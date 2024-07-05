@@ -1835,7 +1835,7 @@ class Domain(Generic_Domain):
 
         elif self.multiprocessor_mode == 4:
             # change over to cuda routines as developed
-            #from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
+            # from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
             extrapolate_second_order_edge_sw(self)
         else:
@@ -2058,13 +2058,13 @@ class Domain(Generic_Domain):
                 
                 # nvtxRangePush('update_conserved_quantities_kernal')
                      
-                 update_conserved_quantities_fix_negative_cells = self.gpu_interface.update_conserved_quantities_kernal
-                 num_negative_ids = update_conserved_quantities_fix_negative_cells(self)
+                # update_conserved_quantities_fix_negative_cells = self.gpu_interface.update_conserved_quantities_kernal
+                # num_negative_ids = update_conserved_quantities_fix_negative_cells(self)
                 # nvtxRangePop()
                 
                 # change over to cuda routines as developed
-                #from .sw_domain_simd_ext import fix_negative_cells
-                #num_negative_ids = fix_negative_cells(self)
+                from .sw_domain_simd_ext import fix_negative_cells
+                num_negative_ids = fix_negative_cells(self)
             else:
                 tff = self.tri_full_flag
 
@@ -2218,6 +2218,38 @@ class Domain(Generic_Domain):
 
         self.distribute_to_vertices_and_edges()
 
+
+    # # Overriding update_boundary from generic doamin 
+    # def update_boundary(self):
+    #     if self.multiprocessor_mode == [0,1,2,3]:
+    #         self.update_boundary_cpu()
+    #     elif self.multiprocessor_mode == 4:
+    #         # self.update_boundary_gpu()
+    #         self.update_boundary_cpu()
+
+
+    # def update_boundary_gpu(self):
+    #     self.gpu_interface.update_boundary_gpu(self)
+    
+    # def update_boundary_cpu(self):
+    #     """Go through list of boundary objects and update boundary values
+    #     for all conserved quantities on boundary.
+    #     It is assumed that the ordering of conserved quantities is
+    #     consistent between the domain and the boundary object, i.e.
+    #     the jth element of vector q must correspond to the jth conserved
+    #     quantity in domain.
+    #     """
+
+    #     #import pdb; pdb.set_trace()
+    #     for tag in self.tag_boundary_cells:
+    #         B = self.boundary_map[tag]
+
+    #         if B is None:
+    #             continue
+
+    #         boundary_segment_edges = self.tag_boundary_cells[tag]
+
+    #         B.evaluate_segment(self, boundary_segment_edges) 
 
     
 
@@ -2817,12 +2849,10 @@ class Domain(Generic_Domain):
             self.gpu_interface.allocate_gpu_arrays()
             self.gpu_interface.compile_gpu_kernels()
            
-        
 
 ################################################################################
 # End of class Shallow Water Domain
 ################################################################################
-
 
 
 ################################################################################
@@ -2911,6 +2941,7 @@ def manning_friction_implicit_gpu(domain):
         domain.gpu_interface.compute_forcing_terms_manning_friction_sloped()
     else:
         domain.gpu_interface.compute_forcing_terms_manning_friction_flat()
+
 
 
 def manning_friction_implicit_cpu(domain):
@@ -3101,3 +3132,4 @@ def my_update_special_conditions(domain):
 
 if __name__ == "__main__":
     pass
+
