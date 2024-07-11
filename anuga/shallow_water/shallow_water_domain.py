@@ -2938,9 +2938,9 @@ def manning_friction_implicit_gpu(domain):
     Wrapper for c version
     """
     if domain.use_sloped_mannings:
-        domain.gpu_interface.compute_forcing_terms_manning_friction_sloped()
+        domain.gpu_interface.compute_forcing_terms_manning_friction_implicit_sloped()
     else:
-        domain.gpu_interface.compute_forcing_terms_manning_friction_flat()
+        domain.gpu_interface.compute_forcing_terms_manning_friction_implicit_flat()
 
 
 
@@ -2978,7 +2978,30 @@ def manning_friction_implicit_cpu(domain):
         manning_friction_flat(g, eps, w, uh, vh, z, eta, xmom_update, \
                                 ymom_update)
 
+
+
+
 def manning_friction_explicit(domain):
+    
+
+    if domain.multiprocessor_mode == [0,1,2,3]:
+        manning_friction_implicit_cpu(domain)
+    elif domain.multiprocessor_mode == 4:
+        manning_friction_implicit_gpu(domain)
+
+
+#GPU version of manning_friction_implicit that'll call the kernal written in sw_domain_cuda
+def manning_friction_explicit_gpu(domain):
+    """Apply (Manning) friction to water momentum
+    Wrapper for c version
+    """
+    if domain.use_sloped_mannings:
+        domain.gpu_interface.compute_forcing_terms_manning_friction_explicit_sloped()
+    else:
+        domain.gpu_interface.compute_forcing_terms_manning_friction_explicit_flat()
+
+
+def manning_friction_explicit_cpu(domain):
     """Apply (Manning) friction to water momentum
     Wrapper for c version
     """

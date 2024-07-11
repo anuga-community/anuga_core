@@ -2285,7 +2285,7 @@ class Generic_Domain(object):
                     Q.boundary_values[i] = q_evol[j]   
     
    
-    """
+    
     def update_boundary(self):
         # Go through list of boundary objects and update boundary values
         # for all conserved quantities on boundary.
@@ -2305,40 +2305,40 @@ class Generic_Domain(object):
             boundary_segment_edges = self.tag_boundary_cells[tag]
 
             B.evaluate_segment(self, boundary_segment_edges)
-    """
     
-    def update_boundary(self):
-        if self.multiprocessor_mode == [0,1,2,3]:
-            self.update_boundary_cpu()
-        elif self.multiprocessor_mode == 4:
-            self.update_boundary_cpu()
-
-    def update_boundary_gpu(self):
-        from anuga.shallow_water.sw_domain_cuda import GPU_interface
-        self.gpu_interface1 = GPU_interface(self)
-        self.gpu_interface.allocate_gpu_arrays()
-        self.gpu_interface.compile_gpu_kernels()
-        self.gpu_interface.update_boundary_gpu(self)
     
-    def update_boundary_cpu(self):
-        """Go through list of boundary objects and update boundary values
-        for all conserved quantities on boundary.
-        It is assumed that the ordering of conserved quantities is
-        consistent between the domain and the boundary object, i.e.
-        the jth element of vector q must correspond to the jth conserved
-        quantity in domain.
-        """
+    # def update_boundary(self):
+    #     if self.multiprocessor_mode == [0,1,2,3]:
+    #         self.update_boundary_cpu()
+    #     elif self.multiprocessor_mode == 4:
+    #         self.update_boundary_cpu()
 
-        #import pdb; pdb.set_trace()
-        for tag in self.tag_boundary_cells:
-            B = self.boundary_map[tag]
+    # def update_boundary_gpu(self):
+    #     from anuga.shallow_water.sw_domain_cuda import GPU_interface
+    #     self.gpu_interface1 = GPU_interface(self)
+    #     self.gpu_interface.allocate_gpu_arrays()
+    #     self.gpu_interface.compile_gpu_kernels()
+    #     self.gpu_interface.update_boundary_gpu(self)
+    
+    # def update_boundary_cpu(self):
+    #     """Go through list of boundary objects and update boundary values
+    #     for all conserved quantities on boundary.
+    #     It is assumed that the ordering of conserved quantities is
+    #     consistent between the domain and the boundary object, i.e.
+    #     the jth element of vector q must correspond to the jth conserved
+    #     quantity in domain.
+    #     """
 
-            if B is None:
-                continue
+    #     #import pdb; pdb.set_trace()
+    #     for tag in self.tag_boundary_cells:
+    #         B = self.boundary_map[tag]
 
-            boundary_segment_edges = self.tag_boundary_cells[tag]
+    #         if B is None:
+    #             continue
 
-            B.evaluate_segment(self, boundary_segment_edges) 
+    #         boundary_segment_edges = self.tag_boundary_cells[tag]
+
+    #         B.evaluate_segment(self, boundary_segment_edges) 
 
     
     

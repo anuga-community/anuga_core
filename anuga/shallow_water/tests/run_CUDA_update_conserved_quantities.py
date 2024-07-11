@@ -116,13 +116,13 @@ nvtxRangePop()
 #---------------------------------------
 timestep = 0.1
 
-# nvtxRangePush('distribute domain1')
-# domain1.distribute_to_vertices_and_edges()
-# nvtxRangePop()
+nvtxRangePush('distribute domain1')
+domain1.distribute_to_vertices_and_edges()
+nvtxRangePop()
 
-# nvtxRangePush('update boundary domain1')
-# domain1.update_boundary()
-# nvtxRangePop()
+nvtxRangePush('update boundary domain1')
+domain1.update_boundary()
+nvtxRangePop()
 
 nvtxRangePush('update conserved quantities : domain1')
 domain1.update_conserved_quantities()
@@ -144,17 +144,17 @@ nvtxRangePop()
 #---------------------------------------
 timestep = 0.1
 
-# nvtxRangePush('distribute domain1')
-# domain2.distribute_to_vertices_and_edges()
-# nvtxRangePop()
+nvtxRangePush('distribute domain1')
+domain2.distribute_to_vertices_and_edges()
+nvtxRangePop()
 
-# nvtxRangePush('update boundary domain1')
-# domain2.update_boundary()
-# nvtxRangePop()
+nvtxRangePush('update boundary domain1')
+domain2.update_boundary()
+nvtxRangePop()
 
 
 nvtxRangePush('initialise gpu_interface : domain2')
-domain2.set_multiprocessor_mode(1)
+domain2.set_multiprocessor_mode(4)
 nvtxRangePop()
 
 # import pdb; pdb.set_trace()
@@ -169,6 +169,20 @@ nvtxRangePop()
 nvtxRangePush('compile gpu kernels for domain2')
 gpu_domain2.compile_gpu_kernels()
 nvtxRangePop()
+
+nvtxRangePush('distribute domain1')
+domain2.distribute_to_vertices_and_edges()
+nvtxRangePop()
+
+nvtxRangePush('update boundary domain1')
+domain2.update_boundary()
+nvtxRangePop()
+
+
+nvtxRangePush('update conserved quantities : domain1')
+domain2.update_conserved_quantities()
+nvtxRangePop()
+
 
 
 stage1_centroid_values_before = num.copy(stage1.centroid_values)
@@ -201,26 +215,26 @@ import math
 sqrtN = 1.0/N
 
 
-# print('stage edge      diff L2 norm ', num.linalg.norm(stage1.edge_values-stage2.edge_values)/N)
-# print('xmom  edge      diff L2 norm ', num.linalg.norm(xmom1.edge_values-xmom2.edge_values)/N)
-# print('ymom  edge      diff L2 norm ', num.linalg.norm(ymom1.edge_values-ymom2.edge_values)/N)
+print('stage edge      diff L2 norm ', num.linalg.norm(stage1.edge_values-stage2.edge_values)/N)
+print('xmom  edge      diff L2 norm ', num.linalg.norm(xmom1.edge_values-xmom2.edge_values)/N)
+print('ymom  edge      diff L2 norm ', num.linalg.norm(ymom1.edge_values-ymom2.edge_values)/N)
 
 print('stage centroid diff L2 norm ', num.linalg.norm(stage1.centroid_values-stage2.centroid_values)/N)
 print('xmom  centroid diff L2 norm ', num.linalg.norm(xmom1.centroid_values-xmom2.centroid_values)/N)
 print('ymom  centroid diff L2 norm ', num.linalg.norm(ymom1.centroid_values-ymom2.centroid_values)/N)
 
-# print('stage vertex diff L2 norm ', num.linalg.norm(stage1.vertex_values-stage2.vertex_values)/N)
-# print('xmom  vertex diff L2 norm ', num.linalg.norm(xmom1.vertex_values-xmom2.vertex_values)/N)
-# print('ymom  vertex diff L2 norm ', num.linalg.norm(ymom1.vertex_values-ymom2.vertex_values)/N)
+print('stage vertex diff L2 norm ', num.linalg.norm(stage1.vertex_values-stage2.vertex_values)/N)
+print('xmom  vertex diff L2 norm ', num.linalg.norm(xmom1.vertex_values-xmom2.vertex_values)/N)
+print('ymom  vertex diff L2 norm ', num.linalg.norm(ymom1.vertex_values-ymom2.vertex_values)/N)
 
 
-# print('stage semi implicit update diff L2 norm ', num.linalg.norm(stage1.semi_implicit_update-stage2.semi_implicit_update)/N)
-# print('xmom  semi implicit update diff L2 norm ', num.linalg.norm(xmom1.semi_implicit_update-xmom2.semi_implicit_update)/N)
-# print('ymom  semi implicit update diff L2 norm ', num.linalg.norm(ymom1.semi_implicit_update-ymom2.semi_implicit_update)/N)
+print('stage semi implicit update diff L2 norm ', num.linalg.norm(stage1.semi_implicit_update-stage2.semi_implicit_update)/N)
+print('xmom  semi implicit update diff L2 norm ', num.linalg.norm(xmom1.semi_implicit_update-xmom2.semi_implicit_update)/N)
+print('ymom  semi implicit update diff L2 norm ', num.linalg.norm(ymom1.semi_implicit_update-ymom2.semi_implicit_update)/N)
 
-# print('stage explicit update diff L2 norm ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update)/N)
-# print('stage explicit update diff L2 norm ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update)/N)
-# print('stage explicit update diff L2 norm ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update)/N)
+print('stage explicit update diff L2 norm ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update)/N)
+print('stage explicit update diff L2 norm ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update)/N)
+print('stage explicit update diff L2 norm ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update)/N)
 
 
 stage1_centroid_values_after = num.copy(stage1.centroid_values)

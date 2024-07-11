@@ -125,9 +125,9 @@ timestep1 = domain1.flux_timestep
 boundary_flux1 = domain1.boundary_flux_sum[0]
 nvtxRangePop()
 
-nvtxRangePush('compute_forcing_terms')
-domain1.compute_forcing_terms()
-nvtxRangePop()
+# nvtxRangePush('compute_forcing_terms')
+# domain1.compute_forcing_terms()
+# nvtxRangePop()
 
 nvtxRangePush('update_conserved_quantities')
 # Update conserved quantities
@@ -165,9 +165,9 @@ domain2.compute_fluxes()
 timestep2 = domain2.flux_timestep
 nvtxRangePop()
 
-nvtxRangePush('compute forcing terms on gpu for domain2')
-domain2.compute_forcing_terms()
-nvtxRangePop()
+# nvtxRangePush('compute forcing terms on gpu for domain2')
+# domain2.compute_forcing_terms()
+# nvtxRangePop()
 
 nvtxRangePush('update_conserved_quantities')
 # Update conserved quantities
@@ -241,6 +241,9 @@ print('ymom  vertex diff L2 norm ', num.linalg.norm(ymom1.vertex_values-ymom2.ve
 
 print('xmom semi implicit update diff L2-norm    ', num.linalg.norm(xmom1.semi_implicit_update-xmom2.semi_implicit_update)*sqrtN)
 print('ymom semi implicit update diff L2-norm    ', num.linalg.norm(ymom1.semi_implicit_update-ymom2.semi_implicit_update)*sqrtN)
+
+print('xmom explicit update diff L2-norm    ', num.linalg.norm(xmom1.explicit_update-xmom2.explicit_update)*sqrtN)
+print('ymom explicit update diff L2-norm    ', num.linalg.norm(ymom1.explicit_update-ymom2.explicit_update)*sqrtN)
 
 
 #(num.abs(stage1.explicit_update-stage2.explicit_update)/num.abs(stage1.explicit_update)).max()
