@@ -1957,7 +1957,6 @@ class Domain(Generic_Domain):
             # change over to cuda routines as developed
             # # from .sw_domain_simd_ext import  protect_new
             protect_new = self.gpu_interface.protect_against_infinitesimal_and_negative_heights_kernal
-            protect_new = self.gpu_interface.protect_against_infinitesimal_and_negative_heights_kernal
         else:
             raise Exception('Not implemented')
 

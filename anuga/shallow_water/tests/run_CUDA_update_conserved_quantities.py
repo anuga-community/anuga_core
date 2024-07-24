@@ -101,8 +101,8 @@ print('total creation time', (end_time - start))
 #------------------------------
 #Evolve the system through time
 #------------------------------
-yieldstep = 0.0002
-finaltime = 0.0002
+yieldstep = 0.0001
+finaltime = 0.1
 
 nvtxRangePush('evolve domain1')
 print('Evolve domain1')
@@ -143,15 +143,6 @@ nvtxRangePop()
 # run domain2 using standard routine
 #---------------------------------------
 timestep = 0.1
-
-nvtxRangePush('distribute domain1')
-domain2.distribute_to_vertices_and_edges()
-nvtxRangePop()
-
-nvtxRangePush('update boundary domain1')
-domain2.update_boundary()
-nvtxRangePop()
-
 
 nvtxRangePush('initialise gpu_interface : domain2')
 domain2.set_multiprocessor_mode(4)

@@ -1549,10 +1549,10 @@ __global__ void _cuda_update_sw(long number_of_elements,
                                               double *bed_centroid_values,
                                               double *xmom_centroid_values, 
                                               double *ymom_centroid_values, 
-                                              long num_negative_cells)  // Is this the way to pass back and is it int or long
+                                              unsigned long long int num_negative_cells)  // Is this the way to pass back and is it int or long
   {
     int k = blockIdx.x * blockDim.x + threadIdx.x;
-    num_negative_cells = 0;
+    // num_negative_cells = 0;
     if (k < number_of_elements)
     {
       int tff = tri_full_flag[k];
