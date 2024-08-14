@@ -18,8 +18,8 @@ import math
 from anuga.shallow_water.sw_domain_cuda import nvtxRangePush, nvtxRangePop
 
 
-nx = 50
-ny = 50
+nx = 500
+ny = 500
 
 def create_domain(name='domain'):
 
@@ -88,9 +88,6 @@ nvtxRangePop()
 #------------------------------
 yieldstep = 0.0002
 finaltime = 0.002
-
-
-
 nvtxRangePush('evolve domain1')
 print('Evolve domain1')
 print('domain1 number of triangles ',domain1.number_of_elements)
@@ -112,6 +109,8 @@ nvtxRangePop()
 #---------------------------------------
 timestep = 0.1
 
+
+
 nvtxRangePush('distribute domain1')
 domain1.distribute_to_vertices_and_edges()
 nvtxRangePop()
@@ -126,6 +125,22 @@ timestep1 = domain1.flux_timestep
 boundary_flux1 = domain1.boundary_flux_sum[0]
 nvtxRangePop()
 
+nvtxRangePush('compute_forcing_terms')
+domain1.compute_forcing_terms()
+nvtxRangePop()
+
+nvtxRangePush('update_conserved_quantities')
+# Update conserved quantities
+domain1.update_conserved_quantities()
+#nvtx marker
+nvtxRangePop()
+
+nvtxRangePush('protect_ainh on cpu')
+# Update conserved quantities
+domain1.protect_against_infinitesimal_and_negative_heights()
+#nvtx marker
+nvtxRangePop()
+
 
 #-----------------------------------------
 # Test the kernel versions of
@@ -135,47 +150,35 @@ nvtxRangePop()
 # as found in evolve_one_euler_step in
 # generic_domain.py (abstract_2d_finite_volume)
 #----------------------------------------
-
-nvtxRangePush('distribute on cpu for domain2')
-domain2.distribute_to_vertices_and_edges()
-nvtxRangePop()
-
-nvtxRangePush('update boundary domain2')
-domain2.update_boundary()
-nvtxRangePop()
-
-# nvtxRangePush('initialise gpu_interface domain2')
-# domain2.set_multiprocessor_mode(4)
-# nvtxRangePop()
-
-# nvtxRangePush('compute fluxes domain2')
-# domain2.compute_fluxes()
-# timestep2 = domain2.flux_timestep
-# boundary_flux2 = domain2.boundary_flux_sum[0]
-# nvtxRangePop()
-
-
-# Setup gpu interface (if multiprocessor_mode == 4 and cupy available)
-# import pdb
-# pdb.set_trace()
+domain2.set_multiprocessor_mode(4)
+nvtxRangePush('distribute on gpu for domain2')
 from anuga.shallow_water.sw_domain_cuda import GPU_interface
 gpu_interface2 = GPU_interface(domain2)
-
-# Some of these arrays are "static" and so only
-# need to be allocated and set once per simulation
-nvtxRangePush('allocate gpu arrays for domain2')
 gpu_interface2.allocate_gpu_arrays()
-nvtxRangePop()
-
-
-
-nvtxRangePush('compile gpu kernels for domain2')
 gpu_interface2.compile_gpu_kernels()
-nvtxRangePop()
+
+domain2.distribute_to_vertices_and_edges()
+domain2.update_boundary()
 
 nvtxRangePush('compute fluxes on gpu for domain2')
-timestep2 = domain2.evolve_max_timestep 
-timestep2 = gpu_interface2.compute_fluxes_ext_central_kernel(timestep2)
+domain2.compute_fluxes()
+timestep2 = domain2.flux_timestep
+nvtxRangePop()
+
+nvtxRangePush('compute forcing terms on gpu for domain2')
+domain2.compute_forcing_terms()
+nvtxRangePop()
+
+nvtxRangePush('update_conserved_quantities')
+# Update conserved quantities
+domain2.update_conserved_quantities()
+#nvtx marker
+nvtxRangePop()
+
+nvtxRangePush('protect_ainh on gpu')
+# Update conserved quantities
+domain2.protect_against_infinitesimal_and_negative_heights()
+#nvtx marker
 nvtxRangePop()
 
 boundary_flux2 = domain2.boundary_flux_sum[0]
@@ -212,6 +215,7 @@ import math
 sqrtN = 1.0/N
 
 
+#  FLUX
 print('timestep diff                ', abs(timestep1-timestep2))
 print('boundary_flux diff           ', abs(boundary_flux1-boundary_flux2))
 print('max_speed diff L2-norm       ', num.linalg.norm(max_speed_1-max_speed_2)*sqrtN)
@@ -222,9 +226,27 @@ print('ymom  update diff L2-norm    ', num.linalg.norm(ymom1.explicit_update-ymo
 print('stage update diff Linf-norm  ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update,num.inf))
 print('xmom  update diff Linf-norm  ', num.linalg.norm(xmom1.explicit_update-xmom2.explicit_update,num.inf))
 print('ymom  update diff Linf-norm  ', num.linalg.norm(ymom1.explicit_update-ymom2.explicit_update,num.inf))
-#print('edge timestep error         ', num.linalg.norm(domain1.edge_timestep-domain2.edge_timestep))
-#print('pressure work error         ', num.linalg.norm(domain1.pressuregrad_work-domain2.pressuregrad_work))
-#print('edge flux work error        ', num.linalg.norm(domain1.edge_flux_work-domain2.edge_flux_work))
+
+# EXTRAPOLATE
+print('stage edge      diff L2 norm ', num.linalg.norm(stage1.edge_values-stage2.edge_values)/N)
+print('xmom  edge      diff L2 norm ', num.linalg.norm(xmom1.edge_values-xmom2.edge_values)/N)
+print('ymom  edge      diff L2 norm ', num.linalg.norm(ymom1.edge_values-ymom2.edge_values)/N)
+
+# EXTRAPOLATE UPDATE_CONSERVED
+print('stage centroid diff L2 norm ', num.linalg.norm(stage1.centroid_values-stage2.centroid_values)/N)
+print('xmom  centroid diff L2 norm ', num.linalg.norm(xmom1.centroid_values-xmom2.centroid_values)/N)
+print('ymom  centroid diff L2 norm ', num.linalg.norm(ymom1.centroid_values-ymom2.centroid_values)/N)
+
+print('stage vertex diff L2 norm ', num.linalg.norm(stage1.vertex_values-stage2.vertex_values)/N)
+print('xmom  vertex diff L2 norm ', num.linalg.norm(xmom1.vertex_values-xmom2.vertex_values)/N)
+print('ymom  vertex diff L2 norm ', num.linalg.norm(ymom1.vertex_values-ymom2.vertex_values)/N)
+
+
+print('xmom semi implicit update diff L2-norm    ', num.linalg.norm(xmom1.semi_implicit_update-xmom2.semi_implicit_update)*sqrtN)
+print('ymom semi implicit update diff L2-norm    ', num.linalg.norm(ymom1.semi_implicit_update-ymom2.semi_implicit_update)*sqrtN)
+
+print('xmom explicit update diff L2-norm    ', num.linalg.norm(xmom1.explicit_update-xmom2.explicit_update)*sqrtN)
+print('ymom explicit update diff L2-norm    ', num.linalg.norm(ymom1.explicit_update-ymom2.explicit_update)*sqrtN)
 
 
 #(num.abs(stage1.explicit_update-stage2.explicit_update)/num.abs(stage1.explicit_update)).max()
@@ -258,22 +280,5 @@ if False:
     pprint(xmom2.explicit_update[xmom_ids[-10:]])
     pprint(num.abs(xmom1.explicit_update-xmom2.explicit_update)[xmom_ids[-10:]])
     print(num.abs(xmom1.explicit_update-xmom2.explicit_update).max())
-
-
-
-
-
-
-
-
-#assert num.allclose(timestep1,timestep2)
-#assert num.allclose(boundary_flux1,boundary_flux2)
-#assert num.allclose(stage1.explicit_update,stage2.explicit_update)
-#assert num.allclose(xmom1.explicit_update,xmom2.explicit_update)
-#assert num.allclose(ymom1.explicit_update,ymom2.explicit_update)
-#assert num.allclose(domain1.edge_timestep,domain2.edge_timestep)
-#assert num.allclose(domain1.pressuregrad_work,domain2.pressuregrad_work)
-#assert num.allclose(domain1.edge_flux_work,domain2.edge_flux_work)
-
 
 

@@ -1782,7 +1782,7 @@ class Domain(Generic_Domain):
         # Flux calculation and gravity incorporated in same
         # procedure
 
-        # nvtxRangePush("Compute Fluxes (Domain)")
+        nvtxRangePush("compute_fluxes")
 
         if self.multiprocessor_mode == 0:
             from .sw_domain_orig_ext import compute_fluxes_ext_central
@@ -1804,7 +1804,7 @@ class Domain(Generic_Domain):
         timestep = self.evolve_max_timestep
         self.flux_timestep = compute_fluxes_ext_central(self, timestep)
 
-        # nvtxRangePop()
+        nvtxRangePop()
 
         
     def distribute_to_vertices_and_edges(self):
@@ -1816,7 +1816,7 @@ class Domain(Generic_Domain):
         nvtxRangePop()
 
         # Do extrapolation step
-        # nvtxRangePush('extrapolate')
+        nvtxRangePush('extrapolate')
         if self.multiprocessor_mode == 0:
             from .sw_domain_orig_ext import extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw(self)
@@ -1841,7 +1841,7 @@ class Domain(Generic_Domain):
         else:
             raise Exception('Not implemented')
 
-        # nvtxRangePop()
+        nvtxRangePop()
 
 
     def distribute_using_edge_limiter(self):
@@ -1944,7 +1944,7 @@ class Domain(Generic_Domain):
         """ Clean up the stage and momentum values to ensure non-negative heights
         """
 
-        # nvtxRangePush('protect_new')
+        nvtxRangePush('protect_against_infinities')
         if self.multiprocessor_mode == 0:
             from .sw_domain_orig_ext import protect_new
         elif self.multiprocessor_mode == 1:
@@ -1962,12 +1962,13 @@ class Domain(Generic_Domain):
 
 
         mass_error = protect_new(self)
-        # nvtxRangePop()
 
         if mass_error > 0.0 and self.verbose :
             #print('Cumulative mass protection: ' + str(mass_error) + ' m^3 ')
             # From https://stackoverflow.com/questions/22397261/cant-convert-float-object-to-str-implicitly
             print('Cumulative mass protection: {0} m^3'.format(mass_error))
+        
+        nvtxRangePop()
 
 
     def balance_deep_and_shallow(self):
@@ -2013,7 +2014,7 @@ class Domain(Generic_Domain):
         computed fluxes and specified forcing functions.
         """
 
-        # nvtxRangePush('update_conserved_quantities')
+        nvtxRangePush('update_conserved_quantities')
 
         timestep = self.timestep
 
@@ -2057,13 +2058,13 @@ class Domain(Generic_Domain):
                 
                 # nvtxRangePush('update_conserved_quantities_kernal')
                      
-                # update_conserved_quantities_fix_negative_cells = self.gpu_interface.update_conserved_quantities_kernal
-                # num_negative_ids = update_conserved_quantities_fix_negative_cells(self)
+                update_conserved_quantities_fix_negative_cells = self.gpu_interface.update_conserved_quantities_kernal
+                num_negative_ids = update_conserved_quantities_fix_negative_cells(self)
                 # nvtxRangePop()
                 
                 # change over to cuda routines as developed
-                from .sw_domain_simd_ext import fix_negative_cells
-                num_negative_ids = fix_negative_cells(self)
+                # from .sw_domain_simd_ext import fix_negative_cells
+                # num_negative_ids = fix_negative_cells(self)
             else:
                 tff = self.tri_full_flag
 
@@ -2083,7 +2084,7 @@ class Domain(Generic_Domain):
                       'Consider using domain.report_water_volume_statistics() to check the extent of the problem'
                 warnings.warn(msg)
 
-        # nvtxRangePop()
+        nvtxRangePop()
 
     def update_other_quantities(self):
         """ There may be a need to calculates some of the other quantities
@@ -2230,26 +2231,26 @@ class Domain(Generic_Domain):
     # def update_boundary_gpu(self):
     #     self.gpu_interface.update_boundary_gpu(self)
     
-    # def update_boundary_cpu(self):
-    #     """Go through list of boundary objects and update boundary values
-    #     for all conserved quantities on boundary.
-    #     It is assumed that the ordering of conserved quantities is
-    #     consistent between the domain and the boundary object, i.e.
-    #     the jth element of vector q must correspond to the jth conserved
-    #     quantity in domain.
-    #     """
+    def update_boundary(self):
+        """Go through list of boundary objects and update boundary values
+        for all conserved quantities on boundary.
+        It is assumed that the ordering of conserved quantities is
+        consistent between the domain and the boundary object, i.e.
+        the jth element of vector q must correspond to the jth conserved
+        quantity in domain.
+        """
+        nvtxRangePush("update_boundary")
+        #import pdb; pdb.set_trace()
+        for tag in self.tag_boundary_cells:
+            B = self.boundary_map[tag]
 
-    #     #import pdb; pdb.set_trace()
-    #     for tag in self.tag_boundary_cells:
-    #         B = self.boundary_map[tag]
+            if B is None:
+                continue
 
-    #         if B is None:
-    #             continue
+            boundary_segment_edges = self.tag_boundary_cells[tag]
 
-    #         boundary_segment_edges = self.tag_boundary_cells[tag]
-
-    #         B.evaluate_segment(self, boundary_segment_edges) 
-
+            B.evaluate_segment(self, boundary_segment_edges) 
+        nvtxRangePop()
     
 
     def evolve(self,
@@ -2925,7 +2926,7 @@ def distribute_using_vertex_limiter(domain):
 def manning_friction_implicit(domain):
     
 
-    if domain.multiprocessor_mode == [0,1,2,3]:
+    if domain.multiprocessor_mode == [0,1,2,3,4]:
         manning_friction_implicit_cpu(domain)
     elif domain.multiprocessor_mode == 4:
         manning_friction_implicit_gpu(domain)
@@ -2940,8 +2941,6 @@ def manning_friction_implicit_gpu(domain):
         domain.gpu_interface.compute_forcing_terms_manning_friction_implicit_sloped()
     else:
         domain.gpu_interface.compute_forcing_terms_manning_friction_implicit_flat()
-
-
 
 def manning_friction_implicit_cpu(domain):
     """Apply (Manning) friction to water momentum
@@ -2978,15 +2977,13 @@ def manning_friction_implicit_cpu(domain):
                                 ymom_update)
 
 
-
-
 def manning_friction_explicit(domain):
     
 
-    if domain.multiprocessor_mode == [0,1,2,3]:
-        manning_friction_implicit_cpu(domain)
+    if domain.multiprocessor_mode == [0,1,2,3,4]:
+        manning_friction_explicit_cpu(domain)
     elif domain.multiprocessor_mode == 4:
-        manning_friction_implicit_gpu(domain)
+        manning_friction_explicit_gpu(domain)
 
 
 #GPU version of manning_friction_implicit that'll call the kernal written in sw_domain_cuda

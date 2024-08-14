@@ -2294,8 +2294,6 @@ class Generic_Domain(object):
         # the jth element of vector q must correspond to the jth conserved
         # quantity in domain.
         
-
-        #import pdb; pdb.set_trace()
         for tag in self.tag_boundary_cells:
             B = self.boundary_map[tag]
 
@@ -2459,9 +2457,12 @@ class Generic_Domain(object):
     
         # The parameter self.flux_timestep should be updated
         # by the forcing_terms to ensure stability
-
+        nvtxRangePush("compute_forcing_terms")
+        
         for f in self.forcing_terms:
             f(self)
+        
+        nvtxRangePop()
 
     def update_conserved_quantities(self):
         """Update vectors of conserved quantities using previously

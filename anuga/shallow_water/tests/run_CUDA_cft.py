@@ -87,7 +87,7 @@ nvtxRangePop()
 #Evolve the system through time
 #------------------------------
 yieldstep = 0.0002
-finaltime = 0.0002
+finaltime = 0.002
 nvtxRangePush('evolve domain1')
 print('Evolve domain1')
 print('domain1 number of triangles ',domain1.number_of_elements)
@@ -110,7 +110,7 @@ nvtxRangePop()
 timestep = 0.1
 
 #nvtx marker
-nvtxRangePush('distribute_to_vertices_and_edges')
+nvtxRangePush('extrpolate')
 # From centroid values calculate edge and vertex values
 domain1.distribute_to_vertices_and_edges()
 #nvtx marker
@@ -134,12 +134,15 @@ domain1.compute_forcing_terms()
 #nvtx marker
 nvtxRangePop()
 
+nvtxRangePush('update_conserved_quantities')
+domain1.update_conserved_quantities()
+nvtxRangePop()
 
 
 ##########################################################
 # GPU INTERFACE
 ##########################################################
-
+domain2.set_multiprocessor_mode(4)
 #nvtx marker
 nvtxRangePush('distribute_to_vertices_and_edges')
 # From centroid values calculate edge and vertex values
@@ -159,25 +162,12 @@ domain2.compute_fluxes()
 #nvtx marker
 nvtxRangePop()
 
-from anuga.shallow_water.sw_domain_cuda import GPU_interface
-gpu_interface2 = GPU_interface(domain2)
-
-# Some of these arrays are "static" and so only
-# need to be allocated and set once per simulation
-nvtxRangePush('allocate gpu arrays for domain2')
-gpu_interface2.allocate_gpu_arrays()
-nvtxRangePop()
-
-
-
-nvtxRangePush('compile gpu kernels for domain2')
-gpu_interface2.compile_gpu_kernels()
-nvtxRangePop()
-
 nvtxRangePush('compute forcing terms on gpu for domain2')
-from anuga.shallow_water.shallow_water_domain import manning_friction_implicit
-domain2.set_multiprocessor_mode(4)
 domain2.compute_forcing_terms()
+nvtxRangePop()
+
+nvtxRangePush('update_conserved_quantities')
+domain2.update_conserved_quantities()
 nvtxRangePop()
 
 

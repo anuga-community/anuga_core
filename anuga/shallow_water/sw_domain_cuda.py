@@ -541,14 +541,14 @@ class GPU_interface(object):
 
         import cupy as cp
 
-        nvtxRangePush('gpu_to_cpu_centroid_values')
+        # nvtxRangePush('gpu_to_cpu_centroid_values')
         # FIXME SR: Do we need to transfer height and bed centroid values
         cp.asnumpy(self.gpu_stage_centroid_values,  out = self.cpu_stage_centroid_values)
         cp.asnumpy(self.gpu_xmom_centroid_values,  out = self.cpu_xmom_centroid_values)
         cp.asnumpy(self.gpu_ymom_centroid_values,  out = self.cpu_ymom_centroid_values)
         cp.asnumpy(self.gpu_height_centroid_values,  out = self.cpu_height_centroid_values)
         cp.asnumpy(self.gpu_bed_centroid_values,  out = self.cpu_bed_centroid_values)  
-        nvtxRangePop()
+        # nvtxRangePop()
 
     def cpu_to_gpu_edge_values(self):
         """
@@ -630,22 +630,22 @@ class GPU_interface(object):
         """
         Move explicit data from gpu to cpu
         """
-        nvtxRangePush("gpu_to_cpu_explicit_update")
+        # nvtxRangePush("gpu_to_cpu_explicit_update")
         import cupy as cp
         cp.asnumpy(self.gpu_stage_explicit_update, out = self.cpu_stage_explicit_update)
         cp.asnumpy(self.gpu_xmom_explicit_update, out = self.cpu_xmom_explicit_update)
         cp.asnumpy(self.gpu_ymom_explicit_update, out = self.cpu_ymom_explicit_update)
-        nvtxRangePop()
+        # nvtxRangePop()
 
     def cpu_to_gpu_semi_explicit_update(self):
         """
         Move semi_explicit_update data from cpu to gpu
         """
-        nvtxRangePush("cpu_to_gpu_semi_explicit_update")
+        # nvtxRangePush("cpu_to_gpu_semi_explicit_update")
         self.gpu_stage_semi_implicit_update.set(self.cpu_stage_semi_implicit_update)
         self.gpu_xmom_semi_implicit_update.set(self.cpu_xmom_semi_implicit_update)
         self.gpu_ymom_semi_implicit_update.set(self.cpu_ymom_semi_implicit_update)
-        nvtxRangePop()
+        # nvtxRangePop()
     
     def gpu_to_cpu_semi_explicit_update(self):
         """
@@ -666,12 +666,12 @@ class GPU_interface(object):
         Ensure transient data has been copied to the GPU via cpu_to_gpu_flux
         """
         import cupy as cp
-
+        nvtxRangePush('compute_fluxes')
         #------------------------------------------------
         # Transfer transient values from cpu if necessary
         #------------------------------------------------
         if transfer_from_cpu:
-            nvtxRangePush('calculate flux: transfer from GPU')
+            
             self.gpu_stage_centroid_values.set(self.cpu_stage_centroid_values)
             self.gpu_xmom_centroid_values.set(self.cpu_xmom_centroid_values)
             self.gpu_ymom_centroid_values.set(self.cpu_ymom_centroid_values)
@@ -685,12 +685,7 @@ class GPU_interface(object):
             self.gpu_height_edge_values.set(self.cpu_height_edge_values)            
             
             #FIXME SR: Want about boundary values!
-            nvtxRangePop()
-
-
-	     
-
-
+           
         #-------------------------------------
         # FIXME SR: Need to calc substep_count
         # properly as used to be static in C code
@@ -711,7 +706,7 @@ class GPU_interface(object):
 
         THREADS_PER_BLOCK = 128
         NO_OF_BLOCKS = int(math.ceil(self.cpu_number_of_elements/THREADS_PER_BLOCK))
-        nvtxRangePush('calculate flux: kernal')
+        
         self.flux_kernel( (NO_OF_BLOCKS, 0, 0), 
                 (THREADS_PER_BLOCK, 0, 0), 
                 (  
@@ -759,34 +754,32 @@ class GPU_interface(object):
                 np.float64(self.cpu_limiting_threshold)
                 ) 
                 )
-        nvtxRangePop()
         
         
-        nvtxRangePush('calculate flux: cupy reductions')
+        
         # FIXME SR: Does gpu_reduce_timestep live on the GPU or CPU?
         gpu_reduce_timestep = self.gpu_timestep_array.min()
         gpu_reduced_local_boundary_flux_sum = self.gpu_local_boundary_flux_sum.sum()
-        nvtxRangePop()
 
-        nvtxRangePush('calculate flux: communicate reduced results')
+       
         # do we need to do this?
         if substep_count == 0:
             timestep = cp.asnumpy(gpu_reduce_timestep)
 
         self.domain.boundary_flux_sum[substep_count] = cp.asnumpy(gpu_reduced_local_boundary_flux_sum)
-        nvtxRangePop()
 
         #------------------------------------------------
         # Recover transient values from gpu if necessary
         #------------------------------------------------
         if transfer_gpu_results:
-            nvtxRangePush('calculate flux: transfer from GPU')
+            # nvtxRangePush('calculate flux: transfer from GPU')
             cp.asnumpy(self.gpu_max_speed, out = self.cpu_max_speed)
             cp.asnumpy(self.gpu_stage_explicit_update, out = self.cpu_stage_explicit_update)
             cp.asnumpy(self.gpu_xmom_explicit_update, out = self.cpu_xmom_explicit_update)
             cp.asnumpy(self.gpu_ymom_explicit_update, out = self.cpu_ymom_explicit_update)
-            nvtxRangePop()
-
+            # nvtxRangePop()
+        
+        nvtxRangePop()
         return timestep
 
 
@@ -802,13 +795,13 @@ class GPU_interface(object):
         # Transfer transient values from cpu if necessary
         #------------------------------------------------
         if transfer_from_cpu:
-            nvtxRangePush('extrapolate kernel: transfer from cpu')
+            # nvtxRangePush('extrapolate kernel: transfer from cpu')
             self.gpu_stage_centroid_values.set(self.cpu_stage_centroid_values)
             self.gpu_xmom_centroid_values.set(self.cpu_xmom_centroid_values)
             self.gpu_ymom_centroid_values.set(self.cpu_ymom_centroid_values)
             self.gpu_height_centroid_values.set(self.cpu_height_centroid_values)
             self.gpu_bed_centroid_values.set(self.cpu_bed_centroid_values)  
-            nvtxRangePop()
+            # nvtxRangePop()
 
         #import ipdb
         #ipdb.set_trace()
@@ -820,7 +813,7 @@ class GPU_interface(object):
         # FIXME SR: Check to see if we need to read in vertex_values arrays
 
         
-        nvtxRangePush('extrapolate kernel: loop 1')
+        nvtxRangePush('extrapolate')
         self.extrapolate_kernel1( (NO_OF_BLOCKS, 0, 0),
                 (THREADS_PER_BLOCK, 0, 0), 
                 (  
@@ -839,7 +832,6 @@ class GPU_interface(object):
                 np.int64   (self.cpu_extrapolate_velocity_second_order)
                 ) 
                 )
-        nvtxRangePop()
 
         if verbose:
             print('gpu_x_centroid_work after loop 1')
@@ -847,7 +839,6 @@ class GPU_interface(object):
             print('gpu_xmom_centroid_values after loop 1')
             print(self.gpu_xmom_centroid_values)
 
-        nvtxRangePush('extrapolate kernel: loop 2')
         self.extrapolate_kernel2( (NO_OF_BLOCKS, 0, 0),
                 (THREADS_PER_BLOCK, 0, 0), 
                 (  
@@ -883,9 +874,6 @@ class GPU_interface(object):
                 np.int64   (self.cpu_extrapolate_velocity_second_order)
                 ) 
                 )
-        nvtxRangePop()
-        #import ipdb
-        #ipdb.set_trace()
 
         if verbose:
             print('gpu_stage_edge_values after loop 2')
@@ -899,7 +887,6 @@ class GPU_interface(object):
             print('self.gpu_surrogate_neighbours after loop 2')
             print(self.gpu_surrogate_neighbours)
 
-        nvtxRangePush('extrapolate kernel: loop 3')
         self.extrapolate_kernel3( (NO_OF_BLOCKS, 0, 0),
                 (THREADS_PER_BLOCK, 0, 0), 
                 (   
@@ -913,9 +900,7 @@ class GPU_interface(object):
                 np.int64 (self.cpu_number_of_elements)
                 ) 
                 )
-        nvtxRangePop()
 
-        nvtxRangePush('extrapolate kernel: loop 4')
         self.extrapolate_kernel4( (NO_OF_BLOCKS, 0, 0),
                 (THREADS_PER_BLOCK, 0, 0), 
                 (   
@@ -934,31 +919,25 @@ class GPU_interface(object):
                 np.int64 (self.cpu_number_of_elements)
                 ) 
                 )
-        nvtxRangePop()
 
 
         #------------------------------------------------
         # Recover transient values from gpu if necessary
         #------------------------------------------------
         if transfer_gpu_results:
-            nvtxRangePush('extrapolate kernel: retrieve gpu edge results')
             cp.asnumpy(self.gpu_stage_edge_values,  out = self.cpu_stage_edge_values)
             cp.asnumpy(self.gpu_xmom_edge_values,   out = self.cpu_xmom_edge_values)
             cp.asnumpy(self.gpu_ymom_edge_values,   out = self.cpu_ymom_edge_values)
             cp.asnumpy(self.gpu_height_edge_values, out = self.cpu_height_edge_values)
             cp.asnumpy(self.gpu_bed_edge_values,    out = self.cpu_bed_edge_values)
-            nvtxRangePop()
 
-            nvtxRangePush('extrapolate kernel: retrieve gpu centroid results')
             # FIXME SR: check to see if we need to transfer all these centroid values
             cp.asnumpy(self.gpu_stage_centroid_values,  out = self.cpu_stage_centroid_values)
             cp.asnumpy(self.gpu_xmom_centroid_values,   out = self.cpu_xmom_centroid_values)
             cp.asnumpy(self.gpu_ymom_centroid_values,   out = self.cpu_ymom_centroid_values)
             cp.asnumpy(self.gpu_height_centroid_values, out = self.cpu_height_centroid_values)
             cp.asnumpy(self.gpu_bed_centroid_values,    out = self.cpu_bed_centroid_values)
-            nvtxRangePop()
 
-            nvtxRangePush('extrapolate kernel: retrieve gpu vertex results')
             cp.asnumpy(self.gpu_stage_vertex_values,  out = self.cpu_stage_vertex_values)
             cp.asnumpy(self.gpu_xmom_vertex_values,   out = self.cpu_xmom_vertex_values)
             cp.asnumpy(self.gpu_ymom_vertex_values,   out = self.cpu_ymom_vertex_values)
@@ -973,13 +952,15 @@ class GPU_interface(object):
 
         Ensure transient data has been copied to the GPU via cpu_to_gpu routines
         """
+
+        nvtxRangePush("update_conserved_quantities")
         if transfer_from_cpu:
             self.cpu_to_gpu_centroid_values()
             self.cpu_to_gpu_explicit_update()
             self.cpu_to_gpu_semi_explicit_update()
         
 
-        nvtxRangePush("Update_Kernal")
+        
         import math
         THREADS_PER_BLOCK = 128
         NO_OF_BLOCKS = int(math.ceil(self.cpu_number_of_elements/THREADS_PER_BLOCK))
@@ -987,7 +968,6 @@ class GPU_interface(object):
 
         # """  Commented this for the three kernal approach
         # Here we're calling the update kernal for stage,xmom,ymom quantity
-        # nvtxRangePush("update : stage")
         self.update_kernal((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
                 np.int64(self.cpu_number_of_elements),
                 np.float64(self.cpu_timestep),
@@ -995,9 +975,7 @@ class GPU_interface(object):
                 self.gpu_stage_explicit_update,
                 self.gpu_stage_semi_implicit_update                
         ))
-        # nvtxRangePop()
 
-        # nvtxRangePush("update : xmom")
         self.update_kernal((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
                 np.int64(self.cpu_number_of_elements),
                 np.float64(self.cpu_timestep),
@@ -1005,9 +983,7 @@ class GPU_interface(object):
                 self.gpu_xmom_explicit_update,
                 self.gpu_xmom_semi_implicit_update                
         ))
-        # nvtxRangePop()
 
-        # nvtxRangePush("update : ymom")
         self.update_kernal((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
                 np.int64(self.cpu_number_of_elements),
                 np.float64(self.cpu_timestep),
@@ -1015,25 +991,12 @@ class GPU_interface(object):
                 self.gpu_ymom_explicit_update,
                 self.gpu_ymom_semi_implicit_update
         ))
-        # nvtxRangePop()
-        # """
-        nvtxRangePop()
-
-
-        # nvtxRangePush('update_conserved_quantities: transfer from GPU')
-
+ 
         if verbose:
             print('gpu_stage_centroid_values after update -> ', self.gpu_stage_centroid_values)
             print('gpu_xmom_centroid_values after update -> ', self.gpu_xmom_centroid_values)
             print('gpu_ymom_centroid_values after update -> ', self.gpu_ymom_centroid_values)
 
-        # nvtxRangePop()
-
-        # if transfer_from_cpu:
-        #     self.cpu_to_gpu_centroid_values()
-
-        nvtxRangePush("fix_negative_cells : kernal")
-        
         self.fix_negative_cells_kernal((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
             np.int64(self.cpu_number_of_elements),
             self.gpu_tri_full_flag,
@@ -1043,21 +1006,19 @@ class GPU_interface(object):
             self.gpu_ymom_centroid_values,
             self.gpu_num_negative_cells
         ))
-        nvtxRangePop()
 
-        nvtxRangePush('fix_negative_cells: transfer from GPU')
 
         if transfer_gpu_results:
             self.gpu_to_cpu_centroid_values()
             cp.asnumpy(self.gpu_num_negative_cells,    out = self.cpu_num_negative_cells)
             # self.cpu_num_negative_cells = cp.sum(self.gpu_num_negative_cells)
-        nvtxRangePop()    
         
         if verbose:
             print('gpu_stage_centroid_values after fix_negative_cells_kernal -> ', self.gpu_stage_centroid_values)
             print('gpu_xmom_centroid_values after fix_negative_cells_kernal -> ', self.gpu_xmom_centroid_values)
             print('gpu_ymom_centroid_values after fix_negative_cells_kernal -> ', self.gpu_ymom_centroid_values)
         
+        nvtxRangePop()    
         return np.sum(self.cpu_num_negative_cells)
     
     def protect_against_infinitesimal_and_negative_heights_kernal(self, transfer_from_cpu=True, transfer_gpu_results=True, verbose=False):
@@ -1067,7 +1028,7 @@ class GPU_interface(object):
         Testing against the CPU version
         Ensure transient data has been copied to the GPU via cpu_to_gpu routines
         """
-        nvtxRangePush("protect against infinities - kernal")
+        nvtxRangePush("protect_against_infinities")
 
         if transfer_from_cpu:
             self.cpu_to_gpu_centroid_values()
@@ -1087,18 +1048,19 @@ class GPU_interface(object):
                                 self.gpu_areas,
                                 self.gpu_stage_vertex_values                                         
                             ))
-        nvtxRangePop()
+        
         if transfer_gpu_results:    
             cp.asnumpy(self.gpu_stage_centroid_values,  out = self.cpu_stage_centroid_values)
             cp.asnumpy(self.gpu_stage_vertex_values,  out = self.cpu_stage_vertex_values)
 
 
         # returning zero as a placeholder for now
+        nvtxRangePop()
         return 0.0
 
 
     def compute_forcing_terms_manning_friction_implicit_flat(self, transfer_from_cpu=True, transfer_gpu_results=True, verbose=False):
-        nvtxRangePush("compute forcing manning flat - kernal")
+        # nvtxRangePush("compute forcing manning flat - kernal")
     
         self.gpu_stage_centroid_values.set(self.cpu_stage_centroid_values)
         self.gpu_bed_vertex_values.set(self.cpu_bed_vertex_values)
@@ -1113,7 +1075,8 @@ class GPU_interface(object):
         NO_OF_BLOCKS = int(math.ceil(self.cpu_number_of_elements/THREADS_PER_BLOCK))
         self.manning_flat_kernal(
             (NO_OF_BLOCKS, 0, 0), 
-            (THREADS_PER_BLOCK, 0, 0), (
+            (THREADS_PER_BLOCK, 0, 0), 
+            (
             np.float64(self.cpu_g),
             np.float64(self.cpu_eps) ,
             np.int64(self.cpu_N),
@@ -1126,17 +1089,21 @@ class GPU_interface(object):
             self.gpu_ymom_semi_implicit_update
         ))    
 
-        nvtxRangePush('CFT: transfer from GPU')
+        # nvtxRangePush('CFT: transfer from GPU')
 
         if transfer_gpu_results:
-            self.gpu_to_cpu_centroid_values()
+            # cp.asnumpy(self.gpu_stage_centroid_values,  out = self.cpu_stage_centroid_values)
+            # cp.asnumpy(self.gpu_xmom_centroid_values,  out = self.cpu_xmom_centroid_values)
+            # cp.asnumpy(self.gpu_ymom_centroid_values,  out = self.cpu_ymom_centroid_values)
+            # cp.asnumpy(self.gpu_bed_centroid_values,  out = self.cpu_bed_centroid_values) 
+            # cp.asnumpy(self.gpu_friction_centroid_values, out = self.cpu_friction_centroid_values)
             cp.asnumpy(self.gpu_xmom_semi_implicit_update,    out = self.cpu_xmom_semi_implicit_update)
             cp.asnumpy(self.gpu_ymom_semi_implicit_update,    out = self.cpu_ymom_semi_implicit_update)
 
-        nvtxRangePop()   
+        # nvtxRangePop()   
 
 
-        nvtxRangePop()
+        # nvtxRangePop()
 
 
     def compute_forcing_terms_manning_friction_implicit_sloped(self, transfer_from_cpu=True, transfer_gpu_results=True, verbose=False):
@@ -1170,14 +1137,18 @@ class GPU_interface(object):
             self.gpu_ymom_semi_implicit_update,
         ))    
 
-        nvtxRangePush('CFT: transfer from GPU')
+        # nvtxRangePush('CFT: transfer from GPU')
 
         if transfer_gpu_results:
-            self.gpu_to_cpu_centroid_values()
+            cp.asnumpy(self.gpu_stage_centroid_values,  out = self.cpu_stage_centroid_values)
+            cp.asnumpy(self.gpu_xmom_centroid_values,  out = self.cpu_xmom_centroid_values)
+            cp.asnumpy(self.gpu_ymom_centroid_values,  out = self.cpu_ymom_centroid_values)
+            cp.asnumpy(self.gpu_bed_centroid_values,  out = self.cpu_bed_centroid_values) 
+            cp.asnumpy(self.gpu_friction_centroid_values, out = self.cpu_friction_centroid_values)
             cp.asnumpy(self.gpu_xmom_semi_implicit_update,    out = self.cpu_xmom_semi_implicit_update)
             cp.asnumpy(self.gpu_ymom_semi_implicit_update,    out = self.cpu_ymom_semi_implicit_update)
 
-        nvtxRangePop()   
+        # nvtxRangePop()   
 
 
         nvtxRangePop()
@@ -1215,7 +1186,11 @@ class GPU_interface(object):
         nvtxRangePush('CFT: transfer from GPU')
 
         if transfer_gpu_results:
-            self.gpu_to_cpu_centroid_values()
+            cp.asnumpy(self.gpu_stage_centroid_values,  out = self.cpu_stage_centroid_values)
+            cp.asnumpy(self.gpu_xmom_centroid_values,  out = self.cpu_xmom_centroid_values)
+            cp.asnumpy(self.gpu_ymom_centroid_values,  out = self.cpu_ymom_centroid_values)
+            cp.asnumpy(self.gpu_bed_centroid_values,  out = self.cpu_bed_centroid_values) 
+            cp.asnumpy(self.gpu_friction_centroid_values, out = self.cpu_friction_centroid_values)
             cp.asnumpy(self.gpu_xmom_explicit_update,    out = self.cpu_xmom_explicit_update)
             cp.asnumpy(self.gpu_ymom_explicit_update,    out = self.cpu_ymom_explicit_update)
 
@@ -1259,7 +1234,11 @@ class GPU_interface(object):
         nvtxRangePush('CFT: transfer from GPU')
 
         if transfer_gpu_results:
-            self.gpu_to_cpu_centroid_values()
+            cp.asnumpy(self.gpu_stage_centroid_values,  out = self.cpu_stage_centroid_values)
+            cp.asnumpy(self.gpu_xmom_centroid_values,  out = self.cpu_xmom_centroid_values)
+            cp.asnumpy(self.gpu_ymom_centroid_values,  out = self.cpu_ymom_centroid_values)
+            cp.asnumpy(self.gpu_bed_centroid_values,  out = self.cpu_bed_centroid_values) 
+            cp.asnumpy(self.gpu_friction_centroid_values, out = self.cpu_friction_centroid_values)
             cp.asnumpy(self.gpu_xmom_explicit_update,    out = self.cpu_xmom_explicit_update)
             cp.asnumpy(self.gpu_ymom_explicit_update,    out = self.cpu_ymom_explicit_update)
         nvtxRangePop()   

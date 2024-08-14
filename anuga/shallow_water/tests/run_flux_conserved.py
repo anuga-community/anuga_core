@@ -126,6 +126,10 @@ timestep1 = domain1.flux_timestep
 boundary_flux1 = domain1.boundary_flux_sum[0]
 nvtxRangePop()
 
+nvtxRangePush('update conserved quantities : domain1')
+domain1.update_conserved_quantities()
+nvtxRangePop()
+
 
 #-----------------------------------------
 # Test the kernel versions of
@@ -156,29 +160,23 @@ nvtxRangePop()
 
 
 # Setup gpu interface (if multiprocessor_mode == 4 and cupy available)
-# import pdb
-# pdb.set_trace()
-from anuga.shallow_water.sw_domain_cuda import GPU_interface
-gpu_interface2 = GPU_interface(domain2)
+domain2.set_multiprocessor_mode(4)
 
-# Some of these arrays are "static" and so only
-# need to be allocated and set once per simulation
-nvtxRangePush('allocate gpu arrays for domain2')
-gpu_interface2.allocate_gpu_arrays()
+nvtxRangePush('compute fluxes domain2')
+domain2.compute_fluxes()
+timestep2 = domain2.flux_timestep
+boundary_flux2 = domain2.boundary_flux_sum[0]
 nvtxRangePop()
 
-
-
-nvtxRangePush('compile gpu kernels for domain2')
-gpu_interface2.compile_gpu_kernels()
-nvtxRangePop()
-
-nvtxRangePush('compute fluxes on gpu for domain2')
-timestep2 = domain2.evolve_max_timestep 
-timestep2 = gpu_interface2.compute_fluxes_ext_central_kernel(timestep2)
+nvtxRangePush('update conserved quantities : domain1')
+domain2.update_conserved_quantities()
 nvtxRangePop()
 
 boundary_flux2 = domain2.boundary_flux_sum[0]
+
+
+
+
 
 # Compare update arrays and timestep
 
@@ -204,7 +202,12 @@ stage2 = quantities2["stage"]
 xmom2 = quantities2["xmomentum"]
 ymom2 = quantities2["ymomentum"]
 max_speed_2 = domain2.max_speed
-
+stage1_centroid_values_before = num.copy(stage1.centroid_values)
+stage2_centroid_values_before = num.copy(stage2.centroid_values)
+xmom1_centroid_values_before = num.copy(xmom1.centroid_values)
+xmom2_centroid_values_before = num.copy(xmom2.centroid_values)
+ymom1_centroid_values_before = num.copy(ymom1.centroid_values)
+ymom2_centroid_values_before = num.copy(ymom2.centroid_values)
 
 N = domain1.number_of_elements
 # scale linalg.norm by number of elements
@@ -222,58 +225,8 @@ print('ymom  update diff L2-norm    ', num.linalg.norm(ymom1.explicit_update-ymo
 print('stage update diff Linf-norm  ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update,num.inf))
 print('xmom  update diff Linf-norm  ', num.linalg.norm(xmom1.explicit_update-xmom2.explicit_update,num.inf))
 print('ymom  update diff Linf-norm  ', num.linalg.norm(ymom1.explicit_update-ymom2.explicit_update,num.inf))
-#print('edge timestep error         ', num.linalg.norm(domain1.edge_timestep-domain2.edge_timestep))
-#print('pressure work error         ', num.linalg.norm(domain1.pressuregrad_work-domain2.pressuregrad_work))
-#print('edge flux work error        ', num.linalg.norm(domain1.edge_flux_work-domain2.edge_flux_work))
 
-
-#(num.abs(stage1.explicit_update-stage2.explicit_update)/num.abs(stage1.explicit_update)).max()
-
-from pprint import pprint
-
-if False:
-    pprint(stage1.explicit_update.reshape(2*nx,2*ny))
-    pprint(stage2.explicit_update.reshape(2*nx,2*ny))
-    pprint((stage1.explicit_update-stage2.explicit_update).reshape(2*nx,2*ny))
-    pprint(max_speed_1.reshape(2*nx,2*ny))
-    pprint(max_speed_2.reshape(2*nx,2*ny))
-    pprint((max_speed_1-max_speed_2).reshape(2*nx,2*ny))
-
-
-    stage_ids = num.argsort(num.abs(stage1.explicit_update-stage2.explicit_update))
-
-    print('stage max diff values')
-    pprint(stage_ids[-10:])
-    pprint(stage1.explicit_update[stage_ids[-10:]])
-    pprint(stage2.explicit_update[stage_ids[-10:]])
-    pprint(num.abs(stage1.explicit_update-stage2.explicit_update)[stage_ids[-10:]])
-    print(num.abs(stage1.explicit_update-stage2.explicit_update).max())
-
-
-    xmom_ids = num.argsort(num.abs(xmom1.explicit_update-xmom2.explicit_update))
-
-    print('xmom max diff values')
-    pprint(xmom_ids[-10:])
-    pprint(xmom1.explicit_update[xmom_ids[-10:]])
-    pprint(xmom2.explicit_update[xmom_ids[-10:]])
-    pprint(num.abs(xmom1.explicit_update-xmom2.explicit_update)[xmom_ids[-10:]])
-    print(num.abs(xmom1.explicit_update-xmom2.explicit_update).max())
-
-
-
-
-
-
-
-
-#assert num.allclose(timestep1,timestep2)
-#assert num.allclose(boundary_flux1,boundary_flux2)
-#assert num.allclose(stage1.explicit_update,stage2.explicit_update)
-#assert num.allclose(xmom1.explicit_update,xmom2.explicit_update)
-#assert num.allclose(ymom1.explicit_update,ymom2.explicit_update)
-#assert num.allclose(domain1.edge_timestep,domain2.edge_timestep)
-#assert num.allclose(domain1.pressuregrad_work,domain2.pressuregrad_work)
-#assert num.allclose(domain1.edge_flux_work,domain2.edge_flux_work)
-
-
-
+# UPDATE CONSERVED QUANTITIES =>
+print('stage centroid diff L2 norm ', num.linalg.norm(stage1.centroid_values-stage2.centroid_values)/N)
+print('xmom  centroid diff L2 norm ', num.linalg.norm(xmom1.centroid_values-xmom2.centroid_values)/N)
+print('ymom  centroid diff L2 norm ', num.linalg.norm(ymom1.centroid_values-ymom2.centroid_values)/N)
