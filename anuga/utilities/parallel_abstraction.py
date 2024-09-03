@@ -96,6 +96,10 @@ else:
     MINLOC = MPI.MINLOC
     mpiWrapper = 'mpi4py'
 
+    # Set up a separate memory pool for each GPU/process
+    # memory_pool = cp.cuda.MemoryPool()
+    # cp.cuda.set_allocator(memory_pool.malloc)
+
     # Initialize GPU according to rank and assign on the card.
     num_gpus = cp.cuda.runtime.getDeviceCount()
     rank = comm.Get_rank()

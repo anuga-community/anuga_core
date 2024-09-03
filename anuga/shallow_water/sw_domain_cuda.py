@@ -33,6 +33,11 @@ class GPU_interface(object):
     def __init__(self, domain):
         import cupy as cp
         self.gpu_arrays_allocated = False
+
+        # Set up a memory pool for managing GPU memory
+        # memory_pool = cp.cuda.MemoryPool()
+        # cp.cuda.set_allocator(memory_pool.malloc)
+        
         #--------------------------------
         # create alias to domain variables
         #--------------------------------
@@ -1097,7 +1102,14 @@ class GPU_interface(object):
             # cp.asnumpy(self.gpu_ymom_centroid_values,  out = self.cpu_ymom_centroid_values)
             # cp.asnumpy(self.gpu_bed_centroid_values,  out = self.cpu_bed_centroid_values) 
             # cp.asnumpy(self.gpu_friction_centroid_values, out = self.cpu_friction_centroid_values)
-            cp.asnumpy(self.gpu_xmom_semi_implicit_update,    out = self.cpu_xmom_semi_implicit_update)
+            
+            # cp.cuda.get_current_stream().synchronize()
+            temp_array = cp.asarray(self.cpu_xmom_semi_implicit_update)
+            cp.copy(self.gpu_xmom_semi_implicit_update, temp_array)
+            cp.asnumpy(temp_array, out=self.cpu_xmom_semi_implicit_update)
+            # cp.cuda.get_current_stream().synchronize()
+            
+            # cp.asnumpy(self.gpu_xmom_semi_implicit_update,    out = self.cpu_xmom_semi_implicit_update)
             cp.asnumpy(self.gpu_ymom_semi_implicit_update,    out = self.cpu_ymom_semi_implicit_update)
 
         # nvtxRangePop()   

@@ -2926,10 +2926,10 @@ def distribute_using_vertex_limiter(domain):
 def manning_friction_implicit(domain):
     
 
-    if domain.multiprocessor_mode == [0,1,2,3,4]:
+    # if domain.multiprocessor_mode == [0,1,2,3,4]:
         manning_friction_implicit_cpu(domain)
-    elif domain.multiprocessor_mode == 4:
-        manning_friction_implicit_gpu(domain)
+    # elif domain.multiprocessor_mode == 4:
+        # manning_friction_implicit_gpu(domain)
 
 
 #GPU version of manning_friction_implicit that'll call the kernal written in sw_domain_cuda
@@ -2980,10 +2980,10 @@ def manning_friction_implicit_cpu(domain):
 def manning_friction_explicit(domain):
     
 
-    if domain.multiprocessor_mode == [0,1,2,3,4]:
+    # if domain.multiprocessor_mode == [0,1,2,3,4]:
         manning_friction_explicit_cpu(domain)
-    elif domain.multiprocessor_mode == 4:
-        manning_friction_explicit_gpu(domain)
+    # elif domain.multiprocessor_mode == 4:
+        # manning_friction_explicit_gpu(domain)
 
 
 #GPU version of manning_friction_implicit that'll call the kernal written in sw_domain_cuda
