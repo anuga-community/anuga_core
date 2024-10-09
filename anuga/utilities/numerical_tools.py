@@ -263,7 +263,8 @@ def ensure_numeric(A, typecode=None):
         else:
             return num.ascontiguousarray(num.array(A))
     else:
-        return num.ascontiguousarray(num.array(A, dtype=typecode, copy=False))
+        # return num.ascontiguousarray(num.array(A, dtype=typecode, copy=False))
+        return num.ascontiguousarray(num.asarray(A))
 
 
 def histogram(a, bins, relative=False):

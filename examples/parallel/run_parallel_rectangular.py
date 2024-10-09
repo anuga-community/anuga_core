@@ -56,7 +56,7 @@ length = 2.0
 width = 2.0
 
 yieldstep = 0.005
-finaltime = 0.015
+finaltime = 0.15
 
 fixed_flux_timestep = 0.0
 
@@ -104,7 +104,13 @@ if fixed_flux_timestep == 0.0:
 
 #print('fixed_flux_timestep ',fixed_flux_timestep)
 
+import cupy as cp
 
+print('no of devices ->')
+print(cp.cuda.runtime.getDeviceCount())
+n_gpus = cp.cuda.runtime.getDeviceCount()
+if n_gpus < 2:
+    raise RuntimeError("This example requires at least two GPUs.")
 
 
 #--------------------------------------------------------------------------

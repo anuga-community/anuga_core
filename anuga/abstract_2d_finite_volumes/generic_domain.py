@@ -162,8 +162,7 @@ class Generic_Domain(object):
         self.tag_boundary_cells = self.mesh.tag_boundary_cells
         # self.number_of_full_nodes = self.mesh.number_of_full_nodes
         # self.number_of_full_triangles = self.mesh.number_of_full_triangles
-        self.number_of_triangles_per_node = \
-            self.mesh.number_of_triangles_per_node
+        self.number_of_triangles_per_node = self.mesh.number_of_triangles_per_node
         self.node_index = self.mesh.node_index
         self.vertex_value_indices = self.mesh.vertex_value_indices
         self.number_of_triangles = self.mesh.number_of_triangles
@@ -2283,18 +2282,18 @@ class Generic_Domain(object):
 
                 for j, name in enumerate(self.evolved_quantities):
                     Q = self.quantities[name]
-                    Q.boundary_values[i] = q_evol[j]
-
+                    Q.boundary_values[i] = q_evol[j]   
+    
+   
+    
     def update_boundary(self):
-        """Go through list of boundary objects and update boundary values
-        for all conserved quantities on boundary.
-        It is assumed that the ordering of conserved quantities is
-        consistent between the domain and the boundary object, i.e.
-        the jth element of vector q must correspond to the jth conserved
-        quantity in domain.
-        """
-
-        #import pdb; pdb.set_trace()
+        # Go through list of boundary objects and update boundary values
+        # for all conserved quantities on boundary.
+        # It is assumed that the ordering of conserved quantities is
+        # consistent between the domain and the boundary object, i.e.
+        # the jth element of vector q must correspond to the jth conserved
+        # quantity in domain.
+        
         for tag in self.tag_boundary_cells:
             B = self.boundary_map[tag]
 
@@ -2304,7 +2303,43 @@ class Generic_Domain(object):
             boundary_segment_edges = self.tag_boundary_cells[tag]
 
             B.evaluate_segment(self, boundary_segment_edges)
+    
+    
+    # def update_boundary(self):
+    #     if self.multiprocessor_mode == [0,1,2,3]:
+    #         self.update_boundary_cpu()
+    #     elif self.multiprocessor_mode == 4:
+    #         self.update_boundary_cpu()
 
+    # def update_boundary_gpu(self):
+    #     from anuga.shallow_water.sw_domain_cuda import GPU_interface
+    #     self.gpu_interface1 = GPU_interface(self)
+    #     self.gpu_interface.allocate_gpu_arrays()
+    #     self.gpu_interface.compile_gpu_kernels()
+    #     self.gpu_interface.update_boundary_gpu(self)
+    
+    # def update_boundary_cpu(self):
+    #     """Go through list of boundary objects and update boundary values
+    #     for all conserved quantities on boundary.
+    #     It is assumed that the ordering of conserved quantities is
+    #     consistent between the domain and the boundary object, i.e.
+    #     the jth element of vector q must correspond to the jth conserved
+    #     quantity in domain.
+    #     """
+
+    #     #import pdb; pdb.set_trace()
+    #     for tag in self.tag_boundary_cells:
+    #         B = self.boundary_map[tag]
+
+    #         if B is None:
+    #             continue
+
+    #         boundary_segment_edges = self.tag_boundary_cells[tag]
+
+    #         B.evaluate_segment(self, boundary_segment_edges) 
+
+    
+    
     def compute_fluxes(self):
         msg = 'Method compute_fluxes must be overridden by Domain subclass'
         raise Exception(msg)
@@ -2422,9 +2457,12 @@ class Generic_Domain(object):
     
         # The parameter self.flux_timestep should be updated
         # by the forcing_terms to ensure stability
-
+        nvtxRangePush("compute_forcing_terms")
+        
         for f in self.forcing_terms:
             f(self)
+        
+        nvtxRangePop()
 
     def update_conserved_quantities(self):
         """Update vectors of conserved quantities using previously

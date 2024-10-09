@@ -88,6 +88,9 @@ nvtxRangePop()
 #------------------------------
 yieldstep = 0.0002
 finaltime = 0.002
+
+
+
 nvtxRangePush('evolve domain1')
 print('Evolve domain1')
 print('domain1 number of triangles ',domain1.number_of_elements)
@@ -109,66 +112,44 @@ nvtxRangePop()
 #---------------------------------------
 timestep = 0.1
 
-#nvtx marker
-nvtxRangePush('extrpolate')
-# From centroid values calculate edge and vertex values
+nvtxRangePush('distribute domain1')
 domain1.distribute_to_vertices_and_edges()
-#nvtx marker
-nvtxRangePop()
-#nvtx marker
-nvtxRangePush('update_boundary')
-# Apply boundary conditions
-domain1.update_boundary()
-#nvtx marker
-nvtxRangePop()
-#nvtx marker
-nvtxRangePush('compute_fluxes')
-# Compute fluxes across each element edge
-domain1.compute_fluxes()
-#nvtx marker
-nvtxRangePop()
-#nvtx marker
-nvtxRangePush('compute_forcing_terms')
-# Compute forcing terms
-domain1.compute_forcing_terms()
-#nvtx marker
 nvtxRangePop()
 
-nvtxRangePush('update_conserved_quantities')
+nvtxRangePush('update boundary domain1')
+domain1.update_boundary()
+nvtxRangePop()
+
+nvtxRangePush('update conserved quantities : domain1')
 domain1.update_conserved_quantities()
 nvtxRangePop()
 
 
-##########################################################
-# GPU INTERFACE
-##########################################################
+#-----------------------------------------
+# Test the kernel versions of
+# distribute_to_vertices_and_edges
+# update_boundary
+# compute_fluxes
+# as found in evolve_one_euler_step in
+# generic_domain.py (abstract_2d_finite_volume)
+#----------------------------------------
+# Setup gpu interface (if multiprocessor_mode == 4 and cupy available)
 domain2.set_multiprocessor_mode(4)
-#nvtx marker
-nvtxRangePush('distribute_to_vertices_and_edges')
-# From centroid values calculate edge and vertex values
+
+nvtxRangePush('distribute on cpu for domain2')
 domain2.distribute_to_vertices_and_edges()
-#nvtx marker
 nvtxRangePop()
-#nvtx marker
-nvtxRangePush('update_boundary')
-# Apply boundary conditions
+
+nvtxRangePush('update boundary domain2')
 domain2.update_boundary()
-#nvtx marker
-nvtxRangePop()
-#nvtx marker
-nvtxRangePush('compute_fluxes')
-# Compute fluxes across each element edge
-domain2.compute_fluxes()
-#nvtx marker
 nvtxRangePop()
 
-nvtxRangePush('compute forcing terms on gpu for domain2')
-domain2.compute_forcing_terms()
-nvtxRangePop()
 
-nvtxRangePush('update_conserved_quantities')
+nvtxRangePush('update conserved quantities : domain1')
 domain2.update_conserved_quantities()
 nvtxRangePop()
+
+boundary_flux2 = domain2.boundary_flux_sum[0]
 
 
 quantities1 = domain1.quantities
@@ -184,14 +165,25 @@ xmom2 = quantities2["xmomentum"]
 ymom2 = quantities2["ymomentum"]
 max_speed_2 = domain2.max_speed
 
+
 N = domain1.number_of_elements
+# scale linalg.norm by number of elements
 import math
-sqrtN = 1.0/N
 
-print('xmom semi implicit update diff L2-norm    ', num.linalg.norm(xmom1.semi_implicit_update-xmom2.semi_implicit_update)*sqrtN)
-print('ymom semi implicit update diff L2-norm    ', num.linalg.norm(ymom1.semi_implicit_update-ymom2.semi_implicit_update)*sqrtN)
+print('stage edge      diff L2 norm ', num.linalg.norm(stage1.edge_values-stage2.edge_values)/N)
+print('xmom  edge      diff L2 norm ', num.linalg.norm(xmom1.edge_values-xmom2.edge_values)/N)
+print('ymom  edge      diff L2 norm ', num.linalg.norm(ymom1.edge_values-ymom2.edge_values)/N)
 
-print('xmom explicit update diff L2-norm    ', num.linalg.norm(xmom1.explicit_update-xmom2.explicit_update)*sqrtN)
-print('ymom explicit update diff L2-norm    ', num.linalg.norm(ymom1.explicit_update-ymom2.explicit_update)*sqrtN)
+print('stage centroid diff L2 norm ', num.linalg.norm(stage1.centroid_values-stage2.centroid_values)/N)
+print('xmom  centroid diff L2 norm ', num.linalg.norm(xmom1.centroid_values-xmom2.centroid_values)/N)
+print('ymom  centroid diff L2 norm ', num.linalg.norm(ymom1.centroid_values-ymom2.centroid_values)/N)
+
+print('stage vertex diff L2 norm ', num.linalg.norm(stage1.vertex_values-stage2.vertex_values)/N)
+print('xmom  vertex diff L2 norm ', num.linalg.norm(xmom1.vertex_values-xmom2.vertex_values)/N)
+print('ymom  vertex diff L2 norm ', num.linalg.norm(ymom1.vertex_values-ymom2.vertex_values)/N)
 
 
+# UPDATE CONSERVED QUANTITIES =>
+print('stage centroid diff L2 norm ', num.linalg.norm(stage1.centroid_values-stage2.centroid_values)/N)
+print('xmom  centroid diff L2 norm ', num.linalg.norm(xmom1.centroid_values-xmom2.centroid_values)/N)
+print('ymom  centroid diff L2 norm ', num.linalg.norm(ymom1.centroid_values-ymom2.centroid_values)/N)

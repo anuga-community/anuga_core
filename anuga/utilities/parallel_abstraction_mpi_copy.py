@@ -1,7 +1,7 @@
 """ Abstract parallel interface - suitable for sequential programs
 
-    Uses mpi4py for parallelism if installed.
-    Otherwise, defines a rudimentary interface for sequential execution.
+    Uses mpi4py for parallism if installed.
+    Otherwise define a rudimentary interface for sequential execution.
 
     mpi4py wrap added 20130503 by Roberto Vidmar rvidmar@inogs.it
 """
@@ -95,16 +95,6 @@ else:
     MAXLOC = MPI.MAXLOC
     MINLOC = MPI.MINLOC
     mpiWrapper = 'mpi4py'
-
-    # Set up a separate memory pool for each GPU/process
-    memory_pool = cp.cuda.MemoryPool()
-    cp.cuda.set_allocator(memory_pool.malloc)
-
-    # Initialize GPU according to rank and assign on the card.
-    num_gpus = cp.cuda.runtime.getDeviceCount()
-    rank = comm.Get_rank()
-    gpu_id = rank % num_gpus  # Assign GPU based on MPI rank
-    cp.cuda.Device(gpu_id).use()
 
     class Status(object):
         """ Simulate pypar return_status object """

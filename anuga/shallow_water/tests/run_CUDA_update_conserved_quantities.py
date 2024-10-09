@@ -101,8 +101,8 @@ print('total creation time', (end_time - start))
 #------------------------------
 #Evolve the system through time
 #------------------------------
-yieldstep = 0.0002
-finaltime = 0.0002
+yieldstep = 0.002
+finaltime = 0.02
 
 nvtxRangePush('evolve domain1')
 print('Evolve domain1')
@@ -116,13 +116,13 @@ nvtxRangePop()
 #---------------------------------------
 timestep = 0.1
 
-# nvtxRangePush('distribute domain1')
-# domain1.distribute_to_vertices_and_edges()
-# nvtxRangePop()
+nvtxRangePush('distribute domain1')
+domain1.distribute_to_vertices_and_edges()
+nvtxRangePop()
 
-# nvtxRangePush('update boundary domain1')
-# domain1.update_boundary()
-# nvtxRangePop()
+nvtxRangePush('update boundary domain1')
+domain1.update_boundary()
+nvtxRangePop()
 
 nvtxRangePush('update conserved quantities : domain1')
 domain1.update_conserved_quantities()
@@ -144,31 +144,36 @@ nvtxRangePop()
 #---------------------------------------
 timestep = 0.1
 
-# nvtxRangePush('distribute domain1')
-# domain2.distribute_to_vertices_and_edges()
-# nvtxRangePop()
-
-# nvtxRangePush('update boundary domain1')
-# domain2.update_boundary()
-# nvtxRangePop()
-
-
 nvtxRangePush('initialise gpu_interface : domain2')
-domain2.set_multiprocessor_mode(1)
+domain2.set_multiprocessor_mode(4)
 nvtxRangePop()
 
 # import pdb; pdb.set_trace()
 timestep2 = domain2.timestep
-from anuga.shallow_water.sw_domain_cuda import GPU_interface
-gpu_domain2 = GPU_interface(domain2)
+# from anuga.shallow_water.sw_domain_cuda import GPU_interface
+# gpu_domain2 = GPU_interface(domain2)
 
-nvtxRangePush('allocate gpu arrays for domain2')
-gpu_domain2.allocate_gpu_arrays()
+# nvtxRangePush('allocate gpu arrays for domain2')
+# gpu_domain2.allocate_gpu_arrays()
+# nvtxRangePop()
+
+# nvtxRangePush('compile gpu kernels for domain2')
+# gpu_domain2.compile_gpu_kernels()
+# nvtxRangePop()
+
+nvtxRangePush('distribute domain1')
+domain2.distribute_to_vertices_and_edges()
 nvtxRangePop()
 
-nvtxRangePush('compile gpu kernels for domain2')
-gpu_domain2.compile_gpu_kernels()
+nvtxRangePush('update boundary domain1')
+domain2.update_boundary()
 nvtxRangePop()
+
+
+nvtxRangePush('update conserved quantities : domain1')
+domain2.update_conserved_quantities()
+nvtxRangePop()
+
 
 
 stage1_centroid_values_before = num.copy(stage1.centroid_values)
@@ -179,19 +184,19 @@ ymom1_centroid_values_before = num.copy(ymom1.centroid_values)
 ymom2_centroid_values_before = num.copy(ymom2.centroid_values)
 
 
-nvtxRangePush('update conserved quantities kernal : domain2')
-num_negative_ids = gpu_domain2.update_conserved_quantities_kernal()
+# nvtxRangePush('update conserved quantities kernal : domain2')
+# num_negative_ids = gpu_domain2.update_conserved_quantities_kernal()
 
-print('num_negative_ids => ', num_negative_ids)
+# print('num_negative_ids => ', num_negative_ids)
 
-if num_negative_ids > 0:
-# FIXME: This only warns the first time -- maybe we should warn whenever loss occurs?
-    import warnings
-    msg = 'Negative cells being set to zero depth, possible loss of conservation. \n' +\
-                      'Consider using domain.report_water_volume_statistics() to check the extent of the problem'
-    warnings.warn(msg)
+# if num_negative_ids > 0:
+# # FIXME: This only warns the first time -- maybe we should warn whenever loss occurs?
+#     import warnings
+#     msg = 'Negative cells being set to zero depth, possible loss of conservation. \n' +\
+#                       'Consider using domain.report_water_volume_statistics() to check the extent of the problem'
+#     warnings.warn(msg)
 
-nvtxRangePop()
+# nvtxRangePop()
 
 
 
@@ -205,6 +210,8 @@ sqrtN = 1.0/N
 # print('xmom  edge      diff L2 norm ', num.linalg.norm(xmom1.edge_values-xmom2.edge_values)/N)
 # print('ymom  edge      diff L2 norm ', num.linalg.norm(ymom1.edge_values-ymom2.edge_values)/N)
 
+
+# UPDATE CONSERVED QUANTITIES =>
 print('stage centroid diff L2 norm ', num.linalg.norm(stage1.centroid_values-stage2.centroid_values)/N)
 print('xmom  centroid diff L2 norm ', num.linalg.norm(xmom1.centroid_values-xmom2.centroid_values)/N)
 print('ymom  centroid diff L2 norm ', num.linalg.norm(ymom1.centroid_values-ymom2.centroid_values)/N)
@@ -223,12 +230,12 @@ print('ymom  centroid diff L2 norm ', num.linalg.norm(ymom1.centroid_values-ymom
 # print('stage explicit update diff L2 norm ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update)/N)
 
 
-stage1_centroid_values_after = num.copy(stage1.centroid_values)
-stage2_centroid_values_after = num.copy(stage2.centroid_values)
-xmom1_centroid_values_after = num.copy(xmom1.centroid_values)
-xmom2_centroid_values_after = num.copy(xmom2.centroid_values)
-ymom1_centroid_values_after = num.copy(ymom1.centroid_values)
-ymom2_centroid_values_after = num.copy(ymom2.centroid_values)
+# stage1_centroid_values_after = num.copy(stage1.centroid_values)
+# stage2_centroid_values_after = num.copy(stage2.centroid_values)
+# xmom1_centroid_values_after = num.copy(xmom1.centroid_values)
+# xmom2_centroid_values_after = num.copy(xmom2.centroid_values)
+# ymom1_centroid_values_after = num.copy(ymom1.centroid_values)
+# ymom2_centroid_values_after = num.copy(ymom2.centroid_values)
 
 
 # print("change stage1.centroid_values")
