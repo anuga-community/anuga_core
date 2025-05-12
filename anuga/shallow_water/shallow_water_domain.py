@@ -316,7 +316,7 @@ class Domain(Generic_Domain):
         # 4. Cuda
         #-------------------------------
         self.gpu_interface = None
-        self.set_multiprocessor_mode(3)
+        self.set_multiprocessor_mode(2)
 
         #-------------------------------
         # datetime and timezone
