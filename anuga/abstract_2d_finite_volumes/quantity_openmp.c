@@ -10,8 +10,15 @@
 // Ole Nielsen, GA 2004
 
 #include "math.h"
-#include "omp.h"
 #include <stdint.h>
+
+#if defined(__APPLE__)
+// clang doesn't have openmp
+// FIXME SR: Need to determine if openmp has been enabled
+// FIXME SR: Maybe need to try to compile a test program
+#else
+#include "omp.h"
+#endif
 
 //Shared code snippets
 #include "util_ext.h"
