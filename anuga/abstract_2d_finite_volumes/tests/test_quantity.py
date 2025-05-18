@@ -30,6 +30,7 @@ except ImportError:
     pass
 
 import pytest
+import sys
 
 def zone_letter_to_hemisphere(zone_letter):
     hemisphere = 'undefined'
