@@ -24,6 +24,12 @@ from anuga.geometry.polygon import *
 import numpy as num
 import pprint
 
+try:
+    import osgeo
+except ImportError:
+    pass
+
+
 def zone_letter_to_hemisphere(zone_letter):
     hemisphere = 'undefined'
     if zone_letter.lower() in 'cdefghjklm':
@@ -2286,6 +2292,8 @@ Parameters
         except:
             pass
 
+    @pytest.mark.skipif('osgeo' not in sys.modules,
+                    reason="requires the gdal module")
     def test_set_values_from_ll_tif_file_north(self):
 
         # Mesh in zone 56 (relative coords) southern hemisphere
@@ -2395,6 +2403,8 @@ Parameters
         import os
         os.remove(tif_file)
 
+    @pytest.mark.skipif('osgeo' not in sys.modules,
+                    reason="requires the gdal module")
     def test_set_values_from_ll_tif_file_north_indices(self):
 
         from pprint import pprint
@@ -2500,6 +2510,8 @@ Parameters
         import os
         os.remove(tif_file)
 
+    @pytest.mark.skipif('osgeo' not in sys.modules,
+                    reason="requires the gdal module")
     def test_set_values_from_ll_tif_file_south(self):
 
         # Mesh in zone 56 (relative coords) southern hemisphere
@@ -2597,6 +2609,8 @@ Parameters
         import os
         os.remove(tif_file)
 
+    @pytest.mark.skipif('osgeo' not in sys.modules,
+                    reason="requires the gdal module")
     def test_set_values_from_utm_tif_file(self):
 
         # Mesh in zone 56 (relative coords) southern hemisphere
