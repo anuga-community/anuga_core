@@ -65,7 +65,7 @@ and its dependencies.
     .. code-block:: bash
 
         cd anuga_core
-        conda env create -n anuga_env_3.12 -f environments/environment.3.12.yml
+        conda env create -n anuga_env_3.12 -f environments/environment_3.12.yml
         conda activate anuga_env_3.12
 
     and finally installs ANUGA in editable mode via: 
