@@ -200,7 +200,7 @@ class GPU_interface(object):
         #with open('../cuda_anuga.cu') as f:
 
         #FIXME SR: Obviously need to make this general!
-        with open('/home/cdacapps01/rutvik/anuga_core/anuga/shallow_water/cuda_anuga.cu') as f:
+        with open('/scratch/bm55/jlv900/dev/anuga_core/anuga/shallow_water/cuda_anuga.cu') as f:
             code = f.read()
 
         self.mod  = cp.RawModule(code=code, options=("--std=c++17",),
@@ -216,8 +216,6 @@ class GPU_interface(object):
                                                     "cft_manning_friction_sloped"
                                                     ))
 
-        #FIXME SR: Only flux_kernel defined at present
-        #FIXME SR: other kernels should be added to the file cuda_anuga.cu 
         self.flux_kernel = self.mod.get_function("_cuda_compute_fluxes_loop")
 
         self.extrapolate_kernel1 = self.mod.get_function("_cuda_extrapolate_second_order_edge_sw_loop1")
