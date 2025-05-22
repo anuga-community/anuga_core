@@ -265,7 +265,7 @@ class Test_grd2array(unittest.TestCase):
 #################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_grd2array, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_grd2array)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)
         

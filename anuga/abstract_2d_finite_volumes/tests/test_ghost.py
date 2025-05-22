@@ -47,6 +47,6 @@ class Test_Domain(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Domain,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Domain)
     runner = unittest.TextTestRunner()
     runner.run(suite)
