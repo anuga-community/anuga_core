@@ -2380,7 +2380,6 @@ class Test_Forcing(unittest.TestCase):
 
             
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_Forcing, 'test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Forcing)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

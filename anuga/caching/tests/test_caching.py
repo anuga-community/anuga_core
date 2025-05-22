@@ -996,7 +996,6 @@ class Test_Caching(unittest.TestCase):
 
 #-------------------------------------------------------------
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_Caching, 'test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Caching)
     runner = unittest.TextTestRunner()
     runner.run(suite)

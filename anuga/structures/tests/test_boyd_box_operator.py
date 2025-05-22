@@ -3252,7 +3252,6 @@ class Test_boyd_box_operator(unittest.TestCase):
         assert numpy.allclose(d, d_expected, rtol=2.0e-2) #depth at outlet used to calc v          
 # =========================================================================
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_boyd_box_operator, 'test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_boyd_box_operator)
     runner = unittest.TextTestRunner()
     runner.run(suite)

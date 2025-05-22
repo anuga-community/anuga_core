@@ -1959,7 +1959,6 @@ class Test_Interpolate(unittest.TestCase):
 ################################################################################
 
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_Interpolate,'test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Interpolate)
     runner = unittest.TextTestRunner() #verbosity=1)
     runner.run(suite)

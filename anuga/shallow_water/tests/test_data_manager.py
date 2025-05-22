@@ -846,8 +846,6 @@ class Test_Data_Manager(Test_Mux):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_Data_Manager, 'test_sww2domain2')
-    #jsuite = unittest.makeSuite(Test_Data_Manager, 'test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Data_Manager)
     
     

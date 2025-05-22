@@ -78,7 +78,6 @@ class Test_poly(unittest.TestCase):
                
 #-------------------------------------------------------------
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_poly, 'test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_poly)
     runner = unittest.TextTestRunner()
     runner.run(suite)

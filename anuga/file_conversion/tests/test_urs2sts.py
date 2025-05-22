@@ -2124,7 +2124,6 @@ class Test_Urs2Sts(Test_Mux):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_Urs2Sts,'test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Urs2Sts)
     runner = unittest.TextTestRunner()
     runner.run(suite)

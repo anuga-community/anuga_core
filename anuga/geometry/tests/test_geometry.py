@@ -105,7 +105,6 @@ class Test_Geometry(unittest.TestCase):
 ################################################################################
 
 if __name__ == "__main__":
-    #mysuite = unittest.makeSuite(Test_Geometry, 'test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Geometry)
     runner = unittest.TextTestRunner()
     runner.run(suite)

@@ -118,7 +118,6 @@ class Test_csv2sts(unittest.TestCase):
             os.remove(sts_out)           
 
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_csv2sts,'test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_csv2sts)
     runner = unittest.TextTestRunner()
     runner.run(suite)

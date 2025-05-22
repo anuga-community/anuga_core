@@ -664,7 +664,6 @@ class Test_tif2(unittest.TestCase):
 
 #################################################################################
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_tif2, 'test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_tif2)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

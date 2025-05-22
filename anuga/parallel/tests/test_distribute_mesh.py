@@ -2894,7 +2894,6 @@ class Test_Distribute_Mesh(unittest.TestCase):
 # -------------------------------------------------------------
 
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_Distribute_Mesh, "test")
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Distribute_Mesh)
     runner = unittest.TextTestRunner()
     runner.run(suite)

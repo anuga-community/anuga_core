@@ -1614,8 +1614,6 @@ class Test_Util(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_Util, 'test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Util)
-#    runner = unittest.TextTestRunner(verbosity=2)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

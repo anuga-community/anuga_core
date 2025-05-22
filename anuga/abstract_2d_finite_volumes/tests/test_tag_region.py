@@ -257,7 +257,6 @@ class Test_tag_region(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_tag_region, 'test')    
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_tag_region)
     runner = unittest.TextTestRunner()
     runner.run(suite)

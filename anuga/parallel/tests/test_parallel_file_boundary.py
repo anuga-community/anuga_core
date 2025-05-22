@@ -491,9 +491,7 @@ if __name__=="__main__":
     #verbose=False
     if myid ==0 and verbose: 
         print('PARALLEL START')
-    #suite = unittest.makeSuite(Test_urs2sts_parallel,'parallel_test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_urs2sts_parallel)
-    #suite = unittest.makeSuite(Test_urs2sts_parallel,'sequential_test')
     runner = unittest.TextTestRunner()
     runner.run(suite)
 

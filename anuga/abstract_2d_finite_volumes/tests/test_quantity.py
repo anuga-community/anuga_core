@@ -3924,8 +3924,6 @@ Parameters
 # -------------------------------------------------------------
 
 if __name__ == "__main__":
-    # _set_values_from_asc')
-    #suite = unittest.makeSuite(Test_Quantity, 'test_')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Quantity)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

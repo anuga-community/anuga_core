@@ -190,7 +190,6 @@ class Test_system(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_system,'test')
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_system)
     runner = unittest.TextTestRunner()
     runner.run(suite)
