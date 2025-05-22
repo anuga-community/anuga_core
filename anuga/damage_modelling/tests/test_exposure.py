@@ -333,6 +333,7 @@ class Test_Exposure(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Exposure,'test')
+    #suite = unittest.makeSuite(Test_Exposure,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Exposure)
     runner = unittest.TextTestRunner()
     runner.run(suite)

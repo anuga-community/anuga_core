@@ -495,6 +495,7 @@ class Test_plot_utils(unittest.TestCase):
 ################################################################################
 if __name__ == "__main__":
     # _triangle_containing_point')
-    suite = unittest.makeSuite(Test_plot_utils, 'test')
+    #suite = unittest.makeSuite(Test_plot_utils, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_plot_utils)
     runner = unittest.TextTestRunner()
     runner.run(suite)

@@ -216,6 +216,7 @@ class Test_set_friction_operators(unittest.TestCase):
             Set_depth_friction_operator(domain, friction="invalid_string", region=region)
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_set_friction_operators, 'test')
+    #suite = unittest.makeSuite(Test_set_friction_operators, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_set_friction_operators)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

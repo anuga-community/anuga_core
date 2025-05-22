@@ -100,6 +100,7 @@ class Test_erosion_operators(unittest.TestCase):
 
             
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_erosion_operators, 'test')
+    #suite = unittest.makeSuite(Test_erosion_operators, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_erosion_operators)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

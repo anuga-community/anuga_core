@@ -369,6 +369,7 @@ class Test_inlet_operator(unittest.TestCase):
 
 # =========================================================================
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_inlet_operator, 'test')
+    #suite = unittest.makeSuite(Test_inlet_operator, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_inlet_operator)
     runner = unittest.TextTestRunner()
     runner.run(suite)

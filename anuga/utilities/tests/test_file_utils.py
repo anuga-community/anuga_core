@@ -150,6 +150,7 @@ class Test_FileUtils(unittest.TestCase):
 
 # -------------------------------------------------------------
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_FileUtils, 'test')
+    #suite = unittest.makeSuite(Test_FileUtils, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_FileUtils)
     runner = unittest.TextTestRunner()  # verbosity=2)
     runner.run(suite)

@@ -231,7 +231,8 @@ class Test_search_functions(unittest.TestCase):
 
 #-------------------------------------------------------------
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_search_functions, 'test')
+    #suite = unittest.makeSuite(Test_search_functions, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_search_functions)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)
     

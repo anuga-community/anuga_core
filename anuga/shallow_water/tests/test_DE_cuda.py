@@ -315,6 +315,7 @@ class Test_DE_cuda(unittest.TestCase):
         #pprint.pprint(domain2.edge_timestep)    
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_DE_cuda, 'test_')
+    #suite = unittest.makeSuite(Test_DE_cuda, 'test_')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_DE_cuda)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

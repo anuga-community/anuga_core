@@ -46,6 +46,7 @@ class Test_Operator(unittest.TestCase):
 ################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Operator, 'test')
+    #suite = unittest.makeSuite(Test_Operator, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Operator)
     runner = unittest.TextTestRunner()
     runner.run(suite)

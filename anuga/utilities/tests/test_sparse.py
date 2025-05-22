@@ -209,6 +209,7 @@ class Test_Sparse(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Sparse, 'test')
+    #suite = unittest.makeSuite(Test_Sparse, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Sparse)
     runner = unittest.TextTestRunner()
     runner.run(suite)

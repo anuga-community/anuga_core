@@ -185,6 +185,7 @@ class Test_Quad(unittest.TestCase):
 ################################################################################
 
 if __name__ == "__main__":
-    mysuite = unittest.makeSuite(Test_Quad,'test')
+    #mysuite = unittest.makeSuite(Test_Quad,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Quad)
     runner = unittest.TextTestRunner()
-    runner.run(mysuite)
+    runner.run(suite)

@@ -1857,7 +1857,8 @@ class Test_Geospatial_data(unittest.TestCase):
 ################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Geospatial_data, 'test')
+    #suite = unittest.makeSuite(Test_Geospatial_data, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Geospatial_data)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)
 

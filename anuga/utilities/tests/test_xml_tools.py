@@ -269,6 +269,7 @@ class Test_xml_tools(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_xml_tools, 'test')
+    #suite = unittest.makeSuite(Test_xml_tools, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_xml_tools)
     runner = unittest.TextTestRunner()
     runner.run(suite)

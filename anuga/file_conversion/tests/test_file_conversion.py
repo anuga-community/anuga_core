@@ -1108,6 +1108,7 @@ Parameters
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_File_Conversion,'test')
+    #suite = unittest.makeSuite(Test_File_Conversion,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_File_Conversion)
     runner = unittest.TextTestRunner()
     runner.run(suite)

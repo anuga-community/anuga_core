@@ -634,6 +634,7 @@ class Test_Numerical_Tools(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Numerical_Tools, 'test')
+    #suite = unittest.makeSuite(Test_Numerical_Tools, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Numerical_Tools)
     runner = unittest.TextTestRunner()
     runner.run(suite)

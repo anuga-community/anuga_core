@@ -551,6 +551,7 @@ showme1.0 0.0 10.0 \n\
 ################################################################################
 
 if __name__ == '__main__':
-    suite = unittest.makeSuite(loadASCIITestCase,'test')
+    #suite = unittest.makeSuite(loadASCIITestCase,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(loadASCIITestCase)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)

@@ -207,6 +207,7 @@ class Test_LoadSave(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_LoadSave, 'test')
+    #suite = unittest.makeSuite(Test_LoadSave, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_LoadSave)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)    

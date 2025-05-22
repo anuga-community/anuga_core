@@ -2155,7 +2155,8 @@ def list_comp(A,B):
 ################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(meshTestCase, 'test')
+    #suite = unittest.makeSuite(meshTestCase, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(meshTestCase)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)
     

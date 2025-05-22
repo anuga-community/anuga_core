@@ -996,7 +996,8 @@ END\n')
 ################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(TestCase, 'test')
+    #jsuite = unittest.makeSuite(TestCase, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestCase)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)
 

@@ -614,6 +614,7 @@ class Test_riverwall_structure(unittest.TestCase):
 
 # =========================================================================
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_riverwall_structure, 'test')
+    #suite = unittest.makeSuite(Test_riverwall_structure, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_riverwall_structure)
     runner = unittest.TextTestRunner()
     runner.run(suite)

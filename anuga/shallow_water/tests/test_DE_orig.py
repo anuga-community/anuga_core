@@ -105,6 +105,7 @@ class Test_DE_domain(unittest.TestCase):
 
             
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_DE1_domain, 'test')
+    #suite = unittest.makeSuite(Test_DE1_domain, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_DE1_domain)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)
