@@ -75,12 +75,12 @@ print(70*'=')
 
 nvtxRangePush('create domain1')
 domain1 = create_domain('domain_original')
-domain1.set_multiprocessor_mode(1)
+domain1.set_multiprocessor_mode(0)
 nvtxRangePop()
 
 nvtxRangePush('create domain1')
 domain2 = create_domain('domain_cuda')
-domain2.set_multiprocessor_mode(1) # will change to 2 once burn in
+domain2.set_multiprocessor_mode(0) # will change to 2 once burn in
 nvtxRangePop()
 
 #------------------------------
