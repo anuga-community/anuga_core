@@ -220,7 +220,10 @@ class GPU_interface(object):
         #with open('../cuda_anuga.cu') as f:
 
         #FIXME SR: Obviously need to make this general!
-        with open('/scratch/bm55/jlv900/dev/anuga_core/anuga/shallow_water/cuda_anuga.cu') as f:
+        this_dir = os.path.dirname(os.path.abspath(__file__))
+        cu_file_path = os.path.join(this_dir, 'cuda_anuga.cu')
+
+        with open(cu_file_path) as f:
             code = f.read()
 
         self.mod  = cp.RawModule(code=code, options=("--std=c++17",),
