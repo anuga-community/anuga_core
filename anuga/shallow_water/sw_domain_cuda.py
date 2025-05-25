@@ -519,7 +519,7 @@ class GPU_interface(object):
 
         THREADS_PER_BLOCK = 128
         NO_OF_BLOCKS = int(math.ceil(self.cpu_number_of_elements/THREADS_PER_BLOCK))
-        nvtxRangePush('calculate flux: kernal')
+        nvtxRangePush('calculate flux: kernel')
         self.flux_kernel( (NO_OF_BLOCKS, 0, 0), 
                 (THREADS_PER_BLOCK, 0, 0), 
                 (  
@@ -793,8 +793,8 @@ class GPU_interface(object):
         NO_OF_BLOCKS = int(math.ceil(self.cpu_number_of_elements/THREADS_PER_BLOCK))
 
 
-        # """  Commented this for the three kernal approach
-        # Here we're calling the update kernal for stage,xmom,ymom quantity
+        # """  Commented this for the three kernel approach
+        # Here we're calling the update kernel for stage,xmom,ymom quantity
         # nvtxRangePush("update : stage")
         self.update_kernal((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
                 np.int64(self.cpu_number_of_elements),
@@ -840,7 +840,7 @@ class GPU_interface(object):
         # if transfer_from_cpu:
         #     self.cpu_to_gpu_centroid_values()
 
-        nvtxRangePush("fix_negative_cells : kernal")
+        nvtxRangePush("fix_negative_cells : kernel")
         
         self.fix_negative_cells_kernal((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
             np.int64(self.cpu_number_of_elements),
@@ -879,7 +879,7 @@ class GPU_interface(object):
         Testing against the CPU version
         Ensure transient data has been copied to the GPU via cpu_to_gpu routines
         """
-        nvtxRangePush("protect against infinities - kernal")
+        nvtxRangePush("protect against infinities - kernel")
 
         if transfer_from_cpu:
             self.cpu_to_gpu_centroid_values()
@@ -906,7 +906,7 @@ class GPU_interface(object):
 
 
     def compute_forcing_terms_manning_friction_flat(self, transfer_from_cpu=True, transfer_gpu_results=True, verbose=False):
-        nvtxRangePush("compute forcing manning flat - kernal")
+        nvtxRangePush("compute forcing manning flat - kernel")
     
         self.gpu_stage_centroid_values.set(self.cpu_stage_centroid_values)
         self.gpu_bed_centroid_values.set(self.cpu_bed_vertex_values)
@@ -949,7 +949,7 @@ class GPU_interface(object):
 
 
     def compute_forcing_terms_manning_friction_sloped(self, transfer_from_cpu=True, transfer_gpu_results=True, verbose=False):
-        nvtxRangePush("compute forcing manning sloped - kernal")
+        nvtxRangePush("compute forcing manning sloped - kernel")
 
         self.gpu_x.set(self.cpu_x)
         self.gpu_stage_centroid_values.set(self.cpu_stage_centroid_values)
@@ -993,7 +993,7 @@ class GPU_interface(object):
 
 
     # This function serves functionality of assigning updated values back to Domain object for further calculation that occur off the GPU.
-    # Call this function after the kernal call to update the Domain
+    # Call this function after the kernel call to update the Domain
     # this method accepts the domain object as an argument and updates only the relevant attributes. It returns the updated domain object, keeping the rest of its attributes intact.
     def update_domain_values(self, domain):
         """

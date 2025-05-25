@@ -125,7 +125,7 @@ def manning_friction_explicit_cpu(domain):
 
 
 
-#GPU version of manning_friction_implicit that'll call the kernal written in sw_domain_cuda
+#GPU version of manning_friction_implicit that'll call the kernel written in sw_domain_cuda
 def manning_friction_implicit_gpu(domain):
     """Apply (Manning) friction to water momentum
     Wrapper for c version
@@ -136,7 +136,7 @@ def manning_friction_implicit_gpu(domain):
         domain.gpu_interface.compute_forcing_terms_manning_friction_flat()
 
 
-#GPU version of manning_friction_explicit that'll call the kernal written in sw_domain_cuda
+#GPU version of manning_friction_explicit that'll call the kernel written in sw_domain_cuda
 def manning_friction_explicit_gpu(domain):
     """Apply (Manning) friction to water momentum
     Wrapper for c version
