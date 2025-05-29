@@ -95,6 +95,7 @@ def create_mesh_from_regions(bounding_polygon,
 
     """
 
+    print(f"maximum triangle areas {str(maximum_triangle_area)}")
     if verbose:
         log.resource_usage_timing(log.logging.CRITICAL, "start_")
     if verbose:

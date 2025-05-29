@@ -1980,6 +1980,7 @@ class Generic_Domain(object):
         """
 
         # Save initial initial conserved quantities values
+        # TODO, port to GPU
         self.backup_conserved_quantities()
 
         ######
@@ -1990,6 +1991,7 @@ class Generic_Domain(object):
         self.distribute_to_vertices_and_edges()
 
         # Apply boundary conditions
+        # TODO, port to GPU
         self.update_boundary()
 
         # Compute fluxes across each element edge
@@ -2011,6 +2013,7 @@ class Generic_Domain(object):
         self.set_relative_time(self.get_relative_time() + self.timestep)
 
         # Update ghosts
+        # for MPI, need to make sure that the ghost layer is large enough to avoid communication 
         if self.ghost_layer_width < 4:
             self.update_ghosts()
 
@@ -2018,6 +2021,7 @@ class Generic_Domain(object):
         self.distribute_to_vertices_and_edges()
 
         # Update boundary values
+        # TODO, port to GPU
         self.update_boundary()
 
         ######
@@ -2042,6 +2046,7 @@ class Generic_Domain(object):
         ######
 
         # Combine steps
+        # TODO, port to GPU
         self.saxpy_conserved_quantities(0.5, 0.5)
 
         # Update special conditions
@@ -2302,7 +2307,7 @@ class Generic_Domain(object):
                 continue
 
             boundary_segment_edges = self.tag_boundary_cells[tag]
-
+            # maybe just evaluate segment on the GPU
             B.evaluate_segment(self, boundary_segment_edges)
 
     def compute_fluxes(self):

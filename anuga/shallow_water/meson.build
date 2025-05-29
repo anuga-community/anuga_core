@@ -63,6 +63,7 @@ py3.extension_module('sw_domain_openacc_ext',
 
 
 python_sources = [
+'sw_domain_cuda.py',
 'boundaries.py',
 'checkpoint.py',
 'forcing.py',
