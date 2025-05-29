@@ -241,7 +241,7 @@ class GPU_interface(object):
 
         import cupy as cp
         
-        nvtxRangePush('to gpu')
+        nvtxRangePush('allocate gpu arrays')
 
         # FIXME SR: we should probably allocate all the cpu numpy arrays with 
         # pinned memory to speed movement of data from host to device
@@ -249,6 +249,7 @@ class GPU_interface(object):
         self.gpu_number_of_boundaries = cp.array(self.cpu_number_of_boundaries)
 
         # these are just used for the reduction operation of the flux calculation
+        # probably should use atomic operations
         self.gpu_timestep_array          = cp.array(self.cpu_timestep_array)
         self.gpu_local_boundary_flux_sum = cp.array(self.cpu_local_boundary_flux_sum )
 
@@ -321,11 +322,11 @@ class GPU_interface(object):
 
         self.gpu_num_negative_cells = cp.array(self.cpu_num_negative_cells)
 
-        nvtxRangePop()
+        self.gpu_x = cp.array(self.cpu_x)
 
         self.gpu_arrays_allocated = True
 
-        self.gpu_x = cp.array(self.cpu_x)
+        nvtxRangePop()
 
     def cpu_to_gpu_centroid_values(self):
         """
@@ -351,6 +352,7 @@ class GPU_interface(object):
 
         nvtxRangePush('gpu_to_cpu_centroid_values')
         # FIXME SR: Do we need to transfer height and bed centroid values
+        # FIXME SR: Probably should use pinned memory buffer.
         cp.asnumpy(self.gpu_stage_centroid_values,  out = self.cpu_stage_centroid_values)
         cp.asnumpy(self.gpu_xmom_centroid_values,  out = self.cpu_xmom_centroid_values)
         cp.asnumpy(self.gpu_ymom_centroid_values,  out = self.cpu_ymom_centroid_values)
@@ -908,13 +910,16 @@ class GPU_interface(object):
     def compute_forcing_terms_manning_friction_flat(self, transfer_from_cpu=True, transfer_gpu_results=True, verbose=False):
         nvtxRangePush("compute forcing manning flat - kernel")
     
-        self.gpu_stage_centroid_values.set(self.cpu_stage_centroid_values)
-        self.gpu_bed_centroid_values.set(self.cpu_bed_vertex_values)
-        self.gpu_xmom_centroid_values.set(self.cpu_xmom_centroid_values)
-        self.gpu_ymom_centroid_values.set(self.cpu_ymom_centroid_values)
-        self.gpu_friction_centroid_values.set(self.cpu_friction_centroid_values)
-        self.gpu_xmom_semi_implicit_update.set(self.cpu_xmom_semi_implicit_update)
-        self.gpu_ymom_semi_implicit_update.set(self.cpu_ymom_semi_implicit_update)
+        if transfer_from_cpu:
+            nvtxRangePush('CFT: transfer from CPU')
+            self.gpu_stage_centroid_values.set(self.cpu_stage_centroid_values)
+            self.gpu_bed_centroid_values.set(self.cpu_bed_vertex_values)
+            self.gpu_xmom_centroid_values.set(self.cpu_xmom_centroid_values)
+            self.gpu_ymom_centroid_values.set(self.cpu_ymom_centroid_values)
+            self.gpu_friction_centroid_values.set(self.cpu_friction_centroid_values)
+            self.gpu_xmom_semi_implicit_update.set(self.cpu_xmom_semi_implicit_update)
+            self.gpu_ymom_semi_implicit_update.set(self.cpu_ymom_semi_implicit_update)
+            nvtxRangePop()
 
         import math
         THREADS_PER_BLOCK = 128
@@ -956,6 +961,7 @@ class GPU_interface(object):
         self.gpu_bed_centroid_values.set(self.cpu_bed_vertex_values)
         self.gpu_xmom_centroid_values.set(self.cpu_xmom_centroid_values)
         self.gpu_ymom_centroid_values.set(self.cpu_ymom_centroid_values)
+
         self.gpu_friction_centroid_values.set(self.cpu_friction_centroid_values)
         self.gpu_xmom_semi_implicit_update.set(self.cpu_xmom_semi_implicit_update)
         self.gpu_ymom_semi_implicit_update.set(self.cpu_ymom_semi_implicit_update)
@@ -979,12 +985,10 @@ class GPU_interface(object):
         )    
 
         nvtxRangePush('CFT: transfer from GPU')
-
         if transfer_gpu_results:
             self.gpu_to_cpu_centroid_values()
             cp.asnumpy(self.gpu_xmom_semi_implicit_update,    out = self.cpu_xmom_semi_implicit_update)
             cp.asnumpy(self.gpu_ymom_semi_implicit_update,    out = self.cpu_ymom_semi_implicit_update)
-
         nvtxRangePop()   
 
 
@@ -1034,6 +1038,10 @@ class GPU_interface(object):
         bed = quantities["elevation"]
         height = quantities["height"]
 
+
+        #FIxME SR: I dont think we need to do this as the
+        # cpu_ variables are just references to the domain and quantity 
+        # arrays
         stage.explicit_update = self.cpu_stage_explicit_update
         xmom.explicit_update = self.cpu_xmom_explicit_update
         ymom.explicit_update = self.cpu_ymom_explicit_update
