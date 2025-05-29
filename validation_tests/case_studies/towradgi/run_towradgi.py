@@ -307,7 +307,8 @@ Creating domain from scratch.
     E = 308570
     S = 6193140
     
-    maximum_triangle_area = 1000
+    #TODO JLGV: unhardcode this
+    maximum_triangle_area = 10000
     #minimum_storable_height = 0.05
     base_friction = 0.04
     alpha = 0.99
@@ -379,6 +380,7 @@ Creating domain from scratch.
     
         # Set a Initial Water Level over the Domain
         domain.set_quantity('stage', 0)
+        domain.set_multiprocessor_mode(2)
     
         
         print('TRYING TO READ %s' % basename+'.npy')

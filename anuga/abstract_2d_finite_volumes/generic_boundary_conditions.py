@@ -218,6 +218,7 @@ class Dirichlet_boundary(Boundary):
     def evaluate(self, vol_id=None, edge_id=None):
         return self.dirichlet_values
 
+    # dirichlet evaluate segment, well used, could be with cupy
     def evaluate_segment(self, domain, segment_edges):
 
         if segment_edges is None:

@@ -104,6 +104,7 @@ class Reflective_boundary(Boundary):
         return q
 
 
+    # TODO JLGV, test when using numba 
     @jit(nopython=True)
     def evaluate_segment(self, domain, segment_edges):
         """Apply BC on the boundary edges defined by segment_edges
@@ -168,6 +169,7 @@ class Reflective_boundary(Boundary):
         Xvel.boundary_values[ids] = n1*r1 - n2*r2
         Yvel.boundary_values[ids] = n2*r1 + n1*r2
 
+    # TODO JLGV, port to GPU using cupy 
     def evaluate_segment(self, domain, segment_edges):
         """Apply BC on the boundary edges defined by segment_edges
 
@@ -231,7 +233,7 @@ class Reflective_boundary(Boundary):
         Xvel.boundary_values[ids] = n1*r1 - n2*r2
         Yvel.boundary_values[ids] = n2*r1 + n1*r2
 
-
+    # TODO JLGV, check if these two are the same ? 
     def evaluate_segment(self, domain, segment_edges):
         """Apply BC on the boundary edges defined by segment_edges
 
