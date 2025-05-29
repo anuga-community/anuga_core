@@ -336,19 +336,33 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 
 	#------------------------------------------------------
 	# Riverwall structures
+	# 
+	# Deal with the case when create_riverwall is called
+	# but no reiverwall edges are found.
 	#------------------------------------------------------
 	riverwallData = domain_object.riverwallData
 
-	riverwall_elevation = riverwallData.riverwall_elevation
-	D.riverwall_elevation = &riverwall_elevation[0]
+	try:
+		riverwall_elevation = riverwallData.riverwall_elevation
+		D.riverwall_elevation = &riverwall_elevation[0]
+	except:
+		D.riverwall_elevation = NULL
 
-	riverwall_rowIndex = riverwallData.hydraulic_properties_rowIndex
-	D.riverwall_rowIndex = &riverwall_rowIndex[0]
+	try:
+		riverwall_rowIndex = riverwallData.hydraulic_properties_rowIndex
+		D.riverwall_rowIndex = &riverwall_rowIndex[0]
+	except:
+		D.riverwall_rowIndex = NULL
+
+	try:
+		riverwall_hydraulic_properties = riverwallData.hydraulic_properties
+		D.riverwall_hydraulic_properties = &riverwall_hydraulic_properties[0,0]
+	except:
+		D.riverwall_hydraulic_properties = NULL
+		
 
 	D.ncol_riverwall_hydraulic_properties = riverwallData.ncol_hydraulic_properties
 
-	riverwall_hydraulic_properties = riverwallData.hydraulic_properties
-	D.riverwall_hydraulic_properties = &riverwall_hydraulic_properties[0,0]
 
 
 
