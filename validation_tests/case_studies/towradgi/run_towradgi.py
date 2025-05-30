@@ -451,7 +451,7 @@ Creating domain from scratch.
     if myid == 0:
         print('CREATING RIVERWALLS')
     
-    domain.riverwallData.create_riverwalls(riverWalls)
+    domain.create_riverwalls(riverWalls)
     
     
     barrier()
@@ -462,9 +462,10 @@ Creating domain from scratch.
     #------------------------------------------------------------------------------
     # ENTER CULVERT DATA
     #------------------------------------------------------------------------------
-    smoothTS=30. # Smoothing timescale for bridges
-        
+    
     if useCulverts: # Use this to turn off culverts
+
+        smoothTS=30. # Smoothing timescale for bridges
 
         if myid == 0: print ('Creating Boyd_pipe_operator at Branch_2_Brooker_St_Culvert') 
         losses = {'inlet':0.5, 'outlet':1.0, 'bend':0.0, 'grate':0.0, 'pier': 0.0, 'other': 0.0}
@@ -954,6 +955,6 @@ for p in range(numprocs):
 # Merge the individual sww files into one file
 # But don't delete the sub domain sww files
 # --------------------------------------------------
-domain.sww_merge()
+domain.sww_merge(delete_old=True)
 
 finalize()
