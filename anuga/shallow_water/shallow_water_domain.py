@@ -2859,6 +2859,25 @@ class Domain(Generic_Domain):
     def set_multiprocessor_mode(self, multiprocessor_mode= 0):
         """
         Set multiprocessor mode 
+        -1. python code 
+         0. original cython
+         1. simd (used for multiprocessor)
+         2. openmp (in development)
+         3. openacc (in development)
+         4. cuda (in development)
+        """
+
+        if multiprocessor_mode not in [0, 1, 2, 3, 4]:
+            raise ValueError('Invalid multiprocessor mode. Must be one of [0, 1, 2, 3, 4]')
+
+        self.multiprocessor_mode = multiprocessor_mode
+
+        if self.multiprocessor_mode == 4:
+            self.set_gpu_interface()
+
+    def get_multiprocessor_mode(self):
+        """
+        Get multiprocessor mode 
         
         0. original
         1. simd (used for multiprocessor)
@@ -2866,15 +2885,8 @@ class Domain(Generic_Domain):
         3. openacc (in development)
         4. cuda (in development)
         """
+        return self.multiprocessor_mode 
 
-        if multiprocessor_mode in [0,1,2,3,4]:
-            self.multiprocessor_mode = multiprocessor_mode
-
-            if multiprocessor_mode == 4:
-                self.set_gpu_interface()
-        else:
-            raise Exception('multiprocessor mode {multiprocessor_mode} not supported')
-    
     def set_gpu_interface(self):
 
         if self.multiprocessor_mode == 4 and self.gpu_interface is None:
