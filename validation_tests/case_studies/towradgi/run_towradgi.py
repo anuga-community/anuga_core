@@ -74,11 +74,13 @@ finaltime=140. #83700.
 scale = 1 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
-
+# Choices are 0 (original),  2 (some openmp parallelism)
 multiprocessor_mode = 2
 
 checkpoint_time = max(600/scale, 60)
 checkpoint_dir = 'CHECKPOINTS'
+
+useCulverts = True # Use this to turn off culverts
 useCheckpointing = False
 
 
@@ -462,7 +464,7 @@ Creating domain from scratch.
     #------------------------------------------------------------------------------
     smoothTS=30. # Smoothing timescale for bridges
         
-    if False: # Use this to turn off culverts
+    if useCulverts: # Use this to turn off culverts
 
         if myid == 0: print ('Creating Boyd_pipe_operator at Branch_2_Brooker_St_Culvert') 
         losses = {'inlet':0.5, 'outlet':1.0, 'bend':0.0, 'grate':0.0, 'pier': 0.0, 'other': 0.0}
