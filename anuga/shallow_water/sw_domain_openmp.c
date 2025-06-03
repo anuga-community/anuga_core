@@ -441,7 +441,7 @@ double __openmp__adjust_edgeflux_with_weir(double *edgeflux0, double *edgeflux1,
   edgeflux[1] = *edgeflux1;
   edgeflux[2] = *edgeflux2;
 
-  ierr = __adjust_edgeflux_with_weir(edgeflux0, h_left, h_right,
+  ierr = __adjust_edgeflux_with_weir(edgeflux, h_left, h_right,
                                      g, weir_height,
                                      Qfactor, s1, s2, h1, h2,
                                      max_speed_local);
