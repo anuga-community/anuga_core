@@ -2264,7 +2264,6 @@ class Domain(Generic_Domain):
         """
 
         # For shallow water we need to update height xvelocity and yvelocity
-
         #Shortcuts
         UH = self.quantities['xmomentum']
         VH = self.quantities['ymomentum']
@@ -2349,6 +2348,7 @@ class Domain(Generic_Domain):
         # and or visualisation.
         # This is done again in the initialisation of the Generic_Domain
         # evolve loop but we do it here to ensure the values are ok for storage.
+
         self.distribute_to_vertices_and_edges()
 
         if self.store is True and (self.get_relative_time() == 0.0 or self.evolved_called is False):
@@ -2867,8 +2867,8 @@ class Domain(Generic_Domain):
          4. cuda (in development)
         """
 
-        if multiprocessor_mode not in [0, 1, 2, 3, 4]:
-            raise ValueError('Invalid multiprocessor mode. Must be one of [0, 1, 2, 3, 4]')
+        if multiprocessor_mode not in [-1, 0, 1, 2, 3, 4]:
+            raise ValueError('Invalid multiprocessor mode. Must be one of [-1, 0, 1, 2, 3, 4]')
 
         self.multiprocessor_mode = multiprocessor_mode
 

@@ -179,7 +179,7 @@ class Reflective_boundary(Boundary):
         :param segment_edges: List of boundary cells on which to apply BC
 
         """
-
+        multiprocessor_mode = domain.get_multiprocessor_mode()
         if segment_edges is None:
             return
         if domain is None:

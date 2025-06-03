@@ -756,11 +756,22 @@ class Generic_Domain(object):
         4. cuda (in development)
         """
 
-        if multiprocessor_mode in [0,1,2,3,4]:
+        if multiprocessor_mode in [-1, 0,1,2,3,4]:
             self.multiprocessor_mode = multiprocessor_mode
         else:
             raise Exception('multiprocessor mode {multiprocessor_mode} not supported')
 
+    def get_multiprocessor_mode(self):
+        """
+        Get multiprocessor mode 
+        
+        0. original
+        1. simd (used for multiprocessor)
+        2. openmp (in development)
+        3. openacc (in development)
+        4. cuda (in development)
+        """
+        return self.multiprocessor_mode 
             
     def set_using_centroid_averaging(self, flag=True):
         """Set flag to use centroid averaging in output

@@ -15,6 +15,7 @@
 // Gareth Davies, GA 2011
 
 #include "math.h"
+#include <math.h>
 #include <stdio.h>
 #include <string.h>
 #include <assert.h>
@@ -68,11 +69,9 @@ int64_t __flux_function_central(double *q_left, double *q_right,
                                 double n1, double n2,
                                 double epsilon,
                                 double ze,
-                                double limiting_threshold,
                                 double g,
                                 double *edgeflux, double *max_speed,
-                                double *pressure_flux, double hc,
-                                double hc_n,
+                                double *pressure_flux, 
                                 int64_t low_froude)
 {
 
@@ -274,12 +273,10 @@ int64_t __openmp__flux_function_central(double q_left0, double q_left1, double q
                                         double n1, double n2,
                                         double epsilon,
                                         double ze,
-                                        double limiting_threshold,
                                         double g,
                                         double *edgeflux0, double *edgeflux1, double *edgeflux2,
                                         double *max_speed,
-                                        double *pressure_flux, double hc,
-                                        double hc_n,
+                                        double *pressure_flux,
                                         int64_t low_froude)
 {
 
@@ -307,11 +304,9 @@ int64_t __openmp__flux_function_central(double q_left0, double q_left1, double q
                                  n1, n2,
                                  epsilon,
                                  ze,
-                                 limiting_threshold,
                                  g,
                                  edgeflux, max_speed,
-                                 pressure_flux, hc,
-                                 hc_n,
+                                 pressure_flux,
                                  low_froude);
 
   *edgeflux0 = edgeflux[0];
@@ -464,7 +459,6 @@ double _openmp_compute_fluxes_central(struct domain *D,
   double max_speed_local, length, inv_area, zl, zr;
   double h_left, h_right, z_half; // For andusse scheme
   // FIXME: limiting_threshold is not used for DE1
-  double limiting_threshold = 10 * D->H0;
   int64_t low_froude = D->low_froude;
   double g = D->g;
   double epsilon = D->epsilon;
@@ -509,7 +503,7 @@ double _openmp_compute_fluxes_central(struct domain *D,
 
 // For all triangles
 #pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, K)          \
-    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude, limiting_threshold) \
+    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude) \
     private(i, ki, ki2, n, m, nm, ii,                                                             \
                 max_speed_local, length, inv_area, zl, zr,                                        \
                 h_left, h_right,                                                                  \
@@ -599,9 +593,9 @@ double _openmp_compute_fluxes_central(struct domain *D,
                               h_left, h_right,
                               hle, hre,
                               normal_x, normal_y,
-                              epsilon, z_half, limiting_threshold, g,
+                              epsilon, z_half, g,
                               edgeflux, &max_speed_local, &pressure_flux,
-                              hc, hc_n, low_froude);
+                              low_froude);
 
       // Force weir discharge to match weir theory
       if (D->edge_flux_type[ki] == 1)
@@ -777,7 +771,6 @@ double _compute_fluxes_central_parallel_data_flow(struct domain *D, double times
   double max_speed_local, length, inv_area, zl, zr;
   double h_left, h_right, z_half; // For andusse scheme
   // FIXME: limiting_threshold is not used for DE1
-  double limiting_threshold = 10 * D->H0;
   int64_t low_froude = D->low_froude;
   //
   int64_t k, i, m, n, ii;
@@ -936,8 +929,8 @@ double _compute_fluxes_central_parallel_data_flow(struct domain *D, double times
                               h_left, h_right,
                               hle, hre,
                               D->normals[ki2], D->normals[ki2 + 1],
-                              D->epsilon, z_half, limiting_threshold, D->g,
-                              edgeflux, &max_speed_local, &pressure_flux, hc, hc_n, low_froude);
+                              D->epsilon, z_half, D->g,
+                              edgeflux, &max_speed_local, &pressure_flux, low_froude);
 
       // Force weir discharge to match weir theory
       if (D->edge_flux_type[ki] == 1)
@@ -1277,11 +1270,11 @@ static inline void __calc_edge_values(double beta_tmp, double cv_k, double cv_k0
 
 static inline void __calc_edge_values_2_bdy(double beta, double cv_k, double cv_k0,
                                             double dxv0, double dxv1, double dxv2, double dyv0, double dyv1, double dyv2,
-                                            double dx1, double dx2, double dy1, double dy2, double inv_area2,
+                                            double dx2, double dy2,
                                             double *edge_values)
 {
   double dqv[3];
-  double dq0, dq1, dq2;
+  double  dq1;
   double a, b;
   double qmin, qmax;
 
@@ -1324,7 +1317,7 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
 
   // Local variables
   double a, b; // Gradient vector used to calculate edge values from centroids
-  int64_t k, k0, k1, k2, k3, k6, coord_index, i;
+  int64_t k0, k1, k2, k3, k6, coord_index, i;
   double x, y, x0, y0, x1, y1, x2, y2, xv0, yv0, xv1, yv1, xv2, yv2; // Vertices of the auxiliary triangle
   double dx1, dx2, dy1, dy2, dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dq1, area2, inv_area2;
   double dqv[3], qmin, qmax, hmin, hmax;
@@ -1333,13 +1326,9 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
   double edge_values[3];
   double cv_k, cv_k0, cv_k1, cv_k2;
 
-  double x_centroid_work;
-  double xmom_centroid_values;
-  double y_centroid_work;
-  double ymom_centroid_values;
 
   double minimum_allowed_height = D->minimum_allowed_height;
-  int64_t number_of_elements = D->number_of_elements;
+  int number_of_elements = D->number_of_elements;
   int64_t extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
 
   // Parameters used to control how the limiter is forced to first-order near
@@ -1356,15 +1345,15 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
   // before extrapolation and limiting
 
 #pragma omp parallel for simd shared(D) default(none) schedule(static) private(dk, dk_inv) firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
-  for (k = 0; k < number_of_elements; k++)
+  for (int k = 0; k < number_of_elements; k++)
   {
-    dk = fmax(D->stage_centroid_values[k] - D->bed_centroid_values[k], 0.0);
+    double dk_local = fmax(D->stage_centroid_values[k] - D->bed_centroid_values[k], 0.0);
 
-    D->height_centroid_values[k] = dk;
+    D->height_centroid_values[k] = dk_local;
     D->x_centroid_work[k] = 0.0;
     D->y_centroid_work[k] = 0.0;
 
-    if (dk <= minimum_allowed_height)
+    if (dk_local <= minimum_allowed_height)
     {
       D->x_centroid_work[k] = 0.0;
       D->xmom_centroid_values[k] = 0.0;
@@ -1374,14 +1363,14 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
 
     if (extrapolate_velocity_second_order == 1)
     {
-      if (dk > minimum_allowed_height)
+      if (dk_local > minimum_allowed_height)
       {
-        dk_inv = 1.0 / dk;
+        double dk_inv_local = 1.0 / dk_local;
         D->x_centroid_work[k] = D->xmom_centroid_values[k];
-        D->xmom_centroid_values[k] = D->xmom_centroid_values[k] * dk_inv;
+        D->xmom_centroid_values[k] = D->xmom_centroid_values[k] * dk_inv_local;
 
         D->y_centroid_work[k] = D->ymom_centroid_values[k];
-        D->ymom_centroid_values[k] = D->ymom_centroid_values[k] * dk_inv;
+        D->ymom_centroid_values[k] = D->ymom_centroid_values[k] * dk_inv_local;
       }
     }
   } // end of for
@@ -1390,7 +1379,6 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
 
 #pragma omp parallel for simd private(k0, k1, k2, k3, k6, coord_index, i,                                               \
                                           dx1, dx2, dy1, dy2, dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,                       \
-                                          x_centroid_work, xmom_centroid_values, y_centroid_work, ymom_centroid_values, \
                                           dq1, area2, inv_area2,                                                        \
                                           cv_k, cv_k0, cv_k1, cv_k2, edge_values,                                       \
                                           x, y, x0, y0, x1, y1, x2, y2, xv0, yv0, xv1, yv1, xv2, yv2,                   \
@@ -1398,7 +1386,7 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
                                           hc, h0, h1, h2, beta_tmp, hfactor,                                            \
                                           dk, dk_inv, a, b) default(none) shared(D) schedule(static)                    \
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order, c_tmp, d_tmp)
-  for (k = 0; k < number_of_elements; k++)
+  for (int k = 0; k < number_of_elements; k++)
   {
 
     // printf("%ld, %e \n",k, D->height_centroid_values[k]);
@@ -1873,7 +1861,7 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
 
 // Fix xmom and ymom centroid values
 #pragma omp parallel for simd schedule(static) private(k3, i, dk) firstprivate(extrapolate_velocity_second_order)
-  for (k = 0; k < D->number_of_elements; k++)
+  for (int k = 0; k < D->number_of_elements; k++)
   {
     if (extrapolate_velocity_second_order == 1)
     {
@@ -1932,12 +1920,11 @@ void _openmp_manning_friction_flat(double g, double eps, int64_t N,
                                    double *eta, double *xmom_update, double *ymom_update)
 {
 
-  int64_t k, k3;
+  int64_t k;
   double S, h, z, abs_mom;
-  const double one_third = 1.0 / 3.0;
   const double seven_thirds = 7.0 / 3.0;
 
-#pragma omp parallel for schedule(static) private(k, k3, z, h, S) firstprivate(eps, g, seven_thirds)
+#pragma omp parallel for schedule(static) private(k, z, h, S) firstprivate(eps, g, seven_thirds)
   for (k = 0; k < N; k++)
   {
     abs_mom = sqrt((uh[k] * uh[k] + vh[k] * vh[k]));
