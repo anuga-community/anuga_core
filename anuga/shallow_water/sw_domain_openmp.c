@@ -2054,3 +2054,85 @@ int64_t _openmp_fix_negative_cells(struct domain *D)
   }
   return num_negative_cells;
 }
+
+int64_t _openmp_update_conserved_quantities(struct domain *D, double timestep)
+      {
+	// Update centroid values based on values stored in
+	// explicit_update and semi_implicit_update as well as given timestep
+
+
+	int64_t k;
+	double denominator, x;
+  int64_t N = D->number_of_elements;
+	int64_t err_return = 0;
+  double stage_c, xmom_c, ymom_c;
+
+	// Divide semi_implicit update by conserved quantity
+	#pragma omp parallel for private(k, x) reduction(min:err_return)
+	for (k=0; k<N; k++) {
+
+		// use previous centroid value
+		stage_c = D->stage_centroid_values[k];
+		if (stage_c == 0.0) {
+			D->stage_semi_implicit_update[k] = 0.0;
+		} else {
+			D->stage_semi_implicit_update[k] /= stage_c;
+		}
+
+    xmom_c = D->xmom_centroid_values[k];
+		if (xmom_c == 0.0) {
+			D->xmom_semi_implicit_update[k] = 0.0;
+		} else {
+			D->xmom_semi_implicit_update[k] /= xmom_c;
+		}
+
+    ymom_c = D->ymom_centroid_values[k];
+		if (ymom_c == 0.0) {
+			D->ymom_semi_implicit_update[k] = 0.0;
+		} else {
+			D->ymom_semi_implicit_update[k] /= ymom_c;
+		}
+
+		// Explicit updates
+		D->stage_centroid_values[k] += timestep*D->stage_explicit_update[k];
+    D->xmom_centroid_values[k] += timestep*D->xmom_explicit_update[k];
+    D->ymom_centroid_values[k] += timestep*D->ymom_explicit_update[k];
+
+		// Semi implicit updates
+		denominator = 1.0 - timestep*D->stage_semi_implicit_update[k];
+		if (denominator <= 0.0) {
+			err_return = -1;
+		} else {
+			//Update conserved_quantities from semi implicit updates
+			D->stage_centroid_values[k] /= denominator;
+		}
+
+    denominator = 1.0 - timestep*D->xmom_semi_implicit_update[k];
+		if (denominator <= 0.0) {
+			err_return = -1;
+		} else {
+			//Update conserved_quantities from semi implicit updates
+			D->xmom_centroid_values[k] /= denominator;
+		}
+
+    denominator = 1.0 - timestep*D->ymom_semi_implicit_update[k];
+		if (denominator <= 0.0) {
+			err_return = -1;
+		} else {
+			//Update conserved_quantities from semi implicit updates
+			D->ymom_centroid_values[k] /= denominator;
+		}
+		
+		// Reset semi_implicit_update here ready for next time step
+		D->stage_semi_implicit_update[k] = 0.0;
+    D->xmom_semi_implicit_update[k] = 0.0;
+    D->ymom_semi_implicit_update[k] = 0.0;
+	}
+
+	if (err_return == -1)
+	{
+		return -1;
+	}
+
+	return 0;
+}

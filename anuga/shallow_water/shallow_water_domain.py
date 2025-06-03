@@ -310,7 +310,7 @@ class Domain(Generic_Domain):
         #-------------------------------
         # Set multiprocessor mode
         # 0. original with local timestep
-        # 1. simd code used by modes 2,3,4
+        # 1. simd transission code used by modes 2,3
         # 2. Openmp
         # 3. Openacc
         # 4. Cuda
@@ -2125,12 +2125,10 @@ class Domain(Generic_Domain):
                 from .sw_domain_simd_ext import fix_negative_cells
                 num_negative_ids = fix_negative_cells(self)
 
-            elif self.multiprocessor_mode == 2:
-                Stage.update(timestep)
-                Xmom.update(timestep)
-                Ymom.update(timestep)                
-                from .sw_domain_openmp_ext import fix_negative_cells
-                num_negative_ids = fix_negative_cells(self)
+            elif self.multiprocessor_mode == 2:               
+                from .sw_domain_openmp_ext import update_conserved_quantities
+                num_negative_ids = update_conserved_quantities(self, timestep)
+                
 
             elif self.multiprocessor_mode == 3:
                 Stage.update(timestep)

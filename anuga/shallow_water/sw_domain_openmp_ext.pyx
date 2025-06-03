@@ -99,6 +99,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	double _openmp_protect(domain* D)
 	int64_t _openmp_extrapolate_second_order_edge_sw(domain* D)
 	int64_t _openmp_fix_negative_cells(domain* D)
+	int64_t _openmp_update_conserved_quantities(domain* D, double timestep)
 	# FIXME SR: Change over to domain* D argument
 	void _openmp_manning_friction_flat(double g, double eps, int64_t N, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom, double* ymom)
 	void _openmp_manning_friction_sloped(double g, double eps, int64_t N, double* x, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom_update, double* ymom_update)
@@ -471,6 +472,26 @@ def fix_negative_cells(object domain_object):
 		num_negative_cells = _openmp_fix_negative_cells(&D)
 
 	return num_negative_cells
+
+def update_conserved_quantities(object domain_object, double timestep):
+
+	cdef domain D
+	cdef int64_t num_negative_cells, e
+
+
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+
+	with nogil:
+		e = _openmp_update_conserved_quantities(&D, timestep)
+		num_negative_ids = _openmp_fix_negative_cells(&D)
+
+	if e == -1:
+		return None
+	else:
+		return num_negative_cells
+
+	
 
 
 
