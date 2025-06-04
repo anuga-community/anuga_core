@@ -31,6 +31,8 @@
 #include "sw_domain.h"
 
 const double pi = 3.14159265358979;
+// FIXME: Perhaps use the epsilon used elsewhere.
+static const double TINY = 1.0e-100; // to avoid machine accuracy problems.
 
 // Trick to compute n modulo d (n%d in python) when d is a power of 2
 uint64_t __mod_of_power_2(uint64_t n, uint64_t d)
@@ -1082,22 +1084,11 @@ double _compute_fluxes_central_parallel_data_flow(struct domain *D, double times
 double _openmp_protect(struct domain *D)
 {
 
-  int64_t k, k3, K;
-  double hc, bmin;
   double mass_error = 0.;
 
-  // double *wc;
-  // double *zc;
-  // double *wv;
-  // double *xmomc;
-  // double *ymomc;
-  // double *areas;
+  double minimum_allowed_height = D->minimum_allowed_height;
 
-  double minimum_allowed_height;
-
-  minimum_allowed_height = D->minimum_allowed_height;
-
-  K = D->number_of_elements;
+  int number_of_elements = D->number_of_elements;
 
   // wc = D->stage_centroid_values;
   // zc = D->bed_centroid_values;
@@ -1114,11 +1105,11 @@ double _openmp_protect(struct domain *D)
 
   // Protect against inifintesimal and negative heights
   // if (maximum_allowed_speed < epsilon) {
-#pragma omp parallel for private(k, k3, hc, bmin) schedule(static) reduction(+ : mass_error) firstprivate(minimum_allowed_height)
-  for (k = 0; k < K; k++)
+#pragma omp parallel for schedule(static) reduction(+ : mass_error) firstprivate(minimum_allowed_height)
+  for (int k = 0; k < number_of_elements; k++)
   {
-    k3 = 3 * k;
-    hc = D->stage_centroid_values[k] - D->bed_centroid_values[k];
+    int k3 = 3 * k;
+    double hc = D->stage_centroid_values[k] - D->bed_centroid_values[k];
     if (hc < minimum_allowed_height * 1.0)
     {
       // Set momentum to zero and ensure h is non negative
@@ -1126,7 +1117,7 @@ double _openmp_protect(struct domain *D)
       D->xmom_centroid_values[k] = 0.;
       if (hc <= 0.0)
       {
-        bmin = D->bed_centroid_values[k];
+        double bmin = D->bed_centroid_values[k];
         // Minimum allowed stage = bmin
 
         // WARNING: ADDING MASS if wc[k]<bmin
@@ -1156,7 +1147,7 @@ double _openmp_protect(struct domain *D)
   return mass_error;
 }
 
-static inline int64_t __find_qmin_and_qmax(double dq0, double dq1, double dq2,
+static inline int64_t __find_qmin_and_qmax_dq1_dq2(const double dq0, const double dq1, const double dq2,
                                            double *qmin, double *qmax)
 {
   // Considering the centroid of an FV triangle and the vertices of its
@@ -1177,7 +1168,7 @@ static inline int64_t __find_qmin_and_qmax(double dq0, double dq1, double dq2,
   return 0;
 }
 
-static inline int64_t __limit_gradient(double *dqv, double qmin, double qmax, double beta_w)
+static inline int64_t __limit_gradient(double *dqv, double qmin, double qmax, const double beta_w)
 {
   // Given provisional jumps dqv from the FV triangle centroid to its
   // vertices/edges, and jumps qmin (qmax) between the centroid of the FV
@@ -1186,132 +1177,83 @@ static inline int64_t __limit_gradient(double *dqv, double qmin, double qmax, do
   // multiplicative factor phi by which the provisional vertex jumps are to be
   // limited
 
-  int64_t i;
-  double r = 1000.0, r0 = 1.0, phi = 1.0;
-  static double TINY = 1.0e-100; // to avoid machine accuracy problems.
-  // FIXME: Perhaps use the epsilon used elsewhere.
+  double r = 1000.0;
 
-  // Any provisional jump with magnitude < TINY does not contribute to
-  // the limiting process.
-  // return 0;
-
-  for (i = 0; i < 3; i++)
+  for (int i = 0; i < 3; i++)
   {
-    if (dqv[i] < -TINY)
-      r0 = qmin / dqv[i];
+    double dq = dqv[i];
 
-    if (dqv[i] > TINY)
-      r0 = qmax / dqv[i];
-
-    r = fmin(r0, r);
+    if (dq < -TINY)
+    {
+      double r0 = qmin / dq;
+      r = fmin(r, r0);
+    }
+    else if (dq > TINY)
+    {
+      double r0 = qmax / dq;
+      r = fmin(r, r0);
+    }
+    // if dq ~ 0, no change to r
   }
 
-  phi = fmin(r * beta_w, 1.0);
-  // phi=1.;
-  dqv[0] = dqv[0] * phi;
-  dqv[1] = dqv[1] * phi;
-  dqv[2] = dqv[2] * phi;
+  double phi = fmin(r * beta_w, 1.0);
 
+  for (int i = 0; i < 3; i++)
+  {
+    dqv[i] *= phi;
+  }
   return 0;
 }
 
-static inline void __calc_edge_values(double beta_tmp, double cv_k, double cv_k0, double cv_k1, double cv_k2,
-                                      double dxv0, double dxv1, double dxv2, double dyv0, double dyv1, double dyv2,
-                                      double dx1, double dx2, double dy1, double dy2, double inv_area2,
-                                      double *edge_values)
+static inline void __calc_edge_values_with_gradient(
+    const double cv_k, const double cv_k0, const double cv_k1, const double cv_k2,
+    const double dxv0, const double dxv1, const double dxv2, const double dyv0, const double dyv1, const double dyv2,
+    const double dx1, const double dx2, const double dy1, const double dy2, const double inv_area2,
+    const double beta_tmp, double *edge_values)
 {
   double dqv[3];
-  double dq0, dq1, dq2;
-  double a, b;
-  double qmin, qmax;
+  double dq0 = cv_k0 - cv_k;
+  double dq1 = cv_k1 - cv_k0;
+  double dq2 = cv_k2 - cv_k0;
 
-  if (beta_tmp > 0.)
-  {
-    // Calculate the difference between vertex 0 of the auxiliary
-    // triangle and the centroid of triangle k
-    dq0 = cv_k0 - cv_k;
+  double a = (dy2 * dq1 - dy1 * dq2) * inv_area2;
+  double b = (dx1 * dq2 - dx2 * dq1) * inv_area2;
 
-    // Calculate differentials between the vertices
-    // of the auxiliary triangle (centroids of neighbouring triangles)
-    dq1 = cv_k1 - cv_k0;
-    dq2 = cv_k2 - cv_k0;
-
-    // Calculate the gradient of stage on the auxiliary triangle
-    a = dy2 * dq1 - dy1 * dq2;
-    a *= inv_area2;
-    b = dx1 * dq2 - dx2 * dq1;
-    b *= inv_area2;
-    // Calculate provisional jumps in stage from the centroid
-    // of triangle k to its vertices, to be limited
-    dqv[0] = a * dxv0 + b * dyv0;
-    dqv[1] = a * dxv1 + b * dyv1;
-    dqv[2] = a * dxv2 + b * dyv2;
-
-    // Now we want to find min and max of the centroid and the
-    // vertices of the auxiliary triangle and compute jumps
-    // from the centroid to the min and max
-    __find_qmin_and_qmax(dq0, dq1, dq2, &qmin, &qmax);
-
-    // Limit the gradient
-    __limit_gradient(dqv, qmin, qmax, beta_tmp);
-
-    edge_values[0] = cv_k + dqv[0];
-    edge_values[1] = cv_k + dqv[1];
-    edge_values[2] = cv_k + dqv[2];
-  }
-  else
-  {
-    // Fast alternative when beta_tmp==0
-    edge_values[0] = cv_k;
-    edge_values[1] = cv_k;
-    edge_values[2] = cv_k;
-  }
-}
-
-static inline void __calc_edge_values_2_bdy(double beta, double cv_k, double cv_k0,
-                                            double dxv0, double dxv1, double dxv2, double dyv0, double dyv1, double dyv2,
-                                            double dx2, double dy2,
-                                            double *edge_values)
-{
-  double dqv[3];
-  double dq1;
-  double a, b;
-  double qmin, qmax;
-
-  // Compute differentials
-  dq1 = cv_k0 - cv_k;
-
-  // Calculate the gradient between the centroid of triangle k
-  // and that of its neighbour
-  a = dq1 * dx2;
-  b = dq1 * dy2;
-
-  // Calculate provisional edge jumps, to be limited
   dqv[0] = a * dxv0 + b * dyv0;
   dqv[1] = a * dxv1 + b * dyv1;
   dqv[2] = a * dxv2 + b * dyv2;
 
-  // Now limit the jumps
-  if (dq1 >= 0.0)
-  {
-    qmin = 0.0;
-    qmax = dq1;
-  }
-  else
-  {
-    qmin = dq1;
-    qmax = 0.0;
-  }
-
-  // Limit the gradient
-  __limit_gradient(dqv, qmin, qmax, beta);
+  double qmin, qmax;
+  __find_qmin_and_qmax_dq1_dq2(dq0, dq1, dq2, &qmin, &qmax);
+  __limit_gradient(dqv, qmin, qmax, beta_tmp);
 
   edge_values[0] = cv_k + dqv[0];
   edge_values[1] = cv_k + dqv[1];
   edge_values[2] = cv_k + dqv[2];
 }
 
-static inline void update_centroid_values(struct domain *D, int number_of_elements, double minimum_allowed_height, int extrapolate_velocity_second_order)
+static inline void __set_constant_edge_values(const double cv_k, double *edge_values)
+{
+  edge_values[0] = cv_k;
+  edge_values[1] = cv_k;
+  edge_values[2] = cv_k;
+}
+
+static inline void compute_qmin_qmax_from_dq1(const double dq1, double *qmin, double *qmax)
+{
+  if (dq1 >= 0.0)
+  {
+    *qmin = 0.0;
+    *qmax = dq1;
+  }
+  else
+  {
+    *qmin = dq1;
+    *qmax = 0.0;
+  }
+}
+
+static inline void update_centroid_values(struct domain *D, const int number_of_elements, const double minimum_allowed_height, const int extrapolate_velocity_second_order)
 {
 #pragma omp parallel for simd shared(D) default(none) schedule(static) firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
   for (int k = 0; k < number_of_elements; k++)
@@ -1345,13 +1287,13 @@ static inline void update_centroid_values(struct domain *D, int number_of_elemen
   }
 }
 
-static inline void set_all_edge_values_from_centroid(struct domain *D, int k)
+static inline void set_all_edge_values_from_centroid(struct domain *D, const int k)
 {
 
-  double stage = D->stage_centroid_values[k];
-  double xmom = D->xmom_centroid_values[k];
-  double ymom = D->ymom_centroid_values[k];
-  double ehgiht = D->height_centroid_values[k];
+  const double stage = D->stage_centroid_values[k];
+  const double xmom = D->xmom_centroid_values[k];
+  const double ymom = D->ymom_centroid_values[k];
+  const double height = D->height_centroid_values[k];
 
   for (int i = 0; i < 3; i++)
   {
@@ -1359,12 +1301,12 @@ static inline void set_all_edge_values_from_centroid(struct domain *D, int k)
     D->stage_edge_values[ki] = stage;
     D->xmom_edge_values[ki] = xmom;
     D->ymom_edge_values[ki] = ymom;
-    D->height_edge_values[ki] = ehgiht;
+    D->height_edge_values[ki] = height;
     D->bed_edge_values[ki] = D->bed_centroid_values[k];
   }
 }
 
-static inline int get_internal_neighbour(const struct domain *D, int k)
+static inline int get_internal_neighbour(const struct domain *D, const int k)
 {
   for (int i = 0; i < 3; i++)
   {
@@ -1377,9 +1319,9 @@ static inline int get_internal_neighbour(const struct domain *D, int k)
   return -1; // Indicates failure
 }
 
-static inline void compute_dqv_from_gradient(double dq1, double dx2, double dy2,
-                                             double dxv0, double dxv1, double dxv2,
-                                             double dyv0, double dyv1, double dyv2,
+static inline void compute_dqv_from_gradient(const double dq1, const double dx2, const double dy2,
+                                             const double dxv0, const double dxv1, const double dxv2,
+                                             const double dyv0, const double dyv1, const double dyv2,
                                              double dqv[3])
 {
   // Calculate the gradient between the centroid of triangle k
@@ -1392,22 +1334,9 @@ static inline void compute_dqv_from_gradient(double dq1, double dx2, double dy2,
   dqv[2] = a * dxv2 + b * dyv2;
 }
 
-static inline void compute_qmin_qmax_from_dq1(double dq1, double *qmin, double *qmax)
-{
-  if (dq1 >= 0.0)
-  {
-    *qmin = 0.0;
-    *qmax = dq1;
-  }
-  else
-  {
-    *qmin = dq1;
-    *qmax = 0.0;
-  }
-}
 
 static inline void compute_gradient_projection_between_centroids(
-    const struct domain *D, int k, int k1,
+    const struct domain *D, const int k, const int k1,
     double *dx2, double *dy2)
 {
   double x = D->centroid_coordinates[2 * k + 0];
@@ -1433,11 +1362,11 @@ static inline void compute_gradient_projection_between_centroids(
 
 static inline void extrapolate_gradient_limited(
     const double *centroid_values, double *edge_values,
-    int k, int k1, int k3,
-    double dx2, double dy2,
-    double dxv0, double dxv1, double dxv2,
-    double dyv0, double dyv1, double dyv2,
-    double beta)
+    const int k, const int k1, const int k3,
+    const double dx2, const double dy2,
+    const double dxv0, const double dxv1, const double dxv2,
+    const double dyv0, const double dyv1, const double dyv2,
+    const double beta)
 {
   double dq1 = centroid_values[k1] - centroid_values[k];
 
@@ -1460,27 +1389,34 @@ static inline void extrapolate_gradient_limited(
 static inline void interpolate_edges_with_beta(
     const double *centroid_values,
     double *edge_values,
-    int k, int k0, int k1, int k2, int k3,
-    double dxv0, double dxv1, double dxv2,
-    double dyv0, double dyv1, double dyv2,
-    double dx1, double dx2, double dy1, double dy2,
-    double inv_area2,
-    double beta_dry, double beta_wet, double hfactor)
+    const int k, const int k0, const int k1, const int k2, const int k3,
+    const double dxv0, const double dxv1, const double dxv2,
+    const double dyv0, const double dyv1, const double dyv2,
+    const double dx1, const double dx2, const double dy1, const double dy2,
+    const double inv_area2,
+    const double beta_dry, const double beta_wet, const double hfactor)
 {
   double beta = beta_dry + (beta_wet - beta_dry) * hfactor;
 
   double edge_vals[3];
-  __calc_edge_values(beta,
-                     centroid_values[k],
-                     centroid_values[k0],
-                     centroid_values[k1],
-                     centroid_values[k2],
-                     dxv0, dxv1, dxv2,
-                     dyv0, dyv1, dyv2,
-                     dx1, dx2, dy1, dy2,
-                     inv_area2,
-                     edge_vals);
-
+  if (beta > 0.0)
+  {
+    __calc_edge_values_with_gradient(
+        centroid_values[k],
+        centroid_values[k0],
+        centroid_values[k1],
+        centroid_values[k2],
+        dxv0, dxv1, dxv2,
+        dyv0, dyv1, dyv2,
+        dx1, dx2, dy1, dy2,
+        inv_area2,
+        beta,
+        edge_vals);
+  }
+  else
+  {
+    __set_constant_edge_values(centroid_values[k], edge_vals);
+  }
   for (int i = 0; i < 3; i++)
   {
     edge_values[k3 + i] = edge_vals[i];
@@ -1489,8 +1425,8 @@ static inline void interpolate_edges_with_beta(
 
 static inline void compute_hfactor_and_inv_area(
     const struct domain *D,
-    int k, int k0, int k1, int k2,
-    double area2, double c_tmp, double d_tmp,
+    const int k, const int k0, const int k1, const int k2,
+    const double area2, const double c_tmp, const double d_tmp,
     double *hfactor, double *inv_area2)
 {
   double hc = D->height_centroid_values[k];
@@ -1514,7 +1450,7 @@ static inline void compute_hfactor_and_inv_area(
   *inv_area2 = 1.0 / area2;
 }
 
-static inline void reconstruct_vertex_values(double *edge_values, double *vertex_values, int k3)
+static inline void reconstruct_vertex_values(double *edge_values, double *vertex_values, const int k3)
 {
   for (int i = 0; i < 3; i++)
   {
@@ -1524,10 +1460,10 @@ static inline void reconstruct_vertex_values(double *edge_values, double *vertex
   }
 }
 
-static inline void compute_edge_diffs(double x, double y,
-                                      double xv0, double yv0,
-                                      double xv1, double yv1,
-                                      double xv2, double yv2,
+static inline void compute_edge_diffs(const double x, const double y,
+                                      const double xv0, const double yv0,
+                                      const double xv1, const double yv1,
+                                      const double xv2, const double yv2,
                                       double *dxv0, double *dxv1, double *dxv2,
                                       double *dyv0, double *dyv1, double *dyv2)
 {
@@ -1569,16 +1505,16 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
     int k6 = k * 6;
 
     // Get the edge coordinates
-    double xv0 = D->edge_coordinates[k6 + 0];
-    double yv0 = D->edge_coordinates[k6 + 1];
-    double xv1 = D->edge_coordinates[k6 + 2];
-    double yv1 = D->edge_coordinates[k6 + 3];
-    double xv2 = D->edge_coordinates[k6 + 4];
-    double yv2 = D->edge_coordinates[k6 + 5];
+    const double xv0 = D->edge_coordinates[k6 + 0];
+    const double yv0 = D->edge_coordinates[k6 + 1];
+    const double xv1 = D->edge_coordinates[k6 + 2];
+    const double yv1 = D->edge_coordinates[k6 + 3];
+    const double xv2 = D->edge_coordinates[k6 + 4];
+    const double yv2 = D->edge_coordinates[k6 + 5];
 
     // Get the centroid coordinates
-    double x = D->centroid_coordinates[k2 + 0];
-    double y = D->centroid_coordinates[k2 + 1];
+    const double x = D->centroid_coordinates[k2 + 0];
+    const double y = D->centroid_coordinates[k2 + 1];
 
 
     double dxv0, dxv1, dxv2;
