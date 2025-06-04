@@ -71,7 +71,7 @@ int64_t __flux_function_central(double *q_left, double *q_right,
                                 double ze,
                                 double g,
                                 double *edgeflux, double *max_speed,
-                                double *pressure_flux, 
+                                double *pressure_flux,
                                 int64_t low_froude)
 {
 
@@ -502,15 +502,15 @@ double _openmp_compute_fluxes_central(struct domain *D,
   double boundary_flux_sum_substep = 0.0;
 
 // For all triangles
-#pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, K)          \
-    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude) \
-    private(i, ki, ki2, n, m, nm, ii,                                                             \
-                max_speed_local, length, inv_area, zl, zr,                                        \
-                h_left, h_right,                                                                  \
-                z_half, ql, pressuregrad_work,                                                    \
-                qr, edgeflux, edge_timestep, normal_x, normal_y,                                  \
-                hle, hre, zc, zc_n, Qfactor, s1, s2, h1, h2, pressure_flux, hc, hc_n,             \
-                h_left_tmp, h_right_tmp, speed_max_last, weir_height, RiverWall_count)            \
+#pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, K) \
+    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)            \
+    private(i, ki, ki2, n, m, nm, ii,                                                    \
+                max_speed_local, length, inv_area, zl, zr,                               \
+                h_left, h_right,                                                         \
+                z_half, ql, pressuregrad_work,                                           \
+                qr, edgeflux, edge_timestep, normal_x, normal_y,                         \
+                hle, hre, zc, zc_n, Qfactor, s1, s2, h1, h2, pressure_flux, hc, hc_n,    \
+                h_left_tmp, h_right_tmp, speed_max_last, weir_height, RiverWall_count)   \
     reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
   for (k = 0; k < K; k++)
   {
@@ -1274,7 +1274,7 @@ static inline void __calc_edge_values_2_bdy(double beta, double cv_k, double cv_
                                             double *edge_values)
 {
   double dqv[3];
-  double  dq1;
+  double dq1;
   double a, b;
   double qmin, qmax;
 
@@ -1311,9 +1311,9 @@ static inline void __calc_edge_values_2_bdy(double beta, double cv_k, double cv_
   edge_values[2] = cv_k + dqv[2];
 }
 
-void update_centroid_values(struct domain *D, int number_of_elements, double minimum_allowed_height, int extrapolate_velocity_second_order)
+static inline void update_centroid_values(struct domain *D, int number_of_elements, double minimum_allowed_height, int extrapolate_velocity_second_order)
 {
-  #pragma omp parallel for simd shared(D) default(none) schedule(static)  firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
+#pragma omp parallel for simd shared(D) default(none) schedule(static) firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
   for (int k = 0; k < number_of_elements; k++)
   {
     double dk_local = fmax(D->stage_centroid_values[k] - D->bed_centroid_values[k], 0.0);
@@ -1344,6 +1344,196 @@ void update_centroid_values(struct domain *D, int number_of_elements, double min
     }
   }
 }
+
+static inline void set_all_edge_values_from_centroid(struct domain *D, int k)
+{
+
+  double stage = D->stage_centroid_values[k];
+  double xmom = D->xmom_centroid_values[k];
+  double ymom = D->ymom_centroid_values[k];
+  double ehgiht = D->height_centroid_values[k];
+
+  for (int i = 0; i < 3; i++)
+  {
+    int ki = 3 * k + i;
+    D->stage_edge_values[ki] = stage;
+    D->xmom_edge_values[ki] = xmom;
+    D->ymom_edge_values[ki] = ymom;
+    D->height_edge_values[ki] = ehgiht;
+    D->bed_edge_values[ki] = D->bed_centroid_values[k];
+  }
+}
+
+static inline void extrapolate_with_limiting(
+    struct domain *D,
+    int k, int k0, int k1, int k2, int k3,
+    double dxv0, double dxv1, double dxv2,
+    double dyv0, double dyv1, double dyv2,
+    double dx1, double dx2, double dy1, double dy2,
+    double area2, double c_tmp, double d_tmp)
+{
+  double hc = D->height_centroid_values[k];
+  double h0 = D->height_centroid_values[k0];
+  double h1 = D->height_centroid_values[k1];
+  double h2 = D->height_centroid_values[k2];
+
+  double hmin = fmin(fmin(h0, fmin(h1, h2)), hc);
+  double hmax = fmax(fmax(h0, fmax(h1, h2)), hc);
+
+  // Compute hfactor
+  // Look for strong changes in cell depth as an indicator of near-wet-dry
+  // Reduce hfactor linearly from 1-0 between depth ratio (hmin/hc) of [a_tmp , b_tmp]
+  // NOTE: If we have a more 'second order' treatment in near dry areas (e.g. with b_tmp being negative), then
+  //       the water tends to dry more rapidly (which is in agreement with analytical results),
+  //       but is also more 'artefacty' in important cases (tendency for high velocities, etc).
+  //
+  // So hfactor = depth_ratio*(c_tmp) + d_tmp, but is clipped between 0 and 1.
+  double hfactor = fmax(0., fmin(c_tmp * fmax(hmin, 0.0) / fmax(hc, 1.0e-06) + d_tmp,
+                                 fmin(c_tmp * fmax(hc, 0.) / fmax(hmax, 1.0e-06) + d_tmp, 1.0)));
+  // Set hfactor to zero smothly as hmin--> minimum_allowed_height. This
+  // avoids some 'chatter' for very shallow flows
+  hfactor = fmin(1.2 * fmax(hmin - D->minimum_allowed_height, 0.) /
+                     (fmax(hmin, 0.) + 1. * D->minimum_allowed_height),
+                 hfactor);
+
+  double inv_area2 = 1.0 / area2;
+  double edge_values[3];
+
+  // ----- Stage -----
+  double beta_tmp = D->beta_w_dry + (D->beta_w - D->beta_w_dry) * hfactor;
+  __calc_edge_values(beta_tmp,
+                     D->stage_centroid_values[k],
+                     D->stage_centroid_values[k0],
+                     D->stage_centroid_values[k1],
+                     D->stage_centroid_values[k2],
+                     dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
+                     dx1, dx2, dy1, dy2, inv_area2, edge_values);
+  for (int i = 0; i < 3; i++)
+    D->stage_edge_values[k3 + i] = edge_values[i];
+
+  // ----- Height -----
+  __calc_edge_values(beta_tmp,
+                     D->height_centroid_values[k],
+                     D->height_centroid_values[k0],
+                     D->height_centroid_values[k1],
+                     D->height_centroid_values[k2],
+                     dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
+                     dx1, dx2, dy1, dy2, inv_area2, edge_values);
+
+  for (int i = 0; i < 3; i++)
+    D->height_edge_values[k3 + i] = edge_values[i];
+
+  // ----- X-Momentum -----
+  beta_tmp = D->beta_uh_dry + (D->beta_uh - D->beta_uh_dry) * hfactor;
+  __calc_edge_values(beta_tmp,
+                     D->xmom_centroid_values[k],
+                     D->xmom_centroid_values[k0],
+                     D->xmom_centroid_values[k1],
+                     D->xmom_centroid_values[k2],
+                     dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
+                     dx1, dx2, dy1, dy2, inv_area2, edge_values);
+
+  for (int i = 0; i < 3; i++)
+    D->xmom_edge_values[k3 + i] = edge_values[i];
+
+  // ----- Y-Momentum -----
+  beta_tmp = D->beta_vh_dry + (D->beta_vh - D->beta_vh_dry) * hfactor;
+  __calc_edge_values(beta_tmp,
+                     D->ymom_centroid_values[k],
+                     D->ymom_centroid_values[k0],
+                     D->ymom_centroid_values[k1],
+                     D->ymom_centroid_values[k2],
+                     dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
+                     dx1, dx2, dy1, dy2, inv_area2, edge_values);
+
+  for (int i = 0; i < 3; i++)
+    D->ymom_edge_values[k3 + i] = edge_values[i];
+}
+
+static inline int get_internal_neighbour(const struct domain* D, int k) {
+    for (int i = 0; i < 3; i++) {
+        int n = D->surrogate_neighbours[3 *k + i];
+        if (n != k) {
+            return n;
+        }
+    }
+    return -1;  // Indicates failure
+}
+
+static inline void compute_dqv_from_gradient(double dq1, double dx2, double dy2,
+                                             double dxv0, double dxv1, double dxv2,
+                                             double dyv0, double dyv1, double dyv2,
+                                             double dqv[3])
+{
+    // Calculate the gradient between the centroid of triangle k
+    // and that of its neighbour
+    double a = dq1 * dx2;
+    double b = dq1 * dy2;
+
+    dqv[0] = a * dxv0 + b * dyv0;
+    dqv[1] = a * dxv1 + b * dyv1;
+    dqv[2] = a * dxv2 + b * dyv2;
+}
+
+static inline void compute_qmin_qmax_from_dq1(double dq1, double* qmin, double* qmax)
+{
+    if (dq1 >= 0.0) {
+        *qmin = 0.0;
+        *qmax = dq1;
+    } else {
+        *qmin = dq1;
+        *qmax = 0.0;
+    }
+}
+
+static inline void compute_gradient_projection_between_centroids(
+    const struct domain* D, int k, int k1,
+    double* dx2, double* dy2)
+{
+    double x  = D->centroid_coordinates[2 * k + 0];
+    double y  = D->centroid_coordinates[2 * k + 1];
+    double x1 = D->centroid_coordinates[2 * k1 + 0];
+    double y1 = D->centroid_coordinates[2 * k1 + 1];
+
+    double dx = x1 - x;
+    double dy = y1 - y;
+    double area2 = dx * dx + dy * dy;
+
+    if (area2 > 0.0) {
+        *dx2 = dx / area2;
+        *dy2 = dy / area2;
+    } else {
+        *dx2 = 0.0;
+        *dy2 = 0.0;
+    }
+}
+
+static inline void extrapolate_gradient_limited(
+    const double *centroid_values, double *edge_values,
+    int k, int k1, int k3,
+    double dx2, double dy2,
+    double dxv0, double dxv1, double dxv2,
+    double dyv0, double dyv1, double dyv2,
+    double beta)
+{
+    double dq1 = centroid_values[k1] - centroid_values[k];
+
+    double dqv[3];
+    compute_dqv_from_gradient(dq1, dx2, dy2,
+                              dxv0, dxv1, dxv2,
+                              dyv0, dyv1, dyv2, dqv);
+
+    double qmin, qmax;
+    compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
+
+    __limit_gradient(dqv, qmin, qmax, beta);
+
+    for (int i = 0; i < 3; i++) {
+        edge_values[k3 + i] = centroid_values[k] + dqv[i];
+    }
+}
+
+
 // Computational routine
 int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
 {
@@ -1353,8 +1543,7 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
   // int64_t i;
   // double  dq1;
   // double dqv[3], qmin, qmax;
-  //double edge_values[3];
-
+  // double edge_values[3];
 
   double minimum_allowed_height = D->minimum_allowed_height;
   int number_of_elements = D->number_of_elements;
@@ -1376,7 +1565,7 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
 
   // Begin extrapolation routine
 
-#pragma omp parallel for simd  default(none) shared(D) schedule(static)                    \
+#pragma omp parallel for simd default(none) shared(D) schedule(static) \
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order, c_tmp, d_tmp)
   for (int k = 0; k < number_of_elements; k++)
   {
@@ -1456,24 +1645,8 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
     if (D->number_of_boundaries[k] == 3)
     {
       // Very unlikely
-      // No neighbours, set gradient on the triangle to zero
-
-      D->stage_edge_values[k3 + 0] = D->stage_centroid_values[k];
-      D->stage_edge_values[k3 + 1] = D->stage_centroid_values[k];
-      D->stage_edge_values[k3 + 2] = D->stage_centroid_values[k];
-
-      D->xmom_edge_values[k3 + 0] = D->xmom_centroid_values[k];
-      D->xmom_edge_values[k3 + 1] = D->xmom_centroid_values[k];
-      D->xmom_edge_values[k3 + 2] = D->xmom_centroid_values[k];
-
-      D->ymom_edge_values[k3 + 0] = D->ymom_centroid_values[k];
-      D->ymom_edge_values[k3 + 1] = D->ymom_centroid_values[k];
-      D->ymom_edge_values[k3 + 2] = D->ymom_centroid_values[k];
-
-      double dk = D->height_centroid_values[k];
-      D->height_edge_values[k3 + 0] = dk;
-      D->height_edge_values[k3 + 1] = dk;
-      D->height_edge_values[k3 + 2] = dk;
+      // No neighbourso, set gradient on the triangle to zero
+      set_all_edge_values_from_centroid(D, k);
     }
     else if (D->number_of_boundaries[k] <= 1)
     {
@@ -1481,211 +1654,43 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
       // Number of boundaries <= 1
       // 'Typical case'
       //==============================================
-      // printf("%ld boundaries <= 1\n",k);
-
-      // Calculate heights of neighbouring cells
-      double hc = D->height_centroid_values[k];
-      double h0 = D->height_centroid_values[k0];
-      double h1 = D->height_centroid_values[k1];
-      double h2 = D->height_centroid_values[k2];
-
-      double hmin = fmin(fmin(h0, fmin(h1, h2)), hc);
-      double hmax = fmax(fmax(h0, fmax(h1, h2)), hc);
-
-      // Look for strong changes in cell depth as an indicator of near-wet-dry
-      // Reduce hfactor linearly from 1-0 between depth ratio (hmin/hc) of [a_tmp , b_tmp]
-      // NOTE: If we have a more 'second order' treatment in near dry areas (e.g. with b_tmp being negative), then
-      //       the water tends to dry more rapidly (which is in agreement with analytical results),
-      //       but is also more 'artefacty' in important cases (tendency for high velocities, etc).
-      //
-      // So hfactor = depth_ratio*(c_tmp) + d_tmp, but is clipped between 0 and 1.
-      double hfactor = fmax(0., fmin(c_tmp * fmax(hmin, 0.0) / fmax(hc, 1.0e-06) + d_tmp,
-                              fmin(c_tmp * fmax(hc, 0.) / fmax(hmax, 1.0e-06) + d_tmp, 1.0)));
-      // Set hfactor to zero smothly as hmin--> minimum_allowed_height. This
-      // avoids some 'chatter' for very shallow flows
-      hfactor = fmin(1.2 * fmax(hmin - D->minimum_allowed_height, 0.) / (fmax(hmin, 0.) + 1. * D->minimum_allowed_height), hfactor);
-
-      double inv_area2 = 1.0 / area2;
-
-      //-----------------------------------
-      // stage
-      //-----------------------------------
-      double beta_tmp = D->beta_w_dry + (D->beta_w - D->beta_w_dry) * hfactor;
-
-      double cv_k = D->stage_centroid_values[k];
-      double cv_k0 = D->stage_centroid_values[k0];
-      double cv_k1 = D->stage_centroid_values[k1];
-      double cv_k2 = D->stage_centroid_values[k2];
-      double edge_values[3];
-      __calc_edge_values(beta_tmp,
-                         cv_k,
-                         cv_k0,
-                         cv_k1,
-                         cv_k2,
-                         dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                         dx1, dx2, dy1, dy2, inv_area2, edge_values);
-
-      D->stage_edge_values[k3 + 0] = edge_values[0];
-      D->stage_edge_values[k3 + 1] = edge_values[1];
-      D->stage_edge_values[k3 + 2] = edge_values[2];
-
-      //-----------------------------------
-      // height
-      //-----------------------------------
-
-      cv_k = D->height_centroid_values[k];
-      cv_k0 = D->height_centroid_values[k0];
-      cv_k1 = D->height_centroid_values[k1];
-      cv_k2 = D->height_centroid_values[k2];
-
-      __calc_edge_values(beta_tmp,
-                         cv_k,
-                         cv_k0,
-                         cv_k1,
-                         cv_k2,
-                         dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                         dx1, dx2, dy1, dy2, inv_area2, edge_values);
-
-      D->height_edge_values[k3 + 0] = edge_values[0];
-      D->height_edge_values[k3 + 1] = edge_values[1];
-      D->height_edge_values[k3 + 2] = edge_values[2];
-
-      //-----------------------------------
-      // xmomentum
-      //-----------------------------------
-
-      beta_tmp = D->beta_uh_dry + (D->beta_uh - D->beta_uh_dry) * hfactor;
-
-      cv_k = D->xmom_centroid_values[k];
-      cv_k0 = D->xmom_centroid_values[k0];
-      cv_k1 = D->xmom_centroid_values[k1];
-      cv_k2 = D->xmom_centroid_values[k2];
-
-      __calc_edge_values(beta_tmp,
-                         cv_k,
-                         cv_k0,
-                         cv_k1,
-                         cv_k2,
-                         dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                         dx1, dx2, dy1, dy2, inv_area2, edge_values);
-
-      D->xmom_edge_values[k3 + 0] = edge_values[0];
-      D->xmom_edge_values[k3 + 1] = edge_values[1];
-      D->xmom_edge_values[k3 + 2] = edge_values[2];
-
-      //-----------------------------------
-      // ymomentum
-      //-----------------------------------
-
-      beta_tmp = D->beta_vh_dry + (D->beta_vh - D->beta_vh_dry) * hfactor;
-
-      cv_k = D->ymom_centroid_values[k];
-      cv_k0 = D->ymom_centroid_values[k0];
-      cv_k1 = D->ymom_centroid_values[k1];
-      cv_k2 = D->ymom_centroid_values[k2];
-
-      __calc_edge_values(beta_tmp,
-                         cv_k,
-                         cv_k0,
-                         cv_k1,
-                         cv_k2,
-                         dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                         dx1, dx2, dy1, dy2, inv_area2, edge_values);
-
-      D->ymom_edge_values[k3 + 0] = edge_values[0];
-      D->ymom_edge_values[k3 + 1] = edge_values[1];
-      D->ymom_edge_values[k3 + 2] = edge_values[2];
+      extrapolate_with_limiting(D, k, k0, k1, k2, k3,
+                                dxv0, dxv1, dxv2,
+                                dyv0, dyv1, dyv2,
+                                dx1, dx2, dy1, dy2,
+                                area2, c_tmp, d_tmp);
 
     } // End number_of_boundaries <=1
     else
     {
-      // printf("%ld 2 boundaries\n",k);
       //==============================================
       //  Number of boundaries == 2
       //==============================================
-
       // One internal neighbour and gradient is in direction of the neighbour's centroid
-
       // Find the only internal neighbour (k1?)
-      for (k2 = k3; k2 < k3 + 3; k2++)
-      {
-        // Find internal neighbour of triangle k
-        // k2 indexes the edges of triangle k
-
-        if (D->surrogate_neighbours[k2] != k)
-        {
-          break;
-        }
-      }
-
-      // if ((k2 == k3 + 3))
-      // {
-      //   // If we didn't find an internal neighbour
-      //   // report_python_error(AT, "Internal neighbour not found");
-      //   return -1;
-      // }
-
-      k1 = D->surrogate_neighbours[k2];
-
+      k1 = get_internal_neighbour(D, k);
       // The coordinates of the triangle are already (x,y).
       // Get centroid of the neighbour (x1,y1)
-      coord_index = 2 * k1;
-      x1 = D->centroid_coordinates[coord_index + 0];
-      y1 = D->centroid_coordinates[coord_index + 1];
-
-      // Compute x- and y- distances between the centroid of
-      // triangle k and that of its neighbour
-      dx1 = x1 - x;
-      dy1 = y1 - y;
-
-      // Set area2 as the square of the distance
-      area2 = dx1 * dx1 + dy1 * dy1;
-
-      // Set dx2=(x1-x0)/((x1-x0)^2+(y1-y0)^2)
-      // and dy2=(y1-y0)/((x1-x0)^2+(y1-y0)^2) which
-      // respectively correspond to the x- and y- gradients
-      // of the conserved quantities
-      dx2 = 1.0 / area2;
-      dy2 = dx2 * dy1;
-      dx2 *= dx1;
+      // this functions updates the variables dx2 and dy2
+      compute_gradient_projection_between_centroids(D, k, k1, &dx2, &dy2);
 
       //-----------------------------------
       // stage
       //-----------------------------------
-
       // Compute differentials
-      double dq1 = D->stage_centroid_values[k1] - D->stage_centroid_values[k];
-
-      // Calculate the gradient between the centroid of triangle k
-      // and that of its neighbour
-      double a = dq1 * dx2;
-      double b = dq1 * dy2;
-
-      // Calculate provisional edge jumps, to be limited
       double dqv[3];
-      dqv[0] = a * dxv0 + b * dyv0;
-      dqv[1] = a * dxv1 + b * dyv1;
-      dqv[2] = a * dxv2 + b * dyv2;
-
+      // Calculate provisional edge jumps, to be limited
+      double dq1 = D->stage_centroid_values[k1] - D->stage_centroid_values[k];
+      compute_dqv_from_gradient(dq1,dx2,dy2, dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dqv);
+      double qmin, qmax;
       // Now limit the jumps
-      double qmin, qmax; 
-      if (dq1 >= 0.0)
-      {
-        qmin = 0.0;
-        qmax = dq1;
-      }
-      else
-      {
-        qmin = dq1;
-        qmax = 0.0;
-      }
-
+      compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
       // Limit the gradient
       __limit_gradient(dqv, qmin, qmax, D->beta_w);
-
-      D->stage_edge_values[k3 + 0] = D->stage_centroid_values[k] + dqv[0];
-      D->stage_edge_values[k3 + 1] = D->stage_centroid_values[k] + dqv[1];
-      D->stage_edge_values[k3 + 2] = D->stage_centroid_values[k] + dqv[2];
+      for(int i = 0; i < 3; i++)
+      {
+        D->stage_edge_values[k3 + i] = D->stage_centroid_values[k] + dqv[i];
+      }
 
       //-----------------------------------
       // height
@@ -1693,35 +1698,15 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
 
       // Compute differentials
       dq1 = D->height_centroid_values[k1] - D->height_centroid_values[k];
-
-      // Calculate the gradient between the centroid of triangle k
-      // and that of its neighbour
-      a = dq1 * dx2;
-      b = dq1 * dy2;
-
-      // Calculate provisional edge jumps, to be limited
-      dqv[0] = a * dxv0 + b * dyv0;
-      dqv[1] = a * dxv1 + b * dyv1;
-      dqv[2] = a * dxv2 + b * dyv2;
-
+      compute_dqv_from_gradient(dq1,dx2,dy2, dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dqv);
       // Now limit the jumps
-      if (dq1 >= 0.0)
-      {
-        qmin = 0.0;
-        qmax = dq1;
-      }
-      else
-      {
-        qmin = dq1;
-        qmax = 0.0;
-      }
-
+      compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
       // Limit the gradient
       __limit_gradient(dqv, qmin, qmax, D->beta_w);
-
-      D->height_edge_values[k3 + 0] = D->height_centroid_values[k] + dqv[0];
-      D->height_edge_values[k3 + 1] = D->height_centroid_values[k] + dqv[1];
-      D->height_edge_values[k3 + 2] = D->height_centroid_values[k] + dqv[2];
+      for(int i = 0; i < 3; i++)
+      {
+        D->height_edge_values[k3 + i] = D->height_centroid_values[k] + dqv[i];
+      }
 
       //-----------------------------------
       // xmomentum
@@ -1729,35 +1714,15 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
 
       // Compute differentials
       dq1 = D->xmom_centroid_values[k1] - D->xmom_centroid_values[k];
-
-      // Calculate the gradient between the centroid of triangle k
-      // and that of its neighbour
-      a = dq1 * dx2;
-      b = dq1 * dy2;
-
-      // Calculate provisional edge jumps, to be limited
-      dqv[0] = a * dxv0 + b * dyv0;
-      dqv[1] = a * dxv1 + b * dyv1;
-      dqv[2] = a * dxv2 + b * dyv2;
-
+      compute_dqv_from_gradient(dq1,dx2,dy2, dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dqv);
       // Now limit the jumps
-      if (dq1 >= 0.0)
-      {
-        qmin = 0.0;
-        qmax = dq1;
-      }
-      else
-      {
-        qmin = dq1;
-        qmax = 0.0;
-      }
-
+      compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
       // Limit the gradient
       __limit_gradient(dqv, qmin, qmax, D->beta_w);
-
-      D->xmom_edge_values[k3 + 0] = D->xmom_centroid_values[k] + dqv[0];
-      D->xmom_edge_values[k3 + 1] = D->xmom_centroid_values[k] + dqv[1];
-      D->xmom_edge_values[k3 + 2] = D->xmom_centroid_values[k] + dqv[2];
+      for(int i = 0; i < 3; i++)
+      {
+        D->xmom_edge_values[k3 + i] = D->xmom_centroid_values[k] + dqv[i];
+      }
 
       //-----------------------------------
       // ymomentum
@@ -1765,38 +1730,17 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
 
       // Compute differentials
       dq1 = D->ymom_centroid_values[k1] - D->ymom_centroid_values[k];
-
-      // Calculate the gradient between the centroid of triangle k
-      // and that of its neighbour
-      a = dq1 * dx2;
-      b = dq1 * dy2;
-
-      // Calculate provisional edge jumps, to be limited
-      dqv[0] = a * dxv0 + b * dyv0;
-      dqv[1] = a * dxv1 + b * dyv1;
-      dqv[2] = a * dxv2 + b * dyv2;
-
+      compute_dqv_from_gradient(dq1,dx2,dy2, dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dqv);
       // Now limit the jumps
-      if (dq1 >= 0.0)
-      {
-        qmin = 0.0;
-        qmax = dq1;
-      }
-      else
-      {
-        qmin = dq1;
-        qmax = 0.0;
-      }
-
+      compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
       // Limit the gradient
       __limit_gradient(dqv, qmin, qmax, D->beta_w);
-
-      D->ymom_edge_values[k3 + 0] = D->ymom_centroid_values[k] + dqv[0];
-      D->ymom_edge_values[k3 + 1] = D->ymom_centroid_values[k] + dqv[1];
-      D->ymom_edge_values[k3 + 2] = D->ymom_centroid_values[k] + dqv[2];
+      for(int i = 0; i < 3; i++)
+      {
+        D->ymom_edge_values[k3 + i] = D->ymom_centroid_values[k] + dqv[i];
+      }
 
     } // else [number_of_boundaries]
-
 
     // If needed, convert from velocity to momenta
     if (D->extrapolate_velocity_second_order == 1)
@@ -1840,7 +1784,7 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
     D->bed_vertex_values[k3 + 1] = D->bed_edge_values[k3 + 0] + D->bed_edge_values[k3 + 2] - D->bed_edge_values[k3 + 1];
     D->bed_vertex_values[k3 + 2] = D->bed_edge_values[k3 + 0] + D->bed_edge_values[k3 + 1] - D->bed_edge_values[k3 + 2];
 
-  } // for k=0 to number_of_elements-1 
+  } // for k=0 to number_of_elements-1
 
 // Fix xmom and ymom centroid values
 #pragma omp parallel for simd schedule(static) firstprivate(extrapolate_velocity_second_order)
@@ -1852,8 +1796,6 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
       D->xmom_centroid_values[k] = D->x_centroid_work[k];
       D->ymom_centroid_values[k] = D->y_centroid_work[k];
     }
-
-
   }
 
   return 0;
@@ -1967,5 +1909,3 @@ int64_t _openmp_fix_negative_cells(struct domain *D)
   }
   return num_negative_cells;
 }
-
-
