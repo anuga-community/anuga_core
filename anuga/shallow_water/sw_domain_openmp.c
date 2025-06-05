@@ -31,6 +31,8 @@
 #include "sw_domain.h"
 
 const double pi = 3.14159265358979;
+
+
 // FIXME: Perhaps use the epsilon used elsewhere.
 static const double TINY = 1.0e-100; // to avoid machine accuracy problems.
 
@@ -667,7 +669,7 @@ double _openmp_compute_fluxes_central(struct domain *D,
         edge_timestep = D->radii[k] * 1.0 / fmax(max_speed_local, epsilon);
 
         // Update the timestep
-        if ((D->tri_full_flag[k] == 1))
+        if (D->tri_full_flag[k] == 1)
         {
           if (max_speed_local > epsilon)
           {
@@ -1004,7 +1006,7 @@ double _compute_fluxes_central_parallel_data_flow(struct domain *D, double times
         D->edge_timestep[ki] = D->radii[k] * tmp;
 
         // Update the timestep
-        if ((D->tri_full_flag[k] == 1))
+        if (D->tri_full_flag[k] == 1)
         {
 
           speed_max_last = fmax(speed_max_last, max_speed_local);
