@@ -1261,37 +1261,45 @@ static inline void compute_qmin_qmax_from_dq1(const double dq1, double *qmin, do
   }
 }
 
-static inline void update_centroid_values(struct domain * __restrict D, const int number_of_elements, const double minimum_allowed_height, const int extrapolate_velocity_second_order)
+static inline void update_centroid_values(struct domain * __restrict D,
+                                          const int number_of_elements,
+                                          const double minimum_allowed_height,
+                                          const int extrapolate_velocity_second_order)
 {
-#pragma omp parallel for simd shared(D) default(none) schedule(static) firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
-  for (int k = 0; k < number_of_elements; k++)
+#pragma omp parallel for simd default(none) shared(D) schedule(static) \
+    firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
+  for (int k = 0; k < number_of_elements; ++k)
   {
-    double dk_local = fmax(D->stage_centroid_values[k] - D->bed_centroid_values[k], 0.0);
+    double stage = D->stage_centroid_values[k];
+    double bed = D->bed_centroid_values[k];
+    double xmom = D->xmom_centroid_values[k];
+    double ymom = D->ymom_centroid_values[k];
 
+    double dk_local = fmax(stage - bed, 0.0);
     D->height_centroid_values[k] = dk_local;
-    D->x_centroid_work[k] = 0.0;
-    D->y_centroid_work[k] = 0.0;
 
-    if (dk_local <= minimum_allowed_height)
-    {
-      D->x_centroid_work[k] = 0.0;
-      D->xmom_centroid_values[k] = 0.0;
-      D->y_centroid_work[k] = 0.0;
-      D->ymom_centroid_values[k] = 0.0;
+    int is_dry = (dk_local <= minimum_allowed_height);
+    int extrapolate = (extrapolate_velocity_second_order == 1) & (dk_local > minimum_allowed_height);
+
+    // Pre-zero everything
+    double xwork = 0.0;
+    double ywork = 0.0;
+    double xmom_out = is_dry ? 0.0 : xmom;
+    double ymom_out = is_dry ? 0.0 : ymom;
+
+    // Store if extrapolating
+    if (extrapolate) {
+      double inv_dk = 1.0 / dk_local;
+      xwork = xmom_out;
+      xmom_out *= inv_dk;
+      ywork = ymom_out;
+      ymom_out *= inv_dk;
     }
 
-    if (extrapolate_velocity_second_order == 1)
-    {
-      if (dk_local > minimum_allowed_height)
-      {
-        double dk_inv_local = 1.0 / dk_local;
-        D->x_centroid_work[k] = D->xmom_centroid_values[k];
-        D->xmom_centroid_values[k] = D->xmom_centroid_values[k] * dk_inv_local;
-
-        D->y_centroid_work[k] = D->ymom_centroid_values[k];
-        D->ymom_centroid_values[k] = D->ymom_centroid_values[k] * dk_inv_local;
-      }
-    }
+    D->x_centroid_work[k] = xwork;
+    D->y_centroid_work[k] = ywork;
+    D->xmom_centroid_values[k] = xmom_out;
+    D->ymom_centroid_values[k] = ymom_out;
   }
 }
 
@@ -1504,12 +1512,23 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain * __restrict D)
   double c_tmp = 1.0 / (a_tmp - b_tmp);
   double d_tmp = 1.0 - (c_tmp * a_tmp);
 
-
   update_centroid_values(D, number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order);
 
   // Begin extrapolation routine
 
-#pragma omp parallel for simd default(none) shared(D) schedule(static) \
+  // Begin extrapolation routine
+  // this will be a problem, need to declare a scratch space outside of this, maybe in the domain to use and avoid mallocs here
+  double dxv0_array[number_of_elements], dxv1_array[number_of_elements], dxv2_array[number_of_elements];
+double dyv0_array[number_of_elements], dyv1_array[number_of_elements], dyv2_array[number_of_elements];
+double dx1_array[number_of_elements], dx2_array[number_of_elements];
+double dy1_array[number_of_elements], dy2_array[number_of_elements];
+double area2_array[number_of_elements];
+
+
+#pragma omp parallel for simd default(none)  schedule(static) \
+    shared(D, dxv0_array, dxv1_array, dxv2_array, \
+           dyv0_array, dyv1_array, dyv2_array, \
+           dx1_array, dx2_array, dy1_array, dy2_array, area2_array) \
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order, c_tmp, d_tmp)
   for (int k = 0; k < number_of_elements; k++)
   {
@@ -1530,7 +1549,7 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain * __restrict D)
     const double x = D->centroid_coordinates[k2 + 0];
     const double y = D->centroid_coordinates[k2 + 1];
 
-
+    // needed in the boundaries section
     double dxv0, dxv1, dxv2;
     double dyv0, dyv1, dyv2;
     compute_edge_diffs(x, y,
@@ -1539,19 +1558,17 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain * __restrict D)
                         xv2, yv2,
                         &dxv0, &dxv1, &dxv2,
                         &dyv0, &dyv1, &dyv2);
-
-    // If no boundaries, auxiliary triangle is formed
-    // from the centroids of the three neighbours
-    // If one boundary, auxiliary triangle is formed
-    // from this centroid and its two neighbours
+    dxv0_array[k] = dxv0;
+    dxv1_array[k] = dxv1;
+    dxv2_array[k] = dxv2;
+    dyv0_array[k] = dyv0;
+    dyv1_array[k] = dyv1;
+    dyv2_array[k] = dyv2;
 
     int k0 = D->surrogate_neighbours[k3 + 0];
     int k1 = D->surrogate_neighbours[k3 + 1];
-    // why is this redefined? should this be a another variable?
     k2 = D->surrogate_neighbours[k3 + 2];
 
-    // Get the auxiliary triangle's vertex coordinates
-    // (normally the centroids of neighbouring triangles)
     int coord_index = 2 * k0;
     double x0 = D->centroid_coordinates[coord_index + 0];
     double y0 = D->centroid_coordinates[coord_index + 1];
@@ -1563,30 +1580,49 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain * __restrict D)
     coord_index = 2 * k2;
     double x2 = D->centroid_coordinates[coord_index + 0];
     double y2 = D->centroid_coordinates[coord_index + 1];
-
-    // Store x- and y- differentials for the vertices
-    // of the auxiliary triangle
+    
+    // needed in the boundaries section
     double dx1 = x1 - x0;
     double dx2 = x2 - x0;
     double dy1 = y1 - y0;
     double dy2 = y2 - y0;
-
-    // Calculate 2*area of the auxiliary triangle
-    // The triangle is guaranteed to be counter-clockwise
+    dx1_array[k] = dx1;
+    dx2_array[k] = dx2;
+    dy1_array[k] = dy1;
+    dy2_array[k] = dy2;
+    // needed in the boundaries section
     double area2 = dy2 * dx1 - dy1 * dx2;
+    area2_array[k] = area2;
 
-    if (((D->height_centroid_values[k0] < minimum_allowed_height) | (k0 == k)) &
-        ((D->height_centroid_values[k1] < minimum_allowed_height) | (k1 == k)) &
-        ((D->height_centroid_values[k2] < minimum_allowed_height) | (k2 == k)))
-    {
-      // printf("Surrounded by dry cells\n");
-      D->x_centroid_work[k] = 0.;
-      D->xmom_centroid_values[k] = 0.;
-      D->y_centroid_work[k] = 0.;
-      D->ymom_centroid_values[k] = 0.;
-    }
+  const int dry =
+    ((D->height_centroid_values[k0] < minimum_allowed_height) | (k0 == k)) &
+    ((D->height_centroid_values[k1] < minimum_allowed_height) | (k1 == k)) &
+    ((D->height_centroid_values[k2] < minimum_allowed_height) | (k2 == k));
 
-    // Limit the edge values
+  if (dry) {
+    D->x_centroid_work[k] = 0.0;
+    D->xmom_centroid_values[k] = 0.0;
+    D->y_centroid_work[k] = 0.0;
+    D->ymom_centroid_values[k] = 0.0;
+  }
+
+  }
+
+#pragma omp parallel for simd default(none) schedule(static) \
+    shared(D, dxv0_array, dxv1_array, dxv2_array, \
+           dyv0_array, dyv1_array, dyv2_array, \
+           dx1_array, dx2_array, dy1_array, dy2_array, area2_array) \
+    firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order, c_tmp, d_tmp)
+  for (int k = 0; k < number_of_elements; k++)
+  {
+    // // Useful indices
+    int k2 = k * 2;
+    int k3 = k * 3;
+
+    int k0 = D->surrogate_neighbours[k3 + 0];
+    int k1 = D->surrogate_neighbours[k3 + 1];
+    k2 = D->surrogate_neighbours[k3 + 2];
+
     if (D->number_of_boundaries[k] == 3)
     {
       // Very unlikely
@@ -1600,30 +1636,30 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain * __restrict D)
       // 'Typical case'
       //==============================================
       double hfactor, inv_area2;
-      compute_hfactor_and_inv_area(D, k, k0, k1, k2, area2, c_tmp, d_tmp, &hfactor, &inv_area2);
+      compute_hfactor_and_inv_area(D, k, k0, k1, k2, area2_array[k], c_tmp, d_tmp, &hfactor, &inv_area2);
       // stage
       interpolate_edges_with_beta(D->stage_centroid_values, D->stage_edge_values,
                                   k, k0, k1, k2, k3,
-                                  dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                                  dx1, dx2, dy1, dy2, inv_area2,
+                                  dxv0_array[k], dxv1_array[k], dxv2_array[k], dyv0_array[k], dyv1_array[k], dyv2_array[k],
+                                  dx1_array[k], dx2_array[k], dy1_array[k], dy2_array[k], inv_area2,
                                   D->beta_w_dry, D->beta_w, hfactor);
       // height
       interpolate_edges_with_beta(D->height_centroid_values, D->height_edge_values,
                                   k, k0, k1, k2, k3,
-                                  dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                                  dx1, dx2, dy1, dy2, inv_area2,
+                                  dxv0_array[k], dxv1_array[k], dxv2_array[k], dyv0_array[k], dyv1_array[k], dyv2_array[k],
+                                  dx1_array[k], dx2_array[k], dy1_array[k], dy2_array[k], inv_area2,
                                   D->beta_w_dry, D->beta_w, hfactor);
       // xmom
       interpolate_edges_with_beta(D->xmom_centroid_values, D->xmom_edge_values,
                                   k, k0, k1, k2, k3,
-                                  dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                                  dx1, dx2, dy1, dy2, inv_area2,
+                                  dxv0_array[k], dxv1_array[k], dxv2_array[k], dyv0_array[k], dyv1_array[k], dyv2_array[k],
+                                  dx1_array[k], dx2_array[k], dy1_array[k], dy2_array[k], inv_area2,
                                   D->beta_uh_dry, D->beta_uh, hfactor);
       // ymom
       interpolate_edges_with_beta(D->ymom_centroid_values, D->ymom_edge_values,
                                   k, k0, k1, k2, k3,
-                                  dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                                  dx1, dx2, dy1, dy2, inv_area2,
+                                  dxv0_array[k], dxv1_array[k], dxv2_array[k], dyv0_array[k], dyv1_array[k], dyv2_array[k],
+                                  dx1_array[k], dx2_array[k], dy1_array[k], dy2_array[k], inv_area2,
                                   D->beta_vh_dry, D->beta_vh, hfactor);
 
     } // End number_of_boundaries <=1
@@ -1635,27 +1671,27 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain * __restrict D)
       // One internal neighbour and gradient is in direction of the neighbour's centroid
       // Find the only internal neighbour (k1?)
       k1 = get_internal_neighbour(D, k);
-      compute_gradient_projection_between_centroids(D, k, k1, &dx2, &dy2);
+      compute_gradient_projection_between_centroids(D, k, k1, &dx2_array[k], &dy2_array[k]);
       // stage
       extrapolate_gradient_limited(D->stage_centroid_values, D->stage_edge_values,
-                                   k, k1, k3, dx2, dy2,
-                                   dxv0, dxv1, dxv2,
-                                   dyv0, dyv1, dyv2, D->beta_w);
+                                   k, k1, k3, dx2_array[k], dy2_array[k],
+                                   dxv0_array[k], dxv1_array[k], dxv2_array[k],
+                                   dyv0_array[k], dyv1_array[k], dyv2_array[k], D->beta_w);
       // height
       extrapolate_gradient_limited(D->height_centroid_values, D->height_edge_values,
-                                   k, k1, k3, dx2, dy2,
-                                   dxv0, dxv1, dxv2,
-                                   dyv0, dyv1, dyv2, D->beta_w);
+                                   k, k1, k3, dx2_array[k], dy2_array[k],
+                                   dxv0_array[k], dxv1_array[k], dxv2_array[k],
+                                   dyv0_array[k], dyv1_array[k], dyv2_array[k], D->beta_w);
       // xmom
       extrapolate_gradient_limited(D->xmom_centroid_values, D->xmom_edge_values,
-                                   k, k1, k3, dx2, dy2,
-                                   dxv0, dxv1, dxv2,
-                                   dyv0, dyv1, dyv2, D->beta_w);
+                                   k, k1, k3, dx2_array[k], dy2_array[k],
+                                   dxv0_array[k], dxv1_array[k], dxv2_array[k],
+                                   dyv0_array[k], dyv1_array[k], dyv2_array[k], D->beta_w);
       // ymom
       extrapolate_gradient_limited(D->ymom_centroid_values, D->ymom_edge_values,
-                                   k, k1, k3, dx2, dy2,
-                                   dxv0, dxv1, dxv2,
-                                   dyv0, dyv1, dyv2, D->beta_w);
+                                   k, k1, k3, dx2_array[k], dy2_array[k],
+                                   dxv0_array[k], dxv1_array[k], dxv2_array[k],
+                                   dyv0_array[k], dyv1_array[k], dyv2_array[k], D->beta_w);
 
     } // else [number_of_boundaries]
 
@@ -1681,8 +1717,8 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain * __restrict D)
     reconstruct_vertex_values(D->xmom_edge_values, D->xmom_vertex_values, k3);
     reconstruct_vertex_values(D->ymom_edge_values, D->ymom_vertex_values, k3);
     reconstruct_vertex_values(D->bed_edge_values, D->bed_vertex_values, k3);
-
-  } // for k=0 to number_of_elements-1
+  }
+   // for k=0 to number_of_elements-1
 
 // Fix xmom and ymom centroid values
 #pragma omp parallel for simd schedule(static) firstprivate(extrapolate_velocity_second_order)
