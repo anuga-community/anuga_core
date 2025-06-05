@@ -452,6 +452,8 @@ double __openmp__adjust_edgeflux_with_weir(double *edgeflux0, double *edgeflux1,
 }
 
 // Computational function for flux computation
+
+
 double _openmp_compute_fluxes_central(struct domain *D,
                                       double timestep)
 {
@@ -1170,6 +1172,7 @@ static inline int64_t __find_qmin_and_qmax_dq1_dq2(const double dq0, const doubl
   return 0;
 }
 
+#pragma omp declare simd
 static inline int64_t __limit_gradient(double *dqv, double qmin, double qmax, const double beta_w)
 {
   // Given provisional jumps dqv from the FV triangle centroid to its
@@ -1207,6 +1210,7 @@ static inline int64_t __limit_gradient(double *dqv, double qmin, double qmax, co
   return 0;
 }
 
+#pragma omp declare simd
 static inline void __calc_edge_values_with_gradient(
     const double cv_k, const double cv_k0, const double cv_k1, const double cv_k2,
     const double dxv0, const double dxv1, const double dxv2, const double dyv0, const double dyv1, const double dyv2,
@@ -1234,6 +1238,7 @@ static inline void __calc_edge_values_with_gradient(
   edge_values[2] = cv_k + dqv[2];
 }
 
+#pragma omp declare simd
 static inline void __set_constant_edge_values(const double cv_k, double *edge_values)
 {
   edge_values[0] = cv_k;
@@ -1241,6 +1246,7 @@ static inline void __set_constant_edge_values(const double cv_k, double *edge_va
   edge_values[2] = cv_k;
 }
 
+#pragma omp declare simd
 static inline void compute_qmin_qmax_from_dq1(const double dq1, double *qmin, double *qmax)
 {
   if (dq1 >= 0.0)
@@ -1289,6 +1295,7 @@ static inline void update_centroid_values(struct domain *D, const int number_of_
   }
 }
 
+#pragma omp declare simd
 static inline void set_all_edge_values_from_centroid(struct domain *D, const int k)
 {
 
@@ -1308,6 +1315,7 @@ static inline void set_all_edge_values_from_centroid(struct domain *D, const int
   }
 }
 
+#pragma omp declare simd
 static inline int get_internal_neighbour(const struct domain *D, const int k)
 {
   for (int i = 0; i < 3; i++)
@@ -1321,6 +1329,7 @@ static inline int get_internal_neighbour(const struct domain *D, const int k)
   return -1; // Indicates failure
 }
 
+#pragma omp declare simd
 static inline void compute_dqv_from_gradient(const double dq1, const double dx2, const double dy2,
                                              const double dxv0, const double dxv1, const double dxv2,
                                              const double dyv0, const double dyv1, const double dyv2,
@@ -1337,6 +1346,7 @@ static inline void compute_dqv_from_gradient(const double dq1, const double dx2,
 }
 
 
+#pragma omp declare simd
 static inline void compute_gradient_projection_between_centroids(
     const struct domain *D, const int k, const int k1,
     double *dx2, double *dy2)
@@ -1362,6 +1372,7 @@ static inline void compute_gradient_projection_between_centroids(
   }
 }
 
+#pragma omp declare simd
 static inline void extrapolate_gradient_limited(
     const double *centroid_values, double *edge_values,
     const int k, const int k1, const int k3,
@@ -1388,9 +1399,10 @@ static inline void extrapolate_gradient_limited(
   }
 }
 
+#pragma omp declare simd
 static inline void interpolate_edges_with_beta(
-    const double *centroid_values,
-    double *edge_values,
+    const double * __restrict centroid_values,
+    double * __restrict edge_values,
     const int k, const int k0, const int k1, const int k2, const int k3,
     const double dxv0, const double dxv1, const double dxv2,
     const double dyv0, const double dyv1, const double dyv2,
@@ -1425,8 +1437,9 @@ static inline void interpolate_edges_with_beta(
   }
 }
 
+#pragma omp declare simd
 static inline void compute_hfactor_and_inv_area(
-    const struct domain *D,
+    const struct domain * __restrict D,
     const int k, const int k0, const int k1, const int k2,
     const double area2, const double c_tmp, const double d_tmp,
     double *hfactor, double *inv_area2)
@@ -1452,16 +1465,15 @@ static inline void compute_hfactor_and_inv_area(
   *inv_area2 = 1.0 / area2;
 }
 
+#pragma omp declare simd
 static inline void reconstruct_vertex_values(double *edge_values, double *vertex_values, const int k3)
 {
-  for (int i = 0; i < 3; i++)
-  {
-    vertex_values[k3 + i] = edge_values[k3 + (i + 1) % 3] +
-                            edge_values[k3 + (i + 2) % 3] -
-                            edge_values[k3 + i];
-  }
+  vertex_values[k3 + 0] = edge_values[k3 + 1] + edge_values[k3 + 2] - edge_values[k3 + 0];
+  vertex_values[k3 + 1] = edge_values[k3 + 2] + edge_values[k3 + 0] - edge_values[k3 + 1];
+  vertex_values[k3 + 2] = edge_values[k3 + 0] + edge_values[k3 + 1] - edge_values[k3 + 2];
 }
 
+#pragma omp declare simd
 static inline void compute_edge_diffs(const double x, const double y,
                                       const double xv0, const double yv0,
                                       const double xv1, const double yv1,
