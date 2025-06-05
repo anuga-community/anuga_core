@@ -1173,7 +1173,7 @@ static inline int64_t __find_qmin_and_qmax_dq1_dq2(const double dq0, const doubl
 }
 
 #pragma omp declare simd
-static inline int64_t __limit_gradient(double *dqv, double qmin, double qmax, const double beta_w)
+static inline int64_t __limit_gradient(double * __restrict dqv, double qmin, double qmax, const double beta_w)
 {
   // Given provisional jumps dqv from the FV triangle centroid to its
   // vertices/edges, and jumps qmin (qmax) between the centroid of the FV
@@ -1215,7 +1215,7 @@ static inline void __calc_edge_values_with_gradient(
     const double cv_k, const double cv_k0, const double cv_k1, const double cv_k2,
     const double dxv0, const double dxv1, const double dxv2, const double dyv0, const double dyv1, const double dyv2,
     const double dx1, const double dx2, const double dy1, const double dy2, const double inv_area2,
-    const double beta_tmp, double *edge_values)
+    const double beta_tmp, double * __restrict edge_values)
 {
   double dqv[3];
   double dq0 = cv_k0 - cv_k;
@@ -1261,7 +1261,7 @@ static inline void compute_qmin_qmax_from_dq1(const double dq1, double *qmin, do
   }
 }
 
-static inline void update_centroid_values(struct domain *D, const int number_of_elements, const double minimum_allowed_height, const int extrapolate_velocity_second_order)
+static inline void update_centroid_values(struct domain * __restrict D, const int number_of_elements, const double minimum_allowed_height, const int extrapolate_velocity_second_order)
 {
 #pragma omp parallel for simd shared(D) default(none) schedule(static) firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
   for (int k = 0; k < number_of_elements; k++)
@@ -1296,7 +1296,7 @@ static inline void update_centroid_values(struct domain *D, const int number_of_
 }
 
 #pragma omp declare simd
-static inline void set_all_edge_values_from_centroid(struct domain *D, const int k)
+static inline void set_all_edge_values_from_centroid(struct domain * __restrict D, const int k)
 {
 
   const double stage = D->stage_centroid_values[k];
@@ -1316,7 +1316,7 @@ static inline void set_all_edge_values_from_centroid(struct domain *D, const int
 }
 
 #pragma omp declare simd
-static inline int get_internal_neighbour(const struct domain *D, const int k)
+static inline int get_internal_neighbour(const struct domain * __restrict D, const int k)
 {
   for (int i = 0; i < 3; i++)
   {
@@ -1348,8 +1348,8 @@ static inline void compute_dqv_from_gradient(const double dq1, const double dx2,
 
 #pragma omp declare simd
 static inline void compute_gradient_projection_between_centroids(
-    const struct domain *D, const int k, const int k1,
-    double *dx2, double *dy2)
+    const struct domain * __restrict D, const int k, const int k1,
+    double * __restrict dx2, double * __restrict dy2)
 {
   double x = D->centroid_coordinates[2 * k + 0];
   double y = D->centroid_coordinates[2 * k + 1];
@@ -1374,7 +1374,7 @@ static inline void compute_gradient_projection_between_centroids(
 
 #pragma omp declare simd
 static inline void extrapolate_gradient_limited(
-    const double *centroid_values, double *edge_values,
+    const double * __restrict centroid_values, double * __restrict edge_values,
     const int k, const int k1, const int k3,
     const double dx2, const double dy2,
     const double dxv0, const double dxv1, const double dxv2,
@@ -1442,7 +1442,7 @@ static inline void compute_hfactor_and_inv_area(
     const struct domain * __restrict D,
     const int k, const int k0, const int k1, const int k2,
     const double area2, const double c_tmp, const double d_tmp,
-    double *hfactor, double *inv_area2)
+    double * __restrict hfactor, double * __restrict inv_area2)
 {
   double hc = D->height_centroid_values[k];
   double h0 = D->height_centroid_values[k0];
@@ -1466,7 +1466,7 @@ static inline void compute_hfactor_and_inv_area(
 }
 
 #pragma omp declare simd
-static inline void reconstruct_vertex_values(double *edge_values, double *vertex_values, const int k3)
+static inline void reconstruct_vertex_values(double * __restrict edge_values, double * __restrict vertex_values, const int k3)
 {
   vertex_values[k3 + 0] = edge_values[k3 + 1] + edge_values[k3 + 2] - edge_values[k3 + 0];
   vertex_values[k3 + 1] = edge_values[k3 + 2] + edge_values[k3 + 0] - edge_values[k3 + 1];
@@ -1478,8 +1478,8 @@ static inline void compute_edge_diffs(const double x, const double y,
                                       const double xv0, const double yv0,
                                       const double xv1, const double yv1,
                                       const double xv2, const double yv2,
-                                      double *dxv0, double *dxv1, double *dxv2,
-                                      double *dyv0, double *dyv1, double *dyv2)
+                                      double * __restrict dxv0, double * __restrict dxv1, double * __restrict dxv2,
+                                      double * __restrict dyv0, double * __restrict dyv1, double * __restrict dyv2)
 {
   *dxv0 = xv0 - x;
   *dxv1 = xv1 - x;
@@ -1490,7 +1490,7 @@ static inline void compute_edge_diffs(const double x, const double y,
 }
 
 // Computational routine
-int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *D)
+int64_t _openmp_extrapolate_second_order_edge_sw(struct domain * __restrict D)
 {
 
   double minimum_allowed_height = D->minimum_allowed_height;
