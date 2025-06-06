@@ -19,7 +19,15 @@ import socket
 env = os.environ.copy()
 
 hostname = socket.gethostname()
-anuga_env = 'anuga_env_3.10'
+
+# Define the Conda environment name
+conda_prefix = os.environ.get("CONDA_PREFIX")
+if conda_prefix:
+    anuga_env = os.path.basename(conda_prefix)
+    print(f"Conda environment name: {anuga_env}")
+else:
+    print("Not running inside a conda environment.")
+
 openmp_threads = [1, 2, 4, 8, 16, 32, 48]
 openmp_threads = [4,6]
 
