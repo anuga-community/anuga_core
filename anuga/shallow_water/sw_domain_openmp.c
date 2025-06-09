@@ -1704,24 +1704,26 @@ void _openmp_manning_friction_flat_semi_implicit(struct domain *D)
 {
 
   int64_t k;
-  double S, h, z, abs_mom, eta;
   const double seven_thirds = 7.0 / 3.0;
 
   int64_t N = D->number_of_elements;
   double eps = D->minimum_allowed_height;
   double g = D->g;
 
+ 
+#pragma omp parallel for simd default(none) shared(D) schedule(static) \
+        firstprivate(N, eps, g, seven_thirds)
 
-#pragma omp parallel for private(k, z, h, S) firstprivate(eps, g, seven_thirds)
   for (k = 0; k < N; k++)
   {
+    double S = 0.0;
+    double h;
     double uh = D->xmom_centroid_values[k];
     double vh = D->ymom_centroid_values[k];
-    abs_mom = sqrt( uh*uh + vh*vh );
 
-    S = 0.0;
+    double abs_mom = sqrt( uh*uh + vh*vh );
+    double eta = D->friction_centroid_values[k];
 
-    eta = D->friction_centroid_values[k];
     if (eta > 1.0e-15)
     {
       h = D->stage_centroid_values[k] - D->bed_centroid_values[k];
