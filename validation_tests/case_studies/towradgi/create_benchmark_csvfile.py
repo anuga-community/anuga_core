@@ -17,6 +17,13 @@ def create_benchmark_csvfile(pstat_basename, openmp_threads, verbose=True):
     Args:
         pstat_basename (str): The base name for the pstat files.
         openmp_threads (list): List of OpenMP thread counts to analyze.
+        verbose (bool): If True, prints the DataFrame to the console.
+
+    Example usage:
+        create_benchmark_csvfile('profile_example', [1, 2, 4, 8], verbose=True)
+        This will create a CSV file named 'profile_example.csv' with the benchmark results.
+        The verbose flag will print the DataFrame to the console.
+    Note: Ensure that the pstat files are in the same directory as this script or provide the full path.
     """
 
     output_csv = pstat_basename+'.csv'
@@ -107,3 +114,19 @@ def create_benchmark_csvfile(pstat_basename, openmp_threads, verbose=True):
         print(80 * '=')
         print('')
         print(df.to_string(index=False))  # Prints the entire DataFrame without row numbers
+
+if __name__ == '__main__':
+    import sys
+
+    if len(sys.argv) != 3:
+        print("Usage: python create_benchmark_csvfile.py <pstat_basename> <openmp_threads>")
+        sys.exit(1)
+
+    pstat_basename = sys.argv[1]
+    openmp_threads = list(map(int, sys.argv[2].split(',')))
+
+    create_benchmark_csvfile(pstat_basename, openmp_threads, verbose=True)
+    # Example usage:
+    # python create_benchmark_csvfile.py pstat_basename 1,2,4,8
+    # This will create a CSV file named 'pstat_basename.csv' with the benchmark results.
+
