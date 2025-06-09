@@ -329,8 +329,8 @@ class Domain(Generic_Domain):
         # Gravity is now incorporated in
         # compute_fluxes routine
         #-------------------------------
-        from .friction import manning_friction_implicit
-        self.forcing_terms.append(manning_friction_implicit)
+        from .friction import manning_friction_semi_implicit
+        self.forcing_terms.append(manning_friction_semi_implicit)
 
 
         #-------------------------------
@@ -1307,22 +1307,22 @@ class Domain(Generic_Domain):
         return self.flow_algorithm
 
 
-    def set_gravity_method(self):
-        """Gravity method is determined by the compute_fluxes_method
-        This is now not used, as gravity is combine in the compute_fluxes method
-        """
+    # def set_gravity_method(self):
+    #     """Gravity method is determined by the compute_fluxes_method
+    #     This is now not used, as gravity is combine in the compute_fluxes method
+    #     """
 
-        if  self.get_compute_fluxes_method() == 'original':
-            self.forcing_terms[0] = gravity
+    #     if  self.get_compute_fluxes_method() == 'original':
+    #         self.forcing_terms[0] = gravity
 
-        elif self.get_compute_fluxes_method() == 'wb_1':
-            self.forcing_terms[0] = gravity_wb
+    #     elif self.get_compute_fluxes_method() == 'wb_1':
+    #         self.forcing_terms[0] = gravity_wb
 
-        elif self.get_compute_fluxes_method() == 'wb_2':
-            self.forcing_terms[0] = gravity
+    #     elif self.get_compute_fluxes_method() == 'wb_2':
+    #         self.forcing_terms[0] = gravity
 
-        else:
-            raise Exception('undefined compute_fluxes method')
+    #     else:
+    #         raise Exception('undefined compute_fluxes method')
 
     def set_extrapolate_velocity(self, flag=True):
         """ Extrapolation routine uses momentum by default,

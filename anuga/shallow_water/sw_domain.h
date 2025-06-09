@@ -16,14 +16,14 @@ struct domain {
     int64_t    number_of_elements;
     int64_t    boundary_length;
     int64_t    number_of_riverwall_edges;
-    double  epsilon;
-    double  H0;
-    double  g;
+    double     epsilon;
+    double     H0;
+    double     g;
     int64_t    optimise_dry_cells;
-    double  evolve_max_timestep;
+    double     evolve_max_timestep;
     int64_t    extrapolate_velocity_second_order;
-    double  minimum_allowed_height;
-    double  maximum_allowed_speed;
+    double     minimum_allowed_height;
+    double     maximum_allowed_speed;
     int64_t    low_froude;
 
 
@@ -43,22 +43,22 @@ struct domain {
     int64_t*   neighbours;
     int64_t*   neighbour_edges;
     int64_t*   surrogate_neighbours;
-    double* normals;
-    double* edgelengths;
-    double* radii;
-    double* areas;
+    double*    normals;
+    double*    edgelengths;
+    double*    radii;
+    double*    areas;
 
-    int64_t* edge_flux_type;
+    int64_t*   edge_flux_type;
 
     int64_t*   tri_full_flag;
     int64_t*   already_computed_flux;
-    double* max_speed;
+    double*    max_speed;
 
     double* vertex_coordinates;
     double* edge_coordinates;
     double* centroid_coordinates;
 
-    int64_t*   number_of_boundaries;
+    int64_t* number_of_boundaries;
     double* stage_edge_values;
     double* xmom_edge_values;
     double* ymom_edge_values;
@@ -107,9 +107,10 @@ struct domain {
 
     double* stage_semi_implicit_update;
     double* xmom_semi_implicit_update;
-    double* ymom_semi_implicit_update;    
-
+    double* ymom_semi_implicit_update; 
     
+    double* friction_centroid_values;
+
 };
 
 
@@ -242,6 +243,7 @@ int64_t print_domain_struct(struct domain *D) {
     printf("D->stage_semi_implicit_update  %p \n", (void *) D->stage_semi_implicit_update);
     printf("D->xmom_semi_implicit_update   %p \n", (void *) D->xmom_semi_implicit_update);
     printf("D->ymom_semi_implicit_update   %p \n", (void *) D->ymom_semi_implicit_update);
+    printf("D->friction_centroid_values   %p \n", (void *) D->friction_centroid_values);
 
 
     return 0;

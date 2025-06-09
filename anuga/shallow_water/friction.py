@@ -19,31 +19,22 @@ from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a
 # --------------------------------------------------------------------------
 
 
-def manning_friction_implicit(domain):
+def manning_friction_semi_implicit(domain):
     
-    if domain.multiprocessor_mode in [0,1,2,3]:
-        manning_friction_implicit_cpu(domain)
+    if domain.multiprocessor_mode in [0,1]:
+        manning_friction_semi_implicit_cpu(domain)
+    elif domain.multiprocessor_mode in [2,3]:
+        manning_friction_semi_implicit_openmp(domain)
     elif domain.multiprocessor_mode == 4:
-        manning_friction_implicit_gpu(domain)
+        manning_friction_semi_implicit_gpu(domain)
 
 
-
-
-
-def manning_friction_implicit_cpu(domain):
+def manning_friction_semi_implicit_cpu(domain):
     """Apply (Manning) friction to water momentum
-    Wrapper for c version.
-    FIXME SR: Thi whole module should be replaced with a call to the C code
-    in sw_domain_orig_ext.py
     """
 
-    if domain.multiprocessor_mode == 2:
-        from .sw_domain_openmp_ext import manning_friction_flat
-        from .sw_domain_openmp_ext import manning_friction_sloped
-    else:
-        from .sw_domain_orig_ext import manning_friction_flat
-        from .sw_domain_orig_ext import manning_friction_sloped
-
+    from .sw_domain_orig_ext import manning_friction_flat
+    from .sw_domain_orig_ext import manning_friction_sloped
     
     xmom = domain.quantities['xmomentum']
     ymom = domain.quantities['ymomentum']
@@ -73,6 +64,18 @@ def manning_friction_implicit_cpu(domain):
                                 ymom_update)
 
 
+def manning_friction_semi_implicit_openmp(domain):
+    """Apply (Manning) friction to water momentum
+    Wrapper for c version.
+    """
+
+    if domain.use_sloped_mannings:
+        from .sw_domain_openmp_ext import manning_friction_sloped_semi_implicit
+        manning_friction_sloped_semi_implicit(domain)
+
+    else:
+        from .sw_domain_openmp_ext import manning_friction_flat_semi_implicit
+        manning_friction_flat_semi_implicit(domain)
 
 
 def manning_friction_explicit(domain):
@@ -81,8 +84,6 @@ def manning_friction_explicit(domain):
         manning_friction_explicit_cpu(domain)
     elif domain.multiprocessor_mode == 4:
         manning_friction_explicit_gpu(domain)
-
-
 
 
 def manning_friction_explicit_cpu(domain):

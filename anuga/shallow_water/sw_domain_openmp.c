@@ -1699,40 +1699,103 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain * __restrict D)
   return 0;
 }
 
-void _openmp_manning_friction_flat(double g, double eps, int64_t N,
-                                   double *w, double *zv,
-                                   double *uh, double *vh,
-                                   double *eta, double *xmom_update, double *ymom_update)
+
+void _openmp_manning_friction_flat_semi_implicit(struct domain *D)
 {
 
   int64_t k;
-  double S, h, z, abs_mom;
+  double S, h, z, abs_mom, eta;
   const double seven_thirds = 7.0 / 3.0;
+
+  int64_t N = D->number_of_elements;
+  double eps = D->minimum_allowed_height;
+  double g = D->g;
+
 
 #pragma omp parallel for schedule(static) private(k, z, h, S) firstprivate(eps, g, seven_thirds)
   for (k = 0; k < N; k++)
   {
-    abs_mom = sqrt((uh[k] * uh[k] + vh[k] * vh[k]));
+    double uh = D->xmom_centroid_values[k];
+    double vh = D->ymom_centroid_values[k];
+    abs_mom = sqrt( uh*uh + vh*vh );
+
     S = 0.0;
 
-    if (eta[k] > eps)
+    eta = D->friction_centroid_values[k];
+    if (eta > 1.0e-15)
     {
-      z = zv[k];
-      h = w[k] - z;
+      h = D->stage_centroid_values[k] - D->bed_centroid_values[k];
       if (h >= eps)
       {
-        S = -g * eta[k] * eta[k] * abs_mom;
-        S /= pow(h, seven_thirds); // Expensive (on Ole's home computer)
-        // S /= exp((7.0/3.0)*log(h));      //seems to save about 15% over manning_friction
-        // S /= h*h*(1 + h/3.0 - h*h/9.0); //FIXME: Could use a Taylor expansion
+        S = -g * eta * eta * abs_mom;
+        S /= pow(h, seven_thirds); 
+      }
+    }
+    D->xmom_semi_implicit_update[k] += S * D->xmom_centroid_values[k];
+    D->ymom_semi_implicit_update[k] += S * D->ymom_centroid_values[k];
+  }
+}
 
-        // Update momentum
+void _openmp_manning_friction_sloped_semi_implicit(struct domain *D)
+{
+
+  int64_t k, k3, k6;
+  double S, h, z, z0, z1, z2, zs, zx, zy;
+  double x0, y0, x1, y1, x2, y2;
+  const double one_third = 1.0 / 3.0;
+  const double seven_thirds = 7.0 / 3.0;
+
+  int64_t N = D->number_of_elements;
+  double g = D->g;
+  double* w = D->stage_centroid_values;
+  double* uh = D->xmom_centroid_values;
+  double* vh = D->ymom_centroid_values;
+  double* eta = D->friction_centroid_values;
+  double* xmom_update = D->xmom_semi_implicit_update;
+  double* ymom_update = D->ymom_semi_implicit_update;
+
+#pragma omp parallel for schedule(static) private(k, k3, z0, z1, z2, x0, y0, x1, y1, x2, y2, zs, zx, zy, h, S) firstprivate(g, one_third, seven_thirds)
+  for (k = 0; k < N; k++)
+  {
+    S = 0.0;
+    k3 = 3 * k;
+    double* zv = D->bed_vertex_values;
+    // Get bathymetry
+    z0 = zv[k3 + 0];
+    z1 = zv[k3 + 1];
+    z2 = zv[k3 + 2];
+
+    // Compute bed slope
+    k6 = 6 * k; // base index
+
+    double* x = D->vertex_coordinates;
+    x0 = x[k6 + 0];
+    y0 = x[k6 + 1];
+    x1 = x[k6 + 2];
+    y1 = x[k6 + 3];
+    x2 = x[k6 + 4];
+    y2 = x[k6 + 5];
+
+    
+    if (eta[k] > 1.0e-16)
+    {
+      _gradient(x0, y0, x1, y1, x2, y2, z0, z1, z2, &zx, &zy);
+
+      zs = sqrt(1.0 + zx * zx + zy * zy);
+      z = (z0 + z1 + z2) * one_third;
+
+      h = w[k] - z;
+      if (h >= D->minimum_allowed_height)
+      {
+        S = -g * eta[k] * eta[k] * zs * sqrt((uh[k] * uh[k] + vh[k] * vh[k]));
+        S /= pow(h, seven_thirds); 
       }
     }
     xmom_update[k] += S * uh[k];
     ymom_update[k] += S * vh[k];
   }
 }
+
 
 void _openmp_manning_friction_sloped(double g, double eps, int64_t N,
                                      double *x, double *w, double *zv,
@@ -1786,6 +1849,42 @@ void _openmp_manning_friction_sloped(double g, double eps, int64_t N,
   }
 }
 
+
+void _openmp_manning_friction_flat(double g, double eps, int64_t N,
+                                   double *w, double *zv,
+                                   double *uh, double *vh,
+                                   double *eta, double *xmom_update, double *ymom_update)
+{
+
+  int64_t k;
+  double S, h, z, abs_mom;
+  const double seven_thirds = 7.0 / 3.0;
+
+#pragma omp parallel for schedule(static) private(k, z, h, S) firstprivate(eps, g, seven_thirds)
+  for (k = 0; k < N; k++)
+  {
+    abs_mom = sqrt((uh[k] * uh[k] + vh[k] * vh[k]));
+    S = 0.0;
+
+    if (eta[k] > eps)
+    {
+      z = zv[k];
+      h = w[k] - z;
+      if (h >= eps)
+      {
+        S = -g * eta[k] * eta[k] * abs_mom;
+        S /= pow(h, seven_thirds); // Expensive (on Ole's home computer)
+        // S /= exp((7.0/3.0)*log(h));      //seems to save about 15% over manning_friction
+        // S /= h*h*(1 + h/3.0 - h*h/9.0); //FIXME: Could use a Taylor expansion
+
+        // Update momentum
+      }
+    }
+    xmom_update[k] += S * uh[k];
+    ymom_update[k] += S * vh[k];
+  }
+}
+
 // Computational function for flux computation
 int64_t _openmp_fix_negative_cells(struct domain *D)
 {
@@ -1808,87 +1907,6 @@ int64_t _openmp_fix_negative_cells(struct domain *D)
   return num_negative_cells;
 }
 
-int64_t _openmp_update_conserved_quantities_old(struct domain *D, double timestep)
-      {
-	// Update centroid values based on values stored in
-	// explicit_update and semi_implicit_update as well as given timestep
-
-
-	int64_t k;
-	double denominator, x;
-  int64_t N = D->number_of_elements;
-	int64_t err_return = 0;
-  double stage_c, xmom_c, ymom_c;
-
-	// Divide semi_implicit update by conserved quantity
-	#pragma omp parallel for private(k, x) reduction(min:err_return)
-	for (k=0; k<N; k++) {
-
-		// use previous centroid value
-		stage_c = D->stage_centroid_values[k];
-		if (stage_c == 0.0) {
-			D->stage_semi_implicit_update[k] = 0.0;
-		} else {
-			D->stage_semi_implicit_update[k] /= stage_c;
-		}
-
-    xmom_c = D->xmom_centroid_values[k];
-		if (xmom_c == 0.0) {
-			D->xmom_semi_implicit_update[k] = 0.0;
-		} else {
-			D->xmom_semi_implicit_update[k] /= xmom_c;
-		}
-
-    ymom_c = D->ymom_centroid_values[k];
-		if (ymom_c == 0.0) {
-			D->ymom_semi_implicit_update[k] = 0.0;
-		} else {
-			D->ymom_semi_implicit_update[k] /= ymom_c;
-		}
-
-		// Explicit updates
-		D->stage_centroid_values[k] += timestep*D->stage_explicit_update[k];
-    D->xmom_centroid_values[k] += timestep*D->xmom_explicit_update[k];
-    D->ymom_centroid_values[k] += timestep*D->ymom_explicit_update[k];
-
-		// Semi implicit updates
-		denominator = 1.0 - timestep*D->stage_semi_implicit_update[k];
-		if (denominator <= 0.0) {
-			err_return = -1;
-		} else {
-			//Update conserved_quantities from semi implicit updates
-			D->stage_centroid_values[k] /= denominator;
-		}
-
-    denominator = 1.0 - timestep*D->xmom_semi_implicit_update[k];
-		if (denominator <= 0.0) {
-			err_return = -1;
-		} else {
-			//Update conserved_quantities from semi implicit updates
-			D->xmom_centroid_values[k] /= denominator;
-		}
-
-    denominator = 1.0 - timestep*D->ymom_semi_implicit_update[k];
-		if (denominator <= 0.0) {
-			err_return = -1;
-		} else {
-			//Update conserved_quantities from semi implicit updates
-			D->ymom_centroid_values[k] /= denominator;
-		}
-		
-		// Reset semi_implicit_update here ready for next time step
-		D->stage_semi_implicit_update[k] = 0.0;
-    D->xmom_semi_implicit_update[k] = 0.0;
-    D->ymom_semi_implicit_update[k] = 0.0;
-	}
-
-	if (err_return == -1)
-	{
-		return -1;
-	}
-
-	return 0;
-}
 
 int64_t _openmp_update_conserved_quantities(struct domain *D, double timestep)
       {

@@ -90,6 +90,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 		double* stage_semi_implicit_update
 		double* xmom_semi_implicit_update
 		double* ymom_semi_implicit_update
+		double* friction_centroid_values
 
 
 	struct edge:
@@ -100,11 +101,11 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	int64_t _openmp_extrapolate_second_order_edge_sw(domain* D)
 	int64_t _openmp_fix_negative_cells(domain* D)
 	int64_t _openmp_update_conserved_quantities(domain* D, double timestep)
+	void _openmp_manning_friction_flat_semi_implicit(domain *D)
+	void _openmp_manning_friction_sloped_semi_implicit(domain *D)
 	# FIXME SR: Change over to domain* D argument
 	void _openmp_manning_friction_flat(double g, double eps, int64_t N, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom, double* ymom)
 	void _openmp_manning_friction_sloped(double g, double eps, int64_t N, double* x, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom_update, double* ymom_update)
-
-
 
 
 cdef int64_t pointer_flag = 0
@@ -273,6 +274,7 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	ymomentum = quantities["ymomentum"]
 	elevation = quantities["elevation"]
 	height = quantities["height"]
+	friction = quantities["friction"]
 
 	edge_values = stage.edge_values
 	D.stage_edge_values = &edge_values[0,0]
@@ -303,6 +305,13 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 
 	centroid_values = height.centroid_values
 	D.height_centroid_values = &centroid_values[0]
+
+	centroid_values = friction.centroid_values
+	D.friction_centroid_values = &centroid_values[0]	
+
+	#------------------------------------------------------
+	# Vertex values
+	#------------------------------------------------------
 
 	vertex_values = stage.vertex_values
 	D.stage_vertex_values = &vertex_values[0,0]
@@ -347,7 +356,9 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	D.xmom_semi_implicit_update = &semi_implicit_update[0]
 
 	semi_implicit_update = ymomentum.semi_implicit_update
-	D.ymom_semi_implicit_update = &semi_implicit_update[0]	
+	D.ymom_semi_implicit_update = &semi_implicit_update[0]
+
+
 
 	#------------------------------------------------------
 	# Riverwall structures
@@ -428,6 +439,26 @@ def protect_new(object domain_object):
 def compute_flux_update_frequency(object domain_object, double timestep):
 
 	pass
+
+def manning_friction_flat_semi_implicit(object domain_object):
+	
+	cdef domain D
+
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+
+	with nogil:
+		_openmp_manning_friction_flat_semi_implicit(&D)
+
+def manning_friction_sloped_semi_implicit(object domain_object):
+	
+	cdef domain D
+
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+
+	with nogil:
+		_openmp_manning_friction_sloped_semi_implicit(&D)
 
 
 def manning_friction_flat(double g, double eps,
