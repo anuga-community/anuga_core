@@ -1712,7 +1712,7 @@ void _openmp_manning_friction_flat_semi_implicit(struct domain *D)
   double g = D->g;
 
 
-#pragma omp parallel for schedule(static) private(k, z, h, S) firstprivate(eps, g, seven_thirds)
+#pragma omp parallel for private(k, z, h, S) firstprivate(eps, g, seven_thirds)
   for (k = 0; k < N; k++)
   {
     double uh = D->xmom_centroid_values[k];
@@ -1754,7 +1754,7 @@ void _openmp_manning_friction_sloped_semi_implicit(struct domain *D)
   double* xmom_update = D->xmom_semi_implicit_update;
   double* ymom_update = D->ymom_semi_implicit_update;
 
-#pragma omp parallel for schedule(static) private(k, k3, z0, z1, z2, x0, y0, x1, y1, x2, y2, zs, zx, zy, h, S) firstprivate(g, one_third, seven_thirds)
+#pragma omp parallel for private(k, k3, z0, z1, z2, x0, y0, x1, y1, x2, y2, zs, zx, zy, h, S) firstprivate(g, one_third, seven_thirds)
   for (k = 0; k < N; k++)
   {
     S = 0.0;
