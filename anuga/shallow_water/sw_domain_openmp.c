@@ -504,7 +504,7 @@ double speed_max_last = 0.0;
       double max_speed_local;
       EdgeData edge_data;
 // For all triangles
-#pragma omp parallel for simd default(none) schedule(dynamic) shared(D, substep_count, number_of_elements) \
+#pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, number_of_elements) \
     firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)                              \
     private(speed_max_last, edgeflux, pressure_flux, max_speed_local, edge_data) \
     reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
@@ -801,7 +801,7 @@ static inline void update_centroid_values(struct domain *__restrict D,
   double ymom_tmp[number_of_elements];
   double xwork_tmp[number_of_elements];
   double ywork_tmp[number_of_elements];
-#pragma omp parallel for simd default(none) shared(D,height_tmp, xmom_tmp, ymom_tmp, xwork_tmp, ywork_tmp) schedule(dynamic) \
+#pragma omp parallel for simd default(none) shared(D,height_tmp, xmom_tmp, ymom_tmp, xwork_tmp, ywork_tmp) schedule(static) \
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
   for (int k = 0; k < number_of_elements; ++k)
   {
@@ -1066,7 +1066,7 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 
   update_centroid_values(D, number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order);
 
-#pragma omp parallel for simd default(none) schedule(dynamic) \
+#pragma omp parallel for simd default(none) schedule(static) \
     shared(D)                                                 \
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order, c_tmp, d_tmp)
   for (int k = 0; k < number_of_elements; k++)
