@@ -91,6 +91,10 @@ cdef extern from "sw_domain_openmp.c" nogil:
 		double* xmom_semi_implicit_update
 		double* ymom_semi_implicit_update
 		double* friction_centroid_values
+		double* stage_backup_values
+		double* xmom_backup_values
+		double* ymom_backup_values
+
 
 
 	struct edge:
@@ -103,6 +107,8 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	int64_t _openmp_update_conserved_quantities(domain* D, double timestep)
 	void _openmp_manning_friction_flat_semi_implicit(domain *D)
 	void _openmp_manning_friction_sloped_semi_implicit(domain *D)
+	int64_t _openmp_saxpy_conserved_quantities(domain *D, double a, double b, double c)
+	int64_t _openmp_backup_conserved_quantities(domain *D)
 	# FIXME SR: Change over to domain* D argument
 	void _openmp_manning_friction_flat(double g, double eps, int64_t N, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom, double* ymom)
 	void _openmp_manning_friction_sloped(double g, double eps, int64_t N, double* x, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom_update, double* ymom_update)
@@ -309,6 +315,15 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	centroid_values = friction.centroid_values
 	D.friction_centroid_values = &centroid_values[0]	
 
+	centroid_values = stage.centroid_backup_values
+	D.stage_backup_values = &centroid_values[0]	
+	
+	centroid_values = xmomentum.centroid_backup_values
+	D.xmom_backup_values = &centroid_values[0]		
+	
+	centroid_values = ymomentum.centroid_backup_values
+	D.ymom_backup_values = &centroid_values[0]	
+
 	#------------------------------------------------------
 	# Vertex values
 	#------------------------------------------------------
@@ -328,6 +343,11 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	vertex_values = height.vertex_values
 	D.height_vertex_values = &vertex_values[0,0]
 
+
+	#------------------------------------------------------
+	# Boundary values
+	#------------------------------------------------------
+
 	boundary_values = stage.boundary_values
 	D.stage_boundary_values = &boundary_values[0]
 
@@ -339,6 +359,10 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 
 	boundary_values = elevation.boundary_values
 	D.bed_boundary_values = &boundary_values[0]
+
+	#------------------------------------------------------
+	# Explicit and semi-implicit update values
+	#------------------------------------------------------
 
 	explicit_update = stage.explicit_update
 	D.stage_explicit_update = &explicit_update[0]
@@ -522,7 +546,28 @@ def update_conserved_quantities(object domain_object, double timestep):
 	else:
 		return num_negative_cells
 
-	
+def saxpy_conserved_quantities(object domain_object, double a, double b, double c):
+
+	cdef domain D
+
+
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+
+	with nogil:
+		_openmp_saxpy_conserved_quantities(&D, a, b, c)
+
+
+def backup_conserved_quantities(object domain_object):
+
+	cdef domain D
+
+
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+
+	with nogil:
+		_openmp_backup_conserved_quantities(&D)	
 
 
 

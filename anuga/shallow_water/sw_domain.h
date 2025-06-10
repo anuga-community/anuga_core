@@ -111,6 +111,10 @@ struct domain {
     
     double* friction_centroid_values;
 
+    double* stage_backup_values;
+    double* xmom_backup_values;
+    double* ymom_backup_values;
+
 };
 
 

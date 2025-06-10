@@ -2175,10 +2175,7 @@ class Generic_Domain(object):
         # self.saxpy_conserved_quantities(2.0/3.0, 1.0/3.0)
 
         # So do this instead!
-        self.saxpy_conserved_quantities(2.0, 1.0)
-        for name in self.conserved_quantities:
-            Q = self.quantities[name]
-            Q.centroid_values[:] = Q.centroid_values / 3.0
+        self.saxpy_conserved_quantities(2.0, 1.0, 3.0)
 
         # Update special conditions
         # self.update_special_conditions()
@@ -2198,16 +2195,29 @@ class Generic_Domain(object):
     def backup_conserved_quantities(self):
 
         # Backup conserved_quantities centroid values
-        for name in self.conserved_quantities:
-            Q = self.quantities[name]
-            Q.backup_centroid_values()
+        if self.multiprocessor_mode == 2:
+            from anuga.shallow_water.sw_domain_openmp_ext import backup_conserved_quantities
+            backup_conserved_quantities(self)
+        else:
+            for name in self.conserved_quantities:
+                Q = self.quantities[name]
+                Q.backup_centroid_values()
 
-    def saxpy_conserved_quantities(self, a, b):
+    def saxpy_conserved_quantities(self, a, b, c=None):
 
-        # Backup conserved_quantities centroid values
-        for name in self.conserved_quantities:
-            Q = self.quantities[name]
-            Q.saxpy_centroid_values(a, b)
+        # saxpy conserved_quantities centroid values with backup values
+        if self.multiprocessor_mode == 2:
+            if c is None:
+                c = 1.0
+            from anuga.shallow_water.sw_domain_openmp_ext import saxpy_conserved_quantities
+            saxpy_conserved_quantities(self, a, b, c)
+        else:
+            for name in self.conserved_quantities:
+                Q = self.quantities[name]
+                Q.saxpy_centroid_values(a, b)
+                if c is not None:
+                    Q.centroid_values[:] = Q.centroid_values / c
+
 
     def conserved_values_to_evolved_values(self, q_cons, q_evol):
         """Needs to be overridden by Domain subclass
@@ -2528,42 +2538,6 @@ class Generic_Domain(object):
 
         return normfunc(self.quantities[quantity].centroid_values)
 
-    def apply_protection_against_isolated_degenerate_timesteps(self):
-
-        # FIXME (Steve): This should be in shallow_water as it assumes x and y
-        # momentum
-        if self.protect_against_isolated_degenerate_timesteps is False:
-            return
-
-        # FIXME (Ole): Make this configurable
-        if num.max(self.max_speed) < 10.0:
-            return
-
-        # Setup 10 bins for speed histogram
-        from anuga.utilities.numerical_tools import histogram, create_bins
-
-        bins = create_bins(self.max_speed, 10)
-        hist = histogram(self.max_speed, bins)
-
-        # Look for characteristic signature
-        if len(hist) > 1 and hist[-1] > 0 and \
-           hist[4] == hist[5] == hist[6] == hist[7] == hist[8] == 0:
-            # Danger of isolated degenerate triangles
-
-            # Find triangles in last bin
-            # FIXME - speed up using numeric package
-            d = 0
-            for i in range(self.number_of_triangles):
-                if self.max_speed[i] > bins[-1]:
-                    msg = 'Time=%f: Ignoring isolated high ' % self.get_time()
-                    msg += 'speed triangle '
-                    msg += '#%d of %d with max speed = %f' \
-                        % (i, self.number_of_triangles, self.max_speed[i])
-
-                    self.get_quantity('xmomentum').set_values(0.0, indices=[i])
-                    self.get_quantity('ymomentum').set_values(0.0, indices=[i])
-                    self.max_speed[i] = 0.0
-                    d += 1
 
 
 if __name__ == "__main__":

@@ -1740,61 +1740,65 @@ void _openmp_manning_friction_flat_semi_implicit(struct domain *D)
 
 void _openmp_manning_friction_sloped_semi_implicit(struct domain *D)
 {
-
-  int64_t k, k3, k6;
-  double S, h, z, z0, z1, z2, zs, zx, zy;
-  double x0, y0, x1, y1, x2, y2;
+  int64_t k;
   const double one_third = 1.0 / 3.0;
   const double seven_thirds = 7.0 / 3.0;
 
   int64_t N = D->number_of_elements;
-  double g = D->g;
-  double* w = D->stage_centroid_values;
-  double* uh = D->xmom_centroid_values;
-  double* vh = D->ymom_centroid_values;
-  double* eta = D->friction_centroid_values;
+  double  g = D->g;
+  double  eps = D->minimum_allowed_height;
   double* xmom_update = D->xmom_semi_implicit_update;
   double* ymom_update = D->ymom_semi_implicit_update;
 
-#pragma omp parallel for private(k, k3, z0, z1, z2, x0, y0, x1, y1, x2, y2, zs, zx, zy, h, S) firstprivate(g, one_third, seven_thirds)
-  for (k = 0; k < N; k++)
+#pragma omp parallel for simd default(none) shared(D) schedule(static) \
+        firstprivate(N, eps, g, seven_thirds)
+for (k = 0; k < N; k++)
   {
+    double S, h, z, z0, z1, z2, zs, zx, zy;
+    double x0, y0, x1, y1, x2, y2;
+    int64_t k3, k6;
+
+    double w = D->stage_centroid_values[k];
+    double uh = D->xmom_centroid_values[k];
+    double vh = D->ymom_centroid_values[k];
+    double eta = D->friction_centroid_values[k];
+
     S = 0.0;
     k3 = 3 * k;
-    double* zv = D->bed_vertex_values;
+    
     // Get bathymetry
-    z0 = zv[k3 + 0];
-    z1 = zv[k3 + 1];
-    z2 = zv[k3 + 2];
+    z0 = D->bed_vertex_values[k3 + 0];
+    z1 = D->bed_vertex_values[k3 + 1];
+    z2 = D->bed_vertex_values[k3 + 2];
 
     // Compute bed slope
     k6 = 6 * k; // base index
 
-    double* x = D->vertex_coordinates;
-    x0 = x[k6 + 0];
-    y0 = x[k6 + 1];
-    x1 = x[k6 + 2];
-    y1 = x[k6 + 3];
-    x2 = x[k6 + 4];
-    y2 = x[k6 + 5];
+    
+    x0 = D->vertex_coordinates[k6 + 0];
+    y0 = D->vertex_coordinates[k6 + 1];
+    x1 = D->vertex_coordinates[k6 + 2];
+    y1 = D->vertex_coordinates[k6 + 3];
+    x2 = D->vertex_coordinates[k6 + 4];
+    y2 = D->vertex_coordinates[k6 + 5];
 
     
-    if (eta[k] > 1.0e-16)
+    if (eta > 1.0e-16)
     {
       _gradient(x0, y0, x1, y1, x2, y2, z0, z1, z2, &zx, &zy);
 
       zs = sqrt(1.0 + zx * zx + zy * zy);
       z = (z0 + z1 + z2) * one_third;
 
-      h = w[k] - z;
-      if (h >= D->minimum_allowed_height)
+      h = w - z;
+      if (h >= eps)
       {
-        S = -g * eta[k] * eta[k] * zs * sqrt((uh[k] * uh[k] + vh[k] * vh[k]));
+        S = -g*eta*eta*zs * sqrt((uh*uh + vh*vh));
         S /= pow(h, seven_thirds); 
       }
     }
-    xmom_update[k] += S * uh[k];
-    ymom_update[k] += S * vh[k];
+    D->xmom_semi_implicit_update[k] += S * uh;
+    D->ymom_semi_implicit_update[k] += S * vh;
   }
 }
 
@@ -1917,14 +1921,15 @@ int64_t _openmp_update_conserved_quantities(struct domain *D, double timestep)
 
 
 	int64_t k;
-	double denominator, x;
   int64_t N = D->number_of_elements;
-	int64_t err_return = 0;
-  double stage_c, xmom_c, ymom_c;
+  
 
 	// Divide semi_implicit update by conserved quantity
-	#pragma omp parallel for private(k, x)
+	#pragma omp parallel for private(k) schedule(static) firstprivate(N, timestep)
 	for (k=0; k<N; k++) {
+
+    double stage_c, xmom_c, ymom_c;
+    double denominator;
 
 		// use previous centroid value
 		stage_c = D->stage_centroid_values[k];
@@ -1979,4 +1984,43 @@ int64_t _openmp_update_conserved_quantities(struct domain *D, double timestep)
 	}
 
 	return 0;
+}
+
+int64_t _openmp_saxpy_conserved_quantities(struct domain *D, double a, double b, double c)
+{
+  // This function performs a SAXPY operation on the centroid values and backup values.
+  //
+  // It does a standard SAXPY operation and then multiplies through a constant c.
+  // to deal with some numerical issues when using a = 1/3 and b = 2/3 and maintaining
+  // positive values.
+  
+
+  int64_t k;
+  int64_t N = D->number_of_elements;
+  double c_inv = 1.0 / c;
+
+
+#pragma omp parallel for simd default(none) shared(D,a,b,c_inv) schedule(static) firstprivate(N)
+  for (k = 0; k < N; k++)
+  {
+    D->stage_centroid_values[k] = c_inv * (a * D->stage_centroid_values[k] + b * D->stage_backup_values[k]);
+    D->xmom_centroid_values[k]  = c_inv * (a * D->xmom_centroid_values[k]  + b * D->xmom_backup_values[k]);
+    D->ymom_centroid_values[k]  = c_inv * (a * D->ymom_centroid_values[k]  + b * D->ymom_backup_values[k]);
+  }
+  return 0;
+}
+
+int64_t _openmp_backup_conserved_quantities(struct domain *D)
+{
+  int64_t k;
+  int64_t N = D->number_of_elements;
+
+#pragma omp parallel for simd default(none) shared(D) schedule(static) firstprivate(N)
+  for (k = 0; k < N; k++)
+  {
+    D->stage_backup_values[k] = D->stage_centroid_values[k];
+    D->xmom_backup_values[k]  = D->xmom_centroid_values[k];
+    D->ymom_backup_values[k]  = D->ymom_centroid_values[k];
+}
+  return 0;
 }
