@@ -49,11 +49,11 @@ double sign(double x) {
   else return 0.0;
 }
 
-int64_t _gradient(double x0, double y0, 
-	      double x1, double y1, 
-	      double x2, double y2, 
-	      double q0, double q1, double q2, 
-	      double *a, double *b) {
+int64_t _gradient(const double x0, const double y0, 
+	      const double x1, const double y1, 
+	      const double x2, const double y2, 
+	      const double q0, const double q1, const double q2, 
+	      double * __restrict a, double * __restrict b) {
 	      
   /*Compute gradient (a,b) based on three points (x0,y0), (x1,y1) and (x2,y2) 
   with values q0, q1 and q2.
@@ -78,8 +78,6 @@ int64_t _gradient(double x0, double y0,
   which is solved using the standard determinant technique    
       
   */
-	      
-
   double det;
   
   det = (y2-y0)*(x1-x0) - (y1-y0)*(x2-x0);
@@ -150,38 +148,35 @@ int64_t _gradient2(double x0, double y0,
 }
 
 
-void _limit_old(int64_t N, double beta, double* qc, double* qv, 
-	    double* qmin, double* qmax) { 
 
-  //N are the number of elements
-  int64_t k, i, k3;
-  double dq, dqa[3], phi, r;
-  
-  //printf("INSIDE\n");
-  for (k=0; k<N; k++) {
-    k3 = k*3;
-    
-    //Find the gradient limiter (phi) across vertices  
-    phi = 1.0;
-    for (i=0; i<3; i++) {    
-      r = 1.0;
-      
-      dq = qv[k3+i] - qc[k];    //Delta between vertex and centroid values
-      dqa[i] = dq;              //Save dq for use in the next loop
-      
-      if (dq > 0.0) r = (qmax[k] - qc[k])/dq;
-      if (dq < 0.0) r = (qmin[k] - qc[k])/dq;      
-  
-  
-      phi = anuga_min( anuga_min(r*beta, 1.0), phi);    
-    }
-    
-    //Then update using phi limiter
-    for (i=0; i<3; i++) {    
-      qv[k3+i] = qc[k] + phi*dqa[i];
-    }
+void _limit_old(int64_t N, double beta,
+                double* __restrict qc,
+                double* __restrict qv,
+                double* __restrict qmin,
+                double* __restrict qmax)
+{
+  for (int64_t k = 0; k < N; ++k) {
+    int64_t k3 = k * 3;
+
+    double dq0 = qv[k3 + 0] - qc[k];
+    double dq1 = qv[k3 + 1] - qc[k];
+    double dq2 = qv[k3 + 2] - qc[k];
+
+    double r0 = (dq0 > 0.0) ? (qmax[k] - qc[k]) / dq0 :
+                (dq0 < 0.0) ? (qmin[k] - qc[k]) / dq0 : 1.0;
+    double r1 = (dq1 > 0.0) ? (qmax[k] - qc[k]) / dq1 :
+                (dq1 < 0.0) ? (qmin[k] - qc[k]) / dq1 : 1.0;
+    double r2 = (dq2 > 0.0) ? (qmax[k] - qc[k]) / dq2 :
+                (dq2 < 0.0) ? (qmin[k] - qc[k]) / dq2 : 1.0;
+
+    double phi = fmin(fmin(fmin(r0 * beta, r1 * beta), r2 * beta), 1.0);
+
+    qv[k3 + 0] = qc[k] + phi * dq0;
+    qv[k3 + 1] = qc[k] + phi * dq1;
+    qv[k3 + 2] = qc[k] + phi * dq2;
   }
 }
+
 
 
 void  print_double_array(char* name, double* array, int64_t n, int64_t m){
