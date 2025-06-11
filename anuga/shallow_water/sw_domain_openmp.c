@@ -2015,12 +2015,35 @@ int64_t _openmp_backup_conserved_quantities(struct domain *D)
   int64_t k;
   int64_t N = D->number_of_elements;
 
-#pragma omp parallel for simd default(none) shared(D) schedule(static) firstprivate(N)
+  // double stage_tmp[N];
+  // double xmom_tmp[N];
+  // double ymom_tmp[N];
+
+  #pragma omp parallel for simd default(none) shared(D) schedule(static) firstprivate(N)
   for (k = 0; k < N; k++)
   {
     D->stage_backup_values[k] = D->stage_centroid_values[k];
     D->xmom_backup_values[k]  = D->xmom_centroid_values[k];
     D->ymom_backup_values[k]  = D->ymom_centroid_values[k];
-}
+
+  }
+
+// #pragma omp parallel for simd default(none) shared(D, stage_tmp, xmom_tmp, ymom_tmp) \
+//         schedule(static) firstprivate(N)
+//   for (k = 0; k < N; k++)
+//   {
+//     stage_tmp[k] = D->stage_centroid_values[k];
+//     xmom_tmp[k]  = D->xmom_centroid_values[k];
+//     ymom_tmp[k]  = D->ymom_centroid_values[k];
+// }
+
+// #pragma omp parallel for simd default(none) shared(D, stage_tmp, xmom_tmp, ymom_tmp) \
+//         schedule(static) firstprivate(N)
+//   for (k = 0; k < N; k++)
+//   {
+//     D->stage_backup_values[k] = stage_tmp[k];
+//     D->xmom_backup_values[k]  = xmom_tmp[k];
+//     D->ymom_backup_values[k]  = ymom_tmp[k];
+// }
   return 0;
 }
