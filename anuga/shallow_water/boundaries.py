@@ -171,7 +171,8 @@ class Reflective_boundary(Boundary):
 
 
 
-    # TODO JLGV, needs openmp version
+    # TODO JLGV, reflective boundary condition needs openmp version
+    # this one first
     def evaluate_segment(self, domain, segment_edges):
         """Apply BC on the boundary edges defined by segment_edges
 

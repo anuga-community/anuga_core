@@ -30,7 +30,7 @@ def configuration(parent_package='',top_path=None):
         # Mac OS X and Windows
         extra_args = None
     else:
-        extra_args = ['-fopenmp']
+        extra_args = ['-qopenmp']
 
     config.add_extension('cg_ext',
                          sources='cg_ext.pyx',

@@ -162,14 +162,6 @@ int64_t __flux_function_central(double *__restrict q_left, double *__restrict q_
   double v_right, v_left;
   double q_left_rotated[3], q_right_rotated[3], flux_right[3], flux_left[3];
 
-  // if (h_left == 0. && h_right == 0.)
-  // {
-  //   // Quick exit
-  //   memset(edgeflux, 0, 3 * sizeof(double));
-  //   *max_speed = 0.0;
-  //   *pressure_flux = 0.;
-  //   return 0;
-  // }
 
   for (int i = 0; i < 3; i++)
   {
@@ -702,7 +694,6 @@ static inline int64_t __find_qmin_and_qmax_dq1_dq2(const double dq0, const doubl
   return 0;
 }
 
-#pragma omp declare simd
 static inline int64_t __limit_gradient(double *__restrict dqv, double qmin, double qmax, const double beta_w)
 {
   // Given provisional jumps dqv from the FV triangle centroid to its
@@ -713,23 +704,42 @@ static inline int64_t __limit_gradient(double *__restrict dqv, double qmin, doub
   // limited
 
   double r = 1000.0;
+  //#pragma omp parallel for simd reduction(min : r) default(none) shared(dqv, qmin, qmax, beta_w, TINY)
+  double dq_x = dqv[0];
+  double dq_y = dqv[1];
+  double dq_z = dqv[2];
 
-  for (int i = 0; i < 3; i++)
+  if(dq_x < -TINY)
   {
-    double dq = dqv[i];
-
-    if (dq < -TINY)
-    {
-      double r0 = qmin / dq;
-      r = fmin(r, r0);
-    }
-    else if (dq > TINY)
-    {
-      double r0 = qmax / dq;
-      r = fmin(r, r0);
-    }
-    // if dq ~ 0, no change to r
+    double r0 = qmin / dq_x;
+    r = fmin(r, r0);
   }
+  else if (dq_x > TINY)
+  {
+    double r0 = qmax / dq_x;
+    r = fmin(r, r0);
+  }
+  if(dq_y < -TINY)
+  {
+    double r0 = qmin / dq_y;
+    r = fmin(r, r0);
+  }
+  else if (dq_y > TINY)
+  {
+    double r0 = qmax / dq_y;
+    r = fmin(r, r0);
+  }
+  if(dq_z < -TINY)
+  {
+    double r0 = qmin / dq_z;
+    r = fmin(r, r0);
+  }
+  else if (dq_z > TINY)
+  {
+    double r0 = qmax / dq_z;
+    r = fmin(r, r0);
+  }
+
 
   double phi = fmin(r * beta_w, 1.0);
 
@@ -1246,18 +1256,19 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
     reconstruct_vertex_values(D->bed_edge_values, D->bed_vertex_values, k3);
   }
   // for k=0 to number_of_elements-1
-
 // Fix xmom and ymom centroid values
+if(extrapolate_velocity_second_order == 1)
+{
 #pragma omp parallel for simd schedule(static) firstprivate(extrapolate_velocity_second_order)
   for (int k = 0; k < D->number_of_elements; k++)
   {
-    if (extrapolate_velocity_second_order == 1)
-    {
       // Convert velocity back to momenta at centroids
       D->xmom_centroid_values[k] = D->x_centroid_work[k];
       D->ymom_centroid_values[k] = D->y_centroid_work[k];
-    }
   }
+}
+  // Convert velocity back to momenta at centroids
+
 
   return 0;
 }

@@ -266,7 +266,7 @@ typedef struct {
 } EdgeData;
 
 // Extract edge-related data and organize it into EdgeData
-static inline void get_edge_data_central_flux(const struct domain *D, const int k, const int i, EdgeData *E) {
+static inline void get_edge_data_central_flux(const struct domain * __restrict D, const int k, const int i, EdgeData * __restrict E) {
     E->ki = 3 * k + i;
     E->ki2 = 2 * E->ki;
 
