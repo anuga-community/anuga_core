@@ -1770,6 +1770,6 @@ class Test_rate_operators(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_rate_operators, 'test_')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_rate_operators)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

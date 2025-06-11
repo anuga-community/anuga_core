@@ -81,6 +81,6 @@ class logTestCase(unittest.TestCase):
 
 ################################################################################
 if __name__ == "__main__":
-    suite = unittest.makeSuite(logTestCase, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(logTestCase)
     runner = unittest.TextTestRunner()  # verbosity=2)
     runner.run(suite)

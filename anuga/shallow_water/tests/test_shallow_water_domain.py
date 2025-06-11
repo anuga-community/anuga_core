@@ -9122,7 +9122,8 @@ friction  \n \
 #################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Shallow_Water, 'test_another_runup_example')
-    #suite = unittest.makeSuite(Test_Shallow_Water, 'test')
+    suite = unittest.TestSuite([
+    Test_Shallow_Water('test_another_runup_example')
+])
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)
