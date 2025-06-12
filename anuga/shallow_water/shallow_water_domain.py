@@ -326,8 +326,8 @@ class Domain(Generic_Domain):
         # Gravity is now incorporated in
         # compute_fluxes routine
         #-------------------------------
-        from .friction import manning_friction_implicit
-        self.forcing_terms.append(manning_friction_implicit)
+        from .friction import manning_friction_semi_implicit
+        self.forcing_terms.append(manning_friction_semi_implicit)
 
 
         #-------------------------------
@@ -1304,22 +1304,22 @@ class Domain(Generic_Domain):
         return self.flow_algorithm
 
 
-    def set_gravity_method(self):
-        """Gravity method is determined by the compute_fluxes_method
-        This is now not used, as gravity is combine in the compute_fluxes method
-        """
+    # def set_gravity_method(self):
+    #     """Gravity method is determined by the compute_fluxes_method
+    #     This is now not used, as gravity is combine in the compute_fluxes method
+    #     """
 
-        if  self.get_compute_fluxes_method() == 'original':
-            self.forcing_terms[0] = gravity
+    #     if  self.get_compute_fluxes_method() == 'original':
+    #         self.forcing_terms[0] = gravity
 
-        elif self.get_compute_fluxes_method() == 'wb_1':
-            self.forcing_terms[0] = gravity_wb
+    #     elif self.get_compute_fluxes_method() == 'wb_1':
+    #         self.forcing_terms[0] = gravity_wb
 
-        elif self.get_compute_fluxes_method() == 'wb_2':
-            self.forcing_terms[0] = gravity
+    #     elif self.get_compute_fluxes_method() == 'wb_2':
+    #         self.forcing_terms[0] = gravity
 
-        else:
-            raise Exception('undefined compute_fluxes method')
+    #     else:
+    #         raise Exception('undefined compute_fluxes method')
 
     def set_extrapolate_velocity(self, flag=True):
         """ Extrapolation routine uses momentum by default,
@@ -2051,6 +2051,43 @@ class Domain(Generic_Domain):
 
         nvtxRangePop()
 
+
+    def apply_protection_against_isolated_degenerate_timesteps(self):
+
+        if self.protect_against_isolated_degenerate_timesteps is False:
+            return
+
+        # FIXME (Ole): Make this configurable
+        if num.max(self.max_speed) < 10.0:
+            return
+
+        # Setup 10 bins for speed histogram
+        from anuga.utilities.numerical_tools import histogram, create_bins
+
+        bins = create_bins(self.max_speed, 10)
+        hist = histogram(self.max_speed, bins)
+
+        # Look for characteristic signature
+        if len(hist) > 1 and hist[-1] > 0 and \
+           hist[4] == hist[5] == hist[6] == hist[7] == hist[8] == 0:
+            # Danger of isolated degenerate triangles
+
+            # Find triangles in last bin
+            # FIXME - speed up using numeric package
+            d = 0
+            for i in range(self.number_of_triangles):
+                if self.max_speed[i] > bins[-1]:
+                    msg = 'Time=%f: Ignoring isolated high ' % self.get_time()
+                    msg += 'speed triangle '
+                    msg += '#%d of %d with max speed = %f' \
+                        % (i, self.number_of_triangles, self.max_speed[i])
+
+                    self.get_quantity('xmomentum').set_values(0.0, indices=[i])
+                    self.get_quantity('ymomentum').set_values(0.0, indices=[i])
+                    self.max_speed[i] = 0.0
+                    d += 1
+
+
     def update_conserved_quantities(self):
         """Update vectors of conserved quantities using previously
         computed fluxes and specified forcing functions.
@@ -2077,11 +2114,9 @@ class Domain(Generic_Domain):
 
             # Choose the correct extension module
             if self.multiprocessor_mode == 1:
-                Stage.update(timestep)
-                Xmom.update(timestep)
-                Ymom.update(timestep)                
-                from .sw_domain_openmp_ext import fix_negative_cells
-                num_negative_ids = fix_negative_cells(self)
+                
+                from .sw_domain_openmp_ext import update_conserved_quantities
+                num_negative_ids = update_conserved_quantities(self, timestep)
 
             elif self.multiprocessor_mode == 2:
                 
