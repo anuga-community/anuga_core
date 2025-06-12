@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 // structures
 struct domain {
@@ -252,5 +253,78 @@ int64_t print_domain_struct(struct domain *D) {
 
     return 0;
 }
+
+
+typedef struct {
+    double ql[3], qr[3];
+    double zl, zr;
+    double hle, hre;
+    double h_left, h_right;
+    double hc, zc, hc_n, zc_n;
+    double z_half;
+    double normal_x, normal_y;
+    double length;
+    int n; // neighbour index
+    int ki, ki2;
+    bool is_boundary;
+    bool is_riverwall;
+    int riverwall_index;
+} EdgeData;
+
+// Extract edge-related data and organize it into EdgeData
+static inline void get_edge_data_central_flux(const struct domain * __restrict D, const int k, const int i, EdgeData * __restrict E) {
+    E->ki = 3 * k + i;
+    E->ki2 = 2 * E->ki;
+
+    E->ql[0] = D->stage_edge_values[E->ki];
+    E->ql[1] = D->xmom_edge_values[E->ki];
+    E->ql[2] = D->ymom_edge_values[E->ki];
+    E->zl = D->bed_edge_values[E->ki];
+    E->hle = D->height_edge_values[E->ki];
+    E->length = D->edgelengths[E->ki];
+
+    E->n = D->neighbours[E->ki];
+    E->is_boundary = (E->n < 0);
+    E->normal_x = D->normals[E->ki2];
+    E->normal_y = D->normals[E->ki2 + 1];
+
+    E->hc = D->height_centroid_values[k];
+    E->zc = D->bed_centroid_values[k];
+    E->hc_n=E->hc;
+    E->zc_n=D->bed_centroid_values[k];
+
+    if (E->is_boundary) {
+        int m = -E->n - 1;
+        E->qr[0] = D->stage_boundary_values[m];
+        E->qr[1] = D->xmom_boundary_values[m];
+        E->qr[2] = D->ymom_boundary_values[m];
+        E->zr = E->zl;
+        E->hre = fmax(E->qr[0] - E->zr, 0.0);
+    } else {
+        E->hc_n = D->height_centroid_values[E->n];
+        E->zc_n = D->bed_centroid_values[E->n];
+        int m = D->neighbour_edges[E->ki];
+        int nm = E->n * 3 + m;
+        E->qr[0] = D->stage_edge_values[nm];
+        E->qr[1] = D->xmom_edge_values[nm];
+        E->qr[2] = D->ymom_edge_values[nm];
+        E->zr = D->bed_edge_values[nm];
+        E->hre = D->height_edge_values[nm];
+    }
+
+    E->z_half = fmax(E->zl, E->zr);
+
+    // Check for riverwall elevation override
+    E->is_riverwall = (D->edge_flux_type[E->ki] == 1);
+    if (E->is_riverwall) {
+        E->riverwall_index = D->edge_river_wall_counter[E->ki] - 1;
+        double zwall = D->riverwall_elevation[E->riverwall_index];
+        E->z_half = fmax(zwall, E->z_half);
+    }
+
+    E->h_left = fmax(E->hle + E->zl - E->z_half, 0.0);
+    E->h_right = fmax(E->hre + E->zr - E->z_half, 0.0);
+}
+
 
 #endif

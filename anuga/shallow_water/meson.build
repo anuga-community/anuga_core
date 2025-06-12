@@ -13,6 +13,16 @@ if openmp.found()
 else
   openmp_deps = dependencies
 endif
+openmp_flag = ''
+openmp_dep = dependency('openmp', required: false)
+cc = meson.get_compiler('c')
+if openmp_dep.found()
+  if cc.get_id() in ['intel', 'intel-cl', 'icx']
+    openmp_flag = '-qopenmp'
+  else
+    openmp_flag = '-fopenmp'
+  endif
+endif
 
 # FIXME SR: Need to setup depenencies for openacc code
 
@@ -44,9 +54,11 @@ py3.extension_module('sw_domain_simd_ext',
 
 py3.extension_module('sw_domain_openmp_ext',
   sources: ['sw_domain_openmp_ext.pyx'],
-  c_args : ['-O3', '-march=native'],
+  c_args : ['-O3', '-march=native', '-g'],
+  #c_args : ['-O3', '-march=native','-funroll-loops', '-fvectorize', '-Rpass=loop-vectorize', '-Rpass=loop-unroll', '-g'],
+  #c_args : ['-O3', '-march=native', openmp_flag, '-g'],
   include_directories: inc_dir,
-  dependencies: openmp_deps,
+dependencies: openmp_dep.found() ? [openmp_dep] : [],
   subdir: 'anuga/shallow_water',
   install: true,
 )
