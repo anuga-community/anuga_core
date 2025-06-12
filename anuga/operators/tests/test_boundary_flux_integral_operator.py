@@ -130,7 +130,7 @@ class Test_boundary_flux_integral_operator(unittest.TestCase):
          
         
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_boundary_flux_integral_operator, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_boundary_flux_integral_operator)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)
 

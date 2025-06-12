@@ -9,6 +9,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 // structures
 struct domain {
@@ -204,47 +205,120 @@ int64_t print_domain_struct(struct domain *D) {
 
 
 
-    printf("D->neighbours             %p \n", D->neighbours);
-    printf("D->surrogate_neighbours   %p \n", D->surrogate_neighbours);
-    printf("D->neighbour_edges        %p \n", D->neighbour_edges);
-    printf("D->normals                %p \n", D->normals);
-    printf("D->edgelengths            %p \n", D->edgelengths);
-    printf("D->radii                  %p \n", D->radii);
-    printf("D->areas                  %p \n", D->areas);
-    printf("D->tri_full_flag          %p \n", D->tri_full_flag);
-    printf("D->already_computed_flux  %p \n", D->already_computed_flux);
-    printf("D->vertex_coordinates     %p \n", D->vertex_coordinates);
-    printf("D->edge_coordinates       %p \n", D->edge_coordinates);
-    printf("D->centroid_coordinates   %p \n", D->centroid_coordinates);
-    printf("D->max_speed              %p \n", D->max_speed);
-    printf("D->number_of_boundaries   %p \n", D->number_of_boundaries);
-    printf("D->stage_edge_values      %p \n", D->stage_edge_values);
-    printf("D->xmom_edge_values       %p \n", D->xmom_edge_values);
-    printf("D->ymom_edge_values       %p \n", D->ymom_edge_values);
-    printf("D->bed_edge_values        %p \n", D->bed_edge_values);
-    printf("D->stage_centroid_values  %p \n", D->stage_centroid_values);
-    printf("D->xmom_centroid_values   %p \n", D->xmom_centroid_values);
-    printf("D->ymom_centroid_values   %p \n", D->ymom_centroid_values);
-    printf("D->bed_centroid_values    %p \n", D->bed_centroid_values);
-    printf("D->stage_vertex_values    %p \n", D->stage_vertex_values);
-    printf("D->xmom_vertex_values     %p \n", D->xmom_vertex_values);
-    printf("D->ymom_vertex_values     %p \n", D->ymom_vertex_values);
-    printf("D->bed_vertex_values      %p \n", D->bed_vertex_values);
-    printf("D->height_vertex_values      %p \n", D->height_vertex_values);
-    printf("D->stage_boundary_values  %p \n", D->stage_boundary_values);
-    printf("D->xmom_boundary_values   %p \n", D->xmom_boundary_values);
-    printf("D->ymom_boundary_values   %p \n", D->ymom_boundary_values);
-    printf("D->bed_boundary_values    %p \n", D->bed_boundary_values);
-    printf("D->stage_explicit_update  %p \n", D->stage_explicit_update);
-    printf("D->xmom_explicit_update   %p \n", D->xmom_explicit_update);
-    printf("D->ymom_explicit_update   %p \n", D->ymom_explicit_update);
-    printf("D->edge_river_wall_counter   %p \n", D->edge_river_wall_counter);
-    printf("D->stage_semi_implicit_update  %p \n", D->stage_semi_implicit_update);
-    printf("D->xmom_semi_implicit_update   %p \n", D->xmom_semi_implicit_update);
-    printf("D->ymom_semi_implicit_update   %p \n", D->ymom_semi_implicit_update);
+    printf("D->neighbours             %p \n", (void *) D->neighbours);
+    printf("D->surrogate_neighbours   %p \n", (void *) D->surrogate_neighbours);
+    printf("D->neighbour_edges        %p \n", (void *) D->neighbour_edges);
+    printf("D->normals                %p \n", (void *) D->normals);
+    printf("D->edgelengths            %p \n", (void *) D->edgelengths);
+    printf("D->radii                  %p \n", (void *) D->radii);
+    printf("D->areas                  %p \n", (void *) D->areas);
+    printf("D->tri_full_flag          %p \n", (void *) D->tri_full_flag);
+    printf("D->already_computed_flux  %p \n", (void *) D->already_computed_flux);
+    printf("D->vertex_coordinates     %p \n", (void *) D->vertex_coordinates);
+    printf("D->edge_coordinates       %p \n", (void *) D->edge_coordinates);
+    printf("D->centroid_coordinates   %p \n", (void *) D->centroid_coordinates);
+    printf("D->max_speed              %p \n", (void *) D->max_speed);
+    printf("D->number_of_boundaries   %p \n", (void *) D->number_of_boundaries);
+    printf("D->stage_edge_values      %p \n", (void *) D->stage_edge_values);
+    printf("D->xmom_edge_values       %p \n", (void *) D->xmom_edge_values);
+    printf("D->ymom_edge_values       %p \n", (void *) D->ymom_edge_values);
+    printf("D->bed_edge_values        %p \n", (void *) D->bed_edge_values);
+    printf("D->stage_centroid_values  %p \n", (void *) D->stage_centroid_values);
+    printf("D->xmom_centroid_values   %p \n", (void *) D->xmom_centroid_values);
+    printf("D->ymom_centroid_values   %p \n", (void *) D->ymom_centroid_values);
+    printf("D->bed_centroid_values    %p \n", (void *) D->bed_centroid_values);
+    printf("D->stage_vertex_values    %p \n", (void *) D->stage_vertex_values);
+    printf("D->xmom_vertex_values     %p \n", (void *) D->xmom_vertex_values);
+    printf("D->ymom_vertex_values     %p \n", (void *) D->ymom_vertex_values);
+    printf("D->bed_vertex_values      %p \n", (void *) D->bed_vertex_values);
+    printf("D->height_vertex_values      %p \n", (void *) D->height_vertex_values);
+    printf("D->stage_boundary_values  %p \n", (void *) D->stage_boundary_values);
+    printf("D->xmom_boundary_values   %p \n", (void *) D->xmom_boundary_values);
+    printf("D->ymom_boundary_values   %p \n", (void *) D->ymom_boundary_values);
+    printf("D->bed_boundary_values    %p \n", (void *) D->bed_boundary_values);
+    printf("D->stage_explicit_update  %p \n", (void *) D->stage_explicit_update);
+    printf("D->xmom_explicit_update   %p \n", (void *) D->xmom_explicit_update);
+    printf("D->ymom_explicit_update   %p \n", (void *) D->ymom_explicit_update);
+    printf("D->edge_river_wall_counter   %p \n",   (void *) D->edge_river_wall_counter);
+    printf("D->stage_semi_implicit_update  %p \n", (void *) D->stage_semi_implicit_update);
+    printf("D->xmom_semi_implicit_update   %p \n", (void *) D->xmom_semi_implicit_update);
+    printf("D->ymom_semi_implicit_update   %p \n", (void *) D->ymom_semi_implicit_update);
 
 
     return 0;
 }
+
+
+typedef struct {
+    double ql[3], qr[3];
+    double zl, zr;
+    double hle, hre;
+    double h_left, h_right;
+    double hc, zc, hc_n, zc_n;
+    double z_half;
+    double normal_x, normal_y;
+    double length;
+    int n; // neighbour index
+    int ki, ki2;
+    bool is_boundary;
+    bool is_riverwall;
+    int riverwall_index;
+} EdgeData;
+
+// Extract edge-related data and organize it into EdgeData
+static inline void get_edge_data_central_flux(const struct domain * __restrict D, const int k, const int i, EdgeData * __restrict E) {
+    E->ki = 3 * k + i;
+    E->ki2 = 2 * E->ki;
+
+    E->ql[0] = D->stage_edge_values[E->ki];
+    E->ql[1] = D->xmom_edge_values[E->ki];
+    E->ql[2] = D->ymom_edge_values[E->ki];
+    E->zl = D->bed_edge_values[E->ki];
+    E->hle = D->height_edge_values[E->ki];
+    E->length = D->edgelengths[E->ki];
+
+    E->n = D->neighbours[E->ki];
+    E->is_boundary = (E->n < 0);
+    E->normal_x = D->normals[E->ki2];
+    E->normal_y = D->normals[E->ki2 + 1];
+
+    E->hc = D->height_centroid_values[k];
+    E->zc = D->bed_centroid_values[k];
+    E->hc_n=E->hc;
+    E->zc_n=D->bed_centroid_values[k];
+
+    if (E->is_boundary) {
+        int m = -E->n - 1;
+        E->qr[0] = D->stage_boundary_values[m];
+        E->qr[1] = D->xmom_boundary_values[m];
+        E->qr[2] = D->ymom_boundary_values[m];
+        E->zr = E->zl;
+        E->hre = fmax(E->qr[0] - E->zr, 0.0);
+    } else {
+        E->hc_n = D->height_centroid_values[E->n];
+        E->zc_n = D->bed_centroid_values[E->n];
+        int m = D->neighbour_edges[E->ki];
+        int nm = E->n * 3 + m;
+        E->qr[0] = D->stage_edge_values[nm];
+        E->qr[1] = D->xmom_edge_values[nm];
+        E->qr[2] = D->ymom_edge_values[nm];
+        E->zr = D->bed_edge_values[nm];
+        E->hre = D->height_edge_values[nm];
+    }
+
+    E->z_half = fmax(E->zl, E->zr);
+
+    // Check for riverwall elevation override
+    E->is_riverwall = (D->edge_flux_type[E->ki] == 1);
+    if (E->is_riverwall) {
+        E->riverwall_index = D->edge_river_wall_counter[E->ki] - 1;
+        double zwall = D->riverwall_elevation[E->riverwall_index];
+        E->z_half = fmax(zwall, E->z_half);
+    }
+
+    E->h_left = fmax(E->hle + E->zl - E->z_half, 0.0);
+    E->h_right = fmax(E->hre + E->zr - E->z_half, 0.0);
+}
+
 
 #endif

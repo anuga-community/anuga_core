@@ -126,6 +126,6 @@ NODATA_value  %g
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_LLAsc2Pts,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_LLAsc2Pts)
     runner = unittest.TextTestRunner()
     runner.run(suite)

@@ -138,6 +138,6 @@ class Test_Timzone(unittest.TestCase):
         assert str(domain.get_datetime()) == '2021-03-21 18:31:00+11:00'
             
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Timzone, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Timezone)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

@@ -41,8 +41,9 @@ def configuration(parent_package='',top_path=None):
         config.add_extension('sw_domain_openmp_ext',
                          sources=['sw_domain_openmp_ext.pyx'],
                          include_dirs=[util_dir],
-                         extra_compile_args=['-fopenmp'],
-                         extra_link_args=['-fopenmp'])
+                         #extra_compile_args=['-fopenmp -O3 -march=native -funroll-loops -ftree-vectorize -fopt-info-vec'],
+                         extra_compile_args=['-qopenmp -O3 -march=native -funroll-loops -fvectorize -g'],
+                         extra_link_args=['-qopenmp'])
 
         config.add_extension('sw_domain_openacc_ext',
                          sources=['sw_domain_openacc_ext.pyx'],

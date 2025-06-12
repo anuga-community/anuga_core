@@ -4,13 +4,13 @@
 #       to build the documentation. It is not used to install anuga itself.
 
 
-numpy
-gdal
+#numpy
+#gdal
 pytest
 meshpy
 cython
-scipy
-netcdf4
+#scipy
+#netcdf4
 matplotlib
 dill
 future

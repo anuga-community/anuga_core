@@ -195,7 +195,7 @@ int64_t _jacobi_precon_c(double* data,
                 int64_t M){
 
 
-  int64_t i, j, k, ckey;
+  int64_t i, j, ckey;
   double diag;
 
 

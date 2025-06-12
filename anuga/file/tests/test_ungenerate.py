@@ -277,7 +277,7 @@ END\n")
 ################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(ungenerateTestCase,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(ungenerateTestCase)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)
     

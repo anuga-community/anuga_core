@@ -34,7 +34,7 @@ typedef struct {
 
 // 'Constructor' function. Returns a pointer to new malloced memory
 // All struct entries are intialised appropriately (mostly to NULL). 
-sparse_csr * make_csr();
+sparse_csr * make_csr(void);
 
 // delete_csr_contents - Free the memory associated with the struct
 // and set the pointer to NULL

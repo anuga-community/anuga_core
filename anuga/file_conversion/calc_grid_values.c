@@ -293,8 +293,8 @@ void _calc_grid_values( double *x, double *y, double *norms,
 	int64_t x_min, x_max, y_min, y_max, point_index;
 	double x_dist, y_dist, x_base, y_base;
 	double sigma0, sigma1, sigma2;
-	double fraction;
-	double intpart;
+	//double fraction;
+	double intpart = 0.0;
 	double triangle[6], point[2];
 	double v1[2], v2[2], v3[2];
 	double n1[2], n2[2], n3[2];
@@ -309,19 +309,6 @@ void _calc_grid_values( double *x, double *y, double *norms,
 	y_base = 0.0;
 
 
-/*
-        printf("%d\n",num_tri);
-        for ( i=0; i< num_tri; i++){
-            printf("volumes\n");
-            printf("%ld %ld %ld \n",volumes[3*i],volumes[3*i+1],volumes[3*i+2]);
-        }
-
-        printf("%d\n",num_vert);
-        for ( i=0; i< num_vert; i++){
-            printf("vertices\n");
-            printf("%g %g \n",x[i],y[i]);
-        }
-*/
 
 	for ( i = 0; i < num_tri; i++ ) {
 
@@ -329,33 +316,21 @@ void _calc_grid_values( double *x, double *y, double *norms,
 		get_tri_norms( norms, i, n1, n2, n3 );
 		get_tri_extent( triangle, extent );
 
-/*
-                printf("tri %g %g  %g %g %g %g\n",
-                   triangle[0],triangle[1],triangle[2],triangle[3], triangle[4],triangle[5]);
-                printf("v1 %g %g\n", v1[0], v1[1]);
-                printf("v2 %g %g\n", v2[0], v2[1]);
-                printf("v3 %g %g\n", v3[0], v3[1]);
 
 
-                printf("e.xmin %g \n", extent->x_min);
-                printf("e.xmax %g \n", extent->x_max);
-                printf("e.ymin %g \n", extent->y_min);
-                printf("e.ymax %g \n", extent->y_max);
-*/
-
-		fraction = modf( (extent->x_min - x_base)/x_dist, &intpart );
+		(void) modf( (extent->x_min - x_base)/x_dist, &intpart );
 		x_min = (int64_t) intpart;
 		x_min = (x_min < 0) ? 0 : x_min; 
 
-		fraction = modf( ABS(extent->x_max - x_base)/x_dist, &intpart );
+		(void) modf( ABS(extent->x_max - x_base)/x_dist, &intpart );
 		x_max = (int64_t) intpart;
 		x_max = (x_max > (ncol-1)) ? (ncol-1) : x_max;
 
-		fraction = modf( (extent->y_min - y_base)/y_dist, &intpart );
+		(void) modf( (extent->y_min - y_base)/y_dist, &intpart );
 		y_min = (int64_t) intpart;
 		y_min = (y_min < 0 ) ? 0 : y_min;
 
-		fraction = modf( ABS(extent->y_max - y_base)/y_dist, &intpart );
+		(void) modf( ABS(extent->y_max - y_base)/y_dist, &intpart );
 		y_max = (int64_t) intpart;
 		y_max = (y_max > (nrow-1)) ? (nrow-1) : y_max;
 		

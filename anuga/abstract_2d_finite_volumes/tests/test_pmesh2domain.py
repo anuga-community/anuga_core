@@ -214,6 +214,6 @@ friction  \n \
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_pmesh2domain, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_pmesh2domain)
     runner = unittest.TextTestRunner()
     runner.run(suite)

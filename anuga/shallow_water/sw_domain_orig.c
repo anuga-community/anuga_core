@@ -1018,12 +1018,12 @@ double _compute_fluxes_central(struct domain *D, double timestep){
                 D->edge_timestep[ki] = D->radii[k] * tmp ;
                 if (n >= 0) {
                     D->edge_timestep[nm] = D->radii[n] * tmp;
-                    if ((D->tri_full_flag[k] == 1)) 
+                    if (D->tri_full_flag[k] == 1)
                         D->max_speed[n] = fmax(D->max_speed[n], max_speed_local);
                 }
 
                 // Update the timestep
-                if ((D->tri_full_flag[k] == 1)) {
+                if (D->tri_full_flag[k] == 1) {
 
                     speed_max_last = fmax(speed_max_last, max_speed_local);
 
@@ -1364,12 +1364,7 @@ int64_t _extrapolate_second_order_sw(struct domain *D) {
     double* xmom_centroid_values;
     double* ymom_centroid_values;
     double* bed_centroid_values;
-    double* edge_coordinates;
     double* vertex_coordinates;
-    double* stage_edge_values;
-    double* xmom_edge_values;
-    double* ymom_edge_values;
-    double* bed_edge_values;
     double* stage_vertex_values;
     double* xmom_vertex_values;
     double* ymom_vertex_values;
@@ -1413,12 +1408,7 @@ int64_t _extrapolate_second_order_sw(struct domain *D) {
     xmom_centroid_values      = D->xmom_centroid_values;
     ymom_centroid_values      = D->ymom_centroid_values;
     bed_centroid_values       = D->bed_centroid_values;
-    edge_coordinates          = D->edge_coordinates;
     vertex_coordinates        = D->vertex_coordinates;
-    stage_edge_values         = D->stage_edge_values;
-    xmom_edge_values          = D->xmom_edge_values;
-    ymom_edge_values          = D->ymom_edge_values;
-    bed_edge_values           = D->bed_edge_values;
     stage_vertex_values       = D->stage_vertex_values;
     xmom_vertex_values        = D->xmom_vertex_values;
     ymom_vertex_values        = D->ymom_vertex_values;
@@ -1768,7 +1758,7 @@ int64_t _extrapolate_second_order_sw(int64_t number_of_elements,
                 }
             }
 
-            if ((k2 == k3 + 3)) {
+            if (k2 == k3 + 3) {
                 // If we didn't find an internal neighbour
                 return -1;
             }
@@ -2441,7 +2431,7 @@ int64_t _extrapolate_second_order_edge_sw(struct domain *D) {
           }
       }
 
-      if ((k2 == k3 + 3))
+      if (k2 == k3 + 3)
       {
         // If we didn't find an internal neighbour
         //report_python_error(AT, "Internal neighbour not found");
@@ -2807,14 +2797,12 @@ void _manning_friction_flat(double g, double eps, int64_t N,
         double* uh, double* vh,
         double* eta, double* xmom_update, double* ymom_update) {
 
-    int64_t k, k3;
-    double S, h, z, z0, z1, z2;
-    const double one_third = 1.0/3.0; 
+    int64_t k;
+    double S, h, z;
     const double seven_thirds = 7.0/3.0;
 
     for (k = 0; k < N; k++) {
         if (eta[k] > eps) {
-            k3 = 3 * k;
             // Get bathymetry
             // z0 = zv[k3 + 0];
             // z1 = zv[k3 + 1];

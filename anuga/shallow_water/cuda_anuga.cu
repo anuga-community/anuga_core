@@ -1682,10 +1682,18 @@ __global__ void _cuda_update_sw(int64_t number_of_elements,
 
 
   // Protect against the water elevation falling below the triangle bed
-  __global__ void _cuda_protect_against_infinitesimal_and_negative_heights(double domain_minimum_allowed_height, int64_t number_of_elements, double* stage_centroid_values, double* bed_centroid_values, double* xmom_centroid_values, double* areas, double* stage_vertex_values) {
+  __global__ void _cuda_protect_against_infinitesimal_and_negative_heights(double domain_minimum_allowed_height,
+     int64_t number_of_elements, 
+     double* stage_centroid_values, 
+     double* bed_centroid_values, 
+     double* xmom_centroid_values, 
+     double* areas, 
+     double* stage_vertex_values)
+  {
     int64_t k3, K;
     double hc, bmin;
     double mass_error = 0.;
+    
   // This acts like minimum_allowed height, but scales with the vertical
   // distance between the bed_centroid_value and the max bed_edge_value of
   // every triangle.
@@ -1729,7 +1737,7 @@ __global__ void _cuda_update_sw(int64_t number_of_elements,
   }
 
   // COMPUTE FORCING TERMS
-  __global__ void cft_manning_friction_flat(double g, double eps, int64_t N,
+__global__ void cft_manning_friction_flat(double g, double eps, int64_t N,
         double* w, double* zv,
         double* uh, double* vh,
         double* eta, double* xmom, double* ymom) {
