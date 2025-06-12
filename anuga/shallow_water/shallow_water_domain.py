@@ -2126,7 +2126,6 @@ class Domain(Generic_Domain):
         else:
             raise Exception('Not implemented')
 
-
         if num_negative_ids > 0:
             # FIXME: This only warns the first time -- maybe we should warn whenever loss occurs?
             import warnings
