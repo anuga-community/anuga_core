@@ -586,7 +586,6 @@ point2, 0.5, 2.0\n")
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Gauge, 'test')
-#    runner = unittest.TextTestRunner(verbosity=2)
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Gauge)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

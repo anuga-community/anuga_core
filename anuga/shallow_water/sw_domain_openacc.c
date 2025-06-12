@@ -673,7 +673,7 @@ double _openacc_compute_fluxes_central(struct domain *D,
         edge_timestep = D->radii[k] *1.0 / fmax(max_speed_local, epsilon);
 
         // Update the timestep
-        if ((D->tri_full_flag[k] == 1))
+        if (D->tri_full_flag[k] == 1)
         {
           if (max_speed_local > epsilon)
           {
@@ -973,7 +973,7 @@ double _compute_fluxes_central_parallel_data_flow(struct domain *D, double times
         D->edge_timestep[ki] = D->radii[k] * tmp;
 
         // Update the timestep
-        if ((D->tri_full_flag[k] == 1))
+        if (D->tri_full_flag[k] == 1)
         {
 
           speed_max_last = fmax(speed_max_last, max_speed_local);
@@ -1250,7 +1250,7 @@ static inline void __calc_edge_values_2_bdy(double beta, double cv_k, double cv_
                         double *edge_values)
 {
   double dqv[3];
-  double dq0, dq1, dq2;
+  double dq1;
   double a, b;
   double qmin, qmax;
 
@@ -1308,10 +1308,6 @@ int64_t _openacc_extrapolate_second_order_edge_sw(struct domain *D)
   double edge_values[3];
   double cv_k, cv_k0, cv_k1, cv_k2;
 
-  double x_centroid_work;
-  double xmom_centroid_values;
-  double y_centroid_work;
-  double ymom_centroid_values;
 
   double minimum_allowed_height = D->minimum_allowed_height;
   int64_t number_of_elements = D->number_of_elements;
@@ -1367,15 +1363,15 @@ int64_t _openacc_extrapolate_second_order_edge_sw(struct domain *D)
   // Begin extrapolation routine
 
 // #pragma omp parallel for simd private(k0, k1, k2, k3, k6, coord_index, i, \
-                          dx1, dx2, dy1, dy2, dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, \
-                          x_centroid_work, xmom_centroid_values, y_centroid_work, ymom_centroid_values, \
-                          dq1, area2, inv_area2, \
-                          cv_k, cv_k0, cv_k1, cv_k2, edge_values, \
-                          x, y, x0, y0, x1, y1, x2, y2, xv0, yv0, xv1, yv1, xv2, yv2, \
-                          dqv, qmin, qmax, hmin, hmax, \
-                          hc, h0, h1, h2, beta_tmp, hfactor, \
-                          dk, dk_inv, a, b) default(none) shared(D) \
-                          firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order, c_tmp, d_tmp)
+//                          dx1, dx2, dy1, dy2, dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, \
+//                          x_centroid_work, xmom_centroid_values, y_centroid_work, ymom_centroid_values, \
+//                          dq1, area2, inv_area2, \
+//                          cv_k, cv_k0, cv_k1, cv_k2, edge_values, \
+//                          x, y, x0, y0, x1, y1, x2, y2, xv0, yv0, xv1, yv1, xv2, yv2, \
+//                          dqv, qmin, qmax, hmin, hmax, \
+//                          hc, h0, h1, h2, beta_tmp, hfactor, \
+//                          dk, dk_inv, a, b) default(none) shared(D) \
+//                          firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order, c_tmp, d_tmp)
   for (k = 0; k < number_of_elements; k++)
   {
 

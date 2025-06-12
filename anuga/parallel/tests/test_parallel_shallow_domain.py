@@ -88,5 +88,5 @@ class Test_parallel_shallow_domain(unittest.TestCase):
 
 if __name__ == "__main__":
     runner = unittest.TextTestRunner()
-    suite = unittest.makeSuite(Test_parallel_shallow_domain, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_parallel_shallow_domain)
     runner.run(suite)

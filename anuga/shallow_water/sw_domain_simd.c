@@ -665,7 +665,7 @@ double _simd_compute_fluxes_central(struct domain *D,
         edge_timestep = D->radii[k] *1.0 / fmax(max_speed_local, epsilon);
 
         // Update the timestep
-        if ((D->tri_full_flag[k] == 1))
+        if (D->tri_full_flag[k] == 1)
         {
           if (max_speed_local > epsilon)
           {
@@ -1006,7 +1006,7 @@ double _compute_fluxes_central_parallel_data_flow(struct domain *D, double times
         D->edge_timestep[ki] = D->radii[k] * tmp;
 
         // Update the timestep
-        if ((D->tri_full_flag[k] == 1))
+        if (D->tri_full_flag[k] == 1)
         {
 
           speed_max_last = fmax(speed_max_last, max_speed_local);
@@ -1283,7 +1283,7 @@ static inline void __calc_edge_values_2_bdy(double beta, double cv_k, double cv_
                         double *edge_values)
 {
   double dqv[3];
-  double dq0, dq1, dq2;
+  double dq1;
   double a, b;
   double qmin, qmax;
 
@@ -1341,10 +1341,6 @@ int64_t _simd_extrapolate_second_order_edge_sw(struct domain *D, int64_t verbose
   double edge_values[3];
   double cv_k, cv_k0, cv_k1, cv_k2;
 
-  double x_centroid_work;
-  double xmom_centroid_values;
-  double y_centroid_work;
-  double ymom_centroid_values;
 
   double minimum_allowed_height = D->minimum_allowed_height;
   int64_t number_of_elements = D->number_of_elements;

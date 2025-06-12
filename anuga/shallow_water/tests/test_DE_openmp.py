@@ -330,6 +330,6 @@ class Test_DE_openmp(unittest.TestCase):
   
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_DE_openmp, 'test_runup')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_DE_openmp)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

@@ -641,7 +641,7 @@ if __name__ == "__main__":
         sys.stdout = fid
     else:
         pass
-    suite = unittest.makeSuite(Test_inundation_damage,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_inundation_damage)
     runner = unittest.TextTestRunner()
     runner.run(suite)
 

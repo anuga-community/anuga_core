@@ -673,6 +673,6 @@ class Test_weir_orifice_trapezoid_operator(unittest.TestCase):
 
 # =========================================================================
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_weir_orifice_trapezoid_operator, 'test_')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_weir_orifice_trapezoid_operator)
     runner = unittest.TextTestRunner()
     runner.run(suite)

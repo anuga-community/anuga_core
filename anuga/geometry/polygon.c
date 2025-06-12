@@ -41,7 +41,7 @@ int64_t __point_on_line(const double x, const double y,
   */
 
   double a0, a1, a_normal0, a_normal1, b0, b1, len_a, len_b;
-  double a_dot_b, len_ba;
+  double a_dot_b;
   double nominator, denominator;
   int64_t is_parallel;
 
@@ -655,9 +655,9 @@ int64_t __is_inside_triangle(double *point,
 
 int64_t __separate_points_by_polygon(const int64_t M, // Number of points
                                      const int64_t N, // Number of polygon vertices
-                                     double *__restrict points,
-                                     double *__restrict polygon,
-                                     int64_t *__restrict indices, // M-Array for storage indices
+                                     double *points,
+                                     double *polygon,
+                                     int64_t *indices, // M-Array for storage indices
                                      const int64_t closed,
                                      const int64_t verbose)
 {
@@ -716,20 +716,31 @@ int64_t __separate_points_by_polygon(const int64_t M, // Number of points
     else
     {
       // Check polygon
-      for (int i = 0, j = N - 1; i < N; j = i++)
+      for (int i = 0; i < N; i++)
       {
+        int j = (i + 1) % N;
+
         double px_i = polygon[2 * i];
         double py_i = polygon[2 * i + 1];
         double px_j = polygon[2 * j];
         double py_j = polygon[2 * j + 1];
 
+        // Check for case where point is contained in line segment
         if (__point_on_line(x, y, px_i, py_i, px_j, py_j, rtol, atol))
         {
-          inside = (closed == 1) ? 1 : 0;
+          if (closed == 1)
+          {
+            inside = 1;
+          }
+          else
+          {
+            inside = 0;
+          }
           break;
         }
         else
         {
+          // Check if truly inside polygon
           if (((py_i < y) && (py_j >= y)) ||
               ((py_j < y) && (py_i >= y)))
           {
@@ -753,3 +764,90 @@ int64_t __separate_points_by_polygon(const int64_t M, // Number of points
 
   return inside_index;
 }
+// int64_t __separate_points_by_polygon(int64_t M,     // Number of points
+// 				 int64_t N,     // Number of polygon vertices
+// 				 double* points,
+// 				 double* polygon,
+// 				 int64_t* indices,  // M-Array for storage indices
+// 				 int64_t closed,
+// 				 int64_t verbose) {
+
+//   double minpx, maxpx, minpy, maxpy, x, y, px_i, py_i, px_j, py_j, rtol=0.0, atol=0.0;
+//   int64_t i, j, k, outside_index, inside_index, inside;
+
+//   // Find min and max of poly used for optimisation when points
+//   // are far away from polygon
+
+//   // FIXME(Ole): Pass in rtol and atol from Python
+
+//   minpx = polygon[0]; maxpx = minpx;
+//   minpy = polygon[1]; maxpy = minpy;
+
+//   for (i=0; i<N; i++) {
+//     px_i = polygon[2*i];
+//     py_i = polygon[2*i + 1];
+
+//     if (px_i < minpx) minpx = px_i;
+//     if (px_i > maxpx) maxpx = px_i;
+//     if (py_i < minpy) minpy = py_i;
+//     if (py_i > maxpy) maxpy = py_i;
+//   }
+
+//   // Begin main loop (for each point)
+//   inside_index = 0;    // Keep track of points inside
+//   outside_index = M-1; // Keep track of points outside (starting from end)
+//   if (verbose){
+//      printf("Separating %ld points\n", M);
+//   }
+//   for (k=0; k<M; k++) {
+//     if (verbose){
+//       if (k %((M+10)/10)==0) printf("Doing %ld of %ld\n", k, M);
+//     }
+
+//     x = points[2*k];
+//     y = points[2*k + 1];
+
+//     inside = 0;
+
+//     // Optimisation
+//     if ((x > maxpx) || (x < minpx) || (y > maxpy) || (y < minpy)) {
+//       // Nothing
+//     } else {
+//       // Check polygon
+//       for (i=0; i<N; i++) {
+//         j = (i+1)%N;
+
+//         px_i = polygon[2*i];
+//         py_i = polygon[2*i+1];
+//         px_j = polygon[2*j];
+//         py_j = polygon[2*j+1];
+
+//         // Check for case where point is contained in line segment
+//         if (__point_on_line(x, y, px_i, py_i, px_j, py_j, rtol, atol)) {
+// 	  if (closed == 1) {
+// 	    inside = 1;
+// 	  } else {
+// 	    inside = 0;
+// 	  }
+// 	  break;
+//         } else {
+//           //Check if truly inside polygon
+// 	  if ( ((py_i < y) && (py_j >= y)) ||
+// 	       ((py_j < y) && (py_i >= y)) ) {
+// 	    if (px_i + (y-py_i)/(py_j-py_i)*(px_j-px_i) < x)
+// 	      inside = 1-inside;
+// 	  }
+//         }
+//       }
+//     }
+//     if (inside == 1) {
+//       indices[inside_index] = k;
+//       inside_index += 1;
+//     } else {
+//       indices[outside_index] = k;
+//       outside_index -= 1;
+//     }
+//   } // End k
+
+//   return inside_index;
+// }
