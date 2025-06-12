@@ -33,8 +33,8 @@ def manning_friction_semi_implicit_cpu(domain):
     """Apply (Manning) friction to water momentum
     """
     
-    from .sw_domain_orig_ext import manning_friction_flat
-    from .sw_domain_orig_ext import manning_friction_sloped
+    from .sw_domain_openmp_ext import manning_friction_flat
+    from .sw_domain_openmp_ext import manning_friction_sloped
     
     xmom = domain.quantities['xmomentum']
     ymom = domain.quantities['ymomentum']

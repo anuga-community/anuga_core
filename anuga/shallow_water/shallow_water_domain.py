@@ -2109,35 +2109,30 @@ class Domain(Generic_Domain):
         #Stage.update(timestep)
         #Xmom.update(timestep)
         #Ymom.update(timestep)
+        
+        assert self.get_using_discontinuous_elevation()
 
-        if self.get_using_discontinuous_elevation():
+        # Update height based on discontinuous elevation
+        if self.multiprocessor_mode == 1:
+            
+            from .sw_domain_openmp_ext import update_conserved_quantities
+            num_negative_ids = update_conserved_quantities(self, timestep)
 
-            # Choose the correct extension module
-            if self.multiprocessor_mode == 1:
-                
-                from .sw_domain_openmp_ext import update_conserved_quantities
-                num_negative_ids = update_conserved_quantities(self, timestep)
+        elif self.multiprocessor_mode == 2:
 
-            elif self.multiprocessor_mode == 2:
-                
-                # nvtxRangePush('update_conserved_quantities_kernal')
-                     
-                 update_conserved_quantities_fix_negative_cells = self.gpu_interface.update_conserved_quantities_kernal
-                 num_negative_ids = update_conserved_quantities_fix_negative_cells(self)
-                # nvtxRangePop()
-                
-                # change over to cuda routines as developed
-                #from .sw_domain_simd_ext import fix_negative_cells
-                #num_negative_ids = fix_negative_cells(self)
-            else:
-                raise Exception('Not implemented')
+            update_conserved_quantities_fix_negative_cells = self.gpu_interface.update_conserved_quantities_kernal
+            num_negative_ids = updaete_conserved_quantities_fix_negative_cells(self, timestep)
+        
+        else:
+            raise Exception('Not implemented')
 
-            if num_negative_ids > 0:
-                # FIXME: This only warns the first time -- maybe we should warn whenever loss occurs?
-                import warnings
-                msg = 'Negative cells being set to zero depth, possible loss of conservation. \n' +\
-                      'Consider using domain.report_water_volume_statistics() to check the extent of the problem'
-                warnings.warn(msg)
+
+        if num_negative_ids > 0:
+            # FIXME: This only warns the first time -- maybe we should warn whenever loss occurs?
+            import warnings
+            msg = 'Negative cells being set to zero depth, possible loss of conservation. \n' +\
+            'Consider using domain.report_water_volume_statistics() to check the extent of the problem'
+            warnings.warn(msg)
 
         # nvtxRangePop()
 
