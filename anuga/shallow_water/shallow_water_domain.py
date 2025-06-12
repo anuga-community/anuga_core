@@ -309,14 +309,11 @@ class Domain(Generic_Domain):
 
         #-------------------------------
         # Set multiprocessor mode
-        # 0. original with local timestep
-        # 1. simd code used by modes 2,3,4
-        # 2. Openmp
-        # 3. Openacc
-        # 4. Cuda
+        # 1. Openmp
+        # 2. Cuda
         #-------------------------------
         self.gpu_interface = None
-        self.set_multiprocessor_mode(2)
+        self.set_multiprocessor_mode(1)
 
         #-------------------------------
         # datetime and timezone
@@ -1852,19 +1849,9 @@ class Domain(Generic_Domain):
 
         # nvtxRangePush("Compute Fluxes (Domain)")
         # Choose the correct extension module
-        if self.multiprocessor_mode == 0:
-            from .sw_domain_orig_ext import compute_fluxes_ext_central
-
-        elif self.multiprocessor_mode == 1:
-            from .sw_domain_simd_ext import compute_fluxes_ext_central
-
-        elif self.multiprocessor_mode == 2:
+        if self.multiprocessor_mode == 1:
             from .sw_domain_openmp_ext import compute_fluxes_ext_central
-
-        elif self.multiprocessor_mode == 3:
-            from .sw_domain_openacc_ext import compute_fluxes_ext_central
-
-        elif self.multiprocessor_mode == 4:
+        elif self.multiprocessor_mode == 2:
             # change over to cuda routines as developed
             # from .sw_domain_simd_ext import compute_fluxes_ext_central
             # FIXME SR: 2023_10_16 currently compute_fluxes and distribute together
@@ -1890,23 +1877,10 @@ class Domain(Generic_Domain):
         # Do extrapolation step
         # nvtxRangePush('extrapolate')
         # Choose the correct extension module
-        if self.multiprocessor_mode == 0:
-            from .sw_domain_orig_ext import extrapolate_second_order_edge_sw
-            extrapolate_second_order_edge_sw(self)
-
-        elif self.multiprocessor_mode == 1:
-            from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
-            extrapolate_second_order_edge_sw(self)
-
-        elif self.multiprocessor_mode == 2:
+        if self.multiprocessor_mode == 1:
             from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw(self)
-
-        elif self.multiprocessor_mode == 3:
-            from .sw_domain_openacc_ext import extrapolate_second_order_edge_sw
-            extrapolate_second_order_edge_sw(self)
-
-        elif self.multiprocessor_mode == 4:
+        elif self.multiprocessor_mode == 2:
             # change over to cuda routines as developed
             #from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
@@ -2019,21 +1993,12 @@ class Domain(Generic_Domain):
 
         # nvtxRangePush('protect_new')
         # Choose the correct extension module
-        if self.multiprocessor_mode == 0:
-            from .sw_domain_orig_ext import protect_new
-
-        elif self.multiprocessor_mode == 1:
-            from .sw_domain_simd_ext import protect_new
-
+        if self.multiprocessor_mode == 1:
+            from .sw_domain_openmp_ext import protect_new
         elif self.multiprocessor_mode == 2:
-            from .sw_domain_openmp_ext import  protect_new
-
-        elif self.multiprocessor_mode == 3:
-            from .sw_domain_openacc_ext import  protect_new
-
-        elif self.multiprocessor_mode == 4:
             # change over to cuda routines as developed
             # # from .sw_domain_simd_ext import  protect_new
+            #from .sw_domain_openmp_ext import protect_new
             protect_new = self.gpu_interface.protect_against_infinitesimal_and_negative_heights_kernal
         else:
             raise Exception('Not implemented')
@@ -2111,35 +2076,14 @@ class Domain(Generic_Domain):
         if self.get_using_discontinuous_elevation():
 
             # Choose the correct extension module
-            if self.multiprocessor_mode == 0:
-                Stage.update(timestep)
-                Xmom.update(timestep)
-                Ymom.update(timestep)
-                from .sw_domain_orig_ext import fix_negative_cells
-                num_negative_ids = fix_negative_cells(self)
-
-            elif self.multiprocessor_mode == 1:
-                Stage.update(timestep)
-                Xmom.update(timestep)
-                Ymom.update(timestep)
-                from .sw_domain_simd_ext import fix_negative_cells
-                num_negative_ids = fix_negative_cells(self)
-
-            elif self.multiprocessor_mode == 2:
+            if self.multiprocessor_mode == 1:
                 Stage.update(timestep)
                 Xmom.update(timestep)
                 Ymom.update(timestep)                
                 from .sw_domain_openmp_ext import fix_negative_cells
                 num_negative_ids = fix_negative_cells(self)
 
-            elif self.multiprocessor_mode == 3:
-                Stage.update(timestep)
-                Xmom.update(timestep)
-                Ymom.update(timestep)
-                from .sw_domain_openacc_ext import fix_negative_cells
-                num_negative_ids = fix_negative_cells(self)
-                
-            elif self.multiprocessor_mode == 4:
+            elif self.multiprocessor_mode == 2:
                 
                 # nvtxRangePush('update_conserved_quantities_kernal')
                      
@@ -2723,21 +2667,11 @@ class Domain(Generic_Domain):
 
         nvtxRangePush('compute_flux_update_frequency')
         # Choose the correct extension module
-        if self.multiprocessor_mode == 0:
-            from .sw_domain_orig_ext import compute_flux_update_frequency
-
-        elif self.multiprocessor_mode == 1:
-            from .sw_domain_simd_ext import compute_flux_update_frequency
-
-        elif self.multiprocessor_mode == 2:
+        if self.multiprocessor_mode == 1:
             from .sw_domain_openmp_ext import compute_flux_update_frequency
-
-        elif self.multiprocessor_mode == 3:
-            from .sw_domain_openacc_ext import compute_flux_update_frequency
-
-        elif self.multiprocessor_mode == 4:
+        elif self.multiprocessor_mode == 2:
             # change over to cuda routines as developed
-            from .sw_domain_simd_ext import compute_flux_update_frequency
+            from .sw_domain_openmp_ext import compute_flux_update_frequency
         else:
             raise Exception('Not implemented')
 
@@ -2859,37 +2793,30 @@ class Domain(Generic_Domain):
     def set_multiprocessor_mode(self, multiprocessor_mode= 0):
         """
         Set multiprocessor mode 
-        -1. python code 
-         0. original cython
-         1. simd (used for multiprocessor)
-         2. openmp (in development)
-         3. openacc (in development)
-         4. cuda (in development)
+         1. openmp (in development)
+         2. cuda (in development)
         """
 
-        if multiprocessor_mode not in [-1, 0, 1, 2, 3, 4]:
-            raise ValueError('Invalid multiprocessor mode. Must be one of [-1, 0, 1, 2, 3, 4]')
+        if multiprocessor_mode not in [1,2]:
+            raise ValueError('Invalid multiprocessor mode. Must be one of [1,2]')
 
         self.multiprocessor_mode = multiprocessor_mode
 
-        if self.multiprocessor_mode == 4:
+        if self.multiprocessor_mode == 2:
             self.set_gpu_interface()
 
     def get_multiprocessor_mode(self):
         """
         Get multiprocessor mode 
         
-        0. original
-        1. simd (used for multiprocessor)
-        2. openmp (in development)
-        3. openacc (in development)
-        4. cuda (in development)
+        1. openmp (in development)
+        2. cuda (in development)
         """
         return self.multiprocessor_mode 
 
     def set_gpu_interface(self):
 
-        if self.multiprocessor_mode == 4 and self.gpu_interface is None:
+        if self.multiprocessor_mode == 2 and self.gpu_interface is None:
 
             # first check that cupy is available
             try:
@@ -2902,7 +2829,7 @@ class Domain(Generic_Domain):
                 print('| WARNING: cupy or gpu not available, so falling back to multiprocessor_mode 0 |')
                 print('|                                                                              |')
                 print('+==============================================================================+')
-                self.set_multiprocessor_mode(0)
+                self.set_multiprocessor_mode(1)
                 return
 
             from .sw_domain_cuda import GPU_interface

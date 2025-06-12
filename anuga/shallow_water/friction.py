@@ -37,12 +37,9 @@ def manning_friction_implicit_cpu(domain):
     in sw_domain_orig_ext.py
     """
 
-    if domain.multiprocessor_mode == 2:
+    if domain.multiprocessor_mode == 1:
         from .sw_domain_openmp_ext import manning_friction_flat
         from .sw_domain_openmp_ext import manning_friction_sloped
-    else:
-        from .sw_domain_orig_ext import manning_friction_flat
-        from .sw_domain_orig_ext import manning_friction_sloped
 
     
     xmom = domain.quantities['xmomentum']

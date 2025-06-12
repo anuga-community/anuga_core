@@ -95,13 +95,22 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	struct edge:
 		pass
 
+	int64_t __rotate(double *q, double n1, double n2)
 	double _openmp_compute_fluxes_central(domain* D, double timestep)
 	double _openmp_protect(domain* D)
+	int64_t _openmp_extrapolate_second_order_sw(domain* D)
 	int64_t _openmp_extrapolate_second_order_edge_sw(domain* D)
 	int64_t _openmp_fix_negative_cells(domain* D)
+	int64_t _openmp_gravity(domain *D)
+	int64_t _openmp_gravity_wb(domain *D) 
 	# FIXME SR: Change over to domain* D argument
 	void _openmp_manning_friction_flat(double g, double eps, int64_t N, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom, double* ymom)
 	void _openmp_manning_friction_sloped(double g, double eps, int64_t N, double* x, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom_update, double* ymom_update)
+	int64_t __flux_function_central(double* ql, double* qr, double h_left,
+	double h_right, double hle, double hre, double n1, double n2,
+	double epsilon, double ze, double g,
+	double* edgeflux, double* max_speed, double* pressure_flux,
+	int64_t low_froude)
 
 
 
@@ -394,6 +403,19 @@ def compute_fluxes_ext_central(object domain_object, double timestep):
 		timestep =  _openmp_compute_fluxes_central(&D, timestep)
 
 	return timestep
+def extrapolate_second_order_sw(object domain_object):
+
+	cdef domain D
+	cdef int64_t e
+
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+
+	with nogil:
+		e = _openmp_extrapolate_second_order_sw(&D)
+
+	if e == -1:
+		return None
 
 def extrapolate_second_order_edge_sw(object domain_object):
 
@@ -473,4 +495,72 @@ def fix_negative_cells(object domain_object):
 	return num_negative_cells
 
 
+
+def rotate(np.ndarray[double, ndim=1, mode="c"] q not None, np.ndarray[double, ndim=1, mode="c"] normal not None, int64_t direction):
+	assert normal.shape[0] == 2, "Normal vector must have 2 components"
+	cdef np.ndarray[double, ndim=1, mode="c"] r
+	cdef double n1, n2
+	n1 = normal[0]
+	n2 = normal[1]
+	if direction == -1:
+		n2 = -n2
+	r = np.ascontiguousarray(np.copy(q))
+	__rotate(&r[0], n1, n2)
+	return r
+
+
+
+
+def flux_function_central(
+	np.ndarray[double, ndim=1, mode="c"] normal not None,
+	np.ndarray[double, ndim=1, mode="c"] ql not None,
+	np.ndarray[double, ndim=1, mode="c"] qr not None,
+	double h_left,
+	double h_right,
+	double hle,
+	double hre,
+	np.ndarray[double, ndim=1, mode="c"] edgeflux not None,
+	double epsilon,
+	double ze,
+	double g,
+	double H0,
+	double hc,
+	double hc_n,
+	int64_t low_froude
+):
+	cdef double h0, limiting_threshold, max_speed, pressure_flux
+	cdef int64_t err
+
+	h0 = H0 * H0
+	limiting_threshold = 10 * H0
+
+	err = __flux_function_central(
+		&ql[0], &qr[0],
+		h_left, h_right, hle, hre, normal[0], normal[1],
+		epsilon, ze, g,
+		&edgeflux[0], &max_speed, &pressure_flux,
+		low_froude
+	)
+
+	assert err >= 0, "Discontinuous Elevation"
+
+	return max_speed, pressure_flux
+
+def gravity(object domain_object):
+	cdef domain D
+
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+
+	err = _openmp_gravity(&D)
+	if err == -1:
+		return None
+
+def gravity_wb(object domain_object):
+	cdef domain D
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+	err = _openmp_gravity_wb(&D)
+	if err == -1:
+		return None
 

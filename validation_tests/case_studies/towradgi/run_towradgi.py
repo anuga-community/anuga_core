@@ -75,7 +75,7 @@ scale = 1 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (25
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
 
-multiprocessor_mode = 2
+multiprocessor_mode = 1
 
 checkpoint_time = max(600/scale, 60)
 checkpoint_dir = 'CHECKPOINTS'
