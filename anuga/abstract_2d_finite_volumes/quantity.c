@@ -99,13 +99,12 @@ int64_t _compute_local_gradients(keyint N,
 			       double* a,
 			       double* b) {
 
-  keyint k, k2, k3, k6;
+  keyint k, k3, k6;
   double x0, y0, x1, y1, x2, y2, v0, v1, v2;
 
   for (k=0; k<N; k++) {
     k6 = 6*k;
     k3 = 3*k;
-    k2 = 2*k;
 
     // vertex coordinates
     // x0, y0, x1, y1, x2, y2 = X[k,:]
@@ -305,15 +304,13 @@ int64_t _limit_vertices_by_all_neighbours(keyint N, double beta,
 				      double* y_gradient) {
 
 
-  keyint i, k, k2, k3, k6;
+  keyint i, k, k3;
   keyint n;
   double qmin, qmax, qn, qc;
   double dq, dqa[3], phi, r;
 
   for (k=0; k<N; k++){
-    k6 = 6*k;
     k3 = 3*k;
-    k2 = 2*k;
 
     qc = centroid_values[k];
     qmin = qc;
@@ -371,15 +368,13 @@ int64_t _limit_edges_by_all_neighbours(keyint N, double beta,
 				   double* x_gradient,
 				   double* y_gradient) {
 
-  keyint i, k, k2, k3, k6;
+  keyint i, k, k3;
   keyint n;
-  double qmin, qmax, qn, qc, sign;
+  double qmin, qmax, qn, qc;
   double dq, dqa[3], phi, r;
 
   for (k=0; k<N; k++){
-    k6 = 6*k;
     k3 = 3*k;
-    k2 = 2*k;
 
     qc = centroid_values[k];
     qmin = qc;
@@ -395,12 +390,6 @@ int64_t _limit_edges_by_all_neighbours(keyint N, double beta,
       }
     }
 
-    sign = 0.0;
-    if (qmin > 0.0) {
-      sign = 1.0;
-    } else if (qmax < 0) {
-      sign = -1.0;
-    }
 
     phi = 1.0;
     for (i=0; i<3; i++) {
@@ -455,15 +444,13 @@ int64_t _limit_edges_by_neighbour(keyint N, double beta,
 		     double* edge_values,
 		     int64_t*   neighbours) {
 
-	keyint i, k, k2, k3, k6;
+	keyint i, k, k3;
 	keyint n;
 	double qmin, qmax, qn, qc;
 	double dq, dqa[3], phi, r;
 
 	for (k=0; k<N; k++){
-		k6 = 6*k;
 		k3 = 3*k;
-		k2 = 2*k;
 
 		qc = centroid_values[k];
 		phi = 1.0;
@@ -512,15 +499,13 @@ int64_t _limit_gradient_by_neighbour(keyint N, double beta,
 		     double* y_gradient,
 		     int64_t*   neighbours) {
 
-	keyint i, k, k2, k3, k6;
+	keyint i, k, k3;
 	keyint n;
 	double qmin, qmax, qn, qc;
 	double dq, dqa[3], phi, r;
 
 	for (k=0; k<N; k++){
-		k6 = 6*k;
 		k3 = 3*k;
-		k2 = 2*k;
 
 		qc = centroid_values[k];
 		phi = 1.0;
@@ -567,14 +552,12 @@ int64_t _bound_vertices_below_by_constant(keyint N, double bound,
 		     double* x_gradient,
 		     double* y_gradient) {
 
-	keyint i, k, k2, k3, k6;
+	keyint i, k, k3;
 	double qmin, qc;
 	double dq, dqa[3], phi, r;
 
 	for (k=0; k<N; k++){
-		k6 = 6*k;
 		k3 = 3*k;
-		k2 = 2*k;
 
 		qc = centroid_values[k];
 		qmin = bound;
@@ -619,14 +602,12 @@ int64_t _bound_vertices_below_by_quantity(keyint N,
 				      double* x_gradient,
 				      double* y_gradient) {
 
-	keyint i, k, k2, k3, k6;
+	keyint i, k, k3;
 	double qmin, qc;
 	double dq, dqa[3], phi, r;
 
 	for (k=0; k<N; k++){
-		k6 = 6*k;
 		k3 = 3*k;
-		k2 = 2*k;
 
 		qc = centroid_values[k];
 

@@ -54,7 +54,7 @@ typedef struct {
 
 // 'Constructor' function. Returns pointer to new malloced memory, with 
 // appropriate initilisation.
-sparse_dok * make_dok();
+sparse_dok * make_dok(void);
 
 // --------------- Hashtable Functions -----------------
 

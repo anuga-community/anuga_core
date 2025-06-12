@@ -48,9 +48,8 @@ int64_t _build_geo_structure(int64_t n,
         double *edge_midpoints,
         int64_t *geo_indices,
         double *geo_values) {
-    int64_t i, edge, edge_counted, j, m;
+    int64_t i, edge, j, m;
     double dist, this_x, this_y, other_x, other_y, edge_length;
-    edge_counted = 0;
     for (i = 0; i < n; i++) {
         //The centroid coordinates of triangle i
         this_x = centroids[2 * i];
@@ -65,7 +64,6 @@ int64_t _build_geo_structure(int64_t n,
             if (j < 0) {
                 m = -j - 1;
                 geo_indices[3 * i + edge] = n + m;
-                edge_counted++;
 
                 other_x = edge_midpoints[2 * (3 * i + edge)];
                 other_y = edge_midpoints[2 * (3 * i + edge) + 1];
@@ -94,7 +92,7 @@ int64_t _build_elliptic_matrix_not_symmetric(int64_t n,
         double *data,
         int64_t *colind) {
     int64_t i, k, edge, j[4], sorted_j[4], this_index;
-    double h_j, v[3], v_i; //v[k] = value of the interaction of edge k in a given triangle, v_i = (i,i) entry
+    double v[3], v_i; //v[k] = value of the interaction of edge k in a given triangle, v_i = (i,i) entry
     for (i = 0; i < n; i++) {
         v_i = 0.0;
         j[3] = i;
@@ -200,7 +198,7 @@ int64_t _update_elliptic_matrix_not_symmetric(int64_t n,
         double *data,
         int64_t *colind) {
     int64_t i, k, edge, j[4], sorted_j[4], this_index;
-    double h_j, v[3], v_i; //v[k] = value of the interaction of edge k in a given triangle, v_i = (i,i) entry
+    double  v[3], v_i; //v[k] = value of the interaction of edge k in a given triangle, v_i = (i,i) entry
     for (i = 0; i < n; i++) {
         v_i = 0.0;
         j[3] = i;
@@ -208,11 +206,6 @@ int64_t _update_elliptic_matrix_not_symmetric(int64_t n,
         //Get the values of each interaction, and the column index at which they occur
         for (edge = 0; edge < 3; edge++) {
             j[edge] = geo_indices[3 * i + edge];
-            if (j[edge] < n) { //interior
-                h_j = cell_data[j[edge]];
-            } else { //boundary
-                h_j = bdry_data[j[edge] - n];
-            }
             v[edge] = -cell_data[i] * geo_values[3 * i + edge]; //the negative of the individual interaction
             v_i += cell_data[i] * geo_values[3 * i + edge]; //sum the three interactions
         }

@@ -11,13 +11,13 @@ static void *emalloc(size_t amt,char * location)
         exit(EXIT_FAILURE);
     }
     return v;
-};
+}
 
 // ***************************************************
 
 // 'Constructor'
 
-sparse_dok * make_dok(){
+sparse_dok * make_dok(void){
 
     sparse_dok * ret = emalloc(sizeof(sparse_dok),"make_dok");
     ret->edgetable=NULL;
@@ -176,8 +176,6 @@ void add_sparse_dok(sparse_dok * dok1,double mult1,sparse_dok * dok2,double mult
 
     int64_t k;
     for(k=0;k<num_entries;k++){
-        int64_t i = edge->key.i;
-        int64_t j = edge->key.j;
         double value = edge->entry;
         edge->entry=value*mult1;
         edge2=find_dok_entry(dok2,edge->key);

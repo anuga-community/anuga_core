@@ -152,15 +152,17 @@ int64_t getNumData(const int32_t *fros, const int32_t *lros, const int32_t total
     int64_t numData = 0;
 
     last_output_step = 0;   
-    for(ista = 0; ista < total_number_of_stations; ista++)
+    for(ista = 0; ista < total_number_of_stations; ista++){
+
         if(*(fros + ista) != -1)
         {
             numData += *(lros + ista) - *(fros + ista) + 1;
             last_output_step = (last_output_step < *(lros+ista) ? 
                 *(lros+ista):last_output_step);
         }   
-        numData += last_output_step*total_number_of_stations; /* these are the t records */
-        return numData;
+    }
+    numData += last_output_step*total_number_of_stations; /* these are the t records */
+    return numData;
 }
 
 /////////////////////////////////////////////////////////////////////////
