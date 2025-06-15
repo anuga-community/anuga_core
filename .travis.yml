@@ -38,6 +38,7 @@ install:
 script:
     - export OMPI_MCA_btl_vader_single_copy_mechanism=none
     - python --version
+    - export OMP_NUM_THREADS=1
     - pytest -q --pyargs anuga
 
 after_success:
