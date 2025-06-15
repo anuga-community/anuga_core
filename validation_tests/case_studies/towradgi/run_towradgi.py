@@ -78,8 +78,8 @@ finaltime=140.
 scale = 1 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
-# Choices are 0 (original),  2 (some openmp parallelism)
-multiprocessor_mode = 2
+# Choose openmp cpu (1) or openmp offloaded gpu (2)
+multiprocessor_mode = 1
 
 checkpoint_time = max(600/scale, 60)
 checkpoint_dir = 'CHECKPOINTS'

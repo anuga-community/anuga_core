@@ -52,15 +52,6 @@ py3.extension_module('pmesh2domain_ext',
   install: true,
 )
 
-py3.extension_module('quantity_ext',
-  sources: ['quantity_ext.pyx'],
-  include_directories: inc_dir,
-  dependencies: openmp_deps,
-  #c_args : ['-O3', '-march=native', '-fopenmp', '-g'],
-  subdir: 'anuga/abstract_2d_finite_volumes',
-  install: true,
-)
-
 
 py3.extension_module('quantity_openmp_ext',
   sources: ['quantity_openmp_ext.pyx'],
@@ -71,14 +62,6 @@ py3.extension_module('quantity_openmp_ext',
   install: true,
 )
 
-py3.extension_module('quantity_openacc_ext',
-  sources: ['quantity_openacc_ext.pyx'],
-  c_args : ['-O3', '-march=native', '-fopenmp', '-g'],
-  include_directories: inc_dir,
-  dependencies: openmp_deps,
-  subdir: 'anuga/abstract_2d_finite_volumes',
-  install: true,
-)
 
 py3.extension_module('quantity_cuda_ext',
   sources: ['quantity_cuda_ext.pyx'],

@@ -99,7 +99,7 @@ class Test_DE_openmp(unittest.TestCase):
         #----------------------------------------
         # Now just run the openmp code on domain2
         #----------------------------------------
-        domain2.set_multiprocessor_mode(2)
+        domain2.set_multiprocessor_mode(1)
         timestep = 0.1
 
         domain1.distribute_to_vertices_and_edges()
@@ -231,10 +231,10 @@ class Test_DE_openmp(unittest.TestCase):
 
 
         domain1 = create_domain('domain_base')
-        domain1.set_multiprocessor_mode(0)
+        domain1.set_multiprocessor_mode(1)
 
         domain2 = create_domain('domain_openmp')
-        domain2.set_multiprocessor_mode(0) # will change to 2 once burn in
+        domain2.set_multiprocessor_mode(1) # will change to 2 once burn in
 
         #------------------------------
         #Evolve the system through time
@@ -250,7 +250,7 @@ class Test_DE_openmp(unittest.TestCase):
         #----------------------------------------
         # Now just run the openmp code on domain2
         #----------------------------------------
-        domain2.set_multiprocessor_mode(2)
+        domain2.set_multiprocessor_mode(1)
         timestep = 0.1
 
         domain1.distribute_to_vertices_and_edges()

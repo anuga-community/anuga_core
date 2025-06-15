@@ -241,13 +241,10 @@ class Generic_Domain(object):
 
         #-------------------------------
         # Set multiprocessor mode 
-        # 0. orig (original with edge optim)
-        # 1. simd (used for multiprocessor)
-        # 2. openmp (in development)
-        # 3. openacc (in development)
-        # 4. cuda (in development)
+        # 1. openmp (in development)
+        # 2. cuda (in development)
         #-------------------------------    
-        self.set_multiprocessor_mode(0)
+        self.set_multiprocessor_mode(1)
 
         self.processor = processor
         self.numproc = numproc
@@ -749,14 +746,11 @@ class Generic_Domain(object):
         """
         Set multiprocessor mode 
         
-        0. original
-        1. simd (used for multiprocessor)
-        2. openmp (in development)
-        3. openacc (in development)
-        4. cuda (in development)
+        1. openmp (in development)
+        2. cuda (in development)
         """
 
-        if multiprocessor_mode in [-1, 0,1,2,3,4]:
+        if multiprocessor_mode in [1,2]:
             self.multiprocessor_mode = multiprocessor_mode
         else:
             raise Exception('multiprocessor mode {multiprocessor_mode} not supported')
@@ -765,11 +759,8 @@ class Generic_Domain(object):
         """
         Get multiprocessor mode 
         
-        0. original
-        1. simd (used for multiprocessor)
-        2. openmp (in development)
-        3. openacc (in development)
-        4. cuda (in development)
+        1. openmp (in development)
+        2. cuda (in development)
         """
         return self.multiprocessor_mode 
             
