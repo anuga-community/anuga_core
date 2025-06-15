@@ -30,7 +30,7 @@ build_script:
   - python --version
 
   # If using m2w64 gcc compiler for windows uncomment the following
-  - conda install -c conda-forge libpython m2w64-toolchain
+  #- conda install -c conda-forge libpython m2w64-toolchain
 
   - cc -v
 
