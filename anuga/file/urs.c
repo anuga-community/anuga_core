@@ -491,7 +491,6 @@ float** _read_mux2(int32_t numSrc,
             fprintf(stderr, "cannot open file %s\n", muxFileName);
             free(muxData);
             free(temp_sts_data);
-            free(muxData);
 
             return NULL;                    
         }
@@ -522,7 +521,6 @@ float** _read_mux2(int32_t numSrc,
             fclose(fp);
             free(muxData);
             free(temp_sts_data);
-            free(muxData);
 
             return NULL;
         }	

@@ -125,9 +125,9 @@ void cg_zAx(double * z, double * data, int64_t * colind, int64_t * row_ptr, doub
 void cg_zDx(double * z, double * D, double * x, int64_t M){
 
   
-  int64_t i, j, ckey;
+  int64_t i;
    
-    #pragma omp parallel for private(ckey,j,i)
+    #pragma omp parallel for private(i)
     for (i=0; i<M; i++){
       z[i]=D[i]*x[i];              
     }
@@ -143,9 +143,9 @@ void cg_zDx(double * z, double * D, double * x, int64_t M){
 void cg_zDinx(double * z, double * D, double * x, int64_t M){
 
   
-  int64_t i, j, ckey;
+  int64_t i;
    
-    #pragma omp parallel for private(ckey,j,i)
+    #pragma omp parallel for private(i)
     for (i=0; i<M; i++){
       z[i]=1.0/D[i]*x[i];              
     }
