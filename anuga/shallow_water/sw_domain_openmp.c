@@ -801,16 +801,20 @@ static inline void compute_qmin_qmax_from_dq1(const double dq1, double *qmin, do
   }
 }
 
-static inline void update_centroid_values(struct domain *__restrict D,
-                                          const int number_of_elements,
+// FIXME SR: This version of update_centroid_values caused a segmentation fault
+// on my laptop when running run_small_towradgi.py (at line defining ywork_tmp)
+static inline void update_centroid_values_with_tmps(struct domain *__restrict D,
+                                          const int64_t number_of_elements,
                                           const double minimum_allowed_height,
-                                          const int extrapolate_velocity_second_order)
+                                          const int64_t extrapolate_velocity_second_order
+                                          )
 {
   double height_tmp[number_of_elements];
   double xmom_tmp[number_of_elements];
   double ymom_tmp[number_of_elements];
   double xwork_tmp[number_of_elements];
   double ywork_tmp[number_of_elements];
+
 #pragma omp parallel for simd default(none) shared(D,height_tmp, xmom_tmp, ymom_tmp, xwork_tmp, ywork_tmp) schedule(static) \
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
   for (int k = 0; k < number_of_elements; ++k)
@@ -866,6 +870,62 @@ static inline void update_centroid_values(struct domain *__restrict D,
     D->y_centroid_work[k]        = ywork_tmp[k];
   }
 }
+
+static inline void update_centroid_values(struct domain *__restrict D,
+                                          const int64_t number_of_elements,
+                                          const double minimum_allowed_height,
+                                          const int64_t extrapolate_velocity_second_order
+                                          )
+{
+  double* height_tmp = D->height_centroid_values;
+  double* xmom_tmp  =  D->xmom_centroid_values;
+  double* ymom_tmp  =  D->ymom_centroid_values;
+  double* xwork_tmp = D->x_centroid_work;
+  double* ywork_tmp = D->y_centroid_work;
+
+
+#pragma omp parallel for simd default(none) shared(D,height_tmp, xmom_tmp, ymom_tmp, xwork_tmp, ywork_tmp) schedule(static) \
+    firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
+  for (int k = 0; k < number_of_elements; ++k)
+  {
+    double stage = D->stage_centroid_values[k];
+    double bed = D->bed_centroid_values[k];
+    double xmom = D->xmom_centroid_values[k];
+    double ymom = D->ymom_centroid_values[k];
+
+    double dk_local = fmax(stage - bed, 0.0);
+    height_tmp[k] = dk_local;
+    //D->height_centroid_values[k] = dk_local;
+
+    int is_dry = (dk_local <= minimum_allowed_height);
+    int extrapolate = (extrapolate_velocity_second_order == 1) & (dk_local > minimum_allowed_height);
+
+    // Pre-zero everything
+    double xwork = 0.0;
+    double ywork = 0.0;
+    double xmom_out = is_dry ? 0.0 : xmom;
+    double ymom_out = is_dry ? 0.0 : ymom;
+
+    // Store if extrapolating
+    if (extrapolate)
+    {
+      double inv_dk = 1.0 / dk_local;
+      xwork = xmom_out;
+      xmom_out *= inv_dk;
+      ywork = ymom_out;
+      ymom_out *= inv_dk;
+    }
+
+    xmom_tmp[k] = xmom_out;
+    ymom_tmp[k] = ymom_out;
+    xwork_tmp[k] = xwork;
+    ywork_tmp[k] = ywork;
+
+  }
+
+
+}
+
 
 #pragma omp declare simd
 static inline void set_all_edge_values_from_centroid(struct domain *__restrict D, const int k)
@@ -1064,7 +1124,7 @@ static inline void compute_edge_diffs(const double x, const double y,
 int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 {
   double minimum_allowed_height = D->minimum_allowed_height;
-  int number_of_elements = D->number_of_elements;
+  int64_t number_of_elements = D->number_of_elements;
   int64_t extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
 
   // Parameters used to control how the limiter is forced to first-order near
