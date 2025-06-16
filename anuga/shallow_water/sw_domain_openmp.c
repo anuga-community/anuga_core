@@ -25,7 +25,6 @@
 #include "util_ext.h"
 #include "sw_domain.h"
 #include "anuga_constants.h"
-//const double pi = 3.14159265358979;
 
 // FIXME: Perhaps use the epsilon used elsewhere.
 
