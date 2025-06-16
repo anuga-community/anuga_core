@@ -24,11 +24,10 @@
 #include "sw_domain_math.h"
 #include "util_ext.h"
 #include "sw_domain.h"
-
+#include "anuga_constants.h"
 //const double pi = 3.14159265358979;
 
 // FIXME: Perhaps use the epsilon used elsewhere.
-static const double TINY = 1.0e-100; // to avoid machine accuracy problems.
 
 // Trick to compute n modulo d (n%d in python) when d is a power of 2
 anuga_uint __mod_of_power_2(anuga_uint n, anuga_uint d)
