@@ -6,7 +6,7 @@
 //Shared code snippets
 
 #include "uthash.h"     /* in utilities */
-#include "anuga_constants.h" /* in utilities */
+#include "anuga_typedefs.h" /* in utilities */
 
 //==============================================================================
 // hashtable code from uthash. Look at copyright info in "uthash.h in the

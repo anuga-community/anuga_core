@@ -10,7 +10,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>
-#include "anuga_constants.h"
+#include "anuga_typedefs.h"
 
 // structures
 struct domain {

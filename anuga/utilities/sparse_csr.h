@@ -17,7 +17,7 @@
 #include <string.h>  /* strcpy */
 #include <stdint.h>  /* anuga_int uanuga_int */
 #include "math.h"
-#include "anuga_constants.h" /* in utilities */
+#include "anuga_typedefs.h" /* in utilities */
 
 #ifndef SPARSE_CSR_H
 #define SPARSE_CSR_H

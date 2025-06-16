@@ -7,17 +7,11 @@
 #include <assert.h>
 #include <stdint.h>
 
-#if defined(__APPLE__)
-// clang doesn't have openmp
-#else
-#include "omp.h"
-#endif
-
 #ifdef USE_LIB_BLAS
 #include <cblas.h>
 #endif
-
-#include "anuga_constants.h"
+#include "anuga_runtime.h"
+#include "anuga_typedefs.h"
 
 void anuga_daxpy(const anuga_int N, const double alpha, const double *X, const int incX, double *Y, const anuga_int incY)
 {

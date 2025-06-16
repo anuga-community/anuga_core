@@ -19,7 +19,7 @@
 #include "math.h"
 #include "stdio.h"
 #include <stdint.h>
-#include "anuga_constants.h"
+#include "anuga_typedefs.h"
 
 #if defined(__APPLE__)
    // clang doesn't have openmp

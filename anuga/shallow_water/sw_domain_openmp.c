@@ -21,12 +21,6 @@
 #include <assert.h>
 #include <stdint.h>
 
-#if defined(__APPLE__)
-// clang doesn't have openmp
-#else
-#include "omp.h"
-#endif
-
 #include "sw_domain_math.h"
 #include "util_ext.h"
 #include "sw_domain.h"
@@ -1439,7 +1433,7 @@ anuga_int _openmp_fix_negative_cells(struct domain *D)
   anuga_int num_negative_cells = 0;
 
 #pragma omp parallel for schedule(static) reduction(+ : num_negative_cells)
-  for (int k = 0; k < D->number_of_elements; k++)
+  for (anuga_int k = 0; k < D->number_of_elements; k++)
   {
     if ((D->stage_centroid_values[k] - D->bed_centroid_values[k] < 0.0) & (D->tri_full_flag[k] > 0))
     {

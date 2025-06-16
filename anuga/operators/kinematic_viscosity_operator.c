@@ -1,7 +1,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdint.h>
-#include "anuga_constants.h"
+#include "anuga_typedefs.h"
 //Rough quicksort implementation (for build_operator_matrix)
 // taken from http://cprogramminglanguage.net/quicksort-algorithm-c-source-code.aspx
 

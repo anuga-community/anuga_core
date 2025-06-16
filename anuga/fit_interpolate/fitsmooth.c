@@ -9,7 +9,7 @@
 
 #include "sparse_dok.h" /* in utilities */
 #include "quad_tree.h"  /* in utilities */
-#include "anuga_constants.h" /* in utilities */
+#include "anuga_typedefs.h" /* in utilities */
 
 #if defined(__APPLE__)
    // clang doesn't have openmp

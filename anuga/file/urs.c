@@ -11,7 +11,7 @@ gcc -shared urs_ext.o  -o urs_ext.so
 #include <float.h>
 #include <time.h>
 #include <stdint.h>
-#include "anuga_constants.h"
+#include "anuga_typedefs.h"
 
 #define MAX_FILE_NAME_LENGTH 128
 #define NODATA 99.0

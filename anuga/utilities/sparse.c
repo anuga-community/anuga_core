@@ -12,7 +12,7 @@
 #include "math.h"
 #include "stdio.h"
 #include <stdint.h>
-#include "anuga_constants.h"
+#include "anuga_typedefs.h"
 
 //Matrix-vector routine
 anuga_int _csr_mv(anuga_int M,
