@@ -15,7 +15,7 @@
 #include "math.h"
 #include "stdint.h"
 #include "stdio.h"
-#include "anuga_constants.h"
+#include "anuga_typedefs.h"
 #define YES 1
 #define NO 0
 

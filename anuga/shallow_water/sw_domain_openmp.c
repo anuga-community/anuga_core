@@ -21,20 +21,12 @@
 #include <assert.h>
 #include <stdint.h>
 
-#if defined(__APPLE__)
-// clang doesn't have openmp
-#else
-#include "omp.h"
-#endif
-
 #include "sw_domain_math.h"
 #include "util_ext.h"
 #include "sw_domain.h"
-
-//const double pi = 3.14159265358979;
+#include "anuga_constants.h"
 
 // FIXME: Perhaps use the epsilon used elsewhere.
-static const double TINY = 1.0e-100; // to avoid machine accuracy problems.
 
 // Trick to compute n modulo d (n%d in python) when d is a power of 2
 anuga_uint __mod_of_power_2(anuga_uint n, anuga_uint d)
@@ -1439,7 +1431,7 @@ anuga_int _openmp_fix_negative_cells(struct domain *D)
   anuga_int num_negative_cells = 0;
 
 #pragma omp parallel for schedule(static) reduction(+ : num_negative_cells)
-  for (int k = 0; k < D->number_of_elements; k++)
+  for (anuga_int k = 0; k < D->number_of_elements; k++)
   {
     if ((D->stage_centroid_values[k] - D->bed_centroid_values[k] < 0.0) & (D->tri_full_flag[k] > 0))
     {

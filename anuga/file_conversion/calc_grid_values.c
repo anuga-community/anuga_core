@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <math.h>
 #include <stdint.h>
-#include "anuga_constants.h"
+#include "anuga_typedefs.h"
 
 #define MIN(a, b) (((a)<=(b))?(a):(b))
 #define MAX(a, b) (((a)>(b))?(a):(b))

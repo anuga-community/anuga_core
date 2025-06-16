@@ -13,7 +13,7 @@
 #include "stdio.h"
 #include "stdlib.h"
 #include "stdint.h"
-#include "anuga_constants.h"
+#include "anuga_typedefs.h"
 
 //-------------------------------------------
 // Low level routines (called from wrappers)

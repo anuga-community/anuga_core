@@ -21,7 +21,7 @@
 #include "math.h"
 #include "uthash.h"     /* in utilities */
 #include "sparse_csr.h"
-#include "anuga_constants.h" /* in utilities */
+#include "anuga_typedefs.h" /* in utilities */
 
 #ifndef SPARSE_DOK_H
 #define SPARSE_DOK_H

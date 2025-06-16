@@ -15,10 +15,10 @@
 
 #include "math.h"
 #include "util_ext.h"
+#include "anuga_constants.h"
 #include <stdio.h>
 #include <stdint.h>
 
-const double pi = 3.14159265358979;
 
 void _manning_friction_flat(double g, double eps, anuga_int N,
                double* w, double* zv,

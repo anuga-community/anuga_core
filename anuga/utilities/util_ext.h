@@ -13,7 +13,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
-#include "anuga_constants.h"
+#include "anuga_typedefs.h"
+#include "anuga_runtime.h"
 
 
 #ifndef ANUGA_UTIL_EXT_H
