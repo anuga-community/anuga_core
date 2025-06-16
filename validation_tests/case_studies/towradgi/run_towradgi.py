@@ -84,7 +84,7 @@ multiprocessor_mode = 1
 checkpoint_time = max(600/scale, 60)
 checkpoint_dir = 'CHECKPOINTS'
 
-useCulverts = False # Use this to turn off culverts
+useCulverts = True # Use this to turn off culverts
 useCheckpointing = False
 
 
