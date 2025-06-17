@@ -15,6 +15,7 @@ build_script:
   - cmd: start /wait "" Miniforge3.exe /InstallationType=JustMe /RegisterPython=0 /S /D=%UserProfile%\Miniforge3
   - cmd: call %UserProfile%\Miniforge3\Scripts\activate.bat
 
+
   - CMD: SET
   - conda config --set always_yes yes --set changeps1 no
   - conda update -q conda
@@ -29,12 +30,8 @@ build_script:
   # test python
   - python --version
 
-  # If using gcc compiler for windows uncomment the following
-  # otherwise MCSV will be used
+  # Using gcc compiler for windows due to openmp support
   - conda install -c conda-forge libpython gcc_win-64 gxx_win-64
-
-  # there seems to be a bug with distutil by not picking the mingw comiler for anuga
-  #- cp windows_setup.cfg setup.cfg
 
 
   - cmd: SET OMP_NUM_THREADS=1

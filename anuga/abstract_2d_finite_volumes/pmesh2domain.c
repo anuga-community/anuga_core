@@ -1,6 +1,7 @@
 #include <stdio.h>   /* gets */
 #include <stdlib.h>  /* atoi, malloc */
 #include <string.h>  /* strcpy */
+#include <inttypes.h> /* PRId64 */
 #include <math.h>
 
 //Shared code snippets
@@ -64,7 +65,7 @@ void print_segments(void) {
     segment_t *s;
 
     for (s = segment_table; s != NULL; s = (segment_t*) (s->hh.next)) {
-        printf("segment key i %ld j %ld vol_id %ld  edge_id %ld\n",
+        printf("segment key i %" PRId64 " j %" PRId64 " vol_id %" PRId64 "  edge_id %" PRId64 "\n",
                 s->key.i, s->key.j, s->vol_id, s->edge_id);
     }
 }

@@ -1,3 +1,4 @@
+#include <inttypes.h> /* PRId64 */
 #include "sparse_dok.h"
 
 
@@ -93,7 +94,7 @@ void print_dok_entries(sparse_dok * hashtable) {
     edge_t *s;
 
     for(s=hashtable->edgetable; s != NULL; s=(edge_t*)(s->hh.next)) {
-        printf("edge key i %ld i %ld entry %f\n",
+        printf("edge key i %" PRId64 " i %" PRId64 " entry %f\n",
                       s->key.i, s->key.j, s->entry);
     }
 }

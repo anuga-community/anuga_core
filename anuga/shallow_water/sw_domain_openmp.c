@@ -483,7 +483,6 @@ double _openmp_compute_fluxes_central(struct domain *D,
   double boundary_flux_sum_substep = 0.0;
   // double max_speed_local;
 
-double speed_max_last = 0.0;
       double edgeflux[3];
       double pressure_flux;
       double max_speed_local;
@@ -491,7 +490,7 @@ double speed_max_last = 0.0;
 // For all triangles
 #pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, number_of_elements) \
     firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)                              \
-    private(speed_max_last, edgeflux, pressure_flux, max_speed_local, edge_data) \
+    private(edgeflux, pressure_flux, max_speed_local, edge_data) \
     reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
   for (anuga_int k = 0; k < number_of_elements; k++)
   {
