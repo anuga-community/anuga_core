@@ -13,6 +13,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <stdint.h>
+#include "anuga_typedefs.h"
+#include "anuga_runtime.h"
 
 
 #ifndef ANUGA_UTIL_EXT_H
@@ -49,7 +51,7 @@ double sign(double x) {
   else return 0.0;
 }
 
-int64_t _gradient(const double x0, const double y0, 
+anuga_int _gradient(const double x0, const double y0, 
 	      const double x1, const double y1, 
 	      const double x2, const double y2, 
 	      const double q0, const double q1, const double q2, 
@@ -92,7 +94,7 @@ int64_t _gradient(const double x0, const double y0,
 }
 
 
-int64_t _gradient2(double x0, double y0, 
+anuga_int _gradient2(double x0, double y0, 
 	       double x1, double y1, 
 	       double q0, double q1, 
 	       double *a, double *b) {
@@ -149,14 +151,14 @@ int64_t _gradient2(double x0, double y0,
 
 
 
-void _limit_old(int64_t N, double beta,
+void _limit_old(anuga_int N, double beta,
                 double* __restrict qc,
                 double* __restrict qv,
                 double* __restrict qmin,
                 double* __restrict qmax)
 {
-  for (int64_t k = 0; k < N; ++k) {
-    int64_t k3 = k * 3;
+  for (anuga_int k = 0; k < N; ++k) {
+    anuga_int k3 = k * 3;
 
     double dq0 = qv[k3 + 0] - qc[k];
     double dq1 = qv[k3 + 1] - qc[k];
@@ -179,9 +181,9 @@ void _limit_old(int64_t N, double beta,
 
 
 
-void  print_double_array(char* name, double* array, int64_t n, int64_t m){
+void  print_double_array(char* name, double* array, anuga_int n, anuga_int m){
 
-    int64_t k,i,km;
+    anuga_int k,i,km;
 
     printf("%s = [",name);
     for (k=0; k<n; k++){
@@ -198,9 +200,9 @@ void  print_double_array(char* name, double* array, int64_t n, int64_t m){
     printf("]\n");
 }
 
-void  print_int_array(char* name, int32_t* array, int64_t n, int64_t m){
+void  print_int_array(char* name, int32_t* array, anuga_int n, anuga_int m){
 
-    int64_t k,i,km;
+    anuga_int k,i,km;
 
     printf("%s = [",name);
     for (k=0; k<n; k++){
@@ -218,9 +220,9 @@ void  print_int_array(char* name, int32_t* array, int64_t n, int64_t m){
 }
 
 
-void  print_long_array(char* name, int64_t * array, int64_t n, int64_t m){
+void  print_long_array(char* name, anuga_int * array, anuga_int n, anuga_int m){
 
-    int64_t k,i,km;
+    anuga_int k,i,km;
 
     printf("%s = [",name);
     for (k=0; k<n; k++){

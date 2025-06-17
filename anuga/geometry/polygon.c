@@ -9,13 +9,13 @@
 //
 // Ole Nielsen, GA 2004
 //
-// NOTE: We use int64_t* instead of int64_t* for numeric arrays as this will work both
+// NOTE: We use anuga_int* instead of anuga_int* for numeric arrays as this will work both
 //       for 64 as well as 32 bit systems
 
 #include "math.h"
 #include "stdint.h"
 #include "stdio.h"
-
+#include "anuga_typedefs.h"
 #define YES 1
 #define NO 0
 
@@ -26,7 +26,7 @@ inline double dist(const double x,
   return sqrt(x * x + y * y);
 }
 
-int64_t __point_on_line(const double x, const double y,
+anuga_int __point_on_line(const double x, const double y,
                         const double x0, const double y0,
                         const double x1, const double y1,
                         const double rtol,
@@ -43,7 +43,7 @@ int64_t __point_on_line(const double x, const double y,
   double a0, a1, a_normal0, a_normal1, b0, b1, len_a, len_b;
   double a_dot_b;
   double nominator, denominator;
-  int64_t is_parallel;
+  anuga_int is_parallel;
 
   a0 = x - x0;
   a1 = y - y0;
@@ -111,7 +111,7 @@ int64_t __point_on_line(const double x, const double y,
 //  Returns NO if there is no determinable intersection point, in which case X,Y will
 //  be unmodified.
 
-int64_t __line_segment_intersection(
+anuga_int __line_segment_intersection(
     double Ax, double Ay,
     double Bx, double By,
     double Cx, double Cy,
@@ -173,7 +173,7 @@ int64_t __line_segment_intersection(
 
 /*
 WORK IN PROGRESS TO OPTIMISE INTERSECTION
-int64_t __intersection(double x0, double y0,
+anuga_int __intersection(double x0, double y0,
        double x1, double y1) {
 
 
@@ -275,18 +275,18 @@ int64_t __intersection(double x0, double y0,
 }
 */
 
-int64_t __interpolate_polyline(int64_t number_of_nodes,
-                               int64_t number_of_points,
+anuga_int __interpolate_polyline(anuga_int number_of_nodes,
+                               anuga_int number_of_points,
                                double *data,
                                double *polyline_nodes,
-                               int64_t *gauge_neighbour_id,
+                               anuga_int *gauge_neighbour_id,
                                double *interpolation_points,
                                double *interpolated_values,
                                double rtol,
                                double atol)
 {
 
-  int64_t j, i, neighbour_id;
+  anuga_int j, i, neighbour_id;
   double x0, y0, x1, y1, x, y;
   double segment_len, segment_delta, slope, alpha;
 
@@ -329,11 +329,11 @@ int64_t __interpolate_polyline(int64_t number_of_nodes,
   return 0;
 }
 
-int64_t __triangle_polygon_overlap(double *polygon,
+anuga_int __triangle_polygon_overlap(double *polygon,
                                    double *triangle,
-                                   int64_t polygon_number_of_vertices)
+                                   anuga_int polygon_number_of_vertices)
 {
-  int64_t i, ii, j, jj, A, B;
+  anuga_int i, ii, j, jj, A, B;
   double p0_x, p0_y, p1_x, p1_y, pp_x, pp_y;
   double t0_x, t0_y, t1_x, t1_y, tp_x, tp_y;
   double u_x, u_y, v_x, v_y, w_x, w_y;
@@ -419,14 +419,14 @@ int64_t __triangle_polygon_overlap(double *polygon,
   return 0; // no overlap
 }
 
-int64_t __polygon_overlap(double *polygon,
+anuga_int __polygon_overlap(double *polygon,
                           double *triangles,
-                          int64_t *indices,
-                          int64_t M, // number of triangles
-                          int64_t polygon_number_of_vertices)
+                          anuga_int *indices,
+                          anuga_int M, // number of triangles
+                          anuga_int polygon_number_of_vertices)
 {
   double *triangle;
-  int64_t i, inside_index, outside_index;
+  anuga_int i, inside_index, outside_index;
 
   inside_index = 0;      // Keep track of triangles that overlap
   outside_index = M - 1; // Keep track of triangles that don't overlap (starting from end)
@@ -452,10 +452,10 @@ int64_t __polygon_overlap(double *polygon,
   return inside_index;
 }
 
-int64_t __triangle_line_intersect(double *line,
+anuga_int __triangle_line_intersect(double *line,
                                   double *triangle)
 {
-  int64_t j, jj, A, B;
+  anuga_int j, jj, A, B;
   double p0_x, p0_y, p1_x, p1_y, pp_x, pp_y;
   double t0_x, t0_y, t1_x, t1_y, tp_x, tp_y;
   double u_x, u_y, v_x, v_y, w_x, w_y;
@@ -532,13 +532,13 @@ int64_t __triangle_line_intersect(double *line,
   return 0; // no intersection
 }
 
-int64_t __line_intersect(double *line,
+anuga_int __line_intersect(double *line,
                          double *triangles,
-                         int64_t *indices,
-                         int64_t M) // number of triangles
+                         anuga_int *indices,
+                         anuga_int M) // number of triangles
 {
   double *triangle;
-  int64_t i, inside_index, outside_index;
+  anuga_int i, inside_index, outside_index;
 
   inside_index = 0;      // Keep track of triangles that intersect
   outside_index = M - 1; // Keep track of triangles that don't intersect (starting from end)
@@ -563,9 +563,9 @@ int64_t __line_intersect(double *line,
   return inside_index;
 }
 
-int64_t __is_inside_triangle(double *point,
+anuga_int __is_inside_triangle(double *point,
                              double *triangle,
-                             int64_t closed,
+                             anuga_int closed,
                              double rtol,
                              double atol)
 {
@@ -575,7 +575,7 @@ int64_t __is_inside_triangle(double *point,
   double denom, alpha, beta;
 
   double x, y; // Point coordinates
-  int64_t i, j, res;
+  anuga_int i, j, res;
 
   x = point[0];
   y = point[1];
@@ -653,17 +653,17 @@ int64_t __is_inside_triangle(double *point,
   return 0;
 }
 
-int64_t __separate_points_by_polygon(const int64_t M, // Number of points
-                                     const int64_t N, // Number of polygon vertices
+anuga_int __separate_points_by_polygon(const anuga_int M, // Number of points
+                                     const anuga_int N, // Number of polygon vertices
                                      double *points,
                                      double *polygon,
-                                     int64_t *indices, // M-Array for storage indices
-                                     const int64_t closed,
-                                     const int64_t verbose)
+                                     anuga_int *indices, // M-Array for storage indices
+                                     const anuga_int closed,
+                                     const anuga_int verbose)
 {
 
   double minpx, maxpx, minpy, maxpy, rtol = 0.0, atol = 0.0;
-  int64_t outside_index, inside_index;
+  anuga_int outside_index, inside_index;
 
   // Find min and max of poly used for optimisation when points
   // are far away from polygon
@@ -764,16 +764,16 @@ int64_t __separate_points_by_polygon(const int64_t M, // Number of points
 
   return inside_index;
 }
-// int64_t __separate_points_by_polygon(int64_t M,     // Number of points
-// 				 int64_t N,     // Number of polygon vertices
+// anuga_int __separate_points_by_polygon(anuga_int M,     // Number of points
+// 				 anuga_int N,     // Number of polygon vertices
 // 				 double* points,
 // 				 double* polygon,
-// 				 int64_t* indices,  // M-Array for storage indices
-// 				 int64_t closed,
-// 				 int64_t verbose) {
+// 				 anuga_int* indices,  // M-Array for storage indices
+// 				 anuga_int closed,
+// 				 anuga_int verbose) {
 
 //   double minpx, maxpx, minpy, maxpy, x, y, px_i, py_i, px_j, py_j, rtol=0.0, atol=0.0;
-//   int64_t i, j, k, outside_index, inside_index, inside;
+//   anuga_int i, j, k, outside_index, inside_index, inside;
 
 //   // Find min and max of poly used for optimisation when points
 //   // are far away from polygon

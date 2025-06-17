@@ -21,28 +21,21 @@
 #include <assert.h>
 #include <stdint.h>
 
-#if defined(__APPLE__)
-// clang doesn't have openmp
-#else
-#include "omp.h"
-#endif
-
+#include "sw_domain_math.h"
 #include "util_ext.h"
 #include "sw_domain.h"
-
-const double pi = 3.14159265358979;
+#include "anuga_constants.h"
 
 // FIXME: Perhaps use the epsilon used elsewhere.
-static const double TINY = 1.0e-100; // to avoid machine accuracy problems.
 
 // Trick to compute n modulo d (n%d in python) when d is a power of 2
-uint64_t __mod_of_power_2(uint64_t n, uint64_t d)
+anuga_uint __mod_of_power_2(anuga_uint n, anuga_uint d)
 {
   return (n & (d - 1));
 }
 
 // Computational function for rotation
-int64_t __rotate(double *q, const double n1, const double n2)
+anuga_int __rotate(double *q, const double n1, const double n2)
 {
   /*Rotate the last  2 coordinates of q (q[1], q[2])
     from x,y coordinates to coordinates based on normal vector (n1, n2).
@@ -90,7 +83,7 @@ static inline void compute_velocity_terms(
 }
 
 static inline double compute_local_froude(
-    const int64_t low_froude,
+    const anuga_int low_froude,
     const double u_left, const double u_right,
     const double v_left, const double v_right,
     const double soundspeed_left, const double soundspeed_right)
@@ -130,7 +123,7 @@ static inline double compute_s_min(const double u_left, const double u_right,
 }
 
 // Innermost flux function (using stage w=z+h)
-int64_t __flux_function_central(double *__restrict q_left, double *__restrict q_right,
+anuga_int __flux_function_central(double *__restrict q_left, double *__restrict q_right,
                                 const double h_left, const double h_right,
                                 const double hle, const double hre,
                                 const double n1, const double n2,
@@ -139,7 +132,7 @@ int64_t __flux_function_central(double *__restrict q_left, double *__restrict q_
                                 const double g,
                                 double *__restrict edgeflux, double *__restrict max_speed,
                                 double *__restrict pressure_flux,
-                                const int64_t low_froude)
+                                const anuga_int low_froude)
 {
 
   /*Compute fluxes between volumes for the shallow water wave equation
@@ -163,7 +156,7 @@ int64_t __flux_function_central(double *__restrict q_left, double *__restrict q_
   double q_left_rotated[3], q_right_rotated[3], flux_right[3], flux_left[3];
 
 
-  for (int i = 0; i < 3; i++)
+  for (anuga_int i = 0; i < 3; i++)
   {
     // Rotate the conserved quantities to align with the normal vector
     // This is done to align the x- and y-momentum with the x-axis
@@ -249,7 +242,7 @@ int64_t __flux_function_central(double *__restrict q_left, double *__restrict q_
   return 0;
 }
 
-int64_t __openmp__flux_function_central(double q_left0, double q_left1, double q_left2,
+anuga_int __openmp__flux_function_central(double q_left0, double q_left1, double q_left2,
                                         double q_right0, double q_right1, double q_right2,
                                         double h_left, double h_right,
                                         double hle, double hre,
@@ -260,14 +253,14 @@ int64_t __openmp__flux_function_central(double q_left0, double q_left1, double q
                                         double *edgeflux0, double *edgeflux1, double *edgeflux2,
                                         double *max_speed,
                                         double *pressure_flux,
-                                        int64_t low_froude)
+                                        anuga_int low_froude)
 {
 
   double edgeflux[3];
   double q_left[3];
   double q_right[3];
 
-  int64_t ierr;
+  anuga_int ierr;
 
   edgeflux[0] = *edgeflux0;
   edgeflux[1] = *edgeflux1;
@@ -413,7 +406,7 @@ double __openmp__adjust_edgeflux_with_weir(double *edgeflux0, double *edgeflux1,
 {
 
   double edgeflux[3];
-  int64_t ierr;
+  anuga_int ierr;
 
   edgeflux[0] = *edgeflux0;
   edgeflux[1] = *edgeflux1;
@@ -432,11 +425,11 @@ double __openmp__adjust_edgeflux_with_weir(double *edgeflux0, double *edgeflux1,
 
 // Apply weir discharge theory correction to the edge flux
 void apply_weir_discharge_correction(const struct domain * __restrict D, const EdgeData * __restrict E,
-                                     const int k, const int ncol_riverwall_hydraulic_properties,
+                                     const anuga_int k, const anuga_int ncol_riverwall_hydraulic_properties,
                                      const double g, double * __restrict edgeflux, double * __restrict max_speed) {
 
-    int RiverWall_count = D->edge_river_wall_counter[E->ki];
-    int ii = D->riverwall_rowIndex[RiverWall_count - 1] * ncol_riverwall_hydraulic_properties;
+    anuga_int RiverWall_count = D->edge_river_wall_counter[E->ki];
+    anuga_int ii = D->riverwall_rowIndex[RiverWall_count - 1] * ncol_riverwall_hydraulic_properties;
 
     double Qfactor = D->riverwall_hydraulic_properties[ii];
     double s1 = D->riverwall_hydraulic_properties[ii + 1];
@@ -461,19 +454,19 @@ double _openmp_compute_fluxes_central(struct domain *D,
                                       double timestep)
 {
   // Local variables
-  int number_of_elements = D->number_of_elements;
-  // int64_t KI, KI2, KI3, B, RW, RW5, SubSteps;
-  int64_t substep_count;
+  anuga_int number_of_elements = D->number_of_elements;
+  // anuga_int KI, KI2, KI3, B, RW, RW5, SubSteps;
+  anuga_int substep_count;
 
   // // FIXME: limiting_threshold is not used for DE1
-  int64_t low_froude = D->low_froude;
+  anuga_int low_froude = D->low_froude;
   double g = D->g;
   double epsilon = D->epsilon;
-  int64_t ncol_riverwall_hydraulic_properties = D->ncol_riverwall_hydraulic_properties;
+  anuga_int ncol_riverwall_hydraulic_properties = D->ncol_riverwall_hydraulic_properties;
 
-  static int64_t call = 0; // Static local variable flagging already computed flux
-  static int64_t timestep_fluxcalls = 1;
-  static int64_t base_call = 1;
+  static anuga_int call = 0; // Static local variable flagging already computed flux
+  static anuga_int timestep_fluxcalls = 1;
+  static anuga_int base_call = 1;
 
   call++; // Flag 'id' of flux calculation for this timestep
 
@@ -500,7 +493,7 @@ double speed_max_last = 0.0;
     firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)                              \
     private(speed_max_last, edgeflux, pressure_flux, max_speed_local, edge_data) \
     reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
-  for (int k = 0; k < number_of_elements; k++)
+  for (anuga_int k = 0; k < number_of_elements; k++)
   {
     double speed_max_last = 0.0;
     // Set explicit_update to zero for all conserved_quantities.
@@ -510,7 +503,7 @@ double speed_max_last = 0.0;
     D->ymom_explicit_update[k] = 0.0;
 
     // Loop through neighbours and compute edge flux for each
-    for (int i = 0; i < 3; i++)
+    for (anuga_int i = 0; i < 3; i++)
     {
       get_edge_data_central_flux(D,k,i,&edge_data);
 
@@ -542,7 +535,7 @@ double speed_max_last = 0.0;
     }
 
       // Multiply edgeflux by edgelength
-      for (int j = 0; j < 3; j++)
+      for (anuga_int j = 0; j < 3; j++)
       {
         edgeflux[j] *= -1.0 * edge_data.length;
       }
@@ -614,7 +607,7 @@ double _openmp_protect(struct domain *D)
 
   double minimum_allowed_height = D->minimum_allowed_height;
 
-  int number_of_elements = D->number_of_elements;
+  anuga_int number_of_elements = D->number_of_elements;
 
   // wc = D->stage_centroid_values;
   // zc = D->bed_centroid_values;
@@ -627,14 +620,14 @@ double _openmp_protect(struct domain *D)
   // distance between the bed_centroid_value and the max bed_edge_value of
   // every triangle.
   // double minimum_relative_height=0.05;
-  // int64_t mass_added = 0;
+  // anuga_int mass_added = 0;
 
   // Protect against inifintesimal and negative heights
   // if (maximum_allowed_speed < epsilon) {
 #pragma omp parallel for schedule(static) reduction(+ : mass_error) firstprivate(minimum_allowed_height)
-  for (int k = 0; k < number_of_elements; k++)
+  for (anuga_int k = 0; k < number_of_elements; k++)
   {
-    int k3 = 3 * k;
+    anuga_int k3 = 3 * k;
     double hc = D->stage_centroid_values[k] - D->bed_centroid_values[k];
     if (hc < minimum_allowed_height * 1.0)
     {
@@ -673,7 +666,7 @@ double _openmp_protect(struct domain *D)
   return mass_error;
 }
 
-static inline int64_t __find_qmin_and_qmax_dq1_dq2(const double dq0, const double dq1, const double dq2,
+static inline anuga_int __find_qmin_and_qmax_dq1_dq2(const double dq0, const double dq1, const double dq2,
                                                    double *qmin, double *qmax)
 {
   // Considering the centroid of an FV triangle and the vertices of its
@@ -694,7 +687,7 @@ static inline int64_t __find_qmin_and_qmax_dq1_dq2(const double dq0, const doubl
   return 0;
 }
 
-static inline int64_t __limit_gradient(double *__restrict dqv, double qmin, double qmax, const double beta_w)
+static inline anuga_int __limit_gradient(double *__restrict dqv, double qmin, double qmax, const double beta_w)
 {
   // Given provisional jumps dqv from the FV triangle centroid to its
   // vertices/edges, and jumps qmin (qmax) between the centroid of the FV
@@ -743,7 +736,7 @@ static inline int64_t __limit_gradient(double *__restrict dqv, double qmin, doub
 
   double phi = fmin(r * beta_w, 1.0);
 
-  for (int i = 0; i < 3; i++)
+  for (anuga_int i = 0; i < 3; i++)
   {
     dqv[i] *= phi;
   }
@@ -801,134 +794,44 @@ static inline void compute_qmin_qmax_from_dq1(const double dq1, double *qmin, do
   }
 }
 
-// FIXME SR: This version of update_centroid_values caused a segmentation fault
-// on my laptop when running run_small_towradgi.py (at line defining ywork_tmp)
-static inline void update_centroid_values_with_tmps(struct domain *__restrict D,
-                                          const int64_t number_of_elements,
-                                          const double minimum_allowed_height,
-                                          const int64_t extrapolate_velocity_second_order
-                                          )
-{
-  double height_tmp[number_of_elements];
-  double xmom_tmp[number_of_elements];
-  double ymom_tmp[number_of_elements];
-  double xwork_tmp[number_of_elements];
-  double ywork_tmp[number_of_elements];
-
-#pragma omp parallel for simd default(none) shared(D,height_tmp, xmom_tmp, ymom_tmp, xwork_tmp, ywork_tmp) schedule(static) \
-    firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
-  for (int k = 0; k < number_of_elements; ++k)
-  {
-    double stage = D->stage_centroid_values[k];
-    double bed = D->bed_centroid_values[k];
-    double xmom = D->xmom_centroid_values[k];
-    double ymom = D->ymom_centroid_values[k];
-
-    double dk_local = fmax(stage - bed, 0.0);
-    height_tmp[k] = dk_local;
-    //D->height_centroid_values[k] = dk_local;
-
-    int is_dry = (dk_local <= minimum_allowed_height);
-    int extrapolate = (extrapolate_velocity_second_order == 1) & (dk_local > minimum_allowed_height);
-
-    // Pre-zero everything
-    double xwork = 0.0;
-    double ywork = 0.0;
-    double xmom_out = is_dry ? 0.0 : xmom;
-    double ymom_out = is_dry ? 0.0 : ymom;
-
-    // Store if extrapolating
-    if (extrapolate)
-    {
-      double inv_dk = 1.0 / dk_local;
-      xwork = xmom_out;
-      xmom_out *= inv_dk;
-      ywork = ymom_out;
-      ymom_out *= inv_dk;
-    }
-
-    xmom_tmp[k] = xmom_out;
-    ymom_tmp[k] = ymom_out;
-    xwork_tmp[k] = xwork;
-    ywork_tmp[k] = ywork;
-
-    // D->x_centroid_work[k] = xwork;
-    // D->y_centroid_work[k] = ywork;
-    // D->xmom_centroid_values[k] = xmom_out;
-    // D->ymom_centroid_values[k] = ymom_out;
-  }
-
-    // Second loop: write results back to domain
-#pragma omp parallel for simd default(none) shared(D, height_tmp, xmom_tmp, ymom_tmp, xwork_tmp, ywork_tmp) \
-    firstprivate(number_of_elements)
-  for (int k = 0; k < number_of_elements; ++k)
-  {
-    D->height_centroid_values[k] = height_tmp[k];
-    D->xmom_centroid_values[k]   = xmom_tmp[k];
-    D->ymom_centroid_values[k]   = ymom_tmp[k];
-    D->x_centroid_work[k]        = xwork_tmp[k];
-    D->y_centroid_work[k]        = ywork_tmp[k];
-  }
-}
 
 static inline void update_centroid_values(struct domain *__restrict D,
-                                          const int64_t number_of_elements,
+                                          const anuga_int number_of_elements,
                                           const double minimum_allowed_height,
-                                          const int64_t extrapolate_velocity_second_order
-                                          )
+                                          const anuga_int extrapolate_velocity_second_order)
 {
-  double* height_tmp = D->height_centroid_values;
-  double* xmom_tmp  =  D->xmom_centroid_values;
-  double* ymom_tmp  =  D->ymom_centroid_values;
-  double* xwork_tmp = D->x_centroid_work;
-  double* ywork_tmp = D->y_centroid_work;
-
-
-#pragma omp parallel for simd default(none) shared(D,height_tmp, xmom_tmp, ymom_tmp, xwork_tmp, ywork_tmp) schedule(static) \
+#pragma omp parallel for simd default(none) shared(D) schedule(static) \
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
-  for (int k = 0; k < number_of_elements; ++k)
+  for (anuga_int k = 0; k < number_of_elements; ++k)
   {
     double stage = D->stage_centroid_values[k];
-    double bed = D->bed_centroid_values[k];
-    double xmom = D->xmom_centroid_values[k];
-    double ymom = D->ymom_centroid_values[k];
+    double bed   = D->bed_centroid_values[k];
+    double xmom  = D->xmom_centroid_values[k];
+    double ymom  = D->ymom_centroid_values[k];
 
     double dk_local = fmax(stage - bed, 0.0);
-    height_tmp[k] = dk_local;
-    //D->height_centroid_values[k] = dk_local;
+    D->height_centroid_values[k] = dk_local;
 
-    int is_dry = (dk_local <= minimum_allowed_height);
-    int extrapolate = (extrapolate_velocity_second_order == 1) & (dk_local > minimum_allowed_height);
+    anuga_int is_dry = (dk_local <= minimum_allowed_height);
+    anuga_int extrapolate = (extrapolate_velocity_second_order == 1) & (dk_local > minimum_allowed_height);
 
-    // Pre-zero everything
-    double xwork = 0.0;
-    double ywork = 0.0;
-    double xmom_out = is_dry ? 0.0 : xmom;
-    double ymom_out = is_dry ? 0.0 : ymom;
+    // Prepare outputs branchless
+    double xmom_out = (is_dry) ? 0.0 : xmom;
+    double ymom_out = (is_dry) ? 0.0 : ymom;
 
-    // Store if extrapolating
-    if (extrapolate)
-    {
-      double inv_dk = 1.0 / dk_local;
-      xwork = xmom_out;
-      xmom_out *= inv_dk;
-      ywork = ymom_out;
-      ymom_out *= inv_dk;
-    }
+    double inv_dk = (extrapolate) ? (1.0 / dk_local) : 1.0;
 
-    xmom_tmp[k] = xmom_out;
-    ymom_tmp[k] = ymom_out;
-    xwork_tmp[k] = xwork;
-    ywork_tmp[k] = ywork;
-
+    D->x_centroid_work[k] = (extrapolate) ? xmom_out : 0.0;
+    D->y_centroid_work[k] = (extrapolate) ? ymom_out : 0.0;
+    D->xmom_centroid_values[k] = xmom_out * inv_dk;
+    D->ymom_centroid_values[k] = ymom_out * inv_dk;
   }
-
-
 }
+
 
 
 #pragma omp declare simd
-static inline void set_all_edge_values_from_centroid(struct domain *__restrict D, const int k)
+static inline void set_all_edge_values_from_centroid(struct domain *__restrict D, const anuga_int k)
 {
 
   const double stage = D->stage_centroid_values[k];
@@ -936,9 +839,9 @@ static inline void set_all_edge_values_from_centroid(struct domain *__restrict D
   const double ymom = D->ymom_centroid_values[k];
   const double height = D->height_centroid_values[k];
 
-  for (int i = 0; i < 3; i++)
+  for (anuga_int i = 0; i < 3; i++)
   {
-    int ki = 3 * k + i;
+    anuga_int ki = 3 * k + i;
     D->stage_edge_values[ki] = stage;
     D->xmom_edge_values[ki] = xmom;
     D->ymom_edge_values[ki] = ymom;
@@ -948,11 +851,11 @@ static inline void set_all_edge_values_from_centroid(struct domain *__restrict D
 }
 
 #pragma omp declare simd
-static inline int get_internal_neighbour(const struct domain *__restrict D, const int k)
+static inline anuga_int get_internal_neighbour(const struct domain *__restrict D, const anuga_int k)
 {
-  for (int i = 0; i < 3; i++)
+  for (anuga_int i = 0; i < 3; i++)
   {
-    int n = D->surrogate_neighbours[3 * k + i];
+    anuga_int n = D->surrogate_neighbours[3 * k + i];
     if (n != k)
     {
       return n;
@@ -979,7 +882,7 @@ static inline void compute_dqv_from_gradient(const double dq1, const double dx2,
 
 #pragma omp declare simd
 static inline void compute_gradient_projection_between_centroids(
-    const struct domain *__restrict D, const int k, const int k1,
+    const struct domain *__restrict D, const anuga_int k, const anuga_int k1,
     double *__restrict dx2, double *__restrict dy2)
 {
   double x = D->centroid_coordinates[2 * k + 0];
@@ -1006,7 +909,7 @@ static inline void compute_gradient_projection_between_centroids(
 #pragma omp declare simd
 static inline void extrapolate_gradient_limited(
     const double *__restrict centroid_values, double *__restrict edge_values,
-    const int k, const int k1, const int k3,
+    const anuga_int k, const anuga_int k1, const anuga_int k3,
     const double dx2, const double dy2,
     const double dxv0, const double dxv1, const double dxv2,
     const double dyv0, const double dyv1, const double dyv2,
@@ -1024,7 +927,7 @@ static inline void extrapolate_gradient_limited(
 
   __limit_gradient(dqv, qmin, qmax, beta);
 
-  for (int i = 0; i < 3; i++)
+  for (anuga_int i = 0; i < 3; i++)
   {
     edge_values[k3 + i] = centroid_values[k] + dqv[i];
   }
@@ -1034,7 +937,7 @@ static inline void extrapolate_gradient_limited(
 static inline void interpolate_edges_with_beta(
     const double *__restrict centroid_values,
     double *__restrict edge_values,
-    const int k, const int k0, const int k1, const int k2, const int k3,
+    const anuga_int k, const anuga_int k0, const anuga_int k1, const anuga_int k2, const anuga_int k3,
     const double dxv0, const double dxv1, const double dxv2,
     const double dyv0, const double dyv1, const double dyv2,
     const double dx1, const double dx2, const double dy1, const double dy2,
@@ -1062,7 +965,7 @@ static inline void interpolate_edges_with_beta(
   {
     __set_constant_edge_values(centroid_values[k], edge_vals);
   }
-  for (int i = 0; i < 3; i++)
+  for (anuga_int i = 0; i < 3; i++)
   {
     edge_values[k3 + i] = edge_vals[i];
   }
@@ -1071,7 +974,7 @@ static inline void interpolate_edges_with_beta(
 #pragma omp declare simd
 static inline void compute_hfactor_and_inv_area(
     const struct domain *__restrict D,
-    const int k, const int k0, const int k1, const int k2,
+    const anuga_int k, const anuga_int k0, const anuga_int k1, const anuga_int k2,
     const double area2, const double c_tmp, const double d_tmp,
     double *__restrict hfactor, double *__restrict inv_area2)
 {
@@ -1097,7 +1000,7 @@ static inline void compute_hfactor_and_inv_area(
 }
 
 #pragma omp declare simd
-static inline void reconstruct_vertex_values(double *__restrict edge_values, double *__restrict vertex_values, const int k3)
+static inline void reconstruct_vertex_values(double *__restrict edge_values, double *__restrict vertex_values, const anuga_int k3)
 {
   vertex_values[k3 + 0] = edge_values[k3 + 1] + edge_values[k3 + 2] - edge_values[k3 + 0];
   vertex_values[k3 + 1] = edge_values[k3 + 2] + edge_values[k3 + 0] - edge_values[k3 + 1];
@@ -1121,11 +1024,11 @@ static inline void compute_edge_diffs(const double x, const double y,
 }
 
 // Computational routine
-int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
+anuga_int _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 {
   double minimum_allowed_height = D->minimum_allowed_height;
-  int64_t number_of_elements = D->number_of_elements;
-  int64_t extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
+  anuga_int number_of_elements = D->number_of_elements;
+  anuga_int extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
 
   // Parameters used to control how the limiter is forced to first-order near
   // wet-dry regions
@@ -1139,12 +1042,12 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 #pragma omp parallel for simd default(none) schedule(static) \
     shared(D)                                                 \
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order, c_tmp, d_tmp)
-  for (int k = 0; k < number_of_elements; k++)
+  for (anuga_int k = 0; k < number_of_elements; k++)
   {
     // // Useful indices
-    int k2 = k * 2;
-    int k3 = k * 3;
-    int k6 = k * 6;
+    anuga_int k2 = k * 2;
+    anuga_int k3 = k * 3;
+    anuga_int k6 = k * 6;
 
     // Get the edge coordinates
     const double xv0 = D->edge_coordinates[k6 + 0];
@@ -1174,11 +1077,11 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
     // dyv1 = dyv1;
     // dyv2 = dyv2;
 
-    int k0 = D->surrogate_neighbours[k3 + 0];
-    int k1 = D->surrogate_neighbours[k3 + 1];
+    anuga_int k0 = D->surrogate_neighbours[k3 + 0];
+    anuga_int k1 = D->surrogate_neighbours[k3 + 1];
     k2 = D->surrogate_neighbours[k3 + 2];
 
-    int coord_index = 2 * k0;
+    anuga_int coord_index = 2 * k0;
     double x0 = D->centroid_coordinates[coord_index + 0];
     double y0 = D->centroid_coordinates[coord_index + 1];
 
@@ -1203,7 +1106,7 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
     double area2 = dy2 * dx1 - dy1 * dx2;
     // area2 = area2;
 
-    const int dry =
+    const anuga_int dry =
         ((D->height_centroid_values[k0] < minimum_allowed_height) | (k0 == k)) &
         ((D->height_centroid_values[k1] < minimum_allowed_height) | (k1 == k)) &
         ((D->height_centroid_values[k2] < minimum_allowed_height) | (k2 == k));
@@ -1296,7 +1199,7 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
     if (D->extrapolate_velocity_second_order == 1)
     {
       // Re-compute momenta at edges
-      for (int i = 0; i < 3; i++)
+      for (anuga_int i = 0; i < 3; i++)
       {
         double dk = D->height_edge_values[k3 + i];
         D->xmom_edge_values[k3 + i] = D->xmom_edge_values[k3 + i] * dk;
@@ -1304,7 +1207,7 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
       }
     }
 
-    for (int i = 0; i < 3; i++)
+    for (anuga_int i = 0; i < 3; i++)
     {
       D->bed_edge_values[k3 + i] = D->stage_edge_values[k3 + i] - D->height_edge_values[k3 + i];
     }
@@ -1320,7 +1223,7 @@ int64_t _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 if(extrapolate_velocity_second_order == 1)
 {
 #pragma omp parallel for simd schedule(static) firstprivate(extrapolate_velocity_second_order)
-  for (int k = 0; k < D->number_of_elements; k++)
+  for (anuga_int k = 0; k < D->number_of_elements; k++)
   {
       // Convert velocity back to momenta at centroids
       D->xmom_centroid_values[k] = D->x_centroid_work[k];
@@ -1337,9 +1240,9 @@ if(extrapolate_velocity_second_order == 1)
 void _openmp_manning_friction_flat_semi_implicit(struct domain *D)
 {
 
-  int64_t k;
+  anuga_int k;
 
-  const int64_t N = D->number_of_elements;
+  const anuga_int N = D->number_of_elements;
   const double eps = D->minimum_allowed_height;
   const double g = D->g;
   const double seven_thirds = 7.0 / 3.0;
@@ -1378,21 +1281,21 @@ void _openmp_manning_friction_flat_semi_implicit(struct domain *D)
 
 void _openmp_manning_friction_sloped_semi_implicit(struct domain *D)
 {
-  int64_t k;
+  anuga_int k;
   const double one_third = 1.0 / 3.0;
   const double seven_thirds = 7.0 / 3.0;
 
-  int64_t N = D->number_of_elements;
+  anuga_int N = D->number_of_elements;
   const double  g = D->g;
   const double  eps = D->minimum_allowed_height;
   
 #pragma omp parallel for simd default(none) shared(D) schedule(static) \
-        firstprivate(N, eps, g, seven_thirds)
+        firstprivate(N, eps, g, seven_thirds, one_third)
 for (k = 0; k < N; k++)
   {
     double S, h, z, z0, z1, z2, zs, zx, zy;
     double x0, y0, x1, y1, x2, y2;
-    int64_t k3, k6;
+    anuga_int k3, k6;
 
     double w = D->stage_centroid_values[k];
     double uh = D->xmom_centroid_values[k];
@@ -1440,13 +1343,13 @@ for (k = 0; k < N; k++)
 
 
 // Original function for flat friction
-void _openmp_manning_friction_flat(const double g, const double eps, const int64_t N,
+void _openmp_manning_friction_flat(const double g, const double eps, const anuga_int N,
                                    double *__restrict w, double *__restrict zv,
                                    double *__restrict uh, double *__restrict vh,
                                    double *__restrict eta, double *__restrict xmom_update, double *__restrict ymom_update)
 {
 
-  int64_t k;
+  anuga_int k;
   const double seven_thirds = 7.0 / 3.0;
 
 #pragma omp parallel for schedule(static) firstprivate(eps, g, seven_thirds)
@@ -1472,7 +1375,7 @@ void _openmp_manning_friction_flat(const double g, const double eps, const int64
 }
 
 
-void _openmp_manning_friction_sloped(const double g, const double eps, const int64_t N,
+void _openmp_manning_friction_sloped(const double g, const double eps, const anuga_int N,
                                      double *__restrict x, double *__restrict w, double *__restrict zv,
                                      double *__restrict uh, double *__restrict vh,
                                      double *__restrict eta, double *__restrict xmom_update, double *__restrict ymom_update)
@@ -1482,17 +1385,17 @@ void _openmp_manning_friction_sloped(const double g, const double eps, const int
   const double seven_thirds = 7.0 / 3.0;
 
 #pragma omp parallel for schedule(static) firstprivate(eps, g, one_third, seven_thirds)
-  for (int k = 0; k < N; k++)
+  for (anuga_int k = 0; k < N; k++)
   {
     double S = 0.0;
-    int k3 = 3 * k;
+    anuga_int k3 = 3 * k;
     // Get bathymetry
     double z0 = zv[k3 + 0];
     double z1 = zv[k3 + 1];
     double z2 = zv[k3 + 2];
 
     // Compute bed slope
-    int k6 = 6 * k; // base index
+    anuga_int k6 = 6 * k; // base index
 
     double x0 = x[k6 + 0];
     double y0 = x[k6 + 1];
@@ -1523,12 +1426,12 @@ void _openmp_manning_friction_sloped(const double g, const double eps, const int
 
 
 // Computational function for flux computation
-int64_t _openmp_fix_negative_cells(struct domain *D)
+anuga_int _openmp_fix_negative_cells(struct domain *D)
 {
-  int64_t num_negative_cells = 0;
+  anuga_int num_negative_cells = 0;
 
 #pragma omp parallel for schedule(static) reduction(+ : num_negative_cells)
-  for (int k = 0; k < D->number_of_elements; k++)
+  for (anuga_int k = 0; k < D->number_of_elements; k++)
   {
     if ((D->stage_centroid_values[k] - D->bed_centroid_values[k] < 0.0) & (D->tri_full_flag[k] > 0))
     {
@@ -1542,9 +1445,9 @@ int64_t _openmp_fix_negative_cells(struct domain *D)
 }
 
 
-int64_t _openmp_gravity(struct domain *D) {
+anuga_int _openmp_gravity(struct domain *D) {
 
-    int64_t k, N, k3, k6;
+    anuga_int k, N, k3, k6;
     double g, avg_h, zx, zy;
     double x0, y0, x1, y1, x2, y2, z0, z1, z2;
 
@@ -1587,9 +1490,9 @@ int64_t _openmp_gravity(struct domain *D) {
     return 0;
 }
 
-int64_t _openmp_gravity_wb(struct domain *D) {
+anuga_int _openmp_gravity_wb(struct domain *D) {
 
-    int64_t i, k, N, k3, k6;
+    anuga_int i, k, N, k3, k6;
     double g, avg_h, wx, wy, fact;
     double x0, y0, x1, y1, x2, y2;
     double hh[3];
@@ -1666,11 +1569,11 @@ int64_t _openmp_gravity_wb(struct domain *D) {
 }
 
 
-int64_t _openmp_extrapolate_second_order_sw(struct domain *D) {
+anuga_int _openmp_extrapolate_second_order_sw(struct domain *D) {
 
 
   // Domain Variables
-    int64_t number_of_elements;
+    anuga_int number_of_elements;
     double epsilon;
     double minimum_allowed_height;
     double beta_w;
@@ -1679,8 +1582,8 @@ int64_t _openmp_extrapolate_second_order_sw(struct domain *D) {
     double beta_uh_dry;
     double beta_vh;
     double beta_vh_dry;
-    int64_t* surrogate_neighbours;
-    int64_t* number_of_boundaries;
+    anuga_int* surrogate_neighbours;
+    anuga_int* number_of_boundaries;
     double* centroid_coordinates;
     double* stage_centroid_values;
     double* xmom_centroid_values;
@@ -1691,12 +1594,12 @@ int64_t _openmp_extrapolate_second_order_sw(struct domain *D) {
     double* xmom_vertex_values;
     double* ymom_vertex_values;
     double* bed_vertex_values;
-    int64_t optimise_dry_cells;
-    int64_t extrapolate_velocity_second_order;
+    anuga_int optimise_dry_cells;
+    anuga_int extrapolate_velocity_second_order;
 
     // Local variables
     double a, b; // Gradient vector used to calculate edge values from centroids
-    int64_t k, k0, k1, k2, k3, k6, coord_index, i;
+    anuga_int k, k0, k1, k2, k3, k6, coord_index, i;
     double x, y, x0, y0, x1, y1, x2, y2, xv0, yv0, xv1, yv1, xv2, yv2; // Vertices of the auxiliary triangle
     double dx1, dx2, dy1, dy2, dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dq0, dq1, dq2, area2, inv_area2;
     double dqv[3], qmin, qmax, hmin, hmax;
@@ -1740,7 +1643,7 @@ int64_t _openmp_extrapolate_second_order_sw(struct domain *D) {
 
 
 /*
-int64_t _extrapolate_second_order_sw(int64_t number_of_elements,
+anuga_int _extrapolate_second_order_sw(anuga_int number_of_elements,
         double epsilon,
         double minimum_allowed_height,
         double beta_w,
@@ -1749,8 +1652,8 @@ int64_t _extrapolate_second_order_sw(int64_t number_of_elements,
         double beta_uh_dry,
         double beta_vh,
         double beta_vh_dry,
-        int64_t* surrogate_neighbours,
-        int64_t* number_of_boundaries,
+        anuga_int* surrogate_neighbours,
+        anuga_int* number_of_boundaries,
         double* centroid_coordinates,
         double* stage_centroid_values,
         double* xmom_centroid_values,
@@ -1761,14 +1664,14 @@ int64_t _extrapolate_second_order_sw(int64_t number_of_elements,
         double* xmom_vertex_values,
         double* ymom_vertex_values,
         double* elevation_vertex_values,
-        int64_t optimise_dry_cells,
-        int64_t extrapolate_velocity_second_order) {
+        anuga_int optimise_dry_cells,
+        anuga_int extrapolate_velocity_second_order) {
 
 
 
     // Local variables
     double a, b; // Gradient vector used to calculate vertex values from centroids
-    int64_t k, k0, k1, k2, k3, k6, coord_index, i;
+    anuga_int k, k0, k1, k2, k3, k6, coord_index, i;
     double x, y, x0, y0, x1, y1, x2, y2, xv0, yv0, xv1, yv1, xv2, yv2; // Vertices of the auxiliary triangle
     double dx1, dx2, dy1, dy2, dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dq0, dq1, dq2, area2, inv_area2;
     double dqv[3], qmin, qmax, hmin, hmax;
@@ -2268,14 +2171,14 @@ int64_t _extrapolate_second_order_sw(int64_t number_of_elements,
 }
 
 
-int64_t _openmp_update_conserved_quantities(struct domain *D, double timestep)
+anuga_int _openmp_update_conserved_quantities(struct domain *D, double timestep)
       {
 	// Update centroid values based on values stored in
 	// explicit_update and semi_implicit_update as well as given timestep
 
 
-	int64_t k;
-  int64_t N = D->number_of_elements;
+	anuga_int k;
+  anuga_int N = D->number_of_elements;
   
 
 	// Divide semi_implicit update by conserved quantity
@@ -2340,7 +2243,7 @@ int64_t _openmp_update_conserved_quantities(struct domain *D, double timestep)
 	return 0;
 }
 
-int64_t _openmp_saxpy_conserved_quantities(struct domain *D, double a, double b, double c)
+anuga_int _openmp_saxpy_conserved_quantities(struct domain *D, double a, double b, double c)
 {
   // This function performs a SAXPY operation on the centroid values and backup values.
   //
@@ -2349,25 +2252,29 @@ int64_t _openmp_saxpy_conserved_quantities(struct domain *D, double a, double b,
   // positive values.
   
 
-  int64_t k;
-  int64_t N = D->number_of_elements;
+  anuga_int N = D->number_of_elements;
   double c_inv = 1.0 / c;
 
+  // stage
+  anuga_daxpy(N, b, D->stage_backup_values, 1, D->stage_centroid_values, 1);
+  anuga_dscal(N, a * c_inv, D->stage_centroid_values, 1);
 
-#pragma omp parallel for simd default(none) shared(D,a,b,c_inv) schedule(static) firstprivate(N)
-  for (k = 0; k < N; k++)
-  {
-    D->stage_centroid_values[k] = c_inv * (a * D->stage_centroid_values[k] + b * D->stage_backup_values[k]);
-    D->xmom_centroid_values[k]  = c_inv * (a * D->xmom_centroid_values[k]  + b * D->xmom_backup_values[k]);
-    D->ymom_centroid_values[k]  = c_inv * (a * D->ymom_centroid_values[k]  + b * D->ymom_backup_values[k]);
-  }
+  // xmom
+  anuga_daxpy(N, b, D->xmom_backup_values, 1, D->xmom_centroid_values, 1);
+  anuga_dscal(N, a * c_inv, D->xmom_centroid_values, 1);
+
+  // ymom
+  anuga_daxpy(N, b, D->ymom_backup_values, 1, D->ymom_centroid_values, 1);
+  anuga_dscal(N, a * c_inv, D->ymom_centroid_values, 1);
+
+
   return 0;
 }
 
-int64_t _openmp_backup_conserved_quantities(struct domain *D)
+anuga_int _openmp_backup_conserved_quantities(struct domain *D)
 {
-  int64_t k;
-  int64_t N = D->number_of_elements;
+  anuga_int k;
+  anuga_int N = D->number_of_elements;
 
   // double stage_tmp[N];
   // double xmom_tmp[N];
