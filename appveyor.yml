@@ -38,7 +38,7 @@ build_script:
   #- cp windows_setup.cfg setup.cfg
 
 
-  # Use MSVC compiler by default unless m2w64-toolchain is installed
+  - cmd: SET OMP_NUM_THREADS=1
   - pip install -v .
 
 test_script:
