@@ -3,7 +3,7 @@ openmp = dependency('openmp', required: false)
 if openmp.found()
   if host_machine.system() == 'windows'
     # On Windows, the mingw compiler does not support OpenMP ATOMIC operations
-    openmp_deps = dependencies
+    openmp_deps = dependencies + [openmp]
   else
     openmp_deps = dependencies + [openmp]
   endif
