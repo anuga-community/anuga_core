@@ -71,18 +71,18 @@ project = PrepareData(input_file, output_log='Simulation_logfile.log')
 set_initial_conditions_in_parallel = False
 
 if not set_initial_conditions_in_parallel:
-    print 'Making domain and initial conditions in serial'
+    print('Making domain and initial conditions in serial')
     domain = setup_mesh.setup_mesh(project, 
         setup_initial_conditions=setup_initial_conditions)
 else:
-    print 'Making domain in serial'
+    print('Making domain in serial')
     domain = setup_mesh.setup_mesh(project)
-    print 'Making initial conditions in parallel'
+    print('Making initial conditions in parallel')
     setup_initial_conditions.setup_initial_conditions(domain, project)
     
 
 # Riverwalls must be added AFTER any distribute step
-print 'Adding riverwalls'
+print('Adding riverwalls')
 setup_riverwalls.setup_riverwalls(domain, project)
 
 ##########################################################################
@@ -91,16 +91,16 @@ setup_riverwalls.setup_riverwalls(domain, project)
 #
 ##########################################################################
 
-print 'Making rainfall '
+print('Making rainfall ')
 setup_rainfall.setup_rainfall(domain, project)
 
-print 'Making inlets '
+print('Making inlets ')
 setup_inlets.setup_inlets(domain, project)
 
-print 'Making bridges '
+print('Making bridges ')
 setup_bridges.setup_bridges(domain, project)
 
-print 'Making pumping stations '
+print('Making pumping stations ')
 setup_pumping_stations.setup_pumping_stations(domain, project)
 
 ##########################################################################
@@ -109,7 +109,7 @@ setup_pumping_stations.setup_pumping_stations(domain, project)
 #
 ##########################################################################
 
-print 'Making boundary conditions '
+print('Making boundary conditions ')
 setup_boundary_conditions.setup_boundary_conditions(domain, project)
 
 ##########################################################################
@@ -131,7 +131,7 @@ max_quantities = collect_max_quantities_operator(
 #
 ##########################################################################
 
-print 'Evolving'
+print('Evolving')
 
 barrier()
 for t in domain.evolve(yieldstep=project.yieldstep,
@@ -168,13 +168,13 @@ max_quantities.export_max_quantities_to_csv(max_quantity_file_start)
 
 os.chdir(project.output_dir)
 if myid == 0 and numprocs > 1:
-    print 'Number of processors %g ' % numprocs
-    print 'That took %.2f seconds' % (time.time() - t0)
-    print 'Communication time %.2f seconds' % domain.communication_time
-    print 'Reduction Communication time %.2f seconds' \
-        % domain.communication_reduce_time
-    print 'Broadcast time %.2f seconds' \
-        % domain.communication_broadcast_time
+    print('Number of processors %g ' % numprocs)
+    print('That took %.2f seconds' % (time.time() - t0))
+    print('Communication time %.2f seconds' % domain.communication_time)
+    print('Reduction Communication time %.2f seconds' \
+        % domain.communication_reduce_time)
+    print('Broadcast time %.2f seconds' \
+        % domain.communication_broadcast_time)
 
     anuga.utilities.sww_merge.sww_merge_parallel(
         project.scenario,
@@ -190,8 +190,8 @@ if myid == 0:
             proj4string=project.proj4string,
             cell_size=project.output_tif_cellsize)
     except:
-        print 'GeoTif creation failed, you can try manually using' + \
-              ' raster_outputs.py or anuga.utilities.plot_utils.Make_Geotif'
+        print('GeoTif creation failed, you can try manually using' + \
+              ' raster_outputs.py or anuga.utilities.plot_utils.Make_Geotif')
 
 barrier()
 finalize()

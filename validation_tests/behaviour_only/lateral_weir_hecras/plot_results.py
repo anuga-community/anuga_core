@@ -46,7 +46,7 @@ def get_corresponding_series(reach, station):
 
 
     if(not station%100.==0.):
-        raise Exception, 'Station must be in 0., 100. , 200., .... 900., 1000.'
+        raise Exception('Station must be in 0., 100. , 200., .... 900., 1000.')
 
     # Get station string in hecras gauges
     if(station>0. and station<1000.):

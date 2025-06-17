@@ -17,7 +17,7 @@ def check_output(list_of_commands):
     process = subprocess.Popen(list_of_commands, stdout=subprocess.PIPE)
 
     output = process.communicate()[0]
-    print output
+    print(output)
 
     #output, unused_err = process.communicate()
     #retcode = process.poll()
@@ -54,7 +54,7 @@ def parse_ogr_info_text(ogr_info, tag_attribute):
                 counter = counter + 1
 
                 if (i + counter) == len(ogr_info):
-                    print ogr_info
+                    print(ogr_info)
                     msg = 'Failed to parse the above output from ogr_info' + \
                           '\n Check that your boundary tag attribute name' + \
                           ' is correctly specified in the input file'
@@ -74,7 +74,7 @@ def parse_ogr_info_text(ogr_info, tag_attribute):
                 counter = counter + 1
 
                 if (i + counter) == len(ogr_info):
-                    print ogr_info
+                    print(ogr_info)
                     msg = 'Failed to parse the above output from ogr_info' + \
                           '\n Could not find the linestring of every ' + \
                           'Feature. \n Check that all geometries are part ' + \
