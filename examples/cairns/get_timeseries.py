@@ -18,7 +18,7 @@ try:
                 quantities=['stage','speed','depth','elevation'],
                 verbose=True)
 except:
-    print 'Failed to process cairns_slide'
+    print('Failed to process cairns_slide')
 
 try:                
     anuga.sww2csv_gauges('cairns_fixed_wave.sww',
@@ -26,7 +26,7 @@ try:
                quantities=['stage', 'speed','depth','elevation'],
                verbose=True)
 except:
-    print 'Failed to process cairns_fixed_wave'
+    print('Failed to process cairns_fixed_wave')
 
 try: 
     import pylab
@@ -41,7 +41,7 @@ try:
                           verbose=True)
 except ImportError:
     #ANUGA does not rely on pylab to work 
-    print 'must have pylab installed to generate plots'
+    print('must have pylab installed to generate plots')
 
 
 try: 
@@ -57,4 +57,4 @@ try:
                           verbose=True)
 except ImportError:
     #ANUGA does not rely on pylab to work 
-    print 'must have pylab installed to generate plots'
+    print('must have pylab installed to generate plots')
