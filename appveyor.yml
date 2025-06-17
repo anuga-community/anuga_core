@@ -31,8 +31,7 @@ build_script:
 
   # If using gcc compiler for windows uncomment the following
   # otherwise MCSV will be used
-  - conda install -c conda-forge libpython gcc_win-64 gxx_win-64 
-  - gcc -v
+  - conda install -c conda-forge libpython gcc_win-64 gxx_win-64
 
   # there seems to be a bug with distutil by not picking the mingw comiler for anuga
   #- cp windows_setup.cfg setup.cfg
