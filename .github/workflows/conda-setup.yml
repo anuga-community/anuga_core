@@ -35,7 +35,7 @@ jobs:
         shell: bash -el {0}
         run: |
           conda activate anuga_env
-          pip install --no-build-isolation .
+          pip install --no-build-isolation . -v
 
       - name: Test package
         shell: bash -el {0}
