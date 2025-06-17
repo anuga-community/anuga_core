@@ -25,21 +25,22 @@ jobs:
         run: |
           conda env create --name anuga_env --file environments/environment_${{matrix.python-version}}.yml
 
-      - name: Install mingw compilers on Windows
+      - name: Install gcc compilers on Windows
         if: runner.os == 'Windows'
         shell: bash -el {0}
         run: |
-          # conda install -c conda-forge -n anuga_env libpython m2w64-toolchain
+           conda install -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64 
 
       - name: Install package
         shell: bash -el {0}
         run: |
           conda activate anuga_env
-          pip install --no-build-isolation .
+          pip install --no-build-isolation . -v
 
       - name: Test package
         shell: bash -el {0}
         run: |
           conda activate anuga_env
           cd ..
+          export OMP_NUM_THREADS=1
           pytest -p no:faulthandler -q --pyargs anuga

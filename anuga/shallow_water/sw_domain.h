@@ -10,25 +10,26 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include "anuga_typedefs.h"
 
 // structures
 struct domain {
     // Changing these don't change the data in python object
-    int64_t    number_of_elements;
-    int64_t    boundary_length;
-    int64_t    number_of_riverwall_edges;
+    anuga_int    number_of_elements;
+    anuga_int    boundary_length;
+    anuga_int    number_of_riverwall_edges;
     double     epsilon;
     double     H0;
     double     g;
-    int64_t    optimise_dry_cells;
+    anuga_int    optimise_dry_cells;
     double     evolve_max_timestep;
-    int64_t    extrapolate_velocity_second_order;
+    anuga_int    extrapolate_velocity_second_order;
     double     minimum_allowed_height;
     double     maximum_allowed_speed;
-    int64_t    low_froude;
+    anuga_int    low_froude;
 
 
-    int64_t timestep_fluxcalls;
+    anuga_int timestep_fluxcalls;
 
     double beta_w;
     double beta_w_dry;
@@ -37,29 +38,29 @@ struct domain {
     double beta_vh;
     double beta_vh_dry;
 
-    int64_t max_flux_update_frequency;
-    int64_t ncol_riverwall_hydraulic_properties;
+    anuga_int max_flux_update_frequency;
+    anuga_int ncol_riverwall_hydraulic_properties;
 
     // Changing values in these arrays will change the values in the python object
-    int64_t*   neighbours;
-    int64_t*   neighbour_edges;
-    int64_t*   surrogate_neighbours;
+    anuga_int*   neighbours;
+    anuga_int*   neighbour_edges;
+    anuga_int*   surrogate_neighbours;
     double*    normals;
     double*    edgelengths;
     double*    radii;
     double*    areas;
 
-    int64_t*   edge_flux_type;
+    anuga_int*   edge_flux_type;
 
-    int64_t*   tri_full_flag;
-    int64_t*   already_computed_flux;
+    anuga_int*   tri_full_flag;
+    anuga_int*   already_computed_flux;
     double*    max_speed;
 
     double* vertex_coordinates;
     double* edge_coordinates;
     double* centroid_coordinates;
 
-    int64_t* number_of_boundaries;
+    anuga_int* number_of_boundaries;
     double* stage_edge_values;
     double* xmom_edge_values;
     double* ymom_edge_values;
@@ -88,9 +89,9 @@ struct domain {
     double* xmom_explicit_update;
     double* ymom_explicit_update;
 
-    int64_t* flux_update_frequency;
-    int64_t* update_next_flux;
-    int64_t* update_extrapolation;
+    anuga_int* flux_update_frequency;
+    anuga_int* update_next_flux;
+    anuga_int* update_extrapolation;
     double* edge_timestep;
     double* edge_flux_work;
     double* neigh_work;
@@ -99,11 +100,11 @@ struct domain {
     double* y_centroid_work;
     double* boundary_flux_sum;
 
-    int64_t* allow_timestep_increase;
+    anuga_int* allow_timestep_increase;
 
-    int64_t* edge_river_wall_counter;
+    anuga_int* edge_river_wall_counter;
     double* riverwall_elevation;
-    int64_t* riverwall_rowIndex;
+    anuga_int* riverwall_rowIndex;
     double* riverwall_hydraulic_properties;
 
     double* stage_semi_implicit_update;
@@ -121,8 +122,8 @@ struct domain {
 
 struct edge {
 
-    int64_t cell_id;
-    int64_t edge_id;
+    anuga_int cell_id;
+    anuga_int edge_id;
 
     // mid point values
     double w;
@@ -153,10 +154,10 @@ struct edge {
 };
 
 
-void get_edge_data(struct edge *E, struct domain *D, int64_t k, int64_t i) {
+void get_edge_data(struct edge *E, struct domain *D, anuga_int k, anuga_int i) {
     // fill edge data (conserved and bed) for ith edge of kth triangle
 
-    int64_t k3i, k3i1, k3i2;
+    anuga_int k3i, k3i1, k3i2;
 
     k3i = 3 * k + i;
     k3i1 = 3 * k + (i + 1) % 3;
@@ -186,7 +187,7 @@ void get_edge_data(struct edge *E, struct domain *D, int64_t k, int64_t i) {
 
 }
 
-int64_t print_domain_struct(struct domain *D) {
+anuga_int print_domain_struct(struct domain *D) {
 
 
     printf("D->number_of_elements     %ld  \n", D->number_of_elements);

@@ -23,21 +23,20 @@
 //Shared code snippets
 #include "util_ext.h"
 
-typedef int64_t keyint;
 
 //-------------------------------------------
 // Low level routines (called from wrappers)
 //------------------------------------------
 
-int64_t _compute_gradients(keyint N,
+anuga_int _compute_gradients(anuga_int N,
 			double* centroids,
 			double* centroid_values,
-			int64_t* number_of_boundaries,
-			int64_t* surrogate_neighbours,
+			anuga_int* number_of_boundaries,
+			anuga_int* surrogate_neighbours,
 			double* a,
 			double* b){
 
-  keyint i, k, k0, k1, k2, index3;
+  anuga_int i, k, k0, k1, k2, index3;
   double x0, x1, x2, y0, y1, y2, q0, q1, q2; //, det;
 
 
@@ -101,13 +100,13 @@ int64_t _compute_gradients(keyint N,
 }
 
 
-int64_t _compute_local_gradients(keyint N,
+anuga_int _compute_local_gradients(anuga_int N,
 			       double* vertex_coordinates,
 			       double* vertex_values,
 			       double* a,
 			       double* b) {
 
-  keyint k, k3, k6;
+  anuga_int k, k3, k6;
   double x0, y0, x1, y1, x2, y2, v0, v1, v2;
 
   for (k=0; k<N; k++) {
@@ -136,7 +135,7 @@ int64_t _compute_local_gradients(keyint N,
     return 0;
 }
 
-int64_t _extrapolate_from_gradient(keyint N,
+anuga_int _extrapolate_from_gradient(anuga_int N,
 			       double* centroids,
 			       double* centroid_values,
 			       double* vertex_coordinates,
@@ -145,7 +144,7 @@ int64_t _extrapolate_from_gradient(keyint N,
 			       double* a,
 			       double* b) {
 
-  keyint k, k2, k3, k6;
+  anuga_int k, k2, k3, k6;
   double x, y, x0, y0, x1, y1, x2, y2;
 
   for (k=0; k<N; k++){
@@ -180,9 +179,9 @@ int64_t _extrapolate_from_gradient(keyint N,
 }
 
 
-int64_t _extrapolate_and_limit_from_gradient(keyint N,double beta,
+anuga_int _extrapolate_and_limit_from_gradient(anuga_int N,double beta,
 					 double* centroids,
-					 int64_t*   neighbours,
+					 anuga_int*   neighbours,
 					 double* centroid_values,
 					 double* vertex_coordinates,
 					 double* vertex_values,
@@ -191,9 +190,9 @@ int64_t _extrapolate_and_limit_from_gradient(keyint N,double beta,
 					 double* x_gradient,
 					 double* y_gradient) {
 
-  keyint i, k, k2, k3, k6;
+  anuga_int i, k, k2, k3, k6;
   double x, y, x0, y0, x1, y1, x2, y2;
-  keyint n;
+  anuga_int n;
   double qmin, qmax, qc;
   double qn[3];
   double dq, dqa[3], r;
@@ -304,17 +303,17 @@ int64_t _extrapolate_and_limit_from_gradient(keyint N,double beta,
 
 
 
-int64_t _limit_vertices_by_all_neighbours(keyint N, double beta,
+anuga_int _limit_vertices_by_all_neighbours(anuga_int N, double beta,
 				      double* centroid_values,
 				      double* vertex_values,
 				      double* edge_values,
-				      int64_t*   neighbours,
+				      anuga_int*   neighbours,
 				      double* x_gradient,
 				      double* y_gradient) {
 
 
-  keyint i, k, k3;
-  keyint n;
+  anuga_int i, k, k3;
+  anuga_int n;
   double qmin, qmax, qn, qc;
   double dq, dqa[3], phi, r;
 
@@ -371,16 +370,16 @@ int64_t _limit_vertices_by_all_neighbours(keyint N, double beta,
 
 
 
-int64_t _limit_edges_by_all_neighbours(keyint N, double beta,
+anuga_int _limit_edges_by_all_neighbours(anuga_int N, double beta,
 				   double* centroid_values,
 				   double* vertex_values,
 				   double* edge_values,
-				   int64_t*   neighbours,
+				   anuga_int*   neighbours,
 				   double* x_gradient,
 				   double* y_gradient) {
 
-  keyint i, k, k3;
-  keyint n;
+  anuga_int i, k, k3;
+  anuga_int n;
   double qmin, qmax, qn, qc;
   double dq, dqa[3], phi, r;
 
@@ -440,14 +439,14 @@ int64_t _limit_edges_by_all_neighbours(keyint N, double beta,
 }
 
 
-int64_t _limit_edges_by_neighbour(keyint N, double beta,
+anuga_int _limit_edges_by_neighbour(anuga_int N, double beta,
 		     double* centroid_values,
 		     double* vertex_values,
 		     double* edge_values,
-		     int64_t*   neighbours) {
+		     anuga_int*   neighbours) {
 
-	keyint i, k, k3;
-	keyint n;
+	anuga_int i, k, k3;
+	anuga_int n;
 	double qmin, qmax, qn, qc;
 	double dq, dqa[3], phi, r;
 
@@ -493,16 +492,16 @@ int64_t _limit_edges_by_neighbour(keyint N, double beta,
 }
 
 
-int64_t _limit_gradient_by_neighbour(keyint N, double beta,
+anuga_int _limit_gradient_by_neighbour(anuga_int N, double beta,
 		     double* centroid_values,
 		     double* vertex_values,
 		     double* edge_values,
 		     double* x_gradient,
 		     double* y_gradient,
-		     int64_t*   neighbours) {
+		     anuga_int*   neighbours) {
 
-	keyint i, k, k3;
-	keyint n;
+	anuga_int i, k, k3;
+	anuga_int n;
 	double qmin, qmax, qn, qc;
 	double dq, dqa[3], phi, r;
 
@@ -547,14 +546,14 @@ int64_t _limit_gradient_by_neighbour(keyint N, double beta,
 	return 0;
 }
 
-int64_t _bound_vertices_below_by_constant(keyint N, double bound,
+anuga_int _bound_vertices_below_by_constant(anuga_int N, double bound,
 		     double* centroid_values,
 		     double* vertex_values,
 		     double* edge_values,
 		     double* x_gradient,
 		     double* y_gradient) {
 
-	keyint i, k, k3;
+	anuga_int i, k, k3;
 	double qmin, qc;
 	double dq, dqa[3], phi, r;
 
@@ -596,7 +595,7 @@ int64_t _bound_vertices_below_by_constant(keyint N, double bound,
 	return 0;
 }
 
-int64_t _bound_vertices_below_by_quantity(keyint N,
+anuga_int _bound_vertices_below_by_quantity(anuga_int N,
 				      double* bound_vertex_values,
 				      double* centroid_values,
 				      double* vertex_values,
@@ -604,7 +603,7 @@ int64_t _bound_vertices_below_by_quantity(keyint N,
 				      double* x_gradient,
 				      double* y_gradient) {
 
-	keyint i, k, k3;
+	anuga_int i, k, k3;
 	double qmin, qc;
 	double dq, dqa[3], phi, r;
 
@@ -647,12 +646,12 @@ int64_t _bound_vertices_below_by_quantity(keyint N,
 	return 0;
 }
 
-int64_t _interpolate(keyint N,
+anuga_int _interpolate(anuga_int N,
 		 double* vertex_values,
 		 double* edge_values,
                  double* centroid_values) {
 
-	keyint k, k3;
+	anuga_int k, k3;
 	double q0, q1, q2;
 
 
@@ -672,11 +671,11 @@ int64_t _interpolate(keyint N,
 	return 0;
 }
 
-int64_t _interpolate_from_vertices_to_edges(keyint N,
+anuga_int _interpolate_from_vertices_to_edges(anuga_int N,
 					double* vertex_values,
 					double* edge_values) {
 
-	keyint k, k3;
+	anuga_int k, k3;
 	double q0, q1, q2;
 
 
@@ -695,11 +694,11 @@ int64_t _interpolate_from_vertices_to_edges(keyint N,
 }
 
 
-int64_t _interpolate_from_edges_to_vertices(keyint N,
+anuga_int _interpolate_from_edges_to_vertices(anuga_int N,
 					double* vertex_values,
 					double* edge_values) {
 
-	keyint k, k3;
+	anuga_int k, k3;
 	double e0, e1, e2;
 
 
@@ -717,13 +716,13 @@ int64_t _interpolate_from_edges_to_vertices(keyint N,
 	return 0;
 }
 
-int64_t _backup_centroid_values(keyint N,
+anuga_int _backup_centroid_values(anuga_int N,
 			    double* centroid_values,
 			    double* centroid_backup_values) {
     // Backup centroid values
 
 
-    keyint k;
+    anuga_int k;
 
     for (k=0; k<N; k++) {
 	centroid_backup_values[k] = centroid_values[k];
@@ -734,7 +733,7 @@ int64_t _backup_centroid_values(keyint N,
 }
 
 
-int64_t _saxpy_centroid_values(keyint N,
+anuga_int _saxpy_centroid_values(anuga_int N,
 			   double a,
 			   double b,
 			   double* centroid_values,
@@ -742,7 +741,7 @@ int64_t _saxpy_centroid_values(keyint N,
     // Saxby centroid values
 
 
-    keyint k;
+    anuga_int k;
 
 
     for (k=0; k<N; k++) {
@@ -754,7 +753,7 @@ int64_t _saxpy_centroid_values(keyint N,
 }
 
 
-int64_t _update(keyint N,
+anuga_int _update(anuga_int N,
 	    double timestep,
 	    double* centroid_values,
 	    double* explicit_update,
@@ -763,7 +762,7 @@ int64_t _update(keyint N,
 	// explicit_update and semi_implicit_update as well as given timestep
 
 
-	keyint k;
+	anuga_int k;
 	double denominator, x;
 
 
@@ -786,7 +785,7 @@ int64_t _update(keyint N,
 	// }
 
 
-	// int64_t err_return = 0;
+	// anuga_int err_return = 0;
 
 	// // Semi implicit updates
 	// #pragma omp parallel for private(k, denominator) reduction(fmin:err_return)
@@ -814,7 +813,7 @@ int64_t _update(keyint N,
 
 	// return 0;
 
-	int64_t err_return = 0;
+	anuga_int err_return = 0;
 
 	// Divide semi_implicit update by conserved quantity
 	#pragma omp parallel for private(k, x) reduction(min:err_return)
@@ -853,16 +852,16 @@ int64_t _update(keyint N,
 }
 
 
-int64_t _average_vertex_values(keyint N,
-			   int64_t* vertex_value_indices,
-			   int64_t* number_of_triangles_per_node,
+anuga_int _average_vertex_values(anuga_int N,
+			   anuga_int* vertex_value_indices,
+			   anuga_int* number_of_triangles_per_node,
 			   double* vertex_values,
 			   double* A) {
   // Average vertex values to obtain one value per node
 
-  keyint i, index;
-  keyint k = 0; //Track triangles touching each node
-  keyint current_node = 0;
+  anuga_int i, index;
+  anuga_int k = 0; //Track triangles touching each node
+  anuga_int current_node = 0;
   double total = 0.0;
 
   for (i=0; i<N; i++) {
@@ -902,17 +901,17 @@ int64_t _average_vertex_values(keyint N,
   return 0;
 }
 
-int64_t _average_centroid_values(keyint N,
-			   int64_t* vertex_value_indices,
-			   int64_t* number_of_triangles_per_node,
+anuga_int _average_centroid_values(anuga_int N,
+			   anuga_int* vertex_value_indices,
+			   anuga_int* number_of_triangles_per_node,
 			   double* centroid_values,
 			   double* A) {
   // Average centroid values to obtain one value per node
 
-  keyint i, index;
-  keyint volume_id;
-  keyint k = 0; //Track triangles touching each node
-  keyint current_node = 0;
+  anuga_int i, index;
+  anuga_int volume_id;
+  anuga_int k = 0; //Track triangles touching each node
+  anuga_int current_node = 0;
   double total = 0.0;
 
   for (i=0; i<N; i++) {
@@ -952,15 +951,15 @@ int64_t _average_centroid_values(keyint N,
 // from a list of vertices and values at those vertices. Called in
 // quantity.py by _set_vertex_values.
 // Naming is a little confusing - but sticking with convention.
-int64_t _set_vertex_values_c(keyint num_verts,
-                        int64_t * vertices,
-                        int64_t * node_index,
-                        int64_t * number_of_triangles_per_node,
-                        int64_t * vertex_value_indices,
+anuga_int _set_vertex_values_c(anuga_int num_verts,
+                        anuga_int * vertices,
+                        anuga_int * node_index,
+                        anuga_int * number_of_triangles_per_node,
+                        anuga_int * vertex_value_indices,
                         double * vertex_values,
                         double * A
                         ){
-  keyint i,j,num_triangles,u_vert_id,vert_v_index;
+  anuga_int i,j,num_triangles,u_vert_id,vert_v_index;
 
   for(i=0;i<num_verts;i++){
 
@@ -979,16 +978,16 @@ int64_t _set_vertex_values_c(keyint num_verts,
 
 }
 
-int64_t _min_and_max_centroid_values(keyint N,
+anuga_int _min_and_max_centroid_values(anuga_int N,
                                  double * qc,
                                  double * qv,
-                                 int64_t * neighbours,
+                                 anuga_int * neighbours,
                                  double * qmin,
                                  double * qmax){
   
   // Find fmin and fmax of this and neighbour's centroid values
 
-  keyint k, i, n, k3;
+  anuga_int k, i, n, k3;
   double qn;
 
   for (k=0; k<N; k++) {
