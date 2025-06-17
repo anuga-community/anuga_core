@@ -65,7 +65,7 @@ void print_segments(void) {
     segment_t *s;
 
     for (s = segment_table; s != NULL; s = (segment_t*) (s->hh.next)) {
-        printf('segment key i %" PRId64 " j %" PRId64 " vol_id %" PRId64 "  edge_id %" PRId64 "\n',
+        printf("segment key i %" PRId64 " j %" PRId64 " vol_id %" PRId64 "  edge_id %" PRId64 "\n",
                 s->key.i, s->key.j, s->vol_id, s->edge_id);
     }
 }

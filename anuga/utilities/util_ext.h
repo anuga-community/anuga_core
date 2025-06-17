@@ -230,7 +230,7 @@ void  print_long_array(char* name, anuga_int * array, anuga_int n, anuga_int m){
 	km = m*k;
 	printf("[");
 	for (i=0; i<m ; i++){
-	  printf('%" PRId64 " ',array[km+i]);
+	  printf("%" PRId64 " ",array[km+i]);
 	}
 	if (k==(n-1))
 	    printf("]");
