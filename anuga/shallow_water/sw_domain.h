@@ -10,6 +10,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>
+#include <inttypes.h>
 #include "anuga_typedefs.h"
 
 // structures
@@ -190,18 +191,18 @@ void get_edge_data(struct edge *E, struct domain *D, anuga_int k, anuga_int i) {
 anuga_int print_domain_struct(struct domain *D) {
 
 
-    printf("D->number_of_elements     %ld  \n", D->number_of_elements);
-    printf("D->boundary_length        %ld  \n", D->boundary_length);
-    printf("D->number_of_riverwall_edges %ld  \n", D->number_of_riverwall_edges);
+    printf("D->number_of_elements     %" PRId64 "  \n", D->number_of_elements);
+    printf("D->boundary_length        %" PRId64 "  \n", D->boundary_length);
+    printf("D->number_of_riverwall_edges %" PRId64 "  \n", D->number_of_riverwall_edges);
     printf("D->epsilon                %g \n", D->epsilon);
     printf("D->H0                     %g \n", D->H0);
     printf("D->g                      %g \n", D->g);
-    printf("D->optimise_dry_cells     %ld \n", D->optimise_dry_cells);
+    printf("D->optimise_dry_cells     %" PRId64 " \n", D->optimise_dry_cells);
     printf("D->evolve_max_timestep    %g \n", D->evolve_max_timestep);
     printf("D->minimum_allowed_height %g \n", D->minimum_allowed_height);
     printf("D->maximum_allowed_speed  %g \n", D->maximum_allowed_speed);
-    printf("D->low_froude             %ld \n", D->low_froude);
-    printf("D->extrapolate_velocity_second_order %ld \n", D->extrapolate_velocity_second_order);
+    printf("D->low_froude             %" PRId64 " \n", D->low_froude);
+    printf("D->extrapolate_velocity_second_order %" PRId64 " \n", D->extrapolate_velocity_second_order);
     printf("D->beta_w                 %g \n", D->beta_w);
     printf("D->beta_w_dry             %g \n", D->beta_w_dry);
     printf("D->beta_uh                %g \n", D->beta_uh);
