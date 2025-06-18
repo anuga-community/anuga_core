@@ -46,13 +46,13 @@ jobs:
       - name: Install package
         shell: bash -el {0}
         run: |
+          conda activate anuga_env
 
           clang --version
           which clang
           which ninja
-
           echo ${PATH}
-          conda activate anuga_env
+
           pip install --no-build-isolation . -v
 
       - name: Test package
