@@ -60,24 +60,24 @@ def build_mesh(project):
 
     # Print some stats about mesh and domain
 
-    print 'Number of triangles = ', len(domain)
-    print 'The extent is ', domain.get_extent()
-    print domain.statistics()
+    print('Number of triangles = ', len(domain))
+    print('The extent is ', domain.get_extent())
+    print(domain.statistics())
 
     # Print info on the smallest triangles
 
     small_areas = domain.areas.argsort()
-    print ''
-    print 'LOCATIONS OF TRIANGLES WITH SMALLEST AREAS'
+    print('')
+    print('LOCATIONS OF TRIANGLES WITH SMALLEST AREAS')
     for i in range(10):
         j = small_areas[i]
         x = domain.centroid_coordinates[j, 0] \
             + domain.geo_reference.xllcorner
         y = domain.centroid_coordinates[j, 1] \
             + domain.geo_reference.yllcorner
-        print '  Area ' + str(domain.areas[j]) + ' location: ' \
-            + str(round(x, 1)) + ',' + str(round(y, 1))
-    print ''
+        print('  Area ' + str(domain.areas[j]) + ' location: ' \
+            + str(round(x, 1)) + ',' + str(round(y, 1)))
+    print('')
 
     return domain
 
@@ -99,7 +99,7 @@ def setup_mesh(project, setup_initial_conditions=None):
     if myid == 0:
 
         if verbose:
-            print 'Hello from processor ', myid
+            print('Hello from processor ', myid)
 
         #
         # HERE, WE MAKE/PARTITION/READ THE MESH
@@ -114,10 +114,10 @@ def setup_mesh(project, setup_initial_conditions=None):
 
         if os.path.exists(pickle_name):
             if verbose:
-                print 'Saved domain seems to already exist'
+                print('Saved domain seems to already exist')
         else:
             if verbose:
-                print 'CREATING PARTITIONED DOMAIN'
+                print('CREATING PARTITIONED DOMAIN')
             domain = build_mesh(project)
 
             if setup_initial_conditions is not None:
@@ -130,7 +130,7 @@ def setup_mesh(project, setup_initial_conditions=None):
 
             if pypar_available:
                 if verbose:
-                    print 'Saving Domain'
+                    print('Saving Domain')
                 sequential_distribute_dump(domain, 1,
                                            partition_dir=project.partition_dir,
                                            verbose=verbose)
@@ -148,16 +148,16 @@ def setup_mesh(project, setup_initial_conditions=None):
                                    par_pickle_name)
             if os.path.exists(par_pickle_name):
                 if verbose:
-                    print 'Saved partitioned domain seems to already exist'
+                    print('Saved partitioned domain seems to already exist')
             else:
                 if verbose:
-                    print 'Load in saved sequential pickled domain'
+                    print('Load in saved sequential pickled domain')
                 domain = \
                     sequential_distribute_load_pickle_file(
                         pickle_name, np=1, verbose=verbose)
 
                 if verbose:
-                    print 'Dump partitioned domains'
+                    print('Dump partitioned domains')
                 sequential_distribute_dump(
                     domain, numprocs,
                     partition_dir=project.partition_dir, verbose=verbose)
@@ -172,7 +172,7 @@ def setup_mesh(project, setup_initial_conditions=None):
 
         domain = None
         if verbose:
-            print 'Hello from processor ', myid
+            print('Hello from processor ', myid)
 
     barrier()
 
@@ -185,7 +185,7 @@ def setup_mesh(project, setup_initial_conditions=None):
 
     if pypar_available:
         if myid == 0:
-            print 'LOADING PARTITIONED DOMAIN'
+            print('LOADING PARTITIONED DOMAIN')
 
         domain = \
             sequential_distribute_load(

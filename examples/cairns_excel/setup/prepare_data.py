@@ -20,7 +20,7 @@ from anuga.utilities import spatialInputUtil as su
 from anuga.parallel import myid, barrier, send, receive, numprocs
 
 # Local modules
-from read_boundary_tags_line_shapefile import \
+from .read_boundary_tags_line_shapefile import \
     read_boundary_tags_line_shapefile
 from setup.parse_input_data import ProjectData
 
@@ -108,7 +108,7 @@ class PrepareData(ProjectData):
             except:
                 pass
 
-            print 'OUTPUT_DIRECTORY: ' + str(self.output_dir)
+            print('OUTPUT_DIRECTORY: ' + str(self.output_dir))
 
         # Send stdout to a file inside the output directory
         if output_log is not None:
@@ -118,7 +118,7 @@ class PrepareData(ProjectData):
                 stdout_file = output_log
 
             if myid == 0:
-                print 'Redirecting output now to ' + stdout_file
+                print('Redirecting output now to ' + stdout_file)
                 sys.stdout = Logger(stdout_file)
             barrier()
 
@@ -137,12 +137,12 @@ class PrepareData(ProjectData):
         # (Consider refactoring though)
         if myid == 0:
             for p in self.print_info:
-                print p
-            print ''
-            print '---------------------'
-            print 'PROCESS_PROJECT_DATA'
-            print '---------------------'
-            print ''
+                print(p)
+            print('')
+            print('---------------------')
+            print('PROCESS_PROJECT_DATA')
+            print('---------------------')
+            print('')
             # Record the time and broadcast to other processers
             time_number = time.time()
             if numprocs > 1:
