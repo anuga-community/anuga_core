@@ -46,6 +46,12 @@ jobs:
       - name: Install package
         shell: bash -el {0}
         run: |
+          echo ${CC}
+          echo ${CXX}
+          echo ${CFLAGS}
+          echo ${CXXFLAGS}
+          echo ${LDFLAGS}
+          echo ${CPPFLAGS}
           conda activate anuga_env
           pip install --no-build-isolation . -v
 

@@ -2,22 +2,6 @@
 inc_dir = include_directories('../utilities', incdir_numpy)
 
 
-openmp = dependency('openmp', required: false)
-if openmp.found()
-  if host_machine.system() == 'windows'
-    # On Windows, the mingw compiler does not support OpenMP ATOMIC operations
-    openmp_deps = dependencies + [openmp]
-  else
-    openmp_deps = dependencies + [openmp]
-  endif
-
-else
-  openmp_deps = dependencies
-endif
-
-# FIXME SR: Need to setup dependencies for openacc code
-openacc_deps = dependencies
-
 # Compile the Cython-generated C code and additional C code
 py3.extension_module('mesh_factory_ext',
   sources: ['mesh_factory_ext.pyx'],
@@ -55,7 +39,7 @@ py3.extension_module('pmesh2domain_ext',
 
 py3.extension_module('quantity_openmp_ext',
   sources: ['quantity_openmp_ext.pyx'],
-  c_args : ['-O3', '-march=native', '-fopenmp', '-g'],
+  c_args : openmp_c_args,
   include_directories: inc_dir,
   dependencies: openmp_deps,
   subdir: 'anuga/abstract_2d_finite_volumes',
@@ -65,7 +49,7 @@ py3.extension_module('quantity_openmp_ext',
 
 py3.extension_module('quantity_cuda_ext',
   sources: ['quantity_cuda_ext.pyx'],
-  c_args : ['-O3', '-march=native', '-fopenmp', '-g'],
+  c_args : openmp_c_args,
   include_directories: inc_dir,
   dependencies: openmp_deps,
   subdir: 'anuga/abstract_2d_finite_volumes',

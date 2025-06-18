@@ -1,30 +1,6 @@
 
 inc_dir = include_directories('../utilities', incdir_numpy)
 
-openmp = dependency('openmp', required: false)
-if openmp.found()
-  if host_machine.system() == 'windows'
-    # On Windows, the mingw compiler does not support OpenMP ATOMIC operations
-    openmp_deps = dependencies + [openmp]
-  else
-    openmp_deps = dependencies + [openmp]
-  endif
-
-else
-  openmp_deps = dependencies
-endif
-openmp_flag = ''
-openmp_dep = dependency('openmp', required: false)
-cc = meson.get_compiler('c')
-if openmp_dep.found()
-  if cc.get_id() in ['intel', 'intel-cl', 'icx']
-    openmp_flag = '-qopenmp'
-  else
-    openmp_flag = '-fopenmp'
-  endif
-endif
-
-# FIXME SR: Need to setup depenencies for openacc code
 
 
 # py3.extension_module('boundaries',
@@ -38,11 +14,9 @@ endif
 
 py3.extension_module('sw_domain_openmp_ext',
   sources: ['sw_domain_openmp_ext.pyx'],
-  c_args : ['-O3', '-march=native', '-g'],
-  #c_args : ['-O3', '-march=native','-funroll-loops', '-fvectorize', '-Rpass=loop-vectorize', '-Rpass=loop-unroll', '-g'],
-  #c_args : ['-O3', '-march=native', openmp_flag, '-g'],
+  c_args : openmp_c_args,
   include_directories: inc_dir,
-dependencies: openmp_dep.found() ? [openmp_dep] : [],
+  dependencies: openmp_deps,
   subdir: 'anuga/shallow_water',
   install: true,
 )
