@@ -17,9 +17,9 @@ command = arg[0]
 ext = '.py'
 
 if len(arg)<3:
-    print __doc__
-    print 'Usage:'
-    print command + ' p <filename>' + ext
+    print(__doc__)
+    print('Usage:')
+    print(command + ' p <filename>' + ext)
     sys.exit()
 
 numproc = int(arg[1])    
