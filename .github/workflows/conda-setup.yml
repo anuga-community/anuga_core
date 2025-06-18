@@ -40,7 +40,7 @@ jobs:
         if: runner.os == 'macOS'
         shell: bash -el {0}
         run: |
-           conda install -c conda-forge -n anuga_env clang llvm-openmp
+           conda install -c conda-forge -n anuga_env cxx-compiler llvm-openmp
            
 
       - name: Install package
@@ -54,9 +54,6 @@ jobs:
           echo ${PATH}
 
           ls -lh /Users/runner/miniconda3/envs/anuga_env/bin/
-
-          export CXX=/Users/runner/miniconda3/envs/anuga_env/bin/clang++
-          export CC=/Users/runner/miniconda3/envs/anuga_env/bin/clang
 
 
           pip install --no-build-isolation -v .
