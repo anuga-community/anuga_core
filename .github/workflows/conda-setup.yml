@@ -1,6 +1,6 @@
 name: Conda setup
 
-on: [pull_request]
+on: [pull_request, push]
 
 jobs:
   test_conda:
