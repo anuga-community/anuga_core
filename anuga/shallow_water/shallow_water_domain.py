@@ -2121,7 +2121,7 @@ class Domain(Generic_Domain):
         elif self.multiprocessor_mode == 2:
 
             update_conserved_quantities_fix_negative_cells = self.gpu_interface.update_conserved_quantities_kernal
-            num_negative_ids = updaete_conserved_quantities_fix_negative_cells(self, timestep)
+            num_negative_ids = update_conserved_quantities_fix_negative_cells(self, timestep)
         
         else:
             raise Exception('Not implemented')
@@ -2129,7 +2129,7 @@ class Domain(Generic_Domain):
         if num_negative_ids > 0:
             # FIXME: This only warns the first time -- maybe we should warn whenever loss occurs?
             import warnings
-            msg = 'Negative cells being set to zero depth, possible loss of conservation. \n' +\
+            msg = f'{num_negative_ids} negative cells being set to zero depth, possible loss of conservation. \n' +\
             'Consider using domain.report_water_volume_statistics() to check the extent of the problem'
             warnings.warn(msg)
 
