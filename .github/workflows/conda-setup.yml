@@ -9,9 +9,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        #os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        os: ["ubuntu-latest", "windows-latest"]
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        #os: ["ubuntu-latest", "windows-latest"]
         python-version: ["3.9", "3.11", "3.13"]
+        exclude:
+          - os: macos-latest
+            python-version: "3.9"
+          - os: macos-latest
+            python-version: "3.11"
     steps:
       - uses: actions/checkout@v4
       - uses: conda-incubator/setup-miniconda@v3
@@ -29,7 +34,14 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash -el {0}
         run: |
-           conda install -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64 
+           conda install -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64
+
+      - name: Install clang with openmp compiler on macOS
+        if: runner.os == 'macOS'
+        shell: bash -el {0}
+        run: |
+           conda install -c conda-forge -n anuga_env clang llvm-openmp
+           
 
       - name: Install package
         shell: bash -el {0}
