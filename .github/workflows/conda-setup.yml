@@ -53,6 +53,10 @@ jobs:
           which ninja
           echo ${PATH}
 
+          export CXX=/Users/runner/miniconda3/envs/anuga_env/bin/clang++
+          export CC=/Users/runner/miniconda3/envs/anuga_env/bin/clang
+
+
           pip install --no-build-isolation . -v
 
       - name: Test package
