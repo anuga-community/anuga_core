@@ -9,8 +9,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        #os: ["ubuntu-latest", "windows-latest"]
+        #os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        os: ["macos-latest"]
         python-version: ["3.9", "3.11", "3.13"]
         exclude:
           - os: macos-latest
@@ -46,12 +46,13 @@ jobs:
       - name: Install package
         shell: bash -el {0}
         run: |
-          echo ${CC}
-          echo ${CXX}
-          echo ${CFLAGS}
-          echo ${CXXFLAGS}
-          echo ${LDFLAGS}
-          echo ${CPPFLAGS}
+          echo $CC
+          echo $CXX
+          echo $CFLAGS
+
+          clang --version
+          where clang
+          where ninja
           conda activate anuga_env
           pip install --no-build-isolation . -v
 
