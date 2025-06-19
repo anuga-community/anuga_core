@@ -553,20 +553,17 @@ def fix_negative_cells(object domain_object):
 def update_conserved_quantities(object domain_object, double timestep):
 
 	cdef domain D
-	cdef int64_t num_negative_cells, e
+	cdef int64_t num_negative_cells
 
 
 	get_python_domain_parameters(&D, domain_object)
 	get_python_domain_pointers(&D, domain_object)
 
 	with nogil:
-		e = _openmp_update_conserved_quantities(&D, timestep)
-		num_negative_ids = _openmp_fix_negative_cells(&D)
+		_openmp_update_conserved_quantities(&D, timestep)
+		num_negative_cells = _openmp_fix_negative_cells(&D)
 
-	if e == -1:
-		return None
-	else:
-		return num_negative_cells
+	return num_negative_cells
 
 def saxpy_conserved_quantities(object domain_object, double a, double b, double c):
 
