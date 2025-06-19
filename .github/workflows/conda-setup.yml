@@ -12,6 +12,7 @@ jobs:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
         #os: ["macos-latest"]
         python-version: ["3.9", "3.11", "3.13"]
+        # running on macOS is expensive so only run on 3.13 until release
         exclude:
           - os: macos-latest
             python-version: "3.9"
