@@ -147,7 +147,7 @@ class GPU_interface(object):
         self.cpu_timestep_array = np.zeros(self.cpu_number_of_elements, dtype=float) 
         self.cpu_num_negative_cells = np.zeros(1, dtype=np.int32)
 
-        # mass_error attribute of protect_kernal for returning the value
+        # mass_error attribute of protect_kernel for returning the value
         self.cpu_mass_error = np.zeros([] , dtype=float)
 
         #for compute forcing terms
@@ -225,13 +225,13 @@ class GPU_interface(object):
         self.extrapolate_kernel3 = self.mod.get_function("_cuda_extrapolate_second_order_edge_sw_loop3")
         self.extrapolate_kernel4 = self.mod.get_function("_cuda_extrapolate_second_order_edge_sw_loop4")
 
-        self.update_kernal = self.mod.get_function("_cuda_update_sw")
-        self.fix_negative_cells_kernal = self.mod.get_function("_cuda_fix_negative_cells_sw")        
+        self.update_kernel = self.mod.get_function("_cuda_update_sw")
+        self.fix_negative_cells_kernel = self.mod.get_function("_cuda_fix_negative_cells_sw")        
 
-        self.protect_kernal = self.mod.get_function("_cuda_protect_against_infinitesimal_and_negative_heights")
+        self.protect_kernel = self.mod.get_function("_cuda_protect_against_infinitesimal_and_negative_heights")
         
-        self.manning_flat_kernal = self.mod.get_function("cft_manning_friction_flat")
-        self.manning_sloped_kernal = self.mod.get_function("cft_manning_friction_sloped")
+        self.manning_flat_kernel = self.mod.get_function("cft_manning_friction_flat")
+        self.manning_sloped_kernel = self.mod.get_function("cft_manning_friction_sloped")
 
 
     #-----------------------------------------------------
@@ -447,11 +447,11 @@ class GPU_interface(object):
         cp.asnumpy(self.gpu_ymom_explicit_update, out = self.cpu_ymom_explicit_update)
         nvtxRangePop()
 
-    def cpu_to_gpu_semi_explicit_update(self):
+    def cpu_to_gpu_semi_implicit_update(self):
         """
         Move semi_explicit_update data from cpu to gpu
         """
-        nvtxRangePush("cpu_to_gpu_semi_explicit_update")
+        nvtxRangePush("cpu_to_gpu_semi_implicit_update")
         self.gpu_stage_semi_implicit_update.set(self.cpu_stage_semi_implicit_update)
         self.gpu_xmom_semi_implicit_update.set(self.cpu_xmom_semi_implicit_update)
         self.gpu_ymom_semi_implicit_update.set(self.cpu_ymom_semi_implicit_update)
@@ -494,7 +494,12 @@ class GPU_interface(object):
             self.gpu_bed_edge_values.set(self.cpu_bed_edge_values)
             self.gpu_height_edge_values.set(self.cpu_height_edge_values)            
             
-            #FIXME SR: Want about boundary values!
+            self.gpu_stage_boundary_values.set(self.cpu_stage_boundary_values)
+            self.gpu_xmom_boundary_values.set(self.cpu_xmom_boundary_values)
+            self.gpu_ymom_boundary_values.set(self.cpu_ymom_boundary_values)
+
+            # FIXME SR: Do we need to transfer this?
+            self.gpu_max_speed.set(self.cpu_max_speed)
             nvtxRangePop()
 
 
@@ -777,7 +782,11 @@ class GPU_interface(object):
             nvtxRangePop()
 
 
-    def update_conserved_quantities_kernal(self, transfer_from_cpu=True, transfer_gpu_results=True, verbose=False):
+    def update_conserved_quantities_kernel(self,
+                                           timestep,
+                                           transfer_from_cpu=True, 
+                                           transfer_gpu_results=True, 
+                                           verbose=False):
         """
         update conserved quantities
 
@@ -785,11 +794,12 @@ class GPU_interface(object):
         """
         if transfer_from_cpu:
             self.cpu_to_gpu_centroid_values()
+
             self.cpu_to_gpu_explicit_update()
-            self.cpu_to_gpu_semi_explicit_update()
+            self.cpu_to_gpu_semi_implicit_update()
         
 
-        nvtxRangePush("Update_Kernal")
+        nvtxRangePush("Update_kernel")
         import math
         THREADS_PER_BLOCK = 128
         NO_OF_BLOCKS = int(math.ceil(self.cpu_number_of_elements/THREADS_PER_BLOCK))
@@ -797,10 +807,11 @@ class GPU_interface(object):
 
         # """  Commented this for the three kernel approach
         # Here we're calling the update kernel for stage,xmom,ymom quantity
+
         # nvtxRangePush("update : stage")
-        self.update_kernal((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
+        self.update_kernel((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
                 np.int64(self.cpu_number_of_elements),
-                np.float64(self.cpu_timestep),
+                np.float64(timestep),
                 self.gpu_stage_centroid_values,
                 self.gpu_stage_explicit_update,
                 self.gpu_stage_semi_implicit_update                
@@ -808,9 +819,9 @@ class GPU_interface(object):
         # nvtxRangePop()
 
         # nvtxRangePush("update : xmom")
-        self.update_kernal((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
+        self.update_kernel((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
                 np.int64(self.cpu_number_of_elements),
-                np.float64(self.cpu_timestep),
+                np.float64(timestep),
                 self.gpu_xmom_centroid_values,
                 self.gpu_xmom_explicit_update,
                 self.gpu_xmom_semi_implicit_update                
@@ -818,9 +829,9 @@ class GPU_interface(object):
         # nvtxRangePop()
 
         # nvtxRangePush("update : ymom")
-        self.update_kernal((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
+        self.update_kernel((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
                 np.int64(self.cpu_number_of_elements),
-                np.float64(self.cpu_timestep),
+                np.float64(timestep),
                 self.gpu_ymom_centroid_values,
                 self.gpu_ymom_explicit_update,
                 self.gpu_ymom_semi_implicit_update
@@ -844,7 +855,8 @@ class GPU_interface(object):
 
         nvtxRangePush("fix_negative_cells : kernel")
         
-        self.fix_negative_cells_kernal((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
+        # FIXME SR: num_negative_cells should be calculated via an atomic operation
+        self.fix_negative_cells_kernel((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), (
             np.int64(self.cpu_number_of_elements),
             self.gpu_tri_full_flag,
             self.gpu_stage_centroid_values,
@@ -864,17 +876,17 @@ class GPU_interface(object):
         nvtxRangePop()    
         
         if verbose:
-            print('gpu_stage_centroid_values after fix_negative_cells_kernal -> ', self.gpu_stage_centroid_values)
-            print('gpu_xmom_centroid_values after fix_negative_cells_kernal -> ', self.gpu_xmom_centroid_values)
-            print('gpu_ymom_centroid_values after fix_negative_cells_kernal -> ', self.gpu_ymom_centroid_values)
+            print('gpu_stage_centroid_values after fix_negative_cells_kernel -> ', self.gpu_stage_centroid_values)
+            print('gpu_xmom_centroid_values after fix_negative_cells_kernel -> ', self.gpu_xmom_centroid_values)
+            print('gpu_ymom_centroid_values after fix_negative_cells_kernel -> ', self.gpu_ymom_centroid_values)
         if verbose:
-            print('gpu_stage_centroid_values after fix_negative_cells_kernal -> ', self.gpu_stage_centroid_values)
-            print('gpu_xmom_centroid_values after fix_negative_cells_kernal -> ', self.gpu_xmom_centroid_values)
-            print('gpu_ymom_centroid_values after fix_negative_cells_kernal -> ', self.gpu_ymom_centroid_values)
+            print('gpu_stage_centroid_values after fix_negative_cells_kernel -> ', self.gpu_stage_centroid_values)
+            print('gpu_xmom_centroid_values after fix_negative_cells_kernel -> ', self.gpu_xmom_centroid_values)
+            print('gpu_ymom_centroid_values after fix_negative_cells_kernel -> ', self.gpu_ymom_centroid_values)
         
         return np.sum(self.cpu_num_negative_cells)
     
-    def protect_against_infinitesimal_and_negative_heights_kernal(self, transfer_from_cpu=True, transfer_gpu_results=True, verbose=False):
+    def protect_against_infinitesimal_and_negative_heights_kernel(self, transfer_from_cpu=True, transfer_gpu_results=True, verbose=False):
 
         """
         protect against infinities
@@ -886,12 +898,12 @@ class GPU_interface(object):
         if transfer_from_cpu:
             self.cpu_to_gpu_centroid_values()
             self.cpu_to_gpu_explicit_update()
-            self.cpu_to_gpu_semi_explicit_update()
+            self.cpu_to_gpu_semi_implicit_update()
         
         import math
         THREADS_PER_BLOCK = 128
         NO_OF_BLOCKS = int(math.ceil(self.cpu_number_of_elements/THREADS_PER_BLOCK))
-        self.protect_kernal((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), 
+        self.protect_kernel((NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0), 
                             (
                                 np.float64(self.cpu_minimum_allowed_height),
                                 np.int64(self.cpu_number_of_elements),
@@ -924,7 +936,7 @@ class GPU_interface(object):
         import math
         THREADS_PER_BLOCK = 128
         NO_OF_BLOCKS = int(math.ceil(self.cpu_number_of_elements/THREADS_PER_BLOCK))
-        self.manning_flat_kernal(
+        self.manning_flat_kernel(
             (NO_OF_BLOCKS, 0, 0), 
             (THREADS_PER_BLOCK, 0, 0),
             (
@@ -956,20 +968,22 @@ class GPU_interface(object):
     def compute_forcing_terms_manning_friction_sloped(self, transfer_from_cpu=True, transfer_gpu_results=True, verbose=False):
         nvtxRangePush("compute forcing manning sloped - kernel")
 
-        self.gpu_x.set(self.cpu_x)
-        self.gpu_stage_centroid_values.set(self.cpu_stage_centroid_values)
-        self.gpu_bed_centroid_values.set(self.cpu_bed_vertex_values)
-        self.gpu_xmom_centroid_values.set(self.cpu_xmom_centroid_values)
-        self.gpu_ymom_centroid_values.set(self.cpu_ymom_centroid_values)
+        if transfer_from_cpu:
+            self.gpu_x.set(self.cpu_x)
 
-        self.gpu_friction_centroid_values.set(self.cpu_friction_centroid_values)
-        self.gpu_xmom_semi_implicit_update.set(self.cpu_xmom_semi_implicit_update)
-        self.gpu_ymom_semi_implicit_update.set(self.cpu_ymom_semi_implicit_update)
+            self.gpu_stage_centroid_values.set(self.cpu_stage_centroid_values)
+            self.gpu_bed_centroid_values.set(self.cpu_bed_centroid_values)
+            self.gpu_xmom_centroid_values.set(self.cpu_xmom_centroid_values)
+            self.gpu_ymom_centroid_values.set(self.cpu_ymom_centroid_values)
+            self.gpu_friction_centroid_values.set(self.cpu_friction_centroid_values)
+
+            self.gpu_xmom_semi_implicit_update.set(self.cpu_xmom_semi_implicit_update)
+            self.gpu_ymom_semi_implicit_update.set(self.cpu_ymom_semi_implicit_update)
 
         import math
         THREADS_PER_BLOCK = 128
         NO_OF_BLOCKS = int(math.ceil(self.cpu_number_of_elements/THREADS_PER_BLOCK))
-        self.manning_flat_kernal(
+        self.manning_flat_kernel(
             (NO_OF_BLOCKS, 0, 0), (THREADS_PER_BLOCK, 0, 0),
             np.float64(self.cpu_g),
             np.float64(self.cpu_eps) ,

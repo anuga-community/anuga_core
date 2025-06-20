@@ -1621,7 +1621,7 @@ __global__ void _cuda_update_sw(int64_t number_of_elements,
     if (k < number_of_elements)
     {
       double x = centroid_values[k];
-      int64_t err_return = 0;
+
       if (x == 0.0) {
         semi_implicit_update[k] = 0.0;
       } else {
@@ -1632,20 +1632,13 @@ __global__ void _cuda_update_sw(int64_t number_of_elements,
 
       // Semi implicit updates
       double denominator = 1.0 - timestep*semi_implicit_update[k];
-      if (denominator <= 0.0) {
-        err_return = -1;
-      } else {
+      if (denominator > 0.0) {
         //Update conserved_quantities from semi implicit updates
         centroid_values[k] /= denominator;
       }
 		
       // Reset semi_implicit_update here ready for next time step
       semi_implicit_update[k] = 0.0;
-
-      if (err_return == -1)
-        {
-          // Handle error h
-        }
 
     }
   }
@@ -1661,7 +1654,7 @@ __global__ void _cuda_update_sw(int64_t number_of_elements,
                                               double *bed_centroid_values,
                                               double *xmom_centroid_values, 
                                               double *ymom_centroid_values, 
-                                              int64_t num_negative_cells)  // Is this the way to pass back and is it int64_t or int64_t
+                                              int64_t num_negative_cells)  // Is this the way to pass back and is it int or long
   {
     int64_t k = blockIdx.x * blockDim.x + threadIdx.x;
     num_negative_cells = 0;
@@ -1760,10 +1753,7 @@ __global__ void cft_manning_friction_flat(double g, double eps, int64_t N,
             h = w[k] - z;
             if (h >= eps) {
                 S = -g * eta[k] * eta[k] * sqrt((uh[k] * uh[k] + vh[k] * vh[k]));
-                S /= pow(h, seven_thirds); //Expensive (on Ole's home computer)
-                //S /= exp((7.0/3.0)*log(h));      //seems to save about 15% over manning_friction
-                //S /= h*h*(1 + h/3.0 - h*h/9.0); //FIXME: Could use a Taylor expansion
-
+                S /= pow(h, seven_thirds); 
 
                 //Update momentum
                 xmom[k] += S * uh[k];

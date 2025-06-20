@@ -1999,7 +1999,7 @@ class Domain(Generic_Domain):
             # change over to cuda routines as developed
             # # from .sw_domain_simd_ext import  protect_new
             #from .sw_domain_openmp_ext import protect_new
-            protect_new = self.gpu_interface.protect_against_infinitesimal_and_negative_heights_kernal
+            protect_new = self.gpu_interface.protect_against_infinitesimal_and_negative_heights_kernel
         else:
             raise Exception('Not implemented')
 
@@ -2120,8 +2120,8 @@ class Domain(Generic_Domain):
 
         elif self.multiprocessor_mode == 2:
 
-            update_conserved_quantities_fix_negative_cells = self.gpu_interface.update_conserved_quantities_kernal
-            num_negative_ids = update_conserved_quantities_fix_negative_cells(self, timestep)
+            update_conserved_quantities = self.gpu_interface.update_conserved_quantities_kernel
+            num_negative_ids = update_conserved_quantities(self, timestep)
         
         else:
             raise Exception('Not implemented')
