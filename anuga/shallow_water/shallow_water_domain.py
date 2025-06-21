@@ -308,7 +308,7 @@ class Domain(Generic_Domain):
         self.set_flow_algorithm()
 
         #-------------------------------
-        # Set multiprocessor mode
+        # Set default multiprocessor mode
         # 1. Openmp
         # 2. Cuda
         #-------------------------------
@@ -2816,7 +2816,7 @@ class Domain(Generic_Domain):
         return self.inv_tri_map
 
 # ==============================================================================
-# GPU interface
+# Multiprocessor Mode (1=openmp, 2=cuda (in development))
 # ==============================================================================
 
     def set_multiprocessor_mode(self, multiprocessor_mode= 0):
@@ -2855,7 +2855,7 @@ class Domain(Generic_Domain):
             except:
                 print('+==============================================================================+')
                 print('|                                                                              |')
-                print('| WARNING: cupy or gpu not available, so falling back to multiprocessor_mode 0 |')
+                print('| WARNING: cupy or gpu not available, so falling back to multiprocessor_mode 1 |')
                 print('|                                                                              |')
                 print('+==============================================================================+')
                 self.set_multiprocessor_mode(1)
