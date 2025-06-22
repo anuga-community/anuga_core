@@ -10,6 +10,7 @@
 #ifdef USE_LIB_BLAS
 #include <cblas.h>
 #endif
+
 #include "anuga_runtime.h"
 #include "anuga_typedefs.h"
 

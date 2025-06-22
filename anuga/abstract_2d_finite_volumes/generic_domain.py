@@ -2186,28 +2186,18 @@ class Generic_Domain(object):
     def backup_conserved_quantities(self):
 
         # Backup conserved_quantities centroid values
-        if self.multiprocessor_mode == 2:
-            from anuga.shallow_water.sw_domain_openmp_ext import backup_conserved_quantities
-            backup_conserved_quantities(self)
-        else:
-            for name in self.conserved_quantities:
-                Q = self.quantities[name]
-                Q.backup_centroid_values()
+        for name in self.conserved_quantities:
+            Q = self.quantities[name]
+            Q.backup_centroid_values()
 
     def saxpy_conserved_quantities(self, a, b, c=None):
 
         # saxpy conserved_quantities centroid values with backup values
-        if self.multiprocessor_mode == 2:
-            if c is None:
-                c = 1.0
-            from anuga.shallow_water.sw_domain_openmp_ext import saxpy_conserved_quantities
-            saxpy_conserved_quantities(self, a, b, c)
-        else:
-            for name in self.conserved_quantities:
-                Q = self.quantities[name]
-                Q.saxpy_centroid_values(a, b)
-                if c is not None:
-                    Q.centroid_values[:] = Q.centroid_values / c
+        for name in self.conserved_quantities:
+            Q = self.quantities[name]
+            Q.saxpy_centroid_values(a, b)
+            if c is not None:
+                Q.centroid_values[:] = Q.centroid_values / c
 
 
     def conserved_values_to_evolved_values(self, q_cons, q_evol):

@@ -2422,6 +2422,286 @@ class Domain(Generic_Domain):
 
         pass
 
+
+    def evolve_one_euler_step(self, yieldstep, finaltime):
+        """One Euler Time Step
+        Q^{n+1} = E(h) Q^n
+
+        Does not assume that centroid values have been extrapolated to
+        vertices and edges
+        """
+
+        #nvtx marker
+        nvtxRangePush('distribute_to_vertices_and_edges')
+
+        # From centroid values calculate edge and vertex values
+        self.distribute_to_vertices_and_edges()
+
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('update_boundary')
+        # Apply boundary conditions
+        self.update_boundary()
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('compute_fluxes')
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('compute_forcing_terms')
+        # Compute forcing terms
+        self.compute_forcing_terms()
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('update_timestep')
+        # Update timestep to fit yieldstep and finaltime
+        self.update_timestep(yieldstep, finaltime)
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('compute_flux_update_frequency')
+        if self.max_flux_update_frequency != 1:
+            # Update flux_update_frequency using the new timestep
+            self.compute_flux_update_frequency()
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('update_conserved_quantities')
+        # Update conserved quantities
+        self.update_conserved_quantities()
+        #nvtx marker
+        nvtxRangePop()
+
+    def evolve_one_rk2_step(self, yieldstep, finaltime):
+        """One 2nd order RK timestep
+        Q^{n+1} = 0.5 Q^n + 0.5 E(h)^2 Q^n
+
+        Does not assume that centroid values have been extrapolated to
+        vertices and edges
+        """
+
+        # Save initial initial conserved quantities values
+        self.backup_conserved_quantities()
+
+        #==========================================
+        # First euler step
+        #==========================================
+
+        # From centroid values calculate edge and vertex values
+        self.distribute_to_vertices_and_edges()
+
+        # Apply boundary conditions
+        self.update_boundary()
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update timestep to fit yieldstep and finaltime
+        self.update_timestep(yieldstep, finaltime)
+
+        # Update centroid values of conserved quantities
+        self.update_conserved_quantities()
+
+        # Update special conditions
+        # self.update_special_conditions()
+
+        # Update time
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+
+        # Update ghosts
+        if self.ghost_layer_width < 4:
+            self.update_ghosts()
+
+        # Update vertex and edge values
+        self.distribute_to_vertices_and_edges()
+
+        # Update boundary values
+        self.update_boundary()
+
+        #=========================================
+        # Second Euler step using the same timestep
+        # calculated in the first step. Might lead to
+        # stability problems but we have not seen any
+        # example.
+        #=========================================
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update conserved quantities
+        self.update_conserved_quantities()
+
+        #========================================
+        # Combine initial and final values
+        # of conserved quantities and cleanup
+        #========================================
+
+        # Combine steps
+        self.saxpy_conserved_quantities(0.5, 0.5)
+
+
+    def evolve_one_rk3_step(self, yieldstep, finaltime):
+        """One 3rd order RK timestep
+        Q^(1) = 3/4 Q^n + 1/4 E(h)^2 Q^n  (at time t^n + h/2)
+        Q^{n+1} = 1/3 Q^n + 2/3 E(h) Q^(1) (at time t^{n+1})
+
+        Does not assume that centroid values have been extrapolated to
+        vertices and edges
+        """
+
+        # Save initial initial conserved quantities values
+        self.backup_conserved_quantities()
+
+        initial_time = self.get_relative_time()
+
+        ######
+        # First euler step
+        ######
+
+        # From centroid values calculate edge and vertex values
+        self.distribute_to_vertices_and_edges()
+
+        # Apply boundary conditions
+        self.update_boundary()
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update timestep to fit yieldstep and finaltime
+        self.update_timestep(yieldstep, finaltime)
+
+        # Update conserved quantities
+        self.update_conserved_quantities()
+
+        # Update special conditions
+        # self.update_special_conditions()
+
+        # Update time
+        self.set_relative_time(self.relative_time+ self.timestep)
+
+        # Update ghosts
+        self.update_ghosts()
+
+        # Update vertex and edge values
+        self.distribute_to_vertices_and_edges()
+
+        # Update boundary values
+        self.update_boundary()
+
+        ######
+        # Second Euler step using the same timestep
+        # calculated in the first step. Might lead to
+        # stability problems but we have not seen any
+        # example.
+        ######
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update conserved quantities
+        self.update_conserved_quantities()
+
+        ######
+        # Combine steps to obtain intermediate
+        # solution at time t^n + 0.5 h
+        ######
+
+        # Combine steps
+        self.saxpy_conserved_quantities(0.25, 0.75)
+
+        # Update special conditions
+        # self.update_special_conditions()
+
+        # Set substep time
+        self.set_relative_time(initial_time + self.timestep * 0.5)
+
+        # Update ghosts
+        self.update_ghosts()
+
+        # Update vertex and edge values
+        self.distribute_to_vertices_and_edges()
+
+        # Update boundary values
+        self.update_boundary()
+
+        ######
+        # Third Euler step
+        ######
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update conserved quantities
+        self.update_conserved_quantities()
+
+        #=======================================
+        # Combine final and initial values
+        # and cleanup
+        #=======================================
+        
+        # self.saxpy_conserved_quantities(2.0/3.0, 1.0/3.0)
+        # This caused a roundoff error that created negative water heights
+
+        # So do this instead!
+        self.saxpy_conserved_quantities(2.0, 1.0, 3.0)
+
+
+        # Set new time
+        self.set_relative_time(initial_time + self.timestep)
+
+
+    def backup_conserved_quantities(self):
+
+        # Backup conserved_quantities centroid values
+        if self.multiprocessor_mode == 1:
+            from anuga.shallow_water.sw_domain_openmp_ext import backup_conserved_quantities
+            backup_conserved_quantities(self)
+        else:
+            for name in self.conserved_quantities:
+                Q = self.quantities[name]
+                Q.backup_centroid_values()
+
+    def saxpy_conserved_quantities(self, a, b, c=None):
+
+        # saxpy conserved_quantities centroid values with backup values
+        if self.multiprocessor_mode == 1:
+            if c is None:
+                c = 1.0
+            from anuga.shallow_water.sw_domain_openmp_ext import saxpy_conserved_quantities
+            saxpy_conserved_quantities(self, a, b, c)
+        else:
+            for name in self.conserved_quantities:
+                Q = self.quantities[name]
+                Q.saxpy_centroid_values(a, b)
+                if c is not None:
+                    Q.centroid_values[:] = Q.centroid_values / c
+
     def timestepping_statistics(self,
                                 track_speeds=False,
                                 triangle_id=None,

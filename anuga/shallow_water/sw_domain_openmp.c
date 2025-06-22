@@ -2252,19 +2252,33 @@ anuga_int _openmp_saxpy_conserved_quantities(struct domain *D, double a, double 
   
 
   anuga_int N = D->number_of_elements;
+  // double a_c = a / c;
+  // double bc_a = b *c /a;
   double c_inv = 1.0 / c;
 
-  // stage
-  anuga_daxpy(N, b, D->stage_backup_values, 1, D->stage_centroid_values, 1);
-  anuga_dscal(N, a * c_inv, D->stage_centroid_values, 1);
+  #pragma omp parallel for simd schedule(static)
+  for (anuga_int i = 0; i < N; i++)
+  {
+    D->stage_centroid_values[i] = a*D->stage_centroid_values[i] + b*D->stage_backup_values[i];
+    D->xmom_centroid_values[i]  = a*D->xmom_centroid_values[i] + b*D->xmom_backup_values[i];
+    D->ymom_centroid_values[i]  = a*D->ymom_centroid_values[i] + b*D->ymom_backup_values[i];
+    D->stage_centroid_values[i] *= c_inv;
+    D->xmom_centroid_values[i]  *= c_inv;
+    D->ymom_centroid_values[i]  *= c_inv;
+  }
+  
 
-  // xmom
-  anuga_daxpy(N, b, D->xmom_backup_values, 1, D->xmom_centroid_values, 1);
-  anuga_dscal(N, a * c_inv, D->xmom_centroid_values, 1);
+  // // stage
+  // anuga_daxpy(N, bc_a, D->stage_backup_values, 1, D->stage_centroid_values, 1);
+  // anuga_dscal(N, a_c, D->stage_centroid_values, 1);
 
-  // ymom
-  anuga_daxpy(N, b, D->ymom_backup_values, 1, D->ymom_centroid_values, 1);
-  anuga_dscal(N, a * c_inv, D->ymom_centroid_values, 1);
+  // // xmom
+  // anuga_daxpy(N, bc_a, D->xmom_backup_values, 1, D->xmom_centroid_values, 1);
+  // anuga_dscal(N, a_c, D->xmom_centroid_values, 1);
+
+  // // ymom
+  // anuga_daxpy(N, bc_a, D->ymom_backup_values, 1, D->ymom_centroid_values, 1);
+  // anuga_dscal(N, a_c, D->ymom_centroid_values, 1);
 
 
   return 0;
