@@ -28,8 +28,18 @@ if conda_prefix:
 else:
     print("Not running inside a conda environment.")
 
-openmp_threads = [1, 2, 4, 8, 16, 32, 48]
-openmp_threads = [4,6]
+PBS_QUEUE=normalsr-exec
+
+
+if 'PBS_QUEUE' in os.environ:
+    PBS_QUEUE = os.environ['PBS_QUEUE']
+    print(f"Using PBS queue: {PBS_QUEUE}")
+    if PBS_QUEUE == 'normalsr-exec':
+        openmp_threads = [1, 2, 4, 8, 16, 32, 48, 64, 80, 100]
+    elif PBS_QUEUE == 'normal-exec':
+        openmp_threads = [1, 2, 4, 6, 8, 12, 16, 24, 32, 48]
+else:
+    openmp_threads = [2,4]
 
 for threads in openmp_threads:
     env["OMP_NUM_THREADS"] = str(threads)  # Set to your desired number of threads
