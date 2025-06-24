@@ -14,11 +14,31 @@ import subprocess
 import sys
 import socket
 
+import argparse
+
+
+parser = argparse.ArgumentParser(
+    description="Run benchmark for given script."
+)
+parser.add_argument(
+    "script_file",
+    type=str,
+    nargs="?",
+    default="run_small_towradgi.py",
+    help="The Python script to run for benchmarking (default: run_small_towradgi.py)"
+)
+
+
+args = parser.parse_args()
+script_file = args.script_file
+
+
 
 # Copy the current environment and set OMP_NUM_THREADS
 env = os.environ.copy()
 
 hostname = socket.gethostname()
+hostname = hostname.split('.')[0]  # Get the hostname without the domain part
 
 # Define the Conda environment name
 conda_prefix = os.environ.get("CONDA_PREFIX")
@@ -28,24 +48,25 @@ if conda_prefix:
 else:
     print("Not running inside a conda environment.")
 
-PBS_QUEUE=normalsr-exec
-
 
 if 'PBS_QUEUE' in os.environ:
     PBS_QUEUE = os.environ['PBS_QUEUE']
     print(f"Using PBS queue: {PBS_QUEUE}")
     if PBS_QUEUE == 'normalsr-exec':
+        queue = 'normalsr'
         openmp_threads = [1, 2, 4, 8, 16, 32, 48, 64, 80, 100]
     elif PBS_QUEUE == 'normal-exec':
+        queue = 'normal'
         openmp_threads = [1, 2, 4, 6, 8, 12, 16, 24, 32, 48]
 else:
-    openmp_threads = [2,4]
+    queue = 'local'
+    openmp_threads = [4]
 
 for threads in openmp_threads:
     env["OMP_NUM_THREADS"] = str(threads)  # Set to your desired number of threads
-    pstat_file = f'profile_{hostname}_{anuga_env}_{time}_omp_{threads}.pstat'
+    pstat_file = f'profile_{hostname}_{queue}_{anuga_env}_{time}_omp_{threads}.pstat'
 
-    cmd = ['conda', 'run', '--no-capture-output', '-n', anuga_env, 'python', '-u', '-m', 'cProfile', '-o', pstat_file, 'run_small_towradgi.py']
+    cmd = ['conda', 'run', '--no-capture-output', '-n', anuga_env, 'python', '-u', '-m', 'cProfile', '-o', pstat_file, script_file]
     
     print('')
     print(80 * '=')
@@ -64,7 +85,7 @@ for threads in openmp_threads:
 #=================================
 # Collect timings
 #=================================
-pstat_basename = f'profile_{hostname}_{anuga_env}_{time}'
+pstat_basename = f'profile_{hostname}_{queue}_{anuga_env}_{time}'
 
 from create_benchmark_csvfile import create_benchmark_csvfile
 
