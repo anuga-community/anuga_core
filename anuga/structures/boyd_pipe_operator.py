@@ -20,7 +20,6 @@ class Boyd_pipe_operator(anuga.Structure_operator):
     mannings_rougness,
     """
 
-
     def __init__(self,
                  domain,
                  losses,

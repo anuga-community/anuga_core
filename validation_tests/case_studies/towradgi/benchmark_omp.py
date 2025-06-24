@@ -39,6 +39,7 @@ env = os.environ.copy()
 
 hostname = socket.gethostname()
 hostname = hostname.split('.')[0]  # Get the hostname without the domain part
+hostname = hostname.split('-')[0]  # Get the first part of the hostname if it contains a hyphen
 
 # Define the Conda environment name
 conda_prefix = os.environ.get("CONDA_PREFIX")
