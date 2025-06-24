@@ -2256,40 +2256,47 @@ anuga_int _openmp_saxpy_conserved_quantities(struct domain *D, double a, double 
   // double bc_a = b *c /a;
   double c_inv = 1.0 / c;
 
-  // #pragma omp parallel for simd schedule(static)
-  // for (anuga_int i = 0; i < N; i++)
-  // {
-  //   D->stage_centroid_values[i] = a*D->stage_centroid_values[i] + b*D->stage_backup_values[i];
-  //   D->xmom_centroid_values[i]  = a*D->xmom_centroid_values[i] + b*D->xmom_backup_values[i];
-  //   D->ymom_centroid_values[i]  = a*D->ymom_centroid_values[i] + b*D->ymom_backup_values[i];
-  //   D->stage_centroid_values[i] *= c_inv;
-  //   D->xmom_centroid_values[i]  *= c_inv;
-  //   D->ymom_centroid_values[i]  *= c_inv;
-  // }
-  
+  #pragma omp parallel for simd schedule(static)
+  for (anuga_int i = 0; i < N; i++)
+  {
+    D->stage_centroid_values[i] = a*D->stage_centroid_values[i] + b*D->stage_backup_values[i];
+    D->xmom_centroid_values[i]  = a*D->xmom_centroid_values[i] + b*D->xmom_backup_values[i];
+    D->ymom_centroid_values[i]  = a*D->ymom_centroid_values[i] + b*D->ymom_backup_values[i];
+  }
+
+  if (c != 1.0)
+  {
+    #pragma omp parallel for simd schedule(static)
+    for (anuga_int i = 0; i < N; i++)
+    {
+      D->stage_centroid_values[i] *= c_inv;
+      D->xmom_centroid_values[i]  *= c_inv;
+      D->ymom_centroid_values[i]  *= c_inv;
+    }
+  }
 
   // FIXME: Should get this to work as it should be faster than the above
-  // stage
-  anuga_dscal(N, a, D->stage_centroid_values, 1);
-  anuga_daxpy(N, b, D->stage_backup_values, 1, D->stage_centroid_values, 1);
-  if (c != 1.0) {
-    anuga_dscal(N, c_inv, D->stage_centroid_values, 1);
-  }
+  // // stage
+  // anuga_dscal(N, a, D->stage_centroid_values, 1);
+  // anuga_daxpy(N, b, D->stage_backup_values, 1, D->stage_centroid_values, 1);
+  // if (c != 1.0) {
+  //   anuga_dscal(N, c_inv, D->stage_centroid_values, 1);
+  // }
   
-  // xmom
-  anuga_dscal(N, a, D->xmom_centroid_values, 1);
-  anuga_daxpy(N, b, D->xmom_backup_values, 1, D->xmom_centroid_values, 1);
-  if (c != 1.0) {
-    anuga_dscal(N, c_inv, D->xmom_centroid_values, 1);
-  }
+  // // xmom
+  // anuga_dscal(N, a, D->xmom_centroid_values, 1);
+  // anuga_daxpy(N, b, D->xmom_backup_values, 1, D->xmom_centroid_values, 1);
+  // if (c != 1.0) {
+  //   anuga_dscal(N, c_inv, D->xmom_centroid_values, 1);
+  // }
 
 
-  // ymom
-  anuga_dscal(N, a, D->ymom_centroid_values, 1);
-  anuga_daxpy(N, b, D->ymom_backup_values, 1, D->ymom_centroid_values, 1);
-  if (c != 1.0) {
-    anuga_dscal(N, c_inv, D->ymom_centroid_values, 1);
-  }
+  // // ymom
+  // anuga_dscal(N, a, D->ymom_centroid_values, 1);
+  // anuga_daxpy(N, b, D->ymom_backup_values, 1, D->ymom_centroid_values, 1);
+  // if (c != 1.0) {
+  //   anuga_dscal(N, c_inv, D->ymom_centroid_values, 1);
+  // }
 
   return 0;
 }
