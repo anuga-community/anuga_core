@@ -67,6 +67,8 @@ struct domain {
     double* ymom_edge_values;
     double* bed_edge_values;
     double* height_edge_values;
+    double* xvelocity_edge_values;
+    double* yvelocity_edge_values;
 
     double* stage_centroid_values;
     double* xmom_centroid_values;
@@ -85,6 +87,9 @@ struct domain {
     double* xmom_boundary_values;
     double* ymom_boundary_values;
     double* bed_boundary_values;
+    double* height_boundary_values;
+    double* xvelocity_boundary_values;
+    double* yvelocity_boundary_values;
 
     double* stage_explicit_update;
     double* xmom_explicit_update;

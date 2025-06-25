@@ -2338,3 +2338,50 @@ anuga_int _openmp_backup_conserved_quantities(struct domain *D)
 // }
   return 0;
 }
+
+void 	_openmp_evaluate_reflective_segment(struct domain *D, anuga_int N,
+   anuga_int *edge_segment, anuga_int *vol_ids, anuga_int *edge_ids){
+
+    #pragma omp parallel for schedule(static)
+     for(int k = 0; k < N; k++){
+
+
+      // get vol_ids 
+      int edge_segment_id = edge_segment[k];
+      int vid = vol_ids[k];
+      int edge_id = edge_ids[k];
+      double n1 = D->normals[vid * 6 + 2 * edge_id];
+      double n2 = D->normals[vid * 6 + 2 * edge_id + 1];
+
+      D->stage_boundary_values[edge_segment_id] = D->stage_edge_values[3 * vid + edge_id];
+      // the bed is the elevation
+      D->bed_boundary_values[edge_segment_id] = D->bed_edge_values[3 * vid + edge_id];
+      D->height_boundary_values[edge_segment_id] = D->height_edge_values[3 * vid + edge_id];
+
+      double q1 = D->xmom_edge_values[3 * vid + edge_id];
+      double q2 = D->ymom_edge_values[3 * vid + edge_id];
+
+      double r1 = -q1*n1 - q2*n2;
+      double r2 = -q1*n2 + q2*n1;
+
+      double x_mom_boundary_value = n1*r1 - n2*r2;
+      double y_mom_boundary_value = n2*r1 + n1*r2;
+
+      D->xmom_boundary_values[edge_segment_id] = x_mom_boundary_value;
+      D->ymom_boundary_values[edge_segment_id] = y_mom_boundary_value;
+
+      q1 = D->xvelocity_edge_values[3 * vid + edge_id];
+      q2 = D->yvelocity_edge_values[3 * vid + edge_id];
+
+      r1 = q1*n1 + q2*n2;
+      r2 = q1*n2 - q2*n1;
+
+      double x_vel_boundary_value = n1*r1 - n2*r2;
+      double y_vel_boundary_value = n2*r1 + n1*r2;
+
+      D->xvelocity_boundary_values[edge_segment_id] = x_vel_boundary_value;
+      D->yvelocity_boundary_values[edge_segment_id] = y_vel_boundary_value;
+
+     }
+
+}

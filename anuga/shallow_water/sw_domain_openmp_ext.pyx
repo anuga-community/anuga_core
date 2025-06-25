@@ -55,6 +55,8 @@ cdef extern from "sw_domain_openmp.c" nogil:
 		double* ymom_edge_values
 		double* bed_edge_values
 		double* height_edge_values
+		double* xvelocity_edge_values
+		double* yvelocity_edge_values
 		double* stage_centroid_values
 		double* xmom_centroid_values
 		double* ymom_centroid_values
@@ -69,6 +71,9 @@ cdef extern from "sw_domain_openmp.c" nogil:
 		double* xmom_boundary_values
 		double* ymom_boundary_values
 		double* bed_boundary_values
+		double* height_boundary_values
+		double* xvelocity_boundary_values
+		double* yvelocity_boundary_values
 		double* stage_explicit_update
 		double* xmom_explicit_update
 		double* ymom_explicit_update
@@ -116,6 +121,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	# FIXME SR: Change over to domain* D argument
 	void _openmp_manning_friction_flat(double g, double eps, int64_t N, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom, double* ymom)
 	void _openmp_manning_friction_sloped(double g, double eps, int64_t N, double* x, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom_update, double* ymom_update)
+	void _openmp_evaluate_reflective_segment(domain *D, int64_t N, int64_t *edge_ptr, int64_t *vol_ids_ptr, int64_t *edge_ids_ptr)
 	int64_t __flux_function_central(double* ql, double* qr, double h_left,
 	double h_right, double hle, double hre, double n1, double n2,
 	double epsilon, double ze, double g,
@@ -290,6 +296,8 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	elevation = quantities["elevation"]
 	height = quantities["height"]
 	friction = quantities["friction"]
+	xvelocity = quantities["xvelocity"]
+	yvelocity = quantities["yvelocity"]
 
 	edge_values = stage.edge_values
 	D.stage_edge_values = &edge_values[0,0]
@@ -305,6 +313,12 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 
 	edge_values = height.edge_values
 	D.height_edge_values = &edge_values[0,0]
+
+	edge_values = xvelocity.edge_values
+	D.xvelocity_edge_values = &edge_values[0,0]
+
+	edge_values = yvelocity.edge_values
+	D.yvelocity_edge_values = &edge_values[0,0]
 
 	centroid_values = stage.centroid_values
 	D.stage_centroid_values = &centroid_values[0]
@@ -368,6 +382,15 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 
 	boundary_values = elevation.boundary_values
 	D.bed_boundary_values = &boundary_values[0]
+
+	boundary_values = height.boundary_values
+	D.height_boundary_values = &boundary_values[0]
+
+	boundary_values = xvelocity.boundary_values
+	D.xvelocity_boundary_values = &boundary_values[0]
+
+	boundary_values = yvelocity.boundary_values
+	D.yvelocity_boundary_values = &boundary_values[0]
 
 	#------------------------------------------------------
 	# Explicit and semi-implicit update values
@@ -588,6 +611,18 @@ def backup_conserved_quantities(object domain_object):
 	with nogil:
 		_openmp_backup_conserved_quantities(&D)	
 
+def evaluate_reflective_segment(object domain_object, np.ndarray[np.int64_t, ndim=1, mode="c"] segment_edges not None, np.ndarray[np.int64_t, ndim=1, mode="c"] vol_ids not None, np.ndarray[np.int64_t, ndim=1, mode="c"] edge_ids not None): 
+	cdef domain D
+	cdef int64_t N
+	N = segment_edges.shape[0]
+
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+
+
+
+	with nogil:
+		_openmp_evaluate_reflective_segment(&D, N, &segment_edges[0], &vol_ids[0], &edge_ids[0])
 
 
 def rotate(np.ndarray[double, ndim=1, mode="c"] q not None, np.ndarray[double, ndim=1, mode="c"] normal not None, int64_t direction):
