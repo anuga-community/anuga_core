@@ -26,7 +26,7 @@ from anuga.fit_interpolate.interpolate import Modeltime_too_late
 from anuga.fit_interpolate.interpolate import Modeltime_too_early
 from anuga.config import g as gravity
      
-from anuga.shallow_water.sw_domain_openmp_ext import rotate
+from anuga.shallow_water.sw_domain_openmp_ext import rotate, evaluate_reflective_segment
 
 try:
     from numba import jit
@@ -180,7 +180,6 @@ class Reflective_boundary(Boundary):
         :param segment_edges: List of boundary cells on which to apply BC
 
         """
-        multiprocessor_mode = domain.get_multiprocessor_mode()
         if segment_edges is None:
             return
         if domain is None:
@@ -189,45 +188,9 @@ class Reflective_boundary(Boundary):
         ids = segment_edges
         vol_ids  = domain.boundary_cells[ids]
         edge_ids = domain.boundary_edges[ids]
+        ids_array = np.array(ids, dtype=np.int64)
 
-        Stage = domain.quantities['stage']
-        Elev  = domain.quantities['elevation']
-        Height= domain.quantities['height']
-        Xmom  = domain.quantities['xmomentum']
-        Ymom  = domain.quantities['ymomentum']
-        Xvel  = domain.quantities['xvelocity']
-        Yvel  = domain.quantities['yvelocity']
-
-        Normals = domain.normals
-        
-        n1  = Normals[vol_ids,2*edge_ids]
-        n2  = Normals[vol_ids,2*edge_ids+1]
-
-        # Transfer these quantities to the boundary array
-        Stage.boundary_values[ids]  = Stage.edge_values[vol_ids,edge_ids]
-        Elev.boundary_values[ids]   = Elev.edge_values[vol_ids,edge_ids]
-        Height.boundary_values[ids] = Height.edge_values[vol_ids,edge_ids]
-
-        # Rotate and negate Momemtum
-        q1 = Xmom.edge_values[vol_ids,edge_ids]
-        q2 = Ymom.edge_values[vol_ids,edge_ids]
-
-        r1 = -q1*n1 - q2*n2
-        r2 = -q1*n2 + q2*n1
-
-        Xmom.boundary_values[ids] = n1*r1 - n2*r2
-        Ymom.boundary_values[ids] = n2*r1 + n1*r2
-
-        # Rotate and negate Velocity
-        q1 = Xvel.edge_values[vol_ids,edge_ids]
-        q2 = Yvel.edge_values[vol_ids,edge_ids]
-
-        r1 = q1*n1 + q2*n2
-        r2 = q1*n2 - q2*n1
-
-        Xvel.boundary_values[ids] = n1*r1 - n2*r2
-        Yvel.boundary_values[ids] = n2*r1 + n1*r2
-
+        evaluate_reflective_segment(domain, ids_array, vol_ids, edge_ids)
 
 
 
