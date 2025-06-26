@@ -36,7 +36,7 @@ jobs:
         run: |
            conda install -c conda-forge -n anuga_env gcc_win-64 gxx_win-64
            # As of 2025/06/19, mpi4py causing a segmentation fault on Windows
-           conda uninstall -n anuga_env mpi4py
+           # conda uninstall -n anuga_env mpi4py
 
       - name: Install clang with openmp compiler on macOS
         if: runner.os == 'macOS'

@@ -450,10 +450,10 @@ void apply_weir_discharge_correction(const struct domain * __restrict D, const E
     }
 }
 
-double _openmp_compute_fluxes_central(const struct domain *__restrict D,
+double _openmp_compute_fluxes_central(struct domain *D,
                                       double timestep)
 {
-  // Local variables 
+  // Local variables
   anuga_int number_of_elements = D->number_of_elements;
   // anuga_int KI, KI2, KI3, B, RW, RW5, SubSteps;
   anuga_int substep_count;
@@ -599,7 +599,7 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
 }
 
 // Protect against the water elevation falling below the triangle bed
-double _openmp_protect(const struct domain *__restrict D)
+double _openmp_protect(struct domain *D)
 {
 
   double mass_error = 0.;
@@ -1236,7 +1236,7 @@ if(extrapolate_velocity_second_order == 1)
 }
 
 
-void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict D)
+void _openmp_manning_friction_flat_semi_implicit(struct domain *D)
 {
 
   anuga_int k;
@@ -1278,7 +1278,7 @@ void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict
 
     
 
-void _openmp_manning_friction_sloped_semi_implicit(const struct domain *__restrict D)
+void _openmp_manning_friction_sloped_semi_implicit(struct domain *D)
 {
   anuga_int k;
   const double one_third = 1.0 / 3.0;
@@ -1425,7 +1425,7 @@ void _openmp_manning_friction_sloped(const double g, const double eps, const anu
 
 
 // Computational function for flux computation
-anuga_int _openmp_fix_negative_cells(const struct domain *__restrict D)
+anuga_int _openmp_fix_negative_cells(struct domain *D)
 {
   anuga_int num_negative_cells = 0;
 
@@ -1444,7 +1444,7 @@ anuga_int _openmp_fix_negative_cells(const struct domain *__restrict D)
 }
 
 
-anuga_int _openmp_gravity(const struct domain *__restrict D) {
+anuga_int _openmp_gravity(struct domain *D) {
 
     anuga_int k, N, k3, k6;
     double g, avg_h, zx, zy;
@@ -1489,7 +1489,7 @@ anuga_int _openmp_gravity(const struct domain *__restrict D) {
     return 0;
 }
 
-anuga_int _openmp_gravity_wb(const struct domain *__restrict D) {
+anuga_int _openmp_gravity_wb(struct domain *D) {
 
     anuga_int i, k, N, k3, k6;
     double g, avg_h, wx, wy, fact;
@@ -1568,7 +1568,7 @@ anuga_int _openmp_gravity_wb(const struct domain *__restrict D) {
 }
 
 
-anuga_int _openmp_extrapolate_second_order_sw(const struct domain *__restrict D) {
+anuga_int _openmp_extrapolate_second_order_sw(struct domain *D) {
 
 
   // Domain Variables
@@ -2170,8 +2170,7 @@ anuga_int _extrapolate_second_order_sw(anuga_int number_of_elements,
 }
 
 
-anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D, 
-                                              const double timestep)
+anuga_int _openmp_update_conserved_quantities(struct domain *D, double timestep)
       {
 	// Update centroid values based on values stored in
 	// explicit_update and semi_implicit_update as well as given timestep
@@ -2186,7 +2185,6 @@ anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D,
 	for (k=0; k<N; k++) {
 
     double stage_c, xmom_c, ymom_c;
-
     double denominator;
 
 		// use previous centroid value
@@ -2196,7 +2194,6 @@ anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D,
 		} else {
 			D->stage_semi_implicit_update[k] /= stage_c;
 		}
- 
 
     xmom_c = D->xmom_centroid_values[k];
 		if (xmom_c == 0.0) {
@@ -2245,10 +2242,7 @@ anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D,
 	return 0;
 }
 
-anuga_int _openmp_saxpy_conserved_quantities(const struct domain *__restrict D, 
-                                             const double a, 
-                                             const double b, 
-                                             const double c)
+anuga_int _openmp_saxpy_conserved_quantities(struct domain *D, double a, double b, double c)
 {
   // This function performs a SAXPY operation on the centroid values and backup values.
   //
@@ -2307,7 +2301,7 @@ anuga_int _openmp_saxpy_conserved_quantities(const struct domain *__restrict D,
   return 0;
 }
 
-anuga_int _openmp_backup_conserved_quantities(const struct domain *__restrict D)
+anuga_int _openmp_backup_conserved_quantities(struct domain *D)
 {
   anuga_int k;
   anuga_int N = D->number_of_elements;
