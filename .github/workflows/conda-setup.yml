@@ -29,7 +29,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash -el {0}
         run: |
-          conda install -c conda-forge -n anuga_env libpython m2w64-toolchain
+          #conda install -c conda-forge -n anuga_env libpython m2w64-toolchain
+          conda install -c conda-forge -n anuga_env gcc_win-64 gxx_win-64
 
       - name: Install package
         shell: bash -el {0}
