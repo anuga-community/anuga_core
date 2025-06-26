@@ -31,6 +31,9 @@ parser.add_argument(
 
 args = parser.parse_args()
 script_file = args.script_file
+print(f"Using script file: {script_file}")
+
+script = script_file.rsplit('.', 1)[0]
 
 
 
@@ -40,6 +43,8 @@ env = os.environ.copy()
 hostname = socket.gethostname()
 hostname = hostname.split('.')[0]  # Get the hostname without the domain part
 hostname = hostname.split('-')[0]  # Get the first part of the hostname if it contains a hyphen
+
+print(f"On machine: {hostname}")
 
 # Define the Conda environment name
 conda_prefix = os.environ.get("CONDA_PREFIX")
@@ -63,9 +68,11 @@ else:
     queue = 'local'
     openmp_threads = [4]
 
+print(f"Using queue: {queue}")
+
 for threads in openmp_threads:
     env["OMP_NUM_THREADS"] = str(threads)  # Set to your desired number of threads
-    pstat_file = f'profile_{hostname}_{queue}_{anuga_env}_{time}_omp_{threads}.pstat'
+    pstat_file = f'profile_{script}_{hostname}_{queue}_{anuga_env}_{time}_omp_{threads}.pstat'
 
     cmd = ['conda', 'run', '--no-capture-output', '-n', anuga_env, 'python', '-u', '-m', 'cProfile', '-o', pstat_file, script_file]
     
@@ -86,7 +93,7 @@ for threads in openmp_threads:
 #=================================
 # Collect timings
 #=================================
-pstat_basename = f'profile_{hostname}_{queue}_{anuga_env}_{time}'
+pstat_basename = f'profile_{script}_{hostname}_{queue}_{anuga_env}_{time}'
 
 from create_benchmark_csvfile import create_benchmark_csvfile
 
