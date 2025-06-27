@@ -8,11 +8,9 @@
     :target: https://app.travis-ci.com/anuga-community/anuga_core
     :alt: Travis CI Status
 
-.. |badge1| image:: https://app.travis-ci.com/anuga-community/anuga_core.svg?branch=main
-    :target: https://app.travis-ci.com/anuga-community/anuga_core
-    :alt: travis ci status
+
    
-.. |badge2| image:: https://ci.appveyor.com/api/projects/status/x5airjv7eq2u805w/branch/develop_hackathon?svg=true
+.. |badge2| image:: https://ci.appveyor.com/api/projects/status/x5airjv7eq2u805w/branch/main?svg=true
     :target: https://ci.appveyor.com/project/stoiver/anuga-core-nwgr0
     :alt: appveyor status
 
