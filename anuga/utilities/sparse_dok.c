@@ -1,3 +1,4 @@
+#include <inttypes.h> /* PRId64 */
 #include "sparse_dok.h"
 
 
@@ -11,13 +12,13 @@ static void *emalloc(size_t amt,char * location)
         exit(EXIT_FAILURE);
     }
     return v;
-};
+}
 
 // ***************************************************
 
 // 'Constructor'
 
-sparse_dok * make_dok(){
+sparse_dok * make_dok(void){
 
     sparse_dok * ret = emalloc(sizeof(sparse_dok),"make_dok");
     ret->edgetable=NULL;
@@ -93,16 +94,16 @@ void print_dok_entries(sparse_dok * hashtable) {
     edge_t *s;
 
     for(s=hashtable->edgetable; s != NULL; s=(edge_t*)(s->hh.next)) {
-        printf("edge key i %ld i %ld entry %f\n",
+        printf("edge key i %" PRId64 " i %" PRId64 " entry %f\n",
                       s->key.i, s->key.j, s->entry);
     }
 }
 
-int64_t key_sort(edge_t *a, edge_t *b) {
+anuga_int key_sort(edge_t *a, edge_t *b) {
     return (a->key.i - b->key.i);
 }
 
-int64_t key_sort_2(edge_t *a, edge_t *b){
+anuga_int key_sort_2(edge_t *a, edge_t *b){
     if(a->key.i - b->key.i==0){
         return (a->key.j-b->key.j);
     } else{
@@ -130,22 +131,22 @@ void convert_to_csr_ptr(sparse_csr * new_csr, sparse_dok * hashtable){
 
     //sort and get number of entries
     sort_by_key(hashtable); 
-    int64_t num_entries = hashtable->num_entries;
-    int64_t num_rows = hashtable->num_rows+1;
+    anuga_int num_entries = hashtable->num_entries;
+    anuga_int num_rows = hashtable->num_rows+1;
 
     //build storage matricies
     ret_csr->data=emalloc(num_entries*sizeof(double),"convert_to_csr_ptr");
-    ret_csr->colind=emalloc(num_entries*sizeof(int64_t),"convert_to_csr_ptr");
-    ret_csr->row_ptr=emalloc((num_rows+1)*sizeof(int64_t),"convert_to_csr_ptr");
+    ret_csr->colind=emalloc(num_entries*sizeof(anuga_int),"convert_to_csr_ptr");
+    ret_csr->row_ptr=emalloc((num_rows+1)*sizeof(anuga_int),"convert_to_csr_ptr");
 
     edge_t * edge = hashtable->edgetable;
 
     //now convert
-    int64_t current_row = -1;
-    int64_t k;
+    anuga_int current_row = -1;
+    anuga_int k;
     for(k=0;k<num_entries;k++){
-        int64_t i = edge->key.i;
-        int64_t j = edge->key.j;
+        anuga_int i = edge->key.i;
+        anuga_int j = edge->key.j;
         double value = edge->entry;
 
         if (i!=current_row){
@@ -170,14 +171,12 @@ void convert_to_csr_ptr(sparse_csr * new_csr, sparse_dok * hashtable){
 void add_sparse_dok(sparse_dok * dok1,double mult1,sparse_dok * dok2,double mult2){
 
     // add both into dok1 - then leave both alone (free outside)
-    int64_t num_entries = dok1->num_entries;
+    anuga_int num_entries = dok1->num_entries;
     edge_t * edge = dok1->edgetable;
     edge_t * edge2;
 
-    int64_t k;
+    anuga_int k;
     for(k=0;k<num_entries;k++){
-        int64_t i = edge->key.i;
-        int64_t j = edge->key.j;
         double value = edge->entry;
         edge->entry=value*mult1;
         edge2=find_dok_entry(dok2,edge->key);
@@ -198,9 +197,9 @@ void add_sparse_dok(sparse_dok * dok1,double mult1,sparse_dok * dok2,double mult
 
 }
 
-int64_t get_dok_rows(sparse_dok * dok){
+anuga_int get_dok_rows(sparse_dok * dok){
 
-    int64_t rows = 0;
+    anuga_int rows = 0;
 
     edge_t *current_edge, *tmp;
 

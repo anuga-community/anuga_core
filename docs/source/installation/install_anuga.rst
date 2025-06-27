@@ -54,7 +54,7 @@ You can test your ANUGA installation by running the unit tests via:
 
 .. note::
 
-    You will nedd to `activate` the `anuga_env` environment each time you want to use ANUGA.
+    You will need to `activate` the `anuga_env` environment each time you want to use ANUGA.
     
     If you are using standard python you use the `source anuga_env/bin/activate` command to 
     activate the environment.
