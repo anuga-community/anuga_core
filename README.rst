@@ -8,7 +8,7 @@
     :target: https://app.travis-ci.com/anuga-community/anuga_core
     :alt: Travis CI Status
 
-.. |badge1| image:: https://app.travis-ci.com/anuga-community/anuga_core.svg?branch=develop_hackathon
+.. |badge1| image:: https://app.travis-ci.com/anuga-community/anuga_core.svg?branch=main
     :target: https://app.travis-ci.com/anuga-community/anuga_core
     :alt: travis ci status
    
