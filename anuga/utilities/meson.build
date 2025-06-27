@@ -50,6 +50,7 @@ python_sources = [
 'animate.py',
 'argparsing.py',
 'cg_solve.py',
+'create_benchmark_csvfile.py',
 'csv_tools.py',
 'data_audit.py',
 'data_audit_wrapper.py',

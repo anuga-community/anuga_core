@@ -84,6 +84,14 @@ configure_file(
     install_mode: 'rwxr-xr-x'
 )
 
+configure_file(
+    input: 'scripts/anuga_benchmark_omp.py',
+    output: 'anuga_benchmark_omp',
+    configuration: conf,
+    install_dir: get_option('bindir'),
+    install_mode: 'rwxr-xr-x'
+)
+
 # Add subdirectories which contains python sources
 subdir('anuga')
 

@@ -1,11 +1,11 @@
-
+#!/usr/bin/env python3
 
 import pstats
 import os
 import csv
 import numpy as np
 
-# This script runs the Towradgi benchmark with different numbers of OpenMP threads
+# This script runs benchmark ifor specified script with different numbers of OpenMP threads
 
 from time import localtime, strftime, gmtime, sleep
 time = strftime('%Y%m%d_%H%M', localtime())
@@ -66,7 +66,7 @@ if 'PBS_QUEUE' in os.environ:
         openmp_threads = [1, 2, 4, 6, 8, 12, 16, 24, 32, 48]
 else:
     queue = 'local'
-    openmp_threads = [4]
+    openmp_threads = [1,2,4]
 
 print(f"Using queue: {queue}")
 
@@ -95,7 +95,7 @@ for threads in openmp_threads:
 #=================================
 pstat_basename = f'profile_{script}_{hostname}_{queue}_{anuga_env}_{time}'
 
-from create_benchmark_csvfile import create_benchmark_csvfile
+from anuga.utilities.create_benchmark_csvfile import create_benchmark_csvfile
 
 create_benchmark_csvfile(pstat_basename, openmp_threads, verbose=True)
 
