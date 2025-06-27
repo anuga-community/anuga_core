@@ -172,7 +172,7 @@ if __name__=="__main__":
     if numprocs == 1: 
         if verbose: print('SEQUENTIAL START')
         runner = unittest.TextTestRunner()
-        suite = unittest.makeSuite(Test_parallel_sw_flow, 'test')
+        suite = unittest.TestLoader().loadTestsFromTestCase(Test_parallel_sw_flow)
         runner.run(suite)
     else:
         #------------------------------------------

@@ -2748,8 +2748,6 @@ Statistics of SWW file:
 #################################################################################
 
 if __name__ == "__main__":
-    # suite = unittest.makeSuite(Test_Shallow_Water, 'test_rainfall_forcing_with_evolve')
-
-    suite = unittest.makeSuite(Test_Sww2Dem, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Sww2Dem)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

@@ -40,7 +40,7 @@ try:
     from matplotlib.pyplot import xlabel, ylabel, savefig
     hold(False)  # Check if this command can be issued
 except:
-    print 'Could not import pylab'
+    print('Could not import pylab')
     plotting = False
 else:
     # Create plots as png files
@@ -99,7 +99,7 @@ expected_argmin = {'Boundary': 2.064999999999999858e+01,
 # Read validation data
 #-------------------------
 
-if verbose: print 'Reading', project.boundary_filename
+if verbose: print('Reading', project.boundary_filename)
 
 fid = NetCDFFile(project.boundary_filename, 'r')
 input_time = fid.variables['time'][:]
@@ -151,12 +151,12 @@ def report_difference(name, computed_value, reference_value, rtol, atol):
         msg = '%s (expected, computed):\n  (%.18e, %.18e):\n  Relative error=%.18e'\
               %(name, reference_value, computed_value,
                 abs(reference_value-computed_value)/reference_value)
-        print msg
+        print(msg)
         
 
     msg = '  Absolute error=%.18e'\
           %(abs(reference_value-computed_value))        
-    print msg
+    print(msg)
 
     
     #print 'Allclose:', allclose(reference_value, computed_value,
@@ -182,7 +182,7 @@ atol = 2.0e-2
 #rtol = 1.0e-2
 #atol = 1.0e-2
 
-if verbose: print 'Precisions used: rtol=%e, atol=%e' %(rtol, atol)
+if verbose: print('Precisions used: rtol=%e, atol=%e' %(rtol, atol))
 
 
 #print reference_time
@@ -192,8 +192,8 @@ for k, name in enumerate(gauge_names):
     denom = 0
     model = []
     if verbose: 
-        print 
-        print 'Validating ' + name
+        print() 
+        print('Validating ' + name)
     observed_timeseries = validation_data[name]
     for i, t in enumerate(reference_time):
         model.append(f(t, point_id=k)[0])
@@ -256,16 +256,16 @@ for k, name in enumerate(gauge_names):
 q, loc, time = get_maximum_inundation_data(sww_filename, return_time=True)
 
 if verbose:
-    print 'Observed results'
-    print 'Max runup elevation (m): 0.0875, 0.09, 0.08, 0.09, 0.1, 0.09, Average 0.09'
-    print 'Max runup elevation (scaled by 400) (m): Average 36'
-    print 'Max runup location:  [5.1575, 1.88]'
-    print 'Max runup time (s): 16.5'
-    print 'Model Results'
-    print 'Max runup elevation (m): ', q
-    print 'Max runup elevation (scaled by 400) (m): ', q*400
-    print 'Max runup location:  ', loc
-    print 'Max runup time (s): ',time
+    print('Observed results')
+    print('Max runup elevation (m): 0.0875, 0.09, 0.08, 0.09, 0.1, 0.09, Average 0.09')
+    print('Max runup elevation (scaled by 400) (m): Average 36')
+    print('Max runup location:  [5.1575, 1.88]')
+    print('Max runup time (s): 16.5')
+    print('Model Results')
+    print('Max runup elevation (m): ', q)
+    print('Max runup elevation (scaled by 400) (m): ', q*400)
+    print('Max runup location:  ', loc)
+    print('Max runup time (s): ',time)
 
 
 #assert is_inside_polygon(loc, gulleys)

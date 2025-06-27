@@ -208,7 +208,7 @@ def assert_(condition, msg="Assertion Failed"):
 if __name__=="__main__":
     if numprocs == 1:
         runner = unittest.TextTestRunner()
-        suite = unittest.makeSuite(Test_parallel_sw_flow, 'test')
+        suite = unittest.TestLoader().loadTestsFromTestCase(Test_parallel_sw_flow)
         runner.run(suite)
     else:
 

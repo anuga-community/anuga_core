@@ -108,7 +108,9 @@ class Test_local_extrapolation_and_flux_updating(unittest.TestCase):
         return
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_local_extrapolation_and_flux_updating, 'test')
+    suite = unittest.TestSuite([
+        Test_local_extrapolation_and_flux_updating('test_local_extrapolation_and_flux_updating_DE0'),
+        Test_local_extrapolation_and_flux_updating('test_local_extrapolation_and_flux_updating_DE1')])
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)
 

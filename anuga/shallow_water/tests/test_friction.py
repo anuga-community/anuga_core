@@ -78,6 +78,6 @@ class Test_Friction(unittest.TestCase):
 
             
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Friction, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Friction)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)
