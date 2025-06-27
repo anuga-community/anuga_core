@@ -3,6 +3,11 @@
     :target: https://app.gitter.im/#/room/#anuga-community:gitter.im
     :alt: Community Chat
 
+..
+    |badge1| image:: https://img.shields.io/travis/com/anuga-community/anuga_core/develop_hackathon.svg
+    :target: https://app.travis-ci.com/anuga-community/anuga_core
+    :alt: Travis CI Status
+
 .. |badge1| image:: https://app.travis-ci.com/anuga-community/anuga_core.svg?branch=develop_hackathon
     :target: https://app.travis-ci.com/anuga-community/anuga_core
     :alt: travis ci status
@@ -31,7 +36,7 @@
     :target: https://anuga.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
-|badge0| |badge1| |badge2| |badge3| |badge3| |badge4| |badge5| |badge6| |badge7|
+|badge0| |badge2| |badge3| |badge3| |badge4| |badge5| |badge6| |badge7|
 
 
 
