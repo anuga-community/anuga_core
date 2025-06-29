@@ -25,6 +25,5 @@ Pmw
 meson
 meson-python
 ninja
-pkg-config
 xarray
 cartopy

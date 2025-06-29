@@ -241,13 +241,10 @@ class Generic_Domain(object):
 
         #-------------------------------
         # Set multiprocessor mode 
-        # 0. orig (original with edge optim)
-        # 1. simd (used for multiprocessor)
-        # 2. openmp (in development)
-        # 3. openacc (in development)
-        # 4. cuda (in development)
+        # 1. openmp (in development)
+        # 2. cuda (in development)
         #-------------------------------    
-        self.set_multiprocessor_mode(0)
+        self.set_multiprocessor_mode(1)
 
         self.processor = processor
         self.numproc = numproc
@@ -749,18 +746,23 @@ class Generic_Domain(object):
         """
         Set multiprocessor mode 
         
-        0. original
-        1. simd (used for multiprocessor)
-        2. openmp (in development)
-        3. openacc (in development)
-        4. cuda (in development)
+        1. openmp (in development)
+        2. cuda (in development)
         """
 
-        if multiprocessor_mode in [0,1,2,3,4]:
+        if multiprocessor_mode in [1,2]:
             self.multiprocessor_mode = multiprocessor_mode
         else:
             raise Exception('multiprocessor mode {multiprocessor_mode} not supported')
 
+    def get_multiprocessor_mode(self):
+        """
+        Get multiprocessor mode 
+        
+        1. openmp (in development)
+        2. cuda (in development)
+        """
+        return self.multiprocessor_mode 
             
     def set_using_centroid_averaging(self, flag=True):
         """Set flag to use centroid averaging in output
@@ -2164,10 +2166,7 @@ class Generic_Domain(object):
         # self.saxpy_conserved_quantities(2.0/3.0, 1.0/3.0)
 
         # So do this instead!
-        self.saxpy_conserved_quantities(2.0, 1.0)
-        for name in self.conserved_quantities:
-            Q = self.quantities[name]
-            Q.centroid_values[:] = Q.centroid_values / 3.0
+        self.saxpy_conserved_quantities(2.0, 1.0, 3.0)
 
         # Update special conditions
         # self.update_special_conditions()
@@ -2191,12 +2190,15 @@ class Generic_Domain(object):
             Q = self.quantities[name]
             Q.backup_centroid_values()
 
-    def saxpy_conserved_quantities(self, a, b):
+    def saxpy_conserved_quantities(self, a, b, c=None):
 
-        # Backup conserved_quantities centroid values
+        # saxpy conserved_quantities centroid values with backup values
         for name in self.conserved_quantities:
             Q = self.quantities[name]
             Q.saxpy_centroid_values(a, b)
+            if c is not None:
+                Q.centroid_values[:] = Q.centroid_values / c
+
 
     def conserved_values_to_evolved_values(self, q_cons, q_evol):
         """Needs to be overridden by Domain subclass
@@ -2517,42 +2519,6 @@ class Generic_Domain(object):
 
         return normfunc(self.quantities[quantity].centroid_values)
 
-    def apply_protection_against_isolated_degenerate_timesteps(self):
-
-        # FIXME (Steve): This should be in shallow_water as it assumes x and y
-        # momentum
-        if self.protect_against_isolated_degenerate_timesteps is False:
-            return
-
-        # FIXME (Ole): Make this configurable
-        if num.max(self.max_speed) < 10.0:
-            return
-
-        # Setup 10 bins for speed histogram
-        from anuga.utilities.numerical_tools import histogram, create_bins
-
-        bins = create_bins(self.max_speed, 10)
-        hist = histogram(self.max_speed, bins)
-
-        # Look for characteristic signature
-        if len(hist) > 1 and hist[-1] > 0 and \
-           hist[4] == hist[5] == hist[6] == hist[7] == hist[8] == 0:
-            # Danger of isolated degenerate triangles
-
-            # Find triangles in last bin
-            # FIXME - speed up using numeric package
-            d = 0
-            for i in range(self.number_of_triangles):
-                if self.max_speed[i] > bins[-1]:
-                    msg = 'Time=%f: Ignoring isolated high ' % self.get_time()
-                    msg += 'speed triangle '
-                    msg += '#%d of %d with max speed = %f' \
-                        % (i, self.number_of_triangles, self.max_speed[i])
-
-                    self.get_quantity('xmomentum').set_values(0.0, indices=[i])
-                    self.get_quantity('ymomentum').set_values(0.0, indices=[i])
-                    self.max_speed[i] = 0.0
-                    d += 1
 
 
 if __name__ == "__main__":

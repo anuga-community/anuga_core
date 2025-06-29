@@ -397,6 +397,6 @@ class TestCase(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(TestCase,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(TestCase)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

@@ -18,9 +18,9 @@ import os
 # ===================================================
 # Read VERSION from setup.py file
 # ===================================================
-with open('setup.py') as infile:
+with open('pyproject.toml') as infile:
     for line in infile:
-        match = re.match(r'VERSION =', line)
+        match = re.match(r'version = ', line)
         if match != None:
             VERSION = re.findall('\d.\d.\ddev|\d.\d.\d',line)[0]
 

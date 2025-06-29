@@ -10,7 +10,7 @@ similar to a beach environment
 import sys
 import anuga
 from math import cos
-from numpy import zeros, float
+from numpy import zeros
 
 #------------------------------------------------------------------------------
 # Setup parameters and utilitiy functions

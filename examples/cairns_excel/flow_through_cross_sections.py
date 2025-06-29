@@ -138,7 +138,7 @@ def get_approximate_discharge_timeseries(sww_filename,
 
     for pk in polylines.keys():
 
-        if verbose: print pk
+        if verbose: print(pk)
 
         pl_full = polylines[pk]
 
@@ -163,7 +163,7 @@ def get_approximate_discharge_timeseries(sww_filename,
             ds = (numpy.diff(gridXY[:,0])**2 + numpy.diff(gridXY[:,1])**2)**0.5
             ds_trapz = numpy.hstack([ ds[0], (ds[0:-1] + ds[1:]), ds[-1]])*0.5
 
-            if verbose: print 'Finding triangles containing point'
+            if verbose: print('Finding triangles containing point')
 
             if use_knn:
                 point_distance, point_indices = point_index_kdtree.query(gridXY, 
@@ -195,7 +195,7 @@ def get_approximate_discharge_timeseries(sww_filename,
                         util.get_triangle_containing_point(p, gridXY_offset[i,:],
                             search_order = search_order) 
 
-            if verbose: print 'Computing the flux'
+            if verbose: print('Computing the flux')
 
             if k_nearest_neighbours == 1:
                 point_uh = ud[:][:, point_indices]    
@@ -297,10 +297,10 @@ if __name__ == '__main__':
         search_mesh = False
 
     assert os.path.exists(sww_filename), 'sww_filename not found'
-    print 'sww_filename: ' + sww_filename
-    print 'knn: ' + str(knn)
-    print 'desired_ds: ' + str(desired_ds)
-    print ''
+    print('sww_filename: ' + sww_filename)
+    print('knn: ' + str(knn))
+    print('desired_ds: ' + str(desired_ds))
+    print('')
 
     output_times, discharge_series = get_approximate_discharge_timeseries(
         sww_filename, polylines, desired_ds=desired_ds, 
