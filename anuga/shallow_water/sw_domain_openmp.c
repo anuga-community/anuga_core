@@ -1023,6 +1023,8 @@ static inline void compute_edge_diffs(const double x, const double y,
 }
 
 // Computational routine
+// Extrapolate second order edge values from centroid values
+// This is the current procedure used in evolve loop.
 anuga_int _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 {
   double minimum_allowed_height = D->minimum_allowed_height;
@@ -1104,6 +1106,9 @@ anuga_int _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
     // needed in the boundaries section
     double area2 = dy2 * dx1 - dy1 * dx2;
     // area2 = area2;
+    // the calculation of dx0 dx1 dx2 dy0 dy1 dy2 etc could be calculated once and stored 
+    // in the domain structure.
+
 
     const anuga_int dry =
         ((D->height_centroid_values[k0] < minimum_allowed_height) | (k0 == k)) &
@@ -1211,11 +1216,13 @@ anuga_int _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
       D->bed_edge_values[k3 + i] = D->stage_edge_values[k3 + i] - D->height_edge_values[k3 + i];
     }
 
-    reconstruct_vertex_values(D->stage_edge_values, D->stage_vertex_values, k3);
-    reconstruct_vertex_values(D->height_edge_values, D->height_vertex_values, k3);
-    reconstruct_vertex_values(D->xmom_edge_values, D->xmom_vertex_values, k3);
-    reconstruct_vertex_values(D->ymom_edge_values, D->ymom_vertex_values, k3);
-    reconstruct_vertex_values(D->bed_edge_values, D->bed_vertex_values, k3);
+    // This should not be needed, as now the evolve loop should just depend
+    // on the edge values, which are reconstructed from the centroid values
+    // reconstruct_vertex_values(D->stage_edge_values, D->stage_vertex_values, k3);
+    // reconstruct_vertex_values(D->height_edge_values, D->height_vertex_values, k3);
+    // reconstruct_vertex_values(D->xmom_edge_values, D->xmom_vertex_values, k3);
+    // reconstruct_vertex_values(D->ymom_edge_values, D->ymom_vertex_values, k3);
+    // reconstruct_vertex_values(D->bed_edge_values, D->bed_vertex_values, k3);
   }
   // for k=0 to number_of_elements-1
 // Fix xmom and ymom centroid values
@@ -1235,6 +1242,25 @@ if(extrapolate_velocity_second_order == 1)
   return 0;
 }
 
+void _openmp_distribute_edges_to_vertices(struct domain *__restrict D)
+{
+  // Distribute edge values to vertices
+  anuga_int number_of_elements = D->number_of_elements;
+
+#pragma omp parallel for simd default(none) shared(D) schedule(static) firstprivate(number_of_elements)
+  for (anuga_int k = 0; k < number_of_elements; k++)
+  {
+    anuga_int k3 = 3 * k;
+
+    // Set vertex values from edge values
+    reconstruct_vertex_values(D->stage_edge_values, D->stage_vertex_values, k3);
+    reconstruct_vertex_values(D->height_edge_values, D->height_vertex_values, k3);
+    reconstruct_vertex_values(D->xmom_edge_values, D->xmom_vertex_values, k3);
+    reconstruct_vertex_values(D->ymom_edge_values, D->ymom_vertex_values, k3);
+    reconstruct_vertex_values(D->bed_edge_values, D->bed_vertex_values, k3);
+  
+  }
+}
 
 void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict D)
 {
@@ -1568,6 +1594,10 @@ anuga_int _openmp_gravity_wb(const struct domain *__restrict D) {
 }
 
 
+// Old function for extrapolating second order edge values from centroid values
+// This function is now replaced by _openmp_extrapolate_second_order_edge_sw
+// which uses SIMD and OpenMP for parallelization
+// This function is kept for reference and compatibility
 anuga_int _openmp_extrapolate_second_order_sw(const struct domain *__restrict D) {
 
 

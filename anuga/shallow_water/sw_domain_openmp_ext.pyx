@@ -118,7 +118,8 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	void _openmp_manning_friction_sloped_semi_implicit(domain *D)
 	int64_t _openmp_saxpy_conserved_quantities(domain *D, double a, double b, double c)
 	int64_t _openmp_backup_conserved_quantities(domain *D)
-	# FIXME SR: Change over to domain* D argument
+	int64_t _openmp_distribute_edges_to_vertices(domain *D)
+	# FIXME SR: Change over to domain* D argument ?
 	void _openmp_manning_friction_flat(double g, double eps, int64_t N, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom, double* ymom)
 	void _openmp_manning_friction_sloped(double g, double eps, int64_t N, double* x, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom_update, double* ymom_update)
 	void _openmp_evaluate_reflective_segment(domain *D, int64_t N, int64_t *edge_ptr, int64_t *vol_ids_ptr, int64_t *edge_ids_ptr)
@@ -462,6 +463,7 @@ def compute_fluxes_ext_central(object domain_object, double timestep):
 		timestep =  _openmp_compute_fluxes_central(&D, timestep)
 
 	return timestep
+	
 def extrapolate_second_order_sw(object domain_object):
 
 	cdef domain D
@@ -475,6 +477,22 @@ def extrapolate_second_order_sw(object domain_object):
 
 	if e == -1:
 		return None
+
+def distribute_edges_to_vertices(object domain_object):
+
+	cdef domain D
+	cdef int64_t e
+
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+
+	with nogil:
+		e = _openmp_distribute_edges_to_vertices(&D)
+
+	if e == -1:
+		return None
+
+	return e	
 
 def extrapolate_second_order_edge_sw(object domain_object):
 

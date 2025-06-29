@@ -1220,14 +1220,14 @@ class Domain(Generic_Domain):
 
 
 
-    def set_distribute_to_vertices_and_edges_method(self, flag='original'):
+    def set_distribute_to_vertices_and_edges_method(self, flag='DE'):
         """Set method for computing fluxes.
 
         Currently
            original
            tsunami
         """
-        distribute_to_vertices_and_edges_methods = ['original',  'tsunami', 'DE']
+        distribute_to_vertices_and_edges_methods = ['DE']
 
         if flag in distribute_to_vertices_and_edges_methods:
             self.distribute_to_vertices_and_edges_method = flag
@@ -1870,6 +1870,30 @@ class Domain(Generic_Domain):
         """ extrapolate centroid values to vertices and edges"""
 
         # Do protection step
+        nvtxRangePush('protect against negative heights')
+        self.protect_against_infinitesimal_and_negative_heights()
+        nvtxRangePop()
+
+        # Do extrapolation step
+        # nvtxRangePush('extrapolate')
+        # Choose the correct extension module
+        if self.multiprocessor_mode == 1:
+            from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
+        elif self.multiprocessor_mode == 2:
+            # change over to cuda routines as developed
+            #from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
+            extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
+        else:
+            raise Exception('Not implemented')
+
+        nvtxRangePush('extrapolate_second_order_edge_sw')
+        extrapolate_second_order_edge_sw(self)
+        nvtxRangePop()
+
+    def distribute_to_edges(self):
+        """ extrapolate centroid values edges"""
+
+        # Do protection step
         nvtxRangePush('protect_against_infinities')
         self.protect_against_infinitesimal_and_negative_heights()
         nvtxRangePop()
@@ -1888,8 +1912,29 @@ class Domain(Generic_Domain):
         else:
             raise Exception('Not implemented')
 
-        # nvtxRangePop()
+        # nvtxRangePop()        
 
+    def distribute_edges_to_vertices(self):
+        """Distribute edge values to vertices.
+        
+        This is a wrapper for the C implementation of the distribution
+        from edges to vertices.
+        """
+
+        if self.multiprocessor_mode == 1:
+            # Using OpenMP extension
+            from .sw_domain_openmp_ext import distribute_edges_to_vertices as distribute_edges_to_vertices_ext
+        elif self.multiprocessor_mode == 2:
+            # Using CUDA extension
+            # FIXME SR: Not implemented yet so use OpenMP version
+            from .sw_domain_openmp_ext import distribute_edges_to_vertices as distribute_edges_to_vertices_ext
+            # distribute_edges_to_vertices_ext = self.gpu_interface.distribute_edges_to_vertices_kernel
+        else:
+            raise Exception('Not implemented')
+        
+        # nvtxRangePush('distribute_edges_to_vertices')
+        distribute_edges_to_vertices_ext(self)
+        # nvtxRangePop()
 
     def distribute_using_edge_limiter(self):
         """Distribution from centroids to edges specific to the SWW eqn.
