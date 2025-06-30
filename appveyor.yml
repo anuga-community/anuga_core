@@ -38,4 +38,5 @@ build_script:
   - pip install -v .
 
 test_script:
+  - cmd: SET OMP_NUM_THREADS=1
   - pytest -q --pyargs anuga
