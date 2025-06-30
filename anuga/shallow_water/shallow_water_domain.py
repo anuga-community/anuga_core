@@ -316,6 +316,13 @@ class Domain(Generic_Domain):
         self.set_multiprocessor_mode(1)
 
         #-------------------------------
+        # If environment variable OMP_NUM_THREADS is not set, 
+        # then set to default (1 thread). If a value is given to
+        # the method, then it will override the default.
+        #------------------------------
+        self.set_omp_num_threads()
+
+        #-------------------------------
         # datetime and timezone
         #-------------------------------
         self.set_timezone()
@@ -1220,14 +1227,14 @@ class Domain(Generic_Domain):
 
 
 
-    def set_distribute_to_vertices_and_edges_method(self, flag='DE'):
+    def set_distribute_to_vertices_and_edges_method(self, flag='original'):
         """Set method for computing fluxes.
 
         Currently
            original
            tsunami
         """
-        distribute_to_vertices_and_edges_methods = ['DE']
+        distribute_to_vertices_and_edges_methods = ['original',  'tsunami', 'DE']
 
         if flag in distribute_to_vertices_and_edges_methods:
             self.distribute_to_vertices_and_edges_method = flag
@@ -3167,6 +3174,37 @@ class Domain(Generic_Domain):
         2. cuda (in development)
         """
         return self.multiprocessor_mode 
+
+    def set_omp_num_threads(self, omp_num_threads=None):
+        """
+        Set the number of OpenMP threads to use for parallel processing.
+        If OMP_NUM_THREADS is not set, this will set it to the specified 
+        omp_num_threads value.
+        By default omp_num_threads is set to 1, other , it will use the default setting.
+        """
+
+        import os
+        if omp_num_threads is None:
+            # Use the default setting
+            omp_num_threads = os.environ.get('OMP_NUM_THREADS', None)
+            #print(f'Using OMP_NUM_THREADS from environment: {omp_num_threads}')
+
+
+        if omp_num_threads is None:
+            omp_num_threads = 1  # Default to 1 if not set
+
+        try:
+            omp_num_threads = int(omp_num_threads)
+        except ValueError:
+            raise ValueError('OMP_NUM_THREADS must be an integer')            
+
+        # Set the number of OpenMP threads
+        self.omp_num_threads = omp_num_threads
+        from .sw_domain_openmp_ext import set_omp_num_threads
+        set_omp_num_threads(omp_num_threads)
+        
+        print(f'Setting omp_num_threads to {omp_num_threads}')
+
 
     def set_gpu_interface(self):
 

@@ -106,22 +106,25 @@ cdef extern from "sw_domain_openmp.c" nogil:
 		pass
 
 	int64_t __rotate(double *q, double n1, double n2)
+	void _openmp_set_omp_num_threads(int64_t num_threads)
 	double _openmp_compute_fluxes_central(domain* D, double timestep)
 	double _openmp_protect(domain* D)
-	int64_t _openmp_extrapolate_second_order_sw(domain* D)
-	int64_t _openmp_extrapolate_second_order_edge_sw(domain* D)
+	void _openmp_extrapolate_second_order_sw(domain* D)
+	void _openmp_extrapolate_second_order_edge_sw(domain* D)
 	int64_t _openmp_fix_negative_cells(domain* D)
 	int64_t _openmp_gravity(domain *D)
 	int64_t _openmp_gravity_wb(domain *D) 
 	int64_t _openmp_update_conserved_quantities(domain* D, double timestep)
 	void _openmp_manning_friction_flat_semi_implicit(domain *D)
 	void _openmp_manning_friction_sloped_semi_implicit(domain *D)
+	void _openmp_manning_friction_sloped_semi_implicit_edge_based(domain *D)
 	int64_t _openmp_saxpy_conserved_quantities(domain *D, double a, double b, double c)
 	int64_t _openmp_backup_conserved_quantities(domain *D)
-	int64_t _openmp_distribute_edges_to_vertices(domain *D)
+	void _openmp_distribute_edges_to_vertices(domain *D)
 	# FIXME SR: Change over to domain* D argument ?
 	void _openmp_manning_friction_flat(double g, double eps, int64_t N, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom, double* ymom)
 	void _openmp_manning_friction_sloped(double g, double eps, int64_t N, double* x, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom_update, double* ymom_update)
+	void _openmp_manning_friction_sloped_edge_based(double g, double eps, int64_t N, double* x, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom_update, double* ymom_update)
 	void _openmp_evaluate_reflective_segment(domain *D, int64_t N, int64_t *edge_ptr, int64_t *vol_ids_ptr, int64_t *edge_ids_ptr)
 	int64_t __flux_function_central(double* ql, double* qr, double h_left,
 	double h_right, double hle, double hre, double n1, double n2,
@@ -451,6 +454,13 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 
 #===============================================================================
 
+def set_omp_num_threads(int64_t num_threads):
+	"""
+	Set the number of OpenMP threads to use.
+	"""
+	_openmp_set_omp_num_threads(num_threads)
+
+	
 def compute_fluxes_ext_central(object domain_object, double timestep):
 
 	cdef domain D
@@ -463,7 +473,7 @@ def compute_fluxes_ext_central(object domain_object, double timestep):
 		timestep =  _openmp_compute_fluxes_central(&D, timestep)
 
 	return timestep
-	
+
 def extrapolate_second_order_sw(object domain_object):
 
 	cdef domain D
@@ -473,10 +483,8 @@ def extrapolate_second_order_sw(object domain_object):
 	get_python_domain_pointers(&D, domain_object)
 
 	with nogil:
-		e = _openmp_extrapolate_second_order_sw(&D)
+		_openmp_extrapolate_second_order_sw(&D)
 
-	if e == -1:
-		return None
 
 def distribute_edges_to_vertices(object domain_object):
 
@@ -487,14 +495,11 @@ def distribute_edges_to_vertices(object domain_object):
 	get_python_domain_pointers(&D, domain_object)
 
 	with nogil:
-		e = _openmp_distribute_edges_to_vertices(&D)
+		_openmp_distribute_edges_to_vertices(&D)
 
-	if e == -1:
-		return None
+	
 
-	return e	
-
-def extrapolate_second_order_edge_sw(object domain_object):
+def extrapolate_second_order_edge_sw(object domain_object, distribute_to_vertices=True):
 
 	cdef domain D
 	cdef int64_t e
@@ -502,11 +507,15 @@ def extrapolate_second_order_edge_sw(object domain_object):
 	get_python_domain_parameters(&D, domain_object)
 	get_python_domain_pointers(&D, domain_object)
 
-	with nogil:
-		e = _openmp_extrapolate_second_order_edge_sw(&D)
 
-	if e == -1:
-		return None
+	with nogil:
+		_openmp_extrapolate_second_order_edge_sw(&D)
+
+	if distribute_to_vertices:
+		with nogil:
+			_openmp_distribute_edges_to_vertices(&D)
+
+
 
 def protect_new(object domain_object):
 
@@ -547,12 +556,22 @@ def manning_friction_sloped_semi_implicit(object domain_object):
 	with nogil:
 		_openmp_manning_friction_sloped_semi_implicit(&D)
 
+def manning_friction_sloped_semi_implicit_edge_based(object domain_object):
+	
+	cdef domain D
 
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+
+	with nogil:
+		_openmp_manning_friction_sloped_semi_implicit_edge_based(&D)
+
+# FIXME SR: Why is the order of arguments different from the C function?
 def manning_friction_flat(double g, double eps,
             np.ndarray[double, ndim=1, mode="c"] w not None,
 			np.ndarray[double, ndim=1, mode="c"] uh not None,
 			np.ndarray[double, ndim=1, mode="c"] vh not None,
-			np.ndarray[double, ndim=1, mode="c"] z not None,
+			np.ndarray[double, ndim=1, mode="c"] z_centroid not None,
 			np.ndarray[double, ndim=1, mode="c"] eta not None,
 			np.ndarray[double, ndim=1, mode="c"] xmom not None,
 			np.ndarray[double, ndim=1, mode="c"] ymom not None):
@@ -560,14 +579,15 @@ def manning_friction_flat(double g, double eps,
 	cdef int64_t N
 	
 	N = w.shape[0]
-	_openmp_manning_friction_flat(g, eps, N, &w[0], &z[0], &uh[0], &vh[0], &eta[0], &xmom[0], &ymom[0])
+	_openmp_manning_friction_flat(g, eps, N, &w[0], &z_centroid[0], &uh[0], &vh[0], &eta[0], &xmom[0], &ymom[0])
 
+# FIXME SR: Why is the order of arguments different from the C function?
 def manning_friction_sloped(double g, double eps,
-        np.ndarray[double, ndim=2, mode="c"] x not None,
+        np.ndarray[double, ndim=2, mode="c"] x_vertex not None,
 		np.ndarray[double, ndim=1, mode="c"] w not None,
 		np.ndarray[double, ndim=1, mode="c"] uh not None,
 		np.ndarray[double, ndim=1, mode="c"] vh not None,
-		np.ndarray[double, ndim=2, mode="c"] z not None,
+		np.ndarray[double, ndim=2, mode="c"] z_vertex not None,
 		np.ndarray[double, ndim=1, mode="c"] eta not None,
 		np.ndarray[double, ndim=1, mode="c"] xmom not None,
 		np.ndarray[double, ndim=1, mode="c"] ymom not None):
@@ -575,7 +595,23 @@ def manning_friction_sloped(double g, double eps,
 	cdef int64_t N
 	
 	N = w.shape[0]
-	_openmp_manning_friction_sloped(g, eps, N, &x[0,0], &w[0], &z[0,0], &uh[0], &vh[0], &eta[0], &xmom[0], &ymom[0])
+	_openmp_manning_friction_sloped(g, eps, N, &x_vertex[0,0], &w[0], &z_vertex[0,0], &uh[0], &vh[0], &eta[0], &xmom[0], &ymom[0])
+
+# FIXME SR: Why is the order of arguments different from the C function?
+def manning_friction_sloped_edge_based(double g, double eps,
+        np.ndarray[double, ndim=2, mode="c"] x_edge not None,
+		np.ndarray[double, ndim=1, mode="c"] w not None,
+		np.ndarray[double, ndim=1, mode="c"] uh not None,
+		np.ndarray[double, ndim=1, mode="c"] vh not None,
+		np.ndarray[double, ndim=2, mode="c"] z_edge not None,
+		np.ndarray[double, ndim=1, mode="c"] eta not None,
+		np.ndarray[double, ndim=1, mode="c"] xmom not None,
+		np.ndarray[double, ndim=1, mode="c"] ymom not None):
+		
+	cdef int64_t N
+	
+	N = w.shape[0]
+	_openmp_manning_friction_sloped_edge_based(g, eps, N, &x_edge[0,0], &w[0], &z_edge[0,0], &uh[0], &vh[0], &eta[0], &xmom[0], &ymom[0])
 
 
 def fix_negative_cells(object domain_object):
