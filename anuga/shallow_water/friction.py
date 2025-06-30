@@ -21,131 +21,154 @@ from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a
 
 def manning_friction_semi_implicit(domain):
     
-    if domain.multiprocessor_mode in [0,1]:
-        manning_friction_semi_implicit_cpu(domain)
-    elif domain.multiprocessor_mode in [2,3]:
-        manning_friction_semi_implicit_openmp(domain)
-    elif domain.multiprocessor_mode == 4:
-        manning_friction_semi_implicit_gpu(domain)
+    if domain.multiprocessor_mode == 1:
+        if domain.use_sloped_mannings:
+            # OpenMP version for sloped mannings
+            from .sw_domain_openmp_ext import manning_friction_sloped_semi_implicit_edge_based
+            manning_friction_sloped_semi_implicit_edge_based(domain)
+            #from .sw_domain_openmp_ext import manning_friction_sloped_semi_implicit
+            #manning_friction_sloped_semi_implicit(domain)
+        else:
+            # OpenMP version for flat mannings
+            from .sw_domain_openmp_ext import manning_friction_flat_semi_implicit
+            manning_friction_flat_semi_implicit(domain)
 
 
-def manning_friction_semi_implicit_cpu(domain):
-    """Apply (Manning) friction to water momentum
-    """
+    elif domain.multiprocessor_mode == 2:
+        # GPU version not implemented yet, use openmp version
+        if domain.use_sloped_mannings:
+            # OpenMP version for sloped mannings
+            from .sw_domain_openmp_ext import manning_friction_sloped_semi_implicit_edge_based
+            manning_friction_sloped_semi_implicit_edge_based(domain)
+        else:
+            # OpenMP version for flat mannings
+            from .sw_domain_openmp_ext import manning_friction_flat_semi_implicit
+            manning_friction_flat_semi_implicit(domain)
+    else:
+        raise ValueError(f"""
+manning_friction_semi_implicit:
+multiprocessor_mode {domain.multiprocessor_mode} not supported
+""")
+
+# # Old code
+# def manning_friction_semi_implicit_cpu(domain):
+#     """Apply (Manning) friction to water momentum
+#     """
     
-    from .sw_domain_openmp_ext import manning_friction_flat
-    from .sw_domain_openmp_ext import manning_friction_sloped
+#     from .sw_domain_openmp_ext import manning_friction_flat
+#     from .sw_domain_openmp_ext import manning_friction_sloped
+#     from .sw_domain_openmp_ext import manning_friction_sloped_edge_based
     
-    xmom = domain.quantities['xmomentum']
-    ymom = domain.quantities['ymomentum']
+#     xmom = domain.quantities['xmomentum']
+#     ymom = domain.quantities['ymomentum']
 
-    # really only need this if using sloped mannings
-    x = domain.get_vertex_coordinates()
+#     # really only need this if using sloped mannings
+#     x = domain.get_vertex_coordinates()
 
-    w = domain.quantities['stage'].centroid_values
-    z = domain.quantities['elevation'].centroid_values
-    zv = domain.quantities['elevation'].vertex_values
+#     w = domain.quantities['stage'].centroid_values
+#     z = domain.quantities['elevation'].centroid_values
+#     zv = domain.quantities['elevation'].vertex_values
 
-    uh = xmom.centroid_values
-    vh = ymom.centroid_values
-    eta = domain.quantities['friction'].centroid_values
+#     uh = xmom.centroid_values
+#     vh = ymom.centroid_values
+#     eta = domain.quantities['friction'].centroid_values
 
-    xmom_update = xmom.semi_implicit_update
-    ymom_update = ymom.semi_implicit_update
+#     xmom_update = xmom.semi_implicit_update
+#     ymom_update = ymom.semi_implicit_update
 
-    eps = domain.minimum_allowed_height
-    g = domain.g
+#     eps = domain.minimum_allowed_height
+#     g = domain.g
 
-    if domain.use_sloped_mannings:
-        manning_friction_sloped(g, eps, x, w, uh, vh, zv, eta, xmom_update, \
-                                ymom_update)
-    else:
-        manning_friction_flat(g, eps, w, uh, vh, z, eta, xmom_update, \
-                                ymom_update)
-
-
-def manning_friction_semi_implicit_openmp(domain):
-    """Apply (Manning) friction to water momentum
-    Wrapper for c version.
-    """
-
-    if domain.use_sloped_mannings:
-        from .sw_domain_openmp_ext import manning_friction_sloped_semi_implicit
-        manning_friction_sloped_semi_implicit(domain)
-
-    else:
-        from .sw_domain_openmp_ext import manning_friction_flat_semi_implicit
-        manning_friction_flat_semi_implicit(domain)
+#     if domain.use_sloped_mannings:
+#         manning_friction_sloped(g, eps, x, w, uh, vh, zv, eta, xmom_update, \
+#                                 ymom_update)
+#     else:
+#         manning_friction_flat(g, eps, w, uh, vh, z, eta, xmom_update, \
+#                                 ymom_update)
 
 
-def manning_friction_explicit(domain):
+# def manning_friction_semi_implicit_openmp(domain):
+#     """Apply (Manning) friction to water momentum
+#     Wrapper for c version.
+#     """
+
+#     if domain.use_sloped_mannings:
+#         from .sw_domain_openmp_ext import manning_friction_sloped_semi_implicit
+#         manning_friction_sloped_semi_implicit(domain)
+
+#     else:
+#         from .sw_domain_openmp_ext import manning_friction_flat_semi_implicit
+#         manning_friction_flat_semi_implicit(domain)
+
+
+# def manning_friction_explicit(domain):
     
-    if domain.multiprocessor_mode in [0,1,2,3]:
-        manning_friction_explicit_cpu(domain)
-    elif domain.multiprocessor_mode == 4:
-        manning_friction_explicit_gpu(domain)
+#     if domain.multiprocessor_mode in [0,1,2,3]:
+#         manning_friction_explicit_cpu(domain)
+#     elif domain.multiprocessor_mode == 4:
+#         manning_friction_explicit_gpu(domain)
 
 
-def manning_friction_explicit_cpu(domain):
-    """Apply (Manning) friction to water momentum
-    Wrapper for c version
-    """
+# def manning_friction_explicit_cpu(domain):
+#     """Apply (Manning) friction to water momentum
+#     Wrapper for c version
+#     """
 
-    if domain.multiprocessor_mode == 2:
-        from .sw_domain_openmp_ext import manning_friction_flat
-        from .sw_domain_openmp_ext import manning_friction_sloped
-    else:
-        from .sw_domain_orig_ext import manning_friction_flat
-        from .sw_domain_orig_ext import manning_friction_sloped
-
-
-    xmom = domain.quantities['xmomentum']
-    ymom = domain.quantities['ymomentum']
-
-    x = domain.get_vertex_coordinates()
-
-    w = domain.quantities['stage'].centroid_values
-    z = domain.quantities['elevation'].centroid_values
-    zv = domain.quantities['elevation'].vertex_values
-
-    uh = xmom.centroid_values
-    vh = ymom.centroid_values
-    eta = domain.quantities['friction'].centroid_values
-
-    xmom_update = xmom.explicit_update
-    ymom_update = ymom.explicit_update
-
-    eps = domain.minimum_allowed_height
-
-    if domain.use_sloped_mannings:
-        manning_friction_sloped(domain.g, eps, x, w, uh, vh, zv, eta, xmom_update, \
-                            ymom_update)
-    else:
-        manning_friction_flat(domain.g, eps, w, uh, vh, z, eta, xmom_update, \
-                            ymom_update)
+#     if domain.multiprocessor_mode == 2:
+#         from .sw_domain_openmp_ext import manning_friction_flat
+#         from .sw_domain_openmp_ext import manning_friction_sloped
+#     else:
+#         from .sw_domain_orig_ext import manning_friction_flat
+#         from .sw_domain_orig_ext import manning_friction_sloped
 
 
+#     xmom = domain.quantities['xmomentum']
+#     ymom = domain.quantities['ymomentum']
 
-#GPU version of manning_friction_implicit that'll call the kernel written in sw_domain_cuda
-def manning_friction_implicit_gpu(domain):
-    """Apply (Manning) friction to water momentum
-    Wrapper for c version
-    """
-    if domain.use_sloped_mannings:
-        domain.gpu_interface.compute_forcing_terms_manning_friction_sloped()
-    else:
-        domain.gpu_interface.compute_forcing_terms_manning_friction_flat()
+#     x = domain.get_vertex_coordinates()
+
+#     w = domain.quantities['stage'].centroid_values
+#     z = domain.quantities['elevation'].centroid_values
+#     zv = domain.quantities['elevation'].vertex_values
+
+#     uh = xmom.centroid_values
+#     vh = ymom.centroid_values
+#     eta = domain.quantities['friction'].centroid_values
+
+#     xmom_update = xmom.explicit_update
+#     ymom_update = ymom.explicit_update
+
+#     eps = domain.minimum_allowed_height
+
+#     if domain.use_sloped_mannings:
+#         manning_friction_sloped(domain.g, eps, x, w, uh, vh, zv, eta, xmom_update, \
+#                             ymom_update)
+#     else:
+#         manning_friction_flat(domain.g, eps, w, uh, vh, z, eta, xmom_update, \
+#                             ymom_update)
 
 
-#GPU version of manning_friction_explicit that'll call the kernel written in sw_domain_cuda
-def manning_friction_explicit_gpu(domain):
-    """Apply (Manning) friction to water momentum
-    Wrapper for c version
-    """
-    if domain.use_sloped_mannings:
-        domain.gpu_interface.compute_forcing_terms_manning_friction_sloped()
-    else:
-        domain.gpu_interface.compute_forcing_terms_manning_friction_flat()
+
+# #GPU version of manning_friction_implicit that'll call the kernel written in sw_domain_cuda
+# def manning_friction_implicit_gpu(domain):
+#     """Apply (Manning) friction to water momentum
+#     Wrapper for c version
+#     """
+#     if domain.use_sloped_mannings:
+#         domain.gpu_interface.compute_forcing_terms_manning_friction_sloped()
+#     else:
+#         domain.gpu_interface.compute_forcing_terms_manning_friction_flat()
+
+
+# #GPU version of manning_friction_explicit that'll call the kernel written in sw_domain_cuda
+# def manning_friction_explicit_gpu(domain):
+#     """Apply (Manning) friction to water momentum
+#     Wrapper for c version
+#     """
+#     if domain.use_sloped_mannings:
+#         domain.gpu_interface.compute_forcing_terms_manning_friction_sloped()
+#     else:
+#         domain.gpu_interface.compute_forcing_terms_manning_friction_flat()
 
 
 # FIXME (Ole): This was implemented for use with one of the analytical solutions

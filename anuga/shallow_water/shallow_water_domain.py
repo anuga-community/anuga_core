@@ -316,6 +316,13 @@ class Domain(Generic_Domain):
         self.set_multiprocessor_mode(1)
 
         #-------------------------------
+        # If environment variable OMP_NUM_THREADS is not set, 
+        # then set to default (1 thread). If a value is given to
+        # the method, then it will override the default.
+        #------------------------------
+        self.set_omp_num_threads()
+
+        #-------------------------------
         # datetime and timezone
         #-------------------------------
         self.set_timezone()
@@ -1870,6 +1877,30 @@ class Domain(Generic_Domain):
         """ extrapolate centroid values to vertices and edges"""
 
         # Do protection step
+        nvtxRangePush('protect against negative heights')
+        self.protect_against_infinitesimal_and_negative_heights()
+        nvtxRangePop()
+
+        # Do extrapolation step
+        # nvtxRangePush('extrapolate')
+        # Choose the correct extension module
+        if self.multiprocessor_mode == 1:
+            from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
+        elif self.multiprocessor_mode == 2:
+            # change over to cuda routines as developed
+            #from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
+            extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
+        else:
+            raise Exception('Not implemented')
+
+        nvtxRangePush('extrapolate_second_order_edge_sw')
+        extrapolate_second_order_edge_sw(self)
+        nvtxRangePop()
+
+    def distribute_to_edges(self):
+        """ extrapolate centroid values edges"""
+
+        # Do protection step
         nvtxRangePush('protect_against_infinities')
         self.protect_against_infinitesimal_and_negative_heights()
         nvtxRangePop()
@@ -1888,8 +1919,29 @@ class Domain(Generic_Domain):
         else:
             raise Exception('Not implemented')
 
-        # nvtxRangePop()
+        # nvtxRangePop()        
 
+    def distribute_edges_to_vertices(self):
+        """Distribute edge values to vertices.
+        
+        This is a wrapper for the C implementation of the distribution
+        from edges to vertices.
+        """
+
+        if self.multiprocessor_mode == 1:
+            # Using OpenMP extension
+            from .sw_domain_openmp_ext import distribute_edges_to_vertices as distribute_edges_to_vertices_ext
+        elif self.multiprocessor_mode == 2:
+            # Using CUDA extension
+            # FIXME SR: Not implemented yet so use OpenMP version
+            from .sw_domain_openmp_ext import distribute_edges_to_vertices as distribute_edges_to_vertices_ext
+            # distribute_edges_to_vertices_ext = self.gpu_interface.distribute_edges_to_vertices_kernel
+        else:
+            raise Exception('Not implemented')
+        
+        # nvtxRangePush('distribute_edges_to_vertices')
+        distribute_edges_to_vertices_ext(self)
+        # nvtxRangePop()
 
     def distribute_using_edge_limiter(self):
         """Distribution from centroids to edges specific to the SWW eqn.
@@ -3122,6 +3174,37 @@ class Domain(Generic_Domain):
         2. cuda (in development)
         """
         return self.multiprocessor_mode 
+
+    def set_omp_num_threads(self, omp_num_threads=None):
+        """
+        Set the number of OpenMP threads to use for parallel processing.
+        If OMP_NUM_THREADS is not set, this will set it to the specified 
+        omp_num_threads value.
+        By default omp_num_threads is set to 1, other , it will use the default setting.
+        """
+
+        import os
+        if omp_num_threads is None:
+            # Use the default setting
+            omp_num_threads = os.environ.get('OMP_NUM_THREADS', None)
+            #print(f'Using OMP_NUM_THREADS from environment: {omp_num_threads}')
+
+
+        if omp_num_threads is None:
+            omp_num_threads = 1  # Default to 1 if not set
+
+        try:
+            omp_num_threads = int(omp_num_threads)
+        except ValueError:
+            raise ValueError('OMP_NUM_THREADS must be an integer')            
+
+        # Set the number of OpenMP threads
+        self.omp_num_threads = omp_num_threads
+        from .sw_domain_openmp_ext import set_omp_num_threads
+        set_omp_num_threads(omp_num_threads)
+        
+        print(f'Setting omp_num_threads to {omp_num_threads}')
+
 
     def set_gpu_interface(self):
 
