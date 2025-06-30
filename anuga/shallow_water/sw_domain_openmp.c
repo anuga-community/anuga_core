@@ -1025,7 +1025,7 @@ static inline void compute_edge_diffs(const double x, const double y,
 // Computational routine
 // Extrapolate second order edge values from centroid values
 // This is the current procedure used in evolve loop.
-anuga_int _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
+void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 {
   double minimum_allowed_height = D->minimum_allowed_height;
   anuga_int number_of_elements = D->number_of_elements;
@@ -1236,10 +1236,7 @@ if(extrapolate_velocity_second_order == 1)
       D->ymom_centroid_values[k] = D->y_centroid_work[k];
   }
 }
-  // Convert velocity back to momenta at centroids
 
-
-  return 0;
 }
 
 void _openmp_distribute_edges_to_vertices(struct domain *__restrict D)
@@ -1366,10 +1363,71 @@ for (k = 0; k < N; k++)
   }
 }
 
+void _openmp_manning_friction_sloped_semi_implicit_edge_based(const struct domain *__restrict D)
+{
+  anuga_int k;
+  const double one_third = 1.0 / 3.0;
+  const double seven_thirds = 7.0 / 3.0;
+
+  anuga_int N = D->number_of_elements;
+  const double  g = D->g;
+  const double  eps = D->minimum_allowed_height;
+  
+#pragma omp parallel for simd default(none) shared(D) schedule(static) \
+        firstprivate(N, eps, g, seven_thirds, one_third)
+for (k = 0; k < N; k++)
+  {
+    double S, h, z, z0, z1, z2, zs, zx, zy;
+    double x0, y0, x1, y1, x2, y2;
+    anuga_int k3, k6;
+
+    double w = D->stage_centroid_values[k];
+    double uh = D->xmom_centroid_values[k];
+    double vh = D->ymom_centroid_values[k];
+    double eta = D->friction_centroid_values[k];
+
+    S = 0.0;
+    k3 = 3 * k;
+    
+    // Get bathymetry
+    z0 = D->bed_edge_values[k3 + 0];
+    z1 = D->bed_edge_values[k3 + 1];
+    z2 = D->bed_edge_values[k3 + 2];
+
+    // Compute bed slope
+    k6 = 6 * k; // base index
+
+    
+    x0 = D->edge_coordinates[k6 + 0];
+    y0 = D->edge_coordinates[k6 + 1];
+    x1 = D->edge_coordinates[k6 + 2];
+    y1 = D->edge_coordinates[k6 + 3];
+    x2 = D->edge_coordinates[k6 + 4];
+    y2 = D->edge_coordinates[k6 + 5];
+
+    
+    if (eta > 1.0e-16)
+    {
+      _gradient(x0, y0, x1, y1, x2, y2, z0, z1, z2, &zx, &zy);
+
+      zs = sqrt(1.0 + zx * zx + zy * zy);
+      z = (z0 + z1 + z2) * one_third;
+
+      h = w - z;
+      if (h >= eps)
+      {
+        S = -g*eta*eta*zs * sqrt((uh*uh + vh*vh));
+        S /= pow(h, seven_thirds); 
+      }
+    }
+    D->xmom_semi_implicit_update[k] += S * uh;
+    D->ymom_semi_implicit_update[k] += S * vh;
+  }
+}
 
 // Original function for flat friction
 void _openmp_manning_friction_flat(const double g, const double eps, const anuga_int N,
-                                   double *__restrict w, double *__restrict zv,
+                                   double *__restrict w, double *__restrict z_centroid,
                                    double *__restrict uh, double *__restrict vh,
                                    double *__restrict eta, double *__restrict xmom_update, double *__restrict ymom_update)
 {
@@ -1386,7 +1444,7 @@ void _openmp_manning_friction_flat(const double g, const double eps, const anuga
 
     if (eta[k] > eps)
     {
-      z = zv[k];
+      z = z_centroid[k];
       h = w[k] - z;
       if (h >= eps)
       {
@@ -1401,7 +1459,7 @@ void _openmp_manning_friction_flat(const double g, const double eps, const anuga
 
 
 void _openmp_manning_friction_sloped(const double g, const double eps, const anuga_int N,
-                                     double *__restrict x, double *__restrict w, double *__restrict zv,
+                                     double *__restrict x_vertex, double *__restrict w, double *__restrict z_vertex,
                                      double *__restrict uh, double *__restrict vh,
                                      double *__restrict eta, double *__restrict xmom_update, double *__restrict ymom_update)
 {
@@ -1415,19 +1473,19 @@ void _openmp_manning_friction_sloped(const double g, const double eps, const anu
     double S = 0.0;
     anuga_int k3 = 3 * k;
     // Get bathymetry
-    double z0 = zv[k3 + 0];
-    double z1 = zv[k3 + 1];
-    double z2 = zv[k3 + 2];
+    double z0 = z_vertex[k3 + 0];
+    double z1 = z_vertex[k3 + 1];
+    double z2 = z_vertex[k3 + 2];
 
     // Compute bed slope
     anuga_int k6 = 6 * k; // base index
 
-    double x0 = x[k6 + 0];
-    double y0 = x[k6 + 1];
-    double x1 = x[k6 + 2];
-    double y1 = x[k6 + 3];
-    double x2 = x[k6 + 4];
-    double y2 = x[k6 + 5];
+    double x0 = x_vertex[k6 + 0];
+    double y0 = x_vertex[k6 + 1];
+    double x1 = x_vertex[k6 + 2];
+    double y1 = x_vertex[k6 + 3];
+    double x2 = x_vertex[k6 + 4];
+    double y2 = x_vertex[k6 + 5];
 
     if (eta[k] > eps)
     {
@@ -1448,6 +1506,53 @@ void _openmp_manning_friction_sloped(const double g, const double eps, const anu
   }
 }
 
+void _openmp_manning_friction_sloped_edge_based(const double g, const double eps, const anuga_int N,
+                                     double *__restrict x_edge, double *__restrict w, double *__restrict z_edge,
+                                     double *__restrict uh, double *__restrict vh,
+                                     double *__restrict eta, double *__restrict xmom_update, double *__restrict ymom_update)
+{
+
+  const double one_third = 1.0 / 3.0;
+  const double seven_thirds = 7.0 / 3.0;
+
+#pragma omp parallel for schedule(static) firstprivate(eps, g, one_third, seven_thirds)
+  for (anuga_int k = 0; k < N; k++)
+  {
+    double S = 0.0;
+    anuga_int k3 = 3 * k;
+    // Get bathymetry
+    double z0 = z_edge[k3 + 0];
+    double z1 = z_edge[k3 + 1];
+    double z2 = z_edge[k3 + 2];
+
+    // Compute bed slope
+    anuga_int k6 = 6 * k; // base index
+
+    double x0 = x_edge[k6 + 0];
+    double y0 = x_edge[k6 + 1];
+    double x1 = x_edge[k6 + 2];
+    double y1 = x_edge[k6 + 3];
+    double x2 = x_edge[k6 + 4];
+    double y2 = x_edge[k6 + 5];
+
+    if (eta[k] > eps)
+    {
+      double zx, zy, zs, z, h;
+      _gradient(x0, y0, x1, y1, x2, y2, z0, z1, z2, &zx, &zy);
+
+      zs = sqrt(1.0 + zx * zx + zy * zy);
+      z = (z0 + z1 + z2) * one_third;
+      h = w[k] - z;
+      if (h >= eps)
+      {
+        S = -g * eta[k] * eta[k] * zs * sqrt((uh[k] * uh[k] + vh[k] * vh[k]));
+        S /= pow(h, seven_thirds); 
+      }
+    }
+    xmom_update[k] += S * uh[k];
+    ymom_update[k] += S * vh[k];
+  }
+}
 
 
 // Computational function for flux computation
@@ -1598,7 +1703,7 @@ anuga_int _openmp_gravity_wb(const struct domain *__restrict D) {
 // This function is now replaced by _openmp_extrapolate_second_order_edge_sw
 // which uses SIMD and OpenMP for parallelization
 // This function is kept for reference and compatibility
-anuga_int _openmp_extrapolate_second_order_sw(const struct domain *__restrict D) {
+void _openmp_extrapolate_second_order_sw(const struct domain *__restrict D) {
 
 
   // Domain Variables
@@ -2012,10 +2117,10 @@ anuga_int _extrapolate_second_order_sw(anuga_int number_of_elements,
                 }
             }
 
-            if (k2 == k3 + 3) {
-                // If we didn't find an internal neighbour
-                return -1;
-            }
+            // if (k2 == k3 + 3) {
+            //     // If we didn't find an internal neighbour
+            //     return -1;
+            // }
 
             k1 = surrogate_neighbours[k2];
 
@@ -2195,8 +2300,6 @@ anuga_int _extrapolate_second_order_sw(anuga_int number_of_elements,
     //free(stage_centroid_store);
 
 
-    return 0;
-
 }
 
 
@@ -2375,7 +2478,13 @@ anuga_int _openmp_backup_conserved_quantities(const struct domain *__restrict D)
   return 0;
 }
 
-void 	_openmp_evaluate_reflective_segment(struct domain *D, anuga_int N,
+void _openmp_set_omp_num_threads(anuga_int num_threads)
+{
+  // Set the number of threads for OpenMP
+  // This is a global setting and will affect all subsequent OpenMP parallel regions
+  omp_set_num_threads(num_threads);
+}
+void _openmp_evaluate_reflective_segment(struct domain *D, anuga_int N,
    anuga_int *edge_segment, anuga_int *vol_ids, anuga_int *edge_ids){
 
     #pragma omp parallel for schedule(static)
