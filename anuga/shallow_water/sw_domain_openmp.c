@@ -58,7 +58,7 @@ anuga_int __rotate(double *q, const double n1, const double n2)
   return 0;
 }
 // general function to replace the repeated if statements for the velocity terms
-static inline void compute_velocity_terms(
+inline void compute_velocity_terms(
     const double h, const double h_edge,
     const double uh_raw, const double vh_raw,
     double *__restrict u, double *__restrict uh, double *__restrict v, double *__restrict vh)
@@ -82,7 +82,7 @@ static inline void compute_velocity_terms(
   }
 }
 
-static inline double compute_local_froude(
+inline double compute_local_froude(
     const anuga_int low_froude,
     const double u_left, const double u_right,
     const double v_left, const double v_right,
@@ -108,14 +108,14 @@ static inline double compute_local_froude(
   }
 }
 
-static inline double compute_s_max(const double u_left, const double u_right,
+inline double compute_s_max(const double u_left, const double u_right,
                                    const double c_left, const double c_right)
 {
   double s = fmax(u_left + c_left, u_right + c_right);
   return (s < 0.0) ? 0.0 : s;
 }
 
-static inline double compute_s_min(const double u_left, const double u_right,
+inline double compute_s_min(const double u_left, const double u_right,
                                    const double c_left, const double c_right)
 {
   double s = fmin(u_left - c_left, u_right - c_right);
@@ -123,7 +123,7 @@ static inline double compute_s_min(const double u_left, const double u_right,
 }
 
 // Innermost flux function (using stage w=z+h)
-anuga_int __flux_function_central(double *__restrict q_left, double *__restrict q_right,
+inline anuga_int __flux_function_central(double *__restrict q_left, double *__restrict q_right,
                                 const double h_left, const double h_right,
                                 const double hle, const double hre,
                                 const double n1, const double n2,
@@ -424,7 +424,7 @@ double __openmp__adjust_edgeflux_with_weir(double *edgeflux0, double *edgeflux1,
 }
 
 // Apply weir discharge theory correction to the edge flux
-void apply_weir_discharge_correction(const struct domain * __restrict D, const EdgeData * __restrict E,
+inline void apply_weir_discharge_correction(const struct domain * __restrict D, const EdgeData * __restrict E,
                                      const anuga_int k, const anuga_int ncol_riverwall_hydraulic_properties,
                                      const double g, double * __restrict edgeflux, double * __restrict max_speed) {
 
@@ -442,7 +442,8 @@ void apply_weir_discharge_correction(const struct domain * __restrict D, const E
     double h_left_tmp = fmax(D->stage_centroid_values[k] - E->z_half, 0.);
     double h_right_tmp = E->is_boundary
                          ? fmax(E->hc_n + E->zr - E->z_half, 0.)
-                         : fmax(D->stage_centroid_values[E->n] - E->z_half, 0.);
+                         : fmax(D->stage_centroid_values[ii] - E->z_half, 0.);
+                         //: fmax(D->stage_centroid_values[E->n] - E->z_half, 0.);
 
     if (D->riverwall_elevation[RiverWall_count - 1] > fmax(E->zc, E->zc_n)) {
         __adjust_edgeflux_with_weir(edgeflux, h_left_tmp, h_right_tmp, g,
@@ -488,9 +489,28 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
       double max_speed_local;
       EdgeData edge_data;
 // For all triangles
-#pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, number_of_elements) \
-    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)                              \
-    private(edgeflux, pressure_flux, max_speed_local, edge_data) \
+
+
+#pragma omp target teams distribute parallel for default(none) schedule(static) shared(D, substep_count, number_of_elements) \
+    map(tofrom:D[0:1],D->stage_explicit_update[0:number_of_elements], D->xmom_explicit_update[0:number_of_elements]) \
+    map(tofrom:D->ymom_explicit_update[0:number_of_elements],  D->tri_full_flag[0:number_of_elements])\
+    map(tofrom:D->radii[0:number_of_elements],  D->normals[0:number_of_elements])\
+    map(tofrom:D->areas[0:number_of_elements],  D->boundary_flux_sum[0:number_of_elements])\
+    map(to:edge_data[0:1], edgeflux[0:3])\
+    map(to:edge_data.ql[0:3], edge_data.qr[0:3])\
+    map(to:D->stage_centroid_values[0:number_of_elements])\
+    map(to:D->stage_edge_values[0:number_of_elements],D->xmom_edge_values[0:number_of_elements])\
+    map(to:D->ymom_edge_values[0:number_of_elements],D->bed_edge_values[0:number_of_elements])\
+    map(to:D->height_edge_values[0:number_of_elements],D->edgelengths[0:number_of_elements])\
+    map(to:D->neighbours[0:number_of_elements],D->height_centroid_values[0:number_of_elements])\
+    map(to:D->bed_centroid_values[0:number_of_elements],D->stage_boundary_values[0:number_of_elements])\
+    map(to:D->xmom_boundary_values[0:number_of_elements],D->ymom_boundary_values[0:number_of_elements])\
+    map(to:D->neighbour_edges[0:number_of_elements],D->edge_flux_type[0:number_of_elements])\
+    map(to:D->edge_river_wall_counter[0:number_of_elements],D->riverwall_elevation[0:number_of_elements])\
+    map(to:D->riverwall_rowIndex[0:number_of_elements])\
+    map(tofrom:D->max_speed[0:number_of_elements])\
+    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)\
+    private(pressure_flux, max_speed_local) \
     reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
   for (anuga_int k = 0; k < number_of_elements; k++)
   {
@@ -530,7 +550,7 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
 
     // Weir flux adjustment
     if (edge_data.is_riverwall) {
-      apply_weir_discharge_correction(D, &edge_data, k, ncol_riverwall_hydraulic_properties, g, edgeflux, &max_speed_local);
+      //apply_weir_discharge_correction(D, &edge_data, k, ncol_riverwall_hydraulic_properties, g, edgeflux, &max_speed_local);
     }
 
       // Multiply edgeflux by edgelength
@@ -558,7 +578,8 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
       // If this cell is not a ghost, and the neighbour is a
       // boundary condition OR a ghost cell, then add the flux to the
       // boundary_flux_integral
-      if (((edge_data.n < 0) & (D->tri_full_flag[k] == 1)) | ((edge_data.n >= 0) && ((D->tri_full_flag[k] == 1) & (D->tri_full_flag[edge_data.n] == 0))))
+      //if (((edge_data.n < 0) & (D->tri_full_flag[k] == 1)) | ((edge_data.n >= 0) && ((D->tri_full_flag[k] == 1) & (D->tri_full_flag[edge_data.n] == 0))))
+      if (((edge_data.n < 0) & (D->tri_full_flag[k] == 1)) | ((edge_data.n >= 0) && ((D->tri_full_flag[k] == 1) & (D->tri_full_flag[k] == 0))))
       {
         // boundary_flux_sum is an array with length = timestep_fluxcalls
         // For each sub-step, we put the boundary flux sum in.
@@ -2391,3 +2412,37 @@ void 	_openmp_evaluate_reflective_segment(struct domain *D, anuga_int N,
      }
 
 }
+
+void test_function(float a_val, float b_val, anuga_int number_of_elements, anuga_int reps){
+
+float *a = (float *)malloc(sizeof(float) * number_of_elements);
+float *b = (float *)malloc(sizeof(float) * number_of_elements);
+float *out = (float *)malloc(sizeof(float) * number_of_elements);
+for(anuga_int i = 0; i < number_of_elements; i++){
+  a[i] = ((float)rand()) / RAND_MAX;
+  b[i] = ((float)rand()) / RAND_MAX;}
+float alpha = 42.0f;
+printf("Allocated a matrix of size %d\n", number_of_elements);
+for(anuga_int i = 0; i < reps; i++){
+  printf(" Doing rep %d i of %d \n", i, reps);
+#pragma omp target teams distribute parallel for map(to: a[:number_of_elements], b[:number_of_elements]) map(from: out[:number_of_elements])
+  for(size_t j = 0; j < number_of_elements; j++){
+    out[j] = alpha * a[j] + b[j]; 
+  }
+
+}
+
+    // Check a few results
+    float sum = 0.0f;
+    for (int i = 0; i < 5; ++i) {
+        printf("out[%d] = %f\n", i, out[i]);
+        sum += out[i];
+    }
+    printf("sum = %f \n ", sum);
+
+    free(a);
+    free(b);
+    free(out);
+
+} 
+

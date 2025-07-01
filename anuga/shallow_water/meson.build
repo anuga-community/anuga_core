@@ -14,9 +14,10 @@ inc_dir = include_directories('../utilities', incdir_numpy)
 
 py3.extension_module('sw_domain_openmp_ext',
   sources: ['sw_domain_openmp_ext.pyx'],
-  c_args : openmp_c_args,
   include_directories: inc_dir,
   dependencies: openmp_deps,
+  c_args : openmp_c_args,
+  link_args: openmp_c_args,
   subdir: 'anuga/shallow_water',
   install: true,
 )

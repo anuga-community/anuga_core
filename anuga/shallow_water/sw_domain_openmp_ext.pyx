@@ -105,6 +105,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	struct edge:
 		pass
 
+	void test_function(float a, float b, int64_t size, int64_t reps)
 	int64_t __rotate(double *q, double n1, double n2)
 	double _openmp_compute_fluxes_central(domain* D, double timestep)
 	double _openmp_protect(domain* D)
@@ -693,3 +694,6 @@ def gravity_wb(object domain_object):
 	if err == -1:
 		return None
 
+def call_c_function_from_python(float a, float b, int64_t size, int64_t reps):
+	print("HIIIIII")
+	test_function(a, b, size, reps)

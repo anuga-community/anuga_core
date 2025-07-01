@@ -271,15 +271,15 @@ typedef struct {
     double z_half;
     double normal_x, normal_y;
     double length;
-    int n; // neighbour index
-    int ki, ki2;
+    anuga_int n; // neighbour index
+    anuga_int ki, ki2;
     bool is_boundary;
     bool is_riverwall;
-    int riverwall_index;
+    anuga_int riverwall_index;
 } EdgeData;
 
 // Extract edge-related data and organize it into EdgeData
-static inline void get_edge_data_central_flux(const struct domain * __restrict D, const int k, const int i, EdgeData * __restrict E) {
+inline void get_edge_data_central_flux(const struct domain * __restrict D, const int k, const int i, EdgeData * __restrict E) {
     E->ki = 3 * k + i;
     E->ki2 = 2 * E->ki;
 
@@ -299,7 +299,7 @@ static inline void get_edge_data_central_flux(const struct domain * __restrict D
     E->zc = D->bed_centroid_values[k];
     E->hc_n=E->hc;
     E->zc_n=D->bed_centroid_values[k];
-
+/*
     if (E->is_boundary) {
         int m = -E->n - 1;
         E->qr[0] = D->stage_boundary_values[m];
@@ -318,6 +318,7 @@ static inline void get_edge_data_central_flux(const struct domain * __restrict D
         E->zr = D->bed_edge_values[nm];
         E->hre = D->height_edge_values[nm];
     }
+    */
 
     E->z_half = fmax(E->zl, E->zr);
 
@@ -325,7 +326,8 @@ static inline void get_edge_data_central_flux(const struct domain * __restrict D
     E->is_riverwall = (D->edge_flux_type[E->ki] == 1);
     if (E->is_riverwall) {
         E->riverwall_index = D->edge_river_wall_counter[E->ki] - 1;
-        double zwall = D->riverwall_elevation[E->riverwall_index];
+        //TODO FIX
+        double zwall = 1.0;// D->riverwall_elevation[E->riverwall_index];
         E->z_half = fmax(zwall, E->z_half);
     }
 

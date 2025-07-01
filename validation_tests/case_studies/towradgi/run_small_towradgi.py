@@ -71,7 +71,7 @@ verbose = args.verbose
 verbose = False
 yieldstep=10. # yield evolve loop every 10 seconds
 outputstep=60. # update sww files every 60 seconds
-finaltime=140. #83700.
+finaltime=30. #83700.
 
 scale = 1 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
