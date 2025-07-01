@@ -1,4 +1,4 @@
-name: Conda setup
+name: github CI
 
 on: [pull_request, push]
 
