@@ -20,7 +20,7 @@ try:
     import pylab
     pylab.hold(False)  # Check if this command can be issued
 except:
-    print 'Could not import pylab'
+    print('Could not import pylab')
     plotting = False
 else:
     # Create plots as png files
@@ -85,7 +85,7 @@ def plot_timeseries(timevector,
     N = timevector.shape[0]
     assert timeseries.shape[0] == N    
 
-    print 'Plotting gauge "%s"' % name
+    print('Plotting gauge "%s"' % name)
 
     if True:
         # Generate plots
@@ -104,8 +104,8 @@ def plot_timeseries(timevector,
 
 timevector, timeseries = get_timeseries(join('outputs','patong.sww'), gauges )
 
-print timevector.shape
-print timeseries.keys()
+print(timevector.shape)
+print(timeseries.keys())
 
 for gauge, ts in timeseries.iteritems():
     plot_timeseries(timevector, ts, name=join('outputs',gauge+'.png'))

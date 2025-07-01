@@ -35,7 +35,7 @@ import project
 # Create Domain from mesh
 #-------------------------
 domain = Domain(project.mesh_filename, use_cache=True, verbose=True)
-print domain.statistics()
+print(domain.statistics())
 
 
 #-------------------------
@@ -48,7 +48,7 @@ import time
 t0 = time.time()
 bathymetry_filename=project.bathymetry_filename
 bathymetry_filename='Benchmark_2_Bathymetry_very_thin.pts'
-print 'Starting domain.set_quantity.  Loading ', bathymetry_filename
+print('Starting domain.set_quantity.  Loading ', bathymetry_filename)
 s = "domain.set_quantity('elevation',filename=bathymetry_filename,alpha=0.02,verbose=True,use_cache=True)"
 
 
@@ -57,7 +57,7 @@ FN = 'profile.dat'
 
 profile.run(s, FN)
 
-print 'Set_quantity elevation took %.2f seconds' %(time.time()-t0)
+print('Set_quantity elevation took %.2f seconds' %(time.time()-t0))
 
 S = pstats.Stats(FN)
 #S.sort_stats('time').print_stats(20)

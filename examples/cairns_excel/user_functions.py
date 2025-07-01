@@ -41,11 +41,11 @@ def print_velocity_statistics(domain, max_quantities):
             dd = dd * (dd > 1.0e-03) + 1.0e-03 * (dd <= 1.0e-03)
             vv = 1 / dd * (xx ** 2 + yy ** 2) ** 0.5
             vv = vv * (dd > 1.0e-03)
-            print '    Processor ', myid
-            print '    @ Peak velocity is: ', vv.max(), vv.argmax()
-            print '     &- MaxSpeedHistory: ', \
-                max_quantities.max_speed.max()
-            print '     %- FUF: ', domain.flux_update_frequency.mean()
+            print('    Processor ', myid)
+            print('    @ Peak velocity is: ', vv.max(), vv.argmax())
+            print('     &- MaxSpeedHistory: ', \
+                max_quantities.max_speed.max())
+            print('     %- FUF: ', domain.flux_update_frequency.mean())
         else:
             pass
         barrier()
@@ -53,7 +53,7 @@ def print_velocity_statistics(domain, max_quantities):
     # Make a newline
 
     if myid == 0:
-        print ''
+        print('')
 
     return
 
@@ -72,19 +72,19 @@ def print_operator_inputs(domain):
     if myid == 0:
         for i in range(len(operators)):
             if hasattr(operators[i], 'rate'):
-                print '    Operator ' + operators[i].label + \
-                      ' rate = ' + str(operators[i].rate(domain.time))
+                print('    Operator ' + operators[i].label + \
+                      ' rate = ' + str(operators[i].rate(domain.time)))
 
     barrier()
 
     # Inlets
     for i in range(len(operators)):
         if hasattr(operators[i], 'applied_Q'):
-            print '    Operator ' + operators[i].label + \
-                  ' Q = ' + str(operators[i].applied_Q)
+            print('    Operator ' + operators[i].label + \
+                  ' Q = ' + str(operators[i].applied_Q))
     barrier()
 
     if myid == 0:
-        print ' '
+        print(' ')
 
     return

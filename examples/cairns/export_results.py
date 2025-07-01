@@ -7,7 +7,7 @@ import anuga
 scenario = 'fixed_wave'
 name = 'cairns_' + scenario
 
-print 'output dir:', name
+print('output dir:', name)
 which_var = 0
 
 if which_var == 0:    # Stage
@@ -30,7 +30,7 @@ if which_var == 4:    # Elevation
     outname = name + '_elevation'
     quantityname = 'elevation'  #Elevation
 
-print 'start sww2dem'
+print('start sww2dem')
 
 anuga.sww2dem(name+'.sww',
         outname+'.asc',

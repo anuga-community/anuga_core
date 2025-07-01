@@ -153,7 +153,7 @@ stage2_edge_values_before = num.copy(stage2.edge_values)
 
 nvtxRangePush('distribute domain2')
 # Now run the distribute procedure on the GPU
-domain2.set_multiprocessor_mode(4)
+domain2.set_multiprocessor_mode(2)
 domain2.distribute_to_vertices_and_edges()
 nvtxRangePop()
 

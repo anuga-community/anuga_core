@@ -184,6 +184,6 @@ class Test_ERMapper(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_ERMapper,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_ERMapper)
     runner = unittest.TextTestRunner()
     runner.run(suite)

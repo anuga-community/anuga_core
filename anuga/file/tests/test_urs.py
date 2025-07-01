@@ -213,6 +213,6 @@ class Test_Urs(unittest.TestCase):
 ################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Urs,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Urs)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)

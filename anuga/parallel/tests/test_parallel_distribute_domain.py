@@ -103,6 +103,6 @@ class Test_parallel_distribute_domain(unittest.TestCase):
            
 if __name__ == "__main__":
     runner = unittest.TextTestRunner()
-    suite = unittest.makeSuite(Test_parallel_distribute_domain, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_parallel_distribute_domain)
     runner.run(suite)
 

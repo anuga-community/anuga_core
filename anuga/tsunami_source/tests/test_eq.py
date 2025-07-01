@@ -61,6 +61,6 @@ class Test_eq(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_eq,'test_')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_eq)
     runner = unittest.TextTestRunner()
     runner.run(suite)

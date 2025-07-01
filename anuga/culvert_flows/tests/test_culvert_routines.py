@@ -579,7 +579,7 @@ class Test_culvert_routines(unittest.TestCase):
                
 #-------------------------------------------------------------
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_culvert_routines, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_culvert_routines)
     runner = unittest.TextTestRunner()
     runner.run(suite)
 

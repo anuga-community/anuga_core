@@ -728,6 +728,6 @@ class Test_set_elevation_operator(unittest.TestCase):
 
             
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_set_elevation_operator, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_set_elevation_operator)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

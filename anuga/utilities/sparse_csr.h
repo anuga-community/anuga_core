@@ -15,7 +15,9 @@
 #include <stdio.h>   /* gets */
 #include <stdlib.h>  /* atoi, malloc */
 #include <string.h>  /* strcpy */
+#include <stdint.h>  /* anuga_int uanuga_int */
 #include "math.h"
+#include "anuga_typedefs.h" /* in utilities */
 
 #ifndef SPARSE_CSR_H
 #define SPARSE_CSR_H
@@ -25,15 +27,15 @@
 // number of rows and the number of entries in the matrix.
 typedef struct {
 	double *data;
-	int *colind;
-	int *row_ptr;
-	int num_rows;
-	int num_entries;
+	anuga_int *colind;
+	anuga_int *row_ptr;
+	anuga_int num_rows;
+	anuga_int num_entries;
 } sparse_csr;
 
 // 'Constructor' function. Returns a pointer to new malloced memory
 // All struct entries are intialised appropriately (mostly to NULL). 
-sparse_csr * make_csr();
+sparse_csr * make_csr(void);
 
 // delete_csr_contents - Free the memory associated with the struct
 // and set the pointer to NULL

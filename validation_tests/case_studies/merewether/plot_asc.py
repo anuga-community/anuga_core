@@ -3,6 +3,7 @@
 # To change this template, choose Tools | Templates
 # and open the template in the editor.
 
+from future.utils import raise_
 __author__="steve"
 __date__ ="$17/04/2012 11:32:04 AM$"
 
@@ -61,7 +62,7 @@ if __name__ == "__main__":
         xllcorner = float(xref[1].strip())
     else:
         msg = 'Unknown keyword: %s' % xref[0].strip()
-        raise Exception, msg
+        raise_(Exception, msg)
 
     yref = lines[3].split()
     if yref[0].strip() == 'yllcorner':
@@ -70,19 +71,19 @@ if __name__ == "__main__":
         yllcorner = float(yref[1].strip())
     else:
         msg = 'Unknown keyword: %s' % yref[0].strip()
-        raise Exception, msg
+        raise_(Exception, msg)
 
     NODATA_value = float(lines[5].split()[1].strip())
 
     assert len(lines) == nrows + 6
 
 
-    print 'rows ', nrows
-    print 'cols ', ncols
-    print 'cell size ',cellsize
+    print('rows ', nrows)
+    print('cols ', ncols)
+    print('cell size ',cellsize)
 
-    print 'xllcorner ',xllcorner
-    print 'yllcorner ',yllcorner
+    print('xllcorner ',xllcorner)
+    print('yllcorner ',yllcorner)
 
     Z = np.zeros((nrows,ncols),dtype=float)
 
@@ -95,12 +96,12 @@ if __name__ == "__main__":
         if len(fields) != ncols:
             msg = 'Wrong number of columns in file "%s" line %d\n' % (name_in, i)
             msg += 'I got %d elements, but there should have been %d\n' % (len(fields), ncols)
-            raise Exception, msg
+            raise_(Exception, msg)
 
         Z[i, :] = np.array([float(x) for x in fields])
 
 
-    print Z.shape
+    print(Z.shape)
 
 
     
@@ -110,7 +111,7 @@ if __name__ == "__main__":
     z_min = int(np.nanmin(ZZ))
     z_max = int(np.nanmax(ZZ))+1
 
-    print z_min,z_max
+    print(z_min,z_max)
 
     xlen = ncols*cellsize
     ylen = nrows*cellsize
@@ -118,8 +119,8 @@ if __name__ == "__main__":
     y = np.arange(ylen, 0.0, -cellsize)
     X, Y = np.meshgrid(x, y)
 
-    print X.shape
-    print Y.shape
+    print(X.shape)
+    print(Y.shape)
 
     plt.figure()
 
@@ -127,7 +128,7 @@ if __name__ == "__main__":
     levels = z_min + np.arange(11,dtype=float)/10.0*(z_max-z_min)
 
 
-    print levels
+    print(levels)
     
     #CS = plt.contour(X, Y, Z)
 
