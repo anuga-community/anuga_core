@@ -12,7 +12,8 @@
     :target: https://github.com/anuga-community/anuga_core/actions/workflows/conda-setup.yml
     :alt: GitHub Actions Status
    
-.. |badge2| image:: https://ci.appveyor.com/api/projects/status/x5airjv7eq2u805w/branch/main?svg=true
+.. 
+    |badge2| image:: https://ci.appveyor.com/api/projects/status/x5airjv7eq2u805w/branch/main?svg=true
     :target: https://ci.appveyor.com/project/stoiver/anuga-core-nwgr0
     :alt: appveyor status
 
@@ -36,7 +37,7 @@
     :target: https://anuga.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
-|badge0| |badge1| |badge2| |badge3| |badge4| |badge5| |badge6| |badge7|
+|badge0| |badge1| |badge3| |badge4| |badge5| |badge6| |badge7|
 
 
 
