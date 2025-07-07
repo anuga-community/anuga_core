@@ -7,6 +7,7 @@ from libc.stdint cimport int64_t
 import numpy as np
 cimport numpy as np
 
+
 cdef extern from "sw_domain_openmp.c" nogil:
 	struct domain:
 		# these shouldn't change within a single timestep
@@ -206,84 +207,112 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	#------------------------------------------------------
 	# Domain structures
 	#------------------------------------------------------
+	# size = 3 * number_of_elements
 	neighbours = domain_object.neighbours
 	D.neighbours = &neighbours[0,0]
 	
+	# size = 3 * number_of_elements
 	surrogate_neighbours = domain_object.surrogate_neighbours
 	D.surrogate_neighbours = &surrogate_neighbours[0,0]
 
+	# size = 3 * number_of_elements
 	neighbour_edges = domain_object.neighbour_edges
 	D.neighbour_edges = &neighbour_edges[0,0]
 
+	# size = 6 * number_of_elements
 	normals = domain_object.normals
 	D.normals = &normals[0,0]
 
+	# size = 3 * number_of_elements
 	edgelengths = domain_object.edgelengths
 	D.edgelengths = &edgelengths[0,0]
 
+	# size = number_of_elements
 	radii = domain_object.radii
 	D.radii = &radii[0]
 
+	# size = number_of_elements
 	areas = domain_object.areas
 	D.areas = &areas[0]
 
+	# size = 3 * number_of_elements
 	edge_flux_type = domain_object.edge_flux_type
 	D.edge_flux_type = &edge_flux_type[0]
+	
 
+    # size = number_of_elements
 	tri_full_flag = domain_object.tri_full_flag
 	D.tri_full_flag = &tri_full_flag[0]
 
+	# size = 3 * number_of_elements
 	already_computed_flux = domain_object.already_computed_flux
 	D.already_computed_flux = &already_computed_flux[0,0]
 
+	# size = 6 * number_of_elements
 	vertex_coordinates = domain_object.vertex_coordinates
 	D.vertex_coordinates = &vertex_coordinates[0,0]
 
+	# size = 6 * number_of_elements
 	edge_coordinates = domain_object.edge_coordinates
 	D.edge_coordinates = &edge_coordinates[0,0]
 
+	# size = 2 * number_of_elements
 	centroid_coordinates = domain_object.centroid_coordinates
 	D.centroid_coordinates = &centroid_coordinates[0,0]
 
+	# size = number_of_elements
 	max_speed = domain_object.max_speed
 	D.max_speed = &max_speed[0]
 
+	# size = number_of_elements
 	number_of_boundaries = domain_object.number_of_boundaries
 	D.number_of_boundaries = &number_of_boundaries[0]
 
+	# size = 3 * number_of_elements
 	flux_update_frequency = domain_object.flux_update_frequency
 	D.flux_update_frequency = &flux_update_frequency[0]
 
+	# size = 3 * number_of_elements
 	update_next_flux = domain_object.update_next_flux
 	D.update_next_flux = &update_next_flux[0]
 
+	# size = number_of_elements
 	update_extrapolation = domain_object.update_extrapolation
 	D.update_extrapolation = &update_extrapolation[0]
 
+	# size = 1
 	allow_timestep_increase = domain_object.allow_timestep_increase
 	D.allow_timestep_increase = &allow_timestep_increase[0]
 
+	# size = 3 * number_of_elements
 	edge_timestep = domain_object.edge_timestep
 	D.edge_timestep = &edge_timestep[0]
 
+	# size = 9 * number_of_elements
 	edge_flux_work = domain_object.edge_flux_work
 	D.edge_flux_work = &edge_flux_work[0]
 
+	# size = 9 * number_of_elements
 	neigh_work = domain_object.neigh_work
 	D.neigh_work = &neigh_work[0]
 
+	# size = 3 * number_of_elements
 	pressuregrad_work = domain_object.pressuregrad_work
 	D.pressuregrad_work = &pressuregrad_work[0]
 
+	# size = number_of_elements
 	x_centroid_work = domain_object.x_centroid_work
 	D.x_centroid_work = &x_centroid_work[0]
 
+	# size = number_of_elements
 	y_centroid_work = domain_object.y_centroid_work
 	D.y_centroid_work = &y_centroid_work[0]
 
+	# size = 3 
 	boundary_flux_sum = domain_object.boundary_flux_sum
 	D.boundary_flux_sum = &boundary_flux_sum[0]
 
+	# size = 3 * number_of_elements
 	edge_river_wall_counter = domain_object.edge_river_wall_counter
 	D.edge_river_wall_counter  = &edge_river_wall_counter[0]
 
@@ -300,51 +329,67 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	xvelocity = quantities["xvelocity"]
 	yvelocity = quantities["yvelocity"]
 
+	# size = 3 * number_of_elements
 	edge_values = stage.edge_values
 	D.stage_edge_values = &edge_values[0,0]
 
+	# size = 3 * number_of_elements
 	edge_values = xmomentum.edge_values
 	D.xmom_edge_values = &edge_values[0,0]
 
+	# size = 3 * number_of_elements
 	edge_values = ymomentum.edge_values
 	D.ymom_edge_values = &edge_values[0,0]
 
+	# size = 3 * number_of_elements
 	edge_values = elevation.edge_values
 	D.bed_edge_values = &edge_values[0,0]
 
+	# size = 3 * number_of_elements
 	edge_values = height.edge_values
 	D.height_edge_values = &edge_values[0,0]
 
+	# size = 3 * number_of_elements
 	edge_values = xvelocity.edge_values
 	D.xvelocity_edge_values = &edge_values[0,0]
 
+	# size = 3 * number_of_elements
 	edge_values = yvelocity.edge_values
 	D.yvelocity_edge_values = &edge_values[0,0]
 
+	# size = number_of_elements
 	centroid_values = stage.centroid_values
 	D.stage_centroid_values = &centroid_values[0]
 
+	# size = number_of_elements
 	centroid_values = xmomentum.centroid_values
 	D.xmom_centroid_values = &centroid_values[0]
 
+	# size = number_of_elements
 	centroid_values = ymomentum.centroid_values
 	D.ymom_centroid_values = &centroid_values[0]
 
+	# size = number_of_elements
 	centroid_values = elevation.centroid_values
 	D.bed_centroid_values = &centroid_values[0]
 
+	# size = number_of_elements
 	centroid_values = height.centroid_values
 	D.height_centroid_values = &centroid_values[0]
 
+	# size = number_of_elements
 	centroid_values = friction.centroid_values
 	D.friction_centroid_values = &centroid_values[0]	
 
+	# size = number_of_elements
 	centroid_values = stage.centroid_backup_values
 	D.stage_backup_values = &centroid_values[0]	
 	
+	# size = number_of_elements
 	centroid_values = xmomentum.centroid_backup_values
 	D.xmom_backup_values = &centroid_values[0]		
 	
+	# size = number_of_elements
 	centroid_values = ymomentum.centroid_backup_values
 	D.ymom_backup_values = &centroid_values[0]	
 
@@ -352,18 +397,23 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	# Vertex values
 	#------------------------------------------------------
 
+	# size = 3 * number_of_elements
 	vertex_values = stage.vertex_values
 	D.stage_vertex_values = &vertex_values[0,0]
 
+	# size = 3 * number_of_elements
 	vertex_values = xmomentum.vertex_values
 	D.xmom_vertex_values = &vertex_values[0,0]
 
+	# size = 3 * number_of_elements
 	vertex_values = ymomentum.vertex_values
 	D.ymom_vertex_values = &vertex_values[0,0]
 
+	# size = 3 * number_of_elements
 	vertex_values = elevation.vertex_values
 	D.bed_vertex_values = &vertex_values[0,0]
 
+	# size = 3 * number_of_elements
 	vertex_values = height.vertex_values
 	D.height_vertex_values = &vertex_values[0,0]
 
@@ -372,24 +422,31 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	# Boundary values
 	#------------------------------------------------------
 
+	# size = boundary_length
 	boundary_values = stage.boundary_values
 	D.stage_boundary_values = &boundary_values[0]
 
+	# size = boundary_length
 	boundary_values = xmomentum.boundary_values
 	D.xmom_boundary_values = &boundary_values[0]
 
+	# size = boundary_length
 	boundary_values = ymomentum.boundary_values
 	D.ymom_boundary_values = &boundary_values[0]
 
+	# size = boundary_length
 	boundary_values = elevation.boundary_values
 	D.bed_boundary_values = &boundary_values[0]
 
+	# size = boundary_length
 	boundary_values = height.boundary_values
 	D.height_boundary_values = &boundary_values[0]
 
+	# size = boundary_length
 	boundary_values = xvelocity.boundary_values
 	D.xvelocity_boundary_values = &boundary_values[0]
 
+	# size = boundary_length
 	boundary_values = yvelocity.boundary_values
 	D.yvelocity_boundary_values = &boundary_values[0]
 
@@ -397,21 +454,27 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	# Explicit and semi-implicit update values
 	#------------------------------------------------------
 
+	# size = number_of_elements
 	explicit_update = stage.explicit_update
 	D.stage_explicit_update = &explicit_update[0]
 
+	# size = number_of_elements
 	explicit_update = xmomentum.explicit_update
 	D.xmom_explicit_update = &explicit_update[0]
 
+	# size = number_of_elements
 	explicit_update = ymomentum.explicit_update
 	D.ymom_explicit_update = &explicit_update[0]
 
+	# size = number_of_elements
 	semi_implicit_update = stage.semi_implicit_update
 	D.stage_semi_implicit_update = &semi_implicit_update[0]
 
+	# size = number_of_elements
 	semi_implicit_update = xmomentum.semi_implicit_update
 	D.xmom_semi_implicit_update = &semi_implicit_update[0]
 
+	# size = number_of_elements
 	semi_implicit_update = ymomentum.semi_implicit_update
 	D.ymom_semi_implicit_update = &semi_implicit_update[0]
 
@@ -424,7 +487,7 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	# but no reiverwall edges are found.
 	#------------------------------------------------------
 	riverwallData = domain_object.riverwallData
-
+	# these all seem to be size 1
 	try:
 		riverwall_elevation = riverwallData.riverwall_elevation
 		D.riverwall_elevation = &riverwall_elevation[0]
