@@ -72,11 +72,11 @@ anuga_int _gradient(const double x0, const double y0,
       
   or in matrix form
   
-  /               \  /   \   /       \  
-  |  x1-x0  y1-y0 |  | a |   | q1-q0 |
-  |               |  |   | = |       | 
-  |  x2-x0  y2-y0 |  | b |   | q2-q0 |
-  \               /  \   /   \       /
+   (               )  (   )   (       )  
+   |  x1-x0  y1-y0 |  | a |   | q1-q0 |
+   |               |  |   | = |       | 
+   |  x2-x0  y2-y0 |  | b |   | q2-q0 |
+   (               )  (   )   (       )
    
   which is solved using the standard determinant technique    
       
@@ -127,11 +127,11 @@ anuga_int _gradient2(double x0, double y0,
      
   which closes the system and yields
   
-  /               \  /   \   /       \  
-  |  x1-x0  y1-y0 |  | a |   | q1-q0 |
-  |               |  |   | = |       | 
-  |  y0-y1  x1-x0 |  | b |   |   0   |
-  \               /  \   /   \       /
+   (               )  (   )   (       )  
+   |  x1-x0  y1-y0 |  | a |   | q1-q0 |
+   |               |  |   | = |       | 
+   |  y0-y1  x1-x0 |  | b |   | 0 |
+   (               )  (   )   (       )
    
   which is solved using the standard determinant technique    
       
