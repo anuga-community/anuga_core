@@ -130,6 +130,11 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	double* edgeflux, double* max_speed, double* pressure_flux,
 	int64_t low_froude)
 
+cdef extern from "domain_c_struct.c" nogil:
+	void init_c_domain(domain* D, int64_t number_of_elements, int64_t boundary_length)
+	void free_c_domain(domain* D)
+	void copy_c_domain(domain* D, domain* source)
+	void say_hi()
 
 cdef int64_t pointer_flag = 0
 cdef int64_t parameter_flag = 0
@@ -164,7 +169,9 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 
 	# these arraypointers are set once the domain is created
 	# and are used in the evolve loop
+	# same order as they are used below
 	cdef int64_t[:,::1]   neighbours
+	cdef int64_t[:,::1] surrogate_neighbours
 	cdef int64_t[:,::1]   neighbour_edges
 	cdef double[:,::1] normals
 	cdef double[:,::1] edgelengths
@@ -176,9 +183,8 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	cdef double[:,::1] vertex_coordinates
 	cdef double[:,::1] edge_coordinates
 	cdef double[:,::1] centroid_coordinates
-	cdef int64_t[::1]  number_of_boundaries
-	cdef int64_t[:,::1] surrogate_neighbours
 	cdef double[::1]   max_speed
+	cdef int64_t[::1]  number_of_boundaries
 	cdef int64_t[::1]  flux_update_frequency
 	cdef int64_t[::1]  update_next_flux
 	cdef int64_t[::1]  update_extrapolation
@@ -190,10 +196,12 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	cdef double[::1]   x_centroid_work
 	cdef double[::1]   y_centroid_work
 	cdef double[::1]   boundary_flux_sum
-	cdef double[::1]   riverwall_elevation
-	cdef int64_t[::1]  riverwall_rowIndex
-	cdef double[:,::1] riverwall_hydraulic_properties
 	cdef int64_t[::1]  edge_river_wall_counter
+
+	cdef int64_t[::1]  riverwall_rowIndex
+
+	cdef double[::1]   riverwall_elevation
+	cdef double[:,::1] riverwall_hydraulic_properties
 	cdef double[:,::1] edge_values
 	cdef double[::1]   centroid_values
 	cdef double[:,::1] vertex_values
@@ -518,6 +526,8 @@ def compute_fluxes_ext_central(object domain_object, double timestep):
 
 	cdef domain D
 
+	say_hi()
+
 
 	get_python_domain_parameters(&D, domain_object)
 	get_python_domain_pointers(&D, domain_object)
@@ -760,3 +770,6 @@ def gravity_wb(object domain_object):
 def call_c_function_from_python(float a, float b, int64_t size, int64_t reps):
 	print("HIIIIII")
 	test_function(a, b, size, reps)
+
+
+

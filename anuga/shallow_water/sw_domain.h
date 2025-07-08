@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdbool.h>
 #include <inttypes.h>
+#include <math.h>     // for fmax
 #include "anuga_typedefs.h"
 
 // structures
@@ -123,8 +124,15 @@ struct domain {
     double* xmom_backup_values;
     double* ymom_backup_values;
 
+    bool  is_c_domain; // Flag to indicate if this is a C domain structure
+    bool is_initialised; // Flag to indicate if the domain has been initialised
+
 };
 
+void init_c_domain(struct domain* D, anuga_int number_of_elements, anuga_int boundary_length);
+void free_c_domain(struct domain* D);
+void copy_c_domain(struct domain* D, struct domain* source);
+void say_hi();
 
 struct edge {
 
@@ -262,6 +270,7 @@ anuga_int print_domain_struct(struct domain *D) {
 }
 
 
+#pragma omp declare target
 typedef struct {
     double ql[3], qr[3];
     double zl, zr;
@@ -277,9 +286,10 @@ typedef struct {
     bool is_riverwall;
     anuga_int riverwall_index;
 } EdgeData;
+#pragma omp end declare target
 
 // Extract edge-related data and organize it into EdgeData
-inline void get_edge_data_central_flux(const struct domain * __restrict D, const int k, const int i, EdgeData * __restrict E) {
+inline void get_edge_data_central_flux(const struct domain *D, const int k, const int i, EdgeData *E) {
     E->ki = 3 * k + i;
     E->ki2 = 2 * E->ki;
 
@@ -288,6 +298,7 @@ inline void get_edge_data_central_flux(const struct domain * __restrict D, const
     E->ql[2] = D->ymom_edge_values[E->ki];
     E->zl = D->bed_edge_values[E->ki];
     E->hle = D->height_edge_values[E->ki];
+    //printf("E->hle %.20f at ki = %d \n", E->hle, E->ki);
     E->length = D->edgelengths[E->ki];
 
     E->n = D->neighbours[E->ki];
@@ -299,7 +310,7 @@ inline void get_edge_data_central_flux(const struct domain * __restrict D, const
     E->zc = D->bed_centroid_values[k];
     E->hc_n=E->hc;
     E->zc_n=D->bed_centroid_values[k];
-/*
+
     if (E->is_boundary) {
         int m = -E->n - 1;
         E->qr[0] = D->stage_boundary_values[m];
@@ -318,7 +329,7 @@ inline void get_edge_data_central_flux(const struct domain * __restrict D, const
         E->zr = D->bed_edge_values[nm];
         E->hre = D->height_edge_values[nm];
     }
-    */
+    
 
     E->z_half = fmax(E->zl, E->zr);
 
@@ -327,7 +338,7 @@ inline void get_edge_data_central_flux(const struct domain * __restrict D, const
     if (E->is_riverwall) {
         E->riverwall_index = D->edge_river_wall_counter[E->ki] - 1;
         //TODO FIX
-        double zwall = 1.0;// D->riverwall_elevation[E->riverwall_index];
+        double zwall =  D->riverwall_elevation[E->riverwall_index];
         E->z_half = fmax(zwall, E->z_half);
     }
 
