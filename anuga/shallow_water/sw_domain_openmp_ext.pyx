@@ -519,21 +519,334 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 
 
 
+cdef inline set_python_domain_pointers(domain *D, object domain_object):
+    cdef int64_t number_of_elements = domain_object.number_of_elements
+    cdef int64_t boundary_length = domain_object.boundary_length
+    cdef int i, j
+
+    # 1D helpers
+    cdef int idx
+
+    #------------------------------------------------------
+    # Domain structures
+    #------------------------------------------------------
+    cdef int64_t[:,::1] neighbours = domain_object.neighbours
+    for i in range(number_of_elements):
+        for j in range(3):
+            neighbours[i, j] = D.neighbours[i * 3 + j]
+
+    cdef int64_t[:,::1] surrogate_neighbours = domain_object.surrogate_neighbours
+    for i in range(number_of_elements):
+        for j in range(3):
+            surrogate_neighbours[i, j] = D.surrogate_neighbours[i * 3 + j]
+
+    cdef int64_t[:,::1] neighbour_edges = domain_object.neighbour_edges
+    for i in range(number_of_elements):
+        for j in range(3):
+            neighbour_edges[i, j] = D.neighbour_edges[i * 3 + j]
+
+    cdef double[:,::1] normals = domain_object.normals
+    for i in range(number_of_elements):
+        for j in range(6):
+            normals[i, j] = D.normals[i * 6 + j]
+
+    cdef double[:,::1] edgelengths = domain_object.edgelengths
+    for i in range(number_of_elements):
+        for j in range(3):
+            edgelengths[i, j] = D.edgelengths[i * 3 + j]
+
+    cdef double[::1] radii = domain_object.radii
+    for i in range(number_of_elements):
+        radii[i] = D.radii[i]
+
+    cdef double[::1] areas = domain_object.areas
+    for i in range(number_of_elements):
+        areas[i] = D.areas[i]
+
+    cdef int64_t[::1] edge_flux_type = domain_object.edge_flux_type
+    for i in range(3 * number_of_elements):
+        edge_flux_type[i] = D.edge_flux_type[i]
+
+    cdef int64_t[::1] tri_full_flag = domain_object.tri_full_flag
+    for i in range(number_of_elements):
+        tri_full_flag[i] = D.tri_full_flag[i]
+
+    cdef int64_t[:,::1] already_computed_flux = domain_object.already_computed_flux
+    for i in range(number_of_elements):
+        for j in range(3):
+            already_computed_flux[i, j] = D.already_computed_flux[i * 3 + j]
+	
+	cdef double[:,::1] vertex_coordinates = domain_object.vertex_coordinates
+	for i in range(number_of_elements):
+		for j in range(6):
+			vertex_coordinates[i, j] = D.vertex_coordinates[i * 6 + j]
+	
+	cdef double[:,::1] edge_coordinates = domain_object.edge_coordinates
+	for i in range(number_of_elements):
+		for j in range(6):
+			edge_coordinates[i, j] = D.edge_coordinates[i * 6 + j]
+	
+	cdef double[:,::1] centroid_coordinates = domain_object.centroid_coordinates
+	for i in range(number_of_elements):
+		for j in range(2):
+			centroid_coordinates[i, j] = D.centroid_coordinates[i * 2 + j]
+	
+	cdef double[::1] max_speed = domain_object.max_speed
+	for i in range(number_of_elements):
+		max_speed[i] = D.max_speed[i]
+
+	cdef int64_t[::1] number_of_boundaries = domain_object.number_of_boundaries
+	for i in range(number_of_elements):
+		number_of_boundaries[i] = D.number_of_boundaries[i]
+	
+	cdef int64_t[::1] flux_update_frequency = domain_object.flux_update_frequency
+	for i in range(3 * number_of_elements):
+		flux_update_frequency[i] = D.flux_update_frequency[i]
+	
+	cdef int64_t[::1] update_next_flux = domain_object.update_next_flux
+	for i in range(3 * number_of_elements):
+		update_next_flux[i] = D.update_next_flux[i]
+	
+	cdef int64_t[::1] update_extrapolation = domain_object.update_extrapolation
+	for i in range(number_of_elements):
+		update_extrapolation[i] = D.update_extrapolation[i]
+
+	cdef int64_t[::1] allow_timestep_increase = domain_object.allow_timestep_increase
+	allow_timestep_increase[0] = D.allow_timestep_increase[0]
+
+	cdef double[::1] edge_timestep = domain_object.edge_timestep
+	for i in range(3 * number_of_elements):
+		edge_timestep[i] = D.edge_timestep[i]
+
+	cdef double[::1] edge_flux_work = domain_object.edge_flux_work
+	for i in range(9 * number_of_elements):
+		edge_flux_work[i] = D.edge_flux_work[i]
+
+	cdef double[::1] neigh_work = domain_object.neigh_work
+	for i in range(9 * number_of_elements):
+		neigh_work[i] = D.neigh_work[i]
+
+	cdef double[::1] pressuregrad_work = domain_object.pressuregrad_work
+	for i in range(3 * number_of_elements):
+		pressuregrad_work[i] = D.pressuregrad_work[i]
+	
+	cdef double[::1] x_centroid_work = domain_object.x_centroid_work
+	for i in range(number_of_elements):
+		x_centroid_work[i] = D.x_centroid_work[i]
+
+	cdef double[::1] y_centroid_work = domain_object.y_centroid_work
+	for i in range(number_of_elements):
+		y_centroid_work[i] = D.y_centroid_work[i]
+	
+	cdef double[::1] boundary_flux_sum = domain_object.boundary_flux_sum
+	for i in range(3):
+		boundary_flux_sum[i] = D.boundary_flux_sum[i]
+
+	cdef int64_t[::1] edge_river_wall_counter = domain_object.edge_river_wall_counter
+	for i in range(3 * number_of_elements):
+		edge_river_wall_counter[i] = D.edge_river_wall_counter[i]
+
+    cdef double[:,::1] edge_values = domain_object.quantities["stage"].edge_values
+    for i in range(number_of_elements):
+        for j in range(3):
+            edge_values[i, j] = D.stage_edge_values[i * 3 + j]
+	
+	cdef double[:,::1] edge_values = domain_object.quantities["xmomentum"].edge_values
+	for i in range(number_of_elements):
+		for j in range(3):
+			edge_values[i, j] = D.xmom_edge_values[i * 3 + j]
+	
+	cdef double[:,::1] edge_values = domain_object.quantities["ymomentum"].edge_values
+	for i in range(number_of_elements):
+		for j in range(3):
+			edge_values[i, j] = D.ymom_edge_values[i * 3 + j]
+	
+	cdef double[:,::1] edge_values = domain_object.quantities["elevation"].edge_values
+	for i in range(number_of_elements):
+		for j in range(3):
+			edge_values[i, j] = D.bed_edge_values[i * 3 + j]
+	
+	cdef double[:,::1] edge_values = domain_object.quantities["height"].edge_values
+	for i in range(number_of_elements):
+		for j in range(3):
+			edge_values[i, j] = D.height_edge_values[i * 3 + j]
+	
+	cdef double[:,::1] edge_values = domain_object.quantities["xvelocity"].edge_values
+	for i in range(number_of_elements):
+		for j in range(3):
+			edge_values[i, j] = D.xvelocity_edge_values[i * 3 + j]
+
+	cdef double[:,::1] edge_values = domain_object.quantities["yvelocity"].edge_values
+	for i in range(number_of_elements):
+		for j in range(3):
+			edge_values[i, j] = D.yvelocity_edge_values[i * 3 + j]
+	
+    cdef double[::1] centroid_values = domain_object.quantities["stage"].centroid_values
+    for i in range(number_of_elements):
+        centroid_values[i] = D.stage_centroid_values[i]
+	
+	cdef double[::1] centroid_values = domain_object.quantities["xmomentum"].centroid_values
+	for i in range(number_of_elements):
+		centroid_values[i] = D.xmom_centroid_values[i]
+	
+	cdef double[::1] centroid_values = domain_object.quantities["ymomentum"].centroid_values
+	for i in range(number_of_elements):
+		centroid_values[i] = D.ymom_centroid_values[i]
+	
+	cdef double[::1] centroid_values = domain_object.quantities["elevation"].centroid_values
+	for i in range(number_of_elements):
+		centroid_values[i] = D.bed_centroid_values[i]
+
+	cdef double[::1] centroid_values = domain_object.quantities["height"].centroid_values
+	for i in range(number_of_elements):
+		centroid_values[i] = D.height_centroid_values[i]
+	
+	cdef double[::1] centroid_values = domain_object.quantities["friction"].centroid_values
+	for i in range(number_of_elements):
+		centroid_values[i] = D.friction_centroid_values[i]
+	
+	cdef double[::1] centroid_values = domain_object.quantities["stage"].centroid_backup_values
+	for i in range(number_of_elements):
+		centroid_values[i] = D.stage_backup_values[i]
+
+	cdef double[::1] centroid_values = domain_object.quantities["xmomentum"].centroid_backup_values
+	for i in range(number_of_elements):
+		centroid_values[i] = D.xmom_backup_values[i]
+
+	cdef double[::1] centroid_values = domain_object.quantities["ymomentum"].centroid_backup_values
+	for i in range(number_of_elements):
+		centroid_values[i] = D.ymom_backup_values[i]
+
+	cdef double[:,::1] vertex_values = domain_object.quantities["stage"].vertex_values
+	for i in range(number_of_elements):
+		for j in range(3):
+			vertex_values[i, j] = D.stage_vertex_values[i * 3 + j]
+	
+	cdef double[:,::1] vertex_values = domain_object.quantities["xmomentum"].vertex_values
+	for i in range(number_of_elements):
+		for j in range(3):
+			vertex_values[i, j] = D.xmom_vertex_values[i * 3 + j]
+	
+	cdef double[:,::1] vertex_values = domain_object.quantities["ymomentum"].vertex_values
+	for i in range(number_of_elements):
+		for j in range(3):
+			vertex_values[i, j] = D.ymom_vertex_values[i * 3 + j]
+	
+	cdef double[:,::1] vertex_values = domain_object.quantities["elevation"].vertex_values
+	for i in range(number_of_elements):
+		for j in range(3):
+			vertex_values[i, j] = D.bed_vertex_values[i * 3 + j]
+	
+	cdef double[:,::1] vertex_values = domain_object.quantities["height"].vertex_values
+	for i in range(number_of_elements):
+		for j in range(3):
+			vertex_values[i, j] = D.height_vertex_values[i * 3 + j]
+
+    cdef double[::1] boundary_values = domain_object.quantities["stage"].boundary_values
+    for i in range(boundary_length):
+        boundary_values[i] = D.stage_boundary_values[i]
+	
+	cdef double[::1] boundary_values = domain_object.quantities["xmomentum"].boundary_values
+	for i in range(boundary_length):
+		boundary_values[i] = D.xmom_boundary_values[i]
+	
+	cdef double[::1] boundary_values = domain_object.quantities["ymomentum"].boundary_values
+	for i in range(boundary_length):
+		boundary_values[i] = D.ymom_boundary_values[i]
+
+	cdef double[::1] boundary_values = domain_object.quantities["elevation"].boundary_values
+	for i in range(boundary_length):
+		boundary_values[i] = D.bed_boundary_values[i]
+	
+	cdef double[::1] boundary_values = domain_object.quantities["height"].boundary_values
+	for i in range(boundary_length):
+		boundary_values[i] = D.height_boundary_values[i]
+	
+	cdef double[::1] boundary_values = domain_object.quantities["xvelocity"].boundary_values
+	for i in range(boundary_length):
+		boundary_values[i] = D.xvelocity_boundary_values[i]
+
+	cdef double[::1] boundary_values = domain_object.quantities["yvelocity"].boundary_values
+	for i in range(boundary_length):
+		boundary_values[i] = D.yvelocity_boundary_values[i]
+
+    cdef double[::1] explicit_update = domain_object.quantities["stage"].explicit_update
+    for i in range(number_of_elements):
+        explicit_update[i] = D.stage_explicit_update[i]
+	
+	cdef double[::1] explicit_update = domain_object.quantities["xmomentum"].explicit_update
+	for i in range(number_of_elements):
+		explicit_update[i] = D.xmom_explicit_update[i]
+
+	cdef double[::1] explicit_update = domain_object.quantities["ymomentum"].explicit_update
+	for i in range(number_of_elements):
+		explicit_update[i] = D.ymom_explicit_update[i]
+	
+	cdef double[::1] semi_implicit_update = domain_object.quantities["stage"].semi_implicit_update
+	for i in range(number_of_elements):
+		semi_implicit_update[i] = D.stage_semi_implicit_update[i]
+	
+	cdef double[::1] semi_implicit_update = domain_object.quantities["xmomentum"].semi_implicit_update
+	for i in range(number_of_elements):
+		semi_implicit_update[i] = D.xmom_semi_implicit_update[i]
+	
+	cdef double[::1] semi_implicit_update = domain_object.quantities["ymomentum"].semi_implicit_update
+	for i in range(number_of_elements):
+		semi_implicit_update[i] = D.ymom_semi_implicit_update[i]
+	
+	#------------------------------------------------------
+	# Riverwall structures
+	# 
+	# Deal with the case when create_riverwall is called
+	# but no reiverwall edges are found.
+	#------------------------------------------------------
+	try:
+		D.riverwall_elevation[0] = domain_object.riverwallData.riverwall_elevation[0]
+	except:
+		pass
+
+	try:
+		for i in range(domain_object.riverwallData.hydraulic_properties_rowIndex.shape[0]):
+			D.riverwall_rowIndex[i] = domain_object.riverwallData.hydraulic_properties_rowIndex[i]
+	except:
+		pass
+
+	try:
+		for i in range(domain_object.riverwallData.hydraulic_properties.shape[0]):
+			for j in range(domain_object.riverwallData.hydraulic_properties.shape[1]):
+				D.riverwall_hydraulic_properties[i, j] = domain_object.riverwallData.hydraulic_properties[i, j]
+	except:
+		pass
+
+	D.ncol_riverwall_hydraulic_properties = domain_object.riverwallData.ncol_hydraulic_properties
+	
+
 
 #===============================================================================
 
 def compute_fluxes_ext_central(object domain_object, double timestep):
 
 	cdef domain D
+	cdef domain D_malloc
 
-	say_hi()
+	cdef int64_t number_of_elements
+	number_of_elements = domain_object.number_of_elements
+	cdef int64_t boundary_length
+	boundary_length = domain_object.boundary_length
 
-
+	# this gets the things from python
 	get_python_domain_parameters(&D, domain_object)
 	get_python_domain_pointers(&D, domain_object)
-
+	init_c_domain(&D_malloc, number_of_elements, boundary_length)
+	copy_c_domain(&D_malloc, &D)
+	# let the freak show begin, we will now copy to C 
+	print(" here again ... ")
 	with nogil:
-		timestep =  _openmp_compute_fluxes_central(&D, timestep)
+		timestep =  _openmp_compute_fluxes_central(&D_malloc, timestep)
+
+	set_python_domain_pointers(&D_malloc, domain_object)
+	free_c_domain(&D_malloc)
+	print(" here again ... after free_c_domain")
 
 	return timestep
 def extrapolate_second_order_sw(object domain_object):
