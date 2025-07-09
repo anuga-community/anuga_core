@@ -12,6 +12,7 @@ void init_c_domain(struct domain* D, anuga_int number_of_elements, anuga_int bou
     // All of our arrays are in function of these two parameters 
     D->number_of_elements = number_of_elements;
     D->boundary_length = boundary_length;
+    
 
 
     // for sanity, let's declare the common sizes 
@@ -108,6 +109,8 @@ void init_c_domain(struct domain* D, anuga_int number_of_elements, anuga_int bou
 
     D->is_c_domain = true; // Flag to indicate this is a C domain structure
     D->is_initialised = true; // Flag to indicate the domain has been initialised
+//     printf("Domain initialised with %d elements and %d boundaries.\n", 
+//            number_of_elements, boundary_length);
 
 }
 
@@ -121,6 +124,8 @@ void free_c_domain(struct domain* D) {
         // If the domain is not initialised, there's nothing to free
         return;
     }
+
+    //printf("Freeing domain memory...\n");
     free(D->neighbours);
     free(D->surrogate_neighbours);
     free(D->neighbour_edges);
@@ -187,6 +192,7 @@ void free_c_domain(struct domain* D) {
     free(D->riverwall_hydraulic_properties);
 
     D->is_initialised = false; // Set the initialised flag to false after freeing memory
+    //printf("Domain memory freed successfully.\n");
 
 }
 
@@ -197,6 +203,15 @@ void copy_c_domain(struct domain* D, struct domain* source) {
         printf("Error: Target Domain is not initialised. Cannot copy.\n");
         return;
     }
+
+    //printf("Copying domain from source to destination...\n");
+
+    D->number_of_elements = source->number_of_elements;
+    D->boundary_length = source->boundary_length;
+    D->number_of_riverwall_edges = source->number_of_riverwall_edges;
+    D->epsilon = source->epsilon;
+    D->g = source->g;
+    D->timestep_fluxcalls = source->timestep_fluxcalls;
 
     // reminder, memcpy works as memcpy(destination, source, size)
 
@@ -336,5 +351,8 @@ void copy_c_domain(struct domain* D, struct domain* source) {
            1 * sizeof(anuga_int));
     memcpy(D->riverwall_hydraulic_properties, source->riverwall_hydraulic_properties,
            1 * sizeof(double));
+
+
+           //printf("Domain copied successfully.\n");
 
 }

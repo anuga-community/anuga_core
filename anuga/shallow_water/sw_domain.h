@@ -325,6 +325,7 @@ inline void get_edge_data_central_flux(const struct domain *D, const int k, cons
         int nm = E->n * 3 + m;
         E->qr[0] = D->stage_edge_values[nm];
         E->qr[1] = D->xmom_edge_values[nm];
+        //printf("y mom edge = %g  at ki = %d, i = %d\n", D->ymom_edge_values[nm], E->ki, i);
         E->qr[2] = D->ymom_edge_values[nm];
         E->zr = D->bed_edge_values[nm];
         E->hre = D->height_edge_values[nm];

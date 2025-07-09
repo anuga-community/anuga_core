@@ -61,7 +61,7 @@ anuga_int __rotate(double *q, const double n1, const double n2)
 inline void compute_velocity_terms(
     const double h, const double h_edge,
     const double uh_raw, const double vh_raw,
-    double *__restrict u, double *__restrict uh, double *__restrict v, double *__restrict vh)
+    double *u, double *uh, double *v, double *vh)
 {
   if (h_edge > 0.0)
   {
@@ -81,6 +81,8 @@ inline void compute_velocity_terms(
     *vh = 0.0;
   }
 }
+
+
 
 inline double compute_local_froude(
     const anuga_int low_froude,
@@ -111,6 +113,8 @@ inline double compute_local_froude(
 inline double compute_s_max(const double u_left, const double u_right,
                                    const double c_left, const double c_right)
 {
+  printf("compute_s_max: u_left %g, u_right %g, c_left %g, c_right %g\n",
+        u_left, u_right, c_left, c_right);
   double s = fmax(u_left + c_left, u_right + c_right);
   return (s < 0.0) ? 0.0 : s;
 }
@@ -118,20 +122,22 @@ inline double compute_s_max(const double u_left, const double u_right,
 inline double compute_s_min(const double u_left, const double u_right,
                                    const double c_left, const double c_right)
 {
+  printf("compute_s_min: u_left %g, u_right %g, c_left %g, c_right %g\n",
+         u_left, u_right, c_left, c_right);
   double s = fmin(u_left - c_left, u_right - c_right);
   return (s > 0.0) ? 0.0 : s;
 }
 
 // Innermost flux function (using stage w=z+h)
-inline anuga_int __flux_function_central(double *__restrict q_left, double *__restrict q_right,
+inline anuga_int __flux_function_central(const double *q_left, const double *q_right,
                                 const double h_left, const double h_right,
                                 const double hle, const double hre,
                                 const double n1, const double n2,
                                 const double epsilon,
                                 const double ze,
                                 const double g,
-                                double *__restrict edgeflux, double *__restrict max_speed,
-                                double *__restrict pressure_flux,
+                                double *edgeflux, double *max_speed,
+                                double *pressure_flux,
                                 const anuga_int low_froude)
 {
 
@@ -155,6 +161,8 @@ inline anuga_int __flux_function_central(double *__restrict q_left, double *__re
   double v_right, v_left;
   double q_left_rotated[3], q_right_rotated[3], flux_right[3], flux_left[3];
 
+  // printf("qright_1 %g, qright_2 %g, qright_3 %g\n",
+  //        q_right[0], q_right[1], q_right[2]);
 
   for (anuga_int i = 0; i < 3; i++)
   {
@@ -163,34 +171,102 @@ inline anuga_int __flux_function_central(double *__restrict q_left, double *__re
     q_left_rotated[i] = q_left[i];
     q_right_rotated[i] = q_right[i];
   }
+  //printf("q_left_rotated %g %g %g\n", q_left_rotated[0], q_left_rotated[1], q_left_rotated[2]);
+  //printf("q_right _rotated %g %g %g\n", q_right_rotated[0], q_right_rotated[1], q_right_rotated[2]);
 
   // Align x- and y-momentum with x-axis
-  __rotate(q_left_rotated, n1, n2);
-  __rotate(q_right_rotated, n1, n2);
+  double q1 = q_left_rotated[1]; // x-momentum left
+  double q2 = q_left_rotated[2]; // y-momentum left
+  q_left_rotated[1] = n1 * q1 + n2 * q2;
+  q_left_rotated[2] = -n2 * q1 + n1 * q2;
+  q1 = q_right_rotated[1]; // x-momentum right
+  q2 = q_right_rotated[2]; // y-momentum right
+  q_right_rotated[1] = n1 * q1  + n2 * q2;
+  q_right_rotated[2] = -n2 * q1 + n1 * q2;
+  // __rotate(q_left_rotated, n1, n2);
+  // __rotate(q_right_rotated, n1, n2);
+  //printf("after q_left_rotated %g %g %g\n", q_left_rotated[0], q_left_rotated[1], q_left_rotated[2]);
+  //printf("after q_right_rotated %g %g %g\n", q_right_rotated[0], q_right_rotated[1], q_right_rotated[2]);
 
   // Compute speeds in x-direction
   // w_left = q_left_rotated[0];
-  uh_left = q_left_rotated[1];
-  vh_left = q_left_rotated[2];
-  compute_velocity_terms(h_left, hle, q_left_rotated[1], q_left_rotated[2],
-                         &u_left, &uh_left, &v_left, &vh_left);
-
-  uh_right = q_right_rotated[1];
-  vh_right = q_right_rotated[2];
-  compute_velocity_terms(h_right, hre, q_right_rotated[1], q_right_rotated[2],
-                         &u_right, &uh_right, &v_right, &vh_right);
+  const double uh_left_raw = q_left_rotated[1];
+  const double vh_left_raw = q_left_rotated[2];
+  if(hle > 0.0) {
+  //printf("uh_left_raw %f, hle %.20f, division = %f\n", uh_left_raw, hle, uh_left_raw / hle);
+    // If the edge height is positive, compute velocities
+    u_left = uh_left_raw / hle;
+    uh_left = h_left * u_left;
+    v_left = vh_left_raw / hle;
+    vh_left = h_left * vh_left_raw / hle;
+  } else {
+    // If the edge height is zero or negative, set velocities to zero
+    u_left = 0.0;
+    uh_left = 0.0;
+    v_left = 0.0;
+    vh_left = 0.0;
+  }
+  // compute_velocity_terms(h_left, hle, uh_left_raw, vh_left_raw,
+  //                        &u_left, &uh_left, &v_left, &vh_left);
+                    
+  const double uh_right_raw = q_right_rotated[1];
+  const double vh_right_raw = q_right_rotated[2];
+  // printf("uh_right_raw %f, hre %.20f, division = %f\n", uh_right_raw, hre, uh_right_raw / hre);
+  if(hre > 0.0) {
+    // If the edge height is positive, compute velocities
+    u_right = uh_right_raw / hre;
+    uh_right = h_right * u_right;
+    v_right = vh_right_raw / hre;
+    vh_right = h_right * vh_right_raw / hre;
+  } else {
+    // If the edge height is zero or negative, set velocities to zero
+    u_right = 0.0;
+    uh_right = 0.0;
+    v_right = 0.0;
+    vh_right = 0.0;
+  }
+  // compute_velocity_terms(h_right, hre, uh_right_raw, vh_right_raw,
+  //                        &u_right, &uh_right, &v_right, &vh_right);
 
   // Maximal and minimal wave speeds
   soundspeed_left = sqrt(g * h_left);
   soundspeed_right = sqrt(g * h_right);
   // Something that scales like the Froude number
   // We will use this to scale the diffusive component of the UH/VH fluxes.
-  double local_fr = compute_local_froude(
-      low_froude, u_left, u_right, v_left, v_right,
-      soundspeed_left, soundspeed_right);
+  // double local_fr = compute_local_froude(
+  //     low_froude, u_left, u_right, v_left, v_right,
+  //     soundspeed_left, soundspeed_right);
+  double numerator = u_right * u_right + u_left * u_left +
+                     v_right * v_right + v_left * v_left;
+  double denominator = soundspeed_left * soundspeed_left +
+                       soundspeed_right * soundspeed_right + 1.0e-10;
+  double local_fr = 1.0;
+  if(low_froude == 1){
+   local_fr = sqrt(fmax(0.001, fmin(1.0, numerator / denominator))); 
+  }
+  else if(low_froude == 2){
+    double fr = sqrt(numerator / denominator);
+    local_fr = sqrt(fmin(1.0, 0.01 + fmax(fr - 0.01, 0.0)));
+  }
+  else{
+    local_fr = 1.0;
+  }
 
-  double s_max = compute_s_max(u_left, u_right, soundspeed_left, soundspeed_right);
-  double s_min = compute_s_min(u_left, u_right, soundspeed_left, soundspeed_right);
+  // printf("u_left = %f, u_right = %f, soundspeed_left = %f, soundspeed_right = %f\n",
+  //        u_left, u_right, soundspeed_left, soundspeed_right);
+  // double s_max = compute_s_max(u_left, u_right, soundspeed_left, soundspeed_right);
+  // double s_min = compute_s_min(u_left, u_right, soundspeed_left, soundspeed_right);
+
+  double s_max = fmax(u_left + soundspeed_left, u_right + soundspeed_right);
+  if(s_max < 0.0)
+  {
+    s_max = 0.0;
+  }
+  double s_min = fmin(u_left - soundspeed_left, u_right - soundspeed_right);
+  if(s_min > 0.0)
+  {
+    s_min = 0.0;
+  }
 
   // Flux formulas
   flux_left[0] = u_left * h_left;
@@ -208,7 +284,10 @@ inline anuga_int __flux_function_central(double *__restrict q_left, double *__re
   if (denom < epsilon)
   {
     // Both wave speeds are very small
-    memset(edgeflux, 0, 3 * sizeof(double));
+    //memset(edgeflux, 0, 3 * sizeof(double));
+    edgeflux[0] = 0.0;
+    edgeflux[1] = 0.0;
+    edgeflux[2] = 0.0;
 
     *max_speed = 0.0;
     //*pressure_flux = 0.0;
@@ -236,8 +315,14 @@ inline anuga_int __flux_function_central(double *__restrict q_left, double *__re
     *pressure_flux = 0.5 * g * (s_max * h_left * h_left - s_min * h_right * h_right) * inverse_denominator;
 
     // Rotate back
-    __rotate(edgeflux, n1, -n2);
+    //__rotate(edgeflux, n1, -n2);
+    double ed1 = edgeflux[1]; // x-momentum flux
+    double ed2 = edgeflux[2]; // y-momentum flux
+    edgeflux[1] = n1 * ed1 - n2 * ed2;
+    edgeflux[2] = n2 * ed1 + n1 * ed2;
   }
+
+  //printf("max speed = %f \n", *max_speed);
 
   return 0;
 }
@@ -292,7 +377,7 @@ anuga_int __openmp__flux_function_central(double q_left0, double q_left1, double
   return ierr;
 }
 
-double __adjust_edgeflux_with_weir(double *edgeflux,
+inline double __adjust_edgeflux_with_weir(double *edgeflux,
                                    const double h_left, double h_right,
                                    const double g, double weir_height,
                                    const double Qfactor,
@@ -424,9 +509,9 @@ double __openmp__adjust_edgeflux_with_weir(double *edgeflux0, double *edgeflux1,
 }
 
 // Apply weir discharge theory correction to the edge flux
-inline void apply_weir_discharge_correction(const struct domain * __restrict D, const EdgeData * __restrict E,
+inline void apply_weir_discharge_correction(const struct domain *D, const EdgeData *E,
                                      const anuga_int k, const anuga_int ncol_riverwall_hydraulic_properties,
-                                     const double g, double * __restrict edgeflux, double * __restrict max_speed) {
+                                     const double g, double *edgeflux, double *max_speed) {
 
     anuga_int RiverWall_count = D->edge_river_wall_counter[E->ki];
     anuga_int ii = D->riverwall_rowIndex[RiverWall_count - 1] * ncol_riverwall_hydraulic_properties;
@@ -442,8 +527,7 @@ inline void apply_weir_discharge_correction(const struct domain * __restrict D, 
     double h_left_tmp = fmax(D->stage_centroid_values[k] - E->z_half, 0.);
     double h_right_tmp = E->is_boundary
                          ? fmax(E->hc_n + E->zr - E->z_half, 0.)
-                         : fmax(D->stage_centroid_values[ii] - E->z_half, 0.);
-                         //: fmax(D->stage_centroid_values[E->n] - E->z_half, 0.);
+                         : fmax(D->stage_centroid_values[E->n] - E->z_half, 0.);
 
     if (D->riverwall_elevation[RiverWall_count - 1] > fmax(E->zc, E->zc_n)) {
         __adjust_edgeflux_with_weir(edgeflux, h_left_tmp, h_right_tmp, g,
@@ -451,11 +535,12 @@ inline void apply_weir_discharge_correction(const struct domain * __restrict D, 
     }
 }
 
-double _openmp_compute_fluxes_central(const struct domain *__restrict D,
+double _openmp_compute_fluxes_central(const struct domain *D,
                                       double timestep)
 {
   // Local variables 
   anuga_int number_of_elements = D->number_of_elements;
+  anuga_int boundary_length = D->boundary_length;
   // anuga_int KI, KI2, KI3, B, RW, RW5, SubSteps;
   anuga_int substep_count;
 
@@ -482,38 +567,59 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
 
   double local_timestep = 1.0e+100;
   double boundary_flux_sum_substep = 0.0;
+  anuga_int my_size = 1200;
+  double array_for_hle[3 * number_of_elements];
+
+  //array_for_hle = D->height_edge_values;
+  //for(int k = 0; k < number_of_elements; k++)
+  //{
+  //  for(int i = 0; i < 3; i++)
+  //  {
+  //    // Store the edge height for each edge in the array
+  //    array_for_hle[3 * k + i] = D->height_edge_values[3 * k + i];
+  //  }
+  //}
+
   // double max_speed_local;
 
       double edgeflux[3];
       double pressure_flux;
-      double max_speed_local;
-      EdgeData edge_data;
-// For all triangles
 
+// printf("mapping up to number of elements %d \n", number_of_elements);
+// printf("mapping up to boundary length %d \n", D->boundary_length);
+// printf("mapping up to river wall edges %d \n", D->number_of_riverwall_edges);
+
+
+
+// #pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, number_of_elements) \
+//     firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)                              \
+//     private(edgeflux, pressure_flux, max_speed_local, edge_data) \
+//     reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
 
 #pragma omp target teams distribute parallel for default(none) schedule(static) shared(D, substep_count, number_of_elements) \
-    map(tofrom:D[0:1],D->stage_explicit_update[0:number_of_elements], D->xmom_explicit_update[0:number_of_elements]) \
+    map(tofrom:D[0:1])\
+    map(tofrom:D->stage_explicit_update[0:number_of_elements], D->xmom_explicit_update[0:number_of_elements]) \
     map(tofrom:D->ymom_explicit_update[0:number_of_elements],  D->tri_full_flag[0:number_of_elements])\
-    map(tofrom:D->radii[0:number_of_elements],  D->normals[0:number_of_elements])\
-    map(tofrom:D->areas[0:number_of_elements],  D->boundary_flux_sum[0:number_of_elements])\
-    map(to:edge_data[0:1], edgeflux[0:3])\
-    map(to:edge_data.ql[0:3], edge_data.qr[0:3])\
-    map(to:D->stage_centroid_values[0:number_of_elements])\
-    map(to:D->stage_edge_values[0:number_of_elements],D->xmom_edge_values[0:number_of_elements])\
-    map(to:D->ymom_edge_values[0:number_of_elements],D->bed_edge_values[0:number_of_elements])\
-    map(to:D->height_edge_values[0:number_of_elements],D->edgelengths[0:number_of_elements])\
-    map(to:D->neighbours[0:number_of_elements],D->height_centroid_values[0:number_of_elements])\
-    map(to:D->bed_centroid_values[0:number_of_elements],D->stage_boundary_values[0:number_of_elements])\
-    map(to:D->xmom_boundary_values[0:number_of_elements],D->ymom_boundary_values[0:number_of_elements])\
-    map(to:D->neighbour_edges[0:number_of_elements],D->edge_flux_type[0:number_of_elements])\
-    map(to:D->edge_river_wall_counter[0:number_of_elements],D->riverwall_elevation[0:number_of_elements])\
-    map(to:D->riverwall_rowIndex[0:number_of_elements])\
+    map(tofrom:D->radii[0:number_of_elements],  D->normals[0:6*number_of_elements])\
+    map(tofrom:D->areas[0:number_of_elements],  D->boundary_flux_sum[0:3])\
+    map(tofrom:D->stage_centroid_values[0:number_of_elements])\
+    map(tofrom:D->stage_edge_values[0:3*number_of_elements],D->xmom_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->ymom_edge_values[0:3*number_of_elements],D->bed_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->height_edge_values[0:3*number_of_elements],D->edgelengths[0:3*number_of_elements])\
+    map(tofrom:D->neighbours[0:3*number_of_elements],D->height_centroid_values[0:number_of_elements])\
+    map(tofrom:D->bed_centroid_values[0:number_of_elements],D->stage_boundary_values[0:boundary_length])\
+    map(tofrom:D->xmom_boundary_values[0:boundary_length],D->ymom_boundary_values[0:boundary_length])\
+    map(tofrom:D->neighbour_edges[0:3 * number_of_elements],D->edge_flux_type[0: 3*number_of_elements])\
+    map(tofrom:D->edge_river_wall_counter[0:3*number_of_elements],D->riverwall_elevation[0:1])\
+    map(tofrom:D->riverwall_rowIndex[0:1])\
     map(tofrom:D->max_speed[0:number_of_elements])\
     firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)\
-    private(pressure_flux, max_speed_local) \
+    private(edgeflux, pressure_flux) \
     reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
   for (anuga_int k = 0; k < number_of_elements; k++)
   {
+    EdgeData edge_data;
+      double max_speed_local = 0.0;
     double speed_max_last = 0.0;
     // Set explicit_update to zero for all conserved_quantities.
     // This assumes compute_fluxes called before forcing terms
@@ -524,8 +630,12 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
     // Loop through neighbours and compute edge flux for each
     for (anuga_int i = 0; i < 3; i++)
     {
+    int ki = 3 * k + i;
+    // if(ki = 1071)
+    //   printf("E->hle %.20f at ki = %d \n", array_for_hle[ki], ki);
       get_edge_data_central_flux(D,k,i,&edge_data);
-
+      // printf("edge_data.h_left %.20f, edge_data.h_right %.20f, edge_data.hle %.20f, edge_data.hre %.20f \n",
+      //        edge_data.h_left, edge_data.h_right, edge_data.hle, edge_data.hre);
       // Edge flux computation (triangle k, edge i)
       if (edge_data.h_left == 0.0 && edge_data.h_right == 0.0)
       {
@@ -550,7 +660,7 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
 
     // Weir flux adjustment
     if (edge_data.is_riverwall) {
-      //apply_weir_discharge_correction(D, &edge_data, k, ncol_riverwall_hydraulic_properties, g, edgeflux, &max_speed_local);
+      apply_weir_discharge_correction(D, &edge_data, k, ncol_riverwall_hydraulic_properties, g, edgeflux, &max_speed_local);
     }
 
       // Multiply edgeflux by edgelength
@@ -561,9 +671,13 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
       // Update timestep based on edge i and possibly neighbour n
       // NOTE: We should only change the timestep on the 'first substep'
       // of the timestepping method [substep_count==0]
+      // printf("substep_count %d, edge_data.n %d, D->tri_full_flag[k] %d, max_speed_local %f \n",
+      //        substep_count, edge_data.n, D->tri_full_flag[k], max_speed_local);
       if (substep_count == 0 && D->tri_full_flag[k] == 1 && max_speed_local > epsilon)
       {
         // Compute the 'edge-timesteps' (useful for setting flux_update_frequency)
+        // printf("D->radii[k] %f, max_speed_local %f, epsilon %f \n",
+        //        D->radii[k], max_speed_local, epsilon);
         double edge_timestep = D->radii[k] * 1.0 / fmax(max_speed_local, epsilon);
         // Update the timestep
         // Apply CFL condition for triangles joining this edge (triangle k and triangle n)
@@ -578,8 +692,7 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
       // If this cell is not a ghost, and the neighbour is a
       // boundary condition OR a ghost cell, then add the flux to the
       // boundary_flux_integral
-      //if (((edge_data.n < 0) & (D->tri_full_flag[k] == 1)) | ((edge_data.n >= 0) && ((D->tri_full_flag[k] == 1) & (D->tri_full_flag[edge_data.n] == 0))))
-      if (((edge_data.n < 0) & (D->tri_full_flag[k] == 1)) | ((edge_data.n >= 0) && ((D->tri_full_flag[k] == 1) & (D->tri_full_flag[k] == 0))))
+      if (((edge_data.n < 0) & (D->tri_full_flag[k] == 1)) | ((edge_data.n >= 0) && ((D->tri_full_flag[k] == 1) & (D->tri_full_flag[edge_data.n] == 0))))
       {
         // boundary_flux_sum is an array with length = timestep_fluxcalls
         // For each sub-step, we put the boundary flux sum in.
@@ -615,6 +728,7 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
   if (substep_count == 0){
     timestep = local_timestep;
   }
+  //printf("Time step for fluxes: %f \n", timestep);
 
   return timestep;
 }
