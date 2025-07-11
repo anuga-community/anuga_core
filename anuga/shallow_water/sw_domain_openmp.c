@@ -591,11 +591,12 @@ double _openmp_compute_fluxes_central(const struct domain *D,
 
 
 
-// #pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, number_of_elements) \
-//     firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)                              \
-//     private(edgeflux, pressure_flux, max_speed_local, edge_data) \
-//     reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
 
+//#pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, number_of_elements) \
+//     firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)                              \
+//     private(edgeflux, pressure_flux) \
+//     reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
+//
 #pragma omp target teams distribute parallel for default(none) schedule(static) shared(D, substep_count, number_of_elements) \
     map(tofrom:D[0:1])\
     map(tofrom:D->stage_explicit_update[0:number_of_elements], D->xmom_explicit_update[0:number_of_elements]) \

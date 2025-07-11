@@ -29,6 +29,7 @@ struct domain {
     double     minimum_allowed_height;
     double     maximum_allowed_speed;
     anuga_int    low_froude;
+    anuga_int number_of_hydraulic_properties_array_size;
 
 
     anuga_int timestep_fluxcalls;
@@ -129,7 +130,7 @@ struct domain {
 
 };
 
-void init_c_domain(struct domain* D, anuga_int number_of_elements, anuga_int boundary_length);
+void init_c_domain(struct domain* D, anuga_int number_of_elements, anuga_int boundary_length, anuga_int number_of_riverwall_edges, anuga_int n_hydraulic_properties);
 void free_c_domain(struct domain* D);
 void copy_c_domain(struct domain* D, struct domain* source);
 void say_hi();

@@ -7,19 +7,24 @@ void say_hi() {
     printf("Hello from C domain!\n");
 }   
 
-void init_c_domain(struct domain* D, anuga_int number_of_elements, anuga_int boundary_length) {
+void init_c_domain(struct domain* D, anuga_int number_of_elements, anuga_int boundary_length, anuga_int number_of_riverwall_edges, anuga_int n_hydraulic_properties) {
     // Initialize the domain structure with the given number of elements and boundary length
     // All of our arrays are in function of these two parameters 
     D->number_of_elements = number_of_elements;
     D->boundary_length = boundary_length;
+    D->number_of_riverwall_edges = number_of_riverwall_edges;
+    D->number_of_hydraulic_properties_array_size = n_hydraulic_properties;
     
 
 
     // for sanity, let's declare the common sizes 
+    size_t n_riverwall = number_of_riverwall_edges;
+    size_t n_hydraulic = n_hydraulic_properties;
     size_t n = number_of_elements;
     size_t b = boundary_length;
     size_t n3 = 3 * number_of_elements;
     size_t n6 = 6 * number_of_elements;
+
 
 
 
@@ -103,9 +108,9 @@ void init_c_domain(struct domain* D, anuga_int number_of_elements, anuga_int bou
     D->ymom_semi_implicit_update = (double*)malloc(n * sizeof(double));
 
     // river wall structures
-    D->riverwall_elevation = (double*)malloc(1 * sizeof(double));
-    D->riverwall_rowIndex = (anuga_int*)malloc(1 * sizeof(anuga_int));
-    D->riverwall_hydraulic_properties = (double*)malloc(1 * sizeof(double));
+    D->riverwall_elevation = (double*)malloc(n_riverwall * sizeof(double));
+    D->riverwall_rowIndex = (anuga_int*)malloc(n_riverwall * sizeof(anuga_int));
+    D->riverwall_hydraulic_properties = (double*)malloc(n_hydraulic * sizeof(double));
 
     D->is_c_domain = true; // Flag to indicate this is a C domain structure
     D->is_initialised = true; // Flag to indicate the domain has been initialised
@@ -346,11 +351,11 @@ void copy_c_domain(struct domain* D, struct domain* source) {
            source->number_of_elements * sizeof(double));
 
     memcpy(D->riverwall_elevation, source->riverwall_elevation,
-           1 * sizeof(double));
+           source->number_of_riverwall_edges * sizeof(double));
     memcpy(D->riverwall_rowIndex, source->riverwall_rowIndex,
-           1 * sizeof(anuga_int));
+           source->number_of_riverwall_edges * sizeof(anuga_int));
     memcpy(D->riverwall_hydraulic_properties, source->riverwall_hydraulic_properties,
-           1 * sizeof(double));
+           source->number_of_hydraulic_properties_array_size * sizeof(double));
 
 
            //printf("Domain copied successfully.\n");

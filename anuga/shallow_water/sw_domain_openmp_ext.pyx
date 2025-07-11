@@ -34,6 +34,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 		double beta_vh_dry
 		int64_t max_flux_update_frequency
 		int64_t ncol_riverwall_hydraulic_properties
+		int64_t number_of_hydraulic_properties_array_size
 
 		# these pointers are set once the domain is created
 		# and are used in the evolve loop
@@ -132,7 +133,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	int64_t low_froude)
 
 cdef extern from "domain_c_struct.c" nogil:
-	void init_c_domain(domain* D, int64_t number_of_elements, int64_t boundary_length)
+	void init_c_domain(domain* D, int64_t number_of_elements, int64_t boundary_length, int64_t a, int64_t b)
 	void free_c_domain(domain* D)
 	void copy_c_domain(domain* D, domain* source)
 	void say_hi()
@@ -499,23 +500,30 @@ cdef inline get_python_domain_pointers(domain *D, object domain_object):
 	# these all seem to be size 1
 	try:
 		riverwall_elevation = riverwallData.riverwall_elevation
+		#print("riverewall elevation size ", riverwall_elevation.size)
 		D.riverwall_elevation = &riverwall_elevation[0]
 	except:
 		D.riverwall_elevation = NULL
 
 	try:
 		riverwall_rowIndex = riverwallData.hydraulic_properties_rowIndex
+		#print(" riverwall_rowIndex size ", riverwall_rowIndex.size)
 		D.riverwall_rowIndex = &riverwall_rowIndex[0]
 	except:
 		D.riverwall_rowIndex = NULL
 
 	try:
 		riverwall_hydraulic_properties = riverwallData.hydraulic_properties
+		#print(" the shape is ", riverwall_hydraulic_properties.shape)
+		D.number_of_hydraulic_properties_array_size = riverwall_hydraulic_properties.size
 		D.riverwall_hydraulic_properties = &riverwall_hydraulic_properties[0,0]
 	except:
 		D.riverwall_hydraulic_properties = NULL
 		
 
+	# size 1
+	#print(" ncol riverwall hydralic perop ", riverwallData.ncol_hydraulic_properties) # size 1
+        # should this be behidn a try except too? it shows a weird number when all of the above are 1 
 	D.ncol_riverwall_hydraulic_properties = riverwallData.ncol_hydraulic_properties
 
 
@@ -836,28 +844,32 @@ def compute_fluxes_ext_central(object domain_object, double timestep):
 	number_of_elements = domain_object.number_of_elements
 	cdef int64_t boundary_length
 	boundary_length = domain_object.boundary_length
+	cdef int64_t n_riverwall_edges 
+	n_riverwall_edges = max(1,domain_object.number_of_riverwall_edges)
 
 	# this gets the things from python
 	#print("Getting domain parameters from python object")
 	get_python_domain_parameters(&D, domain_object)
 	#print("Getting domain pointers from python object")
 	get_python_domain_pointers(&D, domain_object)
+	cdef int64_t n_hydraulic_properties 
+	n_hydraulic_properties = D.number_of_hydraulic_properties_array_size
 	#print("domain object max speed", [D.max_speed[i] for i in range(number_of_elements)])
 	#print("initializing the domain")
 	#print("Domain initialized, copying parameters to C domain")
 	# let the freak show begin, we will now copy to C 
 	#print(" here again ... ")
 	with nogil:
-		init_c_domain(&D_malloc, number_of_elements, boundary_length)
-		copy_c_domain(&D_malloc, &D)
-		timestep =  _openmp_compute_fluxes_central(&D_malloc, timestep)
+		#init_c_domain(&D_malloc, number_of_elements, boundary_length, n_riverwall_edges, n_hydraulic_properties)
+		#copy_c_domain(&D_malloc, &D)
+		timestep =  _openmp_compute_fluxes_central(&D, timestep)
 
 	#print("Time step returned from C: ", timestep)
-	set_python_domain_pointers(&D_malloc, domain_object)
+	#set_python_domain_pointers(&D_malloc, domain_object)
 	#print("domain object max speed", [D.max_speed[i] for i in range(number_of_elements)])
 
-	with nogil:
-		free_c_domain(&D_malloc)
+	#with nogil:
+#		free_c_domain(&D_malloc)
 	#print(" here again ... after free_c_domain")
 	#sys.exit(1)
 

@@ -52,7 +52,7 @@ if openmp.found()
   #if host_machine.system() == 'windows'
   
   openmp_c_args = ['-O3', '-march=native', '-fopenmp', '-g']
-  #openmp_c_args = ['-O0', '-mp=gpu', '-Minfo=mp,accel', '-g']
+  #openmp_c_args = ['-O3', '-mp=gpu', '-Minfo=mp,accel', '-g']
   # openmp_c_args = ['-O3', '-march=native','-funroll-loops', '-fvectorize', '-Rpass=loop-vectorize', '-Rpass=loop-unroll', '-g'],
   # openmp_c_args = ['-O3', '-march=native', openmp_flag, '-g'],
 
