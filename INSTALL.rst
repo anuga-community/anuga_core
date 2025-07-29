@@ -3,7 +3,7 @@ Installation
 
 The installation documentation for ANUGA is available here:
 
-https://anuga.readthedocs.io/en/latest/installation.html
+https://anuga.readthedocs.io/en/latest/installation/index.html
 
 
 
