@@ -78,7 +78,7 @@ echo "..."
 
 cd ${SCRIPTPATH}
 cd ..
-pip install --no-build-isolation -editable .
+pip install --no-build-isolation --editable .
 echo " "
 
 echo "#==========================="
