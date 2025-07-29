@@ -30,6 +30,8 @@ def create_benchmark_csvfile(pstat_basename, openmp_threads, verbose=True):
 
     table_contents = []
 
+    # FIXME SR: Need to update script to cover cases with evolve_one_euler_step, 
+    # evolve_one_rk2_step, etc.
     myfuncs = ['OMP_NUM_THREADS', 
     'total_time', 
     'evolve', 
