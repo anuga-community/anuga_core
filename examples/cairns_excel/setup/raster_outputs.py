@@ -84,7 +84,7 @@ def make_resampled_elevation(
     gdal_rasterize_command = gdal_rasterize + ' -a_srs ' + all_srs \
         + ' -burn 1 -l ' + clip_polygon_layer + ' ' + extent_info + ' ' \
         + res_info + ' ' + clip_polygon + ' ' + new_mask
-    print gdal_rasterize_command
+    print(gdal_rasterize_command)
     os.system(gdal_rasterize_command)
 
     return
@@ -117,7 +117,7 @@ def gdal_calc_command(
 
     gdalcalc_command = gdal_calc + gdal_input + calc_command \
         + '--outfile ' + rast_out
-    print gdalcalc_command
+    print(gdalcalc_command)
     os.system(gdalcalc_command)
 
     return
@@ -239,7 +239,7 @@ def make_me_some_tifs(
         for (i, quant) in enumerate(['elevation_c', 'friction_c']):
 
             # Get the quantity if it exists
-            if fid.variables.has_key(quant):
+            if quant in fid.variables:
                 quant_values = fid.variables[quant]
                 # If multi time-steps, only get first timestep
                 if(len(quant_values.shape) > 1):

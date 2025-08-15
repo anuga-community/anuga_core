@@ -902,6 +902,6 @@ class Test_sww(unittest.TestCase):
 #################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_sww, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_sww)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

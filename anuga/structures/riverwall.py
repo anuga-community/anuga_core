@@ -230,7 +230,7 @@ class RiverWall(object):
         #    print '         the shallow water flux solution as the ratio (min_head)/(weir_height) becomes '
         #    print '         large, or the ratio (downstream_head)/(upstream_head) becomes large'
         #    print ' '
-        #    print '  It works in parallel, but you must use domain.riverwallData.create_riverwall AFTER distributing the mesh'
+        #    print '  It works in parallel, but you must use domain.create_riverwall AFTER distributing the mesh'
         #    print ' '
 
         # NOTE: domain.riverwallData is initialised in shallow_water_domain.py for DE algorithms

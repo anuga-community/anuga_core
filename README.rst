@@ -1,13 +1,19 @@
 
-.. image:: https://badges.gitter.im/gitterHQ/gitter.png
+.. |badge0| image:: https://badges.gitter.im/gitterHQ/gitter.png
     :target: https://app.gitter.im/#/room/#anuga-community:gitter.im
     :alt: Community Chat
 
-.. image:: https://app.travis-ci.com/anuga-community/anuga_core.svg?branch=develop_hackathon
+..
+    |badge1| image:: https://img.shields.io/travis/com/anuga-community/anuga_core/develop_hackathon.svg
     :target: https://app.travis-ci.com/anuga-community/anuga_core
-    :alt: travis ci status
+    :alt: Travis CI Status
+
+.. |badge1| image:: https://github.com/anuga-community/anuga_core/actions/workflows/conda-setup.yml/badge.svg
+    :target: https://github.com/anuga-community/anuga_core/actions/workflows/conda-setup.yml
+    :alt: GitHub Actions Status
    
-.. image:: https://ci.appveyor.com/api/projects/status/x5airjv7eq2u805w/branch/develop_hackathon?svg=true
+.. 
+    |badge2| image:: https://ci.appveyor.com/api/projects/status/x5airjv7eq2u805w/branch/main?svg=true
     :target: https://ci.appveyor.com/project/stoiver/anuga-core-nwgr0
     :alt: appveyor status
 
@@ -31,10 +37,7 @@
     :target: https://anuga.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
 
-|badge0| |badge1| |badge2| |badge3| |badge3| |badge4| |badge5| |badge6| |badge7|
-
-
-
+|badge0| |badge1| |badge3| |badge4| |badge5| |badge6| |badge7|
 
 
 
@@ -106,7 +109,7 @@ ANUGA documentation is available via "read the docs" at
     https://anuga.readthedocs.io 
 
 Also you can obtain help via the old
-`user_manual <https://github.com/anuga-community/anuga_core/raw/main/doc/anuga_user_manual.pdf>`_
+`user_manual <https://dx.doi.org/10.13140/RG.2.2.17267.81446>`_
 
 Also helpful information is available online at
 

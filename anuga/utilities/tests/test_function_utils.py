@@ -53,6 +53,6 @@ class Test_Function_Utils(unittest.TestCase):
 # -------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Function_Utils, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Function_Utils)
     runner = unittest.TextTestRunner()  # verbosity=2)
     runner.run(suite)

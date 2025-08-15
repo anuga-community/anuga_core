@@ -421,6 +421,6 @@ class Test_CSV_utils(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_CSV_utils, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_CSV_utils)
     runner = unittest.TextTestRunner()
     runner.run(suite)

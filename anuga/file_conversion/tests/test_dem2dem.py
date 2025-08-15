@@ -214,7 +214,7 @@ class Test_Dem2Dem(unittest.TestCase):
 #################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Dem2Dem, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Dem2Dem)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)
         

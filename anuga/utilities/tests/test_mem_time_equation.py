@@ -42,6 +42,6 @@ class Test_mem_time_equation(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_mem_time_equation, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_mem_time_equation)
     runner = unittest.TextTestRunner()
     runner.run(suite)

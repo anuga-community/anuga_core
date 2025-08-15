@@ -490,6 +490,6 @@ class Test_system_tools(unittest.TestCase):
 ################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_system_tools, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_system_tools)
     runner = unittest.TextTestRunner()
     runner.run(suite)

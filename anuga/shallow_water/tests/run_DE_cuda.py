@@ -142,7 +142,7 @@ domain2.update_boundary()
 nvtxRangePop()
 
 # nvtxRangePush('initialise gpu_interface domain2')
-# domain2.set_multiprocessor_mode(4)
+# domain2.set_multiprocessor_mode(2)
 # nvtxRangePop()
 
 # nvtxRangePush('compute fluxes domain2')

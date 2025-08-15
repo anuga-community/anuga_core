@@ -285,3 +285,39 @@ class Advection_Domain(Generic_Domain):
 
         self.timestep = timestep
 
+    def apply_protection_against_isolated_degenerate_timesteps(self):
+
+        if self.protect_against_isolated_degenerate_timesteps is False:
+            return
+
+        # FIXME (Ole): Make this configurable
+        if num.max(self.max_speed) < 10.0:
+            return
+
+        # Setup 10 bins for speed histogram
+        from anuga.utilities.numerical_tools import histogram, create_bins
+
+        bins = create_bins(self.max_speed, 10)
+        hist = histogram(self.max_speed, bins)
+
+        # Look for characteristic signature
+        if len(hist) > 1 and hist[-1] > 0 and \
+           hist[4] == hist[5] == hist[6] == hist[7] == hist[8] == 0:
+            # Danger of isolated degenerate triangles
+
+            # Find triangles in last bin
+            # FIXME - speed up using numeric package
+            d = 0
+            for i in range(self.number_of_triangles):
+                if self.max_speed[i] > bins[-1]:
+                    msg = 'Time=%f: Ignoring isolated high ' % self.get_time()
+                    msg += 'speed triangle '
+                    msg += '#%d of %d with max speed = %f' \
+                        % (i, self.number_of_triangles, self.max_speed[i])
+
+                    self.get_quantity('xmomentum').set_values(0.0, indices=[i])
+                    self.get_quantity('ymomentum').set_values(0.0, indices=[i])
+                    self.max_speed[i] = 0.0
+                    d += 1
+
+

@@ -1147,6 +1147,6 @@ class Test_Fit(unittest.TestCase):
 
 #-------------------------------------------------------------
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Fit,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Fit)
     runner = unittest.TextTestRunner() #verbosity=1)
     runner.run(suite)

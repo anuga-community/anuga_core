@@ -42,7 +42,7 @@ def get_corresponding_series(reach, station):
     #elif(reach=='RIGHT'):
     #    anuga_x=5.
     else:
-        raise Exception, 'reach not recognized'
+        raise Exception('reach not recognized')
 
 
     # Get station string in hecras gauges
@@ -80,7 +80,7 @@ def compare_reach(reach):
             pyplot.plot(x[1][:,0],x[1][:,1]+station/1000.+1.0, '--', color='black',linewidth=1.0)
         except:
             msg = 'Missing reach/station '+ reach + '/'+str(station)
-            print msg
+            print(msg)
 
         pyplot.xlim((0, 15000.))
         pyplot.xlabel('Time (s)',fontsize=20)
