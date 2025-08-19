@@ -3155,11 +3155,11 @@ class Domain(Generic_Domain):
         """
         Set multiprocessor mode 
          1. openmp (in development)
-         2. cuda (in development)
+         2. cupy (in development)
         """
 
         if multiprocessor_mode not in [1,2]:
-            raise ValueError('Invalid multiprocessor mode. Must be one of [1,2]')
+            raise ValueError('Invalid multiprocessor mode. Must be one of [1,2] (openmp, cupy)')
 
         self.multiprocessor_mode = multiprocessor_mode
 
@@ -3171,7 +3171,7 @@ class Domain(Generic_Domain):
         Get multiprocessor mode 
         
         1. openmp (in development)
-        2. cuda (in development)
+        2. cupy (in development)
         """
         return self.multiprocessor_mode 
 
