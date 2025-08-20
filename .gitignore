@@ -5,6 +5,8 @@
 [#]*#
 *~
 *$
+*.csv
+*.pstat
 *.bak
 .idea/*
 *.kdev4
