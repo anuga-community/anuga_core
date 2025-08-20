@@ -107,9 +107,9 @@ def setup_initial_conditions(domain, project):
                 quantity_function, domain, approx_grid_spacing=grid_spacing,
                 averaging=mean_type)
 
-        print quantity_name, quantity_data, domain, quantity_clip_range, quantity_mean, quantity_additions
+        print(quantity_name, quantity_data, domain, quantity_clip_range, quantity_mean, quantity_additions)
 
-        print quantity_function(numpy.array([0.0]),numpy.array([0.0]))
+        print(quantity_function(numpy.array([0.0]),numpy.array([0.0])))
         # Set the quantity
         domain.set_quantity(quantity_name, quantity_function,
                             location=location)

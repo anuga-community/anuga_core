@@ -1,11 +1,13 @@
 
 inc_dir = include_directories('../utilities', incdir_numpy)
 
+
 # Compile the Cython-generated C code and additional C code
 py3.extension_module('cg_ext',
   sources: ['cg_ext.pyx'],
   include_directories: inc_dir,
-  dependencies: dependencies,
+  c_args : openmp_c_args,
+  dependencies: openmp_deps,
   subdir: 'anuga/utilities',
   install: true,
 )
@@ -48,6 +50,7 @@ python_sources = [
 'animate.py',
 'argparsing.py',
 'cg_solve.py',
+'create_benchmark_csvfile.py',
 'csv_tools.py',
 'data_audit.py',
 'data_audit_wrapper.py',

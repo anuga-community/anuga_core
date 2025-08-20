@@ -1,6 +1,6 @@
-name: Conda setup
+name: github CI
 
-on: [push, pull_request]
+on: [pull_request, push]
 
 jobs:
   test_conda:
@@ -9,9 +9,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        #os: ["ubuntu-latest", "macos-latest", "windows-latest"]
-        os: ["ubuntu-latest", "windows-latest"]
-        python-version: ["3.9", "3.11", "3.13"]
+        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+
+        # Our meson.build expects that numpy-config is installed but this 
+        # is not available for python < 3.9
+
+        # 2025/06/19: 3.14 causes an error with conda_incubator/setup-miniconda@v3 
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+
     steps:
       - uses: actions/checkout@v4
       - uses: conda-incubator/setup-miniconda@v3
@@ -25,21 +30,32 @@ jobs:
         run: |
           conda env create --name anuga_env --file environments/environment_${{matrix.python-version}}.yml
 
-      - name: Install mingw compilers on Windows
+      - name: Install gcc compilers on Windows
         if: runner.os == 'Windows'
         shell: bash -el {0}
         run: |
-          conda install -c conda-forge -n anuga_env libpython m2w64-toolchain
+           conda install -c conda-forge -n anuga_env gcc_win-64 gxx_win-64
+           # As of 2025/06/19, strange combination of mpi4py, the new compilers and pytest is
+           # causing a segmentation fault on Windows so we uninstall mpi4py
+           # This is a temporary workaround until the issue is resolved.
+           conda uninstall -n anuga_env mpi4py
 
-      - name: Install package
+      - name: Install clang with openmp compiler on macOS
+        if: runner.os == 'macOS'
+        shell: bash -el {0}
+        run: |
+           conda install -c conda-forge -n anuga_env cxx-compiler llvm-openmp
+           
+      - name: Install anuga package
         shell: bash -el {0}
         run: |
           conda activate anuga_env
-          pip install --no-build-isolation .
+          pip install --no-build-isolation -v .
 
       - name: Test package
         shell: bash -el {0}
         run: |
           conda activate anuga_env
           cd ..
-          pytest -p no:faulthandler -q --pyargs anuga
+          export OMP_NUM_THREADS=1
+          pytest -p no:faulthandler -rs --pyargs anuga

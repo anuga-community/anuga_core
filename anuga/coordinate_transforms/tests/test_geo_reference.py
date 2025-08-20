@@ -769,7 +769,7 @@ class geo_referenceTestCase(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(geo_referenceTestCase, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(geo_referenceTestCase)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)
     

@@ -345,7 +345,7 @@ class Test_read_sww(unittest.TestCase):
         
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_read_sww, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_read_sww)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)
     

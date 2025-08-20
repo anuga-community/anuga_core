@@ -45,8 +45,8 @@ copy_code_files(project.output_build,__file__,
 # Fine pts file to be clipped to area of interest
 #------------------------------------------------------------------------------
 
-print 'project.bounding_polygon', project.bounding_polygon
-print 'project.combined_elevation_basename', project.combined_elevation_basename
+print('project.bounding_polygon', project.bounding_polygon)
+print('project.combined_elevation_basename', project.combined_elevation_basename)
 
 # Create Geospatial data from ASCII files
 geospatial_data = {}
@@ -61,7 +61,7 @@ for filename in project.ascii_grid_filenames:
 
     G_grid = Geospatial_data(file_name=absolute_filename+'.pts',
                                                 verbose=True)
-    print 'Clip geospatial object'
+    print('Clip geospatial object')
     geospatial_data[filename] = G_grid.clip(project.bounding_polygon)
 
 # Create Geospatial data from TXT files
@@ -70,7 +70,7 @@ for filename in project.point_filenames:
     absolute_filename = join(project.topographies_folder, filename)
     G_points = Geospatial_data(file_name=absolute_filename,
                                                 verbose=True)
-    print 'Clip geospatial object'
+    print('Clip geospatial object')
     geospatial_data[filename] = G_points.clip(project.bounding_polygon)
 
 #-------------------------------------------------------------------------------
@@ -81,7 +81,7 @@ for extent_polygon_filename in project.extent_polygon_filenames:
     p = read_polygon(join(project.polygons_folder, extent_polygon_filename))
     extent_polygons.append(p)
     
-print 'Add geospatial objects' 
+print('Add geospatial objects') 
 G = None
 for key in geospatial_data:
     if key == project.point_filenames[0] or key == project.point_filenames[1]:
@@ -96,9 +96,9 @@ for key in geospatial_data:
         D = D.clip_outside(extent_polygons[2])
         G += D
 
-print 'Export combined DEM file'
+print('Export combined DEM file')
 G.export_points_file(project.combined_elevation + '.pts')
-print 'Do txt version too'
+print('Do txt version too')
 # Use for comparision in ARC
 G.export_points_file(project.combined_elevation + '.txt')
 

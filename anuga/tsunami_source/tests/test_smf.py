@@ -137,7 +137,7 @@ class Test_smf(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_smf,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_smf)
     runner = unittest.TextTestRunner()
     runner.run(suite)
 

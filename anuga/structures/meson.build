@@ -10,7 +10,6 @@ python_sources = [
 'internal_boundary_functions.py',
 'internal_boundary_operator.py',
 'riverwall.py',
-'setup.py',
 'structure_operator.py',
 'weir_orifice_trapezoid_operator.py',
   ]

@@ -125,7 +125,7 @@ def make_spatially_averaged_function(q_function,
             ub = min((i + 1) * chunk_size, lx)
 
             if verbose:
-                print 'Averaging in triangles ', lb, '-', ub - 1
+                print('Averaging in triangles ', lb, '-', ub - 1)
 
             # Store x,y,triangleIndex
             px = scipy.array([])
@@ -157,7 +157,7 @@ def make_spatially_averaged_function(q_function,
 
             # Get function values at all px,py
             if verbose:
-                print '  Evaluating function at ', len(px), ' points'
+                print('  Evaluating function at ', len(px), ' points')
 
             allTopo = q_function(px, py)
 
@@ -211,16 +211,16 @@ if __name__ == '__main__':
     # Check that the elevation in the 'averaging' band is very small
     # (since we used 'min' averaging)
     if elv[inpol].mean() < 1.0e-06:
-        print 'PASS'
+        print('PASS')
     else:
-        print 'FAIL'
+        print('FAIL')
 
     # Check that no 'averaging' occurred outside the polygon
     x = domain.centroid_coordinates[:,0]
     if all(elv[outpol] - x[outpol]%0.5 == 0.0):
-        print 'PASS'
+        print('PASS')
     else:
-        print 'FAIL'
+        print('FAIL')
 
     # Another test which can catch index errors   
  
@@ -231,7 +231,7 @@ if __name__ == '__main__':
     domain.set_quantity('elevation', topography_smooth2, location='centroids')
 
     # If we get to here, then the above function did not hit an index error.
-    print 'PASS' 
+    print('PASS') 
     
 
     # Another test which can catch index errors   
@@ -244,5 +244,5 @@ if __name__ == '__main__':
     domain.set_quantity('elevation', topography_smooth3, location='centroids')
     
     # If we get to here, then the above function did not hit an index error.
-    print 'PASS' 
+    print('PASS') 
     

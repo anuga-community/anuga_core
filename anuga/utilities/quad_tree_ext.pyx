@@ -11,7 +11,7 @@ cdef extern from "quad_tree.c":
 		pass
 	void delete_quad_tree(quad_tree* quadtree)
 
-cdef delete_quad_tree_cap(object cap):
-	kill = <quad_tree* > PyCapsule_GetPointer(cap, "quad tree")
-	if kill != NULL:
-		delete_quad_tree(kill)
+#cdef delete_quad_tree_cap(object cap):
+#	kill = <quad_tree* > PyCapsule_GetPointer(cap, "quad tree")
+#	if kill != NULL:
+#		delete_quad_tree(kill)

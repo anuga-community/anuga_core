@@ -437,6 +437,6 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Generic_Boundary_Conditions, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Generic_Boundary_Conditions)
     runner = unittest.TextTestRunner()
     runner.run(suite)
