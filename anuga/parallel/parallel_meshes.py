@@ -43,16 +43,21 @@ def parallel_rectangle(m_g, n_g, len1_g=1.0, len2_g=1.0, origin_g = (0.0, 0.0)):
 
     """
 
+    from anuga import myid, numprocs
+    from anuga.utilities.parallel_abstraction import global_running_sum
 
-    from anuga.utilities import parallel_abstraction as pypar
-    m_low, m_high = pypar.balance(m_g, numprocs, myid)
-    
-    n = n_g
-    m_low  = m_low-1
-    m_high = m_high+1
+    mm = m_g // numprocs
+    mmod = m_g % numprocs
 
-    #print 'm_low, m_high', m_low, m_high
+    for i in range(mmod):
+        if (i == myid):
+            mm += 1
+
+    m_low = global_running_sum(mm) - mm
+    m_high = m_low + mm - 1
+
     m = m_high - m_low
+    n = n_g
 
     delta1 = float(len1_g)/m_g
     delta2 = float(len2_g)/n_g
