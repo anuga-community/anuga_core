@@ -313,7 +313,7 @@ class Domain(Generic_Domain):
         # 2. Cuda
         #-------------------------------
         self.gpu_interface = None
-        self.set_multiprocessor_mode(1)
+        self.set_multiprocessor_mode(1)  # Default to OpenMP
 
         #-------------------------------
         # If environment variable OMP_NUM_THREADS is not set, 
