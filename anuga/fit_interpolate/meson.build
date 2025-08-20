@@ -1,6 +1,7 @@
 
 inc_dir = include_directories('../utilities', incdir_numpy)
 
+
 util_srcs = ['../utilities/quad_tree.c',
                  '../utilities/sparse_dok.c',
                  '../utilities/sparse_csr.c']
@@ -9,7 +10,8 @@ util_srcs = ['../utilities/quad_tree.c',
 py3.extension_module('fitsmooth_ext',
   sources: ['fitsmooth_ext.pyx'] + util_srcs,
   include_directories: inc_dir,
-  dependencies: dependencies,
+  c_args : openmp_c_args,
+  dependencies: openmp_deps,
   subdir: 'anuga/fit_interpolate',
   install: true,
 )

@@ -86,5 +86,5 @@ class Test_parallel_sw_flow(unittest.TestCase):
 
 if __name__ == "__main__":
     runner = unittest.TextTestRunner()
-    suite = unittest.makeSuite(Test_parallel_sw_flow, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_parallel_sw_flow)
     runner.run(suite)

@@ -7,7 +7,6 @@ python_sources = [
     'extras.py',
     '__init__.py',
     '__metadata__.py',
-    'old_setup.py',
     'revision.py',
 ]
 

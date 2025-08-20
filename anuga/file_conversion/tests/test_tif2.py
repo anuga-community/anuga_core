@@ -584,6 +584,8 @@ class Test_tif2(unittest.TestCase):
             #Expected ValueError
             raise Exception()       
 
+    @pytest.mark.skipif('osgeo' not in sys.modules,
+                    reason="requires the gdal module")
     def test_tif2point_values_utm(self):
 
         import os

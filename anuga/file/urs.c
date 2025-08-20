@@ -11,6 +11,7 @@ gcc -shared urs_ext.o  -o urs_ext.so
 #include <float.h>
 #include <time.h>
 #include <stdint.h>
+#include "anuga_typedefs.h"
 
 #define MAX_FILE_NAME_LENGTH 128
 #define NODATA 99.0
@@ -24,7 +25,7 @@ static int32_t *fros=NULL;  // First recorded output step
 static int32_t *lros=NULL;  // Last recorded output step 
 static struct tgsrwg* mytgs0=NULL;
 
-static int64_t numDataMax=0;
+static anuga_int numDataMax=0;
 
 
 /*The MUX file format 
@@ -41,7 +42,7 @@ void fillDataArray(int32_t ista, int32_t total_number_of_stations, int32_t nt, i
                    int32_t *istop_p, float *muxData)
 {
     int32_t it, last_it, jsta;
-    int64_t offset=0;
+    anuga_int offset=0;
 
 
     last_it = -1;
@@ -144,23 +145,25 @@ char isdata(float x)
 }
 
 
-int64_t getNumData(const int32_t *fros, const int32_t *lros, const int32_t total_number_of_stations)
+anuga_int getNumData(const int32_t *fros, const int32_t *lros, const int32_t total_number_of_stations)
 /* calculates the number of data in the data block of a mux file */
 /* based on the first and last recorded output steps for each gauge */ 
 {
     int32_t ista, last_output_step;
-    int64_t numData = 0;
+    anuga_int numData = 0;
 
     last_output_step = 0;   
-    for(ista = 0; ista < total_number_of_stations; ista++)
+    for(ista = 0; ista < total_number_of_stations; ista++){
+
         if(*(fros + ista) != -1)
         {
             numData += *(lros + ista) - *(fros + ista) + 1;
             last_output_step = (last_output_step < *(lros+ista) ? 
                 *(lros+ista):last_output_step);
         }   
-        numData += last_output_step*total_number_of_stations; /* these are the t records */
-        return numData;
+    }
+    numData += last_output_step*total_number_of_stations; /* these are the t records */
+    return numData;
 }
 
 /////////////////////////////////////////////////////////////////////////
@@ -170,7 +173,7 @@ int32_t _read_mux2_headers(int32_t numSrc,
                        int32_t* total_number_of_stations,
                        int32_t* number_of_time_steps,
                        double* delta_t,
-                       //int64_t* numDataMax,
+                       //anuga_int* numDataMax,
                        int32_t verbose)
 {
     FILE *fp;
@@ -178,7 +181,7 @@ int32_t _read_mux2_headers(int32_t numSrc,
     struct tgsrwg *mytgs=0;
     char *muxFileName;                                                                  
     char susMuxFileName;
-    int64_t numData;
+    anuga_int numData;
     size_t elements_read; // fread return value
     int32_t block_size;
 
@@ -358,7 +361,7 @@ float** _read_mux2(int32_t numSrc,
                    float *weights, 
                    double *params, 
                    int32_t *number_of_stations,
-                   int64_t *permutation,
+                   anuga_int *permutation,
                    int32_t verbose)
 {
     FILE *fp;
@@ -367,15 +370,15 @@ float** _read_mux2(int32_t numSrc,
     int32_t istart=-1, istop=-1;
     int32_t number_of_selected_stations;
     float *muxData=NULL; // Suppress warning
-    int64_t numData;
-    int64_t *perm = NULL;
-    int64_t *permutation_temp = NULL;
+    anuga_int numData;
+    anuga_int *perm = NULL;
+    anuga_int *permutation_temp = NULL;
 
     int32_t len_sts_data, error_code;
     float **sts_data;
     float *temp_sts_data;
 
-    int64_t offset;
+    anuga_int offset;
 
     int32_t number_of_time_steps, N;
     double delta_t;
@@ -413,7 +416,7 @@ float** _read_mux2(int32_t numSrc,
         *number_of_stations = total_number_of_stations;     
 
         // Create the Identity permutation vector
-        permutation_temp = (int64_t *) malloc(number_of_selected_stations*sizeof(int64_t));
+        permutation_temp = (anuga_int *) malloc(number_of_selected_stations*sizeof(anuga_int));
         if (permutation_temp == NULL)
         {
             printf("ERROR: Memory for permutation_temp could not be allocated.\n");
@@ -422,7 +425,7 @@ float** _read_mux2(int32_t numSrc,
         
         for (i = 0; i < number_of_selected_stations; i++)
         {
-            permutation_temp[i] = (int64_t) i;  
+            permutation_temp[i] = (anuga_int) i;  
         }
 
         perm = permutation_temp;
@@ -489,7 +492,6 @@ float** _read_mux2(int32_t numSrc,
             fprintf(stderr, "cannot open file %s\n", muxFileName);
             free(muxData);
             free(temp_sts_data);
-            free(muxData);
 
             return NULL;                    
         }
@@ -498,8 +500,8 @@ float** _read_mux2(int32_t numSrc,
             printf("Reading mux file %s\n", muxFileName);
         }
 
-        offset = (int64_t) sizeof(int32_t) + total_number_of_stations*(sizeof(struct tgsrwg) + 2*sizeof(int32_t));
-        //printf("\n offset %i ", (int64_t int32_t)offset);
+        offset = (anuga_int) sizeof(int32_t) + total_number_of_stations*(sizeof(struct tgsrwg) + 2*sizeof(int32_t));
+        //printf("\n offset %i ", (anuga_int int32_t)offset);
         fseek(fp, offset, 0);
 
         numData = getNumData(fros_per_source, 
@@ -520,7 +522,6 @@ float** _read_mux2(int32_t numSrc,
             fclose(fp);
             free(muxData);
             free(temp_sts_data);
-            free(muxData);
 
             return NULL;
         }	

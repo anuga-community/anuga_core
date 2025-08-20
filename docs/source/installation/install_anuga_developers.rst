@@ -65,7 +65,7 @@ and its dependencies.
     .. code-block:: bash
 
         cd anuga_core
-        conda env create -n anuga_env_3.12 -f environments/environment.3.12.yml
+        conda env create -n anuga_env_3.12 -f environments/environment_3.12.yml
         conda activate anuga_env_3.12
 
     and finally installs ANUGA in editable mode via: 
@@ -131,6 +131,14 @@ Test the installation.
 .. code-block:: bash
 
    pytest --pyargs anuga
+
+ANUGA also comes with a validation test suite which verifies the correctness of 
+real life hydraulic scenarios. You can run them as follows:
+
+.. code-block:: bash
+
+    cd validation_tests 
+    python run_auto_validation_tests.py
 
 
 Updating

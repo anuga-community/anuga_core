@@ -116,7 +116,7 @@ for i in range(len(alljpg)):
 # NOTE: There are other programs which can make more efficient movies
 movie_command = 'convert -delay ' + str(delay) + ' TMP/*' \
     + file_wildcard + ' ' + animation_name
-print movie_command
+print(movie_command)
 os.system(movie_command)
 
 # Clean up directory

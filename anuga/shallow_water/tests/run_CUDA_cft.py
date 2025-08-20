@@ -176,7 +176,7 @@ nvtxRangePop()
 
 nvtxRangePush('compute forcing terms on gpu for domain2')
 from anuga.shallow_water.shallow_water_domain import manning_friction_implicit
-domain2.set_multiprocessor_mode(4)
+domain2.set_multiprocessor_mode(2)
 manning_friction_implicit(domain2)
 nvtxRangePop()
 

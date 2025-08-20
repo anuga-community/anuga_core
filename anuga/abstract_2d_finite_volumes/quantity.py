@@ -686,20 +686,20 @@ class Quantity(object):
         """Compute interpolated values at edges and centroid
         Pre-condition: vertex_values have been set
         """
-        from .quantity_ext import interpolate
+        from .quantity_openmp_ext import interpolate
         interpolate(self)
 
 
     def interpolate_from_vertices_to_edges(self):
         # Call correct module function (either from this module or C-extension)
 
-        from .quantity_ext import interpolate_from_vertices_to_edges
+        from .quantity_openmp_ext import interpolate_from_vertices_to_edges
         interpolate_from_vertices_to_edges(self)
 
     def interpolate_from_edges_to_vertices(self):
         # Call correct module function (either from this module or C-extension)
 
-        from .quantity_ext import interpolate_from_edges_to_vertices
+        from .quantity_openmp_ext import interpolate_from_edges_to_vertices
         interpolate_from_edges_to_vertices(self)
 
     #---------------------------------------------
@@ -2300,9 +2300,9 @@ class Quantity(object):
             from .quantity_openmp_ext import update
         if self.domain.multiprocessor_mode == 4:
             # FIXME SR: Change this when gpu version is available
-            from .quantity_ext import update
+            from .quantity_openmp_ext import update
         else:
-            from .quantity_ext import update
+            from .quantity_openmp_ext import update
         
         return update(self, timestep)
 
@@ -2391,7 +2391,7 @@ class Conserved_quantity(Quantity):
 ######
 # Prepare the C extensions.
 ######
-from .quantity_ext import \
+from .quantity_openmp_ext import \
          average_vertex_values,\
          average_centroid_values,\
          backup_centroid_values,\
