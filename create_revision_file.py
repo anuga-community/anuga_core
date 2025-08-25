@@ -7,7 +7,7 @@ CreationDate: May 2022
 
 Description:
         
-This script obtains current version from setup.py and Git commit info
+This script obtains current version from pyproject.toml and Git commit info
 and stores it in a Python file named 'revision.py' for use with get_version_info()
 """
 
