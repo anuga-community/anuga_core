@@ -334,6 +334,6 @@ class Test_data_audit(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_data_audit, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_data_audit)
     runner = unittest.TextTestRunner()
     runner.run(suite)

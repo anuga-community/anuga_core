@@ -1059,7 +1059,7 @@ class Test_sww_Interrogate(unittest.TestCase):
  
  
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_sww_Interrogate, 'test_')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_sww_Interrogate)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)
                

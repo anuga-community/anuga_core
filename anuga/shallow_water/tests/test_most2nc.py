@@ -47,6 +47,6 @@ class Test_most2nc(unittest.TestCase):
         os.remove('test.nc')
         
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_most2nc,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_most2nc)
     runner = unittest.TextTestRunner()
     runner.run(suite)

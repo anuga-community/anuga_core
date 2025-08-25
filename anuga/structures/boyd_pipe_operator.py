@@ -20,7 +20,6 @@ class Boyd_pipe_operator(anuga.Structure_operator):
     mannings_rougness,
     """
 
-
     def __init__(self,
                  domain,
                  losses,
@@ -241,7 +240,6 @@ def boyd_pipe_function(depth,
 
     For these conditions we also would like to assess the pipe flow characteristics as it leaves the pipe
     """
-
 
     # Note this errors if blockage is set to 1.0 (ie 100% blockaage) and i have no idea how to fix it
     if blockage >= 1.0:

@@ -1,4 +1,4 @@
-"""  Test environmental forcing - rain, wind, etc.
+"""  Test of the CUDA implementation on the rectangular cross domain
 """
 
 import unittest, os

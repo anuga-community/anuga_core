@@ -93,7 +93,7 @@ def make_spatially_averaged_function(q_function,
             ub = min((i + 1) * chunk_size, lx)
 
             if verbose:
-                print 'Averaging in triangles ', lb, '-', ub - 1
+                print('Averaging in triangles ', lb, '-', ub - 1)
 
             # Store x,y,triangleIndex
             px = scipy.array([])
@@ -119,7 +119,7 @@ def make_spatially_averaged_function(q_function,
 
             # Get function values at all px,py
             if verbose:
-                print '  Evaluating function at ', len(px), ' points'
+                print('  Evaluating function at ', len(px), ' points')
 
             allTopo = q_function(px, py)
 
@@ -136,7 +136,7 @@ def make_spatially_averaged_function(q_function,
                 elif(averaging == 'harmonic_mean'):
                     out[j] = 1.0 / (1.0 / allTopo[out_indices]).mean()
                 else:
-                    raise Exception, 'Unknown value of averaging'
+                    raise Exception('Unknown value of averaging')
         return(out)
 
     return elevation_setter

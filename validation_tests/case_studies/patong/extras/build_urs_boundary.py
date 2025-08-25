@@ -3,6 +3,7 @@ Replacement function that wraps the legacy function urs2sts()
 and passes in the data from the EventSelection <event>.list file.
 """
 
+from future.utils import raise_
 import os
 import os.path
 from time import localtime, strftime, gmtime
@@ -19,7 +20,7 @@ from anuga.file_conversion.urs2sts import urs2sts
 # Get gauges (timeseries of index points)
 #-------------------------------------------------------------------------------
 def get_sts_gauge_data(filename, verbose=False):
-    print 'get_sts_gauge_data: filename=%s' % filename
+    print('get_sts_gauge_data: filename=%s' % filename)
     fid = NetCDFFile(filename+'.sts', 'r')      #Open existing file for read
     permutation = fid.variables['permutation'][:]
     x = fid.variables['x'][:] + fid.xllcorner   #x-coordinates of vertices
@@ -39,7 +40,7 @@ def get_sts_gauge_data(filename, verbose=False):
     #---------------------------------------------------------------------------
      
     maxname = 'max_sts_stage.csv'
-    print 'get_sts_gauge_data: maxname=%s' % maxname
+    print('get_sts_gauge_data: maxname=%s' % maxname)
     fid_max = open(os.path.join(project.event_folder, maxname), 'w')
     fid_max.write('index, x, y, max_stage \n')    
     for j in range(len(x)):
@@ -96,27 +97,27 @@ def build_urs_boundary(event_file, output_dir):
     if project.multi_mux:
         # get the mux+weight data from the meta-file (in <boundaries>)
         mux_event_file = os.path.join(project.event_folder, event_file)
-        print 'using multi-mux file', mux_event_file
+        print('using multi-mux file', mux_event_file)
         try:
             fd = open(mux_event_file, 'r')
             mux_data = fd.readlines()
             fd.close()
-        except IOError, e:
+        except IOError as e:
             msg = 'File %s cannot be read: %s' % (mux_event_file, str(e))
-            raise Exception, msg
+            raise_(Exception, msg)
         except:
             raise
 
         # first line of file is # filenames+weight in rest of file
         num_lines = int(mux_data[0].strip())
         mux_data = mux_data[1:]
-        print 'number of sources %d' % num_lines
+        print('number of sources %d' % num_lines)
 
         # quick sanity check on input mux meta-file
         if num_lines != len(mux_data):
             msg = ('Bad file %s: %d data lines, but line 1 count is %d'
                    % (event_file, len(mux_data), num_lines))
-            raise Exception, msg
+            raise_(Exception, msg)
 
         # Create filename and weights lists.
         # Must chop GRD filename just after '*.grd'.
@@ -131,7 +132,7 @@ def build_urs_boundary(event_file, output_dir):
         mux_weights = [float(line.strip().split()[1]) for line in mux_data]
 
         # Call legacy function to create STS file.
-        print 'creating sts file'
+        print('creating sts file')
         urs2sts(mux_filenames,
                 basename_out=output_dir,
                 ordering_filename=project.urs_order,
@@ -142,14 +143,14 @@ def build_urs_boundary(event_file, output_dir):
     else:                           # a single mux stem file, assume 1.0 weight
         mux_file = os.path.join(project.event_folder, event_file)
         mux_filenames = [mux_file]
-        print 'using single-mux file', mux_file
+        print('using single-mux file', mux_file)
 
         weight_factor = 1.0
         mux_weights = weight_factor*num.ones(len(mux_filenames), float)
             
         order_filename = project.urs_order
 
-        print 'reading', order_filename
+        print('reading', order_filename)
         # Create ordered sts file
         urs2sts(mux_filenames,
                 basename_out=output_dir,
@@ -161,7 +162,7 @@ def build_urs_boundary(event_file, output_dir):
     # report on progress so far
     sts_file = os.path.join(project.event_folder, project.scenario_name)
     quantities, elevation, time = get_sts_gauge_data(sts_file, verbose=False)
-    print len(elevation), len(quantities['stage'][0,:])
+    print(len(elevation), len(quantities['stage'][0,:]))
 
     
 

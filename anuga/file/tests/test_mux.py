@@ -1540,7 +1540,7 @@ ValueError: matrices are not aligned for copy
 ################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Mux,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Mux)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)
         

@@ -3,7 +3,6 @@
 # This module is part of the xlrd package, which is released under a BSD-style licence.
 ##
 
-from __future__ import print_function, unicode_literals
 
 DEBUG = 0
 

@@ -513,8 +513,7 @@ class Test_General_Mesh(unittest.TestCase):
 ################################################################################
 
 if __name__ == "__main__":
-    #suite = unittest.makeSuite(Test_General_Mesh, 'test')
-    suite = unittest.makeSuite(Test_General_Mesh, 'test')     
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_General_Mesh)
     runner = unittest.TextTestRunner()
     runner.run(suite)
 

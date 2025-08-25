@@ -13,7 +13,7 @@ p2 = util.get_output(filename)
 p=util.get_centroids(p2, velocity_extrapolation=True)
 v = (p.x>6.0)*(p.x<8.0)
 
-print numpy.any(v)
+print(numpy.any(v))
 # Numerical results along a central channel 'slice'
 index= -1
 V1 = p.stage[index,v] - p.elev[v]
@@ -50,7 +50,7 @@ def minme(dc):
 import scipy.optimize
 dc_analytical = scipy.optimize.fmin(minme, x0=1.0)[0]
 
-print 'dc_analytic ',dc_analytical
+print('dc_analytic ',dc_analytical)
 
 ##################################
 # Plots
@@ -164,9 +164,9 @@ pyplot.savefig('fig4downstream_channel.png')
 
 
 
-print '#======================================================================'
-print '# Extract some cross section info'
-print '#======================================================================'
+print('#======================================================================')
+print('# Extract some cross section info')
+print('#======================================================================')
 
 from anuga.shallow_water.sww_interrogate import get_flow_through_multiple_cross_sections
 

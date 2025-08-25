@@ -88,5 +88,5 @@ class Test_parallel_riverwall(unittest.TestCase):
 
 if __name__ == "__main__":
     runner = unittest.TextTestRunner()
-    suite = unittest.makeSuite(Test_parallel_riverwall, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_parallel_riverwall)
     runner.run(suite)

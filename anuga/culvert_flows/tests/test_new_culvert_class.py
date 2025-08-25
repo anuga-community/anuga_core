@@ -818,7 +818,7 @@ class Test_Culvert(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Culvert, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Culvert)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)
         
