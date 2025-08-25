@@ -16,7 +16,7 @@ import os
 
 
 # ===================================================
-# Read VERSION from setup.py file
+# Read VERSION from pyproject.toml file
 # ===================================================
 with open('pyproject.toml') as infile:
     for line in infile:
