@@ -7,7 +7,7 @@ CreationDate: May 2022
 
 Description:
         
-This script obtains current version from setup.py and Git commit info
+This script obtains current version from pyproject.toml and Git commit info
 and stores it in a Python file named 'revision.py' for use with get_version_info()
 """
 
@@ -16,7 +16,7 @@ import os
 
 
 # ===================================================
-# Read VERSION from setup.py file
+# Read VERSION from pyproject.toml file
 # ===================================================
 with open('pyproject.toml') as infile:
     for line in infile:
