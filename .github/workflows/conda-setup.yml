@@ -9,7 +9,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        # windows 2025 is causing problems so let's stick to the old image
+        os: ["ubuntu-latest", "macos-latest", "windows-2022"]
 
         # Our meson.build expects that numpy-config is installed but this 
         # is not available for python < 3.9
