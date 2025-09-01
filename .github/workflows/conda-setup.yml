@@ -38,7 +38,7 @@ jobs:
            # As of 2025/06/19, strange combination of mpi4py, the new compilers and pytest is
            # causing a segmentation fault on Windows so we uninstall mpi4py
            # This is a temporary workaround until the issue is resolved.
-           conda uninstall -n anuga_env mpi4py
+           # conda uninstall -n anuga_env mpi4py
 
       - name: Install clang with openmp compiler on macOS
         if: runner.os == 'macOS'
