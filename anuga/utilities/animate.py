@@ -444,6 +444,7 @@ class SWW_plotter(object):
         self.xllcorner = p.xllcorner
         self.yllcorner = p.yllcorner
         self.zone = p.zone
+        self.starttime = p.starttime
 
         if absolute is True:
             self.x[:] = self.x + self.xllcorner
