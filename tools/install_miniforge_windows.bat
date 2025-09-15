@@ -74,6 +74,17 @@ IF ERRORLEVEL 1 (
 )
 
 ECHO #================================================================
+ECHO # Install the compilers on Windows
+ECHO #================================================================
+ECHO ...
+
+CALL conda install -c conda-forge libpython gcc_win-64 gxx_win-64
+IF ERRORLEVEL 1 (
+    ECHO Compiler installation failed. Exiting.
+    EXIT /B 1
+)
+
+ECHO #================================================================
 ECHO # Installing anuga from the %ANUGA_CORE_PATH% directory
 ECHO #================================================================
 ECHO ...
