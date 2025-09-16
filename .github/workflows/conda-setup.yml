@@ -59,4 +59,5 @@ jobs:
           conda activate anuga_env
           cd ..
           export OMP_NUM_THREADS=1
-          pytest -p no:faulthandler -rs --pyargs anuga
+          pytest --pyargs anuga
+          #pytest -p no:faulthandler -rs --pyargs anuga

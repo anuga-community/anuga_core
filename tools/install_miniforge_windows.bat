@@ -90,7 +90,7 @@ ECHO #================================================================
 ECHO ...
 
 CD /D "%SCRIPTPATH%\.."
-pip install --no-build-isolation --editable .
+pip install --no-build-isolation .
 IF ERRORLEVEL 1 (
     ECHO anuga install failed. Exiting.
     EXIT /B 1
