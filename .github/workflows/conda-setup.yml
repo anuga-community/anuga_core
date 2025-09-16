@@ -9,6 +9,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # 2025/09/01: windows is causing problems so let's avoid testing windows for the timebeing
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
 
         # Our meson.build expects that numpy-config is installed but this 
@@ -34,7 +35,7 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash -el {0}
         run: |
-           conda install -c conda-forge -n anuga_env gcc_win-64 gxx_win-64
+           conda install -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64
            # As of 2025/06/19, strange combination of mpi4py, the new compilers and pytest is
            # causing a segmentation fault on Windows so we uninstall mpi4py
            # This is a temporary workaround until the issue is resolved.
@@ -58,4 +59,5 @@ jobs:
           conda activate anuga_env
           cd ..
           export OMP_NUM_THREADS=1
-          pytest -p no:faulthandler -rs --pyargs anuga
+          pytest --pyargs anuga
+          #pytest -p no:faulthandler -rs --pyargs anuga

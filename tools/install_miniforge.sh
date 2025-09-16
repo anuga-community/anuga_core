@@ -9,18 +9,23 @@
 # The script will then install the anuga package from the anuga_core directory
 # and run the unittests.
 #
-# By default a python version of 3.12 will be installed. If you want to install
-# a different version of python, set the PY environment variable before running
-# the script. For example, to install python 3.9 run the script as follows:
+# By default a python version of 3.12 will be installed. 
+#
+# If you want to install a different version of python, set the PY environment
+# variable before running the script. For example, to install python 3.9 run the
+# script as follows:
 #
 # PY=3.9 bash /path/to/anuga_core/tools/install_miniforge.sh
 #
-# The script will install python 3.9 and create the anuga_env_3.9 environment.
+# Then the script will install python 3.9 and create the anuga_env_3.9 environment.
 
 
 PY=${PY:-"3.12"}
 
 set -e 
+
+trap 'echo ""; echo "#====================================================="; echo "# Installation failed at line $LINENO"; echo "#====================================================="; exit 1' ERR
+
 
 SCRIPT=$(realpath "$0")
 SCRIPTPATH=$(dirname "$SCRIPT")
