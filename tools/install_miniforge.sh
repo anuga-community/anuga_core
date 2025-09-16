@@ -83,7 +83,7 @@ echo "..."
 
 cd ${SCRIPTPATH}
 cd ..
-pip install --no-build-isolation --editable .
+pip install --no-build-isolation .
 echo " "
 
 echo "#==========================="
@@ -91,8 +91,9 @@ echo "# Run unittests"
 echo "#==========================="
 echo " "
 
-cd ..
-pytest -q --disable-warnings --pyargs anuga
+cd sandpit
+#pytest -q --disable-warnings --pyargs anuga
+pytest --pyargs anuga
 
 echo " "
 echo "#=================================================================="
