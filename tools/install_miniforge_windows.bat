@@ -89,7 +89,7 @@ ECHO # Installing anuga from the %ANUGA_CORE_PATH% directory
 ECHO #================================================================
 ECHO ...
 
-CD /D "%SCRIPTPATH%\sandpit"
+CD /D "%SCRIPTPATH%\.."
 pip install --no-build-isolation .
 IF ERRORLEVEL 1 (
     ECHO anuga install failed. Exiting.
@@ -102,7 +102,7 @@ ECHO # Run unittests
 ECHO #===========================
 ECHO.
 
-CD /D "%SCRIPTPATH%\..\.."
+CD /D "%SCRIPTPATH%\..\sandpit"
 pytest -q --disable-warnings --pyargs anuga
 IF ERRORLEVEL 1 (
     ECHO Unit tests failed. Exiting.
