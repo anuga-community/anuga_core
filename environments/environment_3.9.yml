@@ -31,4 +31,4 @@ dependencies:
   - wheel=0.45.1
   - xarray=2024.7.0
   - pip:
-    - pmw=2.1.1
+    - pmw==2.1.1
