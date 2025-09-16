@@ -13,8 +13,8 @@ PUSHD %SCRIPTPATH%
 SET ANUGA_CORE_PATH=%CD%\..
 POPD
 
-REM Check allowed Python version
-ECHO %PY% | FINDSTR /R "^3\.\(1[0-3]\|9\)$" >NUL
+REM Check allowed Python versions
+ECHO %PY% | FINDSTR /R "^3\.9 ^3\.10 ^3\.11 ^3\.12 ^3.13" > NUL
 IF ERRORLEVEL 1 (
     ECHO Python version must be greater than 3.8 and less than 3.14
     EXIT /B 1
