@@ -33,14 +33,17 @@ IF EXIST "%USERPROFILE%\miniforge3" (
 ) ELSE (
     ECHO miniforge3 does not exist.
     IF EXIST "%USERPROFILE%\Miniforge3.exe" (
-        ECHO Running Miniforge3.exe installer...
+        ECHO Miniforge3.exe installer exists...
     ) ELSE (
         ECHO Miniforge3.exe does not exist. Downloading...
-        powershell -Command "Invoke-WebRequest -Uri https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe -OutFile %USERPROFILE%\Miniforge3.exe"
+        curl -fsSLo %USERPROFILE%\Miniforge3.exe https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-Windows-x86_64.exe
         IF ERRORLEVEL 1 (
             ECHO Download failed. Exiting.
             EXIT /B 1
         )
+    )
+    IF EXIST "%USERPROFILE%\Miniforge3.exe" (
+        ECHO Running Miniforge3.exe installer...
     )
     START /WAIT "" "%USERPROFILE%\Miniforge3.exe" /S /D=%USERPROFILE%\miniforge3
     IF ERRORLEVEL 1 (
