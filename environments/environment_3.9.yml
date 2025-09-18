@@ -1,6 +1,7 @@
 name: anuga_env_3.9
 channels:
   - conda-forge
+  - defaults
 dependencies:
   - python=3.9.23
   - pip=25.2

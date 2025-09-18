@@ -1,6 +1,7 @@
 name: anuga_env_3.14
 channels:
   - conda-forge
+  - defaults
 dependencies:
   - python=3.14
   - python_abi

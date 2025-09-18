@@ -6,22 +6,29 @@ add_project_arguments('-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', language: '
 py3 = import('python').find_installation(pure: false)
 
 dep_py = py3.dependency()
+py3_version = py3.language_version()
 
 #========================================================
 # Setup numpy dependencies
 #========================================================
-dep_numpy = dependency('numpy')
-
-incdir_numpy = run_command(py3,
-  [
-    '-c',
-    'import os; os.chdir(".."); import numpy; print(numpy.get_include())'
-  ],
+if py3_version.version_compare('>3.8')
+  # Recommended for Python > 3.8
+  dep_numpy = dependency('numpy')
+  inc_numpy = dep_numpy.include_directories()
+else
+  # Fallback for Python 3.8
+  incdir_numpy = run_command(py3,
+  ['-c', 'import os; os.chdir(".."); import numpy; print(numpy.get_include())'],
   check: true
 ).stdout().strip()
+  inc_numpy = include_directories(incdir_numpy)
+  dep_numpy = declare_dependency(include_directories: inc_numpy)
+endif
+
+
 
 # FIXME SR: Do we use this now?
-message('NumPy include directory: ' + incdir_numpy)
+#message('NumPy include directory: ' + inc_numpy)
 
 dependencies = [dep_py, dep_numpy]
 

@@ -1,6 +1,7 @@
 name: anuga_env_3.10
 channels:
   - conda-forge
+  - defaults
 dependencies:
   - python=3.10
   - pip
