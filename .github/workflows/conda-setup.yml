@@ -22,8 +22,7 @@ jobs:
         with:
           miniforge-version: latest      # Installs Miniforge instead of Miniconda
           use-mamba: true                # Recommended for faster installs
-          python-version: ${{ matrix.python-version }}  
-          activate-environment: base     # Activate the base environment
+          python-version: ${{ matrix.python-version }}
           auto-update-conda: true        # Auto-update conda or mamba
           
       - name: Install Our own environment
