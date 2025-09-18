@@ -11,15 +11,16 @@ py3_version = py3.language_version()
 #========================================================
 # Setup numpy dependencies
 #========================================================
+incdir_numpy = run_command(py3,
+  ['-c', 'import os; os.chdir(".."); import numpy; print(numpy.get_include())'],
+  check: true
+).stdout().strip()
+
 if py3_version.version_compare('>3.8')
   # Recommended for Python > 3.8
   dep_numpy = dependency('numpy')
 else
   # Fallback for Python 3.8
-  incdir_numpy = run_command(py3,
-  ['-c', 'import os; os.chdir(".."); import numpy; print(numpy.get_include())'],
-  check: true
-).stdout().strip()
   inc_numpy = include_directories(incdir_numpy)
   dep_numpy = declare_dependency(include_directories: inc_numpy)
 endif
