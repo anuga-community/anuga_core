@@ -14,7 +14,6 @@ py3_version = py3.language_version()
 if py3_version.version_compare('>3.8')
   # Recommended for Python > 3.8
   dep_numpy = dependency('numpy')
-  inc_numpy = dep_numpy.include_directories()
 else
   # Fallback for Python 3.8
   incdir_numpy = run_command(py3,
