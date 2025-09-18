@@ -12,8 +12,9 @@ jobs:
         # 2025/09/01: windows is causing problems so let's avoid testing windows for the timebeing
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
 
-        # 2025/06/19: 3.14 causes an error with conda_incubator/setup-miniconda@v3 
-        python-version: ["3.8", "3.9", "3.10", "3.11", "3.12", "3.13"]
+        # 2025/06/19: 3.14 causes an error with conda_incubator/setup-miniconda@v3
+        # 2025/09/18: 3.8 macos and windows has problems with the new compilers. 
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
 
     steps:
       - uses: actions/checkout@v4
