@@ -2,13 +2,17 @@
 Install ANUGA for Developers
 ----------------------------
 
-If you want to use the very latest version of ANUGA (or develop ANUGA code) then you need
+If you want to use the very latest version of ANUGA (or to develop ANUGA code) then you need
 to download the `anuga_core` repository from `github` and then `pip` install 
 ANUGA from the source. These steps will require that the following package `git` is installed.
 
 
-First download the `anuga_core` repository from `github` and then run our `install_miniforge.sh`
-script.
+The process involves downloading the `anuga_core` repository from `github` and then running the `install_miniforge.sh` 
+(or `install_miniforge_windows.bat` on windows) script from the `anuga_core/tools` directory. 
+This will install `Miniforge` (if not already installed) and then create a `conda` environment with the required dependencies 
+and finally `pip` install ANUGA in editable mode via the `-e` option of the `pip install` command.
+
+Here are the details.
 
 Download ANUGA from `github`
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -25,7 +29,8 @@ This creates a directory `anuga_core`.
 
     If you want to also contribute to the code base, you must have a GitHub 
     account and setup authentication from your developer workstation to GitHub 
-    as per these instructions:  https://docs.github.com/en/authentication/managing-commit-signature-verification. The command to clone ANUGA as a developer is then 
+    as per these instructions:  https://docs.github.com/en/authentication/managing-commit-signature-verification. 
+    The command to clone ANUGA as a developer is then 
 
     .. code-block:: bash
 
@@ -34,7 +39,7 @@ This creates a directory `anuga_core`.
 Install ANUGA using Script
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-We have a script in the `anuga_core/tools` directory that will install `Miniforge` 
+We have a scripts in the `anuga_core/tools` directory that will install `Miniforge` 
 and ANUGA and its dependencies.
 
 Simply run the following command from the `anuga_core` directory:
@@ -42,6 +47,8 @@ Simply run the following command from the `anuga_core` directory:
 .. code-block:: bash
 
     bash tools/install_miniforge.sh
+
+or on windows run the `tools\install_miniforge_windows.bat` script.
 
 This will create a `conda` python 3.12 environment `anuga_env_3.12` and install ANUGA 
 and its dependencies.
@@ -55,31 +62,40 @@ and its dependencies.
     .. code-block:: bash
 
       export PY=3.11; bash tools/install_miniforge.sh
+
+    or for windows:
+    .. code-block:: bat
+
+        set PY=3.11 && tools\install_miniforge_windows.bat
     
     This will install ANUGA for python 3.11. 
 
 .. note::
 
-    The script `install_miniforge.sh` essentially does the following:
+    The install scripts essentially does the following:
 
+    1. Downloads and Installs `Miniforge` if not already installed.
+    2. Creates a `conda` environment with the required dependencies for ANUGA (including required compilers on linux, windows and macos).
+    3. Installs ANUGA in editable mode via `pip install --no-build-isolation -e .`
+
+    For instance for python 3.12 the script  essentially does the following (without error checking):
     .. code-block:: bash
 
+        wget -O "$HOME/Miniforge3.sh" "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+        bash "$HOME/Miniforge3.sh" -b -p "$HOME/miniforge3"
         cd anuga_core
         conda env create -n anuga_env_3.12 -f environments/environment_3.12.yml
         conda activate anuga_env_3.12
-
-    and finally installs ANUGA in editable mode via: 
-
-    .. code-block:: bash
-
+        conda install compilers
         pip install --no-build-isolation -e .
 
 
 .. note::
 
-    You may need to install a compiler to complete the `pip install`. 
+    A compiler is needed to complete the `pip install`. 
     You can use the system compilers or use `conda` to install compilers as such:
 
+    For linux:
     .. code-block:: bash
 
         conda install compilers
@@ -88,30 +104,13 @@ and its dependencies.
 
     .. code-block:: bash
 
-        conda install m2w64-gcc libpython 
+        conda install libpython gcc_win-64 gxx_win-64
 
     or for macOS:
 
-    For macOS we suggest installing `homebrew` which will 
-    provide the gcc compilers. Once you have installed
-    the compilers via `homebrew` you need to set the environment variables to
-    point to the `gcc` and `g++` compilers. 
-    
-    Check their location via:
-    
-    .. code-block:: bash
-        
-        which gcc
-        which g++
-
-    and then set the environment variables as such:
-
     .. code-block:: bash
 
-        export CC=/opt/homebrew/bin/gcc
-        export CXX=/opt/homebrew/bin/g++
-
-    or whatever the path is to your homebrew compilers.
+        conda install cxx-compiler llvm-openmp
 
     Once you have installed the compilers you can run the `pip install` command
     to install ANUGA.
@@ -120,6 +119,8 @@ and its dependencies.
 
         pip install --no-build-isolation -e .
 
+    The `--no-build-isolation` option is needed to ensure that the dependencies (in particular the compilers)
+    installed in the `conda` environment are used during the build process.
 
 Testing the installation
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -130,7 +131,9 @@ Test the installation.
 
 .. code-block:: bash
 
-   pytest --pyargs anuga
+    cd sandpit
+    conda activate anuga_env_3.12   
+    pytest --pyargs anuga
 
 ANUGA also comes with a validation test suite which verifies the correctness of 
 real life hydraulic scenarios. You can run them as follows:
@@ -158,8 +161,8 @@ version and then reinstalling via the following commands:
 And finally check the new installation by running the unit tests via:
 
 .. code-block:: bash
-
-  pytest -q --pyargs anuga 
+    cd sandpit
+    pytest -q --pyargs anuga
 
  
 
