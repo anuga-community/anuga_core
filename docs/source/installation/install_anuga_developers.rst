@@ -48,7 +48,11 @@ Simply run the following command from the `anuga_core` directory:
 
     bash tools/install_miniforge.sh
 
-or on windows run the `tools\install_miniforge_windows.bat` script.
+or on windows run the script:
+
+.. code-block:: bash
+
+    call tools\\install_miniforge_windows.bat
 
 This will create a `conda` python 3.12 environment `anuga_env_3.12` and install ANUGA 
 and its dependencies.
@@ -64,9 +68,10 @@ and its dependencies.
       export PY=3.11; bash tools/install_miniforge.sh
 
     or for windows:
-    .. code-block:: bat
 
-        set PY=3.11 && tools\install_miniforge_windows.bat
+    .. code-block:: bash
+
+      set PY=3.11 && call tools\\install_miniforge_windows.bat
     
     This will install ANUGA for python 3.11. 
 
@@ -79,15 +84,16 @@ and its dependencies.
     3. Installs ANUGA in editable mode via `pip install --no-build-isolation -e .`
 
     For instance for python 3.12 the script  essentially does the following (without error checking):
+
     .. code-block:: bash
 
-        wget -O "$HOME/Miniforge3.sh" "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
-        bash "$HOME/Miniforge3.sh" -b -p "$HOME/miniforge3"
-        cd anuga_core
-        conda env create -n anuga_env_3.12 -f environments/environment_3.12.yml
-        conda activate anuga_env_3.12
-        conda install compilers
-        pip install --no-build-isolation -e .
+      wget -O "$HOME/Miniforge3.sh" "https://github.com/conda-forge/miniforge/releases/latest/download/Miniforge3-$(uname)-$(uname -m).sh"
+      bash "$HOME/Miniforge3.sh" -b -p "$HOME/miniforge3"
+      cd anuga_core
+      conda env create -n anuga_env_3.12 -f environments/environment_3.12.yml
+      conda activate anuga_env_3.12
+      conda install compilers
+      pip install --no-build-isolation -e .
 
 
 .. note::
@@ -96,6 +102,7 @@ and its dependencies.
     You can use the system compilers or use `conda` to install compilers as such:
 
     For linux:
+    
     .. code-block:: bash
 
         conda install compilers
