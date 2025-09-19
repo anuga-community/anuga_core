@@ -102,7 +102,7 @@ and its dependencies.
     You can use the system compilers or use `conda` to install compilers as such:
 
     For linux:
-    
+
     .. code-block:: bash
 
         conda install compilers
@@ -149,6 +149,26 @@ real life hydraulic scenarios. You can run them as follows:
 
     cd validation_tests 
     python run_auto_validation_tests.py
+
+Using the installation
+~~~~~~~~~~~~~~~~~~~~~~
+
+You can now use ANUGA by activating the `anuga_env_3.12` environment and then running your python scripts
+that use ANUGA.
+
+.. code-block:: bash
+
+    conda activate anuga_env_3.12
+    python my_anuga_script.py
+
+If you have a machine with multiple cores you might want to run your anuga scripts using multiple threads. For instance 4 threads.
+You can set the environment variable `OMP_NUM_THREADS=4`, as such:
+
+.. code-block:: bash
+
+    conda activate anuga_env_3.12
+    export OMP_NUM_THREADS=4
+    python my_anuga_script.py
 
 
 Updating
