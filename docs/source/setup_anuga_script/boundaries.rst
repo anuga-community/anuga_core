@@ -15,7 +15,8 @@ Standard boundary types
 
    Reflective_boundary
    Dirichlet_boundary
-   Transmissive_momentum_set_stage_boundary
+   Transmissive_n_momentum_zero_t_momentum_set_stage_boundary
+   Flather_external_stage_zero_velocity_boundary
    Field_boundary
    
 
