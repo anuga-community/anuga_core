@@ -3,7 +3,13 @@
 Operators
 =========
 
+Rate Operators
+~~~~~~~~~~~~~~
 
+.. autosummary::
+   :toctree: generated
+
+   Rate_operator
 
 Setting Operators
 ~~~~~~~~~~~~~~~~~

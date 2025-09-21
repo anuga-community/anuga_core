@@ -188,6 +188,7 @@ version and then reinstalling via the following commands:
 And finally check the new installation by running the unit tests via:
 
 .. code-block:: bash
+    
     cd sandpit
     pytest -q --pyargs anuga
 
