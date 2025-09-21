@@ -45,7 +45,8 @@ class Reflective_boundary(Boundary):
     """Reflective boundary condition object
     
     Reflective boundary returns same conserved quantities as
-    those present in its neighbour volume but with normal momentum reflected.
+    those present in its neighbour volume but with normal momentum negated 
+    so the mass flux is zero.
     """
 
     def __init__(self, domain=None):
