@@ -8,6 +8,8 @@ requires = [
     "pybind11",
     "numpy",
     "libpython; sys_platform == 'win32'",
+    "gcc_win-64; sys_platfoem == 'win32'",
+    "gxx_win-64; sys_platform == 'win32'",
 ]
 
 [project]
