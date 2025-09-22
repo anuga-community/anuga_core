@@ -12,7 +12,7 @@ requires = [
 
 [project]
 name = 'anuga'
-version = '3.2.0dev'
+version = '3.2.0'
 description = 'A set of python modules for tsunami and flood modelling'
 readme = 'README.rst'
 license = 'Apache-2.0'
@@ -21,7 +21,7 @@ authors = [
 ]
 requires-python = ">3.8, <3.14"
 dependencies = [
-    'numpy>=1.24.0',
+    'numpy>=2.0.0',
 ]
 classifiers = [
     'Intended Audience :: Science/Research',
