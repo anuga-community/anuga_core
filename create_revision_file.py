@@ -22,7 +22,7 @@ with open('pyproject.toml') as infile:
     for line in infile:
         match = re.match(r'version = ', line)
         if match != None:
-            VERSION = re.findall('\d.\d.\ddev|\d.\d.\d',line)[0]
+            VERSION = re.findall(r'\d.\d.\ddev|\d.\d.\d',line)[0]
 
 
 destination_path='anuga'
