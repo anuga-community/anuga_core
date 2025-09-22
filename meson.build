@@ -1,4 +1,5 @@
-project('anuga', 'c', 'cpp', 'cython', version: '3.2.0', default_options: ['cpp_std=c++17'])
+# Meson build file for ANUGA core
+project('anuga', 'c', 'cpp', 'cython', version: run_command('python3', 'tools/get_version.py').stdout().strip(), default_options: ['cpp_std=c++17'])
 
 add_project_arguments('-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', language: 'cpp')
 add_project_arguments('-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', language: 'c')
