@@ -44,7 +44,7 @@ classifiers = [
 
 [project.urls]
 homepage      = "https://en.wikipedia.org/wiki/ANUGA_Hydro"
-documentation = "https://anuga-viewer.readthedocs.io"
+documentation = "https://anuga.readthedocs.io"
 source        = "https://github.com/anuga-community/anuga_core"
 download      = "https://github.com/anuga-community/anuga_core/releases"
 tracker       = "https://github.com/anuga-community/anuga_core/issues"
