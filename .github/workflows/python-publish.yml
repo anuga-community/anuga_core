@@ -8,9 +8,9 @@
 
 name: Upload Python Package
 
-on:
-  release:
-    types: [published]
+on: [push]
+  # release:
+  #   types: [published]
 
 permissions:
   contents: read
@@ -68,3 +68,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          repository-url: https://test.pypi.org/legacy/
