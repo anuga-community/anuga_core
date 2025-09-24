@@ -132,9 +132,14 @@ jobs:
 
       - run: ls ./output  # All wheels from all matrix jobs are now here
       
+      # - name: Publish release distributions to PyPI
+      #   uses: pypa/gh-action-pypi-publish@release/v1
+      #   with:
+      #     packages-dir: ./output
+      #     repository-url: https://test.pypi.org/legacy/
+
       - name: Publish release distributions to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: ./output
-          repository-url: https://test.pypi.org/legacy/
+        run: |
+          python -m pip install twine
+          twine upload ./output/* --repository testpypi -u ${{ secrets.TESTPYPI_USERNAME }} -p ${{ secrets.TESTPYPI_PASSWORD }}
 
