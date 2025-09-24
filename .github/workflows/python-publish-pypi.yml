@@ -114,7 +114,7 @@ jobs:
     environment:
       name: pypi
       url: https://pypi.org/p/anuga
-      
+
     permissions:
       id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
 
@@ -133,4 +133,7 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           repository-url: https://test.pypi.org/legacy/
+          verify-metadata: false
+          verbose: true
+          packages-dir: dist/
 
