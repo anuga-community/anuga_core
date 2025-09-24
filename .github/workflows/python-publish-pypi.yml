@@ -124,6 +124,7 @@ jobs:
     steps:
       - name: Retrieve release distributions
         uses: actions/download-artifact@v4
+        with:
           pattern: release-dists-*
           path: ./output
           merge-multiple: true
