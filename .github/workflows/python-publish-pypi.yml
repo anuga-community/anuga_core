@@ -112,7 +112,7 @@ jobs:
       - release-build
     
     environment:
-      name: pypi
+      name: anuga
       url: https://pypi.org/p/anuga
 
     permissions:
