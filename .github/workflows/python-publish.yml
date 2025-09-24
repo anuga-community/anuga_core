@@ -8,9 +8,9 @@
 
 name: Upload Python Package
 
-on:
-  release:
-    types: [published]
+on: [push]
+  # release:
+  #   types: [published]
 
 permissions:
   contents: read
@@ -20,17 +20,19 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.x"
 
       - name: Build release distributions
         run: |
           # NOTE: put your own distribution build steps here.
-          python -m pip install build
-          python -m build
+          python -m pip install build auditwheel
+          python -m build --wheel --sdist
+          auditwheel repair dist/*.whl --wheel-dir dist/
+          rm dist/*-linux_*.whl
 
       - name: Upload distributions
         uses: actions/upload-artifact@v4
@@ -59,7 +61,7 @@ jobs:
 
     steps:
       - name: Retrieve release distributions
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v5
         with:
           name: release-dists
           path: dist/
@@ -68,3 +70,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: dist/
+          repository-url: https://test.pypi.org/legacy/
