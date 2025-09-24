@@ -47,7 +47,7 @@ Parameters specifying locaton of operator
 
 :param region: Region object where water applied 
 :param indices: List of triangles where water applied
-:param polygon: List of [x,y] points specifying where water applied
+:param polygon: List of [x,y] points specifying a polygon where water applied
 :param center: [x.y] point of circle where water applied
 :param radius: radius of circle where water applied
 
