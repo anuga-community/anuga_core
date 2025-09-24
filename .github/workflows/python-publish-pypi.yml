@@ -6,7 +6,7 @@
 # separate terms of service, privacy policy, and support
 # documentation.
 
-name: Upload Python Package
+name: Python Publish PYPI
 
 on:
   push:
@@ -124,12 +124,14 @@ jobs:
     steps:
       - name: Retrieve release distributions
         uses: actions/download-artifact@v4
-        with:
-          name: release-dists
-          path: dist/
+          pattern: release-dists-*
+          path: ./output
+          merge-multiple: true
 
+      - run: ls ./output  # All wheels from all matrix jobs are now here
+      
       - name: Publish release distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: dist/
+          packages-dir: ./output
           repository-url: https://test.pypi.org/legacy/
