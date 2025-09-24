@@ -336,6 +336,6 @@ class Test_culvert_routines_box_10pct(unittest.TestCase):
 # =========================================================================
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_culvert_routines_box_10pct, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_culvert_routines_box_10pct)
     runner = unittest.TextTestRunner()
     runner.run(suite)

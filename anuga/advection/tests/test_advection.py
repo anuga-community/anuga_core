@@ -179,6 +179,6 @@ class Test_Advection(unittest.TestCase):
 
 #-------------------------------------------------------------
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Advection, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Advection)
     runner = unittest.TextTestRunner()
     runner.run(suite)

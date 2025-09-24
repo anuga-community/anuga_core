@@ -51,6 +51,8 @@ class Domain_plotter(object):
 
         self.xmom = domain.quantities['xmomentum'].centroid_values
         self.ymom = domain.quantities['ymomentum'].centroid_values
+
+        self.friction = domain.quantities['friction'].centroid_values
         
         self.depth = self.stage - self.elev
 
@@ -442,6 +444,7 @@ class SWW_plotter(object):
         self.xllcorner = p.xllcorner
         self.yllcorner = p.yllcorner
         self.zone = p.zone
+        self.starttime = p.starttime
 
         if absolute is True:
             self.x[:] = self.x + self.xllcorner

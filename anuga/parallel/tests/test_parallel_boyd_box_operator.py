@@ -324,7 +324,7 @@ def assert_(condition, msg="Assertion Failed"):
 if __name__=="__main__":
     if numprocs == 1:
         runner = unittest.TextTestRunner()
-        suite = unittest.makeSuite(Test_parallel_boyd_box_operator, 'test')
+        suite = unittest.TestLoader().loadTestsFromTestCase(Test_parallel_boyd_box_operator)
         #print "Running for numproc = 1"
         runner.run(suite)
     else:

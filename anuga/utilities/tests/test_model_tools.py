@@ -91,6 +91,6 @@ class Test_Model_Tools(unittest.TestCase):
 ################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Model_Tools, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Model_Tools)
     runner = unittest.TextTestRunner()
     runner.run(suite)

@@ -115,6 +115,6 @@ Parameters
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_dem2array,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_dem2array)
     runner = unittest.TextTestRunner()
     runner.run(suite)

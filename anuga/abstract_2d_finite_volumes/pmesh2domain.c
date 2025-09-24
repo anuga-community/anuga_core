@@ -1,11 +1,13 @@
 #include <stdio.h>   /* gets */
 #include <stdlib.h>  /* atoi, malloc */
 #include <string.h>  /* strcpy */
+#include <inttypes.h> /* PRId64 */
 #include <math.h>
 
 //Shared code snippets
 
 #include "uthash.h"     /* in utilities */
+#include "anuga_typedefs.h" /* in utilities */
 
 //==============================================================================
 // hashtable code from uthash. Look at copyright info in "uthash.h in the
@@ -13,20 +15,20 @@
 //==============================================================================
 
 typedef struct {
-    int i;
-    int j;
+    anuga_int i;
+    anuga_int j;
 } segment_key_t;
 
 typedef struct {
     segment_key_t key; /* key of form i , j */
-    int vol_id; /* id of vol containing this segement */
-    int edge_id; /* edge_id of segement in this vol */
+    anuga_int vol_id; /* id of vol containing this segement */
+    anuga_int edge_id; /* edge_id of segement in this vol */
     UT_hash_handle hh; /* makes this structure hashable */
 } segment_t;
 
 segment_t *segment_table = NULL;
 
-void add_segment(segment_key_t key, int vol_id, int edge_id) {
+void add_segment(segment_key_t key, anuga_int vol_id, anuga_int edge_id) {
     segment_t *s;
 
     s = (segment_t*) malloc(sizeof (segment_t));
@@ -63,16 +65,16 @@ void print_segments(void) {
     segment_t *s;
 
     for (s = segment_table; s != NULL; s = (segment_t*) (s->hh.next)) {
-        printf("segment key i %d j %d vol_id %d  edge_id %d\n",
+        printf("segment key i %" PRId64 " j %" PRId64 " vol_id %" PRId64 "  edge_id %" PRId64 "\n",
                 s->key.i, s->key.j, s->vol_id, s->edge_id);
     }
 }
 
-int vol_id_sort(segment_t *a, segment_t *b) {
+anuga_int vol_id_sort(segment_t *a, segment_t *b) {
     return (a->vol_id - b->vol_id);
 }
 
-int key_sort(segment_t *a, segment_t *b) {
+anuga_int key_sort(segment_t *a, segment_t *b) {
     return (a->key.i - b->key.i);
 }
 

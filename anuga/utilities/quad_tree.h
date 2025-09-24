@@ -10,7 +10,9 @@
 #include <stdio.h>   /* gets */
 #include <stdlib.h>  /* atoi, malloc */
 #include <string.h>  /* strcpy */
+#include <stdint.h>  /* anuga_int uanuga_int */
 #include <math.h>
+#include "anuga_typedefs.h" /* in utilities */
 
 #ifndef quad_tree_H
 #define quad_tree_H
@@ -29,7 +31,7 @@ typedef struct triangle{
 	double x3,y3;
 
 	// index stores the triangles unique id.
-	int index;
+	anuga_int index;
 
 	// outward normal vectors of triangles sides.
 	double nx1,ny1;
@@ -42,7 +44,7 @@ typedef struct triangle{
 } triangle;
 
 // creates a new triangle and returns a pointer to the malloc'ed memory. 
-triangle * new_triangle(int index, double x1, double x2, double x3,
+triangle * new_triangle(anuga_int index, double x1, double x2, double x3,
 						double y1, double y2, double y3);
 
 // deletes entire list of triangles
@@ -53,8 +55,8 @@ void delete_triangle_list(triangle * T);
 double * calculate_sigma(triangle * T,double x,double y);
 
 // Tests to see if a triangle contains a given point,
-// returns a int value 0 false, 1 true.
-int triangle_contains_point(triangle * T,double pointx,double pointy);
+// returns a anuga_int value 0 false, 1 true.
+anuga_int triangle_contains_point(triangle * T,double pointx,double pointy);
 
 //**************************************************************************
 
@@ -67,7 +69,7 @@ typedef struct quad_tree{
 
 	// rectangular extents of current node
 	double xmin,xmax,ymin,ymax;
-	int count;
+	anuga_int count;
 	// parent and children of quad_tree
 	struct quad_tree *parent;
 	struct quad_tree *q[4];
@@ -91,11 +93,11 @@ void quad_tree_insert_triangle(quad_tree *node,triangle *T);
 
 // returns the quadrant of the quad_tree containing the point, or 0 if intersects
 // center axes
-int trivial_contain_split_point(quad_tree *node, double xp,double yp);
+anuga_int trivial_contain_split_point(quad_tree *node, double xp,double yp);
 
 // returns the quadrant of the quad_tree containing the triangle, or 0 if intersects
 // center axes
-int trivial_contain_split(quad_tree *node, triangle *T);
+anuga_int trivial_contain_split(quad_tree *node, triangle *T);
 
 // returns the triangle in the quad_tree's leaves containing the point or NULL
 // if none of the triangles on the current quad_tree contain it.
@@ -106,7 +108,7 @@ triangle * search_triangles_of_quad_tree(quad_tree * node,double xp,double yp);
 triangle * search(quad_tree * node ,double xp, double yp);
 
 // return number of noes in tree
-int quad_tree_node_count(quad_tree * tree);
+anuga_int quad_tree_node_count(quad_tree * tree);
 
 // split the node to make 4 children
 void quad_tree_make_children(quad_tree *node);
@@ -125,11 +127,11 @@ typedef struct quad_tree_ll {
 
     void * tree;
     struct quad_tree_ll * next;
-    int index;
+    anuga_int index;
 
 } quad_tree_ll;
 
-quad_tree_ll * new_quad_tree_ll(quad_tree * start,int index);
+quad_tree_ll * new_quad_tree_ll(quad_tree * start, anuga_int index);
 
 //**************************************************************************
 
@@ -139,13 +141,13 @@ quad_tree_ll * new_quad_tree_ll(quad_tree * start,int index);
 
 typedef struct queue_ll {
 
-    int node;
+    anuga_int node;
     struct queue_ll * next;
 
 
 } queue_ll;
 
-queue_ll * new_queue_ll(int node);
+queue_ll * new_queue_ll(anuga_int node);
 
 //**************************************************************************
 

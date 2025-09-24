@@ -657,6 +657,6 @@ class Test_boyd_pipe_operator(unittest.TestCase):
 
 # =========================================================================
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_boyd_pipe_operator, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_boyd_pipe_operator)
     runner = unittest.TextTestRunner()
     runner.run(suite)

@@ -5,6 +5,8 @@
 [#]*#
 *~
 *$
+*.csv
+*.pstat
 *.bak
 .idea/*
 *.kdev4
@@ -15,6 +17,7 @@
 .settings/
 .*.sw[nop]
 .sw[nop]
+*.pstat
 *.c
 *.cpp
 *.tmp

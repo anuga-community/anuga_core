@@ -242,6 +242,6 @@ END CROSS-SECTIONS:
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_2Pts, 'test_')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_2Pts)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)    

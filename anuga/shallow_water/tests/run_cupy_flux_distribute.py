@@ -86,7 +86,7 @@ nvtxRangePop()
 
 nvtxRangePush('create domain2')
 domain2 = create_domain('domain_cuda')
-domain2.set_multiprocessor_mode(4)
+domain2.set_multiprocessor_mode(2)
 
 
 quantities2 = domain2.quantities

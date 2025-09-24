@@ -30,7 +30,7 @@ def get_flow_through_cross_section(filename, polyline, verbose=False):
     and the polyline would then be a cross section perpendicular to the flow.
     """
 
-    print 'In get_flow_through_cross_section'
+    print('In get_flow_through_cross_section')
     quantity_names =['elevation',
                      'stage',
                      'xmomentum',
@@ -44,7 +44,7 @@ def get_flow_through_cross_section(filename, polyline, verbose=False):
 #                                                           verbose=verbose)
     from anuga.fit_interpolate.interpolate import Interpolation_function
 
-    print 'In get_interpolated_quantities_at_polyline_midpoints'
+    print('In get_interpolated_quantities_at_polyline_midpoints')
     # Get mesh and quantities from sww file
     X = get_mesh_and_quantities_from_file(filename,
                                           quantities=quantity_names,
@@ -59,7 +59,7 @@ def get_flow_through_cross_section(filename, polyline, verbose=False):
 
     # Interpolate
     if verbose:
-        print 'Interpolating - total number of interpolation points = %d' % len(interpolation_points)
+        print('Interpolating - total number of interpolation points = %d' % len(interpolation_points))
 
     interpolation_function = Interpolation_function(time,
                                quantities,
@@ -73,7 +73,7 @@ def get_flow_through_cross_section(filename, polyline, verbose=False):
     time = interpolation_function.time
     interpolation_points = interpolation_function.interpolation_points
 
-    if verbose: print 'Computing hydrograph'
+    if verbose: print('Computing hydrograph')
 
     # Compute hydrograph
     Q = []

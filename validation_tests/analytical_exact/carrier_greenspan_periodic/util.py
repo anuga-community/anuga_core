@@ -115,28 +115,28 @@ def calculate_new_wet_area_analytic(x1,x2,z1,z2,A,t):
     w1,uh1 = analytic_cannal(x1,t)
     w2,uh2 = analytic_cannal(x2,t)
     if (w1 > z1) & (w2 < z2) & (z1 <= z2):
-        print "test1"
+        print("test1")
         x = ((w2-z1)*(x2-x1)+x1*(z2-z1)-x2*(w2-w1))/(z2-z1+w1-w2)
         wet_len = x-x1
     elif (w1 < z1) & (w2 > z2) & (z1 < z2):
-        print "test2"
+        print("test2")
         x = ((w2-z1)*(x2-x1)+x1*(z2-z1)-x2*(w2-w1))/(z2-z1+w1-w2)
         wet_len = x2-x
     elif (w1 < z1) & (w2 > z2) & (z1 >= z2):
-        print "test3"
+        print("test3")
         x = ((w1-z2)*(x2-x1)+x2*(z2-z1)-x1*(w2-w1))/(z2-z1+w1-w2)
         wet_len = x2-x
     elif (w1 > z1) & (w2 < z2) & (z1 > z2):
-        print "test4"
+        print("test4")
         x = ((w1-z2)*(x2-x1)+x2*(z2-z1)-x1*(w2-w1))/(z2-z1+w1-w2)
         wet_len = x-x1
     elif (w1 >= z1) & (w2 >= z2):
-        print "test5"
+        print("test5")
         wet_len = x2-x1 
     else: #(w1 <= z1) & (w2 <= z2)
-        print "test5"
+        print("test5")
         if (w1 > z1) | (w2 > z2):
-            print "ERROR"
+            print("ERROR")
         wet_len = x2-x1        
     return w1,w2,wet_len,uh1,uh2
 
