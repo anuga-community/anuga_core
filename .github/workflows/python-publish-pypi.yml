@@ -103,43 +103,30 @@ jobs:
           path: dist/
 
 
-  pypi-publish:
-    runs-on: ubuntu-latest
-    needs:
-      - release-build
-    permissions:
-      # IMPORTANT: this permission is mandatory for trusted publishing
-      id-token: write
 
-    # Dedicated environments with protections for publishing are strongly recommended.
-    # For more information, see: https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment#deployment-protection-rules
-    #environment:
-      #name: some-environment-name
-      # OPTIONAL: uncomment and update to include your PyPI project URL in the deployment status:
-      #url: https://pypi.org/p/anuga
-      #
-      # ALTERNATIVE: if your GitHub Release name is the PyPI project version string
-      # ALTERNATIVE: exactly, uncomment the following line instead:
-      # url: https://pypi.org/project/YOURPROJECT/${{ github.event.release.name }}
+
+  pypi-publish:
+    name: Upload release to PyPI
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/anuga
+    permissions:
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
 
     steps:
       - name: Retrieve release distributions
         uses: actions/download-artifact@v4
         with:
           pattern: release-dists-*
-          path: ./output
+          path: dist
           merge-multiple: true
 
-      - run: ls ./output  # All wheels from all matrix jobs are now here
-      
+      - run: ls ./dist  # All wheels from all matrix jobs are now here
+
+
       - name: Publish release distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          packages-dir: ./output
           repository-url: https://test.pypi.org/legacy/
-
-      # - name: Publish release distributions to PyPI
-      #   run: |
-      #     python -m pip install twine
-      #     twine upload ./output/* --verbose --repository testpypi -u ${{ secrets.TESTPYPI_USERNAME }} -p ${{ secrets.TESTPYPI_PASSWORD }}
 
