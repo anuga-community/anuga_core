@@ -12,7 +12,7 @@ requires = [
 
 [project]
 name = 'anuga'
-version = '3.2.1rc2'
+version = '3.2.1rc3'
 description = 'A set of python modules for tsunami and flood modelling'
 readme = 'README.rst'
 license = 'Apache-2.0'
