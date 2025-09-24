@@ -12,10 +12,11 @@ requires = [
 
 [project]
 name = 'anuga'
-version = '3.2.1rc7'
+version = '3.2.1rc10'
 description = 'A set of python modules for tsunami and flood modelling'
 readme = 'README.rst'
-license = 'Apache-2.0'
+license-files = ["LICENSE.txt"]
+license = "Apache-2.0"
 authors = [
   {name = 'Stephen Roberts', email = 'stephen.roberts@anu.edu.au'},
 ]
