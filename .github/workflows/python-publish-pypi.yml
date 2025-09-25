@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest] 
+        os: [ubuntu-latest, macos-latest, windows-latest] 
         python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
         #python-version: ['3.10', '3.11']
 
@@ -43,8 +43,6 @@ jobs:
       - name: Install Our own environment
         shell: bash -el {0}
         run: |
-          # conda env create --name anuga_env --file environments/environment_${{matrix.python-version}}.yml
-          
           conda create -n anuga_env -c conda-forge python=${{matrix.python-version}}
 
       - name: Install gcc compilers on Windows
@@ -52,10 +50,6 @@ jobs:
         shell: bash -el {0}
         run: |
            conda install -y -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64
-           # As of 2025/06/19, strange combination of mpi4py, the new compilers and pytest is
-           # causing a segmentation fault on Windows so we uninstall mpi4py
-           # This is a temporary workaround until the issue is resolved.
-           conda uninstall -n anuga_env mpi4py
 
       - name: Install gcc compilers on Linux
         if: runner.os == 'Linux'
