@@ -11,11 +11,11 @@ name: Python Publish PYPI
 on:
   push:
     branches:
-      - develop
+      - main
 
-  pull_request:
-    branches:
-      - develop
+  # pull_request:
+  #   branches:
+  #     - develop
   
 
 permissions:
@@ -134,7 +134,7 @@ jobs:
       - name: Publish release distributions to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          repository-url: https://test.pypi.org/legacy/
+          #repository-url: https://test.pypi.org/legacy/
           verify-metadata: false
           verbose: true
           packages-dir: dist/
