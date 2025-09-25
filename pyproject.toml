@@ -7,12 +7,13 @@ requires = [
     "Cython",   
     "pybind11",
     "numpy",
+    "toml",
     "libpython; sys_platform == 'win32'",
 ]
 
 [project]
 name = 'anuga'
-version = '3.2.1rc16'
+version = '3.2.1rc17'
 description = 'A set of python modules for tsunami and flood modelling'
 readme = 'README.rst'
 license-files = ["LICENSE.txt"]

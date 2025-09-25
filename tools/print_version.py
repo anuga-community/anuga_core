@@ -2,19 +2,13 @@
 This script prints the current version from pyproject.toml.
 """
 
-import re
-import os
+import toml
+
+# Read version from pyproject.toml
+data = toml.load("pyproject.toml")
+version = data["project"]["version"]
+
+print(version)
 
 
-# ===================================================
-# Read VERSION from pyproject.toml file
-# ===================================================
-with open('pyproject.toml') as infile:
-    for line in infile:
-        match = re.match(r'version = ', line)
-        if match != None:
-            VERSION = re.findall(r'\d.\d.\ddev|\d.\d.\d',line)[0]
-
-
-print(VERSION)
 
