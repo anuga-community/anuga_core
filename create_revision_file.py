@@ -26,9 +26,7 @@ with open('pyproject.toml') as infile:
 destination_path='anuga'
 version=VERSION
 verbose=True
-
-   
-    
+  
 
 # Git revision information (relies on the gitpython package)
 # https://stackoverflow.com/questions/14989858/get-the-current-git-hash-in-a-python-script
