@@ -8,14 +8,10 @@
 
 name: Python Publish PYPI
 
-on:
-  push:
-    branches:
-      - main
+on: [push]
+  release:
+    types: [published]
 
-  # pull_request:
-  #   branches:
-  #     - develop
   
 
 permissions:
