@@ -42,37 +42,10 @@ jobs:
         run: |
           conda create -n anuga_env -c conda-forge python=${{matrix.python-version}}
 
-      - name: Install gcc compilers on Windows
-        if: runner.os == 'Windows'
+      - name: Install conda-forge compilers
         shell: bash -el {0}
         run: |
-           conda install -y -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64
-
-      - name: Install gcc compilers on Linux
-        if: runner.os == 'Linux'
-        shell: bash -el {0}
-        run: |
-           conda install -y -c conda-forge -n anuga_env compilers
-
-      - name: Install clang with openmp compiler on macOS
-        if: runner.os == 'macOS'
-        shell: bash -el {0}
-        run: |
-           conda install -y -c conda-forge -n anuga_env cxx-compiler llvm-openmp
-           
-      # - name: Install anuga package
-      #   shell: bash -el {0}
-      #   run: |
-      #     conda activate anuga_env
-      #     pip install --no-build-isolation -v .
-
-      # - name: Test package
-      #   shell: bash -el {0}
-      #   run: |
-      #     conda activate anuga_env
-      #     cd sandpit
-      #     export OMP_NUM_THREADS=1
-      #     pytest --pyargs anuga
+           conda install -y -c conda-forge -n anuga_env compilers openmp
 
       - name: Build wheels
         shell: bash -el {0}
