@@ -44,14 +44,14 @@ jobs:
            conda install -y -c conda-forge -n anuga_env compilers
 
 
-      # - name: Problem on windows
-      #   # As of 2025/06/19, strange combination of mpi4py, the new compilers and pytest is
-      #   # causing a segmentation fault on Windows so we uninstall mpi4py
-      #   # This is a temporary workaround until the issue is resolved.
-      #   if: runner.os == 'Windows'
-      #   shell: bash -el {0}
-      #   run: |
-      #      conda uninstall -n anuga_env mpi4py
+      - name: Problem on windows
+        # As of 2025/06/19, strange combination of mpi4py, the new compilers and pytest is
+        # causing a segmentation fault on Windows so we uninstall mpi4py
+        # This is a temporary workaround until the issue is resolved.
+        if: runner.os == 'Windows'
+        shell: bash -el {0}
+        run: |
+           conda uninstall -n anuga_env mpi4py
            
       - name: Install anuga package
         shell: bash -el {0}

@@ -44,7 +44,7 @@ jobs:
       - name: Install conda-forge compilers
         shell: bash -el {0}
         run: |
-           conda install -y -c conda-forge -n anuga_env compilers openmp
+           conda install -y -c conda-forge -n anuga_env compilers
 
       - name: Build wheels
         shell: bash -el {0}
