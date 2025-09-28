@@ -43,6 +43,24 @@ jobs:
         run: |
            conda install -y -c conda-forge -n anuga_env compilers
 
+      - name: Install gcc compilers on Windows
+        if: runner.os == 'Windows'
+        shell: bash -el {0}
+        run: |
+           conda install -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64
+           # problem when installing compilers package on windows
+
+      - name: Install clang with openmp compiler on macOS
+        if: runner.os == 'macOS'
+        shell: bash -el {0}
+        run: |
+           conda install -c conda-forge -n anuga_env compilers
+
+      - name: Install gxx with openmp compiler on Linux
+        if: runner.os == 'Linux'
+        shell: bash -el {0}
+        run: |
+           conda install -c conda-forge -n anuga_env compilers
 
       - name: Problem on windows
         # As of 2025/06/19, strange combination of mpi4py, the new compilers and pytest is
