@@ -19,31 +19,34 @@ ModifiedBy::
 
 from anuga.abstract_2d_finite_volumes.generic_boundary_conditions\
      import Boundary, File_boundary
-import numpy as num
+import numpy as np
 
 import anuga.utilities.log as log
 from anuga.fit_interpolate.interpolate import Modeltime_too_late
 from anuga.fit_interpolate.interpolate import Modeltime_too_early
 from anuga.config import g as gravity
      
-from .shallow_water_ext import rotate
+from anuga.shallow_water.sw_domain_openmp_ext import rotate, evaluate_reflective_segment
 
-#from anuga.utilities import compile
-#if compile.can_use_C_extension('shallow_water_ext.c'):
-#    # Underlying C implementations can be accessed
-#    from shallow_water_ext import rotate
-#else:
-#    msg = 'C implementations could not be accessed by %s.\n ' % __file__
-#    msg += 'Make sure compile_all.py has been run as described in '
-#    msg += 'the ANUGA installation guide.'
-#    raise Exception, msg
+try:
+    from numba import jit
+except:
+    def jit(nopython=True):
+        """Dummy decorator for numba"""
+        def dummy_decorator(func):
+            return func
+        return dummy_decorator
+
+
+x = np.arange(100).reshape(10, 10)
 
 
 class Reflective_boundary(Boundary):
     """Reflective boundary condition object
     
     Reflective boundary returns same conserved quantities as
-    those present in its neighbour volume but with normal momentum reflected.
+    those present in its neighbour volume but with normal momentum negated 
+    so the mass flux is zero.
     """
 
     def __init__(self, domain=None):
@@ -75,7 +78,8 @@ class Reflective_boundary(Boundary):
         self.ymom = domain.quantities['ymomentum'].edge_values
         self.normals = domain.normals
 
-        self.conserved_quantities = num.zeros(3, float)
+        self.conserved_quantities = np.zeros(3, float)
+
 
     def __repr__(self):
         return 'Reflective_boundary'
@@ -102,7 +106,7 @@ class Reflective_boundary(Boundary):
         return q
 
 
-
+    @jit(nopython=True)
     def evaluate_segment(self, domain, segment_edges):
         """Apply BC on the boundary edges defined by segment_edges
 
@@ -165,6 +169,31 @@ class Reflective_boundary(Boundary):
 
         Xvel.boundary_values[ids] = n1*r1 - n2*r2
         Yvel.boundary_values[ids] = n2*r1 + n1*r2
+
+
+
+    # TODO JLGV, reflective boundary condition needs openmp version
+    # this one first
+    def evaluate_segment(self, domain, segment_edges):
+        """Apply BC on the boundary edges defined by segment_edges
+
+        :param domain: Apply BC on this domain
+        :param segment_edges: List of boundary cells on which to apply BC
+
+        """
+        if segment_edges is None:
+            return
+        if domain is None:
+            return
+
+        ids = segment_edges
+        vol_ids  = domain.boundary_cells[ids]
+        edge_ids = domain.boundary_edges[ids]
+        ids_array = np.array(ids, dtype=np.int64)
+
+        evaluate_reflective_segment(domain, ids_array, vol_ids, edge_ids)
+
+
 
 
 
@@ -349,7 +378,7 @@ class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
 
         return q
 
-
+    # TODO JLGV, needs openmp version
     def evaluate_segment(self, domain, segment_edges): 
         """Apply BC on the boundary edges defined by segment_edges
 
@@ -361,8 +390,8 @@ class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
         """
         
         Stage = domain.quantities['stage']
-        #Elev  = domain.quantities['elevation']
-        #Height= domain.quantities['height']
+        Elev  = domain.quantities['elevation']
+        Height= domain.quantities['height']
         Xmom  = domain.quantities['xmomentum']
         Ymom  = domain.quantities['ymomentum']
 
@@ -581,7 +610,7 @@ class Characteristic_stage_boundary(Boundary):
         except:
             w_outside = float(value[0])
 
-        q = num.zeros(len(self.conserved_quantities), float)
+        q = np.zeros(len(self.conserved_quantities), float)
 
         q[0] = self.stage.edge_values[vol_id, edge_id]
         q[1] = self.xmom.edge_values[vol_id, edge_id]
@@ -664,13 +693,13 @@ class Characteristic_stage_boundary(Boundary):
 
 
 
-        h_inside = num.maximum(Stage.boundary_values[ids]-Elev.boundary_values[ids], 0.0)
+        h_inside = np.maximum(Stage.boundary_values[ids]-Elev.boundary_values[ids], 0.0)
         w_outside = 0.0*Stage.boundary_values[ids] + w_outside 
 
         # Do vectorized operations here
         #
         # In dry cells, the values will be ....
-        q0_dry = num.where(Elev.boundary_values[ids] <= w_outside, w_outside, Elev.boundary_values[ids])
+        q0_dry = np.where(Elev.boundary_values[ids] <= w_outside, w_outside, Elev.boundary_values[ids])
         q1_dry = 0.0 * Xmom.boundary_values[ids]
         q2_dry = 0.0 * Ymom.boundary_values[ids]
         #
@@ -681,12 +710,12 @@ class Characteristic_stage_boundary(Boundary):
         # (note: When cells are dry, this calculation will throw invalid
         # values, but such values will never be selected to be returned)
         sqrt_g = gravity**0.5
-        h_inside  = num.maximum(Stage.boundary_values[ids] - Elev.boundary_values[ids], 0)
+        h_inside  = np.maximum(Stage.boundary_values[ids] - Elev.boundary_values[ids], 0)
         uh_inside = n1 * Xmom.boundary_values[ids] + n2 * Ymom.boundary_values[ids]
         vh_inside = n2 * Xmom.boundary_values[ids] - n1 * Ymom.boundary_values[ids]
-        u_inside  = num.where(h_inside>0.0, uh_inside/h_inside, 0.0)
+        u_inside  = np.where(h_inside>0.0, uh_inside/h_inside, 0.0)
 
-        h_outside = num.maximum(w_outside - Elev.boundary_values[ids], 0)
+        h_outside = np.maximum(w_outside - Elev.boundary_values[ids], 0)
 
         sqrt_h_inside = h_inside**0.5
         sqrt_h_outside = h_outside**0.5
@@ -697,28 +726,28 @@ class Characteristic_stage_boundary(Boundary):
         uh_m = h_m*u_m
 
         # if uh_inside > 0.0 then outflow
-        vh_m = num.where(uh_inside > 0.0, vh_inside, 0.0)
+        vh_m = np.where(uh_inside > 0.0, vh_inside, 0.0)
 
         w_m = h_m + Elev.boundary_values[ids]
 
-        dry_test = num.logical_or(h_inside == 0.0, h_outside == 0.0)
+        dry_test = np.logical_or(h_inside == 0.0, h_outside == 0.0)
 
         q1 = uh_m*n1 + vh_m*n2
         q2 = uh_m*n2 - vh_m*n1
 
-        Stage.boundary_values[ids] = num.where(
+        Stage.boundary_values[ids] = np.where(
             dry_test,
             w_outside,
             w_m 
             )
 
-        Xmom.boundary_values[ids] = num.where(
+        Xmom.boundary_values[ids] = np.where(
             dry_test, 
             0.0,
             q1 
             )
 
-        Ymom.boundary_values[ids] = num.where(
+        Ymom.boundary_values[ids] = np.where(
             dry_test,
             0.0,
             q2)
@@ -858,7 +887,7 @@ class Inflow_boundary(Boundary):
         elevation = z[edge_id]
             
         # Assign conserved quantities and return
-        q = num.array([elevation + depth, xmomentum, ymomentum], float)
+        q = np.array([elevation + depth, xmomentum, ymomentum], float)
         return q
 
 
@@ -1148,13 +1177,13 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
         Elev.boundary_values[ids]  = Elev.edge_values[vol_ids,edge_ids]
 
         bed = Elev.centroid_values[vol_ids]
-        depth_inside = num.maximum(Stage.boundary_values[ids]-bed, 0.0)
+        depth_inside = np.maximum(Stage.boundary_values[ids]-bed, 0.0)
         stage_outside = 0.0*Stage.boundary_values[ids] + stage_outside 
 
         # Do vectorized operations here
         #
         # In dry cells, the values will be ....
-        q0_dry = num.where(bed <= stage_outside, stage_outside, Elev.boundary_values[ids])
+        q0_dry = np.where(bed <= stage_outside, stage_outside, Elev.boundary_values[ids])
         q1_dry = 0.0 * Xmom.boundary_values[ids]
         q2_dry = 0.0 * Ymom.boundary_values[ids]
         #
@@ -1171,7 +1200,7 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
         w1 = 0.0 - sqrt_g_on_depth_inside * stage_outside
         # w2 = v [velocity parallel to boundary] -- uses 'inside' or 'outside'
         # info as required
-        w2 = num.where(ndotq_inside > 0.0,
+        w2 = np.where(ndotq_inside > 0.0,
             (n2 * Xmom.boundary_values[ids] - n1 * Ymom.boundary_values[ids])/depth_inside, 
             0.0 * ndotq_inside)
         # w3 = u + sqrt(g/depth)*(Stage_inside) -- uses 'inside info'
@@ -1185,19 +1214,19 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
         q1_wet = qperp * n1 + qpar * n2
         q2_wet = qperp * n2 - qpar * n1
 
-        dry_test = num.logical_or(depth_inside == 0.0, stage_outside > bed)
+        dry_test = np.logical_or(depth_inside == 0.0, stage_outside > bed)
 
-        Stage.boundary_values[ids] = num.where(
+        Stage.boundary_values[ids] = np.where(
             dry_test,
             q0_dry, 
             q0_wet)
 
-        Xmom.boundary_values[ids] = num.where(
+        Xmom.boundary_values[ids] = np.where(
             dry_test, 
             q1_dry, 
             q1_wet)
 
-        Ymom.boundary_values[ids] = num.where(
+        Ymom.boundary_values[ids] = np.where(
             dry_test,
             q2_dry,
             q2_wet)

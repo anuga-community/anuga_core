@@ -1,31 +1,45 @@
 
-.. image:: https://app.travis-ci.com/anuga-community/anuga_core.svg?branch=main
+.. |badge0| image:: https://badges.gitter.im/gitterHQ/gitter.png
+    :target: https://app.gitter.im/#/room/#anuga-community:gitter.im
+    :alt: Community Chat
+
+..
+    |badge1| image:: https://img.shields.io/travis/com/anuga-community/anuga_core/develop_hackathon.svg
     :target: https://app.travis-ci.com/anuga-community/anuga_core
-    :alt: travis ci status
+    :alt: Travis CI Status
+
+.. |badge1| image:: https://github.com/anuga-community/anuga_core/actions/workflows/conda-setup.yml/badge.svg
+    :target: https://github.com/anuga-community/anuga_core/actions/workflows/conda-setup.yml
+    :alt: GitHub Actions Status
    
-.. image:: https://ci.appveyor.com/api/projects/status/x5airjv7eq2u805w/branch/main?svg=true
+.. 
+    |badge2| image:: https://ci.appveyor.com/api/projects/status/x5airjv7eq2u805w/branch/main?svg=true
     :target: https://ci.appveyor.com/project/stoiver/anuga-core-nwgr0
     :alt: appveyor status
 
-.. image:: https://img.shields.io/pypi/v/anuga.svg
+.. |badge3| image:: https://img.shields.io/pypi/v/anuga.svg
     :target: https://pypi.python.org/pypi/anuga/
     :alt: Latest PyPi Version
 
-.. image:: https://img.shields.io/pypi/dm/anuga.svg
+.. |badge4| image:: https://img.shields.io/pypi/dm/anuga.svg
     :target: https://pypistats.org/packages/anuga
     :alt: PyPi download statistics
 
-.. image:: https://img.shields.io/conda/vn/conda-forge/anuga.svg
+.. |badge5| image:: https://img.shields.io/conda/vn/conda-forge/anuga.svg
     :target: https://anaconda.org/conda-forge/anuga
     :alt: Latest Conda Version
  
-.. image:: https://img.shields.io/conda/dn/conda-forge/anuga.svg
+.. |badge6| image:: https://img.shields.io/conda/dn/conda-forge/anuga.svg
     :target: https://anaconda.org/conda-forge/anuga
     :alt: Conda Forge download statistics
 
-.. image:: https://readthedocs.org/projects/anuga/badge/?version=latest
+.. |badge7| image:: https://readthedocs.org/projects/anuga/badge/?version=latest
     :target: https://anuga.readthedocs.io/en/latest/?badge=latest
     :alt: Documentation Status
+
+|badge0| |badge1| |badge3| |badge4| |badge5| |badge6| |badge7|
+
+
 
 
 =====
@@ -67,7 +81,7 @@ versions will be available from the `anuga-community <https://github.com/anuga-c
 Installation
 ------------
 
-If you use `conda` to provide your `python` envirnment, then you can install `anuga` from the conda-forge channel
+If you use `conda` to provide your `python` environment, then you can install `anuga` from the conda-forge channel
 as follows. First setup the `conda-forge` channel:
 
 .. code-block::
@@ -95,7 +109,7 @@ ANUGA documentation is available via "read the docs" at
     https://anuga.readthedocs.io 
 
 Also you can obtain help via the old
-`user_manual <https://github.com/anuga-community/anuga_core/raw/main/doc/anuga_user_manual.pdf>`_
+`user_manual <https://dx.doi.org/10.13140/RG.2.2.17267.81446>`_
 
 Also helpful information is available online at
 

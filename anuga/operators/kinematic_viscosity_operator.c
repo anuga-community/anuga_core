@@ -1,23 +1,23 @@
 #include <math.h>
 #include <stdio.h>
-#include <unistd.h>
-
+#include <stdint.h>
+#include "anuga_typedefs.h"
 //Rough quicksort implementation (for build_operator_matrix)
 // taken from http://cprogramminglanguage.net/quicksort-algorithm-c-source-code.aspx
 
-void swap(int *x, int *y) {
-    int temp;
+void swap(anuga_int *x, anuga_int *y) {
+    anuga_int temp;
     temp = *x;
     *x = *y;
     *y = temp;
 }
 
-int choose_pivot(int i, int j) {
+anuga_int choose_pivot(anuga_int i, anuga_int j) {
     return ((i + j) / 2);
 }
 
-void quicksort(int list[], int m, int n) {
-    int key, i, j, k;
+void quicksort(anuga_int list[], anuga_int m, anuga_int n) {
+    anuga_int key, i, j, k;
     if (m < n) {
         k = choose_pivot(m, n);
         swap(&list[m], &list[k]);
@@ -40,17 +40,16 @@ void quicksort(int list[], int m, int n) {
     }
 }
 
-int _build_geo_structure(int n,
-        int tot_len,
+anuga_int _build_geo_structure(anuga_int n,
+        anuga_int tot_len,
         double *centroids,
-        long *neighbours,
+        anuga_int *neighbours,
         double *edgelengths,
         double *edge_midpoints,
-        long *geo_indices,
+        anuga_int *geo_indices,
         double *geo_values) {
-    int i, edge, edge_counted, j, m;
+    anuga_int i, edge, j, m;
     double dist, this_x, this_y, other_x, other_y, edge_length;
-    edge_counted = 0;
     for (i = 0; i < n; i++) {
         //The centroid coordinates of triangle i
         this_x = centroids[2 * i];
@@ -65,7 +64,6 @@ int _build_geo_structure(int n,
             if (j < 0) {
                 m = -j - 1;
                 geo_indices[3 * i + edge] = n + m;
-                edge_counted++;
 
                 other_x = edge_midpoints[2 * (3 * i + edge)];
                 other_y = edge_midpoints[2 * (3 * i + edge) + 1];
@@ -85,16 +83,16 @@ int _build_geo_structure(int n,
     return 0;
 }
 
-int _build_elliptic_matrix_not_symmetric(int n,
-        int tot_len,
-        long *geo_indices,
+anuga_int _build_elliptic_matrix_not_symmetric(anuga_int n,
+        anuga_int tot_len,
+        anuga_int *geo_indices,
         double *geo_values,
         double *cell_data,
         double *bdry_data,
         double *data,
-        long *colind) {
-    int i, k, edge, j[4], sorted_j[4], this_index;
-    double h_j, v[3], v_i; //v[k] = value of the interaction of edge k in a given triangle, v_i = (i,i) entry
+        anuga_int *colind) {
+    anuga_int i, k, edge, j[4], sorted_j[4], this_index;
+    double v[3], v_i; //v[k] = value of the interaction of edge k in a given triangle, v_i = (i,i) entry
     for (i = 0; i < n; i++) {
         v_i = 0.0;
         j[3] = i;
@@ -138,15 +136,15 @@ int _build_elliptic_matrix_not_symmetric(int n,
     return 0;
 }
 
-int _build_elliptic_matrix(int n,
-        int tot_len,
-        long *geo_indices,
+anuga_int _build_elliptic_matrix(anuga_int n,
+        anuga_int tot_len,
+        anuga_int *geo_indices,
         double *geo_values,
         double *cell_data,
         double *bdry_data,
         double *data,
-        long *colind) {
-    int i, k, edge, j[4], sorted_j[4], this_index;
+        anuga_int *colind) {
+    anuga_int i, k, edge, j[4], sorted_j[4], this_index;
     double h_j, v[3], v_i; //v[k] = value of the interaction of edge k in a given triangle, v_i = (i,i) entry
     for (i = 0; i < n; i++) {
         v_i = 0.0;
@@ -191,16 +189,16 @@ int _build_elliptic_matrix(int n,
     return 0;
 }
 
-int _update_elliptic_matrix_not_symmetric(int n,
-        int tot_len,
-        long *geo_indices,
+anuga_int _update_elliptic_matrix_not_symmetric(anuga_int n,
+        anuga_int tot_len,
+        anuga_int *geo_indices,
         double *geo_values,
         double *cell_data,
         double *bdry_data,
         double *data,
-        long *colind) {
-    int i, k, edge, j[4], sorted_j[4], this_index;
-    double h_j, v[3], v_i; //v[k] = value of the interaction of edge k in a given triangle, v_i = (i,i) entry
+        anuga_int *colind) {
+    anuga_int i, k, edge, j[4], sorted_j[4], this_index;
+    double  v[3], v_i; //v[k] = value of the interaction of edge k in a given triangle, v_i = (i,i) entry
     for (i = 0; i < n; i++) {
         v_i = 0.0;
         j[3] = i;
@@ -208,11 +206,6 @@ int _update_elliptic_matrix_not_symmetric(int n,
         //Get the values of each interaction, and the column index at which they occur
         for (edge = 0; edge < 3; edge++) {
             j[edge] = geo_indices[3 * i + edge];
-            if (j[edge] < n) { //interior
-                h_j = cell_data[j[edge]];
-            } else { //boundary
-                h_j = bdry_data[j[edge] - n];
-            }
             v[edge] = -cell_data[i] * geo_values[3 * i + edge]; //the negative of the individual interaction
             v_i += cell_data[i] * geo_values[3 * i + edge]; //sum the three interactions
         }
@@ -245,15 +238,15 @@ int _update_elliptic_matrix_not_symmetric(int n,
     return 0;
 }
 
-int _update_elliptic_matrix(int n,
-        int tot_len,
-        long *geo_indices,
+anuga_int _update_elliptic_matrix(anuga_int n,
+        anuga_int tot_len,
+        anuga_int *geo_indices,
         double *geo_values,
         double *cell_data,
         double *bdry_data,
         double *data,
-        long *colind) {
-    int i, k, edge, j[4], sorted_j[4], this_index;
+        anuga_int *colind) {
+    anuga_int i, k, edge, j[4], sorted_j[4], this_index;
     double h_j, v[3], v_i; //v[k] = value of the interaction of edge k in a given triangle, v_i = (i,i) entry
     for (i = 0; i < n; i++) {
         v_i = 0.0;

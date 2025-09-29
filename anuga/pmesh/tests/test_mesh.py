@@ -731,7 +731,7 @@ class meshTestCase(unittest.TestCase):
         s4 = Segment(a,e, tag = "20")
      
         r1 = Region(0.3, 0.3,tag = "1.3")
-        geo = Geo_reference(8.9,8.9,65)
+        geo = Geo_reference(55, 8.9,8.9)
         m = Mesh(userVertices=[a,d,f,e],
                  userSegments=[s1,s2,s3,s4],
                  regions=[r1],
@@ -774,7 +774,7 @@ class meshTestCase(unittest.TestCase):
         s4 = Segment(a,e, tag = "20")
      
         r1 = Region(0.3, 0.3,tag = "1.3")
-        geo = Geo_reference(65,8.9,8.9)
+        geo = Geo_reference(55,8.9,8.9)
         m = Mesh(userVertices=[a,d,f,e],
                  userSegments=[s1,s2,s3,s4],
                  regions=[r1],
@@ -1435,25 +1435,25 @@ class meshTestCase(unittest.TestCase):
         #print "answer",answer
         #print "dict['vertices']",dict['vertices']
         
-        self.assertTrue(num.alltrue(dict['vertices'] == answer),
+        self.assertTrue(num.all(dict['vertices'] == answer),
                         'test_Mesh2IOTriangulationDict failed. test 2')
 
-        self.assertTrue(num.alltrue(dict['vertices'].flatten() ==
+        self.assertTrue(num.all(dict['vertices'].flatten() ==
                                     verts.flatten()),
                          'test_Mesh2IOTriangulationDict failed. test vert')
-        self.assertTrue(num.alltrue(dict['vertex_attributes'].flatten() ==
+        self.assertTrue(num.all(dict['vertex_attributes'].flatten() ==
                                     vert_as.flatten()),
                          'test_Mesh2IOTriangulationDict failed. test vert ats')
 
-        self.assertTrue(num.alltrue(dict['segments'][0] == [0,1]),
+        self.assertTrue(num.all(dict['segments'][0] == [0,1]),
                         'test_Mesh2IODict failed. test 3')
         
         self.assertTrue( dict['segment_tags'] == seg_tags,
                         'test_Mesh2IODict failed. test 3')
         #print " dict['triangles'][0]", dict['triangles'][0] 
-        self.assertTrue(num.alltrue(dict['triangles'][0] == [3,2,4]),
+        self.assertTrue(num.all(dict['triangles'][0] == [3,2,4]),
                         'test_Mesh2IODict failed. test 5')
-        self.assertTrue(num.alltrue(dict['triangle_neighbors'][0] == [-1,2,3]),
+        self.assertTrue(num.all(dict['triangle_neighbors'][0] == [-1,2,3]),
                         'test_Mesh2IODict failed. test 6')
         #print "dict['triangle_tags'][0]", dict['triangle_tags'][0]
         self.assertTrue( dict['triangle_tags'][0] == "1.3",
@@ -1498,23 +1498,23 @@ class meshTestCase(unittest.TestCase):
         #print "answer",answer
         #print "dict['vertices']",dict['vertices']
         
-        self.assertTrue(num.alltrue(dict['vertices'] == answer),
+        self.assertTrue(num.all(dict['vertices'] == answer),
                         'test_Mesh2IOTriangulationDict failed. test 2')
 
-        self.assertTrue(num.alltrue(dict['vertices'] == verts),
+        self.assertTrue(num.all(dict['vertices'] == verts),
                         'test_Mesh2IOTriangulationDict failed. test vert')
-        self.assertTrue(num.alltrue(dict['vertex_attributes'] == vert_as),
+        self.assertTrue(num.all(dict['vertex_attributes'] == vert_as),
                         'test_Mesh2IOTriangulationDict failed. test vert ats')
 
-        self.assertTrue(num.alltrue(dict['segments'][0] == [0,1]),
+        self.assertTrue(num.all(dict['segments'][0] == [0,1]),
                         'test_Mesh2IODict failed. test 3')
         
         self.assertTrue(dict['segment_tags'] == seg_tags,
                         'test_Mesh2IODict failed. test 3')
         #print " dict['triangles'][0]", dict['triangles'][0] 
-        self.assertTrue(num.alltrue(dict['triangles'][0] == [3,2,4]),
+        self.assertTrue(num.all(dict['triangles'][0] == [3,2,4]),
                         'test_Mesh2IODict failed. test 5')
-        self.assertTrue(num.alltrue(dict['triangle_neighbors'][0] == [-1,2,3]),
+        self.assertTrue(num.all(dict['triangle_neighbors'][0] == [-1,2,3]),
                         'test_Mesh2IODict failed. test 6')
         #print "dict['triangle_tags'][0]", dict['triangle_tags'][0]
         self.assertTrue(dict['triangle_tags'][0] == "1.3",
@@ -2042,7 +2042,7 @@ class meshTestCase(unittest.TestCase):
                         'FAILED!')
         vert = m.get_user_vertices(absolute=True)
         
-        self.assertTrue(num.alltrue(vert.flatten() ==
+        self.assertTrue(num.all(vert.flatten() ==
                                     num.array(points).flatten()),
                         'FAILED!')
     
@@ -2155,7 +2155,7 @@ def list_comp(A,B):
 ################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(meshTestCase, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(meshTestCase)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)
     

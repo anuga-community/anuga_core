@@ -686,20 +686,20 @@ class Quantity(object):
         """Compute interpolated values at edges and centroid
         Pre-condition: vertex_values have been set
         """
-        from .quantity_ext import interpolate
+        from .quantity_openmp_ext import interpolate
         interpolate(self)
 
 
     def interpolate_from_vertices_to_edges(self):
         # Call correct module function (either from this module or C-extension)
 
-        from .quantity_ext import interpolate_from_vertices_to_edges
+        from .quantity_openmp_ext import interpolate_from_vertices_to_edges
         interpolate_from_vertices_to_edges(self)
 
     def interpolate_from_edges_to_vertices(self):
         # Call correct module function (either from this module or C-extension)
 
-        from .quantity_ext import interpolate_from_edges_to_vertices
+        from .quantity_openmp_ext import interpolate_from_edges_to_vertices
         interpolate_from_edges_to_vertices(self)
 
     #---------------------------------------------
@@ -745,8 +745,8 @@ class Quantity(object):
 
 
         filename:
-          Name of a points file or dem file (.asc or .grd or .dem) containing data points and attributes for
-          use with fit_interpolate.fit.
+          Name of a points file (extension .pts, .csv, .txt or .xya) or dem file (ext .dem, .asc, .grd or .tif) 
+          containing data points and attributes for use with fit_interpolate.fit.
 
         raster:
           A class or a tuple (x,y,Z)
@@ -921,17 +921,18 @@ class Quantity(object):
                 max_read_lines = default_block_line_size
             filename_ext = os.path.splitext(filename)[1]
             # pts file in the format of .txt or .pts
-            if filename_ext in ['.txt', '.pts', '.csv']:
+            if filename_ext in ['.txt', '.pts', '.csv', '.xya']:
                 self.set_values_from_file(filename, attribute_name, alpha, location,
                                       indices, verbose=verbose,
                                       max_read_lines=max_read_lines,
                                       use_cache=use_cache)
             # dem file in the format of .asc, .grd or .dem
             elif filename_ext in ['.asc', '.grd', '.dem']:
-                self.set_values_from_utm_grid_file(filename, location,
-                      indices, verbose=verbose)
+                self.set_values_from_utm_grid_file(filename, location, indices, verbose=verbose)
+            elif filename_ext in ['.tif']:
+                self.set_values_from_tif_file(filename, location, indices, verbose=verbose)
             else:
-                raise Exception('Extension should be .pts .dem, .csv, .txt, .asc or .grd')
+                raise Exception('Extension should be .pts .dem, .csv, .txt, .xya, .asc, .grd or .tif')
 
         elif raster is not None:
             self.set_values_from_utm_raster(raster,
@@ -1254,7 +1255,7 @@ class Quantity(object):
         assert isinstance(filename, str), msg
 
         msg = 'Extension should be .pts .dem, .csv, or txt'
-        assert os.path.splitext(filename)[1] in ['.pts', '.dem', '.csv', '.txt'], msg
+        assert os.path.splitext(filename)[1] in ['.pts', '.csv', '.txt', '.xya'], msg
 
 
         if location != 'vertices':
@@ -1340,6 +1341,7 @@ class Quantity(object):
 
         from anuga.file_conversion.grd2array import grd2array
         from anuga.file_conversion.dem2array import dem2array
+        from anuga.file_conversion.tif2array import tif2array
 
         filename_ext = os.path.splitext(filename)[1]
 
@@ -1347,6 +1349,11 @@ class Quantity(object):
             x,y,Z = grd2array(filename)
         elif filename_ext == '.dem':
             x,y,Z = dem2array(filename)
+        elif filename_ext == '.tif':
+            x,y,Z= tif2array(filename)
+        else:
+            msg= 'The file extension is not suportted... Only .asc, .grd, .dem, .tif are supported.'
+            Exception(msg)
 
         if location == 'centroids':
             if indices is None:
@@ -1473,13 +1480,105 @@ class Quantity(object):
             # Cleanup centroid values
             self.interpolate()
 
+    def set_values_from_tif_file(self,
+                                 filename,
+                                 location='centroids',
+                                 indices=None,
+                                 verbose=False):
+
+        from anuga.file_conversion.tif2point_values import tif2point_values
+
+        filename_ext = os.path.splitext(filename)[1]
+
+        zone = self.domain.get_zone()
+        if zone == -1:
+            msg = 'UTM zone needed for this calculation.\nUse domain.set_zone to set the UTM zone of your simulation'
+            raise Exception(msg)
+        
+        hemisphere = self.domain.get_hemisphere()
+
+        # Default hemisphere is south. If hemisphere undefined assume south = True
+        south = True
+        if hemisphere == 'northern':
+            south = False
+
+        if location == 'centroids':
+            points = self.domain.centroid_coordinates
+
+            if indices is not None:
+                indices = num.array(indices)
+                points = points[indices,:]
+
+        else:
+            points = self.domain.vertex_coordinates
+
+            if indices is not None:
+                indices = num.array(indices)
+                points = points[tuple(indices),:]
+
+        #print(points.shape)
+
+        
+
+        #print(points.shape)
+
+        from anuga.geospatial_data.geospatial_data import Geospatial_data,  ensure_absolute
+
+        points = ensure_absolute(points, geo_reference=self.domain.geo_reference)
+
+
+        from pprint import pprint
+
+        #pprint(points)
+
+        if filename_ext in ['.tif']:
+                values = tif2point_values(filename, zone=zone, south=south, points=points)
+        else:
+            msg= 'The file extension is not suportted... Only .tif are supported.'
+            Exception(msg)
+
+        #pprint(values)
+
+        # Call underlying method using array values
+        if verbose:
+            log.critical('Applying fitted data to quantity')
+
+
+        if location == 'centroids':
+            if indices is None:
+                msg = 'Number of values must match number of elements'
+                #assert values.shape[0] == N, msg
+
+                self.centroid_values[:] = values
+            else:
+                msg = 'Number of values must match number of indices'
+                assert values.shape[0] == indices.shape[0], msg
+
+                # Brute force
+                self.centroid_values[indices] = values
+        else:
+            if indices is None:
+                msg = 'Number of values must match number of elements'
+                #assert values.shape[0] == N, msg
+
+                #print values.shape
+                #print self.vertex_values.shape
+                self.vertex_values[:] = values.reshape((-1,3))
+            else:
+                msg = 'Number of values must match number of indices'
+                #print(values.shape, indices)
+                assert values.shape[0] == indices.shape[0], msg
+
+                # Brute force
+                self.vertex_values[indices] = values.reshape((-1,3))
+            # Cleanup centroid values
+            self.interpolate()
 
 
     def set_values_from_lat_long_grid_file(self,
                              filename,
                              location='centroids',
                              indices=None,
-                             northern=False,
                              verbose=False):
 
         """Read Digital model from the following ASCII format (.asc or .grd)
@@ -1623,6 +1722,11 @@ class Quantity(object):
             print(self.domain.geo_reference)
 
         utm_zone = self.domain.geo_reference.get_zone()
+        utm_hemisphere = self.domain.geo_reference.get_hemisphere()
+
+        northern = True
+        if utm_hemisphere == 'southern':
+            northern = False
 
         #import re
         #utm_zone_number = re.findall(r'\d+', utm_zone)[0]
@@ -2051,7 +2155,7 @@ class Quantity(object):
     # Methods for outputting model results
     ############################################################################
 
-    def get_vertex_values(self, xy=True, smooth=None, precision=None):
+    def get_vertex_values(self, xy=True, smooth=None, centroid_averaging=None, precision=None):
         """Return vertex values like an OBJ format i.e. one value per node.
 
         The vertex values are returned as one sequence in the 1D float array A.
@@ -2087,6 +2191,13 @@ class Quantity(object):
             except:
                 smooth = False
 
+        if centroid_averaging is None:
+            # Take default from domain
+            try:
+                centroid_averaging = self.domain.get_using_centroid_averaging()
+            except:
+                centroid_averaging = False
+                
         if precision is None:
             precision = float
 
@@ -2097,53 +2208,17 @@ class Quantity(object):
             A = num.zeros(N, float)
             points = self.domain.get_nodes()
 
-            if True:
-                # Fast C version
-                if self.domain.get_using_discontinuous_elevation():
-                    average_centroid_values(ensure_numeric(self.domain.vertex_value_indices),
-                                      ensure_numeric(self.domain.number_of_triangles_per_node),
-                                      ensure_numeric(self.centroid_values),
-                                      A)
-                else:
-                    average_vertex_values(ensure_numeric(self.domain.vertex_value_indices),
-                                      ensure_numeric(self.domain.number_of_triangles_per_node),
-                                      ensure_numeric(self.vertex_values),
-                                      A)
-                A = A.astype(precision)
+            if centroid_averaging:
+                average_centroid_values(ensure_numeric(self.domain.vertex_value_indices),
+                                    ensure_numeric(self.domain.number_of_triangles_per_node),
+                                    ensure_numeric(self.centroid_values),
+                                    A)
             else:
-                # FIXME (Ole): This could be retired
-                # Slow Python version
-                current_node = 0
-                k = 0 # Track triangles touching on node
-                total = 0.0
-                for index in self.domain.vertex_value_indices:
-
-                    if self.domain.number_of_triangles_per_node[current_node] == 0:
-                        total = 0.0
-                        k = 0
-                        current_node += 1
-                    else:
-
-                        if current_node == N:
-                            msg = 'Current node exceeding number of nodes (%d) ' % N
-                            raise Exception(msg)
-
-                        k += 1
-
-                        volume_id = index // 3
-                        vertex_id = index % 3
-
-                        v = self.vertex_values[volume_id, vertex_id]
-                        total += v
-
-                        if self.domain.number_of_triangles_per_node[current_node] == k:
-                            A[current_node] = total // k
-
-                            # Move on to next node
-                            total = 0.0
-                            k = 0
-                            current_node += 1
-
+                average_vertex_values(ensure_numeric(self.domain.vertex_value_indices),
+                                    ensure_numeric(self.domain.number_of_triangles_per_node),
+                                    ensure_numeric(self.vertex_values),
+                                    A)
+            A = A.astype(precision)
 
         else:
             # Return disconnected internal vertex values
@@ -2217,6 +2292,18 @@ class Quantity(object):
     def update(self, timestep):
         # Call correct module function
         # (either from this module or C-extension)
+
+
+        if self.domain.multiprocessor_mode == 2:
+            from .quantity_openmp_ext import update
+        if self.domain.multiprocessor_mode == 3:
+            from .quantity_openmp_ext import update
+        if self.domain.multiprocessor_mode == 4:
+            # FIXME SR: Change this when gpu version is available
+            from .quantity_openmp_ext import update
+        else:
+            from .quantity_openmp_ext import update
+        
         return update(self, timestep)
 
     def compute_gradients(self):
@@ -2304,7 +2391,7 @@ class Conserved_quantity(Quantity):
 ######
 # Prepare the C extensions.
 ######
-from .quantity_ext import \
+from .quantity_openmp_ext import \
          average_vertex_values,\
          average_centroid_values,\
          backup_centroid_values,\

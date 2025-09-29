@@ -42,10 +42,6 @@ from anuga.abstract_2d_finite_volumes.generic_boundary_conditions\
 import numpy as num
 from anuga.config import g
 
-# Get gateway to C implementation of flux function for direct testing
-from anuga.shallow_water.shallow_water_ext import flux_function_central as flux_function
-from anuga.shallow_water.shallow_water_ext import rotate
-
 
 def set_bottom_friction(tag, elements, domain):
     if tag == "bottom":
@@ -211,6 +207,6 @@ class Test_LoadSave(unittest.TestCase):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_LoadSave, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_LoadSave)
     runner = unittest.TextTestRunner() #verbosity=2)
     runner.run(suite)    

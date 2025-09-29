@@ -11,6 +11,9 @@
 
 #include "math.h"
 #include "stdio.h"
+#include "stdlib.h"
+#include "stdint.h"
+#include "anuga_typedefs.h"
 
 //-------------------------------------------
 // Low level routines (called from wrappers)
@@ -20,36 +23,36 @@ double _compute_fluxes(
 		    double* quantity_update,
 		    double* quantity_edge,
 		    double* quantity_bdry,
-                    long*   domain_neighbours,
-		    long*   domain_neighbour_edges,
+            anuga_int*   domain_neighbours,
+		    anuga_int*   domain_neighbour_edges,
 		    double* domain_normals,
-                    double* domain_areas,
+            double* domain_areas,
 		    double* domain_radii,
 		    double* domain_edgelengths,
-		    long*   domain_tri_full_flag,
+		    anuga_int*   domain_tri_full_flag,
 		    double* domain_velocity,
-                    double  huge_timestep,
-                    double  max_timestep,
-		    int ntri,
-		    int nbdry){
+            double  huge_timestep,
+            double  max_timestep,
+		    anuga_int ntri,
+		    anuga_int nbdry){
 
  
         //Local Variables
 
-        double qr,ql;
+        double qr, ql;
         double normal[2];
         double normal_velocity;
         double flux, edgeflux;
         double max_speed;
         double optimal_timestep;
-	double timestep;
-	int  k_i,n_m,k_i_j;
-	int k,i,j,n,m;
-	int k3;
-	
-	//Loop through triangles
+        double timestep;
+        anuga_int k_i, n_m, k_i_j;
+        anuga_int k, i, j, n, m;
+        anuga_int k3;
 
-	timestep = max_timestep;
+        // Loop through triangles
+
+        timestep = max_timestep;
 
         for (k=0; k<ntri; k++){
             optimal_timestep = huge_timestep;

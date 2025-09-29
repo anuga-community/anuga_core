@@ -10,20 +10,20 @@ static void *emalloc(size_t amt,char * location)
         exit(EXIT_FAILURE);
     }
     return v;
-};
+}
 
 double dot_points(double p1x,double p1y,double p2x,double p2y)
 {
     
     return p1x * p2x + p1y * p2y;
     
-};
+}
 
 // ***************************************************
 
 // ******************* TRIANGLE **********************
 
-triangle * new_triangle(int index,double x1,double y1,double x2,double y2,double x3,double y3)
+triangle * new_triangle(anuga_int index,double x1,double y1,double x2,double y2,double x3,double y3)
 {
 
 	triangle * T = emalloc(sizeof(triangle),"new_triangle"); 
@@ -67,7 +67,7 @@ triangle * new_triangle(int index,double x1,double y1,double x2,double y2,double
     }
 
     return T;
-};
+}
 
 void delete_triangle_list(triangle * T)
 {
@@ -77,7 +77,7 @@ void delete_triangle_list(triangle * T)
 	   T = NULL;
      T = next;
   }
-};
+}
 
 double * calculate_sigma(triangle * T,double x,double y)
 {
@@ -92,7 +92,7 @@ double * calculate_sigma(triangle * T,double x,double y)
 	ret_sigma[2] = dot_points(x - T->x1, y - T->y1, T->nx3, T->ny3)/
 					dot_points(T->x3 - T->x1, T->y3 - T->y1, T->nx3, T->ny3);
 	return ret_sigma;				
-};
+}
 
 double dist(double x,
 	    double y) {
@@ -100,7 +100,7 @@ double dist(double x,
   return sqrt(x*x + y*y);
 }
 
-int __point_on_line(double x, double y,
+anuga_int __point_on_line(double x, double y,
                     double x0, double y0,
                     double x1, double y1,
                     double rtol,
@@ -114,9 +114,9 @@ int __point_on_line(double x, double y,
 
   */
 
-  double a0, a1, a_normal0, a_normal1, b0, b1, len_a, len_b;
+  double a0, a1, a_normal0, a_normal1, b0, b1;
   double nominator, denominator;
-  int is_parallel;
+  anuga_int is_parallel;
 
   a0 = x - x0;
   a1 = y - y0;
@@ -168,11 +168,11 @@ int __point_on_line(double x, double y,
     }
   }
   return 0;
-};
+}
 
-int __is_inside_triangle(double* point,
+anuga_int __is_inside_triangle(double* point,
 			 double* triangle,
-			 int closed,
+			 anuga_int closed,
 			 double rtol,
 			 double a_tol) {
 			 
@@ -181,7 +181,7 @@ int __is_inside_triangle(double* point,
   double denom, alpha, beta;
   
   double x, y; // Point coordinates
-  int i, j, res;
+  anuga_int i, j, res;
 
   x = point[0];
   y = point[1];
@@ -251,7 +251,7 @@ int __is_inside_triangle(double* point,
   return 0;			 			 
 }			  			       	
 
-int triangle_contains_point(triangle * T,double pointx,double pointy)
+anuga_int triangle_contains_point(triangle * T,double pointx,double pointy)
 {
     
 //    double v0x,v0y,v1x,v1y,v2x,v2y,dot00,dot01,dot02,dot11,dot12,invDenom,u,v;
@@ -282,7 +282,7 @@ int triangle_contains_point(triangle * T,double pointx,double pointy)
       point[0] = pointx; point[1] = pointy;
       double rtol=1.0e-12;
       double a_tol=1.0e-12;
-      int closed = 1;
+      anuga_int closed = 1;
 
       return __is_inside_triangle(point,
 			 tri,
@@ -291,7 +291,7 @@ int triangle_contains_point(triangle * T,double pointx,double pointy)
 			 a_tol); 
 
 
-};
+}
 
 
 
@@ -312,7 +312,7 @@ quad_tree * new_quad_tree(double xmin, double xmax, double ymin, double ymax)
   ret -> count = 0;
 	return ret; 
 
-};
+}
 
 void delete_quad_tree(quad_tree * quadtree)
 {
@@ -320,7 +320,7 @@ void delete_quad_tree(quad_tree * quadtree)
   quad_tree_ll * nodelist = new_quad_tree_ll(quadtree,0);
   quad_tree_ll * last = nodelist;
   quad_tree_ll * temp;
-  int i;
+  anuga_int i;
 
   while(nodelist !=NULL){
       
@@ -347,7 +347,7 @@ void delete_quad_tree(quad_tree * quadtree)
       free(temp);
   }
 
-};
+}
 
 void quad_tree_make_children(quad_tree *node){
 
@@ -391,7 +391,7 @@ void quad_tree_insert_triangle(quad_tree *node,triangle *T)
 	// find the quadrant of the current node's extents in which the
 	// point lies (zero if intersects center of extents axes).
 
-	int quad = trivial_contain_split(node,T);
+	anuga_int quad = trivial_contain_split(node,T);
 
   // always increase point count, as storing the total in tree below
   node->count+=1;
@@ -412,27 +412,27 @@ void quad_tree_insert_triangle(quad_tree *node,triangle *T)
 	// the triangle here
 	quad_tree_add_triangle_to_list(node,T);
 
-};
+}
 
 
-int trivial_contain_split(quad_tree *node, triangle *T){
+anuga_int trivial_contain_split(quad_tree *node, triangle *T){
 
-	int p1 = trivial_contain_split_point(node,T->x1,T->y1);
-	int p2 = trivial_contain_split_point(node,T->x2,T->y2);
-	int p3 = trivial_contain_split_point(node,T->x3,T->y3);
+	anuga_int p1 = trivial_contain_split_point(node,T->x1,T->y1);
+	anuga_int p2 = trivial_contain_split_point(node,T->x2,T->y2);
+	anuga_int p3 = trivial_contain_split_point(node,T->x3,T->y3);
 	if(p1 == p2 && p2 == p3){
 	 	return p1;
 	}
 	return 0;
-};
+}
 
-int trivial_contain_split_point(quad_tree *node, double xp,double yp)
+anuga_int trivial_contain_split_point(quad_tree *node, double xp,double yp)
 {
 
 	double midx = (node->xmin+node->xmax)/2;
 	double midy = (node->ymin+node->ymax)/2;
 
-	int ret=0;
+	anuga_int ret=0;
 	
 	if (midx < xp){
 		// quad 1 or 4
@@ -450,7 +450,7 @@ int trivial_contain_split_point(quad_tree *node, double xp,double yp)
 		}
 	}
 	return ret;
-};
+}
 
 triangle * search_triangles_of_quad_tree(quad_tree * node,double xp,double yp){
 	
@@ -463,7 +463,7 @@ triangle * search_triangles_of_quad_tree(quad_tree * node,double xp,double yp){
         T = T->next;
     }
 	return T; // should be NULL if this is reached
-};
+}
 
 // Searches the quad tree starting at 'cur_quad_tree' for the 
 // point, returning the triangle that contains it, or NULL
@@ -483,7 +483,7 @@ triangle * search(quad_tree * node, double xp, double yp){
         if(node->q[0]!=NULL) // look for child to search
         {
             //find correct quadrant to search
-            int quad = trivial_contain_split_point(node,xp,yp);
+            anuga_int quad = trivial_contain_split_point(node,xp,yp);
             
             if (quad!=0)
             {
@@ -494,25 +494,25 @@ triangle * search(quad_tree * node, double xp, double yp){
         }
 	}
 	return return_T; // should not be reached
-};
+}
 
-int quad_tree_node_count(quad_tree * tree)
+anuga_int quad_tree_node_count(quad_tree * tree)
 {
-  int node_count = 1;
+  anuga_int node_count = 1;
   if (tree->q[0]!=NULL){
-      int i;
+      anuga_int i;
       for(i=0;i<4;i++){
         node_count+=quad_tree_node_count(tree->q[i]);
       }
   }
   return node_count;
-};
+}
 
 // ***************************************************
 
 // ***************** quad_tree_ll *******************
 
-quad_tree_ll * new_quad_tree_ll(quad_tree * start,int index){
+quad_tree_ll * new_quad_tree_ll(quad_tree * start,anuga_int index){
     quad_tree_ll * list = malloc(sizeof(quad_tree_ll));
     list->tree = start;
     list->next = NULL;
@@ -524,7 +524,7 @@ quad_tree_ll * new_quad_tree_ll(quad_tree * start,int index){
 
 // ***************** queue_ll *******************
 
-queue_ll * new_queue_ll(int node){
+queue_ll * new_queue_ll(anuga_int node){
     queue_ll * list = malloc(sizeof(queue_ll));
     list->node=node;
     list->next = NULL;

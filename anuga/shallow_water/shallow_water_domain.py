@@ -44,7 +44,8 @@ Description:
     v                          speed in the y direction [m/s]
     uh        xmomentum        momentum in the x direction [m^2/s]
     vh        ymomentum        momentum in the y direction [m^2/s]
-                             
+
+
     eta                        mannings friction coefficient [to appear]
     nu                         wind stress coefficient [to appear]
 
@@ -65,7 +66,7 @@ Reference:
     See also: https://anuga.anu.edu.au and https://en.wikipedia.org/wiki/ANUGA_Hydro
 
 
-Constraints: See GPL license in the user guide
+Constraints: See license in the user guide
 """
 
 
@@ -81,9 +82,10 @@ def profileit(name):
             import cProfile
             prof = cProfile.Profile()
             retval = prof.runcall(func, *args, **kwargs)
+
             # Note use of name from outer scope
-            print(str(args[1])+"_"+name)
-            prof.dump_stats(str(args[1])+"_"+name)
+            print(str(args[1])+'_'+name)
+            prof.dump_stats(str(args[1])+'_'+name)
             return retval
         return wrapper
     return inner
@@ -93,6 +95,11 @@ import numpy as num
 import sys
 import os
 import time
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
 
 try:
     import dill as pickle
@@ -113,7 +120,26 @@ from anuga.utilities.parallel_abstraction import finalize, send, receive
 from anuga.utilities.parallel_abstraction import pypar_available, barrier
 
 
-#from pypar import size, rank, send, receive, barrier
+#-----------------------------------------------------
+# Code for profiling cuda version
+#-----------------------------------------------------
+def nvtxRangePush(*arg):
+    pass
+def nvtxRangePop(*arg):
+    pass
+
+try:
+    from cupy.cuda.nvtx import RangePush as nvtxRangePush
+    from cupy.cuda.nvtx import RangePop  as nvtxRangePop
+except:
+    pass
+
+try:
+    from nvtx import range_push as nvtxRangePush
+    from nvtx import range_pop  as nvtxRangePop
+except:
+    pass
+
 
 class Domain(Generic_Domain):
     """Object which encapulates the shallow water model
@@ -126,20 +152,20 @@ class Domain(Generic_Domain):
     Shallow Water Wave Equation
 
     .. math::
-    
+
         U_t + E_x + G_y = S
 
     where
 
     .. math::
-    
+
         U = [w, uh, vh]^T
 
     .. math::
 
         E = [uh, u^2h + gh^2/2, uvh]
 
-    .. math:: 
+    .. math::
 
         G = [vh, uvh, v^2h + gh^2/2]
 
@@ -166,7 +192,7 @@ class Domain(Generic_Domain):
           - horizontal distance from origin [m]
         * - y
           - y
-          - vertical distance from origin [m] 
+          - vertical distance from origin [m]
         * - z
           - elevation
           - elevation of bed on which flow is modelled [m]
@@ -180,7 +206,7 @@ class Domain(Generic_Domain):
           -
           - speed in the x direction [m/s]
         * - v
-          - 
+          -
           - speed in the y direction [m/s]
         * - uh
           - xmomentum
@@ -189,13 +215,13 @@ class Domain(Generic_Domain):
           - ymomentum
           - momentum in the y direction [m^2/s]
         * -
-          - 
+          -
           -
         * - eta
-          - 
+          -
           - mannings friction coefficient [to appear]
         * - nu
-          - 
+          -
           - wind stress coefficient [to appear]
 
     The conserved quantities are w, uh, vh
@@ -274,13 +300,27 @@ class Domain(Generic_Domain):
         #-------------------------------
         self.fractional_step_operators = []
         self.kv_operator = None
-
-
+        self.dplotter = None
 
         #-------------------------------
         # Set flow defaults
         #-------------------------------
         self.set_flow_algorithm()
+
+        #-------------------------------
+        # Set default multiprocessor mode
+        # 1. Openmp
+        # 2. Cuda
+        #-------------------------------
+        self.gpu_interface = None
+        self.set_multiprocessor_mode(1)  # Default to OpenMP
+
+        #-------------------------------
+        # If environment variable OMP_NUM_THREADS is not set, 
+        # then set to default (1 thread). If a value is given to
+        # the method, then it will override the default.
+        #------------------------------
+        self.set_omp_num_threads()
 
         #-------------------------------
         # datetime and timezone
@@ -293,7 +333,8 @@ class Domain(Generic_Domain):
         # Gravity is now incorporated in
         # compute_fluxes routine
         #-------------------------------
-        self.forcing_terms.append(manning_friction_implicit)
+        from .friction import manning_friction_semi_implicit
+        self.forcing_terms.append(manning_friction_semi_implicit)
 
 
         #-------------------------------
@@ -332,11 +373,14 @@ class Domain(Generic_Domain):
         #                   2 == ?
         #                   etc
         self.edge_flux_type=num.zeros(len(self.edge_coordinates[:,0])).astype(int)
+        self.edge_river_wall_counter=num.zeros(len(self.edge_coordinates[:,0])).astype(int)
+        self.number_of_riverwall_edges = 0
 
         # Riverwalls -- initialise with dummy values
         # Presently only works with DE algorithms, will fail otherwise
         import anuga.structures.riverwall
         self.riverwallData=anuga.structures.riverwall.RiverWall(self)
+        self.create_riverwalls = self.riverwallData.create_riverwalls
 
         ## Keep track of the fluxes through the boundaries
         ## Only works for DE algorithms at present
@@ -353,6 +397,7 @@ class Domain(Generic_Domain):
 
         # Work arrays [avoid allocate statements in compute_fluxes or extrapolate_second_order]
         self.edge_flux_work=num.zeros(len(self.edge_coordinates[:,0])*3) # Advective fluxes
+        self.neigh_work=num.zeros(len(self.edge_coordinates[:,0])*3) # Advective fluxes
         self.pressuregrad_work=num.zeros(len(self.edge_coordinates[:,0])) # Gravity related terms
         self.x_centroid_work=num.zeros(len(self.edge_coordinates[:,0])//3)
         self.y_centroid_work=num.zeros(len(self.edge_coordinates[:,0])//3)
@@ -368,8 +413,10 @@ class Domain(Generic_Domain):
         # flux_update_frequency. The edge flux terms are re-computed only when
         #    number_of_timesteps%flux_update_frequency[myEdge]==0
         self.flux_update_frequency=num.zeros(len(self.edge_coordinates[:,0])).astype(int)+1
+
         # Flag: should we update the flux on the next compute fluxes call?
         self.update_next_flux=num.zeros(len(self.edge_coordinates[:,0])).astype(int)+1
+
         # Flag: should we update the extrapolation on the next extrapolation call?
         # (Only do this if one or more of the fluxes on that triangle will be computed on
         # the next timestep, assuming only the flux computation uses edge/vertex values)
@@ -381,6 +428,64 @@ class Domain(Generic_Domain):
         # Do we allow the timestep to increase (not every time if local
         # extrapolation/flux updating is used)
         self.allow_timestep_increase=num.zeros(1).astype(int)+1
+
+
+        #-----------------------------------
+        # parameters for structures
+        #-----------------------------------
+        self.use_new_velocity_head = False
+
+
+
+    def set_plotter(self, *args, **kwargs):
+        """Set the plotter for this domain
+        """
+        
+        if self.dplotter is None:
+            import anuga
+            self.dplotter = anuga.Domain_plotter(self, *args, **kwargs) 
+
+        self.triang = self.dplotter.triang
+        self.stage = self.dplotter.stage
+        self.xmom = self.dplotter.xmom
+        self.ymom = self.dplotter.ymom
+        self.elev = self.dplotter.elev
+        self.friction = self.dplotter.friction
+        self.xvel = self.dplotter.xvel
+        self.yvel = self.dplotter.yvel
+        self.x = self.dplotter.x
+        self.y = self.dplotter.y
+        self.xc = self.dplotter.xc
+        self.yc = self.dplotter.yc
+
+        self.save_depth_frame = self.dplotter.save_depth_frame
+        self.plot_depth_frame = self.dplotter.plot_depth_frame
+        self.make_depth_animation = self.dplotter.make_depth_animation
+
+        self.save_stage_frame = self.dplotter.save_stage_frame
+        self.plot_stage_frame = self.dplotter.plot_stage_frame
+        self.make_stage_animation = self.dplotter.make_stage_animation        
+
+        self.save_speed_frame = self.dplotter.save_speed_frame
+        self.plot_speed_frame = self.dplotter.plot_speed_frame
+        self.make_speed_animation = self.dplotter.make_speed_animation        
+
+        
+    def triplot(self, *args, **kwargs):
+
+        self.set_plotter()
+
+        import matplotlib.pyplot as plt
+        plt.triplot(self.triang, *args, **kwargs)
+
+
+    def tripcolor(self, *args, **kwargs):
+
+        self.set_plotter()
+
+        import matplotlib.pyplot as plt
+        plt.tripcolor(self.triang,  *args, **kwargs)
+
 
     def _set_config_defaults(self):
         """Set the default values in this routine. That way we can inherit class
@@ -408,8 +513,6 @@ class Domain(Generic_Domain):
 
         self.set_minimum_allowed_height(minimum_allowed_height)
         self.maximum_allowed_speed = maximum_allowed_speed
-
-
 
         self.minimum_storable_height = minimum_storable_height
         self.g = g
@@ -479,275 +582,7 @@ class Domain(Generic_Domain):
         print('#----------------------------')
 
 
-    def _set_tsunami_defaults(self):
-        """Set up the defaults for running the flow_algorithm "tsunami"
-        """
 
-        self._set_config_defaults()
-
-        self.set_CFL(1.0)
-        #self.set_use_kinematic_viscosity(False)
-
-        self.set_timestepping_method(2)
-        self.set_default_order(2)
-        self.set_compute_fluxes_method('tsunami')
-        self.set_extrapolate_velocity()
-        self.set_distribute_to_vertices_and_edges_method('tsunami')
-        self.use_edge_limiter=True
-
-        # The following allows storage of the negative depths associated with this method
-        self.minimum_storable_height=-99999999999.0
-
-
-        # Note that the extrapolation method used in quantity_ext.c (e.g.
-        # extrapolate_second_order_and_limit_by_edge) uses a constant value for
-        # all the betas.
-        self.beta_w=1.0
-        self.beta_w_dry=1.0
-        self.beta_uh=1.0
-        self.beta_uh_dry=1.0
-        self.beta_vh=1.0
-        self.beta_vh_dry=1.0
-
-        #self.optimise_dry_cells=True
-        # "self.optimise_dry_cells=False" presently ensures that the stage is
-        # always >= minimum_bed_edge value.  Actually, we should only need to
-        # apply 'False' on the very first time step (to deal with stage values
-        # that were initialised below the bed by the user). After this, the
-        # algorithm should take care of itself, and 'True' should be okay.
-        self.optimise_dry_cells=False
-
-        # Because gravity is treated within the flux function,
-        # we remove it from the forcing terms.
-        #self.forcing_terms.remove(gravity)
-
-        # We need the edge_coordinates for the extrapolation
-        self.edge_coordinates=self.get_edge_midpoint_coordinates()
-
-        ## (OLD) We demand that vertex values are stored uniquely
-        ##self.set_store_vertices_smoothly(False)
-        # Now we can just store centroids directly
-        self.set_store_centroids(True)
-
-        self.maximum_allowed_speed=0.0
-        #self.minimum_allowed_height=0.01
-
-        #self.forcing_terms.append(manning_friction_explicit)
-        #self.forcing_terms.remove(manning_friction_implicit)
-        if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print("#")
-            print("# Here are some tips on using the 'tsunami' solver")
-            print("#")
-            print("# 1) When plotting outputs, I strongly suggest you examine centroid values, not vertex values")
-            print("# , as the latter can be completely misleading near strong gradients in the flow. ")
-            print("# There is a plot_util.py script in anuga_core/utilities/ which might help you extract")
-            print("# quantities at centroid values from sww files.")
-            print("# Note that to accuractely compute centroid values from sww files, the files need to store ")
-            print("# vertices uniquely. This makes for large sww files (3x), but is the price to pay for the right answer")
-            print("# (unless we alter IO to allow centroids to be written to sww files, which would then affect")
-            print("# ANUGA viewer as well -- I expect this would be lots of work)")
-            print("#")
-            print("# 2) In field scale applications (where the depth is typically > 1m), I suggest you set")
-            print("# domain.minimum_allowed_height=0.01 (the default is 1.0e-3). ")
-            print("#")
-            print("# 3) This solver is not expected to perform well in problems with very")
-            print("# shallow water flowing down steep slopes (such that the stage_centroid_value ")
-            print("# is less than the maximum bed_edge_value on a given triangle). However, analytical tests")
-            print("# suggest it can do typical wetting/drying situations very well (parabolic oscillations test case) ")
-            print("#")
-            print("# 4) This solver allows the stage_centroid_value to drop to slightly below the minimum bed_vertex_value")
-            print("# on it's triangle. In other ANUGA versions (e.g. 1.2.1), the limit would be the")
-            print("# bed_centroid_value. This means that triangles store slightly more water than they are")
-            print("# typically interpreted to store, which might have significance in some applications.")
-            print("#")
-            print("# You will probably be able to tell this is causing you problems by convergence testing")
-            print("#")
-            print('# 5) Note that many options in config.py have been overridden by the solver -- we have ')
-            print('# deliberately attempted to get the solver to perform well with consistent values of ')
-            print('# these parameters -- so I advise against changing them unless you at least check that ')
-            print('# it really does improve things')
-            print('#')
-            print('##########################################################################')
-
-
-
-    def _set_1_0_defaults(self):
-        """Set up the defaults for running the flow_algorithm "1_0"
-           so that users can revert back to old default algorithm
-        """
-
-
-        self._set_config_defaults()
-
-        self.set_timestepping_method(1)
-        self.set_default_order(1)
-        self.set_CFL(1.0)
-
-
-        if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print('# Using continuous elevation solver 1_0')
-            print('#')
-            print('# Uses diffusive first order spatial, first order timestepping')
-            print('#')
-            print('##########################################################################')
-
-
-
-    def _set_1_5_defaults(self):
-        """Set up the defaults for running the flow_algorithm "1_5"
-           so that users can revert back to old default algorithm
-        """
-
-        self._set_config_defaults()
-
-        self.set_timestepping_method(1)
-        self.set_default_order(2)
-        beta_w      = 1.0
-        beta_w_dry  = 0.2
-        beta_uh     = 1.0
-        beta_uh_dry = 0.2
-        beta_vh     = 1.0
-        beta_vh_dry = 0.2
-        self.set_betas(beta_w, beta_w_dry, beta_uh, beta_uh_dry, beta_vh, beta_vh_dry)
-        self.set_CFL(1.0)
-        self.set_compute_fluxes_method('wb_2')
-        self.set_extrapolate_velocity()
-
-
-        if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print('# Using continuous elevation solver 1_5')
-            print('#')
-            print('# Uses diffusive second order spatial, first order timestepping')
-            print('#')
-            print('##########################################################################')
-
-
-    def _set_1_75_defaults(self):
-        """Set up the defaults for running the flow_algorithm "1_75"
-           so that users can revert back to old default algorithm
-        """
-
-
-        self._set_config_defaults()
-
-        self.set_timestepping_method(1)
-        self.set_default_order(2)
-        beta_w      = 1.5
-        beta_w_dry  = 0.2
-        beta_uh     = 1.5
-        beta_uh_dry = 0.2
-        beta_vh     = 1.5
-        beta_vh_dry = 0.2
-        self.set_betas(beta_w, beta_w_dry, beta_uh, beta_uh_dry, beta_vh, beta_vh_dry)
-        self.set_CFL(0.75)
-        self.set_compute_fluxes_method('wb_2')
-        self.set_extrapolate_velocity()
-
-
-        if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print('# Using continuous elevation solver 1_75')
-            print('#')
-            print('# Uses less diffusive second order spatial, first order timestepping')
-            print('#')
-            print('##########################################################################')
-
-    def _set_2_0_limited_defaults(self):
-        """Set up the defaults for running the flow_algorithm "2_limited"
-           so that users can revert back to old default algorithm
-        """
-
-        self._set_config_defaults()
-
-        self.set_timestepping_method(2)
-        self.set_default_order(2)
-        beta_w      = 1.5
-        beta_w_dry  = 0.2
-        beta_uh     = 1.5
-        beta_uh_dry = 0.2
-        beta_vh     = 1.5
-        beta_vh_dry = 0.2
-        self.set_betas(beta_w, beta_w_dry, beta_uh, beta_uh_dry, beta_vh, beta_vh_dry)
-        self.set_CFL(1.0)
-        self.set_compute_fluxes_method('wb_2')
-        self.set_extrapolate_velocity()
-
-
-        if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print('# Using continuous elevation solver 2_0_limited')
-            print('#')
-            print('# Uses diffusive second order spatial, second order timestepping')
-            print('#')
-            print('##########################################################################')
-
-
-    def _set_2_0_defaults(self):
-        """Set up the defaults for running the flow_algorithm "2_0"
-           so that users can revert back to old default algorithm
-        """
-
-        self._set_config_defaults()
-
-        self.set_timestepping_method(2)
-        self.set_default_order(2)
-        beta_w      = 1.9
-        beta_w_dry  = 0.2
-        beta_uh     = 1.9
-        beta_uh_dry = 0.2
-        beta_vh     = 1.9
-        beta_vh_dry = 0.2
-        self.set_betas(beta_w, beta_w_dry, beta_uh, beta_uh_dry, beta_vh, beta_vh_dry)
-        self.set_CFL(1.0)
-        self.set_compute_fluxes_method('wb_2')
-        self.set_extrapolate_velocity()
-
-        if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print('# Using continuous elevation solver 2_0')
-            print('#')
-            print('# Uses second order spatial, second order timestepping')
-            print('#')
-            print('##########################################################################')
-
-    def _set_2_5_defaults(self):
-        """Set up the defaults for running the flow_algorithm "2_0"
-           so that users can revert back to old default algorithm
-        """
-
-        self._set_config_defaults()
-
-        self.set_timestepping_method(3)
-        self.set_default_order(2)
-        beta_w      = 1.9
-        beta_w_dry  = 0.2
-        beta_uh     = 1.9
-        beta_uh_dry = 0.2
-        beta_vh     = 1.9
-        beta_vh_dry = 0.2
-        self.set_betas(beta_w, beta_w_dry, beta_uh, beta_uh_dry, beta_vh, beta_vh_dry)
-        self.set_CFL(1.0)
-        self.set_compute_fluxes_method('wb_2')
-        self.set_extrapolate_velocity()
-
-
-        if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print('# Using continuous elevation solver 2_5')
-            print('#')
-            print('# Uses second order spatial, third order timestepping')
-            print('#')
-            print('##########################################################################')
 
     def _set_DE0_defaults(self):
         """Set up the defaults for running the flow_algorithm "DE0"
@@ -762,6 +597,7 @@ class Domain(Generic_Domain):
         self.set_timestepping_method('euler')
 
         self.set_using_discontinuous_elevation(True)
+        self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
         self.set_distribute_to_vertices_and_edges_method('DE')
 
@@ -824,6 +660,7 @@ class Domain(Generic_Domain):
         self.set_timestepping_method(2)
 
         self.set_using_discontinuous_elevation(True)
+        self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
         self.set_distribute_to_vertices_and_edges_method('DE')
 
@@ -886,6 +723,7 @@ class Domain(Generic_Domain):
         self.set_timestepping_method(3)
 
         self.set_using_discontinuous_elevation(True)
+        self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
         self.set_distribute_to_vertices_and_edges_method('DE')
 
@@ -948,6 +786,7 @@ class Domain(Generic_Domain):
         self.set_timestepping_method(2)
 
         self.set_using_discontinuous_elevation(True)
+        self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
         self.set_distribute_to_vertices_and_edges_method('DE')
 
@@ -1010,6 +849,7 @@ class Domain(Generic_Domain):
         self.set_timestepping_method(1)
 
         self.set_using_discontinuous_elevation(True)
+        self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
         self.set_distribute_to_vertices_and_edges_method('DE')
 
@@ -1089,10 +929,10 @@ class Domain(Generic_Domain):
 
     def set_timezone(self, tz = None):
         """Set timezone for domain
-        
+
         :param tz: either a timezone object or string
-        
-        We recommend using the ZoneInfo provided by zoneinfo. 
+
+        We recommend using the ZoneInfo provided by zoneinfo.
         Default is ZoneInfo('UTC')
 
         Example: Set default timezone UTC
@@ -1125,7 +965,7 @@ class Domain(Generic_Domain):
             msg = "Unknown timezone %s" % tz
             raise Exception(msg)
 
-        
+
         self.timezone = new_tz
 
     def get_timezone(self):
@@ -1135,46 +975,49 @@ class Domain(Generic_Domain):
 
     def get_datetime(self, timestamp=None):
         """Retrieve datetime corresponding to current timestamp wrt to domain timezone
-        
-        param: timestamp: return datetime corresponding to given timestamp"""
-        
-        from datetime import datetime
 
+        param: timestamp: return datetime corresponding to given timestamp"""
+
+        from datetime import datetime
+        
         try:
-            from zoneinfo import ZoneInfo
+            from datetime import UTC
         except:
-            from backports.zoneinfo import ZoneInfo
+            from datetime import timezone
+            UTC = timezone.utc 
 
 
         if timestamp is None:
             timestamp = self.get_time()
-        
-        utc_datetime = datetime.utcfromtimestamp(timestamp).replace(tzinfo=ZoneInfo('UTC'))
+
+        #utc_datetime = datetime.utcfromtimestamp(timestamp).replace(tzinfo=ZoneInfo('UTC'))
+        utc_datetime = datetime.fromtimestamp(timestamp,UTC)
+
         current_dt = utc_datetime.astimezone(self.timezone)
         return current_dt
 
     def set_starttime(self, timestamp=0.0):
         """Set the starttime for the evolution
-        
+
         :param timestamp: Either a float or a datetime object
-        
-        Essentially we use unix time as our absolute time. So 
+
+        Essentially we use unix time as our absolute time. So
         time = 0 corresponds to Jan 1st 1970 UTC
 
         Use naive datetime which will be localized to the domain timezone or
         or use zoneinfo.ZoneInfo to set the timezone of datetime.
         Don't use the tzinfo argument of datetime to set timezone as this does not work!
-        
-        Example: 
-        
+
+        Example:
+
             Without setting timezone for the `domain` and the `starttime` then time
             calculations are all based on UTC. Note the timestamp, which is time in seconds
             from 1st Jan 1970 UTC.
-        
+
         >>> import anuga
         >>> from zoneinfo import ZoneInfo
         >>> from datetime import datetime
-        >>> 
+        >>>
         >>> domain = anuga.rectangular_cross_domain(10,10)
         >>> dt = datetime(2021,3,21,18,30)
         >>> domain.set_starttime(dt)
@@ -1183,18 +1026,18 @@ class Domain(Generic_Domain):
 
         Example:
 
-            Setting timezone for the `domain`, then naive `datetime` will be localizes to 
+            Setting timezone for the `domain`, then naive `datetime` will be localizes to
             the `domain` timezone. Note the timestamp, which is time in seconds
             from 1st Jan 1970 UTC.
 
         >>> import anuga
         >>> from zoneinfo import ZoneInfo
         >>> from datetime import datetime
-        >>> 
+        >>>
         >>> domain = anuga.rectangular_cross_domain(10,10)
         >>> AEST = ZoneInfo('Australia/Sydney')
         >>> domain.set_timezone(AEST)
-        >>> 
+        >>>
         >>> dt = datetime(2021,3,21,18,30)
         >>> domain.set_starttime(dt)
         >>> print(domain.get_datetime(), 'TZ', domain.get_timezone(), 'Timestamp: ', domain.get_time())
@@ -1202,22 +1045,22 @@ class Domain(Generic_Domain):
 
         Example:
 
-            Setting timezone for the `domain`, and setting the timezone for the `datetime`. 
+            Setting timezone for the `domain`, and setting the timezone for the `datetime`.
             Note the timestamp, which is time in seconds from 1st Jan 1970 UTC is the same
-            as teh previous example.
+            as the previous example.
 
         >>> import anuga
         >>> from zoneinfo import ZoneInfo
         >>> from datetime import datetime
-        >>> 
+        >>>
         >>> domain = anuga.rectangular_cross_domain(10,10)
-        >>> 
+        >>>
         >>> ACST = ZoneInfo('Australia/Adelaide')
         >>> domain.set_timezone(ACST)
-        >>> 
+        >>>
         >>> AEST = ZoneInfo('Australia/Sydney')
         >>> dt = datetime(2021,3,21,18,30, tzinfo=AEST)
-        >>> 
+        >>>
         >>> domain.set_starttime(dt)
         >>> print(domain.get_datetime(), 'TZ', domain.get_timezone(), 'Timestamp: ', domain.get_time())
         2021-03-21 18:00:00+10:30 TZ Australia/Adelaide Timestamp:  1616311800.0
@@ -1287,7 +1130,7 @@ class Domain(Generic_Domain):
         @param checkpoint: Default = True. Set to False will turn off checkpointing
         @param checkpoint_dir: Where to store checkpointing files
         @param checkpoint_step: Save checkpoint files after this many yieldsteps
-        @param checkpoint_time: If set, over-rides checkpoint_step. save checkpoint files 
+        @param checkpoint_time: If set, over-rides checkpoint_step. save checkpoint files
         after this amount of walltime
         """
 
@@ -1416,15 +1259,10 @@ class Domain(Generic_Domain):
 
 
 
-    def set_flow_algorithm(self, flag='DE0'):
+    def set_flow_algorithm(self, algorithm='DE0'):
         """Set combination of slope limiting and time stepping
 
         Currently
-           1
-           1.5
-           2
-           2.5
-           tsunami
            DE0
            DE1
            DE2
@@ -1432,57 +1270,21 @@ class Domain(Generic_Domain):
            DE1_7
         """
 
-        # FIXME(Ole): flag should be called algorithm ;-)
-        flag = str(flag)
+        algorithm = str(algorithm)
 
         # Replace any dots with dashes
-        flag = flag.replace(".","_")
+        algorithm = algorithm.replace('.', '_')
 
 
-        flow_algorithms = ['1_0', '1_5', '1_75', '2_0', '2_0_limited', '2_5', \
-                           'tsunami', 'yusuke', 'DE0', 'DE1', 'DE2', \
-                           'DE0_7', "DE1_7"]
+        flow_algorithms = ['DE0', 'DE1', 'DE2', \
+                           'DE0_7', 'DE1_7']
 
-        if flag in flow_algorithms:
-            self.flow_algorithm = flag
+        if algorithm in flow_algorithms:
+            self.flow_algorithm = algorithm
         else:
             msg = 'Unknown flow_algorithm. \nPossible choices are:\n'+ \
             ', '.join(flow_algorithms)+'.'
             raise Exception(msg)
-
-        if self.flow_algorithm == '1_0':
-            self._set_1_0_defaults()
-
-        if self.flow_algorithm == '1_5':
-            self._set_1_5_defaults()
-
-        if self.flow_algorithm == '1_75':
-            self._set_1_75_defaults()
-
-        if self.flow_algorithm == '2_0_limited':
-            self._set_2_0_limited_defaults()
-
-
-        if self.flow_algorithm == '2_0':
-            self._set_2_0_defaults()
-
-
-        if self.flow_algorithm == '2_5':
-            self._set_2_5_defaults()
-
-
-        if self.flow_algorithm == 'tsunami':
-            self._set_tsunami_defaults()
-
-
-        if self.flow_algorithm == 'yusuke':
-            # To speed up calculation we also turn off
-            # the update of other quantities
-
-            self._set_tsunami_defaults()
-
-
-
 
         if self.flow_algorithm == 'DE0':
             self._set_DE0_defaults()
@@ -1509,22 +1311,22 @@ class Domain(Generic_Domain):
         return self.flow_algorithm
 
 
-    def set_gravity_method(self):
-        """Gravity method is determined by the compute_fluxes_method
-        This is now not used, as gravity is combine in the compute_fluxes method
-        """
+    # def set_gravity_method(self):
+    #     """Gravity method is determined by the compute_fluxes_method
+    #     This is now not used, as gravity is combine in the compute_fluxes method
+    #     """
 
-        if  self.get_compute_fluxes_method() == 'original':
-            self.forcing_terms[0] = gravity
+    #     if  self.get_compute_fluxes_method() == 'original':
+    #         self.forcing_terms[0] = gravity
 
-        elif self.get_compute_fluxes_method() == 'wb_1':
-            self.forcing_terms[0] = gravity_wb
+    #     elif self.get_compute_fluxes_method() == 'wb_1':
+    #         self.forcing_terms[0] = gravity_wb
 
-        elif self.get_compute_fluxes_method() == 'wb_2':
-            self.forcing_terms[0] = gravity
+    #     elif self.get_compute_fluxes_method() == 'wb_2':
+    #         self.forcing_terms[0] = gravity
 
-        else:
-            raise Exception('undefined compute_fluxes method')
+    #     else:
+    #         raise Exception('undefined compute_fluxes method')
 
     def set_extrapolate_velocity(self, flag=True):
         """ Extrapolation routine uses momentum by default,
@@ -1626,8 +1428,6 @@ class Domain(Generic_Domain):
         self.beta_vh = beta_vh
         self.beta_vh_dry = beta_vh_dry
         self.quantities['ymomentum'].beta = beta_vh
-
-
 
 
     def set_store_vertices_uniquely(self, flag=True, reduction=None):
@@ -1920,7 +1720,7 @@ class Domain(Generic_Domain):
         """Compute the integrated flows from fractional steps.
 
         This requires that the fractional step operators update the fractional_step_volume_integral.
-        
+
         Should work in parallel
         """
 
@@ -2024,8 +1824,9 @@ class Domain(Generic_Domain):
     def extrapolate_second_order_sw(self):
         """Fast version of extrapolation from centroids to edges"""
 
-        from .shallow_water_ext import extrapolate_second_order_sw as extrapol2
-        extrapol2(self)
+        # FIXME (Ole): This might be an obsolute function (it was migrated from from the old c extension)
+        from .sw_domain_orig_ext import extrapolate_second_order_sw
+        extrapolate_second_order_sw(self)
 
     #@profile
     def compute_fluxes(self):
@@ -2049,190 +1850,98 @@ class Domain(Generic_Domain):
         This wrapper calls the underlying C version of compute fluxes
         """
 
-        if self.compute_fluxes_method == 'original':
-            from .shallow_water_ext import compute_fluxes_ext_central_structure
-            from .shallow_water_ext import gravity as gravity_c
+        # Using Gareth Davies discontinuous elevation scheme
+        # Flux calculation and gravity incorporated in same
+        # procedure
 
-            self.flux_timestep = compute_fluxes_ext_central_structure(self)
-            gravity_c(self)
-
-        elif self.compute_fluxes_method == 'wb_1':
-            # Calc pressure terms using Simpson rule in flux
-            # computations. Then they match up exactly with
-            # standard gravity term - g h grad(z)
-            from .shallow_water_ext import compute_fluxes_ext_wb
-            from .shallow_water_ext import gravity as gravity_c
-
-            self.flux_timestep = compute_fluxes_ext_wb(self)
-            gravity_c(self)
-
-        elif self.compute_fluxes_method == 'wb_2':
-            # Use standard flux calculation, but calc gravity
-            # as -g h grad(w) - sum midpoint edge pressure terms
-
-            from .shallow_water_ext import compute_fluxes_ext_central_structure
-            from .shallow_water_ext import gravity_wb as gravity_wb_c
-
-            self.flux_timestep = compute_fluxes_ext_central_structure(self)
-            gravity_wb_c(self)
-
-
-        elif self.compute_fluxes_method == 'wb_3':
-            # Calculate pure flux terms with simpsons rule, and
-            # gravity flux and gravity forcing via
-            # as -g h grad(w) - sum midpoint edge pressure terms
-            from .shallow_water_ext import compute_fluxes_ext_wb_3
-            from .shallow_water_ext import gravity_wb as gravity_wb_c
-
-            self.flux_timestep = compute_fluxes_ext_wb_3(self)
-            gravity_wb_c(self)
-
-        elif self.compute_fluxes_method == 'tsunami':
-            # Using Gareth Davies well balanced scheme
-            # Flux calculation and gravity incorporated in same
-            # procedure
-            #
-            # FIXME SR: This needs cleaning up, should just be passing through
-            # the domain as in other compute flux calls
-
-            from .swb2_domain_ext import compute_fluxes_ext_central \
-                                      as compute_fluxes_ext
-
-            # Shortcuts
-            Stage = self.quantities['stage']
-            Xmom = self.quantities['xmomentum']
-            Ymom = self.quantities['ymomentum']
-            Bed = self.quantities['elevation']
-
-            timestep = self.evolve_max_timestep
-
-            self.flux_timestep = compute_fluxes_ext(timestep,
-                                           self.epsilon,
-                                           self.H0,
-                                           self.g,
-                                           self.neighbours,
-                                           self.neighbour_edges,
-                                           self.normals,
-                                           self.edgelengths,
-                                           self.radii,
-                                           self.areas,
-                                           self.tri_full_flag,
-                                           Stage.edge_values,
-                                           Xmom.edge_values,
-                                           Ymom.edge_values,
-                                           Bed.edge_values,
-                                           Stage.boundary_values,
-                                           Xmom.boundary_values,
-                                           Ymom.boundary_values,
-                                           self.boundary_flux_type,
-                                           Stage.explicit_update,
-                                           Xmom.explicit_update,
-                                           Ymom.explicit_update,
-                                           self.already_computed_flux,
-                                           self.max_speed,
-                                           int(self.optimise_dry_cells),
-                                           Stage.centroid_values,
-                                           Bed.centroid_values,
-                                           Bed.vertex_values)
-
-        elif self.compute_fluxes_method == 'DE':
-            # Using Gareth Davies discontinuous elevation scheme
-            # Flux calculation and gravity incorporated in same
-            # procedure
-
-            from .swDE1_domain_ext import compute_fluxes_ext_central \
-                                      as compute_fluxes_ext
-
-            timestep = self.evolve_max_timestep
-
-            flux_timestep = compute_fluxes_ext(self, timestep)
-
-            self.flux_timestep = flux_timestep
-
+        # nvtxRangePush("Compute Fluxes (Domain)")
+        # Choose the correct extension module
+        if self.multiprocessor_mode == 1:
+            from .sw_domain_openmp_ext import compute_fluxes_ext_central
+        elif self.multiprocessor_mode == 2:
+            # change over to cuda routines as developed
+            # from .sw_domain_simd_ext import compute_fluxes_ext_central
+            # FIXME SR: 2023_10_16 currently compute_fluxes and distribute together
+            # is producing incorrect results, but work separately!
+            compute_fluxes_ext_central = self.gpu_interface.compute_fluxes_ext_central_kernel
         else:
-            raise Exception('unknown compute_fluxes_method')
+            raise Exception('Not implemented')
 
-            # TODO (SR)
-            # Should implement wb_4 as simpsons rule on both pure
-            # flux and pressure flux terms, ie a combination of wb_1
-            # and wb_3
-            # Mabe should come up with better names!
+        timestep = self.evolve_max_timestep
+        self.flux_timestep = compute_fluxes_ext_central(self, timestep)
 
+        # nvtxRangePop()
 
-
-
+        
     def distribute_to_vertices_and_edges(self):
-        """ Call correct module function """
+        """ extrapolate centroid values to vertices and edges"""
 
+        # Do protection step
+        nvtxRangePush('protect against negative heights')
+        self.protect_against_infinitesimal_and_negative_heights()
+        nvtxRangePop()
 
-
-        if self.compute_fluxes_method == 'tsunami':
-
-
-            # FIXME SR: Clean up code to just take self (domain) as
-            # input argument
-            from .swb2_domain_ext import protect
-
-            # shortcuts
-            wc = self.quantities['stage'].centroid_values
-            wv = self.quantities['stage'].vertex_values
-            zc = self.quantities['elevation'].centroid_values
-            zv = self.quantities['elevation'].vertex_values
-            xmomc = self.quantities['xmomentum'].centroid_values
-            ymomc = self.quantities['ymomentum'].centroid_values
-            areas = self.areas
-
-            mass_error = protect(self.minimum_allowed_height, self.maximum_allowed_speed,
-                self.epsilon, wc, wv, zc,zv, xmomc, ymomc, areas)
-
-            if mass_error > 0.0 and self.verbose :
-                print('Cumulative mass protection: %g m^3 '% mass_error)
-
-
-            from .swb2_domain_ext import extrapolate_second_order_edge_sw as extrapol2_ext
-
-            # Shortcuts
-            Stage = self.quantities['stage']
-            Xmom = self.quantities['xmomentum']
-            Ymom = self.quantities['ymomentum']
-            Elevation = self.quantities['elevation']
-
-            extrapol2_ext(self,
-                  self.surrogate_neighbours,
-                  self.number_of_boundaries,
-                  self.centroid_coordinates,
-                  Stage.centroid_values,
-                  Xmom.centroid_values,
-                  Ymom.centroid_values,
-                  Elevation.centroid_values,
-                  self.edge_coordinates,
-                  Stage.edge_values,
-                  Xmom.edge_values,
-                  Ymom.edge_values,
-                  Elevation.edge_values,
-                  Stage.vertex_values,
-                  Xmom.vertex_values,
-                  Ymom.vertex_values,
-                  Elevation.vertex_values,
-                  int(self.optimise_dry_cells),
-                  int(self.extrapolate_velocity_second_order))
-
-        elif self.compute_fluxes_method=='DE':
-
-            # Do protection step
-            self.protect_against_infinitesimal_and_negative_heights()
-            # Do extrapolation step
-            from .swDE1_domain_ext import extrapolate_second_order_edge_sw as extrapol2
-            extrapol2(self)
-
+        # Do extrapolation step
+        # nvtxRangePush('extrapolate')
+        # Choose the correct extension module
+        if self.multiprocessor_mode == 1:
+            from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
+        elif self.multiprocessor_mode == 2:
+            # change over to cuda routines as developed
+            #from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
+            extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
         else:
-            # Code for original method
-            if self.use_edge_limiter:
-                self.distribute_using_edge_limiter()
-            else:
-                self.distribute_using_vertex_limiter()
+            raise Exception('Not implemented')
 
+        nvtxRangePush('extrapolate_second_order_edge_sw')
+        extrapolate_second_order_edge_sw(self)
+        nvtxRangePop()
 
+    def distribute_to_edges(self):
+        """ extrapolate centroid values edges"""
+
+        # Do protection step
+        nvtxRangePush('protect_against_infinities')
+        self.protect_against_infinitesimal_and_negative_heights()
+        nvtxRangePop()
+
+        # Do extrapolation step
+        # nvtxRangePush('extrapolate')
+        # Choose the correct extension module
+        if self.multiprocessor_mode == 1:
+            from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
+            extrapolate_second_order_edge_sw(self)
+        elif self.multiprocessor_mode == 2:
+            # change over to cuda routines as developed
+            #from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
+            extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
+            extrapolate_second_order_edge_sw(self)
+        else:
+            raise Exception('Not implemented')
+
+        # nvtxRangePop()        
+
+    def distribute_edges_to_vertices(self):
+        """Distribute edge values to vertices.
+        
+        This is a wrapper for the C implementation of the distribution
+        from edges to vertices.
+        """
+
+        if self.multiprocessor_mode == 1:
+            # Using OpenMP extension
+            from .sw_domain_openmp_ext import distribute_edges_to_vertices as distribute_edges_to_vertices_ext
+        elif self.multiprocessor_mode == 2:
+            # Using CUDA extension
+            # FIXME SR: Not implemented yet so use OpenMP version
+            from .sw_domain_openmp_ext import distribute_edges_to_vertices as distribute_edges_to_vertices_ext
+            # distribute_edges_to_vertices_ext = self.gpu_interface.distribute_edges_to_vertices_kernel
+        else:
+            raise Exception('Not implemented')
+        
+        # nvtxRangePush('distribute_edges_to_vertices')
+        distribute_edges_to_vertices_ext(self)
+        # nvtxRangePop()
 
     def distribute_using_edge_limiter(self):
         """Distribution from centroids to edges specific to the SWW eqn.
@@ -2334,62 +2043,26 @@ class Domain(Generic_Domain):
         """ Clean up the stage and momentum values to ensure non-negative heights
         """
 
-        if self.flow_algorithm == 'tsunami':
-
-            from .swb2_domain_ext import protect
-
-            # shortcuts
-            wc = self.quantities['stage'].centroid_values
-            wv = self.quantities['stage'].vertex_values
-            zc = self.quantities['elevation'].centroid_values
-            zv = self.quantities['elevation'].vertex_values
-            xmomc = self.quantities['xmomentum'].centroid_values
-            ymomc = self.quantities['ymomentum'].centroid_values
-            areas = self.areas
-
-            mass_error = protect(self.minimum_allowed_height, self.maximum_allowed_speed,
-                self.epsilon, wc, wv, zc,zv, xmomc, ymomc, areas)
-
-            if mass_error > 0.0 and self.verbose :
-                print('Cumulative mass protection: '+str(mass_error)+' m^3 ')
-
-        elif self.compute_fluxes_method == 'DE':
-
-            from .swDE1_domain_ext import protect_new
-
-
-            mass_error = protect_new(self)
-
-#             # shortcuts
-#             wc = self.quantities['stage'].centroid_values
-#             wv = self.quantities['stage'].vertex_values
-#             zc = self.quantities['elevation'].centroid_values
-#             zv = self.quantities['elevation'].vertex_values
-#             xmomc = self.quantities['xmomentum'].centroid_values
-#             ymomc = self.quantities['ymomentum'].centroid_values
-#             areas = self.areas
-#             xc = self.centroid_coordinates[:,0]
-#             yc = self.centroid_coordinates[:,1]
-
-            #mass_error = protect(self.minimum_allowed_height, self.maximum_allowed_speed,
-            #       self.epsilon, wc, wv, zc,zv, xmomc, ymomc, areas, xc, yc)
-#
-            if mass_error > 0.0 and self.verbose :
-                #print('Cumulative mass protection: ' + str(mass_error) + ' m^3 ')
-                # From https://stackoverflow.com/questions/22397261/cant-convert-float-object-to-str-implicitly
-                print('Cumulative mass protection: {0} m^3'.format(mass_error))
-
+        # nvtxRangePush('protect_new')
+        # Choose the correct extension module
+        if self.multiprocessor_mode == 1:
+            from .sw_domain_openmp_ext import protect_new
+        elif self.multiprocessor_mode == 2:
+            # change over to cuda routines as developed
+            # # from .sw_domain_simd_ext import  protect_new
+            #from .sw_domain_openmp_ext import protect_new
+            protect_new = self.gpu_interface.protect_against_infinitesimal_and_negative_heights_kernel
         else:
-            from .shallow_water_ext import protect
+            raise Exception('Not implemented')
 
-            # Shortcuts
-            wc = self.quantities['stage'].centroid_values
-            zc = self.quantities['elevation'].centroid_values
-            xmomc = self.quantities['xmomentum'].centroid_values
-            ymomc = self.quantities['ymomentum'].centroid_values
 
-            protect(self.minimum_allowed_height, self.maximum_allowed_speed,
-                    self.epsilon, wc, zc, xmomc, ymomc)
+        mass_error = protect_new(self)
+        # nvtxRangePop()
+
+        if mass_error > 0.0 and self.verbose :
+            #print('Cumulative mass protection: ' + str(mass_error) + ' m^3 ')
+            # From https://stackoverflow.com/questions/22397261/cant-convert-float-object-to-str-implicitly
+            print('Cumulative mass protection: {0} m^3'.format(mass_error))
 
 
     def balance_deep_and_shallow(self):
@@ -2407,8 +2080,8 @@ class Domain(Generic_Domain):
         Wrapper for C implementation
         """
 
-        from .shallow_water_ext import balance_deep_and_shallow \
-                                      as balance_deep_and_shallow_ext
+        from .sw_domain_orig_ext import balance_deep_and_shallow \
+            as balance_deep_and_shallow_ext
 
         # Shortcuts
         wc = self.quantities['stage'].centroid_values
@@ -2428,51 +2101,91 @@ class Domain(Generic_Domain):
                                    wc, zc, wv, zv, wc,
                                    xmomc, ymomc, xmomv, ymomv)
 
+        nvtxRangePop()
+
+
+    def apply_protection_against_isolated_degenerate_timesteps(self):
+
+        if self.protect_against_isolated_degenerate_timesteps is False:
+            return
+
+        # FIXME (Ole): Make this configurable
+        if num.max(self.max_speed) < 10.0:
+            return
+
+        # Setup 10 bins for speed histogram
+        from anuga.utilities.numerical_tools import histogram, create_bins
+
+        bins = create_bins(self.max_speed, 10)
+        hist = histogram(self.max_speed, bins)
+
+        # Look for characteristic signature
+        if len(hist) > 1 and hist[-1] > 0 and \
+           hist[4] == hist[5] == hist[6] == hist[7] == hist[8] == 0:
+            # Danger of isolated degenerate triangles
+
+            # Find triangles in last bin
+            # FIXME - speed up using numeric package
+            d = 0
+            for i in range(self.number_of_triangles):
+                if self.max_speed[i] > bins[-1]:
+                    msg = 'Time=%f: Ignoring isolated high ' % self.get_time()
+                    msg += 'speed triangle '
+                    msg += '#%d of %d with max speed = %f' \
+                        % (i, self.number_of_triangles, self.max_speed[i])
+
+                    self.get_quantity('xmomentum').set_values(0.0, indices=[i])
+                    self.get_quantity('ymomentum').set_values(0.0, indices=[i])
+                    self.max_speed[i] = 0.0
+                    d += 1
+
 
     def update_conserved_quantities(self):
         """Update vectors of conserved quantities using previously
         computed fluxes and specified forcing functions.
         """
 
+        # nvtxRangePush('update_conserved_quantities')
 
         timestep = self.timestep
 
 
         # Update conserved_quantities
-        #for name in self.conserved_quantities:
-        #    Q = self.quantities[name]
-        #    Q.update(timestep)
-
-        #print 'shallow water update conserved quantties'
-
         Elev = self.quantities['elevation']
         Stage = self.quantities['stage']
         Xmom = self.quantities['xmomentum']
         Ymom = self.quantities['ymomentum']
 
-        Stage.update(timestep)
-        Xmom.update(timestep)
-        Ymom.update(timestep)
+        # FIXME SR: Should pull this together with fix_negative_cells and implemented in 
+        # in sw_domain_orig_..._.c
+        #Stage.update(timestep)
+        #Xmom.update(timestep)
+        #Ymom.update(timestep)
+        
+        assert self.get_using_discontinuous_elevation()
 
-        if self.get_using_discontinuous_elevation():
+        # Update height based on discontinuous elevation
+        if self.multiprocessor_mode == 1:
+            
+            from .sw_domain_openmp_ext import update_conserved_quantities
+            num_negative_ids = update_conserved_quantities(self, timestep)
 
-            tff = self.tri_full_flag
+        elif self.multiprocessor_mode == 2:
 
-            negative_ids = num.where( num.logical_and((Stage.centroid_values - Elev.centroid_values) < 0.0 , tff > 0) )[0]
+            update_conserved_quantities = self.gpu_interface.update_conserved_quantities_kernel
+            num_negative_ids = update_conserved_quantities(self, timestep)
+        
+        else:
+            raise Exception('Not implemented')
 
-            if len(negative_ids) > 0:
-                # FIXME: This only warns the first time -- maybe we should warn whenever loss occurs?
-                import warnings
-                msg = 'Negative cells being set to zero depth, possible loss of conservation. \n' +\
-                      'Consider using domain.report_water_volume_statistics() to check the extent of the problem'
-                warnings.warn(msg)
+        if num_negative_ids > 0:
+            # FIXME: This only warns the first time -- maybe we should warn whenever loss occurs?
+            import warnings
+            msg = f'{num_negative_ids} negative cells being set to zero depth, possible loss of conservation. \n' +\
+            'Consider using domain.report_water_volume_statistics() to check the extent of the problem'
+            warnings.warn(msg)
 
-                Stage.centroid_values[negative_ids] = Elev.centroid_values[negative_ids]
-                Xmom.centroid_values[negative_ids] = 0.0
-                Ymom.centroid_values[negative_ids] = 0.0
-
-
-
+        # nvtxRangePop()
 
     def update_other_quantities(self):
         """ There may be a need to calculates some of the other quantities
@@ -2481,35 +2194,6 @@ class Domain(Generic_Domain):
 
         return
 
-        """
-        if self.flow_algorithm == 'yusuke':
-            return
-
-
-        # The centroid values of height and x and y velocity
-        # might not have been setup
-
-        self.update_centroids_of_velocities_and_height()
-
-
-        # At present just use piecewise constants for these "other' quantities
-        for name in ['height', 'xvelocity', 'yvelocity']:
-            Q = self.quantities[name]
-            Q.extrapolate_first_order()
-
-#        for name in ['height', 'xvelocity', 'yvelocity']:
-#            Q = self.quantities[name]
-#            if self._order_ == 1:
-#                Q.extrapolate_first_order()
-#            elif self._order_ == 2:
-#                if self.use_edge_limiter:
-#                    Q.extrapolate_second_order_and_limit_by_edge()
-#                else:
-#                    Q.extrapolate_second_order_and_limit_by_vertex()
-#            else:
-#                raise Exception('Unknown order')
-
-        """
 
     def update_centroids_of_velocities_and_height(self):
         """Calculate the centroid values of velocities and height based
@@ -2535,9 +2219,9 @@ class Domain(Generic_Domain):
 
         # Make sure boundary values of conserved quantites
         # are consistent with value of functions at centroids
-        #self.distribute_to_vertices_and_edges()
         Z.set_boundary_values_from_edges()
 
+        # FIXME(Ole): Why are these not necessary?
         #W.set_boundary_values_from_edges()
         #UH.set_boundary_values_from_edges()
         #VH.set_boundary_values_from_edges()
@@ -2605,7 +2289,6 @@ class Domain(Generic_Domain):
         """
 
         # For shallow water we need to update height xvelocity and yvelocity
-
         #Shortcuts
         UH = self.quantities['xmomentum']
         VH = self.quantities['ymomentum']
@@ -2636,6 +2319,7 @@ class Domain(Generic_Domain):
         self.distribute_to_vertices_and_edges()
 
 
+    
 
     def evolve(self,
                yieldstep=None,
@@ -2647,13 +2331,13 @@ class Domain(Generic_Domain):
 
 
         :param float yieldstep: yield every yieldstep time period
-        :param float outputstep: Output to sww file every outputstep time period. outputstep should be an integer multiple of yieldstep. 
+        :param float outputstep: Output to sww file every outputstep time period. outputstep should be an integer multiple of yieldstep.
         :param float finaltime: evolve until finaltime (can be a float (secs) or a datetime object)
         :param float duration: evolve for a time of length duration (secs)
-        :param  boolean skip_inital_step: Can be used to restart a simulation (not often used). 
+        :param  boolean skip_inital_step: Can be used to restart a simulation (not often used).
 
 
-        If outputstep is None, the output to sww file happens every yieldstep. 
+        If outputstep is None, the output to sww file happens every yieldstep.
         If yieldstep is None then simply evolve to finaltime or for a duration.
         """
 
@@ -2689,10 +2373,16 @@ class Domain(Generic_Domain):
         # and or visualisation.
         # This is done again in the initialisation of the Generic_Domain
         # evolve loop but we do it here to ensure the values are ok for storage.
+
         self.distribute_to_vertices_and_edges()
 
         if self.store is True and (self.get_relative_time() == 0.0 or self.evolved_called is False):
             self.initialise_storage()
+
+        
+    
+        #nvtx marker
+        nvtxRangePush('_evolve_base')
 
         # Call basic machinery from parent class
         for t in self._evolve_base(yieldstep=yieldstep,
@@ -2738,16 +2428,24 @@ class Domain(Generic_Domain):
 
             self.yieldstep_counter += 1
 
+        #nvtx marker
+        nvtxRangePop()
+
+
     def initialise_storage(self):
         """Create and initialise self.writer object for storing data.
         Also, save x,y and bed elevation
         """
+
+        nvtxRangePush('SWW_file')
 
         # Initialise writer
         self.writer = SWW_file(self)
 
         # Store vertices and connectivity
         self.writer.store_connectivity()
+
+        nvtxRangePop()
 
 
     def store_timestep(self):
@@ -2757,19 +2455,304 @@ class Domain(Generic_Domain):
            self.writer has been initialised
         """
 
+        nvtxRangePush('store_timestep')
         self.writer.store_timestep()
+        nvtxRangePop()
 
 
     def sww_merge(self,  *args, **kwargs):
-        '''Merge all the sub domain sww files into a global sww file
-        
+        """Dummy function for sequential algorithms where the sww produced is the final products.
+
+        For parallel runs, a similarly named routine in parallel_shallow_water will merge all the
+        sub domain sww files into a global sww file
+
         :param bool verbose: Flag to produce more output
         :param bool delete_old: Flag to delete sub domain sww files after
             creating global sww file
-            
-        '''
+
+        """
 
         pass
+
+
+    def evolve_one_euler_step(self, yieldstep, finaltime):
+        """One Euler Time Step
+        Q^{n+1} = E(h) Q^n
+
+        Does not assume that centroid values have been extrapolated to
+        vertices and edges
+        """
+
+        #nvtx marker
+        nvtxRangePush('distribute_to_vertices_and_edges')
+
+        # From centroid values calculate edge and vertex values
+        self.distribute_to_vertices_and_edges()
+
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('update_boundary')
+        # Apply boundary conditions
+        self.update_boundary()
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('compute_fluxes')
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('compute_forcing_terms')
+        # Compute forcing terms
+        self.compute_forcing_terms()
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('update_timestep')
+        # Update timestep to fit yieldstep and finaltime
+        self.update_timestep(yieldstep, finaltime)
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('compute_flux_update_frequency')
+        if self.max_flux_update_frequency != 1:
+            # Update flux_update_frequency using the new timestep
+            self.compute_flux_update_frequency()
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('update_conserved_quantities')
+        # Update conserved quantities
+        self.update_conserved_quantities()
+        #nvtx marker
+        nvtxRangePop()
+
+    def evolve_one_rk2_step(self, yieldstep, finaltime):
+        """One 2nd order RK timestep
+        Q^{n+1} = 0.5 Q^n + 0.5 E(h)^2 Q^n
+
+        Does not assume that centroid values have been extrapolated to
+        vertices and edges
+        """
+
+        # Save initial initial conserved quantities values
+        self.backup_conserved_quantities()
+
+        #==========================================
+        # First euler step
+        #==========================================
+
+        # From centroid values calculate edge and vertex values
+        self.distribute_to_vertices_and_edges()
+
+        # Apply boundary conditions
+        self.update_boundary()
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update timestep to fit yieldstep and finaltime
+        self.update_timestep(yieldstep, finaltime)
+
+        # Update centroid values of conserved quantities
+        self.update_conserved_quantities()
+
+        # Update special conditions
+        # self.update_special_conditions()
+
+        # Update time
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+
+        # Update ghosts
+        if self.ghost_layer_width < 4:
+            self.update_ghosts()
+
+        # Update vertex and edge values
+        self.distribute_to_vertices_and_edges()
+
+        # Update boundary values
+        self.update_boundary()
+
+        #=========================================
+        # Second Euler step using the same timestep
+        # calculated in the first step. Might lead to
+        # stability problems but we have not seen any
+        # example.
+        #=========================================
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update conserved quantities
+        self.update_conserved_quantities()
+
+        #========================================
+        # Combine initial and final values
+        # of conserved quantities and cleanup
+        #========================================
+
+        # Combine steps
+        self.saxpy_conserved_quantities(0.5, 0.5)
+
+
+    def evolve_one_rk3_step(self, yieldstep, finaltime):
+        """One 3rd order RK timestep
+        Q^(1) = 3/4 Q^n + 1/4 E(h)^2 Q^n  (at time t^n + h/2)
+        Q^{n+1} = 1/3 Q^n + 2/3 E(h) Q^(1) (at time t^{n+1})
+
+        Does not assume that centroid values have been extrapolated to
+        vertices and edges
+        """
+
+        # Save initial initial conserved quantities values
+        self.backup_conserved_quantities()
+
+        initial_time = self.get_relative_time()
+
+        ######
+        # First euler step
+        ######
+
+        # From centroid values calculate edge and vertex values
+        self.distribute_to_vertices_and_edges()
+
+        # Apply boundary conditions
+        self.update_boundary()
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update timestep to fit yieldstep and finaltime
+        self.update_timestep(yieldstep, finaltime)
+
+        # Update conserved quantities
+        self.update_conserved_quantities()
+
+        # Update special conditions
+        # self.update_special_conditions()
+
+        # Update time
+        self.set_relative_time(self.relative_time+ self.timestep)
+
+        # Update ghosts
+        self.update_ghosts()
+
+        # Update vertex and edge values
+        self.distribute_to_vertices_and_edges()
+
+        # Update boundary values
+        self.update_boundary()
+
+        ######
+        # Second Euler step using the same timestep
+        # calculated in the first step. Might lead to
+        # stability problems but we have not seen any
+        # example.
+        ######
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update conserved quantities
+        self.update_conserved_quantities()
+
+        ######
+        # Combine steps to obtain intermediate
+        # solution at time t^n + 0.5 h
+        ######
+
+        # Combine steps
+        self.saxpy_conserved_quantities(0.25, 0.75)
+
+        # Update special conditions
+        # self.update_special_conditions()
+
+        # Set substep time
+        self.set_relative_time(initial_time + self.timestep * 0.5)
+
+        # Update ghosts
+        self.update_ghosts()
+
+        # Update vertex and edge values
+        self.distribute_to_vertices_and_edges()
+
+        # Update boundary values
+        self.update_boundary()
+
+        ######
+        # Third Euler step
+        ######
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update conserved quantities
+        self.update_conserved_quantities()
+
+        #=======================================
+        # Combine final and initial values
+        # and cleanup
+        #=======================================
+        
+        # self.saxpy_conserved_quantities(2.0/3.0, 1.0/3.0)
+        # This caused a roundoff error that created negative water heights
+
+        # So do this instead!
+        self.saxpy_conserved_quantities(2.0, 1.0, 3.0)
+
+
+        # Set new time
+        self.set_relative_time(initial_time + self.timestep)
+
+
+    def backup_conserved_quantities(self):
+
+        # Backup conserved_quantities centroid values
+        if self.multiprocessor_mode == 1:
+            from anuga.shallow_water.sw_domain_openmp_ext import backup_conserved_quantities
+            backup_conserved_quantities(self)
+        else:
+            for name in self.conserved_quantities:
+                Q = self.quantities[name]
+                Q.backup_centroid_values()
+
+    def saxpy_conserved_quantities(self, a, b, c=None):
+
+        # saxpy conserved_quantities centroid values with backup values
+        if self.multiprocessor_mode == 1:
+            if c is None:
+                c = 1.0
+            from anuga.shallow_water.sw_domain_openmp_ext import saxpy_conserved_quantities
+            saxpy_conserved_quantities(self, a, b, c)
+        else:
+            for name in self.conserved_quantities:
+                Q = self.quantities[name]
+                Q.saxpy_centroid_values(a, b)
+                if c is not None:
+                    Q.centroid_values[:] = Q.centroid_values / c
 
     def timestepping_statistics(self,
                                 track_speeds=False,
@@ -2781,8 +2764,8 @@ class Domain(Generic_Domain):
 
         :param time_units: 'sec', 'min', 'hr', 'day'
         :param bool datetime: flag to use timestamp or datetime
-        :param track_speed: Optional boolean keyword track_speeds decides whether 
-                            to report location of smallest timestep as well as a 
+        :param track_speed: Optional boolean keyword track_speeds decides whether
+                            to report location of smallest timestep as well as a
                             histogram and percentile report.
         :param bool relative_time: Flag to report relative time instead of absolute time
         :param int triangle_id: Can be used to specify a particular
@@ -2917,8 +2900,8 @@ class Domain(Generic_Domain):
 
         :param time_units: 'sec', 'min', 'hr', 'day'
         :param bool datetime: flag to use timestamp or datetime
-        :param track_speed: Optional boolean keyword track_speeds decides whether 
-                            to report location of smallest timestep as well as a 
+        :param track_speed: Optional boolean keyword track_speeds decides whether
+                            to report location of smallest timestep as well as a
                             histogram and percentile report.
         :param bool relative_time: Flag to report relative time instead of absolute time
         :param int triangle_id: Can be used to specify a particular
@@ -2992,24 +2975,6 @@ class Domain(Generic_Domain):
         return boundary_flows, total_boundary_inflow, total_boundary_outflow
 
 
-    def compute_forcing_flows(self):
-        """
-        Compute flows in and out of domain due to forcing terms.
-
-        Quantities computed are:
-
-           Total inflow through forcing terms
-           Total outflow through forcing terms
-           Current total volume in domain
-
-        """
-
-        #FIXME(Ole): We need to separate what part of explicit_update was
-        # due to the normal flux calculations and what is due to forcing terms.
-
-        pass
-
-
     def compute_total_volume(self):
         """
         Compute total volume (m^3) of water in entire domain
@@ -3060,10 +3025,21 @@ class Domain(Generic_Domain):
             Update the 'flux_update_frequency' and 'update_extrapolate' variables
             Used to control updating of fluxes / extrapolation for 'local-time-stepping'
         """
-        from .swDE1_domain_ext import compute_flux_update_frequency \
-                                  as compute_flux_update_frequency_ext
 
-        compute_flux_update_frequency_ext(self, self.timestep)
+        nvtxRangePush('compute_flux_update_frequency')
+        # Choose the correct extension module
+        if self.multiprocessor_mode == 1:
+            from .sw_domain_openmp_ext import compute_flux_update_frequency
+        elif self.multiprocessor_mode == 2:
+            # change over to cuda routines as developed
+            from .sw_domain_openmp_ext import compute_flux_update_frequency
+        else:
+            raise Exception('Not implemented')
+
+
+        compute_flux_update_frequency(self, self.timestep)
+
+        nvtxRangePop()
 
     def report_water_volume_statistics(self, verbose=True, returnStats=False):
         """
@@ -3075,12 +3051,13 @@ class Domain(Generic_Domain):
         from anuga import myid
 
         if(self.compute_fluxes_method != 'DE'):
-            if(myid==0):
+            if(myid == 0):
                 print('Water_volume_statistics only supported for DE algorithm ')
             return
 
         # Compute the volume
-        Vol=self.get_water_volume()
+        Vol = self.get_water_volume()
+
         # Compute the boundary flux integral
         fluxIntegral=self.get_boundary_flux_integral()
         fracIntegral=self.get_fractional_step_volume_integral()
@@ -3093,7 +3070,7 @@ class Domain(Generic_Domain):
             print('    V - BF - FS - InitialVolume :',  Vol- fluxIntegral -fracIntegral - self.volume_history[0])
             print(' ')
 
-        if(returnStats):
+        if returnStats:
             return [Vol, fluxIntegral, fracIntegral]
         else:
             return
@@ -3108,26 +3085,27 @@ class Domain(Generic_Domain):
         Useful in models
         with complex meshes, to find ways to speed up the model
         """
+
         from anuga.parallel import myid, numprocs
         from anuga.config import g, epsilon
 
-        if(threshold_depth is None):
+        if threshold_depth is None:
             threshold_depth=self.minimum_allowed_height
 
         uh = self.quantities['xmomentum'].centroid_values
         vh = self.quantities['ymomentum'].centroid_values
         d =  self.quantities['stage'].centroid_values - self.quantities['elevation'].centroid_values
         d = num.maximum(d, threshold_depth)
-        v = ( (uh)**2 + (vh)**2)**0.5/d
-        v = v*(d>threshold_depth)
+        v = ((uh)**2 + (vh)**2)**0.5/d
+        v = v * (d > threshold_depth)
 
         for i in range(numprocs):
-            if(myid==i):
+            if myid == i:
                 print('    Processor ', myid)
-                gravSpeed=(g*d)**0.5
-                waveSpeed = abs(v)+gravSpeed
-                localTS=self.radii/num.maximum(waveSpeed, epsilon)
-                controlling_pt_ind=localTS.argmin()
+                gravSpeed = (g * d)**0.5
+                waveSpeed = abs(v) + gravSpeed
+                localTS = self.radii / num.maximum(waveSpeed, epsilon)
+                controlling_pt_ind = localTS.argmin()
                 print('    * Smallest LocalTS is: ', localTS[controlling_pt_ind])
                 print('     -- Location: ', round(self.centroid_coordinates[controlling_pt_ind,0]+self.geo_reference.xllcorner,2),\
                                         round(self.centroid_coordinates[controlling_pt_ind,1]+self.geo_reference.yllcorner,2))
@@ -3169,156 +3147,99 @@ class Domain(Generic_Domain):
     def get_inv_tri_map(self):
         return self.inv_tri_map
 
+# ==============================================================================
+# Multiprocessor Mode (1=openmp, 2=cuda (in development))
+# ==============================================================================
+
+    def set_multiprocessor_mode(self, multiprocessor_mode= 0):
+        """
+        Set multiprocessor mode 
+         1. openmp (in development)
+         2. cupy (in development)
+        """
+
+        if multiprocessor_mode not in [1,2]:
+            raise ValueError('Invalid multiprocessor mode. Must be one of [1,2] (openmp, cupy)')
+
+        self.multiprocessor_mode = multiprocessor_mode
+
+        if self.multiprocessor_mode == 2:
+            self.set_gpu_interface()
+
+    def get_multiprocessor_mode(self):
+        """
+        Get multiprocessor mode 
+        
+        1. openmp (in development)
+        2. cupy (in development)
+        """
+        return self.multiprocessor_mode 
+
+    def set_omp_num_threads(self, omp_num_threads=None):
+        """
+        Set the number of OpenMP threads to use for parallel processing.
+        If OMP_NUM_THREADS is not set, this will set it to the specified 
+        omp_num_threads value.
+        By default omp_num_threads is set to 1, other , it will use the default setting.
+        """
+
+        import os
+        if omp_num_threads is None:
+            # Use the default setting
+            omp_num_threads = os.environ.get('OMP_NUM_THREADS', None)
+            #print(f'Using OMP_NUM_THREADS from environment: {omp_num_threads}')
+
+
+        if omp_num_threads is None:
+            omp_num_threads = 1  # Default to 1 if not set
+
+        try:
+            omp_num_threads = int(omp_num_threads)
+        except ValueError:
+            raise ValueError('OMP_NUM_THREADS must be an integer')            
+
+        # Set the number of OpenMP threads
+        self.omp_num_threads = omp_num_threads
+        from .sw_domain_openmp_ext import set_omp_num_threads
+        set_omp_num_threads(omp_num_threads)
+        
+        print(f'Setting omp_num_threads to {omp_num_threads}')
+
+
+    def set_gpu_interface(self):
+
+        if self.multiprocessor_mode == 2 and self.gpu_interface is None:
+
+            # first check that cupy is available
+            try:
+                import cupy as cp
+                test_cupy_array = cp.array([1,2,3])
+
+            except:
+                print('+==============================================================================+')
+                print('|                                                                              |')
+                print('| WARNING: cupy or gpu not available, so falling back to multiprocessor_mode 1 |')
+                print('|                                                                              |')
+                print('+==============================================================================+')
+                self.set_multiprocessor_mode(1)
+                return
+
+            from .sw_domain_cuda import GPU_interface
+            self.gpu_interface = GPU_interface(self)
+            self.gpu_interface.allocate_gpu_arrays()
+            self.gpu_interface.compile_gpu_kernels()
+           
+        
+
 ################################################################################
 # End of class Shallow Water Domain
 ################################################################################
 
-#-----------------
-# Flux computation
-#-----------------
-
-#def compute_fluxes(domain):
-#    """Compute fluxes and timestep suitable for all volumes in domain.
-#
-#    Compute total flux for each conserved quantity using "flux_function"
-#
-#    Fluxes across each edge are scaled by edgelengths and summed up
-#    Resulting flux is then scaled by area and stored in
-#    explicit_update for each of the three conserved quantities
-#    stage, xmomentum and ymomentum
-#
-#    The maximal allowable speed computed by the flux_function for each volume
-#    is converted to a timestep that must not be exceeded. The minimum of
-#    those is computed as the next overall timestep.
-#
-#    Post conditions:
-#      domain.explicit_update is reset to computed flux values
-#      domain.timestep is set to the largest step satisfying all volumes.
-#
-#    This wrapper calls the underlying C version of compute fluxes
-#    """
-#
-#    import sys
-#    from shallow_water_ext import compute_fluxes_ext_central \
-#                                  as compute_fluxes_ext
-#
-#    # Shortcuts
-#    Stage = domain.quantities['stage']
-#    Xmom = domain.quantities['xmomentum']
-#    Ymom = domain.quantities['ymomentum']
-#    Bed = domain.quantities['elevation']
-#
-#
-#
-#    timestep = float(sys.maxint)
-#
-#    flux_timestep = compute_fluxes_ext(timestep,
-#                                       domain.epsilon,
-#                                       domain.H0,
-#                                       domain.g,
-#                                       domain.neighbours,
-#                                       domain.neighbour_edges,
-#                                       domain.normals,
-#                                       domain.edgelengths,
-#                                       domain.radii,
-#                                       domain.areas,
-#                                       domain.tri_full_flag,
-#                                       Stage.edge_values,
-#                                       Xmom.edge_values,
-#                                       Ymom.edge_values,
-#                                       Bed.edge_values,
-#                                       Stage.boundary_values,
-#                                       Xmom.boundary_values,
-#                                       Ymom.boundary_values,
-#                                       Stage.explicit_update,
-#                                       Xmom.explicit_update,
-#                                       Ymom.explicit_update,
-#                                       domain.already_computed_flux,
-#                                       domain.max_speed,
-#                                       domain.optimise_dry_cells)
-#
-#    domain.flux_timestep = flux_timestep
-#
-#
-#
-#def compute_fluxes_structure(domain):
-#    """Compute fluxes and timestep suitable for all volumes in domain.
-#
-#    Compute total flux for each conserved quantity using "flux_function"
-#
-#    Fluxes across each edge are scaled by edgelengths and summed up
-#    Resulting flux is then scaled by area and stored in
-#    explicit_update for each of the three conserved quantities
-#    stage, xmomentum and ymomentum
-#
-#    The maximal allowable speed computed by the flux_function for each volume
-#    is converted to a timestep that must not be exceeded. The minimum of
-#    those is computed as the next overall timestep.
-#
-#    Post conditions:
-#      domain.explicit_update is reset to computed flux values
-#      domain.flux_timestep is set to the largest step satisfying all volumes.
-#
-#    This wrapper calls the underlying C version of compute fluxes
-#    """
-#
-#
-#    from shallow_water_ext import compute_fluxes_ext_central_structure
-#
-#
-#    domain.flux_timestep = compute_fluxes_ext_central_structure(domain)
-#
 
 
 ################################################################################
 # Module functions for gradient limiting
 ################################################################################
-
-def extrapolate_second_order_sw_old(domain):
-    """Wrapper calling C version of extrapolate_second_order_sw.
-
-    domain  the domain to operate on
-
-    Note MH090605: The following method belongs to the shallow_water domain
-    class, see comments in the corresponding method in shallow_water_ext.c
-    """
-
-    from .shallow_water_ext import extrapolate_second_order_sw_old as extrapol2
-
-    # Shortcuts
-    Stage = domain.quantities['stage']
-    Xmom = domain.quantities['xmomentum']
-    Ymom = domain.quantities['ymomentum']
-    Elevation = domain.quantities['elevation']
-
-    extrapol2(domain,
-              domain.surrogate_neighbours,
-              domain.number_of_boundaries,
-              domain.centroid_coordinates,
-              Stage.centroid_values,
-              Xmom.centroid_values,
-              Ymom.centroid_values,
-              Elevation.centroid_values,
-              domain.vertex_coordinates,
-              Stage.vertex_values,
-              Xmom.vertex_values,
-              Ymom.vertex_values,
-              Elevation.vertex_values,
-              int(domain.optimise_dry_cells),
-              int(domain.extrapolate_velocity_second_order))
-
-
-#def extrapolate_second_order_sw(domain):
-#    """Wrapper calling C version of extrapolate_second_order_sw.
-#
-#    domain  the domain to operate on
-#
-#    Note MH090605: The following method belongs to the shallow_water domain
-#    class, see comments in the corresponding method in shallow_water_ext.c
-#    """
-#
-#    from shallow_water_ext import extrapolate_second_order_sw as extrapol2
-#    extrapol2(domain)
 
 
 def distribute_using_vertex_limiter(domain):
@@ -3350,7 +3271,7 @@ def distribute_using_vertex_limiter(domain):
         # perform the extrapolation and limiting on
         # all of the conserved quantities
 
-        if (domain._order_ == 1):
+        if domain._order_ == 1:
             for name in domain.conserved_quantities:
                 Q = domain.quantities[name]
                 Q.extrapolate_first_order()
@@ -3378,247 +3299,9 @@ def distribute_using_vertex_limiter(domain):
         Q = domain.quantities[name]
         Q.interpolate_from_vertices_to_edges()
 
-#def distribute_using_edge_limiter(domain):
-#    """Distribution from centroids to edges specific to the SWW eqn.
-#
-#    It will ensure that h (w-z) is always non-negative even in the
-#    presence of steep bed-slopes by taking a weighted average between shallow
-#    and deep cases.
-#
-#    In addition, all conserved quantities get distributed as per either a
-#    constant (order==1) or a piecewise linear function (order==2).
-#
-#
-#    Precondition:
-#      All quantities defined at centroids and bed elevation defined at
-#      vertices.
-#
-#    Postcondition
-#      Conserved quantities defined at vertices
-#    """
-#
-#    # Remove very thin layers of water
-#    domain.protect_against_infinitesimal_and_negative_heights()
-#
-#    for name in domain.conserved_quantities:
-#        Q = domain.quantities[name]
-#        if domain._order_ == 1:
-#            Q.extrapolate_first_order()
-#        elif domain._order_ == 2:
-#            Q.extrapolate_second_order_and_limit_by_edge()
-#        else:
-#            raise Exception('Unknown order')
-#
-#    balance_deep_and_shallow(domain)
-#
-#    # Compute edge values by interpolation
-#    for name in domain.conserved_quantities:
-#        Q = domain.quantities[name]
-#        Q.interpolate_from_vertices_to_edges()
-#
-##def protect_against_infinitesimal_and_negative_heights(domain):
-##    """Protect against infinitesimal heights and associated high velocities"""
-##
-##    from shallow_water_ext import protect
-##
-##    # Shortcuts
-##    wc = domain.quantities['stage'].centroid_values
-##    zc = domain.quantities['elevation'].centroid_values
-##    xmomc = domain.quantities['xmomentum'].centroid_values
-##    ymomc = domain.quantities['ymomentum'].centroid_values
-##
-##    protect(domain.minimum_allowed_height, domain.maximum_allowed_speed,
-##            domain.epsilon, wc, zc, xmomc, ymomc)
 
 
-
-
-
-################################################################################
-# Standard forcing terms
-################################################################################
-
-
-def manning_friction_implicit(domain):
-    """Apply (Manning) friction to water momentum
-    Wrapper for c version
-    """
-
-    from .shallow_water_ext import manning_friction_flat
-    from .shallow_water_ext import manning_friction_sloped
-
-    xmom = domain.quantities['xmomentum']
-    ymom = domain.quantities['ymomentum']
-
-    x = domain.get_vertex_coordinates()
-
-    w = domain.quantities['stage'].centroid_values
-    z = domain.quantities['elevation'].vertex_values
-
-    uh = xmom.centroid_values
-    vh = ymom.centroid_values
-    eta = domain.quantities['friction'].centroid_values
-
-    xmom_update = xmom.semi_implicit_update
-    ymom_update = ymom.semi_implicit_update
-
-    eps = domain.minimum_allowed_height
-    g = domain.g
-
-    if domain.use_sloped_mannings:
-        manning_friction_sloped(g, eps, x, w, uh, vh, z, eta, xmom_update, \
-                                ymom_update)
-    else:
-        manning_friction_flat(g, eps, w, uh, vh, z, eta, xmom_update, \
-                                ymom_update)
-
-
-def manning_friction_explicit(domain):
-    """Apply (Manning) friction to water momentum
-    Wrapper for c version
-    """
-
-    from .shallow_water_ext import manning_friction_flat
-    from .shallow_water_ext import manning_friction_sloped
-
-    xmom = domain.quantities['xmomentum']
-    ymom = domain.quantities['ymomentum']
-
-    x = domain.get_vertex_coordinates()
-
-    w = domain.quantities['stage'].centroid_values
-    z = domain.quantities['elevation'].vertex_values
-
-    uh = xmom.centroid_values
-    vh = ymom.centroid_values
-    eta = domain.quantities['friction'].centroid_values
-
-    xmom_update = xmom.explicit_update
-    ymom_update = ymom.explicit_update
-
-    eps = domain.minimum_allowed_height
-
-    if domain.use_sloped_mannings:
-        manning_friction_sloped(domain.g, eps, x, w, uh, vh, z, eta, xmom_update, \
-                            ymom_update)
-    else:
-        manning_friction_flat(domain.g, eps, w, uh, vh, z, eta, xmom_update, \
-                            ymom_update)
-
-
-
-# FIXME (Ole): This was implemented for use with one of the analytical solutions
-def linear_friction(domain):
-    """Apply linear friction to water momentum
-
-    Assumes quantity: 'linear_friction' to be present
-    """
-
-    w = domain.quantities['stage'].centroid_values
-    z = domain.quantities['elevation'].centroid_values
-    h = w-z
-
-    uh = domain.quantities['xmomentum'].centroid_values
-    vh = domain.quantities['ymomentum'].centroid_values
-    tau = domain.quantities['linear_friction'].centroid_values
-
-    xmom_update = domain.quantities['xmomentum'].semi_implicit_update
-    ymom_update = domain.quantities['ymomentum'].semi_implicit_update
-
-    num_tris = len(domain)
-    eps = domain.minimum_allowed_height
-
-    for k in range(num_tris):
-        if tau[k] >= eps:
-            if h[k] >= eps:
-                S = -tau[k]/h[k]
-
-                #Update momentum
-                xmom_update[k] += S*uh[k]
-                ymom_update[k] += S*vh[k]
-
-def depth_dependent_friction(domain, default_friction,
-                             surface_roughness_data,
-                             verbose=False):
-    """Returns an array of friction values for each wet element adjusted for
-            depth.
-
-    Inputs:
-        domain - computational domain object
-        default_friction - depth independent bottom friction
-        surface_roughness_data - N x 5 array of n0, d1, n1, d2, n2 values
-        for each friction region.
-
-    Outputs:
-        wet_friction - Array that can be used directly to update friction as
-                        follows:
-                       domain.set_quantity('friction', wet_friction)
-
-
-
-    """
-
-    default_n0 = 0  # James - this was missing, don't know what it should be
-
-    # Create a temp array to store updated depth dependent
-    # friction for wet elements
-    # EHR this is outwardly inneficient but not obvious how to avoid
-    # recreating each call??????
-
-    wet_friction    = num.zeros(len(domain), float)
-    wet_friction[:] = default_n0  # Initially assign default_n0 to all array so
-                                  # sure have no zeros values
-
-    # create depth instance for this timestep
-    depth = domain.create_quantity_from_expression('stage - elevation')
-    # Recompute depth as vector
-    d_vals = depth.get_values(location='centroids')
-
-    # rebuild the 'friction' values adjusted for depth at this instant
-    # loop for each wet element in domain
-
-    for i in domain.get_wet_elements():
-        # Get roughness data for each element
-        d1 = float(surface_roughness_data[i, 1])
-        n1 = float(surface_roughness_data[i, 2])
-        d2 = float(surface_roughness_data[i, 3])
-        n2 = float(surface_roughness_data[i, 4])
-
-
-        # Recompute friction values from depth for this element
-
-        if d_vals[i]   <= d1:
-            ddf = n1
-        elif d_vals[i] >= d2:
-            ddf = n2
-        else:
-            ddf = n1 + ((n2-n1)/(d2-d1))*(d_vals[i]-d1)
-
-        # check sanity of result
-        if (ddf  < 0.010 or \
-                            ddf > 9999.0) :
-            log.critical('>>>> WARNING: computed depth_dependent friction '
-                         'out of range, ddf%f, n1=%f, n2=%f'
-                         % (ddf, n1, n2))
-
-        # update depth dependent friction  for that wet element
-        wet_friction[i] = ddf
-
-    # EHR add code to show range of 'friction across domain at this instant as
-    # sanity check?????????
-
-    if verbose :
-        # return array of domain nvals
-        nvals = domain.get_quantity('friction').get_values(location='centroids')
-        n_min = min(nvals)
-        n_max = max(nvals)
-
-        log.critical('         ++++ calculate_depth_dependent_friction - '
-                     'Updated friction - range  %7.3f to %7.3f'
-                     % (n_min, n_max))
-
-    return wet_friction
-
+# FIXME (Ole): Does this do anything?
 def my_update_special_conditions(domain):
 
     pass

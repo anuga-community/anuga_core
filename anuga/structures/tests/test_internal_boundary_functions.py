@@ -213,6 +213,6 @@ class Test_internal_boundary_functions(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_internal_boundary_functions, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_internal_boundary_functions)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

@@ -6,7 +6,7 @@ import anuga
 import anuga.utilities.plot_utils as util
 import numpy as np
 
-flow_algorithms = ['DE0', 'DE1', '1_5', '2_0', 'tsunami']
+flow_algorithms = ['DE0', 'DE1']
 verbose = False
 
 import sys
@@ -495,6 +495,6 @@ class Test_plot_utils(unittest.TestCase):
 ################################################################################
 if __name__ == "__main__":
     # _triangle_containing_point')
-    suite = unittest.makeSuite(Test_plot_utils, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_plot_utils)
     runner = unittest.TextTestRunner()
     runner.run(suite)

@@ -50,7 +50,7 @@ def setup_pumping_stations(domain, project):
 
         smoothing_timescale = ps[10]
 
-        print 'Need to implement elevation data adjustments'
+        print('Need to implement elevation data adjustments')
 
         # Function which computes Q
         pump_behaviour = pumping_station_function(

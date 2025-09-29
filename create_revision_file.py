@@ -7,30 +7,26 @@ CreationDate: May 2022
 
 Description:
         
-This script obtains current version from setup.py and Git commit info
+This script obtains current version from pyproject.toml and Git commit info
 and stores it in a Python file named 'revision.py' for use with get_version_info()
 """
 
 import re
 import os
-
+import toml
 
 # ===================================================
-# Read VERSION from setup.py file
+# Read VERSION from pyproject.toml file
 # ===================================================
-with open('setup.py') as infile:
-    for line in infile:
-        match = re.match(r'VERSION =', line)
-        if match != None:
-            VERSION = re.findall('\d.\d.\d',line)[0]
+with open('pyproject.toml') as infile:
+    config = toml.load(infile)
+    VERSION = config['project']['version']
 
 
 destination_path='anuga'
 version=VERSION
 verbose=True
-    
-   
-    
+  
 
 # Git revision information (relies on the gitpython package)
 # https://stackoverflow.com/questions/14989858/get-the-current-git-hash-in-a-python-script

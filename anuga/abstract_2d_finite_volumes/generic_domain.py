@@ -36,6 +36,28 @@ import anuga
 import numpy as num
 
 
+# ---------------- wrapper for nvtx marker
+
+def nvtxRangePush(*arg):
+    pass
+def nvtxRangePop(*arg):
+    pass
+
+try:
+    from nvtx import range_push as nvtxRangePush
+    from nvtx import range_pop  as nvtxRangePop
+except:
+    pass
+
+try:
+    from cupy.cuda.nvtx import RangePush as nvtxRangePush
+    from cupy.cuda.nvtx import RangePop  as nvtxRangePop
+except:
+    pass
+# ---------------- wrapper for nvtx marker
+
+
+
 class Generic_Domain(object):
     """Generic computational Domain constructor.
     """
@@ -85,6 +107,7 @@ class Generic_Domain(object):
 
         # FIXME SR: This is a bug
         # FIXME(Ole): Do you mean a hack?
+        # FIXME SR: Of course, a hack.
         number_of_full_nodes = None
         number_of_full_triangles = None
 
@@ -216,6 +239,13 @@ class Generic_Domain(object):
         else:
             self.ghost_recv_dict = ghost_recv_dict
 
+        #-------------------------------
+        # Set multiprocessor mode 
+        # 1. openmp (in development)
+        # 2. cuda (in development)
+        #-------------------------------    
+        self.set_multiprocessor_mode(1)
+
         self.processor = processor
         self.numproc = numproc
         self.ghost_layer_width = ghost_layer_width
@@ -341,6 +371,8 @@ class Generic_Domain(object):
 
         # Early algorithms need elevation to remain continuous
         self.set_using_discontinuous_elevation(False)
+        self.set_using_centroid_averaging(False)
+        self.set_using_centroid_averaging(False)
 
         if verbose:
             log.critical('Domain: Set work arrays')
@@ -587,11 +619,27 @@ class Generic_Domain(object):
     def set_zone(self, zone):
         """Set zone for domain."""
 
-        self.geo_reference.zone = zone
+        self.geo_reference.set_zone(zone)
+
+    def get_zone(self):
+        """get zone for domain Geo_reference"""
+
+        return self.geo_reference.get_zone()
+
 
     def set_institution(self,institution):
 
         self.institution = institution
+
+
+    def set_hemisphere(self, hemisphere):
+
+        self.geo_reference.set_hemisphere(hemisphere)
+
+    def get_hemisphere(self):
+
+        return self.geo_reference.get_hemisphere()
+
 
     def get_datetime(self):
         """Return date time of current modeltime."""
@@ -679,13 +727,61 @@ class Generic_Domain(object):
         default is False
         """
 
-        self.using_discontinuous_elevation = flag
+        if flag is True:
+            self.using_discontinuous_elevation = True
+        elif flag is False:
+            self.using_discontinuous_elevation = False
+        else:
+            msg = f'Excepted boolean argument, received {flag}'
+            raise Exception(msg)
 
     def get_using_discontinuous_elevation(self):
         """
         Return boolean indicating whether algorithm is using dicontinuous elevation
         """
         return self.using_discontinuous_elevation
+
+
+    def set_multiprocessor_mode(self, multiprocessor_mode= 0):
+        """
+        Set multiprocessor mode 
+        
+        1. openmp (in development)
+        2. cuda (in development)
+        """
+
+        if multiprocessor_mode in [1,2]:
+            self.multiprocessor_mode = multiprocessor_mode
+        else:
+            raise Exception('multiprocessor mode {multiprocessor_mode} not supported')
+
+    def get_multiprocessor_mode(self):
+        """
+        Get multiprocessor mode 
+        
+        1. openmp (in development)
+        2. cuda (in development)
+        """
+        return self.multiprocessor_mode 
+            
+    def set_using_centroid_averaging(self, flag=True):
+        """Set flag to use centroid averaging in output
+        of smoothed vertex values. This is good to ensure
+        that vertex stage >= vertex elevation. But can be
+        less accurate than vertex averaging. 
+        """
+
+        if flag is True:
+            self.using_centroid_averaging = True
+        elif flag is False:
+            self.using_centroid_averaging = False
+        else:
+            msg = f'Excepted boolean argument, received {flag}'
+            raise Exception(msg)
+
+    def get_using_centroid_averaging(self):
+
+        return self.using_centroid_averaging
 
     def set_quantity_vertices_dict(self, quantity_dict):
         """Set values for named quantities.
@@ -1825,27 +1921,57 @@ class Generic_Domain(object):
         vertices and edges
         """
 
+        #nvtx marker
+        nvtxRangePush('distribute_to_vertices_and_edges')
+
         # From centroid values calculate edge and vertex values
         self.distribute_to_vertices_and_edges()
 
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('update_boundary')
         # Apply boundary conditions
         self.update_boundary()
+        #nvtx marker
+        nvtxRangePop()
 
+        #nvtx marker
+        nvtxRangePush('compute_fluxes')
         # Compute fluxes across each element edge
         self.compute_fluxes()
+        #nvtx marker
+        nvtxRangePop()
 
+        #nvtx marker
+        nvtxRangePush('compute_forcing_terms')
         # Compute forcing terms
         self.compute_forcing_terms()
+        #nvtx marker
+        nvtxRangePop()
 
+        #nvtx marker
+        nvtxRangePush('update_timestep')
         # Update timestep to fit yieldstep and finaltime
         self.update_timestep(yieldstep, finaltime)
+        #nvtx marker
+        nvtxRangePop()
 
+        #nvtx marker
+        nvtxRangePush('compute_flux_update_frequency')
         if self.max_flux_update_frequency != 1:
             # Update flux_update_frequency using the new timestep
             self.compute_flux_update_frequency()
+        #nvtx marker
+        nvtxRangePop()
 
+        #nvtx marker
+        nvtxRangePush('update_conserved_quantities')
         # Update conserved quantities
         self.update_conserved_quantities()
+        #nvtx marker
+        nvtxRangePop()
 
     def evolve_one_rk2_step(self, yieldstep, finaltime):
         """One 2nd order RK timestep
@@ -2040,10 +2166,7 @@ class Generic_Domain(object):
         # self.saxpy_conserved_quantities(2.0/3.0, 1.0/3.0)
 
         # So do this instead!
-        self.saxpy_conserved_quantities(2.0, 1.0)
-        for name in self.conserved_quantities:
-            Q = self.quantities[name]
-            Q.centroid_values[:] = Q.centroid_values / 3.0
+        self.saxpy_conserved_quantities(2.0, 1.0, 3.0)
 
         # Update special conditions
         # self.update_special_conditions()
@@ -2067,12 +2190,15 @@ class Generic_Domain(object):
             Q = self.quantities[name]
             Q.backup_centroid_values()
 
-    def saxpy_conserved_quantities(self, a, b):
+    def saxpy_conserved_quantities(self, a, b, c=None):
 
-        # Backup conserved_quantities centroid values
+        # saxpy conserved_quantities centroid values with backup values
         for name in self.conserved_quantities:
             Q = self.quantities[name]
             Q.saxpy_centroid_values(a, b)
+            if c is not None:
+                Q.centroid_values[:] = Q.centroid_values / c
+
 
     def conserved_values_to_evolved_values(self, q_cons, q_evol):
         """Needs to be overridden by Domain subclass
@@ -2170,6 +2296,7 @@ class Generic_Domain(object):
         quantity in domain.
         """
 
+        #import pdb; pdb.set_trace()
         for tag in self.tag_boundary_cells:
             B = self.boundary_map[tag]
 
@@ -2294,7 +2421,7 @@ class Generic_Domain(object):
         they should be defined in Domain subclass and appended to
         the list self.forcing_terms
         """
-
+    
         # The parameter self.flux_timestep should be updated
         # by the forcing_terms to ensure stability
 
@@ -2392,42 +2519,6 @@ class Generic_Domain(object):
 
         return normfunc(self.quantities[quantity].centroid_values)
 
-    def apply_protection_against_isolated_degenerate_timesteps(self):
-
-        # FIXME (Steve): This should be in shallow_water as it assumes x and y
-        # momentum
-        if self.protect_against_isolated_degenerate_timesteps is False:
-            return
-
-        # FIXME (Ole): Make this configurable
-        if num.max(self.max_speed) < 10.0:
-            return
-
-        # Setup 10 bins for speed histogram
-        from anuga.utilities.numerical_tools import histogram, create_bins
-
-        bins = create_bins(self.max_speed, 10)
-        hist = histogram(self.max_speed, bins)
-
-        # Look for characteristic signature
-        if len(hist) > 1 and hist[-1] > 0 and \
-           hist[4] == hist[5] == hist[6] == hist[7] == hist[8] == 0:
-            # Danger of isolated degenerate triangles
-
-            # Find triangles in last bin
-            # FIXME - speed up using numeric package
-            d = 0
-            for i in range(self.number_of_triangles):
-                if self.max_speed[i] > bins[-1]:
-                    msg = 'Time=%f: Ignoring isolated high ' % self.get_time()
-                    msg += 'speed triangle '
-                    msg += '#%d of %d with max speed = %f' \
-                        % (i, self.number_of_triangles, self.max_speed[i])
-
-                    self.get_quantity('xmomentum').set_values(0.0, indices=[i])
-                    self.get_quantity('ymomentum').set_values(0.0, indices=[i])
-                    self.max_speed[i] = 0.0
-                    d += 1
 
 
 if __name__ == "__main__":

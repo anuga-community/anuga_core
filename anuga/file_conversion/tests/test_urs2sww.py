@@ -625,6 +625,6 @@ class Test_Dem2Pts(Test_Mux):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Dem2Pts,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Dem2Pts)
     runner = unittest.TextTestRunner()
     runner.run(suite)

@@ -90,6 +90,10 @@ class Test_csv2sts(unittest.TestCase):
         cmd += '%s --lon %s %s %s' % (str(lat), str(lon), testfile_csv, sts_out)
         
         os.system(cmd)
+
+        print(os.getcwd() + "\n")
+        print(os.listdir())
+
         self._check_generated_sts()
 
 
@@ -114,6 +118,6 @@ class Test_csv2sts(unittest.TestCase):
             os.remove(sts_out)           
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_csv2sts,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_csv2sts)
     runner = unittest.TextTestRunner()
     runner.run(suite)

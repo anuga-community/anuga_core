@@ -1122,7 +1122,12 @@ def Make_Geotif(swwFile=None,
         index_qFun = scipy.interpolate.NearestNDInterpolator(
             swwXY,
             numpy.arange(len(swwX),dtype='int64').transpose())
-        gridqInd = index_qFun(gridXY_array)
+        gridqInd = index_qFun(gridXY_array).astype(int)
+
+        #from pprint import pprint
+        #print(72*"=")
+        #pprint(gridqInd)
+        
         # Function to do the interpolation
         def myInterpFun(quantity):
             return quantity[gridqInd]
@@ -1159,7 +1164,7 @@ def Make_Geotif(swwFile=None,
         if(verbose):
             print('Reduction = ', myTSi)
         for output_quantity in output_quantities:
-            if (verbose): print(output_quantity)
+            if (verbose): print(f'output_quantity {output_quantity}')
 
             if(myTSi != 'max'):
                 myTS = myTSi
@@ -1211,6 +1216,7 @@ def Make_Geotif(swwFile=None,
 
             if(verbose):
                 print('Making raster ...')
+
             gridq.shape = (len(desiredY),len(desiredX))
             make_grid(numpy.flipud(gridq), desiredY, desiredX, output_name, EPSG_CODE=EPSG_CODE, 
                       proj4string=proj4string, creation_options=creation_options)

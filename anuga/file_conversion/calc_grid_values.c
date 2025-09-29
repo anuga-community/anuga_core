@@ -1,5 +1,7 @@
 #include <stdio.h>
 #include <math.h>
+#include <stdint.h>
+#include "anuga_typedefs.h"
 
 #define MIN(a, b) (((a)<=(b))?(a):(b))
 #define MAX(a, b) (((a)>(b))?(a):(b))
@@ -50,8 +52,8 @@ void get_tri_extent(double *vertices, PTR_EXTENT out)
 }
 
 void get_tri_vertices( double *x, double *y,\
-			long *volumes, \
-			int tri_id, \
+			anuga_int *volumes, \
+			anuga_int tri_id, \
 			double *out, \
 			double *v1,  \
 			double *v2,  \
@@ -79,7 +81,7 @@ void get_tri_vertices( double *x, double *y,\
 	}
 }
 
-void get_tri_norms( double *norms, int tri_id, 
+void get_tri_norms( double *norms, anuga_int tri_id, 
 		       double *n1, double *n2, double *n3)
 {
 	n1[0] = norms[tri_id*6];
@@ -90,9 +92,9 @@ void get_tri_norms( double *norms, int tri_id,
 	n3[1] = norms[tri_id*6+5];
 }
 
-void init_norms( double *x, double *y, double *norms, long *volumes, int num_tri  )
+void init_norms( double *x, double *y, double *norms, anuga_int *volumes, anuga_int num_tri  )
 {
-	int i;
+	anuga_int i;
 	double x1, x2, x3, y1, y2, y3;
 	double xn1, yn1, xn2, yn2, xn3, yn3;
 	double l1, l2, l3;
@@ -138,12 +140,12 @@ void init_norms( double *x, double *y, double *norms, long *volumes, int num_tri
 }
 
 // remove nodes that are not in any triangles
-void remove_lone_verts( double **verts, int *volumes )
+void remove_lone_verts( double **verts, anuga_int *volumes )
 {
 	
 }
 
-int _point_on_line(double x, double y,
+anuga_int _point_on_line(double x, double y,
 		   double x0, double y0,
 		   double x1, double y1,
 		   double rtol,
@@ -152,7 +154,7 @@ int _point_on_line(double x, double y,
 
   double a0, a1, a_normal0, a_normal1, b0, b1, len_a, len_b;
   double nominator, denominator;
-  int is_parallel;
+  anuga_int is_parallel;
 
   a0 = x - x0;
   a1 = y - y0;
@@ -197,9 +199,9 @@ int _point_on_line(double x, double y,
   }
 }
 
-int _is_inside_triangle(double *point,
+anuga_int _is_inside_triangle(double *point,
 			double *triangle,
-			int closed,
+			anuga_int closed,
 			double rtol,
 			double atol) 
 {			 
@@ -208,7 +210,7 @@ int _is_inside_triangle(double *point,
   double denom, alpha, beta;
   
   double x, y; // Point coordinates
-  int i, j, res;
+  anuga_int i, j, res;
 
   x = point[0];
   y = point[1];
@@ -279,21 +281,21 @@ int _is_inside_triangle(double *point,
 }
 
 void _calc_grid_values( double *x, double *y, double *norms,
-				 int num_vert,
-				 long *volumes, 
-				 int num_tri, 
+				 anuga_int num_vert,
+				 anuga_int *volumes, 
+				 anuga_int num_tri, 
 				 double cell_size,
-				 int nrow,
-				 int ncol,
+				 anuga_int nrow,
+				 anuga_int ncol,
 				 double *vertex_val,
 				 double *grid_val )
 {
-	int i, j, k;
-	int x_min, x_max, y_min, y_max, point_index;
+	anuga_int i, j, k;
+	anuga_int x_min, x_max, y_min, y_max, point_index;
 	double x_dist, y_dist, x_base, y_base;
 	double sigma0, sigma1, sigma2;
-	double fraction;
-	double intpart;
+	//double fraction;
+	double intpart = 0.0;
 	double triangle[6], point[2];
 	double v1[2], v2[2], v3[2];
 	double n1[2], n2[2], n3[2];
@@ -308,19 +310,6 @@ void _calc_grid_values( double *x, double *y, double *norms,
 	y_base = 0.0;
 
 
-/*
-        printf("%d\n",num_tri);
-        for ( i=0; i< num_tri; i++){
-            printf("volumes\n");
-            printf("%ld %ld %ld \n",volumes[3*i],volumes[3*i+1],volumes[3*i+2]);
-        }
-
-        printf("%d\n",num_vert);
-        for ( i=0; i< num_vert; i++){
-            printf("vertices\n");
-            printf("%g %g \n",x[i],y[i]);
-        }
-*/
 
 	for ( i = 0; i < num_tri; i++ ) {
 
@@ -328,34 +317,22 @@ void _calc_grid_values( double *x, double *y, double *norms,
 		get_tri_norms( norms, i, n1, n2, n3 );
 		get_tri_extent( triangle, extent );
 
-/*
-                printf("tri %g %g  %g %g %g %g\n",
-                   triangle[0],triangle[1],triangle[2],triangle[3], triangle[4],triangle[5]);
-                printf("v1 %g %g\n", v1[0], v1[1]);
-                printf("v2 %g %g\n", v2[0], v2[1]);
-                printf("v3 %g %g\n", v3[0], v3[1]);
 
 
-                printf("e.xmin %g \n", extent->x_min);
-                printf("e.xmax %g \n", extent->x_max);
-                printf("e.ymin %g \n", extent->y_min);
-                printf("e.ymax %g \n", extent->y_max);
-*/
-
-		fraction = modf( (extent->x_min - x_base)/x_dist, &intpart );
-		x_min = intpart;
+		(void) modf( (extent->x_min - x_base)/x_dist, &intpart );
+		x_min = (anuga_int) intpart;
 		x_min = (x_min < 0) ? 0 : x_min; 
 
-		fraction = modf( ABS(extent->x_max - x_base)/x_dist, &intpart );
-		x_max = intpart;
+		(void) modf( ABS(extent->x_max - x_base)/x_dist, &intpart );
+		x_max = (anuga_int) intpart;
 		x_max = (x_max > (ncol-1)) ? (ncol-1) : x_max;
 
-		fraction = modf( (extent->y_min - y_base)/y_dist, &intpart );
-		y_min = intpart;
+		(void) modf( (extent->y_min - y_base)/y_dist, &intpart );
+		y_min = (anuga_int) intpart;
 		y_min = (y_min < 0 ) ? 0 : y_min;
 
-		fraction = modf( ABS(extent->y_max - y_base)/y_dist, &intpart );
-		y_max = intpart;
+		(void) modf( ABS(extent->y_max - y_base)/y_dist, &intpart );
+		y_max = (anuga_int) intpart;
 		y_max = (y_max > (nrow-1)) ? (nrow-1) : y_max;
 		
 		if ( x_max >= 0 && y_max >= 0 ) {

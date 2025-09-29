@@ -363,7 +363,7 @@ class Test_sww(unittest.TestCase):
         domain.set_name('test_get_mesh_and_quantities_from_sww_file')
         swwfile = domain.get_name() + '.sww'
         domain.set_datadir('.')
-        domain.set_flow_algorithm('1_5')
+        domain.set_flow_algorithm('DE0')
 
         Br = Reflective_boundary(domain)    # Side walls
         Bd = Dirichlet_boundary([1, 0, 0])  # inflow
@@ -388,7 +388,7 @@ class Test_sww(unittest.TestCase):
 
         
         # Check that mesh has been recovered
-        assert num.alltrue(mesh.triangles == domain.get_triangles())
+        assert num.all(mesh.triangles == domain.get_triangles())
         assert num.allclose(mesh.nodes, domain.get_nodes())
 
         # Check that time has been recovered
@@ -462,7 +462,7 @@ class Test_sww(unittest.TestCase):
 
         
         # Check that mesh has been recovered
-        assert num.alltrue(mesh.triangles == domain.get_triangles())
+        assert num.all(mesh.triangles == domain.get_triangles())
         assert num.allclose(mesh.nodes, domain.get_nodes())
 
         # Check that time has been recovered
@@ -510,7 +510,7 @@ class Test_sww(unittest.TestCase):
         domain.set_name('test_get_mesh_and_quantities_from_unique_vertices_sww_file')
         swwfile = domain.get_name() + '.sww'
         domain.set_datadir('.')
-        domain.set_flow_algorithm('1_5')
+        domain.set_flow_algorithm('DE0')
         domain.set_store_vertices_uniquely()
 
         Br = Reflective_boundary(domain)    # Side walls
@@ -554,7 +554,7 @@ class Test_sww(unittest.TestCase):
         # Check that mesh has been recovered
         # triangle order should be ok
         assert num.allclose(mesh.nodes[mi,:],domain.get_nodes()[di,:])
-        assert num.alltrue(minv[mesh.triangles] == dinv[domain.get_triangles()])
+        assert num.all(minv[mesh.triangles] == dinv[domain.get_triangles()])
 
 
         # Check that time has been recovered
@@ -647,7 +647,7 @@ class Test_sww(unittest.TestCase):
         # Check that mesh has been recovered
         # triangle order should be ok
         assert num.allclose(mesh.nodes[mi,:],domain.get_nodes()[di,:])
-        assert num.alltrue(minv[mesh.triangles] == dinv[domain.get_triangles()])
+        assert num.all(minv[mesh.triangles] == dinv[domain.get_triangles()])
 
 
         # Check that time has been recovered
@@ -902,6 +902,6 @@ class Test_sww(unittest.TestCase):
 #################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_sww, 'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_sww)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

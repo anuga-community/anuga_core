@@ -23,12 +23,15 @@ from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a, \
                             netcdf_float
 
 from anuga.anuga_exceptions import *
+from anuga.utilities.file_utils import create_filename
 
 
 #shallow water imports
 from anuga.file.sww import Read_sww, Write_sww
 from anuga.shallow_water.shallow_water_domain import Domain
 from anuga.shallow_water.shallow_water_domain import Domain
+
+
 
 
 def sww2obj(filename, size):
@@ -39,8 +42,10 @@ def sww2obj(filename, size):
         size The number of lines to write.
     """
 
+    # FIXME SR: shouldn't size be read from the incoming file?
+
     if filename[-4:] != '.sww':
-        raise IOError('Output file %s should be of type .sww.' % sww_file)
+        raise IOError('Output file %s should be of type .sww.' % filename)
 
     basefilename = filename[:-4]
 
@@ -181,7 +186,7 @@ def timefile2netcdf(file_text, file_out = None, quantity_names=None, \
 
     msg = 'File %s must list time as a monotonuosly ' % file_text
     msg += 'increasing sequence'
-    assert num.alltrue(T[1:] - T[:-1] > 0), msg
+    assert num.all(T[1:] - T[:-1] > 0), msg
 
     #Create NetCDF file
     fid = NetCDFFile(file_out, netcdf_mode_w)

@@ -22,33 +22,7 @@ from anuga.operators.base_operator import Operator
 from anuga import Region
 
 class Rate_operator(Operator):
-    """
-    Create a Rate_operator that adds water over a region at a specified
-    rate (ms^{-1} = vol/Area/sec)
 
-    Parameters specifying locaton of operator
-
-    :param region: Region object where water applied 
-    :param indices: List of triangles where water applied
-    :param  polygon: List of [x,y] points specifying where water applied
-    :param center: [x.y] point of circle where water applied
-    :param radius: radius of circle where water applied
-
-    Parameters specifying rate
-
-    :param rate: scalar, function of (t), (x,y), or (x,y,t), a Quantity, 
-                    a numpy array of size (number_of_triangles), or an xarray with rate at points and time
-    :param factor: scalar to specify conversion from rate argument to m/s
-    :param default_rate: use this rate if outside time interval of rate function or xarray
-
-    Parameters involving communication
-
-    :param description:
-    :param label:
-    :param logging:
-    :param verbose:
-    :param monitor:
-    """
 
     def __init__(self,
                  domain,
@@ -65,6 +39,35 @@ class Rate_operator(Operator):
                  logging = False,
                  verbose = False,
                  monitor = False):
+        """
+Create a Rate_operator that adds water over a region at a specified
+rate (ms^{-1} = vol/Area/sec)
+
+Parameters specifying locaton of operator
+
+:param region: Region object where water applied 
+:param indices: List of triangles where water applied
+:param polygon: List of [x,y] points specifying a polygon where water applied
+:param center: [x.y] point of circle where water applied
+:param radius: radius of circle where water applied
+
+Parameters specifying rate
+
+:param rate: scalar, function of (t), (x,y), or (x,y,t), or a Quantity, 
+                a numpy array of size (number_of_triangles), 
+                or an xarray with rate at points and time
+:param factor: scalar, function of t, or 2 by n numpy array time sequence, 
+                used to specify conversion from rate argument to m/s
+:param default_rate: use this rate if outside time interval of rate function or xarray
+
+Parameters involving communication
+
+:param description:
+:param label:
+:param logging:
+:param verbose:
+:param monitor:
+    """
 
 
 
@@ -98,10 +101,10 @@ class Rate_operator(Operator):
         #--------------------------------
         # Setting up rate
         #--------------------------------
-        self.factor = factor
         self.rate_callable = False
         self.rate_spatial = False
         self.rate_xarray = False
+
 
         #-------------------------------
         # Check if rate is actually an xarray. 
@@ -123,11 +126,25 @@ class Rate_operator(Operator):
         self.set_default_rate(default_rate)
         self.default_rate_invoked = False    # Flag
 
+        #------------------------------
+        # Setting up factor, can be a scalar
+        # or a function of time
+        #------------------------------
+        # FIXME SR: maybe also allow time, factor file or array
+
+        self.factor_callable = False
+        self.set_factor(factor)
+
+
+
         # ----------------
         # Mass tracking
         #-----------------
         self.monitor = monitor
+        self.cumulative_influx = 0.0
         self.local_influx=0.0
+        self.local_max = 0.0
+        self.local_min = 0.0
 
     def __call__(self):
         """
@@ -147,7 +164,7 @@ class Rate_operator(Operator):
 
         t = self.domain.get_time()
         timestep = self.domain.get_timestep()
-        factor = self.factor
+        factor = self.get_factor()
         indices = self.indices
 
 
@@ -174,6 +191,11 @@ class Rate_operator(Operator):
             rate = self.get_non_spatial_rate(t)
 
 
+        factor = self.get_factor(t)
+
+        # We need to adjust the momentums if rate < 0 since otherwise 
+        # the xmom and ymom stay the same but height -> 0 which leads to xvel, yvel -> infty
+        
 
         fid = self.full_indices
         if num.all(rate >= 0.0):
@@ -181,28 +203,60 @@ class Rate_operator(Operator):
             if indices is None:
                 local_rates = factor*timestep*rate
                 self.local_influx = (local_rates*self.areas)[fid].sum()
+
                 self.stage_c[:] = self.stage_c[:] + local_rates
             else:
                 local_rates = factor*timestep*rate
                 self.local_influx=(local_rates*self.areas)[fid].sum()
-                self.stage_c[indices] = self.stage_c[indices] \
-                       + local_rates
+
+                self.stage_c[indices] = self.stage_c[indices] + local_rates
         else: # Be more careful if rate < 0
             if indices is None:
                 #self.local_influx=(num.minimum(factor*timestep*rate, self.stage_c[:]-self.elev_c[:])*self.areas)[fid].sum()
                 #self.stage_c[:] = num.maximum(self.stage_c  \
                 #       + factor*rate*timestep, self.elev_c )
-                local_rates = num.maximum(factor*timestep*rate, self.elev_c[:]-self.stage_c[:])
+                self.height_c[:] = self.stage_c[:] - self.elev_c[:]
+                local_rates = num.maximum(factor*timestep*rate, -self.height_c)
+                local_factors = num.where(local_rates < 0.0, (local_rates+self.height_c)/(self.height_c+1.0e-10), 1.0)
+
+                #print(local_factors, local_rates)
                 self.local_influx = (local_rates*self.areas)[fid].sum()
+
                 self.stage_c[:] = self.stage_c + local_rates
+                self.xmom_c[:] = self.xmom_c[:]*local_factors
+                self.ymom_c[:] = self.ymom_c[:]*local_factors
             else:
                 #self.local_influx=(num.minimum(factor*timestep*rate, self.stage_c[indices]-self.elev_c[indices])*self.areas)[fid].sum()
                 #self.stage_c[indices] = num.maximum(self.stage_c[indices] \
                 #       + factor*rate*timestep, self.elev_c[indices])
 
-                local_rates = num.maximum(factor*timestep*rate, self.elev_c[indices]-self.stage_c[indices])
+                #local_rates = num.maximum(factor*timestep*rate, self.elev_c[indices]-self.stage_c[indices])
+
+                heights = self.stage_c[indices] - self.elev_c[indices]
+                local_rates = num.maximum(factor*timestep*rate, -heights)
+                local_factors = num.where(local_rates < 0.0, (local_rates+heights)/(heights+1.0e-10), 1.0)
+
+                #print(local_factors, local_rates, fid)
+
                 self.local_influx = (local_rates*self.areas)[fid].sum()
+
                 self.stage_c[indices] = self.stage_c[indices] + local_rates
+                self.xmom_c[indices] = self.xmom_c[indices]*local_factors
+                self.ymom_c[indices] = self.ymom_c[indices]*local_factors
+
+
+        try:
+            self.local_max = local_rates[fid].max()/timestep
+            self.local_min = local_rates[fid].min()/timestep
+        except ValueError:
+            self.local_max = 0.0
+            self.local_min = 0.0
+        except:
+            self.local_max = local_rates/timestep
+            self.local_min = local_rates/timestep
+        
+        self.cumulative_influx += self.local_influx
+
         # Update mass inflows from fractional steps
         self.domain.fractional_step_volume_integral+=self.local_influx
         
@@ -314,6 +368,55 @@ class Rate_operator(Operator):
             self.rate_callable = True
             self.rate_spatial = True
 
+
+    def set_factor(self, factor):
+        """Set factor. Can change factor while running
+
+
+        Can be a scalar, a function of t, or an n by 2 numpy array defining a time sequence
+        """
+
+        if isinstance(factor, num.ndarray):
+            factor_shape = factor.shape
+            msg =  f"The shape {factor_shape} of the input factor "
+            msg += f"should be (2,n) so that a time function can be constructed"
+            assert factor_shape[0] == 2, msg
+            self.factor_type = 'time_sequence'
+            from scipy.interpolate import interp1d
+            factor = interp1d(factor[0,:], factor[1,:], kind='zero', bounds_error=False,  fill_value = (0.0, 0.0))
+
+
+        from anuga.utilities.function_utils import determine_function_type
+        self.factor_type = determine_function_type(factor)
+
+
+        self.factor = factor
+
+        if self.factor_type == 'scalar':
+            self.factor_callable = False
+        elif self.factor_type == 't':
+            self.factor_callable = True
+        else:
+            msg = f'factor must be a scalar or a function of t. It was determined to be a function of {self.factor_type}'
+            raise Exception(msg)
+
+    def get_factor(self, t=None):
+        """Provide a factor to calculate added volume
+        """
+
+        if t is None:
+            t = self.get_time()
+
+        assert isinstance(t, (int, float))
+
+
+        if self.factor_type == 'scalar':
+            factor = self.factor
+        else:
+            factor = self.factor(t)
+
+        return factor
+
     def set_areas(self):
 
         if self.indices is None:
@@ -342,36 +445,40 @@ class Rate_operator(Operator):
         """ Calculate current overall discharge
         """
 
+        # FIXME SR: this does not take into account the zeroing of large negative rates
+
+        factor = self.get_factor()
+        
         if full_only:
             if self.rate_spatial:
                 rate = self.get_spatial_rate() # rate is an array
                 fid = self.full_indices
-                return num.sum(self.areas[fid]*rate[fid])*self.factor
+                return num.sum(self.areas[fid]*rate[fid])*factor
             elif self.rate_type == 'quantity':
                 rate = self.rate.centroid_values # rate is a quantity
                 fid = self.full_indices
-                return num.sum(self.areas[fid]*rate[fid])*self.factor
+                return num.sum(self.areas[fid]*rate[fid])*factor
             elif self.rate_type == 'centroid_array':
                 rate = self.rate # rate is already a centroid sized array
                 fid = self.full_indices
-                return num.sum(self.areas[fid]*rate[fid])*self.factor
+                return num.sum(self.areas[fid]*rate[fid])*factor
             else:
                 rate = self.get_non_spatial_rate() # rate is a scalar
                 fid = self.full_indices
-                return num.sum(self.areas[fid]*rate)*self.factor
+                return num.sum(self.areas[fid]*rate)*factor
         else:
             if self.rate_spatial:
                 rate = self.get_spatial_rate() # rate is an array
-                return num.sum(self.areas*rate)*self.factor
+                return num.sum(self.areas*rate)*factor
             elif self.rate_type == 'quantity':
                 rate = self.rate.centroid_values # rate is a quantity
-                return num.sum(self.areas*rate)*self.factor
+                return num.sum(self.areas*rate)*factor
             elif self.rate_type == 'centroid_array':
                 rate = self.rate # rate is already a centroid sized array
-                return num.sum(self.areas*rate)*self.factor
+                return num.sum(self.areas*rate)*factor
             else:
                 rate = self.get_non_spatial_rate() # rate is a scalar
-                return num.sum(self.areas*rate)*self.factor
+                return num.sum(self.areas*rate)*factor
 
     def set_default_rate(self, default_rate):
         """
@@ -404,9 +511,12 @@ class Rate_operator(Operator):
     def _prepare_xarray_rate(self, xa):
 
         import numpy as np
+        import pandas
 
         # to speed up parallel code it helps to load the xarray
         self.xa = xa.load()
+
+        self.xa['time'] = pandas.to_datetime(xa['time'], utc=True)
 
         # these are absolute coord (since we haven't implemented offsets)
         # Convert to relative coords to domain xllcorner and yllcorner
@@ -417,17 +527,19 @@ class Rate_operator(Operator):
 
 
         # Determine data timestep from xarray. We assume the timestep is constant, so just test first 2 timeslices.
-        data_dt = (self.xa['time'][1].values.astype('int64')-self.xa['time'][0].values.astype('int64'))/1.0e9
-        self.domain.set_evolve_max_timestep(min(data_dt, self.domain.get_evolve_max_timestep()))
-
+        try:
+            data_dt = (self.xa['time'][1].values.astype('int64')-self.xa['time'][0].values.astype('int64'))/1.0e9
+            self.domain.set_evolve_max_timestep(min(data_dt, self.domain.get_evolve_max_timestep()))
+        except:  # if we can't determine the timestep probably means there is just one timeslice so just
+            pass
 
         from scipy.spatial import KDTree
         tree = KDTree(self.xy)
         if self.verbose:
             print(tree.size, self.xy.shape)
 
-        #FIXME SR: Is this right or do we need to take into account the xll and yll offsets?
-        dd, ii = tree.query(self.domain.centroid_coordinates)
+        #dd, ii = tree.query(self.domain.centroid_coordinates)
+        dd, ii = tree.query(self.domain.get_centroid_coordinates(absolute=True))
 
         self.ii = ii
 
@@ -438,7 +550,12 @@ class Rate_operator(Operator):
     def _update_Q_xarray(self):
 
         import pandas
-        current_utc_datetime64 = pandas.to_datetime(self.domain.get_datetime()).tz_convert('UTC').replace(tzinfo=None)
+        current_utc_datetime64 = pandas.to_datetime(self.domain.get_datetime()).tz_convert('UTC')#.replace(tzinfo=None)
+
+        if self.verbose:
+            print(f"{self.domain.get_time()} {self.domain.get_datetime()}")
+            print(f"UTC time {current_utc_datetime64} type {type(current_utc_datetime64)} ")
+            print(self.xa.sel(time=current_utc_datetime64, method='nearest'))
       
         try:
             Q_ref = self.xa.sel(time=current_utc_datetime64, method="ffill", tolerance='5m')
@@ -480,38 +597,45 @@ class Rate_operator(Operator):
 
     def timestepping_statistics(self):
 
-        if self.rate_spatial:
-            rate = self.get_spatial_rate()
-            try:
-                min_rate = num.min(rate)
-            except ValueError:
-                min_rate = 0.0
-            try:
-                max_rate = num.max(rate)
-            except ValueError:
-                max_rate = 0.0
+        # retrieve data from last __call__ call
+        message  = indent + self.label + ': Min rate = %g m/s, Max rate = %g m/s, Total Q = %g m^3'% (self.local_min, self.local_max, self.local_influx)
 
-            Q = self.get_Q()
-            message  = indent + self.label + ': Min rate = %g m/s, Max rate = %g m/s, Total Q = %g m^3/s'% (min_rate,max_rate, Q)
 
-        elif self.rate_type == 'quantity':
-            rate = self.get_non_spatial_rate() # return quantity
-            min_rate = rate.get_minimum_value()
-            max_rate = rate.get_maximum_value()
-            Q = self.get_Q()
-            message  = indent + self.label + ': Min rate = %g m/s, Max rate = %g m/s, Total Q = %g m^3/s'% (min_rate,max_rate, Q)
+        # if self.rate_spatial:
+        #     rate = self.get_spatial_rate()
+        #     try:
+        #         min_rate = num.min(rate)
+        #     except ValueError:
+        #         min_rate = 0.0
+        #     try:
+        #         max_rate = num.max(rate)
+        #     except ValueError:
+        #         max_rate = 0.0
 
-        elif self.rate_type == 'centroid_array':
-            rate = self.get_non_spatial_rate() # return centroid_array
-            min_rate = rate.min()
-            max_rate = rate.max()
-            Q = self.get_Q()
-            message  = indent + self.label + ': Min rate = %g m/s, Max rate = %g m/s, Total Q = %g m^3/s'% (min_rate,max_rate, Q)
+        #     Q = self.get_Q()
+        #     message  = indent + self.label + ': Min rate = %g m/s, Max rate = %g m/s, Total Q = %g m^3/s'% (min_rate,max_rate, Q)
 
-        else:
-            rate = self.get_non_spatial_rate()
-            Q = self.get_Q()
-            message  = indent + self.label + ': Rate = %g m/s, Total Q = %g m^3/s' % (rate, Q)
+        # elif self.rate_type == 'quantity':
+        #     rate = self.get_non_spatial_rate() # return quantity
+        #     min_rate = rate.get_minimum_value()
+        #     max_rate = rate.get_maximum_value()
+        #     Q = self.get_Q()
+        #     message  = indent + self.label + ': Min rate = %g m/s, Max rate = %g m/s, Total Q = %g m^3/s'% (min_rate,max_rate, Q)
+
+        # elif self.rate_type == 'centroid_array':
+        #     rate = self.get_non_spatial_rate() # return centroid_array
+        #     min_rate = rate.min()
+        #     max_rate = rate.max()
+        #     Q = self.get_Q()
+        #     message  = indent + self.label + ': Min rate = %g m/s, Max rate = %g m/s, Total Q = %g m^3/s'% (min_rate,max_rate, Q)
+
+        # else:
+        #     rate = self.get_non_spatial_rate()
+        #     Q = self.get_Q()
+        #     message  = indent + self.label + ': Rate = %g m/s, Total Q = %g m^3/s' % (rate, Q)
+
+
+        #print(message)
 
         return message
 

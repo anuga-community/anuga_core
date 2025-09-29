@@ -64,6 +64,7 @@ def current_datetime():
     from datetime import datetime
     return datetime.now().strftime("%Y%m%d_%H%M%S%z")
 
+
 log_filename = os.path.join('.', f'anuga_{current_datetime()}.log')
 
 # set module variables so users don't have to do 'import logging'.
@@ -159,9 +160,7 @@ def log(msg, level=None):
 
     # why are we here? ... Oh yes! Log the message!
     if _new_python:
-        #FIXME SR: On 2022/12/20 got an error due to the extra argument
         logging.log(level, msg, extra={'mname': fname, 'lnum': lnum})
-        #logging.log(level, msg)
     else:
         logging.log(level, msg)
 

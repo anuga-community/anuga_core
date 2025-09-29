@@ -2106,7 +2106,7 @@ class Test_Urs2Sts(Test_Mux):
         
             time_vec = Bf.F.get_time()
             assert num.allclose(Bf.F.starttime, starttime)            
-            assert num.alltrue(time_vec < time_limit)
+            assert num.all(time_vec < time_limit)
             
             
         try:    
@@ -2124,6 +2124,6 @@ class Test_Urs2Sts(Test_Mux):
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_Urs2Sts,'test')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_Urs2Sts)
     runner = unittest.TextTestRunner()
     runner.run(suite)

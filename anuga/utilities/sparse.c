@@ -11,16 +11,18 @@
 	
 #include "math.h"
 #include "stdio.h"
+#include <stdint.h>
+#include "anuga_typedefs.h"
 
 //Matrix-vector routine
-int _csr_mv(int M,
+anuga_int _csr_mv(anuga_int M,
 	    double* data, 
-	    long* colind,
-	    long* row_ptr,
+	    anuga_int* colind,
+	    anuga_int* row_ptr,
 	    double* x,
 	    double* y) {
   		
-  long i, j, ckey;
+  anuga_int i, j, ckey;
 
   for (i=0; i<M; i++ ) 
     for (ckey=row_ptr[i]; ckey<row_ptr[i+1]; ckey++) {
@@ -32,15 +34,15 @@ int _csr_mv(int M,
 }            
 
 //Matrix-matrix routine
-int _csr_mm(int M,
-	    int columns, 
+anuga_int _csr_mm(anuga_int M,
+	    anuga_int columns, 
 	    double* data, 
-	    long* colind,
-	    long* row_ptr,
+	    anuga_int* colind,
+	    anuga_int* row_ptr,
 	    double* x,
 	    double* y) {
   		
-  long i, j, ckey, c, rowind_i, rowind_j;
+  anuga_int i, j, ckey, c, rowind_i, rowind_j;
 
   for (i=0; i<M; i++ ) {
     rowind_i = i*columns;

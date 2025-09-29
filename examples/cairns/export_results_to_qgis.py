@@ -8,7 +8,7 @@ scenario = 'fixed_wave'
 #scenario = 'slide'
 name = 'cairns_' + scenario
 
-print 'output dir:', name
+print('output dir:', name)
 
 """
 Produce .tif files extracting results of cairns simulation.
