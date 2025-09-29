@@ -6,6 +6,8 @@ project('anuga', 'c', 'cpp', 'cython', version: run_command('python', ['-c', 'im
 
 add_project_arguments('-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', language: 'cpp')
 add_project_arguments('-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', language: 'c')
+add_project_arguments(['-mp=gpu', '-target=gpu', '-acc'], language: ['c', 'cpp'])
+add_project_link_arguments(['-mp=gpu', '-target=gpu', '-acc'], language: ['c', 'cpp'])
 
 py3 = import('python').find_installation(pure: false)
 
@@ -59,7 +61,8 @@ if openmp.found()
  
   #if host_machine.system() == 'windows'
   
-  openmp_c_args = ['-O3', '-march=native', '-fopenmp', '-g']
+  #openmp_c_args = ['-O3', '-march=native', '-fopenmp', '-g']
+  openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g', '-gpu=cc70']
   # openmp_c_args = ['-O3', '-march=native','-funroll-loops', '-fvectorize', '-Rpass=loop-vectorize', '-Rpass=loop-unroll', '-g'],
   # openmp_c_args = ['-O3', '-march=native', openmp_flag, '-g'],
 

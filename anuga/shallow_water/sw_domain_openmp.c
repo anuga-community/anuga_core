@@ -476,6 +476,8 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
     base_call = call;
   }
 
+
+  anuga_int boundary_length = D->boundary_length;
   // Which substep of the timestepping method are we on?
   substep_count = (call - base_call) % D->timestep_fluxcalls;
 
@@ -487,10 +489,31 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
       double pressure_flux;
       double max_speed_local;
       EdgeData edge_data;
+
 // For all triangles
-#pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, number_of_elements) \
-    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)                              \
-    private(edgeflux, pressure_flux, max_speed_local, edge_data) \
+//#pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, number_of_elements) \
+//    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)                              \
+//    private(edgeflux, pressure_flux, max_speed_local, edge_data) \
+//    reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
+#pragma omp target teams distribute parallel for default(none) schedule(static) shared(D, substep_count, number_of_elements) \
+    map(tofrom:D[0:1])\
+    map(tofrom:D->stage_explicit_update[0:number_of_elements], D->xmom_explicit_update[0:number_of_elements]) \
+    map(tofrom:D->ymom_explicit_update[0:number_of_elements],  D->tri_full_flag[0:number_of_elements])\
+    map(tofrom:D->radii[0:number_of_elements],  D->normals[0:6*number_of_elements])\
+    map(tofrom:D->areas[0:number_of_elements],  D->boundary_flux_sum[0:3])\
+    map(tofrom:D->stage_centroid_values[0:number_of_elements])\
+    map(tofrom:D->stage_edge_values[0:3*number_of_elements],D->xmom_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->ymom_edge_values[0:3*number_of_elements],D->bed_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->height_edge_values[0:3*number_of_elements],D->edgelengths[0:3*number_of_elements])\
+    map(tofrom:D->neighbours[0:3*number_of_elements],D->height_centroid_values[0:number_of_elements])\
+    map(tofrom:D->bed_centroid_values[0:number_of_elements],D->stage_boundary_values[0:boundary_length])\
+    map(tofrom:D->xmom_boundary_values[0:boundary_length],D->ymom_boundary_values[0:boundary_length])\
+    map(tofrom:D->neighbour_edges[0:3 * number_of_elements],D->edge_flux_type[0: 3*number_of_elements])\
+    map(tofrom:D->edge_river_wall_counter[0:3*number_of_elements],D->riverwall_elevation[0:1])\
+    map(tofrom:D->riverwall_rowIndex[0:1])\
+    map(tofrom:D->max_speed[0:number_of_elements])\
+    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)\
+    private(edgeflux, pressure_flux, edge_data, max_speed_local) \
     reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
   for (anuga_int k = 0; k < number_of_elements; k++)
   {
