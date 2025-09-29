@@ -2484,6 +2484,7 @@ void _openmp_set_omp_num_threads(anuga_int num_threads)
   // This is a global setting and will affect all subsequent OpenMP parallel regions
   omp_set_num_threads(num_threads);
 }
+
 void _openmp_evaluate_reflective_segment(struct domain *D, anuga_int N,
    anuga_int *edge_segment, anuga_int *vol_ids, anuga_int *edge_ids){
 

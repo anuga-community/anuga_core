@@ -14,7 +14,7 @@ dependencies:
   - matplotlib
   - meshpy
   - meson
-  - meson-python
+  - meson-python=0.17
   - mpi4py
   - netcdf4
   - ninja
@@ -27,6 +27,7 @@ dependencies:
   - pyproj
   - pytest
   - scipy
+  - toml
   - utm
   - wheel
   - xarray

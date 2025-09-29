@@ -7,21 +7,23 @@ requires = [
     "Cython",   
     "pybind11",
     "numpy",
+    "toml",
     "libpython; sys_platform == 'win32'",
 ]
 
 [project]
 name = 'anuga'
-version = '3.2.0dev'
+version = '3.2.1dev'
 description = 'A set of python modules for tsunami and flood modelling'
 readme = 'README.rst'
-license = 'Apache-2.0'
+license-files = ["LICENSE.txt"]
+license = "Apache-2.0"
 authors = [
   {name = 'Stephen Roberts', email = 'stephen.roberts@anu.edu.au'},
 ]
 requires-python = ">3.8, <3.14"
 dependencies = [
-    'numpy>=1.24.0',
+    'numpy>=2.0.0',
 ]
 classifiers = [
     'Intended Audience :: Science/Research',
@@ -44,7 +46,7 @@ classifiers = [
 
 [project.urls]
 homepage      = "https://en.wikipedia.org/wiki/ANUGA_Hydro"
-documentation = "https://anuga-viewer.readthedocs.io"
+documentation = "https://anuga.readthedocs.io"
 source        = "https://github.com/anuga-community/anuga_core"
 download      = "https://github.com/anuga-community/anuga_core/releases"
 tracker       = "https://github.com/anuga-community/anuga_core/issues"
