@@ -64,6 +64,7 @@ def current_datetime():
     from datetime import datetime
     return datetime.now().strftime("%Y%m%d_%H%M%S%z")
 
+
 log_filename = os.path.join('.', f'anuga_{current_datetime()}.log')
 
 # set module variables so users don't have to do 'import logging'.

@@ -42,7 +42,6 @@ def csr_mv(object csr_sparse, np.ndarray x not None):
 	else:
 
 		raise ValueError("Allowed dimensions in sparse_ext restricted to 1 or 2")
-		return None
 
 	return y
 

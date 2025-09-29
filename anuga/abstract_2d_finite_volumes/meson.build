@@ -68,7 +68,6 @@ python_sources = [
   '__init__.py',
   'mesh_factory.py',
   'neighbour_mesh.py',
-  'old_setup.py',
   'pmesh2domain.py',
   'quantity.py',
   'region.py',

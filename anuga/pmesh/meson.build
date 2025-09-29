@@ -8,7 +8,6 @@ python_sources = [
   'mesh.py',
   'mesh_quadtree.py',
   'ProgressBar.py',
-  'setup.py',
   'timing.py',
   'toolbarbutton.py',
   'ungen_example.py',

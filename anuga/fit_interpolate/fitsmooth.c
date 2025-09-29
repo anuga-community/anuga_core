@@ -4,7 +4,6 @@
 #include <stdio.h>   /* gets */
 #include <stdlib.h>  /* atoi, malloc */
 #include <string.h>  /* strcpy */
-#include <stdint.h>  /* uanuga_int */
 #include "math.h"
 
 #include "sparse_dok.h" /* in utilities */
@@ -28,11 +27,10 @@
 // of a variables from scattered data points to a mesh. See fit.py for more details.s
 anuga_int _build_smoothing_matrix(anuga_int n,
                       anuga_int* triangles,
-        		      double* areas,
+        		          double* areas,
                       double* vertex_coordinates,
                       anuga_int* strides,
-                      sparse_dok * smoothing_mat)
-		      {
+                      sparse_dok * smoothing_mat){
 
 
     anuga_int k;

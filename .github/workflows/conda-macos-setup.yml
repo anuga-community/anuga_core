@@ -13,7 +13,7 @@ jobs:
         os: ["macos-latest"]
         python-version: ["3.11"]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
       - uses: conda-incubator/setup-miniconda@v3
         with:
           auto-update-conda: true
@@ -31,6 +31,12 @@ jobs:
         run: |
           conda install -c conda-forge -n anuga_env libpython m2w64-toolchain
 
+      - name: Install clang with openmp compiler on macOS
+        if: runner.os == 'macOS'
+        shell: bash -el {0}
+        run: |
+           conda install -c conda-forge -n anuga_env cxx-compiler llvm-openmp
+
       - name: Install package
         shell: bash -el {0}
         run: |
@@ -42,4 +48,4 @@ jobs:
         run: |
           conda activate anuga_env
           cd ..
-          pytest -p no:faulthandler -q --pyargs anuga
+          pytest --pyargs anuga
