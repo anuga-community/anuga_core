@@ -11,6 +11,11 @@
 	
 #include "math.h"
 #include <stdio.h>
+#include <stdlib.h>
+#include <stdint.h>
+#include <inttypes.h>
+#include "anuga_typedefs.h"
+#include "anuga_runtime.h"
 
 
 #ifndef ANUGA_UTIL_EXT_H
@@ -22,16 +27,16 @@
 #define AT __FILE__ ":" TOSTRING(__LINE__)
 #define P_ERROR_BUFFER_SIZE 100
 
-
-double max(double x, double y) {  
+// provided by stdlib.h 
+double anuga_max(double x, double y) {  
   //Return maximum of two doubles
   
   if (x > y) return x;
   else return y;
 }
 
-
-double min(double x, double y) {  
+// provided by stdlib.h
+double anuga_min(double x, double y) {  
   //Return minimum of two doubles
   
   if (x < y) return x;
@@ -47,11 +52,11 @@ double sign(double x) {
   else return 0.0;
 }
 
-int _gradient(double x0, double y0, 
-	      double x1, double y1, 
-	      double x2, double y2, 
-	      double q0, double q1, double q2, 
-	      double *a, double *b) {
+anuga_int _gradient(const double x0, const double y0, 
+	      const double x1, const double y1, 
+	      const double x2, const double y2, 
+	      const double q0, const double q1, const double q2, 
+	      double * __restrict a, double * __restrict b) {
 	      
   /*Compute gradient (a,b) based on three points (x0,y0), (x1,y1) and (x2,y2) 
   with values q0, q1 and q2.
@@ -76,8 +81,6 @@ int _gradient(double x0, double y0,
   which is solved using the standard determinant technique    
       
   */
-	      
-
   double det;
   
   det = (y2-y0)*(x1-x0) - (y1-y0)*(x2-x0);
@@ -92,7 +95,7 @@ int _gradient(double x0, double y0,
 }
 
 
-int _gradient2(double x0, double y0, 
+anuga_int _gradient2(double x0, double y0, 
 	       double x1, double y1, 
 	       double q0, double q1, 
 	       double *a, double *b) {
@@ -148,43 +151,40 @@ int _gradient2(double x0, double y0,
 }
 
 
-void _limit_old(int N, double beta, double* qc, double* qv, 
-	    double* qmin, double* qmax) { 
 
-  //N are the number of elements
-  int k, i, k3;
-  double dq, dqa[3], phi, r;
-  
-  //printf("INSIDE\n");
-  for (k=0; k<N; k++) {
-    k3 = k*3;
-    
-    //Find the gradient limiter (phi) across vertices  
-    phi = 1.0;
-    for (i=0; i<3; i++) {    
-      r = 1.0;
-      
-      dq = qv[k3+i] - qc[k];    //Delta between vertex and centroid values
-      dqa[i] = dq;              //Save dq for use in the next loop
-      
-      if (dq > 0.0) r = (qmax[k] - qc[k])/dq;
-      if (dq < 0.0) r = (qmin[k] - qc[k])/dq;      
-  
-  
-      phi = min( min(r*beta, 1.0), phi);    
-    }
-    
-    //Then update using phi limiter
-    for (i=0; i<3; i++) {    
-      qv[k3+i] = qc[k] + phi*dqa[i];
-    }
+void _limit_old(anuga_int N, double beta,
+                double* __restrict qc,
+                double* __restrict qv,
+                double* __restrict qmin,
+                double* __restrict qmax)
+{
+  for (anuga_int k = 0; k < N; ++k) {
+    anuga_int k3 = k * 3;
+
+    double dq0 = qv[k3 + 0] - qc[k];
+    double dq1 = qv[k3 + 1] - qc[k];
+    double dq2 = qv[k3 + 2] - qc[k];
+
+    double r0 = (dq0 > 0.0) ? (qmax[k] - qc[k]) / dq0 :
+                (dq0 < 0.0) ? (qmin[k] - qc[k]) / dq0 : 1.0;
+    double r1 = (dq1 > 0.0) ? (qmax[k] - qc[k]) / dq1 :
+                (dq1 < 0.0) ? (qmin[k] - qc[k]) / dq1 : 1.0;
+    double r2 = (dq2 > 0.0) ? (qmax[k] - qc[k]) / dq2 :
+                (dq2 < 0.0) ? (qmin[k] - qc[k]) / dq2 : 1.0;
+
+    double phi = fmin(fmin(fmin(r0 * beta, r1 * beta), r2 * beta), 1.0);
+
+    qv[k3 + 0] = qc[k] + phi * dq0;
+    qv[k3 + 1] = qc[k] + phi * dq1;
+    qv[k3 + 2] = qc[k] + phi * dq2;
   }
 }
 
 
-void  print_double_array(char* name, double* array, int n, int m){
 
-    int k,i,km;
+void  print_double_array(char* name, double* array, anuga_int n, anuga_int m){
+
+    anuga_int k,i,km;
 
     printf("%s = [",name);
     for (k=0; k<n; k++){
@@ -201,9 +201,9 @@ void  print_double_array(char* name, double* array, int n, int m){
     printf("]\n");
 }
 
-void  print_int_array(char* name, int* array, int n, int m){
+void  print_int_array(char* name, int32_t* array, anuga_int n, anuga_int m){
 
-    int k,i,km;
+    anuga_int k,i,km;
 
     printf("%s = [",name);
     for (k=0; k<n; k++){
@@ -221,16 +221,16 @@ void  print_int_array(char* name, int* array, int n, int m){
 }
 
 
-void  print_long_array(char* name, long* array, int n, int m){
+void  print_long_array(char* name, anuga_int * array, anuga_int n, anuga_int m){
 
-    int k,i,km;
+    anuga_int k,i,km;
 
     printf("%s = [",name);
     for (k=0; k<n; k++){
 	km = m*k;
 	printf("[");
 	for (i=0; i<m ; i++){
-	  printf("%i ",(int) array[km+i]);
+	  printf("%" PRId64 " ",array[km+i]);
 	}
 	if (k==(n-1))
 	    printf("]");

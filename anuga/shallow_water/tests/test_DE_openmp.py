@@ -99,7 +99,7 @@ class Test_DE_openmp(unittest.TestCase):
         #----------------------------------------
         # Now just run the openmp code on domain2
         #----------------------------------------
-        domain2.set_multiprocessor_mode(2)
+        domain2.set_multiprocessor_mode(1)
         timestep = 0.1
 
         domain1.distribute_to_vertices_and_edges()
@@ -250,7 +250,7 @@ class Test_DE_openmp(unittest.TestCase):
         #----------------------------------------
         # Now just run the openmp code on domain2
         #----------------------------------------
-        domain2.set_multiprocessor_mode(2)
+        domain2.set_multiprocessor_mode(1)
         timestep = 0.1
 
         domain1.distribute_to_vertices_and_edges()
@@ -281,6 +281,9 @@ class Test_DE_openmp(unittest.TestCase):
         ymom2 = quantities2["ymomentum"]
 
         max_speed_2 = domain2.max_speed
+
+        print('domain1 max_speed ', num.max(max_speed_1), ' min ', num.min(max_speed_1))
+        print('domain2 max_speed ', num.max(max_speed_2), ' min ', num.min(max_speed_2))
 
 
         print('timestep error              ', abs(timestep1-timestep2))
@@ -327,6 +330,6 @@ class Test_DE_openmp(unittest.TestCase):
   
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_DE_openmp, 'test_runup')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_DE_openmp)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

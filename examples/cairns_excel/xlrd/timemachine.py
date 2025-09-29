@@ -7,7 +7,6 @@
 # Currently supported: 2.6 to 2.7, 3.2+
 # usage: from timemachine import *
 
-from __future__ import print_function
 import sys
 
 python_version = sys.version_info[:2] # e.g. version 2.6 -> (2, 6)

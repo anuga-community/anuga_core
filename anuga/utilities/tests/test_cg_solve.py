@@ -552,7 +552,6 @@ class Test_CG_Solve(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_CG_Solve, 'test')
-    #runner = unittest.TextTestRunner(verbosity=2)
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_CG_Solve)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

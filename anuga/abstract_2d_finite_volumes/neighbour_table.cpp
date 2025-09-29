@@ -1,6 +1,9 @@
 #include <cstdio>   /* gets */
 #include <cstdlib>  /* atoi, malloc */
 #include <cstring>  /* strcpy */
+#include <cstdint>  /* anuga_int anuga_uint */
+#include "anuga_typedefs.h"
+
 //#include <cmath>    /* math!!! */
 
 // Hack to avoid ::hypot error using mingw on windows
@@ -19,18 +22,17 @@
 // basic type used for keys and counters
 // should be the same type as triangle/coordinate ids
 // used by the passed in arrays.
-typedef long keyint;
 
 struct edge_key_t {
-    keyint i;
-    keyint j;
+    anuga_int i;
+    anuga_int j;
     bool operator==(const edge_key_t & other) const {
         return i == other.i && j == other.j;
     }
 };
 
 // Bitmixer from MurmurHash3
-uint64_t bitmix( uint64_t key )
+anuga_uint bitmix( anuga_uint key )
 {
   key ^= (key >> 33);
   key *= 0xff51afd7ed558ccd;
@@ -52,25 +54,25 @@ namespace std {
 }
 
 struct edge_t {
-    keyint vol_id;                /* id of vol containing this edge */
-    keyint edge_id;               /* edge_id of edge in this vol */
+    anuga_int vol_id;                /* id of vol containing this edge */
+    anuga_int edge_id;               /* edge_id of edge in this vol */
 };
 
 //==============================================================================
 // Code to calculate neighbour structure
 //==============================================================================
-int _build_neighbour_structure(keyint N, keyint M,
-                      long* triangles,
-		      long* neighbours,
-                      long* neighbour_edges,
-                      long* number_of_boundaries)
+anuga_int _build_neighbour_structure(anuga_int N, anuga_int M,
+                      anuga_int* triangles,
+		              anuga_int* neighbours,
+                      anuga_int* neighbour_edges,
+                      anuga_int* number_of_boundaries)
 		      {
-    keyint k;
-    keyint k3;
-    keyint n0,n1,n2;
-    keyint vol_id;
-    keyint edge_id;
-    int err = 0;
+    anuga_int k;
+    anuga_int k3;
+    anuga_int n0,n1,n2;
+    anuga_int vol_id;
+    anuga_int edge_id;
+    anuga_int err = 0;
     edge_key_t key;
 
     std::unordered_map<edge_key_t,edge_t> edgetable;

@@ -1,22 +1,23 @@
 """  Test environmental forcing - rain, wind, etc.
 """
 
-import unittest, os
+import unittest, os, sys
 
 import anuga
 
 from anuga import Reflective_boundary
 from anuga import rectangular_cross_domain
-
 from anuga import Domain
 
 import numpy as num
 import warnings
 import time
 import math
+import pytest
 
 
-
+@pytest.mark.skipif('cupy' not in sys.modules,
+                    reason="requires the cupy module")
 class Test_DE_cuda(unittest.TestCase):
     def setUp(self):
         pass
@@ -79,10 +80,10 @@ class Test_DE_cuda(unittest.TestCase):
 
 
         domain1 = create_domain('domain_original')
-        domain1.set_multiprocessor_mode(0)
+        domain1.set_multiprocessor_mode(1)
 
         domain2 = create_domain('domain_cuda')
-        domain2.set_multiprocessor_mode(0) # will change to 2 once burn in
+        domain2.set_multiprocessor_mode(1) # will change to 2 once burn in
 
         #------------------------------
         #Evolve the system through time
@@ -98,7 +99,7 @@ class Test_DE_cuda(unittest.TestCase):
         #----------------------------------------
         # Now just run the cuda code on domain2
         #----------------------------------------
-        domain2.set_multiprocessor_mode(4)
+        domain2.set_multiprocessor_mode(2)
         timestep = 0.1
 
         domain1.distribute_to_vertices_and_edges()
@@ -233,10 +234,10 @@ class Test_DE_cuda(unittest.TestCase):
 
 
         domain1 = create_domain('domain_original')
-        domain1.set_multiprocessor_mode(0)
+        domain1.set_multiprocessor_mode(1)
 
         domain2 = create_domain('domain_cuda')
-        domain2.set_multiprocessor_mode(0) # will change to 4 once burn in
+        domain2.set_multiprocessor_mode(1) # will change to 4 once burn in
 
         #------------------------------
         #Evolve the system through time
@@ -253,7 +254,7 @@ class Test_DE_cuda(unittest.TestCase):
        #----------------------------------------
         # Now just run the cuda code on domain2
         #----------------------------------------
-        domain2.set_multiprocessor_mode(4)
+        domain2.set_multiprocessor_mode(2)
         timestep = 0.1
 
         domain1.distribute_to_vertices_and_edges()
@@ -314,6 +315,6 @@ class Test_DE_cuda(unittest.TestCase):
         #pprint.pprint(domain2.edge_timestep)    
 
 if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_DE_cuda, 'test_')
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_DE_cuda)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)

@@ -403,6 +403,7 @@ class Parallel_Structure_operator(anuga.Operator):
             gain = outflow_extra_depth*outflow_area
 
             # Update Stats
+            self.accumulated_flow += gain
             self.discharge  = Q*timestep_star/timestep #outflow_extra_depth*self.outflow.get_area()/timestep
             self.discharge_abs_timemean += Q*timestep_star/self.domain.yieldstep
             self.velocity = barrel_speed #self.discharge/outlet_depth/self.width

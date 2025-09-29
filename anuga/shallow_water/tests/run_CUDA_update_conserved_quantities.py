@@ -179,7 +179,7 @@ ymom1_centroid_values_before = num.copy(ymom1.centroid_values)
 ymom2_centroid_values_before = num.copy(ymom2.centroid_values)
 
 
-nvtxRangePush('update conserved quantities kernal : domain2')
+nvtxRangePush('update conserved quantities kernel : domain2')
 num_negative_ids = gpu_domain2.update_conserved_quantities_kernal()
 
 print('num_negative_ids => ', num_negative_ids)

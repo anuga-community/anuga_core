@@ -66,7 +66,7 @@ Reference:
     See also: https://anuga.anu.edu.au and https://en.wikipedia.org/wiki/ANUGA_Hydro
 
 
-Constraints: See GPL license in the user guide
+Constraints: See license in the user guide
 """
 
 
@@ -95,6 +95,11 @@ import numpy as num
 import sys
 import os
 import time
+
+try:
+    from zoneinfo import ZoneInfo
+except ImportError:
+    from backports.zoneinfo import ZoneInfo
 
 try:
     import dill as pickle
@@ -295,6 +300,7 @@ class Domain(Generic_Domain):
         #-------------------------------
         self.fractional_step_operators = []
         self.kv_operator = None
+        self.dplotter = None
 
         #-------------------------------
         # Set flow defaults
@@ -302,15 +308,19 @@ class Domain(Generic_Domain):
         self.set_flow_algorithm()
 
         #-------------------------------
-        # Set multiprocessor mode
-        # 0. original with local timestep
-        # 1. simd code used by modes 2,3,4
-        # 2. Openmp
-        # 3. Openacc
-        # 4. Cuda
+        # Set default multiprocessor mode
+        # 1. Openmp
+        # 2. Cuda
         #-------------------------------
         self.gpu_interface = None
-        self.set_multiprocessor_mode(1)
+        self.set_multiprocessor_mode(1)  # Default to OpenMP
+
+        #-------------------------------
+        # If environment variable OMP_NUM_THREADS is not set, 
+        # then set to default (1 thread). If a value is given to
+        # the method, then it will override the default.
+        #------------------------------
+        self.set_omp_num_threads()
 
         #-------------------------------
         # datetime and timezone
@@ -323,7 +333,8 @@ class Domain(Generic_Domain):
         # Gravity is now incorporated in
         # compute_fluxes routine
         #-------------------------------
-        self.forcing_terms.append(manning_friction_implicit)
+        from .friction import manning_friction_semi_implicit
+        self.forcing_terms.append(manning_friction_semi_implicit)
 
 
         #-------------------------------
@@ -369,6 +380,7 @@ class Domain(Generic_Domain):
         # Presently only works with DE algorithms, will fail otherwise
         import anuga.structures.riverwall
         self.riverwallData=anuga.structures.riverwall.RiverWall(self)
+        self.create_riverwalls = self.riverwallData.create_riverwalls
 
         ## Keep track of the fluxes through the boundaries
         ## Only works for DE algorithms at present
@@ -416,6 +428,64 @@ class Domain(Generic_Domain):
         # Do we allow the timestep to increase (not every time if local
         # extrapolation/flux updating is used)
         self.allow_timestep_increase=num.zeros(1).astype(int)+1
+
+
+        #-----------------------------------
+        # parameters for structures
+        #-----------------------------------
+        self.use_new_velocity_head = False
+
+
+
+    def set_plotter(self, *args, **kwargs):
+        """Set the plotter for this domain
+        """
+        
+        if self.dplotter is None:
+            import anuga
+            self.dplotter = anuga.Domain_plotter(self, *args, **kwargs) 
+
+        self.triang = self.dplotter.triang
+        self.stage = self.dplotter.stage
+        self.xmom = self.dplotter.xmom
+        self.ymom = self.dplotter.ymom
+        self.elev = self.dplotter.elev
+        self.friction = self.dplotter.friction
+        self.xvel = self.dplotter.xvel
+        self.yvel = self.dplotter.yvel
+        self.x = self.dplotter.x
+        self.y = self.dplotter.y
+        self.xc = self.dplotter.xc
+        self.yc = self.dplotter.yc
+
+        self.save_depth_frame = self.dplotter.save_depth_frame
+        self.plot_depth_frame = self.dplotter.plot_depth_frame
+        self.make_depth_animation = self.dplotter.make_depth_animation
+
+        self.save_stage_frame = self.dplotter.save_stage_frame
+        self.plot_stage_frame = self.dplotter.plot_stage_frame
+        self.make_stage_animation = self.dplotter.make_stage_animation        
+
+        self.save_speed_frame = self.dplotter.save_speed_frame
+        self.plot_speed_frame = self.dplotter.plot_speed_frame
+        self.make_speed_animation = self.dplotter.make_speed_animation        
+
+        
+    def triplot(self, *args, **kwargs):
+
+        self.set_plotter()
+
+        import matplotlib.pyplot as plt
+        plt.triplot(self.triang, *args, **kwargs)
+
+
+    def tripcolor(self, *args, **kwargs):
+
+        self.set_plotter()
+
+        import matplotlib.pyplot as plt
+        plt.tripcolor(self.triang,  *args, **kwargs)
+
 
     def _set_config_defaults(self):
         """Set the default values in this routine. That way we can inherit class
@@ -909,17 +979,20 @@ class Domain(Generic_Domain):
         param: timestamp: return datetime corresponding to given timestamp"""
 
         from datetime import datetime
-
+        
         try:
-            from zoneinfo import ZoneInfo
+            from datetime import UTC
         except:
-            from backports.zoneinfo import ZoneInfo
+            from datetime import timezone
+            UTC = timezone.utc 
 
 
         if timestamp is None:
             timestamp = self.get_time()
 
-        utc_datetime = datetime.utcfromtimestamp(timestamp).replace(tzinfo=ZoneInfo('UTC'))
+        #utc_datetime = datetime.utcfromtimestamp(timestamp).replace(tzinfo=ZoneInfo('UTC'))
+        utc_datetime = datetime.fromtimestamp(timestamp,UTC)
+
         current_dt = utc_datetime.astimezone(self.timezone)
         return current_dt
 
@@ -1186,7 +1259,7 @@ class Domain(Generic_Domain):
 
 
 
-    def set_flow_algorithm(self, flag='DE0'):
+    def set_flow_algorithm(self, algorithm='DE0'):
         """Set combination of slope limiting and time stepping
 
         Currently
@@ -1197,18 +1270,17 @@ class Domain(Generic_Domain):
            DE1_7
         """
 
-        # FIXME(Ole): flag should be called algorithm ;-)
-        flag = str(flag)
+        algorithm = str(algorithm)
 
         # Replace any dots with dashes
-        flag = flag.replace('.', '_')
+        algorithm = algorithm.replace('.', '_')
 
 
         flow_algorithms = ['DE0', 'DE1', 'DE2', \
                            'DE0_7', 'DE1_7']
 
-        if flag in flow_algorithms:
-            self.flow_algorithm = flag
+        if algorithm in flow_algorithms:
+            self.flow_algorithm = algorithm
         else:
             msg = 'Unknown flow_algorithm. \nPossible choices are:\n'+ \
             ', '.join(flow_algorithms)+'.'
@@ -1239,22 +1311,22 @@ class Domain(Generic_Domain):
         return self.flow_algorithm
 
 
-    def set_gravity_method(self):
-        """Gravity method is determined by the compute_fluxes_method
-        This is now not used, as gravity is combine in the compute_fluxes method
-        """
+    # def set_gravity_method(self):
+    #     """Gravity method is determined by the compute_fluxes_method
+    #     This is now not used, as gravity is combine in the compute_fluxes method
+    #     """
 
-        if  self.get_compute_fluxes_method() == 'original':
-            self.forcing_terms[0] = gravity
+    #     if  self.get_compute_fluxes_method() == 'original':
+    #         self.forcing_terms[0] = gravity
 
-        elif self.get_compute_fluxes_method() == 'wb_1':
-            self.forcing_terms[0] = gravity_wb
+    #     elif self.get_compute_fluxes_method() == 'wb_1':
+    #         self.forcing_terms[0] = gravity_wb
 
-        elif self.get_compute_fluxes_method() == 'wb_2':
-            self.forcing_terms[0] = gravity
+    #     elif self.get_compute_fluxes_method() == 'wb_2':
+    #         self.forcing_terms[0] = gravity
 
-        else:
-            raise Exception('undefined compute_fluxes method')
+    #     else:
+    #         raise Exception('undefined compute_fluxes method')
 
     def set_extrapolate_velocity(self, flag=True):
         """ Extrapolation routine uses momentum by default,
@@ -1783,16 +1855,10 @@ class Domain(Generic_Domain):
         # procedure
 
         # nvtxRangePush("Compute Fluxes (Domain)")
-
-        if self.multiprocessor_mode == 0:
-            from .sw_domain_orig_ext import compute_fluxes_ext_central
-        elif self.multiprocessor_mode == 1:
-            from .sw_domain_simd_ext import compute_fluxes_ext_central
-        elif self.multiprocessor_mode == 2:
+        # Choose the correct extension module
+        if self.multiprocessor_mode == 1:
             from .sw_domain_openmp_ext import compute_fluxes_ext_central
-        elif self.multiprocessor_mode == 3:
-            from .sw_domain_openacc_ext import compute_fluxes_ext_central
-        elif self.multiprocessor_mode == 4:
+        elif self.multiprocessor_mode == 2:
             # change over to cuda routines as developed
             # from .sw_domain_simd_ext import compute_fluxes_ext_central
             # FIXME SR: 2023_10_16 currently compute_fluxes and distribute together
@@ -1811,29 +1877,41 @@ class Domain(Generic_Domain):
         """ extrapolate centroid values to vertices and edges"""
 
         # Do protection step
+        nvtxRangePush('protect against negative heights')
+        self.protect_against_infinitesimal_and_negative_heights()
+        nvtxRangePop()
+
+        # Do extrapolation step
+        # nvtxRangePush('extrapolate')
+        # Choose the correct extension module
+        if self.multiprocessor_mode == 1:
+            from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
+        elif self.multiprocessor_mode == 2:
+            # change over to cuda routines as developed
+            #from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
+            extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
+        else:
+            raise Exception('Not implemented')
+
+        nvtxRangePush('extrapolate_second_order_edge_sw')
+        extrapolate_second_order_edge_sw(self)
+        nvtxRangePop()
+
+    def distribute_to_edges(self):
+        """ extrapolate centroid values edges"""
+
+        # Do protection step
         nvtxRangePush('protect_against_infinities')
         self.protect_against_infinitesimal_and_negative_heights()
         nvtxRangePop()
 
         # Do extrapolation step
         # nvtxRangePush('extrapolate')
-        if self.multiprocessor_mode == 0:
-            from .sw_domain_orig_ext import extrapolate_second_order_edge_sw
-            extrapolate_second_order_edge_sw(self)
-
-        elif self.multiprocessor_mode == 1:
-            from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
-            extrapolate_second_order_edge_sw(self)
-
-        elif self.multiprocessor_mode == 2:
+        # Choose the correct extension module
+        if self.multiprocessor_mode == 1:
             from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw(self)
-
-        elif self.multiprocessor_mode == 3:
-            from .sw_domain_openacc_ext import extrapolate_second_order_edge_sw
-            extrapolate_second_order_edge_sw(self)
-
-        elif self.multiprocessor_mode == 4:
+        elif self.multiprocessor_mode == 2:
             # change over to cuda routines as developed
             #from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
@@ -1841,8 +1919,29 @@ class Domain(Generic_Domain):
         else:
             raise Exception('Not implemented')
 
-        # nvtxRangePop()
+        # nvtxRangePop()        
 
+    def distribute_edges_to_vertices(self):
+        """Distribute edge values to vertices.
+        
+        This is a wrapper for the C implementation of the distribution
+        from edges to vertices.
+        """
+
+        if self.multiprocessor_mode == 1:
+            # Using OpenMP extension
+            from .sw_domain_openmp_ext import distribute_edges_to_vertices as distribute_edges_to_vertices_ext
+        elif self.multiprocessor_mode == 2:
+            # Using CUDA extension
+            # FIXME SR: Not implemented yet so use OpenMP version
+            from .sw_domain_openmp_ext import distribute_edges_to_vertices as distribute_edges_to_vertices_ext
+            # distribute_edges_to_vertices_ext = self.gpu_interface.distribute_edges_to_vertices_kernel
+        else:
+            raise Exception('Not implemented')
+        
+        # nvtxRangePush('distribute_edges_to_vertices')
+        distribute_edges_to_vertices_ext(self)
+        # nvtxRangePop()
 
     def distribute_using_edge_limiter(self):
         """Distribution from centroids to edges specific to the SWW eqn.
@@ -1945,19 +2044,14 @@ class Domain(Generic_Domain):
         """
 
         # nvtxRangePush('protect_new')
-        if self.multiprocessor_mode == 0:
-            from .sw_domain_orig_ext import protect_new
-        elif self.multiprocessor_mode == 1:
-            from .sw_domain_simd_ext import protect_new
+        # Choose the correct extension module
+        if self.multiprocessor_mode == 1:
+            from .sw_domain_openmp_ext import protect_new
         elif self.multiprocessor_mode == 2:
-            from .sw_domain_openmp_ext import  protect_new
-        elif self.multiprocessor_mode == 3:
-            from .sw_domain_openacc_ext import  protect_new
-        elif self.multiprocessor_mode == 4:
             # change over to cuda routines as developed
             # # from .sw_domain_simd_ext import  protect_new
-            protect_new = self.gpu_interface.protect_against_infinitesimal_and_negative_heights_kernal
-            protect_new = self.gpu_interface.protect_against_infinitesimal_and_negative_heights_kernal
+            #from .sw_domain_openmp_ext import protect_new
+            protect_new = self.gpu_interface.protect_against_infinitesimal_and_negative_heights_kernel
         else:
             raise Exception('Not implemented')
 
@@ -2009,6 +2103,43 @@ class Domain(Generic_Domain):
 
         nvtxRangePop()
 
+
+    def apply_protection_against_isolated_degenerate_timesteps(self):
+
+        if self.protect_against_isolated_degenerate_timesteps is False:
+            return
+
+        # FIXME (Ole): Make this configurable
+        if num.max(self.max_speed) < 10.0:
+            return
+
+        # Setup 10 bins for speed histogram
+        from anuga.utilities.numerical_tools import histogram, create_bins
+
+        bins = create_bins(self.max_speed, 10)
+        hist = histogram(self.max_speed, bins)
+
+        # Look for characteristic signature
+        if len(hist) > 1 and hist[-1] > 0 and \
+           hist[4] == hist[5] == hist[6] == hist[7] == hist[8] == 0:
+            # Danger of isolated degenerate triangles
+
+            # Find triangles in last bin
+            # FIXME - speed up using numeric package
+            d = 0
+            for i in range(self.number_of_triangles):
+                if self.max_speed[i] > bins[-1]:
+                    msg = 'Time=%f: Ignoring isolated high ' % self.get_time()
+                    msg += 'speed triangle '
+                    msg += '#%d of %d with max speed = %f' \
+                        % (i, self.number_of_triangles, self.max_speed[i])
+
+                    self.get_quantity('xmomentum').set_values(0.0, indices=[i])
+                    self.get_quantity('ymomentum').set_values(0.0, indices=[i])
+                    self.max_speed[i] = 0.0
+                    d += 1
+
+
     def update_conserved_quantities(self):
         """Update vectors of conserved quantities using previously
         computed fluxes and specified forcing functions.
@@ -2030,59 +2161,29 @@ class Domain(Generic_Domain):
         #Stage.update(timestep)
         #Xmom.update(timestep)
         #Ymom.update(timestep)
+        
+        assert self.get_using_discontinuous_elevation()
 
-        if self.get_using_discontinuous_elevation():
+        # Update height based on discontinuous elevation
+        if self.multiprocessor_mode == 1:
+            
+            from .sw_domain_openmp_ext import update_conserved_quantities
+            num_negative_ids = update_conserved_quantities(self, timestep)
 
-            if self.multiprocessor_mode == 1:
-                Stage.update(timestep)
-                Xmom.update(timestep)
-                Ymom.update(timestep)
-                from .sw_domain_simd_ext import fix_negative_cells
-                num_negative_ids = fix_negative_cells(self)
-            elif self.multiprocessor_mode == 2:
-                Stage.update(timestep)
-                Xmom.update(timestep)
-                Ymom.update(timestep)                
-                from .sw_domain_openmp_ext import fix_negative_cells
-                Stage.update(timestep)
-                Xmom.update(timestep)
-                Ymom.update(timestep)
-                num_negative_ids = fix_negative_cells(self)
-            elif self.multiprocessor_mode == 3:
-                Stage.update(timestep)
-                Xmom.update(timestep)
-                Ymom.update(timestep)
-                from .sw_domain_openacc_ext import fix_negative_cells
-                num_negative_ids = fix_negative_cells(self)
-            elif self.multiprocessor_mode == 4:
-                
-                # nvtxRangePush('update_conserved_quantities_kernal')
-                     
-                 update_conserved_quantities_fix_negative_cells = self.gpu_interface.update_conserved_quantities_kernal
-                 num_negative_ids = update_conserved_quantities_fix_negative_cells(self)
-                # nvtxRangePop()
-                
-                # change over to cuda routines as developed
-                #from .sw_domain_simd_ext import fix_negative_cells
-                #num_negative_ids = fix_negative_cells(self)
-            else:
-                tff = self.tri_full_flag
+        elif self.multiprocessor_mode == 2:
 
-                negative_ids = num.where( num.logical_and((Stage.centroid_values - Elev.centroid_values) < 0.0 , tff > 0) )[0]
+            update_conserved_quantities = self.gpu_interface.update_conserved_quantities_kernel
+            num_negative_ids = update_conserved_quantities(self, timestep)
+        
+        else:
+            raise Exception('Not implemented')
 
-                num_negative_ids = len(negative_ids)
-
-                if num_negative_ids > 0:
-                    Stage.centroid_values[negative_ids] = Elev.centroid_values[negative_ids]
-                    Xmom.centroid_values[negative_ids] = 0.0
-                    Ymom.centroid_values[negative_ids] = 0.0
-
-            if num_negative_ids > 0:
-                # FIXME: This only warns the first time -- maybe we should warn whenever loss occurs?
-                import warnings
-                msg = 'Negative cells being set to zero depth, possible loss of conservation. \n' +\
-                      'Consider using domain.report_water_volume_statistics() to check the extent of the problem'
-                warnings.warn(msg)
+        if num_negative_ids > 0:
+            # FIXME: This only warns the first time -- maybe we should warn whenever loss occurs?
+            import warnings
+            msg = f'{num_negative_ids} negative cells being set to zero depth, possible loss of conservation. \n' +\
+            'Consider using domain.report_water_volume_statistics() to check the extent of the problem'
+            warnings.warn(msg)
 
         # nvtxRangePop()
 
@@ -2188,7 +2289,6 @@ class Domain(Generic_Domain):
         """
 
         # For shallow water we need to update height xvelocity and yvelocity
-
         #Shortcuts
         UH = self.quantities['xmomentum']
         VH = self.quantities['ymomentum']
@@ -2273,6 +2373,7 @@ class Domain(Generic_Domain):
         # and or visualisation.
         # This is done again in the initialisation of the Generic_Domain
         # evolve loop but we do it here to ensure the values are ok for storage.
+
         self.distribute_to_vertices_and_edges()
 
         if self.store is True and (self.get_relative_time() == 0.0 or self.evolved_called is False):
@@ -2372,6 +2473,286 @@ class Domain(Generic_Domain):
         """
 
         pass
+
+
+    def evolve_one_euler_step(self, yieldstep, finaltime):
+        """One Euler Time Step
+        Q^{n+1} = E(h) Q^n
+
+        Does not assume that centroid values have been extrapolated to
+        vertices and edges
+        """
+
+        #nvtx marker
+        nvtxRangePush('distribute_to_vertices_and_edges')
+
+        # From centroid values calculate edge and vertex values
+        self.distribute_to_vertices_and_edges()
+
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('update_boundary')
+        # Apply boundary conditions
+        self.update_boundary()
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('compute_fluxes')
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('compute_forcing_terms')
+        # Compute forcing terms
+        self.compute_forcing_terms()
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('update_timestep')
+        # Update timestep to fit yieldstep and finaltime
+        self.update_timestep(yieldstep, finaltime)
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('compute_flux_update_frequency')
+        if self.max_flux_update_frequency != 1:
+            # Update flux_update_frequency using the new timestep
+            self.compute_flux_update_frequency()
+        #nvtx marker
+        nvtxRangePop()
+
+        #nvtx marker
+        nvtxRangePush('update_conserved_quantities')
+        # Update conserved quantities
+        self.update_conserved_quantities()
+        #nvtx marker
+        nvtxRangePop()
+
+    def evolve_one_rk2_step(self, yieldstep, finaltime):
+        """One 2nd order RK timestep
+        Q^{n+1} = 0.5 Q^n + 0.5 E(h)^2 Q^n
+
+        Does not assume that centroid values have been extrapolated to
+        vertices and edges
+        """
+
+        # Save initial initial conserved quantities values
+        self.backup_conserved_quantities()
+
+        #==========================================
+        # First euler step
+        #==========================================
+
+        # From centroid values calculate edge and vertex values
+        self.distribute_to_vertices_and_edges()
+
+        # Apply boundary conditions
+        self.update_boundary()
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update timestep to fit yieldstep and finaltime
+        self.update_timestep(yieldstep, finaltime)
+
+        # Update centroid values of conserved quantities
+        self.update_conserved_quantities()
+
+        # Update special conditions
+        # self.update_special_conditions()
+
+        # Update time
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+
+        # Update ghosts
+        if self.ghost_layer_width < 4:
+            self.update_ghosts()
+
+        # Update vertex and edge values
+        self.distribute_to_vertices_and_edges()
+
+        # Update boundary values
+        self.update_boundary()
+
+        #=========================================
+        # Second Euler step using the same timestep
+        # calculated in the first step. Might lead to
+        # stability problems but we have not seen any
+        # example.
+        #=========================================
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update conserved quantities
+        self.update_conserved_quantities()
+
+        #========================================
+        # Combine initial and final values
+        # of conserved quantities and cleanup
+        #========================================
+
+        # Combine steps
+        self.saxpy_conserved_quantities(0.5, 0.5)
+
+
+    def evolve_one_rk3_step(self, yieldstep, finaltime):
+        """One 3rd order RK timestep
+        Q^(1) = 3/4 Q^n + 1/4 E(h)^2 Q^n  (at time t^n + h/2)
+        Q^{n+1} = 1/3 Q^n + 2/3 E(h) Q^(1) (at time t^{n+1})
+
+        Does not assume that centroid values have been extrapolated to
+        vertices and edges
+        """
+
+        # Save initial initial conserved quantities values
+        self.backup_conserved_quantities()
+
+        initial_time = self.get_relative_time()
+
+        ######
+        # First euler step
+        ######
+
+        # From centroid values calculate edge and vertex values
+        self.distribute_to_vertices_and_edges()
+
+        # Apply boundary conditions
+        self.update_boundary()
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update timestep to fit yieldstep and finaltime
+        self.update_timestep(yieldstep, finaltime)
+
+        # Update conserved quantities
+        self.update_conserved_quantities()
+
+        # Update special conditions
+        # self.update_special_conditions()
+
+        # Update time
+        self.set_relative_time(self.relative_time+ self.timestep)
+
+        # Update ghosts
+        self.update_ghosts()
+
+        # Update vertex and edge values
+        self.distribute_to_vertices_and_edges()
+
+        # Update boundary values
+        self.update_boundary()
+
+        ######
+        # Second Euler step using the same timestep
+        # calculated in the first step. Might lead to
+        # stability problems but we have not seen any
+        # example.
+        ######
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update conserved quantities
+        self.update_conserved_quantities()
+
+        ######
+        # Combine steps to obtain intermediate
+        # solution at time t^n + 0.5 h
+        ######
+
+        # Combine steps
+        self.saxpy_conserved_quantities(0.25, 0.75)
+
+        # Update special conditions
+        # self.update_special_conditions()
+
+        # Set substep time
+        self.set_relative_time(initial_time + self.timestep * 0.5)
+
+        # Update ghosts
+        self.update_ghosts()
+
+        # Update vertex and edge values
+        self.distribute_to_vertices_and_edges()
+
+        # Update boundary values
+        self.update_boundary()
+
+        ######
+        # Third Euler step
+        ######
+
+        # Compute fluxes across each element edge
+        self.compute_fluxes()
+
+        # Compute forcing terms
+        self.compute_forcing_terms()
+
+        # Update conserved quantities
+        self.update_conserved_quantities()
+
+        #=======================================
+        # Combine final and initial values
+        # and cleanup
+        #=======================================
+        
+        # self.saxpy_conserved_quantities(2.0/3.0, 1.0/3.0)
+        # This caused a roundoff error that created negative water heights
+
+        # So do this instead!
+        self.saxpy_conserved_quantities(2.0, 1.0, 3.0)
+
+
+        # Set new time
+        self.set_relative_time(initial_time + self.timestep)
+
+
+    def backup_conserved_quantities(self):
+
+        # Backup conserved_quantities centroid values
+        if self.multiprocessor_mode == 1:
+            from anuga.shallow_water.sw_domain_openmp_ext import backup_conserved_quantities
+            backup_conserved_quantities(self)
+        else:
+            for name in self.conserved_quantities:
+                Q = self.quantities[name]
+                Q.backup_centroid_values()
+
+    def saxpy_conserved_quantities(self, a, b, c=None):
+
+        # saxpy conserved_quantities centroid values with backup values
+        if self.multiprocessor_mode == 1:
+            if c is None:
+                c = 1.0
+            from anuga.shallow_water.sw_domain_openmp_ext import saxpy_conserved_quantities
+            saxpy_conserved_quantities(self, a, b, c)
+        else:
+            for name in self.conserved_quantities:
+                Q = self.quantities[name]
+                Q.saxpy_centroid_values(a, b)
+                if c is not None:
+                    Q.centroid_values[:] = Q.centroid_values / c
 
     def timestepping_statistics(self,
                                 track_speeds=False,
@@ -2645,18 +3026,13 @@ class Domain(Generic_Domain):
             Used to control updating of fluxes / extrapolation for 'local-time-stepping'
         """
 
-        nvtxRangePush('compute_flux_update_frequenc')
-        if self.multiprocessor_mode == 0:
-            from .sw_domain_orig_ext import compute_flux_update_frequency
-        elif self.multiprocessor_mode == 1:
-            from .sw_domain_simd_ext import compute_flux_update_frequency
-        elif self.multiprocessor_mode == 2:
+        nvtxRangePush('compute_flux_update_frequency')
+        # Choose the correct extension module
+        if self.multiprocessor_mode == 1:
             from .sw_domain_openmp_ext import compute_flux_update_frequency
-        elif self.multiprocessor_mode == 3:
-            from .sw_domain_openacc_ext import compute_flux_update_frequency
-        elif self.multiprocessor_mode == 4:
+        elif self.multiprocessor_mode == 2:
             # change over to cuda routines as developed
-            from .sw_domain_simd_ext import compute_flux_update_frequency
+            from .sw_domain_openmp_ext import compute_flux_update_frequency
         else:
             raise Exception('Not implemented')
 
@@ -2772,31 +3148,67 @@ class Domain(Generic_Domain):
         return self.inv_tri_map
 
 # ==============================================================================
-# GPU interface
+# Multiprocessor Mode (1=openmp, 2=cuda (in development))
 # ==============================================================================
 
     def set_multiprocessor_mode(self, multiprocessor_mode= 0):
         """
         Set multiprocessor mode 
-        
-        0. original
-        1. simd (used for multiprocessor)
-        2. openmp (in development)
-        3. openacc (in development)
-        4. cuda (in development)
+         1. openmp (in development)
+         2. cupy (in development)
         """
 
-        if multiprocessor_mode in [0,1,2,3,4]:
-            self.multiprocessor_mode = multiprocessor_mode
+        if multiprocessor_mode not in [1,2]:
+            raise ValueError('Invalid multiprocessor mode. Must be one of [1,2] (openmp, cupy)')
 
-            if multiprocessor_mode == 4:
-                self.set_gpu_interface()
-        else:
-            raise Exception('multiprocessor mode {multiprocessor_mode} not supported')
-    
+        self.multiprocessor_mode = multiprocessor_mode
+
+        if self.multiprocessor_mode == 2:
+            self.set_gpu_interface()
+
+    def get_multiprocessor_mode(self):
+        """
+        Get multiprocessor mode 
+        
+        1. openmp (in development)
+        2. cupy (in development)
+        """
+        return self.multiprocessor_mode 
+
+    def set_omp_num_threads(self, omp_num_threads=None):
+        """
+        Set the number of OpenMP threads to use for parallel processing.
+        If OMP_NUM_THREADS is not set, this will set it to the specified 
+        omp_num_threads value.
+        By default omp_num_threads is set to 1, other , it will use the default setting.
+        """
+
+        import os
+        if omp_num_threads is None:
+            # Use the default setting
+            omp_num_threads = os.environ.get('OMP_NUM_THREADS', None)
+            #print(f'Using OMP_NUM_THREADS from environment: {omp_num_threads}')
+
+
+        if omp_num_threads is None:
+            omp_num_threads = 1  # Default to 1 if not set
+
+        try:
+            omp_num_threads = int(omp_num_threads)
+        except ValueError:
+            raise ValueError('OMP_NUM_THREADS must be an integer')            
+
+        # Set the number of OpenMP threads
+        self.omp_num_threads = omp_num_threads
+        from .sw_domain_openmp_ext import set_omp_num_threads
+        set_omp_num_threads(omp_num_threads)
+        
+        print(f'Setting omp_num_threads to {omp_num_threads}')
+
+
     def set_gpu_interface(self):
 
-        if self.multiprocessor_mode == 4 and self.gpu_interface is None:
+        if self.multiprocessor_mode == 2 and self.gpu_interface is None:
 
             # first check that cupy is available
             try:
@@ -2888,209 +3300,6 @@ def distribute_using_vertex_limiter(domain):
         Q.interpolate_from_vertices_to_edges()
 
 
-################################################################################
-# Standard forcing terms
-################################################################################
-
-#compute_forcing_terms
-def manning_friction_implicit(domain):
-    
-
-    if domain.multiprocessor_mode == [0,1,2,3]:
-        manning_friction_implicit_cpu(domain)
-    elif domain.multiprocessor_mode == 4:
-        manning_friction_implicit_gpu(domain)
-
-
-#GPU version of manning_friction_implicit that'll call the kernal written in sw_domain_cuda
-def manning_friction_implicit_gpu(domain):
-    """Apply (Manning) friction to water momentum
-    Wrapper for c version
-    """
-    if domain.use_sloped_mannings:
-        domain.gpu_interface.compute_forcing_terms_manning_friction_sloped()
-    else:
-        domain.gpu_interface.compute_forcing_terms_manning_friction_flat()
-
-
-def manning_friction_implicit_cpu(domain):
-    """Apply (Manning) friction to water momentum
-    Wrapper for c version
-    """
-
-    from .sw_domain_orig_ext import manning_friction_flat
-    from .sw_domain_orig_ext import manning_friction_sloped
-
-    xmom = domain.quantities['xmomentum']
-    ymom = domain.quantities['ymomentum']
-
-    # really only need this if using sloped mannings
-    x = domain.get_vertex_coordinates()
-
-    w = domain.quantities['stage'].centroid_values
-    z = domain.quantities['elevation'].vertex_values
-
-    uh = xmom.centroid_values
-    vh = ymom.centroid_values
-    eta = domain.quantities['friction'].centroid_values
-
-    xmom_update = xmom.semi_implicit_update
-    ymom_update = ymom.semi_implicit_update
-
-    eps = domain.minimum_allowed_height
-    g = domain.g
-
-    if domain.use_sloped_mannings:
-        manning_friction_sloped(g, eps, x, w, uh, vh, z, eta, xmom_update, \
-                                ymom_update)
-    else:
-        manning_friction_flat(g, eps, w, uh, vh, z, eta, xmom_update, \
-                                ymom_update)
-
-def manning_friction_explicit(domain):
-    """Apply (Manning) friction to water momentum
-    Wrapper for c version
-    """
-
-    from .sw_domain_orig_ext import manning_friction_flat
-    from .sw_domain_orig_ext import manning_friction_sloped
-
-    xmom = domain.quantities['xmomentum']
-    ymom = domain.quantities['ymomentum']
-
-    x = domain.get_vertex_coordinates()
-
-    w = domain.quantities['stage'].centroid_values
-    z = domain.quantities['elevation'].vertex_values
-
-    uh = xmom.centroid_values
-    vh = ymom.centroid_values
-    eta = domain.quantities['friction'].centroid_values
-
-    xmom_update = xmom.explicit_update
-    ymom_update = ymom.explicit_update
-
-    eps = domain.minimum_allowed_height
-
-    if domain.use_sloped_mannings:
-        manning_friction_sloped(domain.g, eps, x, w, uh, vh, z, eta, xmom_update, \
-                            ymom_update)
-    else:
-        manning_friction_flat(domain.g, eps, w, uh, vh, z, eta, xmom_update, \
-                            ymom_update)
-
-
-
-# FIXME (Ole): This was implemented for use with one of the analytical solutions
-def linear_friction(domain):
-    """Apply linear friction to water momentum
-
-    Assumes quantity: 'linear_friction' to be present
-    """
-
-    w = domain.quantities['stage'].centroid_values
-    z = domain.quantities['elevation'].centroid_values
-    h = w-z
-
-    uh = domain.quantities['xmomentum'].centroid_values
-    vh = domain.quantities['ymomentum'].centroid_values
-    tau = domain.quantities['linear_friction'].centroid_values
-
-    xmom_update = domain.quantities['xmomentum'].semi_implicit_update
-    ymom_update = domain.quantities['ymomentum'].semi_implicit_update
-
-    num_tris = len(domain)
-    eps = domain.minimum_allowed_height
-
-    for k in range(num_tris):
-        if tau[k] >= eps:
-            if h[k] >= eps:
-                S = -tau[k]/h[k]
-
-                #Update momentum
-                xmom_update[k] += S*uh[k]
-                ymom_update[k] += S*vh[k]
-
-def depth_dependent_friction(domain, default_friction,
-                             surface_roughness_data,
-                             verbose=False):
-    """Returns an array of friction values for each wet element adjusted for
-            depth.
-
-    Inputs:
-        domain - computational domain object
-        default_friction - depth independent bottom friction
-        surface_roughness_data - N x 5 array of n0, d1, n1, d2, n2 values
-        for each friction region.
-
-    Outputs:
-        wet_friction - Array that can be used directly to update friction as
-                        follows:
-                       domain.set_quantity('friction', wet_friction)
-
-
-
-    """
-
-    default_n0 = 0  # James - this was missing, don't know what it should be
-
-    # Create a temp array to store updated depth dependent
-    # friction for wet elements
-    # EHR this is outwardly inneficient but not obvious how to avoid
-    # recreating each call??????
-
-    wet_friction    = num.zeros(len(domain), float)
-    wet_friction[:] = default_n0  # Initially assign default_n0 to all array so
-                                  # sure have no zeros values
-
-    # create depth instance for this timestep
-    depth = domain.create_quantity_from_expression('stage - elevation')
-    # Recompute depth as vector
-    d_vals = depth.get_values(location='centroids')
-
-    # rebuild the 'friction' values adjusted for depth at this instant
-    # loop for each wet element in domain
-
-    for i in domain.get_wet_elements():
-        # Get roughness data for each element
-        d1 = float(surface_roughness_data[i, 1])
-        n1 = float(surface_roughness_data[i, 2])
-        d2 = float(surface_roughness_data[i, 3])
-        n2 = float(surface_roughness_data[i, 4])
-
-
-        # Recompute friction values from depth for this element
-
-        if d_vals[i] <= d1:
-            ddf = n1
-        elif d_vals[i] >= d2:
-            ddf = n2
-        else:
-            ddf = n1 + ((n2 - n1) / (d2 - d1)) * (d_vals[i] - d1)
-
-        # Check sanity of result
-        if ddf < 0.010 or ddf > 9999.0:
-            log.critical('>>>> WARNING: computed depth_dependent friction '
-                         'out of range, ddf%f, n1=%f, n2=%f'
-                         % (ddf, n1, n2))
-
-        # update depth dependent friction  for that wet element
-        wet_friction[i] = ddf
-
-    # EHR add code to show range of 'friction across domain at this instant as
-    # sanity check?????????
-
-    if verbose:
-        # return array of domain nvals
-        nvals = domain.get_quantity('friction').get_values(location='centroids')
-        n_min = min(nvals)
-        n_max = max(nvals)
-
-        log.critical('         ++++ calculate_depth_dependent_friction - '
-                     'Updated friction - range  %7.3f to %7.3f'
-                     % (n_min, n_max))
-
-    return wet_friction
 
 # FIXME (Ole): Does this do anything?
 def my_update_special_conditions(domain):

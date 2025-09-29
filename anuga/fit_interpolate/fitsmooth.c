@@ -8,6 +8,7 @@
 
 #include "sparse_dok.h" /* in utilities */
 #include "quad_tree.h"  /* in utilities */
+#include "anuga_typedefs.h" /* in utilities */
 
 #if defined(__APPLE__)
    // clang doesn't have openmp
@@ -24,23 +25,22 @@
 
 // Builds the matrix D used to smooth the interpolation 
 // of a variables from scattered data points to a mesh. See fit.py for more details.s
-int _build_smoothing_matrix(int n,
-                      long* triangles,
-        		      double* areas,
+anuga_int _build_smoothing_matrix(anuga_int n,
+                      anuga_int* triangles,
+        		          double* areas,
                       double* vertex_coordinates,
-                      int* strides,
-                      sparse_dok * smoothing_mat)
-		      {
+                      anuga_int* strides,
+                      sparse_dok * smoothing_mat){
 
 
-    int k;
-    int k3,k6;
-    int err = 0;
+    anuga_int k;
+    anuga_int k3,k6;
+    anuga_int err = 0;
     edge_key_t key;
 
     double det,area,x0,x1,x2,y0,y1,y2;
     double a0,b0,a1,b1,a2,b2,e01,e12,e20;
-    int v0,v1,v2;
+    anuga_int v0,v1,v2;
     double smoothing_val;
 
     
@@ -139,13 +139,13 @@ int _build_smoothing_matrix(int n,
 
 // Builds a quad tree out of a list of triangles for quick 
 // searching. 
-quad_tree * _build_quad_tree(int n,
-                      long* triangles,
+quad_tree * _build_quad_tree(anuga_int n,
+                      anuga_int* triangles,
                       double* vertex_coordinates,
                       double* extents)               
 {   
     
-    int k,k6;
+    anuga_int k,k6;
     double x0,y0,x1,y1,x2,y2;
 
     // set up quad tree and allocate memory
@@ -175,20 +175,20 @@ quad_tree * _build_quad_tree(int n,
 // and residual. Uses a quad_tree for fast access to the triangles of the mesh.
 // This function takes a list of point coordinates, and associated point values
 // (for any number of attributes).
-int _build_matrix_AtA_Atz_points(int N, long * triangles,
-                      double * point_coordinates, double * point_values,
-                      int zdims, int npts,
-                      sparse_dok * AtA,
-                      double ** Atz,quad_tree * quadtree)
+anuga_int _build_matrix_AtA_Atz_points(anuga_int N, 
+    anuga_int * triangles,
+    double * point_coordinates, 
+    double * point_values,
+    anuga_int zdims,
+    anuga_int npts,
+    sparse_dok * AtA,
+    double ** Atz,
+    quad_tree * quadtree)
               {
 
-
-
-    int k;
-
-
-
-    int i,w;
+    anuga_int k;
+    anuga_int i,w;
+    
     for(w=0;w<zdims;w++){
         for(i=0;i<N;i++){
             Atz[w][i]=0;
@@ -210,7 +210,7 @@ int _build_matrix_AtA_Atz_points(int N, long * triangles,
 
         if(T!=NULL){
             double * sigma = calculate_sigma(T,x,y);
-            int js[3];
+            anuga_int js[3];
             for(i=0;i<3;i++){
                 js[i]=triangles[3*(T->index)+i];
             }
@@ -245,11 +245,11 @@ int _build_matrix_AtA_Atz_points(int N, long * triangles,
 void _combine_partial_AtA_Atz(sparse_dok * dok_AtA1,sparse_dok * dok_AtA2,
                              double* Atz1,
                              double* Atz2,
-                             int n, int zdim){
+                             anuga_int n, anuga_int zdim){
 
     add_sparse_dok(dok_AtA1,1,dok_AtA2,1);
 
-    int i;
+    anuga_int i;
     for(i=0;i<n*zdim;i++){
         Atz1[i]+=Atz2[i];
     }
