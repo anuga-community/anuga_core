@@ -9,10 +9,6 @@
 name: Python Publish PYPI
 
 on:
-<<<<<<< HEAD
-
-=======
->>>>>>> develop
   release:
     types: [published]
 
