@@ -9,7 +9,10 @@
 name: Python Publish PYPI
 
 on:
+<<<<<<< HEAD
 
+=======
+>>>>>>> develop
   release:
     types: [published]
 
@@ -22,7 +25,7 @@ jobs:
   release-build:
     runs-on: ${{ matrix.os }}
     strategy:
-      fail-fast: false
+      fail-fast: true
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest] 
         python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
@@ -46,33 +49,23 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash -el {0}
         run: |
-           conda install -y -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64
+           conda install -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64
 
-      - name: Install gcc compilers on Linux
-        if: runner.os == 'Linux'
-        shell: bash -el {0}
-        run: |
-           conda install -y -c conda-forge -n anuga_env compilers
+           # conda install -c conda-forge -n anuga_env compilers
+           # The compilers package on windows which uses clang. We run into
+           # problems when testing anuga, so we skip it for now.
 
       - name: Install clang with openmp compiler on macOS
         if: runner.os == 'macOS'
         shell: bash -el {0}
         run: |
-           conda install -y -c conda-forge -n anuga_env cxx-compiler llvm-openmp
-           
-      # - name: Install anuga package
-      #   shell: bash -el {0}
-      #   run: |
-      #     conda activate anuga_env
-      #     pip install --no-build-isolation -v .
+           conda install -c conda-forge -n anuga_env compilers
 
-      # - name: Test package
-      #   shell: bash -el {0}
-      #   run: |
-      #     conda activate anuga_env
-      #     cd sandpit
-      #     export OMP_NUM_THREADS=1
-      #     pytest --pyargs anuga
+      - name: Install gxx with openmp compiler on Linux
+        if: runner.os == 'Linux'
+        shell: bash -el {0}
+        run: |
+           conda install -c conda-forge -n anuga_env compilers
 
       - name: Build wheels
         shell: bash -el {0}
