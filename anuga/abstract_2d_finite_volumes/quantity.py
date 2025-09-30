@@ -1516,20 +1516,11 @@ class Quantity(object):
                 indices = num.array(indices)
                 points = points[tuple(indices),:]
 
-        #print(points.shape)
-
-        
-
-        #print(points.shape)
 
         from anuga.geospatial_data.geospatial_data import Geospatial_data,  ensure_absolute
 
         points = ensure_absolute(points, geo_reference=self.domain.geo_reference)
 
-
-        from pprint import pprint
-
-        #pprint(points)
 
         if filename_ext in ['.tif']:
                 values = tif2point_values(filename, zone=zone, south=south, points=points)
@@ -1537,7 +1528,6 @@ class Quantity(object):
             msg= 'The file extension is not suportted... Only .tif are supported.'
             Exception(msg)
 
-        #pprint(values)
 
         # Call underlying method using array values
         if verbose:
@@ -2294,11 +2284,9 @@ class Quantity(object):
         # (either from this module or C-extension)
 
 
+        if self.domain.multiprocessor_mode == 1:
+            from .quantity_openmp_ext import update
         if self.domain.multiprocessor_mode == 2:
-            from .quantity_openmp_ext import update
-        if self.domain.multiprocessor_mode == 3:
-            from .quantity_openmp_ext import update
-        if self.domain.multiprocessor_mode == 4:
             # FIXME SR: Change this when gpu version is available
             from .quantity_openmp_ext import update
         else:
