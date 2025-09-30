@@ -1,0 +1,127 @@
+# This workflow will upload a Python Package to PyPI when a release is created
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: Python Publish PYPI
+
+on:
+  release:
+    types: [published]
+
+  
+
+permissions:
+  contents: read
+
+jobs:
+  release-build:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: true
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest] 
+        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+        #python-version: ['3.10', '3.11']
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          miniforge-version: latest      # Installs Miniforge instead of Miniconda
+          use-mamba: true                # Recommended for faster installs
+          python-version: ${{ matrix.python-version }}
+          auto-update-conda: true        # Auto-update conda or mamba
+
+      - name: Install Our own environment
+        shell: bash -el {0}
+        run: |
+          conda create -n anuga_env -c conda-forge python=${{matrix.python-version}}
+
+      - name: Install gcc compilers on Windows
+        if: runner.os == 'Windows'
+        shell: bash -el {0}
+        run: |
+           conda install -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64
+
+           # conda install -c conda-forge -n anuga_env compilers
+           # The compilers package on windows which uses clang. We run into
+           # problems when testing anuga, so we skip it for now.
+
+      - name: Install clang with openmp compiler on macOS
+        if: runner.os == 'macOS'
+        shell: bash -el {0}
+        run: |
+           conda install -c conda-forge -n anuga_env compilers
+
+      - name: Install gxx with openmp compiler on Linux
+        if: runner.os == 'Linux'
+        shell: bash -el {0}
+        run: |
+           conda install -c conda-forge -n anuga_env compilers
+
+      - name: Build wheels
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          python -m pip install build
+          python -m build --wheel --outdir dist-wheel
+
+      - name: Repair wheels
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          python -m pip install repairwheel
+          repairwheel -o dist dist-wheel/*.whl
+
+      - name: Build source distribution
+        if: runner.os == 'linux' && matrix.python-version == '3.13'
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          python -m build --sdist --outdir dist
+          
+      - name: Upload distributions
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dists-${{ matrix.python-version }}-${{ matrix.os }}
+          path: dist/
+
+
+
+
+  pypi-publish:
+    name: Upload release to PyPI
+    runs-on: ubuntu-latest
+    needs:
+      - release-build
+    
+    environment:
+      name: anuga
+      url: https://pypi.org/p/anuga
+
+    permissions:
+      id-token: write  # IMPORTANT: this permission is mandatory for trusted publishing
+
+    steps:
+      - name: Retrieve release distributions
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-dists-*
+          path: dist
+          merge-multiple: true
+
+      - run: ls ./dist  # All wheels from all matrix jobs are now here
+
+
+      - name: Publish release distributions to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+        with:
+          #repository-url: https://test.pypi.org/legacy/
+          verify-metadata: false
+          verbose: true
+          packages-dir: dist/
+

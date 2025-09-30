@@ -30,6 +30,7 @@ dependencies:
   - pyproj
   - pytest
   - scipy
+  - toml
   - utm
   - wheel
   - xarray
