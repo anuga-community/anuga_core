@@ -5,9 +5,12 @@ on:
   pull_request:
     branches:
       - main
+      - develop
+      - develop_gpu
 
   push:
     branches:
+      - main
       - develop
       - develop_gpu
 
@@ -38,17 +41,16 @@ jobs:
         run: |
           conda env create --name anuga_env --file environments/environment_${{matrix.python-version}}.yml
 
-      - name: Install conda-forge compilers
-        shell: bash -el {0}
-        run: |
-           conda install -y -c conda-forge -n anuga_env compilers
 
       - name: Install gcc compilers on Windows
         if: runner.os == 'Windows'
         shell: bash -el {0}
         run: |
            conda install -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64
-           # problem when installing compilers package on windows
+
+           # conda install -c conda-forge -n anuga_env compilers
+           # The compilers package on windows which uses clang. We run into
+           # problems when testing anuga, so we skip it for now.
 
       - name: Install clang with openmp compiler on macOS
         if: runner.os == 'macOS'
