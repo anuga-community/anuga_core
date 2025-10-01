@@ -6,8 +6,6 @@ project('anuga', 'c', 'cpp', 'cython', version: run_command('python', ['-c', 'im
 
 add_project_arguments('-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', language: 'cpp')
 add_project_arguments('-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', language: 'c')
-add_project_arguments(['-mp=gpu', '-target=gpu', '-acc', '-gpu=mem:managed'], language: ['c', 'cpp'])
-add_project_link_arguments(['-mp=gpu', '-target=gpu', '-acc'], language: ['c', 'cpp'])
 
 py3 = import('python').find_installation(pure: false)
 
@@ -42,36 +40,31 @@ dependencies = [dep_py, dep_numpy]
 # Deal with OpenMP
 #========================================================
 
-# cc = meson.get_compiler('c')
-# if openmp_dep.found()
-#   if cc.get_id() in ['intel', 'intel-cl', 'icx']
-#     openmp_flag = '-qopenmp'
-#   else
-#     openmp_flag = '-fopenmp'
-#   endif
-# endif
-
+cc = meson.get_compiler('c')
 openmp = dependency('openmp', required: false)
+message('Compiler ID is: ' + cc.get_id())
+
 if openmp.found()
   # On Windows, the mingw compiler does not support OpenMP ATOMIC operations
   # so using gcc_win-64 gxx_win-64 provided by conda-forge
   # On linux, OpenMP is supported by gcc and g++
   # On macOS, OpenMP is not supported by the Apple clang compiler so using 
   # clang and llvm-openmp provided by conda-forge
- 
-  #if host_machine.system() == 'windows'
-  
-  #openmp_c_args = ['-O3', '-march=native', '-fopenmp', '-g']
-  openmp_c_args = ['-O0', '-mp=gpu,multicore', '-g', '-gpu=cc70']
-  # openmp_c_args = ['-O3', '-march=native','-funroll-loops', '-fvectorize', '-Rpass=loop-vectorize', '-Rpass=loop-unroll', '-g'],
-  # openmp_c_args = ['-O3', '-march=native', openmp_flag, '-g'],
 
+  if cc.get_id() in ['intel', 'intel-cl', 'icx']
+    openmp_c_args = ['-O3', '-qopenmp', '-g']
+    add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
+  elif cc.get_id() == 'nvidia_hpc'
+    openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g', '-gpu=cc70']
+    add_project_link_arguments(['-mp=multicore,gpu', '-acc'], language: ['c', 'cpp'])
+  else
+    openmp_c_args = ['-O3', '-fopenmp', '-g']
+    add_project_link_arguments('-fopenmp', language: ['c', 'cpp'])
+  endif
   openmp_deps = dependencies + [openmp]
-
 else
   openmp_deps = dependencies
 endif
-
 
 
 #========================================================

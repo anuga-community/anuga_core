@@ -130,7 +130,7 @@ anuga_int __flux_function_central(double *__restrict q_left, double *__restrict 
                                 const double epsilon,
                                 const double ze,
                                 const double g,
-                                double *edgeflux, double *__restrict max_speed,
+                                double *__restrict edgeflux, double *__restrict max_speed,
                                 double *__restrict pressure_flux,
                                 const anuga_int low_froude)
 {
@@ -294,7 +294,7 @@ anuga_int __openmp__flux_function_central(double q_left0, double q_left1, double
 
   return ierr;
 }
-double inline __adjust_edgeflux_with_weir(double *edgeflux,
+void inline __adjust_edgeflux_with_weir(double *edgeflux,
                                    const double h_left, double h_right,
                                    const double g, double weir_height,
                                    const double Qfactor,
@@ -320,7 +320,7 @@ double inline __adjust_edgeflux_with_weir(double *edgeflux,
 
   if ((h_left <= 0.0) && (h_right <= 0.0))
   {
-    return 0;
+    return;
   }
 
   minhd = fmin(h_left, h_right);
@@ -396,7 +396,6 @@ double inline __adjust_edgeflux_with_weir(double *edgeflux,
   //*max_speed_local += fabs(edgeflux[0])/(maxhd+1.0e-100);
   //*max_speed_local *= fmax(scaleFlux, 1.0);
 
-  return 0;
 }
 
 double __openmp__adjust_edgeflux_with_weir(double *edgeflux0, double *edgeflux1, double *edgeflux2,
@@ -409,13 +408,13 @@ double __openmp__adjust_edgeflux_with_weir(double *edgeflux0, double *edgeflux1,
 {
 
   double edgeflux[3];
-  anuga_int ierr;
+  anuga_int ierr = 0;
 
   edgeflux[0] = *edgeflux0;
   edgeflux[1] = *edgeflux1;
   edgeflux[2] = *edgeflux2;
 
-  ierr = __adjust_edgeflux_with_weir(edgeflux, h_left, h_right,
+   __adjust_edgeflux_with_weir(edgeflux, h_left, h_right,
                                      g, weir_height,
                                      Qfactor, s1, s2, h1, h2,
                                      max_speed_local);
@@ -427,7 +426,7 @@ double __openmp__adjust_edgeflux_with_weir(double *edgeflux0, double *edgeflux1,
 }
 
 // Apply weir discharge theory correction to the edge flux
-int apply_weir_discharge_correction(const struct domain * __restrict D, const EdgeData * __restrict E,
+void apply_weir_discharge_correction(const struct domain * __restrict D, const EdgeData * __restrict E,
                                      const anuga_int k, const anuga_int ncol_riverwall_hydraulic_properties,
                                      const double g, double *edgeflux, double * __restrict max_speed) {
 
@@ -450,7 +449,6 @@ int apply_weir_discharge_correction(const struct domain * __restrict D, const Ed
         __adjust_edgeflux_with_weir(edgeflux, h_left, h_right, g,
                                     weir_height, Qfactor, s1, s2, h1, h2, max_speed);
     }
-    return 1;
 }
 
 double _openmp_compute_fluxes_central(const struct domain *__restrict D,
@@ -498,7 +496,8 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
 //    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)                              \
 //    private(edgeflux, pressure_flux, max_speed_local, edge_data) \
 //    reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
-#pragma omp target teams loop  shared(D, substep_count, number_of_elements) \
+#ifdef __NVCOMPILER_LLVM__
+#pragma omp target teams loop shared(D, substep_count, number_of_elements) \
     map(tofrom:D[0:1])\
     map(tofrom:D->stage_explicit_update[0:number_of_elements], D->xmom_explicit_update[0:number_of_elements]) \
     map(tofrom:D->ymom_explicit_update[0:number_of_elements],  D->tri_full_flag[0:number_of_elements])\
@@ -519,6 +518,12 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
     firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)\
     private(pressure_flux,  max_speed_local) \
     reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
+#else
+#pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, number_of_elements) \
+    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)\
+    private(pressure_flux,  max_speed_local) \
+    reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
+#endif
   for (anuga_int k = 0; k < number_of_elements; k++)
   {
       EdgeData edge_data;
@@ -559,8 +564,7 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
 
     // Weir flux adjustment
     if (edge_data.is_riverwall) {
-      int ierr;
-      ierr = apply_weir_discharge_correction(D, &edge_data, k, ncol_riverwall_hydraulic_properties, g, edgeflux, &max_speed_local);
+      apply_weir_discharge_correction(D, &edge_data, k, ncol_riverwall_hydraulic_properties, g, edgeflux, &max_speed_local);
     }
 
       // Multiply edgeflux by edgelength
