@@ -85,5 +85,5 @@ jobs:
           conda activate anuga_env
           cd sandpit
           export OMP_NUM_THREADS=1
-          pytest --pyargs anuga
-          #pytest -p no:faulthandler -rs --pyargs anuga
+          pytest -rs --pyargs anuga
+
