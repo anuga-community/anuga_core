@@ -15,6 +15,7 @@ matplotlib
 dill
 future
 gitpython
+toml
 utm
 pyproj
 affine

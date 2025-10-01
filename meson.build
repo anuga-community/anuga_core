@@ -1,5 +1,8 @@
-# Meson build file for ANUGA core
-project('anuga', 'c', 'cpp', 'cython', version: '3.2.1rc2', default_options: ['cpp_std=c++17'])
+# Meson build file for ANUGA core.
+# version read from pyproject.toml
+# This ensures that the version is consistent across the project files
+# and avoids the need for manual updates in multiple places.
+project('anuga', 'c', 'cpp', 'cython', version: run_command('python', ['-c', 'import toml; print(toml.load("pyproject.toml")["project"]["version"])']).stdout().strip()  , default_options: ['cpp_std=c++17'])
 
 add_project_arguments('-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', language: 'cpp')
 add_project_arguments('-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', language: 'c')

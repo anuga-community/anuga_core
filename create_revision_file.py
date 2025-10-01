@@ -13,24 +13,20 @@ and stores it in a Python file named 'revision.py' for use with get_version_info
 
 import re
 import os
-
+import toml
 
 # ===================================================
 # Read VERSION from pyproject.toml file
 # ===================================================
 with open('pyproject.toml') as infile:
-    for line in infile:
-        match = re.match(r'version = ', line)
-        if match != None:
-            VERSION = re.findall(r'\d.\d.\drc\d|\d.\d.\d',line)[0]
+    config = toml.load(infile)
+    VERSION = config['project']['version']
 
 
 destination_path='anuga'
 version=VERSION
 verbose=True
-
-   
-    
+  
 
 # Git revision information (relies on the gitpython package)
 # https://stackoverflow.com/questions/14989858/get-the-current-git-hash-in-a-python-script
