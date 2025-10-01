@@ -1005,7 +1005,6 @@ class Mesh(General_mesh):
         hist = histogram(areas, bins)
 
         str =  '------------------------------------------------\n'
-        str += ' Jorge openmp version \n'
         str += 'Mesh statistics:\n'
         str += '  Number of triangles = %d\n' %len(self)
         str += '  Extent [m]:\n'

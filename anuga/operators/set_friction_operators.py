@@ -58,13 +58,6 @@ class Set_depth_friction_operator(Operator):
                         radius=radius,
                         verbose=verbose)
 
-        # Region.__init__(self, domain,
-        #         indices=indices,
-        #         polygon=polygon,
-        #         center=center,
-        #         radius=radius,
-        #         verbose=verbose)
-
         #------------------------------------------
         # Local variables
         #------------------------------------------
