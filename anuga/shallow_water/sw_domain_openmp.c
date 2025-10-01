@@ -490,12 +490,7 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
       double pressure_flux;
       double max_speed_local;
 
-      //#pragma omp target enter data map(alloc:edgeflux)
 // For all triangles
-//#pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, number_of_elements) \
-//    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)                              \
-//    private(edgeflux, pressure_flux, max_speed_local, edge_data) \
-//    reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
 #ifdef __NVCOMPILER_LLVM__
 #pragma omp target teams loop shared(D, substep_count, number_of_elements) \
     map(tofrom:D[0:1])\
