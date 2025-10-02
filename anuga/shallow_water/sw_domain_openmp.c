@@ -1310,6 +1310,7 @@ void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict
 {
 
   anuga_int k;
+  // JORGE TODO: PORT TO GPU
 
   const anuga_int N = D->number_of_elements;
   const double eps = D->minimum_allowed_height;
@@ -2353,6 +2354,7 @@ anuga_int _extrapolate_second_order_sw(anuga_int number_of_elements,
 anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D, 
                                               const double timestep)
       {
+      // JORGE TODO: PORT TO GPU
 	// Update centroid values based on values stored in
 	// explicit_update and semi_implicit_update as well as given timestep
 
@@ -2534,6 +2536,7 @@ void _openmp_set_omp_num_threads(anuga_int num_threads)
 
 void _openmp_evaluate_reflective_segment(struct domain *D, anuga_int N,
    anuga_int *edge_segment, anuga_int *vol_ids, anuga_int *edge_ids){
+   // JORGE TODO: PORT TO GPU
 
     #pragma omp parallel for schedule(static)
      for(int k = 0; k < N; k++){
