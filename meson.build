@@ -55,7 +55,7 @@ if openmp.found()
     openmp_c_args = ['-O3', '-qopenmp', '-g']
     add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
   elif cc.get_id() == 'nvidia_hpc'
-    openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g', '-gpu=cc70']
+    openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g', '-gpu=cc70', '-gpu=mem:separate']
     add_project_link_arguments(['-mp=multicore,gpu', '-acc'], language: ['c', 'cpp'])
   else
     openmp_c_args = ['-O3', '-fopenmp', '-g']
