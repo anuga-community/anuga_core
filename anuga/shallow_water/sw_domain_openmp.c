@@ -2469,7 +2469,18 @@ anuga_int _openmp_saxpy_conserved_quantities(const struct domain *__restrict D,
   // double bc_a = b *c /a;
   double c_inv = 1.0 / c;
 
+#ifdef __NVCOMPILER_LLVM__
+  #pragma omp target teams loop \
+  map(to:D[0:1])\
+  map(to: D->stage_backup_values[0:N])\
+  map(to: D->xmom_backup_values[0:N])\
+  map(to: D->ymom_backup_values[0:N])\
+  map(tofrom: D->stage_centroid_values[0:N])\
+  map(tofrom: D->xmom_centroid_values[0:N])\
+  map(tofrom: D->ymom_centroid_values[0:N])
+#else
   #pragma omp parallel for simd schedule(static)
+#endif
   for (anuga_int i = 0; i < N; i++)
   {
     D->stage_centroid_values[i] = a*D->stage_centroid_values[i] + b*D->stage_backup_values[i];
@@ -2479,7 +2490,15 @@ anuga_int _openmp_saxpy_conserved_quantities(const struct domain *__restrict D,
 
   if (c != 1.0)
   {
+#ifdef __NVCOMPILER_LLVM__
+  #pragma omp target teams loop \
+  map(to:D[0:1])\
+  map(tofrom: D->stage_centroid_values[0:N])\
+  map(tofrom: D->xmom_centroid_values[0:N])\
+  map(tofrom: D->ymom_centroid_values[0:N])
+#else
     #pragma omp parallel for simd schedule(static)
+#endif
     for (anuga_int i = 0; i < N; i++)
     {
       D->stage_centroid_values[i] *= c_inv;
@@ -2523,7 +2542,18 @@ anuga_int _openmp_backup_conserved_quantities(const struct domain *__restrict D)
   // double xmom_tmp[N];
   // double ymom_tmp[N];
 
+#ifdef __NVCOMPILER_LLVM__
+  #pragma omp target teams loop \
+  map(to:D[0:1])\
+  map(to:D->stage_centroid_values[0:N])\
+  map(to:D->xmom_centroid_values[0:N])\
+  map(to:D->ymom_centroid_values[0:N])\
+  map(tofrom:D->stage_backup_values[0:N])\
+  map(tofrom:D->xmom_backup_values[0:N])\
+  map(tofrom:D->ymom_backup_values[0:N])
+#else
   #pragma omp parallel for simd default(none) shared(D) schedule(static) firstprivate(N)
+#endif
   for (k = 0; k < N; k++)
   {
     D->stage_backup_values[k] = D->stage_centroid_values[k];
@@ -2532,23 +2562,6 @@ anuga_int _openmp_backup_conserved_quantities(const struct domain *__restrict D)
 
   }
 
-// #pragma omp parallel for simd default(none) shared(D, stage_tmp, xmom_tmp, ymom_tmp) \
-//         schedule(static) firstprivate(N)
-//   for (k = 0; k < N; k++)
-//   {
-//     stage_tmp[k] = D->stage_centroid_values[k];
-//     xmom_tmp[k]  = D->xmom_centroid_values[k];
-//     ymom_tmp[k]  = D->ymom_centroid_values[k];
-// }
-
-// #pragma omp parallel for simd default(none) shared(D, stage_tmp, xmom_tmp, ymom_tmp) \
-//         schedule(static) firstprivate(N)
-//   for (k = 0; k < N; k++)
-//   {
-//     D->stage_backup_values[k] = stage_tmp[k];
-//     D->xmom_backup_values[k]  = xmom_tmp[k];
-//     D->ymom_backup_values[k]  = ymom_tmp[k];
-// }
   return 0;
 }
 
