@@ -2544,45 +2544,45 @@ class Domain(Generic_Domain):
         """
 
         # Save initial initial conserved quantities values
-        self.backup_conserved_quantities()
+        self.backup_conserved_quantities() # has C, not ported to GPU 
 
         #==========================================
         # First euler step
         #==========================================
 
         # From centroid values calculate edge and vertex values
-        self.distribute_to_vertices_and_edges()
+        self.distribute_to_vertices_and_edges() # has C, ported to GPU
 
         # Apply boundary conditions
-        self.update_boundary()
+        self.update_boundary() # has C, not ported to GPU
 
         # Compute fluxes across each element edge
-        self.compute_fluxes()
+        self.compute_fluxes() # has C, ported to GPU
 
         # Compute forcing terms
-        self.compute_forcing_terms()
+        self.compute_forcing_terms() # has C, not ported to GPU
 
         # Update timestep to fit yieldstep and finaltime
-        self.update_timestep(yieldstep, finaltime)
+        self.update_timestep(yieldstep, finaltime) #needs C
 
         # Update centroid values of conserved quantities
-        self.update_conserved_quantities()
+        self.update_conserved_quantities() # has C, not ported to GPU
 
         # Update special conditions
         # self.update_special_conditions()
 
         # Update time
-        self.set_relative_time(self.get_relative_time() + self.timestep)
+        self.set_relative_time(self.get_relative_time() + self.timestep) # needs C
 
         # Update ghosts
         if self.ghost_layer_width < 4:
-            self.update_ghosts()
+            self.update_ghosts() # needs C
 
         # Update vertex and edge values
-        self.distribute_to_vertices_and_edges()
+        self.distribute_to_vertices_and_edges() # has C, ported to GPU
 
         # Update boundary values
-        self.update_boundary()
+        self.update_boundary() # needs C, boundary.py 382
 
         #=========================================
         # Second Euler step using the same timestep
@@ -2592,13 +2592,13 @@ class Domain(Generic_Domain):
         #=========================================
 
         # Compute fluxes across each element edge
-        self.compute_fluxes()
+        self.compute_fluxes() # has C, ported to GPU
 
         # Compute forcing terms
-        self.compute_forcing_terms()
+        self.compute_forcing_terms() # has C, nor poted to GPU
 
         # Update conserved quantities
-        self.update_conserved_quantities()
+        self.update_conserved_quantities() # has C, not prote
 
         #========================================
         # Combine initial and final values
@@ -2606,7 +2606,7 @@ class Domain(Generic_Domain):
         #========================================
 
         # Combine steps
-        self.saxpy_conserved_quantities(0.5, 0.5)
+        self.saxpy_conserved_quantities(0.5, 0.5) # has C, not ported
 
 
     def evolve_one_rk3_step(self, yieldstep, finaltime):
