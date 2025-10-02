@@ -1309,38 +1309,50 @@ void _openmp_distribute_edges_to_vertices(struct domain *__restrict D)
 void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict D)
 {
 
-  anuga_int k;
   // JORGE TODO: PORT TO GPU
 
   const anuga_int N = D->number_of_elements;
+  const anuga_int number_of_elements = D->number_of_elements;
   const double eps = D->minimum_allowed_height;
   const double g = D->g;
   const double seven_thirds = 7.0 / 3.0;
 
  
-#pragma omp parallel for simd default(none) shared(D) schedule(static) \
-        firstprivate(N, eps, g, seven_thirds)
-
-  for (k = 0; k < N; k++)
+#ifdef __NVCOMPILER_LLVM__
+#pragma omp target teams loop \
+        map(to: D[0:1])\
+        map(to: D->xmom_centroid_values[0:number_of_elements])\
+        map(to: D->ymom_centroid_values[0:number_of_elements])\
+        map(to: D->friction_centroid_values[0:number_of_elements])\
+        map(to: D->stage_centroid_values[0:number_of_elements])\
+        map(to: D->bed_centroid_values[0:number_of_elements])\
+        map(tofrom: D->xmom_semi_implicit_update[0:number_of_elements])\
+        map(tofrom: D->ymom_semi_implicit_update[0:number_of_elements])\
+        shared(D) firstprivate(N, eps, g, seven_thirds)
+#else
+#pragma omp parallel for simd default(none) \
+        schedule(static) \
+        shared(D) firstprivate(N, eps, g, seven_thirds)
+#endif
+  for (anuga_int k = 0; k < N; k++)
   {
     double S = 0.0;
-    double h;
-    double uh = D->xmom_centroid_values[k];
-    double vh = D->ymom_centroid_values[k];
-    double eta = D->friction_centroid_values[k];
+    const double uh = D->xmom_centroid_values[k];
+    const double vh = D->ymom_centroid_values[k];
+    const double eta = D->friction_centroid_values[k];
     double abs_mom = sqrt( uh*uh + vh*vh );
 
-    if (eta > 1.0e-15)
+    if (eta > ETA_SMALL)
     {
-      h = D->stage_centroid_values[k] - D->bed_centroid_values[k];
+      const double h = D->stage_centroid_values[k] - D->bed_centroid_values[k];
       if (h >= eps)
        {
         S = -g * eta * eta * abs_mom;
         S /= pow(h, seven_thirds); 
        }
-      }
-    D->xmom_semi_implicit_update[k] += S * D->xmom_centroid_values[k];
-    D->ymom_semi_implicit_update[k] += S * D->ymom_centroid_values[k];
+    }
+    D->xmom_semi_implicit_update[k] += S * uh; 
+    D->ymom_semi_implicit_update[k] += S * vh; 
   }
 }
 
