@@ -2637,6 +2637,7 @@ void _openmp_evaluate_reflective_segment(const struct domain *__restrict D, anug
       D->xmom_boundary_values[edge_segment_id] = x_mom_boundary_value;
       D->ymom_boundary_values[edge_segment_id] = y_mom_boundary_value;
 
+	  // FIXME SR: Check that we really need to work with velocities
       q1 = D->xvelocity_edge_values[3 * vid + edge_id];
       q2 = D->yvelocity_edge_values[3 * vid + edge_id];
 
