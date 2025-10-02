@@ -829,7 +829,16 @@ static inline void update_centroid_values(struct domain *__restrict D,
                                           const double minimum_allowed_height,
                                           const anuga_int extrapolate_velocity_second_order)
 {
-#pragma omp parallel for simd default(none) shared(D) schedule(static) \
+    #pragma omp target teams loop \
+    map(tofrom: D[0:1])\
+    map(tofrom: D->stage_centroid_values[0:number_of_elements])\
+    map(tofrom: D->bed_centroid_values[0:number_of_elements])\
+    map(tofrom: D->xmom_centroid_values[0:number_of_elements])\
+    map(tofrom: D->ymom_centroid_values[0:number_of_elements])\
+    map(tofrom: D->height_centroid_values[0:number_of_elements])\
+    map(tofrom: D->x_centroid_work[0:number_of_elements])\
+    map(tofrom: D->y_centroid_work[0:number_of_elements])\
+    default(none) shared(D) \
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
   for (anuga_int k = 0; k < number_of_elements; ++k)
   {
