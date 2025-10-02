@@ -1309,9 +1309,6 @@ void _openmp_distribute_edges_to_vertices(struct domain *__restrict D)
 void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict D)
 {
 
-  // JORGE TODO: PORT TO GPU
-
-  const anuga_int N = D->number_of_elements;
   const anuga_int number_of_elements = D->number_of_elements;
   const double eps = D->minimum_allowed_height;
   const double g = D->g;
@@ -1320,7 +1317,7 @@ void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict
  
 #ifdef __NVCOMPILER_LLVM__
 #pragma omp target teams loop \
-        map(to: D[0:1])\
+        map(tofrom: D[0:1])\
         map(to: D->xmom_centroid_values[0:number_of_elements])\
         map(to: D->ymom_centroid_values[0:number_of_elements])\
         map(to: D->friction_centroid_values[0:number_of_elements])\
@@ -1328,13 +1325,13 @@ void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict
         map(to: D->bed_centroid_values[0:number_of_elements])\
         map(tofrom: D->xmom_semi_implicit_update[0:number_of_elements])\
         map(tofrom: D->ymom_semi_implicit_update[0:number_of_elements])\
-        shared(D) firstprivate(N, eps, g, seven_thirds)
+        shared(D) firstprivate(number_of_elements, eps, g, seven_thirds)
 #else
 #pragma omp parallel for simd default(none) \
         schedule(static) \
-        shared(D) firstprivate(N, eps, g, seven_thirds)
+        shared(D) firstprivate(number_of_elements, eps, g, seven_thirds)
 #endif
-  for (anuga_int k = 0; k < N; k++)
+  for (anuga_int k = 0; k < number_of_elements; k++)
   {
     double S = 0.0;
     const double uh = D->xmom_centroid_values[k];
@@ -2371,35 +2368,52 @@ anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D,
 	// explicit_update and semi_implicit_update as well as given timestep
 
 
-	anuga_int k;
-  anuga_int N = D->number_of_elements;
+  anuga_int number_of_elements = D->number_of_elements;
   
 
 	// Divide semi_implicit update by conserved quantity
-	#pragma omp parallel for private(k) schedule(static) shared(D) firstprivate(N, timestep)
-	for (k=0; k<N; k++) {
+#ifdef __NVCOMPILER_LLVM__
+  #pragma omp target teams loop \
+  map(tofrom: D[0:1])\
+  map(tofrom: D->stage_centroid_values[0:number_of_elements])\
+  map(tofrom: D->xmom_centroid_values[0:number_of_elements])\
+  map(tofrom: D->ymom_centroid_values[0:number_of_elements])\
+  map(tofrom: D->stage_semi_implicit_update[0:number_of_elements])\
+  map(tofrom: D->xmom_semi_implicit_update[0:number_of_elements])\
+  map(tofrom: D->ymom_semi_implicit_update[0:number_of_elements])\
+  map(to: D->stage_explicit_update[0:number_of_elements])\
+  map(to: D->xmom_explicit_update[0:number_of_elements])\
+  map(to: D->ymom_explicit_update[0:number_of_elements])\
+  shared(D) firstprivate(number_of_elements, timestep)
+#else
+	#pragma omp parallel for schedule(static) \
+  shared(D) firstprivate(number_of_elements, timestep)
+#endif
+	for (int k=0; k<number_of_elements; k++) {
 
-    double stage_c, xmom_c, ymom_c;
 
     double denominator;
 
 		// use previous centroid value
-		stage_c = D->stage_centroid_values[k];
+		const double stage_c = D->stage_centroid_values[k];
+    const double xmom_c = D->xmom_centroid_values[k];
+    const double ymom_c = D->ymom_centroid_values[k];
+		const double explicit_stage = D->stage_explicit_update[k];
+    const double explicit_xmom = D->xmom_explicit_update[k];
+    const double explicit_ymom = D->ymom_explicit_update[k];
+
 		if (stage_c == 0.0) {
 			D->stage_semi_implicit_update[k] = 0.0;
 		} else {
 			D->stage_semi_implicit_update[k] /= stage_c;
 		}
- 
 
-    xmom_c = D->xmom_centroid_values[k];
 		if (xmom_c == 0.0) {
 			D->xmom_semi_implicit_update[k] = 0.0;
 		} else {
 			D->xmom_semi_implicit_update[k] /= xmom_c;
 		}
 
-    ymom_c = D->ymom_centroid_values[k];
 		if (ymom_c == 0.0) {
 			D->ymom_semi_implicit_update[k] = 0.0;
 		} else {
@@ -2407,9 +2421,9 @@ anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D,
 		}
 
 		// Explicit updates
-		D->stage_centroid_values[k] += timestep*D->stage_explicit_update[k];
-    D->xmom_centroid_values[k]  += timestep*D->xmom_explicit_update[k];
-    D->ymom_centroid_values[k]  += timestep*D->ymom_explicit_update[k];
+		D->stage_centroid_values[k] += timestep*explicit_stage;
+    D->xmom_centroid_values[k]  += timestep*explicit_xmom;
+    D->ymom_centroid_values[k]  += timestep*explicit_ymom;
 
 		// Semi implicit updates
 		denominator = 1.0 - timestep*D->stage_semi_implicit_update[k];
