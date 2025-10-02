@@ -829,6 +829,7 @@ static inline void update_centroid_values(struct domain *__restrict D,
                                           const double minimum_allowed_height,
                                           const anuga_int extrapolate_velocity_second_order)
 {
+#ifdef __NVCOMPILER_LLVM__
     #pragma omp target teams loop \
     map(tofrom: D[0:1])\
     map(tofrom: D->stage_centroid_values[0:number_of_elements])\
@@ -840,6 +841,11 @@ static inline void update_centroid_values(struct domain *__restrict D,
     map(tofrom: D->y_centroid_work[0:number_of_elements])\
     default(none) shared(D) \
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
+#else
+    #pragma omp parallel for simd \
+    default(none) shared(D) \
+    firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
+#endif
   for (anuga_int k = 0; k < number_of_elements; ++k)
   {
     double stage = D->stage_centroid_values[k];
@@ -1009,12 +1015,10 @@ static inline void interpolate_edges_with_beta(
   }
 }
 
-#pragma omp declare simd
-static inline void compute_hfactor_and_inv_area(
+double compute_hfactor(
     const struct domain *__restrict D,
     const anuga_int k, const anuga_int k0, const anuga_int k1, const anuga_int k2,
-    const double area2, const double c_tmp, const double d_tmp,
-    double *__restrict hfactor, double *__restrict inv_area2)
+    const double c_tmp, const double d_tmp)
 {
   double hc = D->height_centroid_values[k];
   double h0 = D->height_centroid_values[k0];
@@ -1027,14 +1031,14 @@ static inline void compute_hfactor_and_inv_area(
   double tmp1 = c_tmp * fmax(hmin, 0.0) / fmax(hc, 1.0e-06) + d_tmp;
   double tmp2 = c_tmp * fmax(hc, 0.0) / fmax(hmax, 1.0e-06) + d_tmp;
 
-  *hfactor = fmax(0.0, fmin(tmp1, fmin(tmp2, 1.0)));
+  double hfactor = fmax(0.0, fmin(tmp1, fmin(tmp2, 1.0)));
 
   // Smooth shutoff near dry areas
-  *hfactor = fmin(1.2 * fmax(hmin - D->minimum_allowed_height, 0.0) /
+  hfactor = fmin(1.2 * fmax(hmin - D->minimum_allowed_height, 0.0) /
                       (fmax(hmin, 0.0) + D->minimum_allowed_height),
-                  *hfactor);
+                  hfactor);
+  return hfactor;
 
-  *inv_area2 = 1.0 / area2;
 }
 
 #pragma omp declare simd
@@ -1045,21 +1049,6 @@ static inline void reconstruct_vertex_values(double *__restrict edge_values, dou
   vertex_values[k3 + 2] = edge_values[k3 + 0] + edge_values[k3 + 1] - edge_values[k3 + 2];
 }
 
-#pragma omp declare simd
-static inline void compute_edge_diffs(const double x, const double y,
-                                      const double xv0, const double yv0,
-                                      const double xv1, const double yv1,
-                                      const double xv2, const double yv2,
-                                      double *__restrict dxv0, double *__restrict dxv1, double *__restrict dxv2,
-                                      double *__restrict dyv0, double *__restrict dyv1, double *__restrict dyv2)
-{
-  *dxv0 = xv0 - x;
-  *dxv1 = xv1 - x;
-  *dxv2 = xv2 - x;
-  *dyv0 = yv0 - y;
-  *dyv1 = yv1 - y;
-  *dyv2 = yv2 - y;
-}
 
 // Computational routine
 // Extrapolate second order edge values from centroid values
@@ -1079,9 +1068,32 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 
   update_centroid_values(D, number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order);
 
-#pragma omp parallel for simd default(none) schedule(static) \
-    shared(D)                                                 \
+#ifdef __NVCOMPILER_LLVM__
+    #pragma omp target teams loop default(none)\
+    map(tofrom: D[0:1])\
+    map(tofrom: D->beta_w_dry, D->beta_w, D->beta_uh_dry, D->beta_uh, D->beta_vh_dry, D->beta_vh)\
+    map(tofrom: D->minimum_allowed_height, D->extrapolate_velocity_second_order)\
+    map(tofrom: D->edge_coordinates[0:6*number_of_elements])\
+    map(tofrom: D->centroid_coordinates[0:2*number_of_elements])\
+    map(tofrom: D->surrogate_neighbours[0:3*number_of_elements])\
+    map(tofrom: D->number_of_boundaries[0:number_of_elements])\
+    map(tofrom: D->xmom_centroid_values[0:number_of_elements])\
+    map(tofrom: D->ymom_centroid_values[0:number_of_elements])\
+    map(tofrom: D->height_centroid_values[0:number_of_elements])\
+    map(tofrom: D->x_centroid_work[0:number_of_elements])\
+    map(tofrom: D->y_centroid_work[0:number_of_elements])\
+    map(tofrom:D->stage_centroid_values[0:number_of_elements])\
+    map(tofrom:D->stage_edge_values[0:3*number_of_elements],D->xmom_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->ymom_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->height_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->bed_edge_values[0:3*number_of_elements])\
+    shared(D)\
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order, c_tmp, d_tmp)
+#else
+    #pragma omp parallel for simd \
+    shared(D)\
+    firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order, c_tmp, d_tmp)
+#endif
   for (anuga_int k = 0; k < number_of_elements; k++)
   {
     // // Useful indices
@@ -1104,18 +1116,13 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
     // needed in the boundaries section
     double dxv0, dxv1, dxv2;
     double dyv0, dyv1, dyv2;
-    compute_edge_diffs(x, y,
-                       xv0, yv0,
-                       xv1, yv1,
-                       xv2, yv2,
-                       &dxv0, &dxv1, &dxv2,
-                       &dyv0, &dyv1, &dyv2);
-    // dxv0 = dxv0;
-    // dxv1 = dxv1;
-    // dxv2 = dxv2;
-    // dyv0 = dyv0;
-    // dyv1 = dyv1;
-    // dyv2 = dyv2;
+    // basically just algebra, no loops
+    dxv0 = xv0 - x;
+    dxv1 = xv1 - x;
+    dxv2 = xv2 - x;
+    dyv0 = yv0 - y;
+    dyv1 = yv1 - y;
+    dyv2 = yv2 - y;
 
     anuga_int k0 = D->surrogate_neighbours[k3 + 0];
     anuga_int k1 = D->surrogate_neighbours[k3 + 1];
@@ -1147,12 +1154,12 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
     // area2 = area2;
     // the calculation of dx0 dx1 dx2 dy0 dy1 dy2 etc could be calculated once and stored 
     // in the domain structure.
-
-
     const anuga_int dry =
         ((D->height_centroid_values[k0] < minimum_allowed_height) | (k0 == k)) &
         ((D->height_centroid_values[k1] < minimum_allowed_height) | (k1 == k)) &
         ((D->height_centroid_values[k2] < minimum_allowed_height) | (k2 == k));
+
+
 
     if (dry)
     {
@@ -1170,6 +1177,7 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
     {
       // Very unlikely
       // No neighbourso, set gradient on the triangle to zero
+      // there's a loop here, beware the moon
       set_all_edge_values_from_centroid(D, k);
     }
     else if (D->number_of_boundaries[k] <= 1)
@@ -1178,8 +1186,8 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
       // Number of boundaries <= 1
       // 'Typical case'
       //==============================================
-      double hfactor, inv_area2;
-      compute_hfactor_and_inv_area(D, k, k0, k1, k2, area2, c_tmp, d_tmp, &hfactor, &inv_area2);
+      double hfactor = compute_hfactor(D, k, k0, k1, k2, c_tmp, d_tmp);
+      double inv_area2 = 1.0/area2;
       // stage
       interpolate_edges_with_beta(D->stage_centroid_values, D->stage_edge_values,
                                   k, k0, k1, k2, k3,
