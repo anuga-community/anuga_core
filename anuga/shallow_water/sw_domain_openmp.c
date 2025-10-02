@@ -831,14 +831,6 @@ static inline void update_centroid_values(struct domain *__restrict D,
 {
 #ifdef __NVCOMPILER_LLVM__
     #pragma omp target teams loop \
-    map(tofrom: D[0:1])\
-    map(tofrom: D->stage_centroid_values[0:number_of_elements])\
-    map(tofrom: D->bed_centroid_values[0:number_of_elements])\
-    map(tofrom: D->xmom_centroid_values[0:number_of_elements])\
-    map(tofrom: D->ymom_centroid_values[0:number_of_elements])\
-    map(tofrom: D->height_centroid_values[0:number_of_elements])\
-    map(tofrom: D->x_centroid_work[0:number_of_elements])\
-    map(tofrom: D->y_centroid_work[0:number_of_elements])\
     default(none) shared(D) \
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
 #else
@@ -1066,7 +1058,34 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
   double c_tmp = 1.0 / (a_tmp - b_tmp);
   double d_tmp = 1.0 - (c_tmp * a_tmp);
 
+    #pragma omp target enter data\
+    map(to:D[0:1])\
+    map(to: D->stage_centroid_values[0:number_of_elements])\
+    map(to: D->bed_centroid_values[0:number_of_elements])\
+    map(to: D->xmom_centroid_values[0:number_of_elements])\
+    map(to: D->ymom_centroid_values[0:number_of_elements])\
+    map(to: D->height_centroid_values[0:number_of_elements])\
+    map(to: D->x_centroid_work[0:number_of_elements])\
+    map(to: D->y_centroid_work[0:number_of_elements])
   update_centroid_values(D, number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order);
+      #pragma omp target update from(\
+    D->stage_centroid_values[0:number_of_elements],\
+    D->bed_centroid_values[0:number_of_elements],\
+    D->xmom_centroid_values[0:number_of_elements],\
+    D->ymom_centroid_values[0:number_of_elements],\
+    D->height_centroid_values[0:number_of_elements],\
+    D->x_centroid_work[0:number_of_elements],\
+    D->y_centroid_work[0:number_of_elements])
+
+    #pragma omp target exit data\
+    map(release:D[0:1])\
+    map(release: D->stage_centroid_values[0:number_of_elements])\
+    map(release: D->bed_centroid_values[0:number_of_elements])\
+    map(release: D->xmom_centroid_values[0:number_of_elements])\
+    map(release: D->ymom_centroid_values[0:number_of_elements])\
+    map(release: D->height_centroid_values[0:number_of_elements])\
+    map(release: D->x_centroid_work[0:number_of_elements])\
+    map(release: D->y_centroid_work[0:number_of_elements])
 
 #ifdef __NVCOMPILER_LLVM__
     #pragma omp target teams loop default(none)\
