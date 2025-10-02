@@ -2544,7 +2544,7 @@ class Domain(Generic_Domain):
         """
 
         # Save initial initial conserved quantities values
-        self.backup_conserved_quantities() # has C, not ported to GPU 
+        self.backup_conserved_quantities() # has C, ported to GPU 
 
         #==========================================
         # First euler step
@@ -2554,19 +2554,19 @@ class Domain(Generic_Domain):
         self.distribute_to_vertices_and_edges() # has C, ported to GPU
 
         # Apply boundary conditions
-        self.update_boundary() # has C, not ported to GPU
+        self.update_boundary() # has C, ported to GPU
 
         # Compute fluxes across each element edge
         self.compute_fluxes() # has C, ported to GPU
 
         # Compute forcing terms
-        self.compute_forcing_terms() # has C, not ported to GPU
+        self.compute_forcing_terms() # has C, ported to GPU
 
         # Update timestep to fit yieldstep and finaltime
         self.update_timestep(yieldstep, finaltime) #needs C
 
         # Update centroid values of conserved quantities
-        self.update_conserved_quantities() # has C, not ported to GPU
+        self.update_conserved_quantities() # has C, ported to GPU
 
         # Update special conditions
         # self.update_special_conditions()
@@ -2598,7 +2598,7 @@ class Domain(Generic_Domain):
         self.compute_forcing_terms() # has C, nor poted to GPU
 
         # Update conserved quantities
-        self.update_conserved_quantities() # has C, not prote
+        self.update_conserved_quantities() # has C, prote
 
         #========================================
         # Combine initial and final values
