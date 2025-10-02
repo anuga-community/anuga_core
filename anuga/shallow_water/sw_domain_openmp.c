@@ -1275,8 +1275,13 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 // Fix xmom and ymom centroid values
 if(extrapolate_velocity_second_order == 1)
 {
-#pragma omp parallel for simd schedule(static) firstprivate(extrapolate_velocity_second_order)
-  for (anuga_int k = 0; k < D->number_of_elements; k++)
+#ifdef __NVCOMPILER_LLVM__
+#pragma omp target teams loop map(to:D[0:1],D->x_centroid_work[0:number_of_elements], D->y_centroid_work[0:number_of_elements])\
+map(tofrom: D->xmom_centroid_values[0:number_of_elements], D->ymom_centroid_values[0:number_of_elements])
+#else
+#pragma omp parallel for simd schedule(static)
+#endif
+  for (anuga_int k = 0; k < number_of_elements; k++)
   {
       // Convert velocity back to momenta at centroids
       D->xmom_centroid_values[k] = D->x_centroid_work[k];
