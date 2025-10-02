@@ -1325,11 +1325,11 @@ void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict
         map(tofrom: D->bed_centroid_values[0:number_of_elements])\
         map(tofrom: D->xmom_semi_implicit_update[0:number_of_elements])\
         map(tofrom: D->ymom_semi_implicit_update[0:number_of_elements])\
-        shared(D) firstprivate(number_of_elements, eps, g, seven_thirds)
+        shared(D, ETA_SMALL) firstprivate(number_of_elements, eps, g, seven_thirds)
 #else
 #pragma omp parallel for simd default(none) \
         schedule(static) \
-        shared(D) firstprivate(number_of_elements, eps, g, seven_thirds)
+        shared(D, ETA_SMALL) firstprivate(number_of_elements, eps, g, seven_thirds)
 #endif
   for (anuga_int k = 0; k < number_of_elements; k++)
   {
