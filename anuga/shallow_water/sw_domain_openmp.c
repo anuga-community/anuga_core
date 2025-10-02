@@ -1318,11 +1318,11 @@ void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict
 #ifdef __NVCOMPILER_LLVM__
 #pragma omp target teams loop \
         map(tofrom: D[0:1])\
-        map(to: D->xmom_centroid_values[0:number_of_elements])\
-        map(to: D->ymom_centroid_values[0:number_of_elements])\
-        map(to: D->friction_centroid_values[0:number_of_elements])\
-        map(to: D->stage_centroid_values[0:number_of_elements])\
-        map(to: D->bed_centroid_values[0:number_of_elements])\
+        map(tofrom: D->xmom_centroid_values[0:number_of_elements])\
+        map(tofrom: D->ymom_centroid_values[0:number_of_elements])\
+        map(tofrom: D->friction_centroid_values[0:number_of_elements])\
+        map(tofrom: D->stage_centroid_values[0:number_of_elements])\
+        map(tofrom: D->bed_centroid_values[0:number_of_elements])\
         map(tofrom: D->xmom_semi_implicit_update[0:number_of_elements])\
         map(tofrom: D->ymom_semi_implicit_update[0:number_of_elements])\
         shared(D) firstprivate(number_of_elements, eps, g, seven_thirds)
@@ -2363,7 +2363,6 @@ anuga_int _extrapolate_second_order_sw(anuga_int number_of_elements,
 anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D, 
                                               const double timestep)
       {
-      // JORGE TODO: PORT TO GPU
 	// Update centroid values based on values stored in
 	// explicit_update and semi_implicit_update as well as given timestep
 
@@ -2560,18 +2559,46 @@ void _openmp_set_omp_num_threads(anuga_int num_threads)
   omp_set_num_threads(num_threads);
 }
 
-void _openmp_evaluate_reflective_segment(struct domain *D, anuga_int N,
+void _openmp_evaluate_reflective_segment(const struct domain *__restrict D, anuga_int N,
    anuga_int *edge_segment, anuga_int *vol_ids, anuga_int *edge_ids){
    // JORGE TODO: PORT TO GPU
 
+  anuga_int boundary_length = D->boundary_length;
+  anuga_int number_of_edges = N;
+  anuga_int number_of_elements = D->number_of_elements; 
+
+#ifdef __NVCOMPILER_LLVM__
+    #pragma omp target teams loop \
+    map(tofrom: D[0:1])\
+    map(tofrom:D->stage_boundary_values[0:boundary_length])\
+    map(tofrom:D->bed_boundary_values[0:boundary_length])\
+    map(tofrom:D->height_boundary_values[0:boundary_length])\
+    map(tofrom:D->xmom_boundary_values[0:boundary_length])\
+    map(tofrom:D->ymom_boundary_values[0:boundary_length])\
+    map(tofrom:D->xvelocity_boundary_values[0:boundary_length])\
+    map(tofrom:D->yvelocity_boundary_values[0:boundary_length])\
+    map(tofrom:D->xvelocity_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->yvelocity_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->xmom_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->ymom_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->stage_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->bed_edge_values[0:3*number_of_elements])\
+    map(tofrom:D->height_edge_values[0:3*number_of_elements])\
+    map(to: edge_segment[0:number_of_edges])\
+    map(to: vol_ids[0:number_of_edges])\
+    map(to: edge_ids[0:number_of_edges])\
+    map(tofrom: D->normals[0:6*number_of_elements])\
+    shared(D) firstprivate(number_of_edges)
+#else
     #pragma omp parallel for schedule(static)
-     for(int k = 0; k < N; k++){
+#endif
+     for(anuga_int k = 0; k < number_of_edges; k++){
 
 
       // get vol_ids 
-      int edge_segment_id = edge_segment[k];
-      int vid = vol_ids[k];
-      int edge_id = edge_ids[k];
+      anuga_int edge_segment_id = edge_segment[k];
+      anuga_int vid = vol_ids[k];
+      anuga_int edge_id = edge_ids[k];
       double n1 = D->normals[vid * 6 + 2 * edge_id];
       double n2 = D->normals[vid * 6 + 2 * edge_id + 1];
 
@@ -2605,5 +2632,6 @@ void _openmp_evaluate_reflective_segment(struct domain *D, anuga_int N,
       D->yvelocity_boundary_values[edge_segment_id] = y_vel_boundary_value;
 
      }
+
 
 }
