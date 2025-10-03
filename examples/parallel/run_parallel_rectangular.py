@@ -76,8 +76,8 @@ parser.add_argument('-fdt', '--fixed_dt', type=float, default=fixed_flux_timeste
                     help='Set a fixed flux timestep')
 parser.add_argument('-ta', '--test_allreduce', action='store_true',
                     help='run fixed timestep with dummy allreduce')
-parser.add_argument('-mp', '--multi_processor_mode', type=int, default=0,
-                    help='set multiprocessor mode in [0,1,2,3,4]')
+parser.add_argument('-mp', '--multi_processor_mode', type=int, default=1,
+                    help='set multiprocessor mode in [1,2]')
 
 parser.add_argument('-v', '--verbose', action='store_true', help='turn on verbosity')
 

@@ -476,7 +476,10 @@ class Domain(Generic_Domain):
         self.set_plotter()
 
         import matplotlib.pyplot as plt
-        plt.triplot(self.triang, *args, **kwargs)
+        fig, ax = plt.subplots()
+
+        lines = ax.triplot(self.triang, *args, **kwargs)
+        return ax
 
 
     def tripcolor(self, *args, **kwargs):
@@ -484,7 +487,10 @@ class Domain(Generic_Domain):
         self.set_plotter()
 
         import matplotlib.pyplot as plt
-        plt.tripcolor(self.triang,  *args, **kwargs)
+        fig, ax = plt.subplots()
+        
+        lines = ax.tripcolor(self.triang,  *args, **kwargs)
+        return ax
 
 
     def _set_config_defaults(self):

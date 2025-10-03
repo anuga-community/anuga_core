@@ -35,6 +35,7 @@ def create_benchmark_csvfile(pstat_basename, openmp_threads, verbose=True):
     myfuncs = ['OMP_NUM_THREADS', 
     'total_time', 
     'evolve', 
+    'evolve_one_euler_step',
     'evolve_one_rk2_step', 
     'compute_fluxes', 
     'distribute_to_vertices_and_edges', 
@@ -48,7 +49,8 @@ def create_benchmark_csvfile(pstat_basename, openmp_threads, verbose=True):
 
     column_header = ['THREADS', 
     'total_time', 
-    'evolve', 
+    'evolve',
+    'euler_step', 
     'rk2_step', 
     'fluxes', 
     'distribute', 
@@ -84,8 +86,8 @@ def create_benchmark_csvfile(pstat_basename, openmp_threads, verbose=True):
         benchmark_dict['OMP_NUM_THREADS'] = threads
 
 
-        #for key in myfuncs:
-        #    print(f'{key} {benchmark_dict[key]:.3g}')
+        for key in myfuncs:
+            print(f'{key} {benchmark_dict[key]:.3g}')
 
         table_line =[]
 
