@@ -1057,7 +1057,6 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
   double b_tmp = 0.1; // Highest depth ratio with hfactor=0
   double c_tmp = 1.0 / (a_tmp - b_tmp);
   double d_tmp = 1.0 - (c_tmp * a_tmp);
-
     #pragma omp target enter data\
     map(to:D[0:1])\
     map(to: D->bed_centroid_values[0:number_of_elements])\
@@ -1283,24 +1282,8 @@ if(extrapolate_velocity_second_order == 1)
       D->ymom_centroid_values[k] = D->y_centroid_work[k];
   }
 }
-   //   #pragma omp target update from(\
-   //  D->bed_centroid_values[0:number_of_elements],\
-   //  D->beta_w_dry, D->beta_w, D->beta_uh_dry, D->beta_uh, D->beta_vh_dry, D->beta_vh,\
-   //  D->minimum_allowed_height, D->extrapolate_velocity_second_order,\
-   //  D->edge_coordinates[0:6*number_of_elements],\
-   //  D->centroid_coordinates[0:2*number_of_elements],\
-   //  D->surrogate_neighbours[0:3*number_of_elements],\
-   //  D->number_of_boundaries[0:number_of_elements],\
-   //  D->xmom_centroid_values[0:number_of_elements],\
-   //  D->ymom_centroid_values[0:number_of_elements],\
-   //  D->height_centroid_values[0:number_of_elements],\
-   //  D->x_centroid_work[0:number_of_elements],\
-   //  D->y_centroid_work[0:number_of_elements],\
-   // D->stage_centroid_values[0:number_of_elements],\
-   // D->stage_edge_values[0:3*number_of_elements],D->xmom_edge_values[0:3*number_of_elements],\
-   // D->ymom_edge_values[0:3*number_of_elements],\
-   // D->height_edge_values[0:3*number_of_elements])
 
+// We need to figure out which things we need to cpy from, i.e. what did we modify inside the loop
     #pragma omp target exit data\
     map(from: D[0:1])\
     map(from: D->bed_centroid_values[0:number_of_elements])\
