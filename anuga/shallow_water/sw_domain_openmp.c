@@ -1060,54 +1060,31 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 
     #pragma omp target enter data\
     map(to:D[0:1])\
-    map(to: D->stage_centroid_values[0:number_of_elements])\
     map(to: D->bed_centroid_values[0:number_of_elements])\
+    map(to: D->beta_w_dry, D->beta_w, D->beta_uh_dry, D->beta_uh, D->beta_vh_dry, D->beta_vh)\
+    map(to: D->minimum_allowed_height, D->extrapolate_velocity_second_order)\
+    map(to: D->edge_coordinates[0:6*number_of_elements])\
+    map(to: D->centroid_coordinates[0:2*number_of_elements])\
+    map(to: D->surrogate_neighbours[0:3*number_of_elements])\
+    map(to: D->number_of_boundaries[0:number_of_elements])\
     map(to: D->xmom_centroid_values[0:number_of_elements])\
     map(to: D->ymom_centroid_values[0:number_of_elements])\
     map(to: D->height_centroid_values[0:number_of_elements])\
     map(to: D->x_centroid_work[0:number_of_elements])\
-    map(to: D->y_centroid_work[0:number_of_elements])
-  update_centroid_values(D, number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order);
-      #pragma omp target update from(\
-    D->stage_centroid_values[0:number_of_elements],\
-    D->bed_centroid_values[0:number_of_elements],\
-    D->xmom_centroid_values[0:number_of_elements],\
-    D->ymom_centroid_values[0:number_of_elements],\
-    D->height_centroid_values[0:number_of_elements],\
-    D->x_centroid_work[0:number_of_elements],\
-    D->y_centroid_work[0:number_of_elements])
+    map(to: D->y_centroid_work[0:number_of_elements])\
+    map(to: D->stage_centroid_values[0:number_of_elements])\
+    map(to: D->stage_edge_values[0:3*number_of_elements],D->xmom_edge_values[0:3*number_of_elements])\
+    map(to: D->ymom_edge_values[0:3*number_of_elements])\
+    map(to: D->height_edge_values[0:3*number_of_elements])\
+    map(to: D->bed_edge_values[0:3*number_of_elements])
 
-    #pragma omp target exit data\
-    map(release:D[0:1])\
-    map(release: D->stage_centroid_values[0:number_of_elements])\
-    map(release: D->bed_centroid_values[0:number_of_elements])\
-    map(release: D->xmom_centroid_values[0:number_of_elements])\
-    map(release: D->ymom_centroid_values[0:number_of_elements])\
-    map(release: D->height_centroid_values[0:number_of_elements])\
-    map(release: D->x_centroid_work[0:number_of_elements])\
-    map(release: D->y_centroid_work[0:number_of_elements])
+  update_centroid_values(D, number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order);
+
 
 #ifdef __NVCOMPILER_LLVM__
     #pragma omp target teams loop default(none)\
-    map(tofrom: D[0:1])\
-    map(tofrom: D->beta_w_dry, D->beta_w, D->beta_uh_dry, D->beta_uh, D->beta_vh_dry, D->beta_vh)\
-    map(tofrom: D->minimum_allowed_height, D->extrapolate_velocity_second_order)\
-    map(tofrom: D->edge_coordinates[0:6*number_of_elements])\
-    map(tofrom: D->centroid_coordinates[0:2*number_of_elements])\
-    map(tofrom: D->surrogate_neighbours[0:3*number_of_elements])\
-    map(tofrom: D->number_of_boundaries[0:number_of_elements])\
-    map(tofrom: D->xmom_centroid_values[0:number_of_elements])\
-    map(tofrom: D->ymom_centroid_values[0:number_of_elements])\
-    map(tofrom: D->height_centroid_values[0:number_of_elements])\
-    map(tofrom: D->x_centroid_work[0:number_of_elements])\
-    map(tofrom: D->y_centroid_work[0:number_of_elements])\
-    map(tofrom:D->stage_centroid_values[0:number_of_elements])\
-    map(tofrom:D->stage_edge_values[0:3*number_of_elements],D->xmom_edge_values[0:3*number_of_elements])\
-    map(tofrom:D->ymom_edge_values[0:3*number_of_elements])\
-    map(tofrom:D->height_edge_values[0:3*number_of_elements])\
-    map(tofrom:D->bed_edge_values[0:3*number_of_elements])\
     shared(D)\
-    firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order, c_tmp, d_tmp)
+    firstprivate(number_of_elements, minimum_allowed_height, c_tmp, d_tmp)
 #else
     #pragma omp parallel for simd \
     shared(D)\
@@ -1295,8 +1272,7 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 if(extrapolate_velocity_second_order == 1)
 {
 #ifdef __NVCOMPILER_LLVM__
-#pragma omp target teams loop map(to:D[0:1],D->x_centroid_work[0:number_of_elements], D->y_centroid_work[0:number_of_elements])\
-map(tofrom: D->xmom_centroid_values[0:number_of_elements], D->ymom_centroid_values[0:number_of_elements])
+#pragma omp target teams loop
 #else
 #pragma omp parallel for simd schedule(static)
 #endif
@@ -1307,6 +1283,43 @@ map(tofrom: D->xmom_centroid_values[0:number_of_elements], D->ymom_centroid_valu
       D->ymom_centroid_values[k] = D->y_centroid_work[k];
   }
 }
+   //   #pragma omp target update from(\
+   //  D->bed_centroid_values[0:number_of_elements],\
+   //  D->beta_w_dry, D->beta_w, D->beta_uh_dry, D->beta_uh, D->beta_vh_dry, D->beta_vh,\
+   //  D->minimum_allowed_height, D->extrapolate_velocity_second_order,\
+   //  D->edge_coordinates[0:6*number_of_elements],\
+   //  D->centroid_coordinates[0:2*number_of_elements],\
+   //  D->surrogate_neighbours[0:3*number_of_elements],\
+   //  D->number_of_boundaries[0:number_of_elements],\
+   //  D->xmom_centroid_values[0:number_of_elements],\
+   //  D->ymom_centroid_values[0:number_of_elements],\
+   //  D->height_centroid_values[0:number_of_elements],\
+   //  D->x_centroid_work[0:number_of_elements],\
+   //  D->y_centroid_work[0:number_of_elements],\
+   // D->stage_centroid_values[0:number_of_elements],\
+   // D->stage_edge_values[0:3*number_of_elements],D->xmom_edge_values[0:3*number_of_elements],\
+   // D->ymom_edge_values[0:3*number_of_elements],\
+   // D->height_edge_values[0:3*number_of_elements])
+
+    #pragma omp target exit data\
+    map(from: D[0:1])\
+    map(from: D->bed_centroid_values[0:number_of_elements])\
+    map(from: D->beta_w_dry, D->beta_w, D->beta_uh_dry, D->beta_uh, D->beta_vh_dry, D->beta_vh)\
+    map(from: D->minimum_allowed_height, D->extrapolate_velocity_second_order)\
+    map(from: D->edge_coordinates[0:6*number_of_elements])\
+    map(from: D->centroid_coordinates[0:2*number_of_elements])\
+    map(from: D->surrogate_neighbours[0:3*number_of_elements])\
+    map(from: D->number_of_boundaries[0:number_of_elements])\
+    map(from: D->xmom_centroid_values[0:number_of_elements])\
+    map(from: D->ymom_centroid_values[0:number_of_elements])\
+    map(from: D->height_centroid_values[0:number_of_elements])\
+    map(from: D->x_centroid_work[0:number_of_elements])\
+    map(from: D->y_centroid_work[0:number_of_elements])\
+    map(from: D->stage_centroid_values[0:number_of_elements])\
+    map(from: D->stage_edge_values[0:3*number_of_elements],D->xmom_edge_values[0:3*number_of_elements])\
+    map(from: D->ymom_edge_values[0:3*number_of_elements])\
+    map(from: D->height_edge_values[0:3*number_of_elements])\
+    map(from: D->bed_edge_values[0:3*number_of_elements])
 
 }
 
