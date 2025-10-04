@@ -87,12 +87,18 @@ def create_benchmark_csvfile(pstat_basename, openmp_threads, verbose=True):
 
 
         for key in myfuncs:
-            print(f'{key} {benchmark_dict[key]:.3g}')
+            try:
+                print(f'{key} {benchmark_dict[key]:.3g}')
+            except KeyError:
+                print(f'{key} not found')
 
         table_line =[]
 
         for key in myfuncs:
-            table_line.append(f'{benchmark_dict[key]:.3g}')
+            try:
+                table_line.append(f'{benchmark_dict[key]:.3g}')
+            except KeyError:
+                table_line.append('nan')
 
         table_contents.append(table_line)
 

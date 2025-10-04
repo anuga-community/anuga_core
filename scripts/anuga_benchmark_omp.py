@@ -31,16 +31,19 @@ parser.add_argument(
 parser.add_argument(
     "script_args",
     type=str, 
+    default=" ",
     nargs=argparse.REMAINDER,
     help="Arguments for the benchmarked script")
 
 args = parser.parse_args()
 script_file = args.script_file
 script_args = args.script_args
+
+print(f"Using script args: {script_args}")
+
 print(f"Using script file: {script_file} {script_args}")
 
 script = script_file.rsplit('.', 1)[0]
-
 
 
 # Copy the current environment and set OMP_NUM_THREADS
@@ -85,7 +88,7 @@ for threads in openmp_threads:
     #         script_file]
     cmd = ['conda', 'run', '--no-capture-output',
              'python', '-u', '-m', 'cProfile', '-o', pstat_file,
-            script_file]
+            script_file] + script_args
 
     print('')
     print(80 * '=')
