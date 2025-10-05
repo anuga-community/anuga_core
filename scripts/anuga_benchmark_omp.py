@@ -39,9 +39,14 @@ args = parser.parse_args()
 script_file = args.script_file
 script_args = args.script_args
 
-print(f"Using script args: {script_args}")
+if script_args == []:
+    script_args_str = ""
+else:
+    script_args_str = " " + " ".join(script_args)
 
-print(f"Using script file: {script_file} {script_args}")
+#print(f"Using script args: {script_args_str}")
+
+print(f"Using script file: {script_file + script_args_str}")
 
 script = script_file.rsplit('.', 1)[0]
 

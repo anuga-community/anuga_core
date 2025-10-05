@@ -471,26 +471,31 @@ class Domain(Generic_Domain):
         self.make_speed_animation = self.dplotter.make_speed_animation        
 
         
-    def triplot(self, *args, **kwargs):
+    def triplot(self, *args,  **kwargs):
 
         self.set_plotter()
 
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots()
 
-        lines = ax.triplot(self.triang, *args, **kwargs)
-        return ax
+        im = ax.triplot(self.triang, *args, **kwargs)
+
+        return im
 
 
-    def tripcolor(self, *args, **kwargs):
+    def tripcolor(self, *args, colorbar=True, **kwargs):
 
         self.set_plotter()
 
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots()
-        
-        lines = ax.tripcolor(self.triang,  *args, **kwargs)
-        return ax
+
+        im = ax.tripcolor(self.triang,  *args, **kwargs)
+
+        if colorbar:
+            fig.colorbar(im)
+            
+        return im
 
 
     def _set_config_defaults(self):

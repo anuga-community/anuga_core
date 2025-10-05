@@ -50,13 +50,13 @@ def create_benchmark_csvfile(pstat_basename, openmp_threads, verbose=True):
     column_header = ['THREADS', 
     'total_time', 
     'evolve',
-    'euler_step', 
+    'rk1_step', 
     'rk2_step', 
     'fluxes', 
-    'distribute', 
+    'dist', 
     'update', 
-    'forcing',
-    'boundary',
+    'force',
+    'bound',
     'backup',
     'saxpy', 
     'operators'
@@ -86,11 +86,11 @@ def create_benchmark_csvfile(pstat_basename, openmp_threads, verbose=True):
         benchmark_dict['OMP_NUM_THREADS'] = threads
 
 
-        for key in myfuncs:
-            try:
-                print(f'{key} {benchmark_dict[key]:.3g}')
-            except KeyError:
-                print(f'{key} not found')
+        # for key in myfuncs:
+        #     try:
+        #         print(f'{key} {benchmark_dict[key]:.3g}')
+        #     except KeyError:
+        #         print(f'{key} not found')
 
         table_line =[]
 
