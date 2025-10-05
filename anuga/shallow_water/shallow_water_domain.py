@@ -483,7 +483,7 @@ class Domain(Generic_Domain):
         return im
 
 
-    def tripcolor(self, *args, colorbar=True, **kwargs):
+    def tripcolor(self, *args,  **kwargs):
 
         self.set_plotter()
 
@@ -492,9 +492,6 @@ class Domain(Generic_Domain):
 
         im = ax.tripcolor(self.triang,  *args, **kwargs)
 
-        if colorbar:
-            fig.colorbar(im)
-            
         return im
 
 
