@@ -463,19 +463,21 @@ class Mesh(object):
         return """
         mesh Triangles: %s 
         mesh Attribute Titles: %s 
-        mesh Segments: %s  
+        mesh Segments: %s 
+        mesh Segment Tags: %s 
         mesh Vertices: %s 
         user Segments: %s  
-        user Vertices: %s  
+        user Vertices: %s 
         holes: %s 
-        regions: %s""" % (self.meshTriangles,
+        regions: %s""" % (self.getTriangulation(),
                           self.attributeTitles,
-                          self.meshSegments,
-                          self.meshVertices,
+                          self.getMeshSegments().tolist(),
+                          self.getMeshSegmentTags(),
+                          self.getMeshVertices().tolist(),
                           self.getUserSegments(),
-                          self.userVertices,
-                          self.holes,
-                          self.regions)
+                          self.getUserVertices(),
+                          self.getHoles(),
+                          self.getRegions())
 
     def __init__(self,
                  userSegments=None,

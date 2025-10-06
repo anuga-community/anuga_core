@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
 
+import collections
+import collections.abc
+collections.Callable = collections.abc.Callable
+
 import  Pmw, math, time, string, marshal
 
 try:
