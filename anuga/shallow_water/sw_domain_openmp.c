@@ -1057,6 +1057,7 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
   double b_tmp = 0.1; // Highest depth ratio with hfactor=0
   double c_tmp = 1.0 / (a_tmp - b_tmp);
   double d_tmp = 1.0 - (c_tmp * a_tmp);
+#ifdef __NVCOMPILER_LLVM__
     #pragma omp target enter data\
     map(to:D[0:1])\
     map(to: D->bed_centroid_values[0:number_of_elements])\
@@ -1076,7 +1077,7 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
     map(to: D->ymom_edge_values[0:3*number_of_elements])\
     map(to: D->height_edge_values[0:3*number_of_elements])\
     map(to: D->bed_edge_values[0:3*number_of_elements])
-
+#endif
   update_centroid_values(D, number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order);
 
 
@@ -1284,6 +1285,7 @@ if(extrapolate_velocity_second_order == 1)
 }
 
 // We need to figure out which things we need to cpy from, i.e. what did we modify inside the loop
+#ifdef __NVCOMPILER_LLVM__
     #pragma omp target exit data\
     map(from: D[0:1])\
     map(from: D->bed_centroid_values[0:number_of_elements])\
@@ -1303,7 +1305,7 @@ if(extrapolate_velocity_second_order == 1)
     map(from: D->ymom_edge_values[0:3*number_of_elements])\
     map(from: D->height_edge_values[0:3*number_of_elements])\
     map(from: D->bed_edge_values[0:3*number_of_elements])
-
+#endif
 }
 
 void _openmp_distribute_edges_to_vertices(struct domain *__restrict D)
