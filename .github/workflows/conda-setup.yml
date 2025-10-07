@@ -62,7 +62,7 @@ jobs:
         if: runner.os == 'Linux'
         shell: bash -el {0}
         run: |
-           conda install -c conda-forge -n anuga_env compilers
+           conda install -c conda-forge -n anuga_env compilers libgomp
 
       - name: Problem on windows
         # As of 2025/06/19, strange combination of mpi4py, the new compilers and pytest is
