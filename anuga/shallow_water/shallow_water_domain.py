@@ -1926,8 +1926,8 @@ class Domain(Generic_Domain):
 
         # nvtxRangePop()
 
-        
-    def distribute_to_vertices_and_edges(self):
+
+    def distribute_to_vertices_and_edges(self, distribute_to_vertices=True):
         """ extrapolate centroid values to vertices and edges"""
 
         # Do protection step
@@ -1948,7 +1948,7 @@ class Domain(Generic_Domain):
             raise Exception('Not implemented')
 
         nvtxRangePush('extrapolate_second_order_edge_sw')
-        extrapolate_second_order_edge_sw(self)
+        extrapolate_second_order_edge_sw(self, distribute_to_vertices=distribute_to_vertices)
         nvtxRangePop()
 
     def distribute_to_edges(self):
@@ -2540,8 +2540,8 @@ class Domain(Generic_Domain):
         #nvtx marker
         nvtxRangePush('distribute_to_vertices_and_edges')
 
-        # From centroid values calculate edge and vertex values
-        self.distribute_to_vertices_and_edges()
+        # From centroid values calculate edge
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
 
         #nvtx marker
         nvtxRangePop()
@@ -2604,8 +2604,8 @@ class Domain(Generic_Domain):
         # First euler step
         #==========================================
 
-        # From centroid values calculate edge and vertex values
-        self.distribute_to_vertices_and_edges()
+        # From centroid values calculate edge values
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
 
         # Apply boundary conditions
         self.update_boundary()
@@ -2632,8 +2632,8 @@ class Domain(Generic_Domain):
         if self.ghost_layer_width < 4:
             self.update_ghosts()
 
-        # Update vertex and edge values
-        self.distribute_to_vertices_and_edges()
+        # Update edge values
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
 
         # Update boundary values
         self.update_boundary()
@@ -2681,8 +2681,8 @@ class Domain(Generic_Domain):
         # First euler step
         ######
 
-        # From centroid values calculate edge and vertex values
-        self.distribute_to_vertices_and_edges()
+        # From centroid values calculate edge values
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
 
         # Apply boundary conditions
         self.update_boundary()
@@ -2708,8 +2708,8 @@ class Domain(Generic_Domain):
         # Update ghosts
         self.update_ghosts()
 
-        # Update vertex and edge values
-        self.distribute_to_vertices_and_edges()
+        # Update edge values
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
 
         # Update boundary values
         self.update_boundary()
@@ -2747,8 +2747,8 @@ class Domain(Generic_Domain):
         # Update ghosts
         self.update_ghosts()
 
-        # Update vertex and edge values
-        self.distribute_to_vertices_and_edges()
+        # Update edge values
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
 
         # Update boundary values
         self.update_boundary()
