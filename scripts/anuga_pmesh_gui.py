@@ -2,7 +2,10 @@
 
 import collections
 import collections.abc
-collections.Callable = collections.abc.Callable
+try:
+    collections.Callable
+except AttributeError:
+    collections.Callable = collections.abc.Callable
 
 import  Pmw, math, time, string, marshal
 
