@@ -486,9 +486,9 @@ class Domain(Generic_Domain):
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots()
 
-        im = ax.triplot(self.triang, *args, **kwargs)
+        lines = ax.triplot(self.triang, *args, **kwargs)
 
-        return im
+        return fig, ax, lines
 
 
     def tripcolor(self, *args,  **kwargs):
@@ -500,7 +500,7 @@ class Domain(Generic_Domain):
 
         im = ax.tripcolor(self.triang,  *args, **kwargs)
 
-        return im
+        return fig, ax, im
 
     #==============================================================
     # Methods to set and get domain parameters
