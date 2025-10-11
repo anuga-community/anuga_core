@@ -3,6 +3,7 @@
 import pstats
 import os
 import csv
+import shutil
 import numpy as np
 
 # This script runs benchmark ifor specified script with different numbers of OpenMP threads
@@ -42,7 +43,7 @@ parser.add_argument(
 args = parser.parse_args()
 script_file = args.script_file
 script_args = args.script_args
-openmp_threads = args.openmp_threads
+openmp_threads = args.openmp_threads[0]
 
 if script_args == []:
     script_args_str = ""
@@ -90,12 +91,14 @@ else:
 print(f"Using queue: {queue}")
 
 
-env["OMP_NUM_THREADS"] = str(threads)  # Set to your desired number of threads
-output_dir = f'output_{script}_{hostname}_{queue}_{anuga_env}_{time}_omp_{openmp_threads}
+env["OMP_NUM_THREADS"] = str(openmp_threads)  # Set to your desired number of threads
+output_dir = f'OUTPUT/output_{script}_{hostname}_{queue}_{anuga_env}_{time}_omp_{openmp_threads}'
 
+os.makedirs(output_dir, exist_ok=True)
+shutil.copy(script_file, output_dir)
+os.chdir(output_dir)
 
-cmd = ['conda', 'run', '--no-capture-output',
-        script_file] + script_args
+cmd = ['conda', 'run', '--no-capture-output', 'python', '-u', script_file] + script_args
 
 print('')
 print(80 * '=')
@@ -110,15 +113,13 @@ with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, buf
         print(line, end='')  # Print each line as it arrives
         output_lines.append(line)
 
+with open('output.txt', 'w') as f:
+    f.writelines(output_lines)
 
 
-#=================================
-# Collect timings
-#=================================
-pstat_basename = f'profile_{script}_{hostname}_{queue}_{anuga_env}_{time}'
 
-from anuga.utilities.create_benchmark_csvfile import create_benchmark_csvfile
 
-create_benchmark_csvfile(pstat_basename, openmp_threads, verbose=True)
+
+
 
 
