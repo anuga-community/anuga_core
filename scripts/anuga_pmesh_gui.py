@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
 
+import anuga.utilities.log as log
+log.log_filename = './anuga_pmesh_gui.log'
+
 import collections
 import collections.abc
 try:
