@@ -92,10 +92,26 @@ print(f"Using queue: {queue}")
 
 
 env["OMP_NUM_THREADS"] = str(openmp_threads)  # Set to your desired number of threads
-output_dir = f'OUTPUT/output_{script}_{hostname}_{queue}_{anuga_env}_{time}_omp_{openmp_threads}'
+output_dir = f'../../OUTPUT/output_{script}_{hostname}_{queue}_{anuga_env}_{time}_omp_{openmp_threads}'
 
 os.makedirs(output_dir, exist_ok=True)
-shutil.copy(script_file, output_dir)
+
+
+destination_dir = output_dir
+
+for item in os.listdir('.'):
+    src_path = os.path.join('.', item)
+    dst_path = os.path.join(destination_dir, item)
+    if os.path.isdir(src_path):
+        shutil.copytree(src_path, dst_path)
+    else:
+        shutil.copy2(src_path, dst_path)
+
+
+
+
+
+#shutil.copy(script_file, output_dir)
 os.chdir(output_dir)
 
 cmd = ['conda', 'run', '--no-capture-output', 'python', '-u', script_file] + script_args
