@@ -43,7 +43,7 @@ parser.add_argument(
 args = parser.parse_args()
 script_file = args.script_file
 script_args = args.script_args
-openmp_threads = args.openmp_threads[0]
+openmp_threads = args.openmp_threads
 
 if script_args == []:
     script_args_str = ""
