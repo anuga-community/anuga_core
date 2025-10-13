@@ -56,6 +56,13 @@ print(f"Using script file: {script_file + script_args_str}")
 
 script = script_file.rsplit('.', 1)[0]
 
+abs_script_file = os.path.abspath(script_file)
+
+#print(f"Using project root: {abs_script_file}")
+parts = os.path.normpath(abs_script_file).split(os.sep)
+abs_script_file = '_'.join(parts[-4:])
+print(f"Using absolute script file: {abs_script_file}")
+
 
 # Copy the current environment and set OMP_NUM_THREADS
 env = os.environ.copy()
@@ -92,7 +99,7 @@ print(f"Using queue: {queue}")
 
 
 env["OMP_NUM_THREADS"] = str(openmp_threads)  # Set to your desired number of threads
-output_dir = f'../../OUTPUT/output_{script}_{hostname}_{queue}_{anuga_env}_{time}_omp_{openmp_threads}'
+output_dir = f'../../OUTPUT/experiment_{abs_script_file}_datetime_{time}'
 
 os.makedirs(output_dir, exist_ok=True)
 
