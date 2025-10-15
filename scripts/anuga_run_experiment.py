@@ -140,6 +140,17 @@ with open('output.txt', 'w') as f:
     f.writelines(output_lines)
 
 
+output_lines = []
+with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, text=True, env=env) as process, \
+      open('output.txt', 'w') as f:
+    for line in process.stdout:
+        print(line, end='')   # print to console immediately
+        f.write(line)         # write each line to file immediately
+        output_lines.append(line)
+    process.wait()
+
+
+
 
 
 
