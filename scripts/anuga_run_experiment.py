@@ -130,23 +130,12 @@ print(80 * '=')
 print('')
 
 # Run the subprocess with the modified environment
-output_lines = []
-with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, text=True, env=env) as process:
-    for line in process.stdout:
-        print(line, end='')  # Print each line as it arrives
-        output_lines.append(line)
-
-with open('output.txt', 'w') as f:
-    f.writelines(output_lines)
-
-
-output_lines = []
 with subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, text=True, env=env) as process, \
-      open('output.txt', 'w') as f:
+      open('output.txt', 'w', buffering=1) as f:
     for line in process.stdout:
         print(line, end='')   # print to console immediately
         f.write(line)         # write each line to file immediately
-        output_lines.append(line)
+        f.flush()             # flush the file buffer
     process.wait()
 
 
