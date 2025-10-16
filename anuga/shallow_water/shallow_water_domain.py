@@ -96,6 +96,7 @@ import sys
 import os
 import time
 
+
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
@@ -2397,6 +2398,10 @@ class Domain(Generic_Domain):
 
         # Call check integrity here rather than from user scripts
         # self.check_integrity()
+
+        from time import time as walltime
+        self.evolve_start_walltime = walltime()
+        self.last_walltime = self.evolve_start_walltime
 
         from datetime import datetime
         if finaltime is not None:
