@@ -78,3 +78,18 @@ def parse_time(time = None, verbose=False, debug=False):
     if debug: print(time)
     
     return float(time)
+
+def seconds_to_hhmmss(seconds):
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+
+    parts = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if secs or not parts:
+        parts.append(f"{secs}s")
+
+    return ':'.join(parts)
