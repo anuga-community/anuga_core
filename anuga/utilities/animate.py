@@ -833,3 +833,21 @@ class SWW_plotter(object):
             else:
                 os.mkdir("%s" % plot_dir)
             print("Figure files for each frame will be stored in " + plot_dir)
+
+    def triplot(self, *args, **kwargs):
+
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots()
+
+        lines = ax.triplot(self.triang, *args, **kwargs)
+        return ax
+
+
+    def tripcolor(self, *args, **kwargs):
+
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots()
+        
+        lines = ax.tripcolor(self.triang,  *args, **kwargs)
+        return ax
+

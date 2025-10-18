@@ -1,5 +1,15 @@
 #!/usr/bin/env python3
 
+import anuga.utilities.log as log
+log.log_filename = './anuga_pmesh_gui.log'
+
+import collections
+import collections.abc
+try:
+    collections.Callable
+except AttributeError:
+    collections.Callable = collections.abc.Callable
+
 import  Pmw, math, time, string, marshal
 
 try:

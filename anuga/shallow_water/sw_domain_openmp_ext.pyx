@@ -7,6 +7,9 @@ from libc.stdint cimport int64_t
 import numpy as np
 cimport numpy as np
 
+# FIXME SR: Should create a python class which holds all of these parameters
+# so we don't need to create it before each C function call.
+
 cdef extern from "sw_domain_openmp.c" nogil:
 	struct domain:
 		# these shouldn't change within a single timestep
@@ -469,6 +472,9 @@ def compute_fluxes_ext_central(object domain_object, double timestep):
 	get_python_domain_parameters(&D, domain_object)
 	get_python_domain_pointers(&D, domain_object)
 
+	# FIXME SR: Plan to store the timestep in a numpy array so we can avoid
+	# copying it back and forth between python and C.
+	# This will require changing the function signature in the C code.
 	with nogil:
 		timestep =  _openmp_compute_fluxes_central(&D, timestep)
 

@@ -354,7 +354,10 @@ class Generic_Domain(object):
         self.flux_timestep = 0.0
         self.evolved_called = False
 
-        self.last_walltime = walltime()
+        self.last_walltime    = walltime()
+        self.initial_walltime = self.last_walltime
+        self.evolve_start_walltime = self.last_walltime
+        self.relative_finaltime = None
 
         # Monitoring
         self.quantities_to_be_monitored = None
@@ -1264,8 +1267,18 @@ class Generic_Domain(object):
 
 
 
-        msg += ' (%ds)' % (walltime() - self.last_walltime)
-        self.last_walltime = walltime()
+        msg += f' ({int(walltime() - self.last_walltime):d}s)'
+
+
+
+        if self.evolved_called:
+            # Report cpu time since evolve was called
+            # (which may be different from the time since the last call to
+            # this function)
+            cpu_time = anuga.seconds_to_hhmmss(int(walltime() - self.evolve_start_walltime))
+            msg += f' cpusum ({cpu_time})'
+            msg += f' {100*self.relative_time/self.relative_finaltime:.2f}%'
+            self.last_walltime = walltime()
 
         if track_speeds is True:
             msg += '\n'
@@ -1706,6 +1719,9 @@ class Generic_Domain(object):
 
         All times are given in seconds
         """
+
+        self.evolve_start_walltime = walltime()
+        self.last_walltime = self.evolve_start_walltime
 
         for t in self._evolve_base(yieldstep=yieldstep,
                                    finaltime=finaltime, duration=duration,
