@@ -389,8 +389,7 @@ class Test_order_boundary(unittest.TestCase):
 
 
 #-------------------------------------------------------------
+if __name__ == '__main__':
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_order_boundary)
+    unittest.TextTestRunner(verbosity=2).run(suite)
 
-if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_order_boundary, 'test')
-    runner = unittest.TextTestRunner()
-    runner.run(suite)
