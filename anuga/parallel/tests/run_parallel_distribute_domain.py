@@ -164,3 +164,5 @@ for i in range(len(l1list)):
                                                 linflist[i][0], linflist[i][1], linflist[i][2]))
     
 fid.close()
+
+finalize()
