@@ -7,6 +7,7 @@ matplotlib.use('Agg')
 from matplotlib import pyplot as pyplot
 import csv, pprint
 from numpy import zeros
+import pandas as pd
 
 #--------------------------------------------
 # Recall the reference solution
@@ -15,40 +16,21 @@ from numpy import zeros
 # See: Roberts and Wilson, ANZIAM Journal (CTAC2010).
 #--------------------------------------------
 #################Opening the reference solution################
-infile = open('Ver_numerical_2.000000.csv', 'r')
-table = []
-for row in csv.reader(infile):
-    table.append(row)
-infile.close()
-for r in range(len(table)):
-    for c in range(len(table[0])):
-        table[r][c] = float(table[r][c])
-Vertices = zeros(len(table))        
-VerW = zeros(len(table))
-VerP = zeros(len(table))
-VerZ = zeros(len(table))
-VerH = zeros(len(table))
-VerU = zeros(len(table))
-for r in range(len(table)):
-    for c in range(len(table[0])):
-        if c==0:
-            Vertices[r] = table[r][c]             
-        elif c==1:
-            VerW[r] = table[r][c]
-        elif c==2:
-            VerP[r] = table[r][c]
-        elif c==3:
-            VerZ[r] = table[r][c]
-        elif c==4:
-            VerH[r] = table[r][c]
-        elif c==5:
-            VerU[r] = table[r][c]
-Vertices_left = -1.0*Vertices[::-1]
-VerW_left = VerW[::-1]
-VerP_left = -1.0*VerP[::-1]
-VerZ_left = VerZ[::-1]
-VerH_left = VerH[::-1]
-VerU_left = -1.0*VerU[::-1]
+df = pd.read_csv('Ver_numerical_2.000000.csv', header=None, 
+                  names=['Vertices', 'VerW', 'VerP', 'VerZ', 'VerH', 'VerU'])
+
+Vertices = df['Vertices'].to_numpy()
+VerW = df['VerW'].to_numpy()
+VerP = df['VerP'].to_numpy()
+VerZ = df['VerZ'].to_numpy()
+VerH = df['VerH'].to_numpy()
+VerU = df['VerU'].to_numpy()
+Vertices_left = -1.0*df['Vertices'].iloc[::-1]
+VerW_left = df['VerW'].iloc[::-1]
+VerP_left = -1.0*df['VerP'].iloc[::-1]
+VerZ_left = df['VerZ'].iloc[::-1]
+VerH_left = df['VerH'].iloc[::-1]
+VerU_left = -1.0*df['VerU'].iloc[::-1]
 
 p_st = util.get_output('radial_dam.sww')
 p2_st=util.get_centroids(p_st)

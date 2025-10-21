@@ -10,7 +10,7 @@ Ref: Carrier and Greenspan, Journal of Fluid Mechanics, 1958
 import sys
 import anuga
 from anuga import Domain as Domain
-from numpy import zeros, array, float, hstack
+from numpy import zeros, array, hstack
 from time import localtime, strftime, gmtime
 from scipy.optimize import fsolve
 from math import sin, pi, exp, sqrt, cos

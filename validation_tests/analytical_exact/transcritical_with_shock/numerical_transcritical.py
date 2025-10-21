@@ -10,7 +10,7 @@ import sys
 import anuga
 from anuga import Domain as Domain
 from math import cos
-from numpy import zeros, ones, float
+from numpy import zeros, ones
 from time import localtime, strftime, gmtime
 from anuga import myid, finalize, distribute
 
