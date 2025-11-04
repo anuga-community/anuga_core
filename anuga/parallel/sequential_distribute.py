@@ -220,6 +220,7 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
 
     partition = Sequential_distribute(domain, verbose, debug, parameters)
 
+    if verbose: print('sequential_distribute_dump: Partitioning mesh to %d processes'%numprocs)
     partition.distribute(numprocs)
 
     # Make sure the partition_dir exists
@@ -235,9 +236,11 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
                 raise
 
     import pickle
-    from tqdm.notebook import tqdm
+    from tqdm import trange
 
-    for p in tqdm(range(0, numprocs)):
+    if verbose: print('sequential_distribute_dump: Dumping partitions to %s'%partition_dir)
+    
+    for p in range(0, numprocs):
 
         tostore = partition.extract_submesh(p)
 
