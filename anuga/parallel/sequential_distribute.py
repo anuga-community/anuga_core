@@ -229,7 +229,7 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
         import os
         import errno
         try:
-            os.makedirs(partition_dir)
+            os.makedirs(partition_dir, exist_ok=True)
         except OSError as exception:
             if exception.errno != errno.EEXIST:
                 raise
@@ -246,7 +246,7 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
         lst = list(tostore)
 
         # Write points and triangles to their own files
-        num.save(pickle_name+".np1",tostore[1]) # this append .npy to filename
+        num.save(pickle_name+".np1",tostore[1]) # num.save appends .npy to filename
         lst[1] = pickle_name+".np1.npy"
         num.save(pickle_name+".np2",tostore[2])
         lst[2] = pickle_name+".np2.npy"

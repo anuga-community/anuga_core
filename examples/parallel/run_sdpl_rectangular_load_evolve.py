@@ -203,11 +203,12 @@ if domain.number_of_global_triangles < 10:
 # to save time avoid merge
 #domain.sww_merge(delete_old=True)
 
+total_time = time.time() - domain.initial_walltime
 
 if myid == 0:
     print(80*'=')
-    print('np,ntri,ctime,dtime,etime')
-    msg = "%d,%d,%f,%f,%f"% (numprocs, domain.number_of_global_triangles, domain.creation_time, distribute_time, evolve_time)
+    print('np,ntri,ttime,dtime,etime')
+    msg = "%d,%d,%f,%f,%f"% (numprocs, domain.number_of_global_triangles, total_time, distribute_time, evolve_time)
     print(msg)
 
 finalize()
