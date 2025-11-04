@@ -87,17 +87,17 @@ args = parser.parse_args()
 
 print(args)
 
-sqrtN = args.sqrtN
-yieldstep = args.yieldstep
-finaltime = args.finaltime
-verbose = args.verbose
-evolve_verbose = args.evolve_verbose
+sqrtN               = args.sqrtN
+yieldstep           = args.yieldstep
+finaltime           = args.finaltime
+verbose             = args.verbose
+evolve_verbose      = args.evolve_verbose
 fixed_flux_timestep = args.fixed_dt
-test_allreduce = args.test_allreduce
-ghost_layer = args.ghost_layer
-store_sww = args.store_sww
+test_allreduce      = args.test_allreduce
+ghost_layer         = args.ghost_layer
+store_sww           = args.store_sww
 
-ncpus = args.numprocs
+ncpus               = args.numprocs
 
 dist_params = {}
 dist_params['ghost_layer_width'] = ghost_layer
