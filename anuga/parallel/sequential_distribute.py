@@ -235,7 +235,8 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
                 raise
 
     import pickle
-    for p in range(0, numprocs):
+    from tqdm import trange
+    for p in trange(0, numprocs):
 
         tostore = partition.extract_submesh(p)
 
