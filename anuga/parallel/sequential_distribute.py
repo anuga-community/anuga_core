@@ -236,7 +236,6 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
                 raise
 
     import pickle
-    from tqdm import trange
 
     if verbose: print('sequential_distribute_dump: Dumping partitions to %s'%partition_dir)
     
