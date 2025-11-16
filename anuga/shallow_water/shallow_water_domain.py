@@ -2389,7 +2389,7 @@ class Domain(Generic_Domain):
         :param float outputstep: Output to sww file every outputstep time period. outputstep should be an integer multiple of yieldstep.
         :param float finaltime: evolve until finaltime (can be a float (secs) or a datetime object)
         :param float duration: evolve for a time of length duration (secs)
-        :param  boolean skip_inital_step: Can be used to restart a simulation (not often used).
+        :param boolean skip_initial_step: Can be used to restart a simulation (not often used).
 
 
         If outputstep is None, the output to sww file happens every yieldstep.
