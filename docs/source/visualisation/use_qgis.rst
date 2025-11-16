@@ -13,6 +13,8 @@ Opening sww files in QGIS
 
 Open QGIS. 
 
+This document uses QGIS version 3.42
+
 From the "layer" menu choose "Data Source Manager"
 
 .. figure:: img/qgis-layer.png
@@ -69,19 +71,19 @@ From the "Contours" tab choose the colour ramp, min and max.
 .. figure:: img/qgis-contours.png
 
 
-Your first timeslice of yourdataset quantityshould now be visible. 
-Now you need to activate the temporal controller to step through time.
+The first timeslice of your dataset quantity should now be visible. 
+You need to activate the temporal controller to step through time.
 
 
 The "Time Controller Panel" may already be activated, but if not, from the ribbon, choose "Temporal Controller Panel". 
 
-* The "temporal Contoller" has 4 options: "Turn off", "Fixed Range", "Animated" and "Movie". 
-  Choose "Animated".
+* The "temporal Contoller" has 4 options: "Off", "Fixed Range", "Animated" and "Movie". 
+* Choose "Animated".
 * When "Animated" is chosen, you should see a slider and controls. 
 * We recommend that you update the "Animation Range".
 * You should now be able to run through the chosen quantity's time series.
 
-.. figure:: img/qgis-temporal-controller.png
+.. figure:: img/qgis-temporal-control.png
 
 
 
@@ -90,7 +92,7 @@ time series data stored in sww files.
 
 In general we recommend the following resources for learning QGIS:
 
-  * https://docs.qgis.org/3.28/en/docs/user_manual/
+  * https://docs.qgis.org/3.40/en/docs/user_manual/
 
   * https://www.qgistutorials.com/en/
 
