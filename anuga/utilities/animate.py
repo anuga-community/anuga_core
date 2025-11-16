@@ -407,11 +407,25 @@ class SWW_plotter(object):
     """
     A class to wrap ANUGA swwfile centroid values for stage, height, elevation
     xmomentunm and ymomentum, and triangulation information.
+
+    Example:
+
+        Open an SWW file and plot depth at frame 10.
+
+    >>> import anuga
+    >>> import matplotlib.pyplot as plt
+    >>>
+    >>> splotter = anuga.SWW_plotter('domain.sww')
+    >>> splotter.plot_depth_frame(frame=10)
+    >>> plt.show()
+    >>> 
+    >>> domain.set_starttime(dt)
+    >>> print(domain.get_datetime(), 'TZ', domain.get_timezone(), 'Timestamp: ', domain.get_time())
+    2021-03-21 18:30:00+00:00 TZ UTC Timestamp:  1616351400.0
     """
 
     def __init__(self, swwfile='domain.sww', plot_dir='_plot',
-                 min_depth = 0.01,
-                 minimum_allowed_depth=1.0e-03,
+                 min_depth = 0.001,
                  absolute=False):
 
         self.plot_dir = plot_dir
@@ -466,10 +480,11 @@ class SWW_plotter(object):
             for i in range(self.depth.shape[0]):
                 self.depth[i, :] = self.stage[i, :]-self.elev
 
+
         with np.errstate(invalid='ignore'):
-            self.xvel = np.where(self.depth > minimum_allowed_depth,
+            self.xvel = np.where(self.depth > self.min_depth,
                              self.xmom / self.depth, 0.0)
-            self.yvel = np.where(self.depth > minimum_allowed_depth,
+            self.yvel = np.where(self.depth > self.min_depth,
                              self.ymom / self.depth, 0.0)
 
         self.speed = np.sqrt(self.xvel**2 + self.yvel**2)
@@ -496,24 +511,26 @@ class SWW_plotter(object):
 
         ims = []
 
-        fig = plt.figure(figsize=figsize, dpi=dpi)
+        #fig = plt.figure(figsize=figsize, dpi=dpi)
+
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
         plt.title('Depth: Time {0:0>4}'.format(time))
 
         self.triang.set_mask(depth > md)
-        plt.tripcolor(self.triang,
+        ax.tripcolor(self.triang,
                       facecolors=elev,
                       cmap='Greys_r')
 
         self.triang.set_mask(depth < md)
-        plt.tripcolor(self.triang,
+        ax.tripcolor(self.triang,
                       facecolors=depth,
                       cmap='viridis',
                       vmin=vmin, vmax=vmax)
 
         plt.colorbar()
 
-        return fig
+        return fig, ax
 
     def save_depth_frame(self, figsize=(10, 6), dpi=160, frame=-1,
                          vmin=0.0, vmax=20.0):
@@ -524,7 +541,7 @@ class SWW_plotter(object):
         time = self.time[frame]
         plot_dir = self.plot_dir
 
-        fig = self._depth_frame(figsize, dpi, frame, vmin, vmax)
+        fig, ax = self._depth_frame(figsize, dpi, frame, vmin, vmax)
 
         if plot_dir is None:
             fig.savefig(name+'_depth_{0:0>10}.png'.format(int(time)))
@@ -539,9 +556,11 @@ class SWW_plotter(object):
 
         import matplotlib.pyplot as plt
 
-        fig = self._depth_frame(figsize, dpi, frame, vmin, vmax)
+        fig, ax = self._depth_frame(figsize, dpi, frame, vmin, vmax)
 
         plt.show()
+
+        return fig, ax
 
 
     #------------------------------------------
