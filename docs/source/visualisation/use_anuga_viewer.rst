@@ -22,15 +22,20 @@ Controls
 * Hold both mouse buttons down or hold the middle button to slide around the model.
 * Hold down shift and click on the water with the left mouse button to show a timeseries plot. The data shown depends on the view mode.
 * Click on something that is not water, or click without holding shift to hide the timeseries plot.
+* Press h to show/hide the help screen. Here are some of the controls:
+  * Press r to reset the view (sometimes useful if you get lost).
+  * Press t to cycle through the view modes (stage, momentum).
+  * Press w to toggle wireframe modes.
 
 Applying Textures
 -----------------
 
 * Applying images (ie textures) to the bedslope mesh can be done with the --texture command line option. For example:
 
-```
-viewer.exe -texture ..\images\bedslope.jpg ..\data\cairns.sww
-```
+.. code-block:: bash
+
+   anuga_viewer.exe -texture ..\images\bedslope.jpg ..\data\cairns.sww
+
 
 * There are two possible ways the texture is mapped onto the bedslope mesh, based on the texture format.
 
