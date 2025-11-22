@@ -20,6 +20,7 @@
       ~SWW_plotter.make_speed_depth_animation
       ~SWW_plotter.make_stage_animation
       ~SWW_plotter.plot_depth_frame
+      ~SWW_plotter.plot_mesh
       ~SWW_plotter.plot_speed_depth_frame
       ~SWW_plotter.plot_speed_frame
       ~SWW_plotter.plot_stage_frame
