@@ -20,7 +20,7 @@ Evolving the Model
 
 In addition to evolving the model, it would good to be able to interact with the evolving model. This 
 is all provided by the :meth:`evolve <Domain.evolve>` method 
-of the :doc:`Domain <domain.rst>` object. 
+of the :doc:`Domain <../setup_anuga_script/domain>` object. 
 
 Suppose we have created and set up a Domain by completing the first 4 basic steps.
 For example here is such a setup for a domain object called `domain`:
