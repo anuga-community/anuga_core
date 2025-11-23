@@ -17,38 +17,41 @@ A typical MPI parallel script looks like this:
 
 .. code-block:: python
 
-    from anuga import rectangular_cross_domain
-    from anuga import distribute
-    from anuga import finalize
-    from anuga import myid
+   # Simple rain example
+   import anuga
+   import math
 
-    # Create a sequential domain on process 0
-    if myid == 0:
-        domain = rectangular_cross_domain(1000, 1000, 10, 10)
-        # Set up domain (e.g., set quantities)
-    else:
-        domain = None
+   # Create a sequential domain on process 0
+   if anuga.myid == 0:
+      domain = anuga.rectangular_cross_domain(1000, 1000, 10, 10)
 
-    # Distribute the domain to all processes
-    domain = distribute(domain)
+      # Set the initial conditions
+      domain.set_quantity('elevation', function = lambda x,y : x/10)
+      domain.set_quantity('stage', expression = "elevation + 0.2" )
+   else:
+      domain = None
 
-    # Set up boundary conditions, (must be after distribute)
-    Br = anuga.Reflective_boundary(domain)
-    domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+   # Distribute the domain to all processes
+   domain = anuga.distribute(domain)
 
-    # Set up operators
-    rate_operator = anuga.Rate_operator(domain, rate=0.01)
+   # Set up boundary conditions, (must be after distribute)
+   Br = anuga.Reflective_boundary(domain)
+   domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
 
-    # Evolve the domain in parallel
-    domain.evolve(yieldstep=1.0, finaltime=10.0):
-      if myid == 0:
-         domain.print_timestepping_statistics()
+   # Set up operators
+   # Specify the operators
+   rain = anuga.Rate_operator(domain, rate=lambda t: math.exp( -t**2 ), factor=0.001)
 
-    # Merge sww files on process 0
-    domain.sww_merge()
+   # Evolve the domain in parallel
+   domain.evolve(yieldstep=1.0, finaltime=10.0):
+   if anuga.myid == 0:
+      domain.print_timestepping_statistics()
 
-    # Finalize MPI
-    finalize()
+   # Merge sww files on process 0
+   domain.sww_merge()
+
+   # Finalize MPI
+   anuga.finalize()
 
 To execute an MPI parallel run you need to use the mpiexec command. 
 Suppose you script is named `run_model.py` and you want to use 8 MPI processes, 

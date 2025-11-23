@@ -2,8 +2,8 @@
 
 
 
-Setting up an ANUGA Script
-==========================
+Script Structure
+=================
 
 
 .. only:: html

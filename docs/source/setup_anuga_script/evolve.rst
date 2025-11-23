@@ -202,14 +202,4 @@ Note that the date is 1st Jan 1970, starting at time 0:00, incrementing by 1 sec
 the UTC offset is +0000 (ie the timezone is UTC). 
 
 
-Useful Domain methods
----------------------
-
-.. autosummary::
-   :toctree: generated
-   
-   Domain.evolve
-   Domain.print_timestepping_statistics
-   Domain.set_starttime
-   Domain.set_timezone
 
