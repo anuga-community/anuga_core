@@ -321,7 +321,7 @@ class Domain(Generic_Domain):
         # then set to default (1 thread). If a value is given to
         # the method, then it will override the default.
         #------------------------------
-        self.set_omp_num_threads()
+        self.set_omp_num_threads(verbose=False)
 
         #-------------------------------
         # datetime and timezone
@@ -467,6 +467,8 @@ class Domain(Generic_Domain):
         self.xc = self.dplotter.xc
         self.yc = self.dplotter.yc
 
+        self.plot_mesh = self.dplotter.plot_mesh
+
         self.save_depth_frame = self.dplotter.save_depth_frame
         self.plot_depth_frame = self.dplotter.plot_depth_frame
         self.make_depth_animation = self.dplotter.make_depth_animation
@@ -489,6 +491,9 @@ class Domain(Generic_Domain):
 
         lines = ax.triplot(self.triang, *args, **kwargs)
 
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+
         return fig, ax, lines
 
 
@@ -500,6 +505,9 @@ class Domain(Generic_Domain):
         fig, ax = plt.subplots()
 
         im = ax.tripcolor(self.triang,  *args, **kwargs)
+
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
 
         return fig, ax, im
 
@@ -1964,7 +1972,7 @@ class Domain(Generic_Domain):
         # nvtxRangePush('extrapolate')
         # Choose the correct extension module
         if self.multiprocessor_mode == 1:
-            from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
+            from .sw_domain_openmp_ext import distribute_to_edges as extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw(self)
         elif self.multiprocessor_mode == 2:
             # change over to cuda routines as developed
@@ -2389,7 +2397,7 @@ class Domain(Generic_Domain):
         :param float outputstep: Output to sww file every outputstep time period. outputstep should be an integer multiple of yieldstep.
         :param float finaltime: evolve until finaltime (can be a float (secs) or a datetime object)
         :param float duration: evolve for a time of length duration (secs)
-        :param  boolean skip_inital_step: Can be used to restart a simulation (not often used).
+        :param boolean skip_initial_step: Can be used to restart a simulation (not often used).
 
 
         If outputstep is None, the output to sww file happens every yieldstep.
@@ -2543,7 +2551,7 @@ class Domain(Generic_Domain):
         """
 
         #nvtx marker
-        nvtxRangePush('distribute_to_vertices_and_edges')
+        nvtxRangePush('distribute_to_edges')
 
         # From centroid values calculate edge
         self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
@@ -3234,7 +3242,7 @@ class Domain(Generic_Domain):
         """
         return self.multiprocessor_mode 
 
-    def set_omp_num_threads(self, omp_num_threads=None):
+    def set_omp_num_threads(self, omp_num_threads=None, verbose=True):
         """
         Set the number of OpenMP threads to use for parallel processing.
         If OMP_NUM_THREADS is not set, this will set it to the specified 
@@ -3244,9 +3252,10 @@ class Domain(Generic_Domain):
 
         import os
         if omp_num_threads is None:
-            # Use the default setting
+            # Use the environment setting
             omp_num_threads = os.environ.get('OMP_NUM_THREADS', None)
-            #print(f'Using OMP_NUM_THREADS from environment: {omp_num_threads}')
+            if verbose:
+                print(f'Using OMP_NUM_THREADS from environment: {omp_num_threads}')
 
 
         if omp_num_threads is None:
@@ -3261,8 +3270,9 @@ class Domain(Generic_Domain):
         self.omp_num_threads = omp_num_threads
         from .sw_domain_openmp_ext import set_omp_num_threads
         set_omp_num_threads(omp_num_threads)
-        
-        print(f'Setting omp_num_threads to {omp_num_threads}')
+
+        if verbose:
+            print(f'Setting omp_num_threads to {omp_num_threads}')
 
 
     def set_gpu_interface(self):

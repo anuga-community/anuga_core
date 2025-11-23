@@ -491,6 +491,33 @@ def extrapolate_second_order_sw(object domain_object):
 	with nogil:
 		_openmp_extrapolate_second_order_sw(&D)
 
+def distribute_to_edges(object domain_object):
+
+	cdef domain D
+	cdef int64_t e
+
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+
+	with nogil:
+		_openmp_extrapolate_second_order_sw(&D)
+
+def distribute_to_edges_and_vertices(object domain_object, distribute_to_vertices=True):
+
+	cdef domain D
+	cdef int64_t e
+
+	get_python_domain_parameters(&D, domain_object)
+	get_python_domain_pointers(&D, domain_object)
+
+
+	with nogil:
+		_openmp_extrapolate_second_order_edge_sw(&D)
+
+	if distribute_to_vertices:
+		with nogil:
+			_openmp_distribute_edges_to_vertices(&D)
+
 
 def distribute_edges_to_vertices(object domain_object):
 

@@ -5,25 +5,35 @@ import os
 import csv
 import shutil
 import numpy as np
-
-# This script runs benchmark ifor specified script with different numbers of OpenMP threads
-
-from time import localtime, strftime, gmtime, sleep
-time = strftime('%Y%m%d_%H%M', localtime())
-
 import subprocess
 import sys
 import socket
-
 import argparse
+
+from pathlib import Path
+
+# This script runs experiment for specified script, saves output and copies
+# all files in the current directory to the output directory.
+#
+# Usage example:
+# python anuga_run_experiment.py -omp 4 -dl 0 run_small_towradgi.py arg1 arg2 ...
+#
+# -omp: number of OpenMP threads
+# -dl: directory level for output directory
+
+from time import localtime, strftime, gmtime, sleep
+time = strftime('%Y%m%d_%H%M', localtime())
 
 
 parser = argparse.ArgumentParser(
     description="Run experiment for given script."
 )
 
-parser.add_argument('-omp', '--openmp_threads', type=int, nargs=1, default=4,
+parser.add_argument('-omp', '--openmp_threads', type=int, nargs=1, default=[4],
                     help="OpenMP threads used for the experiment")
+
+parser.add_argument('-dl', '--directory_level', type=int, nargs=1, default=[2],
+                    help="Directory level for output directory")
 
 parser.add_argument(
     "script_file",
@@ -43,7 +53,12 @@ parser.add_argument(
 args = parser.parse_args()
 script_file = args.script_file
 script_args = args.script_args
-openmp_threads = args.openmp_threads
+openmp_threads = args.openmp_threads[0]
+directory_level = args.directory_level[0]
+
+print(f"Using OpenMP threads: {openmp_threads}")
+print(f"Using directory level: {directory_level}")
+
 
 if script_args == []:
     script_args_str = ""
@@ -99,10 +114,16 @@ print(f"Using queue: {queue}")
 
 
 env["OMP_NUM_THREADS"] = str(openmp_threads)  # Set to your desired number of threads
-output_dir = f'../../OUTPUT/experiment_{abs_script_file}_datetime_{time}'
+
+
+
+def get_output_dir(directory_level, abs_script_file, time):
+    base = Path(*(['..'] * directory_level)) / 'OUTPUT'
+    return str(base / f'{abs_script_file}_datetime_{time}')
+
+output_dir = get_output_dir(directory_level, abs_script_file, time)
 
 os.makedirs(output_dir, exist_ok=True)
-
 
 destination_dir = output_dir
 

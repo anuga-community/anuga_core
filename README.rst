@@ -3,19 +3,11 @@
     :target: https://app.gitter.im/#/room/#anuga-community:gitter.im
     :alt: Community Chat
 
-..
-    |badge1| image:: https://img.shields.io/travis/com/anuga-community/anuga_core/develop_hackathon.svg
-    :target: https://app.travis-ci.com/anuga-community/anuga_core
-    :alt: Travis CI Status
 
 .. |badge1| image:: https://github.com/anuga-community/anuga_core/actions/workflows/conda-setup.yml/badge.svg
     :target: https://github.com/anuga-community/anuga_core/actions/workflows/conda-setup.yml
     :alt: GitHub Actions Status
-   
-.. 
-    |badge2| image:: https://ci.appveyor.com/api/projects/status/x5airjv7eq2u805w/branch/main?svg=true
-    :target: https://ci.appveyor.com/project/stoiver/anuga-core-nwgr0
-    :alt: appveyor status
+
 
 .. |badge3| image:: https://img.shields.io/pypi/v/anuga.svg
     :target: https://pypi.python.org/pypi/anuga/
