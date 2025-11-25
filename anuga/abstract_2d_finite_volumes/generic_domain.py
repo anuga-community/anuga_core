@@ -1913,14 +1913,14 @@ class Generic_Domain(object):
 
                 # Reinitialise
                 print("reinit", flush=True)
-                
+
                 self.relative_yieldtime += yieldstep
                 self.yieldtime = self.relative_yieldtime + self.starttime
                 self.recorded_min_timestep = self.evolve_max_timestep
                 self.recorded_max_timestep = self.evolve_min_timestep
                 self.number_of_steps = 0
                 self.number_of_first_order_steps = 0
-                self.max_speed = num.zeros(N, float)
+                self.max_speed[:] = 0.0
                 print("finishign reinit", flush=True)
 
     def evolve_one_euler_step(self, yieldstep, finaltime):
@@ -2492,7 +2492,7 @@ class Generic_Domain(object):
 
             for i, q in enumerate(quantities):
                 Q_cv = self.quantities[q].centroid_values
-                num.put(Q_cv, Idg, num.take(Q_cv, Idf, axis=0))
+                Q_cv[Idg] = Q_cv[Idf]
 
 #    def update_special_conditions(self):
 #        """There may be a need to change the values of the conserved

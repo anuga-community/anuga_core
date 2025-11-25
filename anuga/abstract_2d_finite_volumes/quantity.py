@@ -2218,18 +2218,24 @@ class Quantity(object):
                                     ensure_numeric(self.domain.number_of_triangles_per_node),
                                     ensure_numeric(self.vertex_values),
                                     A)
-            A = A.astype(precision)
+            # Avoid copy if already correct precision
+            if A.dtype != precision:
+                A = A.astype(precision)
 
         else:
             # Return disconnected internal vertex values
             V = self.domain.get_disconnected_triangles()
             points = self.domain.get_vertex_coordinates()
-            A = self.vertex_values.flatten().astype(precision)
+            # Avoid copy if already correct precision
+            A_flat = self.vertex_values.ravel()
+            A = A_flat if A_flat.dtype == precision else A_flat.astype(precision)
 
         # Return
         if xy is True:
-            X = points[:,0].astype(precision)
-            Y = points[:,1].astype(precision)
+            X_col = points[:,0]
+            Y_col = points[:,1]
+            X = X_col if X_col.dtype == precision else X_col.astype(precision)
+            Y = Y_col if Y_col.dtype == precision else Y_col.astype(precision)
 
             return X, Y, A, V
         else:

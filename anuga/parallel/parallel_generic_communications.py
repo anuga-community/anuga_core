@@ -116,7 +116,7 @@ def communicate_ghosts_blocking(domain, quantities=None):
                     for i, q in enumerate(quantities):
                         #print 'Send',i,q
                         Q_cv =  domain.quantities[q].centroid_values
-                        Xout[:,i] = num.take(Q_cv, Idf)
+                        Xout[:,i] = Q_cv[Idf]
 
                     pypar.send(Xout, int(send_proc), use_buffer=True, bypass=True)
 
@@ -128,12 +128,12 @@ def communicate_ghosts_blocking(domain, quantities=None):
                 Idg = domain.ghost_recv_dict[iproc][0]
                 X   = domain.ghost_recv_dict[iproc][2]
 
-                X = pypar.receive(int(iproc), buffer=X, bypass=True)
+                pypar.receive(int(iproc), buffer=X, bypass=True)
 
                 for i, q in enumerate(quantities):
                     #print 'Receive',i,q
                     Q_cv =  domain.quantities[q].centroid_values
-                    num.put(Q_cv, Idg, X[:,i])
+                    Q_cv[Idg] = X[:,i]
 
     #local update of ghost cells
     iproc = domain.processor
@@ -150,7 +150,7 @@ def communicate_ghosts_blocking(domain, quantities=None):
         for i, q in enumerate(quantities):
             #print 'LOCAL SEND RECEIVE',i,q
             Q_cv =  domain.quantities[q].centroid_values
-            num.put(Q_cv, Idg, num.take(Q_cv, Idf))
+            Q_cv[Idg] = Q_cv[Idf]
 
     domain.communication_time += time.time()-t0
 
@@ -192,7 +192,7 @@ def communicate_ghosts_non_blocking(domain, quantities=None):
         for i, q in enumerate(quantities):
             #print 'Store send data',i,q
             Q_cv =  domain.quantities[q].centroid_values
-            Xout[:,i] = num.take(Q_cv, Idf)
+            Xout[:,i] = Q_cv[Idf]
 
     #--------------------------------------------
     # Do all the comuunication using isend/irecv 
@@ -242,7 +242,7 @@ def communicate_ghosts_non_blocking(domain, quantities=None):
         for i, q in enumerate(quantities):
             #print 'Read receive data',i,q
             Q_cv =  domain.quantities[q].centroid_values
-            num.put(Q_cv, Idg, X[:,i])
+            Q_cv[Idg] = X[:,i]
 
 
     domain.communication_time += time.time()-t0
@@ -276,7 +276,7 @@ def communicate_ghosts_asynchronous(domain, quantities=None):
         for i, q in enumerate(quantities):
             #print 'Store send data',i,q
             Q_cv =  domain.quantities[q].centroid_values
-            Xout[:,i] = num.take(Q_cv, Idf)
+            Xout[:,i] = Q_cv[Idf]
 
     # Do all the comuunication using isend/irecv via the buffers in the
     # full_send_dict and ghost_recv_dict
@@ -291,7 +291,7 @@ def communicate_ghosts_asynchronous(domain, quantities=None):
         for i, q in enumerate(quantities):
             #print 'Read receive data',i,q
             Q_cv =  domain.quantities[q].centroid_values
-            num.put(Q_cv, Idg, X[:,i])
+            Q_cv[Idg] = X[:,i]
 
 
     domain.communication_time += time.time()-t0

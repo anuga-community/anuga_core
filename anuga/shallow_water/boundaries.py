@@ -189,7 +189,8 @@ class Reflective_boundary(Boundary):
         ids = segment_edges
         vol_ids  = domain.boundary_cells[ids]
         edge_ids = domain.boundary_edges[ids]
-        ids_array = np.array(ids, dtype=np.int64)
+        # Use asarray to avoid copying if already correct type
+        ids_array = np.asarray(ids, dtype=np.int64)
 
         evaluate_reflective_segment(domain, ids_array, vol_ids, edge_ids)
 

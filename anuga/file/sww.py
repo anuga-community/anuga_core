@@ -289,7 +289,7 @@ class SWW_file(Data_format):
             raise DataFileNotOpenError(msg)
 
         # Check to see if the file is already too big:
-        time = fid.variables['time'][:]
+        time = fid.variables['time']
 
         i = len(time) + 1
         file_size = stat(self.filename)[6]
@@ -341,7 +341,7 @@ class SWW_file(Data_format):
             domain = self.domain
 
             # Get the variables
-            time = fid.variables['time'][:]
+            time = fid.variables['time']
             i = len(time)
 
             if 'stage' in self.writer.dynamic_quantities:
@@ -361,8 +361,8 @@ class SWW_file(Data_format):
                 Q = domain.quantities['elevation']
                 z, _ = Q.get_vertex_values(xy=False)
 
-                storable_indices = num.array(
-                    w-z >= self.minimum_storable_height)
+                # Create boolean mask directly (avoid unnecessary array copy)
+                storable_indices = (w-z >= self.minimum_storable_height)
 
                 # print numpy.sum(storable_indices), len(z), self.minimum_storable_height, numpy.min(w-z)
             else:
@@ -387,11 +387,8 @@ class SWW_file(Data_format):
                     if name in ['xmomentum', 'ymomentum']:
                         # Get xmomentum where depth exceeds
                         # minimum_storable_height
-
-                        # Define a zero vector of same size and type as A
-                        # for use with momenta
-                        null = num.zeros(num.size(A), A.dtype.char)
-                        A = num.choose(storable_indices, (null, A))
+                        # Use where instead of choose to avoid creating intermediate zero array
+                        A = num.where(storable_indices, A, 0.0)
 
                 dynamic_quantities[name] = A
 
@@ -431,6 +428,11 @@ class SWW_file(Data_format):
             # Flush and close
             # fid.sync()
             fid.close()
+
+            # Explicitly clear temporary arrays to help garbage collection
+            dynamic_quantities.clear()
+            dynamic_quantities_centroid.clear()
+            del w, z, storable_indices
 
 
 class Read_sww(object):
@@ -996,7 +998,8 @@ class Write_sww(Write_sts):
             # check if time already saved as in check pointing
             if slice_index > 0:
                 if time <= file_time[slice_index-1]:
-                    check = numpy.where(numpy.abs(file_time[:]-time) < 1.0e-14)
+                    # Avoid copying entire time array - only check existing entries
+                    check = numpy.where(numpy.abs(file_time[0:slice_index]-time) < 1.0e-14)
                     slice_index = int(check[0][0])
             file_time[slice_index] = time
         else:
@@ -1020,11 +1023,15 @@ class Write_sww(Write_sts):
             else:
                 q_values = ensure_numeric(quant[q])
 
-                q_retyped = q_values.astype(sww_precision)
+                # Avoid unnecessary copy if already correct precision
+                if q_values.dtype == sww_precision:
+                    q_retyped = q_values
+                else:
+                    q_retyped = q_values.astype(sww_precision)
                 outfile.variables[q][slice_index] = q_retyped
 
-                # This updates the _range values
-                q_range = outfile.variables[q + Write_sww.RANGE][:]
+                # This updates the _range values - avoid copying range array
+                q_range = outfile.variables[q + Write_sww.RANGE]
                 q_values_min = num.min(q_values)
                 if q_values_min < q_range[0]:
                     outfile.variables[q + Write_sww.RANGE][0] = q_values_min
@@ -1087,7 +1094,11 @@ class Write_sww(Write_sts):
             else:
                 q_values = ensure_numeric(quant[q])
 
-                q_retyped = q_values.astype(sww_precision)
+                # Avoid unnecessary copy if already correct precision
+                if q_values.dtype == sww_precision:
+                    q_retyped = q_values
+                else:
+                    q_retyped = q_values.astype(sww_precision)
                 outfile.variables[q][slice_index] = q_retyped
 
     def verbose_quantities(self, outfile):

@@ -128,7 +128,7 @@ class Parallel_domain(Domain):
 
                         #for i in range(N):
                         #    Xout[i,0] = stage_cv[Idf[i]]
-                        Xout[:,0] = num.take(stage_cv, Idf)
+                        Xout[:,0] = stage_cv[Idf]
 
                         pypar.send(Xout,send_proc)
 
@@ -142,10 +142,10 @@ class Parallel_domain(Domain):
                     Idg = self.ghost_recv_dict[iproc][0]
                     X = self.ghost_recv_dict[iproc][2]
 
-                    X = pypar.receive(iproc,X)
+                    pypar.receive(iproc, buffer=X)
                     N = len(Idg)
 
-                    num.put(stage_cv, Idg, X[:,0])
+                    stage_cv[Idg] = X[:,0]
                     #for i in range(N):
                     #    stage_cv[Idg[i]] = X[i,0]
 
@@ -168,7 +168,7 @@ class Parallel_domain(Domain):
             #    #print i,Idg[i],Idf[i]
             #    stage_cv[Idg[i]] = stage_cv[Idf[i]]
 
-            num.put(stage_cv, Idg, num.take(stage_cv, Idf))
+            stage_cv[Idg] = stage_cv[Idf]
 
 
         self.communication_time += time.time()-t0
