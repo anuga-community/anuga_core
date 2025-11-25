@@ -33,8 +33,8 @@ import traceback
 import logging
 
 
-DefaultConsoleLogLevel = logging.CRITICAL
-DefaultFileLogLevel = logging.INFO
+DefaultConsoleLogLevel = logging.DEBUG
+DefaultFileLogLevel = logging.DEBUG
 TimingDelimiter ='#@# '
 
 ################################################################################

@@ -109,7 +109,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	void _openmp_set_omp_num_threads(int64_t num_threads)
 	double _openmp_compute_fluxes_central(domain* D, double timestep)
 	double _openmp_protect(domain* D)
-	void _openmp_extrapolate_second_order_sw(domain* D)
+	#void _openmp_extrapolate_second_order_sw(domain* D)
 	void _openmp_extrapolate_second_order_edge_sw(domain* D)
 	int64_t _openmp_fix_negative_cells(domain* D)
 	int64_t _openmp_gravity(domain *D)
@@ -474,16 +474,16 @@ def compute_fluxes_ext_central(object domain_object, double timestep):
 
 	return timestep
 
-def extrapolate_second_order_sw(object domain_object):
+#def extrapolate_second_order_sw(object domain_object):
 
-	cdef domain D
-	cdef int64_t e
+#	cdef domain D
+#	cdef int64_t e
 
-	get_python_domain_parameters(&D, domain_object)
-	get_python_domain_pointers(&D, domain_object)
+#	get_python_domain_parameters(&D, domain_object)
+#	get_python_domain_pointers(&D, domain_object)
 
-	with nogil:
-		_openmp_extrapolate_second_order_sw(&D)
+#	with nogil:
+#		_openmp_extrapolate_second_order_sw(&D)
 
 
 def distribute_edges_to_vertices(object domain_object):

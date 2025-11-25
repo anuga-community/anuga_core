@@ -113,7 +113,7 @@ options = {
   'bin': True,           # Use binary format (more efficient)
   'compression': True,   # Use zlib compression
   'bytecode': True,      # Recompute if bytecode has changed
-  'expire': False        # Automatically remove files that have been accessed
+  'expire': True # Automatically remove files that have been accessed
                          # least recently
 }
 

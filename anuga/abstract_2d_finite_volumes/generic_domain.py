@@ -1848,17 +1848,21 @@ class Generic_Domain(object):
                 self.evolve_one_rk3_step(yieldstep, self.finaltime)
 
             # Apply other fractional steps
+            #print("did the step")
             self.apply_fractional_steps()
 
             # Centroid Values of variables should be ok
 
             # Update time
             #self.set_time(initial_time + self.timestep)
+            #print("relative time setter")
             self.relative_time = initial_relative_time + self.timestep
 
+            #print("update ghost")
             self.update_ghosts()
 
             # Update extrema (only uses centroid values)
+            #print("update extrema")
             self.update_extrema()
 
             self.number_of_steps += 1
@@ -1898,12 +1902,17 @@ class Generic_Domain(object):
 
                 # Log and then Pass control on to outer loop for more
                 # specific actions
+                print("going to die")
                 self.distribute_to_vertices_and_edges()
+                print("updating boundary")
                 self.update_boundary()
+                print("log operator timestepping")
                 self.log_operator_timestepping_statistics()
+                print("yield")
                 yield(self.get_time())
 
                 # Reinitialise
+                print("reinit", flush=True)
                 
                 self.relative_yieldtime += yieldstep
                 self.yieldtime = self.relative_yieldtime + self.starttime
@@ -1912,6 +1921,7 @@ class Generic_Domain(object):
                 self.number_of_steps = 0
                 self.number_of_first_order_steps = 0
                 self.max_speed = num.zeros(N, float)
+                print("finishign reinit", flush=True)
 
     def evolve_one_euler_step(self, yieldstep, finaltime):
         """One Euler Time Step
@@ -1982,6 +1992,7 @@ class Generic_Domain(object):
         """
 
         # Save initial initial conserved quantities values
+        print("back up  conserved", flush=True)
         self.backup_conserved_quantities()
 
         ######
@@ -1989,27 +2000,34 @@ class Generic_Domain(object):
         ######
 
         # From centroid values calculate edge and vertex values
+        print("distribute to ver and ed", flush=True)
         self.distribute_to_vertices_and_edges()
 
         # Apply boundary conditions
+        print("update bound", flush=True)
         self.update_boundary()
 
         # Compute fluxes across each element edge
+        print("compute flux", flush=True)
         self.compute_fluxes()
 
         # Compute forcing terms
+        print("compute forcing", flush=True)
         self.compute_forcing_terms()
 
         # Update timestep to fit yieldstep and finaltime
+        print("update timestep", flush=True)
         self.update_timestep(yieldstep, finaltime)
 
         # Update centroid values of conserved quantities
+        print("update conserved quant", flush=True)
         self.update_conserved_quantities()
 
         # Update special conditions
         # self.update_special_conditions()
 
         # Update time
+        print("set relative time", flush=True)
         self.set_relative_time(self.get_relative_time() + self.timestep)
 
         # Update ghosts
@@ -2017,9 +2035,11 @@ class Generic_Domain(object):
             self.update_ghosts()
 
         # Update vertex and edge values
+        print("distribute to ver and ed 2", flush=True)
         self.distribute_to_vertices_and_edges()
 
         # Update boundary values
+        print("update bound 2", flush=True)
         self.update_boundary()
 
         ######
@@ -2030,12 +2050,15 @@ class Generic_Domain(object):
         ######
 
         # Compute fluxes across each element edge
+        print("fluxes again", flush=True)
         self.compute_fluxes()
 
         # Compute forcing terms
+        print("forcing again", flush=True)
         self.compute_forcing_terms()
 
         # Update conserved quantities
+        print("conserved quantit update", flush=True)
         self.update_conserved_quantities()
 
         ######
@@ -2044,6 +2067,7 @@ class Generic_Domain(object):
         ######
 
         # Combine steps
+        print("Saxpy", flush=True)
         self.saxpy_conserved_quantities(0.5, 0.5)
 
         # Update special conditions
