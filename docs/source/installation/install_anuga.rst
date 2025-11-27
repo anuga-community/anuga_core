@@ -2,7 +2,7 @@
 .. _install_anuga:
 
 Install ANUGA
--------------
+=============
 
 Once you have a working `python` environment you can install a prebuilt 
 version of ANUGA from `conda-forge` (if you have an Anaconda or Miniforge install) 
@@ -14,10 +14,8 @@ or via `pip` if you have a standard python install.
     (see `Install ANUGA for Developers <install_anuga_developers.html>`_).
     
 
-
-
 Anaconda or Miniforge
-~~~~~~~~~~~~~~~~~~~~~
+---------------------
 
 It is always recommended that you create a separate `conda` environment for 
 your ANUGA installation. 
@@ -43,7 +41,7 @@ We are now ready to use ANUGA.
 
 
 Test ANUGA
-~~~~~~~~~~  
+----------
 
 You can test your ANUGA installation by running the unit tests via:
 

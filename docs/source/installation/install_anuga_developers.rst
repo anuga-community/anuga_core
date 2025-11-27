@@ -1,6 +1,6 @@
 
 Install ANUGA for Developers
-----------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you want to use the very latest version of ANUGA (or to develop ANUGA code) then you need
 to download the `anuga_core` repository from `github` and then `pip` install 
@@ -15,7 +15,7 @@ and finally `pip` install ANUGA in editable mode via the `-e` option of the `pip
 Here are the details.
 
 Download ANUGA from `github`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 We need to download (clone) the ANUGA source code from `github`
 
@@ -37,7 +37,7 @@ This creates a directory `anuga_core`.
         git clone git@github.com:anuga-community/anuga_core.git
 
 Install ANUGA using Script
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 We have a scripts in the `anuga_core/tools` directory that will install `Miniforge` 
 and ANUGA and its dependencies.
@@ -130,7 +130,8 @@ and its dependencies.
     installed in the `conda` environment are used during the build process.
 
 Testing the installation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^
+
 Once the installation is complete you can activate the `anuga_env_3.12` environment
 and run the unit tests to check that everything is working. 
 
@@ -151,7 +152,7 @@ real life hydraulic scenarios. You can run them as follows:
     python run_auto_validation_tests.py
 
 Using the installation
-~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^
 
 You can now use ANUGA by activating the `anuga_env_3.12` environment and then running your python scripts
 that use ANUGA.
@@ -172,7 +173,7 @@ You can set the environment variable `OMP_NUM_THREADS=4`, as such:
 
 
 Updating
-~~~~~~~~
+^^^^^^^^^
 
 From time to time you might like to update your version of anuga to the latest version on 
 github. You can do this by going to the `anuga_core` directory and `pulling` the latest
