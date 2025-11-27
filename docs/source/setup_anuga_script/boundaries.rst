@@ -27,6 +27,7 @@ you would do the following:
     domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
 
 Standard Boundary Types
+-----------------------
 
  * :class:`Reflective_boundary` 
  * :class:`Dirichlet_boundary` 
