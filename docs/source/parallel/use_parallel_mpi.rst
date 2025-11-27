@@ -43,9 +43,9 @@ A typical MPI parallel script looks like this:
    rain = anuga.Rate_operator(domain, rate=lambda t: math.exp( -t**2 ), factor=0.001)
 
    # Evolve the domain in parallel
-   domain.evolve(yieldstep=1.0, finaltime=10.0):
-   if anuga.myid == 0:
-      domain.print_timestepping_statistics()
+   for t in domain.evolve(yieldstep=1.0, finaltime=10.0):
+       if anuga.myid == 0:
+           domain.print_timestepping_statistics()
 
    # Merge sww files on process 0
    domain.sww_merge()
