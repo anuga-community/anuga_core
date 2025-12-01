@@ -1848,21 +1848,16 @@ class Generic_Domain(object):
                 self.evolve_one_rk3_step(yieldstep, self.finaltime)
 
             # Apply other fractional steps
-            #print("did the step")
             self.apply_fractional_steps()
 
             # Centroid Values of variables should be ok
 
             # Update time
-            #self.set_time(initial_time + self.timestep)
-            #print("relative time setter")
             self.relative_time = initial_relative_time + self.timestep
 
-            #print("update ghost")
             self.update_ghosts()
 
             # Update extrema (only uses centroid values)
-            #print("update extrema")
             self.update_extrema()
 
             self.number_of_steps += 1
@@ -1902,13 +1897,9 @@ class Generic_Domain(object):
 
                 # Log and then Pass control on to outer loop for more
                 # specific actions
-                print("going to die")
                 self.distribute_to_vertices_and_edges()
-                print("updating boundary")
                 self.update_boundary()
-                print("log operator timestepping")
                 self.log_operator_timestepping_statistics()
-                print("yield")
                 yield(self.get_time())
 
                 # Reinitialise
