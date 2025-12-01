@@ -1912,7 +1912,6 @@ class Generic_Domain(object):
                 yield(self.get_time())
 
                 # Reinitialise
-                print("reinit", flush=True)
 
                 self.relative_yieldtime += yieldstep
                 self.yieldtime = self.relative_yieldtime + self.starttime
@@ -1921,7 +1920,6 @@ class Generic_Domain(object):
                 self.number_of_steps = 0
                 self.number_of_first_order_steps = 0
                 self.max_speed[:] = 0.0
-                print("finishign reinit", flush=True)
 
     def evolve_one_euler_step(self, yieldstep, finaltime):
         """One Euler Time Step
@@ -1992,7 +1990,6 @@ class Generic_Domain(object):
         """
 
         # Save initial initial conserved quantities values
-        print("back up  conserved", flush=True)
         self.backup_conserved_quantities()
 
         ######
@@ -2000,34 +1997,27 @@ class Generic_Domain(object):
         ######
 
         # From centroid values calculate edge and vertex values
-        print("distribute to ver and ed", flush=True)
         self.distribute_to_vertices_and_edges()
 
         # Apply boundary conditions
-        print("update bound", flush=True)
         self.update_boundary()
 
         # Compute fluxes across each element edge
-        print("compute flux", flush=True)
         self.compute_fluxes()
 
         # Compute forcing terms
-        print("compute forcing", flush=True)
         self.compute_forcing_terms()
 
         # Update timestep to fit yieldstep and finaltime
-        print("update timestep", flush=True)
         self.update_timestep(yieldstep, finaltime)
 
         # Update centroid values of conserved quantities
-        print("update conserved quant", flush=True)
         self.update_conserved_quantities()
 
         # Update special conditions
         # self.update_special_conditions()
 
         # Update time
-        print("set relative time", flush=True)
         self.set_relative_time(self.get_relative_time() + self.timestep)
 
         # Update ghosts
@@ -2035,11 +2025,9 @@ class Generic_Domain(object):
             self.update_ghosts()
 
         # Update vertex and edge values
-        print("distribute to ver and ed 2", flush=True)
         self.distribute_to_vertices_and_edges()
 
         # Update boundary values
-        print("update bound 2", flush=True)
         self.update_boundary()
 
         ######
@@ -2050,15 +2038,12 @@ class Generic_Domain(object):
         ######
 
         # Compute fluxes across each element edge
-        print("fluxes again", flush=True)
         self.compute_fluxes()
 
         # Compute forcing terms
-        print("forcing again", flush=True)
         self.compute_forcing_terms()
 
         # Update conserved quantities
-        print("conserved quantit update", flush=True)
         self.update_conserved_quantities()
 
         ######
@@ -2067,7 +2052,6 @@ class Generic_Domain(object):
         ######
 
         # Combine steps
-        print("Saxpy", flush=True)
         self.saxpy_conserved_quantities(0.5, 0.5)
 
         # Update special conditions
