@@ -427,23 +427,63 @@ def read_multi_poly_file_value(multi_P_file,attribute):
 # Define a function to read Culvert and Bridge data from Files in Directory
 def Create_culvert_bridge_Operator(domain,culvert_bridge_file):
     """This script reads in culvert and bridge data files
-    and populates Operator parameters.    
-    
+    and creates culvert operators using the parameters provided in the file.
+    The file should contain key=value pairs, one per line.
+    For example:
+
+    height=2.0
+    width=3.0
+    length=10.0
+    z1=5.0
+    z2=5.5
+    manning=0.015
+
+    will create a Boyd_box_operator.
+
+    Depending on the parameters provided, it will create either a Boyd_box_operator,
+    Boyd_pipe_operator, or Weir_orifice_trapezoid_operator.
+   
+    Called by:
+    User ANUGA Model SCRIPT
+    Purpose:
+    To create culvert or bridge operators based on parameters read from a file.
+    Calls:
+    anuga.Boyd_box_operator
+    anuga.Boyd_pipe_operator
+    anuga.Weir_orifice_trapezoid_operator
     """
     #print culvert_bridge_file
     local_vars = {}    
     
     with open(culvert_bridge_file, 'r') as f:
+        multiline_key = None
+        multiline_value = ''
         for line in f:
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
-            if '=' in line:
+            if multiline_key:
+                # Continue collecting multiline value
+                if line.endswith(',') or line.endswith('\\'):
+                    multiline_value += line + '\n'
+                    continue
+                else:
+                    multiline_value += line
+                    value = multiline_value
+                    key = multiline_key
+                    multiline_key = None
+                    multiline_value = ''
+            elif '=' in line:
                 key, value = line.split('=', 1)
                 key = key.strip()
                 value = value.strip()
+                if value.endswith(',') or value.endswith('\\'):
+                    multiline_key = key
+                    multiline_value = value + '\n'
+                    continue
+            else:
+                continue
             try:
-                # Try to evaluate value as Python literal
                 local_vars[key] = eval(value)
             except Exception:
                 local_vars[key] = value
