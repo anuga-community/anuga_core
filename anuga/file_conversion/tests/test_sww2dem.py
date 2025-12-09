@@ -1189,8 +1189,6 @@ class Test_Sww2Dem(unittest.TestCase):
         lines = prjid.readlines()
         prjid.close()
 
-        print(lines)
-
         L = lines[0].strip().split()
         assert L[0].strip().lower() == 'projection'
         assert L[1].strip().lower() == 'utm'
