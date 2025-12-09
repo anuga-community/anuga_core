@@ -408,9 +408,8 @@ class Test_Sww2Dem(unittest.TestCase):
 
 
         # Check asc file
-        ascid = open(ascfile)
-        lines = ascid.readlines()
-        ascid.close()
+        with open(ascfile) as ascid:
+            lines = ascid.readlines()
 
         L = lines[0].strip().split()
         assert L[0].strip().lower() == 'ncols'
