@@ -122,7 +122,7 @@ class Test_Sww2Dem(unittest.TestCase):
         self.domain.set_quantity('elevation', lambda x, y:-x - y)
         self.domain.set_quantity('stage', 1.0)
 
-        self.domain.geo_reference = Geo_reference(56, 308500, 6189000)
+        self.domain.geo_reference = Geo_reference(56, 308500, 6189000, hemisphere='undefined')
 
         sww = SWW_file(self.domain)
         sww.store_connectivity()
@@ -295,7 +295,7 @@ class Test_Sww2Dem(unittest.TestCase):
         os.remove(ascfile)
         os.remove(swwfile)
 
-    def test_sww2dem_asc_elevation_depth_DE0(self):
+    def test_sww2dem_asc_elevation_depth_DE0_undefined(self):
         """test_sww2dem_asc_elevation_depth
         
         Test that sww information can be converted correctly to asc/prj
@@ -328,6 +328,416 @@ class Test_Sww2Dem(unittest.TestCase):
         domain.set_quantity('stage', 1.0)
 
         domain.geo_reference = Geo_reference(56, 308500, 6189000)
+
+        sww = SWW_file(domain)
+        sww.store_connectivity()
+        sww.store_timestep()
+
+
+        domain.evolve_to_end(finaltime=0.01)
+        sww.store_timestep()
+
+        cellsize = 0.25
+        # Check contents
+        # Get NetCDF
+
+        fid = NetCDFFile(sww.filename, netcdf_mode_r)
+
+        # Get the variables
+        x = fid.variables['x'][:]
+        y = fid.variables['y'][:]
+        z = fid.variables['elevation'][:]
+        time = fid.variables['time'][:]
+        stage = fid.variables['stage'][:]
+        
+        # Check georeferencig: zone, xllcorner and yllcorner
+        assert fid.zone == 56
+        assert fid.xllcorner == 308500
+        assert fid.yllcorner == 6189000
+                
+
+        fid.close()
+
+        # Export to ascii/prj files
+        sww2dem(domain.get_name() + '.sww',
+                domain.get_name() + '_elevation.asc',
+                quantity='elevation',
+                cellsize=cellsize,
+                number_of_decimal_places=9,
+                verbose=self.verbose)
+
+        # Check prj (meta data)
+        prjid = open(prjfile)
+        lines = prjid.readlines()
+        prjid.close()
+
+        L = lines[0].strip().split()
+        assert L[0].strip().lower() == 'projection'
+        assert L[1].strip().lower() == 'utm'
+
+        L = lines[1].strip().split()
+        assert L[0].strip().lower() == 'zone'
+        assert L[1].strip().lower() == '56'
+
+        L = lines[2].strip().split()
+        assert L[0].strip().lower() == 'datum'
+        assert L[1].strip().lower() == 'wgs84'
+
+        L = lines[3].strip().split()
+        assert L[0].strip().lower() == 'zunits'
+        assert L[1].strip().lower() == 'no'
+
+        L = lines[4].strip().split()
+        assert L[0].strip().lower() == 'units'
+        assert L[1].strip().lower() == 'meters'
+
+        L = lines[5].strip().split()
+        assert L[0].strip().lower() == 'spheroid'
+        assert L[1].strip().lower() == 'wgs84'
+
+        L = lines[6].strip().split()
+        assert L[0].strip().lower() == 'xshift'
+        assert L[1].strip().lower() == '0'
+
+        L = lines[7].strip().split()
+        assert L[0].strip().lower() == 'yshift'
+        assert L[1].strip().lower() == '0'
+
+        L = lines[8].strip().split()
+        assert L[0].strip().lower() == 'parameters'
+
+
+        # Check asc file
+        ascid = open(ascfile)
+        lines = ascid.readlines()
+        ascid.close()
+
+        L = lines[0].strip().split()
+        assert L[0].strip().lower() == 'ncols'
+        assert L[1].strip().lower() == '5'
+
+        L = lines[1].strip().split()
+        assert L[0].strip().lower() == 'nrows'
+        assert L[1].strip().lower() == '5'
+
+        L = lines[2].strip().split()
+        assert L[0].strip().lower() == 'xllcorner'
+        assert num.allclose(float(L[1].strip().lower()), 308500)
+
+        L = lines[3].strip().split()
+        assert L[0].strip().lower() == 'yllcorner'
+        assert num.allclose(float(L[1].strip().lower()), 6189000)
+
+        L = lines[4].strip().split()
+        assert L[0].strip().lower() == 'cellsize'
+        assert num.allclose(float(L[1].strip().lower()), cellsize)
+
+        L = lines[5].strip().split()
+        assert L[0].strip() == 'NODATA_value'
+        assert L[1].strip().lower() == '-9999'
+
+        # Check grid values
+        for j in range(5):
+            L = lines[6 + j].strip().split()
+            y = (4 - j) * cellsize
+            for i in range(5):
+                assert num.allclose(float(L[i]), -i * cellsize - y, rtol=5e-2, atol=5e-2)
+                
+        # Cleanup
+        os.remove(prjfile)
+        os.remove(ascfile)
+
+        ascfile = domain.get_name() + '_depth.asc'
+        prjfile = domain.get_name() + '_depth.prj'
+
+        # Export to ascii/prj files
+        sww2dem(domain.get_name() + '.sww',
+                ascfile,
+                quantity='depth',
+                cellsize=cellsize,
+                number_of_decimal_places=9,
+                verbose=self.verbose)
+        
+        # Check asc file
+        ascid = open(ascfile)
+        lines = ascid.readlines()
+        ascid.close()
+
+        L = lines[0].strip().split()
+        assert L[0].strip().lower() == 'ncols'
+        assert L[1].strip().lower() == '5'
+
+        L = lines[1].strip().split()
+        assert L[0].strip().lower() == 'nrows'
+        assert L[1].strip().lower() == '5'
+
+        L = lines[2].strip().split()
+        assert L[0].strip().lower() == 'xllcorner'
+        assert num.allclose(float(L[1].strip().lower()), 308500)
+
+        L = lines[3].strip().split()
+        assert L[0].strip().lower() == 'yllcorner'
+        assert num.allclose(float(L[1].strip().lower()), 6189000)
+
+        L = lines[4].strip().split()
+        assert L[0].strip().lower() == 'cellsize'
+        assert num.allclose(float(L[1].strip().lower()), cellsize)
+
+        L = lines[5].strip().split()
+        assert L[0].strip() == 'NODATA_value'
+        assert L[1].strip().lower() == '-9999'
+
+        # Check grid values
+        for j in range(5):
+            L = lines[6 + j].strip().split()
+            y = (4 - j) * cellsize
+            for i in range(5):
+                assert num.allclose(float(L[i]), 1 - (-i * cellsize - y), rtol=5e-2, atol=5e-2)
+
+
+        # Cleanup
+        os.remove(prjfile)
+        os.remove(ascfile)
+        os.remove(swwfile)
+
+    def test_sww2dem_asc_elevation_depth_DE0_northern(self):
+        """test_sww2dem_asc_elevation_depth
+        
+        Test that sww information can be converted correctly to asc/prj
+        format readable by e.g. ArcView
+        
+        Also check geo_reference is correct
+        """
+
+        import time, os
+
+        # Setup
+
+        domain = anuga.rectangular_cross_domain(16,16)
+
+        B = Transmissive_boundary(domain)
+        domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})        
+
+
+        domain.set_name('datatest')
+
+        prjfile = domain.get_name() + '_elevation.prj'
+        ascfile = domain.get_name() + '_elevation.asc'
+        swwfile = domain.get_name() + '.sww'
+
+        domain.set_datadir('.')
+        domain.set_flow_algorithm('DE0')
+        domain.format = 'sww'
+        domain.smooth = True
+        domain.set_quantity('elevation', lambda x, y:-x - y)
+        domain.set_quantity('stage', 1.0)
+
+        domain.geo_reference = Geo_reference(56, 308500, 6189000, hemisphere='northern')
+
+        sww = SWW_file(domain)
+        sww.store_connectivity()
+        sww.store_timestep()
+
+
+        domain.evolve_to_end(finaltime=0.01)
+        sww.store_timestep()
+
+        cellsize = 0.25
+        # Check contents
+        # Get NetCDF
+
+        fid = NetCDFFile(sww.filename, netcdf_mode_r)
+
+        # Get the variables
+        x = fid.variables['x'][:]
+        y = fid.variables['y'][:]
+        z = fid.variables['elevation'][:]
+        time = fid.variables['time'][:]
+        stage = fid.variables['stage'][:]
+        
+        # Check georeferencig: zone, xllcorner and yllcorner
+        assert fid.zone == 56
+        assert fid.xllcorner == 308500
+        assert fid.yllcorner == 6189000
+                
+
+        fid.close()
+
+        # Export to ascii/prj files
+        sww2dem(domain.get_name() + '.sww',
+                domain.get_name() + '_elevation.asc',
+                quantity='elevation',
+                cellsize=cellsize,
+                number_of_decimal_places=9,
+                verbose=self.verbose)
+
+        # Check prj (meta data)
+        prjid = open(prjfile)
+        lines = prjid.readlines()
+        prjid.close()
+
+        L = lines[0].strip().split()
+        assert L[0].strip().lower() == 'projection'
+        assert L[1].strip().lower() == 'utm'
+
+        L = lines[1].strip().split()
+        assert L[0].strip().lower() == 'zone'
+        assert L[1].strip().lower() == '56'
+
+        L = lines[2].strip().split()
+        assert L[0].strip().lower() == 'datum'
+        assert L[1].strip().lower() == 'wgs84'
+
+        L = lines[3].strip().split()
+        assert L[0].strip().lower() == 'zunits'
+        assert L[1].strip().lower() == 'no'
+
+        L = lines[4].strip().split()
+        assert L[0].strip().lower() == 'units'
+        assert L[1].strip().lower() == 'meters'
+
+        L = lines[5].strip().split()
+        assert L[0].strip().lower() == 'spheroid'
+        assert L[1].strip().lower() == 'wgs84'
+
+        L = lines[6].strip().split()
+        assert L[0].strip().lower() == 'xshift'
+        assert L[1].strip().lower() == '500000'
+
+        L = lines[7].strip().split()
+        assert L[0].strip().lower() == 'yshift'
+        assert L[1].strip().lower() == '0'
+
+        L = lines[8].strip().split()
+        assert L[0].strip().lower() == 'parameters'
+
+
+        # Check asc file
+        ascid = open(ascfile)
+        lines = ascid.readlines()
+        ascid.close()
+
+        L = lines[0].strip().split()
+        assert L[0].strip().lower() == 'ncols'
+        assert L[1].strip().lower() == '5'
+
+        L = lines[1].strip().split()
+        assert L[0].strip().lower() == 'nrows'
+        assert L[1].strip().lower() == '5'
+
+        L = lines[2].strip().split()
+        assert L[0].strip().lower() == 'xllcorner'
+        assert num.allclose(float(L[1].strip().lower()), 308500)
+
+        L = lines[3].strip().split()
+        assert L[0].strip().lower() == 'yllcorner'
+        assert num.allclose(float(L[1].strip().lower()), 6189000)
+
+        L = lines[4].strip().split()
+        assert L[0].strip().lower() == 'cellsize'
+        assert num.allclose(float(L[1].strip().lower()), cellsize)
+
+        L = lines[5].strip().split()
+        assert L[0].strip() == 'NODATA_value'
+        assert L[1].strip().lower() == '-9999'
+
+        # Check grid values
+        for j in range(5):
+            L = lines[6 + j].strip().split()
+            y = (4 - j) * cellsize
+            for i in range(5):
+                assert num.allclose(float(L[i]), -i * cellsize - y, rtol=5e-2, atol=5e-2)
+                
+        # Cleanup
+        os.remove(prjfile)
+        os.remove(ascfile)
+
+        ascfile = domain.get_name() + '_depth.asc'
+        prjfile = domain.get_name() + '_depth.prj'
+
+        # Export to ascii/prj files
+        sww2dem(domain.get_name() + '.sww',
+                ascfile,
+                quantity='depth',
+                cellsize=cellsize,
+                number_of_decimal_places=9,
+                verbose=self.verbose)
+        
+        # Check asc file
+        ascid = open(ascfile)
+        lines = ascid.readlines()
+        ascid.close()
+
+        L = lines[0].strip().split()
+        assert L[0].strip().lower() == 'ncols'
+        assert L[1].strip().lower() == '5'
+
+        L = lines[1].strip().split()
+        assert L[0].strip().lower() == 'nrows'
+        assert L[1].strip().lower() == '5'
+
+        L = lines[2].strip().split()
+        assert L[0].strip().lower() == 'xllcorner'
+        assert num.allclose(float(L[1].strip().lower()), 308500)
+
+        L = lines[3].strip().split()
+        assert L[0].strip().lower() == 'yllcorner'
+        assert num.allclose(float(L[1].strip().lower()), 6189000)
+
+        L = lines[4].strip().split()
+        assert L[0].strip().lower() == 'cellsize'
+        assert num.allclose(float(L[1].strip().lower()), cellsize)
+
+        L = lines[5].strip().split()
+        assert L[0].strip() == 'NODATA_value'
+        assert L[1].strip().lower() == '-9999'
+
+        # Check grid values
+        for j in range(5):
+            L = lines[6 + j].strip().split()
+            y = (4 - j) * cellsize
+            for i in range(5):
+                assert num.allclose(float(L[i]), 1 - (-i * cellsize - y), rtol=5e-2, atol=5e-2)
+
+
+        # Cleanup
+        os.remove(prjfile)
+        os.remove(ascfile)
+        os.remove(swwfile)
+
+    def test_sww2dem_asc_elevation_depth_DE0_southern(self):
+        """test_sww2dem_asc_elevation_depth
+        
+        Test that sww information can be converted correctly to asc/prj
+        format readable by e.g. ArcView
+        
+        Also check geo_reference is correct
+        """
+
+        import time, os
+
+        # Setup
+
+        domain = anuga.rectangular_cross_domain(16,16)
+
+        B = Transmissive_boundary(domain)
+        domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})        
+
+
+        domain.set_name('datatest')
+
+        prjfile = domain.get_name() + '_elevation.prj'
+        ascfile = domain.get_name() + '_elevation.asc'
+        swwfile = domain.get_name() + '.sww'
+
+        domain.set_datadir('.')
+        domain.set_flow_algorithm('DE0')
+        domain.format = 'sww'
+        domain.smooth = True
+        domain.set_quantity('elevation', lambda x, y:-x - y)
+        domain.set_quantity('stage', 1.0)
+
+        domain.geo_reference = Geo_reference(56, 308500, 6189000, hemisphere='southern')
 
         sww = SWW_file(domain)
         sww.store_connectivity()
@@ -501,6 +911,7 @@ class Test_Sww2Dem(unittest.TestCase):
         os.remove(swwfile)
 
 
+
     def test_sww2dem_larger_DE0(self):
         """Test that sww information can be converted correctly to asc/prj
         format readable by e.g. ArcView. Here:
@@ -607,11 +1018,11 @@ class Test_Sww2Dem(unittest.TestCase):
 
         L = lines[6].strip().split()
         assert L[0].strip().lower() == 'xshift'
-        assert L[1].strip().lower() == '500000'
+        assert L[1].strip().lower() == '0'
 
         L = lines[7].strip().split()
         assert L[0].strip().lower() == 'yshift'
-        assert L[1].strip().lower() == '10000000'
+        assert L[1].strip().lower() == '0'
 
         L = lines[8].strip().split()
         assert L[0].strip().lower() == 'parameters'
@@ -778,6 +1189,7 @@ class Test_Sww2Dem(unittest.TestCase):
         lines = prjid.readlines()
         prjid.close()
 
+        print(lines)
 
         L = lines[0].strip().split()
         assert L[0].strip().lower() == 'projection'
@@ -805,11 +1217,11 @@ class Test_Sww2Dem(unittest.TestCase):
 
         L = lines[6].strip().split()
         assert L[0].strip().lower() == 'xshift'
-        assert L[1].strip().lower() == '500000'
+        assert L[1].strip().lower() == '0'
 
         L = lines[7].strip().split()
         assert L[0].strip().lower() == 'yshift'
-        assert L[1].strip().lower() == '10000000'
+        assert L[1].strip().lower() == '0'
 
         L = lines[8].strip().split()
         assert L[0].strip().lower() == 'parameters'
@@ -922,7 +1334,7 @@ class Test_Sww2Dem(unittest.TestCase):
         domain.set_datadir('.')
         domain.format = 'sww'
         domain.smooth = True
-        domain.geo_reference = Geo_reference(56, 308500, 6189000)
+        domain.geo_reference = Geo_reference(56, 308500, 6189000,)
 
         #
         domain.set_quantity('elevation', lambda x, y:-x - y)
@@ -1003,11 +1415,11 @@ class Test_Sww2Dem(unittest.TestCase):
 
         L = lines[6].strip().split()
         assert L[0].strip().lower() == 'xshift'
-        assert L[1].strip().lower() == '500000'
+        assert L[1].strip().lower() == '0'
 
         L = lines[7].strip().split()
         assert L[0].strip().lower() == 'yshift'
-        assert L[1].strip().lower() == '10000000'
+        assert L[1].strip().lower() == '0'
 
         L = lines[8].strip().split()
         assert L[0].strip().lower() == 'parameters'

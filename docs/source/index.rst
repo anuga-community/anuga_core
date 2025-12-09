@@ -2,7 +2,7 @@
 
 .. currentmodule:: anuga
 
-
+===================
 ANUGA documentation
 ===================
 
