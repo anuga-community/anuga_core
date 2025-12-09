@@ -570,9 +570,8 @@ class Test_Sww2Dem(unittest.TestCase):
                 verbose=self.verbose)
 
         # Check prj (meta data)
-        prjid = open(prjfile)
-        lines = prjid.readlines()
-        prjid.close()
+        with open(prjfile) as prjid:
+            lines = prjid.readlines()
 
         L = lines[0].strip().split()
         assert L[0].strip().lower() == 'projection'
