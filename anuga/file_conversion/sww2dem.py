@@ -109,7 +109,6 @@ def sww2dem(name_in, name_out,
         raise IOError('Format for %s must be either asc or ers.' % name_out)
 
 
-    false_easting = 500000
     false_northing = 10000000
 
 
