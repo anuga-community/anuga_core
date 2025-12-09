@@ -367,10 +367,8 @@ class Test_Sww2Dem(unittest.TestCase):
                 verbose=self.verbose)
 
         # Check prj (meta data)
-        prjid = open(prjfile)
-        lines = prjid.readlines()
-        prjid.close()
-
+        with open(prjfile) as prjid:
+            lines = prjid.readlines()
         L = lines[0].strip().split()
         assert L[0].strip().lower() == 'projection'
         assert L[1].strip().lower() == 'utm'
@@ -408,9 +406,8 @@ class Test_Sww2Dem(unittest.TestCase):
 
 
         # Check asc file
-        ascid = open(ascfile)
-        lines = ascid.readlines()
-        ascid.close()
+        with open(ascfile) as ascid:
+            lines = ascid.readlines()
 
         L = lines[0].strip().split()
         assert L[0].strip().lower() == 'ncols'
@@ -459,9 +456,8 @@ class Test_Sww2Dem(unittest.TestCase):
                 verbose=self.verbose)
         
         # Check asc file
-        ascid = open(ascfile)
-        lines = ascid.readlines()
-        ascid.close()
+        with open(ascfile) as ascid:
+            lines = ascid.readlines()
 
         L = lines[0].strip().split()
         assert L[0].strip().lower() == 'ncols'
@@ -572,9 +568,8 @@ class Test_Sww2Dem(unittest.TestCase):
                 verbose=self.verbose)
 
         # Check prj (meta data)
-        prjid = open(prjfile)
-        lines = prjid.readlines()
-        prjid.close()
+        with open(prjfile) as prjid:
+            lines = prjid.readlines()
 
         L = lines[0].strip().split()
         assert L[0].strip().lower() == 'projection'
@@ -613,9 +608,8 @@ class Test_Sww2Dem(unittest.TestCase):
 
 
         # Check asc file
-        ascid = open(ascfile)
-        lines = ascid.readlines()
-        ascid.close()
+        with open(ascfile) as ascid:
+            lines = ascid.readlines()
 
         L = lines[0].strip().split()
         assert L[0].strip().lower() == 'ncols'
@@ -664,10 +658,8 @@ class Test_Sww2Dem(unittest.TestCase):
                 verbose=self.verbose)
         
         # Check asc file
-        ascid = open(ascfile)
-        lines = ascid.readlines()
-        ascid.close()
-
+        with open(ascfile) as ascid:
+            lines = ascid.readlines()
         L = lines[0].strip().split()
         assert L[0].strip().lower() == 'ncols'
         assert L[1].strip().lower() == '5'
@@ -1189,8 +1181,6 @@ class Test_Sww2Dem(unittest.TestCase):
         lines = prjid.readlines()
         prjid.close()
 
-        print(lines)
-
         L = lines[0].strip().split()
         assert L[0].strip().lower() == 'projection'
         assert L[1].strip().lower() == 'utm'
@@ -1334,7 +1324,7 @@ class Test_Sww2Dem(unittest.TestCase):
         domain.set_datadir('.')
         domain.format = 'sww'
         domain.smooth = True
-        domain.geo_reference = Geo_reference(56, 308500, 6189000,)
+        domain.geo_reference = Geo_reference(56, 308500, 6189000)
 
         #
         domain.set_quantity('elevation', lambda x, y:-x - y)

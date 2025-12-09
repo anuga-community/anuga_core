@@ -1,6 +1,6 @@
 
 Installation
-------------
+============
 
 
 ANUGA is a python package with some C/C++ extensions (and an optional fortran 
