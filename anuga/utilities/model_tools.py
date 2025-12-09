@@ -431,18 +431,30 @@ def Create_culvert_bridge_Operator(domain,culvert_bridge_file):
     
     """
     #print culvert_bridge_file
-    globals={}
-    locals={}    
+    local_vars = {}    
     
-    exec(open(culvert_bridge_file).read(), globals, locals) 
-    #print locals
-    #if 'height' and 'z1' and 'z2' in locals:
-    if 'z1' and 'z2' in locals:
-        culvert = Weir_orifice_trapezoid_operator(domain, **locals)
-    elif 'diameter' in locals:
-        culvert = Boyd_pipe_operator(domain, **locals)
-    elif 'height' in locals:
-        culvert = Boyd_box_operator(domain, **locals)
+    with open(culvert_bridge_file, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if '=' in line:
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                try:
+                    # Try to evaluate value as Python literal
+                    local_vars[key] = eval(value)
+                except Exception:
+                    local_vars[key] = value
+    #print local_vars
+    #if 'height' and 'z1' and 'z2' in local_vars:
+    if 'z1' in local_vars and 'z2' in local_vars:
+        culvert = Weir_orifice_trapezoid_operator(domain, **local_vars)
+    elif 'diameter' in local_vars:
+        culvert = Boyd_pipe_operator(domain, **local_vars)
+    elif 'height' in local_vars:
+        culvert = Boyd_box_operator(domain, **local_vars)
     else:
         raise Exception('Cant create culvert')
 
