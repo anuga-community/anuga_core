@@ -1326,7 +1326,7 @@ class Test_Sww2Dem(unittest.TestCase):
         domain.set_datadir('.')
         domain.format = 'sww'
         domain.smooth = True
-        domain.geo_reference = Geo_reference(56, 308500, 6189000,)
+        domain.geo_reference = Geo_reference(56, 308500, 6189000)
 
         #
         domain.set_quantity('elevation', lambda x, y:-x - y)
