@@ -442,11 +442,11 @@ def Create_culvert_bridge_Operator(domain,culvert_bridge_file):
                 key, value = line.split('=', 1)
                 key = key.strip()
                 value = value.strip()
-            try:
-                # Try to evaluate value as Python literal
-                local_vars[key] = eval(value)
-            except Exception:
-                local_vars[key] = value
+                try:
+                    # Try to evaluate value as Python literal
+                    local_vars[key] = eval(value)
+                except Exception:
+                    local_vars[key] = value
     #print local_vars
     #if 'height' and 'z1' and 'z2' in local_vars:
     if 'z1' in local_vars and 'z2' in local_vars:
