@@ -660,10 +660,8 @@ class Test_Sww2Dem(unittest.TestCase):
                 verbose=self.verbose)
         
         # Check asc file
-        ascid = open(ascfile)
-        lines = ascid.readlines()
-        ascid.close()
-
+        with open(ascfile) as ascid:
+            lines = ascid.readlines()
         L = lines[0].strip().split()
         assert L[0].strip().lower() == 'ncols'
         assert L[1].strip().lower() == '5'
