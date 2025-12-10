@@ -104,8 +104,8 @@ class Draw(AppShell.AppShell):
         self.canvas.pack(side=LEFT, expand=YES, fill=BOTH)
 
         Widget.bind(self.canvas, "<Button-1>", self.mouseDown)
-        Widget.bind(self.canvas, "<Button3-ButtonRelease>", self.rightMouseUp)
-        Widget.bind(self.canvas, "<Button2-ButtonRelease>",self.DeleteSelectedMeshObject)
+        Widget.bind(self.canvas, "<ButtonRelease-3>", self.rightMouseUp)
+        Widget.bind(self.canvas, "<ButtonRelease-2>",self.DeleteSelectedMeshObject)
         Widget.bind(self.canvas, "<Motion>", self.displayCoords)
         # "<Delete>" didn't work..
         #Widget.bind(self.canvas, "<Delete>", self.DeleteSelectedMeshObject)
