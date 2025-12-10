@@ -467,6 +467,8 @@ class Domain(Generic_Domain):
         self.xc = self.dplotter.xc
         self.yc = self.dplotter.yc
 
+        self.plot_mesh = self.dplotter.plot_mesh
+
         self.save_depth_frame = self.dplotter.save_depth_frame
         self.plot_depth_frame = self.dplotter.plot_depth_frame
         self.make_depth_animation = self.dplotter.make_depth_animation
@@ -489,6 +491,9 @@ class Domain(Generic_Domain):
 
         lines = ax.triplot(self.triang, *args, **kwargs)
 
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+
         return fig, ax, lines
 
 
@@ -500,6 +505,9 @@ class Domain(Generic_Domain):
         fig, ax = plt.subplots()
 
         im = ax.tripcolor(self.triang,  *args, **kwargs)
+
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
 
         return fig, ax, im
 
@@ -2389,7 +2397,7 @@ class Domain(Generic_Domain):
         :param float outputstep: Output to sww file every outputstep time period. outputstep should be an integer multiple of yieldstep.
         :param float finaltime: evolve until finaltime (can be a float (secs) or a datetime object)
         :param float duration: evolve for a time of length duration (secs)
-        :param  boolean skip_inital_step: Can be used to restart a simulation (not often used).
+        :param boolean skip_initial_step: Can be used to restart a simulation (not often used).
 
 
         If outputstep is None, the output to sww file happens every yieldstep.
@@ -3244,9 +3252,10 @@ class Domain(Generic_Domain):
 
         import os
         if omp_num_threads is None:
-            # Use the default setting
+            # Use the environment setting
             omp_num_threads = os.environ.get('OMP_NUM_THREADS', None)
-            #print(f'Using OMP_NUM_THREADS from environment: {omp_num_threads}')
+            if verbose:
+                print(f'Using OMP_NUM_THREADS from environment: {omp_num_threads}')
 
 
         if omp_num_threads is None:

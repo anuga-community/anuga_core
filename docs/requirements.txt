@@ -26,4 +26,5 @@ matplotlib
 
 nbsphinx
 sphinx_rtd_theme
+sphinx-copybutton
 sphinx

@@ -2,8 +2,8 @@
 
 
 
-Setting up an ANUGA Script
-==========================
+Script Structure
+=================
 
 
 .. only:: html
@@ -62,7 +62,6 @@ A simple example of an ANUGA script is shown below:
 >>> for t in domain.evolve(yieldstep=1.0, finaltime=10.0):
 >>>     domain.print_timestepping_statistics()
 >>>
-Setting omp_num_threads to 1
 Time = 0.0000 (sec), steps=0 (0s)
 Time = 1.0000 (sec), delta t in [0.00858488, 0.01071429] (s), steps=111 (0s)
 Time = 2.0000 (sec), delta t in [0.00832106, 0.00991988] (s), steps=111 (0s)
