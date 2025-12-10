@@ -503,9 +503,6 @@ class GPU_interface(object):
             nvtxRangePop()
 
 
-	     
-
-
         #-------------------------------------
         # FIXME SR: Need to calc substep_count
         # properly as used to be static in C code
