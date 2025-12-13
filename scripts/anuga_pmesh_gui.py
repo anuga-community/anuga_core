@@ -3,6 +3,8 @@
 import anuga.utilities.log as log
 log.log_filename = './anuga_pmesh_gui.log'
 
+import platform
+
 import collections
 import collections.abc
 try:
@@ -104,8 +106,11 @@ class Draw(AppShell.AppShell):
         self.canvas.pack(side=LEFT, expand=YES, fill=BOTH)
 
         Widget.bind(self.canvas, "<Button-1>", self.mouseDown)
-        Widget.bind(self.canvas, "<ButtonRelease-3>", self.rightMouseUp)
-        Widget.bind(self.canvas, "<ButtonRelease-2>",self.DeleteSelectedMeshObject)
+        if platform.system() == "Darwin":
+            Widget.bind(self.canvas, "<ButtonRelease-3>", self.rightMouseUp)
+        else:
+            Widget.bind(self.canvas, "<ButtonRelease-3>", self.rightMouseUp)
+            Widget.bind(self.canvas, "<ButtonRelease-2>",self.DeleteSelectedMeshObject)
         Widget.bind(self.canvas, "<Motion>", self.displayCoords)
         # "<Delete>" didn't work..
         #Widget.bind(self.canvas, "<Delete>", self.DeleteSelectedMeshObject)
@@ -401,6 +406,7 @@ class Draw(AppShell.AppShell):
         """
 
         from locale import atof
+
         if type(tag) is str:
             fraction = atof(tag)
         else:
