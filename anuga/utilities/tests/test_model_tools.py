@@ -86,6 +86,216 @@ class Test_Model_Tools(unittest.TestCase):
 
                                 i = i+1
 
+    def test_create_culvert_bridge_operator_boyd_pipe(self):
+        """
+        Test creation of Boyd pipe operator (based on diameter being set)
+        """
+
+        import os
+        import anuga
+        
+        
+        file_contents = \
+"""
+#--------------------------
+# CULVERT DATA FOR: Nrth Bagot Rd
+#--------------------------
+#blockage = 0.0
+label = 'Nrth_Bagot_6x600'
+diameter = 0.6
+#width=3.04
+#height=2.45
+apron = 0.5
+enquiry_points = [ [9.,5.], [14.,5.] ]
+manning=0.013
+invert_elevations=[0.0,0.1]
+losses = {'inlet':0.5, 'outlet':1.0, 'bend':0.0, 'grate':0.0, 'pier': 0.0, 'other': 0.0}
+#end_points = [[10,5], [12,5]]
+
+exchange_lines = [ [[10, 1], [10, 9]], 
+                   [[12, 1], [12, 9]] ]
+"""
+
+        culvert_bridge_file = 'test_boyd_pipe.txt'
+        with open(culvert_bridge_file, 'w') as f:
+            f.write(file_contents)
+
+        # Create domain and add culvert/bridge operator
+        # using the culvert_bridge_file
+        domain1 = anuga.rectangular_cross_domain(30, 10, 30, 10)
+        domain1.set_name('domain1_boyd_pipe')
+        Br = anuga.Reflective_boundary(domain1)
+        Bd = anuga.Dirichlet_boundary([10, 0, 0])
+        domain1.set_boundary({'left': Bd, 'right': Br, 'top': Br, 'bottom': Br})
+        anuga.Create_culvert_bridge_Operator(domain1, culvert_bridge_file)
+        os.remove(culvert_bridge_file)
+        domain1.evolve_to_end(0.1)
+
+        # Create domain and add culvert/bridge operator
+        # using the local_vars dictionary
+        domain2 = anuga.rectangular_cross_domain(30, 10, 30, 10)
+        domain2.set_name('domain2_boyd_pipe')
+        Br = anuga.Reflective_boundary(domain2)
+        Bd = anuga.Dirichlet_boundary([10, 0, 0])
+        domain2.set_boundary({'left': Bd, 'right': Br, 'top': Br, 'bottom': Br})
+        local_vars= {}
+        exec(file_contents, {}, local_vars)
+        #print(local_vars)
+        anuga.Boyd_pipe_operator(domain2, **local_vars)
+        domain2.evolve_to_end(0.1)
+
+        # Check that the two domains give identical results
+        s1 = domain1.get_quantity('stage').centroid_values
+        s2 = domain2.get_quantity('stage').centroid_values
+        assert num.allclose(s1, s2)
+
+        try:
+            os.remove('domain1_boyd_pipe.sww')
+            os.remove('domain2_boyd_pipe.sww')
+        except FileNotFoundError:
+            pass
+        
+
+    def test_create_culvert_bridge_operator_boyd_box(self):
+        """
+        Test creation of Boyd box operator (based on width and height being set)
+        """
+
+        import os
+        import anuga
+        
+        
+        file_contents = \
+"""
+#--------------------------
+# CULVERT DATA FOR: Nrth Bagot Rd
+#--------------------------
+#blockage = 0.0
+label = 'Nrth_Bagot_6x600'
+#diameter = 0.6
+width=3.04
+height=2.45
+apron = 0.5
+enquiry_points = [ [9.,5.], [14.,5.] ]
+manning=0.013
+invert_elevations=[0.0,0.1]
+losses = {'inlet':0.5, 'outlet':1.0, 'bend':0.0, 'grate':0.0, 'pier': 0.0, 'other': 0.0}
+#end_points = [[10,5], [12,5]]
+
+exchange_lines = [ [[10, 1], [10, 9]], 
+                   [[12, 1], [12, 9]] ]
+"""
+
+        culvert_bridge_file = 'test_boyd_box.txt'
+        with open(culvert_bridge_file, 'w') as f:
+            f.write(file_contents)
+
+        #Create domain and add culvert/bridge operator
+        #using the culvert_bridge_file
+        domain1 = anuga.rectangular_cross_domain(30, 10, 30, 10)
+        domain1.set_name('domain1_boyd_box')
+        Br = anuga.Reflective_boundary(domain1)
+        Bd = anuga.Dirichlet_boundary([10, 0, 0])
+        domain1.set_boundary({'left': Bd, 'right': Br, 'top': Br, 'bottom': Br})
+        anuga.Create_culvert_bridge_Operator(domain1, culvert_bridge_file)
+        os.remove(culvert_bridge_file)
+        domain1.evolve_to_end(0.1)
+
+        # Create domain and add culvert/bridge operator
+        # using the local_vars dictionary
+        domain2 = anuga.rectangular_cross_domain(30, 10, 30, 10)
+        domain2.set_name('domain2_boyd_box')
+        Br = anuga.Reflective_boundary(domain2)
+        Bd = anuga.Dirichlet_boundary([10, 0, 0])
+        domain2.set_boundary({'left': Bd, 'right': Br, 'top': Br, 'bottom': Br})
+        local_vars= {}
+        exec(file_contents, {}, local_vars)
+        #print(local_vars)
+        anuga.Boyd_box_operator(domain2, **local_vars)
+        domain2.evolve_to_end(0.1)
+
+        # Check that the two domains give identical results
+        s1 = domain1.get_quantity('stage').centroid_values
+        s2 = domain2.get_quantity('stage').centroid_values
+        assert num.allclose(s1, s2)
+
+        try:    
+            os.remove('domain1_boyd_box.sww')
+            os.remove('domain2_boyd_box.sww')
+        except FileNotFoundError:
+            pass
+        
+    def test_create_culvert_bridge_operator_weir_orifice_trapezoid_operator(self):
+        """
+        Test creation of Weir_orifice_trapezoid_operator (based on z1 or z2 being set)
+        """
+
+        import os
+        import anuga
+        
+        
+        file_contents = \
+"""
+#--------------------------
+# CULVERT DATA FOR: Nrth Bagot Rd
+#--------------------------
+#blockage = 0.0
+label = 'Nrth_Bagot_6x600'
+#diameter = 0.6
+width=3.04
+height=2.45
+z1 = 1.0
+z2 = 0.5
+apron = 0.5
+enquiry_points = [ [9.,5.], [14.,5.] ]
+manning=0.013
+invert_elevations=[0.0,0.1]
+losses = {'inlet':0.5, 'outlet':1.0, 'bend':0.0, 'grate':0.0, 'pier': 0.0, 'other': 0.0}
+#end_points = [[10,5], [12,5]]
+
+exchange_lines = [ [[10, 1], [10, 9]], 
+                   [[12, 1], [12, 9]] ]
+"""
+
+        culvert_bridge_file = 'test_weir_orifice_trapezoid_operator.txt'
+        with open(culvert_bridge_file, 'w') as f:
+            f.write(file_contents)
+
+        #Create domain and add culvert/bridge operator
+        #using the culvert_bridge_file
+        domain1 = anuga.rectangular_cross_domain(30, 10, 30, 10)
+        domain1.set_name('domain1_weir_orifice_trapezoid')
+        Br = anuga.Reflective_boundary(domain1)
+        Bd = anuga.Dirichlet_boundary([10, 0, 0])
+        domain1.set_boundary({'left': Bd, 'right': Br, 'top': Br, 'bottom': Br})
+        anuga.Create_culvert_bridge_Operator(domain1, culvert_bridge_file)
+        os.remove(culvert_bridge_file)
+        domain1.evolve_to_end(0.1)
+
+        # Create domain and add culvert/bridge operator
+        # using the local_vars dictionary
+        domain2 = anuga.rectangular_cross_domain(30, 10, 30, 10)
+        domain2.set_name('domain2_weir_orifice_trapezoid')
+        Br = anuga.Reflective_boundary(domain2)
+        Bd = anuga.Dirichlet_boundary([10, 0, 0])
+        domain2.set_boundary({'left': Bd, 'right': Br, 'top': Br, 'bottom': Br})
+        local_vars= {}
+        exec(file_contents, {}, local_vars)
+        #print(local_vars)
+        anuga.Weir_orifice_trapezoid_operator(domain2, **local_vars)
+        domain2.evolve_to_end(0.1)
+
+        # Check that the two domains give identical results
+        s1 = domain1.get_quantity('stage').centroid_values
+        s2 = domain2.get_quantity('stage').centroid_values
+        assert num.allclose(s1, s2)
+        
+        try:
+            os.remove('domain1_weir_orifice_trapezoid.sww')
+            os.remove('domain2_weir_orifice_trapezoid.sww')
+        except FileNotFoundError:
+            pass
+        
 
 
 ################################################################################

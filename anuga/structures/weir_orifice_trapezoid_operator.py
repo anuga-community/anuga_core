@@ -24,8 +24,8 @@ class Weir_orifice_trapezoid_operator(anuga.Structure_operator):
 
     def __init__(self,
                  domain,
-                 losses,
-                 width,
+                 losses=0.0,
+                 width=None,
                  height=None,
                  barrels=1.0,
                  blockage=0.0,

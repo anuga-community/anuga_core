@@ -425,7 +425,7 @@ def read_multi_poly_file_value(multi_P_file,attribute):
 
 
 # Define a function to read Culvert and Bridge data from Files in Directory
-def Create_culvert_bridge_Operator(domain,culvert_bridge_file):
+def Create_culvert_bridge_Operator(domain,culvert_bridge_file, verbose=False):
     """This script reads in culvert and bridge data files
     and creates culvert operators using the parameters provided in the file.
     The file should contain key=value pairs, one per line.
@@ -483,12 +483,17 @@ def Create_culvert_bridge_Operator(domain,culvert_bridge_file):
                     continue
             else:
                 continue
-            try:
-                local_vars[key] = eval(value)
-            except Exception:
-                local_vars[key] = value
-    #print local_vars
-    #if 'height' and 'z1' and 'z2' in local_vars:
+
+            local_vars[key] = eval(value)
+            
+            # try:
+            #     local_vars[key] = eval(value)
+            # except Exception:
+            #     local_vars[key] = value
+
+    print(local_vars)
+
+
     if 'z1' in local_vars and 'z2' in local_vars:
         culvert = Weir_orifice_trapezoid_operator(domain, **local_vars)
     elif 'diameter' in local_vars:
