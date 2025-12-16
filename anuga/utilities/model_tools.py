@@ -447,7 +447,7 @@ def Create_culvert_bridge_Operator(domain,culvert_bridge_file, verbose=False):
     User ANUGA Model SCRIPT
     Purpose:
     To create culvert or bridge operators based on parameters read from a file.
-    Calls:
+    Calls one of the following functions based on the parameters provided:
     anuga.Boyd_box_operator
     anuga.Boyd_pipe_operator
     anuga.Weir_orifice_trapezoid_operator
@@ -491,7 +491,7 @@ def Create_culvert_bridge_Operator(domain,culvert_bridge_file, verbose=False):
             # except Exception:
             #     local_vars[key] = value
 
-    print(local_vars)
+    #print(local_vars)
 
 
     if 'z1' in local_vars and 'z2' in local_vars:
