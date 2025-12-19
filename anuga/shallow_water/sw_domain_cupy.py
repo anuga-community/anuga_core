@@ -200,7 +200,7 @@ class GPU_interface(object):
         #with open('../cuda_anuga.cu') as f:
 
         #FIXME SR: Obviously need to make this general!
-        with open('/home/cdacapps01/rutvik/anuga_core/anuga/shallow_water/cuda_anuga.cu') as f:
+        with open('/home/851/sgr851/anuga_core/anuga/shallow_water/cuda_anuga.cu') as f:
             code = f.read()
 
         self.mod  = cp.RawModule(code=code, options=("--std=c++17",),
