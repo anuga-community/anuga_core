@@ -3293,7 +3293,7 @@ class Domain(Generic_Domain):
                 self.set_multiprocessor_mode(1)
                 return
 
-            from .sw_domain_cuda import GPU_interface
+            from .sw_domain_cupy import GPU_interface
             self.gpu_interface = GPU_interface(self)
             self.gpu_interface.allocate_gpu_arrays()
             self.gpu_interface.compile_gpu_kernels()
