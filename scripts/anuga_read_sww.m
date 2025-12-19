@@ -106,4 +106,12 @@ for k = 1:numel(centroidVars)
     s.(vname) = data;
 end
 
+
+% Ensure s.elevation_c has shape to subtract from s.stage_c
+if ~isequal(size(s.stage_c), size(s.elevation_c))
+    s.depth_c = s.stage_c - s.elevation_c';
+else
+    s.depth_c = s.stage_c - s.elevation_c;
+end
+
 end

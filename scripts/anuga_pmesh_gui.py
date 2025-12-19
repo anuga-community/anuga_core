@@ -107,10 +107,11 @@ class Draw(AppShell.AppShell):
 
         Widget.bind(self.canvas, "<Button-1>", self.mouseDown)
         if platform.system() == "Darwin":
-            Widget.bind(self.canvas, "<ButtonRelease-3>", self.rightMouseUp)
+            Widget.bind(self.canvas, "<Button-3>", self.rightMouseUp)
+            Widget.bind(self.canvas, "<Button-2>",self.DeleteSelectedMeshObject)
         else:
-            Widget.bind(self.canvas, "<ButtonRelease-3>", self.rightMouseUp)
-            Widget.bind(self.canvas, "<ButtonRelease-2>",self.DeleteSelectedMeshObject)
+            Widget.bind(self.canvas, "<Button-3>", self.rightMouseUp)
+            Widget.bind(self.canvas, "<Button-2>",self.DeleteSelectedMeshObject)
         Widget.bind(self.canvas, "<Motion>", self.displayCoords)
         # "<Delete>" didn't work..
         #Widget.bind(self.canvas, "<Delete>", self.DeleteSelectedMeshObject)
