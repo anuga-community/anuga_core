@@ -2588,14 +2588,6 @@ class Domain(Generic_Domain):
         nvtxRangePop()
 
         #nvtx marker
-        nvtxRangePush('compute_flux_update_frequency')
-        if self.max_flux_update_frequency != 1:
-            # Update flux_update_frequency using the new timestep
-            self.compute_flux_update_frequency()
-        #nvtx marker
-        nvtxRangePop()
-
-        #nvtx marker
         nvtxRangePush('update_conserved_quantities')
         # Update conserved quantities
         self.update_conserved_quantities()
