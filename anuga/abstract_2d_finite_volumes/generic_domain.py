@@ -2312,7 +2312,7 @@ class Generic_Domain(object):
         quantity in domain.
         """
 
-        #import pdb; pdb.set_trace()
+        nvtxRangePush('update_boundary')
         for tag in self.tag_boundary_cells:
             B = self.boundary_map[tag]
 
@@ -2322,6 +2322,8 @@ class Generic_Domain(object):
             boundary_segment_edges = self.tag_boundary_cells[tag]
 
             B.evaluate_segment(self, boundary_segment_edges)
+        
+        nvtxRangePop()
 
     def compute_fluxes(self):
         msg = 'Method compute_fluxes must be overridden by Domain subclass'
@@ -2375,10 +2377,11 @@ class Generic_Domain(object):
         # disable variable timestepping
         if self.fixed_flux_timestep is not None:
             self.flux_timestep = self.fixed_flux_timestep
-
-        # self.timestep is calculated from speed of characteristics
-        # Apply CFL condition here
-        timestep = min(self.CFL * self.flux_timestep, self.evolve_max_timestep)
+            timestep = self.fixed_flux_timestep
+        else:
+            # self.timestep is calculated from speed of characteristics
+            # Apply CFL condition here
+            timestep = min(self.CFL * self.flux_timestep, self.evolve_max_timestep)
 
         # Record maximal and minimal values of timestep for reporting
         self.recorded_max_timestep = max(timestep, self.recorded_max_timestep)
@@ -2486,12 +2489,6 @@ class Generic_Domain(object):
                 Q_cv = self.quantities[q].centroid_values
                 num.put(Q_cv, Idg, num.take(Q_cv, Idf, axis=0))
 
-#    def update_special_conditions(self):
-#        """There may be a need to change the values of the conserved
-#        quantities to satisfy special conditions at the very lowest level
-#        the fluid flow calculation
-#        """
-#        pass
 
     def update_other_quantities(self):
         """ There may be a need to calculates some of the other quantities
