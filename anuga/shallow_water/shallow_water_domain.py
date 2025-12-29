@@ -2634,6 +2634,7 @@ class Domain(Generic_Domain):
         self.update_boundary()
 
         # Compute fluxes across each element edge
+        # In MPI parallel mode this involves an allreduce to find global minimal timestep
         self.compute_fluxes()
 
         # Compute forcing terms (friction)
@@ -2642,12 +2643,9 @@ class Domain(Generic_Domain):
         # Update timestep to fit yieldstep and finaltime
         self.update_timestep(yieldstep, finaltime)
 
-        #nvtx marker
-        nvtxRangePush('update_conserved_quantities')
         # Update conserved quantities
         self.update_conserved_quantities()
-        #nvtx marker
-        nvtxRangePop()
+
 
     def evolve_one_rk2_step(self, yieldstep, finaltime):
         """One 2nd order RK timestep
@@ -2671,6 +2669,7 @@ class Domain(Generic_Domain):
         self.update_boundary()
 
         # Compute fluxes across each element edge
+        # In MPI parallel mode this involves an allreduce to find global minimal timestep
         self.compute_fluxes()
 
         # Compute forcing terms (friction)
@@ -2681,6 +2680,10 @@ class Domain(Generic_Domain):
 
         # Update centroid values of conserved quantities
         self.update_conserved_quantities()
+
+        #===========================
+        # End of first euler step
+        #===========================
 
         # Update time
         self.set_relative_time(self.get_relative_time() + self.timestep)
@@ -2703,6 +2706,7 @@ class Domain(Generic_Domain):
         self.update_boundary()
 
         # Compute fluxes across each element edge
+        # In MPI parallel mode this involves an allreduce to find global minimal timestep
         self.compute_fluxes()
 
         # Compute forcing terms (friction)
@@ -2745,6 +2749,7 @@ class Domain(Generic_Domain):
         self.update_boundary()
 
         # Compute fluxes across each element edge
+        # In MPI parallel mode this involves an allreduce to find global minimal timestep
         self.compute_fluxes()
 
         # Compute forcing terms (friction)
@@ -2756,18 +2761,22 @@ class Domain(Generic_Domain):
         # Update conserved quantities
         self.update_conserved_quantities()
 
+        #====================================
+        # End of first euler step
+        #====================================
+
         # Update time
         self.set_relative_time(self.relative_time+ self.timestep)
 
         # Update ghosts
         self.update_ghosts()
 
-        ######
+        #============================================
         # Second Euler step using the same timestep
         # calculated in the first step. Might lead to
         # stability problems but we have not seen any
         # example.
-        ######        
+        #============================================      
 
         # Update edge values
         self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
@@ -2776,6 +2785,7 @@ class Domain(Generic_Domain):
         self.update_boundary()
 
         # Compute fluxes across each element edge
+        # In MPI parallel mode this involves an allreduce to find global minimal timestep
         self.compute_fluxes()
 
         # Compute forcing terms (friction) 
@@ -2784,10 +2794,14 @@ class Domain(Generic_Domain):
         # Update conserved quantities using timestep from first step
         self.update_conserved_quantities()
 
-        ######
+        #============================================
+        # End of second euler step
+        #============================================
+
+        #============================================
         # Combine steps to obtain intermediate
         # solution at time t^n + 0.5 h
-        ######
+        #============================================
 
         # Combine steps
         self.saxpy_conserved_quantities(0.25, 0.75)
@@ -2809,6 +2823,7 @@ class Domain(Generic_Domain):
         self.update_boundary()
 
         # Compute fluxes across each element edge
+        # In MPI parallel mode this involves an allreduce to find global minimal timestep
         self.compute_fluxes()
 
         # Compute forcing terms (friction)
@@ -3252,10 +3267,10 @@ class Domain(Generic_Domain):
         return self.inv_tri_map
 
 # ==============================================================================
-# Multiprocessor Mode (1=openmp, 2=cuda (in development))
+# Multiprocessor Mode (1=openmp, 2=cupy (in development))
 # ==============================================================================
 
-    def set_multiprocessor_mode(self, multiprocessor_mode= 0):
+    def set_multiprocessor_mode(self, multiprocessor_mode=1):
         """
         Set multiprocessor mode 
          1. openmp (in development)
@@ -3281,10 +3296,10 @@ class Domain(Generic_Domain):
 
     def set_omp_num_threads(self, omp_num_threads=None, verbose=True):
         """
-        Set the number of OpenMP threads to use for parallel processing.
+        Set the number of OpenMP threads to use for multithread processing.
         If OMP_NUM_THREADS is not set, this will set it to the specified 
         omp_num_threads value.
-        By default omp_num_threads is set to 1, other , it will use the default setting.
+        By default omp_num_threads is set to 1, other, it will use the default setting.
         """
 
         import os
@@ -3305,8 +3320,8 @@ class Domain(Generic_Domain):
 
         # Set the number of OpenMP threads
         self.omp_num_threads = omp_num_threads
-        from .sw_domain_openmp_ext import set_omp_num_threads
-        set_omp_num_threads(omp_num_threads)
+        from .sw_domain_openmp_ext import set_omp_num_threads as set_omp_num_threads_ext
+        set_omp_num_threads_ext(omp_num_threads)
 
         if verbose:
             print(f'Setting omp_num_threads to {omp_num_threads}')
