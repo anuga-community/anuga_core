@@ -317,6 +317,12 @@ class Domain(Generic_Domain):
         self.set_multiprocessor_mode(1)  # Default to OpenMP
 
         #-------------------------------
+        # C extension domain structure
+        # Will be setup by setup_domain_openmp_ext
+        #-------------------------------
+        self._Domain_C_struct = None
+
+        #-------------------------------
         # If environment variable OMP_NUM_THREADS is not set, 
         # then set to default (1 thread). If a value is given to
         # the method, then it will override the default.
@@ -441,6 +447,31 @@ class Domain(Generic_Domain):
         #-----------------------------------
         self.use_new_velocity_head = False
 
+
+    #------------------------------------------------
+    # Domain_C_struct is a cdef class with a custom __cinit__, 
+    # so Cython will not auto-generate a default pickling protocol for it; 
+    # when pickle reaches the Domain object and tries to pickle _Domain_C_struct, 
+    # you get TypeError: no default __reduce__ due to non-trivial __cinit__.
+    # So we implement __getstate__ and __setstate__ to exclude it from pickling,
+    # and recreate it lazily when needed.
+    #------------------------------------------------
+    def __getstate__(self):
+        state = self.__dict__.copy()
+        # Do not pickle the C wrapper; it can be recreated
+        state.pop('_Domain_C_struct', None)
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+        # Recreate C wrapper lazily when needed
+        self._Domain_C_struct = None
+
+    def update_domain_c_struct(self):
+        """Update the C domain structure from the Python Domain object.
+        """
+        from anuga.shallow_water.sw_domain_openmp_ext import update_Domain_C_struct
+        update_Domain_C_struct(self)
 
 
     def set_plotter(self, *args, **kwargs):

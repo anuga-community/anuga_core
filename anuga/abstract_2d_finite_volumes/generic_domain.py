@@ -1927,7 +1927,8 @@ class Generic_Domain(object):
                 self.recorded_max_timestep = self.evolve_min_timestep
                 self.number_of_steps = 0
                 self.number_of_first_order_steps = 0
-                self.max_speed = num.zeros(N, float)
+                #self.max_speed[:] = num.zeros(N, float)
+                self.max_speed[:] = 0.0
 
     def evolve_one_euler_step(self, yieldstep, finaltime):
         """One Euler Time Step
