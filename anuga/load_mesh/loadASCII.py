@@ -857,8 +857,8 @@ def _read_msh_file(file_name):
     mesh['outline_segment_tags'] = []
     try:
         tags = fid.variables['outline_segment_tags'][:]
-        for i, tag in enumerate(tags):
-            mesh['outline_segment_tags'].append(tags[i].tobytes().decode().strip())
+        # OPTIMIZED: Use list comprehension instead of enumerate + index
+        mesh['outline_segment_tags'] = [tag.tobytes().decode().strip() for tag in tags]
     except KeyError:
         for ob in mesh['outline_segments']:
             mesh['outline_segment_tags'].append('')
@@ -876,8 +876,8 @@ def _read_msh_file(file_name):
     mesh['region_tags'] = []
     try:
         tags = fid.variables['region_tags'][:]
-        for i, tag in enumerate(tags):
-            mesh['region_tags'].append(tags[i].tobytes().decode().strip())
+        # OPTIMIZED: Use list comprehension instead of enumerate + index
+        mesh['region_tags'] = [tag.tobytes().decode().strip() for tag in tags]
     except KeyError:
         for ob in mesh['regions']:
             mesh['region_tags'].append('')
