@@ -1063,7 +1063,7 @@ class SWW_plotter(object):
         """
         
         try:
-            mesh = self.mesh
+            _ = self.mesh
         except AttributeError:
             from anuga.file.sww import get_mesh_and_quantities_from_file
             self.mesh, _, __ = get_mesh_and_quantities_from_file(self.filename, verbose=verbose)
