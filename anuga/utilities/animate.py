@@ -1086,9 +1086,7 @@ class SWW_plotter(object):
             Numpy array of water volume at each timestep
         """
 
-        try:
-            mesh = self.mesh
-        except AttributeError:
+        if not hasattr(self, "mesh"):
             from anuga.file.sww import get_mesh_and_quantities_from_file
             self.mesh, _, __ = get_mesh_and_quantities_from_file(self.filename, verbose=verbose)
 
