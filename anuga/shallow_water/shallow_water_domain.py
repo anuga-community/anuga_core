@@ -474,6 +474,9 @@ class Domain(Generic_Domain):
         update_Domain_C_struct(self)
 
 
+    #---------------------------------------------------------------
+    # Plotting methods
+    #---------------------------------------------------------------
     def set_plotter(self, *args, **kwargs):
         """Set the plotter for this domain
         """
@@ -544,6 +547,10 @@ class Domain(Generic_Domain):
 
     #==============================================================
     # Methods to set and get domain parameters
+    # 
+    # FIXME SR: These (and other paramters) should be refactored 
+    # to save the underlying quantities in np.ndarray(s) for 
+    # efficient access in Cython
     #==============================================================
 
     @property
