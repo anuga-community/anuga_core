@@ -12,8 +12,9 @@ Features
 --------
 
 - Plot and animate results from ANUGA SWW files such as stage, elevation, depth, xmom, ymom, xvel, 
-- and yvel.
-- Useful for inspecting model output and presenting results in graphical format.
+  and yvel.
+- Useful for inspecting model output and presenting results in graphical format and to interogate 
+  model results.
 
 Example Usage
 -------------
@@ -62,6 +63,18 @@ Example Usage
 
     # Display the animation in a jupyter notebook
     anim
+
+    # Calculate water volume over entire domain (or a subset of triangles or polygon)
+    volume = splotter.water_volume()
+    print('Water volume at each time step:', volume)
+
+    # Calculate flow through a polyline
+    polyline = [[759195.0, 5912922.0],
+                [759250.0, 5912892.0]]
+    flow = splotter.get_flow_through_cross_section(polyline)
+    print('Flow through cross section at each time step:', flow)
+
+
     
 
 See Also

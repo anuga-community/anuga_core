@@ -22,8 +22,8 @@ class Parallel_Boyd_pipe_operator(Parallel_Structure_operator):
 
     def __init__(self,
                  domain,
-                 losses,
-                 diameter,
+                 losses=0.0,
+                 diameter=None,
                  blockage=0.0,
                  barrels=1.0,
                  z1=0.0,

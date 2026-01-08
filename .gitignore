@@ -21,6 +21,8 @@
 *.c
 *.cpp
 *.tmp
+*.rst
+*.txt
 *.vim
 *.sww
 *.tif
@@ -39,6 +41,7 @@
 *.html
 *.pickle
 tags
+OUTPUT
 
 # validation temp files #
 #########################

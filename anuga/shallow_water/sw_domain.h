@@ -24,6 +24,7 @@ struct domain {
     double     g;
     anuga_int    optimise_dry_cells;
     double     evolve_max_timestep;
+    double     evolve_min_timestep;
     anuga_int    extrapolate_velocity_second_order;
     double     minimum_allowed_height;
     double     maximum_allowed_speed;
@@ -204,6 +205,7 @@ anuga_int print_domain_struct(struct domain *D) {
     printf("D->g                      %g \n", D->g);
     printf("D->optimise_dry_cells     %" PRId64 " \n", D->optimise_dry_cells);
     printf("D->evolve_max_timestep    %g \n", D->evolve_max_timestep);
+    printf("D->evolve_min_timestep    %g \n", D->evolve_min_timestep);
     printf("D->minimum_allowed_height %g \n", D->minimum_allowed_height);
     printf("D->maximum_allowed_speed  %g \n", D->maximum_allowed_speed);
     printf("D->low_froude             %" PRId64 " \n", D->low_froude);

@@ -62,31 +62,16 @@ def communicate_flux_timestep(domain, yieldstep, finaltime):
     #                  buffer=domain.global_timestep,
     #                  bypass=True)
 
-    from mpi4py import MPI
-    #pypar.comm.Barrier()
-    pypar.comm.Allreduce(local_timestep, global_timestep, op=MPI.MIN)
-    #pypar.comm.Barrier()
-
+    from mpi4py.MPI import MIN
+    pypar.comm.Allreduce(local_timestep, global_timestep, op=MIN)
 
     domain.communication_reduce_time += time.time()-t0
 
-#    pypar.reduce(domain.local_timestep, pypar.MIN, 0,
-#                      buffer=domain.global_timestep,
-#                      bypass=True)
-#
-#
-#    domain.communication_reduce_time += time.time()-t0
-
-
-    #Broadcast minimal timestep to all processors
     t0 = time.time()
-    #pypar.broadcast(domain.global_timestep, 0)#, bypass=True)
 
     domain.communication_broadcast_time += time.time()-t0
-
-    #old_flux_timestep = domain.flux_timestep
-    domain.flux_timestep = domain.global_timestep[0]
     
+    domain.flux_timestep = domain.global_timestep[0]
     
 
 def communicate_ghosts_blocking(domain, quantities=None):

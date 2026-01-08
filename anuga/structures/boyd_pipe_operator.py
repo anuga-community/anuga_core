@@ -22,7 +22,7 @@ class Boyd_pipe_operator(anuga.Structure_operator):
 
     def __init__(self,
                  domain,
-                 losses,
+                 losses=0.0,
                  diameter=None,
                  barrels=1.0,
                  blockage=0.0,
@@ -46,9 +46,9 @@ class Boyd_pipe_operator(anuga.Structure_operator):
 
         anuga.Structure_operator.__init__(self,
                                           domain,
-                                          end_points,
-                                          exchange_lines,
-                                          enquiry_points,
+                                          end_points=end_points,
+                                          exchange_lines=exchange_lines,
+                                          enquiry_points=enquiry_points,
                                           invert_elevations=invert_elevations,
                                           width=None,
                                           height=None,

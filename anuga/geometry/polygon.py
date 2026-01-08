@@ -262,12 +262,14 @@ def line_intersect(triangles, line, verbose=False):
     """Determine which of a list of triangles intersect a line
 
     """
-    line = ensure_numeric(line)
-    triangles = ensure_numeric(triangles)
+    line = ensure_numeric(line, float)
+    triangles = ensure_numeric(triangles, float)
 
     M = triangles.shape[0]// 3  # Number of triangles
 
     indices = num.zeros(M, int)
+
+    #import pdb; pdb.set_trace()
 
     count = _line_intersect(line, triangles, indices)
 
