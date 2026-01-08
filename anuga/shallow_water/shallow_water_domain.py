@@ -470,7 +470,7 @@ class Domain(Generic_Domain):
     def update_domain_c_struct(self):
         """Update the C domain structure from the Python Domain object.
         """
-        from anuga.shallow_water.sw_domain_openmp_ext import update_Domain_C_struct
+        from .sw_domain_openmp_ext import update_Domain_C_struct
         update_Domain_C_struct(self)
 
 
@@ -2889,7 +2889,7 @@ class Domain(Generic_Domain):
 
         # Backup conserved_quantities centroid values
         if self.multiprocessor_mode == 1:
-            from anuga.shallow_water.sw_domain_openmp_ext import backup_conserved_quantities
+            from .sw_domain_openmp_ext import backup_conserved_quantities
             backup_conserved_quantities(self)
         else:
             for name in self.conserved_quantities:
@@ -2902,7 +2902,7 @@ class Domain(Generic_Domain):
         if self.multiprocessor_mode == 1:
             if c is None:
                 c = 1.0
-            from anuga.shallow_water.sw_domain_openmp_ext import saxpy_conserved_quantities
+            from .sw_domain_openmp_ext import saxpy_conserved_quantities
             saxpy_conserved_quantities(self, a, b, c)
         else:
             for name in self.conserved_quantities:
