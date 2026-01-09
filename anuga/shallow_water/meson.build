@@ -36,10 +36,12 @@ python_sources = [
 'tsh2sww.py',
 ]
 
+cuda_sources = ['cuda_anuga.cu']
 
 py3.install_sources(
-  python_sources,
+  python_sources + cuda_sources,
   subdir: 'anuga/shallow_water'
 )
+
 
 subdir('tests')

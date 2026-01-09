@@ -1,7 +1,6 @@
 // CUDA code to implement flux and quantity updates as used 
 // in evolve loop
 
-//for extrapolate
 
 #ifdef __INTELLISENSE__
 #define __CUDACC__
