@@ -15,10 +15,8 @@ import numpy as np
 # Roberto Vidmar, 20130415: the following imports mpi4py
 try:
     from mpi4py import MPI
-    import cupy as cp
-
 except ImportError:
-    print('WARNING: Could not import mpi4py or cupy - defining sequential interface')
+    print('WARNING: Could not import mpi4py - defining sequential interface')
 
     def size():
         return 1
@@ -99,15 +97,18 @@ else:
     MINLOC = MPI.MINLOC
     mpiWrapper = 'mpi4py'
 
-    # Set up a separate memory pool for each GPU/process
-    memory_pool = cp.cuda.MemoryPool()
-    cp.cuda.set_allocator(memory_pool.malloc)
+    try:
+        # Set up a separate memory pool for each GPU/process
+        memory_pool = cp.cuda.MemoryPool()
+        cp.cuda.set_allocator(memory_pool.malloc)
 
-    # Initialize GPU according to rank and assign on the card.
-    num_gpus = cp.cuda.runtime.getDeviceCount()
-    rank = comm.Get_rank()
-    gpu_id = rank % num_gpus  # Assign GPU based on MPI rank
-    cp.cuda.Device(gpu_id).use()
+        # Initialize GPU according to rank and assign on the card.
+        num_gpus = cp.cuda.runtime.getDeviceCount()
+        rank = comm.Get_rank()
+        gpu_id = rank % num_gpus  # Assign GPU based on MPI rank
+        cp.cuda.Device(gpu_id).use()
+    except:
+        pass
 
     class Status(object):
         """ Simulate pypar return_status object """
@@ -162,11 +163,13 @@ else:
             cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
         except:
             pass
+
         if isinstance(x, str):
             recvmsg = comm.gather(x, root)
             if recvmsg is not None:
                 return ''.join(recvmsg)
-        elif isinstance(x, (np.ndarray, cp.ndarray)):
+        #elif isinstance(x, (np.ndarray, cp.ndarray)):
+        elif isinstance(x, np.ndarray):
             if buffer is None:
                 if x.ndim == 1:
                     buffer = np.empty(x.size * comm.size, dtype=x.dtype)
@@ -233,7 +236,8 @@ else:
             l = len(x)
             n = l // comm.size
             sendobj = [x[i: i + n] for i in range(0, l, n)]
-        elif isinstance(x, (np.ndarray, cp.ndarray)):
+        #elif isinstance(x, (np.ndarray, cp.ndarray)):
+        elif isinstance(x, np.ndarray):
             scatterer = comm.Scatter
             sendobj = x
             if buffer is None:
