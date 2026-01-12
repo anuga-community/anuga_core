@@ -1,5 +1,10 @@
+"""  Test environmental forcing - rain, wind, etc.
+"""
+
+import unittest, os
+
 import anuga
-import os
+
 from anuga import Reflective_boundary
 from anuga import rectangular_cross_domain
 
@@ -9,8 +14,6 @@ import numpy as num
 import warnings
 import time
 import math
-
-from pprint import pprint
 
 from anuga.shallow_water.sw_domain_cuda import nvtxRangePush, nvtxRangePop
 
@@ -61,42 +64,14 @@ def create_domain(name='domain'):
     # Associate boundary tags with boundary objects
     #----------------------------------------------
     domain.set_boundary({'left': Br, 'right': Bd, 'top': Br, 'bottom':Br})
-    #print(domain.__dict__)
-    #print(dir(domain))
+
     return domain
-
-    
-
-
 
 print('')
 print(70*'=')
-print('Test Runup for extrapolate')
+print('Test Runup')
 print(70*'=')
 
-nvtxRangePush('create domain1')
-domain1 = create_domain('domain_original')
-domain1.set_multiprocessor_mode(1)
-
-quantities1 = domain1.quantities
-stage1 = quantities1["stage"]
-xmom1 = quantities1["xmomentum"]
-ymom1 = quantities1["ymomentum"]
-nvtxRangePop()
-
-nvtxRangePush('create domain2')
-domain2 = create_domain('domain_cuda')
-domain2.set_multiprocessor_mode(2)
-
-
-quantities2 = domain2.quantities
-stage2 = quantities2["stage"]
-xmom2 = quantities2["xmomentum"]
-ymom2 = quantities2["ymomentum"]
-nvtxRangePop()
-
-import time
-start = time.time()
 
 nvtxRangePush('create domain1')
 domain1 = create_domain('domain_original')
@@ -113,6 +88,9 @@ nvtxRangePop()
 #------------------------------
 yieldstep = 0.0002
 finaltime = 0.002
+
+
+
 nvtxRangePush('evolve domain1')
 print('Evolve domain1')
 print('domain1 number of triangles ',domain1.number_of_elements)
@@ -134,8 +112,6 @@ nvtxRangePop()
 #---------------------------------------
 timestep = 0.1
 
-
-
 nvtxRangePush('distribute domain1')
 domain1.distribute_to_vertices_and_edges()
 nvtxRangePop()
@@ -144,27 +120,9 @@ nvtxRangePush('update boundary domain1')
 domain1.update_boundary()
 nvtxRangePop()
 
-nvtxRangePush('compute fluxes domain1')
-domain1.compute_fluxes()
-timestep1 = domain1.flux_timestep
-boundary_flux1 = domain1.boundary_flux_sum[0]
+nvtxRangePush('update conserved quantities : domain1')
+domain1.update_conserved_quantities()
 nvtxRangePop()
-
-# nvtxRangePush('compute_forcing_terms')
-# domain1.compute_forcing_terms()
-# nvtxRangePop()
-
-# nvtxRangePush('update_conserved_quantities')
-# # Update conserved quantities
-# domain1.update_conserved_quantities()
-# #nvtx marker
-# nvtxRangePop()
-
-# nvtxRangePush('protect_ainh on cpu')
-# Update conserved quantities
-# domain1.protect_against_infinitesimal_and_negative_heights()
-#nvtx marker
-# nvtxRangePop()
 
 
 #-----------------------------------------
@@ -175,37 +133,23 @@ nvtxRangePop()
 # as found in evolve_one_euler_step in
 # generic_domain.py (abstract_2d_finite_volume)
 #----------------------------------------
+# Setup gpu interface (if multiprocessor_mode == 4 and cupy available)
 domain2.set_multiprocessor_mode(4)
-nvtxRangePush('distribute on gpu for domain2')
-from anuga.shallow_water.sw_domain_cuda import GPU_interface
-gpu_interface2 = GPU_interface(domain2)
-gpu_interface2.allocate_gpu_arrays()
-gpu_interface2.compile_gpu_kernels()
 
-nvtxRangePush('distribute domain2')
-# Now run the distribute procedure on the GPU
-domain2.set_multiprocessor_mode(4)
-gpu_interface2.extrapolate_second_order_edge_sw_kernel()
+nvtxRangePush('distribute on cpu for domain2')
+domain2.distribute_to_vertices_and_edges()
+nvtxRangePop()
+
+nvtxRangePush('update boundary domain2')
+domain2.update_boundary()
 nvtxRangePop()
 
 
-nvtxRangePush('compute fluxes on gpu for domain2')
-timestep2 = domain2.evolve_max_timestep 
-timestep2 = gpu_interface2.compute_fluxes_ext_central_kernel(timestep2)
+nvtxRangePush('update conserved quantities : domain1')
+domain2.update_conserved_quantities()
 nvtxRangePop()
 
 boundary_flux2 = domain2.boundary_flux_sum[0]
-
-# Compare update arrays and timestep
-
-
-print('domain1 timestep ', timestep1)
-print('domain2 timestep ', timestep2)
-
-print('domain1 boundary_flux ', boundary_flux1)
-print('domain2 boundary_flux ', boundary_flux2)
-
-
 
 
 quantities1 = domain1.quantities
@@ -225,20 +169,6 @@ max_speed_2 = domain2.max_speed
 N = domain1.number_of_elements
 # scale linalg.norm by number of elements
 import math
-sqrtN = 1.0/N
-
-
-print('timestep diff                ', abs(timestep1-timestep2))
-print('boundary_flux diff           ', abs(boundary_flux1-boundary_flux2))
-print('max_speed diff L2-norm       ', num.linalg.norm(max_speed_1-max_speed_2)*sqrtN)
-print('stage update diff L2-norm    ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update)*sqrtN)
-print('xmom  update diff L2-norm    ', num.linalg.norm(xmom1.explicit_update-xmom2.explicit_update)*sqrtN)
-print('ymom  update diff L2-norm    ', num.linalg.norm(ymom1.explicit_update-ymom2.explicit_update)*sqrtN)
-
-print('stage update diff Linf-norm  ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update,num.inf))
-print('xmom  update diff Linf-norm  ', num.linalg.norm(xmom1.explicit_update-xmom2.explicit_update,num.inf))
-print('ymom  update diff Linf-norm  ', num.linalg.norm(ymom1.explicit_update-ymom2.explicit_update,num.inf))
-
 
 print('stage edge      diff L2 norm ', num.linalg.norm(stage1.edge_values-stage2.edge_values)/N)
 print('xmom  edge      diff L2 norm ', num.linalg.norm(xmom1.edge_values-xmom2.edge_values)/N)
@@ -251,3 +181,9 @@ print('ymom  centroid diff L2 norm ', num.linalg.norm(ymom1.centroid_values-ymom
 print('stage vertex diff L2 norm ', num.linalg.norm(stage1.vertex_values-stage2.vertex_values)/N)
 print('xmom  vertex diff L2 norm ', num.linalg.norm(xmom1.vertex_values-xmom2.vertex_values)/N)
 print('ymom  vertex diff L2 norm ', num.linalg.norm(ymom1.vertex_values-ymom2.vertex_values)/N)
+
+
+# UPDATE CONSERVED QUANTITIES =>
+print('stage centroid diff L2 norm ', num.linalg.norm(stage1.centroid_values-stage2.centroid_values)/N)
+print('xmom  centroid diff L2 norm ', num.linalg.norm(xmom1.centroid_values-xmom2.centroid_values)/N)
+print('ymom  centroid diff L2 norm ', num.linalg.norm(ymom1.centroid_values-ymom2.centroid_values)/N)

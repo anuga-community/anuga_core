@@ -222,3 +222,4 @@ doc/source/generated
 ###################################
 anuga/__config__.py
 anuga/version.py
+anuga/shallow_water/tests/environment_cupy.yml

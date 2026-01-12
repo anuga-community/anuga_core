@@ -1,7 +1,7 @@
 """ Abstract parallel interface - suitable for sequential programs
 
-    Uses mpi4py for parallelism if installed.
-    Otherwise, defines a rudimentary interface for sequential execution.
+    Uses mpi4py for parallism if installed.
+    Otherwise define a rudimentary interface for sequential execution.
 
     mpi4py wrap added 20130503 by Roberto Vidmar rvidmar@inogs.it
 """
@@ -69,9 +69,6 @@ except ImportError:
     def send_recv_via_dicts(*args, **kwargs):
         pass
 
-    def global_running_sum(*args, **kwargs):
-        pass
-
     MIN = None
 
     pypar_available = False
@@ -98,16 +95,6 @@ else:
     MAXLOC = MPI.MAXLOC
     MINLOC = MPI.MINLOC
     mpiWrapper = 'mpi4py'
-
-    # Set up a separate memory pool for each GPU/process
-    memory_pool = cp.cuda.MemoryPool()
-    cp.cuda.set_allocator(memory_pool.malloc)
-
-    # Initialize GPU according to rank and assign on the card.
-    num_gpus = cp.cuda.runtime.getDeviceCount()
-    rank = comm.Get_rank()
-    gpu_id = rank % num_gpus  # Assign GPU based on MPI rank
-    cp.cuda.Device(gpu_id).use()
 
     class Status(object):
         """ Simulate pypar return_status object """
@@ -138,19 +125,12 @@ else:
         comm.Abort()
 
     def allreduce(sendbuf, op, buffer=None, vanilla=0, bypass=False):
-        try:
-            cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
-        except:
-            pass
+        cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
         return comm.Allreduce(sendbuf, buffer, op=op)
 
     def broadcast(buffer, root, vanilla=False, bypass=False):
         """ Uses numpy array Bcast if bypass is True """
-        try:
-            cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
-        except:
-            pass
-
+        cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
         if bypass:
             return comm.Bcast(buffer, root)
         else:
@@ -158,10 +138,7 @@ else:
 
     def gather(x, root, buffer=None, vanilla=0):
         """ Simulate pypar gather, vanilla is unused """
-        try:
-            cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
-        except:
-            pass
+        cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
         if isinstance(x, str):
             recvmsg = comm.gather(x, root)
             if recvmsg is not None:
@@ -189,10 +166,7 @@ else:
 
     def receive(source, buffer=None, vanilla=False, tag=1, return_status=False, bypass=False):
         """ This wrap uses Recv for receiving if bypass is True, else recv """
-        try:
-            cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
-        except:
-            pass
+        cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
         s = MPI.Status()
         if bypass:
             if not isinstance(buffer, np.ndarray):
@@ -216,18 +190,12 @@ else:
 
     def reduce(x, op, root, buffer=None, vanilla=0, bypass=False):
         """ Simulate pypar reduce, vanilla and bypass are not used """
-        try:
-            cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
-        except:
-            pass
+        cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
         return comm.Reduce(x, buffer, op=op, root=root)
 
     def scatter(x, root, buffer=None, vanilla=False):
         """ Simulate pypar scatter, vanilla is not used """
-        try:
-            cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
-        except:
-            pass
+        cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
         if isinstance(x, str):
             scatterer = comm.scatter
             l = len(x)
@@ -252,10 +220,7 @@ else:
 
     def send(x, destination, use_buffer=False, vanilla=False, tag=1, bypass=False):
         """ This wrap uses Send for sending if bypass is True, else send """
-        try:
-            cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
-        except:
-            pass
+        cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
         if bypass:
             comm.Send(np.ascontiguousarray(x), dest=destination, tag=tag)
         else:
@@ -265,37 +230,20 @@ else:
         return comm.size
 
     def send_recv_via_dicts(sendDict, recvDict):
-        """ This wrap uses Irecv and Isend for exchanging numpy arrays stored
-            in dicts.
-        """
-
-        try:
-            cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
-        except:
-            pass
+        """ This wrap uses Irecv and Isend for exchanging numpy arrays stored in dicts. """
+        cp.cuda.get_current_stream().synchronize()  # Ensure GPU stream sync
         skeys = list(sendDict.keys())
         skeys.sort()
         rkeys = list(recvDict.keys())
         rkeys.sort()
         assert rkeys == skeys
-        # Keys are integers, indexes of processes
         for key in rkeys:
             recvBuf = recvDict[key][2]
             sendBuf = sendDict[key][2]
-            comm.Sendrecv(np.ascontiguousarray(sendBuf), key, 123,
-            recvBuf, key, 123)
-
-    def global_running_sum(val):
-        """Compute running sum across ranks using MPI Scan
-
-        Args:
-            val (float / int): value to sum
-        """
-        return comm.scan(val, SUM)
+            comm.Sendrecv(np.ascontiguousarray(sendBuf), key, 123, recvBuf, key, 123)
 
     numprocs = size()
     myid = rank()
-
 
 # Global error handler
 def global_except_hook(exctype, value, traceback):

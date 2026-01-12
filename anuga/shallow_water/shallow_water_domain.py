@@ -1933,7 +1933,7 @@ class Domain(Generic_Domain):
         timestep = self.evolve_max_timestep
         self.flux_timestep = compute_fluxes_ext_central(self, timestep)
 
-        # nvtxRangePop()
+        nvtxRangePop()
 
 
     def distribute_to_vertices_and_edges(self, distribute_to_vertices=True):
@@ -1969,20 +1969,20 @@ class Domain(Generic_Domain):
         nvtxRangePop()
 
         # Do extrapolation step
-        # nvtxRangePush('extrapolate')
+        nvtxRangePush('extrapolate')
         # Choose the correct extension module
         if self.multiprocessor_mode == 1:
             from .sw_domain_openmp_ext import distribute_to_edges as extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw(self)
         elif self.multiprocessor_mode == 2:
             # change over to cuda routines as developed
-            #from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
+            # from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
             extrapolate_second_order_edge_sw(self)
         else:
             raise Exception('Not implemented')
 
-        # nvtxRangePop()        
+        nvtxRangePop()        
 
     def distribute_edges_to_vertices(self):
         """Distribute edge values to vertices.
@@ -2120,12 +2120,13 @@ class Domain(Generic_Domain):
 
 
         mass_error = protect_new(self)
-        # nvtxRangePop()
 
         if mass_error > 0.0 and self.verbose :
             #print('Cumulative mass protection: ' + str(mass_error) + ' m^3 ')
             # From https://stackoverflow.com/questions/22397261/cant-convert-float-object-to-str-implicitly
             print('Cumulative mass protection: {0} m^3'.format(mass_error))
+        
+        nvtxRangePop()
 
 
     def balance_deep_and_shallow(self):
@@ -2208,7 +2209,7 @@ class Domain(Generic_Domain):
         computed fluxes and specified forcing functions.
         """
 
-        # nvtxRangePush('update_conserved_quantities')
+        nvtxRangePush('update_conserved_quantities')
 
         timestep = self.timestep
 
@@ -2234,7 +2235,6 @@ class Domain(Generic_Domain):
             num_negative_ids = update_conserved_quantities(self, timestep)
 
         elif self.multiprocessor_mode == 2:
-
             update_conserved_quantities = self.gpu_interface.update_conserved_quantities_kernel
             num_negative_ids = update_conserved_quantities(self, timestep)
         
@@ -2248,7 +2248,7 @@ class Domain(Generic_Domain):
             'Consider using domain.report_water_volume_statistics() to check the extent of the problem'
             warnings.warn(msg)
 
-        # nvtxRangePop()
+        nvtxRangePop()
 
     def update_other_quantities(self):
         """ There may be a need to calculates some of the other quantities
@@ -2382,6 +2382,38 @@ class Domain(Generic_Domain):
         self.distribute_to_vertices_and_edges()
 
 
+    # # Overriding update_boundary from generic doamin 
+    # def update_boundary(self):
+    #     if self.multiprocessor_mode == [0,1,2,3]:
+    #         self.update_boundary_cpu()
+    #     elif self.multiprocessor_mode == 4:
+    #         # self.update_boundary_gpu()
+    #         self.update_boundary_cpu()
+
+
+    # def update_boundary_gpu(self):
+    #     self.gpu_interface.update_boundary_gpu(self)
+    
+    def update_boundary(self):
+        """Go through list of boundary objects and update boundary values
+        for all conserved quantities on boundary.
+        It is assumed that the ordering of conserved quantities is
+        consistent between the domain and the boundary object, i.e.
+        the jth element of vector q must correspond to the jth conserved
+        quantity in domain.
+        """
+        nvtxRangePush("update_boundary")
+        #import pdb; pdb.set_trace()
+        for tag in self.tag_boundary_cells:
+            B = self.boundary_map[tag]
+
+            if B is None:
+                continue
+
+            boundary_segment_edges = self.tag_boundary_cells[tag]
+
+            B.evaluate_segment(self, boundary_segment_edges) 
+        nvtxRangePop()
     
 
     def evolve(self,
@@ -3298,12 +3330,10 @@ class Domain(Generic_Domain):
             self.gpu_interface.allocate_gpu_arrays()
             self.gpu_interface.compile_gpu_kernels()
            
-        
 
 ################################################################################
 # End of class Shallow Water Domain
 ################################################################################
-
 
 
 ################################################################################
@@ -3369,6 +3399,229 @@ def distribute_using_vertex_limiter(domain):
         Q.interpolate_from_vertices_to_edges()
 
 
+################################################################################
+# Standard forcing terms
+################################################################################
+
+#compute_forcing_terms
+def manning_friction_implicit(domain):
+    
+
+    # if domain.multiprocessor_mode == [0,1,2,3,4]:
+        manning_friction_implicit_cpu(domain)
+    # elif domain.multiprocessor_mode == 4:
+        # manning_friction_implicit_gpu(domain)
+
+
+#GPU version of manning_friction_implicit that'll call the kernel written in sw_domain_cuda
+def manning_friction_implicit_gpu(domain):
+    """Apply (Manning) friction to water momentum
+    Wrapper for c version
+    """
+    if domain.use_sloped_mannings:
+        domain.gpu_interface.compute_forcing_terms_manning_friction_implicit_sloped()
+    else:
+        domain.gpu_interface.compute_forcing_terms_manning_friction_implicit_flat()
+
+def manning_friction_implicit_cpu(domain):
+    """Apply (Manning) friction to water momentum
+    Wrapper for c version
+    """
+
+    from .sw_domain_orig_ext import manning_friction_flat
+    from .sw_domain_orig_ext import manning_friction_sloped
+
+    xmom = domain.quantities['xmomentum']
+    ymom = domain.quantities['ymomentum']
+
+    # really only need this if using sloped mannings
+    x = domain.get_vertex_coordinates()
+
+    w = domain.quantities['stage'].centroid_values
+    z = domain.quantities['elevation'].vertex_values
+
+    uh = xmom.centroid_values
+    vh = ymom.centroid_values
+    eta = domain.quantities['friction'].centroid_values
+
+    xmom_update = xmom.semi_implicit_update
+    ymom_update = ymom.semi_implicit_update
+
+    eps = domain.minimum_allowed_height
+    g = domain.g
+
+    if domain.use_sloped_mannings:
+        manning_friction_sloped(g, eps, x, w, uh, vh, z, eta, xmom_update, \
+                                ymom_update)
+    else:
+        manning_friction_flat(g, eps, w, uh, vh, z, eta, xmom_update, \
+                                ymom_update)
+
+
+def manning_friction_explicit(domain):
+    
+
+    # if domain.multiprocessor_mode == [0,1,2,3,4]:
+        manning_friction_explicit_cpu(domain)
+    # elif domain.multiprocessor_mode == 4:
+        # manning_friction_explicit_gpu(domain)
+
+
+#GPU version of manning_friction_implicit that'll call the kernel written in sw_domain_cuda
+def manning_friction_explicit_gpu(domain):
+    """Apply (Manning) friction to water momentum
+    Wrapper for c version
+    """
+    if domain.use_sloped_mannings:
+        domain.gpu_interface.compute_forcing_terms_manning_friction_explicit_sloped()
+    else:
+        domain.gpu_interface.compute_forcing_terms_manning_friction_explicit_flat()
+
+
+def manning_friction_explicit_cpu(domain):
+    """Apply (Manning) friction to water momentum
+    Wrapper for c version
+    """
+
+    from .sw_domain_orig_ext import manning_friction_flat
+    from .sw_domain_orig_ext import manning_friction_sloped
+
+    xmom = domain.quantities['xmomentum']
+    ymom = domain.quantities['ymomentum']
+
+    x = domain.get_vertex_coordinates()
+
+    w = domain.quantities['stage'].centroid_values
+    z = domain.quantities['elevation'].vertex_values
+
+    uh = xmom.centroid_values
+    vh = ymom.centroid_values
+    eta = domain.quantities['friction'].centroid_values
+
+    xmom_update = xmom.explicit_update
+    ymom_update = ymom.explicit_update
+
+    eps = domain.minimum_allowed_height
+
+    if domain.use_sloped_mannings:
+        manning_friction_sloped(domain.g, eps, x, w, uh, vh, z, eta, xmom_update, \
+                            ymom_update)
+    else:
+        manning_friction_flat(domain.g, eps, w, uh, vh, z, eta, xmom_update, \
+                            ymom_update)
+
+
+
+# FIXME (Ole): This was implemented for use with one of the analytical solutions
+def linear_friction(domain):
+    """Apply linear friction to water momentum
+
+    Assumes quantity: 'linear_friction' to be present
+    """
+
+    w = domain.quantities['stage'].centroid_values
+    z = domain.quantities['elevation'].centroid_values
+    h = w-z
+
+    uh = domain.quantities['xmomentum'].centroid_values
+    vh = domain.quantities['ymomentum'].centroid_values
+    tau = domain.quantities['linear_friction'].centroid_values
+
+    xmom_update = domain.quantities['xmomentum'].semi_implicit_update
+    ymom_update = domain.quantities['ymomentum'].semi_implicit_update
+
+    num_tris = len(domain)
+    eps = domain.minimum_allowed_height
+
+    for k in range(num_tris):
+        if tau[k] >= eps:
+            if h[k] >= eps:
+                S = -tau[k]/h[k]
+
+                #Update momentum
+                xmom_update[k] += S*uh[k]
+                ymom_update[k] += S*vh[k]
+
+def depth_dependent_friction(domain, default_friction,
+                             surface_roughness_data,
+                             verbose=False):
+    """Returns an array of friction values for each wet element adjusted for
+            depth.
+
+    Inputs:
+        domain - computational domain object
+        default_friction - depth independent bottom friction
+        surface_roughness_data - N x 5 array of n0, d1, n1, d2, n2 values
+        for each friction region.
+
+    Outputs:
+        wet_friction - Array that can be used directly to update friction as
+                        follows:
+                       domain.set_quantity('friction', wet_friction)
+
+
+
+    """
+
+    default_n0 = 0  # James - this was missing, don't know what it should be
+
+    # Create a temp array to store updated depth dependent
+    # friction for wet elements
+    # EHR this is outwardly inneficient but not obvious how to avoid
+    # recreating each call??????
+
+    wet_friction    = num.zeros(len(domain), float)
+    wet_friction[:] = default_n0  # Initially assign default_n0 to all array so
+                                  # sure have no zeros values
+
+    # create depth instance for this timestep
+    depth = domain.create_quantity_from_expression('stage - elevation')
+    # Recompute depth as vector
+    d_vals = depth.get_values(location='centroids')
+
+    # rebuild the 'friction' values adjusted for depth at this instant
+    # loop for each wet element in domain
+
+    for i in domain.get_wet_elements():
+        # Get roughness data for each element
+        d1 = float(surface_roughness_data[i, 1])
+        n1 = float(surface_roughness_data[i, 2])
+        d2 = float(surface_roughness_data[i, 3])
+        n2 = float(surface_roughness_data[i, 4])
+
+
+        # Recompute friction values from depth for this element
+
+        if d_vals[i] <= d1:
+            ddf = n1
+        elif d_vals[i] >= d2:
+            ddf = n2
+        else:
+            ddf = n1 + ((n2 - n1) / (d2 - d1)) * (d_vals[i] - d1)
+
+        # Check sanity of result
+        if ddf < 0.010 or ddf > 9999.0:
+            log.critical('>>>> WARNING: computed depth_dependent friction '
+                         'out of range, ddf%f, n1=%f, n2=%f'
+                         % (ddf, n1, n2))
+
+        # update depth dependent friction  for that wet element
+        wet_friction[i] = ddf
+
+    # EHR add code to show range of 'friction across domain at this instant as
+    # sanity check?????????
+
+    if verbose:
+        # return array of domain nvals
+        nvals = domain.get_quantity('friction').get_values(location='centroids')
+        n_min = min(nvals)
+        n_max = max(nvals)
+
+        log.critical('         ++++ calculate_depth_dependent_friction - '
+                     'Updated friction - range  %7.3f to %7.3f'
+                     % (n_min, n_max))
+
+    return wet_friction
 
 # FIXME (Ole): Does this do anything?
 def my_update_special_conditions(domain):
@@ -3379,3 +3632,4 @@ def my_update_special_conditions(domain):
 
 if __name__ == "__main__":
     pass
+

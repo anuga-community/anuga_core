@@ -761,105 +761,6 @@ __global__ void _cuda_compute_fluxes_loop(
 
 }
 
-
-
-
-// // Computational function for flux computation
-// int64_t main(int64_t *argc, char*argv[])
-// {
-//   // local variables
-//   int64_t substep_count;
-//   int64_t number_of_elements =1024;
-  
-//   double limiting_threshold = 10 ;
-//   int64_t   low_froude;
-//   double g;
-//   double epsilon;
-
-//   int64_t ncol_riverwall_hydraulic_properties;
- 
-//   double local_timestep[1];      // InOut
-//   double* boundary_flux_sum ;     // InOut
-//   double* max_speed;             // InOut
-//   double* stage_explicit_update; // InOut
-//   double* xmom_explicit_update; // InOut
-//   double* ymom_explicit_update ;// InOut
-
-//   double* stage_centroid_values;
-//   double* stage_edge_values;
-//   double* xmom_edge_values ;
-//   double* ymom_edge_values ;
-//   double* bed_edge_values ;
-//   double* height_edge_values ;
-//   double* height_centroid_values;
-//   double* bed_centroid_values ;
-//   double* stage_boundary_values ;
-//   double* xmom_boundary_values ;
-//   double* ymom_boundary_values ;
-//   double* areas ;
-//   double* normals ;
-//   double* edgelengths ;
-//   double* radii ;
-//   int64_t* tri_full_flag ;
-//   int64_t* neighbours ;
-//   int64_t* neighbour_edges ;
-//   int64_t* edge_flux_type ;
-//   int64_t* edge_river_wall_counter ;
-//   double* riverwall_elevation ;
-//   int64_t* riverwall_rowIndex ;
-//   double* riverwall_hydraulic_properties;
-
-//   unsigned int64_t THREADS_PER_BLOCK;
-
-//   int64_t timestep_fluxcalls = 1;
-//   int64_t base_call = 1;
-//   THREADS_PER_BLOCK = 256;
-//   int64_t NO_OF_BLOCKS = number_of_elements/THREADS_PER_BLOCK; 
-
-//   __cuda_compute_fluxes_loop_1<<<NO_OF_BLOCKS,THREADS_PER_BLOCK>>>(local_timestep,        // InOut
-//                                boundary_flux_sum,     // InOut
-//                                max_speed,             // InOut
-//                                stage_explicit_update, // InOut
-//                                xmom_explicit_update,  // InOut
-//                                ymom_explicit_update,  // InOut
-
-//                                stage_centroid_values,
-//                                stage_edge_values,
-//                                xmom_edge_values,
-//                                ymom_edge_values,
-//                                bed_edge_values,
-//                                height_edge_values,
-//                                height_centroid_values,
-//                                bed_centroid_values,
-//                                stage_boundary_values,
-//                                xmom_boundary_values,
-//                                ymom_boundary_values,
-//                                areas,
-//                                normals,
-//                                edgelengths,
-//                                radii,
-//                                tri_full_flag,
-//                                neighbours,
-//                                neighbour_edges,
-//                                edge_flux_type,
-//                                edge_river_wall_counter,
-//                                riverwall_elevation,
-//                                riverwall_rowIndex,
-//                                riverwall_hydraulic_properties,
-
-//                                number_of_elements,
-//                                substep_count,
-//                                ncol_riverwall_hydraulic_properties,
-//                                epsilon,
-//                                g,
-//                                low_froude,
-//                                limiting_threshold);
-
-// }
-
-
-
-
 //  ##  EXTRAPOLATE function   ##  
 
 
@@ -975,19 +876,6 @@ __device__ void __calc_edge_values_2_bdy(double beta, double cv_k, double cv_k0,
 
 }
 
-
-/*
-
-__global__ void _cuda_extrapolate_second_order_edge_sw(double* stage_edge_values, double* xmom_edge_values, double* ymom_edge_values,
-                                            double* height_edge_values, double* bed_edge_values, double* centroid_coordinates,
-                                            double* edge_coordinates, double* height_centroid_values, double* x_centroid_work,
-                                            double* xmom_centroid_values, double* y_centroid_work, double* ymom_centroid_values,
-                                            double* stage_centroid_values, double beta_w_dry, double beta_w,
-                                            double beta_uh_dry, double beta_uh, double beta_vh_dry, double beta_vh,
-                                            double minimum_allowed_height, int64_t number_of_elements, int64_t extrapolate_velocity_second_order) {
-
-
-*/
 
 __global__ void _cuda_extrapolate_second_order_edge_sw_loop1(
                                                       double* stage_centroid_values, 

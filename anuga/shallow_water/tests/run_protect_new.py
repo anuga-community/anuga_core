@@ -87,7 +87,7 @@ nvtxRangePop()
 #Evolve the system through time
 #------------------------------
 yieldstep = 0.0002
-finaltime = 0.0002
+finaltime = 0.002
 nvtxRangePush('evolve domain1')
 print('Evolve domain1')
 print('domain1 number of triangles ',domain1.number_of_elements)
@@ -184,6 +184,6 @@ import math
 sqrtN = 1.0/N
 
 print('max_speed diff L2-norm       ', num.linalg.norm(max_speed_1-max_speed_2)*sqrtN)
-print('xmom update diff L2-norm    ', num.linalg.norm(xmom1.centroid_values-xmom2.centroid_values)*sqrtN)
-print('xmom  update diff L2-norm    ', num.linalg.norm(stage1.centroid_values-stage2.centroid_values)*sqrtN)
-print('ymom  update diff L2-norm    ', num.linalg.norm(stage1.vertex_values-stage2.vertex_values)*sqrtN)
+# print('xmom centroid diff L2-norm    ', num.linalg.norm(xmom1.centroid_values-xmom2.centroid_values)*sqrtN)
+print('stage  centroid diff L2-norm    ', num.linalg.norm(stage1.centroid_values-stage2.centroid_values)*sqrtN)
+print('stage  vertex diff L2-norm    ', num.linalg.norm(stage1.vertex_values-stage2.vertex_values)*sqrtN)

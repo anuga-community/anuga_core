@@ -44,9 +44,9 @@ from anuga.utilities.system_tools import get_pathname_from_package
 # Setup parameters
 #--------------------------------------------------------------------------
 
-DATA_DIR = 'data'
+DATA_DIR = '/home/appadmin/rutvik/anuga_core/examples/parallel/data/'
 
-mesh_filename = anuga.join(DATA_DIR,"merimbula_10785_1.tsh") ; x0 = 756000.0 ; x1 = 756500.0; yieldstep = 10; finaltime = 100
+mesh_filename = anuga.join(DATA_DIR,"merimbula_10785_1.tsh") ; x0 = 756000.0 ; x1 = 756500.0; yieldstep = 10; finaltime = 10000
 
 verbose = True
 
@@ -86,6 +86,7 @@ if myid == 0:
     domain = create_domain_from_file(mesh_filename)
     domain.set_quantity('stage', Set_Stage(x0, x1, 1.0))
     domain.set_store_vertices_smoothly(False)
+    domain.set_multiprocessor_mode(4)
 
 else:
     domain = None

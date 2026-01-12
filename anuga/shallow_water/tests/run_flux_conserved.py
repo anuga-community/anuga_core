@@ -1,5 +1,10 @@
+"""  Test environmental forcing - rain, wind, etc.
+"""
+
+import unittest, os
+
 import anuga
-import os
+
 from anuga import Reflective_boundary
 from anuga import rectangular_cross_domain
 
@@ -9,13 +14,12 @@ import numpy as num
 import warnings
 import time
 import math
-from pprint import pprint
 
 from anuga.shallow_water.sw_domain_cuda import nvtxRangePush, nvtxRangePop
 
 
-nx = 10
-ny = 10
+nx = 50
+ny = 50
 
 def create_domain(name='domain'):
 
@@ -60,17 +64,14 @@ def create_domain(name='domain'):
     # Associate boundary tags with boundary objects
     #----------------------------------------------
     domain.set_boundary({'left': Br, 'right': Bd, 'top': Br, 'bottom':Br})
-    #print(domain.__dict__)
-    #print(dir(domain))
-    return domain
 
+    return domain
 
 print('')
 print(70*'=')
-print('Test Runup for update_conserved_quantities')
+print('Test Runup')
 print(70*'=')
-import time
-start = time.time()
+
 
 nvtxRangePush('create domain1')
 domain1 = create_domain('domain_original')
@@ -81,6 +82,113 @@ nvtxRangePush('create domain1')
 domain2 = create_domain('domain_cuda')
 domain2.set_multiprocessor_mode(1) # will change to 2 once burn in
 nvtxRangePop()
+
+#------------------------------
+#Evolve the system through time
+#------------------------------
+yieldstep = 0.0002
+finaltime = 0.002
+
+
+
+nvtxRangePush('evolve domain1')
+print('Evolve domain1')
+print('domain1 number of triangles ',domain1.number_of_elements)
+for t in domain1.evolve(yieldstep=yieldstep,finaltime=finaltime):
+    domain1.print_timestepping_statistics()
+nvtxRangePop()
+
+nvtxRangePush('evolve domain2')
+print('Evolve domain2')
+print('domain2 number of triangles ',domain2.number_of_elements)
+for t in domain2.evolve(yieldstep=yieldstep,finaltime=finaltime):
+    domain2.print_timestepping_statistics()
+nvtxRangePop()
+
+
+
+#---------------------------------------
+# run domain1 using standard routine
+#---------------------------------------
+timestep = 0.1
+
+nvtxRangePush('distribute domain1')
+domain1.distribute_to_vertices_and_edges()
+nvtxRangePop()
+
+nvtxRangePush('update boundary domain1')
+domain1.update_boundary()
+nvtxRangePop()
+
+nvtxRangePush('compute fluxes domain1')
+domain1.compute_fluxes()
+timestep1 = domain1.flux_timestep
+boundary_flux1 = domain1.boundary_flux_sum[0]
+nvtxRangePop()
+
+nvtxRangePush('update conserved quantities : domain1')
+domain1.update_conserved_quantities()
+nvtxRangePop()
+
+
+#-----------------------------------------
+# Test the kernel versions of
+# distribute_to_vertices_and_edges
+# update_boundary
+# compute_fluxes
+# as found in evolve_one_euler_step in
+# generic_domain.py (abstract_2d_finite_volume)
+#----------------------------------------
+
+nvtxRangePush('distribute on cpu for domain2')
+domain2.distribute_to_vertices_and_edges()
+nvtxRangePop()
+
+nvtxRangePush('update boundary domain2')
+domain2.update_boundary()
+nvtxRangePop()
+
+# nvtxRangePush('initialise gpu_interface domain2')
+# domain2.set_multiprocessor_mode(4)
+# nvtxRangePop()
+
+# nvtxRangePush('compute fluxes domain2')
+# domain2.compute_fluxes()
+# timestep2 = domain2.flux_timestep
+# boundary_flux2 = domain2.boundary_flux_sum[0]
+# nvtxRangePop()
+
+
+# Setup gpu interface (if multiprocessor_mode == 4 and cupy available)
+domain2.set_multiprocessor_mode(4)
+
+nvtxRangePush('compute fluxes domain2')
+domain2.compute_fluxes()
+timestep2 = domain2.flux_timestep
+boundary_flux2 = domain2.boundary_flux_sum[0]
+nvtxRangePop()
+
+nvtxRangePush('update conserved quantities : domain1')
+domain2.update_conserved_quantities()
+nvtxRangePop()
+
+boundary_flux2 = domain2.boundary_flux_sum[0]
+
+
+
+
+
+# Compare update arrays and timestep
+
+
+print('domain1 timestep ', timestep1)
+print('domain2 timestep ', timestep2)
+
+print('domain1 boundary_flux ', boundary_flux1)
+print('domain2 boundary_flux ', boundary_flux2)
+
+
+
 
 quantities1 = domain1.quantities
 stage1 = quantities1["stage"]
@@ -167,63 +275,24 @@ xmom2_centroid_values_before = num.copy(xmom2.centroid_values)
 ymom1_centroid_values_before = num.copy(ymom1.centroid_values)
 ymom2_centroid_values_before = num.copy(ymom2.centroid_values)
 
-
-nvtxRangePush('protect_kernal : domain2')
-
-protect_new = gpu_domain2.protect_against_infinitesimal_and_negative_heights_kernal
-mass_error = protect_new()
-
-nvtxRangePop()
-
-
-
 N = domain1.number_of_elements
 # scale linalg.norm by number of elements
 import math
 sqrtN = 1.0/N
 
 
-# print('stage edge      diff L2 norm ', num.linalg.norm(stage1.edge_values-stage2.edge_values)/N)
-# print('xmom  edge      diff L2 norm ', num.linalg.norm(xmom1.edge_values-xmom2.edge_values)/N)
-# print('ymom  edge      diff L2 norm ', num.linalg.norm(ymom1.edge_values-ymom2.edge_values)/N)
+print('timestep diff                ', abs(timestep1-timestep2))
+print('boundary_flux diff           ', abs(boundary_flux1-boundary_flux2))
+print('max_speed diff L2-norm       ', num.linalg.norm(max_speed_1-max_speed_2)*sqrtN)
+print('stage update diff L2-norm    ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update)*sqrtN)
+print('xmom  update diff L2-norm    ', num.linalg.norm(xmom1.explicit_update-xmom2.explicit_update)*sqrtN)
+print('ymom  update diff L2-norm    ', num.linalg.norm(ymom1.explicit_update-ymom2.explicit_update)*sqrtN)
 
+print('stage update diff Linf-norm  ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update,num.inf))
+print('xmom  update diff Linf-norm  ', num.linalg.norm(xmom1.explicit_update-xmom2.explicit_update,num.inf))
+print('ymom  update diff Linf-norm  ', num.linalg.norm(ymom1.explicit_update-ymom2.explicit_update,num.inf))
+
+# UPDATE CONSERVED QUANTITIES =>
 print('stage centroid diff L2 norm ', num.linalg.norm(stage1.centroid_values-stage2.centroid_values)/N)
-print('stage vertex diff L2 norm ', num.linalg.norm(stage1.vertex_values-stage2.vertex_values)/N)
-
-
-# print('stage semi implicit update diff L2 norm ', num.linalg.norm(stage1.semi_implicit_update-stage2.semi_implicit_update)/N)
-# print('xmom  semi implicit update diff L2 norm ', num.linalg.norm(xmom1.semi_implicit_update-xmom2.semi_implicit_update)/N)
-# print('ymom  semi implicit update diff L2 norm ', num.linalg.norm(ymom1.semi_implicit_update-ymom2.semi_implicit_update)/N)
-
-# print('stage explicit update diff L2 norm ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update)/N)
-# print('stage explicit update diff L2 norm ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update)/N)
-# print('stage explicit update diff L2 norm ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update)/N)
-
-
-stage1_centroid_values_after = num.copy(stage1.centroid_values)
-stage2_centroid_values_after = num.copy(stage2.centroid_values)
-xmom1_centroid_values_after = num.copy(xmom1.centroid_values)
-xmom2_centroid_values_after = num.copy(xmom2.centroid_values)
-ymom1_centroid_values_after = num.copy(ymom1.centroid_values)
-ymom2_centroid_values_after = num.copy(ymom2.centroid_values)
-
-
-# print("change stage1.centroid_values")
-# pprint(stage1_centroid_values_after - stage1_centroid_values_before)
-
-# print("change stage2.centroid_values")
-# pprint(stage2_centroid_values_after - stage2_centroid_values_before)
-
-# print("change xmom1.centroid_values")
-# pprint(xmom1_centroid_values_after - xmom1_centroid_values_before)
-
-# print("change xmom2.centroid_values")
-# pprint(xmom2_centroid_values_after - xmom2_centroid_values_before)
-
-# print()
-# print()
-# print()
-
-# print('Stage 1 and stage 2 cenrtoid values before')
-# pprint(stage1_centroid_values_before)
-# pprint(stage2_centroid_values_before)
+print('xmom  centroid diff L2 norm ', num.linalg.norm(xmom1.centroid_values-xmom2.centroid_values)/N)
+print('ymom  centroid diff L2 norm ', num.linalg.norm(ymom1.centroid_values-ymom2.centroid_values)/N)
