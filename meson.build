@@ -40,35 +40,31 @@ dependencies = [dep_py, dep_numpy]
 # Deal with OpenMP
 #========================================================
 
-# cc = meson.get_compiler('c')
-# if openmp_dep.found()
-#   if cc.get_id() in ['intel', 'intel-cl', 'icx']
-#     openmp_flag = '-qopenmp'
-#   else
-#     openmp_flag = '-fopenmp'
-#   endif
-# endif
-
+cc = meson.get_compiler('c')
 openmp = dependency('openmp', required: false)
+message('Compiler ID is: ' + cc.get_id())
+
 if openmp.found()
   # On Windows, the mingw compiler does not support OpenMP ATOMIC operations
   # so using gcc_win-64 gxx_win-64 provided by conda-forge
   # On linux, OpenMP is supported by gcc and g++
   # On macOS, OpenMP is not supported by the Apple clang compiler so using 
   # clang and llvm-openmp provided by conda-forge
- 
-  #if host_machine.system() == 'windows'
-  
-  openmp_c_args = ['-O3', '-march=native', '-fopenmp', '-g']
-  # openmp_c_args = ['-O3', '-march=native','-funroll-loops', '-fvectorize', '-Rpass=loop-vectorize', '-Rpass=loop-unroll', '-g'],
-  # openmp_c_args = ['-O3', '-march=native', openmp_flag, '-g'],
 
+  if cc.get_id() in ['intel', 'intel-cl', 'icx']
+    openmp_c_args = ['-O3', '-qopenmp', '-g']
+    add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
+  elif cc.get_id() == 'nvidia_hpc'
+    openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g', '-gpu=cc70', '-gpu=mem:separate']
+    add_project_link_arguments(['-mp=multicore,gpu', '-acc'], language: ['c', 'cpp'])
+  else
+    openmp_c_args = ['-O3', '-fopenmp', '-g']
+    add_project_link_arguments('-fopenmp', language: ['c', 'cpp'])
+  endif
   openmp_deps = dependencies + [openmp]
-
 else
   openmp_deps = dependencies
 endif
-
 
 
 #========================================================

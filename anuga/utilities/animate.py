@@ -68,6 +68,26 @@ class Domain_plotter(object):
 
         self.domain = domain
 
+
+    #------------------------------------------
+    # General plots
+    #------------------------------------------
+    def plot_mesh(self, figsize=(10, 6), dpi=80):
+        
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+
+        ax.triplot(self.triang, linewidth=0.4)
+
+        ax.set_title('Mesh')
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+
+        #plt.show()
+
+        return fig, ax
+
     def _depth_frame(self, figsize, dpi, vmin, vmax):
 
 
@@ -78,25 +98,29 @@ class Domain_plotter(object):
 
         md = self.min_depth
 
-        fig = plt.figure(figsize=figsize, dpi=dpi)
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
-        plt.title('Depth: Time {0:0>4}'.format(time))
+        ax.set_title('Depth: Time {0:0>4}'.format(time))
 
         self.triang.set_mask(self.depth > md)
-        plt.tripcolor(self.triang,
+        ax.tripcolor(self.triang,
                       facecolors=self.elev,
                       cmap='Greys_r')
 
 
         self.triang.set_mask(self.depth <= md)
-        plt.tripcolor(self.triang,
+        im = ax.tripcolor(self.triang,
                       facecolors=self.depth,
                       cmap='viridis',
                       vmin=vmin, vmax=vmax)
 
-        plt.colorbar()
+        self.triang.set_mask(None)
 
-        return fig
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        fig.colorbar(im, ax=ax)
+
+        return fig, ax
 
     def save_depth_frame(self, figsize=(10, 6), dpi=80,
                          vmin=0.0, vmax=20):
@@ -107,7 +131,7 @@ class Domain_plotter(object):
         name = self.domain.get_name()
         time = self.domain.get_time()
 
-        fig = self._depth_frame(figsize, dpi, vmin, vmax)
+        fig, ax = self._depth_frame(figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
             fig.savefig(name+'_depth_{0:0>10}.png'.format(int(time)))
@@ -118,14 +142,16 @@ class Domain_plotter(object):
         fig.clf()
         plt.close()
 
-    def plot_depth_frame(self, figsize=(5, 3), dpi=80,
+    def plot_depth_frame(self, figsize=(10, 6), dpi=80,
                          vmin=0.0, vmax=20.0):
 
         import matplotlib.pyplot as plt
 
-        fig = self._depth_frame(figsize, dpi, vmin, vmax)
+        fig, ax = self._depth_frame(figsize, dpi, vmin, vmax)
 
-        plt.show()
+        #plt.show()
+        
+        return fig, ax
 
     def make_depth_animation(self):
 
@@ -178,24 +204,29 @@ class Domain_plotter(object):
 
         md = self.min_depth
 
-        fig = plt.figure(figsize=figsize, dpi=dpi)
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
-        plt.title('Stage: Time {0:0>4}'.format(time))
+        ax.set_title('Stage: Time {0:0>4}'.format(time))
 
         self.triang.set_mask(self.depth > md)
-        plt.tripcolor(self.triang,
+        ax.tripcolor(self.triang,
                       facecolors=self.elev,
                       cmap='Greys_r')
 
         self.triang.set_mask(self.depth <= md)
-        plt.tripcolor(self.triang,
+        im = ax.tripcolor(self.triang,
                       facecolors=self.stage,
                       cmap='viridis',
                       vmin=vmin, vmax=vmax)
 
-        plt.colorbar()
 
-        return fig
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        fig.colorbar(im, ax=ax)
+
+        self.triang.set_mask(None)
+
+        return fig, ax
 
     def save_stage_frame(self, figsize=(10, 6), dpi=80,
                          vmin=-20.0, vmax=20.0):
@@ -206,7 +237,7 @@ class Domain_plotter(object):
         name = self.domain.get_name()
         time = self.domain.get_time()
 
-        fig = self._stage_frame(figsize, dpi, vmin, vmax)
+        fig, ax = self._stage_frame(figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
             fig.savefig(name+'_stage_{0:0>10}.png'.format(int(time)))
@@ -217,14 +248,16 @@ class Domain_plotter(object):
         fig.clf()
         plt.close()
 
-    def plot_stage_frame(self, figsize=(5, 3), dpi=80,
+    def plot_stage_frame(self, figsize=(10, 6), dpi=80,
                          vmin=-20.0, vmax=20.0):
 
         import matplotlib.pyplot as plt
 
-        fig = self._stage_frame(figsize, dpi, vmin, vmax)
+        fig, ax = self._stage_frame(figsize, dpi, vmin, vmax)
 
-        plt.show()
+        #plt.show()
+
+        return fig, ax
 
     def make_stage_animation(self):
 
@@ -287,24 +320,28 @@ class Domain_plotter(object):
 
         self.speed = np.sqrt(self.xvel**2 + self.yvel**2)  
 
-        fig = plt.figure(figsize=figsize, dpi=dpi)
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
-        plt.title('Speed: Time {0:0>4}'.format(time))
+        ax.set_title('Speed: Time {0:0>4}'.format(time))
 
         self.triang.set_mask(self.depth > md)
-        plt.tripcolor(self.triang,
+        ax.tripcolor(self.triang,
                       facecolors=self.elev,
                       cmap='Greys_r')
 
         self.triang.set_mask(self.depth <= md)
-        plt.tripcolor(self.triang,
+        im = ax.tripcolor(self.triang,
                       facecolors=self.speed,
                       cmap='viridis',
                       vmin=vmin, vmax=vmax)
 
-        plt.colorbar()
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        fig.colorbar(im, ax=ax)
 
-        return fig
+        self.triang.set_mask(None)
+
+        return fig, ax
 
     def save_speed_frame(self, figsize=(10, 6), dpi=80,
                          vmin=-20.0, vmax=20.0):
@@ -315,7 +352,7 @@ class Domain_plotter(object):
         name = self.domain.get_name()
         time = self.domain.get_time()
 
-        fig = self._speed_frame(figsize, dpi, vmin, vmax)
+        fig, ax = self._speed_frame(figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_{0:0>10}.png'.format(int(time)))
@@ -330,9 +367,11 @@ class Domain_plotter(object):
 
         import matplotlib.pyplot as plt
 
-        fig = self._speed_frame(figsize, dpi, vmin, vmax)
+        fig, ax = self._speed_frame(figsize, dpi, vmin, vmax)
 
-        plt.show()
+        #plt.show()
+
+        return fig, ax
 
     def make_speed_animation(self):
 
@@ -406,12 +445,50 @@ class Domain_plotter(object):
 class SWW_plotter(object):
     """
     A class to wrap ANUGA swwfile centroid values for stage, height, elevation
-    xmomentunm and ymomentum, and triangulation information.
+    xmomentum and ymomentum, and triangulation information.
+
+    Plotting functions are provided to plot depth, speed, speed_depth, stage and mesh,
+    and to create animations of depth, speed, speed_depth (momentum) and stage.
+
+    Plotting based on matplotlib's tripcolor and triplot functions.
+
+    Example:
+
+        Open an SWW file and plot various quantities.
+
+    >>> import anuga
+    >>> import matplotlib.pyplot as plt
+    >>>
+    >>> # Enable interactive mode
+    >>> plot.ion()
+    >>>
+    >>> # Create SWW plotter object by opening an SWW file
+    >>> splotter = anuga.SWW_plotter('domain.sww')
+    >>>
+    >>> # Find min and max depth for plotting
+    >>> vmin = splotter.depth.min()
+    >>> vmax = splotter.depth.max()
+    >>>
+    >>> # Plot depth at last frame.
+    >>> fig, ax = splotter.plot_depth_frame(-1, vmin=vmin, vmax=vmax)
+    >>> ax.set_title('Depth at final time')
+    >>> 
+    >>> # Plot speed at second frame
+    >>> fig, ax = splotter.plot_speed_frame(1)
+    >>> ax.set_title('Speed at second frame')
+    >>>
+    >>> # Plot Mesh
+    >>> fig, ax, im = splotter.plot_mesh()
+    >>> ax.set_title('Mesh')
+    >>>
+    >>> # Animate depth
+    >>> for frame in range(len(splotter.time)):
+    ...     splotter.save_depth_frame(frame, vmin=vmin, vmax=vmax)
+    >>> anim = splotter.make_depth_animation()
     """
 
     def __init__(self, swwfile='domain.sww', plot_dir='_plot',
-                 min_depth = 0.01,
-                 minimum_allowed_depth=1.0e-03,
+                 min_depth = 0.001,
                  absolute=False):
 
         self.plot_dir = plot_dir
@@ -466,10 +543,11 @@ class SWW_plotter(object):
             for i in range(self.depth.shape[0]):
                 self.depth[i, :] = self.stage[i, :]-self.elev
 
+
         with np.errstate(invalid='ignore'):
-            self.xvel = np.where(self.depth > minimum_allowed_depth,
+            self.xvel = np.where(self.depth > self.min_depth,
                              self.xmom / self.depth, 0.0)
-            self.yvel = np.where(self.depth > minimum_allowed_depth,
+            self.yvel = np.where(self.depth > self.min_depth,
                              self.ymom / self.depth, 0.0)
 
         self.speed = np.sqrt(self.xvel**2 + self.yvel**2)
@@ -479,9 +557,28 @@ class SWW_plotter(object):
         self.time = np.array(p.variables['time'])
 
     #------------------------------------------
+    # General plots
+    #------------------------------------------
+    def plot_mesh(self, figsize=(10, 8), dpi=80, **kwargs):
+        
+        import matplotlib.pyplot as plt
+
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+
+        im = ax.triplot(self.triang, linewidth=0.4, **kwargs)
+
+        ax.set_title('Mesh')
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+
+        #plt.show()
+
+        return fig, ax, im
+
+    #------------------------------------------
     # Depth procedures
     #------------------------------------------
-    def _depth_frame(self, figsize, dpi, frame, vmin, vmax):
+    def _depth_frame(self, frame, figsize, dpi, vmin, vmax):
 
         name = self.name
         time = self.time[frame]
@@ -496,26 +593,34 @@ class SWW_plotter(object):
 
         ims = []
 
-        fig = plt.figure(figsize=figsize, dpi=dpi)
+        #fig = plt.figure(figsize=figsize, dpi=dpi)
+
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
         plt.title('Depth: Time {0:0>4}'.format(time))
 
         self.triang.set_mask(depth > md)
-        plt.tripcolor(self.triang,
+        ax.tripcolor(self.triang,
                       facecolors=elev,
                       cmap='Greys_r')
 
         self.triang.set_mask(depth < md)
-        plt.tripcolor(self.triang,
+        im = ax.tripcolor(self.triang,
                       facecolors=depth,
                       cmap='viridis',
                       vmin=vmin, vmax=vmax)
 
-        plt.colorbar()
+        
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
 
-        return fig
+        self.triang.set_mask(None)
 
-    def save_depth_frame(self, figsize=(10, 6), dpi=160, frame=-1,
+        fig.colorbar(im, ax=ax)
+
+        return fig, ax
+
+    def save_depth_frame(self, frame=-1, figsize=(10, 6), dpi=160, 
                          vmin=0.0, vmax=20.0):
 
         import matplotlib.pyplot as plt
@@ -524,7 +629,7 @@ class SWW_plotter(object):
         time = self.time[frame]
         plot_dir = self.plot_dir
 
-        fig = self._depth_frame(figsize, dpi, frame, vmin, vmax)
+        fig, ax = self._depth_frame(frame, figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
             fig.savefig(name+'_depth_{0:0>10}.png'.format(int(time)))
@@ -534,20 +639,22 @@ class SWW_plotter(object):
         plt.close()
         fig.clf()
 
-    def plot_depth_frame(self, figsize=(5, 3), dpi = 80, frame=-1,
+    def plot_depth_frame(self, frame=-1, figsize=(10, 6), dpi = 80,
                          vmin=0.0, vmax=20.0):
 
         import matplotlib.pyplot as plt
 
-        fig = self._depth_frame(figsize, dpi, frame, vmin, vmax)
+        fig, ax = self._depth_frame(frame, figsize, dpi, vmin, vmax)
 
-        plt.show()
+        #plt.show()
+
+        return fig, ax
 
 
     #------------------------------------------
     # Stage procedures
     #------------------------------------------
-    def _stage_frame(self, figsize, dpi, frame, vmin, vmax):
+    def _stage_frame(self, frame, figsize, dpi, vmin, vmax):
 
         import matplotlib.pyplot as plt
 
@@ -565,26 +672,32 @@ class SWW_plotter(object):
 
         ims = []
 
-        fig = plt.figure(figsize=figsize, dpi=dpi)
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
         plt.title('Stage: Time {0:0>4}'.format(time))
 
         self.triang.set_mask(depth > md)
-        plt.tripcolor(self.triang,
+        ax.tripcolor(self.triang,
                       facecolors=elev,
                       cmap='Greys_r')
 
         self.triang.set_mask(depth < md)
-        plt.tripcolor(self.triang,
+        im = ax.tripcolor(self.triang,
                       facecolors=stage,
                       cmap='viridis',
                       vmin=vmin, vmax=vmax)
 
-        plt.colorbar()
-        
-        return fig
+        self.triang.set_mask(None)
 
-    def save_stage_frame(self, figsize=(10, 6), dpi=160, frame=-1,
+        
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+
+        fig.colorbar(im, ax=ax)
+        
+        return fig, ax
+
+    def save_stage_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=-20.0, vmax=20.0):
 
         import matplotlib.pyplot as plt
@@ -593,7 +706,7 @@ class SWW_plotter(object):
         time = self.time[frame]
         plot_dir = self.plot_dir
 
-        fig = self._stage_frame(figsize, dpi, frame, vmin, vmax)
+        fig, ax = self._stage_frame(frame, figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
             fig.savefig(name+'_stage_{0:0>10}.png'.format(int(time)))
@@ -603,20 +716,21 @@ class SWW_plotter(object):
         plt.close()
         fig.clf()
 
-    def plot_stage_frame(self, figsize=(5, 3), dpi=80, frame=-1,
+    def plot_stage_frame(self, frame=-1, figsize=(5, 3), dpi=80,
                          vmin=-20, vmax=20.0):
 
         import matplotlib.pyplot as plt
 
-        fig = self._stage_frame(figsize, dpi, frame, vmin, vmax)
+        fig, ax = self._stage_frame(frame, figsize, dpi, vmin, vmax)
 
-        plt.show()
+        #plt.show()
 
+        return fig, ax
 
     #------------------------------------------
     # Depth Speed procedures
     #------------------------------------------
-    def _speed_depth_frame(self, figsize, dpi, frame, vmin, vmax):
+    def _speed_depth_frame(self, frame, figsize, dpi, vmin, vmax):
 
         import matplotlib.pyplot as plt
 
@@ -635,26 +749,31 @@ class SWW_plotter(object):
 
         ims = []
 
-        fig = plt.figure(figsize=figsize, dpi=dpi)
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
         plt.title('Speed_Depth: Time {0:0>4}'.format(time))
 
         self.triang.set_mask(depth > md)
-        plt.tripcolor(self.triang,
+        ax.tripcolor(self.triang,
                       facecolors=speed_depth,
                       cmap='Greys_r')
 
         self.triang.set_mask(depth < md)
-        plt.tripcolor(self.triang,
+        im = ax.tripcolor(self.triang,
                       facecolors=elev,
                       cmap='viridis',
                       vmin=vmin, vmax=vmax)
 
-        plt.colorbar()
+        self.triang.set_mask(None)
 
-        return fig
 
-    def save_speed_depth_frame(self, figsize=(10, 6), dpi=160, frame=-1,
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        fig.colorbar(im, ax=ax)
+
+        return fig, ax
+
+    def save_speed_depth_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=-20.0, vmax=20.0):
 
         import matplotlib.pyplot as plt
@@ -663,7 +782,7 @@ class SWW_plotter(object):
         time = self.time[frame]
         plot_dir = self.plot_dir
 
-        fig = self._speed_depth_frame(figsize, dpi, frame, vmin, vmax)
+        fig, ax = self._speed_depth_frame(frame, figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_depth_{0:0>10}.png'.format(int(time)))
@@ -673,19 +792,21 @@ class SWW_plotter(object):
         plt.close()
         fig.clf()
 
-    def plot_speed_depth_frame(self, figsize=(5, 3), dpi=80, frame=-1,
+    def plot_speed_depth_frame(self, frame=-1, figsize=(5, 3), dpi=80,
                          vmin=-20, vmax=20.0):
 
         import matplotlib.pyplot as plt
 
-        self._speed_depth_frame(figsize, dpi, frame, vmin, vmax)
+        self._speed_depth_frame(frame, figsize, dpi, vmin, vmax)
 
-        plt.show()
+        #plt.show()
+
+        return fig, ax
 
     #------------------------------------------
     # Speed procedures
     #------------------------------------------
-    def _speed_frame(self, figsize, dpi, frame, vmin, vmax):
+    def _speed_frame(self, frame, figsize, dpi, vmin, vmax):
 
         import matplotlib.pyplot as plt
 
@@ -703,33 +824,37 @@ class SWW_plotter(object):
 
         ims = []
 
-        fig = plt.figure(figsize=figsize, dpi=dpi)
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
         plt.title('Speed: Time {0:0>4}'.format(time))
 
         self.triang.set_mask(depth > md)
-        plt.tripcolor(self.triang,
+        ax.tripcolor(self.triang,
                       facecolors=elev,
                       cmap='Greys_r')
 
         self.triang.set_mask(depth < md)
-        plt.tripcolor(self.triang,
+        im = ax.tripcolor(self.triang,
                       facecolors=speed,
                       cmap='viridis',
                       vmin=vmin, vmax=vmax)
 
-        plt.colorbar()
+        self.triang.set_mask(None)
 
-        return fig
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        fig.colorbar(im, ax=ax)
 
-    def save_speed_frame(self, figsize=(10, 6), dpi=160, frame=-1,
+        return fig, ax
+
+    def save_speed_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=0.0, vmax=10.0):
 
         name = self.name
         time = self.time[frame]
         plot_dir = self.plot_dir
 
-        fig = self._speed_frame(figsize, dpi, frame, vmin, vmax)
+        fig, ax = self._speed_frame(frame, figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_{0:0>10}.png'.format(int(time)))
@@ -739,15 +864,16 @@ class SWW_plotter(object):
         plt.close()
         fig.clf()
 
-    def plot_speed_frame(self, figsize=(5, 3), dpi=80, frame=-1,
+    def plot_speed_frame(self, frame=-1, figsize=(10, 6), dpi=80,
                          vmin=0.0, vmax=10.0):
 
         import matplotlib.pyplot as plt
 
-        self._speed_frame(figsize, dpi, frame, vmin, vmax)
+        fig, ax = self._speed_frame(frame, figsize, dpi, vmin, vmax)
 
-        plt.show()
+        #plt.show()
 
+        return fig, ax
 
     #------------------------------------------
     # Animation procedures
@@ -833,3 +959,21 @@ class SWW_plotter(object):
             else:
                 os.mkdir("%s" % plot_dir)
             print("Figure files for each frame will be stored in " + plot_dir)
+
+    def triplot(self, figsize = (10, 6), dpi=80, **kwargs):
+
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+
+        lines = ax.triplot(self.triang, *args, **kwargs)
+        return fig, ax, lines
+
+
+    def tripcolor(self, figsize = (10, 6), dpi=80, **kwargs):
+
+        import matplotlib.pyplot as plt
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+        
+        im = ax.tripcolor(self.triang,  *args, **kwargs)
+        return fig, ax, im
+

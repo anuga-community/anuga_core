@@ -15,14 +15,14 @@ class Parallel_Weir_orifice_trapezoid_operator(Parallel_Structure_operator):
     This is the base class for culverts. Inherit from this class (and overwrite
     compute_discharge method for specific subclasses)
     
-    Input: Two points, pipe_size (either diameter or width, height),
+    Input: Two points, pipe_size (width, height),
     mannings_rougness,
     """
 
     def __init__(self,
                  domain,
-                 losses,
-                 width,
+                 losses=0.0,
+                 width=None,
                  height=None,
                  z1=None,
                  z2=None,

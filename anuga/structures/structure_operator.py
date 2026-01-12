@@ -63,10 +63,10 @@ class Structure_operator(anuga.Operator):
         anuga.Operator.__init__(self,domain)
 
         self.master_proc = 0
-        self.end_points = ensure_numeric(end_points)
-        self.exchange_lines = ensure_numeric(exchange_lines)
-        self.enquiry_points = ensure_numeric(enquiry_points)
-        self.invert_elevations = ensure_numeric(invert_elevations)
+        self.end_points = ensure_numeric(end_points, float)
+        self.exchange_lines = ensure_numeric(exchange_lines, float)
+        self.enquiry_points = ensure_numeric(enquiry_points, float)
+        self.invert_elevations = ensure_numeric(invert_elevations, float)
 
         assert self.end_points is None or self.exchange_lines is None
 

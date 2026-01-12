@@ -28,13 +28,27 @@ parser.add_argument(
     help="The Python script to run for benchmarking (default: run_small_towradgi.py)"
 )
 
+parser.add_argument(
+    "script_args",
+    type=str, 
+    default=" ",
+    nargs=argparse.REMAINDER,
+    help="Arguments for the benchmarked script")
 
 args = parser.parse_args()
 script_file = args.script_file
-print(f"Using script file: {script_file}")
+script_args = args.script_args
+
+if script_args == []:
+    script_args_str = ""
+else:
+    script_args_str = " " + " ".join(script_args)
+
+#print(f"Using script args: {script_args_str}")
+
+print(f"Using script file: {script_file + script_args_str}")
 
 script = script_file.rsplit('.', 1)[0]
-
 
 
 # Copy the current environment and set OMP_NUM_THREADS
@@ -74,8 +88,13 @@ for threads in openmp_threads:
     env["OMP_NUM_THREADS"] = str(threads)  # Set to your desired number of threads
     pstat_file = f'profile_{script}_{hostname}_{queue}_{anuga_env}_{time}_omp_{threads}.pstat'
 
-    cmd = ['conda', 'run', '--no-capture-output', '-n', anuga_env, 'python', '-u', '-m', 'cProfile', '-o', pstat_file, script_file]
-    
+    # cmd = ['conda', 'run', '--no-capture-output', '-n',
+    #         anuga_env, 'python', '-u', '-m', 'cProfile', '-o', pstat_file,
+    #         script_file]
+    cmd = ['conda', 'run', '--no-capture-output',
+             'python', '-u', '-m', 'cProfile', '-o', pstat_file,
+            script_file] + script_args
+
     print('')
     print(80 * '=')
     print(f'Running command: {" ".join(cmd)}')

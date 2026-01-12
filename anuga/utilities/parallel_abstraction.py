@@ -73,6 +73,9 @@ except:
   def send_recv_via_dicts(*args, **kwargs):
       pass
 
+  def global_running_sum(*args, **kwargs):
+      pass
+
   MIN = None
 
   pypar_available = False
@@ -271,6 +274,14 @@ else:
       sendBuf = sendDict[key][2]
       comm.Sendrecv(np.ascontiguousarray(sendBuf), key, 123,
         recvBuf, key, 123)
+
+  def global_running_sum(val):
+      """Compute running sum across ranks using MPI Scan
+
+      Args:
+         val (float / int): value to sum
+      """
+      return comm.scan(val, SUM)
 
   numprocs = size()
   myid = rank()

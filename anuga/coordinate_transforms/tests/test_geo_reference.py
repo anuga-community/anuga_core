@@ -27,6 +27,22 @@ class geo_referenceTestCase(unittest.TestCase):
         self.assertTrue(z == g.get_zone(), ' failed')
         self.assertTrue(x == g.get_xllcorner(), ' failed')
         self.assertTrue(y == g.get_yllcorner(), ' failed') 
+
+    def test_get_southern_hemisphere(self):
+        g = Geo_reference(56,1.9,1.9, hemisphere='southern')
+        false_easting = g.false_easting
+        false_northing = g.false_northing
+
+        self.assertTrue(false_easting == DEFAULT_SOUTHERN_FALSE_EASTING, ' failed')
+        self.assertTrue(false_northing == DEFAULT_SOUTHERN_FALSE_NORTHING, ' failed')
+
+    def test_get_northern_hemisphere(self):
+        g = Geo_reference(56,1.9,1.9, hemisphere='northern')
+        false_easting = g.false_easting
+        false_northing = g.false_northing
+
+        self.assertTrue(false_easting == DEFAULT_NORTHERN_FALSE_EASTING, ' failed')
+        self.assertTrue(false_northing == DEFAULT_NORTHERN_FALSE_NORTHING, ' failed')
         
     def test_read_write_NetCDF(self):
         from anuga.file.netcdf import NetCDFFile

@@ -96,6 +96,7 @@ import sys
 import os
 import time
 
+
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
@@ -320,7 +321,7 @@ class Domain(Generic_Domain):
         # then set to default (1 thread). If a value is given to
         # the method, then it will override the default.
         #------------------------------
-        self.set_omp_num_threads()
+        self.set_omp_num_threads(verbose=False)
 
         #-------------------------------
         # datetime and timezone
@@ -396,6 +397,7 @@ class Domain(Generic_Domain):
         self.volume_history=[]
 
         # Work arrays [avoid allocate statements in compute_fluxes or extrapolate_second_order]
+        # FIXME SR: Should rationalise these arrays -- some may be redundant
         self.edge_flux_work=num.zeros(len(self.edge_coordinates[:,0])*3) # Advective fluxes
         self.neigh_work=num.zeros(len(self.edge_coordinates[:,0])*3) # Advective fluxes
         self.pressuregrad_work=num.zeros(len(self.edge_coordinates[:,0])) # Gravity related terms
@@ -404,6 +406,10 @@ class Domain(Generic_Domain):
 
         ############################################################################
         ## Local-timestepping information
+        ############################################################################
+        # FIXME SR: Nice idea but is not generally used, so should hive off to 
+        # another branch of the code and removed for general use
+
         #
         # Fluxes can be updated every 1, 2, 4, 8, .. max_flux_update_frequency timesteps
         # The global timestep is not allowed to increase except when
@@ -441,10 +447,13 @@ class Domain(Generic_Domain):
         """Set the plotter for this domain
         """
         
+        #FIXME SR: Should look into seeing if the triang can use the 
+        # triangulation from Domain rather than having two copies
         if self.dplotter is None:
             import anuga
             self.dplotter = anuga.Domain_plotter(self, *args, **kwargs) 
 
+        
         self.triang = self.dplotter.triang
         self.stage = self.dplotter.stage
         self.xmom = self.dplotter.xmom
@@ -457,6 +466,8 @@ class Domain(Generic_Domain):
         self.y = self.dplotter.y
         self.xc = self.dplotter.xc
         self.yc = self.dplotter.yc
+
+        self.plot_mesh = self.dplotter.plot_mesh
 
         self.save_depth_frame = self.dplotter.save_depth_frame
         self.plot_depth_frame = self.dplotter.plot_depth_frame
@@ -471,22 +482,73 @@ class Domain(Generic_Domain):
         self.make_speed_animation = self.dplotter.make_speed_animation        
 
         
-    def triplot(self, *args, **kwargs):
+    def triplot(self, *args,  **kwargs):
 
         self.set_plotter()
 
         import matplotlib.pyplot as plt
-        plt.triplot(self.triang, *args, **kwargs)
+        fig, ax = plt.subplots()
+
+        lines = ax.triplot(self.triang, *args, **kwargs)
+
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+
+        return fig, ax, lines
 
 
-    def tripcolor(self, *args, **kwargs):
+    def tripcolor(self, *args,  **kwargs):
 
         self.set_plotter()
 
         import matplotlib.pyplot as plt
-        plt.tripcolor(self.triang,  *args, **kwargs)
+        fig, ax = plt.subplots()
+
+        im = ax.tripcolor(self.triang,  *args, **kwargs)
+
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+
+        return fig, ax, im
+
+    #==============================================================
+    # Methods to set and get domain parameters
+    #==============================================================
+
+    @property
+    def g(self) -> float:
+        """Gravitational acceleration [m/s^2]"""
+        return self._g
+
+    @g.setter
+    def g(self, value: float):
+        """Set gravitational acceleration [m/s^2]"""
+        self._g = value
+
+    @property
+    def timestep(self) -> float:
+        """Current timestep [s]"""
+        return self._timestep
+    
+    @timestep.setter
+    def timestep(self, value: float):
+        """Set current timestep [s]"""
+        self._timestep = value
+
+    @property
+    def flux_timestep(self) -> float:
+        """Current flux timestep [s]"""
+        return self._flux_timestep
+
+    @flux_timestep.setter
+    def flux_timestep(self, value: float):
+        """Set current flux timestep [s]"""
+        self._flux_timestep = value
 
 
+    #==============================================================
+    # Set config defaults
+    #==============================================================
     def _set_config_defaults(self):
         """Set the default values in this routine. That way we can inherit class
         and just redefine the defaults for the new class
@@ -515,6 +577,7 @@ class Domain(Generic_Domain):
         self.maximum_allowed_speed = maximum_allowed_speed
 
         self.minimum_storable_height = minimum_storable_height
+
         self.g = g
 
         self.alpha_balance = alpha_balance
@@ -1872,8 +1935,8 @@ class Domain(Generic_Domain):
 
         # nvtxRangePop()
 
-        
-    def distribute_to_vertices_and_edges(self):
+
+    def distribute_to_vertices_and_edges(self, distribute_to_vertices=True):
         """ extrapolate centroid values to vertices and edges"""
 
         # Do protection step
@@ -1894,7 +1957,7 @@ class Domain(Generic_Domain):
             raise Exception('Not implemented')
 
         nvtxRangePush('extrapolate_second_order_edge_sw')
-        extrapolate_second_order_edge_sw(self)
+        extrapolate_second_order_edge_sw(self, distribute_to_vertices=distribute_to_vertices)
         nvtxRangePop()
 
     def distribute_to_edges(self):
@@ -1909,7 +1972,7 @@ class Domain(Generic_Domain):
         # nvtxRangePush('extrapolate')
         # Choose the correct extension module
         if self.multiprocessor_mode == 1:
-            from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
+            from .sw_domain_openmp_ext import distribute_to_edges as extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw(self)
         elif self.multiprocessor_mode == 2:
             # change over to cuda routines as developed
@@ -2334,7 +2397,7 @@ class Domain(Generic_Domain):
         :param float outputstep: Output to sww file every outputstep time period. outputstep should be an integer multiple of yieldstep.
         :param float finaltime: evolve until finaltime (can be a float (secs) or a datetime object)
         :param float duration: evolve for a time of length duration (secs)
-        :param  boolean skip_inital_step: Can be used to restart a simulation (not often used).
+        :param boolean skip_initial_step: Can be used to restart a simulation (not often used).
 
 
         If outputstep is None, the output to sww file happens every yieldstep.
@@ -2343,6 +2406,10 @@ class Domain(Generic_Domain):
 
         # Call check integrity here rather than from user scripts
         # self.check_integrity()
+
+        from time import time as walltime
+        self.evolve_start_walltime = walltime()
+        self.last_walltime = self.evolve_start_walltime
 
         from datetime import datetime
         if finaltime is not None:
@@ -2484,10 +2551,10 @@ class Domain(Generic_Domain):
         """
 
         #nvtx marker
-        nvtxRangePush('distribute_to_vertices_and_edges')
+        nvtxRangePush('distribute_to_edges')
 
-        # From centroid values calculate edge and vertex values
-        self.distribute_to_vertices_and_edges()
+        # From centroid values calculate edge
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
 
         #nvtx marker
         nvtxRangePop()
@@ -2544,45 +2611,45 @@ class Domain(Generic_Domain):
         """
 
         # Save initial initial conserved quantities values
-        self.backup_conserved_quantities()
+        self.backup_conserved_quantities() # has C, ported to GPU 
 
         #==========================================
         # First euler step
         #==========================================
 
-        # From centroid values calculate edge and vertex values
-        self.distribute_to_vertices_and_edges()
+        # From centroid values calculate edge values
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False) # has C, ported to GPU
 
         # Apply boundary conditions
-        self.update_boundary()
+        self.update_boundary() # has C, ported to GPU
 
         # Compute fluxes across each element edge
-        self.compute_fluxes()
+        self.compute_fluxes() # has C, ported to GPU
 
         # Compute forcing terms
-        self.compute_forcing_terms()
+        self.compute_forcing_terms() # has C, ported to GPU
 
         # Update timestep to fit yieldstep and finaltime
-        self.update_timestep(yieldstep, finaltime)
+        self.update_timestep(yieldstep, finaltime) #needs C
 
         # Update centroid values of conserved quantities
-        self.update_conserved_quantities()
+        self.update_conserved_quantities() # has C, ported to GPU
 
         # Update special conditions
         # self.update_special_conditions()
 
         # Update time
-        self.set_relative_time(self.get_relative_time() + self.timestep)
+        self.set_relative_time(self.get_relative_time() + self.timestep) # needs C
 
         # Update ghosts
         if self.ghost_layer_width < 4:
-            self.update_ghosts()
+            self.update_ghosts() # needs C
 
-        # Update vertex and edge values
-        self.distribute_to_vertices_and_edges()
+        # Update edge values
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False) # has C, ported to GPU
 
         # Update boundary values
-        self.update_boundary()
+        self.update_boundary() # needs C, boundary.py 382
 
         #=========================================
         # Second Euler step using the same timestep
@@ -2592,13 +2659,13 @@ class Domain(Generic_Domain):
         #=========================================
 
         # Compute fluxes across each element edge
-        self.compute_fluxes()
+        self.compute_fluxes() # has C, ported to GPU
 
         # Compute forcing terms
-        self.compute_forcing_terms()
+        self.compute_forcing_terms() # has C, nor poted to GPU
 
         # Update conserved quantities
-        self.update_conserved_quantities()
+        self.update_conserved_quantities() # has C, prote
 
         #========================================
         # Combine initial and final values
@@ -2606,7 +2673,7 @@ class Domain(Generic_Domain):
         #========================================
 
         # Combine steps
-        self.saxpy_conserved_quantities(0.5, 0.5)
+        self.saxpy_conserved_quantities(0.5, 0.5) # has C, not ported
 
 
     def evolve_one_rk3_step(self, yieldstep, finaltime):
@@ -2621,14 +2688,14 @@ class Domain(Generic_Domain):
         # Save initial initial conserved quantities values
         self.backup_conserved_quantities()
 
-        initial_time = self.get_relative_time()
+        initial_relative_time = self.get_relative_time()
 
         ######
         # First euler step
         ######
 
-        # From centroid values calculate edge and vertex values
-        self.distribute_to_vertices_and_edges()
+        # From centroid values calculate edge values
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
 
         # Apply boundary conditions
         self.update_boundary()
@@ -2654,8 +2721,8 @@ class Domain(Generic_Domain):
         # Update ghosts
         self.update_ghosts()
 
-        # Update vertex and edge values
-        self.distribute_to_vertices_and_edges()
+        # Update edge values
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
 
         # Update boundary values
         self.update_boundary()
@@ -2688,13 +2755,13 @@ class Domain(Generic_Domain):
         # self.update_special_conditions()
 
         # Set substep time
-        self.set_relative_time(initial_time + self.timestep * 0.5)
+        self.set_relative_time(initial_relative_time + self.timestep * 0.5)
 
         # Update ghosts
         self.update_ghosts()
 
-        # Update vertex and edge values
-        self.distribute_to_vertices_and_edges()
+        # Update edge values
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
 
         # Update boundary values
         self.update_boundary()
@@ -2723,9 +2790,9 @@ class Domain(Generic_Domain):
         # So do this instead!
         self.saxpy_conserved_quantities(2.0, 1.0, 3.0)
 
-
+    
         # Set new time
-        self.set_relative_time(initial_time + self.timestep)
+        self.set_relative_time(initial_relative_time + self.timestep)
 
 
     def backup_conserved_quantities(self):
@@ -3175,7 +3242,7 @@ class Domain(Generic_Domain):
         """
         return self.multiprocessor_mode 
 
-    def set_omp_num_threads(self, omp_num_threads=None):
+    def set_omp_num_threads(self, omp_num_threads=None, verbose=True):
         """
         Set the number of OpenMP threads to use for parallel processing.
         If OMP_NUM_THREADS is not set, this will set it to the specified 
@@ -3185,9 +3252,10 @@ class Domain(Generic_Domain):
 
         import os
         if omp_num_threads is None:
-            # Use the default setting
+            # Use the environment setting
             omp_num_threads = os.environ.get('OMP_NUM_THREADS', None)
-            #print(f'Using OMP_NUM_THREADS from environment: {omp_num_threads}')
+            if verbose:
+                print(f'Using OMP_NUM_THREADS from environment: {omp_num_threads}')
 
 
         if omp_num_threads is None:
@@ -3202,8 +3270,9 @@ class Domain(Generic_Domain):
         self.omp_num_threads = omp_num_threads
         from .sw_domain_openmp_ext import set_omp_num_threads
         set_omp_num_threads(omp_num_threads)
-        
-        print(f'Setting omp_num_threads to {omp_num_threads}')
+
+        if verbose:
+            print(f'Setting omp_num_threads to {omp_num_threads}')
 
 
     def set_gpu_interface(self):

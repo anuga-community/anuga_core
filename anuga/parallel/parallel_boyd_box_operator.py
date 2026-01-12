@@ -21,8 +21,8 @@ class Parallel_Boyd_box_operator(Parallel_Structure_operator):
 
     def __init__(self,
                  domain,
-                 losses,
-                 width,
+                 losses=0.0,
+                 width=None,
                  blockage=0.0,
                  barrels=1.0,
                  z1=0.0,

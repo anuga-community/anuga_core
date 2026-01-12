@@ -27,7 +27,6 @@ import sys
 import math
 from xml import dom
 import anuga
-import nvtx
 
 
 #----------------------------
@@ -76,8 +75,8 @@ parser.add_argument('-fdt', '--fixed_dt', type=float, default=fixed_flux_timeste
                     help='Set a fixed flux timestep')
 parser.add_argument('-ta', '--test_allreduce', action='store_true',
                     help='run fixed timestep with dummy allreduce')
-parser.add_argument('-mp', '--multi_processor_mode', type=int, default=0,
-                    help='set multiprocessor mode in [0,1,2,3,4]')
+parser.add_argument('-mp', '--multi_processor_mode', type=int, default=1,
+                    help='set multiprocessor mode in [1,2]')
 
 parser.add_argument('-v', '--verbose', action='store_true', help='turn on verbosity')
 
@@ -113,7 +112,7 @@ if fixed_flux_timestep == 0.0:
 if myid == 0:
 
     #nvtx marker
-    rng = nvtx.start_range(message="rect_example_creat_time", color="blue")
+    #rng = nvtx.start_range(message="rect_example_creat_time", color="blue")
 
 
     domain = rectangular_cross_domain(sqrtN, sqrtN,
@@ -131,8 +130,9 @@ if myid == 0:
     domain.set_multiprocessor_mode(multi_processor_mode)
  
     if verbose: domain.print_statistics()
+
     # nvtx marker
-    nvtx.end_range(rng)
+    #nvtx.end_range(rng)
 
 else:
     domain = None
@@ -155,11 +155,11 @@ barrier()
 # Distribute domain
 #-------------------------------------------------------------------------
 # nvtx marker
-rng = nvtx.start_range(message="rectangular_exam_domain_distr", color="blue")
+#rng = nvtx.start_range(message="rectangular_exam_domain_distr", color="blue")
 
 domain = distribute(domain,verbose=verbose,parameters=dist_params)
 # nvtx marker
-nvtx.end_range(rng)
+#nvtx.end_range(rng)
 
 
 # FIXME: THis should be able to be set in the sequential domain
@@ -202,7 +202,7 @@ barrier()
 t0 = time.time()
 
 # nvtx marker
-rng = nvtx.start_range(message="rect_exam_evolve_time", color="blue")
+#rng = nvtx.start_range(message="rect_exam_evolve_time", color="blue")
 
 #===========================================================================
 # Main Evolve Loop
@@ -213,7 +213,7 @@ for t in domain.evolve(yieldstep = yieldstep, finaltime = finaltime):
         sys.stdout.flush()
 
 # nvtx marker
-nvtx.end_range(rng)
+#nvtx.end_range(rng)
         
         
 evolve_time = time.time()-t0

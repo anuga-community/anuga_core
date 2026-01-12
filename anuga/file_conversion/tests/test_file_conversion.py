@@ -87,7 +87,7 @@ class Test_File_Conversion(unittest.TestCase):
         and checking that its headers and some of its contents
         are correct.
     """
-    verbose = False
+    verbose = False 
 
     def set_verbose(self):
         Test_File_Conversion.verbose = True

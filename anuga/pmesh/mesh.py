@@ -30,9 +30,7 @@ import anuga.alpha_shape.alpha_shape
 from anuga.geospatial_data.geospatial_data import Geospatial_data, \
     ensure_geospatial, ensure_absolute, ensure_numeric
 from anuga.mesh_engine.mesh_engine import generate_mesh
-import anuga.utilities.log as log
 
-log.log_filename = './anuga_pmesh_gui.log'
 
 from anuga.file.ungenerate import load_ungenerate
 
