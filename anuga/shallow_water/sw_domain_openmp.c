@@ -456,7 +456,7 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
 {
   // Local variables 
   anuga_int number_of_elements = D->number_of_elements;
-  anuga_int n_riverwall_edges = D->number_of_riverwall_edges;
+  // anuga_int n_riverwall_edges = D->number_of_riverwall_edges;
   //printf(" n edges %d \n", n_riverwall_edges);
   // anuga_int KI, KI2, KI3, B, RW, RW5, SubSteps;
   anuga_int substep_count;
@@ -480,7 +480,7 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
   }
 
 
-  anuga_int boundary_length = D->boundary_length;
+  // anuga_int boundary_length = D->boundary_length;
   // Which substep of the timestepping method are we on?
   substep_count = (call - base_call) % D->timestep_fluxcalls;
 
@@ -2600,9 +2600,9 @@ void _openmp_evaluate_reflective_segment(const struct domain *__restrict D, anug
    anuga_int *edge_segment, anuga_int *vol_ids, anuga_int *edge_ids){
    // JORGE TODO: PORT TO GPU
 
-  anuga_int boundary_length = D->boundary_length;
+  // anuga_int boundary_length = D->boundary_length;
   anuga_int number_of_edges = N;
-  anuga_int number_of_elements = D->number_of_elements; 
+  // anuga_int number_of_elements = D->number_of_elements; 
 
 #ifdef __NVCOMPILER_LLVM__
     #pragma omp target teams loop \
