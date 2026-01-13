@@ -7,12 +7,14 @@ on:
       - main
       - develop
       - develop_gpu
+      - develop_cupy
 
   push:
     branches:
       - main
       - develop
       - develop_gpu
+      - develop_cupy
 
 jobs:
   test_conda:
