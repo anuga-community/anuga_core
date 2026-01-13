@@ -491,6 +491,8 @@ class SWW_plotter(object):
                  min_depth = 0.001,
                  absolute=False):
 
+        self.filename = swwfile
+
         self.plot_dir = plot_dir
         self.make_plot_dir()
         
@@ -961,6 +963,18 @@ class SWW_plotter(object):
             print("Figure files for each frame will be stored in " + plot_dir)
 
     def triplot(self, figsize = (10, 6), dpi=80, **kwargs):
+        """
+        Create a triplot of the mesh.
+
+        Args:
+            figsize: Figure size
+            dpi: Dots per inch
+            **kwargs: Additional arguments to pass to triplot
+        Returns:
+            fig: Matplotlib figure object
+            ax: Matplotlib axes object
+            lines: The lines created by triplot
+        """
 
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
@@ -970,10 +984,141 @@ class SWW_plotter(object):
 
 
     def tripcolor(self, figsize = (10, 6), dpi=80, **kwargs):
+        """
+        Create a tripcolor plot of the mesh.
+
+        Args:
+            figsize: Figure size
+            dpi: Dots per inch
+            **kwargs: Additional arguments to pass to tripcolor
+        Returns:
+            fig: Matplotlib figure object
+            ax: Matplotlib axes object
+            im: The image created by tripcolor
+        """
 
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
         
         im = ax.tripcolor(self.triang,  *args, **kwargs)
         return fig, ax, im
+
+    def get_flow_through_cross_section(self, polyline: list, verbose: bool = False) -> tuple[np.ndarray, list]:
+        """
+        Calculate flow through a cross-section defined by a polyline.
+        
+        Args:
+            polyline: List of [x, y] coordinates defining the cross-section
+            verbose: Whether to print debug information
+            
+        Returns:
+            tuple containing:
+                - time: numpy array of time values
+                - Q: list of flow values at each timestep
+        """
+        
+        # FIXME SR: This is a quick implementation and may not be efficient for large meshes.
+        try:
+            mesh = self.mesh
+        except AttributeError:
+            from anuga.file.sww import get_mesh_and_quantities_from_file
+            self.mesh, _, __ = get_mesh_and_quantities_from_file(self.filename, verbose=verbose)
+            
+        segments = self.mesh.get_intersecting_segments(polyline, verbose=verbose)
+
+        Q = []
+        for k, t in enumerate(self.time):
+            total_flow = 0
+            for seg in segments:
+                i = seg.triangle_id
+                depth = self.depth[k,i]
+                uh = self.xmom[k,i]
+                vh = self.ymom[k,i]
+                normal = seg.normal
+
+                # Inner product of momentum vector with segment normal [m^2/s]
+                normal_momentum = uh*normal[0] + vh*normal[1]
+
+                # Flow across this segment [m^3/s]
+                segment_flow = normal_momentum * seg.length
+
+                # Accumulate
+                total_flow += segment_flow
+
+            # Store flow at this timestep
+            Q.append(total_flow)
+
+        return self.time, Q
+
+    def get_triangles_inside_polygon(self, polygon: list | np.ndarray, verbose: bool = False) -> list | np.ndarray:
+        """
+        Get list of triangle IDs whose centroids lie within a given polygon.
+        
+        Args:
+            polygon: List of [x, y] coordinates defining the polygon
+            verbose: Whether to print debug information
+            
+        Returns:
+            List of triangle IDs inside the polygon
+        """
+        
+        try:
+            _ = self.mesh
+        except AttributeError:
+            from anuga.file.sww import get_mesh_and_quantities_from_file
+            self.mesh, _, __ = get_mesh_and_quantities_from_file(self.filename, verbose=verbose)
+        
+        triangle_ids = self.mesh.get_triangles_inside_polygon(polygon, verbose=verbose)
+        
+        return triangle_ids
+
+    def water_volume(self, per_unit_area=False, triangle_ids=None, polygon=None, verbose=False) -> np.ndarray:
+        """
+        Compute the water volume associated within a subset of triangles or within a polygon.
+
+        Args:
+            per_unit_area: If True, return volume per unit area
+            triangle_ids: List of triangle IDs to include
+            polygon: Polygon defining area of interest
+            verbose: Whether to print debug information
+
+        Returns:
+            Numpy array of water volume at each timestep
+        """
+
+        if not hasattr(self, "mesh"):
+            from anuga.file.sww import get_mesh_and_quantities_from_file
+            self.mesh, _, __ = get_mesh_and_quantities_from_file(self.filename, verbose=verbose)
+
+        self.areas = self.mesh.areas
+
+
+
+        if(triangle_ids is None and polygon is None):
+            triangle_ids=list(range(len(self.xc)))
+        elif(triangle_ids is not None):
+            pass
+        else:
+            triangle_ids = self.get_triangles_inside_polygon(polygon, verbose=verbose)
+            
+
+        l=len(self.time)
+        areas=self.areas[triangle_ids]
+        
+        total_area=areas.sum()
+        volume=self.time*0.
+    
+        if self.elev.ndim ==1:
+            for i in range(l):
+                volume[i]=((self.stage[i,triangle_ids]-self.elev[triangle_ids])*(self.stage[i,triangle_ids]>self.elev[triangle_ids])*areas).sum()
+        else:
+            for i in range(l):
+                volume[i]=((self.stage[i,triangle_ids]-self.elev[i,triangle_ids])*(self.stage[i,triangle_ids]>self.elev[i,triangle_ids])*areas).sum()
+
+        if(per_unit_area):
+            volume = volume / total_area
+        
+        return volume
+
+
 
