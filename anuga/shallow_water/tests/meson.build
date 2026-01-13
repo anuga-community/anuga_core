@@ -3,7 +3,7 @@
 python_sources = [
 '__init__.py',
 'test_data_manager.py',
-'test_sw_domain_cupy.py',
+'test_sw_domain_openmp.py',
 'test_forcing.py',
 'test_friction.py',
 'test_loadsave.py',
