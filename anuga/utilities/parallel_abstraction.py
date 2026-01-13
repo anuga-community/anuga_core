@@ -98,6 +98,13 @@ else:
     mpiWrapper = 'mpi4py'
 
     try:
+        import cupy as cp
+        cupy_available = True
+    except ImportError:
+        cupy_available = False
+        import numpy as cp  # Use numpy as a fallback
+
+    try:
         # Set up a separate memory pool for each GPU/process
         memory_pool = cp.cuda.MemoryPool()
         cp.cuda.set_allocator(memory_pool.malloc)
@@ -168,8 +175,8 @@ else:
             recvmsg = comm.gather(x, root)
             if recvmsg is not None:
                 return ''.join(recvmsg)
-        #elif isinstance(x, (np.ndarray, cp.ndarray)):
-        elif isinstance(x, np.ndarray):
+        elif isinstance(x, (np.ndarray, cp.ndarray)):
+        #elif isinstance(x, np.ndarray):
             if buffer is None:
                 if x.ndim == 1:
                     buffer = np.empty(x.size * comm.size, dtype=x.dtype)
@@ -236,8 +243,8 @@ else:
             l = len(x)
             n = l // comm.size
             sendobj = [x[i: i + n] for i in range(0, l, n)]
-        #elif isinstance(x, (np.ndarray, cp.ndarray)):
-        elif isinstance(x, np.ndarray):
+        elif isinstance(x, (np.ndarray, cp.ndarray)):
+        #elif isinstance(x, np.ndarray):
             scatterer = comm.Scatter
             sendobj = x
             if buffer is None:
