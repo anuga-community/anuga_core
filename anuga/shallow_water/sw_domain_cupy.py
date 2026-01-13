@@ -384,7 +384,11 @@ class GPU_interface(object):
         #with open('../cuda_anuga.cu') as f:
 
         #FIXME SR: Obviously need to make this general!
+<<<<<<< HEAD:anuga/shallow_water/sw_domain_cuda.py
         with open('/home/appadmin/rutvik/anuga_core/anuga/shallow_water/cuda_anuga.cu') as f:
+=======
+        with open('/home/851/sgr851/anuga_core/anuga/shallow_water/cuda_anuga.cu') as f:
+>>>>>>> develop_cupy:anuga/shallow_water/sw_domain_cupy.py
             code = f.read()
 
         self.mod  = cp.RawModule(code=code, options=("--std=c++17",),
@@ -698,9 +702,6 @@ class GPU_interface(object):
             # FIXME SR: Do we need to transfer this?
             self.gpu_max_speed.set(self.cpu_max_speed)
             nvtxRangePop()
-
-
-	     
 
 
         #-------------------------------------

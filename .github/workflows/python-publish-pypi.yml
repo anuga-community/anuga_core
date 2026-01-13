@@ -24,7 +24,7 @@ jobs:
       fail-fast: true
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest] 
-        python-version: ['3.9', '3.10', '3.11', '3.12', '3.13']
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
         #python-version: ['3.10', '3.11']
 
     steps:
@@ -85,7 +85,7 @@ jobs:
           python -m build --sdist --outdir dist
           
       - name: Upload distributions
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: release-dists-${{ matrix.python-version }}-${{ matrix.os }}
           path: dist/
@@ -108,7 +108,7 @@ jobs:
 
     steps:
       - name: Retrieve release distributions
-        uses: actions/download-artifact@v5
+        uses: actions/download-artifact@v6
         with:
           pattern: release-dists-*
           path: dist

@@ -16,22 +16,23 @@
 // structures
 struct domain {
     // Changing these don't change the data in python object
-    anuga_int    number_of_elements;
-    anuga_int    boundary_length;
-    anuga_int    number_of_riverwall_edges;
-    double     epsilon;
-    double     H0;
-    double     g;
-    anuga_int    optimise_dry_cells;
-    double     evolve_max_timestep;
-    anuga_int    extrapolate_velocity_second_order;
-    double     minimum_allowed_height;
-    double     maximum_allowed_speed;
-    anuga_int    low_froude;
-
-
+    anuga_int number_of_elements;
+    anuga_int boundary_length;
+    anuga_int number_of_riverwall_edges;
+    anuga_int optimise_dry_cells;
+    anuga_int extrapolate_velocity_second_order;
+    anuga_int low_froude;
     anuga_int timestep_fluxcalls;
+    anuga_int max_flux_update_frequency;
+    anuga_int ncol_riverwall_hydraulic_properties;
 
+    double epsilon;
+    double H0;
+    double g;
+    double evolve_max_timestep;
+    double evolve_min_timestep;
+    double minimum_allowed_height;
+    double maximum_allowed_speed;
     double beta_w;
     double beta_w_dry;
     double beta_uh;
@@ -39,8 +40,7 @@ struct domain {
     double beta_vh;
     double beta_vh_dry;
 
-    anuga_int max_flux_update_frequency;
-    anuga_int ncol_riverwall_hydraulic_properties;
+ 
 
     // Changing values in these arrays will change the values in the python object
     anuga_int*   neighbours;
@@ -204,6 +204,7 @@ anuga_int print_domain_struct(struct domain *D) {
     printf("D->g                      %g \n", D->g);
     printf("D->optimise_dry_cells     %" PRId64 " \n", D->optimise_dry_cells);
     printf("D->evolve_max_timestep    %g \n", D->evolve_max_timestep);
+    printf("D->evolve_min_timestep    %g \n", D->evolve_min_timestep);
     printf("D->minimum_allowed_height %g \n", D->minimum_allowed_height);
     printf("D->maximum_allowed_speed  %g \n", D->maximum_allowed_speed);
     printf("D->low_froude             %" PRId64 " \n", D->low_froude);

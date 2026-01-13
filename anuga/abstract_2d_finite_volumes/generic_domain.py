@@ -1926,7 +1926,7 @@ class Generic_Domain(object):
                 self.recorded_max_timestep = self.evolve_min_timestep
                 self.number_of_steps = 0
                 self.number_of_first_order_steps = 0
-                self.max_speed = num.zeros(N, float)
+                self.max_speed[:] = 0.0
 
     def evolve_one_euler_step(self, yieldstep, finaltime):
         """One Euler Time Step
@@ -2305,13 +2305,15 @@ class Generic_Domain(object):
    
     
     def update_boundary(self):
-        # Go through list of boundary objects and update boundary values
-        # for all conserved quantities on boundary.
-        # It is assumed that the ordering of conserved quantities is
-        # consistent between the domain and the boundary object, i.e.
-        # the jth element of vector q must correspond to the jth conserved
-        # quantity in domain.
-        
+        """Go through list of boundary objects and update boundary values
+        for all conserved quantities on boundary.
+        It is assumed that the ordering of conserved quantities is
+        consistent between the domain and the boundary object, i.e.
+        the jth element of vector q must correspond to the jth conserved
+        quantity in domain.
+        """
+
+        nvtxRangePush('update_boundary')
         for tag in self.tag_boundary_cells:
             B = self.boundary_map[tag]
 
@@ -2321,13 +2323,8 @@ class Generic_Domain(object):
             boundary_segment_edges = self.tag_boundary_cells[tag]
 
             B.evaluate_segment(self, boundary_segment_edges)
-    
-    
-    # def update_boundary(self):
-    #     if self.multiprocessor_mode == [0,1,2,3]:
-    #         self.update_boundary_cpu()
-    #     elif self.multiprocessor_mode == 4:
-    #         self.update_boundary_cpu()
+        
+        nvtxRangePop()
 
     # def update_boundary_gpu(self):
     #     from anuga.shallow_water.sw_domain_cuda import GPU_interface
@@ -2410,10 +2407,11 @@ class Generic_Domain(object):
         # disable variable timestepping
         if self.fixed_flux_timestep is not None:
             self.flux_timestep = self.fixed_flux_timestep
-
-        # self.timestep is calculated from speed of characteristics
-        # Apply CFL condition here
-        timestep = min(self.CFL * self.flux_timestep, self.evolve_max_timestep)
+            timestep = self.fixed_flux_timestep
+        else:
+            # self.timestep is calculated from speed of characteristics
+            # Apply CFL condition here
+            timestep = min(self.CFL * self.flux_timestep, self.evolve_max_timestep)
 
         # Record maximal and minimal values of timestep for reporting
         self.recorded_max_timestep = max(timestep, self.recorded_max_timestep)
@@ -2524,12 +2522,6 @@ class Generic_Domain(object):
                 Q_cv = self.quantities[q].centroid_values
                 num.put(Q_cv, Idg, num.take(Q_cv, Idf, axis=0))
 
-#    def update_special_conditions(self):
-#        """There may be a need to change the values of the conserved
-#        quantities to satisfy special conditions at the very lowest level
-#        the fluid flow calculation
-#        """
-#        pass
 
     def update_other_quantities(self):
         """ There may be a need to calculates some of the other quantities

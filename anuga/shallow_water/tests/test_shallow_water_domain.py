@@ -3838,6 +3838,8 @@ class Test_Shallow_Water(unittest.TestCase):
         domain.beta_uh_dry = 0.9
         domain.beta_vh = 0.9
         domain.beta_vh_dry = 0.9
+
+        domain.update_domain_c_struct()
         domain.distribute_to_vertices_and_edges()
 
         assert num.allclose(L[1], [-2.66666667,  4.        ,  4.        ])
@@ -3882,6 +3884,8 @@ class Test_Shallow_Water(unittest.TestCase):
         domain.beta_uh_dry = 0.9
         domain.beta_vh = 0.9
         domain.beta_vh_dry = 0.9
+
+        domain.update_domain_c_struct()
         domain.distribute_to_vertices_and_edges()
 
         assert num.allclose(L[1], [ -7.81670675,   9.95991663,  12.67160494])

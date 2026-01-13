@@ -31,14 +31,18 @@ python_sources = [
 '__init__.py',
 'most2nc.py',
 'shallow_water_domain.py',
+'sw_domain_cupy.py',
 'sww_interrogate.py',
 'tsh2sww.py',
 ]
 
+cuda_sources = ['cuda_anuga.cu']
 
 py3.install_sources(
-  python_sources,
+  python_sources + cuda_sources,
   subdir: 'anuga/shallow_water'
 )
 
+
 subdir('tests')
+subdir('cupy_tests')
