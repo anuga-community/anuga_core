@@ -13,7 +13,7 @@ Features
 
 - Plot and animate results from ANUGA SWW files such as stage, elevation, depth, xmom, ymom, xvel, 
   and yvel.
-- Useful for inspecting model output and presenting results in graphical format and to interogate 
+- Useful for inspecting model output and presenting results in graphical format and to interrogate 
   model results.
 
 Example Usage
