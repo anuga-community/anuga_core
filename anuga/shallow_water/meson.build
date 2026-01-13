@@ -45,3 +45,4 @@ py3.install_sources(
 
 
 subdir('tests')
+subdir('cupy_tests')
