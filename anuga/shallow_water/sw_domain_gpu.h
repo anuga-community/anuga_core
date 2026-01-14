@@ -131,6 +131,10 @@ struct rate_operator_info {
     int num_full;                // Number of full indices
     int active;                  // Whether this operator slot is in use
     int mapped;                  // Whether arrays are mapped to GPU
+    // Rate array caching (avoids H2D transfer every call)
+    double *rate_array_cache;    // GPU-resident copy of rate array
+    int rate_array_size;         // Size of cached rate array
+    int rate_array_mapped;       // Whether rate array is mapped to GPU
 };
 
 struct rate_operators {
@@ -271,9 +275,11 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
 // rate_array_size: size of rate_array (must match num_indices or be full domain size)
 // use_indices_into_rate: if 1, rate_array is full domain size, index with indices[k]
 //                        if 0, rate_array matches indices size, index with k
+// rate_changed: if 1, transfer new data to GPU; if 0, reuse cached data on GPU
 double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
                                      double *rate_array, int rate_array_size,
                                      int use_indices_into_rate,
+                                     int rate_changed,
                                      double factor, double timestep);
 
 // Ghost exchange - the key MPI function
