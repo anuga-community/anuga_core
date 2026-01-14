@@ -1104,7 +1104,7 @@ class Mesh(General_mesh):
             return tid
 
 
-    def get_triangles_inside_polygon(self, polygon):
+    def get_triangles_inside_polygon(self, polygon, verbose=False):
         """Return triangle ids for triangles whose centroid is inside given polygon
         """
 

@@ -78,7 +78,6 @@ class Test_parallel_distribute_mesh(unittest.TestCase):
     def test_that_sequential_and_parallel_outputs_are_identical(self):
         pass
            
-if __name__ == "__main__":
-    runner = unittest.TextTestRunner()
-    suite = unittest.makeSuite(Test_parallel_distribute_mesh, 'test')
-    runner.run(suite)
+if __name__ == '__main__':
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_results)
+    unittest.TextTestRunner(verbosity=2).run(suite)

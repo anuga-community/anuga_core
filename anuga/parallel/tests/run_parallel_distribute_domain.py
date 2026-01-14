@@ -154,15 +154,17 @@ for t in domain.evolve(yieldstep=1, finaltime=20):
 
 # Store results in the appropriate file
 if numprocs > 1:
-    fid = open('distribute_domain_parallel.txt', 'w')
-else: 
-    fid = open('distribute_domain_sequential.txt', 'w')
-
-for i in range(len(l1list)):
-    fid.write('%f %f %f %f %f %f %f %f %f\n' % (l1list[i][0], l1list[i][1], l1list[i][2],
-                                                l2list[i][0], l2list[i][1], l2list[i][2],
-                                                linflist[i][0], linflist[i][1], linflist[i][2]))
-    
-fid.close()
+    if myid == 0:
+        with open('distribute_domain_parallel.txt', 'w') as fid:
+            for i in range(len(l1list)):
+                fid.write('%f %f %f %f %f %f %f %f %f\n' % (l1list[i][0], l1list[i][1], l1list[i][2],
+                                                            l2list[i][0], l2list[i][1], l2list[i][2],
+                                                            linflist[i][0], linflist[i][1], linflist[i][2]))    
+else:
+    with open('distribute_domain_sequential.txt', 'w') as fid:
+        for i in range(len(l1list)):
+            fid.write('%f %f %f %f %f %f %f %f %f\n' % (l1list[i][0], l1list[i][1], l1list[i][2],
+                                                        l2list[i][0], l2list[i][1], l2list[i][2],
+                                                        linflist[i][0], linflist[i][1], linflist[i][2]))
 
 finalize()

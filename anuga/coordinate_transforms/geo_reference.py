@@ -27,8 +27,13 @@ DEFAULT_ZONE = -1  # This signifies that simulation isn't located within a UTM f
 DEFAULT_PROJECTION = 'UTM'
 DEFAULT_DATUM = 'wgs84'
 DEFAULT_UNITS = 'm'
-DEFAULT_FALSE_EASTING = 500000
-DEFAULT_FALSE_NORTHING = 10000000    
+
+DEFAULT_SOUTHERN_FALSE_EASTING = 500000
+DEFAULT_SOUTHERN_FALSE_NORTHING = 10000000
+
+DEFAULT_NORTHERN_FALSE_EASTING = 500000
+DEFAULT_NORTHERN_FALSE_NORTHING = 0
+
 DEFAULT_HEMISPHERE = 'undefined'
 
 TITLE = '#geo reference' + "\n" # this title is referred to in the test format
@@ -57,8 +62,8 @@ class Geo_reference(object):
                  datum=DEFAULT_DATUM,
                  projection=DEFAULT_PROJECTION,
                  units=DEFAULT_UNITS,
-                 false_easting=DEFAULT_FALSE_EASTING,
-                 false_northing=DEFAULT_FALSE_NORTHING,
+                 false_easting=None,
+                 false_northing=None,
                  hemisphere=DEFAULT_HEMISPHERE,
                  NetCDFObject=None,
                  ASCIIFile=None,
@@ -92,8 +97,10 @@ class Geo_reference(object):
 
         self.set_zone(zone)
         self.set_hemisphere(hemisphere)
-        self.false_easting = int(false_easting)
-        self.false_northing = int(false_northing)
+        self.set_false_easting_northing(false_easting=false_easting, false_northing=false_northing)
+
+
+
         self.datum = datum
         self.projection = projection
     
@@ -166,6 +173,24 @@ class Geo_reference(object):
 
         self.hemisphere=str(hemisphere)
 
+    def set_false_easting_northing(self, false_easting=None, false_northing=None):
+        if false_easting is None:
+            if self.hemisphere == 'southern':
+                false_easting = DEFAULT_SOUTHERN_FALSE_EASTING
+            elif self.hemisphere == 'northern':
+                false_easting = DEFAULT_NORTHERN_FALSE_EASTING
+            else:
+                false_easting = 0
+        if false_northing is None:
+            if self.hemisphere == 'southern':
+                false_northing = DEFAULT_SOUTHERN_FALSE_NORTHING
+            elif self.hemisphere == 'northern':
+                false_northing = DEFAULT_NORTHERN_FALSE_NORTHING
+            else:
+                false_northing = 0
+        self.false_easting = int(false_easting)
+        self.false_northing = int(false_northing)
+
     def write_NetCDF(self, outfile):
         """Write georef attributes to an open NetCDF file.
 
@@ -209,20 +234,39 @@ class Geo_reference(object):
         # FIXME (Ole): It would be more robust to always use get_absolute()        
         self.absolute = num.allclose([self.xllcorner, self.yllcorner], 0)
         
-        if self.false_easting != DEFAULT_FALSE_EASTING:
-            log.critical("WARNING: False easting of %f specified."
-                         % self.false_easting)
-            log.critical("Default false easting is %f." % DEFAULT_FALSE_EASTING)
-            log.critical("ANUGA does not correct for differences in "
-                         "False Eastings.")
+        if self.zone == 'southern':
+            if self.false_easting != DEFAULT_SOUTHERN_FALSE_EASTING:
+                log.critical("WARNING: False easting of %f specified."
+                            % self.false_easting)
+                log.critical("Default false easting is %f." % DEFAULT_SOUTHERN_FALSE_EASTING)
+                log.critical("ANUGA does not correct for differences in "
+                            "False Eastings.")
 
-        if self.false_northing != DEFAULT_FALSE_NORTHING:
-            log.critical("WARNING: False northing of %f specified."
-                         % self.false_northing)
-            log.critical("Default false northing is %f."
-                         % DEFAULT_FALSE_NORTHING)
-            log.critical("ANUGA does not correct for differences in "
-                         "False Northings.")
+            if self.false_northing != DEFAULT_SOUTHERN_FALSE_NORTHING:
+                log.critical("WARNING: False northing of %f specified."
+                            % self.false_northing)
+                log.critical("Default false northing is %f."
+                            % DEFAULT_SOUTHERN_FALSE_NORTHING)
+                log.critical("ANUGA does not correct for differences in "
+                            "False Northings.")
+
+        if self.zone == 'northern':
+            if self.false_easting != DEFAULT_NORTHERN_FALSE_EASTING:
+                log.critical("WARNING: False easting of %f specified."
+                            % self.false_easting)
+                log.critical("Default false easting is %f." % DEFAULT_NORTHERN_FALSE_EASTING)
+                log.critical("ANUGA does not correct for differences in "
+                            "False Eastings.")
+
+            if self.false_northing != DEFAULT_NORTHERN_FALSE_NORTHING:
+                log.critical("WARNING: False northing of %f specified."
+                            % self.false_northing)
+                log.critical("Default false northing is %f."
+                            % DEFAULT_NORTHERN_FALSE_NORTHING)
+                log.critical("ANUGA does not correct for differences in "
+                            "False Northings.")
+
+
 
         if self.datum.upper() != DEFAULT_DATUM.upper():
             log.critical("WARNING: Datum of %s specified." % self.datum)

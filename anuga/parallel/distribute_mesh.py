@@ -10,6 +10,10 @@
 # grid partitioning. Once testing has finished on this
 # routine the others should be removed.
 #
+#  FIXME SR: This module was built when ANUGA was using
+#  vertex values. We now use centroid values. Really only
+#  to work with centroid arrays.
+#
 #  Authors: Linda Stals and Matthew Hardy, June 2005
 #  Modified: Linda Stals, Nov 2005
 #            Jack Kelly, Nov 2005

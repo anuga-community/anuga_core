@@ -1,5 +1,5 @@
 Examples
-********
+---------
 
 .. currentmodule:: anuga
 

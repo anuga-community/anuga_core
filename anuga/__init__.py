@@ -103,6 +103,7 @@ from os.path import join
 from anuga.config import indent
 
 from anuga.utilities.parse_time import parse_time
+from anuga.utilities.parse_time import seconds_to_hhmmss
 
 # ----------------------------
 # Parallel api
