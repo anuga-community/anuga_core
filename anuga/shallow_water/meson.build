@@ -36,21 +36,38 @@ if gpu_enabled
 
   gpu_inc_dir = include_directories('../utilities', incdir_numpy, mpi4py_incdir)
 
+  # GPU architecture option
+  # NVIDIA: cc70 (V100), cc80 (A100), cc90 (H100)
+  # AMD: gfx908 (MI100), gfx90a (MI210/MI250), gfx942 (MI300X)
+  gpu_arch = get_option('gpu_arch')
+
+  # Detect if targeting AMD or NVIDIA based on architecture string
+  is_amd_gpu = gpu_arch.startswith('gfx')
+
   # Compiler-specific GPU offloading flags
   if cc.get_id() == 'nvidia_hpc'
-    # NVIDIA HPC SDK - best GPU support
-    gpu_c_args = ['-O3', '-mp=gpu,multicore', '-Minfo=accel', '-g']
+    # NVIDIA HPC SDK - best GPU support for NVIDIA GPUs
+    gpu_c_args = ['-O3', '-mp=gpu,multicore', '-Minfo=accel', '-g', '-gpu=' + gpu_arch]
     if get_option('gpu_aware_mpi')
       gpu_c_args += ['-DGPU_AWARE_MPI']
     endif
   elif cc.get_id() == 'clang'
-    # Clang with LLVM offloading
-    gpu_c_args = ['-O3', '-fopenmp', '-fopenmp-targets=nvptx64-nvidia-cuda', '-g']
+    if is_amd_gpu
+      # Clang/AOMP for AMD GPUs
+      gpu_c_args = ['-O3', '-fopenmp', '-fopenmp-targets=amdgcn-amd-amdhsa',
+                    '-Xopenmp-target=amdgcn-amd-amdhsa', '-march=' + gpu_arch, '-g']
+    else
+      # Clang with LLVM offloading for NVIDIA
+      # Convert cc70 -> sm_70 format for clang
+      sm_arch = 'sm_' + gpu_arch.substring(2)
+      gpu_c_args = ['-O3', '-fopenmp', '-fopenmp-targets=nvptx64-nvidia-cuda',
+                    '-Xopenmp-target=nvptx64-nvidia-cuda', '-march=' + sm_arch, '-g']
+    endif
     if get_option('gpu_aware_mpi')
       gpu_c_args += ['-DGPU_AWARE_MPI']
     endif
   else
-    # GCC with nvptx offloading
+    # GCC with nvptx offloading (NVIDIA only, AMD not well supported)
     gpu_c_args = ['-O3', '-fopenmp', '-foffload=nvptx-none', '-g']
     if get_option('gpu_aware_mpi')
       gpu_c_args += ['-DGPU_AWARE_MPI']
@@ -69,6 +86,7 @@ if gpu_enabled
   )
 
   message('GPU extension enabled')
+  message('GPU architecture: ' + gpu_arch)
   if get_option('gpu_aware_mpi')
     message('GPU-aware MPI enabled')
   endif

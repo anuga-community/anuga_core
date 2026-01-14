@@ -7,3 +7,9 @@ option('gpu', type: 'boolean', value: false,
 # GPU-aware MPI for direct device-to-device communication
 option('gpu_aware_mpi', type: 'boolean', value: false,
        description: 'Enable GPU-aware MPI for direct device communication (requires GPU-aware MPI library)')
+
+# GPU architecture/compute capability
+# NVIDIA: cc70 (V100), cc80 (A100), cc90 (H100)
+# AMD (future): gfx908 (MI100), gfx90a (MI210/MI250), gfx942 (MI300X)
+option('gpu_arch', type: 'string', value: 'cc70',
+       description: 'GPU architecture: cc70 (V100), cc80 (A100), cc90 (H100), or AMD gfx* targets')

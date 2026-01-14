@@ -152,6 +152,8 @@ Parameters involving communication
         self._gpu_op_id = None  # GPU operator ID (set on first GPU call)
         self._gpu_initialized = False
         self._gpu_rate_array_cache = None  # Cached rate array for GPU (avoids recreating every call)
+        self._gpu_rate_min_cache = None    # Cached min value for statistics
+        self._gpu_rate_max_cache = None    # Cached max value for statistics
 
     def _init_gpu(self):
         """Initialize GPU operator for this rate operator."""
@@ -249,6 +251,13 @@ Parameters involving communication
                     # Use cached rate array if available (avoids expensive array copy every RK2 step)
                     if self._gpu_rate_array_cache is None:
                         self._gpu_rate_array_cache = num.ascontiguousarray(self.rate.centroid_values, dtype=num.float64)
+                        # Cache min/max too (avoids iterating 5M elements every call)
+                        if self.indices is None:
+                            self._gpu_rate_min_cache = self._gpu_rate_array_cache.min()
+                            self._gpu_rate_max_cache = self._gpu_rate_array_cache.max()
+                        else:
+                            self._gpu_rate_min_cache = self._gpu_rate_array_cache[self.indices].min()
+                            self._gpu_rate_max_cache = self._gpu_rate_array_cache[self.indices].max()
                     rate_array = self._gpu_rate_array_cache
                     # rate_array is full domain size, use_indices_into_rate=1
                     self.local_influx = apply_rate_operator_array_gpu(
@@ -259,13 +268,9 @@ Parameters involving communication
                         float(factor),
                         float(timestep)
                     )
-                    # Estimate min/max for statistics
-                    if self.indices is None:
-                        self.local_max = rate_array.max() * factor
-                        self.local_min = rate_array.min() * factor
-                    else:
-                        self.local_max = rate_array[self.indices].max() * factor
-                        self.local_min = rate_array[self.indices].min() * factor
+                    # Use cached min/max for statistics
+                    self.local_max = self._gpu_rate_max_cache * factor
+                    self.local_min = self._gpu_rate_min_cache * factor
 
                 elif self.rate_type == 'centroid_array':
                     # Centroid array type - use array-based GPU kernel
@@ -273,6 +278,13 @@ Parameters involving communication
                     # Use cached rate array if available
                     if self._gpu_rate_array_cache is None:
                         self._gpu_rate_array_cache = num.ascontiguousarray(self.rate, dtype=num.float64)
+                        # Cache min/max too
+                        if self.indices is None:
+                            self._gpu_rate_min_cache = self._gpu_rate_array_cache.min()
+                            self._gpu_rate_max_cache = self._gpu_rate_array_cache.max()
+                        else:
+                            self._gpu_rate_min_cache = self._gpu_rate_array_cache[self.indices].min()
+                            self._gpu_rate_max_cache = self._gpu_rate_array_cache[self.indices].max()
                     rate_array = self._gpu_rate_array_cache
                     # rate_array is full domain size, use_indices_into_rate=1
                     self.local_influx = apply_rate_operator_array_gpu(
@@ -283,13 +295,9 @@ Parameters involving communication
                         float(factor),
                         float(timestep)
                     )
-                    # Estimate min/max for statistics
-                    if self.indices is None:
-                        self.local_max = rate_array.max() * factor
-                        self.local_min = rate_array.min() * factor
-                    else:
-                        self.local_max = rate_array[self.indices].max() * factor
-                        self.local_min = rate_array[self.indices].min() * factor
+                    # Use cached min/max for statistics
+                    self.local_max = self._gpu_rate_max_cache * factor
+                    self.local_min = self._gpu_rate_min_cache * factor
 
                 else:
                     # Scalar or time-dependent rate - use scalar GPU kernel
@@ -506,10 +514,12 @@ Parameters involving communication
 
         self.rate = rate
 
-        # Invalidate GPU rate array cache (will be recreated on next GPU call)
+        # Invalidate GPU caches (will be recreated on next GPU call)
         # Use hasattr since set_rate() can be called from __init__ before cache is initialized
         if hasattr(self, '_gpu_rate_array_cache'):
             self._gpu_rate_array_cache = None
+            self._gpu_rate_min_cache = None
+            self._gpu_rate_max_cache = None
 
         if self.rate_type == 'scalar':
             self.rate_callable = False
