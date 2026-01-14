@@ -2034,6 +2034,10 @@ class Domain(Generic_Domain):
 
         nvtxRangePush('distribute_to_vertices_and_edges')
 
+        # Sync from GPU if in GPU mode (needed before CPU reads data at yieldsteps)
+        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+            self.gpu_interface.sync_from_device()
+
         # Do protection step
         self.protect_against_infinitesimal_and_negative_heights()
 

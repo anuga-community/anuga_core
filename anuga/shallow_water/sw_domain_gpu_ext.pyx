@@ -181,6 +181,18 @@ cdef extern from "sw_domain_gpu.c" nogil:
     double gpu_evolve_one_rk2_step(gpu_domain *GD, double yieldstep, int apply_forcing)
     void print_gpu_domain_info(gpu_domain *GD)
 
+    # Rate operators (rain, extraction, etc.)
+    int gpu_rate_operator_init(gpu_domain *GD, int num_indices, int *indices,
+                               double *areas, int *full_indices, int num_full)
+    void gpu_rate_operator_finalize(gpu_domain *GD, int op_id)
+    void gpu_rate_operators_finalize_all(gpu_domain *GD)
+    double gpu_rate_operator_apply(gpu_domain *GD, int op_id,
+                                   double rate, double factor, double timestep)
+    double gpu_rate_operator_apply_array(gpu_domain *GD, int op_id,
+                                         double *rate_array, int rate_array_size,
+                                         int use_indices_into_rate,
+                                         double factor, double timestep)
+
 
 # ============================================================================
 # GPU Domain Wrapper Class
@@ -1037,3 +1049,132 @@ def manning_friction_gpu(GPUDomain gpu_dom):
     The friction is then applied during update_conserved_quantities.
     """
     gpu_manning_friction(&gpu_dom.GD)
+
+
+# ============================================================================
+# Rate Operator GPU Support
+# ============================================================================
+
+def init_rate_operator(GPUDomain gpu_dom,
+                       np.ndarray[int, ndim=1, mode="c"] indices,
+                       np.ndarray[double, ndim=1, mode="c"] areas,
+                       np.ndarray[int, ndim=1, mode="c"] full_indices=None):
+    """
+    Initialize a rate operator for GPU execution.
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    indices : ndarray of int
+        Triangle indices where rate is applied
+    areas : ndarray of double
+        Triangle areas (for mass tracking)
+    full_indices : ndarray of int, optional
+        Indices of "full" (non-ghost) triangles for mass tracking
+
+    Returns
+    -------
+    int
+        Operator ID (use this to apply rate or finalize)
+        Returns -1 on error
+    """
+    cdef int num_indices = len(indices)
+    cdef int num_full = 0
+    cdef int *full_ptr = NULL
+
+    if full_indices is not None:
+        num_full = len(full_indices)
+        full_ptr = &full_indices[0]
+
+    return gpu_rate_operator_init(&gpu_dom.GD, num_indices, &indices[0],
+                                  &areas[0], full_ptr, num_full)
+
+
+def finalize_rate_operator(GPUDomain gpu_dom, int op_id):
+    """
+    Finalize and free a rate operator.
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    op_id : int
+        Operator ID returned by init_rate_operator
+    """
+    gpu_rate_operator_finalize(&gpu_dom.GD, op_id)
+
+
+def finalize_all_rate_operators(GPUDomain gpu_dom):
+    """
+    Finalize all rate operators.
+
+    Call this during domain cleanup.
+    """
+    gpu_rate_operators_finalize_all(&gpu_dom.GD)
+
+
+def apply_rate_operator_gpu(GPUDomain gpu_dom, int op_id,
+                            double rate, double factor, double timestep):
+    """
+    Apply rate operator on GPU.
+
+    This is the GPU equivalent of Rate_operator.__call__().
+    Handles both positive rates (rain) and negative rates (extraction).
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    op_id : int
+        Operator ID returned by init_rate_operator
+    rate : double
+        Rate value in m/s (scalar - get from Python function if time-dependent)
+    factor : double
+        Conversion factor
+    timestep : double
+        Current timestep
+
+    Returns
+    -------
+    double
+        Local mass influx (for mass conservation tracking)
+    """
+    return gpu_rate_operator_apply(&gpu_dom.GD, op_id, rate, factor, timestep)
+
+
+def apply_rate_operator_array_gpu(GPUDomain gpu_dom, int op_id,
+                                  np.ndarray[double, ndim=1, mode="c"] rate_array,
+                                  int use_indices_into_rate,
+                                  double factor, double timestep):
+    """
+    Apply rate operator with per-cell rate array on GPU.
+
+    This handles quantity-type rates where each cell has its own rate value.
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    op_id : int
+        Operator ID returned by init_rate_operator
+    rate_array : ndarray of double
+        Per-cell rate values
+    use_indices_into_rate : int
+        If 1, rate_array is full domain size (index with indices[k])
+        If 0, rate_array matches operator indices size (index with k)
+    factor : double
+        Conversion factor
+    timestep : double
+        Current timestep
+
+    Returns
+    -------
+    double
+        Local mass influx (for mass conservation tracking)
+    """
+    cdef int rate_size = len(rate_array)
+    return gpu_rate_operator_apply_array(&gpu_dom.GD, op_id,
+                                         &rate_array[0], rate_size,
+                                         use_indices_into_rate,
+                                         factor, timestep)

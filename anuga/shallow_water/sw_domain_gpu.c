@@ -1125,6 +1125,283 @@ void gpu_evaluate_time_boundary(struct gpu_domain *GD) {
 }
 
 // ============================================================================
+// Rate Operators (rain, extraction, etc.)
+// ============================================================================
+
+int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
+                           double *areas, int *full_indices, int num_full) {
+    struct rate_operators *RO = &GD->rate_ops;
+
+    // Find a free slot
+    int op_id = -1;
+    for (int i = 0; i < MAX_RATE_OPERATORS; i++) {
+        if (!RO->ops[i].active) {
+            op_id = i;
+            break;
+        }
+    }
+
+    if (op_id < 0) {
+        fprintf(stderr, "ERROR: No free rate operator slots (max %d)\n", MAX_RATE_OPERATORS);
+        return -1;
+    }
+
+    struct rate_operator_info *op = &RO->ops[op_id];
+
+    op->num_indices = num_indices;
+    op->num_full = num_full;
+    op->active = 1;
+    op->mapped = 0;
+
+    if (num_indices == 0) {
+        op->indices = NULL;
+        op->areas = NULL;
+        op->full_indices = NULL;
+        RO->num_operators++;
+        return op_id;
+    }
+
+    // Allocate and copy arrays
+    op->indices = (int*)malloc(num_indices * sizeof(int));
+    op->areas = (double*)malloc(num_indices * sizeof(double));
+
+    if (!op->indices || !op->areas) {
+        fprintf(stderr, "Failed to allocate rate_operator arrays\n");
+        if (op->indices) free(op->indices);
+        if (op->areas) free(op->areas);
+        op->active = 0;
+        return -1;
+    }
+
+    memcpy(op->indices, indices, num_indices * sizeof(int));
+    memcpy(op->areas, areas, num_indices * sizeof(double));
+
+    if (num_full > 0 && full_indices != NULL) {
+        op->full_indices = (int*)malloc(num_full * sizeof(int));
+        if (op->full_indices) {
+            memcpy(op->full_indices, full_indices, num_full * sizeof(int));
+        }
+    } else {
+        op->full_indices = NULL;
+    }
+
+    // Map to GPU immediately if GPU is already initialized
+    if (GD->gpu_initialized) {
+        int ni = op->num_indices;
+        int *idx = op->indices;
+        double *ar = op->areas;
+        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
+        op->mapped = 1;
+    }
+
+    RO->num_operators++;
+
+    if (GD->rank == 0) {
+        printf("Rate_operator %d initialized: %d indices, %d full (GPU mapped: %d)\n",
+               op_id, num_indices, num_full, op->mapped);
+    }
+
+    return op_id;
+}
+
+void gpu_rate_operator_finalize(struct gpu_domain *GD, int op_id) {
+    if (op_id < 0 || op_id >= MAX_RATE_OPERATORS) return;
+
+    struct rate_operator_info *op = &GD->rate_ops.ops[op_id];
+    if (!op->active) return;
+
+    if (op->mapped && op->num_indices > 0) {
+        int ni = op->num_indices;
+        int *idx = op->indices;
+        double *ar = op->areas;
+        #pragma omp target exit data map(delete: idx[0:ni], ar[0:ni])
+    }
+
+    if (op->indices) free(op->indices);
+    if (op->areas) free(op->areas);
+    if (op->full_indices) free(op->full_indices);
+
+    op->indices = NULL;
+    op->areas = NULL;
+    op->full_indices = NULL;
+    op->num_indices = 0;
+    op->num_full = 0;
+    op->active = 0;
+    op->mapped = 0;
+
+    GD->rate_ops.num_operators--;
+}
+
+void gpu_rate_operators_finalize_all(struct gpu_domain *GD) {
+    for (int i = 0; i < MAX_RATE_OPERATORS; i++) {
+        if (GD->rate_ops.ops[i].active) {
+            gpu_rate_operator_finalize(GD, i);
+        }
+    }
+    GD->rate_ops.initialized = 0;
+}
+
+double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
+                               double rate, double factor, double timestep) {
+    if (op_id < 0 || op_id >= MAX_RATE_OPERATORS) return 0.0;
+
+    struct rate_operator_info *op = &GD->rate_ops.ops[op_id];
+    if (!op->active || op->num_indices == 0) return 0.0;
+
+    // Ensure mapped
+    if (!op->mapped) {
+        int ni = op->num_indices;
+        int *idx = op->indices;
+        double *ar = op->areas;
+        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
+        op->mapped = 1;
+    }
+
+    int num_indices = op->num_indices;
+    int *indices = op->indices;
+    double *areas = op->areas;
+
+    // Domain arrays
+    double *stage_c = GD->D.stage_centroid_values;
+    double *xmom_c = GD->D.xmom_centroid_values;
+    double *ymom_c = GD->D.ymom_centroid_values;
+    double *bed_c = GD->D.bed_centroid_values;
+
+    double local_rate = factor * timestep * rate;
+    double local_influx = 0.0;
+
+    if (rate >= 0.0) {
+        // Simple positive rate - just add to stage
+        // Reduction for mass tracking
+        #pragma omp target teams distribute parallel for reduction(+:local_influx)
+        for (int k = 0; k < num_indices; k++) {
+            int i = indices[k];
+            stage_c[i] += local_rate;
+            local_influx += local_rate * areas[k];
+        }
+    } else {
+        // Negative rate (extraction) - need to limit and scale momentum
+        #pragma omp target teams distribute parallel for reduction(+:local_influx)
+        for (int k = 0; k < num_indices; k++) {
+            int i = indices[k];
+
+            // Current height
+            double height = stage_c[i] - bed_c[i];
+
+            // Can't remove more water than exists
+            double actual_rate = (local_rate > -height) ? local_rate : -height;
+
+            // Scaling factor for momentum (when extracting water)
+            double scale_factor;
+            if (actual_rate < 0.0) {
+                scale_factor = (actual_rate + height) / (height + 1.0e-10);
+            } else {
+                scale_factor = 1.0;
+            }
+
+            // Apply updates
+            stage_c[i] += actual_rate;
+            xmom_c[i] *= scale_factor;
+            ymom_c[i] *= scale_factor;
+
+            local_influx += actual_rate * areas[k];
+        }
+    }
+
+    return local_influx;
+}
+
+double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
+                                     double *rate_array, int rate_array_size,
+                                     int use_indices_into_rate,
+                                     double factor, double timestep) {
+    if (op_id < 0 || op_id >= MAX_RATE_OPERATORS) return 0.0;
+
+    struct rate_operator_info *op = &GD->rate_ops.ops[op_id];
+    if (!op->active || op->num_indices == 0) return 0.0;
+
+    // Ensure operator arrays are mapped
+    if (!op->mapped) {
+        int ni = op->num_indices;
+        int *idx = op->indices;
+        double *ar = op->areas;
+        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
+        op->mapped = 1;
+    }
+
+    int num_indices = op->num_indices;
+    int *indices = op->indices;
+    double *areas = op->areas;
+
+    // Domain arrays
+    double *stage_c = GD->D.stage_centroid_values;
+    double *xmom_c = GD->D.xmom_centroid_values;
+    double *ymom_c = GD->D.ymom_centroid_values;
+    double *bed_c = GD->D.bed_centroid_values;
+
+    double local_influx = 0.0;
+    double ft = factor * timestep;
+
+    // Map rate array to device for this call
+    #pragma omp target enter data map(to: rate_array[0:rate_array_size])
+
+    if (use_indices_into_rate) {
+        // rate_array is full domain size, index with indices[k]
+        #pragma omp target teams distribute parallel for reduction(+:local_influx)
+        for (int k = 0; k < num_indices; k++) {
+            int i = indices[k];
+            double rate = rate_array[i];
+            double local_rate = ft * rate;
+
+            if (rate >= 0.0) {
+                stage_c[i] += local_rate;
+                local_influx += local_rate * areas[k];
+            } else {
+                // Negative rate - limit and scale momentum
+                double height = stage_c[i] - bed_c[i];
+                double actual_rate = (local_rate > -height) ? local_rate : -height;
+                double scale_factor = (actual_rate < 0.0) ?
+                    (actual_rate + height) / (height + 1.0e-10) : 1.0;
+
+                stage_c[i] += actual_rate;
+                xmom_c[i] *= scale_factor;
+                ymom_c[i] *= scale_factor;
+                local_influx += actual_rate * areas[k];
+            }
+        }
+    } else {
+        // rate_array matches indices size, index with k
+        #pragma omp target teams distribute parallel for reduction(+:local_influx)
+        for (int k = 0; k < num_indices; k++) {
+            int i = indices[k];
+            double rate = rate_array[k];
+            double local_rate = ft * rate;
+
+            if (rate >= 0.0) {
+                stage_c[i] += local_rate;
+                local_influx += local_rate * areas[k];
+            } else {
+                // Negative rate - limit and scale momentum
+                double height = stage_c[i] - bed_c[i];
+                double actual_rate = (local_rate > -height) ? local_rate : -height;
+                double scale_factor = (actual_rate < 0.0) ?
+                    (actual_rate + height) / (height + 1.0e-10) : 1.0;
+
+                stage_c[i] += actual_rate;
+                xmom_c[i] *= scale_factor;
+                ymom_c[i] *= scale_factor;
+                local_influx += actual_rate * areas[k];
+            }
+        }
+    }
+
+    // Unmap rate array
+    #pragma omp target exit data map(delete: rate_array[0:rate_array_size])
+
+    return local_influx;
+}
+
+// ============================================================================
 // GPU Memory Management
 // ============================================================================
 
