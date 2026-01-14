@@ -1311,6 +1311,96 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
     return local_influx;
 }
 
+double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
+                                     double *rate_array, int rate_array_size,
+                                     int use_indices_into_rate,
+                                     double factor, double timestep) {
+    if (op_id < 0 || op_id >= MAX_RATE_OPERATORS) return 0.0;
+
+    struct rate_operator_info *op = &GD->rate_ops.ops[op_id];
+    if (!op->active || op->num_indices == 0) return 0.0;
+
+    // Ensure operator arrays are mapped
+    if (!op->mapped) {
+        int ni = op->num_indices;
+        int *idx = op->indices;
+        double *ar = op->areas;
+        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
+        op->mapped = 1;
+    }
+
+    int num_indices = op->num_indices;
+    int *indices = op->indices;
+    double *areas = op->areas;
+
+    // Domain arrays
+    double *stage_c = GD->D.stage_centroid_values;
+    double *xmom_c = GD->D.xmom_centroid_values;
+    double *ymom_c = GD->D.ymom_centroid_values;
+    double *bed_c = GD->D.bed_centroid_values;
+
+    double local_influx = 0.0;
+    double ft = factor * timestep;
+
+    // Map rate array to device for this call
+    #pragma omp target enter data map(to: rate_array[0:rate_array_size])
+
+    if (use_indices_into_rate) {
+        // rate_array is full domain size, index with indices[k]
+        #pragma omp target teams distribute parallel for reduction(+:local_influx)
+        for (int k = 0; k < num_indices; k++) {
+            int i = indices[k];
+            double rate = rate_array[i];
+            double local_rate = ft * rate;
+
+            if (rate >= 0.0) {
+                stage_c[i] += local_rate;
+                local_influx += local_rate * areas[k];
+            } else {
+                // Negative rate - limit and scale momentum
+                double height = stage_c[i] - bed_c[i];
+                double actual_rate = (local_rate > -height) ? local_rate : -height;
+                double scale_factor = (actual_rate < 0.0) ?
+                    (actual_rate + height) / (height + 1.0e-10) : 1.0;
+
+                stage_c[i] += actual_rate;
+                xmom_c[i] *= scale_factor;
+                ymom_c[i] *= scale_factor;
+                local_influx += actual_rate * areas[k];
+            }
+        }
+    } else {
+        // rate_array matches indices size, index with k
+        #pragma omp target teams distribute parallel for reduction(+:local_influx)
+        for (int k = 0; k < num_indices; k++) {
+            int i = indices[k];
+            double rate = rate_array[k];
+            double local_rate = ft * rate;
+
+            if (rate >= 0.0) {
+                stage_c[i] += local_rate;
+                local_influx += local_rate * areas[k];
+            } else {
+                // Negative rate - limit and scale momentum
+                double height = stage_c[i] - bed_c[i];
+                double actual_rate = (local_rate > -height) ? local_rate : -height;
+                double scale_factor = (actual_rate < 0.0) ?
+                    (actual_rate + height) / (height + 1.0e-10) : 1.0;
+
+                stage_c[i] += actual_rate;
+                xmom_c[i] *= scale_factor;
+                ymom_c[i] *= scale_factor;
+                local_influx += actual_rate * areas[k];
+            }
+        }
+    }
+
+    // Unmap rate array
+    #pragma omp target exit data map(delete: rate_array[0:rate_array_size])
+
+    return local_influx;
+}
+
 // ============================================================================
 // GPU Memory Management
 // ============================================================================

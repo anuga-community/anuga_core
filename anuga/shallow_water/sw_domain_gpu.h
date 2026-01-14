@@ -266,6 +266,16 @@ void gpu_rate_operators_finalize_all(struct gpu_domain *GD);
 double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
                                double rate, double factor, double timestep);
 
+// Apply rate operator with per-cell rate array (for quantity-type rates)
+// rate_array: array of rate values, one per cell in indices
+// rate_array_size: size of rate_array (must match num_indices or be full domain size)
+// use_indices_into_rate: if 1, rate_array is full domain size, index with indices[k]
+//                        if 0, rate_array matches indices size, index with k
+double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
+                                     double *rate_array, int rate_array_size,
+                                     int use_indices_into_rate,
+                                     double factor, double timestep);
+
 // Ghost exchange - the key MPI function
 // Uses GPU-aware MPI if available, otherwise does D2H/H2D for small halo buffers
 void gpu_exchange_ghosts(struct gpu_domain *GD);

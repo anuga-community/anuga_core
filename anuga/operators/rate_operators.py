@@ -170,8 +170,12 @@ Parameters involving communication
             return
 
         # Only support non-spatial, non-xarray rates for GPU
-        # Spatial rates and xarray rates need more complex handling
+        # Spatial rates (x,y or x,y,t functions) and xarray rates need more complex handling
         if self.rate_spatial or self.rate_xarray:
+            return
+
+        # Supported rate types: scalar, t, quantity, centroid_array
+        if self.rate_type not in ('scalar', 't', 'quantity', 'centroid_array'):
             return
 
         # Get indices - if None, apply to all elements
@@ -221,36 +225,77 @@ Parameters involving communication
         if (hasattr(self.domain, 'multiprocessor_mode') and
             self.domain.multiprocessor_mode == 2 and
             not self.rate_spatial and
-            not self.rate_xarray and
-            self.rate_type not in ('quantity', 'centroid_array')):
+            not self.rate_xarray):
 
             # Lazy initialization of GPU operator
             if not self._gpu_initialized:
                 self._init_gpu()
 
             if self._gpu_initialized and self._gpu_op_id is not None and self._gpu_op_id >= 0:
-                # Use GPU path
                 t = self.domain.get_time()
                 timestep = self.domain.get_timestep()
                 factor = self.get_factor(t)
-                rate = self.get_non_spatial_rate(t)
 
-                from anuga.shallow_water.sw_domain_gpu_ext import apply_rate_operator_gpu
-                self.local_influx = apply_rate_operator_gpu(
-                    self.domain.gpu_interface.gpu_dom,
-                    self._gpu_op_id,
-                    float(rate),
-                    float(factor),
-                    float(timestep)
-                )
+                if self.rate_type == 'quantity':
+                    # Quantity type - use array-based GPU kernel
+                    from anuga.shallow_water.sw_domain_gpu_ext import apply_rate_operator_array_gpu
+                    rate_array = num.ascontiguousarray(self.rate.centroid_values, dtype=num.float64)
+                    # rate_array is full domain size, use_indices_into_rate=1
+                    self.local_influx = apply_rate_operator_array_gpu(
+                        self.domain.gpu_interface.gpu_dom,
+                        self._gpu_op_id,
+                        rate_array,
+                        1,  # use_indices_into_rate
+                        float(factor),
+                        float(timestep)
+                    )
+                    # Estimate min/max for statistics
+                    if self.indices is None:
+                        self.local_max = rate_array.max() * factor
+                        self.local_min = rate_array.min() * factor
+                    else:
+                        self.local_max = rate_array[self.indices].max() * factor
+                        self.local_min = rate_array[self.indices].min() * factor
+
+                elif self.rate_type == 'centroid_array':
+                    # Centroid array type - use array-based GPU kernel
+                    from anuga.shallow_water.sw_domain_gpu_ext import apply_rate_operator_array_gpu
+                    rate_array = num.ascontiguousarray(self.rate, dtype=num.float64)
+                    # rate_array is full domain size, use_indices_into_rate=1
+                    self.local_influx = apply_rate_operator_array_gpu(
+                        self.domain.gpu_interface.gpu_dom,
+                        self._gpu_op_id,
+                        rate_array,
+                        1,  # use_indices_into_rate
+                        float(factor),
+                        float(timestep)
+                    )
+                    # Estimate min/max for statistics
+                    if self.indices is None:
+                        self.local_max = rate_array.max() * factor
+                        self.local_min = rate_array.min() * factor
+                    else:
+                        self.local_max = rate_array[self.indices].max() * factor
+                        self.local_min = rate_array[self.indices].min() * factor
+
+                else:
+                    # Scalar or time-dependent rate - use scalar GPU kernel
+                    from anuga.shallow_water.sw_domain_gpu_ext import apply_rate_operator_gpu
+                    rate = self.get_non_spatial_rate(t)
+                    self.local_influx = apply_rate_operator_gpu(
+                        self.domain.gpu_interface.gpu_dom,
+                        self._gpu_op_id,
+                        float(rate),
+                        float(factor),
+                        float(timestep)
+                    )
+                    # Estimate min/max rate for statistics
+                    self.local_max = rate * factor if rate >= 0 else 0.0
+                    self.local_min = rate * factor if rate < 0 else 0.0
 
                 # Update tracking
                 self.cumulative_influx += self.local_influx
                 self.domain.fractional_step_volume_integral += self.local_influx
-
-                # Estimate min/max rate for statistics
-                self.local_max = rate * factor if rate >= 0 else 0.0
-                self.local_min = rate * factor if rate < 0 else 0.0
 
                 return
 
