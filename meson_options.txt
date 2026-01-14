@@ -1,0 +1,9 @@
+# ANUGA build options
+
+# GPU acceleration with OpenMP target offloading
+option('gpu', type: 'boolean', value: false,
+       description: 'Enable GPU acceleration with OpenMP target offloading')
+
+# GPU-aware MPI for direct device-to-device communication
+option('gpu_aware_mpi', type: 'boolean', value: false,
+       description: 'Enable GPU-aware MPI for direct device communication (requires GPU-aware MPI library)')
