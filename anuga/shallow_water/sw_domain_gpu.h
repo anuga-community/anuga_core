@@ -89,6 +89,18 @@ struct transmissive_n_zero_t_boundary {
     int mapped;                  // Whether arrays are mapped to GPU
 };
 
+// Time_boundary - time-dependent Dirichlet values (function called from Python each timestep)
+struct time_boundary {
+    int num_edges;               // Number of time boundary edges
+    int *boundary_indices;       // Where to write in boundary_values arrays [num_edges]
+    int *vol_ids;                // Interior cell IDs [num_edges]
+    int *edge_ids;               // Which edge (0, 1, or 2) [num_edges]
+    double stage_value;          // Current stage value (updated each timestep from Python)
+    double xmom_value;           // Current xmom value (updated each timestep from Python)
+    double ymom_value;           // Current ymom value (updated each timestep from Python)
+    int mapped;                  // Whether arrays are mapped to GPU
+};
+
 // Boundary edge sync buffers - pre-allocated for efficient sparse sync
 // Allocated once during setup, reused every timestep
 struct boundary_edge_sync {
@@ -130,6 +142,7 @@ struct gpu_domain {
     struct dirichlet_boundary dirichlet;
     struct transmissive_boundary transmissive;
     struct transmissive_n_zero_t_boundary transmissive_n_zero_t;
+    struct time_boundary time_bdry;
 
     // Boundary edge sync (for sparse edge value sync)
     struct boundary_edge_sync edge_sync;
@@ -207,6 +220,13 @@ int gpu_transmissive_n_zero_t_init(struct gpu_domain *GD, int num_edges,
 void gpu_transmissive_n_zero_t_finalize(struct gpu_domain *GD);
 void gpu_transmissive_n_zero_t_set_stage(struct gpu_domain *GD, double stage_value);
 void gpu_evaluate_transmissive_n_zero_t_boundary(struct gpu_domain *GD);
+
+// Time_boundary - time-dependent Dirichlet values
+int gpu_time_boundary_init(struct gpu_domain *GD, int num_edges,
+                           int *boundary_indices, int *vol_ids, int *edge_ids);
+void gpu_time_boundary_finalize(struct gpu_domain *GD);
+void gpu_time_boundary_set_values(struct gpu_domain *GD, double stage, double xmom, double ymom);
+void gpu_evaluate_time_boundary(struct gpu_domain *GD);
 
 // Ghost exchange - the key MPI function
 // Uses GPU-aware MPI if available, otherwise does D2H/H2D for small halo buffers

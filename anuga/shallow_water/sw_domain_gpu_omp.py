@@ -46,7 +46,7 @@ class GPU_OMP_interface:
         from anuga.shallow_water.sw_domain_gpu_ext import (
             init_gpu_domain, map_to_gpu,
             init_reflective_boundary, init_dirichlet_boundary, init_transmissive_boundary,
-            init_transmissive_n_zero_t_boundary
+            init_transmissive_n_zero_t_boundary, init_time_boundary
         )
 
         # Initialize GPU domain structure
@@ -60,6 +60,7 @@ class GPU_OMP_interface:
             init_dirichlet_boundary(self.gpu_dom, self.domain)
             init_transmissive_boundary(self.gpu_dom, self.domain)
             init_transmissive_n_zero_t_boundary(self.gpu_dom, self.domain)
+            init_time_boundary(self.gpu_dom, self.domain)
 
         # Map arrays to GPU memory (persistent for simulation)
         # This now includes all boundary arrays if initialized above

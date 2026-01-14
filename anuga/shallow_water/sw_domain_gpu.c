@@ -391,6 +391,16 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->transmissive_n_zero_t.stage_value = 0.0;
     GD->transmissive_n_zero_t.mapped = 0;
 
+    // Initialize time_boundary to empty
+    GD->time_bdry.num_edges = 0;
+    GD->time_bdry.boundary_indices = NULL;
+    GD->time_bdry.vol_ids = NULL;
+    GD->time_bdry.edge_ids = NULL;
+    GD->time_bdry.stage_value = 0.0;
+    GD->time_bdry.xmom_value = 0.0;
+    GD->time_bdry.ymom_value = 0.0;
+    GD->time_bdry.mapped = 0;
+
     // Initialize boundary edge sync to empty
     GD->edge_sync.num_boundary_cells = 0;
     GD->edge_sync.cell_ids = NULL;
@@ -1003,6 +1013,118 @@ void gpu_evaluate_transmissive_n_zero_t_boundary(struct gpu_domain *GD) {
 }
 
 // ============================================================================
+// Time_boundary - time-dependent Dirichlet values
+// ============================================================================
+
+int gpu_time_boundary_init(struct gpu_domain *GD, int num_edges,
+                           int *boundary_indices, int *vol_ids, int *edge_ids) {
+    struct time_boundary *B = &GD->time_bdry;
+
+    B->num_edges = num_edges;
+    B->mapped = 0;
+    B->stage_value = 0.0;
+    B->xmom_value = 0.0;
+    B->ymom_value = 0.0;
+
+    if (num_edges == 0) {
+        B->boundary_indices = NULL;
+        B->vol_ids = NULL;
+        B->edge_ids = NULL;
+        return 0;
+    }
+
+    B->boundary_indices = (int*)malloc(num_edges * sizeof(int));
+    B->vol_ids = (int*)malloc(num_edges * sizeof(int));
+    B->edge_ids = (int*)malloc(num_edges * sizeof(int));
+
+    if (!B->boundary_indices || !B->vol_ids || !B->edge_ids) {
+        fprintf(stderr, "Failed to allocate time_boundary arrays\n");
+        return -1;
+    }
+
+    memcpy(B->boundary_indices, boundary_indices, num_edges * sizeof(int));
+    memcpy(B->vol_ids, vol_ids, num_edges * sizeof(int));
+    memcpy(B->edge_ids, edge_ids, num_edges * sizeof(int));
+
+    if (GD->rank == 0) {
+        printf("Time_boundary initialized: %d edges (GPU mapping deferred)\n", num_edges);
+    }
+
+    return 0;
+}
+
+void gpu_time_boundary_finalize(struct gpu_domain *GD) {
+    struct time_boundary *B = &GD->time_bdry;
+
+    if (B->mapped && B->num_edges > 0) {
+        int ne = B->num_edges;
+        int *b_idx = B->boundary_indices;
+        int *v_ids = B->vol_ids;
+        int *e_ids = B->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+    }
+
+    if (B->boundary_indices) free(B->boundary_indices);
+    if (B->vol_ids) free(B->vol_ids);
+    if (B->edge_ids) free(B->edge_ids);
+
+    B->num_edges = 0;
+    B->boundary_indices = NULL;
+    B->vol_ids = NULL;
+    B->edge_ids = NULL;
+    B->mapped = 0;
+}
+
+void gpu_time_boundary_set_values(struct gpu_domain *GD, double stage, double xmom, double ymom) {
+    // Update values - called from Python each timestep before evaluate
+    GD->time_bdry.stage_value = stage;
+    GD->time_bdry.xmom_value = xmom;
+    GD->time_bdry.ymom_value = ymom;
+}
+
+void gpu_evaluate_time_boundary(struct gpu_domain *GD) {
+    // Time-dependent Dirichlet boundary - sets constant values (that vary with time)
+    struct time_boundary *B = &GD->time_bdry;
+    if (B->num_edges == 0) return;
+    if (!B->mapped) return;
+
+    int num_edges = B->num_edges;
+    int *boundary_indices = B->boundary_indices;
+    int *vol_ids = B->vol_ids;
+    int *edge_ids = B->edge_ids;
+    double stage_val = B->stage_value;
+    double xmom_val = B->xmom_value;
+    double ymom_val = B->ymom_value;
+
+    // Edge values (read for bed/height)
+    double *bed_ev = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+
+    // Boundary values (write)
+    double *stage_bv = GD->D.stage_boundary_values;
+    double *bed_bv = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
+    double *xmom_bv = GD->D.xmom_boundary_values;
+    double *ymom_bv = GD->D.ymom_boundary_values;
+
+    #pragma omp target teams distribute parallel for
+    for (int k = 0; k < num_edges; k++) {
+        int bid = boundary_indices[k];
+        int vid = vol_ids[k];
+        int eid = edge_ids[k];
+
+        // Set stage and momentum from time-dependent values
+        stage_bv[bid] = stage_val;
+        xmom_bv[bid] = xmom_val;
+        ymom_bv[bid] = ymom_val;
+
+        // Copy bed/height from interior edge
+        bed_bv[bid] = bed_ev[3 * vid + eid];
+        height_bv[bid] = height_ev[3 * vid + eid];
+    }
+}
+
+// ============================================================================
 // GPU Memory Management
 // ============================================================================
 
@@ -1138,6 +1260,22 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
 
         if (GD->rank == 0) {
             printf("Transmissive_n_zero_t boundary arrays mapped to GPU: %d edges\n", ne);
+        }
+    }
+
+    // Map time_boundary arrays if initialized
+    struct time_boundary *TB = &GD->time_bdry;
+    if (TB->num_edges > 0 && TB->boundary_indices != NULL) {
+        int ne = TB->num_edges;
+        int *b_idx = TB->boundary_indices;
+        int *v_ids = TB->vol_ids;
+        int *e_ids = TB->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        TB->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Time_boundary arrays mapped to GPU: %d edges\n", ne);
         }
     }
 
@@ -1282,6 +1420,17 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *e_ids = Tnzt->edge_ids;
         #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Tnzt->mapped = 0;
+    }
+
+    // Unmap time_boundary arrays if mapped
+    struct time_boundary *TB = &GD->time_bdry;
+    if (TB->mapped && TB->num_edges > 0) {
+        int ne = TB->num_edges;
+        int *b_idx = TB->boundary_indices;
+        int *v_ids = TB->vol_ids;
+        int *e_ids = TB->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        TB->mapped = 0;
     }
 
     if (GD->backup_arrays_mapped) {

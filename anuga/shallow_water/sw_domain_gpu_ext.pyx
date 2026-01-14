@@ -161,6 +161,13 @@ cdef extern from "sw_domain_gpu.c" nogil:
     void gpu_transmissive_n_zero_t_set_stage(gpu_domain *GD, double stage_value)
     void gpu_evaluate_transmissive_n_zero_t_boundary(gpu_domain *GD)
 
+    # Time_boundary - time-dependent Dirichlet values
+    int gpu_time_boundary_init(gpu_domain *GD, int num_edges,
+                               int *boundary_indices, int *vol_ids, int *edge_ids)
+    void gpu_time_boundary_finalize(gpu_domain *GD)
+    void gpu_time_boundary_set_values(gpu_domain *GD, double stage, double xmom, double ymom)
+    void gpu_evaluate_time_boundary(gpu_domain *GD)
+
     # GPU kernels
     void gpu_extrapolate_second_order(gpu_domain *GD)
     double gpu_compute_fluxes(gpu_domain *GD)
@@ -861,6 +868,64 @@ def evaluate_transmissive_n_zero_t_boundary_gpu(GPUDomain gpu_dom):
     Call set_transmissive_n_zero_t_stage first to set the stage value.
     """
     gpu_evaluate_transmissive_n_zero_t_boundary(&gpu_dom.GD)
+
+
+def init_time_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize Time_boundary for GPU.
+
+    This boundary type sets conserved quantities from a time-dependent function.
+    The function is called from Python each timestep (cheap), and the assignment
+    happens on GPU (avoids D2H/H2D transfer overhead).
+
+    Call this once after domain setup, BEFORE map_to_gpu.
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+
+    if domain_object.boundary_map is None:
+        return
+
+    all_ids = []
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and boundary.__class__.__name__ == 'Time_boundary':
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                all_ids.extend(segment_edges)
+
+    if len(all_ids) == 0:
+        return
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr = np.ascontiguousarray(domain_object.boundary_cells[ids], dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_time_boundary_init(&gpu_dom.GD, num_edges,
+                           &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0])
+
+
+def set_time_boundary_values(GPUDomain gpu_dom, double stage, double xmom, double ymom):
+    """
+    Update the values for Time_boundary.
+
+    Call this each timestep before evaluate_time_boundary_gpu.
+    The values come from calling the Python time-dependent function.
+    """
+    gpu_time_boundary_set_values(&gpu_dom.GD, stage, xmom, ymom)
+
+
+def evaluate_time_boundary_gpu(GPUDomain gpu_dom):
+    """
+    Evaluate Time_boundary on GPU.
+
+    Sets stage and momentum from time-dependent values.
+    Call set_time_boundary_values first to set the values.
+    """
+    gpu_evaluate_time_boundary(&gpu_dom.GD)
 
 
 def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double yieldstep, int apply_forcing):

@@ -2791,7 +2791,6 @@ class Domain(Generic_Domain):
             compute_fluxes_gpu,
             update_conserved_quantities_gpu,
             saxpy_conserved_quantities_gpu,
-            manning_friction_gpu,
             sync_boundary_values,
             init_boundary_edge_sync,
             boundary_edge_sync,
@@ -2801,6 +2800,8 @@ class Domain(Generic_Domain):
             evaluate_transmissive_boundary_gpu,
             set_transmissive_n_zero_t_stage,
             evaluate_transmissive_n_zero_t_boundary_gpu,
+            set_time_boundary_values,
+            evaluate_time_boundary_gpu,
         )
         import numpy as np
 
@@ -2808,7 +2809,8 @@ class Domain(Generic_Domain):
 
         # Supported GPU boundary types (no D2H/H2D transfer needed)
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
-                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary'}
+                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                              'Time_boundary'}
 
         # Lazy init: identify which boundaries need CPU evaluation vs GPU
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -2816,6 +2818,7 @@ class Domain(Generic_Domain):
             self._gpu_all_on_gpu = True  # All boundaries can be evaluated on GPU
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []  # Boundaries needing stage updates
+            self._gpu_time_boundaries = []  # Time_boundary objects
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -2828,6 +2831,9 @@ class Domain(Generic_Domain):
                         # Store reference - we'll get stage value each timestep (cheap Python call)
                         # The expensive D2H/H2D transfers are eliminated - that's the main win
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                    elif btype == 'Time_boundary':
+                        # Store reference - we'll get values each timestep from Python function
+                        self._gpu_time_boundaries.append(B)
 
             # Set up boundary edge sync if we have ANY CPU-evaluated boundaries
             if not self._gpu_all_on_gpu:
@@ -2873,6 +2879,11 @@ class Domain(Generic_Domain):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+            # Update and evaluate Time_boundary
+            for B in self._gpu_time_boundaries:
+                q = B.get_boundary_values()
+                set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+            evaluate_time_boundary_gpu(gpu_dom)
         else:
             # Some boundaries need CPU - evaluate all on CPU to avoid sync conflicts
             boundary_edge_sync(gpu_dom)
@@ -2885,8 +2896,8 @@ class Domain(Generic_Domain):
         # Compute fluxes
         self.flux_timestep = compute_fluxes_gpu(gpu_dom)
 
-        # Manning friction
-        manning_friction_gpu(gpu_dom)
+        # Forcing terms (Manning friction on GPU, others sync to CPU)
+        self.compute_forcing_terms()
 
         # Update timestep (CPU)
         self.update_timestep(yieldstep, finaltime)
@@ -2924,6 +2935,11 @@ class Domain(Generic_Domain):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+            # Update and evaluate Time_boundary
+            for B in self._gpu_time_boundaries:
+                q = B.get_boundary_values()
+                set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+            evaluate_time_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -2935,8 +2951,8 @@ class Domain(Generic_Domain):
         # Compute fluxes (ignore timestep from second step)
         compute_fluxes_gpu(gpu_dom)
 
-        # Manning friction
-        manning_friction_gpu(gpu_dom)
+        # Forcing terms (Manning friction on GPU, others sync to CPU)
+        self.compute_forcing_terms()
 
         # Update conserved quantities
         update_conserved_quantities_gpu(gpu_dom, self.timestep)
