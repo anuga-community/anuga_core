@@ -55,7 +55,6 @@ Australian National University, though now it is further developed and maintaine
 
 Copyright Commonwealth of Australia (Geoscience Australia) and Australian National University 2004-Now
 
-*GPU build* `pip install -e . --no-build-isolation -C setup-args="-Dgpu=true"` 
 
 Where can I get ANUGA?
 ----------------------
