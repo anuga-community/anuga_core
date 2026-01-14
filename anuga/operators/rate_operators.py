@@ -146,6 +146,65 @@ Parameters involving communication
         self.local_max = 0.0
         self.local_min = 0.0
 
+        # ----------------
+        # GPU support
+        #-----------------
+        self._gpu_op_id = None  # GPU operator ID (set on first GPU call)
+        self._gpu_initialized = False
+
+    def _init_gpu(self):
+        """Initialize GPU operator for this rate operator."""
+        if self._gpu_initialized:
+            return
+
+        # Check if domain is in GPU mode
+        if not hasattr(self.domain, 'multiprocessor_mode') or self.domain.multiprocessor_mode != 2:
+            return
+
+        # Check if we have a GPU interface
+        if not hasattr(self.domain, 'gpu_interface') or self.domain.gpu_interface is None:
+            return
+
+        gpu_interface = self.domain.gpu_interface
+        if not hasattr(gpu_interface, 'gpu_dom') or gpu_interface.gpu_dom is None:
+            return
+
+        # Only support non-spatial, non-xarray rates for GPU
+        # Spatial rates and xarray rates need more complex handling
+        if self.rate_spatial or self.rate_xarray:
+            return
+
+        # Get indices - if None, apply to all elements
+        if self.indices is None:
+            indices = num.arange(self.domain.number_of_elements, dtype=num.intc)
+            areas = self.domain.areas.copy()
+        elif self.indices is []:
+            return  # No indices, nothing to do
+        else:
+            indices = num.asarray(self.indices, dtype=num.intc)
+            areas = self.domain.areas[indices].copy()
+
+        # Get full indices for mass tracking
+        if self.full_indices is not None and len(self.full_indices) > 0:
+            full_indices = num.asarray(self.full_indices, dtype=num.intc)
+        else:
+            full_indices = None
+
+        try:
+            from anuga.shallow_water.sw_domain_gpu_ext import init_rate_operator
+            self._gpu_op_id = init_rate_operator(
+                gpu_interface.gpu_dom,
+                indices,
+                areas.astype(num.float64),
+                full_indices
+            )
+            if self._gpu_op_id >= 0:
+                self._gpu_initialized = True
+        except Exception as e:
+            import warnings
+            warnings.warn(f"Failed to initialize GPU rate operator: {e}")
+            self._gpu_op_id = None
+
     def __call__(self):
         """
         Apply rate to those triangles defined in indices
@@ -158,6 +217,44 @@ Parameters involving communication
         if self.indices is []:
             return
 
+        # Check for GPU execution path
+        if (hasattr(self.domain, 'multiprocessor_mode') and
+            self.domain.multiprocessor_mode == 2 and
+            not self.rate_spatial and
+            not self.rate_xarray and
+            self.rate_type not in ('quantity', 'centroid_array')):
+
+            # Lazy initialization of GPU operator
+            if not self._gpu_initialized:
+                self._init_gpu()
+
+            if self._gpu_initialized and self._gpu_op_id is not None and self._gpu_op_id >= 0:
+                # Use GPU path
+                t = self.domain.get_time()
+                timestep = self.domain.get_timestep()
+                factor = self.get_factor(t)
+                rate = self.get_non_spatial_rate(t)
+
+                from anuga.shallow_water.sw_domain_gpu_ext import apply_rate_operator_gpu
+                self.local_influx = apply_rate_operator_gpu(
+                    self.domain.gpu_interface.gpu_dom,
+                    self._gpu_op_id,
+                    float(rate),
+                    float(factor),
+                    float(timestep)
+                )
+
+                # Update tracking
+                self.cumulative_influx += self.local_influx
+                self.domain.fractional_step_volume_integral += self.local_influx
+
+                # Estimate min/max rate for statistics
+                self.local_max = rate * factor if rate >= 0 else 0.0
+                self.local_min = rate * factor if rate < 0 else 0.0
+
+                return
+
+        # Fall back to CPU path
         if self.rate_xarray:
             # setup centroid_array from xarray corresponding to current time
             self._update_Q_xarray()

@@ -119,6 +119,26 @@ struct boundary_edge_sync {
     int initialized;
 };
 
+// Rate operator info - for GPU-accelerated rate application (rain, etc.)
+// Supports both positive rates (inflow) and negative rates (extraction)
+#define MAX_RATE_OPERATORS 16
+
+struct rate_operator_info {
+    int num_indices;             // Number of triangles this operator applies to
+    int *indices;                // Triangle indices [num_indices] - mapped to GPU
+    double *areas;               // Triangle areas for mass tracking [num_indices]
+    int *full_indices;           // Indices that are "full" (not ghost) for mass tracking
+    int num_full;                // Number of full indices
+    int active;                  // Whether this operator slot is in use
+    int mapped;                  // Whether arrays are mapped to GPU
+};
+
+struct rate_operators {
+    struct rate_operator_info ops[MAX_RATE_OPERATORS];
+    int num_operators;           // Number of active operators
+    int initialized;
+};
+
 // GPU domain struct - extends base domain with MPI/GPU state
 struct gpu_domain {
     // Base domain struct (contains all ANUGA arrays)
@@ -146,6 +166,9 @@ struct gpu_domain {
 
     // Boundary edge sync (for sparse edge value sync)
     struct boundary_edge_sync edge_sync;
+
+    // Rate operators (rain, extraction, etc.)
+    struct rate_operators rate_ops;
 
     // Simulation parameters for GPU kernels
     double CFL;
@@ -227,6 +250,21 @@ int gpu_time_boundary_init(struct gpu_domain *GD, int num_edges,
 void gpu_time_boundary_finalize(struct gpu_domain *GD);
 void gpu_time_boundary_set_values(struct gpu_domain *GD, double stage, double xmom, double ymom);
 void gpu_evaluate_time_boundary(struct gpu_domain *GD);
+
+// Rate operators - rain, extraction, etc.
+// Returns operator ID (0 to MAX_RATE_OPERATORS-1) or -1 on error
+int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
+                           double *areas, int *full_indices, int num_full);
+void gpu_rate_operator_finalize(struct gpu_domain *GD, int op_id);
+void gpu_rate_operators_finalize_all(struct gpu_domain *GD);
+
+// Apply rate operator on GPU - returns local_influx (mass added to full cells)
+// rate: the rate value in m/s (scalar - computed from Python function if time-dependent)
+// factor: conversion factor
+// timestep: current timestep
+// For negative rates, also scales momentum appropriately
+double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
+                               double rate, double factor, double timestep);
 
 // Ghost exchange - the key MPI function
 // Uses GPU-aware MPI if available, otherwise does D2H/H2D for small halo buffers
