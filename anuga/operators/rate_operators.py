@@ -237,19 +237,19 @@ Parameters involving communication
                 factor = self.get_factor(t)
 
                 # DEBUG: Confirm GPU path taken
-                print(f"DEBUG Rate_operator: GPU path, op_id={self._gpu_op_id}, rate_type={self.rate_type}, t={t}, timestep={timestep}, factor={factor}")
+                #print(f"DEBUG Rate_operator: GPU path, op_id={self._gpu_op_id}, rate_type={self.rate_type}, t={t}, timestep={timestep}, factor={factor}")
                 # DEBUG: Check rate quantity info
-                if self.rate_type == 'quantity':
-                    print(f"DEBUG Rate_operator: rate quantity name={self.rate.name}, rate object id={id(self.rate)}")
+                #if self.rate_type == 'quantity':
+                #    print(f"DEBUG Rate_operator: rate quantity name={self.rate.name}, rate object id={id(self.rate)}")
 
                 if self.rate_type == 'quantity':
                     # Quantity type - use array-based GPU kernel
                     from anuga.shallow_water.sw_domain_gpu_ext import apply_rate_operator_array_gpu
                     rate_array = num.ascontiguousarray(self.rate.centroid_values, dtype=num.float64)
                     # DEBUG: Check rate array values
-                    print(f"DEBUG Rate_operator: rate_array min={rate_array.min()}, max={rate_array.max()}, shape={rate_array.shape}")
+                    #print(f"DEBUG Rate_operator: rate_array min={rate_array.min()}, max={rate_array.max()}, shape={rate_array.shape}")
                     # DEBUG: Check if this quantity is same as a domain quantity (might be stale on CPU)
-                    print(f"DEBUG Rate_operator: rate.centroid_values is stage.centroid_values: {self.rate.centroid_values is self.domain.quantities['stage'].centroid_values}")
+                    #print(f"DEBUG Rate_operator: rate.centroid_values is stage.centroid_values: {self.rate.centroid_values is self.domain.quantities['stage'].centroid_values}")
                     # rate_array is full domain size, use_indices_into_rate=1
                     self.local_influx = apply_rate_operator_array_gpu(
                         self.domain.gpu_interface.gpu_dom,
@@ -260,7 +260,7 @@ Parameters involving communication
                         float(timestep)
                     )
                     # DEBUG: Check returned influx
-                    print(f"DEBUG Rate_operator: local_influx={self.local_influx}")
+                    #print(f"DEBUG Rate_operator: local_influx={self.local_influx}")
                     # Estimate min/max for statistics
                     if self.indices is None:
                         self.local_max = rate_array.max() * factor
