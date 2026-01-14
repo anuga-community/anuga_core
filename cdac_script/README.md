@@ -68,6 +68,11 @@ Requirements:
 
 To build GPU ANUGA: `pip install -e . --no-build-isolation -C setup-args="-Dgpu=true"` 
 
+If you have a non V100 GPU, you'll need to open meson.build and change the GPU arch:
+```
+ openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g', '-gpu=cc70', '-gpu=mem:separate']
+```
+
 
 To ensure GPU execution `export OMP_TARGET_OFFLOAD=mandatory` 
 
