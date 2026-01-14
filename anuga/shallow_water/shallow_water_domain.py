@@ -2796,16 +2796,54 @@ class Domain(Generic_Domain):
             init_boundary_edge_sync,
             boundary_edge_sync,
             exchange_ghosts,
+            evaluate_reflective_boundary_gpu,
+            evaluate_dirichlet_boundary_gpu,
+            evaluate_transmissive_boundary_gpu,
+            set_transmissive_n_zero_t_stage,
+            evaluate_transmissive_n_zero_t_boundary_gpu,
         )
         import numpy as np
 
         gpu_dom = self.gpu_interface.gpu_dom
 
-        # Lazy init: set up boundary edge sync buffers once (maps to GPU)
-        if not hasattr(self, '_gpu_boundary_edge_sync_initialized'):
-            boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
-            init_boundary_edge_sync(gpu_dom, boundary_cell_ids)
-            self._gpu_boundary_edge_sync_initialized = True
+        # Supported GPU boundary types (no D2H/H2D transfer needed)
+        GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary'}
+
+        # Lazy init: identify which boundaries need CPU evaluation vs GPU
+        if not hasattr(self, '_gpu_boundary_info_initialized'):
+            self._gpu_cpu_tags = []  # Tags that need CPU evaluation
+            self._gpu_all_on_gpu = True  # All boundaries can be evaluated on GPU
+            cpu_boundary_types = []
+            self._gpu_transmissive_n_zero_t_boundaries = []  # Boundaries needing stage updates
+
+            for tag, B in self.boundary_map.items():
+                if B is not None:
+                    btype = B.__class__.__name__
+                    if btype not in GPU_BOUNDARY_TYPES:
+                        self._gpu_cpu_tags.append(tag)
+                        self._gpu_all_on_gpu = False
+                        cpu_boundary_types.append((tag, btype))
+                    elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                        # Store reference - we'll get stage value each timestep (cheap Python call)
+                        # The expensive D2H/H2D transfers are eliminated - that's the main win
+                        self._gpu_transmissive_n_zero_t_boundaries.append(B)
+
+            # Set up boundary edge sync if we have ANY CPU-evaluated boundaries
+            if not self._gpu_all_on_gpu:
+                # Get unique cell IDs for all boundaries (CPU evaluates all in this case)
+                boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
+                init_boundary_edge_sync(gpu_dom, boundary_cell_ids)
+
+                # Warn user about CPU fallback
+                print("WARNING: GPU boundary evaluation disabled - falling back to CPU")
+                print("  The following boundary types require CPU evaluation:")
+                for tag, btype in cpu_boundary_types:
+                    print(f"    - tag '{tag}': {btype}")
+                print(f"  Supported GPU boundary types: {GPU_BOUNDARY_TYPES}")
+                print("  This adds ~1ms overhead per RK2 step due to D2H/H2D transfers.")
+
+            self._gpu_boundary_info_initialized = True
 
         # Backup for RK2
         backup_conserved_quantities_gpu(gpu_dom)
@@ -2818,13 +2856,31 @@ class Domain(Generic_Domain):
         protect_gpu(gpu_dom)
         extrapolate_second_order_gpu(gpu_dom)
 
-        # Sync edge values for boundary cells (GPU -> host) then evaluate on CPU
-        boundary_edge_sync(gpu_dom)
-        for tag in self.tag_boundary_cells:
-            B = self.boundary_map[tag]
-            if B is not None:
-                B.evaluate_segment(self, self.tag_boundary_cells[tag])
-        sync_boundary_values(gpu_dom)
+        # Evaluate boundaries
+        if self._gpu_all_on_gpu:
+            # All boundaries are GPU-supported - evaluate entirely on GPU (no sync needed)
+            evaluate_reflective_boundary_gpu(gpu_dom)
+            evaluate_dirichlet_boundary_gpu(gpu_dom)
+            evaluate_transmissive_boundary_gpu(gpu_dom)
+            # Update stage and evaluate transmissive_n_zero_t boundaries
+            # Python call to get_boundary_values() is cheap (~microseconds)
+            # The big win is eliminating D2H/H2D array transfers (~milliseconds)
+            for B in self._gpu_transmissive_n_zero_t_boundaries:
+                stage_val = B.get_boundary_values()
+                try:
+                    stage_val = float(stage_val)
+                except:
+                    stage_val = float(stage_val[0])
+                set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+            evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+        else:
+            # Some boundaries need CPU - evaluate all on CPU to avoid sync conflicts
+            boundary_edge_sync(gpu_dom)
+            for tag in self.tag_boundary_cells:
+                B = self.boundary_map[tag]
+                if B is not None:
+                    B.evaluate_segment(self, self.tag_boundary_cells[tag])
+            sync_boundary_values(gpu_dom)
 
         # Compute fluxes
         self.flux_timestep = compute_fluxes_gpu(gpu_dom)
@@ -2855,13 +2911,26 @@ class Domain(Generic_Domain):
         protect_gpu(gpu_dom)
         extrapolate_second_order_gpu(gpu_dom)
 
-        # Sync edge values for boundary cells (GPU -> host) then evaluate on CPU
-        boundary_edge_sync(gpu_dom)
-        for tag in self.tag_boundary_cells:
-            B = self.boundary_map[tag]
-            if B is not None:
-                B.evaluate_segment(self, self.tag_boundary_cells[tag])
-        sync_boundary_values(gpu_dom)
+        # Evaluate boundaries (same pattern as first step)
+        if self._gpu_all_on_gpu:
+            evaluate_reflective_boundary_gpu(gpu_dom)
+            evaluate_dirichlet_boundary_gpu(gpu_dom)
+            evaluate_transmissive_boundary_gpu(gpu_dom)
+            for B in self._gpu_transmissive_n_zero_t_boundaries:
+                stage_val = B.get_boundary_values()
+                try:
+                    stage_val = float(stage_val)
+                except:
+                    stage_val = float(stage_val[0])
+                set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+            evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+        else:
+            boundary_edge_sync(gpu_dom)
+            for tag in self.tag_boundary_cells:
+                B = self.boundary_map[tag]
+                if B is not None:
+                    B.evaluate_segment(self, self.tag_boundary_cells[tag])
+            sync_boundary_values(gpu_dom)
 
         # Compute fluxes (ignore timestep from second step)
         compute_fluxes_gpu(gpu_dom)

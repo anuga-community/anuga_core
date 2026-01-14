@@ -64,6 +64,8 @@ cdef extern from "sw_domain_gpu.c" nogil:
         double* stage_boundary_values
         double* xmom_boundary_values
         double* ymom_boundary_values
+        double* bed_boundary_values
+        double* height_boundary_values
         # Backup for RK2
         double* stage_backup_values
         double* xmom_backup_values
@@ -137,6 +139,27 @@ cdef extern from "sw_domain_gpu.c" nogil:
                             int *boundary_indices, int *vol_ids, int *edge_ids)
     void gpu_reflective_finalize(gpu_domain *GD)
     void gpu_evaluate_reflective_boundary(gpu_domain *GD)
+
+    # Dirichlet boundary
+    int gpu_dirichlet_init(gpu_domain *GD, int num_edges,
+                           int *boundary_indices, int *vol_ids, int *edge_ids,
+                           double stage_value, double xmom_value, double ymom_value)
+    void gpu_dirichlet_finalize(gpu_domain *GD)
+    void gpu_evaluate_dirichlet_boundary(gpu_domain *GD)
+
+    # Transmissive boundary
+    int gpu_transmissive_init(gpu_domain *GD, int num_edges,
+                              int *boundary_indices, int *vol_ids, int *edge_ids,
+                              int use_centroid)
+    void gpu_transmissive_finalize(gpu_domain *GD)
+    void gpu_evaluate_transmissive_boundary(gpu_domain *GD)
+
+    # Transmissive_n_momentum_zero_t_momentum_set_stage boundary
+    int gpu_transmissive_n_zero_t_init(gpu_domain *GD, int num_edges,
+                                       int *boundary_indices, int *vol_ids, int *edge_ids)
+    void gpu_transmissive_n_zero_t_finalize(gpu_domain *GD)
+    void gpu_transmissive_n_zero_t_set_stage(gpu_domain *GD, double stage_value)
+    void gpu_evaluate_transmissive_n_zero_t_boundary(gpu_domain *GD)
 
     # GPU kernels
     void gpu_extrapolate_second_order(gpu_domain *GD)
@@ -327,6 +350,9 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     D.bed_centroid_values = &bed_cv[0]
     bed_ev = elev.edge_values
     D.bed_edge_values = &bed_ev[0, 0]
+    cdef double[::1] bed_bv
+    bed_bv = elev.boundary_values
+    D.bed_boundary_values = &bed_bv[0]
 
     # Height
     height = quantities["height"]
@@ -334,6 +360,9 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     D.height_centroid_values = &height_cv[0]
     height_ev = height.edge_values
     D.height_edge_values = &height_ev[0, 0]
+    cdef double[::1] height_bv
+    height_bv = height.boundary_values
+    D.height_boundary_values = &height_bv[0]
 
     # Mesh connectivity
     neighbours = domain_object.neighbours
@@ -669,6 +698,169 @@ def evaluate_reflective_boundary_gpu(GPUDomain gpu_dom):
     No data transfer required.
     """
     gpu_evaluate_reflective_boundary(&gpu_dom.GD)
+
+
+def init_dirichlet_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize Dirichlet boundary for GPU evaluation.
+
+    Extracts Dirichlet boundary info from domain and prepares for GPU mapping.
+    Call this once after domain setup, BEFORE map_to_gpu.
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+    cdef double stage_value = 0.0
+    cdef double xmom_value = 0.0
+    cdef double ymom_value = 0.0
+
+    if domain_object.boundary_map is None:
+        return
+
+    # Find Dirichlet boundaries - note: all Dirichlet boundaries must have same values
+    # for GPU evaluation (limitation - could be extended to per-tag values)
+    all_ids = []
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and boundary.__class__.__name__ == 'Dirichlet_boundary':
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                all_ids.extend(segment_edges)
+                # Get Dirichlet values from first boundary found
+                if hasattr(boundary, 'dirichlet_values') and len(boundary.dirichlet_values) >= 3:
+                    stage_value = float(boundary.dirichlet_values[0])
+                    xmom_value = float(boundary.dirichlet_values[1])
+                    ymom_value = float(boundary.dirichlet_values[2])
+
+    if len(all_ids) == 0:
+        return
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr = np.ascontiguousarray(domain_object.boundary_cells[ids], dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_dirichlet_init(&gpu_dom.GD, num_edges,
+                       &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0],
+                       stage_value, xmom_value, ymom_value)
+
+
+def evaluate_dirichlet_boundary_gpu(GPUDomain gpu_dom):
+    """
+    Evaluate Dirichlet boundary on GPU.
+
+    Sets constant values at boundary, entirely on device.
+    No data transfer required.
+    """
+    gpu_evaluate_dirichlet_boundary(&gpu_dom.GD)
+
+
+def init_transmissive_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize Transmissive boundary for GPU evaluation.
+
+    Extracts Transmissive boundary info from domain and prepares for GPU mapping.
+    Call this once after domain setup, BEFORE map_to_gpu.
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+    cdef int use_centroid = 0
+
+    if domain_object.boundary_map is None:
+        return
+
+    all_ids = []
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and boundary.__class__.__name__ == 'Transmissive_boundary':
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                all_ids.extend(segment_edges)
+
+    if len(all_ids) == 0:
+        return
+
+    # Check if domain uses centroid transmissive BC
+    if hasattr(domain_object, 'centroid_transmissive_bc'):
+        use_centroid = 1 if domain_object.centroid_transmissive_bc else 0
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr = np.ascontiguousarray(domain_object.boundary_cells[ids], dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_transmissive_init(&gpu_dom.GD, num_edges,
+                          &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0],
+                          use_centroid)
+
+
+def evaluate_transmissive_boundary_gpu(GPUDomain gpu_dom):
+    """
+    Evaluate Transmissive boundary on GPU.
+
+    Copies interior values to boundary, entirely on device.
+    No data transfer required.
+    """
+    gpu_evaluate_transmissive_boundary(&gpu_dom.GD)
+
+
+def init_transmissive_n_zero_t_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize Transmissive_n_momentum_zero_t_momentum_set_stage boundary for GPU.
+
+    This boundary type sets stage from a (potentially time-varying) function,
+    keeps normal momentum, and zeros tangential momentum.
+
+    Call this once after domain setup, BEFORE map_to_gpu.
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+
+    if domain_object.boundary_map is None:
+        return
+
+    all_ids = []
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and boundary.__class__.__name__ == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                all_ids.extend(segment_edges)
+
+    if len(all_ids) == 0:
+        return
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr = np.ascontiguousarray(domain_object.boundary_cells[ids], dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_transmissive_n_zero_t_init(&gpu_dom.GD, num_edges,
+                                   &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0])
+
+
+def set_transmissive_n_zero_t_stage(GPUDomain gpu_dom, double stage_value):
+    """
+    Update the stage value for Transmissive_n_zero_t boundary.
+
+    Call this each timestep before evaluate_transmissive_n_zero_t_boundary_gpu.
+    """
+    gpu_transmissive_n_zero_t_set_stage(&gpu_dom.GD, stage_value)
+
+
+def evaluate_transmissive_n_zero_t_boundary_gpu(GPUDomain gpu_dom):
+    """
+    Evaluate Transmissive_n_zero_t boundary on GPU.
+
+    Sets stage from external value, keeps normal momentum, zeros tangential.
+    Call set_transmissive_n_zero_t_stage first to set the stage value.
+    """
+    gpu_evaluate_transmissive_n_zero_t_boundary(&gpu_dom.GD)
 
 
 def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double yieldstep, int apply_forcing):

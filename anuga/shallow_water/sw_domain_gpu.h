@@ -56,6 +56,39 @@ struct reflective_boundary {
     int mapped;                  // Whether arrays are mapped to GPU
 };
 
+// Dirichlet boundary info - constant values at boundary
+struct dirichlet_boundary {
+    int num_edges;               // Number of Dirichlet boundary edges
+    int *boundary_indices;       // Where to write in boundary_values arrays [num_edges]
+    int *vol_ids;                // Interior cell IDs [num_edges]
+    int *edge_ids;               // Which edge (0, 1, or 2) [num_edges]
+    double stage_value;          // Constant stage value
+    double xmom_value;           // Constant xmom value
+    double ymom_value;           // Constant ymom value
+    int mapped;                  // Whether arrays are mapped to GPU
+};
+
+// Transmissive boundary info - copies interior values to boundary
+struct transmissive_boundary {
+    int num_edges;               // Number of transmissive boundary edges
+    int *boundary_indices;       // Where to write in boundary_values arrays [num_edges]
+    int *vol_ids;                // Interior cell IDs [num_edges]
+    int *edge_ids;               // Which edge (0, 1, or 2) [num_edges]
+    int use_centroid;            // 1 = use centroid values, 0 = use edge values
+    int mapped;                  // Whether arrays are mapped to GPU
+};
+
+// Transmissive_n_momentum_zero_t_momentum_set_stage boundary
+// Sets stage from external value, keeps normal momentum, zeros tangential
+struct transmissive_n_zero_t_boundary {
+    int num_edges;               // Number of boundary edges
+    int *boundary_indices;       // Where to write in boundary_values arrays [num_edges]
+    int *vol_ids;                // Interior cell IDs [num_edges]
+    int *edge_ids;               // Which edge (0, 1, or 2) [num_edges]
+    double stage_value;          // Current stage value (updated each timestep from Python)
+    int mapped;                  // Whether arrays are mapped to GPU
+};
+
 // Boundary edge sync buffers - pre-allocated for efficient sparse sync
 // Allocated once during setup, reused every timestep
 struct boundary_edge_sync {
@@ -94,6 +127,9 @@ struct gpu_domain {
 
     // Boundary conditions
     struct reflective_boundary reflective;
+    struct dirichlet_boundary dirichlet;
+    struct transmissive_boundary transmissive;
+    struct transmissive_n_zero_t_boundary transmissive_n_zero_t;
 
     // Boundary edge sync (for sparse edge value sync)
     struct boundary_edge_sync edge_sync;
@@ -150,6 +186,27 @@ int gpu_reflective_init(struct gpu_domain *GD, int num_edges,
                         int *boundary_indices, int *vol_ids, int *edge_ids);
 void gpu_reflective_finalize(struct gpu_domain *GD);
 void gpu_evaluate_reflective_boundary(struct gpu_domain *GD);
+
+// Dirichlet boundary - constant values at boundary
+int gpu_dirichlet_init(struct gpu_domain *GD, int num_edges,
+                       int *boundary_indices, int *vol_ids, int *edge_ids,
+                       double stage_value, double xmom_value, double ymom_value);
+void gpu_dirichlet_finalize(struct gpu_domain *GD);
+void gpu_evaluate_dirichlet_boundary(struct gpu_domain *GD);
+
+// Transmissive boundary - copies interior values to boundary
+int gpu_transmissive_init(struct gpu_domain *GD, int num_edges,
+                          int *boundary_indices, int *vol_ids, int *edge_ids,
+                          int use_centroid);
+void gpu_transmissive_finalize(struct gpu_domain *GD);
+void gpu_evaluate_transmissive_boundary(struct gpu_domain *GD);
+
+// Transmissive_n_momentum_zero_t_momentum_set_stage boundary
+int gpu_transmissive_n_zero_t_init(struct gpu_domain *GD, int num_edges,
+                                   int *boundary_indices, int *vol_ids, int *edge_ids);
+void gpu_transmissive_n_zero_t_finalize(struct gpu_domain *GD);
+void gpu_transmissive_n_zero_t_set_stage(struct gpu_domain *GD, double stage_value);
+void gpu_evaluate_transmissive_n_zero_t_boundary(struct gpu_domain *GD);
 
 // Ghost exchange - the key MPI function
 // Uses GPU-aware MPI if available, otherwise does D2H/H2D for small halo buffers

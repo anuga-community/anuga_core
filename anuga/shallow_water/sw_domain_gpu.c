@@ -365,6 +365,32 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->reflective.edge_ids = NULL;
     GD->reflective.mapped = 0;
 
+    // Initialize dirichlet boundary to empty
+    GD->dirichlet.num_edges = 0;
+    GD->dirichlet.boundary_indices = NULL;
+    GD->dirichlet.vol_ids = NULL;
+    GD->dirichlet.edge_ids = NULL;
+    GD->dirichlet.stage_value = 0.0;
+    GD->dirichlet.xmom_value = 0.0;
+    GD->dirichlet.ymom_value = 0.0;
+    GD->dirichlet.mapped = 0;
+
+    // Initialize transmissive boundary to empty
+    GD->transmissive.num_edges = 0;
+    GD->transmissive.boundary_indices = NULL;
+    GD->transmissive.vol_ids = NULL;
+    GD->transmissive.edge_ids = NULL;
+    GD->transmissive.use_centroid = 0;
+    GD->transmissive.mapped = 0;
+
+    // Initialize transmissive_n_zero_t boundary to empty
+    GD->transmissive_n_zero_t.num_edges = 0;
+    GD->transmissive_n_zero_t.boundary_indices = NULL;
+    GD->transmissive_n_zero_t.vol_ids = NULL;
+    GD->transmissive_n_zero_t.edge_ids = NULL;
+    GD->transmissive_n_zero_t.stage_value = 0.0;
+    GD->transmissive_n_zero_t.mapped = 0;
+
     // Initialize boundary edge sync to empty
     GD->edge_sync.num_boundary_cells = 0;
     GD->edge_sync.cell_ids = NULL;
@@ -392,8 +418,11 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
     // Free halo structures
     gpu_halo_finalize(GD);
 
-    // Free reflective boundary structures
+    // Free boundary structures
     gpu_reflective_finalize(GD);
+    gpu_dirichlet_finalize(GD);
+    gpu_transmissive_finalize(GD);
+    gpu_transmissive_n_zero_t_finalize(GD);
 
     // Free boundary edge sync structures
     gpu_boundary_edge_sync_finalize(GD);
@@ -506,7 +535,7 @@ int gpu_reflective_init(struct gpu_domain *GD, int num_edges,
     struct reflective_boundary *R = &GD->reflective;
 
     R->num_edges = num_edges;
-    R->mapped = 0;
+    R->mapped = 0;  // Will be mapped later in gpu_domain_map_arrays
 
     if (num_edges == 0) {
         R->boundary_indices = NULL;
@@ -515,7 +544,7 @@ int gpu_reflective_init(struct gpu_domain *GD, int num_edges,
         return 0;
     }
 
-    // Allocate and copy arrays (same pattern as other arrays)
+    // Allocate and copy arrays (will be mapped to GPU in gpu_domain_map_arrays)
     R->boundary_indices = (int*)malloc(num_edges * sizeof(int));
     R->vol_ids = (int*)malloc(num_edges * sizeof(int));
     R->edge_ids = (int*)malloc(num_edges * sizeof(int));
@@ -529,20 +558,12 @@ int gpu_reflective_init(struct gpu_domain *GD, int num_edges,
     memcpy(R->vol_ids, vol_ids, num_edges * sizeof(int));
     memcpy(R->edge_ids, edge_ids, num_edges * sizeof(int));
 
-    // TEMPORARILY DISABLED - skip GPU mapping to debug
-    // if (GD->device_id >= 0) {
-    //     int *b_idx = R->boundary_indices;
-    //     int *v_ids = R->vol_ids;
-    //     int *e_ids = R->edge_ids;
-    //     int ne = num_edges;
-    //
-    //     #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
-    //     R->mapped = 1;
-    // }
-    R->mapped = 0;  // Force CPU path
+    // NOTE: GPU mapping now happens in gpu_domain_map_arrays() to ensure
+    // all arrays are mapped in the same data region. Call gpu_reflective_init
+    // BEFORE gpu_domain_map_arrays().
 
     if (GD->rank == 0) {
-        printf("Reflective boundary initialized: %d edges\n", num_edges);
+        printf("Reflective boundary initialized: %d edges (GPU mapping deferred)\n", num_edges);
     }
 
     return 0;
@@ -578,9 +599,11 @@ void gpu_evaluate_reflective_boundary(struct gpu_domain *GD) {
     struct reflective_boundary *R = &GD->reflective;
     if (R->num_edges == 0) return;
 
-    // TEMPORARY: skip GPU kernel, use CPU fallback via sync
-    // This helps isolate if the issue is with the kernel or mapping
-    return;
+    // Only run GPU kernel if arrays are mapped
+    if (!R->mapped) {
+        // Arrays not on GPU - caller should use CPU fallback
+        return;
+    }
 
     int num_edges = R->num_edges;
     int *boundary_indices = R->boundary_indices;
@@ -634,6 +657,352 @@ void gpu_evaluate_reflective_boundary(struct gpu_domain *GD) {
 }
 
 // ============================================================================
+// Dirichlet Boundary Setup and Evaluation
+// ============================================================================
+
+int gpu_dirichlet_init(struct gpu_domain *GD, int num_edges,
+                       int *boundary_indices, int *vol_ids, int *edge_ids,
+                       double stage_value, double xmom_value, double ymom_value) {
+    struct dirichlet_boundary *D = &GD->dirichlet;
+
+    D->num_edges = num_edges;
+    D->mapped = 0;
+    D->stage_value = stage_value;
+    D->xmom_value = xmom_value;
+    D->ymom_value = ymom_value;
+
+    if (num_edges == 0) {
+        D->boundary_indices = NULL;
+        D->vol_ids = NULL;
+        D->edge_ids = NULL;
+        return 0;
+    }
+
+    D->boundary_indices = (int*)malloc(num_edges * sizeof(int));
+    D->vol_ids = (int*)malloc(num_edges * sizeof(int));
+    D->edge_ids = (int*)malloc(num_edges * sizeof(int));
+
+    if (!D->boundary_indices || !D->vol_ids || !D->edge_ids) {
+        fprintf(stderr, "Failed to allocate Dirichlet boundary arrays\n");
+        return -1;
+    }
+
+    memcpy(D->boundary_indices, boundary_indices, num_edges * sizeof(int));
+    memcpy(D->vol_ids, vol_ids, num_edges * sizeof(int));
+    memcpy(D->edge_ids, edge_ids, num_edges * sizeof(int));
+
+    if (GD->rank == 0) {
+        printf("Dirichlet boundary initialized: %d edges (GPU mapping deferred)\n", num_edges);
+    }
+
+    return 0;
+}
+
+void gpu_dirichlet_finalize(struct gpu_domain *GD) {
+    struct dirichlet_boundary *D = &GD->dirichlet;
+
+    if (D->mapped && D->num_edges > 0) {
+        int ne = D->num_edges;
+        int *b_idx = D->boundary_indices;
+        int *v_ids = D->vol_ids;
+        int *e_ids = D->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+    }
+
+    if (D->boundary_indices) free(D->boundary_indices);
+    if (D->vol_ids) free(D->vol_ids);
+    if (D->edge_ids) free(D->edge_ids);
+
+    D->num_edges = 0;
+    D->boundary_indices = NULL;
+    D->vol_ids = NULL;
+    D->edge_ids = NULL;
+    D->mapped = 0;
+}
+
+void gpu_evaluate_dirichlet_boundary(struct gpu_domain *GD) {
+    struct dirichlet_boundary *D = &GD->dirichlet;
+    if (D->num_edges == 0) return;
+    if (!D->mapped) return;
+
+    int num_edges = D->num_edges;
+    int *boundary_indices = D->boundary_indices;
+    int *vol_ids = D->vol_ids;
+    int *edge_ids = D->edge_ids;
+    double stage_val = D->stage_value;
+    double xmom_val = D->xmom_value;
+    double ymom_val = D->ymom_value;
+
+    // Edge values (read for bed/height)
+    double *bed_ev = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+
+    // Boundary values (write)
+    double *stage_bv = GD->D.stage_boundary_values;
+    double *bed_bv = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
+    double *xmom_bv = GD->D.xmom_boundary_values;
+    double *ymom_bv = GD->D.ymom_boundary_values;
+
+    #pragma omp target teams distribute parallel for
+    for (int k = 0; k < num_edges; k++) {
+        int bid = boundary_indices[k];
+        int vid = vol_ids[k];
+        int eid = edge_ids[k];
+
+        // Set constant Dirichlet values
+        stage_bv[bid] = stage_val;
+        xmom_bv[bid] = xmom_val;
+        ymom_bv[bid] = ymom_val;
+
+        // Copy bed/height from interior edge
+        bed_bv[bid] = bed_ev[3 * vid + eid];
+        height_bv[bid] = height_ev[3 * vid + eid];
+    }
+}
+
+// ============================================================================
+// Transmissive Boundary Setup and Evaluation
+// ============================================================================
+
+int gpu_transmissive_init(struct gpu_domain *GD, int num_edges,
+                          int *boundary_indices, int *vol_ids, int *edge_ids,
+                          int use_centroid) {
+    struct transmissive_boundary *T = &GD->transmissive;
+
+    T->num_edges = num_edges;
+    T->mapped = 0;
+    T->use_centroid = use_centroid;
+
+    if (num_edges == 0) {
+        T->boundary_indices = NULL;
+        T->vol_ids = NULL;
+        T->edge_ids = NULL;
+        return 0;
+    }
+
+    T->boundary_indices = (int*)malloc(num_edges * sizeof(int));
+    T->vol_ids = (int*)malloc(num_edges * sizeof(int));
+    T->edge_ids = (int*)malloc(num_edges * sizeof(int));
+
+    if (!T->boundary_indices || !T->vol_ids || !T->edge_ids) {
+        fprintf(stderr, "Failed to allocate Transmissive boundary arrays\n");
+        return -1;
+    }
+
+    memcpy(T->boundary_indices, boundary_indices, num_edges * sizeof(int));
+    memcpy(T->vol_ids, vol_ids, num_edges * sizeof(int));
+    memcpy(T->edge_ids, edge_ids, num_edges * sizeof(int));
+
+    if (GD->rank == 0) {
+        printf("Transmissive boundary initialized: %d edges, use_centroid=%d (GPU mapping deferred)\n",
+               num_edges, use_centroid);
+    }
+
+    return 0;
+}
+
+void gpu_transmissive_finalize(struct gpu_domain *GD) {
+    struct transmissive_boundary *T = &GD->transmissive;
+
+    if (T->mapped && T->num_edges > 0) {
+        int ne = T->num_edges;
+        int *b_idx = T->boundary_indices;
+        int *v_ids = T->vol_ids;
+        int *e_ids = T->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+    }
+
+    if (T->boundary_indices) free(T->boundary_indices);
+    if (T->vol_ids) free(T->vol_ids);
+    if (T->edge_ids) free(T->edge_ids);
+
+    T->num_edges = 0;
+    T->boundary_indices = NULL;
+    T->vol_ids = NULL;
+    T->edge_ids = NULL;
+    T->mapped = 0;
+}
+
+void gpu_evaluate_transmissive_boundary(struct gpu_domain *GD) {
+    struct transmissive_boundary *T = &GD->transmissive;
+    if (T->num_edges == 0) return;
+    if (!T->mapped) return;
+
+    int num_edges = T->num_edges;
+    int *boundary_indices = T->boundary_indices;
+    int *vol_ids = T->vol_ids;
+    int *edge_ids = T->edge_ids;
+    int use_centroid = T->use_centroid;
+
+    // Centroid values (for use_centroid mode)
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *bed_cv = GD->D.bed_centroid_values;
+    double *height_cv = GD->D.height_centroid_values;
+
+    // Edge values
+    double *stage_ev = GD->D.stage_edge_values;
+    double *xmom_ev = GD->D.xmom_edge_values;
+    double *ymom_ev = GD->D.ymom_edge_values;
+    double *bed_ev = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+
+    // Boundary values (write)
+    double *stage_bv = GD->D.stage_boundary_values;
+    double *bed_bv = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
+    double *xmom_bv = GD->D.xmom_boundary_values;
+    double *ymom_bv = GD->D.ymom_boundary_values;
+
+    #pragma omp target teams distribute parallel for
+    for (int k = 0; k < num_edges; k++) {
+        int bid = boundary_indices[k];
+        int vid = vol_ids[k];
+        int eid = edge_ids[k];
+
+        if (use_centroid) {
+            // Copy from centroid values
+            stage_bv[bid] = stage_cv[vid];
+            xmom_bv[bid] = xmom_cv[vid];
+            ymom_bv[bid] = ymom_cv[vid];
+            bed_bv[bid] = bed_cv[vid];
+            height_bv[bid] = height_cv[vid];
+        } else {
+            // Copy from edge values
+            stage_bv[bid] = stage_ev[3 * vid + eid];
+            xmom_bv[bid] = xmom_ev[3 * vid + eid];
+            ymom_bv[bid] = ymom_ev[3 * vid + eid];
+            bed_bv[bid] = bed_ev[3 * vid + eid];
+            height_bv[bid] = height_ev[3 * vid + eid];
+        }
+    }
+}
+
+// ============================================================================
+// Transmissive_n_momentum_zero_t_momentum_set_stage Boundary
+// ============================================================================
+
+int gpu_transmissive_n_zero_t_init(struct gpu_domain *GD, int num_edges,
+                                   int *boundary_indices, int *vol_ids, int *edge_ids) {
+    struct transmissive_n_zero_t_boundary *B = &GD->transmissive_n_zero_t;
+
+    B->num_edges = num_edges;
+    B->mapped = 0;
+    B->stage_value = 0.0;
+
+    if (num_edges == 0) {
+        B->boundary_indices = NULL;
+        B->vol_ids = NULL;
+        B->edge_ids = NULL;
+        return 0;
+    }
+
+    B->boundary_indices = (int*)malloc(num_edges * sizeof(int));
+    B->vol_ids = (int*)malloc(num_edges * sizeof(int));
+    B->edge_ids = (int*)malloc(num_edges * sizeof(int));
+
+    if (!B->boundary_indices || !B->vol_ids || !B->edge_ids) {
+        fprintf(stderr, "Failed to allocate transmissive_n_zero_t boundary arrays\n");
+        return -1;
+    }
+
+    memcpy(B->boundary_indices, boundary_indices, num_edges * sizeof(int));
+    memcpy(B->vol_ids, vol_ids, num_edges * sizeof(int));
+    memcpy(B->edge_ids, edge_ids, num_edges * sizeof(int));
+
+    if (GD->rank == 0) {
+        printf("Transmissive_n_zero_t boundary initialized: %d edges (GPU mapping deferred)\n", num_edges);
+    }
+
+    return 0;
+}
+
+void gpu_transmissive_n_zero_t_finalize(struct gpu_domain *GD) {
+    struct transmissive_n_zero_t_boundary *B = &GD->transmissive_n_zero_t;
+
+    if (B->mapped && B->num_edges > 0) {
+        int ne = B->num_edges;
+        int *b_idx = B->boundary_indices;
+        int *v_ids = B->vol_ids;
+        int *e_ids = B->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+    }
+
+    if (B->boundary_indices) free(B->boundary_indices);
+    if (B->vol_ids) free(B->vol_ids);
+    if (B->edge_ids) free(B->edge_ids);
+
+    B->num_edges = 0;
+    B->boundary_indices = NULL;
+    B->vol_ids = NULL;
+    B->edge_ids = NULL;
+    B->mapped = 0;
+}
+
+void gpu_transmissive_n_zero_t_set_stage(struct gpu_domain *GD, double stage_value) {
+    // Update stage value - called from Python each timestep before evaluate
+    GD->transmissive_n_zero_t.stage_value = stage_value;
+}
+
+void gpu_evaluate_transmissive_n_zero_t_boundary(struct gpu_domain *GD) {
+    // Transmissive normal momentum, zero tangential momentum, set stage
+    struct transmissive_n_zero_t_boundary *B = &GD->transmissive_n_zero_t;
+    if (B->num_edges == 0) return;
+    if (!B->mapped) return;
+
+    int num_edges = B->num_edges;
+    int *boundary_indices = B->boundary_indices;
+    int *vol_ids = B->vol_ids;
+    int *edge_ids = B->edge_ids;
+    double stage_val = B->stage_value;
+
+    // Edge values (read)
+    double *xmom_ev = GD->D.xmom_edge_values;
+    double *ymom_ev = GD->D.ymom_edge_values;
+    double *bed_ev = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+    double *normals = GD->D.normals;
+
+    // Boundary values (write)
+    double *stage_bv = GD->D.stage_boundary_values;
+    double *bed_bv = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
+    double *xmom_bv = GD->D.xmom_boundary_values;
+    double *ymom_bv = GD->D.ymom_boundary_values;
+
+    #pragma omp target teams distribute parallel for
+    for (int k = 0; k < num_edges; k++) {
+        int bid = boundary_indices[k];
+        int vid = vol_ids[k];
+        int eid = edge_ids[k];
+
+        // Set stage from external value
+        stage_bv[bid] = stage_val;
+
+        // Copy bed/height from interior edge
+        bed_bv[bid] = bed_ev[3 * vid + eid];
+        height_bv[bid] = height_ev[3 * vid + eid];
+
+        // Get normal vector for this edge
+        double n1 = normals[vid * 6 + 2 * eid];
+        double n2 = normals[vid * 6 + 2 * eid + 1];
+
+        // Get interior momentum
+        double q1 = xmom_ev[3 * vid + eid];
+        double q2 = ymom_ev[3 * vid + eid];
+
+        // Compute normal component of momentum (dot product with normal)
+        double ndotq = n1 * q1 + n2 * q2;
+
+        // Set boundary momentum to just the normal component (zero tangential)
+        xmom_bv[bid] = ndotq * n1;
+        ymom_bv[bid] = ndotq * n2;
+    }
+}
+
+// ============================================================================
 // GPU Memory Management
 // ============================================================================
 
@@ -644,6 +1013,7 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
     anuga_int n = GD->D.number_of_elements;
     anuga_int nb = GD->D.boundary_length;
     struct halo_exchange *H = &GD->halo;
+    struct reflective_boundary *R = &GD->reflective;
 
     // Extract pointers to local variables (OpenMP target can't handle struct->member syntax)
     double *stage_cv = GD->D.stage_centroid_values;
@@ -696,13 +1066,79 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         areas[0:n], radii[0:n], max_speed[0:n], \
         centroid_coords[0:2*n], edge_coords[0:6*n])
 
-    // Map boundary values if present
+    // Map boundary values if present (including bed and height for reflective boundary)
     if (nb > 0) {
         double *stage_bv = GD->D.stage_boundary_values;
         double *xmom_bv = GD->D.xmom_boundary_values;
         double *ymom_bv = GD->D.ymom_boundary_values;
+        double *bed_bv = GD->D.bed_boundary_values;
+        double *height_bv = GD->D.height_boundary_values;
         #pragma omp target enter data map(to: \
-            stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb])
+            stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
+            bed_bv[0:nb], height_bv[0:nb])
+    }
+
+    // Map reflective boundary arrays if initialized (must be done BEFORE this function is called)
+    if (R->num_edges > 0 && R->boundary_indices != NULL) {
+        int ne = R->num_edges;
+        int *b_idx = R->boundary_indices;
+        int *v_ids = R->vol_ids;
+        int *e_ids = R->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        R->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Reflective boundary arrays mapped to GPU: %d edges\n", ne);
+        }
+    }
+
+    // Map dirichlet boundary arrays if initialized
+    struct dirichlet_boundary *Dir = &GD->dirichlet;
+    if (Dir->num_edges > 0 && Dir->boundary_indices != NULL) {
+        int ne = Dir->num_edges;
+        int *b_idx = Dir->boundary_indices;
+        int *v_ids = Dir->vol_ids;
+        int *e_ids = Dir->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        Dir->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Dirichlet boundary arrays mapped to GPU: %d edges\n", ne);
+        }
+    }
+
+    // Map transmissive boundary arrays if initialized
+    struct transmissive_boundary *T = &GD->transmissive;
+    if (T->num_edges > 0 && T->boundary_indices != NULL) {
+        int ne = T->num_edges;
+        int *b_idx = T->boundary_indices;
+        int *v_ids = T->vol_ids;
+        int *e_ids = T->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        T->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Transmissive boundary arrays mapped to GPU: %d edges\n", ne);
+        }
+    }
+
+    // Map transmissive_n_zero_t boundary arrays if initialized
+    struct transmissive_n_zero_t_boundary *Tnzt = &GD->transmissive_n_zero_t;
+    if (Tnzt->num_edges > 0 && Tnzt->boundary_indices != NULL) {
+        int ne = Tnzt->num_edges;
+        int *b_idx = Tnzt->boundary_indices;
+        int *v_ids = Tnzt->vol_ids;
+        int *e_ids = Tnzt->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        Tnzt->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Transmissive_n_zero_t boundary arrays mapped to GPU: %d edges\n", ne);
+        }
     }
 
     // Map backup arrays for RK2 if present
@@ -797,8 +1233,55 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         double *stage_bv = GD->D.stage_boundary_values;
         double *xmom_bv = GD->D.xmom_boundary_values;
         double *ymom_bv = GD->D.ymom_boundary_values;
+        double *bed_bv = GD->D.bed_boundary_values;
+        double *height_bv = GD->D.height_boundary_values;
         #pragma omp target exit data map(delete: \
-            stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb])
+            stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
+            bed_bv[0:nb], height_bv[0:nb])
+    }
+
+    // Unmap reflective boundary arrays if mapped
+    struct reflective_boundary *R = &GD->reflective;
+    if (R->mapped && R->num_edges > 0) {
+        int ne = R->num_edges;
+        int *b_idx = R->boundary_indices;
+        int *v_ids = R->vol_ids;
+        int *e_ids = R->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        R->mapped = 0;
+    }
+
+    // Unmap dirichlet boundary arrays if mapped
+    struct dirichlet_boundary *Dir = &GD->dirichlet;
+    if (Dir->mapped && Dir->num_edges > 0) {
+        int ne = Dir->num_edges;
+        int *b_idx = Dir->boundary_indices;
+        int *v_ids = Dir->vol_ids;
+        int *e_ids = Dir->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        Dir->mapped = 0;
+    }
+
+    // Unmap transmissive boundary arrays if mapped
+    struct transmissive_boundary *T = &GD->transmissive;
+    if (T->mapped && T->num_edges > 0) {
+        int ne = T->num_edges;
+        int *b_idx = T->boundary_indices;
+        int *v_ids = T->vol_ids;
+        int *e_ids = T->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        T->mapped = 0;
+    }
+
+    // Unmap transmissive_n_zero_t boundary arrays if mapped
+    struct transmissive_n_zero_t_boundary *Tnzt = &GD->transmissive_n_zero_t;
+    if (Tnzt->mapped && Tnzt->num_edges > 0) {
+        int ne = Tnzt->num_edges;
+        int *b_idx = Tnzt->boundary_indices;
+        int *v_ids = Tnzt->vol_ids;
+        int *e_ids = Tnzt->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        Tnzt->mapped = 0;
     }
 
     if (GD->backup_arrays_mapped) {
