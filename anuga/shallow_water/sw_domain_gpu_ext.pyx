@@ -1,0 +1,676 @@
+#cython: wraparound=False, boundscheck=False, cdivision=True, profile=False, nonecheck=False, overflowcheck=False, cdivision_warnings=False, unraisable_tracebacks=False, warn.unused=False
+"""
+Cython wrapper for GPU-accelerated shallow water solver with MPI support.
+
+This module bridges Python (mpi4py, NumPy) to the C GPU implementation.
+Key responsibilities:
+- Extract MPI_Comm handle from mpi4py
+- Convert Python domain arrays to C pointers
+- Flatten Python ghost dicts to C arrays for GPU efficiency
+"""
+
+import cython
+from libc.stdint cimport int64_t, int32_t
+from libc.stdlib cimport malloc, free
+
+import numpy as np
+cimport numpy as np
+
+# Import mpi4py's MPI_Comm type
+from mpi4py cimport MPI
+from mpi4py.libmpi cimport MPI_Comm
+
+# External C declarations
+cdef extern from "sw_domain_gpu.c" nogil:
+    # Forward declare the structs
+    struct domain:
+        int64_t number_of_elements
+        int64_t boundary_length
+        double epsilon
+        double H0
+        double g
+        double minimum_allowed_height
+        double maximum_allowed_speed
+        double evolve_max_timestep
+        int64_t low_froude
+        int64_t extrapolate_velocity_second_order
+        # Beta values for gradient limiting
+        double beta_w
+        double beta_w_dry
+        double beta_uh
+        double beta_uh_dry
+        double beta_vh
+        double beta_vh_dry
+        # Centroid values
+        double* stage_centroid_values
+        double* xmom_centroid_values
+        double* ymom_centroid_values
+        double* bed_centroid_values
+        double* height_centroid_values
+        # Edge values
+        double* stage_edge_values
+        double* xmom_edge_values
+        double* ymom_edge_values
+        double* bed_edge_values
+        double* height_edge_values
+        # Updates
+        double* stage_explicit_update
+        double* xmom_explicit_update
+        double* ymom_explicit_update
+        double* stage_semi_implicit_update
+        double* xmom_semi_implicit_update
+        double* ymom_semi_implicit_update
+        # Boundary values
+        double* stage_boundary_values
+        double* xmom_boundary_values
+        double* ymom_boundary_values
+        # Backup for RK2
+        double* stage_backup_values
+        double* xmom_backup_values
+        double* ymom_backup_values
+        # Mesh connectivity
+        int64_t* neighbours
+        int64_t* neighbour_edges
+        int64_t* surrogate_neighbours
+        int64_t* number_of_boundaries
+        double* normals
+        double* edgelengths
+        double* areas
+        double* radii
+        double* max_speed
+        double* centroid_coordinates
+        double* edge_coordinates
+        # Work arrays for extrapolation
+        double* x_centroid_work
+        double* y_centroid_work
+        # Friction
+        double* friction_centroid_values
+
+    struct halo_exchange:
+        int num_neighbors
+        int* neighbor_ranks
+        int* send_counts
+        int* recv_counts
+        int total_send_size
+        int total_recv_size
+        int* flat_send_indices
+        int* flat_recv_indices
+        double* send_buffer
+        double* recv_buffer
+
+    struct gpu_domain:
+        domain D
+        MPI_Comm comm
+        int rank
+        int nprocs
+        int gpu_initialized
+        int device_id
+        int gpu_aware_mpi
+        halo_exchange halo
+        double CFL
+        double evolve_max_timestep
+
+    # Function declarations - initialization and cleanup
+    int gpu_domain_init(gpu_domain *GD, MPI_Comm comm, int rank, int nprocs)
+    void gpu_domain_finalize(gpu_domain *GD)
+    int gpu_halo_init(gpu_domain *GD, int num_neighbors, int *neighbor_ranks,
+                      int *send_counts, int *recv_counts,
+                      int *flat_send_indices, int *flat_recv_indices)
+    void gpu_halo_finalize(gpu_domain *GD)
+
+    # GPU memory management
+    void gpu_domain_map_arrays(gpu_domain *GD)
+    void gpu_domain_unmap_arrays(gpu_domain *GD)
+    void gpu_domain_sync_to_device(gpu_domain *GD)
+    void gpu_domain_sync_from_device(gpu_domain *GD)
+    void gpu_sync_boundary_values(gpu_domain *GD)
+
+    # MPI ghost exchange
+    void gpu_exchange_ghosts(gpu_domain *GD)
+
+    # GPU kernels
+    void gpu_extrapolate_second_order(gpu_domain *GD)
+    double gpu_compute_fluxes(gpu_domain *GD)
+    void gpu_update_conserved_quantities(gpu_domain *GD, double timestep)
+    void gpu_backup_conserved_quantities(gpu_domain *GD)
+    void gpu_saxpy_conserved_quantities(gpu_domain *GD, double a, double b)
+    double gpu_protect(gpu_domain *GD)
+    void gpu_manning_friction(gpu_domain *GD)
+
+    # Full RK2 step
+    double gpu_evolve_one_rk2_step(gpu_domain *GD, double yieldstep, int apply_forcing)
+    void print_gpu_domain_info(gpu_domain *GD)
+
+
+# ============================================================================
+# GPU Domain Wrapper Class
+# ============================================================================
+
+cdef class GPUDomain:
+    """
+    Wrapper class holding the C gpu_domain struct.
+    This provides a Python-accessible handle to the GPU domain state.
+    """
+    cdef gpu_domain GD
+    cdef bint initialized
+    cdef object python_domain  # Keep reference to prevent GC
+
+    def __cinit__(self):
+        self.initialized = False
+        self.python_domain = None
+
+    def __dealloc__(self):
+        if self.initialized:
+            gpu_domain_finalize(&self.GD)
+
+    @property
+    def rank(self):
+        return self.GD.rank
+
+    @property
+    def nprocs(self):
+        return self.GD.nprocs
+
+    @property
+    def gpu_initialized(self):
+        return self.GD.gpu_initialized
+
+    @property
+    def device_id(self):
+        return self.GD.device_id
+
+    @property
+    def gpu_aware_mpi(self):
+        return self.GD.gpu_aware_mpi
+
+    @property
+    def num_neighbors(self):
+        return self.GD.halo.num_neighbors
+
+
+# ============================================================================
+# MPI Communicator Extraction
+# ============================================================================
+
+cdef MPI_Comm get_mpi_comm():
+    """
+    Extract the raw MPI_Comm handle from mpi4py.
+
+    mpi4py exposes the C MPI_Comm via the .ob_mpi attribute on Comm objects.
+    This is the key bridge between Python MPI and C MPI calls.
+    """
+    import anuga.utilities.parallel_abstraction as pypar
+    cdef MPI.Comm comm = pypar.comm
+    return comm.ob_mpi
+
+
+cdef int get_mpi_rank():
+    """Get current MPI rank."""
+    import anuga.utilities.parallel_abstraction as pypar
+    # Use function if available (works in both MPI and non-MPI modes)
+    if hasattr(pypar, 'rank'):
+        return pypar.rank()
+    return pypar.myid
+
+
+cdef int get_mpi_size():
+    """Get total number of MPI processes."""
+    import anuga.utilities.parallel_abstraction as pypar
+    # Use function if available (works in both MPI and non-MPI modes)
+    if hasattr(pypar, 'size'):
+        return pypar.size()
+    return pypar.numprocs
+
+
+# ============================================================================
+# Domain Array Pointer Extraction
+# ============================================================================
+
+cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
+    """
+    Extract NumPy array pointers from Python domain object.
+
+    This mirrors the pattern from sw_domain_openmp_ext.pyx but targets
+    the gpu_domain struct.
+    """
+    cdef domain *D = &GD.D
+
+    # Typed memoryview declarations
+    cdef double[::1] stage_cv, xmom_cv, ymom_cv, bed_cv, height_cv
+    cdef double[:,::1] stage_ev, xmom_ev, ymom_ev, bed_ev, height_ev
+    cdef double[::1] stage_eu, xmom_eu, ymom_eu
+    cdef double[::1] stage_siu, xmom_siu, ymom_siu
+    cdef double[::1] stage_bv, xmom_bv, ymom_bv
+    cdef double[::1] stage_backup, xmom_backup, ymom_backup
+    cdef int64_t[:,::1] neighbours, neighbour_edges, surrogate_neighbours
+    cdef int64_t[::1] number_of_boundaries
+    cdef double[:,::1] normals, edgelengths
+    cdef double[::1] areas, radii, max_speed
+    cdef double[:,::1] centroid_coords, edge_coords
+    cdef double[::1] x_centroid_work, y_centroid_work
+
+    # Get basic parameters
+    D.number_of_elements = domain_object.number_of_elements
+    D.boundary_length = domain_object.boundary_length
+    D.epsilon = domain_object.epsilon
+    D.H0 = domain_object.H0
+    D.g = domain_object.g
+    D.minimum_allowed_height = domain_object.minimum_allowed_height
+    D.maximum_allowed_speed = domain_object.maximum_allowed_speed
+    D.evolve_max_timestep = domain_object.evolve_max_timestep
+    D.low_froude = domain_object.low_froude
+    D.extrapolate_velocity_second_order = domain_object.extrapolate_velocity_second_order
+
+    # Beta values for gradient limiting
+    D.beta_w = domain_object.beta_w
+    D.beta_w_dry = domain_object.beta_w_dry
+    D.beta_uh = domain_object.beta_uh
+    D.beta_uh_dry = domain_object.beta_uh_dry
+    D.beta_vh = domain_object.beta_vh
+    D.beta_vh_dry = domain_object.beta_vh_dry
+
+    # Get quantities dict
+    quantities = domain_object.quantities
+
+    # Stage
+    stage = quantities["stage"]
+    stage_cv = stage.centroid_values
+    D.stage_centroid_values = &stage_cv[0]
+    stage_ev = stage.edge_values
+    D.stage_edge_values = &stage_ev[0, 0]
+    stage_eu = stage.explicit_update
+    D.stage_explicit_update = &stage_eu[0]
+    stage_siu = stage.semi_implicit_update
+    D.stage_semi_implicit_update = &stage_siu[0]
+    stage_bv = stage.boundary_values
+    D.stage_boundary_values = &stage_bv[0]
+
+    # X-momentum
+    xmom = quantities["xmomentum"]
+    xmom_cv = xmom.centroid_values
+    D.xmom_centroid_values = &xmom_cv[0]
+    xmom_ev = xmom.edge_values
+    D.xmom_edge_values = &xmom_ev[0, 0]
+    xmom_eu = xmom.explicit_update
+    D.xmom_explicit_update = &xmom_eu[0]
+    xmom_siu = xmom.semi_implicit_update
+    D.xmom_semi_implicit_update = &xmom_siu[0]
+    xmom_bv = xmom.boundary_values
+    D.xmom_boundary_values = &xmom_bv[0]
+
+    # Y-momentum
+    ymom = quantities["ymomentum"]
+    ymom_cv = ymom.centroid_values
+    D.ymom_centroid_values = &ymom_cv[0]
+    ymom_ev = ymom.edge_values
+    D.ymom_edge_values = &ymom_ev[0, 0]
+    ymom_eu = ymom.explicit_update
+    D.ymom_explicit_update = &ymom_eu[0]
+    ymom_siu = ymom.semi_implicit_update
+    D.ymom_semi_implicit_update = &ymom_siu[0]
+    ymom_bv = ymom.boundary_values
+    D.ymom_boundary_values = &ymom_bv[0]
+
+    # Elevation (bed)
+    elev = quantities["elevation"]
+    bed_cv = elev.centroid_values
+    D.bed_centroid_values = &bed_cv[0]
+    bed_ev = elev.edge_values
+    D.bed_edge_values = &bed_ev[0, 0]
+
+    # Height
+    height = quantities["height"]
+    height_cv = height.centroid_values
+    D.height_centroid_values = &height_cv[0]
+    height_ev = height.edge_values
+    D.height_edge_values = &height_ev[0, 0]
+
+    # Mesh connectivity
+    neighbours = domain_object.neighbours
+    D.neighbours = &neighbours[0, 0]
+
+    neighbour_edges = domain_object.neighbour_edges
+    D.neighbour_edges = &neighbour_edges[0, 0]
+
+    surrogate_neighbours = domain_object.surrogate_neighbours
+    D.surrogate_neighbours = &surrogate_neighbours[0, 0]
+
+    number_of_boundaries = domain_object.number_of_boundaries
+    D.number_of_boundaries = &number_of_boundaries[0]
+
+    normals = domain_object.normals
+    D.normals = &normals[0, 0]
+
+    edgelengths = domain_object.edgelengths
+    D.edgelengths = &edgelengths[0, 0]
+
+    areas = domain_object.areas
+    D.areas = &areas[0]
+
+    radii = domain_object.radii
+    D.radii = &radii[0]
+
+    max_speed = domain_object.max_speed
+    D.max_speed = &max_speed[0]
+
+    centroid_coords = domain_object.centroid_coordinates
+    D.centroid_coordinates = &centroid_coords[0, 0]
+
+    edge_coords = domain_object.edge_coordinates
+    D.edge_coordinates = &edge_coords[0, 0]
+
+    # Work arrays for extrapolation
+    x_centroid_work = domain_object.x_centroid_work
+    D.x_centroid_work = &x_centroid_work[0]
+
+    y_centroid_work = domain_object.y_centroid_work
+    D.y_centroid_work = &y_centroid_work[0]
+
+    # Friction
+    cdef double[::1] friction_cv
+    friction = quantities["friction"]
+    friction_cv = friction.centroid_values
+    D.friction_centroid_values = &friction_cv[0]
+
+    # Backup arrays for RK2 - these are on each Quantity object
+    cdef double[::1] stage_backup_cv, xmom_backup_cv, ymom_backup_cv
+    stage_backup_cv = stage.centroid_backup_values
+    xmom_backup_cv = xmom.centroid_backup_values
+    ymom_backup_cv = ymom.centroid_backup_values
+    D.stage_backup_values = &stage_backup_cv[0]
+    D.xmom_backup_values = &xmom_backup_cv[0]
+    D.ymom_backup_values = &ymom_backup_cv[0]
+
+
+# ============================================================================
+# Halo Structure Building
+# ============================================================================
+
+cdef void build_halo_from_dicts(gpu_domain *GD, object domain_object):
+    """
+    Convert Python ghost dictionaries to flattened C arrays for GPU.
+
+    ANUGA stores ghost exchange info in:
+    - domain.full_send_dict[proc] = [indices, global_ids, buffer]
+    - domain.ghost_recv_dict[proc] = [indices, global_ids, buffer]
+
+    We flatten these to contiguous arrays for efficient GPU access.
+    """
+    full_send_dict = domain_object.full_send_dict
+    ghost_recv_dict = domain_object.ghost_recv_dict
+
+    # Count neighbors (excluding self)
+    my_rank = GD.rank
+    neighbors = []
+    for proc in full_send_dict:
+        if proc != my_rank:
+            neighbors.append(proc)
+
+    cdef int num_neighbors = len(neighbors)
+    if num_neighbors == 0:
+        return
+
+    # Allocate temporary arrays
+    cdef np.ndarray[int, ndim=1] neighbor_ranks = np.array(neighbors, dtype=np.int32)
+    cdef np.ndarray[int, ndim=1] send_counts = np.zeros(num_neighbors, dtype=np.int32)
+    cdef np.ndarray[int, ndim=1] recv_counts = np.zeros(num_neighbors, dtype=np.int32)
+
+    # Count send/recv sizes
+    cdef int total_send = 0
+    cdef int total_recv = 0
+    cdef int ni
+    for ni in range(num_neighbors):
+        proc = neighbor_ranks[ni]
+        send_counts[ni] = len(full_send_dict[proc][0])
+        recv_counts[ni] = len(ghost_recv_dict[proc][0])
+        total_send += send_counts[ni]
+        total_recv += recv_counts[ni]
+
+    # Flatten indices
+    cdef np.ndarray[int, ndim=1] flat_send = np.zeros(total_send, dtype=np.int32)
+    cdef np.ndarray[int, ndim=1] flat_recv = np.zeros(total_recv, dtype=np.int32)
+
+    cdef int send_offset = 0
+    cdef int recv_offset = 0
+    cdef int j, idx
+
+    for ni in range(num_neighbors):
+        proc = neighbor_ranks[ni]
+
+        # Copy send indices
+        send_indices = full_send_dict[proc][0]
+        for j in range(send_counts[ni]):
+            flat_send[send_offset + j] = send_indices[j]
+        send_offset += send_counts[ni]
+
+        # Copy recv indices
+        recv_indices = ghost_recv_dict[proc][0]
+        for j in range(recv_counts[ni]):
+            flat_recv[recv_offset + j] = recv_indices[j]
+        recv_offset += recv_counts[ni]
+
+    # Call C function to initialize halo
+    gpu_halo_init(GD, num_neighbors,
+                  <int*>neighbor_ranks.data,
+                  <int*>send_counts.data,
+                  <int*>recv_counts.data,
+                  <int*>flat_send.data,
+                  <int*>flat_recv.data)
+
+
+# ============================================================================
+# Public Python API
+# ============================================================================
+
+def init_gpu_domain(object domain_object):
+    """
+    Initialize GPU domain from Python domain object.
+
+    This is the main entry point called from Python. It:
+    1. Extracts MPI_Comm from mpi4py
+    2. Creates gpu_domain struct with array pointers
+    3. Builds flattened halo exchange structures
+    4. Returns a GPUDomain wrapper object
+
+    Parameters
+    ----------
+    domain_object : anuga.shallow_water.Domain
+        The Python domain object (must be already partitioned for MPI)
+
+    Returns
+    -------
+    GPUDomain
+        Wrapper object holding the GPU domain state
+    """
+    cdef MPI_Comm comm = get_mpi_comm()
+    cdef int rank = get_mpi_rank()
+    cdef int nprocs = get_mpi_size()
+
+    # Create wrapper object
+    gpu_dom = GPUDomain()
+
+    # Initialize C struct with MPI info
+    gpu_domain_init(&gpu_dom.GD, comm, rank, nprocs)
+
+    # Extract array pointers from Python domain
+    get_domain_pointers(&gpu_dom.GD, domain_object)
+
+    # Build halo exchange structures from ghost dicts
+    if hasattr(domain_object, 'full_send_dict') and domain_object.full_send_dict:
+        build_halo_from_dicts(&gpu_dom.GD, domain_object)
+
+    # Keep reference to Python domain to prevent GC of arrays
+    gpu_dom.python_domain = domain_object
+    gpu_dom.initialized = True
+
+    if rank == 0:
+        print(f"GPU domain initialized: {gpu_dom.GD.D.number_of_elements} elements")
+        print_gpu_domain_info(&gpu_dom.GD)
+
+    return gpu_dom
+
+
+def map_to_gpu(GPUDomain gpu_dom):
+    """
+    Map domain arrays to GPU memory.
+
+    Call this once after init_gpu_domain, before starting the evolve loop.
+    """
+    gpu_domain_map_arrays(&gpu_dom.GD)
+
+
+def unmap_from_gpu(GPUDomain gpu_dom):
+    """
+    Unmap domain arrays from GPU memory.
+
+    Call this when done with GPU computation.
+    """
+    gpu_domain_unmap_arrays(&gpu_dom.GD)
+
+
+def sync_to_device(GPUDomain gpu_dom):
+    """
+    Sync centroid values from host to device.
+
+    Call this after Python modifies arrays (e.g., boundary updates).
+    """
+    gpu_domain_sync_to_device(&gpu_dom.GD)
+
+
+def sync_from_device(GPUDomain gpu_dom):
+    """
+    Sync centroid values from device to host.
+
+    Call this before Python needs to read arrays (e.g., at yieldstep for I/O).
+    """
+    gpu_domain_sync_from_device(&gpu_dom.GD)
+
+
+def sync_boundary_values(GPUDomain gpu_dom):
+    """
+    Sync boundary values from host to device.
+
+    Call this after Python updates boundary conditions.
+    """
+    gpu_sync_boundary_values(&gpu_dom.GD)
+
+
+def exchange_ghosts(GPUDomain gpu_dom):
+    """
+    Exchange ghost cell data between MPI ranks.
+
+    This uses GPU-aware MPI if available, otherwise does efficient
+    D2H/H2D transfers of only the small halo buffers.
+    """
+    gpu_exchange_ghosts(&gpu_dom.GD)
+
+
+def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double yieldstep, int apply_forcing):
+    """
+    Execute one RK2 timestep on GPU.
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    yieldstep : float
+        The yieldstep duration
+    apply_forcing : int
+        Whether to apply GPU-compatible forcing terms
+
+    Returns
+    -------
+    float
+        The timestep used
+    """
+    return gpu_evolve_one_rk2_step(&gpu_dom.GD, yieldstep, apply_forcing)
+
+
+def finalize_gpu_domain(GPUDomain gpu_dom):
+    """
+    Clean up GPU domain resources.
+
+    This is called automatically when GPUDomain is garbage collected,
+    but can be called explicitly for deterministic cleanup.
+    """
+    if gpu_dom.initialized:
+        gpu_domain_finalize(&gpu_dom.GD)
+        gpu_dom.initialized = False
+
+
+# ============================================================================
+# GPU Kernel Wrappers
+# ============================================================================
+
+def extrapolate_second_order_gpu(GPUDomain gpu_dom):
+    """
+    Perform second-order edge extrapolation on GPU.
+
+    This extrapolates centroid values to edge values using a limited
+    gradient reconstruction. Handles wet-dry fronts with adaptive limiting.
+    """
+    gpu_extrapolate_second_order(&gpu_dom.GD)
+
+
+def compute_fluxes_gpu(GPUDomain gpu_dom):
+    """
+    Compute fluxes across all edges on GPU.
+
+    Uses the central upwind Kurganov-Noelle-Petrova scheme.
+
+    Returns
+    -------
+    float
+        The local minimum timestep (caller should do MPI_Allreduce for global min)
+    """
+    return gpu_compute_fluxes(&gpu_dom.GD)
+
+
+def update_conserved_quantities_gpu(GPUDomain gpu_dom, double timestep):
+    """
+    Update conserved quantities using explicit and semi-implicit updates.
+
+    Q_new = (Q_old + timestep * explicit_update) / (1 - timestep * semi_implicit_update)
+    """
+    gpu_update_conserved_quantities(&gpu_dom.GD, timestep)
+
+
+def backup_conserved_quantities_gpu(GPUDomain gpu_dom):
+    """
+    Backup centroid values for RK2 timestepping.
+    """
+    gpu_backup_conserved_quantities(&gpu_dom.GD)
+
+
+def saxpy_conserved_quantities_gpu(GPUDomain gpu_dom, double a, double b):
+    """
+    RK2 combination: Q = a*Q_current + b*Q_backup
+
+    Typically called with a=0.5, b=0.5 for standard RK2.
+    """
+    gpu_saxpy_conserved_quantities(&gpu_dom.GD, a, b)
+
+
+def protect_gpu(GPUDomain gpu_dom):
+    """
+    Protect against negative water depths.
+
+    Sets stage = bed where water depth would be negative,
+    and zeros momentum where depth is very small.
+
+    Returns
+    -------
+    float
+        Mass error (total volume added to prevent negative depths)
+    """
+    return gpu_protect(&gpu_dom.GD)
+
+
+def manning_friction_gpu(GPUDomain gpu_dom):
+    """
+    Apply Manning friction on GPU (flat, semi-implicit formulation).
+
+    Adds friction contribution to the semi_implicit_update arrays.
+    The friction is then applied during update_conserved_quantities.
+    """
+    gpu_manning_friction(&gpu_dom.GD)

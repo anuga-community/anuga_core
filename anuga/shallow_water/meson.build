@@ -84,6 +84,7 @@ python_sources = [
 '__init__.py',
 'most2nc.py',
 'shallow_water_domain.py',
+'sw_domain_gpu_omp.py',
 'sww_interrogate.py',
 'tsh2sww.py',
 ]

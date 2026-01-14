@@ -1992,7 +1992,11 @@ class Domain(Generic_Domain):
             boundary_segment_edges = self.tag_boundary_cells[tag]
 
             B.evaluate_segment(self, boundary_segment_edges)
-        
+
+        # Sync boundary values to GPU if in GPU mode
+        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+            self.gpu_interface.sync_boundary_values()
+
         nvtxRangePop()
 
 
@@ -2001,15 +2005,27 @@ class Domain(Generic_Domain):
         they should be defined in Domain subclass and appended to
         the list self.forcing_terms
         """
-    
+
         # The parameter self.flux_timestep should be updated
         # by the forcing_terms to ensure stability but it isn't
         # currently.
 
         nvtxRangePush('compute_forcing_terms')
 
-        for f in self.forcing_terms:
-            f(self)
+        if self.multiprocessor_mode == 2:
+            # GPU mode: use GPU Manning friction, fall back to CPU for others
+            for f in self.forcing_terms:
+                if f.__name__ == 'manning_friction_semi_implicit':
+                    self.gpu_interface.manning_friction_kernel(self)
+                else:
+                    # Other forcing terms (rain, etc.) run on CPU
+                    # Need to sync from device, run, sync back
+                    self.gpu_interface.sync_from_device()
+                    f(self)
+                    self.gpu_interface.sync_to_device()
+        else:
+            for f in self.forcing_terms:
+                f(self)
 
         nvtxRangePop()
 
@@ -2693,8 +2709,13 @@ class Domain(Generic_Domain):
         vertices and edges
         """
 
+        # HIJACKED: Direct GPU implementation for testing
+        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+            self._evolve_one_rk2_step_gpu(yieldstep, finaltime)
+            return
+
         # Save initial initial conserved quantities values
-        self.backup_conserved_quantities() # has C, ported to GPU 
+        self.backup_conserved_quantities() # has C, ported to GPU
 
         #==========================================
         # First euler step
@@ -2760,6 +2781,90 @@ class Domain(Generic_Domain):
 
         # Combine steps
         self.saxpy_conserved_quantities(0.5, 0.5) # has C, not ported
+
+    def _evolve_one_rk2_step_gpu(self, yieldstep, finaltime):
+        """Direct GPU implementation of RK2 step for testing."""
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            backup_conserved_quantities_gpu,
+            extrapolate_second_order_gpu,
+            protect_gpu,
+            compute_fluxes_gpu,
+            update_conserved_quantities_gpu,
+            saxpy_conserved_quantities_gpu,
+            manning_friction_gpu,
+            sync_boundary_values,
+            exchange_ghosts,
+        )
+
+        gpu_dom = self.gpu_interface.gpu_dom
+
+        # Backup for RK2
+        backup_conserved_quantities_gpu(gpu_dom)
+
+        #==========================================
+        # First Euler step
+        #==========================================
+
+        # Protect + Extrapolate
+        protect_gpu(gpu_dom)
+        extrapolate_second_order_gpu(gpu_dom)
+
+        # Boundary conditions (CPU, then sync to GPU)
+        for tag in self.tag_boundary_cells:
+            B = self.boundary_map[tag]
+            if B is not None:
+                B.evaluate_segment(self, self.tag_boundary_cells[tag])
+        sync_boundary_values(gpu_dom)
+
+        # Compute fluxes
+        self.flux_timestep = compute_fluxes_gpu(gpu_dom)
+
+        # Manning friction
+        manning_friction_gpu(gpu_dom)
+
+        # Update timestep (CPU)
+        self.update_timestep(yieldstep, finaltime)
+
+        # Update conserved quantities
+        update_conserved_quantities_gpu(gpu_dom, self.timestep)
+
+        #===========================
+        # End of first Euler step
+        #===========================
+
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+
+        # Ghost exchange (MPI)
+        if self.ghost_layer_width < 4:
+            exchange_ghosts(gpu_dom)
+
+        #=========================================
+        # Second Euler step
+        #=========================================
+
+        protect_gpu(gpu_dom)
+        extrapolate_second_order_gpu(gpu_dom)
+
+        # Boundary conditions
+        for tag in self.tag_boundary_cells:
+            B = self.boundary_map[tag]
+            if B is not None:
+                B.evaluate_segment(self, self.tag_boundary_cells[tag])
+        sync_boundary_values(gpu_dom)
+
+        # Compute fluxes (ignore timestep from second step)
+        compute_fluxes_gpu(gpu_dom)
+
+        # Manning friction
+        manning_friction_gpu(gpu_dom)
+
+        # Update conserved quantities
+        update_conserved_quantities_gpu(gpu_dom, self.timestep)
+
+        #========================================
+        # Combine initial and final values
+        #========================================
+        saxpy_conserved_quantities_gpu(gpu_dom, 0.5, 0.5)
 
 
     def evolve_one_rk3_step(self, yieldstep, finaltime):
@@ -2891,6 +2996,8 @@ class Domain(Generic_Domain):
         if self.multiprocessor_mode == 1:
             from anuga.shallow_water.sw_domain_openmp_ext import backup_conserved_quantities
             backup_conserved_quantities(self)
+        elif self.multiprocessor_mode == 2:
+            self.gpu_interface.backup_conserved_quantities_kernel(self)
         else:
             for name in self.conserved_quantities:
                 Q = self.quantities[name]
@@ -2904,12 +3011,24 @@ class Domain(Generic_Domain):
                 c = 1.0
             from anuga.shallow_water.sw_domain_openmp_ext import saxpy_conserved_quantities
             saxpy_conserved_quantities(self, a, b, c)
+        elif self.multiprocessor_mode == 2:
+            # GPU version doesn't support c parameter yet
+            self.gpu_interface.saxpy_conserved_quantities_kernel(self, a, b)
         else:
             for name in self.conserved_quantities:
                 Q = self.quantities[name]
                 Q.saxpy_centroid_values(a, b)
                 if c is not None:
                     Q.centroid_values[:] = Q.centroid_values / c
+
+    def update_ghosts(self, quantities=None):
+        """Override to use GPU ghost exchange when in GPU mode."""
+        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+            # Use GPU-aware MPI ghost exchange
+            self.gpu_interface.exchange_ghosts()
+        else:
+            # Fall back to parent implementation
+            super().update_ghosts(quantities)
 
     def timestepping_statistics(self,
                                 track_speeds=False,
@@ -3369,24 +3488,37 @@ class Domain(Generic_Domain):
 
         if self.multiprocessor_mode == 2 and self.gpu_interface is None:
 
-            # first check that cupy is available
+            # Try OpenMP target offloading interface first
+            try:
+                from .sw_domain_gpu_omp import GPU_OMP_interface
+                self.gpu_interface = GPU_OMP_interface(self)
+                self.gpu_interface.setup()
+                print('+==============================================================================+')
+                print('| GPU interface initialized using OpenMP target offloading                    |')
+                print('+==============================================================================+')
+                return
+            except ImportError as e:
+                print(f'OpenMP GPU interface not available: {e}')
+
+            # Fall back to CUDA/CuPy interface
             try:
                 import cupy as cp
                 test_cupy_array = cp.array([1,2,3])
-
-            except:
-                print('+==============================================================================+')
-                print('|                                                                              |')
-                print('| WARNING: cupy or gpu not available, so falling back to multiprocessor_mode 1 |')
-                print('|                                                                              |')
-                print('+==============================================================================+')
-                self.set_multiprocessor_mode(1)
+                from .sw_domain_cuda import GPU_interface
+                self.gpu_interface = GPU_interface(self)
+                self.gpu_interface.allocate_gpu_arrays()
+                self.gpu_interface.compile_gpu_kernels()
                 return
+            except:
+                pass
 
-            from .sw_domain_cuda import GPU_interface
-            self.gpu_interface = GPU_interface(self)
-            self.gpu_interface.allocate_gpu_arrays()
-            self.gpu_interface.compile_gpu_kernels()
+            # No GPU available
+            print('+==============================================================================+')
+            print('|                                                                              |')
+            print('| WARNING: GPU not available, falling back to multiprocessor_mode 1 (OpenMP)  |')
+            print('|                                                                              |')
+            print('+==============================================================================+')
+            self.set_multiprocessor_mode(1)
            
         
 

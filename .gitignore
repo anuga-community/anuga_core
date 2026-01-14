@@ -18,7 +18,7 @@
 .*.sw[nop]
 .sw[nop]
 *.pstat
-*.c
+#*.c
 *.cpp
 *.tmp
 *.rst

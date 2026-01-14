@@ -1,0 +1,1522 @@
+// GPU-accelerated shallow water solver with MPI halo exchange
+//
+// Implements:
+// - MPI communicator integration (passed from mpi4py)
+// - GPU-aware MPI halo exchange (with fallback for non-GPU-aware MPI)
+// - OpenMP target offloading for GPU kernels
+//
+// Based on miniapp_mpi.c patterns adapted for ANUGA's data structures
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <math.h>
+#include <omp.h>
+#include <mpi.h>
+#include "sw_domain_gpu.h"
+
+// ============================================================================
+// Flux Computation Helper Functions (device code)
+// These are marked with #pragma omp declare target for GPU execution
+// ============================================================================
+
+#pragma omp declare target
+
+// Small constant for avoiding division by zero
+static const double GPU_TINY = 1.0e-100;
+
+// ============================================================================
+// Extrapolation Helper Functions (device code)
+// ============================================================================
+
+// Find qmin and qmax from three differences
+static inline void gpu_find_qmin_and_qmax_dq1_dq2(
+    double dq0, double dq1, double dq2,
+    double *qmin, double *qmax) {
+    *qmax = fmax(fmax(dq0, fmax(dq0 + dq1, dq0 + dq2)), 0.0);
+    *qmin = fmin(fmin(dq0, fmin(dq0 + dq1, dq0 + dq2)), 0.0);
+}
+
+// Find qmin and qmax from single difference
+static inline void gpu_compute_qmin_qmax_from_dq1(double dq1, double *qmin, double *qmax) {
+    if (dq1 >= 0.0) {
+        *qmin = 0.0;
+        *qmax = dq1;
+    } else {
+        *qmin = dq1;
+        *qmax = 0.0;
+    }
+}
+
+// Limit gradient to enforce monotonicity
+static inline void gpu_limit_gradient(double *dqv, double qmin, double qmax, double beta_w) {
+    double r = 1000.0;
+
+    double dq_x = dqv[0];
+    double dq_y = dqv[1];
+    double dq_z = dqv[2];
+
+    if (dq_x < -GPU_TINY) {
+        r = fmin(r, qmin / dq_x);
+    } else if (dq_x > GPU_TINY) {
+        r = fmin(r, qmax / dq_x);
+    }
+    if (dq_y < -GPU_TINY) {
+        r = fmin(r, qmin / dq_y);
+    } else if (dq_y > GPU_TINY) {
+        r = fmin(r, qmax / dq_y);
+    }
+    if (dq_z < -GPU_TINY) {
+        r = fmin(r, qmin / dq_z);
+    } else if (dq_z > GPU_TINY) {
+        r = fmin(r, qmax / dq_z);
+    }
+
+    double phi = fmin(r * beta_w, 1.0);
+
+    dqv[0] *= phi;
+    dqv[1] *= phi;
+    dqv[2] *= phi;
+}
+
+// Compute edge values with gradient limiting (for typical case with 3 neighbors)
+static inline void gpu_calc_edge_values_with_gradient(
+    double cv_k, double cv_k0, double cv_k1, double cv_k2,
+    double dxv0, double dxv1, double dxv2,
+    double dyv0, double dyv1, double dyv2,
+    double dx1, double dx2, double dy1, double dy2,
+    double inv_area2, double beta_tmp, double *edge_values) {
+
+    double dqv[3];
+    double dq0 = cv_k0 - cv_k;
+    double dq1 = cv_k1 - cv_k0;
+    double dq2 = cv_k2 - cv_k0;
+
+    double a = (dy2 * dq1 - dy1 * dq2) * inv_area2;
+    double b = (dx1 * dq2 - dx2 * dq1) * inv_area2;
+
+    dqv[0] = a * dxv0 + b * dyv0;
+    dqv[1] = a * dxv1 + b * dyv1;
+    dqv[2] = a * dxv2 + b * dyv2;
+
+    double qmin, qmax;
+    gpu_find_qmin_and_qmax_dq1_dq2(dq0, dq1, dq2, &qmin, &qmax);
+    gpu_limit_gradient(dqv, qmin, qmax, beta_tmp);
+
+    edge_values[0] = cv_k + dqv[0];
+    edge_values[1] = cv_k + dqv[1];
+    edge_values[2] = cv_k + dqv[2];
+}
+
+// Set constant edge values (for zero beta or boundary cases)
+static inline void gpu_set_constant_edge_values(double cv_k, double *edge_values) {
+    edge_values[0] = cv_k;
+    edge_values[1] = cv_k;
+    edge_values[2] = cv_k;
+}
+
+// Compute dqv from gradient (for boundary case with single neighbor)
+static inline void gpu_compute_dqv_from_gradient(
+    double dq1, double dx2, double dy2,
+    double dxv0, double dxv1, double dxv2,
+    double dyv0, double dyv1, double dyv2,
+    double *dqv) {
+    double a = dq1 * dx2;
+    double b = dq1 * dy2;
+
+    dqv[0] = a * dxv0 + b * dyv0;
+    dqv[1] = a * dxv1 + b * dyv1;
+    dqv[2] = a * dxv2 + b * dyv2;
+}
+
+// ============================================================================
+// Flux Computation Helper Functions (device code)
+// ============================================================================
+
+// Rotate momentum components to align with edge normal
+static inline void gpu_rotate(double *q, double n1, double n2) {
+    double q1 = q[1];
+    double q2 = q[2];
+    q[1] = n1 * q1 + n2 * q2;
+    q[2] = -n2 * q1 + n1 * q2;
+}
+
+// Compute velocity terms with zero-depth handling
+static inline void gpu_compute_velocity_terms(
+    double h, double h_edge,
+    double uh_raw, double vh_raw,
+    double *u, double *uh, double *v, double *vh) {
+    if (h_edge > 0.0) {
+        double inv_h_edge = 1.0 / h_edge;
+        *u = uh_raw * inv_h_edge;
+        *uh = h * (*u);
+        *v = vh_raw * inv_h_edge;
+        *vh = h * inv_h_edge * vh_raw;
+    } else {
+        *u = 0.0;
+        *uh = 0.0;
+        *v = 0.0;
+        *vh = 0.0;
+    }
+}
+
+// Compute local Froude number for low-Froude corrections
+static inline double gpu_compute_local_froude(
+    anuga_int low_froude,
+    double u_left, double u_right,
+    double v_left, double v_right,
+    double soundspeed_left, double soundspeed_right) {
+    double numerator = u_right * u_right + u_left * u_left +
+                       v_right * v_right + v_left * v_left;
+    double denominator = soundspeed_left * soundspeed_left +
+                         soundspeed_right * soundspeed_right + 1.0e-10;
+
+    if (low_froude == 1) {
+        return sqrt(fmax(0.001, fmin(1.0, numerator / denominator)));
+    } else if (low_froude == 2) {
+        double fr = sqrt(numerator / denominator);
+        return sqrt(fmin(1.0, 0.01 + fmax(fr - 0.01, 0.0)));
+    } else {
+        return 1.0;
+    }
+}
+
+// Maximum wave speed (positive direction)
+static inline double gpu_compute_s_max(double u_left, double u_right,
+                                       double c_left, double c_right) {
+    double s = fmax(u_left + c_left, u_right + c_right);
+    return (s < 0.0) ? 0.0 : s;
+}
+
+// Minimum wave speed (negative direction)
+static inline double gpu_compute_s_min(double u_left, double u_right,
+                                       double c_left, double c_right) {
+    double s = fmin(u_left - c_left, u_right - c_right);
+    return (s > 0.0) ? 0.0 : s;
+}
+
+// Central flux function - Kurganov-Noelle-Petrova scheme
+static inline void gpu_flux_function_central(
+    double *q_left, double *q_right,
+    double h_left, double h_right,
+    double hle, double hre,
+    double n1, double n2,
+    double epsilon, double ze, double g,
+    double *edgeflux, double *max_speed, double *pressure_flux,
+    anuga_int low_froude) {
+
+    double uh_left, vh_left, u_left, v_left;
+    double uh_right, vh_right, u_right, v_right;
+    double soundspeed_left, soundspeed_right;
+    double q_left_rotated[3], q_right_rotated[3];
+    double flux_left[3], flux_right[3];
+
+    // Copy and rotate to edge-aligned coordinates
+    for (int i = 0; i < 3; i++) {
+        q_left_rotated[i] = q_left[i];
+        q_right_rotated[i] = q_right[i];
+    }
+    gpu_rotate(q_left_rotated, n1, n2);
+    gpu_rotate(q_right_rotated, n1, n2);
+
+    // Compute velocities
+    uh_left = q_left_rotated[1];
+    vh_left = q_left_rotated[2];
+    gpu_compute_velocity_terms(h_left, hle, q_left_rotated[1], q_left_rotated[2],
+                               &u_left, &uh_left, &v_left, &vh_left);
+
+    uh_right = q_right_rotated[1];
+    vh_right = q_right_rotated[2];
+    gpu_compute_velocity_terms(h_right, hre, q_right_rotated[1], q_right_rotated[2],
+                               &u_right, &uh_right, &v_right, &vh_right);
+
+    // Wave speeds
+    soundspeed_left = sqrt(g * h_left);
+    soundspeed_right = sqrt(g * h_right);
+
+    double local_fr = gpu_compute_local_froude(low_froude, u_left, u_right,
+                                               v_left, v_right,
+                                               soundspeed_left, soundspeed_right);
+
+    double s_max = gpu_compute_s_max(u_left, u_right, soundspeed_left, soundspeed_right);
+    double s_min = gpu_compute_s_min(u_left, u_right, soundspeed_left, soundspeed_right);
+
+    // Physical fluxes
+    flux_left[0] = u_left * h_left;
+    flux_left[1] = u_left * uh_left;
+    flux_left[2] = u_left * vh_left;
+
+    flux_right[0] = u_right * h_right;
+    flux_right[1] = u_right * uh_right;
+    flux_right[2] = u_right * vh_right;
+
+    // Central upwind flux
+    double denom = s_max - s_min;
+    double inverse_denominator = 1.0 / fmax(denom, 1.0e-100);
+    double s_max_s_min = s_max * s_min;
+
+    if (denom < epsilon) {
+        // Both wave speeds very small
+        edgeflux[0] = 0.0;
+        edgeflux[1] = 0.0;
+        edgeflux[2] = 0.0;
+        *max_speed = 0.0;
+        *pressure_flux = 0.5 * g * 0.5 * (h_left * h_left + h_right * h_right);
+    } else {
+        *max_speed = fmax(s_max, -s_min);
+
+        double flux_0 = s_max * flux_left[0] - s_min * flux_right[0];
+        flux_0 += s_max_s_min * (fmax(q_right_rotated[0], ze) - fmax(q_left_rotated[0], ze));
+        edgeflux[0] = flux_0 * inverse_denominator;
+
+        double flux_1 = s_max * flux_left[1] - s_min * flux_right[1];
+        flux_1 += local_fr * s_max_s_min * (uh_right - uh_left);
+        edgeflux[1] = flux_1 * inverse_denominator;
+
+        double flux_2 = s_max * flux_left[2] - s_min * flux_right[2];
+        flux_2 += local_fr * s_max_s_min * (vh_right - vh_left);
+        edgeflux[2] = flux_2 * inverse_denominator;
+
+        *pressure_flux = 0.5 * g * (s_max * h_left * h_left - s_min * h_right * h_right) * inverse_denominator;
+
+        // Rotate back
+        gpu_rotate(edgeflux, n1, -n2);
+    }
+}
+
+#pragma omp end declare target
+
+// ============================================================================
+// Utility Functions
+// ============================================================================
+
+// Detect if MPI library supports GPU-aware communication
+// This is a runtime check - compile with -DGPU_AWARE_MPI to force enable
+int detect_gpu_aware_mpi(void) {
+#ifdef GPU_AWARE_MPI
+    return 1;
+#else
+    // Could add runtime detection here (e.g., check MPIX_Query_cuda_support)
+    // For now, default to disabled - user must compile with -DGPU_AWARE_MPI
+    return 0;
+#endif
+}
+
+void print_gpu_domain_info(struct gpu_domain *GD) {
+    printf("GPU Domain Info (rank %d/%d):\n", GD->rank, GD->nprocs);
+    printf("  Elements: %" PRId64 "\n", GD->D.number_of_elements);
+    printf("  GPU initialized: %d\n", GD->gpu_initialized);
+    printf("  GPU-aware MPI: %d\n", GD->gpu_aware_mpi);
+    printf("  Halo neighbors: %d\n", GD->halo.num_neighbors);
+    if (GD->halo.num_neighbors > 0) {
+        printf("  Total send: %d, Total recv: %d\n",
+               GD->halo.total_send_size, GD->halo.total_recv_size);
+    }
+}
+
+// ============================================================================
+// Initialization and Cleanup
+// ============================================================================
+
+int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) {
+    // Store MPI info
+    GD->comm = comm;
+    GD->rank = rank;
+    GD->nprocs = nprocs;
+
+    // Initialize GPU state
+    GD->gpu_initialized = 0;
+    GD->backup_arrays_mapped = 0;
+
+    // Select GPU device (round-robin if more ranks than GPUs)
+    int num_devices = omp_get_num_devices();
+    if (num_devices > 0) {
+        GD->device_id = rank % num_devices;
+        omp_set_default_device(GD->device_id);
+    } else {
+        GD->device_id = -1;
+        if (rank == 0) {
+            fprintf(stderr, "Warning: No GPU devices found, will use CPU fallback\n");
+        }
+    }
+
+    // Detect GPU-aware MPI
+    GD->gpu_aware_mpi = detect_gpu_aware_mpi();
+
+    // Initialize halo to empty
+    GD->halo.num_neighbors = 0;
+    GD->halo.neighbor_ranks = NULL;
+    GD->halo.send_counts = NULL;
+    GD->halo.recv_counts = NULL;
+    GD->halo.total_send_size = 0;
+    GD->halo.total_recv_size = 0;
+    GD->halo.flat_send_indices = NULL;
+    GD->halo.flat_recv_indices = NULL;
+    GD->halo.send_offsets = NULL;
+    GD->halo.recv_offsets = NULL;
+    GD->halo.send_buffer = NULL;
+    GD->halo.recv_buffer = NULL;
+    GD->halo.requests = NULL;
+
+    // Default simulation parameters
+    GD->CFL = 1.0;
+    GD->evolve_max_timestep = 1.0e10;
+
+    return 0;
+}
+
+void gpu_domain_finalize(struct gpu_domain *GD) {
+    // Unmap GPU arrays if mapped
+    if (GD->gpu_initialized) {
+        gpu_domain_unmap_arrays(GD);
+    }
+
+    // Free halo structures
+    gpu_halo_finalize(GD);
+
+    GD->gpu_initialized = 0;
+}
+
+// ============================================================================
+// Halo Exchange Setup
+// ============================================================================
+
+int gpu_halo_init(struct gpu_domain *GD,
+                  int num_neighbors,
+                  int *neighbor_ranks,
+                  int *send_counts,
+                  int *recv_counts,
+                  int *flat_send_indices,
+                  int *flat_recv_indices) {
+    struct halo_exchange *H = &GD->halo;
+
+    H->num_neighbors = num_neighbors;
+
+    if (num_neighbors == 0) {
+        // No communication needed
+        return 0;
+    }
+
+    // Allocate and copy neighbor info
+    H->neighbor_ranks = (int *)malloc(num_neighbors * sizeof(int));
+    H->send_counts = (int *)malloc(num_neighbors * sizeof(int));
+    H->recv_counts = (int *)malloc(num_neighbors * sizeof(int));
+    H->send_offsets = (int *)malloc((num_neighbors + 1) * sizeof(int));
+    H->recv_offsets = (int *)malloc((num_neighbors + 1) * sizeof(int));
+
+    memcpy(H->neighbor_ranks, neighbor_ranks, num_neighbors * sizeof(int));
+    memcpy(H->send_counts, send_counts, num_neighbors * sizeof(int));
+    memcpy(H->recv_counts, recv_counts, num_neighbors * sizeof(int));
+
+    // Compute total sizes and offsets
+    H->total_send_size = 0;
+    H->total_recv_size = 0;
+    H->send_offsets[0] = 0;
+    H->recv_offsets[0] = 0;
+
+    for (int ni = 0; ni < num_neighbors; ni++) {
+        H->total_send_size += send_counts[ni];
+        H->total_recv_size += recv_counts[ni];
+        H->send_offsets[ni + 1] = H->total_send_size;
+        H->recv_offsets[ni + 1] = H->total_recv_size;
+    }
+
+    // Allocate and copy flattened index arrays
+    H->flat_send_indices = (int *)malloc(H->total_send_size * sizeof(int));
+    H->flat_recv_indices = (int *)malloc(H->total_recv_size * sizeof(int));
+
+    memcpy(H->flat_send_indices, flat_send_indices, H->total_send_size * sizeof(int));
+    memcpy(H->flat_recv_indices, flat_recv_indices, H->total_recv_size * sizeof(int));
+
+    // Allocate communication buffers
+    // 3 quantities per element: stage, xmom, ymom centroid values
+    H->send_buffer = (double *)malloc(3 * H->total_send_size * sizeof(double));
+    H->recv_buffer = (double *)malloc(3 * H->total_recv_size * sizeof(double));
+
+    // Allocate MPI request array
+    H->requests = (MPI_Request *)malloc(2 * num_neighbors * sizeof(MPI_Request));
+
+    if (GD->rank == 0) {
+        printf("GPU halo exchange initialized:\n");
+        printf("  Neighbors: %d\n", num_neighbors);
+        printf("  Total send: %d elements\n", H->total_send_size);
+        printf("  Total recv: %d elements\n", H->total_recv_size);
+    }
+
+    return 0;
+}
+
+void gpu_halo_finalize(struct gpu_domain *GD) {
+    struct halo_exchange *H = &GD->halo;
+
+    if (H->neighbor_ranks) free(H->neighbor_ranks);
+    if (H->send_counts) free(H->send_counts);
+    if (H->recv_counts) free(H->recv_counts);
+    if (H->send_offsets) free(H->send_offsets);
+    if (H->recv_offsets) free(H->recv_offsets);
+    if (H->flat_send_indices) free(H->flat_send_indices);
+    if (H->flat_recv_indices) free(H->flat_recv_indices);
+    if (H->send_buffer) free(H->send_buffer);
+    if (H->recv_buffer) free(H->recv_buffer);
+    if (H->requests) free(H->requests);
+
+    H->num_neighbors = 0;
+    H->neighbor_ranks = NULL;
+    H->send_counts = NULL;
+    H->recv_counts = NULL;
+    H->send_offsets = NULL;
+    H->recv_offsets = NULL;
+    H->flat_send_indices = NULL;
+    H->flat_recv_indices = NULL;
+    H->send_buffer = NULL;
+    H->recv_buffer = NULL;
+    H->requests = NULL;
+}
+
+// ============================================================================
+// GPU Memory Management
+// ============================================================================
+
+void gpu_domain_map_arrays(struct gpu_domain *GD) {
+    if (GD->gpu_initialized) return;
+    if (GD->device_id < 0) return;  // No GPU available
+
+    anuga_int n = GD->D.number_of_elements;
+    anuga_int nb = GD->D.boundary_length;
+    struct halo_exchange *H = &GD->halo;
+
+    // Extract pointers to local variables (OpenMP target can't handle struct->member syntax)
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *bed_cv = GD->D.bed_centroid_values;
+    double *height_cv = GD->D.height_centroid_values;
+    double *stage_ev = GD->D.stage_edge_values;
+    double *xmom_ev = GD->D.xmom_edge_values;
+    double *ymom_ev = GD->D.ymom_edge_values;
+    double *bed_ev = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+    double *stage_eu = GD->D.stage_explicit_update;
+    double *xmom_eu = GD->D.xmom_explicit_update;
+    double *ymom_eu = GD->D.ymom_explicit_update;
+    double *stage_siu = GD->D.stage_semi_implicit_update;
+    double *xmom_siu = GD->D.xmom_semi_implicit_update;
+    double *ymom_siu = GD->D.ymom_semi_implicit_update;
+    anuga_int *neighbours = GD->D.neighbours;
+    anuga_int *neighbour_edges = GD->D.neighbour_edges;
+    double *normals = GD->D.normals;
+    double *edgelengths = GD->D.edgelengths;
+    double *areas = GD->D.areas;
+    double *radii = GD->D.radii;
+    double *max_speed = GD->D.max_speed;
+    double *centroid_coords = GD->D.centroid_coordinates;
+    double *edge_coords = GD->D.edge_coordinates;
+
+    // Additional arrays for extrapolation
+    anuga_int *surrogate_neighbours = GD->D.surrogate_neighbours;
+    anuga_int *number_of_boundaries = GD->D.number_of_boundaries;
+    double *x_centroid_work = GD->D.x_centroid_work;
+    double *y_centroid_work = GD->D.y_centroid_work;
+
+    // Friction array
+    double *friction_cv = GD->D.friction_centroid_values;
+
+    // Map all domain arrays to GPU - persistent for entire simulation
+    #pragma omp target enter data map(to: \
+        stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], \
+        bed_cv[0:n], height_cv[0:n], friction_cv[0:n], \
+        stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n], \
+        bed_ev[0:3*n], height_ev[0:3*n], \
+        stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n], \
+        stage_siu[0:n], xmom_siu[0:n], ymom_siu[0:n], \
+        neighbours[0:3*n], neighbour_edges[0:3*n], \
+        surrogate_neighbours[0:3*n], number_of_boundaries[0:n], \
+        x_centroid_work[0:n], y_centroid_work[0:n], \
+        normals[0:6*n], edgelengths[0:3*n], \
+        areas[0:n], radii[0:n], max_speed[0:n], \
+        centroid_coords[0:2*n], edge_coords[0:6*n])
+
+    // Map boundary values if present
+    if (nb > 0) {
+        double *stage_bv = GD->D.stage_boundary_values;
+        double *xmom_bv = GD->D.xmom_boundary_values;
+        double *ymom_bv = GD->D.ymom_boundary_values;
+        #pragma omp target enter data map(to: \
+            stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb])
+    }
+
+    // Map backup arrays for RK2 if present
+    if (GD->D.stage_backup_values != NULL) {
+        double *stage_backup = GD->D.stage_backup_values;
+        double *xmom_backup = GD->D.xmom_backup_values;
+        double *ymom_backup = GD->D.ymom_backup_values;
+        #pragma omp target enter data map(to: \
+            stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
+        GD->backup_arrays_mapped = 1;
+    }
+
+    // Map halo exchange arrays if we have neighbors
+    if (H->num_neighbors > 0) {
+        int send_size = H->total_send_size;
+        int recv_size = H->total_recv_size;
+        int *flat_send = H->flat_send_indices;
+        int *flat_recv = H->flat_recv_indices;
+        double *send_buf = H->send_buffer;
+        double *recv_buf = H->recv_buffer;
+
+        #pragma omp target enter data map(to: flat_send[0:send_size], flat_recv[0:recv_size]) \
+            map(alloc: send_buf[0:3*send_size], recv_buf[0:3*recv_size])
+    }
+
+    GD->gpu_initialized = 1;
+
+    if (GD->rank == 0) {
+        printf("GPU arrays mapped to device %d\n", GD->device_id);
+    }
+}
+
+void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
+    if (!GD->gpu_initialized) return;
+
+    anuga_int n = GD->D.number_of_elements;
+    anuga_int nb = GD->D.boundary_length;
+    struct halo_exchange *H = &GD->halo;
+
+    // Extract pointers to local variables
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *bed_cv = GD->D.bed_centroid_values;
+    double *height_cv = GD->D.height_centroid_values;
+    double *stage_ev = GD->D.stage_edge_values;
+    double *xmom_ev = GD->D.xmom_edge_values;
+    double *ymom_ev = GD->D.ymom_edge_values;
+    double *bed_ev = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+    double *stage_eu = GD->D.stage_explicit_update;
+    double *xmom_eu = GD->D.xmom_explicit_update;
+    double *ymom_eu = GD->D.ymom_explicit_update;
+    double *stage_siu = GD->D.stage_semi_implicit_update;
+    double *xmom_siu = GD->D.xmom_semi_implicit_update;
+    double *ymom_siu = GD->D.ymom_semi_implicit_update;
+    anuga_int *neighbours = GD->D.neighbours;
+    anuga_int *neighbour_edges = GD->D.neighbour_edges;
+    double *normals = GD->D.normals;
+    double *edgelengths = GD->D.edgelengths;
+    double *areas = GD->D.areas;
+    double *radii = GD->D.radii;
+    double *max_speed = GD->D.max_speed;
+    double *centroid_coords = GD->D.centroid_coordinates;
+    double *edge_coords = GD->D.edge_coordinates;
+
+    // Additional arrays for extrapolation
+    anuga_int *surrogate_neighbours = GD->D.surrogate_neighbours;
+    anuga_int *number_of_boundaries = GD->D.number_of_boundaries;
+    double *x_centroid_work = GD->D.x_centroid_work;
+    double *y_centroid_work = GD->D.y_centroid_work;
+
+    // Friction array
+    double *friction_cv = GD->D.friction_centroid_values;
+
+    // Unmap domain arrays
+    #pragma omp target exit data map(delete: \
+        stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], \
+        bed_cv[0:n], height_cv[0:n], friction_cv[0:n], \
+        stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n], \
+        bed_ev[0:3*n], height_ev[0:3*n], \
+        stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n], \
+        stage_siu[0:n], xmom_siu[0:n], ymom_siu[0:n], \
+        neighbours[0:3*n], neighbour_edges[0:3*n], \
+        surrogate_neighbours[0:3*n], number_of_boundaries[0:n], \
+        x_centroid_work[0:n], y_centroid_work[0:n], \
+        normals[0:6*n], edgelengths[0:3*n], \
+        areas[0:n], radii[0:n], max_speed[0:n], \
+        centroid_coords[0:2*n], edge_coords[0:6*n])
+
+    if (nb > 0) {
+        double *stage_bv = GD->D.stage_boundary_values;
+        double *xmom_bv = GD->D.xmom_boundary_values;
+        double *ymom_bv = GD->D.ymom_boundary_values;
+        #pragma omp target exit data map(delete: \
+            stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb])
+    }
+
+    if (GD->backup_arrays_mapped) {
+        double *stage_backup = GD->D.stage_backup_values;
+        double *xmom_backup = GD->D.xmom_backup_values;
+        double *ymom_backup = GD->D.ymom_backup_values;
+        #pragma omp target exit data map(delete: \
+            stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
+    }
+
+    // Unmap halo arrays
+    if (H->num_neighbors > 0) {
+        int send_size = H->total_send_size;
+        int recv_size = H->total_recv_size;
+        int *flat_send = H->flat_send_indices;
+        int *flat_recv = H->flat_recv_indices;
+        double *send_buf = H->send_buffer;
+        double *recv_buf = H->recv_buffer;
+
+        #pragma omp target exit data map(delete: \
+            flat_send[0:send_size], flat_recv[0:recv_size], \
+            send_buf[0:3*send_size], recv_buf[0:3*recv_size])
+    }
+
+    GD->gpu_initialized = 0;
+}
+
+void gpu_domain_sync_to_device(struct gpu_domain *GD) {
+    // Sync all centroid values to GPU (use at start of GPU computation)
+    if (!GD->gpu_initialized) return;
+
+    anuga_int n = GD->D.number_of_elements;
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *height_cv = GD->D.height_centroid_values;
+
+    #pragma omp target update to(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+}
+
+void gpu_domain_sync_from_device(struct gpu_domain *GD) {
+    // Sync centroid values from GPU (use at yieldstep for Python I/O)
+    if (!GD->gpu_initialized) return;
+
+    anuga_int n = GD->D.number_of_elements;
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *height_cv = GD->D.height_centroid_values;
+
+    #pragma omp target update from(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+}
+
+void gpu_sync_boundary_values(struct gpu_domain *GD) {
+    // Sync boundary values from Python (small transfer at start of step)
+    if (!GD->gpu_initialized) return;
+
+    anuga_int nb = GD->D.boundary_length;
+    if (nb == 0) return;
+
+    double *stage_bv = GD->D.stage_boundary_values;
+    double *xmom_bv = GD->D.xmom_boundary_values;
+    double *ymom_bv = GD->D.ymom_boundary_values;
+
+    #pragma omp target update to(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb])
+}
+
+// ============================================================================
+// Ghost Exchange - Key MPI Function
+// ============================================================================
+
+// Exchange ghost cell data between MPI ranks
+// Adapted from miniapp_mpi.c exchange_halo()
+void gpu_exchange_ghosts(struct gpu_domain *GD) {
+    struct halo_exchange *H = &GD->halo;
+
+    if (H->num_neighbors == 0) return;
+
+    int send_size = H->total_send_size;
+    int recv_size = H->total_recv_size;
+
+    double *stage = GD->D.stage_centroid_values;
+    double *xmom = GD->D.xmom_centroid_values;
+    double *ymom = GD->D.ymom_centroid_values;
+    double *send_buf = H->send_buffer;
+    double *recv_buf = H->recv_buffer;
+    int *flat_send = H->flat_send_indices;
+    int *flat_recv = H->flat_recv_indices;
+
+    // Pack send buffer on GPU
+    #pragma omp target teams distribute parallel for
+    for (int idx = 0; idx < send_size; idx++) {
+        int k = flat_send[idx];  // Local element index
+        send_buf[3*idx + 0] = stage[k];
+        send_buf[3*idx + 1] = xmom[k];
+        send_buf[3*idx + 2] = ymom[k];
+    }
+
+#ifdef GPU_AWARE_MPI
+    // GPU-aware MPI path: pass device pointers directly to MPI
+    #pragma omp target data use_device_addr(send_buf, recv_buf)
+    {
+        int req_count = 0;
+        int send_offset = 0, recv_offset = 0;
+
+        // Post all receives first
+        for (int ni = 0; ni < H->num_neighbors; ni++) {
+            int partner = H->neighbor_ranks[ni];
+            int count = H->recv_counts[ni];
+            MPI_Irecv(&recv_buf[3*recv_offset], 3*count, MPI_DOUBLE,
+                      partner, 0, GD->comm, &H->requests[req_count++]);
+            recv_offset += count;
+        }
+
+        // Post all sends
+        for (int ni = 0; ni < H->num_neighbors; ni++) {
+            int partner = H->neighbor_ranks[ni];
+            int count = H->send_counts[ni];
+            MPI_Isend(&send_buf[3*send_offset], 3*count, MPI_DOUBLE,
+                      partner, 0, GD->comm, &H->requests[req_count++]);
+            send_offset += count;
+        }
+
+        // Wait for all communication to complete
+        MPI_Waitall(req_count, H->requests, MPI_STATUSES_IGNORE);
+    }
+
+#else
+    // Non-GPU-aware MPI path: transfer halo buffers through host
+    // This is still efficient because halo is much smaller than full domain
+
+    // Copy packed send buffer from GPU to host
+    #pragma omp target update from(send_buf[0:3*send_size])
+
+    // MPI communication on host
+    int req_count = 0;
+    int send_offset = 0, recv_offset = 0;
+
+    // Post all receives first
+    for (int ni = 0; ni < H->num_neighbors; ni++) {
+        int partner = H->neighbor_ranks[ni];
+        int count = H->recv_counts[ni];
+        MPI_Irecv(&recv_buf[3*recv_offset], 3*count, MPI_DOUBLE,
+                  partner, 0, GD->comm, &H->requests[req_count++]);
+        recv_offset += count;
+    }
+
+    // Post all sends
+    for (int ni = 0; ni < H->num_neighbors; ni++) {
+        int partner = H->neighbor_ranks[ni];
+        int count = H->send_counts[ni];
+        MPI_Isend(&send_buf[3*send_offset], 3*count, MPI_DOUBLE,
+                  partner, 0, GD->comm, &H->requests[req_count++]);
+        send_offset += count;
+    }
+
+    // Wait for all communication to complete
+    MPI_Waitall(req_count, H->requests, MPI_STATUSES_IGNORE);
+
+    // Copy received halo data from host to GPU
+    #pragma omp target update to(recv_buf[0:3*recv_size])
+#endif
+
+    // Unpack receive buffer on GPU
+    #pragma omp target teams distribute parallel for
+    for (int idx = 0; idx < recv_size; idx++) {
+        int k = flat_recv[idx];  // Local ghost element index
+        stage[k] = recv_buf[3*idx + 0];
+        xmom[k] = recv_buf[3*idx + 1];
+        ymom[k] = recv_buf[3*idx + 2];
+    }
+}
+
+// ============================================================================
+// GPU Kernel Stubs - To be implemented with ANUGA's numerical methods
+// ============================================================================
+
+void gpu_extrapolate_second_order(struct gpu_domain *GD) {
+    // GPU implementation of second-order edge extrapolation
+    // Based on _openmp_extrapolate_second_order_edge_sw in sw_domain_openmp.c
+
+    anuga_int n = GD->D.number_of_elements;
+    double minimum_allowed_height = GD->D.minimum_allowed_height;
+    anuga_int extrapolate_velocity_second_order = GD->D.extrapolate_velocity_second_order;
+
+    // Parameters for hfactor computation (wet-dry limiting)
+    double a_tmp = 0.3;  // Highest depth ratio with hfactor=1
+    double b_tmp = 0.1;  // Highest depth ratio with hfactor=0
+    double c_tmp = 1.0 / (a_tmp - b_tmp);
+    double d_tmp = 1.0 - (c_tmp * a_tmp);
+
+    // Beta values for gradient limiting
+    double beta_w = GD->D.beta_w;
+    double beta_w_dry = GD->D.beta_w_dry;
+    double beta_uh = GD->D.beta_uh;
+    double beta_uh_dry = GD->D.beta_uh_dry;
+    double beta_vh = GD->D.beta_vh;
+    double beta_vh_dry = GD->D.beta_vh_dry;
+
+    // Extract array pointers
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *bed_cv = GD->D.bed_centroid_values;
+    double *height_cv = GD->D.height_centroid_values;
+
+    double *stage_ev = GD->D.stage_edge_values;
+    double *xmom_ev = GD->D.xmom_edge_values;
+    double *ymom_ev = GD->D.ymom_edge_values;
+    double *bed_ev = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+
+    double *centroid_coords = GD->D.centroid_coordinates;
+    double *edge_coords = GD->D.edge_coordinates;
+
+    anuga_int *surrogate_neighbours = GD->D.surrogate_neighbours;
+    anuga_int *number_of_boundaries = GD->D.number_of_boundaries;
+    double *x_centroid_work = GD->D.x_centroid_work;
+    double *y_centroid_work = GD->D.y_centroid_work;
+
+    // Step 1: Update centroid values (compute height, optionally convert momentum to velocity)
+    #pragma omp target teams distribute parallel for
+    for (anuga_int k = 0; k < n; k++) {
+        double stage = stage_cv[k];
+        double bed = bed_cv[k];
+        double xmom = xmom_cv[k];
+        double ymom = ymom_cv[k];
+
+        double dk = fmax(stage - bed, 0.0);
+        height_cv[k] = dk;
+
+        int is_dry = (dk <= minimum_allowed_height);
+        int extrapolate = (extrapolate_velocity_second_order == 1) && (dk > minimum_allowed_height);
+
+        // Zero momentum in dry cells
+        double xmom_out = is_dry ? 0.0 : xmom;
+        double ymom_out = is_dry ? 0.0 : ymom;
+
+        double inv_dk = extrapolate ? (1.0 / dk) : 1.0;
+
+        // Store original momentum in work arrays before converting to velocity
+        x_centroid_work[k] = extrapolate ? xmom_out : 0.0;
+        y_centroid_work[k] = extrapolate ? ymom_out : 0.0;
+
+        // Convert to velocity for extrapolation (or zero if dry)
+        xmom_cv[k] = xmom_out * inv_dk;
+        ymom_cv[k] = ymom_out * inv_dk;
+    }
+
+    // Step 2: Main extrapolation loop
+    #pragma omp target teams distribute parallel for
+    for (anuga_int k = 0; k < n; k++) {
+        anuga_int k2 = k * 2;
+        anuga_int k3 = k * 3;
+        anuga_int k6 = k * 6;
+
+        // Get edge coordinates
+        double xv0 = edge_coords[k6 + 0];
+        double yv0 = edge_coords[k6 + 1];
+        double xv1 = edge_coords[k6 + 2];
+        double yv1 = edge_coords[k6 + 3];
+        double xv2 = edge_coords[k6 + 4];
+        double yv2 = edge_coords[k6 + 5];
+
+        // Get centroid coordinates
+        double x = centroid_coords[k2 + 0];
+        double y = centroid_coords[k2 + 1];
+
+        // Differences from centroid to edge midpoints
+        double dxv0 = xv0 - x;
+        double dxv1 = xv1 - x;
+        double dxv2 = xv2 - x;
+        double dyv0 = yv0 - y;
+        double dyv1 = yv1 - y;
+        double dyv2 = yv2 - y;
+
+        // Get surrogate neighbour indices
+        anuga_int k0 = surrogate_neighbours[k3 + 0];
+        anuga_int k1 = surrogate_neighbours[k3 + 1];
+        anuga_int sn2 = surrogate_neighbours[k3 + 2];
+
+        // Get neighbour centroids
+        double x0 = centroid_coords[2 * k0 + 0];
+        double y0 = centroid_coords[2 * k0 + 1];
+        double x1 = centroid_coords[2 * k1 + 0];
+        double y1 = centroid_coords[2 * k1 + 1];
+        double x2 = centroid_coords[2 * sn2 + 0];
+        double y2 = centroid_coords[2 * sn2 + 1];
+
+        // Differences between neighbour centroids
+        double dx1 = x1 - x0;
+        double dx2 = x2 - x0;
+        double dy1 = y1 - y0;
+        double dy2 = y2 - y0;
+
+        double area2 = dy2 * dx1 - dy1 * dx2;
+
+        // Check if all neighbours are dry
+        int dry = ((height_cv[k0] < minimum_allowed_height) || (k0 == k)) &&
+                  ((height_cv[k1] < minimum_allowed_height) || (k1 == k)) &&
+                  ((height_cv[sn2] < minimum_allowed_height) || (sn2 == k));
+
+        if (dry) {
+            x_centroid_work[k] = 0.0;
+            xmom_cv[k] = 0.0;
+            y_centroid_work[k] = 0.0;
+            ymom_cv[k] = 0.0;
+        }
+
+        int num_boundaries = number_of_boundaries[k];
+
+        if (num_boundaries == 3) {
+            // No neighbours - set edge values to centroid values
+            double stage_c = stage_cv[k];
+            double xmom_c = xmom_cv[k];
+            double ymom_c = ymom_cv[k];
+            double height_c = height_cv[k];
+            double bed_c = bed_cv[k];
+
+            for (int i = 0; i < 3; i++) {
+                stage_ev[k3 + i] = stage_c;
+                xmom_ev[k3 + i] = xmom_c;
+                ymom_ev[k3 + i] = ymom_c;
+                height_ev[k3 + i] = height_c;
+                bed_ev[k3 + i] = bed_c;
+            }
+
+        } else if (num_boundaries <= 1) {
+            // Typical case - full gradient reconstruction
+            // Compute hfactor for wet-dry limiting
+            double hc = height_cv[k];
+            double h0 = height_cv[k0];
+            double h1 = height_cv[k1];
+            double h2 = height_cv[sn2];
+
+            double hmin = fmin(fmin(h0, fmin(h1, h2)), hc);
+            double hmax = fmax(fmax(h0, fmax(h1, h2)), hc);
+
+            double tmp1 = c_tmp * fmax(hmin, 0.0) / fmax(hc, 1.0e-06) + d_tmp;
+            double tmp2 = c_tmp * fmax(hc, 0.0) / fmax(hmax, 1.0e-06) + d_tmp;
+            double hfactor = fmax(0.0, fmin(tmp1, fmin(tmp2, 1.0)));
+
+            // Smooth shutoff near dry areas
+            hfactor = fmin(1.2 * fmax(hmin - minimum_allowed_height, 0.0) /
+                           (fmax(hmin, 0.0) + minimum_allowed_height), hfactor);
+
+            double inv_area2 = 1.0 / area2;
+            double edge_vals[3];
+
+            // Stage
+            double beta_stage = beta_w_dry + (beta_w - beta_w_dry) * hfactor;
+            if (beta_stage > 0.0) {
+                gpu_calc_edge_values_with_gradient(
+                    stage_cv[k], stage_cv[k0], stage_cv[k1], stage_cv[sn2],
+                    dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
+                    dx1, dx2, dy1, dy2, inv_area2, beta_stage, edge_vals);
+            } else {
+                gpu_set_constant_edge_values(stage_cv[k], edge_vals);
+            }
+            stage_ev[k3 + 0] = edge_vals[0];
+            stage_ev[k3 + 1] = edge_vals[1];
+            stage_ev[k3 + 2] = edge_vals[2];
+
+            // Height (same beta as stage)
+            if (beta_stage > 0.0) {
+                gpu_calc_edge_values_with_gradient(
+                    height_cv[k], height_cv[k0], height_cv[k1], height_cv[sn2],
+                    dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
+                    dx1, dx2, dy1, dy2, inv_area2, beta_stage, edge_vals);
+            } else {
+                gpu_set_constant_edge_values(height_cv[k], edge_vals);
+            }
+            height_ev[k3 + 0] = edge_vals[0];
+            height_ev[k3 + 1] = edge_vals[1];
+            height_ev[k3 + 2] = edge_vals[2];
+
+            // X-momentum
+            double beta_xmom = beta_uh_dry + (beta_uh - beta_uh_dry) * hfactor;
+            if (beta_xmom > 0.0) {
+                gpu_calc_edge_values_with_gradient(
+                    xmom_cv[k], xmom_cv[k0], xmom_cv[k1], xmom_cv[sn2],
+                    dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
+                    dx1, dx2, dy1, dy2, inv_area2, beta_xmom, edge_vals);
+            } else {
+                gpu_set_constant_edge_values(xmom_cv[k], edge_vals);
+            }
+            xmom_ev[k3 + 0] = edge_vals[0];
+            xmom_ev[k3 + 1] = edge_vals[1];
+            xmom_ev[k3 + 2] = edge_vals[2];
+
+            // Y-momentum
+            double beta_ymom = beta_vh_dry + (beta_vh - beta_vh_dry) * hfactor;
+            if (beta_ymom > 0.0) {
+                gpu_calc_edge_values_with_gradient(
+                    ymom_cv[k], ymom_cv[k0], ymom_cv[k1], ymom_cv[sn2],
+                    dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
+                    dx1, dx2, dy1, dy2, inv_area2, beta_ymom, edge_vals);
+            } else {
+                gpu_set_constant_edge_values(ymom_cv[k], edge_vals);
+            }
+            ymom_ev[k3 + 0] = edge_vals[0];
+            ymom_ev[k3 + 1] = edge_vals[1];
+            ymom_ev[k3 + 2] = edge_vals[2];
+
+        } else {
+            // Number of boundaries == 2
+            // One internal neighbour, gradient is in direction of neighbour's centroid
+            // Find the only internal neighbour
+            anuga_int kn = k;  // Will be set to internal neighbour
+            for (int i = 0; i < 3; i++) {
+                anuga_int sn = surrogate_neighbours[k3 + i];
+                if (sn != k) {
+                    kn = sn;
+                    break;
+                }
+            }
+
+            // Compute gradient projection between centroids
+            double xn = centroid_coords[2 * kn + 0];
+            double yn = centroid_coords[2 * kn + 1];
+            double dx = xn - x;
+            double dy = yn - y;
+            double dist2 = dx * dx + dy * dy;
+
+            double grad_dx2 = (dist2 > 0.0) ? dx / dist2 : 0.0;
+            double grad_dy2 = (dist2 > 0.0) ? dy / dist2 : 0.0;
+
+            double dqv[3], qmin, qmax, dq1;
+
+            // Stage
+            dq1 = stage_cv[kn] - stage_cv[k];
+            gpu_compute_dqv_from_gradient(dq1, grad_dx2, grad_dy2,
+                                          dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dqv);
+            gpu_compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
+            gpu_limit_gradient(dqv, qmin, qmax, beta_w);
+            stage_ev[k3 + 0] = stage_cv[k] + dqv[0];
+            stage_ev[k3 + 1] = stage_cv[k] + dqv[1];
+            stage_ev[k3 + 2] = stage_cv[k] + dqv[2];
+
+            // Height
+            dq1 = height_cv[kn] - height_cv[k];
+            gpu_compute_dqv_from_gradient(dq1, grad_dx2, grad_dy2,
+                                          dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dqv);
+            gpu_compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
+            gpu_limit_gradient(dqv, qmin, qmax, beta_w);
+            height_ev[k3 + 0] = height_cv[k] + dqv[0];
+            height_ev[k3 + 1] = height_cv[k] + dqv[1];
+            height_ev[k3 + 2] = height_cv[k] + dqv[2];
+
+            // X-momentum
+            dq1 = xmom_cv[kn] - xmom_cv[k];
+            gpu_compute_dqv_from_gradient(dq1, grad_dx2, grad_dy2,
+                                          dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dqv);
+            gpu_compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
+            gpu_limit_gradient(dqv, qmin, qmax, beta_w);
+            xmom_ev[k3 + 0] = xmom_cv[k] + dqv[0];
+            xmom_ev[k3 + 1] = xmom_cv[k] + dqv[1];
+            xmom_ev[k3 + 2] = xmom_cv[k] + dqv[2];
+
+            // Y-momentum
+            dq1 = ymom_cv[kn] - ymom_cv[k];
+            gpu_compute_dqv_from_gradient(dq1, grad_dx2, grad_dy2,
+                                          dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dqv);
+            gpu_compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
+            gpu_limit_gradient(dqv, qmin, qmax, beta_w);
+            ymom_ev[k3 + 0] = ymom_cv[k] + dqv[0];
+            ymom_ev[k3 + 1] = ymom_cv[k] + dqv[1];
+            ymom_ev[k3 + 2] = ymom_cv[k] + dqv[2];
+        }
+
+        // Convert velocity edge values back to momentum if needed
+        if (extrapolate_velocity_second_order == 1) {
+            for (int i = 0; i < 3; i++) {
+                double dk = height_ev[k3 + i];
+                xmom_ev[k3 + i] *= dk;
+                ymom_ev[k3 + i] *= dk;
+            }
+        }
+
+        // Compute bed edge values from stage - height
+        for (int i = 0; i < 3; i++) {
+            bed_ev[k3 + i] = stage_ev[k3 + i] - height_ev[k3 + i];
+        }
+    }
+
+    // Step 3: Restore centroid momentum values if we converted to velocity
+    if (extrapolate_velocity_second_order == 1) {
+        #pragma omp target teams distribute parallel for
+        for (anuga_int k = 0; k < n; k++) {
+            xmom_cv[k] = x_centroid_work[k];
+            ymom_cv[k] = y_centroid_work[k];
+        }
+    }
+}
+
+double gpu_compute_fluxes(struct gpu_domain *GD) {
+    // Compute fluxes across all edges using central upwind scheme
+    // Returns the local minimum timestep (caller should do MPI_Allreduce)
+    //
+    // This is the GPU version of _openmp_compute_fluxes_central
+    // Arrays are already mapped to GPU via gpu_domain_map_arrays()
+
+    anuga_int n = GD->D.number_of_elements;
+    double g = GD->D.g;
+    double epsilon = GD->D.epsilon;
+    anuga_int low_froude = GD->D.low_froude;
+
+    // Extract array pointers for GPU kernel
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *bed_cv = GD->D.bed_centroid_values;
+    double *height_cv = GD->D.height_centroid_values;
+
+    double *stage_ev = GD->D.stage_edge_values;
+    double *xmom_ev = GD->D.xmom_edge_values;
+    double *ymom_ev = GD->D.ymom_edge_values;
+    double *bed_ev = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+
+    double *stage_bv = GD->D.stage_boundary_values;
+    double *xmom_bv = GD->D.xmom_boundary_values;
+    double *ymom_bv = GD->D.ymom_boundary_values;
+
+    double *stage_eu = GD->D.stage_explicit_update;
+    double *xmom_eu = GD->D.xmom_explicit_update;
+    double *ymom_eu = GD->D.ymom_explicit_update;
+
+    anuga_int *neighbours = GD->D.neighbours;
+    anuga_int *neighbour_edges = GD->D.neighbour_edges;
+    double *normals = GD->D.normals;
+    double *edgelengths = GD->D.edgelengths;
+    double *radii = GD->D.radii;
+    double *areas = GD->D.areas;
+    double *max_speed_array = GD->D.max_speed;
+
+    double local_timestep = 1.0e+100;
+
+    // Main flux computation loop
+    #pragma omp target teams distribute parallel for \
+        reduction(min: local_timestep)
+    for (anuga_int k = 0; k < n; k++) {
+        double edgeflux[3];
+        double ql[3], qr[3];
+        double speed_max_last = 0.0;
+
+        // Zero the explicit updates for this element
+        stage_eu[k] = 0.0;
+        xmom_eu[k] = 0.0;
+        ymom_eu[k] = 0.0;
+
+        // Get centroid values for this element
+        double hc = height_cv[k];
+        double zc = bed_cv[k];
+
+        // Loop over the 3 edges
+        for (int i = 0; i < 3; i++) {
+            int ki = 3 * k + i;
+            int ki2 = 2 * ki;
+
+            // Left state (this element's edge values)
+            ql[0] = stage_ev[ki];
+            ql[1] = xmom_ev[ki];
+            ql[2] = ymom_ev[ki];
+            double zl = bed_ev[ki];
+            double hle = height_ev[ki];
+
+            // Edge geometry
+            double length = edgelengths[ki];
+            double n1 = normals[ki2];
+            double n2 = normals[ki2 + 1];
+
+            // Get neighbour info
+            anuga_int neighbour = neighbours[ki];
+            int is_boundary = (neighbour < 0);
+
+            double zr, hre, hc_n, zc_n;
+
+            if (is_boundary) {
+                // Boundary edge - get values from boundary arrays
+                int m = -neighbour - 1;
+                qr[0] = stage_bv[m];
+                qr[1] = xmom_bv[m];
+                qr[2] = ymom_bv[m];
+                zr = zl;
+                hre = fmax(qr[0] - zr, 0.0);
+                hc_n = hc;
+                zc_n = zc;
+            } else {
+                // Internal edge - get values from neighbour element
+                int m = neighbour_edges[ki];
+                int nm = neighbour * 3 + m;
+                qr[0] = stage_ev[nm];
+                qr[1] = xmom_ev[nm];
+                qr[2] = ymom_ev[nm];
+                zr = bed_ev[nm];
+                hre = height_ev[nm];
+                hc_n = height_cv[neighbour];
+                zc_n = bed_cv[neighbour];
+            }
+
+            // Compute z_half (max bed elevation at edge)
+            double z_half = fmax(zl, zr);
+
+            // Compute effective heights at the edge
+            double h_left = fmax(hle + zl - z_half, 0.0);
+            double h_right = fmax(hre + zr - z_half, 0.0);
+
+            double max_speed_local = 0.0;
+            double pressure_flux = 0.0;
+
+            if (h_left == 0.0 && h_right == 0.0) {
+                // Both heights zero - no flux
+                edgeflux[0] = 0.0;
+                edgeflux[1] = 0.0;
+                edgeflux[2] = 0.0;
+            } else {
+                // Compute flux using central scheme
+                gpu_flux_function_central(ql, qr,
+                                          h_left, h_right,
+                                          hle, hre,
+                                          n1, n2,
+                                          epsilon, z_half, g,
+                                          edgeflux, &max_speed_local, &pressure_flux,
+                                          low_froude);
+            }
+
+            // Multiply flux by edge length (and negate for conservation)
+            edgeflux[0] *= -length;
+            edgeflux[1] *= -length;
+            edgeflux[2] *= -length;
+
+            // Update timestep based on max wave speed
+            if (max_speed_local > epsilon) {
+                double edge_timestep = radii[k] / fmax(max_speed_local, epsilon);
+                local_timestep = fmin(local_timestep, edge_timestep);
+                speed_max_last = fmax(speed_max_last, max_speed_local);
+            }
+
+            // Accumulate flux contributions
+            stage_eu[k] += edgeflux[0];
+            xmom_eu[k] += edgeflux[1];
+            ymom_eu[k] += edgeflux[2];
+
+            // Pressure gradient (gravity) terms
+            double pressuregrad_work = length * (-g * 0.5 * (h_left * h_left - hle * hle
+                                       - (hle + hc) * (zl - zc)) + pressure_flux);
+            xmom_eu[k] -= normals[ki2] * pressuregrad_work;
+            ymom_eu[k] -= normals[ki2 + 1] * pressuregrad_work;
+
+        } // End edge loop
+
+        // Store max speed for this element
+        max_speed_array[k] = speed_max_last;
+
+        // Normalize by area
+        double inv_area = 1.0 / areas[k];
+        stage_eu[k] *= inv_area;
+        xmom_eu[k] *= inv_area;
+        ymom_eu[k] *= inv_area;
+
+    } // End element loop
+
+    return local_timestep;
+}
+
+void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
+    // Update centroid values using explicit and semi-implicit updates
+    // Q_new = (Q_old + timestep * explicit_update) / (1 - timestep * semi_implicit_update)
+    // Arrays are already mapped to GPU
+
+    anuga_int n = GD->D.number_of_elements;
+
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *stage_eu = GD->D.stage_explicit_update;
+    double *xmom_eu = GD->D.xmom_explicit_update;
+    double *ymom_eu = GD->D.ymom_explicit_update;
+    double *stage_siu = GD->D.stage_semi_implicit_update;
+    double *xmom_siu = GD->D.xmom_semi_implicit_update;
+    double *ymom_siu = GD->D.ymom_semi_implicit_update;
+
+    #pragma omp target teams distribute parallel for
+    for (anuga_int k = 0; k < n; k++) {
+        // Normalize semi-implicit update by current value
+        double stage_c = stage_cv[k];
+        double xmom_c = xmom_cv[k];
+        double ymom_c = ymom_cv[k];
+
+        double stage_si = (stage_c == 0.0) ? 0.0 : stage_siu[k] / stage_c;
+        double xmom_si = (xmom_c == 0.0) ? 0.0 : xmom_siu[k] / xmom_c;
+        double ymom_si = (ymom_c == 0.0) ? 0.0 : ymom_siu[k] / ymom_c;
+
+        // Apply explicit update
+        stage_cv[k] += timestep * stage_eu[k];
+        xmom_cv[k] += timestep * xmom_eu[k];
+        ymom_cv[k] += timestep * ymom_eu[k];
+
+        // Apply semi-implicit update (from friction etc.)
+        double denom;
+
+        denom = 1.0 - timestep * stage_si;
+        if (denom > 0.0) stage_cv[k] /= denom;
+
+        denom = 1.0 - timestep * xmom_si;
+        if (denom > 0.0) xmom_cv[k] /= denom;
+
+        denom = 1.0 - timestep * ymom_si;
+        if (denom > 0.0) ymom_cv[k] /= denom;
+
+        // Reset semi-implicit update for next timestep
+        stage_siu[k] = 0.0;
+        xmom_siu[k] = 0.0;
+        ymom_siu[k] = 0.0;
+    }
+}
+
+void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
+    // Backup centroid values for RK2 - simple array copy
+    // Arrays are already mapped to GPU via gpu_domain_map_arrays()
+
+    anuga_int n = GD->D.number_of_elements;
+
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *stage_backup = GD->D.stage_backup_values;
+    double *xmom_backup = GD->D.xmom_backup_values;
+    double *ymom_backup = GD->D.ymom_backup_values;
+
+    #pragma omp target teams distribute parallel for
+    for (anuga_int k = 0; k < n; k++) {
+        stage_backup[k] = stage_cv[k];
+        xmom_backup[k] = xmom_cv[k];
+        ymom_backup[k] = ymom_cv[k];
+    }
+}
+
+void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
+    // RK2 combination: Q = a*Q_current + b*Q_backup
+    // Typically called with a=0.5, b=0.5 for standard RK2
+    // Arrays are already mapped to GPU
+
+    anuga_int n = GD->D.number_of_elements;
+
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *stage_backup = GD->D.stage_backup_values;
+    double *xmom_backup = GD->D.xmom_backup_values;
+    double *ymom_backup = GD->D.ymom_backup_values;
+
+    #pragma omp target teams distribute parallel for
+    for (anuga_int k = 0; k < n; k++) {
+        stage_cv[k] = a * stage_cv[k] + b * stage_backup[k];
+        xmom_cv[k] = a * xmom_cv[k] + b * xmom_backup[k];
+        ymom_cv[k] = a * ymom_cv[k] + b * ymom_backup[k];
+    }
+}
+
+double gpu_protect(struct gpu_domain *GD) {
+    // Protect against negative water depths
+    // Sets stage = bed where water depth would be negative
+    // Also zeros momentum where depth is very small
+    // Returns mass_error: total mass added to prevent negative depths
+
+    anuga_int n = GD->D.number_of_elements;
+    double min_height = GD->D.minimum_allowed_height;
+    double mass_error = 0.0;
+
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *bed_cv = GD->D.bed_centroid_values;
+    double *height_cv = GD->D.height_centroid_values;
+    double *areas = GD->D.areas;
+
+    #pragma omp target teams distribute parallel for reduction(+:mass_error)
+    for (anuga_int k = 0; k < n; k++) {
+        double h = stage_cv[k] - bed_cv[k];
+
+        if (h < min_height) {
+            // Very shallow - zero momentum to prevent instability
+            xmom_cv[k] = 0.0;
+            ymom_cv[k] = 0.0;
+        }
+
+        if (h < 0.0) {
+            // Negative depth - track mass error and set stage to bed
+            mass_error += (-h) * areas[k];
+            stage_cv[k] = bed_cv[k];
+            h = 0.0;
+        }
+
+        // Update height quantity
+        height_cv[k] = h;
+    }
+
+    return mass_error;
+}
+
+void gpu_manning_friction(struct gpu_domain *GD) {
+    // GPU implementation of Manning friction (flat, semi-implicit)
+    // Based on _openmp_manning_friction_flat_semi_implicit in sw_domain_openmp.c
+    //
+    // Adds friction contribution to semi_implicit_update arrays.
+    // The semi-implicit formulation provides better stability for friction terms.
+
+    anuga_int n = GD->D.number_of_elements;
+    double g = GD->D.g;
+    double eps = GD->D.minimum_allowed_height;
+    double seven_thirds = 7.0 / 3.0;
+
+    // Small threshold for friction coefficient
+    double eta_small = 1.0e-12;
+
+    // Extract array pointers
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *bed_cv = GD->D.bed_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *friction_cv = GD->D.friction_centroid_values;
+    double *xmom_siu = GD->D.xmom_semi_implicit_update;
+    double *ymom_siu = GD->D.ymom_semi_implicit_update;
+
+    #pragma omp target teams distribute parallel for
+    for (anuga_int k = 0; k < n; k++) {
+        double S = 0.0;
+        double uh = xmom_cv[k];
+        double vh = ymom_cv[k];
+        double eta = friction_cv[k];
+
+        // Compute absolute momentum
+        double abs_mom = sqrt(uh * uh + vh * vh);
+
+        if (eta > eta_small) {
+            double h = stage_cv[k] - bed_cv[k];
+            if (h >= eps) {
+                // Manning friction: S = -g * n^2 * |u| / h^(7/3)
+                // Applied semi-implicitly via: du/dt = S * u
+                S = -g * eta * eta * abs_mom;
+                S /= pow(h, seven_thirds);
+            }
+        }
+
+        // Add to semi-implicit update (will be applied in update_conserved_quantities)
+        xmom_siu[k] += S * uh;
+        ymom_siu[k] += S * vh;
+    }
+}
+
+// ============================================================================
+// Full RK2 Step - Orchestrates all GPU operations
+// ============================================================================
+
+double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double yieldstep, int apply_forcing) {
+    // This will orchestrate the full RK2 step on GPU
+    // For now, just return a dummy timestep
+    (void)yieldstep;
+    (void)apply_forcing;
+
+    double timestep = GD->evolve_max_timestep;
+
+    // RK2 Step structure (to be implemented):
+    // 1. backup_conserved_quantities()
+    // 2. First Euler step:
+    //    - extrapolate_second_order()
+    //    - compute_fluxes() -> get timestep
+    //    - apply_forcing() if enabled
+    //    - update_conserved_quantities()
+    //    - exchange_ghosts()
+    //    - extrapolate_second_order()
+    // 3. Second Euler step:
+    //    - compute_fluxes()
+    //    - apply_forcing() if enabled
+    //    - update_conserved_quantities()
+    // 4. saxpy_conserved_quantities(0.5, 0.5)
+
+    return timestep;
+}
