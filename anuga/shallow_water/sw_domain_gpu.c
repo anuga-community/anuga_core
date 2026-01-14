@@ -358,6 +358,24 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->halo.recv_buffer = NULL;
     GD->halo.requests = NULL;
 
+    // Initialize reflective boundary to empty
+    GD->reflective.num_edges = 0;
+    GD->reflective.boundary_indices = NULL;
+    GD->reflective.vol_ids = NULL;
+    GD->reflective.edge_ids = NULL;
+    GD->reflective.mapped = 0;
+
+    // Initialize boundary edge sync to empty
+    GD->edge_sync.num_boundary_cells = 0;
+    GD->edge_sync.cell_ids = NULL;
+    GD->edge_sync.buf_size = 0;
+    GD->edge_sync.stage_buf = NULL;
+    GD->edge_sync.xmom_buf = NULL;
+    GD->edge_sync.ymom_buf = NULL;
+    GD->edge_sync.bed_buf = NULL;
+    GD->edge_sync.height_buf = NULL;
+    GD->edge_sync.initialized = 0;
+
     // Default simulation parameters
     GD->CFL = 1.0;
     GD->evolve_max_timestep = 1.0e10;
@@ -373,6 +391,12 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
 
     // Free halo structures
     gpu_halo_finalize(GD);
+
+    // Free reflective boundary structures
+    gpu_reflective_finalize(GD);
+
+    // Free boundary edge sync structures
+    gpu_boundary_edge_sync_finalize(GD);
 
     GD->gpu_initialized = 0;
 }
@@ -471,6 +495,142 @@ void gpu_halo_finalize(struct gpu_domain *GD) {
     H->send_buffer = NULL;
     H->recv_buffer = NULL;
     H->requests = NULL;
+}
+
+// ============================================================================
+// Reflective Boundary Setup
+// ============================================================================
+
+int gpu_reflective_init(struct gpu_domain *GD, int num_edges,
+                        int *boundary_indices, int *vol_ids, int *edge_ids) {
+    struct reflective_boundary *R = &GD->reflective;
+
+    R->num_edges = num_edges;
+    R->mapped = 0;
+
+    if (num_edges == 0) {
+        R->boundary_indices = NULL;
+        R->vol_ids = NULL;
+        R->edge_ids = NULL;
+        return 0;
+    }
+
+    // Allocate and copy arrays (same pattern as other arrays)
+    R->boundary_indices = (int*)malloc(num_edges * sizeof(int));
+    R->vol_ids = (int*)malloc(num_edges * sizeof(int));
+    R->edge_ids = (int*)malloc(num_edges * sizeof(int));
+
+    if (!R->boundary_indices || !R->vol_ids || !R->edge_ids) {
+        fprintf(stderr, "Failed to allocate reflective boundary arrays\n");
+        return -1;
+    }
+
+    memcpy(R->boundary_indices, boundary_indices, num_edges * sizeof(int));
+    memcpy(R->vol_ids, vol_ids, num_edges * sizeof(int));
+    memcpy(R->edge_ids, edge_ids, num_edges * sizeof(int));
+
+    // TEMPORARILY DISABLED - skip GPU mapping to debug
+    // if (GD->device_id >= 0) {
+    //     int *b_idx = R->boundary_indices;
+    //     int *v_ids = R->vol_ids;
+    //     int *e_ids = R->edge_ids;
+    //     int ne = num_edges;
+    //
+    //     #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+    //     R->mapped = 1;
+    // }
+    R->mapped = 0;  // Force CPU path
+
+    if (GD->rank == 0) {
+        printf("Reflective boundary initialized: %d edges\n", num_edges);
+    }
+
+    return 0;
+}
+
+void gpu_reflective_finalize(struct gpu_domain *GD) {
+    struct reflective_boundary *R = &GD->reflective;
+
+    if (R->mapped && R->num_edges > 0) {
+        int *b_idx = R->boundary_indices;
+        int *v_ids = R->vol_ids;
+        int *e_ids = R->edge_ids;
+        int ne = R->num_edges;
+
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+    }
+
+    if (R->boundary_indices) free(R->boundary_indices);
+    if (R->vol_ids) free(R->vol_ids);
+    if (R->edge_ids) free(R->edge_ids);
+
+    R->num_edges = 0;
+    R->boundary_indices = NULL;
+    R->vol_ids = NULL;
+    R->edge_ids = NULL;
+    R->mapped = 0;
+}
+
+void gpu_evaluate_reflective_boundary(struct gpu_domain *GD) {
+    // Evaluate reflective boundary entirely on GPU
+    // No data transfer needed - reads edge values, writes boundary values
+
+    struct reflective_boundary *R = &GD->reflective;
+    if (R->num_edges == 0) return;
+
+    // TEMPORARY: skip GPU kernel, use CPU fallback via sync
+    // This helps isolate if the issue is with the kernel or mapping
+    return;
+
+    int num_edges = R->num_edges;
+    int *boundary_indices = R->boundary_indices;
+    int *vol_ids = R->vol_ids;
+    int *edge_ids = R->edge_ids;
+
+    // Edge values (read)
+    double *stage_ev = GD->D.stage_edge_values;
+    double *bed_ev = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+    double *xmom_ev = GD->D.xmom_edge_values;
+    double *ymom_ev = GD->D.ymom_edge_values;
+    double *normals = GD->D.normals;
+
+    // Boundary values (write)
+    double *stage_bv = GD->D.stage_boundary_values;
+    double *bed_bv = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
+    double *xmom_bv = GD->D.xmom_boundary_values;
+    double *ymom_bv = GD->D.ymom_boundary_values;
+
+    // All arrays already mapped via target enter data
+    #pragma omp target teams distribute parallel for
+    for (int k = 0; k < num_edges; k++) {
+        int bid = boundary_indices[k];
+        int vid = vol_ids[k];
+        int eid = edge_ids[k];
+
+        // Copy conserved quantities from edge to boundary
+        stage_bv[bid] = stage_ev[3 * vid + eid];
+        bed_bv[bid] = bed_ev[3 * vid + eid];
+        height_bv[bid] = height_ev[3 * vid + eid];
+
+        // Get normal vector for this edge
+        double n1 = normals[vid * 6 + 2 * eid];
+        double n2 = normals[vid * 6 + 2 * eid + 1];
+
+        // Get interior momentum
+        double q1 = xmom_ev[3 * vid + eid];
+        double q2 = ymom_ev[3 * vid + eid];
+
+        // Reflect momentum: negate normal component, keep tangential
+        // r = q - 2*(q.n)*n  but we compute it via rotation
+        double r1 = -q1 * n1 - q2 * n2;  // -(q dot n)
+        double r2 = -q1 * n2 + q2 * n1;  // tangential component
+
+        // Rotate back
+        xmom_bv[bid] = n1 * r1 - n2 * r2;
+        ymom_bv[bid] = n2 * r1 + n1 * r2;
+    }
 }
 
 // ============================================================================
@@ -693,7 +853,7 @@ void gpu_domain_sync_from_device(struct gpu_domain *GD) {
 }
 
 void gpu_sync_boundary_values(struct gpu_domain *GD) {
-    // Sync boundary values from Python (small transfer at start of step)
+    // Sync boundary values TO GPU (after CPU boundary evaluation)
     if (!GD->gpu_initialized) return;
 
     anuga_int nb = GD->D.boundary_length;
@@ -702,8 +862,176 @@ void gpu_sync_boundary_values(struct gpu_domain *GD) {
     double *stage_bv = GD->D.stage_boundary_values;
     double *xmom_bv = GD->D.xmom_boundary_values;
     double *ymom_bv = GD->D.ymom_boundary_values;
+    double *bed_bv = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
 
-    #pragma omp target update to(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb])
+    #pragma omp target update to(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
+                                 bed_bv[0:nb], height_bv[0:nb])
+}
+
+void gpu_sync_edge_values_from_device(struct gpu_domain *GD) {
+    // Sync ALL edge values FROM GPU - expensive, use sparse version if possible
+    if (!GD->gpu_initialized) return;
+
+    anuga_int n = GD->D.number_of_elements;
+
+    double *stage_ev = GD->D.stage_edge_values;
+    double *xmom_ev = GD->D.xmom_edge_values;
+    double *ymom_ev = GD->D.ymom_edge_values;
+    double *bed_ev = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+
+    #pragma omp target update from(stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n], \
+                                   bed_ev[0:3*n], height_ev[0:3*n])
+}
+
+// Initialize boundary edge sync buffers - call once after boundaries are set
+int gpu_boundary_edge_sync_init(struct gpu_domain *GD,
+                                int num_boundary_cells,
+                                int *boundary_cell_ids) {
+    if (!GD->gpu_initialized) return -1;
+
+    struct boundary_edge_sync *S = &GD->edge_sync;
+
+    if (S->initialized) {
+        // Already initialized - clean up first
+        gpu_boundary_edge_sync_finalize(GD);
+    }
+
+    S->num_boundary_cells = num_boundary_cells;
+    S->buf_size = num_boundary_cells * 3;  // 3 edges per cell
+
+    if (num_boundary_cells == 0) {
+        S->initialized = 1;
+        return 0;  // Nothing to do
+    }
+
+    // Allocate cell IDs array (copy from Python's array)
+    S->cell_ids = (int*)malloc(num_boundary_cells * sizeof(int));
+    memcpy(S->cell_ids, boundary_cell_ids, num_boundary_cells * sizeof(int));
+
+    // Allocate staging buffers
+    S->stage_buf = (double*)malloc(S->buf_size * sizeof(double));
+    S->xmom_buf = (double*)malloc(S->buf_size * sizeof(double));
+    S->ymom_buf = (double*)malloc(S->buf_size * sizeof(double));
+    S->bed_buf = (double*)malloc(S->buf_size * sizeof(double));
+    S->height_buf = (double*)malloc(S->buf_size * sizeof(double));
+
+    // Map all buffers to GPU once
+    int nc = num_boundary_cells;
+    int bs = S->buf_size;
+    int *cell_ids_ptr = S->cell_ids;
+    double *stage_buf = S->stage_buf;
+    double *xmom_buf = S->xmom_buf;
+    double *ymom_buf = S->ymom_buf;
+    double *bed_buf = S->bed_buf;
+    double *height_buf = S->height_buf;
+
+    #pragma omp target enter data map(to: cell_ids_ptr[0:nc]) \
+        map(alloc: stage_buf[0:bs], xmom_buf[0:bs], ymom_buf[0:bs], \
+                   bed_buf[0:bs], height_buf[0:bs])
+
+    S->initialized = 1;
+    printf("Rank %d: Boundary edge sync initialized for %d cells (%d edge values)\n",
+           GD->rank, num_boundary_cells, S->buf_size);
+
+    return 0;
+}
+
+// Finalize boundary edge sync buffers
+void gpu_boundary_edge_sync_finalize(struct gpu_domain *GD) {
+    struct boundary_edge_sync *S = &GD->edge_sync;
+
+    if (!S->initialized) return;
+
+    if (S->num_boundary_cells > 0) {
+        // Unmap from GPU
+        int nc = S->num_boundary_cells;
+        int bs = S->buf_size;
+        int *cell_ids_ptr = S->cell_ids;
+        double *stage_buf = S->stage_buf;
+        double *xmom_buf = S->xmom_buf;
+        double *ymom_buf = S->ymom_buf;
+        double *bed_buf = S->bed_buf;
+        double *height_buf = S->height_buf;
+
+        #pragma omp target exit data map(delete: cell_ids_ptr[0:nc], \
+            stage_buf[0:bs], xmom_buf[0:bs], ymom_buf[0:bs], \
+            bed_buf[0:bs], height_buf[0:bs])
+
+        // Free host memory
+        free(S->cell_ids);
+        free(S->stage_buf);
+        free(S->xmom_buf);
+        free(S->ymom_buf);
+        free(S->bed_buf);
+        free(S->height_buf);
+    }
+
+    S->cell_ids = NULL;
+    S->stage_buf = NULL;
+    S->xmom_buf = NULL;
+    S->ymom_buf = NULL;
+    S->bed_buf = NULL;
+    S->height_buf = NULL;
+    S->num_boundary_cells = 0;
+    S->buf_size = 0;
+    S->initialized = 0;
+}
+
+// Sync boundary edge values from GPU - fast version using pre-allocated buffers
+void gpu_boundary_edge_sync(struct gpu_domain *GD) {
+    struct boundary_edge_sync *S = &GD->edge_sync;
+
+    if (!S->initialized || S->num_boundary_cells == 0) return;
+
+    int nc = S->num_boundary_cells;
+    int bs = S->buf_size;
+    int *cell_ids = S->cell_ids;
+    double *stage_buf = S->stage_buf;
+    double *xmom_buf = S->xmom_buf;
+    double *ymom_buf = S->ymom_buf;
+    double *bed_buf = S->bed_buf;
+    double *height_buf = S->height_buf;
+
+    double *stage_ev = GD->D.stage_edge_values;
+    double *xmom_ev = GD->D.xmom_edge_values;
+    double *ymom_ev = GD->D.ymom_edge_values;
+    double *bed_ev = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+
+    // Gather on GPU into contiguous staging buffers
+    #pragma omp target teams distribute parallel for
+    for (int i = 0; i < nc; i++) {
+        int vid = cell_ids[i];
+        for (int e = 0; e < 3; e++) {
+            int buf_idx = i * 3 + e;
+            int src_idx = vid * 3 + e;
+            stage_buf[buf_idx] = stage_ev[src_idx];
+            xmom_buf[buf_idx] = xmom_ev[src_idx];
+            ymom_buf[buf_idx] = ymom_ev[src_idx];
+            bed_buf[buf_idx] = bed_ev[src_idx];
+            height_buf[buf_idx] = height_ev[src_idx];
+        }
+    }
+
+    // Sync staging buffers from GPU to host
+    #pragma omp target update from(stage_buf[0:bs], xmom_buf[0:bs], ymom_buf[0:bs], \
+                                   bed_buf[0:bs], height_buf[0:bs])
+
+    // Scatter on CPU to the actual edge value arrays (host copies)
+    for (int i = 0; i < nc; i++) {
+        int vid = S->cell_ids[i];  // Use host copy of cell_ids
+        for (int e = 0; e < 3; e++) {
+            int buf_idx = i * 3 + e;
+            int dst_idx = vid * 3 + e;
+            stage_ev[dst_idx] = stage_buf[buf_idx];
+            xmom_ev[dst_idx] = xmom_buf[buf_idx];
+            ymom_ev[dst_idx] = ymom_buf[buf_idx];
+            bed_ev[dst_idx] = bed_buf[buf_idx];
+            height_ev[dst_idx] = height_buf[buf_idx];
+        }
+    }
 }
 
 // ============================================================================

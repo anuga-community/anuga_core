@@ -47,6 +47,33 @@ struct halo_exchange {
     MPI_Request *requests;       // [2 * num_neighbors] for Isend/Irecv pairs
 };
 
+// Reflective boundary info - stored on GPU for efficient evaluation
+struct reflective_boundary {
+    int num_edges;               // Number of reflective boundary edges
+    int *boundary_indices;       // Where to write in boundary_values arrays [num_edges]
+    int *vol_ids;                // Interior cell IDs [num_edges]
+    int *edge_ids;               // Which edge (0, 1, or 2) [num_edges]
+    int mapped;                  // Whether arrays are mapped to GPU
+};
+
+// Boundary edge sync buffers - pre-allocated for efficient sparse sync
+// Allocated once during setup, reused every timestep
+struct boundary_edge_sync {
+    int num_boundary_cells;      // Number of unique boundary-adjacent cells
+    int *cell_ids;               // Cell IDs to sync [num_boundary_cells] - mapped to GPU
+
+    // Staging buffers for gather/scatter (mapped to GPU once)
+    // Size = num_boundary_cells * 3 (3 edges per cell)
+    int buf_size;
+    double *stage_buf;
+    double *xmom_buf;
+    double *ymom_buf;
+    double *bed_buf;
+    double *height_buf;
+
+    int initialized;
+};
+
 // GPU domain struct - extends base domain with MPI/GPU state
 struct gpu_domain {
     // Base domain struct (contains all ANUGA arrays)
@@ -64,6 +91,12 @@ struct gpu_domain {
 
     // Halo exchange info
     struct halo_exchange halo;
+
+    // Boundary conditions
+    struct reflective_boundary reflective;
+
+    // Boundary edge sync (for sparse edge value sync)
+    struct boundary_edge_sync edge_sync;
 
     // Simulation parameters for GPU kernels
     double CFL;
@@ -98,8 +131,25 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD);
 void gpu_domain_sync_to_device(struct gpu_domain *GD);
 void gpu_domain_sync_from_device(struct gpu_domain *GD);
 
-// Update boundary values from Python (small transfer at start of yieldstep)
+// Sync boundary values TO GPU (after CPU boundary evaluation)
 void gpu_sync_boundary_values(struct gpu_domain *GD);
+
+// Sync edge values FROM GPU (before CPU boundary evaluation)
+void gpu_sync_edge_values_from_device(struct gpu_domain *GD);
+
+// Boundary edge sync - init once, sync every timestep
+// Call init after boundaries are known (after set_boundary)
+int gpu_boundary_edge_sync_init(struct gpu_domain *GD,
+                                int num_boundary_cells,
+                                int *boundary_cell_ids);
+void gpu_boundary_edge_sync_finalize(struct gpu_domain *GD);
+void gpu_boundary_edge_sync(struct gpu_domain *GD);  // Fast sync using pre-allocated buffers
+
+// Reflective boundary - setup and evaluation on GPU
+int gpu_reflective_init(struct gpu_domain *GD, int num_edges,
+                        int *boundary_indices, int *vol_ids, int *edge_ids);
+void gpu_reflective_finalize(struct gpu_domain *GD);
+void gpu_evaluate_reflective_boundary(struct gpu_domain *GD);
 
 // Ghost exchange - the key MPI function
 // Uses GPU-aware MPI if available, otherwise does D2H/H2D for small halo buffers

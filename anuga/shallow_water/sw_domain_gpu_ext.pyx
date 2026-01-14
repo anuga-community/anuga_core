@@ -124,9 +124,19 @@ cdef extern from "sw_domain_gpu.c" nogil:
     void gpu_domain_sync_to_device(gpu_domain *GD)
     void gpu_domain_sync_from_device(gpu_domain *GD)
     void gpu_sync_boundary_values(gpu_domain *GD)
+    void gpu_sync_edge_values_from_device(gpu_domain *GD)
+    int gpu_boundary_edge_sync_init(gpu_domain *GD, int num_boundary_cells, int *boundary_cell_ids)
+    void gpu_boundary_edge_sync_finalize(gpu_domain *GD)
+    void gpu_boundary_edge_sync(gpu_domain *GD)
 
     # MPI ghost exchange
     void gpu_exchange_ghosts(gpu_domain *GD)
+
+    # Reflective boundary
+    int gpu_reflective_init(gpu_domain *GD, int num_edges,
+                            int *boundary_indices, int *vol_ids, int *edge_ids)
+    void gpu_reflective_finalize(gpu_domain *GD)
+    void gpu_evaluate_reflective_boundary(gpu_domain *GD)
 
     # GPU kernels
     void gpu_extrapolate_second_order(gpu_domain *GD)
@@ -555,6 +565,45 @@ def sync_boundary_values(GPUDomain gpu_dom):
     gpu_sync_boundary_values(&gpu_dom.GD)
 
 
+def sync_edge_values_from_device(GPUDomain gpu_dom):
+    """
+    Sync ALL edge values from device to host.
+
+    Call this before CPU boundary evaluation needs to read edge values.
+    WARNING: This is expensive - use sync_boundary_edge_values for sparse sync.
+    """
+    gpu_sync_edge_values_from_device(&gpu_dom.GD)
+
+
+def init_boundary_edge_sync(GPUDomain gpu_dom, np.ndarray[int, ndim=1, mode="c"] boundary_cell_ids):
+    """
+    Initialize boundary edge sync buffers - call once after boundaries are set.
+
+    This pre-allocates staging buffers on GPU for efficient sparse sync.
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    boundary_cell_ids : ndarray
+        Unique cell IDs that are adjacent to boundaries
+    """
+    cdef int num_cells = len(boundary_cell_ids)
+    cdef int result = gpu_boundary_edge_sync_init(&gpu_dom.GD, num_cells, &boundary_cell_ids[0])
+    if result != 0:
+        raise RuntimeError("Failed to initialize boundary edge sync")
+
+
+def boundary_edge_sync(GPUDomain gpu_dom):
+    """
+    Sync edge values for boundary-adjacent cells from GPU to host.
+
+    Fast operation - uses pre-allocated buffers. Call init_boundary_edge_sync first.
+    Call this before CPU boundary evaluation needs to read edge values.
+    """
+    gpu_boundary_edge_sync(&gpu_dom.GD)
+
+
 def exchange_ghosts(GPUDomain gpu_dom):
     """
     Exchange ghost cell data between MPI ranks.
@@ -563,6 +612,63 @@ def exchange_ghosts(GPUDomain gpu_dom):
     D2H/H2D transfers of only the small halo buffers.
     """
     gpu_exchange_ghosts(&gpu_dom.GD)
+
+
+def init_reflective_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize reflective boundary for GPU evaluation.
+
+    Extracts reflective boundary info from domain and maps to GPU.
+    Call this once after domain setup.
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    domain_object : Domain
+        The Python domain object
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+
+    # Collect all reflective boundary edges (may have multiple tags)
+    # boundary_map may not be set up yet if called early
+    if domain_object.boundary_map is None:
+        return
+
+    all_ids = []
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and boundary.__class__.__name__ == 'Reflective_boundary':
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                all_ids.extend(segment_edges)
+
+    if len(all_ids) == 0:
+        # No reflective boundary, nothing to do
+        return
+
+    # Build arrays
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr = np.ascontiguousarray(domain_object.boundary_cells[ids], dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    # Call C init
+    gpu_reflective_init(&gpu_dom.GD, num_edges,
+                        &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0])
+
+
+def evaluate_reflective_boundary_gpu(GPUDomain gpu_dom):
+    """
+    Evaluate reflective boundary on GPU.
+
+    This reads edge values and writes boundary values entirely on device.
+    No data transfer required.
+    """
+    gpu_evaluate_reflective_boundary(&gpu_dom.GD)
 
 
 def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double yieldstep, int apply_forcing):

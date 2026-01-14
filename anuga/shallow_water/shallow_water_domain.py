@@ -2793,10 +2793,19 @@ class Domain(Generic_Domain):
             saxpy_conserved_quantities_gpu,
             manning_friction_gpu,
             sync_boundary_values,
+            init_boundary_edge_sync,
+            boundary_edge_sync,
             exchange_ghosts,
         )
+        import numpy as np
 
         gpu_dom = self.gpu_interface.gpu_dom
+
+        # Lazy init: set up boundary edge sync buffers once (maps to GPU)
+        if not hasattr(self, '_gpu_boundary_edge_sync_initialized'):
+            boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
+            init_boundary_edge_sync(gpu_dom, boundary_cell_ids)
+            self._gpu_boundary_edge_sync_initialized = True
 
         # Backup for RK2
         backup_conserved_quantities_gpu(gpu_dom)
@@ -2809,7 +2818,8 @@ class Domain(Generic_Domain):
         protect_gpu(gpu_dom)
         extrapolate_second_order_gpu(gpu_dom)
 
-        # Boundary conditions (CPU, then sync to GPU)
+        # Sync edge values for boundary cells (GPU -> host) then evaluate on CPU
+        boundary_edge_sync(gpu_dom)
         for tag in self.tag_boundary_cells:
             B = self.boundary_map[tag]
             if B is not None:
@@ -2845,7 +2855,8 @@ class Domain(Generic_Domain):
         protect_gpu(gpu_dom)
         extrapolate_second_order_gpu(gpu_dom)
 
-        # Boundary conditions
+        # Sync edge values for boundary cells (GPU -> host) then evaluate on CPU
+        boundary_edge_sync(gpu_dom)
         for tag in self.tag_boundary_cells:
             B = self.boundary_map[tag]
             if B is not None:
