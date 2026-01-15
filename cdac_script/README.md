@@ -63,18 +63,44 @@ Requirements:
 
 - Preferrably the conda_env_3.13 environment, 3.12 was evil (memory leak)
 - An nvidia-hpc-sdk install (tested 25.5 and 25.7)
-- CUDA for GPU code generation 
+- CUDA for GPU code generation
 - Depending on the behaviour of your system `module load your-mpi` mpi4py seems to come with one, but be careful!
 
-To build GPU ANUGA: `pip install -e . --no-build-isolation -C setup-args="-Dgpu=true"` 
+### Basic build (V100 - default)
 
-If you have a non V100 GPU, you'll need to open meson.build and change the GPU arch:
+```bash
+pip install -e . --no-build-isolation -Csetup-args=-Dgpu=true
 ```
- openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g', '-gpu=cc70', '-gpu=mem:separate']
+
+### Specifying GPU architecture
+
+Use the `-Dgpu_arch` flag to target different GPUs:
+
+```bash
+# V100 (default - cc70)
+pip install -e . --no-build-isolation -Csetup-args=-Dgpu=true
+
+# A100 (cc80)
+pip install -e . --no-build-isolation -Csetup-args=-Dgpu=true -Csetup-args=-Dgpu_arch=cc80
+
+# H100 (cc90)
+pip install -e . --no-build-isolation -Csetup-args=-Dgpu=true -Csetup-args=-Dgpu_arch=cc90
 ```
 
+### Supported GPU architectures
 
-To ensure GPU execution `export OMP_TARGET_OFFLOAD=mandatory` 
+| GPU | Architecture | Flag |
+|-----|--------------|------|
+| NVIDIA V100 | cc70 | `-Dgpu_arch=cc70` (default) |
+| NVIDIA A100 | cc80 | `-Dgpu_arch=cc80` |
+| NVIDIA H100 | cc90 | `-Dgpu_arch=cc90` |
+| AMD MI100 | gfx908 | `-Dgpu_arch=gfx908` (requires clang/AOMP) |
+| AMD MI210/MI250 | gfx90a | `-Dgpu_arch=gfx90a` (requires clang/AOMP) |
+| AMD MI300X | gfx942 | `-Dgpu_arch=gfx942` (requires clang/AOMP) |
+
+### Runtime settings
+
+To ensure GPU execution: `export OMP_TARGET_OFFLOAD=mandatory` 
 
 All unit tests pass, using `pytest --pyargs anuga`. It will be slow-ish because there's many of them.
 
