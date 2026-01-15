@@ -154,6 +154,7 @@ Parameters involving communication
         self._gpu_rate_array_cache = None  # Cached rate array for GPU (avoids recreating every call)
         self._gpu_rate_min_cache = None    # Cached min value for statistics
         self._gpu_rate_max_cache = None    # Cached max value for statistics
+        self._gpu_rate_changed = True      # Flag to indicate rate data needs to be transferred to GPU
 
     def _init_gpu(self):
         """Initialize GPU operator for this rate operator."""
@@ -258,16 +259,21 @@ Parameters involving communication
                         else:
                             self._gpu_rate_min_cache = self._gpu_rate_array_cache[self.indices].min()
                             self._gpu_rate_max_cache = self._gpu_rate_array_cache[self.indices].max()
+                        self._gpu_rate_changed = True  # New cache, needs transfer
                     rate_array = self._gpu_rate_array_cache
                     # rate_array is full domain size, use_indices_into_rate=1
+                    # Pass rate_changed flag to avoid unnecessary H2D transfer
+                    rate_changed = 1 if self._gpu_rate_changed else 0
                     self.local_influx = apply_rate_operator_array_gpu(
                         self.domain.gpu_interface.gpu_dom,
                         self._gpu_op_id,
                         rate_array,
                         1,  # use_indices_into_rate
+                        rate_changed,
                         float(factor),
                         float(timestep)
                     )
+                    self._gpu_rate_changed = False  # Data transferred, don't repeat
                     # Use cached min/max for statistics
                     self.local_max = self._gpu_rate_max_cache * factor
                     self.local_min = self._gpu_rate_min_cache * factor
@@ -285,16 +291,21 @@ Parameters involving communication
                         else:
                             self._gpu_rate_min_cache = self._gpu_rate_array_cache[self.indices].min()
                             self._gpu_rate_max_cache = self._gpu_rate_array_cache[self.indices].max()
+                        self._gpu_rate_changed = True  # New cache, needs transfer
                     rate_array = self._gpu_rate_array_cache
                     # rate_array is full domain size, use_indices_into_rate=1
+                    # Pass rate_changed flag to avoid unnecessary H2D transfer
+                    rate_changed = 1 if self._gpu_rate_changed else 0
                     self.local_influx = apply_rate_operator_array_gpu(
                         self.domain.gpu_interface.gpu_dom,
                         self._gpu_op_id,
                         rate_array,
                         1,  # use_indices_into_rate
+                        rate_changed,
                         float(factor),
                         float(timestep)
                     )
+                    self._gpu_rate_changed = False  # Data transferred, don't repeat
                     # Use cached min/max for statistics
                     self.local_max = self._gpu_rate_max_cache * factor
                     self.local_min = self._gpu_rate_min_cache * factor
@@ -520,6 +531,7 @@ Parameters involving communication
             self._gpu_rate_array_cache = None
             self._gpu_rate_min_cache = None
             self._gpu_rate_max_cache = None
+            self._gpu_rate_changed = True  # Signal that rate data needs to be transferred to GPU
 
         if self.rate_type == 'scalar':
             self.rate_callable = False

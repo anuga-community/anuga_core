@@ -191,6 +191,7 @@ cdef extern from "sw_domain_gpu.c" nogil:
     double gpu_rate_operator_apply_array(gpu_domain *GD, int op_id,
                                          double *rate_array, int rate_array_size,
                                          int use_indices_into_rate,
+                                         int rate_changed,
                                          double factor, double timestep)
 
     # FLOP counters (Gordon Bell performance profiling)
@@ -1169,6 +1170,7 @@ def apply_rate_operator_gpu(GPUDomain gpu_dom, int op_id,
 def apply_rate_operator_array_gpu(GPUDomain gpu_dom, int op_id,
                                   np.ndarray[double, ndim=1, mode="c"] rate_array,
                                   int use_indices_into_rate,
+                                  int rate_changed,
                                   double factor, double timestep):
     """
     Apply rate operator with per-cell rate array on GPU.
@@ -1186,6 +1188,8 @@ def apply_rate_operator_array_gpu(GPUDomain gpu_dom, int op_id,
     use_indices_into_rate : int
         If 1, rate_array is full domain size (index with indices[k])
         If 0, rate_array matches operator indices size (index with k)
+    rate_changed : int
+        If 1, transfer new data to GPU; if 0, reuse cached data on GPU
     factor : double
         Conversion factor
     timestep : double
@@ -1200,6 +1204,7 @@ def apply_rate_operator_array_gpu(GPUDomain gpu_dom, int op_id,
     return gpu_rate_operator_apply_array(&gpu_dom.GD, op_id,
                                          &rate_array[0], rate_size,
                                          use_indices_into_rate,
+                                         rate_changed,
                                          factor, timestep)
 
 

@@ -924,7 +924,7 @@ Creating domain from scratch.
 
 
 
-domain.set_multiprocessor_mode(multiprocessor_mode)
+domain.set_multiprocessor_mode(2)
 
 # ------------------------------------------------------------------------------
 # EVOLVE SYSTEM THROUGH TIME

@@ -207,6 +207,10 @@ class Parallel_Inlet_operator(Inlet_operator):
         else:
             Q = self.Q
 
+        # Handle file_function returning arrays - extract scalar value
+        if hasattr(Q, '__len__'):
+            Q = float(Q[0]) if len(Q) > 0 else 0.0
+
         return Q
 
 
