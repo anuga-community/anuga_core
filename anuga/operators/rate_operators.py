@@ -314,16 +314,21 @@ Parameters involving communication
                     # Scalar or time-dependent rate - use scalar GPU kernel
                     from anuga.shallow_water.sw_domain_gpu_ext import apply_rate_operator_gpu
                     rate = self.get_non_spatial_rate(t)
+                    # Handle case where rate is an array (from file_function)
+                    try:
+                        rate_scalar = float(rate)
+                    except (TypeError, ValueError):
+                        rate_scalar = float(rate[0])
                     self.local_influx = apply_rate_operator_gpu(
                         self.domain.gpu_interface.gpu_dom,
                         self._gpu_op_id,
-                        float(rate),
+                        rate_scalar,
                         float(factor),
                         float(timestep)
                     )
                     # Estimate min/max rate for statistics
-                    self.local_max = rate * factor if rate >= 0 else 0.0
-                    self.local_min = rate * factor if rate < 0 else 0.0
+                    self.local_max = rate_scalar * factor if rate_scalar >= 0 else 0.0
+                    self.local_min = rate_scalar * factor if rate_scalar < 0 else 0.0
 
                 # Update tracking
                 self.cumulative_influx += self.local_influx

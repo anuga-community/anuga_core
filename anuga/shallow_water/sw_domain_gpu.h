@@ -121,7 +121,7 @@ struct boundary_edge_sync {
 
 // Rate operator info - for GPU-accelerated rate application (rain, etc.)
 // Supports both positive rates (inflow) and negative rates (extraction)
-#define MAX_RATE_OPERATORS 16
+#define MAX_RATE_OPERATORS 64
 
 struct rate_operator_info {
     int num_indices;             // Number of triangles this operator applies to
@@ -335,7 +335,8 @@ double gpu_protect(struct gpu_domain *GD);
 void gpu_manning_friction(struct gpu_domain *GD);
 
 // Full RK2 step on GPU (calls all the above in sequence)
-double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double yieldstep, int apply_forcing);
+// max_timestep: Maximum allowed timestep (respecting yieldstep/finaltime constraints)
+double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
 
 // Utility functions
 int detect_gpu_aware_mpi(void);

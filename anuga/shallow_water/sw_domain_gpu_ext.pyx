@@ -178,7 +178,7 @@ cdef extern from "sw_domain_gpu.c" nogil:
     void gpu_manning_friction(gpu_domain *GD)
 
     # Full RK2 step
-    double gpu_evolve_one_rk2_step(gpu_domain *GD, double yieldstep, int apply_forcing)
+    double gpu_evolve_one_rk2_step(gpu_domain *GD, double max_timestep, int apply_forcing)
     void print_gpu_domain_info(gpu_domain *GD)
 
     # Rate operators (rain, extraction, etc.)
@@ -964,7 +964,7 @@ def evaluate_time_boundary_gpu(GPUDomain gpu_dom):
     gpu_evaluate_time_boundary(&gpu_dom.GD)
 
 
-def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double yieldstep, int apply_forcing):
+def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
     """
     Execute one RK2 timestep on GPU.
 
@@ -972,8 +972,8 @@ def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double yieldstep, int apply_forci
     ----------
     gpu_dom : GPUDomain
         The GPU domain wrapper
-    yieldstep : float
-        The yieldstep duration
+    max_timestep : float
+        Maximum allowed timestep (respecting yieldstep/finaltime constraints)
     apply_forcing : int
         Whether to apply GPU-compatible forcing terms
 
@@ -982,7 +982,7 @@ def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double yieldstep, int apply_forci
     float
         The timestep used
     """
-    return gpu_evolve_one_rk2_step(&gpu_dom.GD, yieldstep, apply_forcing)
+    return gpu_evolve_one_rk2_step(&gpu_dom.GD, max_timestep, apply_forcing)
 
 
 def finalize_gpu_domain(GPUDomain gpu_dom):

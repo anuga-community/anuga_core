@@ -2868,28 +2868,109 @@ void gpu_manning_friction(struct gpu_domain *GD) {
 // Full RK2 Step - Orchestrates all GPU operations
 // ============================================================================
 
-double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double yieldstep, int apply_forcing) {
-    // This will orchestrate the full RK2 step on GPU
-    // For now, just return a dummy timestep
-    (void)yieldstep;
-    (void)apply_forcing;
+double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing) {
+    // Full RK2 step orchestrated entirely in C - eliminates Python round-trip overhead
+    //
+    // This function performs:
+    // 1. Backup conserved quantities
+    // 2. First Euler step (protect, extrapolate, boundaries, fluxes, forcing, update, ghost exchange)
+    // 3. Second Euler step (same pattern)
+    // 4. RK2 averaging (saxpy)
+    //
+    // Parameters:
+    // - max_timestep: Maximum allowed timestep (respecting yieldstep/finaltime constraints)
+    // - apply_forcing: Whether to apply forcing terms (Manning friction)
+    //
+    // Time-dependent boundary values (Time_boundary, Transmissive_n_zero_t) must be set
+    // by Python BEFORE calling this function via set_time_boundary_values() and
+    // set_transmissive_n_zero_t_stage().
 
-    double timestep = GD->evolve_max_timestep;
+    double local_timestep, global_timestep, timestep;
 
-    // RK2 Step structure (to be implemented):
-    // 1. backup_conserved_quantities()
-    // 2. First Euler step:
-    //    - extrapolate_second_order()
-    //    - compute_fluxes() -> get timestep
-    //    - apply_forcing() if enabled
-    //    - update_conserved_quantities()
-    //    - exchange_ghosts()
-    //    - extrapolate_second_order()
-    // 3. Second Euler step:
-    //    - compute_fluxes()
-    //    - apply_forcing() if enabled
-    //    - update_conserved_quantities()
-    // 4. saxpy_conserved_quantities(0.5, 0.5)
+    // ========================================
+    // Backup conserved quantities for RK2
+    // ========================================
+    gpu_backup_conserved_quantities(GD);
+
+    // ========================================
+    // First Euler step
+    // ========================================
+
+    // Protect against negative depths
+    gpu_protect(GD);
+
+    // Extrapolate to vertices and edges
+    gpu_extrapolate_second_order(GD);
+
+    // Evaluate all GPU-supported boundary conditions
+    // (Time-dependent values must be set by Python before this call)
+    gpu_evaluate_reflective_boundary(GD);
+    gpu_evaluate_dirichlet_boundary(GD);
+    gpu_evaluate_transmissive_boundary(GD);
+    gpu_evaluate_transmissive_n_zero_t_boundary(GD);
+    gpu_evaluate_time_boundary(GD);
+
+    // Compute fluxes - returns local minimum timestep
+    local_timestep = gpu_compute_fluxes(GD);
+
+    // MPI reduce to get global minimum timestep
+    if (GD->nprocs > 1) {
+        MPI_Allreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE, MPI_MIN, GD->comm);
+    } else {
+        global_timestep = local_timestep;
+    }
+
+    // Apply CFL condition and respect max_timestep from Python
+    timestep = GD->CFL * global_timestep;
+    if (timestep > max_timestep) {
+        timestep = max_timestep;
+    }
+
+    // Apply forcing terms (Manning friction on GPU)
+    if (apply_forcing) {
+        gpu_manning_friction(GD);
+    }
+
+    // Update conserved quantities with computed timestep
+    gpu_update_conserved_quantities(GD, timestep);
+
+    // Ghost exchange (MPI) - sync ghost cells between processes
+    if (GD->nprocs > 1) {
+        gpu_exchange_ghosts(GD);
+    }
+
+    // ========================================
+    // Second Euler step
+    // ========================================
+
+    // Protect against negative depths
+    gpu_protect(GD);
+
+    // Extrapolate to vertices and edges
+    gpu_extrapolate_second_order(GD);
+
+    // Evaluate boundary conditions (same as first step)
+    gpu_evaluate_reflective_boundary(GD);
+    gpu_evaluate_dirichlet_boundary(GD);
+    gpu_evaluate_transmissive_boundary(GD);
+    gpu_evaluate_transmissive_n_zero_t_boundary(GD);
+    gpu_evaluate_time_boundary(GD);
+
+    // Compute fluxes (ignore timestep from second step - use first step's timestep)
+    gpu_compute_fluxes(GD);
+
+    // Apply forcing terms (Manning friction on GPU)
+    if (apply_forcing) {
+        gpu_manning_friction(GD);
+    }
+
+    // Update conserved quantities (same timestep as first step)
+    gpu_update_conserved_quantities(GD, timestep);
+
+    // ========================================
+    // RK2 averaging: Q_final = 0.5 * Q_backup + 0.5 * Q_current
+    // ========================================
+    gpu_saxpy_conserved_quantities(GD, 0.5, 0.5);
 
     return timestep;
 }
