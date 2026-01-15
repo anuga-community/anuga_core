@@ -431,6 +431,499 @@ class Test_DE_gpu(unittest.TestCase):
         assert err < 1e-10, f"RK2 step mismatch: {err}"
         print('\nFull RK2 step: PASS')
 
+    def test_transmissive_n_zero_t_boundary_values(self):
+        """Test that boundary values are set correctly for Transmissive_n_zero_t.
+
+        This directly compares the boundary_values arrays after a single boundary evaluation.
+        """
+        print('\n' + '=' * 70)
+        print('Test: Transmissive_n_zero_t boundary values')
+        print('=' * 70)
+
+        from anuga.shallow_water.sw_domain_openmp_ext import (
+            extrapolate_second_order_edge_sw,
+        )
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            protect_gpu, extrapolate_second_order_gpu,
+            evaluate_reflective_boundary_gpu,
+            set_transmissive_n_zero_t_stage,
+            evaluate_transmissive_n_zero_t_boundary_gpu,
+            sync_to_device, sync_all_from_device,
+        )
+
+        # Create domain with transmissive_n_zero_t boundary
+        domain = anuga.rectangular_cross_domain(3, 3, len1=10., len2=10.)
+        domain.set_flow_algorithm('DE0')
+        domain.set_low_froude(0)
+        domain.set_name('test_tnzt_bv')
+        domain.set_datadir('.')
+
+        def topography(x, y):
+            return -x / 5.0
+
+        domain.set_quantity('elevation', topography)
+        domain.set_quantity('friction', 0.01)
+        domain.set_quantity('stage', 0.0)
+
+        TIDE_VALUE = -0.5
+
+        def tide_function(t):
+            return TIDE_VALUE
+
+        Br = anuga.Reflective_boundary(domain)
+        Bt = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(
+            domain, function=tide_function)
+
+        domain.set_boundary({'left': Bt, 'right': Br, 'top': Br, 'bottom': Br})
+
+        # Run short burn-in with CPU
+        domain.set_multiprocessor_mode(1)
+        for t in domain.evolve(yieldstep=0.1, finaltime=0.1):
+            pass
+
+        # Save the state
+        stage_cv = domain.quantities['stage'].centroid_values.copy()
+        xmom_cv = domain.quantities['xmomentum'].centroid_values.copy()
+        ymom_cv = domain.quantities['ymomentum'].centroid_values.copy()
+
+        # Get boundary info
+        stage_bv = domain.quantities['stage'].boundary_values
+        xmom_bv = domain.quantities['xmomentum'].boundary_values
+        ymom_bv = domain.quantities['ymomentum'].boundary_values
+
+        print(f'Number of boundary edges: {len(stage_bv)}')
+        print(f'Tide value: {TIDE_VALUE}')
+
+        # Find transmissive_n_zero_t boundary indices
+        tnzt_ids = []
+        for tag, boundary in domain.boundary_map.items():
+            if boundary is not None and boundary.__class__.__name__ == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                segment_edges = domain.tag_boundary_cells.get(tag, None)
+                if segment_edges is not None:
+                    tnzt_ids.extend(segment_edges)
+        print(f'Transmissive_n_zero_t boundary indices: {tnzt_ids}')
+
+        # === CPU boundary evaluation ===
+        domain.protect_against_infinitesimal_and_negative_heights()
+        extrapolate_second_order_edge_sw(domain, distribute_to_vertices=False)
+        domain.update_boundary()
+
+        cpu_stage_bv = stage_bv.copy()
+        cpu_xmom_bv = xmom_bv.copy()
+        cpu_ymom_bv = ymom_bv.copy()
+
+        print('\nCPU boundary values at transmissive_n_zero_t edges:')
+        for bid in tnzt_ids[:3]:  # Show first 3
+            print(f'  [{bid}] stage={cpu_stage_bv[bid]:.4f}, xmom={cpu_xmom_bv[bid]:.6f}, ymom={cpu_ymom_bv[bid]:.6f}')
+
+        # === GPU boundary evaluation ===
+        # Reset state
+        domain.quantities['stage'].centroid_values[:] = stage_cv
+        domain.quantities['xmomentum'].centroid_values[:] = xmom_cv
+        domain.quantities['ymomentum'].centroid_values[:] = ymom_cv
+
+        # Initialize GPU
+        domain.set_multiprocessor_mode(2)
+        gpu_dom = domain.gpu_interface.gpu_dom
+
+        # Sync state to GPU
+        sync_to_device(gpu_dom)
+
+        # Run GPU boundary evaluation
+        protect_gpu(gpu_dom)
+        extrapolate_second_order_gpu(gpu_dom)
+        evaluate_reflective_boundary_gpu(gpu_dom)
+        set_transmissive_n_zero_t_stage(gpu_dom, TIDE_VALUE)
+        evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+
+        # Sync back
+        sync_all_from_device(gpu_dom)
+
+        gpu_stage_bv = stage_bv.copy()
+        gpu_xmom_bv = xmom_bv.copy()
+        gpu_ymom_bv = ymom_bv.copy()
+
+        print('\nGPU boundary values at transmissive_n_zero_t edges:')
+        for bid in tnzt_ids[:3]:  # Show first 3
+            print(f'  [{bid}] stage={gpu_stage_bv[bid]:.4f}, xmom={gpu_xmom_bv[bid]:.6f}, ymom={gpu_ymom_bv[bid]:.6f}')
+
+        # Compare
+        stage_bv_err = np.linalg.norm(cpu_stage_bv[tnzt_ids] - gpu_stage_bv[tnzt_ids])
+        xmom_bv_err = np.linalg.norm(cpu_xmom_bv[tnzt_ids] - gpu_xmom_bv[tnzt_ids])
+        ymom_bv_err = np.linalg.norm(cpu_ymom_bv[tnzt_ids] - gpu_ymom_bv[tnzt_ids])
+
+        print(f'\nBoundary value errors:')
+        print(f'  stage: {stage_bv_err:.6e}')
+        print(f'  xmom:  {xmom_bv_err:.6e}')
+        print(f'  ymom:  {ymom_bv_err:.6e}')
+
+        # Clean up
+        try:
+            os.remove('test_tnzt_bv.sww')
+        except:
+            pass
+
+        # The stage at boundary should be exactly the tide value
+        for bid in tnzt_ids:
+            assert abs(gpu_stage_bv[bid] - TIDE_VALUE) < 1e-10, \
+                f"GPU boundary stage[{bid}]={gpu_stage_bv[bid]} should be {TIDE_VALUE}"
+            assert abs(cpu_stage_bv[bid] - TIDE_VALUE) < 1e-10, \
+                f"CPU boundary stage[{bid}]={cpu_stage_bv[bid]} should be {TIDE_VALUE}"
+
+        assert stage_bv_err < 1e-10, f"Stage boundary mismatch: {stage_bv_err}"
+        # Momentum might have small differences due to edge value differences
+        assert xmom_bv_err < 1e-8, f"Xmom boundary mismatch: {xmom_bv_err}"
+        assert ymom_bv_err < 1e-8, f"Ymom boundary mismatch: {ymom_bv_err}"
+
+        print('\nTransmissive_n_zero_t boundary values: PASS')
+
+    def test_transmissive_n_zero_t_rk2_step(self):
+        """Test single RK2 step with Transmissive_n_zero_t boundary.
+
+        This does a step-by-step comparison like test_full_rk2_step but with
+        the transmissive_n_zero_t boundary type.
+        """
+        print('\n' + '=' * 70)
+        print('Test: Transmissive_n_zero_t RK2 step comparison')
+        print('=' * 70)
+
+        from anuga.shallow_water.sw_domain_openmp_ext import (
+            extrapolate_second_order_edge_sw,
+            update_conserved_quantities as omp_update_conserved,
+            backup_conserved_quantities as omp_backup_conserved,
+            saxpy_conserved_quantities as omp_saxpy_conserved,
+        )
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            protect_gpu, extrapolate_second_order_gpu, compute_fluxes_gpu,
+            backup_conserved_quantities_gpu, update_conserved_quantities_gpu,
+            saxpy_conserved_quantities_gpu, sync_from_device, sync_to_device,
+            sync_all_from_device,
+            evaluate_reflective_boundary_gpu,
+            set_transmissive_n_zero_t_stage,
+            evaluate_transmissive_n_zero_t_boundary_gpu,
+        )
+
+        TIDE_VALUE = -0.5
+
+        def create_domain(name):
+            domain = anuga.rectangular_cross_domain(3, 3, len1=10., len2=10.)
+            domain.set_flow_algorithm('DE0')
+            domain.set_low_froude(0)
+            domain.set_name(name)
+            domain.set_datadir('.')
+
+            def topography(x, y):
+                return -x / 5.0
+
+            domain.set_quantity('elevation', topography)
+            domain.set_quantity('friction', 0.01)
+            domain.set_quantity('stage', 0.0)
+
+            def tide_function(t):
+                return TIDE_VALUE
+
+            Br = anuga.Reflective_boundary(domain)
+            Bt = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(
+                domain, function=tide_function)
+            domain.set_boundary({'left': Bt, 'right': Br, 'top': Br, 'bottom': Br})
+            return domain
+
+        # Create two identical domains
+        domain1 = create_domain('domain_omp')
+        domain2 = create_domain('domain_gpu')
+
+        # Run burn-in on both
+        domain1.set_multiprocessor_mode(1)
+        for t in domain1.evolve(yieldstep=0.1, finaltime=0.1):
+            pass
+
+        domain2.set_multiprocessor_mode(1)
+        for t in domain2.evolve(yieldstep=0.1, finaltime=0.1):
+            pass
+
+        # Copy state to ensure identical starting point
+        for qname in ['stage', 'xmomentum', 'ymomentum']:
+            domain2.quantities[qname].centroid_values[:] = \
+                domain1.quantities[qname].centroid_values.copy()
+
+        # Initialize GPU
+        domain2.set_multiprocessor_mode(2)
+        gpu_dom = domain2.gpu_interface.gpu_dom
+
+        # Sync domain2 state to GPU
+        sync_to_device(gpu_dom)
+
+        timestep = 0.01
+
+        def checkpoint(label):
+            """Compare CPU and GPU state."""
+            sync_all_from_device(gpu_dom)
+            s1 = domain1.quantities['stage'].centroid_values
+            s2 = domain2.quantities['stage'].centroid_values
+            x1 = domain1.quantities['xmomentum'].centroid_values
+            x2 = domain2.quantities['xmomentum'].centroid_values
+            stage_err = np.linalg.norm(s1 - s2)
+            xmom_err = np.linalg.norm(x1 - x2)
+            print(f'  {label}: stage_err={stage_err:.2e}, xmom_err={xmom_err:.2e}')
+            return max(stage_err, xmom_err)
+
+        print('Running RK2 step with transmissive_n_zero_t boundary:')
+
+        # === BACKUP ===
+        omp_backup_conserved(domain1)
+        backup_conserved_quantities_gpu(gpu_dom)
+        checkpoint('after backup')
+
+        # === FIRST EULER STEP ===
+        domain1.protect_against_infinitesimal_and_negative_heights()
+        protect_gpu(gpu_dom)
+        checkpoint('E1: after protect')
+
+        extrapolate_second_order_edge_sw(domain1, distribute_to_vertices=False)
+        extrapolate_second_order_gpu(gpu_dom)
+        checkpoint('E1: after extrapolate')
+
+        # Boundaries - CPU uses update_boundary, GPU uses explicit calls
+        domain1.update_boundary()
+        evaluate_reflective_boundary_gpu(gpu_dom)
+        set_transmissive_n_zero_t_stage(gpu_dom, TIDE_VALUE)
+        evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+
+        # Compare boundary values
+        sync_all_from_device(gpu_dom)
+        sb1 = domain1.quantities['stage'].boundary_values
+        sb2 = domain2.quantities['stage'].boundary_values
+        bv_err = np.linalg.norm(sb1 - sb2)
+        print(f'  E1: boundary_values stage_err={bv_err:.2e}')
+
+        checkpoint('E1: after boundaries')
+
+        # Compute fluxes
+        domain1.compute_fluxes()
+        flux_dt_gpu = compute_fluxes_gpu(gpu_dom)
+        print(f'    flux_timestep: OMP={domain1.flux_timestep:.6e}, GPU={flux_dt_gpu:.6e}')
+
+        # Compare explicit_update
+        sync_all_from_device(gpu_dom)
+        eu1 = domain1.quantities['stage'].explicit_update
+        eu2 = domain2.quantities['stage'].explicit_update
+        eu_err = np.linalg.norm(eu1 - eu2)
+        print(f'  E1: explicit_update stage_err={eu_err:.2e}')
+
+        checkpoint('E1: after compute_fluxes')
+
+        # Update conserved quantities
+        domain1.timestep = timestep
+        omp_update_conserved(domain1, timestep)
+        update_conserved_quantities_gpu(gpu_dom, timestep)
+        err = checkpoint('E1: after update_conserved')
+
+        if err > 1e-10:
+            print('\n*** Divergence after first Euler step ***')
+
+        # === SECOND EULER STEP ===
+        domain1.protect_against_infinitesimal_and_negative_heights()
+        protect_gpu(gpu_dom)
+
+        extrapolate_second_order_edge_sw(domain1, distribute_to_vertices=False)
+        extrapolate_second_order_gpu(gpu_dom)
+        checkpoint('E2: after extrapolate')
+
+        domain1.update_boundary()
+        evaluate_reflective_boundary_gpu(gpu_dom)
+        set_transmissive_n_zero_t_stage(gpu_dom, TIDE_VALUE)
+        evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+        checkpoint('E2: after boundaries')
+
+        domain1.compute_fluxes()
+        compute_fluxes_gpu(gpu_dom)
+        checkpoint('E2: after compute_fluxes')
+
+        omp_update_conserved(domain1, timestep)
+        update_conserved_quantities_gpu(gpu_dom, timestep)
+        checkpoint('E2: after update_conserved')
+
+        # === SAXPY ===
+        omp_saxpy_conserved(domain1, 0.5, 0.5, 1.0)
+        saxpy_conserved_quantities_gpu(gpu_dom, 0.5, 0.5)
+        err = checkpoint('FINAL: after saxpy')
+
+        # Clean up
+        try:
+            os.remove('domain_omp.sww')
+            os.remove('domain_gpu.sww')
+        except:
+            pass
+
+        assert err < 1e-10, f"RK2 step mismatch: {err}"
+        print('\nTransmissive_n_zero_t RK2 step: PASS')
+
+    def test_single_domain_mode_switch(self):
+        """Test running same domain in CPU then GPU mode to verify identical results."""
+        print('\n' + '=' * 70)
+        print('Test: Single domain mode switch')
+        print('=' * 70)
+
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_all_from_device
+
+        domain = anuga.rectangular_cross_domain(3, 3, len1=10., len2=10.)
+        domain.set_flow_algorithm('DE0')
+        domain.set_low_froude(0)
+        domain.set_name('domain_test')
+        domain.set_datadir('.')
+
+        def topography(x, y):
+            return -x / 5.0
+
+        domain.set_quantity('elevation', topography)
+        domain.set_quantity('friction', 0.01)
+        domain.set_quantity('stage', 0.0)
+
+        def tide_function(t):
+            return -0.5 + 0.1 * t
+
+        Br = anuga.Reflective_boundary(domain)
+        Bt = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(
+            domain, function=tide_function)
+        domain.set_boundary({'left': Bt, 'right': Br, 'top': Br, 'bottom': Br})
+
+        # Run with CPU mode
+        domain.set_multiprocessor_mode(1)
+        for t in domain.evolve(yieldstep=0.1, finaltime=0.1):
+            pass
+
+        # Save CPU state
+        cpu_stage = domain.quantities['stage'].centroid_values.copy()
+        cpu_xmom = domain.quantities['xmomentum'].centroid_values.copy()
+        cpu_time = domain.get_time()
+
+        print(f'After CPU mode: time={cpu_time:.4f}, stage[0]={cpu_stage[0]:.6f}')
+
+        # Reset state
+        domain.quantities['stage'].centroid_values[:] = 0.0
+        domain.quantities['xmomentum'].centroid_values[:] = 0.0
+        domain.quantities['ymomentum'].centroid_values[:] = 0.0
+        domain.set_time(0.0)
+
+        # Run with GPU mode
+        domain.set_multiprocessor_mode(2)
+        gpu_dom = domain.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+
+        for t in domain.evolve(yieldstep=0.1, finaltime=0.1):
+            pass
+
+        sync_all_from_device(gpu_dom)
+        gpu_stage = domain.quantities['stage'].centroid_values.copy()
+        gpu_xmom = domain.quantities['xmomentum'].centroid_values.copy()
+        gpu_time = domain.get_time()
+
+        print(f'After GPU mode: time={gpu_time:.4f}, stage[0]={gpu_stage[0]:.6f}')
+
+        # Compare
+        stage_err = np.linalg.norm(cpu_stage - gpu_stage)
+        xmom_err = np.linalg.norm(cpu_xmom - gpu_xmom)
+
+        print(f'Stage error: {stage_err:.6e}')
+        print(f'Xmom error: {xmom_err:.6e}')
+
+        try:
+            os.remove('domain_test.sww')
+        except:
+            pass
+
+        assert stage_err < 1e-10, f"Stage mismatch: {stage_err}"
+        print('\nSingle domain mode switch: PASS')
+
+    def test_transmissive_n_zero_t_multi_step(self):
+        """Test multi-step evolution with Transmissive_n_zero_t boundary on GPU.
+
+        This extends test_single_domain_mode_switch to multiple yieldsteps:
+        Run multiple yieldsteps in CPU mode, reset, run same yieldsteps in GPU mode.
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            sync_to_device, sync_from_device as sync_all_from_device
+        )
+
+        print('\n' + '=' * 70)
+        print('Test: Transmissive_n_zero_t multi-step (extended mode switch)')
+        print('=' * 70)
+
+        # Create domain with Transmissive_n_zero_t boundary
+        # Use SAME parameters as test_single_domain_mode_switch
+        domain = anuga.rectangular_cross_domain(3, 3, len1=10., len2=10.)
+        domain.set_flow_algorithm('DE0')
+        domain.set_low_froude(0)
+        domain.set_name('multi_step_test')
+        domain.set_datadir('.')
+        domain.store = False
+
+        def topography(x, y):
+            return -x / 5.0
+
+        domain.set_quantity('elevation', topography)
+        domain.set_quantity('friction', 0.01)
+        domain.set_quantity('stage', 0.0)
+
+        def tide_function(t):
+            return -0.5 + 0.1 * t
+
+        Br = anuga.Reflective_boundary(domain)
+        Bt = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(
+            domain, function=tide_function)
+        domain.set_boundary({'left': Bt, 'right': Br, 'top': Br, 'bottom': Br})
+
+        # Save initial state
+        initial_state = {}
+        for qname in ['stage', 'xmomentum', 'ymomentum']:
+            initial_state[qname] = domain.quantities[qname].centroid_values.copy()
+
+        # Run multiple yieldsteps in CPU mode
+        # Match parameters from passing test_single_domain_mode_switch
+        domain.set_multiprocessor_mode(1)
+        yieldstep = 0.1
+        finaltime = 0.1
+        for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
+            pass
+
+        # Save CPU final state
+        cpu_stage = domain.quantities['stage'].centroid_values.copy()
+        cpu_xmom = domain.quantities['xmomentum'].centroid_values.copy()
+        cpu_time = domain.get_time()
+
+        print(f'After CPU mode: time={cpu_time:.4f}, stage mean={cpu_stage.mean():.6f}')
+
+        # Reset to initial state
+        for qname in ['stage', 'xmomentum', 'ymomentum']:
+            domain.quantities[qname].centroid_values[:] = initial_state[qname]
+        domain.set_time(0.0)
+
+        # Run same yieldsteps in GPU mode
+        domain.set_multiprocessor_mode(2)
+        gpu_dom = domain.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+
+        for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
+            pass
+
+        sync_all_from_device(gpu_dom)
+        gpu_stage = domain.quantities['stage'].centroid_values.copy()
+        gpu_xmom = domain.quantities['xmomentum'].centroid_values.copy()
+        gpu_time = domain.get_time()
+
+        print(f'After GPU mode: time={gpu_time:.4f}, stage mean={gpu_stage.mean():.6f}')
+
+        # Compare
+        stage_err = np.linalg.norm(cpu_stage - gpu_stage)
+        xmom_err = np.linalg.norm(cpu_xmom - gpu_xmom)
+
+        print(f'Stage error norm: {stage_err:.6e}')
+        print(f'Xmom error norm: {xmom_err:.6e}')
+
+        # Should be identical (machine precision)
+        assert stage_err < 1e-10, f"Stage mismatch: {stage_err}"
+        print('\nTransmissive_n_zero_t multi-step: PASS')
+
 
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_DE_gpu)

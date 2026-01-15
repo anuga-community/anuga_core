@@ -147,6 +147,11 @@ class GPU_OMP_interface:
         from anuga.shallow_water.sw_domain_gpu_ext import sync_boundary_values
         sync_boundary_values(self.gpu_dom)
 
+    def sync_edge_values_from_device(self):
+        """Sync edge values from device to host."""
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_edge_values_from_device
+        sync_edge_values_from_device(self.gpu_dom)
+
     def exchange_ghosts(self):
         """Exchange ghost cells between MPI ranks."""
         from anuga.shallow_water.sw_domain_gpu_ext import exchange_ghosts
@@ -186,6 +191,8 @@ class GPU_OMP_interface:
         """Update conserved quantities with explicit and semi-implicit terms."""
         from anuga.shallow_water.sw_domain_gpu_ext import update_conserved_quantities_gpu
         update_conserved_quantities_gpu(self.gpu_dom, timestep)
+        # GPU protect kernel handles negative cells, return 0 for compatibility
+        return 0
 
     def backup_conserved_quantities_kernel(self, domain):
         """Backup centroid values for RK2."""

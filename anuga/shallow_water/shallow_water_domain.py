@@ -1984,19 +1984,96 @@ class Domain(Generic_Domain):
         """
 
         nvtxRangePush('update_boundary')
-        for tag in self.tag_boundary_cells:
-            B = self.boundary_map[tag]
 
-            if B is None:
-                continue
-
-            boundary_segment_edges = self.tag_boundary_cells[tag]
-
-            B.evaluate_segment(self, boundary_segment_edges)
-
-        # Sync boundary values to GPU if in GPU mode
+        # GPU mode - use GPU boundary functions if all boundaries are GPU-supported
         if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            self.gpu_interface.sync_boundary_values()
+            from anuga.shallow_water.sw_domain_gpu_ext import (
+                evaluate_reflective_boundary_gpu,
+                evaluate_dirichlet_boundary_gpu,
+                evaluate_transmissive_boundary_gpu,
+                set_transmissive_n_zero_t_stage,
+                evaluate_transmissive_n_zero_t_boundary_gpu,
+                set_time_boundary_values,
+                evaluate_time_boundary_gpu,
+                boundary_edge_sync,
+                sync_boundary_values,
+                init_boundary_edge_sync,
+            )
+            import numpy as np
+            gpu_dom = self.gpu_interface.gpu_dom
+
+            # Ensure boundaries are initialized
+            self.gpu_interface.ensure_boundaries_initialized()
+
+            # Lazily initialize GPU boundary info
+            GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                                  'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                                  'Time_boundary'}
+
+            if not hasattr(self, '_gpu_boundary_info_initialized'):
+                self._gpu_cpu_tags = []
+                self._gpu_all_on_gpu = True
+                self._gpu_transmissive_n_zero_t_boundaries = []
+                self._gpu_time_boundaries = []
+
+                for tag, B in self.boundary_map.items():
+                    if B is not None:
+                        btype = B.__class__.__name__
+                        if btype not in GPU_BOUNDARY_TYPES:
+                            self._gpu_cpu_tags.append(tag)
+                            self._gpu_all_on_gpu = False
+                        elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                            self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                        elif btype == 'Time_boundary':
+                            self._gpu_time_boundaries.append(B)
+
+                # Set up boundary edge sync if we have ANY CPU-evaluated boundaries
+                if not self._gpu_all_on_gpu:
+                    boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
+                    init_boundary_edge_sync(gpu_dom, boundary_cell_ids)
+
+                self._gpu_boundary_info_initialized = True
+
+            if self._gpu_all_on_gpu:
+                # All boundaries are GPU-supported - evaluate entirely on GPU
+                evaluate_reflective_boundary_gpu(gpu_dom)
+                evaluate_dirichlet_boundary_gpu(gpu_dom)
+                evaluate_transmissive_boundary_gpu(gpu_dom)
+
+                # Handle transmissive_n_zero_t boundaries (need Python function call for stage)
+                for B in self._gpu_transmissive_n_zero_t_boundaries:
+                    stage_val = B.get_boundary_values()
+                    try:
+                        stage_val = float(stage_val)
+                    except:
+                        stage_val = float(stage_val[0])
+                    set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+                evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+
+                # Handle Time_boundary (need Python function call for values)
+                for B in self._gpu_time_boundaries:
+                    q = B.get_boundary_values()
+                    set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+                evaluate_time_boundary_gpu(gpu_dom)
+            else:
+                # Some boundaries need CPU - sync edge values, evaluate on CPU, sync back
+                boundary_edge_sync(gpu_dom)
+                for tag in self.tag_boundary_cells:
+                    B = self.boundary_map[tag]
+                    if B is not None:
+                        B.evaluate_segment(self, self.tag_boundary_cells[tag])
+                sync_boundary_values(gpu_dom)
+        else:
+            # CPU mode - evaluate boundaries on CPU
+            for tag in self.tag_boundary_cells:
+                B = self.boundary_map[tag]
+
+                if B is None:
+                    continue
+
+                boundary_segment_edges = self.tag_boundary_cells[tag]
+
+                B.evaluate_segment(self, boundary_segment_edges)
 
         nvtxRangePop()
 
@@ -2052,7 +2129,7 @@ class Domain(Generic_Domain):
             raise Exception('Not implemented')
 
         extrapolate_second_order_edge_sw(self, distribute_to_vertices=distribute_to_vertices)
-        
+
         nvtxRangePop()
 
     def distribute_to_edges(self):
