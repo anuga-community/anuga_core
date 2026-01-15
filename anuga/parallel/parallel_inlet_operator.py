@@ -126,6 +126,10 @@ class Parallel_Inlet_operator(Inlet_operator):
                 pypar.send((volume, current_volume, total_area, timestep), i)
         else:
             volume, current_volume, total_area, timestep = pypar.receive(self.master_proc)
+            volume = float(volume)
+            current_volume = float(current_volume)
+            total_area = float(total_area)
+            timestep = float(timestep)
 
 
         #print self.myid, volume, current_volume, total_area, timestep
@@ -264,11 +268,12 @@ class Parallel_Inlet_operator(Inlet_operator):
 
     def timestepping_statistics(self):
 
+        import numpy as np
         message = '---------------------------\n'
         message += 'Inlet report for %s:\n' % self.label
         message += '--------------------------\n'
-        message += 'Q [m^3/s]: %.2f\n' % self.applied_Q
-        message += 'Total volume [m^3]: %.2f\n' % self.total_applied_volume
+        message += 'Q [m^3/s]: %.2f\n' % float(np.asarray(self.applied_Q).flat[0])
+        message += 'Total volume [m^3]: %.2f\n' % float(np.asarray(self.total_applied_volume).flat[0])
 
         return message
 

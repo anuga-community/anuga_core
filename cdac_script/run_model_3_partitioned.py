@@ -66,8 +66,8 @@ domain_name = 'mahanadi_delta_' + Current_Date.strftime(TIMEFORMATCU)
 output_dir = 'output/' + Current_Date.strftime(TIMEFORMATCU)
 log.log_filename = output_dir + '/log_' + domain_name
 checkpoint_dir = 'checkpoints'
-yieldstep = 5
-finaltime = 20.0
+yieldstep = 10800
+finaltime = 86400
 min_allowed_height = 0.008
 max_allowed_speed = 1.0
 checkpoint_time = 60 * 60
@@ -202,7 +202,8 @@ Br = anuga.Reflective_boundary(domain)
 Bw = anuga.Reflective_boundary(domain)
 if os.path.exists(tide_filename):
     wave_function = anuga.file_function(tide_filename, quantities='stage', verbose=verbose)
-    Bw = anuga.Time_boundary(domain=domain, function=lambda t: [float(wave_function(t)), 0.0, 0.0])
+    #Bw = anuga.Time_boundary(domain=domain, function=lambda t: [float(wave_function(t)), 0.0, 0.0])
+    Bw = anuga.Time_boundary(domain=domain, function=lambda t: [wave_function(t).item(), 0.0, 0.0])
 else:
     if myid == 0 and verbose:
         print("The paradip tide file %s does not exist !!" % tide_filename)
