@@ -208,5 +208,9 @@ Run with CPU fallback to compare:
 OMP_TARGET_OFFLOAD=disabled python your_script.py
 ```
 
+### Known Issues
+
+**Volume calculation differs**: Stage values are correct but `compute_total_volume()` may report different values between GPU and CPU modes. This is under investigation - the physics (stage values) are correct.
+
 
 

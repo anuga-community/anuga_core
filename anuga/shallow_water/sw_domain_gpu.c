@@ -2893,15 +2893,20 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
     double *stage_backup = GD->D.stage_backup_values;
     double *xmom_backup = GD->D.xmom_backup_values;
     double *ymom_backup = GD->D.ymom_backup_values;
+    double *height_cv = GD->D.height_centroid_values;
+    double *bed_cv = GD->D.bed_centroid_values;
 
     #pragma omp target teams distribute parallel for
     for (anuga_int k = 0; k < n; k++) {
-        stage_cv[k] = a * stage_cv[k] + b * stage_backup[k];
+        double stage = a * stage_cv[k] + b * stage_backup[k];
+        stage_cv[k] = stage;
         xmom_cv[k] = a * xmom_cv[k] + b * xmom_backup[k];
         ymom_cv[k] = a * ymom_cv[k] + b * ymom_backup[k];
+        // Update height to match the new stage (needed for volume calculation)
+        height_cv[k] = fmax(stage - bed_cv[k], 0.0);
     }
 
-    // Count FLOPs: 6 FLOPs per element (3 quantities × (2 mul + 1 add))
+    // Count FLOPs: 9 FLOPs per element (3 quantities × (2 mul + 1 add) + height calc)
     if (GD->flops.enabled) {
         GD->flops.saxpy_flops += (uint64_t)n * FLOPS_SAXPY;
         GD->flops.saxpy_calls++;

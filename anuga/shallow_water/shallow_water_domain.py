@@ -3243,8 +3243,9 @@ class Domain(Generic_Domain):
     def update_ghosts(self, quantities=None):
         """Override to use GPU ghost exchange when in GPU mode."""
         if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            # Use GPU-aware MPI ghost exchange
-            self.gpu_interface.exchange_ghosts()
+            # GPU RK2 loop handles ghost exchange internally via exchange_ghosts(gpu_dom)
+            # Don't do another exchange here - it would cause MPI message conflicts
+            pass
         else:
             # Fall back to parent implementation
             super().update_ghosts(quantities)
