@@ -16,6 +16,34 @@
 #include "sw_domain_gpu.h"
 
 // ============================================================================
+// FLOP Counting Constants (Gordon Bell Performance Profiling)
+// ============================================================================
+//
+// FLOP counts per kernel per element (triangle):
+//
+// | Kernel                      | FLOPs/element | Notes                              |
+// |-----------------------------|---------------|-----------------------------------|
+// | extrapolate_second_order    | 150           | Gradient limiting, 5 quantities   |
+// | compute_fluxes              | 380           | 3 edges × flux function           |
+// | update_conserved_quantities | 21            | Explicit + semi-implicit          |
+// | protect                     | 5             | Depth check, mass error           |
+// | manning_friction            | 15            | sqrt, pow, semi-implicit          |
+// | backup_conserved_quantities | 0             | Memory copy only                  |
+// | saxpy_conserved_quantities  | 6             | 3 × (2 mul + 1 add)               |
+// | rate_operator_apply         | 8             | Per affected cell                 |
+// | ghost_exchange              | 0             | Memory operations only            |
+
+#define FLOPS_EXTRAPOLATE        150
+#define FLOPS_COMPUTE_FLUXES     380
+#define FLOPS_UPDATE             21
+#define FLOPS_PROTECT            5
+#define FLOPS_MANNING            15
+#define FLOPS_BACKUP             0
+#define FLOPS_SAXPY              6
+#define FLOPS_RATE_OPERATOR      8
+#define FLOPS_GHOST_EXCHANGE     0
+
+// ============================================================================
 // Flux Computation Helper Functions (device code)
 // These are marked with #pragma omp declare target for GPU execution
 // ============================================================================
@@ -415,6 +443,9 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     // Default simulation parameters
     GD->CFL = 1.0;
     GD->evolve_max_timestep = 1.0e10;
+
+    // Initialize FLOP counters (Gordon Bell profiling)
+    gpu_flop_counters_init(GD);
 
     return 0;
 }
@@ -1308,6 +1339,12 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
         }
     }
 
+    // Count FLOPs: 8 FLOPs per affected cell
+    if (GD->flops.enabled) {
+        GD->flops.rate_operator_flops += (uint64_t)op->num_indices * FLOPS_RATE_OPERATOR;
+        GD->flops.rate_operator_calls++;
+    }
+
     return local_influx;
 }
 
@@ -1397,6 +1434,12 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
 
     // Unmap rate array
     #pragma omp target exit data map(delete: rate_array[0:rate_array_size])
+
+    // Count FLOPs: 8 FLOPs per affected cell
+    if (GD->flops.enabled) {
+        GD->flops.rate_operator_flops += (uint64_t)op->num_indices * FLOPS_RATE_OPERATOR;
+        GD->flops.rate_operator_calls++;
+    }
 
     return local_influx;
 }
@@ -2369,6 +2412,12 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
             ymom_cv[k] = y_centroid_work[k];
         }
     }
+
+    // Count FLOPs: 150 FLOPs per element (gradient limiting, 5 quantities)
+    if (GD->flops.enabled) {
+        GD->flops.extrapolate_flops += (uint64_t)n * FLOPS_EXTRAPOLATE;
+        GD->flops.extrapolate_calls++;
+    }
 }
 
 double gpu_compute_fluxes(struct gpu_domain *GD) {
@@ -2539,6 +2588,12 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
 
     } // End element loop
 
+    // Count FLOPs: 380 FLOPs per element (3 edges × flux function)
+    if (GD->flops.enabled) {
+        GD->flops.compute_fluxes_flops += (uint64_t)n * FLOPS_COMPUTE_FLUXES;
+        GD->flops.compute_fluxes_calls++;
+    }
+
     return local_timestep;
 }
 
@@ -2592,6 +2647,12 @@ void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
         xmom_siu[k] = 0.0;
         ymom_siu[k] = 0.0;
     }
+
+    // Count FLOPs: 21 FLOPs per element (explicit + semi-implicit update)
+    if (GD->flops.enabled) {
+        GD->flops.update_flops += (uint64_t)n * FLOPS_UPDATE;
+        GD->flops.update_calls++;
+    }
 }
 
 void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
@@ -2612,6 +2673,12 @@ void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
         stage_backup[k] = stage_cv[k];
         xmom_backup[k] = xmom_cv[k];
         ymom_backup[k] = ymom_cv[k];
+    }
+
+    // Count FLOPs: 0 FLOPs per element (memory copy only)
+    if (GD->flops.enabled) {
+        GD->flops.backup_flops += (uint64_t)n * FLOPS_BACKUP;
+        GD->flops.backup_calls++;
     }
 }
 
@@ -2634,6 +2701,12 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
         stage_cv[k] = a * stage_cv[k] + b * stage_backup[k];
         xmom_cv[k] = a * xmom_cv[k] + b * xmom_backup[k];
         ymom_cv[k] = a * ymom_cv[k] + b * ymom_backup[k];
+    }
+
+    // Count FLOPs: 6 FLOPs per element (3 quantities × (2 mul + 1 add))
+    if (GD->flops.enabled) {
+        GD->flops.saxpy_flops += (uint64_t)n * FLOPS_SAXPY;
+        GD->flops.saxpy_calls++;
     }
 }
 
@@ -2673,6 +2746,12 @@ double gpu_protect(struct gpu_domain *GD) {
 
         // Update height quantity
         height_cv[k] = h;
+    }
+
+    // Count FLOPs: 5 FLOPs per element (depth check, mass error)
+    if (GD->flops.enabled) {
+        GD->flops.protect_flops += (uint64_t)n * FLOPS_PROTECT;
+        GD->flops.protect_calls++;
     }
 
     return mass_error;
@@ -2726,6 +2805,12 @@ void gpu_manning_friction(struct gpu_domain *GD) {
         xmom_siu[k] += S * uh;
         ymom_siu[k] += S * vh;
     }
+
+    // Count FLOPs: 15 FLOPs per element (sqrt, pow, semi-implicit)
+    if (GD->flops.enabled) {
+        GD->flops.manning_flops += (uint64_t)n * FLOPS_MANNING;
+        GD->flops.manning_calls++;
+    }
 }
 
 // ============================================================================
@@ -2756,4 +2841,258 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double yieldstep, int appl
     // 4. saxpy_conserved_quantities(0.5, 0.5)
 
     return timestep;
+}
+
+// ============================================================================
+// FLOP Counter Functions (Gordon Bell Performance Profiling)
+// ============================================================================
+
+void gpu_flop_counters_init(struct gpu_domain *GD) {
+    // Initialize all FLOP counters to zero
+    memset(&GD->flops, 0, sizeof(struct flop_counters));
+    GD->flops.enabled = 1;  // Enable by default
+}
+
+void gpu_flop_counters_reset(struct gpu_domain *GD) {
+    // Reset counters but keep enabled state
+    int enabled = GD->flops.enabled;
+    memset(&GD->flops, 0, sizeof(struct flop_counters));
+    GD->flops.enabled = enabled;
+}
+
+void gpu_flop_counters_enable(struct gpu_domain *GD, int enable) {
+    GD->flops.enabled = enable;
+}
+
+void gpu_flop_counters_start_timer(struct gpu_domain *GD) {
+    GD->flops.start_time = MPI_Wtime();
+}
+
+void gpu_flop_counters_stop_timer(struct gpu_domain *GD) {
+    GD->flops.elapsed_time = MPI_Wtime() - GD->flops.start_time;
+}
+
+uint64_t gpu_flop_counters_get_total(struct gpu_domain *GD) {
+    // Recalculate total from individual counters
+    GD->flops.total_flops =
+        GD->flops.extrapolate_flops +
+        GD->flops.compute_fluxes_flops +
+        GD->flops.update_flops +
+        GD->flops.protect_flops +
+        GD->flops.manning_flops +
+        GD->flops.backup_flops +
+        GD->flops.saxpy_flops +
+        GD->flops.rate_operator_flops +
+        GD->flops.ghost_exchange_flops;
+    return GD->flops.total_flops;
+}
+
+double gpu_flop_counters_get_flops(struct gpu_domain *GD) {
+    // Return FLOP/s (floating point operations per second)
+    if (GD->flops.elapsed_time <= 0.0) {
+        return 0.0;
+    }
+    return (double)gpu_flop_counters_get_total(GD) / GD->flops.elapsed_time;
+}
+
+void gpu_flop_counters_print(struct gpu_domain *GD) {
+    uint64_t total = gpu_flop_counters_get_total(GD);
+    double gflops = (double)total / 1.0e9;
+    double elapsed = GD->flops.elapsed_time;
+    double gflops_per_sec = (elapsed > 0.0) ? gflops / elapsed : 0.0;
+
+    printf("\n");
+    printf("============================================================\n");
+    printf("FLOP Counter Summary (Gordon Bell Profiling)\n");
+    printf("============================================================\n");
+    printf("Kernel                       |      FLOPs |     Calls |  FLOPs/call\n");
+    printf("-----------------------------|------------|-----------|------------\n");
+
+    if (GD->flops.extrapolate_calls > 0) {
+        printf("extrapolate_second_order     | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.extrapolate_flops,
+               (unsigned long)GD->flops.extrapolate_calls,
+               (unsigned long)(GD->flops.extrapolate_flops / GD->flops.extrapolate_calls));
+    }
+    if (GD->flops.compute_fluxes_calls > 0) {
+        printf("compute_fluxes               | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.compute_fluxes_flops,
+               (unsigned long)GD->flops.compute_fluxes_calls,
+               (unsigned long)(GD->flops.compute_fluxes_flops / GD->flops.compute_fluxes_calls));
+    }
+    if (GD->flops.update_calls > 0) {
+        printf("update_conserved_quantities  | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.update_flops,
+               (unsigned long)GD->flops.update_calls,
+               (unsigned long)(GD->flops.update_flops / GD->flops.update_calls));
+    }
+    if (GD->flops.protect_calls > 0) {
+        printf("protect                      | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.protect_flops,
+               (unsigned long)GD->flops.protect_calls,
+               (unsigned long)(GD->flops.protect_flops / GD->flops.protect_calls));
+    }
+    if (GD->flops.manning_calls > 0) {
+        printf("manning_friction             | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.manning_flops,
+               (unsigned long)GD->flops.manning_calls,
+               (unsigned long)(GD->flops.manning_flops / GD->flops.manning_calls));
+    }
+    if (GD->flops.saxpy_calls > 0) {
+        printf("saxpy_conserved_quantities   | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.saxpy_flops,
+               (unsigned long)GD->flops.saxpy_calls,
+               (unsigned long)(GD->flops.saxpy_flops / GD->flops.saxpy_calls));
+    }
+    if (GD->flops.rate_operator_calls > 0) {
+        printf("rate_operator_apply          | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.rate_operator_flops,
+               (unsigned long)GD->flops.rate_operator_calls,
+               (unsigned long)(GD->flops.rate_operator_flops / GD->flops.rate_operator_calls));
+    }
+
+    printf("-----------------------------|------------|-----------|------------\n");
+    printf("TOTAL                        | %10lu |\n", (unsigned long)total);
+    printf("============================================================\n");
+    printf("Total GFLOPs:     %.3f\n", gflops);
+    printf("Elapsed time:     %.3f s\n", elapsed);
+    printf("Performance:      %.3f GFLOP/s\n", gflops_per_sec);
+    printf("============================================================\n\n");
+}
+
+// Per-kernel FLOP getters
+uint64_t gpu_flop_counters_get_extrapolate(struct gpu_domain *GD) {
+    return GD->flops.extrapolate_flops;
+}
+
+uint64_t gpu_flop_counters_get_compute_fluxes(struct gpu_domain *GD) {
+    return GD->flops.compute_fluxes_flops;
+}
+
+uint64_t gpu_flop_counters_get_update(struct gpu_domain *GD) {
+    return GD->flops.update_flops;
+}
+
+uint64_t gpu_flop_counters_get_protect(struct gpu_domain *GD) {
+    return GD->flops.protect_flops;
+}
+
+uint64_t gpu_flop_counters_get_manning(struct gpu_domain *GD) {
+    return GD->flops.manning_flops;
+}
+
+uint64_t gpu_flop_counters_get_backup(struct gpu_domain *GD) {
+    return GD->flops.backup_flops;
+}
+
+uint64_t gpu_flop_counters_get_saxpy(struct gpu_domain *GD) {
+    return GD->flops.saxpy_flops;
+}
+
+uint64_t gpu_flop_counters_get_rate_operator(struct gpu_domain *GD) {
+    return GD->flops.rate_operator_flops;
+}
+
+uint64_t gpu_flop_counters_get_ghost_exchange(struct gpu_domain *GD) {
+    return GD->flops.ghost_exchange_flops;
+}
+
+// ============================================================================
+// MPI Reduction for Multi-GPU FLOP Counters (Gordon Bell)
+// ============================================================================
+
+uint64_t gpu_flop_counters_get_global_total(struct gpu_domain *GD) {
+    // Get local total first
+    uint64_t local_total = gpu_flop_counters_get_total(GD);
+
+    // MPI_Allreduce to sum across all ranks
+    // MPI_UNSIGNED_LONG_LONG maps to uint64_t
+    uint64_t global_total = 0;
+    MPI_Allreduce(&local_total, &global_total, 1, MPI_UNSIGNED_LONG_LONG,
+                  MPI_SUM, GD->comm);
+
+    return global_total;
+}
+
+double gpu_flop_counters_get_global_flops(struct gpu_domain *GD) {
+    // Get global total FLOPs
+    uint64_t global_total = gpu_flop_counters_get_global_total(GD);
+
+    // Use local elapsed time (should be same across ranks if synchronized)
+    if (GD->flops.elapsed_time <= 0.0) {
+        return 0.0;
+    }
+    return (double)global_total / GD->flops.elapsed_time;
+}
+
+void gpu_flop_counters_print_global(struct gpu_domain *GD) {
+    // Gather per-kernel FLOPs from all ranks
+    uint64_t local_flops[9];
+    local_flops[0] = GD->flops.extrapolate_flops;
+    local_flops[1] = GD->flops.compute_fluxes_flops;
+    local_flops[2] = GD->flops.update_flops;
+    local_flops[3] = GD->flops.protect_flops;
+    local_flops[4] = GD->flops.manning_flops;
+    local_flops[5] = GD->flops.backup_flops;
+    local_flops[6] = GD->flops.saxpy_flops;
+    local_flops[7] = GD->flops.rate_operator_flops;
+    local_flops[8] = GD->flops.ghost_exchange_flops;
+
+    uint64_t global_flops[9];
+    MPI_Reduce(local_flops, global_flops, 9, MPI_UNSIGNED_LONG_LONG,
+               MPI_SUM, 0, GD->comm);
+
+    // Get global total and max elapsed time
+    uint64_t local_total = gpu_flop_counters_get_total(GD);
+    uint64_t global_total = 0;
+    MPI_Reduce(&local_total, &global_total, 1, MPI_UNSIGNED_LONG_LONG,
+               MPI_SUM, 0, GD->comm);
+
+    double local_elapsed = GD->flops.elapsed_time;
+    double max_elapsed = 0.0;
+    MPI_Reduce(&local_elapsed, &max_elapsed, 1, MPI_DOUBLE,
+               MPI_MAX, 0, GD->comm);
+
+    // Only rank 0 prints
+    if (GD->rank != 0) return;
+
+    double gflops = (double)global_total / 1.0e9;
+    double gflops_per_sec = (max_elapsed > 0.0) ? gflops / max_elapsed : 0.0;
+
+    printf("\n");
+    printf("============================================================\n");
+    printf("GLOBAL FLOP Counter Summary (Gordon Bell - %d GPUs)\n", GD->nprocs);
+    printf("============================================================\n");
+    printf("Kernel                       |      GFLOPs | %% of total\n");
+    printf("-----------------------------|-------------|------------\n");
+
+    const char* names[] = {
+        "extrapolate_second_order",
+        "compute_fluxes",
+        "update_conserved_quantities",
+        "protect",
+        "manning_friction",
+        "backup_conserved_quantities",
+        "saxpy_conserved_quantities",
+        "rate_operator_apply",
+        "ghost_exchange"
+    };
+
+    for (int i = 0; i < 9; i++) {
+        if (global_flops[i] > 0) {
+            double kernel_gflops = (double)global_flops[i] / 1.0e9;
+            double pct = 100.0 * (double)global_flops[i] / (double)global_total;
+            printf("%-28s | %11.3f | %9.1f%%\n", names[i], kernel_gflops, pct);
+        }
+    }
+
+    printf("-----------------------------|-------------|------------\n");
+    printf("TOTAL                        | %11.3f | 100.0%%\n", gflops);
+    printf("============================================================\n");
+    printf("Number of GPUs:   %d\n", GD->nprocs);
+    printf("Total GFLOPs:     %.3f\n", gflops);
+    printf("Elapsed time:     %.3f s\n", max_elapsed);
+    printf("Performance:      %.3f GFLOP/s\n", gflops_per_sec);
+    printf("Per-GPU average:  %.3f GFLOP/s\n", gflops_per_sec / GD->nprocs);
+    printf("============================================================\n\n");
 }

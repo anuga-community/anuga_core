@@ -3584,6 +3584,20 @@ class Domain(Generic_Domain):
             print(f'Setting omp_num_threads to {omp_num_threads}')
 
 
+    @property
+    def gpu(self):
+        """
+        Shortcut to access the GPU interface.
+
+        Returns the gpu_interface object which provides FLOP counters and kernel wrappers.
+        Raises AttributeError if GPU mode is not enabled.
+        """
+        if self.gpu_interface is None:
+            raise AttributeError(
+                "GPU interface not initialized. Call domain.set_multiprocessor_mode(2) first."
+            )
+        return self.gpu_interface
+
     def set_gpu_interface(self):
 
         if self.multiprocessor_mode == 2 and self.gpu_interface is None:

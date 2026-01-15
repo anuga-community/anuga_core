@@ -139,6 +139,42 @@ struct rate_operators {
     int initialized;
 };
 
+// FLOP counter structure for performance profiling (Gordon Bell)
+// Counts floating-point operations per kernel for FLOPS reporting
+struct flop_counters {
+    // Per-kernel FLOP counts (accumulated across all calls)
+    uint64_t extrapolate_flops;      // gpu_extrapolate_second_order
+    uint64_t compute_fluxes_flops;   // gpu_compute_fluxes
+    uint64_t update_flops;           // gpu_update_conserved_quantities
+    uint64_t protect_flops;          // gpu_protect
+    uint64_t manning_flops;          // gpu_manning_friction
+    uint64_t backup_flops;           // gpu_backup_conserved_quantities
+    uint64_t saxpy_flops;            // gpu_saxpy_conserved_quantities
+    uint64_t rate_operator_flops;    // gpu_rate_operator_apply*
+    uint64_t ghost_exchange_flops;   // gpu_exchange_ghosts (pack/unpack)
+
+    // Total FLOP count
+    uint64_t total_flops;
+
+    // Call counts for verification
+    uint64_t extrapolate_calls;
+    uint64_t compute_fluxes_calls;
+    uint64_t update_calls;
+    uint64_t protect_calls;
+    uint64_t manning_calls;
+    uint64_t backup_calls;
+    uint64_t saxpy_calls;
+    uint64_t rate_operator_calls;
+    uint64_t ghost_exchange_calls;
+
+    // Timing for FLOPS calculation (optional, can use external timer)
+    double start_time;
+    double elapsed_time;
+
+    // Enable/disable flag
+    int enabled;
+};
+
 // GPU domain struct - extends base domain with MPI/GPU state
 struct gpu_domain {
     // Base domain struct (contains all ANUGA arrays)
@@ -177,6 +213,9 @@ struct gpu_domain {
     // RK2 backup arrays (allocated on GPU)
     // These may already exist in base domain, but we track GPU copies here
     int backup_arrays_mapped;
+
+    // FLOP counters for performance profiling (Gordon Bell)
+    struct flop_counters flops;
 };
 
 // ============================================================================
@@ -295,5 +334,32 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double yieldstep, int appl
 // Utility functions
 int detect_gpu_aware_mpi(void);
 void print_gpu_domain_info(struct gpu_domain *GD);
+
+// FLOP counter functions (Gordon Bell performance profiling)
+void gpu_flop_counters_init(struct gpu_domain *GD);
+void gpu_flop_counters_reset(struct gpu_domain *GD);
+void gpu_flop_counters_enable(struct gpu_domain *GD, int enable);
+void gpu_flop_counters_start_timer(struct gpu_domain *GD);
+void gpu_flop_counters_stop_timer(struct gpu_domain *GD);
+uint64_t gpu_flop_counters_get_total(struct gpu_domain *GD);
+double gpu_flop_counters_get_flops(struct gpu_domain *GD);  // FLOP/s
+void gpu_flop_counters_print(struct gpu_domain *GD);
+
+// Per-kernel FLOP getters
+uint64_t gpu_flop_counters_get_extrapolate(struct gpu_domain *GD);
+uint64_t gpu_flop_counters_get_compute_fluxes(struct gpu_domain *GD);
+uint64_t gpu_flop_counters_get_update(struct gpu_domain *GD);
+uint64_t gpu_flop_counters_get_protect(struct gpu_domain *GD);
+uint64_t gpu_flop_counters_get_manning(struct gpu_domain *GD);
+uint64_t gpu_flop_counters_get_backup(struct gpu_domain *GD);
+uint64_t gpu_flop_counters_get_saxpy(struct gpu_domain *GD);
+uint64_t gpu_flop_counters_get_rate_operator(struct gpu_domain *GD);
+uint64_t gpu_flop_counters_get_ghost_exchange(struct gpu_domain *GD);
+
+// MPI reduction for multi-GPU (Gordon Bell)
+// Returns global totals across all ranks
+uint64_t gpu_flop_counters_get_global_total(struct gpu_domain *GD);
+double gpu_flop_counters_get_global_flops(struct gpu_domain *GD);
+void gpu_flop_counters_print_global(struct gpu_domain *GD);
 
 #endif // SW_DOMAIN_GPU_H

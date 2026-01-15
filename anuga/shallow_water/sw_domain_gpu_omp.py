@@ -154,3 +154,142 @@ class GPU_OMP_interface:
         """Apply Manning friction (semi-implicit)."""
         from anuga.shallow_water.sw_domain_gpu_ext import manning_friction_gpu
         manning_friction_gpu(self.gpu_dom)
+
+    # =========================================================================
+    # FLOP Counter API (Gordon Bell Performance Profiling)
+    # =========================================================================
+
+    def flop_counters_reset(self):
+        """
+        Reset all FLOP counters to zero.
+
+        Call this at the start of the profiling period.
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_reset
+        flop_counters_reset(self.gpu_dom)
+
+    def flop_counters_enable(self, enable=True):
+        """
+        Enable or disable FLOP counting.
+
+        Parameters
+        ----------
+        enable : bool
+            True to enable counting, False to disable
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_enable
+        flop_counters_enable(self.gpu_dom, enable)
+
+    def flop_counters_start_timer(self):
+        """
+        Start the FLOP counter timer.
+
+        Call this at the start of the profiling period.
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_start_timer
+        flop_counters_start_timer(self.gpu_dom)
+
+    def flop_counters_stop_timer(self):
+        """
+        Stop the FLOP counter timer.
+
+        Call this at the end of the profiling period.
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_stop_timer
+        flop_counters_stop_timer(self.gpu_dom)
+
+    def flop_counters_get_total(self):
+        """
+        Get total FLOP count across all kernels.
+
+        Returns
+        -------
+        int
+            Total FLOPs executed since last reset
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_get_total
+        return flop_counters_get_total(self.gpu_dom)
+
+    def flop_counters_get_flops(self):
+        """
+        Get FLOP rate (FLOPs per second).
+
+        Call flop_counters_stop_timer first to record elapsed time.
+
+        Returns
+        -------
+        float
+            FLOP/s rate
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_get_flops
+        return flop_counters_get_flops(self.gpu_dom)
+
+    def flop_counters_print(self):
+        """
+        Print detailed FLOP counter summary to stdout.
+
+        Shows per-kernel breakdown and total performance in GFLOP/s.
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_print
+        flop_counters_print(self.gpu_dom)
+
+    def flop_counters_get_stats(self):
+        """
+        Get all FLOP counter statistics as a dictionary.
+
+        Returns
+        -------
+        dict
+            Dictionary with per-kernel FLOPs, total, elapsed time, and GFLOP/s
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_get_stats
+        return flop_counters_get_stats(self.gpu_dom)
+
+    # =========================================================================
+    # Global FLOP Counter API (MPI reduction for multi-GPU)
+    # =========================================================================
+
+    def flop_counters_get_global_total(self):
+        """
+        Get global total FLOP count summed across all MPI ranks/GPUs.
+
+        Returns
+        -------
+        int
+            Total FLOPs across all GPUs since last reset
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_get_global_total
+        return flop_counters_get_global_total(self.gpu_dom)
+
+    def flop_counters_get_global_flops(self):
+        """
+        Get global FLOP rate (FLOPs per second) across all GPUs.
+
+        Returns
+        -------
+        float
+            Global FLOP/s rate
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_get_global_flops
+        return flop_counters_get_global_flops(self.gpu_dom)
+
+    def flop_counters_print_global(self):
+        """
+        Print global FLOP counter summary to stdout (rank 0 only).
+
+        Shows per-kernel breakdown summed across all GPUs with percentages.
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_print_global
+        flop_counters_print_global(self.gpu_dom)
+
+    def flop_counters_get_global_stats(self):
+        """
+        Get global FLOP counter statistics as a dictionary (MPI reduced).
+
+        Returns
+        -------
+        dict
+            Dictionary with global total, GFLOP/s, num_gpus, and per-GPU average
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_get_global_stats
+        return flop_counters_get_global_stats(self.gpu_dom)

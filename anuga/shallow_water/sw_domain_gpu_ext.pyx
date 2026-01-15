@@ -10,7 +10,7 @@ Key responsibilities:
 """
 
 import cython
-from libc.stdint cimport int64_t, int32_t
+from libc.stdint cimport int64_t, int32_t, uint64_t
 from libc.stdlib cimport malloc, free
 
 import numpy as np
@@ -192,6 +192,29 @@ cdef extern from "sw_domain_gpu.c" nogil:
                                          double *rate_array, int rate_array_size,
                                          int use_indices_into_rate,
                                          double factor, double timestep)
+
+    # FLOP counters (Gordon Bell performance profiling)
+    void gpu_flop_counters_init(gpu_domain *GD)
+    void gpu_flop_counters_reset(gpu_domain *GD)
+    void gpu_flop_counters_enable(gpu_domain *GD, int enable)
+    void gpu_flop_counters_start_timer(gpu_domain *GD)
+    void gpu_flop_counters_stop_timer(gpu_domain *GD)
+    uint64_t gpu_flop_counters_get_total(gpu_domain *GD)
+    double gpu_flop_counters_get_flops(gpu_domain *GD)
+    void gpu_flop_counters_print(gpu_domain *GD)
+    uint64_t gpu_flop_counters_get_extrapolate(gpu_domain *GD)
+    uint64_t gpu_flop_counters_get_compute_fluxes(gpu_domain *GD)
+    uint64_t gpu_flop_counters_get_update(gpu_domain *GD)
+    uint64_t gpu_flop_counters_get_protect(gpu_domain *GD)
+    uint64_t gpu_flop_counters_get_manning(gpu_domain *GD)
+    uint64_t gpu_flop_counters_get_backup(gpu_domain *GD)
+    uint64_t gpu_flop_counters_get_saxpy(gpu_domain *GD)
+    uint64_t gpu_flop_counters_get_rate_operator(gpu_domain *GD)
+    uint64_t gpu_flop_counters_get_ghost_exchange(gpu_domain *GD)
+    # MPI reduction for multi-GPU (Gordon Bell)
+    uint64_t gpu_flop_counters_get_global_total(gpu_domain *GD)
+    double gpu_flop_counters_get_global_flops(gpu_domain *GD)
+    void gpu_flop_counters_print_global(gpu_domain *GD)
 
 
 # ============================================================================
@@ -1178,3 +1201,177 @@ def apply_rate_operator_array_gpu(GPUDomain gpu_dom, int op_id,
                                          &rate_array[0], rate_size,
                                          use_indices_into_rate,
                                          factor, timestep)
+
+
+# ============================================================================
+# FLOP Counter API (Gordon Bell Performance Profiling)
+# ============================================================================
+
+def flop_counters_reset(GPUDomain gpu_dom):
+    """
+    Reset all FLOP counters to zero.
+
+    Call this at the start of the profiling period.
+    """
+    gpu_flop_counters_reset(&gpu_dom.GD)
+
+
+def flop_counters_enable(GPUDomain gpu_dom, bint enable):
+    """
+    Enable or disable FLOP counting.
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    enable : bool
+        True to enable counting, False to disable
+    """
+    gpu_flop_counters_enable(&gpu_dom.GD, 1 if enable else 0)
+
+
+def flop_counters_start_timer(GPUDomain gpu_dom):
+    """
+    Start the FLOP counter timer.
+
+    Call this at the start of the profiling period.
+    """
+    gpu_flop_counters_start_timer(&gpu_dom.GD)
+
+
+def flop_counters_stop_timer(GPUDomain gpu_dom):
+    """
+    Stop the FLOP counter timer.
+
+    Call this at the end of the profiling period.
+    """
+    gpu_flop_counters_stop_timer(&gpu_dom.GD)
+
+
+def flop_counters_get_total(GPUDomain gpu_dom):
+    """
+    Get total FLOP count across all kernels.
+
+    Returns
+    -------
+    int
+        Total FLOPs executed since last reset
+    """
+    return gpu_flop_counters_get_total(&gpu_dom.GD)
+
+
+def flop_counters_get_flops(GPUDomain gpu_dom):
+    """
+    Get FLOP rate (FLOPs per second).
+
+    Call flop_counters_stop_timer first to record elapsed time.
+
+    Returns
+    -------
+    float
+        FLOP/s rate
+    """
+    return gpu_flop_counters_get_flops(&gpu_dom.GD)
+
+
+def flop_counters_print(GPUDomain gpu_dom):
+    """
+    Print detailed FLOP counter summary to stdout.
+
+    Shows per-kernel breakdown and total performance in GFLOP/s.
+    """
+    gpu_flop_counters_print(&gpu_dom.GD)
+
+
+def flop_counters_get_stats(GPUDomain gpu_dom):
+    """
+    Get all FLOP counter statistics as a dictionary.
+
+    Returns
+    -------
+    dict
+        Dictionary with per-kernel FLOPs, total, elapsed time, and GFLOP/s
+    """
+    cdef uint64_t total = gpu_flop_counters_get_total(&gpu_dom.GD)
+    cdef double flops = gpu_flop_counters_get_flops(&gpu_dom.GD)
+
+    return {
+        'extrapolate': gpu_flop_counters_get_extrapolate(&gpu_dom.GD),
+        'compute_fluxes': gpu_flop_counters_get_compute_fluxes(&gpu_dom.GD),
+        'update': gpu_flop_counters_get_update(&gpu_dom.GD),
+        'protect': gpu_flop_counters_get_protect(&gpu_dom.GD),
+        'manning': gpu_flop_counters_get_manning(&gpu_dom.GD),
+        'backup': gpu_flop_counters_get_backup(&gpu_dom.GD),
+        'saxpy': gpu_flop_counters_get_saxpy(&gpu_dom.GD),
+        'rate_operator': gpu_flop_counters_get_rate_operator(&gpu_dom.GD),
+        'ghost_exchange': gpu_flop_counters_get_ghost_exchange(&gpu_dom.GD),
+        'total_flops': total,
+        'flops_per_second': flops,
+        'gflops_per_second': flops / 1.0e9,
+        'total_gflops': total / 1.0e9,
+    }
+
+
+# ============================================================================
+# Global FLOP Counter API (MPI reduction for multi-GPU)
+# ============================================================================
+
+def flop_counters_get_global_total(GPUDomain gpu_dom):
+    """
+    Get global total FLOP count summed across all MPI ranks/GPUs.
+
+    This performs an MPI_Allreduce to sum FLOPs from all ranks.
+
+    Returns
+    -------
+    int
+        Total FLOPs across all GPUs since last reset
+    """
+    return gpu_flop_counters_get_global_total(&gpu_dom.GD)
+
+
+def flop_counters_get_global_flops(GPUDomain gpu_dom):
+    """
+    Get global FLOP rate (FLOPs per second) across all GPUs.
+
+    Call flop_counters_stop_timer first to record elapsed time.
+
+    Returns
+    -------
+    float
+        Global FLOP/s rate (sum of all GPU FLOPs / elapsed time)
+    """
+    return gpu_flop_counters_get_global_flops(&gpu_dom.GD)
+
+
+def flop_counters_print_global(GPUDomain gpu_dom):
+    """
+    Print global FLOP counter summary to stdout (rank 0 only).
+
+    Shows per-kernel breakdown summed across all GPUs, with percentages.
+    Includes total GFLOP/s and per-GPU average.
+    """
+    gpu_flop_counters_print_global(&gpu_dom.GD)
+
+
+def flop_counters_get_global_stats(GPUDomain gpu_dom):
+    """
+    Get global FLOP counter statistics as a dictionary (MPI reduced).
+
+    Returns
+    -------
+    dict
+        Dictionary with global total, elapsed time, GFLOP/s, and per-GPU average
+    """
+    cdef uint64_t global_total = gpu_flop_counters_get_global_total(&gpu_dom.GD)
+    cdef double global_flops = gpu_flop_counters_get_global_flops(&gpu_dom.GD)
+    cdef int nprocs = gpu_dom.GD.nprocs
+
+    return {
+        'global_total_flops': global_total,
+        'global_total_gflops': global_total / 1.0e9,
+        'global_flops_per_second': global_flops,
+        'global_gflops_per_second': global_flops / 1.0e9,
+        'num_gpus': nprocs,
+        'per_gpu_gflops_per_second': (global_flops / 1.0e9) / nprocs if nprocs > 0 else 0.0,
+    }
