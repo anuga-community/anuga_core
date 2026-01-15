@@ -20,26 +20,29 @@
 // ============================================================================
 //
 // FLOP counts per kernel per element (triangle):
+// Counted: +, -, *, /, sqrt, fmin, fmax, pow (comparisons not counted)
 //
 // | Kernel                      | FLOPs/element | Notes                              |
 // |-----------------------------|---------------|-----------------------------------|
-// | extrapolate_second_order    | 150           | Gradient limiting, 5 quantities   |
-// | compute_fluxes              | 380           | 3 edges × flux function           |
+// | extrapolate_second_order    | 220           | Gradient limiting, 4 quantities   |
+// | compute_fluxes              | 400           | 3 edges × flux function + pressure|
 // | update_conserved_quantities | 21            | Explicit + semi-implicit          |
 // | protect                     | 5             | Depth check, mass error           |
-// | manning_friction            | 15            | sqrt, pow, semi-implicit          |
+// | manning_friction            | 18            | sqrt, pow(7/3), semi-implicit     |
 // | backup_conserved_quantities | 0             | Memory copy only                  |
-// | saxpy_conserved_quantities  | 6             | 3 × (2 mul + 1 add)               |
+// | saxpy_conserved_quantities  | 9             | 3 × (2 mul + 1 add)               |
 // | rate_operator_apply         | 8             | Per affected cell                 |
 // | ghost_exchange              | 0             | Memory operations only            |
+//
+// Total per RK2 step: ~673 FLOPs/element (excluding rate_operator)
 
-#define FLOPS_EXTRAPOLATE        150
-#define FLOPS_COMPUTE_FLUXES     380
+#define FLOPS_EXTRAPOLATE        220
+#define FLOPS_COMPUTE_FLUXES     400
 #define FLOPS_UPDATE             21
 #define FLOPS_PROTECT            5
-#define FLOPS_MANNING            15
+#define FLOPS_MANNING            18
 #define FLOPS_BACKUP             0
-#define FLOPS_SAXPY              6
+#define FLOPS_SAXPY              9
 #define FLOPS_RATE_OPERATOR      8
 #define FLOPS_GHOST_EXCHANGE     0
 
