@@ -122,9 +122,11 @@ cdef extern from "sw_domain_gpu.c" nogil:
 
     # GPU memory management
     void gpu_domain_map_arrays(gpu_domain *GD)
+    void gpu_remap_boundary_arrays(gpu_domain *GD)
     void gpu_domain_unmap_arrays(gpu_domain *GD)
     void gpu_domain_sync_to_device(gpu_domain *GD)
     void gpu_domain_sync_from_device(gpu_domain *GD)
+    void gpu_domain_sync_all_from_device(gpu_domain *GD)
     void gpu_sync_boundary_values(gpu_domain *GD)
     void gpu_sync_edge_values_from_device(gpu_domain *GD)
     int gpu_boundary_edge_sync_init(gpu_domain *GD, int num_boundary_cells, int *boundary_cell_ids)
@@ -334,6 +336,10 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     D.minimum_allowed_height = domain_object.minimum_allowed_height
     D.maximum_allowed_speed = domain_object.maximum_allowed_speed
     D.evolve_max_timestep = domain_object.evolve_max_timestep
+
+    # Copy CFL and evolve_max_timestep to GPU domain struct (used by C RK2 loop)
+    GD.CFL = domain_object.CFL
+    GD.evolve_max_timestep = domain_object.evolve_max_timestep
     D.low_froude = domain_object.low_froude
     D.extrapolate_velocity_second_order = domain_object.extrapolate_velocity_second_order
 
@@ -601,6 +607,16 @@ def map_to_gpu(GPUDomain gpu_dom):
     gpu_domain_map_arrays(&gpu_dom.GD)
 
 
+def remap_boundary_arrays(GPUDomain gpu_dom):
+    """
+    Remap boundary arrays to GPU memory.
+
+    Call this after boundaries are initialized (if they weren't initialized
+    before map_to_gpu was called).
+    """
+    gpu_remap_boundary_arrays(&gpu_dom.GD)
+
+
 def unmap_from_gpu(GPUDomain gpu_dom):
     """
     Unmap domain arrays from GPU memory.
@@ -626,6 +642,17 @@ def sync_from_device(GPUDomain gpu_dom):
     Call this before Python needs to read arrays (e.g., at yieldstep for I/O).
     """
     gpu_domain_sync_from_device(&gpu_dom.GD)
+
+
+def sync_all_from_device(GPUDomain gpu_dom):
+    """
+    Sync ALL arrays from device to host (for debugging/testing).
+
+    This syncs centroid_values, edge_values, boundary_values,
+    explicit_update, semi_implicit_update, and backup_values.
+    Use this when you need to inspect intermediate GPU values.
+    """
+    gpu_domain_sync_all_from_device(&gpu_dom.GD)
 
 
 def sync_boundary_values(GPUDomain gpu_dom):

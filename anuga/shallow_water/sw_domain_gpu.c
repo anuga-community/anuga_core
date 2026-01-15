@@ -1501,7 +1501,9 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
 
 void gpu_domain_map_arrays(struct gpu_domain *GD) {
     if (GD->gpu_initialized) return;
-    if (GD->device_id < 0) return;  // No GPU available
+    // Note: Don't return early if device_id < 0. With OMP_TARGET_OFFLOAD=disabled,
+    // the OpenMP target directives run on CPU, so we still need to set up the
+    // data structures and flags for the boundary/kernel functions to work.
 
     anuga_int n = GD->D.number_of_elements;
     anuga_int nb = GD->D.boundary_length;
@@ -1680,6 +1682,91 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
     }
 }
 
+void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
+    // Remap boundary arrays that were initialized after the initial map_to_gpu call.
+    // This is needed when set_boundary() is called AFTER set_multiprocessor_mode().
+
+    // Map reflective boundary arrays if initialized but not yet mapped
+    struct reflective_boundary *R = &GD->reflective;
+    if (R->num_edges > 0 && R->boundary_indices != NULL && !R->mapped) {
+        int ne = R->num_edges;
+        int *b_idx = R->boundary_indices;
+        int *v_ids = R->vol_ids;
+        int *e_ids = R->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        R->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Reflective boundary arrays mapped to GPU (late): %d edges\n", ne);
+        }
+    }
+
+    // Map dirichlet boundary arrays if initialized but not yet mapped
+    struct dirichlet_boundary *Dir = &GD->dirichlet;
+    if (Dir->num_edges > 0 && Dir->boundary_indices != NULL && !Dir->mapped) {
+        int ne = Dir->num_edges;
+        int *b_idx = Dir->boundary_indices;
+        int *v_ids = Dir->vol_ids;
+        int *e_ids = Dir->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        Dir->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Dirichlet boundary arrays mapped to GPU (late): %d edges\n", ne);
+        }
+    }
+
+    // Map transmissive boundary arrays if initialized but not yet mapped
+    struct transmissive_boundary *T = &GD->transmissive;
+    if (T->num_edges > 0 && T->boundary_indices != NULL && !T->mapped) {
+        int ne = T->num_edges;
+        int *b_idx = T->boundary_indices;
+        int *v_ids = T->vol_ids;
+        int *e_ids = T->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        T->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Transmissive boundary arrays mapped to GPU (late): %d edges\n", ne);
+        }
+    }
+
+    // Map transmissive_n_zero_t boundary arrays if initialized but not yet mapped
+    struct transmissive_n_zero_t_boundary *Tnzt = &GD->transmissive_n_zero_t;
+    if (Tnzt->num_edges > 0 && Tnzt->boundary_indices != NULL && !Tnzt->mapped) {
+        int ne = Tnzt->num_edges;
+        int *b_idx = Tnzt->boundary_indices;
+        int *v_ids = Tnzt->vol_ids;
+        int *e_ids = Tnzt->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        Tnzt->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Transmissive_n_zero_t boundary arrays mapped to GPU (late): %d edges\n", ne);
+        }
+    }
+
+    // Map time_boundary arrays if initialized but not yet mapped
+    struct time_boundary *TB = &GD->time_bdry;
+    if (TB->num_edges > 0 && TB->boundary_indices != NULL && !TB->mapped) {
+        int ne = TB->num_edges;
+        int *b_idx = TB->boundary_indices;
+        int *v_ids = TB->vol_ids;
+        int *e_ids = TB->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        TB->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Time_boundary arrays mapped to GPU (late): %d edges\n", ne);
+        }
+    }
+}
+
 void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     if (!GD->gpu_initialized) return;
 
@@ -1853,6 +1940,66 @@ void gpu_domain_sync_from_device(struct gpu_domain *GD) {
     double *height_cv = GD->D.height_centroid_values;
 
     #pragma omp target update from(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+}
+
+void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
+    // Sync ALL arrays from GPU (for debugging/testing intermediate values)
+    if (!GD->gpu_initialized) return;
+
+    anuga_int n = GD->D.number_of_elements;
+    anuga_int nb = GD->D.boundary_length;
+
+    // Centroid values
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *height_cv = GD->D.height_centroid_values;
+
+    // Edge values
+    double *stage_ev = GD->D.stage_edge_values;
+    double *xmom_ev = GD->D.xmom_edge_values;
+    double *ymom_ev = GD->D.ymom_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+    double *bed_ev = GD->D.bed_edge_values;
+
+    // Explicit and semi-implicit updates
+    double *stage_eu = GD->D.stage_explicit_update;
+    double *xmom_eu = GD->D.xmom_explicit_update;
+    double *ymom_eu = GD->D.ymom_explicit_update;
+    double *stage_siu = GD->D.stage_semi_implicit_update;
+    double *xmom_siu = GD->D.xmom_semi_implicit_update;
+    double *ymom_siu = GD->D.ymom_semi_implicit_update;
+
+    // Sync centroid values
+    #pragma omp target update from(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+
+    // Sync edge values
+    #pragma omp target update from(stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n], \
+                                   height_ev[0:3*n], bed_ev[0:3*n])
+
+    // Sync explicit and semi-implicit updates
+    #pragma omp target update from(stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n], \
+                                   stage_siu[0:n], xmom_siu[0:n], ymom_siu[0:n])
+
+    // Sync boundary values if present
+    if (nb > 0) {
+        double *stage_bv = GD->D.stage_boundary_values;
+        double *xmom_bv = GD->D.xmom_boundary_values;
+        double *ymom_bv = GD->D.ymom_boundary_values;
+        double *height_bv = GD->D.height_boundary_values;
+        double *bed_bv = GD->D.bed_boundary_values;
+
+        #pragma omp target update from(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
+                                       height_bv[0:nb], bed_bv[0:nb])
+    }
+
+    // Sync backup values if mapped
+    if (GD->backup_arrays_mapped) {
+        double *stage_backup = GD->D.stage_backup_values;
+        double *xmom_backup = GD->D.xmom_backup_values;
+        double *ymom_backup = GD->D.ymom_backup_values;
+        #pragma omp target update from(stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
+    }
 }
 
 void gpu_sync_boundary_values(struct gpu_domain *GD) {

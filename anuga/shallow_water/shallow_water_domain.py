@@ -2815,6 +2815,10 @@ class Domain(Generic_Domain):
 
         gpu_dom = self.gpu_interface.gpu_dom
 
+        # Ensure GPU boundaries are initialized (handles case where set_boundary
+        # was called after set_multiprocessor_mode)
+        self.gpu_interface.ensure_boundaries_initialized()
+
         # Supported GPU boundary types (no D2H/H2D transfer needed)
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
@@ -2990,6 +2994,10 @@ class Domain(Generic_Domain):
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
+
+        # Ensure GPU boundaries are initialized (handles case where set_boundary
+        # was called after set_multiprocessor_mode)
+        self.gpu_interface.ensure_boundaries_initialized()
 
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',

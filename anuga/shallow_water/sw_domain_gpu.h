@@ -242,9 +242,11 @@ void gpu_halo_finalize(struct gpu_domain *GD);
 
 // GPU memory management
 void gpu_domain_map_arrays(struct gpu_domain *GD);
+void gpu_remap_boundary_arrays(struct gpu_domain *GD);
 void gpu_domain_unmap_arrays(struct gpu_domain *GD);
 void gpu_domain_sync_to_device(struct gpu_domain *GD);
 void gpu_domain_sync_from_device(struct gpu_domain *GD);
+void gpu_domain_sync_all_from_device(struct gpu_domain *GD);  // Debug: sync ALL arrays
 
 // Sync boundary values TO GPU (after CPU boundary evaluation)
 void gpu_sync_boundary_values(struct gpu_domain *GD);

@@ -33,6 +33,7 @@ class GPU_OMP_interface:
         self.domain = domain
         self.gpu_dom = None
         self.initialized = False
+        self.boundaries_initialized = False
 
     def setup(self):
         """
@@ -56,11 +57,7 @@ class GPU_OMP_interface:
         # This allows boundary arrays to be mapped together with main arrays,
         # avoiding OpenMP data region issues
         if self.domain.boundary_map is not None:
-            init_reflective_boundary(self.gpu_dom, self.domain)
-            init_dirichlet_boundary(self.gpu_dom, self.domain)
-            init_transmissive_boundary(self.gpu_dom, self.domain)
-            init_transmissive_n_zero_t_boundary(self.gpu_dom, self.domain)
-            init_time_boundary(self.gpu_dom, self.domain)
+            self._init_boundaries()
 
         # Map arrays to GPU memory (persistent for simulation)
         # This now includes all boundary arrays if initialized above
@@ -84,6 +81,56 @@ class GPU_OMP_interface:
         unmap_from_gpu(self.gpu_dom)
         finalize_gpu_domain(self.gpu_dom)
         self.initialized = False
+
+    def _init_boundaries(self):
+        """Initialize GPU boundary structures from domain.boundary_map."""
+        if self.boundaries_initialized:
+            return
+        if self.domain.boundary_map is None:
+            return
+
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            init_reflective_boundary, init_dirichlet_boundary, init_transmissive_boundary,
+            init_transmissive_n_zero_t_boundary, init_time_boundary
+        )
+
+        init_reflective_boundary(self.gpu_dom, self.domain)
+        init_dirichlet_boundary(self.gpu_dom, self.domain)
+        init_transmissive_boundary(self.gpu_dom, self.domain)
+        init_transmissive_n_zero_t_boundary(self.gpu_dom, self.domain)
+        init_time_boundary(self.gpu_dom, self.domain)
+
+        self.boundaries_initialized = True
+
+    def ensure_boundaries_initialized(self):
+        """
+        Ensure GPU boundaries are initialized.
+
+        Call this before the first RK2 step if set_boundary() was called
+        after set_multiprocessor_mode().
+        """
+        if self.boundaries_initialized:
+            return
+        if self.domain.boundary_map is None:
+            return
+
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            init_reflective_boundary, init_dirichlet_boundary, init_transmissive_boundary,
+            init_transmissive_n_zero_t_boundary, init_time_boundary,
+            remap_boundary_arrays
+        )
+
+        # Initialize boundary structures
+        init_reflective_boundary(self.gpu_dom, self.domain)
+        init_dirichlet_boundary(self.gpu_dom, self.domain)
+        init_transmissive_boundary(self.gpu_dom, self.domain)
+        init_transmissive_n_zero_t_boundary(self.gpu_dom, self.domain)
+        init_time_boundary(self.gpu_dom, self.domain)
+
+        # Remap boundary arrays to GPU (they weren't mapped during setup)
+        remap_boundary_arrays(self.gpu_dom)
+
+        self.boundaries_initialized = True
 
     def sync_to_device(self):
         """Sync centroid values from host to device."""
