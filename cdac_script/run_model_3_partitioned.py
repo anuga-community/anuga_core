@@ -17,11 +17,12 @@ import os
 import time
 import sys
 import numpy as np
-import linecache
 import itertools
 import datetime
+import re
 from discharge_data import setup_discharge_3
 from tide_data import setup_tide_3
+from rainfall_loader import RainfallLoader
 import anuga
 from anuga import Inlet_operator
 from anuga import file_function
@@ -238,6 +239,21 @@ if useCheckpointing:
     domain.set_checkpointing(checkpoint_time=checkpoint_time, checkpoint_dir=checkpoint_dir)
 
 # ------------------------------------------------------------------------------
+# Pre-load rainfall data (avoids slow CSV reading during evolve loop)
+# ------------------------------------------------------------------------------
+if myid == 0:
+    print('Pre-loading rainfall data...', flush=True)
+
+rainfall_loader = RainfallLoader(
+    date_str=Current_Date.strftime(TIMEFORMATCU),
+    rainfall_factor=gpm_rainfall_factor,  # Will auto-detect source type
+    base_dir="rainfall_data",
+    verbose=(myid == 0)
+)
+
+barrier()
+
+# ------------------------------------------------------------------------------
 # Evolution (unchanged from original)
 # ------------------------------------------------------------------------------
 if myid == 0 and verbose:
@@ -249,232 +265,82 @@ import time
 t0 = time.time()
 rain_set_zero = True
 
+last_rainfall_timestep = -1  # Track which rainfall timestep we're using
+yieldstep_count = 0
+STATS_INTERVAL = 360  # Compute volume/stats every N yieldsteps (360 * 5s = 30 min sim time)
+
 for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
-    if myid == 0: domain.write_time()
-    fltStr = str(t)
-    rplStr = fltStr.replace(".", "_")
-    imd_daily_rain25 = "rainfall_data/imd/daily/rgdata_rain_25/" + Current_Date.strftime(
-        TIMEFORMATCU) + "/imd_" + Current_Date.strftime(TIMEFORMATCU) + "_%s.csv" % rplStr
-    imd_daily_daily_pt_bhub = "rainfall_data/imd/daily/pt_data_bhubaneshwar/" + Current_Date.strftime(
-        TIMEFORMATCU) + "/imd_" + Current_Date.strftime(TIMEFORMATCU) + "_%s.csv" % rplStr
-    imd_rain_file_wrf = "rainfall_data/imd/wrf/" + Current_Date.strftime(
-        TIMEFORMATCU) + "/imd_" + Current_Date.strftime(
-        TIMEFORMATCU) + "_%s.csv" % rplStr
-    imd_rain_file_gfs = "rainfall_data/imd/gfs/" + Current_Date.strftime(
-        TIMEFORMATCU) + "/imd_" + Current_Date.strftime(
-        TIMEFORMATCU) + "_%s.csv" % rplStr
-    gpm_rain_file = "rainfall_data/gpm/" + Current_Date.strftime(TIMEFORMATCU) + "/gpm_" + Current_Date.strftime(
-        TIMEFORMATCU) + "_%s.csv" % rplStr
-    gfs_rain_file = "rainfall_data/gfs/" + Current_Date.strftime(TIMEFORMATCU) + "/gfs_" + Current_Date.strftime(
-        TIMEFORMATCU) + "_%s.csv" % rplStr
+    yieldstep_count += 1
+
+    # Check if we need to update rainfall (only when crossing to new rainfall timestep)
     if not rain_set_zero and len(np.where(daily_time == t)[0]) == 1:
-        rain_set_zero = True;
-    if rain_set_zero:
-        if os.path.exists(imd_daily_daily_pt_bhub):
-            if myid == 0: print(
-                    "Setting up imd daily rainfall file %s !!" % imd_daily_daily_pt_bhub)
-            triangle_index_rain = []
-            triangle_index_elvation_main_rain = []
-            for tri_index in range(len(domain)):
-                vertices = domain.get_triangles(tri_index)
-                triangle_index_rain.append(tri_index)
-                triangle_index_elevation = []
-                triangle_index_elevation.insert(0, np.double(
-                    linecache.getline(imd_daily_daily_pt_bhub, vertices[0] + 1)) * imd_rainfall_factor_pt_bhub)
-                triangle_index_elevation.insert(1, np.double(
-                    linecache.getline(imd_daily_daily_pt_bhub, vertices[1] + 1)) * imd_rainfall_factor_pt_bhub)
-                triangle_index_elevation.insert(2, np.double(
-                    linecache.getline(imd_daily_daily_pt_bhub, vertices[2] + 1)) * imd_rainfall_factor_pt_bhub)
-                triangle_index_elvation_main_rain.append(triangle_index_elevation)
-            domain.set_quantity('Rain',
-                                numeric=triangle_index_elvation_main_rain,
-                                use_cache=cache,
-                                verbose=True,
-                                alpha=0.1, indices=triangle_index_rain,
-                                location='vertices')
+        rain_set_zero = True
 
-            triangle_index_rain = []
-            triangle_index_elvation_main_rain = []
-            linecache.clearcache()
-            rain_opertor.set_rate(rate=Q)
-            rain_set_zero = False
-        elif os.path.exists(imd_daily_rain25):
-            if myid == 0: print(
-                    "Setting up imd daily 25 rainfall file %s !!" % imd_daily_rain25)
-            triangle_index_rain = []
-            triangle_index_elvation_main_rain = []
-            for tri_index in range(len(domain)):
-                vertices = domain.get_triangles(tri_index)
-                triangle_index_rain.append(tri_index)
-                triangle_index_elevation = []
-                triangle_index_elevation.insert(0, np.double(
-                    linecache.getline(imd_daily_rain25, vertices[0] + 3)) * imd_rainfall_factor_rgdata_rain25)
-                triangle_index_elevation.insert(1, np.double(
-                    linecache.getline(imd_daily_rain25, vertices[1] + 3)) * imd_rainfall_factor_rgdata_rain25)
-                triangle_index_elevation.insert(2, np.double(
-                    linecache.getline(imd_daily_rain25, vertices[2] + 3)) * imd_rainfall_factor_rgdata_rain25)
-                triangle_index_elvation_main_rain.append(triangle_index_elevation)
-            domain.set_quantity('Rain',
-                                numeric=triangle_index_elvation_main_rain,
-                                use_cache=cache,
-                                verbose=True,
-                                alpha=0.1, indices=triangle_index_rain,
-                                location='vertices')
+    if rain_set_zero and rainfall_loader.has_data():
+        # Get pre-loaded rainfall data for current time
+        rain_data = rainfall_loader.get_rainfall_at_time(t)
+        if rain_data is not None:
+            # Find which timestep this data is from
+            available_ts = rainfall_loader.get_timesteps()
+            current_ts = max([ts for ts in available_ts if ts <= t], default=-1)
 
-            triangle_index_rain = []
-            triangle_index_elvation_main_rain = []
-            linecache.clearcache()
-            rain_opertor.set_rate(rate=Q)
-            rain_set_zero = False
-        elif os.path.exists(imd_rain_file_wrf):
-            if myid == 0: print(
-                    "Setting up imd wrf rainfall file %s !!" % imd_rain_file_wrf)
-            triangle_index_rain = []
-            triangle_index_elvation_main_rain = []
-            for tri_index in range(len(domain)):
-                vertices = domain.get_triangles(tri_index)
-                triangle_index_rain.append(tri_index)
-                triangle_index_elevation = []
-                triangle_index_elevation.insert(0, np.double(
-                    linecache.getline(imd_rain_file_wrf, vertices[0] + 1)) * imd_rainfall_factor_wrf)
-                triangle_index_elevation.insert(1, np.double(
-                    linecache.getline(imd_rain_file_wrf, vertices[1] + 1)) * imd_rainfall_factor_wrf)
-                triangle_index_elevation.insert(2, np.double(
-                    linecache.getline(imd_rain_file_wrf, vertices[2] + 1)) * imd_rainfall_factor_wrf)
-                triangle_index_elvation_main_rain.append(triangle_index_elevation)
-            domain.set_quantity('Rain',
-                                numeric=triangle_index_elvation_main_rain,
-                                use_cache=cache,
-                                verbose=True,
-                                alpha=0.1, indices=triangle_index_rain,
-                                location='vertices')
+            # Only update if we've moved to a new rainfall timestep
+            if current_ts != last_rainfall_timestep:
+                if myid == 0:
+                    print(f"Setting rainfall from {rainfall_loader.source_type} t={current_ts}")
 
-            triangle_index_rain = []
-            triangle_index_elvation_main_rain = []
-            linecache.clearcache()
-            rain_opertor.set_rate(rate=Q)
-        elif os.path.exists(imd_rain_file_gfs):
-            if myid == 0: print(
-                    "Setting up imd gfs rainfall file %s !!" % imd_rain_file_gfs)
-            triangle_index_rain = []
-            triangle_index_elvation_main_rain = []
-            for tri_index in range(len(domain)):
-                vertices = domain.get_triangles(tri_index)
-                triangle_index_rain.append(tri_index)
-                triangle_index_elevation = []
-                triangle_index_elevation.insert(0, np.double(
-                    linecache.getline(imd_rain_file_gfs, vertices[0] + 1)) * imd_rainfall_factor_gfs)
-                triangle_index_elevation.insert(1, np.double(
-                    linecache.getline(imd_rain_file_gfs, vertices[1] + 1)) * imd_rainfall_factor_gfs)
-                triangle_index_elevation.insert(2, np.double(
-                    linecache.getline(imd_rain_file_gfs, vertices[2] + 1)) * imd_rainfall_factor_gfs)
-                triangle_index_elvation_main_rain.append(triangle_index_elevation)
-            domain.set_quantity('Rain',
-                                numeric=triangle_index_elvation_main_rain,
-                                use_cache=cache,
-                                verbose=True,
-                                alpha=0.1, indices=triangle_index_rain,
-                                location='vertices')
+                # Get triangle vertices for mapping vertex data to triangles
+                triangles = domain.triangles
+                # rain_data is per-vertex, we need per-triangle vertex values
+                rain_at_vertices = rain_data[triangles]  # Shape: (num_triangles, 3)
 
-            triangle_index_rain = []
-            triangle_index_elvation_main_rain = []
-            linecache.clearcache()
+                domain.set_quantity('Rain',
+                                    numeric=rain_at_vertices,
+                                    location='vertices')
+                rain_opertor.set_rate(rate=Q)
+                last_rainfall_timestep = current_ts
+                rain_set_zero = False
+        else:
+            if myid == 0:
+                print("No rainfall data for t=%s, setting to zero" % t)
+            domain.set_quantity('Rain', 0.0)
             rain_opertor.set_rate(rate=Q)
-        elif os.path.exists(gpm_rain_file):
-            if myid == 0: print(
-                    "Setting up NOAA GPM rainfall file %s !!" % gpm_rain_file)
-            triangle_index_rain = []
-            triangle_index_elvation_main_rain = []
-            for tri_index in range(len(domain)):
-                vertices = domain.get_triangles(tri_index)
-                triangle_index_rain.append(tri_index)
-                triangle_index_elevation = []
-                triangle_index_elevation.insert(0, np.double(
-                    linecache.getline(gpm_rain_file, vertices[0] + 1)) * gpm_rainfall_factor)
-                triangle_index_elevation.insert(1, np.double(
-                    linecache.getline(gpm_rain_file, vertices[1] + 1)) * gpm_rainfall_factor)
-                triangle_index_elevation.insert(2, np.double(
-                    linecache.getline(gpm_rain_file, vertices[2] + 1)) * gpm_rainfall_factor)
-                triangle_index_elvation_main_rain.append(triangle_index_elevation)
-            domain.set_quantity('Rain',
-                                numeric=triangle_index_elvation_main_rain,
-                                use_cache=cache,
-                                verbose=True,
-                                alpha=0.1, indices=triangle_index_rain,
-                                location='vertices')
-            triangle_index_rain = []
-            triangle_index_elvation_main_rain = []
-            linecache.clearcache()
-            rain_opertor.set_rate(rate=Q)
-        elif os.path.exists(gfs_rain_file):
-            if myid == 0: print(
-                    "Setting up NOAA GFS rainfall file %s !!" % gfs_rain_file)
-            triangle_index_rain = []
-            triangle_index_elvation_main_rain = []
-            for tri_index in range(len(domain)):
-                vertices = domain.get_triangles(tri_index)
-                triangle_index_rain.append(tri_index)
-                triangle_index_elevation = []
-                triangle_index_elevation.insert(0, np.double(
-                    linecache.getline(gfs_rain_file, vertices[0] + 1)) * gfs_rainfall_factor)
-                triangle_index_elevation.insert(1, np.double(
-                    linecache.getline(gfs_rain_file, vertices[1] + 1)) * gfs_rainfall_factor)
-                triangle_index_elevation.insert(2, np.double(
-                    linecache.getline(gfs_rain_file, vertices[2] + 1)) * gfs_rainfall_factor)
-                triangle_index_elvation_main_rain.append(triangle_index_elevation)
-            domain.set_quantity('Rain',
-                                numeric=triangle_index_elvation_main_rain,
-                                use_cache=cache,
-                                verbose=True,
-                                alpha=0.1, indices=triangle_index_rain,
-                                location='vertices')
+    elif rain_set_zero:
+        # No pre-loaded data, set to zero
+        if myid == 0:
+            print("No rainfall data available, setting to zero")
+        domain.set_quantity('Rain', 0.0)
+        rain_opertor.set_rate(rate=Q)
+        rain_set_zero = False
 
-            triangle_index_rain = []
-            triangle_index_elvation_main_rain = []
-            linecache.clearcache()
-            rain_opertor.set_rate(rate=Q)
-        elif rain_set_zero:
-            print("The Rainfall IMD/GPM/GFS files does not exist setting rain to zero !!")
-            domain.set_quantity('Rain', 0.00) #set rainfall with hardcoded value = 4mm #modifed by RK
-            rain_opertor.set_rate(rate=Q)
-    else:
-        if myid == 0: print("Using previously set Daily Rainfall!!")
-    import re
-    volume = domain.compute_total_volume()
-    stats = domain.timestepping_statistics()
-    rainstats = rain_opertor.timestepping_statistics()
-    maxInundation = Q.get_maximum_value()
-    indices = domain.get_wet_elements()
-    element_count = len(indices)
-    file1 = open("rain_data.txt", "a+")
-    file2 = open("wet_elements.txt", "a+")
-    file3 = open("max_inandation.txt", "a+")
-    try:
-      rain_arr = re.findall(r"\d+\.\d+",rainstats)
-      total_rain = float(rain_arr[0])
-      file1.write(str(total_rain))
-      file1.writelines("\n")
-      file2.write(str(element_count))
-      file2.writelines("\n")
-      file3.write(str(maxInundation))
-      file3.writelines("\n")
-    except:
-      #print("there is no Q")
-      file1.write(str(0.0))
-      file1.writelines("\n")
-      file2.write(str(0.0))
-      file2.writelines("\n")
-      file3.write(str(0.0))
-      file3.writelines("\n")
+    # Only compute expensive stats every STATS_INTERVAL yieldsteps
+    # This reduces MPI reductions significantly
+    if yieldstep_count % STATS_INTERVAL == 0 or t == 0:
+        if myid == 0: domain.write_time()
+        volume = domain.compute_total_volume()
+        stats = domain.timestepping_statistics()
+        rainstats = rain_opertor.timestepping_statistics()
+        maxInundation = Q.get_maximum_value()
+        indices = domain.get_wet_elements()
+        element_count = len(indices)
 
-    if myid == 0:
-        print("Total Volume =: %s Time Stepping Statistics =: %s Rain Operator Statistics=: %s" % (
-            str(volume), str(stats),str(rainstats )))
+        # Write to files
+        with open("rain_data.txt", "a+") as f:
+            try:
+                rain_arr = re.findall(r"\d+\.\d+", rainstats)
+                f.write(str(float(rain_arr[0])) + "\n")
+            except:
+                f.write("0.0\n")
 
-    # Close file handles
-    file1.close()
-    file2.close()
-    file3.close()
+        with open("wet_elements.txt", "a+") as f:
+            f.write(str(element_count) + "\n")
+
+        with open("max_inandation.txt", "a+") as f:
+            f.write(str(maxInundation) + "\n")
+
+        if myid == 0:
+            print("Total Volume =: %s Time Stepping Statistics =: %s Rain Operator Statistics=: %s" % (
+                str(volume), str(stats), str(rainstats)))
 
 barrier()
 
