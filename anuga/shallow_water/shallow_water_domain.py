@@ -2782,6 +2782,13 @@ class Domain(Generic_Domain):
         # Update conserved quantities
         self.update_conserved_quantities()
 
+        # Ghost exchange (MPI) - required for multi-GPU operation
+        # Note: update_ghosts() is a no-op in GPU mode, so we call exchange_ghosts directly
+        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+            if self.ghost_layer_width < 4:
+                from anuga.shallow_water.sw_domain_gpu_ext import exchange_ghosts
+                exchange_ghosts(self.gpu_interface.gpu_dom)
+
 
     def evolve_one_rk2_step(self, yieldstep, finaltime):
         """One 2nd order RK timestep
