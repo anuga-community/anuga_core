@@ -116,7 +116,7 @@ from anuga.file.sww import SWW_file
 
 import anuga.utilities.log as log
 
-from anuga.utilities.parallel_abstraction import size, rank, get_processor_name
+from anuga.utilities.parallel_abstraction import size, rank, myid, get_processor_name
 from anuga.utilities.parallel_abstraction import finalize, send, receive
 from anuga.utilities.parallel_abstraction import pypar_available, barrier
 
@@ -3067,7 +3067,9 @@ class Domain(Generic_Domain):
 
         msg = self.timestepping_statistics(*args, **kwargs)
 
-        print(msg)
+        from anuga import myid
+        if myid == 0: 
+            print(msg)
 
 
     def compute_boundary_flows(self):
@@ -3221,7 +3223,7 @@ class Domain(Generic_Domain):
 
         if(verbose and myid==0):
             print(' ')
-            print('    Volume V is:', Vol)
+            print(f'    Volume V at time {self.get_time()}:', Vol)
             print('    Boundary Flux integral BF: ', fluxIntegral)
             print('    (rate + inlet) Fractional Step volume integral FS: ', fracIntegral)
             print('    V - BF - FS - InitialVolume :',  Vol- fluxIntegral -fracIntegral - self.volume_history[0])
@@ -3263,7 +3265,7 @@ class Domain(Generic_Domain):
                 waveSpeed = abs(v) + gravSpeed
                 localTS = self.radii / num.maximum(waveSpeed, epsilon)
                 controlling_pt_ind = localTS.argmin()
-                print('    * Smallest LocalTS is: ', localTS[controlling_pt_ind])
+                print(f'     * Smallest LocalTS at time {self.get_time()} is approximately: ', localTS[controlling_pt_ind])
                 print('     -- Location: ', round(self.centroid_coordinates[controlling_pt_ind,0]+self.geo_reference.xllcorner,2),\
                                         round(self.centroid_coordinates[controlling_pt_ind,1]+self.geo_reference.yllcorner,2))
                 print('     -+ Speed: ', v[controlling_pt_ind])

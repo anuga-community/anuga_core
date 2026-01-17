@@ -895,6 +895,7 @@ Creating domain from scratch.
         print('CREATING RAINFALL POLYGONS')
     
     Rainfall_Gauge_directory = join('Forcing', 'Rainfall', 'Gauge')
+    ops = []
     for filename in os.listdir(Rainfall_Gauge_directory):
         Gaugefile = join(Rainfall_Gauge_directory, filename)
         Rainfile = join('Forcing', 'Rainfall', 'Hort', filename[0:-4]+'.tms')
@@ -902,8 +903,8 @@ Creating domain from scratch.
         #print(Rainfile)
         polygon = anuga.read_polygon(Gaugefile)
         rainfall = anuga.file_function(Rainfile, quantities='rate')
-        op1 = Rate_operator(domain, rate=rainfall, factor=1.0e-3,
-                            polygon=polygon, default_rate=0.0)
+        ops.append(Rate_operator(domain, rate=rainfall, factor=1.0e-3,
+                            polygon=polygon, default_rate=0.0))
     
     barrier()
     
@@ -916,8 +917,10 @@ Creating domain from scratch.
     Bd = anuga.Dirichlet_boundary([0, 0, 0])
     Bw = anuga.Time_boundary(domain=domain, function=lambda t: [
                              func(t)[0], 0.0, 0.0])
+    Br = anuga.Reflective_boundary(domain)
     
-    domain.set_boundary({'west': Bd, 'south': Bd, 'north': Bd, 'east': Bw})
+    #domain.set_boundary({'west': Bd, 'south': Bd, 'north': Bd, 'east': Bw})
+    domain.set_boundary({'west': Br, 'south': Br, 'north': Br, 'east': Br})
     
     if myid == 0:
         print('Start Evolve')
@@ -934,8 +937,11 @@ t0 = time.time()
 
 
 for t in domain.evolve(yieldstep=yieldstep, outputstep=outputstep, finaltime=finaltime):
-    if myid == 0:
-        domain.write_time()
+
+    domain.print_timestepping_statistics()
+    #domain.print_operator_timestepping_statistics()
+    domain.report_water_volume_statistics()
+    #domain.report_cells_with_small_local_timestep()
 
 barrier()
 
