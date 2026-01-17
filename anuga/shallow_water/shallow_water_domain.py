@@ -116,7 +116,7 @@ from anuga.file.sww import SWW_file
 
 import anuga.utilities.log as log
 
-from anuga.utilities.parallel_abstraction import size, rank, myid, get_processor_name
+from anuga.utilities.parallel_abstraction import size, rank, get_processor_name
 from anuga.utilities.parallel_abstraction import finalize, send, receive
 from anuga.utilities.parallel_abstraction import pypar_available, barrier
 
