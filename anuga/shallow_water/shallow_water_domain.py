@@ -2002,9 +2002,6 @@ class Domain(Generic_Domain):
             import numpy as np
             gpu_dom = self.gpu_interface.gpu_dom
 
-            # Ensure boundaries are initialized
-            self.gpu_interface.ensure_boundaries_initialized()
-
             # Lazily initialize GPU boundary info
             GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                                   'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
@@ -2899,10 +2896,6 @@ class Domain(Generic_Domain):
 
         gpu_dom = self.gpu_interface.gpu_dom
 
-        # Ensure GPU boundaries are initialized (handles case where set_boundary
-        # was called after set_multiprocessor_mode)
-        self.gpu_interface.ensure_boundaries_initialized()
-
         # Supported GPU boundary types (no D2H/H2D transfer needed)
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
@@ -3078,10 +3071,6 @@ class Domain(Generic_Domain):
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
-
-        # Ensure GPU boundaries are initialized (handles case where set_boundary
-        # was called after set_multiprocessor_mode)
-        self.gpu_interface.ensure_boundaries_initialized()
 
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
@@ -3805,6 +3794,23 @@ class Domain(Generic_Domain):
     def set_gpu_interface(self):
 
         if self.multiprocessor_mode == 2 and self.gpu_interface is None:
+
+            # Check that boundaries are properly set before GPU initialization
+            # After distribute(), boundary_map may be {'exterior': None, 'ghost': None}
+            # which is not None but has no actual boundary objects - this causes silent failures
+            if self.boundary_map is None:
+                raise RuntimeError(
+                    "GPU mode requires boundaries to be set before calling set_multiprocessor_mode(2).\n"
+                    "Please call domain.set_boundary({...}) BEFORE domain.set_multiprocessor_mode(2)."
+                )
+
+            has_real_boundary = any(b is not None for b in self.boundary_map.values())
+            if not has_real_boundary:
+                raise RuntimeError(
+                    "GPU mode requires boundaries to be set before calling set_multiprocessor_mode(2).\n"
+                    "Please call domain.set_boundary({...}) BEFORE domain.set_multiprocessor_mode(2).\n"
+                    f"Current boundary_map has no boundary objects: {list(self.boundary_map.keys())}"
+                )
 
             # Try OpenMP target offloading interface first
             try:

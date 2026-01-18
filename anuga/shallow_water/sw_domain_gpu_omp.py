@@ -104,33 +104,17 @@ class GPU_OMP_interface:
 
     def ensure_boundaries_initialized(self):
         """
-        Ensure GPU boundaries are initialized.
+        Verify GPU boundaries are initialized.
 
-        Call this before the first RK2 step if set_boundary() was called
-        after set_multiprocessor_mode().
+        Note: As of 2026-01-18, boundaries MUST be set before calling
+        set_multiprocessor_mode(2). This method is kept for backwards
+        compatibility but should not be needed.
         """
-        if self.boundaries_initialized:
-            return
-        if self.domain.boundary_map is None:
-            return
-
-        from anuga.shallow_water.sw_domain_gpu_ext import (
-            init_reflective_boundary, init_dirichlet_boundary, init_transmissive_boundary,
-            init_transmissive_n_zero_t_boundary, init_time_boundary,
-            remap_boundary_arrays
-        )
-
-        # Initialize boundary structures
-        init_reflective_boundary(self.gpu_dom, self.domain)
-        init_dirichlet_boundary(self.gpu_dom, self.domain)
-        init_transmissive_boundary(self.gpu_dom, self.domain)
-        init_transmissive_n_zero_t_boundary(self.gpu_dom, self.domain)
-        init_time_boundary(self.gpu_dom, self.domain)
-
-        # Remap boundary arrays to GPU (they weren't mapped during setup)
-        remap_boundary_arrays(self.gpu_dom)
-
-        self.boundaries_initialized = True
+        if not self.boundaries_initialized:
+            raise RuntimeError(
+                "GPU boundaries not initialized. This should not happen - "
+                "boundaries must be set before calling set_multiprocessor_mode(2)."
+            )
 
     def sync_to_device(self):
         """Sync centroid values from host to device."""
