@@ -140,14 +140,17 @@ class Parallel_domain(Domain):
         receive the information for the ghost cells
         """
 
+        # GPU mode handles ghost exchange internally via C-level MPI calls
+        if getattr(self, 'multiprocessor_mode', 0) == 2 and getattr(self, 'gpu_interface', None) is not None:
+            return
+
         #generic_comms.communicate_ghosts_asynchronous(self, quantities)
         generic_comms.communicate_ghosts_non_blocking(self, quantities)
         #generic_comms.communicate_ghosts_blocking(self)
 
     def apply_fractional_steps(self):
-
-        for operator in self.fractional_step_operators:
-            operator()
+        # Call parent implementation which handles GPU sync logic
+        super().apply_fractional_steps()
 
         # PETE: Make sure that there are no deadlocks here
 
