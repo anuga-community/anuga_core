@@ -73,11 +73,12 @@ yieldstep=600. # yield evolve loop every 10 seconds
 outputstep=600. # update sww files every 60 seconds
 finaltime=1800. #83700.
 
-scale = 1 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
+# For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles), super fine 0.1 (1.6 million)
+scale = 0.1 
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
-# Choices are 1 (openmp) 2 (cupy)
-multiprocessor_mode = 1
+# Choices are 1 (openmp) 2 (copenmp)
+multiprocessor_mode = 2
 
 checkpoint_time = max(600/scale, 60)
 checkpoint_dir = 'CHECKPOINTS'
@@ -925,6 +926,7 @@ Creating domain from scratch.
 
 
 domain.set_multiprocessor_mode(multiprocessor_mode )
+domain.use_c_rk2_loop = True
 
 # ------------------------------------------------------------------------------
 # EVOLVE SYSTEM THROUGH TIME
