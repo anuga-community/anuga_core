@@ -1733,17 +1733,17 @@ class Domain(Generic_Domain):
 
         from anuga import numprocs
 
-        #print self.evolved_called
-
-        if not self.evolved_called:
+        # GPU path: compute volume directly on GPU (avoids expensive D2H sync)
+        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+            from anuga.shallow_water.sw_domain_gpu_ext import compute_water_volume_gpu
+            volume = compute_water_volume_gpu(self.gpu_interface.gpu_dom)
+        elif not self.evolved_called:
             Stage = self.quantities['stage']
             Elev =  self.quantities['elevation']
             h_c = Stage.centroid_values - Elev.centroid_values
-            #print h_c
             from anuga import Quantity
             Height = Quantity(self)
             Height.set_values(h_c, location='centroids')
-            #print Height.centroid_values
             volume = Height.get_integral()
         elif self.get_using_discontinuous_elevation():
             Height = self.quantities['height']
@@ -1758,24 +1758,9 @@ class Domain(Generic_Domain):
             self.volume_history.append(volume)
             return volume
 
-        # isolated parallel code
-        from anuga import myid, send, receive, barrier
-
-        if myid == 0:
-            water_volume = volume
-            for i in range(1,numprocs):
-                remote_volume = receive(i)
-                water_volume = water_volume + remote_volume
-        else:
-            send(volume,0)
-
-        #barrier()
-
-        if myid == 0:
-            for i in range(1,numprocs):
-                send(water_volume,i)
-        else:
-            water_volume = receive(0)
+        # Use MPI_Allreduce instead of manual gather-broadcast
+        from mpi4py import MPI
+        water_volume = MPI.COMM_WORLD.allreduce(volume, op=MPI.SUM)
 
         self.volume_history.append(water_volume)
         return water_volume
@@ -1798,23 +1783,9 @@ class Domain(Generic_Domain):
         if numprocs == 1:
             return flux_integral
 
-        # isolate parallel code
-        from anuga import myid, send, receive, barrier
-
-        if myid == 0:
-            for i in range(1,numprocs):
-                remote_flux_integral = receive(i)
-                flux_integral = flux_integral + remote_flux_integral
-        else:
-            send(flux_integral,0)
-
-        #barrier()
-
-        if myid == 0:
-            for i in range(1,numprocs):
-                send(flux_integral,i)
-        else:
-            flux_integral = receive(0)
+        # Use MPI_Allreduce instead of manual gather-broadcast
+        from mpi4py import MPI
+        flux_integral = MPI.COMM_WORLD.allreduce(flux_integral, op=MPI.SUM)
 
         return flux_integral
 
@@ -1833,23 +1804,9 @@ class Domain(Generic_Domain):
         if numprocs == 1:
             return flux_integral
 
-        # isolate parallel code
-        from anuga import myid, send, receive, barrier
-
-        if myid == 0:
-            for i in range(1,numprocs):
-                remote_flux_integral = receive(i)
-                flux_integral = flux_integral + remote_flux_integral
-        else:
-            send(flux_integral,0)
-
-        #barrier()
-
-        if myid == 0:
-            for i in range(1,numprocs):
-                send(flux_integral,i)
-        else:
-            flux_integral = receive(0)
+        # Use MPI_Allreduce instead of manual gather-broadcast
+        from mpi4py import MPI
+        flux_integral = MPI.COMM_WORLD.allreduce(flux_integral, op=MPI.SUM)
 
         return flux_integral
 
@@ -3301,6 +3258,7 @@ class Domain(Generic_Domain):
         """Check if any fractional step operators require CPU execution.
 
         Rate_operators with GPU support don't need CPU sync.
+        boundary_flux_integral_operator is GPU-safe (only reads boundary_flux_sum).
         Boyd_box_operator, Inlet_operator, etc. do need CPU sync.
 
         Result is cached after first call since operators don't change during simulation.
@@ -3310,14 +3268,22 @@ class Domain(Generic_Domain):
             return self._cached_has_cpu_only_ops
 
         from anuga.operators.rate_operators import Rate_operator
+        from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
 
         result = False
         for op in self.fractional_step_operators:
             if isinstance(op, Rate_operator):
+                # Force GPU initialization if not already done (lazy init causes race with caching)
+                if hasattr(op, '_init_gpu') and not getattr(op, '_gpu_initialized', False):
+                    op._init_gpu()
                 # Rate_operator with GPU support doesn't need CPU sync
                 if hasattr(op, '_gpu_initialized') and op._gpu_initialized:
                     continue  # GPU-accelerated, no sync needed
-            # All other operators (or Rate_operator without GPU) need CPU
+            elif isinstance(op, boundary_flux_integral_operator):
+                # boundary_flux_integral_operator only reads boundary_flux_sum (small array)
+                # and accumulates a scalar - doesn't need full centroid sync
+                continue
+            # All other operators need CPU sync
             result = True
             break
 
@@ -3846,9 +3812,12 @@ class Domain(Generic_Domain):
                 from .sw_domain_gpu_omp import GPU_OMP_interface
                 self.gpu_interface = GPU_OMP_interface(self)
                 self.gpu_interface.setup()
-                print('+==============================================================================+')
-                print('| GPU interface initialized using OpenMP target offloading                    |')
-                print('+==============================================================================+')
+                # Only print from rank 0
+                from anuga import myid, numprocs
+                if myid == 0:
+                    print('+==============================================================================+')
+                    print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
+                    print('+==============================================================================+')
                 return
             except Exception as e:
                 print(f'OpenMP GPU interface not available: {e}')
@@ -3866,11 +3835,11 @@ class Domain(Generic_Domain):
                 pass
 
             # No GPU available
-            print('+==============================================================================+')
-            print('|                                                                              |')
-            print('| WARNING: GPU not available, falling back to multiprocessor_mode 1 (OpenMP)  |')
-            print('|                                                                              |')
-            print('+==============================================================================+')
+            from anuga import myid
+            if myid == 0:
+                print('+==============================================================================+')
+                print('| WARNING: GPU not available, falling back to multiprocessor_mode 1 (OpenMP)  |')
+                print('+==============================================================================+')
             self.set_multiprocessor_mode(1)
            
         

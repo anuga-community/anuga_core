@@ -39,26 +39,26 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
     double beta_vh = GD->D.beta_vh;
     double beta_vh_dry = GD->D.beta_vh_dry;
 
-    // Extract array pointers
-    double *stage_cv = GD->D.stage_centroid_values;
-    double *xmom_cv = GD->D.xmom_centroid_values;
-    double *ymom_cv = GD->D.ymom_centroid_values;
-    double *bed_cv = GD->D.bed_centroid_values;
-    double *height_cv = GD->D.height_centroid_values;
+    // Extract array pointers (restrict enables better optimization)
+    double * restrict stage_cv = GD->D.stage_centroid_values;
+    double * restrict xmom_cv = GD->D.xmom_centroid_values;
+    double * restrict ymom_cv = GD->D.ymom_centroid_values;
+    double * restrict bed_cv = GD->D.bed_centroid_values;
+    double * restrict height_cv = GD->D.height_centroid_values;
 
-    double *stage_ev = GD->D.stage_edge_values;
-    double *xmom_ev = GD->D.xmom_edge_values;
-    double *ymom_ev = GD->D.ymom_edge_values;
-    double *bed_ev = GD->D.bed_edge_values;
-    double *height_ev = GD->D.height_edge_values;
+    double * restrict stage_ev = GD->D.stage_edge_values;
+    double * restrict xmom_ev = GD->D.xmom_edge_values;
+    double * restrict ymom_ev = GD->D.ymom_edge_values;
+    double * restrict bed_ev = GD->D.bed_edge_values;
+    double * restrict height_ev = GD->D.height_edge_values;
 
-    double *centroid_coords = GD->D.centroid_coordinates;
-    double *edge_coords = GD->D.edge_coordinates;
+    double * restrict centroid_coords = GD->D.centroid_coordinates;
+    double * restrict edge_coords = GD->D.edge_coordinates;
 
-    anuga_int *surrogate_neighbours = GD->D.surrogate_neighbours;
-    anuga_int *number_of_boundaries = GD->D.number_of_boundaries;
-    double *x_centroid_work = GD->D.x_centroid_work;
-    double *y_centroid_work = GD->D.y_centroid_work;
+    anuga_int * restrict surrogate_neighbours = GD->D.surrogate_neighbours;
+    anuga_int * restrict number_of_boundaries = GD->D.number_of_boundaries;
+    double * restrict x_centroid_work = GD->D.x_centroid_work;
+    double * restrict y_centroid_work = GD->D.y_centroid_work;
 
     // Step 1: Update centroid values (compute height, optionally convert momentum to velocity)
     #pragma omp target teams distribute parallel for simd
@@ -353,34 +353,34 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
     double epsilon = GD->D.epsilon;
     anuga_int low_froude = GD->D.low_froude;
 
-    // Extract array pointers for GPU kernel
-    double *stage_cv = GD->D.stage_centroid_values;
-    double *xmom_cv = GD->D.xmom_centroid_values;
-    double *ymom_cv = GD->D.ymom_centroid_values;
-    double *bed_cv = GD->D.bed_centroid_values;
-    double *height_cv = GD->D.height_centroid_values;
+    // Extract array pointers for GPU kernel (restrict enables better optimization)
+    double * restrict stage_cv = GD->D.stage_centroid_values;
+    double * restrict xmom_cv = GD->D.xmom_centroid_values;
+    double * restrict ymom_cv = GD->D.ymom_centroid_values;
+    double * restrict bed_cv = GD->D.bed_centroid_values;
+    double * restrict height_cv = GD->D.height_centroid_values;
 
-    double *stage_ev = GD->D.stage_edge_values;
-    double *xmom_ev = GD->D.xmom_edge_values;
-    double *ymom_ev = GD->D.ymom_edge_values;
-    double *bed_ev = GD->D.bed_edge_values;
-    double *height_ev = GD->D.height_edge_values;
+    double * restrict stage_ev = GD->D.stage_edge_values;
+    double * restrict xmom_ev = GD->D.xmom_edge_values;
+    double * restrict ymom_ev = GD->D.ymom_edge_values;
+    double * restrict bed_ev = GD->D.bed_edge_values;
+    double * restrict height_ev = GD->D.height_edge_values;
 
-    double *stage_bv = GD->D.stage_boundary_values;
-    double *xmom_bv = GD->D.xmom_boundary_values;
-    double *ymom_bv = GD->D.ymom_boundary_values;
+    double * restrict stage_bv = GD->D.stage_boundary_values;
+    double * restrict xmom_bv = GD->D.xmom_boundary_values;
+    double * restrict ymom_bv = GD->D.ymom_boundary_values;
 
-    double *stage_eu = GD->D.stage_explicit_update;
-    double *xmom_eu = GD->D.xmom_explicit_update;
-    double *ymom_eu = GD->D.ymom_explicit_update;
+    double * restrict stage_eu = GD->D.stage_explicit_update;
+    double * restrict xmom_eu = GD->D.xmom_explicit_update;
+    double * restrict ymom_eu = GD->D.ymom_explicit_update;
 
-    anuga_int *neighbours = GD->D.neighbours;
-    anuga_int *neighbour_edges = GD->D.neighbour_edges;
-    double *normals = GD->D.normals;
-    double *edgelengths = GD->D.edgelengths;
-    double *radii = GD->D.radii;
-    double *areas = GD->D.areas;
-    double *max_speed_array = GD->D.max_speed;
+    anuga_int * restrict neighbours = GD->D.neighbours;
+    anuga_int * restrict neighbour_edges = GD->D.neighbour_edges;
+    double * restrict normals = GD->D.normals;
+    double * restrict edgelengths = GD->D.edgelengths;
+    double * restrict radii = GD->D.radii;
+    double * restrict areas = GD->D.areas;
+    double * restrict max_speed_array = GD->D.max_speed;
 
     double local_timestep = 1.0e+100;
 
@@ -525,15 +525,15 @@ void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
 
     anuga_int n = GD->D.number_of_elements;
 
-    double *stage_cv = GD->D.stage_centroid_values;
-    double *xmom_cv = GD->D.xmom_centroid_values;
-    double *ymom_cv = GD->D.ymom_centroid_values;
-    double *stage_eu = GD->D.stage_explicit_update;
-    double *xmom_eu = GD->D.xmom_explicit_update;
-    double *ymom_eu = GD->D.ymom_explicit_update;
-    double *stage_siu = GD->D.stage_semi_implicit_update;
-    double *xmom_siu = GD->D.xmom_semi_implicit_update;
-    double *ymom_siu = GD->D.ymom_semi_implicit_update;
+    double * restrict stage_cv = GD->D.stage_centroid_values;
+    double * restrict xmom_cv = GD->D.xmom_centroid_values;
+    double * restrict ymom_cv = GD->D.ymom_centroid_values;
+    double * restrict stage_eu = GD->D.stage_explicit_update;
+    double * restrict xmom_eu = GD->D.xmom_explicit_update;
+    double * restrict ymom_eu = GD->D.ymom_explicit_update;
+    double * restrict stage_siu = GD->D.stage_semi_implicit_update;
+    double * restrict xmom_siu = GD->D.xmom_semi_implicit_update;
+    double * restrict ymom_siu = GD->D.ymom_semi_implicit_update;
 
     #pragma omp target teams distribute parallel for simd
     for (anuga_int k = 0; k < n; k++) {
@@ -582,12 +582,12 @@ void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
 
     anuga_int n = GD->D.number_of_elements;
 
-    double *stage_cv = GD->D.stage_centroid_values;
-    double *xmom_cv = GD->D.xmom_centroid_values;
-    double *ymom_cv = GD->D.ymom_centroid_values;
-    double *stage_backup = GD->D.stage_backup_values;
-    double *xmom_backup = GD->D.xmom_backup_values;
-    double *ymom_backup = GD->D.ymom_backup_values;
+    double * restrict stage_cv = GD->D.stage_centroid_values;
+    double * restrict xmom_cv = GD->D.xmom_centroid_values;
+    double * restrict ymom_cv = GD->D.ymom_centroid_values;
+    double * restrict stage_backup = GD->D.stage_backup_values;
+    double * restrict xmom_backup = GD->D.xmom_backup_values;
+    double * restrict ymom_backup = GD->D.ymom_backup_values;
 
     #pragma omp target teams distribute parallel for simd
     for (anuga_int k = 0; k < n; k++) {
@@ -610,14 +610,14 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
 
     anuga_int n = GD->D.number_of_elements;
 
-    double *stage_cv = GD->D.stage_centroid_values;
-    double *xmom_cv = GD->D.xmom_centroid_values;
-    double *ymom_cv = GD->D.ymom_centroid_values;
-    double *stage_backup = GD->D.stage_backup_values;
-    double *xmom_backup = GD->D.xmom_backup_values;
-    double *ymom_backup = GD->D.ymom_backup_values;
-    double *height_cv = GD->D.height_centroid_values;
-    double *bed_cv = GD->D.bed_centroid_values;
+    double * restrict stage_cv = GD->D.stage_centroid_values;
+    double * restrict xmom_cv = GD->D.xmom_centroid_values;
+    double * restrict ymom_cv = GD->D.ymom_centroid_values;
+    double * restrict stage_backup = GD->D.stage_backup_values;
+    double * restrict xmom_backup = GD->D.xmom_backup_values;
+    double * restrict ymom_backup = GD->D.ymom_backup_values;
+    double * restrict height_cv = GD->D.height_centroid_values;
+    double * restrict bed_cv = GD->D.bed_centroid_values;
 
     #pragma omp target teams distribute parallel for simd
     for (anuga_int k = 0; k < n; k++) {
@@ -646,12 +646,12 @@ double gpu_protect(struct gpu_domain *GD) {
     double min_height = GD->D.minimum_allowed_height;
     double mass_error = 0.0;
 
-    double *stage_cv = GD->D.stage_centroid_values;
-    double *xmom_cv = GD->D.xmom_centroid_values;
-    double *ymom_cv = GD->D.ymom_centroid_values;
-    double *bed_cv = GD->D.bed_centroid_values;
-    double *height_cv = GD->D.height_centroid_values;
-    double *areas = GD->D.areas;
+    double * restrict stage_cv = GD->D.stage_centroid_values;
+    double * restrict xmom_cv = GD->D.xmom_centroid_values;
+    double * restrict ymom_cv = GD->D.ymom_centroid_values;
+    double * restrict bed_cv = GD->D.bed_centroid_values;
+    double * restrict height_cv = GD->D.height_centroid_values;
+    double * restrict areas = GD->D.areas;
 
     #pragma omp target teams distribute parallel for simd reduction(+:mass_error)
     for (anuga_int k = 0; k < n; k++) {
@@ -683,6 +683,30 @@ double gpu_protect(struct gpu_domain *GD) {
     return mass_error;
 }
 
+double gpu_compute_water_volume(struct gpu_domain *GD) {
+    // Compute total water volume on GPU
+    // Returns local volume (caller should do MPI_Allreduce for global sum)
+    //
+    // Volume = sum((stage - elevation) * area) for all elements
+
+    anuga_int n = GD->D.number_of_elements;
+    double volume = 0.0;
+
+    double * restrict stage_cv = GD->D.stage_centroid_values;
+    double * restrict bed_cv = GD->D.bed_centroid_values;
+    double * restrict areas = GD->D.areas;
+
+    #pragma omp target teams distribute parallel for simd reduction(+:volume)
+    for (anuga_int k = 0; k < n; k++) {
+        double h = stage_cv[k] - bed_cv[k];
+        if (h > 0.0) {
+            volume += h * areas[k];
+        }
+    }
+
+    return volume;
+}
+
 void gpu_manning_friction(struct gpu_domain *GD) {
     // GPU implementation of Manning friction (flat, semi-implicit)
     // Based on _openmp_manning_friction_flat_semi_implicit in sw_domain_openmp.c
@@ -698,14 +722,14 @@ void gpu_manning_friction(struct gpu_domain *GD) {
     // Small threshold for friction coefficient
     double eta_small = 1.0e-12;
 
-    // Extract array pointers
-    double *stage_cv = GD->D.stage_centroid_values;
-    double *bed_cv = GD->D.bed_centroid_values;
-    double *xmom_cv = GD->D.xmom_centroid_values;
-    double *ymom_cv = GD->D.ymom_centroid_values;
-    double *friction_cv = GD->D.friction_centroid_values;
-    double *xmom_siu = GD->D.xmom_semi_implicit_update;
-    double *ymom_siu = GD->D.ymom_semi_implicit_update;
+    // Extract array pointers (restrict enables better optimization)
+    double * restrict stage_cv = GD->D.stage_centroid_values;
+    double * restrict bed_cv = GD->D.bed_centroid_values;
+    double * restrict xmom_cv = GD->D.xmom_centroid_values;
+    double * restrict ymom_cv = GD->D.ymom_centroid_values;
+    double * restrict friction_cv = GD->D.friction_centroid_values;
+    double * restrict xmom_siu = GD->D.xmom_semi_implicit_update;
+    double * restrict ymom_siu = GD->D.ymom_semi_implicit_update;
 
     #pragma omp target teams distribute parallel for simd
     for (anuga_int k = 0; k < n; k++) {

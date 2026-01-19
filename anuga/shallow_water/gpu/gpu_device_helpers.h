@@ -42,13 +42,13 @@ static const double GPU_TINY = 1.0e-100;
 // Find qmin and qmax from three differences
 static inline void gpu_find_qmin_and_qmax_dq1_dq2(
     double dq0, double dq1, double dq2,
-    double *qmin, double *qmax) {
+    double * restrict qmin, double * restrict qmax) {
     *qmax = fmax(fmax(dq0, fmax(dq0 + dq1, dq0 + dq2)), 0.0);
     *qmin = fmin(fmin(dq0, fmin(dq0 + dq1, dq0 + dq2)), 0.0);
 }
 
 // Find qmin and qmax from single difference
-static inline void gpu_compute_qmin_qmax_from_dq1(double dq1, double *qmin, double *qmax) {
+static inline void gpu_compute_qmin_qmax_from_dq1(double dq1, double * restrict qmin, double * restrict qmax) {
     if (dq1 >= 0.0) {
         *qmin = 0.0;
         *qmax = dq1;
@@ -59,7 +59,7 @@ static inline void gpu_compute_qmin_qmax_from_dq1(double dq1, double *qmin, doub
 }
 
 // Limit gradient to enforce monotonicity
-static inline void gpu_limit_gradient(double *dqv, double qmin, double qmax, double beta_w) {
+static inline void gpu_limit_gradient(double * restrict dqv, double qmin, double qmax, double beta_w) {
     double r = 1000.0;
 
     double dq_x = dqv[0];
@@ -95,7 +95,7 @@ static inline void gpu_calc_edge_values_with_gradient(
     double dxv0, double dxv1, double dxv2,
     double dyv0, double dyv1, double dyv2,
     double dx1, double dx2, double dy1, double dy2,
-    double inv_area2, double beta_tmp, double *edge_values) {
+    double inv_area2, double beta_tmp, double * restrict edge_values) {
 
     double dqv[3];
     double dq0 = cv_k0 - cv_k;
@@ -119,7 +119,7 @@ static inline void gpu_calc_edge_values_with_gradient(
 }
 
 // Set constant edge values (for zero beta or boundary cases)
-static inline void gpu_set_constant_edge_values(double cv_k, double *edge_values) {
+static inline void gpu_set_constant_edge_values(double cv_k, double * restrict edge_values) {
     edge_values[0] = cv_k;
     edge_values[1] = cv_k;
     edge_values[2] = cv_k;
@@ -130,7 +130,7 @@ static inline void gpu_compute_dqv_from_gradient(
     double dq1, double dx2, double dy2,
     double dxv0, double dxv1, double dxv2,
     double dyv0, double dyv1, double dyv2,
-    double *dqv) {
+    double * restrict dqv) {
     double a = dq1 * dx2;
     double b = dq1 * dy2;
 
@@ -144,7 +144,7 @@ static inline void gpu_compute_dqv_from_gradient(
 // ============================================================================
 
 // Rotate momentum components to align with edge normal
-static inline void gpu_rotate(double *q, double n1, double n2) {
+static inline void gpu_rotate(double * restrict q, double n1, double n2) {
     double q1 = q[1];
     double q2 = q[2];
     q[1] = n1 * q1 + n2 * q2;
@@ -155,7 +155,7 @@ static inline void gpu_rotate(double *q, double n1, double n2) {
 static inline void gpu_compute_velocity_terms(
     double h, double h_edge,
     double uh_raw, double vh_raw,
-    double *u, double *uh, double *v, double *vh) {
+    double * restrict u, double * restrict uh, double * restrict v, double * restrict vh) {
     if (h_edge > 0.0) {
         double inv_h_edge = 1.0 / h_edge;
         *u = uh_raw * inv_h_edge;
@@ -207,12 +207,12 @@ static inline double gpu_compute_s_min(double u_left, double u_right,
 
 // Central flux function - Kurganov-Noelle-Petrova scheme
 static inline void gpu_flux_function_central(
-    double *q_left, double *q_right,
+    double * restrict q_left, double * restrict q_right,
     double h_left, double h_right,
     double hle, double hre,
     double n1, double n2,
     double epsilon, double ze, double g,
-    double *edgeflux, double *max_speed, double *pressure_flux,
+    double * restrict edgeflux, double * restrict max_speed, double * restrict pressure_flux,
     anuga_int low_froude) {
 
     double uh_left, vh_left, u_left, v_left;
