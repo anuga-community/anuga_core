@@ -106,6 +106,32 @@ All unit tests pass, using `pytest --pyargs anuga`. It will be slow-ish because 
 
 *To enable the GPU code*: `domain.set_multiprocessor_mode(2)`
 
+### Script Order (IMPORTANT!)
+
+The GPU interface handles any order of `set_multiprocessor_mode()` and `set_boundary()` calls automatically. However, for clarity, the recommended pattern is:
+
+```python
+# 1. Create and distribute domain
+domain = anuga.distribute(domain)
+
+# 2. Set runtime parameters
+domain.set_flow_algorithm('DE1')
+
+# 3. Set boundaries BEFORE or AFTER set_multiprocessor_mode - both work!
+Br = anuga.Reflective_boundary(domain)
+Bt = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(domain, function=tide_function)
+domain.set_boundary({'exterior': Br, 'open': Bt})
+
+# 4. Enable GPU mode (can be before or after set_boundary)
+domain.set_multiprocessor_mode(2)
+
+# 5. Evolve
+for t in domain.evolve(yieldstep=60, finaltime=3600):
+    print(domain.timestepping_statistics())
+```
+
+**Note**: The GPU interface uses lazy initialization for boundaries. If `set_boundary()` is called after `set_multiprocessor_mode()`, the boundaries are automatically initialized on the first RK2 step.
+
 You should see something like:
 ```
 GPU halo exchange initialized:
@@ -138,7 +164,53 @@ To run on multi node: `mpirun -np 64 --bind-to core --map-by ppr:4:node python r
 For example that line would run a 16 node, 64 GPU job for the partitioned scheme. You would need a prepartitioned mesh on 64 processes.
 
 
+## GPU Gotchas & Troubleshooting
 
+### Supported Boundary Types
+
+These boundary types run entirely on GPU (no CPU fallback):
+- `Reflective_boundary`
+- `Dirichlet_boundary`
+- `Transmissive_boundary`
+- `Transmissive_n_momentum_zero_t_momentum_set_stage_boundary`
+- `Time_boundary`
+
+If you use an unsupported boundary type, ALL boundaries fall back to CPU evaluation (with a warning).
+
+### Wrong Results Checklist
+
+If GPU mode produces different results than CPU mode:
+
+1. **Check boundary initialization**: Look for messages like `Reflective boundary arrays mapped to GPU: XX edges`. If you see `num_edges=0`, boundaries weren't initialized.
+
+2. **Check for late mapping messages**: `*_boundary arrays mapped to GPU (late): XX edges` means boundaries were initialized after `set_multiprocessor_mode()` - this is fine and handled automatically.
+
+3. **Verify with OMP_TARGET_OFFLOAD=disabled**: This runs GPU code on CPU. If results are still wrong, it's a logic bug not a GPU memory issue.
+
+### Performance Tips
+
+1. **Don't mix modes**: Once in GPU mode, stay in GPU mode. Mode switching is expensive.
+
+2. **Minimize yieldsteps**: GPU→CPU sync only happens at yieldsteps. Longer yieldsteps = fewer syncs.
+
+3. **Use prepartitioned meshes**: Loading partitioned data is much faster than partitioning at runtime.
+
+### Debugging
+
+Enable verbose GPU output:
+```python
+domain.set_multiprocessor_mode(2)
+# Check domain.gpu_interface.gpu_dom for internal state
+```
+
+Run with CPU fallback to compare:
+```bash
+OMP_TARGET_OFFLOAD=disabled python your_script.py
+```
+
+### Known Issues
+
+**Volume calculation differs**: Stage values are correct but `compute_total_volume()` may report different values between GPU and CPU modes. This is under investigation - the physics (stage values) are correct.
 
 
 

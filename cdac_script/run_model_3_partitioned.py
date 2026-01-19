@@ -70,6 +70,10 @@ finaltime = 20.0
 min_allowed_height = 0.008
 max_allowed_speed = 1.0
 checkpoint_time = 60 * 60
+
+# Stats interval: only compute volume/wet_elements every N seconds of sim time
+# This reduces MPI reductions from 17,280 (every 5s) to 48 (every 30min) for 24h sim
+stats_interval = 1800  # 30 minutes of simulation time
 flow_algorithm = 'DE1'
 useCheckpointing = False
 
@@ -248,6 +252,7 @@ import time
 
 t0 = time.time()
 rain_set_zero = True
+last_stats_time = -stats_interval  # Ensure we compute stats at t=0
 
 for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
     if myid == 0: domain.write_time()
@@ -439,42 +444,46 @@ for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
             rain_opertor.set_rate(rate=Q)
     else:
         if myid == 0: print("Using previously set Daily Rainfall!!")
-    import re
-    volume = domain.compute_total_volume()
-    stats = domain.timestepping_statistics()
-    rainstats = rain_opertor.timestepping_statistics()
-    maxInundation = Q.get_maximum_value()
-    indices = domain.get_wet_elements()
-    element_count = len(indices)
-    file1 = open("rain_data.txt", "a+")
-    file2 = open("wet_elements.txt", "a+")
-    file3 = open("max_inandation.txt", "a+")
-    try:
-      rain_arr = re.findall(r"\d+\.\d+",rainstats)
-      total_rain = float(rain_arr[0])
-      file1.write(str(total_rain))
-      file1.writelines("\n")
-      file2.write(str(element_count))
-      file2.writelines("\n")
-      file3.write(str(maxInundation))
-      file3.writelines("\n")
-    except:
-      #print("there is no Q")
-      file1.write(str(0.0))
-      file1.writelines("\n")
-      file2.write(str(0.0))
-      file2.writelines("\n")
-      file3.write(str(0.0))
-      file3.writelines("\n")
 
-    if myid == 0:
-        print("Total Volume =: %s Time Stepping Statistics =: %s Rain Operator Statistics=: %s" % (
-            str(volume), str(stats),str(rainstats )))
+    # Only compute expensive stats at stats_interval (reduces MPI reductions by ~360x)
+    if t - last_stats_time >= stats_interval:
+        last_stats_time = t
+        import re
+        volume = domain.compute_total_volume()
+        stats = domain.timestepping_statistics()
+        rainstats = rain_opertor.timestepping_statistics()
+        maxInundation = Q.get_maximum_value()
+        indices = domain.get_wet_elements()
+        element_count = len(indices)
+        file1 = open("rain_data.txt", "a+")
+        file2 = open("wet_elements.txt", "a+")
+        file3 = open("max_inandation.txt", "a+")
+        try:
+          rain_arr = re.findall(r"\d+\.\d+",rainstats)
+          total_rain = float(rain_arr[0])
+          file1.write(str(total_rain))
+          file1.writelines("\n")
+          file2.write(str(element_count))
+          file2.writelines("\n")
+          file3.write(str(maxInundation))
+          file3.writelines("\n")
+        except:
+          #print("there is no Q")
+          file1.write(str(0.0))
+          file1.writelines("\n")
+          file2.write(str(0.0))
+          file2.writelines("\n")
+          file3.write(str(0.0))
+          file3.writelines("\n")
 
-    # Close file handles
-    file1.close()
-    file2.close()
-    file3.close()
+        if myid == 0:
+            print("Total Volume =: %s Time Stepping Statistics =: %s Rain Operator Statistics=: %s" % (
+                str(volume), str(stats),str(rainstats )))
+
+        # Close file handles
+        file1.close()
+        file2.close()
+        file3.close()
 
 barrier()
 

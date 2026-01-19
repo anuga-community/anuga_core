@@ -16,6 +16,37 @@
 #include "sw_domain_gpu.h"
 
 // ============================================================================
+// FLOP Counting Constants (Gordon Bell Performance Profiling)
+// ============================================================================
+//
+// FLOP counts per kernel per element (triangle):
+// Counted: +, -, *, /, sqrt, fmin, fmax, pow (comparisons not counted)
+//
+// | Kernel                      | FLOPs/element | Notes                              |
+// |-----------------------------|---------------|-----------------------------------|
+// | extrapolate_second_order    | 220           | Gradient limiting, 4 quantities   |
+// | compute_fluxes              | 400           | 3 edges × flux function + pressure|
+// | update_conserved_quantities | 21            | Explicit + semi-implicit          |
+// | protect                     | 5             | Depth check, mass error           |
+// | manning_friction            | 18            | sqrt, pow(7/3), semi-implicit     |
+// | backup_conserved_quantities | 0             | Memory copy only                  |
+// | saxpy_conserved_quantities  | 9             | 3 × (2 mul + 1 add)               |
+// | rate_operator_apply         | 8             | Per affected cell                 |
+// | ghost_exchange              | 0             | Memory operations only            |
+//
+// Total per RK2 step: ~673 FLOPs/element (excluding rate_operator)
+
+#define FLOPS_EXTRAPOLATE        220
+#define FLOPS_COMPUTE_FLUXES     400
+#define FLOPS_UPDATE             21
+#define FLOPS_PROTECT            5
+#define FLOPS_MANNING            18
+#define FLOPS_BACKUP             0
+#define FLOPS_SAXPY              9
+#define FLOPS_RATE_OPERATOR      8
+#define FLOPS_GHOST_EXCHANGE     0
+
+// ============================================================================
 // Flux Computation Helper Functions (device code)
 // These are marked with #pragma omp declare target for GPU execution
 // ============================================================================
@@ -415,6 +446,9 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     // Default simulation parameters
     GD->CFL = 1.0;
     GD->evolve_max_timestep = 1.0e10;
+
+    // Initialize FLOP counters (Gordon Bell profiling)
+    gpu_flop_counters_init(GD);
 
     return 0;
 }
@@ -1323,6 +1357,12 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
         }
     }
 
+    // Count FLOPs: 8 FLOPs per affected cell
+    if (GD->flops.enabled) {
+        GD->flops.rate_operator_flops += (uint64_t)op->num_indices * FLOPS_RATE_OPERATOR;
+        GD->flops.rate_operator_calls++;
+    }
+
     return local_influx;
 }
 
@@ -1446,6 +1486,12 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
 
     // Rate array cache stays mapped on GPU for next call
 
+    // Count FLOPs: 8 FLOPs per affected cell
+    if (GD->flops.enabled) {
+        GD->flops.rate_operator_flops += (uint64_t)op->num_indices * FLOPS_RATE_OPERATOR;
+        GD->flops.rate_operator_calls++;
+    }
+
     return local_influx;
 }
 
@@ -1455,7 +1501,9 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
 
 void gpu_domain_map_arrays(struct gpu_domain *GD) {
     if (GD->gpu_initialized) return;
-    if (GD->device_id < 0) return;  // No GPU available
+    // Note: Don't return early if device_id < 0. With OMP_TARGET_OFFLOAD=disabled,
+    // the OpenMP target directives run on CPU, so we still need to set up the
+    // data structures and flags for the boundary/kernel functions to work.
 
     anuga_int n = GD->D.number_of_elements;
     anuga_int nb = GD->D.boundary_length;
@@ -1634,6 +1682,91 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
     }
 }
 
+void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
+    // Remap boundary arrays that were initialized after the initial map_to_gpu call.
+    // This is needed when set_boundary() is called AFTER set_multiprocessor_mode().
+
+    // Map reflective boundary arrays if initialized but not yet mapped
+    struct reflective_boundary *R = &GD->reflective;
+    if (R->num_edges > 0 && R->boundary_indices != NULL && !R->mapped) {
+        int ne = R->num_edges;
+        int *b_idx = R->boundary_indices;
+        int *v_ids = R->vol_ids;
+        int *e_ids = R->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        R->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Reflective boundary arrays mapped to GPU (late): %d edges\n", ne);
+        }
+    }
+
+    // Map dirichlet boundary arrays if initialized but not yet mapped
+    struct dirichlet_boundary *Dir = &GD->dirichlet;
+    if (Dir->num_edges > 0 && Dir->boundary_indices != NULL && !Dir->mapped) {
+        int ne = Dir->num_edges;
+        int *b_idx = Dir->boundary_indices;
+        int *v_ids = Dir->vol_ids;
+        int *e_ids = Dir->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        Dir->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Dirichlet boundary arrays mapped to GPU (late): %d edges\n", ne);
+        }
+    }
+
+    // Map transmissive boundary arrays if initialized but not yet mapped
+    struct transmissive_boundary *T = &GD->transmissive;
+    if (T->num_edges > 0 && T->boundary_indices != NULL && !T->mapped) {
+        int ne = T->num_edges;
+        int *b_idx = T->boundary_indices;
+        int *v_ids = T->vol_ids;
+        int *e_ids = T->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        T->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Transmissive boundary arrays mapped to GPU (late): %d edges\n", ne);
+        }
+    }
+
+    // Map transmissive_n_zero_t boundary arrays if initialized but not yet mapped
+    struct transmissive_n_zero_t_boundary *Tnzt = &GD->transmissive_n_zero_t;
+    if (Tnzt->num_edges > 0 && Tnzt->boundary_indices != NULL && !Tnzt->mapped) {
+        int ne = Tnzt->num_edges;
+        int *b_idx = Tnzt->boundary_indices;
+        int *v_ids = Tnzt->vol_ids;
+        int *e_ids = Tnzt->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        Tnzt->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Transmissive_n_zero_t boundary arrays mapped to GPU (late): %d edges\n", ne);
+        }
+    }
+
+    // Map time_boundary arrays if initialized but not yet mapped
+    struct time_boundary *TB = &GD->time_bdry;
+    if (TB->num_edges > 0 && TB->boundary_indices != NULL && !TB->mapped) {
+        int ne = TB->num_edges;
+        int *b_idx = TB->boundary_indices;
+        int *v_ids = TB->vol_ids;
+        int *e_ids = TB->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        TB->mapped = 1;
+
+        if (GD->rank == 0) {
+            printf("Time_boundary arrays mapped to GPU (late): %d edges\n", ne);
+        }
+    }
+}
+
 void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     if (!GD->gpu_initialized) return;
 
@@ -1807,6 +1940,66 @@ void gpu_domain_sync_from_device(struct gpu_domain *GD) {
     double *height_cv = GD->D.height_centroid_values;
 
     #pragma omp target update from(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+}
+
+void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
+    // Sync ALL arrays from GPU (for debugging/testing intermediate values)
+    if (!GD->gpu_initialized) return;
+
+    anuga_int n = GD->D.number_of_elements;
+    anuga_int nb = GD->D.boundary_length;
+
+    // Centroid values
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *height_cv = GD->D.height_centroid_values;
+
+    // Edge values
+    double *stage_ev = GD->D.stage_edge_values;
+    double *xmom_ev = GD->D.xmom_edge_values;
+    double *ymom_ev = GD->D.ymom_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+    double *bed_ev = GD->D.bed_edge_values;
+
+    // Explicit and semi-implicit updates
+    double *stage_eu = GD->D.stage_explicit_update;
+    double *xmom_eu = GD->D.xmom_explicit_update;
+    double *ymom_eu = GD->D.ymom_explicit_update;
+    double *stage_siu = GD->D.stage_semi_implicit_update;
+    double *xmom_siu = GD->D.xmom_semi_implicit_update;
+    double *ymom_siu = GD->D.ymom_semi_implicit_update;
+
+    // Sync centroid values
+    #pragma omp target update from(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+
+    // Sync edge values
+    #pragma omp target update from(stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n], \
+                                   height_ev[0:3*n], bed_ev[0:3*n])
+
+    // Sync explicit and semi-implicit updates
+    #pragma omp target update from(stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n], \
+                                   stage_siu[0:n], xmom_siu[0:n], ymom_siu[0:n])
+
+    // Sync boundary values if present
+    if (nb > 0) {
+        double *stage_bv = GD->D.stage_boundary_values;
+        double *xmom_bv = GD->D.xmom_boundary_values;
+        double *ymom_bv = GD->D.ymom_boundary_values;
+        double *height_bv = GD->D.height_boundary_values;
+        double *bed_bv = GD->D.bed_boundary_values;
+
+        #pragma omp target update from(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
+                                       height_bv[0:nb], bed_bv[0:nb])
+    }
+
+    // Sync backup values if mapped
+    if (GD->backup_arrays_mapped) {
+        double *stage_backup = GD->D.stage_backup_values;
+        double *xmom_backup = GD->D.xmom_backup_values;
+        double *ymom_backup = GD->D.ymom_backup_values;
+        #pragma omp target update from(stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
+    }
 }
 
 void gpu_sync_boundary_values(struct gpu_domain *GD) {
@@ -2417,6 +2610,12 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
             ymom_cv[k] = y_centroid_work[k];
         }
     }
+
+    // Count FLOPs: 150 FLOPs per element (gradient limiting, 5 quantities)
+    if (GD->flops.enabled) {
+        GD->flops.extrapolate_flops += (uint64_t)n * FLOPS_EXTRAPOLATE;
+        GD->flops.extrapolate_calls++;
+    }
 }
 
 double gpu_compute_fluxes(struct gpu_domain *GD) {
@@ -2587,6 +2786,12 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
 
     } // End element loop
 
+    // Count FLOPs: 380 FLOPs per element (3 edges × flux function)
+    if (GD->flops.enabled) {
+        GD->flops.compute_fluxes_flops += (uint64_t)n * FLOPS_COMPUTE_FLUXES;
+        GD->flops.compute_fluxes_calls++;
+    }
+
     return local_timestep;
 }
 
@@ -2640,6 +2845,12 @@ void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
         xmom_siu[k] = 0.0;
         ymom_siu[k] = 0.0;
     }
+
+    // Count FLOPs: 21 FLOPs per element (explicit + semi-implicit update)
+    if (GD->flops.enabled) {
+        GD->flops.update_flops += (uint64_t)n * FLOPS_UPDATE;
+        GD->flops.update_calls++;
+    }
 }
 
 void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
@@ -2661,6 +2872,12 @@ void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
         xmom_backup[k] = xmom_cv[k];
         ymom_backup[k] = ymom_cv[k];
     }
+
+    // Count FLOPs: 0 FLOPs per element (memory copy only)
+    if (GD->flops.enabled) {
+        GD->flops.backup_flops += (uint64_t)n * FLOPS_BACKUP;
+        GD->flops.backup_calls++;
+    }
 }
 
 void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
@@ -2676,12 +2893,23 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
     double *stage_backup = GD->D.stage_backup_values;
     double *xmom_backup = GD->D.xmom_backup_values;
     double *ymom_backup = GD->D.ymom_backup_values;
+    double *height_cv = GD->D.height_centroid_values;
+    double *bed_cv = GD->D.bed_centroid_values;
 
     #pragma omp target teams distribute parallel for
     for (anuga_int k = 0; k < n; k++) {
-        stage_cv[k] = a * stage_cv[k] + b * stage_backup[k];
+        double stage = a * stage_cv[k] + b * stage_backup[k];
+        stage_cv[k] = stage;
         xmom_cv[k] = a * xmom_cv[k] + b * xmom_backup[k];
         ymom_cv[k] = a * ymom_cv[k] + b * ymom_backup[k];
+        // Update height to match the new stage (needed for volume calculation)
+        height_cv[k] = fmax(stage - bed_cv[k], 0.0);
+    }
+
+    // Count FLOPs: 9 FLOPs per element (3 quantities × (2 mul + 1 add) + height calc)
+    if (GD->flops.enabled) {
+        GD->flops.saxpy_flops += (uint64_t)n * FLOPS_SAXPY;
+        GD->flops.saxpy_calls++;
     }
 }
 
@@ -2721,6 +2949,12 @@ double gpu_protect(struct gpu_domain *GD) {
 
         // Update height quantity
         height_cv[k] = h;
+    }
+
+    // Count FLOPs: 5 FLOPs per element (depth check, mass error)
+    if (GD->flops.enabled) {
+        GD->flops.protect_flops += (uint64_t)n * FLOPS_PROTECT;
+        GD->flops.protect_calls++;
     }
 
     return mass_error;
@@ -2774,34 +3008,375 @@ void gpu_manning_friction(struct gpu_domain *GD) {
         xmom_siu[k] += S * uh;
         ymom_siu[k] += S * vh;
     }
+
+    // Count FLOPs: 15 FLOPs per element (sqrt, pow, semi-implicit)
+    if (GD->flops.enabled) {
+        GD->flops.manning_flops += (uint64_t)n * FLOPS_MANNING;
+        GD->flops.manning_calls++;
+    }
 }
 
 // ============================================================================
 // Full RK2 Step - Orchestrates all GPU operations
 // ============================================================================
 
-double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double yieldstep, int apply_forcing) {
-    // This will orchestrate the full RK2 step on GPU
-    // For now, just return a dummy timestep
-    (void)yieldstep;
-    (void)apply_forcing;
+double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing) {
+    // Full RK2 step orchestrated entirely in C - eliminates Python round-trip overhead
+    //
+    // This function performs:
+    // 1. Backup conserved quantities
+    // 2. First Euler step (protect, extrapolate, boundaries, fluxes, forcing, update, ghost exchange)
+    // 3. Second Euler step (same pattern)
+    // 4. RK2 averaging (saxpy)
+    //
+    // Parameters:
+    // - max_timestep: Maximum allowed timestep (respecting yieldstep/finaltime constraints)
+    // - apply_forcing: Whether to apply forcing terms (Manning friction)
+    //
+    // Time-dependent boundary values (Time_boundary, Transmissive_n_zero_t) must be set
+    // by Python BEFORE calling this function via set_time_boundary_values() and
+    // set_transmissive_n_zero_t_stage().
 
-    double timestep = GD->evolve_max_timestep;
+    double local_timestep, global_timestep, timestep;
 
-    // RK2 Step structure (to be implemented):
-    // 1. backup_conserved_quantities()
-    // 2. First Euler step:
-    //    - extrapolate_second_order()
-    //    - compute_fluxes() -> get timestep
-    //    - apply_forcing() if enabled
-    //    - update_conserved_quantities()
-    //    - exchange_ghosts()
-    //    - extrapolate_second_order()
-    // 3. Second Euler step:
-    //    - compute_fluxes()
-    //    - apply_forcing() if enabled
-    //    - update_conserved_quantities()
-    // 4. saxpy_conserved_quantities(0.5, 0.5)
+    // ========================================
+    // Backup conserved quantities for RK2
+    // ========================================
+    gpu_backup_conserved_quantities(GD);
+
+    // ========================================
+    // First Euler step
+    // ========================================
+
+    // Protect against negative depths
+    gpu_protect(GD);
+
+    // Extrapolate to vertices and edges
+    gpu_extrapolate_second_order(GD);
+
+    // Evaluate all GPU-supported boundary conditions
+    // (Time-dependent values must be set by Python before this call)
+    gpu_evaluate_reflective_boundary(GD);
+    gpu_evaluate_dirichlet_boundary(GD);
+    gpu_evaluate_transmissive_boundary(GD);
+    gpu_evaluate_transmissive_n_zero_t_boundary(GD);
+    gpu_evaluate_time_boundary(GD);
+
+    // Compute fluxes - returns local minimum timestep
+    local_timestep = gpu_compute_fluxes(GD);
+
+    // MPI reduce to get global minimum timestep
+    if (GD->nprocs > 1) {
+        MPI_Allreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE, MPI_MIN, GD->comm);
+    } else {
+        global_timestep = local_timestep;
+    }
+
+    // Apply CFL condition and respect max_timestep from Python
+    timestep = GD->CFL * global_timestep;
+    if (timestep > max_timestep) {
+        timestep = max_timestep;
+    }
+
+    // Apply forcing terms (Manning friction on GPU)
+    if (apply_forcing) {
+        gpu_manning_friction(GD);
+    }
+
+    // Update conserved quantities with computed timestep
+    gpu_update_conserved_quantities(GD, timestep);
+
+    // Ghost exchange (MPI) - sync ghost cells between processes
+    if (GD->nprocs > 1) {
+        gpu_exchange_ghosts(GD);
+    }
+
+    // ========================================
+    // Second Euler step
+    // ========================================
+
+    // Protect against negative depths
+    gpu_protect(GD);
+
+    // Extrapolate to vertices and edges
+    gpu_extrapolate_second_order(GD);
+
+    // Evaluate boundary conditions (same as first step)
+    gpu_evaluate_reflective_boundary(GD);
+    gpu_evaluate_dirichlet_boundary(GD);
+    gpu_evaluate_transmissive_boundary(GD);
+    gpu_evaluate_transmissive_n_zero_t_boundary(GD);
+    gpu_evaluate_time_boundary(GD);
+
+    // Compute fluxes (ignore timestep from second step - use first step's timestep)
+    gpu_compute_fluxes(GD);
+
+    // Apply forcing terms (Manning friction on GPU)
+    if (apply_forcing) {
+        gpu_manning_friction(GD);
+    }
+
+    // Update conserved quantities (same timestep as first step)
+    gpu_update_conserved_quantities(GD, timestep);
+
+    // ========================================
+    // RK2 averaging: Q_final = 0.5 * Q_backup + 0.5 * Q_current
+    // ========================================
+    gpu_saxpy_conserved_quantities(GD, 0.5, 0.5);
 
     return timestep;
+}
+
+// ============================================================================
+// FLOP Counter Functions (Gordon Bell Performance Profiling)
+// ============================================================================
+
+void gpu_flop_counters_init(struct gpu_domain *GD) {
+    // Initialize all FLOP counters to zero
+    memset(&GD->flops, 0, sizeof(struct flop_counters));
+    GD->flops.enabled = 1;  // Enable by default
+}
+
+void gpu_flop_counters_reset(struct gpu_domain *GD) {
+    // Reset counters but keep enabled state
+    int enabled = GD->flops.enabled;
+    memset(&GD->flops, 0, sizeof(struct flop_counters));
+    GD->flops.enabled = enabled;
+}
+
+void gpu_flop_counters_enable(struct gpu_domain *GD, int enable) {
+    GD->flops.enabled = enable;
+}
+
+void gpu_flop_counters_start_timer(struct gpu_domain *GD) {
+    GD->flops.start_time = MPI_Wtime();
+}
+
+void gpu_flop_counters_stop_timer(struct gpu_domain *GD) {
+    GD->flops.elapsed_time = MPI_Wtime() - GD->flops.start_time;
+}
+
+uint64_t gpu_flop_counters_get_total(struct gpu_domain *GD) {
+    // Recalculate total from individual counters
+    GD->flops.total_flops =
+        GD->flops.extrapolate_flops +
+        GD->flops.compute_fluxes_flops +
+        GD->flops.update_flops +
+        GD->flops.protect_flops +
+        GD->flops.manning_flops +
+        GD->flops.backup_flops +
+        GD->flops.saxpy_flops +
+        GD->flops.rate_operator_flops +
+        GD->flops.ghost_exchange_flops;
+    return GD->flops.total_flops;
+}
+
+double gpu_flop_counters_get_flops(struct gpu_domain *GD) {
+    // Return FLOP/s (floating point operations per second)
+    if (GD->flops.elapsed_time <= 0.0) {
+        return 0.0;
+    }
+    return (double)gpu_flop_counters_get_total(GD) / GD->flops.elapsed_time;
+}
+
+void gpu_flop_counters_print(struct gpu_domain *GD) {
+    uint64_t total = gpu_flop_counters_get_total(GD);
+    double gflops = (double)total / 1.0e9;
+    double elapsed = GD->flops.elapsed_time;
+    double gflops_per_sec = (elapsed > 0.0) ? gflops / elapsed : 0.0;
+
+    printf("\n");
+    printf("============================================================\n");
+    printf("FLOP Counter Summary (Gordon Bell Profiling)\n");
+    printf("============================================================\n");
+    printf("Kernel                       |      FLOPs |     Calls |  FLOPs/call\n");
+    printf("-----------------------------|------------|-----------|------------\n");
+
+    if (GD->flops.extrapolate_calls > 0) {
+        printf("extrapolate_second_order     | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.extrapolate_flops,
+               (unsigned long)GD->flops.extrapolate_calls,
+               (unsigned long)(GD->flops.extrapolate_flops / GD->flops.extrapolate_calls));
+    }
+    if (GD->flops.compute_fluxes_calls > 0) {
+        printf("compute_fluxes               | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.compute_fluxes_flops,
+               (unsigned long)GD->flops.compute_fluxes_calls,
+               (unsigned long)(GD->flops.compute_fluxes_flops / GD->flops.compute_fluxes_calls));
+    }
+    if (GD->flops.update_calls > 0) {
+        printf("update_conserved_quantities  | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.update_flops,
+               (unsigned long)GD->flops.update_calls,
+               (unsigned long)(GD->flops.update_flops / GD->flops.update_calls));
+    }
+    if (GD->flops.protect_calls > 0) {
+        printf("protect                      | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.protect_flops,
+               (unsigned long)GD->flops.protect_calls,
+               (unsigned long)(GD->flops.protect_flops / GD->flops.protect_calls));
+    }
+    if (GD->flops.manning_calls > 0) {
+        printf("manning_friction             | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.manning_flops,
+               (unsigned long)GD->flops.manning_calls,
+               (unsigned long)(GD->flops.manning_flops / GD->flops.manning_calls));
+    }
+    if (GD->flops.saxpy_calls > 0) {
+        printf("saxpy_conserved_quantities   | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.saxpy_flops,
+               (unsigned long)GD->flops.saxpy_calls,
+               (unsigned long)(GD->flops.saxpy_flops / GD->flops.saxpy_calls));
+    }
+    if (GD->flops.rate_operator_calls > 0) {
+        printf("rate_operator_apply          | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.rate_operator_flops,
+               (unsigned long)GD->flops.rate_operator_calls,
+               (unsigned long)(GD->flops.rate_operator_flops / GD->flops.rate_operator_calls));
+    }
+
+    printf("-----------------------------|------------|-----------|------------\n");
+    printf("TOTAL                        | %10lu |\n", (unsigned long)total);
+    printf("============================================================\n");
+    printf("Total GFLOPs:     %.3f\n", gflops);
+    printf("Elapsed time:     %.3f s\n", elapsed);
+    printf("Performance:      %.3f GFLOP/s\n", gflops_per_sec);
+    printf("============================================================\n\n");
+}
+
+// Per-kernel FLOP getters
+uint64_t gpu_flop_counters_get_extrapolate(struct gpu_domain *GD) {
+    return GD->flops.extrapolate_flops;
+}
+
+uint64_t gpu_flop_counters_get_compute_fluxes(struct gpu_domain *GD) {
+    return GD->flops.compute_fluxes_flops;
+}
+
+uint64_t gpu_flop_counters_get_update(struct gpu_domain *GD) {
+    return GD->flops.update_flops;
+}
+
+uint64_t gpu_flop_counters_get_protect(struct gpu_domain *GD) {
+    return GD->flops.protect_flops;
+}
+
+uint64_t gpu_flop_counters_get_manning(struct gpu_domain *GD) {
+    return GD->flops.manning_flops;
+}
+
+uint64_t gpu_flop_counters_get_backup(struct gpu_domain *GD) {
+    return GD->flops.backup_flops;
+}
+
+uint64_t gpu_flop_counters_get_saxpy(struct gpu_domain *GD) {
+    return GD->flops.saxpy_flops;
+}
+
+uint64_t gpu_flop_counters_get_rate_operator(struct gpu_domain *GD) {
+    return GD->flops.rate_operator_flops;
+}
+
+uint64_t gpu_flop_counters_get_ghost_exchange(struct gpu_domain *GD) {
+    return GD->flops.ghost_exchange_flops;
+}
+
+// ============================================================================
+// MPI Reduction for Multi-GPU FLOP Counters (Gordon Bell)
+// ============================================================================
+
+uint64_t gpu_flop_counters_get_global_total(struct gpu_domain *GD) {
+    // Get local total first
+    uint64_t local_total = gpu_flop_counters_get_total(GD);
+
+    // MPI_Allreduce to sum across all ranks
+    // MPI_UNSIGNED_LONG_LONG maps to uint64_t
+    uint64_t global_total = 0;
+    MPI_Allreduce(&local_total, &global_total, 1, MPI_UNSIGNED_LONG_LONG,
+                  MPI_SUM, GD->comm);
+
+    return global_total;
+}
+
+double gpu_flop_counters_get_global_flops(struct gpu_domain *GD) {
+    // Get global total FLOPs
+    uint64_t global_total = gpu_flop_counters_get_global_total(GD);
+
+    // Use local elapsed time (should be same across ranks if synchronized)
+    if (GD->flops.elapsed_time <= 0.0) {
+        return 0.0;
+    }
+    return (double)global_total / GD->flops.elapsed_time;
+}
+
+void gpu_flop_counters_print_global(struct gpu_domain *GD) {
+    // Gather per-kernel FLOPs from all ranks
+    uint64_t local_flops[9];
+    local_flops[0] = GD->flops.extrapolate_flops;
+    local_flops[1] = GD->flops.compute_fluxes_flops;
+    local_flops[2] = GD->flops.update_flops;
+    local_flops[3] = GD->flops.protect_flops;
+    local_flops[4] = GD->flops.manning_flops;
+    local_flops[5] = GD->flops.backup_flops;
+    local_flops[6] = GD->flops.saxpy_flops;
+    local_flops[7] = GD->flops.rate_operator_flops;
+    local_flops[8] = GD->flops.ghost_exchange_flops;
+
+    uint64_t global_flops[9];
+    MPI_Reduce(local_flops, global_flops, 9, MPI_UNSIGNED_LONG_LONG,
+               MPI_SUM, 0, GD->comm);
+
+    // Get global total and max elapsed time
+    uint64_t local_total = gpu_flop_counters_get_total(GD);
+    uint64_t global_total = 0;
+    MPI_Reduce(&local_total, &global_total, 1, MPI_UNSIGNED_LONG_LONG,
+               MPI_SUM, 0, GD->comm);
+
+    double local_elapsed = GD->flops.elapsed_time;
+    double max_elapsed = 0.0;
+    MPI_Reduce(&local_elapsed, &max_elapsed, 1, MPI_DOUBLE,
+               MPI_MAX, 0, GD->comm);
+
+    // Only rank 0 prints
+    if (GD->rank != 0) return;
+
+    double gflops = (double)global_total / 1.0e9;
+    double gflops_per_sec = (max_elapsed > 0.0) ? gflops / max_elapsed : 0.0;
+
+    printf("\n");
+    printf("============================================================\n");
+    printf("GLOBAL FLOP Counter Summary (Gordon Bell - %d GPUs)\n", GD->nprocs);
+    printf("============================================================\n");
+    printf("Kernel                       |      GFLOPs | %% of total\n");
+    printf("-----------------------------|-------------|------------\n");
+
+    const char* names[] = {
+        "extrapolate_second_order",
+        "compute_fluxes",
+        "update_conserved_quantities",
+        "protect",
+        "manning_friction",
+        "backup_conserved_quantities",
+        "saxpy_conserved_quantities",
+        "rate_operator_apply",
+        "ghost_exchange"
+    };
+
+    for (int i = 0; i < 9; i++) {
+        if (global_flops[i] > 0) {
+            double kernel_gflops = (double)global_flops[i] / 1.0e9;
+            double pct = 100.0 * (double)global_flops[i] / (double)global_total;
+            printf("%-28s | %11.3f | %9.1f%%\n", names[i], kernel_gflops, pct);
+        }
+    }
+
+    printf("-----------------------------|-------------|------------\n");
+    printf("TOTAL                        | %11.3f | 100.0%%\n", gflops);
+    printf("============================================================\n");
+    printf("Number of GPUs:   %d\n", GD->nprocs);
+    printf("Total GFLOPs:     %.3f\n", gflops);
+    printf("Elapsed time:     %.3f s\n", max_elapsed);
+    printf("Performance:      %.3f GFLOP/s\n", gflops_per_sec);
+    printf("Per-GPU average:  %.3f GFLOP/s\n", gflops_per_sec / GD->nprocs);
+    printf("============================================================\n\n");
 }

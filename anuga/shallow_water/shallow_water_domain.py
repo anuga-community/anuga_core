@@ -314,7 +314,8 @@ class Domain(Generic_Domain):
         # 2. Cuda
         #-------------------------------
         self.gpu_interface = None
-        self.set_multiprocessor_mode(1)  # Default to OpenMP
+        self.use_c_rk2_loop = True  # Use C RK2 loop (faster) vs Python-orchestrated GPU loop
+        self.set_multiprocessor_mode(1)  # Default to OpenMP (use set_multiprocessor_mode(2) for GPU)
 
         #-------------------------------
         # C extension domain structure
@@ -1983,19 +1984,93 @@ class Domain(Generic_Domain):
         """
 
         nvtxRangePush('update_boundary')
-        for tag in self.tag_boundary_cells:
-            B = self.boundary_map[tag]
 
-            if B is None:
-                continue
-
-            boundary_segment_edges = self.tag_boundary_cells[tag]
-
-            B.evaluate_segment(self, boundary_segment_edges)
-
-        # Sync boundary values to GPU if in GPU mode
+        # GPU mode - use GPU boundary functions if all boundaries are GPU-supported
         if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            self.gpu_interface.sync_boundary_values()
+            from anuga.shallow_water.sw_domain_gpu_ext import (
+                evaluate_reflective_boundary_gpu,
+                evaluate_dirichlet_boundary_gpu,
+                evaluate_transmissive_boundary_gpu,
+                set_transmissive_n_zero_t_stage,
+                evaluate_transmissive_n_zero_t_boundary_gpu,
+                set_time_boundary_values,
+                evaluate_time_boundary_gpu,
+                boundary_edge_sync,
+                sync_boundary_values,
+                init_boundary_edge_sync,
+            )
+            import numpy as np
+            gpu_dom = self.gpu_interface.gpu_dom
+
+            # Lazily initialize GPU boundary info
+            GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                                  'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                                  'Time_boundary'}
+
+            if not hasattr(self, '_gpu_boundary_info_initialized'):
+                self._gpu_cpu_tags = []
+                self._gpu_all_on_gpu = True
+                self._gpu_transmissive_n_zero_t_boundaries = []
+                self._gpu_time_boundaries = []
+
+                for tag, B in self.boundary_map.items():
+                    if B is not None:
+                        btype = B.__class__.__name__
+                        if btype not in GPU_BOUNDARY_TYPES:
+                            self._gpu_cpu_tags.append(tag)
+                            self._gpu_all_on_gpu = False
+                        elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                            self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                        elif btype == 'Time_boundary':
+                            self._gpu_time_boundaries.append(B)
+
+                # Set up boundary edge sync if we have ANY CPU-evaluated boundaries
+                if not self._gpu_all_on_gpu:
+                    boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
+                    init_boundary_edge_sync(gpu_dom, boundary_cell_ids)
+
+                self._gpu_boundary_info_initialized = True
+
+            if self._gpu_all_on_gpu:
+                # All boundaries are GPU-supported - evaluate entirely on GPU
+                evaluate_reflective_boundary_gpu(gpu_dom)
+                evaluate_dirichlet_boundary_gpu(gpu_dom)
+                evaluate_transmissive_boundary_gpu(gpu_dom)
+
+                # Handle transmissive_n_zero_t boundaries (need Python function call for stage)
+                for B in self._gpu_transmissive_n_zero_t_boundaries:
+                    stage_val = B.get_boundary_values()
+                    try:
+                        stage_val = float(stage_val)
+                    except:
+                        stage_val = float(stage_val[0])
+                    set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+                evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+
+                # Handle Time_boundary (need Python function call for values)
+                for B in self._gpu_time_boundaries:
+                    q = B.get_boundary_values()
+                    set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+                evaluate_time_boundary_gpu(gpu_dom)
+            else:
+                # Some boundaries need CPU - sync edge values, evaluate on CPU, sync back
+                boundary_edge_sync(gpu_dom)
+                for tag in self.tag_boundary_cells:
+                    B = self.boundary_map[tag]
+                    if B is not None:
+                        B.evaluate_segment(self, self.tag_boundary_cells[tag])
+                sync_boundary_values(gpu_dom)
+        else:
+            # CPU mode - evaluate boundaries on CPU
+            for tag in self.tag_boundary_cells:
+                B = self.boundary_map[tag]
+
+                if B is None:
+                    continue
+
+                boundary_segment_edges = self.tag_boundary_cells[tag]
+
+                B.evaluate_segment(self, boundary_segment_edges)
 
         nvtxRangePop()
 
@@ -2051,7 +2126,7 @@ class Domain(Generic_Domain):
             raise Exception('Not implemented')
 
         extrapolate_second_order_edge_sw(self, distribute_to_vertices=distribute_to_vertices)
-        
+
         nvtxRangePop()
 
     def distribute_to_edges(self):
@@ -2704,6 +2779,13 @@ class Domain(Generic_Domain):
         # Update conserved quantities
         self.update_conserved_quantities()
 
+        # Ghost exchange (MPI) - required for multi-GPU operation
+        # Note: update_ghosts() is a no-op in GPU mode, so we call exchange_ghosts directly
+        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+            if self.ghost_layer_width < 4:
+                from anuga.shallow_water.sw_domain_gpu_ext import exchange_ghosts
+                exchange_ghosts(self.gpu_interface.gpu_dom)
+
 
     def evolve_one_rk2_step(self, yieldstep, finaltime):
         """One 2nd order RK timestep
@@ -2713,9 +2795,12 @@ class Domain(Generic_Domain):
         vertices and edges
         """
 
-        # HIJACKED: Direct GPU implementation for testing
+        # GPU mode: use C RK2 loop (faster) or Python-orchestrated GPU loop
         if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            self._evolve_one_rk2_step_gpu(yieldstep, finaltime)
+            if self.use_c_rk2_loop:
+                self._evolve_one_rk2_step_c(yieldstep, finaltime)
+            else:
+                self._evolve_one_rk2_step_gpu(yieldstep, finaltime)
             return
 
         # Save initial initial conserved quantities values
@@ -2967,6 +3052,97 @@ class Domain(Generic_Domain):
         saxpy_conserved_quantities_gpu(gpu_dom, 0.5, 0.5)
 
 
+    def _evolve_one_rk2_step_c(self, yieldstep, finaltime):
+        """RK2 step executed entirely in C - eliminates Python round-trip overhead.
+
+        This is faster than _evolve_one_rk2_step_gpu() because:
+        - All kernel calls happen in C without Python round-trips
+        - MPI reduction for timestep happens in C
+        - Only one Python->C call per RK2 step
+
+        Limitations:
+        - Only supports GPU-evaluated boundary types
+        - Rate_operators must be applied separately (after this call)
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            evolve_one_rk2_step_gpu,
+            set_transmissive_n_zero_t_stage,
+            set_time_boundary_values,
+        )
+
+        gpu_dom = self.gpu_interface.gpu_dom
+
+        # Supported GPU boundary types
+        GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                              'Time_boundary'}
+
+        # Lazy init: identify which boundaries need special handling
+        if not hasattr(self, '_gpu_boundary_info_initialized'):
+            self._gpu_cpu_tags = []
+            self._gpu_all_on_gpu = True
+            cpu_boundary_types = []
+            self._gpu_transmissive_n_zero_t_boundaries = []
+            self._gpu_time_boundaries = []
+
+            for tag, B in self.boundary_map.items():
+                if B is not None:
+                    btype = B.__class__.__name__
+                    if btype not in GPU_BOUNDARY_TYPES:
+                        self._gpu_cpu_tags.append(tag)
+                        self._gpu_all_on_gpu = False
+                        cpu_boundary_types.append((tag, btype))
+                    elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                        self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                    elif btype == 'Time_boundary':
+                        self._gpu_time_boundaries.append(B)
+
+            if not self._gpu_all_on_gpu:
+                print("WARNING: C RK2 loop requires all GPU-supported boundary types")
+                print("  Falling back to Python-orchestrated GPU loop")
+                print(f"  Unsupported types: {cpu_boundary_types}")
+
+            self._gpu_boundary_info_initialized = True
+
+        # If any boundary requires CPU, fall back to Python-orchestrated loop
+        if not self._gpu_all_on_gpu:
+            return self._evolve_one_rk2_step_gpu(yieldstep, finaltime)
+
+        # Set time-dependent boundary values BEFORE calling C function
+        # Python function calls are cheap (~microseconds)
+        for B in self._gpu_transmissive_n_zero_t_boundaries:
+            stage_val = B.get_boundary_values()
+            try:
+                stage_val = float(stage_val)
+            except:
+                stage_val = float(stage_val[0])
+            set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+
+        for B in self._gpu_time_boundaries:
+            q = B.get_boundary_values()
+            set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+
+        # Compute max allowed timestep (respecting yieldstep and finaltime)
+        # This mirrors the logic in update_timestep()
+        remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
+        if finaltime is not None:
+            remaining_finaltime = finaltime - self.get_time()
+            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep, remaining_finaltime)
+        else:
+            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
+
+        # Execute full RK2 step in C (includes MPI timestep reduction)
+        # apply_forcing=1 enables Manning friction on GPU
+        self.timestep = evolve_one_rk2_step_gpu(gpu_dom, max_timestep, 1)
+
+        # Update internal time tracking
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+
+        # Record timestep stats
+        self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
+        self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
+
+
     def evolve_one_rk3_step(self, yieldstep, finaltime):
         """One 3rd order RK timestep
         Q^(1) = 3/4 Q^n + 1/4 E(h)^2 Q^n  (at time t^n + h/2)
@@ -3121,11 +3297,28 @@ class Domain(Generic_Domain):
                 if c is not None:
                     Q.centroid_values[:] = Q.centroid_values / c
 
+    def apply_fractional_steps(self):
+        """Override to sync GPU data before fractional step operators run."""
+        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+            # Fractional step operators (Boyd box, inlet, etc.) run on CPU
+            # Need to sync data from GPU first
+            if len(self.fractional_step_operators) > 0:
+                self.gpu_interface.sync_from_device()
+
+        # Call parent implementation
+        super().apply_fractional_steps()
+
+        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+            # Sync changes back to GPU
+            if len(self.fractional_step_operators) > 0:
+                self.gpu_interface.sync_to_device()
+
     def update_ghosts(self, quantities=None):
         """Override to use GPU ghost exchange when in GPU mode."""
         if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            # Use GPU-aware MPI ghost exchange
-            self.gpu_interface.exchange_ghosts()
+            # GPU RK2 loop handles ghost exchange internally via exchange_ghosts(gpu_dom)
+            # Don't do another exchange here - it would cause MPI message conflicts
+            pass
         else:
             # Fall back to parent implementation
             super().update_ghosts(quantities)
@@ -3584,9 +3777,40 @@ class Domain(Generic_Domain):
             print(f'Setting omp_num_threads to {omp_num_threads}')
 
 
+    @property
+    def gpu(self):
+        """
+        Shortcut to access the GPU interface.
+
+        Returns the gpu_interface object which provides FLOP counters and kernel wrappers.
+        Raises AttributeError if GPU mode is not enabled.
+        """
+        if self.gpu_interface is None:
+            raise AttributeError(
+                "GPU interface not initialized. Call domain.set_multiprocessor_mode(2) first."
+            )
+        return self.gpu_interface
+
     def set_gpu_interface(self):
 
         if self.multiprocessor_mode == 2 and self.gpu_interface is None:
+
+            # Check that boundaries are properly set before GPU initialization
+            # After distribute(), boundary_map may be {'exterior': None, 'ghost': None}
+            # which is not None but has no actual boundary objects - this causes silent failures
+            if self.boundary_map is None:
+                raise RuntimeError(
+                    "GPU mode requires boundaries to be set before calling set_multiprocessor_mode(2).\n"
+                    "Please call domain.set_boundary({...}) BEFORE domain.set_multiprocessor_mode(2)."
+                )
+
+            has_real_boundary = any(b is not None for b in self.boundary_map.values())
+            if not has_real_boundary:
+                raise RuntimeError(
+                    "GPU mode requires boundaries to be set before calling set_multiprocessor_mode(2).\n"
+                    "Please call domain.set_boundary({...}) BEFORE domain.set_multiprocessor_mode(2).\n"
+                    f"Current boundary_map has no boundary objects: {list(self.boundary_map.keys())}"
+                )
 
             # Try OpenMP target offloading interface first
             try:
@@ -3597,7 +3821,7 @@ class Domain(Generic_Domain):
                 print('| GPU interface initialized using OpenMP target offloading                    |')
                 print('+==============================================================================+')
                 return
-            except ImportError as e:
+            except Exception as e:
                 print(f'OpenMP GPU interface not available: {e}')
 
             # Fall back to CUDA/CuPy interface
