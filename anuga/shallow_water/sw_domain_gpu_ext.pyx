@@ -20,8 +20,8 @@ cimport numpy as np
 from mpi4py cimport MPI
 from mpi4py.libmpi cimport MPI_Comm
 
-# External C declarations
-cdef extern from "sw_domain_gpu.c" nogil:
+# External C declarations (from gpu/ subdirectory)
+cdef extern from "gpu_domain.h" nogil:
     # Forward declare the structs
     struct domain:
         int64_t number_of_elements

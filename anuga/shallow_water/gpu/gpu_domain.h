@@ -7,8 +7,8 @@
 //
 // Based on miniapp_mpi.c patterns
 
-#ifndef SW_DOMAIN_GPU_H
-#define SW_DOMAIN_GPU_H
+#ifndef GPU_DOMAIN_H
+#define GPU_DOMAIN_H
 
 #include <stdint.h>
 #include <stdio.h>
@@ -371,4 +371,4 @@ uint64_t gpu_flop_counters_get_global_total(struct gpu_domain *GD);
 double gpu_flop_counters_get_global_flops(struct gpu_domain *GD);
 void gpu_flop_counters_print_global(struct gpu_domain *GD);
 
-#endif // SW_DOMAIN_GPU_H
+#endif // GPU_DOMAIN_H

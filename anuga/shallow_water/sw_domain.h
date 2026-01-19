@@ -161,7 +161,7 @@ struct edge {
 };
 
 
-void get_edge_data(struct edge *E, struct domain *D, anuga_int k, anuga_int i) {
+static inline void get_edge_data(struct edge *E, struct domain *D, anuga_int k, anuga_int i) {
     // fill edge data (conserved and bed) for ith edge of kth triangle
 
     anuga_int k3i, k3i1, k3i2;
@@ -194,7 +194,7 @@ void get_edge_data(struct edge *E, struct domain *D, anuga_int k, anuga_int i) {
 
 }
 
-anuga_int print_domain_struct(struct domain *D) {
+static inline anuga_int print_domain_struct(struct domain *D) {
 
 
     printf("D->number_of_elements     %" PRId64 "  \n", D->number_of_elements);
