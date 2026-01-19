@@ -1733,17 +1733,17 @@ class Domain(Generic_Domain):
 
         from anuga import numprocs
 
-        #print self.evolved_called
-
-        if not self.evolved_called:
+        # GPU path: compute volume directly on GPU (avoids expensive D2H sync)
+        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+            from anuga.shallow_water.sw_domain_gpu_ext import compute_water_volume_gpu
+            volume = compute_water_volume_gpu(self.gpu_interface.gpu_dom)
+        elif not self.evolved_called:
             Stage = self.quantities['stage']
             Elev =  self.quantities['elevation']
             h_c = Stage.centroid_values - Elev.centroid_values
-            #print h_c
             from anuga import Quantity
             Height = Quantity(self)
             Height.set_values(h_c, location='centroids')
-            #print Height.centroid_values
             volume = Height.get_integral()
         elif self.get_using_discontinuous_elevation():
             Height = self.quantities['height']

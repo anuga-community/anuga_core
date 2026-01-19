@@ -177,6 +177,7 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_backup_conserved_quantities(gpu_domain *GD)
     void gpu_saxpy_conserved_quantities(gpu_domain *GD, double a, double b)
     double gpu_protect(gpu_domain *GD)
+    double gpu_compute_water_volume(gpu_domain *GD)
     void gpu_manning_friction(gpu_domain *GD)
 
     # Full RK2 step
@@ -1090,6 +1091,20 @@ def protect_gpu(GPUDomain gpu_dom):
         Mass error (total volume added to prevent negative depths)
     """
     return gpu_protect(&gpu_dom.GD)
+
+
+def compute_water_volume_gpu(GPUDomain gpu_dom):
+    """
+    Compute total water volume on GPU.
+
+    Returns local volume - caller should do MPI_Allreduce for global sum.
+
+    Returns
+    -------
+    float
+        Local water volume (m^3)
+    """
+    return gpu_compute_water_volume(&gpu_dom.GD)
 
 
 def manning_friction_gpu(GPUDomain gpu_dom):

@@ -334,6 +334,7 @@ void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep);
 void gpu_backup_conserved_quantities(struct gpu_domain *GD);
 void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b);
 double gpu_protect(struct gpu_domain *GD);
+double gpu_compute_water_volume(struct gpu_domain *GD);
 void gpu_manning_friction(struct gpu_domain *GD);
 
 // Full RK2 step on GPU (calls all the above in sequence)

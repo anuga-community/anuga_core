@@ -683,6 +683,30 @@ double gpu_protect(struct gpu_domain *GD) {
     return mass_error;
 }
 
+double gpu_compute_water_volume(struct gpu_domain *GD) {
+    // Compute total water volume on GPU
+    // Returns local volume (caller should do MPI_Allreduce for global sum)
+    //
+    // Volume = sum((stage - elevation) * area) for all elements
+
+    anuga_int n = GD->D.number_of_elements;
+    double volume = 0.0;
+
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *bed_cv = GD->D.bed_centroid_values;
+    double *areas = GD->D.areas;
+
+    #pragma omp target teams distribute parallel for simd reduction(+:volume)
+    for (anuga_int k = 0; k < n; k++) {
+        double h = stage_cv[k] - bed_cv[k];
+        if (h > 0.0) {
+            volume += h * areas[k];
+        }
+    }
+
+    return volume;
+}
+
 void gpu_manning_friction(struct gpu_domain *GD) {
     // GPU implementation of Manning friction (flat, semi-implicit)
     // Based on _openmp_manning_friction_flat_semi_implicit in sw_domain_openmp.c
