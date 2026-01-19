@@ -3065,11 +3065,9 @@ class Domain(Generic_Domain):
                             triangle rather than the one with the largest speed.
         """
 
-        msg = self.timestepping_statistics(*args, **kwargs)
-
-        from anuga import myid
-        if myid == 0: 
-            print(msg)
+        msg = self.timestepping_statistics(*args, **kwargs) 
+            
+        print(msg, flush=True)
 
 
     def compute_boundary_flows(self):

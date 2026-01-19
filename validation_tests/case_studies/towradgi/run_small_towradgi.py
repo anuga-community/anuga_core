@@ -97,6 +97,25 @@ domain_name = join('Towradgi_historic_flood')
 meshname = join('DEM_bridges', 'towradgi.tsh')
 func = file_function(join('Forcing', 'Tide', 'Pioneer.tms'), quantities='rainfall')
 
+
+# times = numpy.linspace(0.0, 3600.0*23.25, 100)
+# values = numpy.array([func(t)[0] for t in times])
+
+# for t,v in zip(times, values):
+#     print(t,v)
+
+
+# from matplotlib import pyplot as plt
+
+# plt.plot(times, values)
+# plt.xlabel('Time')
+# plt.ylabel('Rainfall')
+# plt.title('Rainfall over Time')
+# plt.show()
+
+
+
+
 # ------------------------------------------------------------------------------
 # Use a try statement to read in previous checkpoint file and if not possible
 # just go ahead as normal and produce domain as usual.

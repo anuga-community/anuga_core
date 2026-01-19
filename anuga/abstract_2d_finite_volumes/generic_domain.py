@@ -1275,9 +1275,23 @@ class Generic_Domain(object):
             # Report cpu time since evolve was called
             # (which may be different from the time since the last call to
             # this function)
-            cpu_time = anuga.seconds_to_hhmmss(int(walltime() - self.evolve_start_walltime))
-            msg += f' cpusum ({cpu_time})'
-            msg += f' {100*self.relative_time/self.relative_finaltime:.2f}%'
+            cpu_time = walltime() - self.evolve_start_walltime
+            cpu_time_hhmmss = anuga.seconds_to_hhmmss(int(cpu_time))
+            #msg += f' cpusum ({cpu_time_hhmmss})'
+            
+            
+            try:
+                fraction = self.relative_time/self.relative_finaltime
+
+                bar_len = 15
+                filled = int(bar_len * fraction)
+                cpu_time_ETA_hhmmss = anuga.seconds_to_hhmmss(int(cpu_time/fraction-cpu_time))
+                bar = "#" * filled + "-" * (bar_len - filled)
+                msg += f' |{bar}| [{cpu_time_hhmmss} < {cpu_time_ETA_hhmmss}]'
+                #msg += f' {100*fraction:.2f}%'
+                #msg += f' ETA ({cpu_time_ETA_hhmmss})'
+            except:
+                pass
             self.last_walltime = walltime()
 
         if track_speeds is True:
