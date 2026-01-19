@@ -5,6 +5,7 @@ python_sources = [
 'test_data_manager.py',
 'test_DE_openmp.py',
 'test_DE_cuda.py',
+'test_DE_gpu_omp.py',
 'test_forcing.py',
 'test_friction.py',
 'test_loadsave.py',
