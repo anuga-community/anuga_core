@@ -66,7 +66,17 @@ Requirements:
 - CUDA for GPU code generation
 - Depending on the behaviour of your system `module load your-mpi` mpi4py seems to come with one, but be careful!
 
-### Basic build (V100 - default)
+### CPU-only build (no CUDA required)
+
+If using NVHPC compiler but don't want GPU support (e.g., no CUDA installed):
+
+```bash
+pip install -e . --no-build-isolation
+```
+
+This uses multicore OpenMP only, no GPU flags.
+
+### Basic GPU build (V100 - default)
 
 ```bash
 pip install -e . --no-build-isolation -Csetup-args=-Dgpu=true
@@ -108,7 +118,14 @@ All unit tests pass, using `pytest --pyargs anuga`. It will be slow-ish because 
 
 ### Script Order (IMPORTANT!)
 
-The GPU interface handles any order of `set_multiprocessor_mode()` and `set_boundary()` calls automatically. However, for clarity, the recommended pattern is:
+**Boundaries MUST be set BEFORE enabling GPU mode.** If you call `set_multiprocessor_mode(2)` before `set_boundary()`, you will get a RuntimeError:
+
+```
+RuntimeError: GPU mode requires boundaries to be set before calling set_multiprocessor_mode(2).
+Please call domain.set_boundary({...}) BEFORE domain.set_multiprocessor_mode(2).
+```
+
+Correct pattern:
 
 ```python
 # 1. Create and distribute domain
@@ -117,20 +134,18 @@ domain = anuga.distribute(domain)
 # 2. Set runtime parameters
 domain.set_flow_algorithm('DE1')
 
-# 3. Set boundaries BEFORE or AFTER set_multiprocessor_mode - both work!
+# 3. Set boundaries FIRST!
 Br = anuga.Reflective_boundary(domain)
 Bt = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(domain, function=tide_function)
 domain.set_boundary({'exterior': Br, 'open': Bt})
 
-# 4. Enable GPU mode (can be before or after set_boundary)
+# 4. THEN enable GPU mode
 domain.set_multiprocessor_mode(2)
 
 # 5. Evolve
 for t in domain.evolve(yieldstep=60, finaltime=3600):
     print(domain.timestepping_statistics())
 ```
-
-**Note**: The GPU interface uses lazy initialization for boundaries. If `set_boundary()` is called after `set_multiprocessor_mode()`, the boundaries are automatically initialized on the first RK2 step.
 
 You should see something like:
 ```
@@ -181,9 +196,9 @@ If you use an unsupported boundary type, ALL boundaries fall back to CPU evaluat
 
 If GPU mode produces different results than CPU mode:
 
-1. **Check boundary initialization**: Look for messages like `Reflective boundary arrays mapped to GPU: XX edges`. If you see `num_edges=0`, boundaries weren't initialized.
+1. **Check boundary initialization**: Look for messages like `Reflective boundary arrays mapped to GPU: XX edges`. If you see `num_edges=0`, boundaries weren't initialized properly.
 
-2. **Check for late mapping messages**: `*_boundary arrays mapped to GPU (late): XX edges` means boundaries were initialized after `set_multiprocessor_mode()` - this is fine and handled automatically.
+2. **Did you set boundaries first?**: GPU mode now requires `set_boundary()` before `set_multiprocessor_mode(2)`. If the order is wrong, you'll get a RuntimeError.
 
 3. **Verify with OMP_TARGET_OFFLOAD=disabled**: This runs GPU code on CPU. If results are still wrong, it's a logic bug not a GPU memory issue.
 
@@ -194,6 +209,87 @@ If GPU mode produces different results than CPU mode:
 2. **Minimize yieldsteps**: GPU→CPU sync only happens at yieldsteps. Longer yieldsteps = fewer syncs.
 
 3. **Use prepartitioned meshes**: Loading partitioned data is much faster than partitioning at runtime.
+
+4. **Consolidate Rate_operators into a single Quantity** (see below).
+
+### Rate_operator Optimization (CRITICAL for GPU)
+
+**The Problem**: Many scripts create multiple Rate_operators for rainfall, one per polygon:
+
+```python
+# BAD for GPU - creates 26+ operators, each with a file_function
+for filename in os.listdir(Rainfall_Gauge_directory):
+    polygon = anuga.read_polygon(Gaugefile)
+    rainfall = anuga.file_function(Rainfile, quantities='rate')
+    op = Rate_operator(domain, rate=rainfall, polygon=polygon, ...)
+```
+
+Each operator has `rate_type='t'` (time-dependent scalar), causing:
+- 26+ Python→GPU round trips per RK2 step
+- 26+ GPU kernel launches
+- 26+ `file_function(t)` evaluations
+
+**The Solution**: Consolidate into a single Quantity-based Rate_operator:
+
+```python
+# GOOD for GPU - single operator with per-cell array
+from anuga.geometry.polygon import inside_polygon
+
+# Step 1: Pre-load all rainfall data and polygon masks
+rainfall_data = []
+for filename in os.listdir(Rainfall_Gauge_directory):
+    polygon = anuga.read_polygon(Gaugefile)
+    rainfall_func = anuga.file_function(Rainfile, quantities='rate')
+
+    # Create mask for cells inside this polygon
+    centroids = domain.get_centroid_coordinates(absolute=True)
+    mask = inside_polygon(centroids, polygon)
+    if len(mask) > 0:
+        rainfall_data.append((mask, rainfall_func))
+
+# Step 2: Create a Quantity to hold per-cell rainfall rates
+rainfall_quantity = anuga.Quantity(domain, name='rainfall_rate')
+rainfall_quantity.set_values(0.0)
+
+# Step 3: Single Rate_operator using the Quantity
+rainfall_operator = Rate_operator(domain, rate=rainfall_quantity, factor=1.0e-3,
+                                  default_rate=0.0, label='Combined_Rainfall')
+
+# Step 4: Function to update rainfall (call at yieldsteps)
+_last_update_time = [-1.0]
+
+def update_rainfall_quantity(t):
+    if abs(t - _last_update_time[0]) < 60.0:  # Only update every 60s sim time
+        return
+    _last_update_time[0] = t
+
+    rainfall_quantity.centroid_values[:] = 0.0
+    for mask, rainfall_func in rainfall_data:
+        try:
+            rate = rainfall_func(t)
+            if hasattr(rate, '__len__'):
+                rate = rate[0]
+            rainfall_quantity.centroid_values[mask] = rate
+        except:
+            pass
+
+    # Signal GPU cache refresh
+    rainfall_operator._gpu_rate_array_cache = None
+    rainfall_operator._gpu_rate_changed = True
+
+# Step 5: Call in evolve loop
+for t in domain.evolve(yieldstep=60, finaltime=3600):
+    update_rainfall_quantity(t)
+    print(domain.timestepping_statistics())
+```
+
+**Result**:
+- `rate_type='quantity'` uses the array GPU kernel
+- Array cached on GPU, only transfers when `_gpu_rate_changed=True`
+- 1 kernel launch instead of 26+ per RK2 step
+- `file_function` evaluated at yieldsteps only, not every RK2 step
+
+This optimization eliminated Rate_operator from the CPU profile entirely.
 
 ### Debugging
 

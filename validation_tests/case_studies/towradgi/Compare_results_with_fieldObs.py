@@ -4,11 +4,12 @@ Compare the Towradgi model runs with various field observations
 
 """
 import scipy
+import numpy
 import matplotlib
 matplotlib.use('Agg')
 from matplotlib import pyplot as pyplot
 from anuga.utilities import plot_utils as util
-import gdal
+from osgeo import gdal
 
 
 swwdir='MODEL_OUTPUTS/'
@@ -16,8 +17,8 @@ swwname='Towradgi_historic_flood.sww'
 
 p=util.get_output(swwdir+swwname)
 p2=util.get_centroids(p,velocity_extrapolation=True)
-floodLevels=scipy.genfromtxt('Validation/historic_1998_flood_levels_towradgi_ck.csv', delimiter=',',skip_header=1)
-pioneerLevel=scipy.genfromtxt('Validation/pioneer_timeseries.txt', 
+floodLevels=numpy.genfromtxt('Validation/historic_1998_flood_levels_towradgi_ck.csv', delimiter=',',skip_header=1)
+pioneerLevel=numpy.genfromtxt('Validation/pioneer_timeseries.txt', 
                               skip_header=1)
 
 # Extract modelled peak at the coordinates in floodLevels
@@ -76,20 +77,20 @@ except:
 depthFile=tif_outdir+'/Towradgi_historic_flood_depth_max.tif'
 #myDepth=scipy.misc.imread(depthFile)
 raster = gdal.Open(depthFile)
-myDepth = scipy.array(raster.ReadAsArray())
+myDepth = numpy.array(raster.ReadAsArray())
 
 
-X=scipy.arange(p.xllcorner, p.xllcorner+myDepth.shape[1]*CellSize, CellSize)
-Y=scipy.arange(p.yllcorner, p.yllcorner+myDepth.shape[0]*CellSize, CellSize)
-X,Y=scipy.meshgrid(X,Y)
+X=numpy.arange(p.xllcorner, p.xllcorner+myDepth.shape[1]*CellSize, CellSize)
+Y=numpy.arange(p.yllcorner, p.yllcorner+myDepth.shape[0]*CellSize, CellSize)
+X,Y=numpy.meshgrid(X,Y)
 pyplot.clf()
 pyplot.figure(figsize=(12,6))
 pyplot.plot([X.min(),X.max()],[Y.min(),Y.max()],' ')
-pyplot.imshow(scipy.flipud(myDepth),extent=[X.min(),X.max(),Y.min(),Y.max()],origin='lower',cmap=pyplot.get_cmap('Greys'))
+pyplot.imshow(numpy.flipud(myDepth),extent=[X.min(),X.max(),Y.min(),Y.max()],origin='lower',cmap=pyplot.get_cmap('Greys'))
 pyplot.gca().set_aspect('equal')
 pyplot.colorbar(orientation='horizontal').set_label('Peak Depth in model (m)')
 er1=floodLevels[:,3]-modelled_level
-pyplot.scatter(floodLevels[:,0], floodLevels[:,1], c=er1,s=20,cmap=pyplot.get_cmap('spectral'))
+pyplot.scatter(floodLevels[:,0], floodLevels[:,1], c=er1,s=20,cmap=pyplot.get_cmap('Spectral'))
 pyplot.colorbar().set_label(label='Field observation - Modelled Peak Stage (m)')
 pyplot.xlim([p.x.min()+p.xllcorner,p.x.max()+p.xllcorner])
 pyplot.ylim([p.y.min()+p.yllcorner,p.y.max()+p.yllcorner])

@@ -34,7 +34,7 @@ if gpu_enabled
     check: true
   ).stdout().strip()
 
-  gpu_inc_dir = include_directories('../utilities', incdir_numpy, mpi4py_incdir)
+  gpu_inc_dir = include_directories('../utilities', incdir_numpy, mpi4py_incdir, 'gpu')
 
   # GPU architecture option
   # NVIDIA: cc70 (V100), cc80 (A100), cc90 (H100)
@@ -77,7 +77,15 @@ if gpu_enabled
   gpu_deps = openmp_deps + [mpi_dep]
 
   py3.extension_module('sw_domain_gpu_ext',
-    sources: ['sw_domain_gpu_ext.pyx'],
+    sources: [
+      'sw_domain_gpu_ext.pyx',
+      'gpu/gpu_domain_core.c',
+      'gpu/gpu_boundaries.c',
+      'gpu/gpu_kernels.c',
+      'gpu/gpu_halo.c',
+      'gpu/gpu_rate_operator.c',
+      'gpu/gpu_flop.c',
+    ],
     c_args: gpu_c_args,
     include_directories: gpu_inc_dir,
     dependencies: gpu_deps,
