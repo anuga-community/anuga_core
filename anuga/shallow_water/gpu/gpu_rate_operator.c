@@ -161,14 +161,14 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
     }
 
     int num_indices = op->num_indices;
-    int *indices = op->indices;
-    double *areas = op->areas;
+    int * restrict indices = op->indices;
+    double * restrict areas = op->areas;
 
-    // Domain arrays
-    double *stage_c = GD->D.stage_centroid_values;
-    double *xmom_c = GD->D.xmom_centroid_values;
-    double *ymom_c = GD->D.ymom_centroid_values;
-    double *bed_c = GD->D.bed_centroid_values;
+    // Domain arrays (restrict enables better optimization)
+    double * restrict stage_c = GD->D.stage_centroid_values;
+    double * restrict xmom_c = GD->D.xmom_centroid_values;
+    double * restrict ymom_c = GD->D.ymom_centroid_values;
+    double * restrict bed_c = GD->D.bed_centroid_values;
 
     double local_rate = factor * timestep * rate;
     double local_influx = 0.0;
@@ -240,14 +240,14 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
     }
 
     int num_indices = op->num_indices;
-    int *indices = op->indices;
-    double *areas = op->areas;
+    int * restrict indices = op->indices;
+    double * restrict areas = op->areas;
 
-    // Domain arrays
-    double *stage_c = GD->D.stage_centroid_values;
-    double *xmom_c = GD->D.xmom_centroid_values;
-    double *ymom_c = GD->D.ymom_centroid_values;
-    double *bed_c = GD->D.bed_centroid_values;
+    // Domain arrays (restrict enables better optimization)
+    double * restrict stage_c = GD->D.stage_centroid_values;
+    double * restrict xmom_c = GD->D.xmom_centroid_values;
+    double * restrict ymom_c = GD->D.ymom_centroid_values;
+    double * restrict bed_c = GD->D.bed_centroid_values;
 
     double local_influx = 0.0;
     double ft = factor * timestep;

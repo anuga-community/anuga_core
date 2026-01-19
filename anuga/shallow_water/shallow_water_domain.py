@@ -3812,9 +3812,12 @@ class Domain(Generic_Domain):
                 from .sw_domain_gpu_omp import GPU_OMP_interface
                 self.gpu_interface = GPU_OMP_interface(self)
                 self.gpu_interface.setup()
-                print('+==============================================================================+')
-                print('| GPU interface initialized using OpenMP target offloading                    |')
-                print('+==============================================================================+')
+                # Only print from rank 0
+                from anuga import myid, numprocs
+                if myid == 0:
+                    print('+==============================================================================+')
+                    print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
+                    print('+==============================================================================+')
                 return
             except Exception as e:
                 print(f'OpenMP GPU interface not available: {e}')
@@ -3832,11 +3835,11 @@ class Domain(Generic_Domain):
                 pass
 
             # No GPU available
-            print('+==============================================================================+')
-            print('|                                                                              |')
-            print('| WARNING: GPU not available, falling back to multiprocessor_mode 1 (OpenMP)  |')
-            print('|                                                                              |')
-            print('+==============================================================================+')
+            from anuga import myid
+            if myid == 0:
+                print('+==============================================================================+')
+                print('| WARNING: GPU not available, falling back to multiprocessor_mode 1 (OpenMP)  |')
+                print('+==============================================================================+')
             self.set_multiprocessor_mode(1)
            
         
