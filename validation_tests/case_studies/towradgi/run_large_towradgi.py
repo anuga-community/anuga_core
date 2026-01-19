@@ -74,7 +74,7 @@ outputstep=600. # update sww files every 60 seconds
 finaltime=1800. #83700.
 
 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles), super fine 0.1 (1.6 million)
-scale = 0.1 
+scale = 0.1
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
 # Choices are 1 (openmp) 2 (copenmp)
@@ -890,21 +890,68 @@ Creating domain from scratch.
                                     verbose=False) 
     
     # ----------------------------------------------------------------------------------------------------------------------------------------------------
-    # APPLY RAINFALL
+    # APPLY RAINFALL - Optimized: Pre-load all rainfall data into a single Quantity
     # ----------------------------------------------------------------------------------------------------------------------------------------------------
-    if myid == 0 and verbose:
-        print('CREATING RAINFALL POLYGONS')
-    
+    if myid == 0:
+        print('CREATING RAINFALL QUANTITY (optimized)')
+
     Rainfall_Gauge_directory = join('Forcing', 'Rainfall', 'Gauge')
+
+    # Step 1: Pre-load all rainfall time series and polygon masks
+    rainfall_data = []  # List of (mask, file_function) tuples
+
     for filename in os.listdir(Rainfall_Gauge_directory):
         Gaugefile = join(Rainfall_Gauge_directory, filename)
         Rainfile = join('Forcing', 'Rainfall', 'Hort', filename[0:-4]+'.tms')
-        #print(Gaugefile)
-        #print(Rainfile)
+
         polygon = anuga.read_polygon(Gaugefile)
-        rainfall = anuga.file_function(Rainfile, quantities='rate')
-        op1 = Rate_operator(domain, rate=rainfall, factor=1.0e-3,
-                            polygon=polygon, default_rate=0.0)
+        rainfall_func = anuga.file_function(Rainfile, quantities='rate')
+
+        # Create mask for cells inside this polygon
+        from anuga.geometry.polygon import inside_polygon
+        centroids = domain.get_centroid_coordinates(absolute=True)
+        mask = inside_polygon(centroids, polygon)
+
+        if len(mask) > 0:
+            rainfall_data.append((mask, rainfall_func))
+
+    if myid == 0:
+        print(f'  Loaded {len(rainfall_data)} rainfall polygons')
+
+    # Step 2: Create a Quantity to hold per-cell rainfall rates
+    rainfall_quantity = anuga.Quantity(domain, name='rainfall_rate')
+    rainfall_quantity.set_values(0.0)
+
+    # Step 3: Create a single Rate_operator using the Quantity
+    rainfall_operator = Rate_operator(domain, rate=rainfall_quantity, factor=1.0e-3,
+                                      default_rate=0.0, label='Combined_Rainfall')
+
+    # Step 4: Function to update rainfall Quantity (call at each yieldstep or when needed)
+    _last_rainfall_update_time = [-1.0]  # Use list to allow modification in closure
+
+    def update_rainfall_quantity(t):
+        """Update rainfall Quantity values based on current time."""
+        # Only update if time has changed significantly (e.g., every 60 seconds)
+        if abs(t - _last_rainfall_update_time[0]) < 60.0:
+            return
+        _last_rainfall_update_time[0] = t
+
+        # Reset to zero
+        rainfall_quantity.centroid_values[:] = 0.0
+
+        # Apply each polygon's rainfall rate
+        for mask, rainfall_func in rainfall_data:
+            try:
+                rate = rainfall_func(t)
+                if hasattr(rate, '__len__'):
+                    rate = rate[0]
+                rainfall_quantity.centroid_values[mask] = rate
+            except:
+                pass  # Outside time range, use default (0)
+
+        # Signal that GPU cache needs refresh
+        rainfall_operator._gpu_rate_array_cache = None
+        rainfall_operator._gpu_rate_changed = True
     
     barrier()
     
@@ -934,12 +981,37 @@ domain.use_c_rk2_loop = True
 barrier()
 t0 = time.time()
 
+import cProfile
+import pstats
+
+profiler = cProfile.Profile()
+profiler.enable()
 
 for t in domain.evolve(yieldstep=yieldstep, outputstep=outputstep, finaltime=finaltime):
+    # Update rainfall quantity at each yieldstep (only transfers to GPU when data changes)
+    try:
+        update_rainfall_quantity(t)
+    except NameError:
+        pass  # Checkpoint loaded, no rainfall_quantity defined
     if myid == 0:
         domain.write_time()
 
+profiler.disable()
+
 barrier()
+
+# Print profiling results
+if myid == 0:
+    print("\n" + "="*80)
+    print("PROFILING RESULTS - Top 40 by cumulative time")
+    print("="*80)
+    stats = pstats.Stats(profiler)
+    stats.sort_stats('cumulative')
+    stats.print_stats(40)
+
+    # Also save to file for detailed analysis
+    profiler.dump_stats('profile.prof')
+    print(f"\nProfile saved to profile.prof - view with: python -m pstats profile.prof")
 
 for p in range(numprocs):
     if myid == p:

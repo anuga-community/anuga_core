@@ -55,8 +55,16 @@ if openmp.found()
     openmp_c_args = ['-O3', '-qopenmp', '-g']
     add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
   elif cc.get_id() == 'nvidia_hpc'
-    openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g', '-gpu=cc70', '-gpu=mem:separate']
-    add_project_link_arguments(['-mp=multicore,gpu', '-acc'], language: ['c', 'cpp'])
+    # Only add GPU flags if gpu option is enabled, otherwise just use multicore OpenMP
+    if get_option('gpu')
+      gpu_arch = get_option('gpu_arch')
+      openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g', '-gpu=' + gpu_arch, '-gpu=mem:separate']
+      add_project_link_arguments(['-mp=multicore,gpu', '-acc'], language: ['c', 'cpp'])
+    else
+      # CPU-only OpenMP with NVHPC (no CUDA required)
+      openmp_c_args = ['-O3', '-mp=multicore', '-g']
+      add_project_link_arguments(['-mp=multicore'], language: ['c', 'cpp'])
+    endif
   else
     openmp_c_args = ['-O3', '-fopenmp', '-g']
     add_project_link_arguments('-fopenmp', language: ['c', 'cpp'])

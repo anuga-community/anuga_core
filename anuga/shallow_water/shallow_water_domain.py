@@ -3297,20 +3297,49 @@ class Domain(Generic_Domain):
                 if c is not None:
                     Q.centroid_values[:] = Q.centroid_values / c
 
+    def _has_cpu_only_fractional_operators(self):
+        """Check if any fractional step operators require CPU execution.
+
+        Rate_operators with GPU support don't need CPU sync.
+        Boyd_box_operator, Inlet_operator, etc. do need CPU sync.
+
+        Result is cached after first call since operators don't change during simulation.
+        """
+        # Check cache first
+        if hasattr(self, '_cached_has_cpu_only_ops'):
+            return self._cached_has_cpu_only_ops
+
+        from anuga.operators.rate_operators import Rate_operator
+
+        result = False
+        for op in self.fractional_step_operators:
+            if isinstance(op, Rate_operator):
+                # Rate_operator with GPU support doesn't need CPU sync
+                if hasattr(op, '_gpu_initialized') and op._gpu_initialized:
+                    continue  # GPU-accelerated, no sync needed
+            # All other operators (or Rate_operator without GPU) need CPU
+            result = True
+            break
+
+        self._cached_has_cpu_only_ops = result
+        return result
+
     def apply_fractional_steps(self):
         """Override to sync GPU data before fractional step operators run."""
+        needs_cpu_sync = False
         if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            # Fractional step operators (Boyd box, inlet, etc.) run on CPU
-            # Need to sync data from GPU first
-            if len(self.fractional_step_operators) > 0:
+            # Only sync if there are operators that actually need CPU execution
+            # GPU-accelerated Rate_operators don't need sync
+            needs_cpu_sync = self._has_cpu_only_fractional_operators()
+            if needs_cpu_sync:
                 self.gpu_interface.sync_from_device()
 
         # Call parent implementation
         super().apply_fractional_steps()
 
         if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            # Sync changes back to GPU
-            if len(self.fractional_step_operators) > 0:
+            # Sync changes back to GPU only if we synced from device
+            if needs_cpu_sync:
                 self.gpu_interface.sync_to_device()
 
     def update_ghosts(self, quantities=None):
