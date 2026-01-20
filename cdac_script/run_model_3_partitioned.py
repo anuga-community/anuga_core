@@ -41,6 +41,7 @@ if len(sys.argv) > 1:
     Previous_Date = datetime.datetime(int(input[2]), int(input[1]), int(input[0])).replace(minute=0, hour=0, second=0, microsecond=0) - datetime.timedelta(days=1)
     Previous_hotstart_Date = datetime.datetime(int(input[2]), int(input[1]), int(input[0])).replace(minute=0, hour=0, second=0, microsecond=0) - datetime.timedelta(days=2)
 else:
+    #Current_Date = datetime.datetime(2021, 9, 10).replace(minute=0, hour=0, second=0, microsecond=0)
     Current_Date = datetime.datetime.today().replace(minute=0, hour=0, second=0, microsecond=0)
     Previous_Date = datetime.datetime.today().replace(minute=0, hour=0, second=0, microsecond=0) - datetime.timedelta(days=1)
     Previous_hotstart_Date = datetime.datetime.today().replace(minute=0, hour=0, second=0, microsecond=0) - datetime.timedelta(days=2)
@@ -49,7 +50,7 @@ bypass = True
 TIMEFORMATCU = "%d_%m_%Y"
 
 # CONFIGURATION: Set mesh resolution here (100, 300, or 900)
-MESH_SIZE = 900  # <-- CHANGE THIS for different mesh sizes
+MESH_SIZE = 300 # <-- CHANGE THIS for different mesh sizes
 
 name_stem = f'delta11372sqkm_uniform_mesh_{MESH_SIZE}sqm_Chilka{MESH_SIZE}sqm'
 partition_name = f'mahanadi_delta_{MESH_SIZE}sqm'  # Must match partition_mahanadi.py output
@@ -65,15 +66,15 @@ domain_name = 'mahanadi_delta_' + Current_Date.strftime(TIMEFORMATCU)
 output_dir = 'output/' + Current_Date.strftime(TIMEFORMATCU)
 log.log_filename = output_dir + '/log_' + domain_name
 checkpoint_dir = 'checkpoints'
-yieldstep = 5
-finaltime = 20.0
+#yieldstep = 50
+#finaltime = 200
+yieldstep = 10800
+#finaltime = 43200.0 # 12 hours
+finaltime = 86400.0 # only for running 21_07_2021 simulation
+#finaltime = 3600.0
 min_allowed_height = 0.008
 max_allowed_speed = 1.0
 checkpoint_time = 60 * 60
-
-# Stats interval: only compute volume/wet_elements every N seconds of sim time
-# This reduces MPI reductions from 17,280 (every 5s) to 48 (every 30min) for 24h sim
-stats_interval = 1800  # 30 minutes of simulation time
 flow_algorithm = 'DE1'
 useCheckpointing = False
 
@@ -162,7 +163,6 @@ if myid == 0:
 # Set domain parameters (needed after loading)
 domain.set_name(domain_name)
 domain.set_datadir(output_dir)
-domain.set_multiprocessor_mode(2)
 
 # Handle hotstart stage if previous output exists
 # NOTE: This modifies stage AFTER loading partition
@@ -205,7 +205,8 @@ Br = anuga.Reflective_boundary(domain)
 Bw = anuga.Reflective_boundary(domain)
 if os.path.exists(tide_filename):
     wave_function = anuga.file_function(tide_filename, quantities='stage', verbose=verbose)
-    Bw = anuga.Time_boundary(domain=domain, function=lambda t: [float(wave_function(t)), 0.0, 0.0])
+    #Bw = anuga.Time_boundary(domain=domain, function=lambda t: [float(wave_function(t)), 0.0, 0.0])
+    Bw = anuga.Time_boundary(domain=domain, function=lambda t: [wave_function(t).item(), 0.0, 0.0])
 else:
     if myid == 0 and verbose:
         print("The paradip tide file %s does not exist !!" % tide_filename)
@@ -214,6 +215,9 @@ dict1 = {str(n): Bw for n in range(coastal_tag_start, coastal_tag_end)}
 dict2 = {'exterior': Br}
 dict3 = dict(itertools.chain(list(dict2.items()), list(dict1.items())))
 domain.set_boundary(dict3)
+
+domain.set_multiprocessor_mode(2)
+domain.use_c_rk2_loop = True
 
 barrier()
 
@@ -248,11 +252,17 @@ if myid == 0 and verbose:
     print('EVOLVE')
 
 barrier()
+domain.gpu.flop_counters_reset()
+domain.gpu.flop_counters_start_timer()
 import time
 
 t0 = time.time()
+import cProfile
+import pstats
+
+#profiler = cProfile.Profile()
+#profiler.enable()
 rain_set_zero = True
-last_stats_time = -stats_interval  # Ensure we compute stats at t=0
 
 for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
     if myid == 0: domain.write_time()
@@ -439,53 +449,65 @@ for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
             linecache.clearcache()
             rain_opertor.set_rate(rate=Q)
         elif rain_set_zero:
-            print("The Rainfall IMD/GPM/GFS files does not exist setting rain to zero !!")
-            domain.set_quantity('Rain', 0.00) #set rainfall with hardcoded value = 4mm #modifed by RK
+            print("The Rainfall IMD/GPM/GFS files does not exist setting rain to 0.004 !!")
+            domain.set_quantity('Rain', 0.000) #set rainfall with hardcoded value = 4mm #modifed by RK
             rain_opertor.set_rate(rate=Q)
     else:
         if myid == 0: print("Using previously set Daily Rainfall!!")
+    import re
+    volume = domain.compute_total_volume()
+    stats = domain.timestepping_statistics()
+    rainstats = rain_opertor.timestepping_statistics()
+    maxInundation = Q.get_maximum_value()
+    indices = domain.get_wet_elements()
+    element_count = len(indices)
+    file1 = open("rain_data.txt", "a+")
+    file2 = open("wet_elements.txt", "a+")
+    file3 = open("max_inandation.txt", "a+")
+    try:
+      rain_arr = re.findall(r"\d+\.\d+",rainstats)
+      total_rain = float(rain_arr[0])
+      file1.write(str(total_rain))
+      file1.writelines("\n")
+      file2.write(str(element_count))
+      file2.writelines("\n")
+      file3.write(str(maxInundation))
+      file3.writelines("\n")
+    except:
+      #print("there is no Q")
+      file1.write(str(0.0))
+      file1.writelines("\n")
+      file2.write(str(0.0))
+      file2.writelines("\n")
+      file3.write(str(0.0))
+      file3.writelines("\n")
 
-    # Only compute expensive stats at stats_interval (reduces MPI reductions by ~360x)
-    if t - last_stats_time >= stats_interval:
-        last_stats_time = t
-        import re
-        volume = domain.compute_total_volume()
-        stats = domain.timestepping_statistics()
-        rainstats = rain_opertor.timestepping_statistics()
-        maxInundation = Q.get_maximum_value()
-        indices = domain.get_wet_elements()
-        element_count = len(indices)
-        file1 = open("rain_data.txt", "a+")
-        file2 = open("wet_elements.txt", "a+")
-        file3 = open("max_inandation.txt", "a+")
-        try:
-          rain_arr = re.findall(r"\d+\.\d+",rainstats)
-          total_rain = float(rain_arr[0])
-          file1.write(str(total_rain))
-          file1.writelines("\n")
-          file2.write(str(element_count))
-          file2.writelines("\n")
-          file3.write(str(maxInundation))
-          file3.writelines("\n")
-        except:
-          #print("there is no Q")
-          file1.write(str(0.0))
-          file1.writelines("\n")
-          file2.write(str(0.0))
-          file2.writelines("\n")
-          file3.write(str(0.0))
-          file3.writelines("\n")
+    if myid == 0:
+        print("Total Volume =: %s Time Stepping Statistics =: %s Rain Operator Statistics=: %s" % (
+            str(volume), str(stats),str(rainstats )))
 
-        if myid == 0:
-            print("Total Volume =: %s Time Stepping Statistics =: %s Rain Operator Statistics=: %s" % (
-                str(volume), str(stats),str(rainstats )))
+    # Close file handles
+    file1.close()
+    file2.close()
+    file3.close()
 
-        # Close file handles
-        file1.close()
-        file2.close()
-        file3.close()
-
+#profiler.disable()
 barrier()
+
+domain.gpu.flop_counters_stop_timer()
+domain.gpu.flop_counters_print_global()
+
+#if myid == 0:
+#    print("\n" + "="*80)
+#    print("PROFILING RESULTS - Top 40 by cumulative time")
+#    print("="*80)
+#    stats = pstats.Stats(profiler)
+#    stats.sort_stats('cumulative')
+#    stats.print_stats(40)
+
+   # Also save to file for detailed analysis
+#    profiler.dump_stats('profile.prof')
+#    print(f"\nProfile saved to profile.prof - view with: python -m pstats profile.prof")
 
 for p in range(numprocs):
     if myid == p:
