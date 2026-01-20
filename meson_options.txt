@@ -13,3 +13,8 @@ option('gpu_aware_mpi', type: 'boolean', value: false,
 # AMD (future): gfx908 (MI100), gfx90a (MI210/MI250), gfx942 (MI300X)
 option('gpu_arch', type: 'string', value: 'cc70',
        description: 'GPU architecture: cc70 (V100), cc80 (A100), cc90 (H100), or AMD gfx* targets')
+
+# Cray system support - use Cray compiler wrappers (cc, CC) for MPI
+# On Cray systems (Perlmutter, Frontier, etc.), the compiler wrappers handle MPI linking
+option('cray', type: 'boolean', value: false,
+       description: 'Build on Cray system using compiler wrappers (cc/CC) for proper MPI linking')

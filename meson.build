@@ -42,16 +42,31 @@ dependencies = [dep_py, dep_numpy]
 
 cc = meson.get_compiler('c')
 openmp = dependency('openmp', required: false)
+cray_system = get_option('cray')
 message('Compiler ID is: ' + cc.get_id())
+if cray_system
+  message('Cray system mode enabled - using compiler wrappers')
+endif
 
 if openmp.found()
   # On Windows, the mingw compiler does not support OpenMP ATOMIC operations
   # so using gcc_win-64 gxx_win-64 provided by conda-forge
   # On linux, OpenMP is supported by gcc and g++
-  # On macOS, OpenMP is not supported by the Apple clang compiler so using 
+  # On macOS, OpenMP is not supported by the Apple clang compiler so using
   # clang and llvm-openmp provided by conda-forge
 
-  if cc.get_id() in ['intel', 'intel-cl', 'icx']
+  if cray_system
+    # On Cray systems with NVHPC via the cc wrapper
+    # The wrapper handles MPI, we just need OpenMP GPU flags
+    if get_option('gpu')
+      gpu_arch = get_option('gpu_arch')
+      openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g', '-gpu=' + gpu_arch, '-gpu=mem:separate']
+      add_project_link_arguments(['-mp=multicore,gpu', '-acc'], language: ['c', 'cpp'])
+    else
+      openmp_c_args = ['-O3', '-mp=multicore', '-g']
+      add_project_link_arguments(['-mp=multicore'], language: ['c', 'cpp'])
+    endif
+  elif cc.get_id() in ['intel', 'intel-cl', 'icx']
     openmp_c_args = ['-O3', '-qopenmp', '-g']
     add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
   elif cc.get_id() == 'nvidia_hpc'

@@ -24,10 +24,9 @@ py3.extension_module('sw_domain_openmp_ext',
 
 # GPU extension with MPI support (optional)
 gpu_enabled = get_option('gpu')
+cray_system = get_option('cray')
 
 if gpu_enabled
-  mpi_dep = dependency('mpi', language: 'c', required: true)
-
   # Get mpi4py include directory
   mpi4py_incdir = run_command(py3,
     ['-c', 'import mpi4py; print(mpi4py.get_include())'],
@@ -44,37 +43,57 @@ if gpu_enabled
   # Detect if targeting AMD or NVIDIA based on architecture string
   is_amd_gpu = gpu_arch.startswith('gfx')
 
-  # Compiler-specific GPU offloading flags
-  if cc.get_id() == 'nvidia_hpc'
-    # NVIDIA HPC SDK - best GPU support for NVIDIA GPUs
+  if cray_system
+    # On Cray systems (Perlmutter, Frontier, etc.), the compiler wrappers (cc, CC)
+    # handle MPI linking automatically. We just need GPU offloading flags.
+    # The wrapper must be set via CC=cc environment variable or native file.
+    message('Cray system detected - using compiler wrapper for MPI')
+
+    # NVHPC flags for GPU offloading (Cray wrapper passes these through)
     gpu_c_args = ['-O3', '-mp=gpu,multicore', '-Minfo=accel', '-g', '-gpu=' + gpu_arch]
     if get_option('gpu_aware_mpi')
       gpu_c_args += ['-DGPU_AWARE_MPI']
     endif
-  elif cc.get_id() == 'clang'
-    if is_amd_gpu
-      # Clang/AOMP for AMD GPUs
-      gpu_c_args = ['-O3', '-fopenmp', '-fopenmp-targets=amdgcn-amd-amdhsa',
-                    '-Xopenmp-target=amdgcn-amd-amdhsa', '-march=' + gpu_arch, '-g']
-    else
-      # Clang with LLVM offloading for NVIDIA
-      # Convert cc70 -> sm_70 format for clang
-      sm_arch = 'sm_' + gpu_arch.substring(2)
-      gpu_c_args = ['-O3', '-fopenmp', '-fopenmp-targets=nvptx64-nvidia-cuda',
-                    '-Xopenmp-target=nvptx64-nvidia-cuda', '-march=' + sm_arch, '-g']
-    endif
-    if get_option('gpu_aware_mpi')
-      gpu_c_args += ['-DGPU_AWARE_MPI']
-    endif
-  else
-    # GCC with nvptx offloading (NVIDIA only, AMD not well supported)
-    gpu_c_args = ['-O3', '-fopenmp', '-foffload=nvptx-none', '-g']
-    if get_option('gpu_aware_mpi')
-      gpu_c_args += ['-DGPU_AWARE_MPI']
-    endif
-  endif
 
-  gpu_deps = openmp_deps + [mpi_dep]
+    # On Cray, don't add explicit MPI dependency - wrapper handles it
+    gpu_deps = openmp_deps
+
+  else
+    # Non-Cray systems - need explicit MPI dependency
+    mpi_dep = dependency('mpi', language: 'c', required: true)
+
+    # Compiler-specific GPU offloading flags
+    if cc.get_id() == 'nvidia_hpc'
+      # NVIDIA HPC SDK - best GPU support for NVIDIA GPUs
+      gpu_c_args = ['-O3', '-mp=gpu,multicore', '-Minfo=accel', '-g', '-gpu=' + gpu_arch]
+      if get_option('gpu_aware_mpi')
+        gpu_c_args += ['-DGPU_AWARE_MPI']
+      endif
+    elif cc.get_id() == 'clang'
+      if is_amd_gpu
+        # Clang/AOMP for AMD GPUs
+        gpu_c_args = ['-O3', '-fopenmp', '-fopenmp-targets=amdgcn-amd-amdhsa',
+                      '-Xopenmp-target=amdgcn-amd-amdhsa', '-march=' + gpu_arch, '-g']
+      else
+        # Clang with LLVM offloading for NVIDIA
+        # Convert cc70 -> sm_70 format for clang
+        sm_arch = 'sm_' + gpu_arch.substring(2)
+        gpu_c_args = ['-O3', '-fopenmp', '-fopenmp-targets=nvptx64-nvidia-cuda',
+                      '-Xopenmp-target=nvptx64-nvidia-cuda', '-march=' + sm_arch, '-g']
+      endif
+      if get_option('gpu_aware_mpi')
+        gpu_c_args += ['-DGPU_AWARE_MPI']
+      endif
+    else
+      # GCC with nvptx offloading (NVIDIA only, AMD not well supported)
+      gpu_c_args = ['-O3', '-fopenmp', '-foffload=nvptx-none', '-g']
+      if get_option('gpu_aware_mpi')
+        gpu_c_args += ['-DGPU_AWARE_MPI']
+      endif
+    endif
+
+    gpu_deps = openmp_deps + [mpi_dep]
+  endif
 
   py3.extension_module('sw_domain_gpu_ext',
     sources: [
@@ -95,6 +114,9 @@ if gpu_enabled
 
   message('GPU extension enabled')
   message('GPU architecture: ' + gpu_arch)
+  if cray_system
+    message('Cray system mode: MPI handled by compiler wrapper')
+  endif
   if get_option('gpu_aware_mpi')
     message('GPU-aware MPI enabled')
   endif
