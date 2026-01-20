@@ -462,7 +462,7 @@ if useRainfall:
 
     Rainfall_Gauge_directory = join('Forcing', 'Rainfall', 'Gauge')
 
-    for filename in os.listdir(Rainfall_Gauge_directory):
+    for filename in sorted(os.listdir(Rainfall_Gauge_directory)):
         Gaugefile = join(Rainfall_Gauge_directory, filename)
         Rainfile = join('Forcing', 'Rainfall', 'Hort', filename[0:-4]+'.tms')
 
@@ -478,6 +478,9 @@ if useRainfall:
 else:
     if myid == 0:
         print('RAINFALL DISABLED for debugging')
+
+def update_rainfall_quantity(t):
+    pass  # No-op for standard method
 
 barrier()
 
@@ -497,9 +500,13 @@ domain.set_boundary({'west': Bd, 'south': Bd, 'north': Bd, 'east': Bw})
 if myid == 0:
     print(f'Setting multiprocessor_mode = {multiprocessor_mode}')
 
-domain.set_multiprocessor_mode(multiprocessor_mode)
-if multiprocessor_mode == 2:
-    domain.use_c_rk2_loop = True
+if multiprocessor_mode > 0:
+    domain.set_multiprocessor_mode(multiprocessor_mode)
+    if multiprocessor_mode == 2:
+        domain.use_c_rk2_loop = True
+else:
+    if myid == 0:
+        print('  (CPU serial mode - no GPU acceleration)')
 
 if myid == 0:
     print('Starting evolution...')
