@@ -1,0 +1,29 @@
+{
+  "description": "Towradgi validation baseline - CPU single-core reference run",
+  "created": "2026-01-20",
+  "parameters": {
+    "finaltime": 600.0,
+    "yieldstep": 60.0,
+    "scale": 0.1,
+    "multiprocessor_mode": 0,
+    "algorithm": "DE1"
+  },
+  "tolerances": {
+    "volume_rel": 0.001,
+    "total_Q_rel": 0.01,
+    "steps_abs": 5
+  },
+  "yieldsteps": [
+    {"time": 0, "volume": 65542.76, "total_Q": 0.0000, "steps": 0, "delta_t": null},
+    {"time": 60, "volume": 54177.88, "total_Q": 0.0034, "steps": 426, "delta_t": 0.14114},
+    {"time": 120, "volume": 51313.95, "total_Q": 0.0039, "steps": 426, "delta_t": 0.14114},
+    {"time": 180, "volume": 50638.92, "total_Q": 0.0043, "steps": 426, "delta_t": 0.14114},
+    {"time": 240, "volume": 50245.50, "total_Q": 0.0047, "steps": 426, "delta_t": 0.14114},
+    {"time": 300, "volume": 49996.64, "total_Q": 0.0051, "steps": 426, "delta_t": 0.14114},
+    {"time": 360, "volume": 50222.57, "total_Q": 0.2244, "steps": 426, "delta_t": 0.14114},
+    {"time": 420, "volume": 50885.86, "total_Q": 0.2813, "steps": 426, "delta_t": 0.14113},
+    {"time": 480, "volume": 51569.88, "total_Q": 0.3645, "steps": 426, "delta_t": 0.14111},
+    {"time": 540, "volume": 52265.95, "total_Q": 0.4418, "steps": 426, "delta_t": 0.14110},
+    {"time": 600, "volume": 52973.46, "total_Q": 0.1728, "steps": 426, "delta_t": 0.14111}
+  ]
+}
