@@ -3259,18 +3259,24 @@ class Domain(Generic_Domain):
 
         Rate_operators with GPU support don't need CPU sync.
         boundary_flux_integral_operator is GPU-safe (only reads boundary_flux_sum).
-        Boyd_box_operator, Inlet_operator, etc. do need CPU sync.
+        Inlet_operator needs partial sync (only its triangle indices).
+        Boyd_box_operator, etc. need full CPU sync.
 
-        Result is cached after first call since operators don't change during simulation.
+        Returns: (needs_full_sync, inlet_operators)
+            needs_full_sync: True if any operator needs full domain sync
+            inlet_operators: list of Inlet_operators that only need partial sync
         """
         # Check cache first
-        if hasattr(self, '_cached_has_cpu_only_ops'):
-            return self._cached_has_cpu_only_ops
+        if hasattr(self, '_cached_fractional_ops_info'):
+            return self._cached_fractional_ops_info
 
         from anuga.operators.rate_operators import Rate_operator
         from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
+        from anuga.structures.inlet_operator import Inlet_operator
 
-        result = False
+        needs_full_sync = False
+        inlet_operators = []
+
         for op in self.fractional_step_operators:
             if isinstance(op, Rate_operator):
                 # Force GPU initialization if not already done (lazy init causes race with caching)
@@ -3283,30 +3289,118 @@ class Domain(Generic_Domain):
                 # boundary_flux_integral_operator only reads boundary_flux_sum (small array)
                 # and accumulates a scalar - doesn't need full centroid sync
                 continue
-            # All other operators need CPU sync
-            result = True
+            elif isinstance(op, Inlet_operator):
+                # Inlet_operator only modifies specific triangles - can use partial sync
+                inlet_operators.append(op)
+                continue
+            # All other operators need full CPU sync
+            needs_full_sync = True
             break
 
-        self._cached_has_cpu_only_ops = result
+        result = (needs_full_sync, inlet_operators)
+        self._cached_fractional_ops_info = result
         return result
 
-    def apply_fractional_steps(self):
-        """Override to sync GPU data before fractional step operators run."""
-        needs_cpu_sync = False
-        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            # Only sync if there are operators that actually need CPU execution
-            # GPU-accelerated Rate_operators don't need sync
-            needs_cpu_sync = self._has_cpu_only_fractional_operators()
-            if needs_cpu_sync:
-                self.gpu_interface.sync_from_device()
+    def _setup_inlet_partial_sync_buffers(self, inlet_operators):
+        """Setup buffers for partial sync of Inlet_operator triangles.
 
-        # Call parent implementation
+        Called once when first needed, caches the buffers.
+        """
+        if hasattr(self, '_inlet_sync_buffers'):
+            return self._inlet_sync_buffers
+
+        import numpy as np
+
+        # Collect all unique triangle indices from all inlet operators
+        all_indices = set()
+        for op in inlet_operators:
+            if hasattr(op, 'inlet') and hasattr(op.inlet, 'triangle_indices'):
+                all_indices.update(op.inlet.triangle_indices)
+
+        if len(all_indices) == 0:
+            self._inlet_sync_buffers = None
+            return None
+
+        # Create sorted array of indices
+        indices = np.array(sorted(all_indices), dtype=np.int32)
+        num_indices = len(indices)
+
+        # Create sync buffers
+        stage_buf = np.zeros(num_indices, dtype=np.float64)
+        xmom_buf = np.zeros(num_indices, dtype=np.float64)
+        ymom_buf = np.zeros(num_indices, dtype=np.float64)
+        height_buf = np.zeros(num_indices, dtype=np.float64)
+
+        self._inlet_sync_buffers = {
+            'indices': indices,
+            'stage': stage_buf,
+            'xmom': xmom_buf,
+            'ymom': ymom_buf,
+            'height': height_buf,
+        }
+        return self._inlet_sync_buffers
+
+    def apply_fractional_steps(self):
+        """Override to sync GPU data before fractional step operators run.
+
+        Optimized to use partial sync for Inlet_operators instead of full domain sync.
+        """
+        import numpy as np
+
+        needs_full_sync = False
+        inlet_operators = []
+        use_partial_sync = False
+
+        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+            needs_full_sync, inlet_operators = self._has_cpu_only_fractional_operators()
+
+            if needs_full_sync:
+                # Some operator needs full domain sync
+                self.gpu_interface.sync_from_device()
+            elif len(inlet_operators) > 0:
+                # Only Inlet_operators need CPU - use partial sync
+                use_partial_sync = True
+                bufs = self._setup_inlet_partial_sync_buffers(inlet_operators)
+                if bufs is not None:
+                    # Gather values from GPU for inlet triangles
+                    self.gpu_interface.sync_partial_from_device(
+                        bufs['indices'], bufs['stage'], bufs['xmom'],
+                        bufs['ymom'], bufs['height'])
+                    # Copy from buffers to numpy arrays (so Inlet_operator can modify them)
+                    stage_cv = self.quantities['stage'].centroid_values
+                    xmom_cv = self.quantities['xmomentum'].centroid_values
+                    ymom_cv = self.quantities['ymomentum'].centroid_values
+                    height_cv = self.quantities['height'].centroid_values
+                    for i, idx in enumerate(bufs['indices']):
+                        stage_cv[idx] = bufs['stage'][i]
+                        xmom_cv[idx] = bufs['xmom'][i]
+                        ymom_cv[idx] = bufs['ymom'][i]
+                        height_cv[idx] = bufs['height'][i]
+
+        # Call parent implementation (runs all operators)
         super().apply_fractional_steps()
 
         if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            # Sync changes back to GPU only if we synced from device
-            if needs_cpu_sync:
+            if needs_full_sync:
+                # Sync full domain back to GPU
                 self.gpu_interface.sync_to_device()
+            elif use_partial_sync:
+                bufs = self._inlet_sync_buffers
+                if bufs is not None:
+                    # Copy from numpy arrays to buffers
+                    stage_cv = self.quantities['stage'].centroid_values
+                    xmom_cv = self.quantities['xmomentum'].centroid_values
+                    ymom_cv = self.quantities['ymomentum'].centroid_values
+                    height_cv = self.quantities['height'].centroid_values
+                    for i, idx in enumerate(bufs['indices']):
+                        bufs['stage'][i] = stage_cv[idx]
+                        bufs['xmom'][i] = xmom_cv[idx]
+                        bufs['ymom'][i] = ymom_cv[idx]
+                        bufs['height'][i] = height_cv[idx]
+                    # Scatter values back to GPU
+                    self.gpu_interface.sync_partial_to_device(
+                        bufs['indices'], bufs['stage'], bufs['xmom'],
+                        bufs['ymom'], bufs['height'])
 
     def update_ghosts(self, quantities=None):
         """Override to use GPU ghost exchange when in GPU mode."""

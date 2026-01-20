@@ -719,6 +719,82 @@ void gpu_sync_edge_values_from_device(struct gpu_domain *GD) {
                                    bed_ev[0:3*n], height_ev[0:3*n])
 }
 
+// ============================================================================
+// Partial sync functions for sparse triangle updates (e.g., Inlet_operator)
+// These are much more efficient than full-domain sync when only a small
+// subset of triangles need to be synced.
+// ============================================================================
+
+void gpu_domain_sync_partial_from_device(struct gpu_domain *GD,
+                                          int *indices, int num_indices,
+                                          double *stage_buf, double *xmom_buf,
+                                          double *ymom_buf, double *height_buf) {
+    // Sync specific triangle centroid values FROM GPU to host buffers.
+    // Uses gather pattern: GPU kernel collects sparse values into contiguous buffer,
+    // then small buffer is transferred to host.
+    //
+    // Parameters:
+    //   indices: triangle indices to sync (must be mapped to GPU)
+    //   num_indices: number of triangles
+    //   stage_buf, xmom_buf, ymom_buf, height_buf: host buffers (size num_indices each)
+    //
+    if (!GD->gpu_initialized || num_indices == 0) return;
+
+    anuga_int n = GD->D.number_of_elements;
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *height_cv = GD->D.height_centroid_values;
+
+    // Gather values from sparse indices into contiguous buffers on GPU
+    #pragma omp target teams distribute parallel for \
+        map(to: indices[0:num_indices]) \
+        map(from: stage_buf[0:num_indices], xmom_buf[0:num_indices], \
+                  ymom_buf[0:num_indices], height_buf[0:num_indices])
+    for (int i = 0; i < num_indices; i++) {
+        int idx = indices[i];
+        stage_buf[i] = stage_cv[idx];
+        xmom_buf[i] = xmom_cv[idx];
+        ymom_buf[i] = ymom_cv[idx];
+        height_buf[i] = height_cv[idx];
+    }
+}
+
+void gpu_domain_sync_partial_to_device(struct gpu_domain *GD,
+                                        int *indices, int num_indices,
+                                        double *stage_buf, double *xmom_buf,
+                                        double *ymom_buf, double *height_buf) {
+    // Sync specific triangle centroid values TO GPU from host buffers.
+    // Uses scatter pattern: small buffer transferred to GPU, then GPU kernel
+    // scatters values to sparse locations.
+    //
+    // Parameters:
+    //   indices: triangle indices to sync (must be mapped to GPU)
+    //   num_indices: number of triangles
+    //   stage_buf, xmom_buf, ymom_buf, height_buf: host buffers (size num_indices each)
+    //
+    if (!GD->gpu_initialized || num_indices == 0) return;
+
+    anuga_int n = GD->D.number_of_elements;
+    double *stage_cv = GD->D.stage_centroid_values;
+    double *xmom_cv = GD->D.xmom_centroid_values;
+    double *ymom_cv = GD->D.ymom_centroid_values;
+    double *height_cv = GD->D.height_centroid_values;
+
+    // Scatter values from contiguous buffers to sparse indices on GPU
+    #pragma omp target teams distribute parallel for \
+        map(to: indices[0:num_indices], \
+                stage_buf[0:num_indices], xmom_buf[0:num_indices], \
+                ymom_buf[0:num_indices], height_buf[0:num_indices])
+    for (int i = 0; i < num_indices; i++) {
+        int idx = indices[i];
+        stage_cv[idx] = stage_buf[i];
+        xmom_cv[idx] = xmom_buf[i];
+        ymom_cv[idx] = ymom_buf[i];
+        height_cv[idx] = height_buf[i];
+    }
+}
+
 // Initialize boundary edge sync buffers - call once after boundaries are set
 int gpu_boundary_edge_sync_init(struct gpu_domain *GD,
                                 int num_boundary_cells,

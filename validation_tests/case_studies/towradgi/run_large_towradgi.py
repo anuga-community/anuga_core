@@ -74,7 +74,7 @@ outputstep=600. # update sww files every 60 seconds
 finaltime=1800. #83700.
 
 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles), super fine 0.1 (1.6 million)
-scale = 1
+scale = 0.1
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
 # Choices are 1 (openmp) 2 (copenmp)

@@ -136,6 +136,40 @@ class GPU_OMP_interface:
         from anuga.shallow_water.sw_domain_gpu_ext import sync_edge_values_from_device
         sync_edge_values_from_device(self.gpu_dom)
 
+    def sync_partial_from_device(self, indices, stage_buf, xmom_buf, ymom_buf, height_buf):
+        """
+        Sync specific triangle centroid values FROM GPU to host buffers.
+
+        This is much more efficient than sync_from_device when only a small
+        subset of triangles need to be synced (e.g., for Inlet_operator).
+
+        Parameters
+        ----------
+        indices : ndarray[int32]
+            Triangle indices to sync
+        stage_buf, xmom_buf, ymom_buf, height_buf : ndarray[float64]
+            Output buffers (must be pre-allocated with size len(indices))
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_partial_from_device
+        sync_partial_from_device(self.gpu_dom, indices, stage_buf, xmom_buf, ymom_buf, height_buf)
+
+    def sync_partial_to_device(self, indices, stage_buf, xmom_buf, ymom_buf, height_buf):
+        """
+        Sync specific triangle centroid values TO GPU from host buffers.
+
+        This is much more efficient than sync_to_device when only a small
+        subset of triangles need to be synced (e.g., for Inlet_operator).
+
+        Parameters
+        ----------
+        indices : ndarray[int32]
+            Triangle indices to sync
+        stage_buf, xmom_buf, ymom_buf, height_buf : ndarray[float64]
+            Input buffers with values to write to GPU
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_partial_to_device
+        sync_partial_to_device(self.gpu_dom, indices, stage_buf, xmom_buf, ymom_buf, height_buf)
+
     def exchange_ghosts(self):
         """Exchange ghost cells between MPI ranks."""
         from anuga.shallow_water.sw_domain_gpu_ext import exchange_ghosts

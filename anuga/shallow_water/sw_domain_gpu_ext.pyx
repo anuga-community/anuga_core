@@ -127,6 +127,15 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_domain_sync_to_device(gpu_domain *GD)
     void gpu_domain_sync_from_device(gpu_domain *GD)
     void gpu_domain_sync_all_from_device(gpu_domain *GD)
+    # Partial sync for sparse triangle updates (Inlet_operator optimization)
+    void gpu_domain_sync_partial_from_device(gpu_domain *GD,
+                                              int *indices, int num_indices,
+                                              double *stage_buf, double *xmom_buf,
+                                              double *ymom_buf, double *height_buf)
+    void gpu_domain_sync_partial_to_device(gpu_domain *GD,
+                                            int *indices, int num_indices,
+                                            double *stage_buf, double *xmom_buf,
+                                            double *ymom_buf, double *height_buf)
     void gpu_sync_boundary_values(gpu_domain *GD)
     void gpu_sync_edge_values_from_device(gpu_domain *GD)
     int gpu_boundary_edge_sync_init(gpu_domain *GD, int num_boundary_cells, int *boundary_cell_ids)
@@ -654,6 +663,66 @@ def sync_all_from_device(GPUDomain gpu_dom):
     Use this when you need to inspect intermediate GPU values.
     """
     gpu_domain_sync_all_from_device(&gpu_dom.GD)
+
+
+def sync_partial_from_device(GPUDomain gpu_dom,
+                              np.ndarray[int, ndim=1, mode="c"] indices,
+                              np.ndarray[double, ndim=1, mode="c"] stage_buf,
+                              np.ndarray[double, ndim=1, mode="c"] xmom_buf,
+                              np.ndarray[double, ndim=1, mode="c"] ymom_buf,
+                              np.ndarray[double, ndim=1, mode="c"] height_buf):
+    """
+    Sync specific triangle centroid values FROM GPU to host buffers.
+
+    This is much more efficient than sync_from_device when only a small
+    subset of triangles need to be synced (e.g., for Inlet_operator).
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    indices : ndarray[int]
+        Triangle indices to sync
+    stage_buf, xmom_buf, ymom_buf, height_buf : ndarray[double]
+        Output buffers (must be pre-allocated with size len(indices))
+    """
+    cdef int num_indices = len(indices)
+    if num_indices == 0:
+        return
+    gpu_domain_sync_partial_from_device(&gpu_dom.GD,
+                                         &indices[0], num_indices,
+                                         &stage_buf[0], &xmom_buf[0],
+                                         &ymom_buf[0], &height_buf[0])
+
+
+def sync_partial_to_device(GPUDomain gpu_dom,
+                            np.ndarray[int, ndim=1, mode="c"] indices,
+                            np.ndarray[double, ndim=1, mode="c"] stage_buf,
+                            np.ndarray[double, ndim=1, mode="c"] xmom_buf,
+                            np.ndarray[double, ndim=1, mode="c"] ymom_buf,
+                            np.ndarray[double, ndim=1, mode="c"] height_buf):
+    """
+    Sync specific triangle centroid values TO GPU from host buffers.
+
+    This is much more efficient than sync_to_device when only a small
+    subset of triangles need to be synced (e.g., for Inlet_operator).
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    indices : ndarray[int]
+        Triangle indices to sync
+    stage_buf, xmom_buf, ymom_buf, height_buf : ndarray[double]
+        Input buffers with values to write to GPU
+    """
+    cdef int num_indices = len(indices)
+    if num_indices == 0:
+        return
+    gpu_domain_sync_partial_to_device(&gpu_dom.GD,
+                                       &indices[0], num_indices,
+                                       &stage_buf[0], &xmom_buf[0],
+                                       &ymom_buf[0], &height_buf[0])
 
 
 def sync_boundary_values(GPUDomain gpu_dom):

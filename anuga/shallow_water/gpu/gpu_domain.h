@@ -248,6 +248,17 @@ void gpu_domain_sync_to_device(struct gpu_domain *GD);
 void gpu_domain_sync_from_device(struct gpu_domain *GD);
 void gpu_domain_sync_all_from_device(struct gpu_domain *GD);  // Debug: sync ALL arrays
 
+// Partial sync for sparse triangle updates (e.g., Inlet_operator)
+// Much more efficient than full-domain sync when only a small subset needs syncing
+void gpu_domain_sync_partial_from_device(struct gpu_domain *GD,
+                                          int *indices, int num_indices,
+                                          double *stage_buf, double *xmom_buf,
+                                          double *ymom_buf, double *height_buf);
+void gpu_domain_sync_partial_to_device(struct gpu_domain *GD,
+                                        int *indices, int num_indices,
+                                        double *stage_buf, double *xmom_buf,
+                                        double *ymom_buf, double *height_buf);
+
 // Sync boundary values TO GPU (after CPU boundary evaluation)
 void gpu_sync_boundary_values(struct gpu_domain *GD);
 
