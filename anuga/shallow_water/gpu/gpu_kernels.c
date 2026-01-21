@@ -687,7 +687,8 @@ double gpu_compute_water_volume(struct gpu_domain *GD) {
     // Compute total water volume on GPU
     // Returns local volume (caller should do MPI_Allreduce for global sum)
     //
-    // Volume = sum((stage - elevation) * area) for all elements
+    // Volume = sum((stage - elevation) * area) for FULL elements only
+    // Ghost cells are excluded to avoid double-counting in parallel runs
 
     anuga_int n = GD->D.number_of_elements;
     double volume = 0.0;
@@ -695,12 +696,16 @@ double gpu_compute_water_volume(struct gpu_domain *GD) {
     double * restrict stage_cv = GD->D.stage_centroid_values;
     double * restrict bed_cv = GD->D.bed_centroid_values;
     double * restrict areas = GD->D.areas;
+    anuga_int * restrict tri_full_flag = GD->D.tri_full_flag;
 
     #pragma omp target teams distribute parallel for simd reduction(+:volume)
     for (anuga_int k = 0; k < n; k++) {
-        double h = stage_cv[k] - bed_cv[k];
-        if (h > 0.0) {
-            volume += h * areas[k];
+        // Only count full (non-ghost) cells to avoid double-counting
+        if (tri_full_flag[k] == 1) {
+            double h = stage_cv[k] - bed_cv[k];
+            if (h > 0.0) {
+                volume += h * areas[k];
+            }
         }
     }
 
