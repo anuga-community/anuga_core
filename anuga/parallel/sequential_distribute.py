@@ -61,6 +61,7 @@ class Sequential_distribute(object):
         self.domain_quantities_to_be_stored = domain.quantities_to_be_stored
         self.domain_smooth = domain.smooth
         self.domain_low_froude = domain.low_froude
+        self.domain_fixed_flux_timestep = domain.fixed_flux_timestep
         self.number_of_global_triangles = domain.number_of_triangles
         self.number_of_global_nodes = domain.number_of_nodes
         self.boundary_map = domain.boundary_map
@@ -196,6 +197,7 @@ class Sequential_distribute(object):
         domain_quantities_to_be_stored = self.domain_quantities_to_be_stored
         domain_smooth = self.domain_smooth
         domain_low_froude = self.domain_low_froude
+        domain_fixed_flux_timestep = self.domain_fixed_flux_timestep
 
         tostore = (kwargs, points, vertices, boundary, quantities, \
                    boundary_map, \
@@ -203,7 +205,7 @@ class Sequential_distribute(object):
                    domain_minimum_storable_height, \
                    domain_minimum_allowed_height, domain_flow_algorithm, \
                    domain_georef, domain_quantities_to_be_stored, domain_smooth, \
-                   domain_low_froude)
+                   domain_low_froude, domain_fixed_flux_timestep)
 
         return tostore
 
@@ -290,7 +292,7 @@ def sequential_distribute_load_pickle_file(pickle_name, np=1, verbose = False):
                    domain_minimum_storable_height, domain_minimum_allowed_height, \
                    domain_flow_algorithm, domain_georef, \
                    domain_quantities_to_be_stored, domain_smooth, \
-                   domain_low_froude = pickle.load(f)
+                   domain_low_froude, domain_fixed_flux_timestep = pickle.load(f)
     f.close()
 
     for k in quantities:
@@ -334,5 +336,6 @@ def sequential_distribute_load_pickle_file(pickle_name, np=1, verbose = False):
     domain.geo_reference = domain_georef
     domain.set_quantities_to_be_stored(domain_quantities_to_be_stored)
     domain.smooth = domain_smooth
+    domain.fixed_flux_timestep = domain_fixed_flux_timestep
 
     return domain

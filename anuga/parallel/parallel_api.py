@@ -87,8 +87,8 @@ def distribute(domain, verbose=False, debug=False, parameters = None):
                 domain_name, domain_dir, domain_store, domain_store_centroids, \
                 domain_minimum_storable_height, domain_minimum_allowed_height, \
                 domain_flow_algorithm, domain_georef, \
-                domain_quantities_to_be_stored, domain_smooth, domain_low_froude \
-                 = partition.extract_submesh(0)
+                domain_quantities_to_be_stored, domain_smooth, domain_low_froude, \
+                domain_fixed_flux_timestep = partition.extract_submesh(0)
 
         for p in range(1, numprocs):
 
@@ -102,8 +102,8 @@ def distribute(domain, verbose=False, debug=False, parameters = None):
             domain_name, domain_dir, domain_store, domain_store_centroids, \
             domain_minimum_storable_height, domain_minimum_allowed_height, \
             domain_flow_algorithm, domain_georef, \
-            domain_quantities_to_be_stored, domain_smooth, domain_low_froude\
-             = receive(0)
+            domain_quantities_to_be_stored, domain_smooth, domain_low_froude, \
+            domain_fixed_flux_timestep = receive(0)
 
     #---------------------------------------------------------------------------
     # Now Create parallel domain
@@ -145,6 +145,7 @@ def distribute(domain, verbose=False, debug=False, parameters = None):
     parallel_domain.geo_reference = domain_georef
     parallel_domain.set_quantities_to_be_stored(domain_quantities_to_be_stored)
     parallel_domain.smooth = domain_smooth
+    parallel_domain.fixed_flux_timestep = domain_fixed_flux_timestep
 
     return parallel_domain
 
