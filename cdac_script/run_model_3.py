@@ -65,7 +65,8 @@ else:
                                                                microsecond=0) - datetime.timedelta(days=2)
 bypass=True
 TIMEFORMATCU = "%d_%m_%Y"
-name_stem = 'delta11372sqkm_uniform_mesh_300sqm_Chilka300sqm'  # name of the ascii file
+#name_stem = 'delta11372sqkm_uniform_mesh_300sqm_Chilka300sqm'  # name of the ascii file
+name_stem = 'Delta_11381_sqkm_900sqm'
 mesh_filename = 'mesh_file/' + name_stem + '.tsh'
 poly = anuga.read_polygon('polygons/Chilka_Modified_Poly.csv')
 poly_bounding = anuga.read_polygon('polygons/Delta_11372_sqkm.csv')
@@ -86,15 +87,10 @@ finaltime = 3600
 #finaltime = 432000.0 # 432000.0 for 5 days simulation
 #finaltime = 302400.0 #for 4 days simulation | 302400.0 for output at 3rd day 6 PM
 #finaltime = 43200.0
-finaltime = 86400.0 # only for running 21_07_2021 simulation
+#finaltime = 86400.0 # only for running 21_07_2021 simulation
 min_allowed_height = 0.008
 max_allowed_speed = 1.0
 checkpoint_time = 60 * 60
-
-# Stats interval: only compute volume/wet_elements every N seconds of sim time
-# This reduces MPI reductions from 17,280 (every 5s) to 48 (every 30min) for 24h sim
-stats_interval = 1800  # 30 minutes of simulation time
-
 flow_algorithm = 'DE1'
 useCheckpointing = False
 friction_filename = 'friction_data/LULC_Apr2020_Norm.asc'
@@ -179,7 +175,6 @@ if myid == 0:
     domain.set_datadir(output_dir)
     domain.set_minimum_allowed_height(min_allowed_height)
     domain.set_maximum_allowed_speed(max_allowed_speed)
-    domain.set_multiprocessor_mode(2)
     #print domain.statistics()
     domain.set_quantity('friction', filename=friction_filename, location=friction_location)
     triangle_index = []
@@ -255,7 +250,8 @@ Bw = anuga.Reflective_boundary(domain)
 if os.path.exists(tide_filename):
     wave_function = anuga.file_function(tide_filename, quantities='stage', verbose=verbose)
     #Bw = anuga.Time_boundary(domain=domain, function=lambda t: [wave_function(t) * 1, 0.0, 0.0]) #original
-    Bw = anuga.Time_boundary(domain=domain,function=lambda t: [float(wave_function(t)), 0.0, 0.0])
+    #Bw = anuga.Time_boundary(domain=domain,function=lambda t: [float(wave_function(t)), 0.0, 0.0])
+    Bw = anuga.Time_boundary(domain=domain, function=lambda t: [wave_function(t).item(), 0.0, 0.0])
 else:
     if myid == 0 and verbose: print("The paradip tide file %s does not exist !!" % tide_filename)
 
@@ -267,6 +263,9 @@ domain.set_boundary(dict3)  # set boundary
 
 #To make sure that boundry conditions managed well Samir
 barrier()
+
+domain.set_multiprocessor_mode(2)
+domain.use_c_rk2_loop = True
 
     ########################################################################
     # Input Discharge with Time Series Naraj Barrage
@@ -313,8 +312,6 @@ import time
 
 t0 = time.time()
 rain_set_zero = True
-last_stats_time = -stats_interval  # Ensure we compute stats at t=0
-
 for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
     if myid == 0: domain.write_time()
     fltStr = str(t)
@@ -505,48 +502,39 @@ for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
             rain_opertor.set_rate(rate=Q)
     else:
         if myid == 0: print("Using previously set Daily Rainfall!!")
+    import re
+    volume = domain.compute_total_volume()
+    stats = domain.timestepping_statistics()
+    rainstats = rain_opertor.timestepping_statistics()
+    maxInundation = Q.get_maximum_value()
+    indices = domain.get_wet_elements()
+    element_count = len(indices)
+    file1 = open("rain_data.txt", "a+")
+    file2 = open("wet_elements.txt", "a+")
+    file3 = open("max_inandation.txt", "a+")
+    try:
+      rain_arr = re.findall(r"\d+\.\d+",rainstats)
+      total_rain = float(rain_arr[0])
+      file1.write(str(total_rain))
+      file1.writelines("\n")
+      file2.write(str(element_count))
+      file2.writelines("\n")
+      file3.write(str(maxInundation))
+      file3.writelines("\n")
+    except:
+      #print("there is no Q")
+      file1.write(str(0.0))
+      file1.writelines("\n")
+      file2.write(str(0.0))
+      file2.writelines("\n")
+      file3.write(str(0.0))
+      file3.writelines("\n")
+    #maxInundation = quantity.get_maximum_value()
+    #indices = domain.get_wet_elements()
 
-    # Only compute expensive stats at stats_interval (reduces MPI reductions by ~360x)
-    if t - last_stats_time >= stats_interval:
-        last_stats_time = t
-        import re
-        volume = domain.compute_total_volume()
-        stats = domain.timestepping_statistics()
-        rainstats = rain_opertor.timestepping_statistics()
-        maxInundation = Q.get_maximum_value()
-        indices = domain.get_wet_elements()
-        element_count = len(indices)
-        file1 = open("rain_data.txt", "a+")
-        file2 = open("wet_elements.txt", "a+")
-        file3 = open("max_inandation.txt", "a+")
-        try:
-          rain_arr = re.findall(r"\d+\.\d+",rainstats)
-          total_rain = float(rain_arr[0])
-          file1.write(str(total_rain))
-          file1.writelines("\n")
-          file2.write(str(element_count))
-          file2.writelines("\n")
-          file3.write(str(maxInundation))
-          file3.writelines("\n")
-        except:
-          #print("there is no Q")
-          file1.write(str(0.0))
-          file1.writelines("\n")
-          file2.write(str(0.0))
-          file2.writelines("\n")
-          file3.write(str(0.0))
-          file3.writelines("\n")
-        #maxInundation = quantity.get_maximum_value()
-        #indices = domain.get_wet_elements()
-
-        if myid == 0:
-            print("Total Volume =: %s Time Stepping Statistics =: %s Rain Operator Statistics=: %s" % (
-                str(volume), str(stats),str(rainstats )))
-
-        # Close file handles
-        file1.close()
-        file2.close()
-        file3.close()
+    if myid == 0:
+        print("Total Volume =: %s Time Stepping Statistics =: %s Rain Operator Statistics=: %s" % (
+            str(volume), str(stats),str(rainstats )))
 
     '''if t == 86400.0:
         if myid == 0:

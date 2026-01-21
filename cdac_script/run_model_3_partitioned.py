@@ -50,7 +50,7 @@ bypass = True
 TIMEFORMATCU = "%d_%m_%Y"
 
 # CONFIGURATION: Set mesh resolution here (100, 300, or 900)
-MESH_SIZE = 300 # <-- CHANGE THIS for different mesh sizes
+MESH_SIZE = 900 # <-- CHANGE THIS for different mesh sizes
 
 name_stem = f'delta11372sqkm_uniform_mesh_{MESH_SIZE}sqm_Chilka{MESH_SIZE}sqm'
 partition_name = f'mahanadi_delta_{MESH_SIZE}sqm'  # Must match partition_mahanadi.py output
@@ -66,11 +66,13 @@ domain_name = 'mahanadi_delta_' + Current_Date.strftime(TIMEFORMATCU)
 output_dir = 'output/' + Current_Date.strftime(TIMEFORMATCU)
 log.log_filename = output_dir + '/log_' + domain_name
 checkpoint_dir = 'checkpoints'
-#yieldstep = 50
-#finaltime = 200
-yieldstep = 10800
+yieldstep = 100
+finaltime = 600
+#yieldstep = 10800
+#finaltime = 21600
+#yieldstep = 10800
 #finaltime = 43200.0 # 12 hours
-finaltime = 86400.0 # only for running 21_07_2021 simulation
+#finaltime = 86400.0 # only for running 21_07_2021 simulation
 #finaltime = 3600.0
 min_allowed_height = 0.008
 max_allowed_speed = 1.0
@@ -216,9 +218,9 @@ dict2 = {'exterior': Br}
 dict3 = dict(itertools.chain(list(dict2.items()), list(dict1.items())))
 domain.set_boundary(dict3)
 
-domain.set_multiprocessor_mode(2)
-domain.use_c_rk2_loop = True
 
+domain.set_multiprocessor_mode(2)
+domain.use_c_rk2_loop = False
 barrier()
 
 # Input Discharge with Time Series Naraj Barrage
@@ -260,8 +262,8 @@ t0 = time.time()
 import cProfile
 import pstats
 
-#profiler = cProfile.Profile()
-#profiler.enable()
+profiler = cProfile.Profile()
+profiler.enable()
 rain_set_zero = True
 
 for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
@@ -491,23 +493,23 @@ for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
     file2.close()
     file3.close()
 
-#profiler.disable()
+profiler.disable()
 barrier()
 
 domain.gpu.flop_counters_stop_timer()
 domain.gpu.flop_counters_print_global()
 
-#if myid == 0:
-#    print("\n" + "="*80)
-#    print("PROFILING RESULTS - Top 40 by cumulative time")
-#    print("="*80)
-#    stats = pstats.Stats(profiler)
-#    stats.sort_stats('cumulative')
-#    stats.print_stats(40)
+if myid == 0:
+    print("\n" + "="*80)
+    print("PROFILING RESULTS - Top 40 by cumulative time")
+    print("="*80)
+    stats = pstats.Stats(profiler)
+    stats.sort_stats('cumulative')
+    stats.print_stats(40)
 
    # Also save to file for detailed analysis
-#    profiler.dump_stats('profile.prof')
-#    print(f"\nProfile saved to profile.prof - view with: python -m pstats profile.prof")
+    profiler.dump_stats('profile.prof')
+    print(f"\nProfile saved to profile.prof - view with: python -m pstats profile.prof")
 
 for p in range(numprocs):
     if myid == p:
