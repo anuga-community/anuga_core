@@ -87,6 +87,8 @@ cdef extern from "gpu_domain.h" nogil:
         double* y_centroid_work
         # Friction
         double* friction_centroid_values
+        # Full/ghost flag for parallel runs
+        int64_t* tri_full_flag
 
     struct halo_exchange:
         int num_neighbors
@@ -469,6 +471,11 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     friction = quantities["friction"]
     friction_cv = friction.centroid_values
     D.friction_centroid_values = &friction_cv[0]
+
+    # Full/ghost flag for parallel runs (needed for volume calculations)
+    cdef int64_t[::1] tri_full_flag
+    tri_full_flag = domain_object.tri_full_flag
+    D.tri_full_flag = &tri_full_flag[0]
 
     # Backup arrays for RK2 - these are on each Quantity object
     cdef double[::1] stage_backup_cv, xmom_backup_cv, ymom_backup_cv
