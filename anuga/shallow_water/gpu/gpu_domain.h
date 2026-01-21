@@ -129,6 +129,7 @@ struct rate_operator_info {
     double *areas;               // Triangle areas for mass tracking [num_indices]
     int *full_indices;           // Indices that are "full" (not ghost) for mass tracking
     int num_full;                // Number of full indices
+    int *is_full;                // Flag array [num_indices]: 1 if full (non-ghost), 0 if ghost
     int active;                  // Whether this operator slot is in use
     int mapped;                  // Whether arrays are mapped to GPU
     // Rate array caching (avoids H2D transfer every call)

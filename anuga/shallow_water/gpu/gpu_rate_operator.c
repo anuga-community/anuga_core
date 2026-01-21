@@ -49,6 +49,7 @@ int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
         op->indices = NULL;
         op->areas = NULL;
         op->full_indices = NULL;
+        op->is_full = NULL;
         RO->num_operators++;
         return op_id;
     }
@@ -56,11 +57,13 @@ int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
     // Allocate and copy arrays
     op->indices = (int*)malloc(num_indices * sizeof(int));
     op->areas = (double*)malloc(num_indices * sizeof(double));
+    op->is_full = (int*)malloc(num_indices * sizeof(int));
 
-    if (!op->indices || !op->areas) {
+    if (!op->indices || !op->areas || !op->is_full) {
         fprintf(stderr, "Failed to allocate rate_operator arrays\n");
         if (op->indices) free(op->indices);
         if (op->areas) free(op->areas);
+        if (op->is_full) free(op->is_full);
         op->active = 0;
         return -1;
     }
@@ -68,13 +71,27 @@ int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
     memcpy(op->indices, indices, num_indices * sizeof(int));
     memcpy(op->areas, areas, num_indices * sizeof(double));
 
+    // Initialize is_full to 0 (ghost), then mark full cells as 1
+    memset(op->is_full, 0, num_indices * sizeof(int));
     if (num_full > 0 && full_indices != NULL) {
         op->full_indices = (int*)malloc(num_full * sizeof(int));
         if (op->full_indices) {
             memcpy(op->full_indices, full_indices, num_full * sizeof(int));
         }
+        // Mark full cells in is_full array
+        // full_indices[j] gives the position k in indices[] that is a full cell
+        for (int j = 0; j < num_full; j++) {
+            int k = full_indices[j];
+            if (k >= 0 && k < num_indices) {
+                op->is_full[k] = 1;
+            }
+        }
     } else {
         op->full_indices = NULL;
+        // If no full_indices provided, assume all cells are full
+        for (int k = 0; k < num_indices; k++) {
+            op->is_full[k] = 1;
+        }
     }
 
     // Map to GPU immediately if GPU is already initialized
@@ -82,7 +99,8 @@ int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
         int ni = op->num_indices;
         int *idx = op->indices;
         double *ar = op->areas;
-        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
+        int *isf = op->is_full;
+        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni], isf[0:ni])
         op->mapped = 1;
     }
 
@@ -106,7 +124,8 @@ void gpu_rate_operator_finalize(struct gpu_domain *GD, int op_id) {
         int ni = op->num_indices;
         int *idx = op->indices;
         double *ar = op->areas;
-        #pragma omp target exit data map(delete: idx[0:ni], ar[0:ni])
+        int *isf = op->is_full;
+        #pragma omp target exit data map(delete: idx[0:ni], ar[0:ni], isf[0:ni])
     }
 
     // Clean up rate array cache
@@ -120,10 +139,12 @@ void gpu_rate_operator_finalize(struct gpu_domain *GD, int op_id) {
     if (op->indices) free(op->indices);
     if (op->areas) free(op->areas);
     if (op->full_indices) free(op->full_indices);
+    if (op->is_full) free(op->is_full);
 
     op->indices = NULL;
     op->areas = NULL;
     op->full_indices = NULL;
+    op->is_full = NULL;
     op->rate_array_cache = NULL;
     op->num_indices = 0;
     op->num_full = 0;
@@ -156,13 +177,15 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
         int ni = op->num_indices;
         int *idx = op->indices;
         double *ar = op->areas;
-        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
+        int *isf = op->is_full;
+        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni], isf[0:ni])
         op->mapped = 1;
     }
 
     int num_indices = op->num_indices;
     int * restrict indices = op->indices;
     double * restrict areas = op->areas;
+    int * restrict is_full = op->is_full;
 
     // Domain arrays (restrict enables better optimization)
     double * restrict stage_c = GD->D.stage_centroid_values;
@@ -175,15 +198,18 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
 
     if (rate >= 0.0) {
         // Simple positive rate - just add to stage
-        // Reduction for mass tracking
+        // Apply to ALL cells, but only count influx for full (non-ghost) cells
         #pragma omp target teams distribute parallel for reduction(+:local_influx)
         for (int k = 0; k < num_indices; k++) {
             int i = indices[k];
             stage_c[i] += local_rate;
-            local_influx += local_rate * areas[k];
+            if (is_full[k]) {
+                local_influx += local_rate * areas[k];
+            }
         }
     } else {
         // Negative rate (extraction) - need to limit and scale momentum
+        // Apply to ALL cells, but only count influx for full (non-ghost) cells
         #pragma omp target teams distribute parallel for reduction(+:local_influx)
         for (int k = 0; k < num_indices; k++) {
             int i = indices[k];
@@ -207,7 +233,9 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
             xmom_c[i] *= scale_factor;
             ymom_c[i] *= scale_factor;
 
-            local_influx += actual_rate * areas[k];
+            if (is_full[k]) {
+                local_influx += actual_rate * areas[k];
+            }
         }
     }
 
@@ -235,13 +263,15 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
         int ni = op->num_indices;
         int *idx = op->indices;
         double *ar = op->areas;
-        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
+        int *isf = op->is_full;
+        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni], isf[0:ni])
         op->mapped = 1;
     }
 
     int num_indices = op->num_indices;
     int * restrict indices = op->indices;
     double * restrict areas = op->areas;
+    int * restrict is_full = op->is_full;
 
     // Domain arrays (restrict enables better optimization)
     double * restrict stage_c = GD->D.stage_centroid_values;
@@ -290,6 +320,8 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
 
     if (use_indices_into_rate) {
         // gpu_rate_array is full domain size, index with indices[k]
+        // Apply rate to ALL cells (including ghosts for correct exchange)
+        // but only sum local_influx for FULL cells (non-ghost) to avoid double-counting
         #pragma omp target teams distribute parallel for reduction(+:local_influx)
         for (int k = 0; k < num_indices; k++) {
             int i = indices[k];
@@ -298,7 +330,10 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
 
             if (rate >= 0.0) {
                 stage_c[i] += local_rate;
-                local_influx += local_rate * areas[k];
+                // Only count influx for full (non-ghost) cells
+                if (is_full[k]) {
+                    local_influx += local_rate * areas[k];
+                }
             } else {
                 // Negative rate - limit and scale momentum
                 double height = stage_c[i] - bed_c[i];
@@ -309,11 +344,16 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
                 stage_c[i] += actual_rate;
                 xmom_c[i] *= scale_factor;
                 ymom_c[i] *= scale_factor;
-                local_influx += actual_rate * areas[k];
+                // Only count influx for full (non-ghost) cells
+                if (is_full[k]) {
+                    local_influx += actual_rate * areas[k];
+                }
             }
         }
     } else {
         // gpu_rate_array matches indices size, index with k
+        // Apply rate to ALL cells (including ghosts for correct exchange)
+        // but only sum local_influx for FULL cells (non-ghost) to avoid double-counting
         #pragma omp target teams distribute parallel for reduction(+:local_influx)
         for (int k = 0; k < num_indices; k++) {
             int i = indices[k];
@@ -322,7 +362,10 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
 
             if (rate >= 0.0) {
                 stage_c[i] += local_rate;
-                local_influx += local_rate * areas[k];
+                // Only count influx for full (non-ghost) cells
+                if (is_full[k]) {
+                    local_influx += local_rate * areas[k];
+                }
             } else {
                 // Negative rate - limit and scale momentum
                 double height = stage_c[i] - bed_c[i];
@@ -333,7 +376,10 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
                 stage_c[i] += actual_rate;
                 xmom_c[i] *= scale_factor;
                 ymom_c[i] *= scale_factor;
-                local_influx += actual_rate * areas[k];
+                // Only count influx for full (non-ghost) cells
+                if (is_full[k]) {
+                    local_influx += actual_rate * areas[k];
+                }
             }
         }
     }
