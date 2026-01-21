@@ -159,6 +159,11 @@ t_load_start = time.time()
 domain = anuga.sequential_distribute_load(partition_name, partition_dir=partition_dir, verbose=verbose)
 t_load = time.time() - t_load_start
 
+# CRITICAL: Get local-to-global node mapping for reading rainfall files
+# After distribute, domain.get_triangles() returns LOCAL vertex indices,
+# but rainfall CSV files use GLOBAL vertex indices
+node_l2g = domain.node_l2g
+
 if myid == 0:
     print(f'Loaded partitioned domain in {t_load:.2f}s', flush=True)
 
@@ -294,14 +299,15 @@ for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
             triangle_index_elvation_main_rain = []
             for tri_index in range(len(domain)):
                 vertices = domain.get_triangles(tri_index)
+                global_vertices = node_l2g[vertices]  # Convert local to global indices
                 triangle_index_rain.append(tri_index)
                 triangle_index_elevation = []
                 triangle_index_elevation.insert(0, np.double(
-                    linecache.getline(imd_daily_daily_pt_bhub, vertices[0] + 1)) * imd_rainfall_factor_pt_bhub)
+                    linecache.getline(imd_daily_daily_pt_bhub, global_vertices[0] + 1)) * imd_rainfall_factor_pt_bhub)
                 triangle_index_elevation.insert(1, np.double(
-                    linecache.getline(imd_daily_daily_pt_bhub, vertices[1] + 1)) * imd_rainfall_factor_pt_bhub)
+                    linecache.getline(imd_daily_daily_pt_bhub, global_vertices[1] + 1)) * imd_rainfall_factor_pt_bhub)
                 triangle_index_elevation.insert(2, np.double(
-                    linecache.getline(imd_daily_daily_pt_bhub, vertices[2] + 1)) * imd_rainfall_factor_pt_bhub)
+                    linecache.getline(imd_daily_daily_pt_bhub, global_vertices[2] + 1)) * imd_rainfall_factor_pt_bhub)
                 triangle_index_elvation_main_rain.append(triangle_index_elevation)
             domain.set_quantity('Rain',
                                 numeric=triangle_index_elvation_main_rain,
@@ -322,14 +328,15 @@ for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
             triangle_index_elvation_main_rain = []
             for tri_index in range(len(domain)):
                 vertices = domain.get_triangles(tri_index)
+                global_vertices = node_l2g[vertices]  # Convert local to global indices
                 triangle_index_rain.append(tri_index)
                 triangle_index_elevation = []
                 triangle_index_elevation.insert(0, np.double(
-                    linecache.getline(imd_daily_rain25, vertices[0] + 3)) * imd_rainfall_factor_rgdata_rain25)
+                    linecache.getline(imd_daily_rain25, global_vertices[0] + 3)) * imd_rainfall_factor_rgdata_rain25)
                 triangle_index_elevation.insert(1, np.double(
-                    linecache.getline(imd_daily_rain25, vertices[1] + 3)) * imd_rainfall_factor_rgdata_rain25)
+                    linecache.getline(imd_daily_rain25, global_vertices[1] + 3)) * imd_rainfall_factor_rgdata_rain25)
                 triangle_index_elevation.insert(2, np.double(
-                    linecache.getline(imd_daily_rain25, vertices[2] + 3)) * imd_rainfall_factor_rgdata_rain25)
+                    linecache.getline(imd_daily_rain25, global_vertices[2] + 3)) * imd_rainfall_factor_rgdata_rain25)
                 triangle_index_elvation_main_rain.append(triangle_index_elevation)
             domain.set_quantity('Rain',
                                 numeric=triangle_index_elvation_main_rain,
@@ -350,14 +357,15 @@ for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
             triangle_index_elvation_main_rain = []
             for tri_index in range(len(domain)):
                 vertices = domain.get_triangles(tri_index)
+                global_vertices = node_l2g[vertices]  # Convert local to global indices
                 triangle_index_rain.append(tri_index)
                 triangle_index_elevation = []
                 triangle_index_elevation.insert(0, np.double(
-                    linecache.getline(imd_rain_file_wrf, vertices[0] + 1)) * imd_rainfall_factor_wrf)
+                    linecache.getline(imd_rain_file_wrf, global_vertices[0] + 1)) * imd_rainfall_factor_wrf)
                 triangle_index_elevation.insert(1, np.double(
-                    linecache.getline(imd_rain_file_wrf, vertices[1] + 1)) * imd_rainfall_factor_wrf)
+                    linecache.getline(imd_rain_file_wrf, global_vertices[1] + 1)) * imd_rainfall_factor_wrf)
                 triangle_index_elevation.insert(2, np.double(
-                    linecache.getline(imd_rain_file_wrf, vertices[2] + 1)) * imd_rainfall_factor_wrf)
+                    linecache.getline(imd_rain_file_wrf, global_vertices[2] + 1)) * imd_rainfall_factor_wrf)
                 triangle_index_elvation_main_rain.append(triangle_index_elevation)
             domain.set_quantity('Rain',
                                 numeric=triangle_index_elvation_main_rain,
@@ -377,14 +385,15 @@ for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
             triangle_index_elvation_main_rain = []
             for tri_index in range(len(domain)):
                 vertices = domain.get_triangles(tri_index)
+                global_vertices = node_l2g[vertices]  # Convert local to global indices
                 triangle_index_rain.append(tri_index)
                 triangle_index_elevation = []
                 triangle_index_elevation.insert(0, np.double(
-                    linecache.getline(imd_rain_file_gfs, vertices[0] + 1)) * imd_rainfall_factor_gfs)
+                    linecache.getline(imd_rain_file_gfs, global_vertices[0] + 1)) * imd_rainfall_factor_gfs)
                 triangle_index_elevation.insert(1, np.double(
-                    linecache.getline(imd_rain_file_gfs, vertices[1] + 1)) * imd_rainfall_factor_gfs)
+                    linecache.getline(imd_rain_file_gfs, global_vertices[1] + 1)) * imd_rainfall_factor_gfs)
                 triangle_index_elevation.insert(2, np.double(
-                    linecache.getline(imd_rain_file_gfs, vertices[2] + 1)) * imd_rainfall_factor_gfs)
+                    linecache.getline(imd_rain_file_gfs, global_vertices[2] + 1)) * imd_rainfall_factor_gfs)
                 triangle_index_elvation_main_rain.append(triangle_index_elevation)
             domain.set_quantity('Rain',
                                 numeric=triangle_index_elvation_main_rain,
@@ -404,14 +413,15 @@ for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
             triangle_index_elvation_main_rain = []
             for tri_index in range(len(domain)):
                 vertices = domain.get_triangles(tri_index)
+                global_vertices = node_l2g[vertices]  # Convert local to global indices
                 triangle_index_rain.append(tri_index)
                 triangle_index_elevation = []
                 triangle_index_elevation.insert(0, np.double(
-                    linecache.getline(gpm_rain_file, vertices[0] + 1)) * gpm_rainfall_factor)
+                    linecache.getline(gpm_rain_file, global_vertices[0] + 1)) * gpm_rainfall_factor)
                 triangle_index_elevation.insert(1, np.double(
-                    linecache.getline(gpm_rain_file, vertices[1] + 1)) * gpm_rainfall_factor)
+                    linecache.getline(gpm_rain_file, global_vertices[1] + 1)) * gpm_rainfall_factor)
                 triangle_index_elevation.insert(2, np.double(
-                    linecache.getline(gpm_rain_file, vertices[2] + 1)) * gpm_rainfall_factor)
+                    linecache.getline(gpm_rain_file, global_vertices[2] + 1)) * gpm_rainfall_factor)
                 triangle_index_elvation_main_rain.append(triangle_index_elevation)
             domain.set_quantity('Rain',
                                 numeric=triangle_index_elvation_main_rain,
@@ -430,14 +440,15 @@ for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
             triangle_index_elvation_main_rain = []
             for tri_index in range(len(domain)):
                 vertices = domain.get_triangles(tri_index)
+                global_vertices = node_l2g[vertices]  # Convert local to global indices
                 triangle_index_rain.append(tri_index)
                 triangle_index_elevation = []
                 triangle_index_elevation.insert(0, np.double(
-                    linecache.getline(gfs_rain_file, vertices[0] + 1)) * gfs_rainfall_factor)
+                    linecache.getline(gfs_rain_file, global_vertices[0] + 1)) * gfs_rainfall_factor)
                 triangle_index_elevation.insert(1, np.double(
-                    linecache.getline(gfs_rain_file, vertices[1] + 1)) * gfs_rainfall_factor)
+                    linecache.getline(gfs_rain_file, global_vertices[1] + 1)) * gfs_rainfall_factor)
                 triangle_index_elevation.insert(2, np.double(
-                    linecache.getline(gfs_rain_file, vertices[2] + 1)) * gfs_rainfall_factor)
+                    linecache.getline(gfs_rain_file, global_vertices[2] + 1)) * gfs_rainfall_factor)
                 triangle_index_elvation_main_rain.append(triangle_index_elevation)
             domain.set_quantity('Rain',
                                 numeric=triangle_index_elvation_main_rain,
