@@ -246,14 +246,17 @@ Parameters involving communication
 
 
         try:
-            self.local_max = local_rates[fid].max()/timestep
-            self.local_min = local_rates[fid].min()/timestep
-        except ValueError:
-            self.local_max = 0.0
-            self.local_min = 0.0
+            self.local_max = (local_rates[fid].max()/timestep)
+            self.local_min = (local_rates[fid].min()/timestep)
         except:
             self.local_max = local_rates/timestep
             self.local_min = local_rates/timestep
+
+        if isinstance(self.local_max, num.ndarray) and self.local_max.size == 0:
+            self.local_max = 0.0
+            self.local_min = 0.0
+
+        # print(self.local_min, self.local_max)
         
         self.cumulative_influx += self.local_influx
 
@@ -598,7 +601,7 @@ Parameters involving communication
     def timestepping_statistics(self):
 
         # retrieve data from last __call__ call
-        message  = indent + self.label + ': Min rate = %g m/s, Max rate = %g m/s, Total Q = %g m^3'% (self.local_min, self.local_max, self.local_influx)
+        message  = indent + self.label + f': At time {self.domain.get_time()} Min rate = {self.local_min:.2e} m/s, Max rate = {self.local_max:.2e} m/s, Total Q = {self.cumulative_influx:.2e} m^3'
 
 
         # if self.rate_spatial:
