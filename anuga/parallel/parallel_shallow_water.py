@@ -129,7 +129,9 @@ class Parallel_domain(Domain):
         """Calculate local timestep
         """
 
-        generic_comms.communicate_flux_timestep(self, yieldstep, finaltime)
+        # Only need to communicate fluxes and timesteps if fixed timestep is not used
+        if self.fixed_flux_timestep is None:
+            generic_comms.communicate_flux_timestep(self, yieldstep, finaltime)
 
         Domain.update_timestep(self, yieldstep, finaltime)
 
