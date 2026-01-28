@@ -930,18 +930,38 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
         double total = t_backup + t_protect + t_extrapolate + t_boundary +
                        t_compute_fluxes + t_timestep_comm + t_forcing +
                        t_update_cq + t_exchange + t_saxpy;
+        struct { const char *name; double val; } entries[] = {
+            {"exchange_ghosts", t_exchange},
+            {"timestep_comm",   t_timestep_comm},
+            {"compute_fluxes",  t_compute_fluxes},
+            {"extrapolate",     t_extrapolate},
+            {"boundary",        t_boundary},
+            {"update_cq",       t_update_cq},
+            {"forcing",         t_forcing},
+            {"protect",         t_protect},
+            {"saxpy",           t_saxpy},
+            {"backup",          t_backup},
+        };
+        int n_entries = 10;
+        // Simple insertion sort by descending value
+        for (int i = 1; i < n_entries; i++) {
+            double v = entries[i].val;
+            const char *nm = entries[i].name;
+            int j = i - 1;
+            while (j >= 0 && entries[j].val < v) {
+                entries[j+1].val = entries[j].val;
+                entries[j+1].name = entries[j].name;
+                j--;
+            }
+            entries[j+1].val = v;
+            entries[j+1].name = nm;
+        }
         printf("[Rank %d] C RK2 timing after %d steps (total %.1fs):\n",
                GD->rank, rk2_step_count, total);
-        printf("  exchange_ghosts   %8.1fs  (%5.1f%%)\n", t_exchange, 100.0*t_exchange/total);
-        printf("  timestep_comm     %8.1fs  (%5.1f%%)\n", t_timestep_comm, 100.0*t_timestep_comm/total);
-        printf("  compute_fluxes    %8.1fs  (%5.1f%%)\n", t_compute_fluxes, 100.0*t_compute_fluxes/total);
-        printf("  extrapolate       %8.1fs  (%5.1f%%)\n", t_extrapolate, 100.0*t_extrapolate/total);
-        printf("  boundary          %8.1fs  (%5.1f%%)\n", t_boundary, 100.0*t_boundary/total);
-        printf("  update_cq         %8.1fs  (%5.1f%%)\n", t_update_cq, 100.0*t_update_cq/total);
-        printf("  forcing           %8.1fs  (%5.1f%%)\n", t_forcing, 100.0*t_forcing/total);
-        printf("  protect           %8.1fs  (%5.1f%%)\n", t_protect, 100.0*t_protect/total);
-        printf("  saxpy             %8.1fs  (%5.1f%%)\n", t_saxpy, 100.0*t_saxpy/total);
-        printf("  backup            %8.1fs  (%5.1f%%)\n", t_backup, 100.0*t_backup/total);
+        for (int i = 0; i < n_entries; i++) {
+            printf("  %-20s %8.1fs  (%5.1f%%)\n",
+                   entries[i].name, entries[i].val, 100.0*entries[i].val/total);
+        }
         fflush(stdout);
     }
 
