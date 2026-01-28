@@ -84,6 +84,9 @@ int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices,
 
     // Map to GPU if already initialized
     if (GD->gpu_initialized) {
+        // Ensure we map to the correct device for this domain
+        omp_set_default_device(GD->device_id);
+
         int ni = op->num_indices;
         int *idx = op->indices;
         double *ar = op->areas;
@@ -169,6 +172,8 @@ double gpu_inlet_get_volume(struct gpu_domain *GD, int op_id) {
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return 0.0;
 
+    omp_set_default_device(GD->device_id);
+
     int num = op->num_indices;
     int * restrict indices = op->indices;
     double * restrict areas = op->areas;
@@ -207,6 +212,8 @@ void gpu_inlet_get_velocities(struct gpu_domain *GD, int op_id,
     if (op_id < 0 || op_id >= MAX_INLET_OPERATORS) return;
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return;
+
+    omp_set_default_device(GD->device_id);
 
     // Small D2H: gather depths, xmom, ymom for inlet triangles
     int n = op->num_indices;
@@ -356,6 +363,8 @@ void gpu_inlet_set_stages_evenly(struct gpu_domain *GD, int op_id, double volume
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return;
 
+    omp_set_default_device(GD->device_id);
+
     int n = op->num_indices;
     int * restrict indices = op->indices;
     double * restrict stage_c = GD->D.stage_centroid_values;
@@ -452,6 +461,8 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
     if (op_id < 0 || op_id >= MAX_INLET_OPERATORS) return 0.0;
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return 0.0;
+
+    omp_set_default_device(GD->device_id);
 
     int n = op->num_indices;
     int * restrict indices = op->indices;
