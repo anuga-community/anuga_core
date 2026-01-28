@@ -18,7 +18,7 @@ def boundary_dictionary_construct(int64_t numTriangle, defaultTag,\
 	b = neighbours.shape[1]
 
 	if bool(boundary):
-		for vol_id, edge_id in boundary.keys():
+		for (vol_id, edge_id) in boundary.keys():
 			msg = 'Segment (%d, %d) does not exist' %(vol_id, edge_id)
 			assert vol_id < a and edge_id < b, msg
 
@@ -26,7 +26,6 @@ def boundary_dictionary_construct(int64_t numTriangle, defaultTag,\
 		for edge_id in xrange(0,3):
 			if neighbours[vol_id, edge_id] < 0:
 				if not boundary.has_key((vol_id, edge_id)):
-					print ("Adding default boundary tag for segment (%d, %d)" %(vol_id, edge_id))
 					boundary[(vol_id, edge_id)] = defaultTag
 
 	return boundary
