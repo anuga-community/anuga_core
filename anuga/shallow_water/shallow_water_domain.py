@@ -3324,6 +3324,7 @@ class Domain(Generic_Domain):
 
         from anuga.operators.rate_operators import Rate_operator
         from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
+        from anuga.structures.inlet_operator import Inlet_operator
 
         result = False
         cpu_only_ops = []
@@ -3340,6 +3341,12 @@ class Domain(Generic_Domain):
                 # boundary_flux_integral_operator only reads boundary_flux_sum (small array)
                 # and accumulates a scalar - doesn't need full centroid sync
                 continue
+            elif isinstance(op, Inlet_operator):
+                # Force GPU initialization if not already done
+                if hasattr(op, '_init_gpu') and not getattr(op, '_gpu_initialized', False):
+                    op._init_gpu()
+                if hasattr(op, '_gpu_initialized') and op._gpu_initialized:
+                    continue  # GPU-accelerated, no sync needed
             # All other operators need CPU sync
             cpu_only_ops.append(op_name)
             result = True

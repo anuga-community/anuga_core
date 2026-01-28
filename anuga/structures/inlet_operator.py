@@ -70,9 +70,86 @@ class Inlet_operator(anuga.Operator):
 
         self.activate_logging()
 
-        #print('Setting up inlet operator')
+        # GPU state (lazy init on first __call__)
+        self._gpu_op_id = None
+        self._gpu_initialized = False
+
+    def _init_gpu(self):
+        """Initialize GPU inlet operator (lazy, called on first __call__ in GPU mode)."""
+        try:
+            from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
+            gpu_dom = self.domain.gpu_domain
+
+            tri_indices = numpy.ascontiguousarray(
+                self.inlet.triangle_indices, dtype=numpy.intc)
+            areas = numpy.ascontiguousarray(
+                self.inlet.get_areas(), dtype=numpy.float64)
+
+            op_id = gpu_ext.init_inlet_operator(gpu_dom, tri_indices, areas)
+            if op_id >= 0:
+                self._gpu_op_id = op_id
+                self._gpu_initialized = True
+        except Exception as e:
+            import sys
+            print(f"WARNING: GPU inlet operator init failed: {e}", file=sys.stderr)
+            self._gpu_initialized = False
+
+    def _call_gpu(self):
+        """GPU path for __call__ - transfers only inlet data (~6KB)."""
+        from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
+
+        gpu_dom = self.domain.gpu_domain
+        op_id = self._gpu_op_id
+        timestep = self.domain.get_timestep()
+        t = self.domain.get_time()
+
+        # Get current volume from GPU (small reduction, returns scalar)
+        current_volume = gpu_ext.inlet_get_volume_gpu(gpu_dom, op_id)
+        total_area = self.inlet.area
+
+        assert current_volume >= 0.0
+
+        # Compute Q on CPU (scalar, cheap)
+        Q1 = self.update_Q(t)
+        Q2 = self.update_Q(t + timestep)
+        Q = 0.5 * (Q1 + Q2)
+        volume = Q * timestep
+
+        self.applied_Q = Q
+
+        # Get velocities from GPU (small D2H)
+        vel_u, vel_v = gpu_ext.inlet_get_velocities_gpu(gpu_dom, op_id)
+
+        has_velocity = 1 if self.velocity is not None else 0
+        ext_vel_u = self.velocity[0] if has_velocity else 0.0
+        ext_vel_v = self.velocity[1] if has_velocity else 0.0
+        zero_vel = 1 if self.zero_velocity else 0
+
+        # Apply on GPU (handles all 3 cases)
+        actual_volume = gpu_ext.inlet_apply_gpu(
+            gpu_dom, op_id, volume, current_volume, total_area,
+            vel_u, vel_v, has_velocity, ext_vel_u, ext_vel_v, zero_vel)
+
+        # Update tracking variables
+        self.total_requested_volume += volume
+        if volume >= 0.0:
+            self.domain.fractional_step_volume_integral += volume
+        elif current_volume + volume >= 0.0:
+            self.domain.fractional_step_volume_integral += volume
+        else:
+            self.applied_Q = -current_volume / timestep
+            self.domain.fractional_step_volume_integral -= current_volume
+
+        self.total_applied_volume += actual_volume
 
     def __call__(self):
+
+        # GPU path: skip full domain sync, transfer only inlet data
+        if getattr(self.domain, 'multiprocessor_mode', 0) == 2:
+            if not self._gpu_initialized:
+                self._init_gpu()
+            if self._gpu_initialized:
+                return self._call_gpu()
 
         timestep = self.domain.get_timestep()
 

@@ -143,6 +143,30 @@ struct rate_operators {
     int initialized;
 };
 
+// Inlet operator info - for GPU-accelerated inlet operations
+// The inlet only touches 10-100 triangles, so we do small D2H/H2D
+// of just those values (~6KB) instead of full domain sync (~235MB)
+#define MAX_INLET_OPERATORS 32
+
+struct inlet_operator_info {
+    int num_indices;             // Number of inlet triangles
+    int *indices;                // Triangle indices [num_indices] - mapped to GPU
+    double *areas;               // Triangle areas [num_indices] - mapped to GPU
+    double total_area;           // Precomputed sum of areas
+    double *scratch_stages;      // Host scratch buffer [num_indices]
+    double *scratch_bed;         // Host scratch buffer [num_indices]
+    double *scratch_xmom;        // Host scratch buffer [num_indices]
+    double *scratch_ymom;        // Host scratch buffer [num_indices]
+    double *scratch_depths;      // Host scratch buffer [num_indices]
+    int active;
+    int mapped;
+};
+
+struct inlet_operators {
+    struct inlet_operator_info ops[MAX_INLET_OPERATORS];
+    int num_operators;
+};
+
 // FLOP counter structure for performance profiling (Gordon Bell)
 // Counts floating-point operations per kernel for FLOPS reporting
 struct flop_counters {
@@ -209,6 +233,9 @@ struct gpu_domain {
 
     // Rate operators (rain, extraction, etc.)
     struct rate_operators rate_ops;
+
+    // Inlet operators (GPU-accelerated inlet flow)
+    struct inlet_operators inlet_ops;
 
     // Simulation parameters for GPU kernels
     double CFL;
@@ -372,5 +399,31 @@ uint64_t gpu_flop_counters_get_ghost_exchange(struct gpu_domain *GD);
 uint64_t gpu_flop_counters_get_global_total(struct gpu_domain *GD);
 double gpu_flop_counters_get_global_flops(struct gpu_domain *GD);
 void gpu_flop_counters_print_global(struct gpu_domain *GD);
+
+// Inlet operators - GPU-accelerated inlet flow
+// Returns operator ID (0 to MAX_INLET_OPERATORS-1) or -1 on error
+int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices, int *indices, double *areas);
+void gpu_inlet_operator_finalize(struct gpu_domain *GD, int op_id);
+void gpu_inlet_operators_finalize_all(struct gpu_domain *GD);
+
+// Inlet operator queries (small GPU reductions returning scalars)
+double gpu_inlet_get_volume(struct gpu_domain *GD, int op_id);
+void gpu_inlet_get_velocities(struct gpu_domain *GD, int op_id, double *u_out, double *v_out);
+
+// Inlet operator modifications (small GPU kernels on 10-100 triangles)
+void gpu_inlet_set_depths(struct gpu_domain *GD, int op_id, double depth);
+void gpu_inlet_set_xmoms(struct gpu_domain *GD, int op_id, double value);
+void gpu_inlet_set_ymoms(struct gpu_domain *GD, int op_id, double value);
+void gpu_inlet_set_xmoms_array(struct gpu_domain *GD, int op_id, double *values, int n);
+void gpu_inlet_set_ymoms_array(struct gpu_domain *GD, int op_id, double *values, int n);
+void gpu_inlet_set_stages_evenly(struct gpu_domain *GD, int op_id, double volume);
+
+// Main entry point combining all 3 cases of inlet application
+// Returns actual applied volume
+double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
+                       double current_volume, double total_area,
+                       double *vel_u, double *vel_v, int num_vel,
+                       int has_velocity, double ext_vel_u, double ext_vel_v,
+                       int zero_velocity);
 
 #endif // GPU_DOMAIN_H

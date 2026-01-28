@@ -84,6 +84,7 @@ if gpu_enabled
       'gpu/gpu_kernels.c',
       'gpu/gpu_halo.c',
       'gpu/gpu_rate_operator.c',
+      'gpu/gpu_inlet_operator.c',
       'gpu/gpu_flop.c',
     ],
     c_args: gpu_c_args,

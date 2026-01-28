@@ -100,6 +100,23 @@ cdef extern from "gpu_domain.h" nogil:
         double* send_buffer
         double* recv_buffer
 
+    struct inlet_operator_info:
+        int num_indices
+        int* indices
+        double* areas
+        double total_area
+        double* scratch_stages
+        double* scratch_bed
+        double* scratch_xmom
+        double* scratch_ymom
+        double* scratch_depths
+        int active
+        int mapped
+
+    struct inlet_operators:
+        inlet_operator_info ops[32]
+        int num_operators
+
     struct gpu_domain:
         domain D
         MPI_Comm comm
@@ -109,6 +126,7 @@ cdef extern from "gpu_domain.h" nogil:
         int device_id
         int gpu_aware_mpi
         halo_exchange halo
+        inlet_operators inlet_ops
         double CFL
         double evolve_max_timestep
         double fixed_flux_timestep
@@ -197,6 +215,24 @@ cdef extern from "gpu_domain.h" nogil:
                                          int use_indices_into_rate,
                                          int rate_changed,
                                          double factor, double timestep)
+
+    # Inlet operators (GPU-accelerated inlet flow)
+    int gpu_inlet_operator_init(gpu_domain *GD, int num_indices, int *indices, double *areas)
+    void gpu_inlet_operator_finalize(gpu_domain *GD, int op_id)
+    void gpu_inlet_operators_finalize_all(gpu_domain *GD)
+    double gpu_inlet_get_volume(gpu_domain *GD, int op_id)
+    void gpu_inlet_get_velocities(gpu_domain *GD, int op_id, double *u_out, double *v_out)
+    void gpu_inlet_set_depths(gpu_domain *GD, int op_id, double depth)
+    void gpu_inlet_set_xmoms(gpu_domain *GD, int op_id, double value)
+    void gpu_inlet_set_ymoms(gpu_domain *GD, int op_id, double value)
+    void gpu_inlet_set_xmoms_array(gpu_domain *GD, int op_id, double *values, int n)
+    void gpu_inlet_set_ymoms_array(gpu_domain *GD, int op_id, double *values, int n)
+    void gpu_inlet_set_stages_evenly(gpu_domain *GD, int op_id, double volume)
+    double gpu_inlet_apply(gpu_domain *GD, int op_id, double volume,
+                           double current_volume, double total_area,
+                           double *vel_u, double *vel_v, int num_vel,
+                           int has_velocity, double ext_vel_u, double ext_vel_v,
+                           int zero_velocity)
 
     # FLOP counters (Gordon Bell performance profiling)
     void gpu_flop_counters_init(gpu_domain *GD)
@@ -1251,6 +1287,113 @@ def apply_rate_operator_array_gpu(GPUDomain gpu_dom, int op_id,
                                          use_indices_into_rate,
                                          rate_changed,
                                          factor, timestep)
+
+
+# ============================================================================
+# Inlet Operator GPU Support
+# ============================================================================
+
+def init_inlet_operator(GPUDomain gpu_dom,
+                        np.ndarray[int, ndim=1, mode="c"] indices,
+                        np.ndarray[double, ndim=1, mode="c"] areas):
+    """
+    Initialize an inlet operator for GPU execution.
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    indices : ndarray of int
+        Triangle indices where inlet operates
+    areas : ndarray of double
+        Triangle areas
+
+    Returns
+    -------
+    int
+        Operator ID (use this to apply or finalize)
+        Returns -1 on error
+    """
+    cdef int num_indices = len(indices)
+    return gpu_inlet_operator_init(&gpu_dom.GD, num_indices, &indices[0], &areas[0])
+
+
+def finalize_inlet_operator(GPUDomain gpu_dom, int op_id):
+    """Finalize and free an inlet operator."""
+    gpu_inlet_operator_finalize(&gpu_dom.GD, op_id)
+
+
+def finalize_all_inlet_operators(GPUDomain gpu_dom):
+    """Finalize all inlet operators."""
+    gpu_inlet_operators_finalize_all(&gpu_dom.GD)
+
+
+def inlet_get_volume_gpu(GPUDomain gpu_dom, int op_id):
+    """
+    Get total water volume in inlet triangles (GPU reduction).
+
+    Returns scalar volume - no full domain sync needed.
+    """
+    return gpu_inlet_get_volume(&gpu_dom.GD, op_id)
+
+
+def inlet_get_velocities_gpu(GPUDomain gpu_dom, int op_id):
+    """
+    Get area-weighted velocities from inlet triangles (GPU reduction).
+
+    Returns (u_array, v_array) as numpy arrays - small D2H of inlet data only.
+    """
+    cdef int n = gpu_dom.GD.inlet_ops.ops[op_id].num_indices
+    cdef double u_dummy = 0.0
+    cdef double v_dummy = 0.0
+
+    gpu_inlet_get_velocities(&gpu_dom.GD, op_id, &u_dummy, &v_dummy)
+
+    # The velocities are stored in scratch buffers - copy to numpy arrays
+    cdef double *s_xmom = gpu_dom.GD.inlet_ops.ops[op_id].scratch_xmom
+    cdef double *s_ymom = gpu_dom.GD.inlet_ops.ops[op_id].scratch_ymom
+
+    u_arr = np.empty(n, dtype=np.float64)
+    v_arr = np.empty(n, dtype=np.float64)
+    cdef double[::1] u_view = u_arr
+    cdef double[::1] v_view = v_arr
+    cdef int k
+    for k in range(n):
+        u_view[k] = s_xmom[k]
+        v_view[k] = s_ymom[k]
+
+    return u_arr, v_arr
+
+
+def inlet_apply_gpu(GPUDomain gpu_dom, int op_id, double volume,
+                    double current_volume, double total_area,
+                    object vel_u_arr, object vel_v_arr,
+                    int has_velocity, double ext_vel_u, double ext_vel_v,
+                    int zero_velocity):
+    """
+    Apply inlet operator on GPU - main entry point.
+
+    Handles all 3 cases (positive volume, negative sustainable, drain).
+    Returns actual applied volume.
+    """
+    cdef np.ndarray[double, ndim=1, mode="c"] u_np
+    cdef np.ndarray[double, ndim=1, mode="c"] v_np
+    cdef double *u_ptr = NULL
+    cdef double *v_ptr = NULL
+    cdef int n_vel = 0
+
+    if vel_u_arr is not None and vel_v_arr is not None:
+        u_np = np.ascontiguousarray(vel_u_arr, dtype=np.float64)
+        v_np = np.ascontiguousarray(vel_v_arr, dtype=np.float64)
+        u_ptr = &u_np[0]
+        v_ptr = &v_np[0]
+        n_vel = len(u_np)
+
+    return gpu_inlet_apply(&gpu_dom.GD, op_id, volume,
+                           current_volume, total_area,
+                           u_ptr, v_ptr, n_vel,
+                           has_velocity, ext_vel_u, ext_vel_v,
+                           zero_velocity)
 
 
 # ============================================================================
