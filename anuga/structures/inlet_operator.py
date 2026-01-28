@@ -78,7 +78,7 @@ class Inlet_operator(anuga.Operator):
         """Initialize GPU inlet operator (lazy, called on first __call__ in GPU mode)."""
         try:
             from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
-            gpu_dom = self.domain.gpu_domain
+            gpu_dom = self.domain.gpu_interface.gpu_dom
 
             tri_indices = numpy.ascontiguousarray(
                 self.inlet.triangle_indices, dtype=numpy.intc)
@@ -98,7 +98,7 @@ class Inlet_operator(anuga.Operator):
         """GPU path for __call__ - transfers only inlet data (~6KB)."""
         from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
 
-        gpu_dom = self.domain.gpu_domain
+        gpu_dom = self.domain.gpu_interface.gpu_dom
         op_id = self._gpu_op_id
         timestep = self.domain.get_timestep()
         t = self.domain.get_time()

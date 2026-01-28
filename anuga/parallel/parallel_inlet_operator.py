@@ -106,7 +106,7 @@ class Parallel_Inlet_operator(Inlet_operator):
         try:
             from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
             import numpy as np
-            gpu_dom = self.domain.gpu_domain
+            gpu_dom = self.domain.gpu_interface.gpu_dom
 
             tri_indices = np.ascontiguousarray(
                 self.inlet.triangle_indices, dtype=np.intc)
@@ -128,14 +128,18 @@ class Parallel_Inlet_operator(Inlet_operator):
         from anuga.utilities import parallel_abstraction as pypar
         from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
         import numpy as np
+        import sys
 
-        gpu_dom = self.domain.gpu_domain
+        gpu_dom = self.domain.gpu_interface.gpu_dom
         op_id = self._gpu_op_id
         volume = 0
+
+        print(f"[Rank {self.myid}] _call_gpu: entering, op_id={op_id}, procs={self.procs}, master={self.master_proc}", flush=True, file=sys.stderr)
 
         # Each proc gets local volume from GPU (small reduction)
         local_volume = gpu_ext.inlet_get_volume_gpu(gpu_dom, op_id)
         local_area = self.inlet.area
+        print(f"[Rank {self.myid}] _call_gpu: local_volume={local_volume}, local_area={local_area}", flush=True, file=sys.stderr)
 
         # MPI gather volumes/areas to master (scalars, not full domain)
         current_volume = local_volume
@@ -145,10 +149,12 @@ class Parallel_Inlet_operator(Inlet_operator):
             for i in self.procs:
                 if i == self.master_proc:
                     continue
+                print(f"[Rank {self.myid}] _call_gpu: waiting to receive from {i}", flush=True, file=sys.stderr)
                 val = pypar.receive(i)
                 current_volume += val[0]
                 total_area += val[1]
         else:
+            print(f"[Rank {self.myid}] _call_gpu: sending to master {self.master_proc}", flush=True, file=sys.stderr)
             pypar.send(numpy.array([local_volume, local_area]), self.master_proc)
 
         # Master computes Q, broadcasts
@@ -173,9 +179,11 @@ class Parallel_Inlet_operator(Inlet_operator):
             timestep = float(timestep)
 
         self.applied_Q = volume / timestep
+        print(f"[Rank {self.myid}] _call_gpu: after broadcast, volume={volume}, current_volume={current_volume}", flush=True, file=sys.stderr)
 
         # Get velocities from GPU (small D2H)
         vel_u, vel_v = gpu_ext.inlet_get_velocities_gpu(gpu_dom, op_id)
+        print(f"[Rank {self.myid}] _call_gpu: got velocities u={vel_u}, v={vel_v}", flush=True, file=sys.stderr)
 
         has_velocity = 1 if self.velocity is not None else 0
         ext_vel_u = self.velocity[0] if has_velocity else 0.0
@@ -185,9 +193,11 @@ class Parallel_Inlet_operator(Inlet_operator):
         # For set_stages_evenly in parallel, we need MPI coordination
         # The parallel version gathers stages across procs for merge-sort
         if volume >= 0.0:
+            print(f"[Rank {self.myid}] _call_gpu: calling set_stages_evenly({volume})", flush=True, file=sys.stderr)
             # Parallel set_stages_evenly: small D2H of local inlet stages,
             # MPI gather to master, master runs merge-sort, broadcasts new_stage
             self.inlet.set_stages_evenly(volume)
+            print(f"[Rank {self.myid}] _call_gpu: set_stages_evenly done", flush=True, file=sys.stderr)
 
             # Now set momentum on GPU using small transfers
             depths = self.inlet.get_depths()
@@ -249,7 +259,8 @@ class Parallel_Inlet_operator(Inlet_operator):
     def __call__(self):
 
         # GPU path: use small-buffer MPI instead of full domain sync
-        if getattr(self.domain, 'multiprocessor_mode', 0) == 2:
+        # Only use GPU path for ranks that own part of this inlet
+        if getattr(self.domain, 'multiprocessor_mode', 0) == 2 and self.myid in self.procs:
             if not self._gpu_initialized:
                 self._init_gpu()
             if self._gpu_initialized:
