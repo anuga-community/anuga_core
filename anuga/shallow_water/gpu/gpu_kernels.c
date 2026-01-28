@@ -791,7 +791,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     static double t_boundary = 0, t_compute_fluxes = 0, t_forcing = 0;
     static double t_timestep_comm = 0, t_update_cq = 0, t_exchange = 0, t_saxpy = 0;
     static int rk2_step_count = 0;
-    static int timing_interval = 10000;
+    static int timing_interval = 50000;
     static double t_wall_start = 0;
     if (rk2_step_count == 0) t_wall_start = MPI_Wtime();
     double t0;
@@ -968,6 +968,8 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
             entries[j+1].name = nm;
         }
         double wall_now = MPI_Wtime();
+        bool super_print = false;
+        if(super_print){
         printf("[Rank %d] C RK2 timing after %d steps (total %.1fs, wall %.1fs, avg %.3fms/step):\n",
                GD->rank, rk2_step_count, total, wall_now - t_wall_start,
                1000.0 * total / rk2_step_count);
@@ -976,6 +978,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
                    entries[i].name, entries[i].val, 100.0*entries[i].val/total);
         }
         fflush(stdout);
+        }
     }
 
     return timestep;
