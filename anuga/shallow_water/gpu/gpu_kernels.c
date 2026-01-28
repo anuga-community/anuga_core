@@ -786,90 +786,164 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
 
     double local_timestep, global_timestep, timestep;
 
+    // Timing accumulators (static - persist across calls)
+    static double t_backup = 0, t_protect = 0, t_extrapolate = 0;
+    static double t_boundary = 0, t_compute_fluxes = 0, t_forcing = 0;
+    static double t_timestep_comm = 0, t_update_cq = 0, t_exchange = 0, t_saxpy = 0;
+    static int rk2_step_count = 0;
+    static int timing_interval = 10000;
+    double t0;
+
     // ========================================
     // Backup conserved quantities for RK2
     // ========================================
+    t0 = MPI_Wtime();
     gpu_backup_conserved_quantities(GD);
+    t_backup += MPI_Wtime() - t0;
 
     // ========================================
     // First Euler step
     // ========================================
 
     // Protect against negative depths
+    t0 = MPI_Wtime();
     gpu_protect(GD);
+    t_protect += MPI_Wtime() - t0;
 
     // Extrapolate to vertices and edges
+    t0 = MPI_Wtime();
     gpu_extrapolate_second_order(GD);
+    t_extrapolate += MPI_Wtime() - t0;
 
     // Evaluate all GPU-supported boundary conditions
-    // (Time-dependent values must be set by Python before this call)
+    t0 = MPI_Wtime();
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
     gpu_evaluate_transmissive_boundary(GD);
     gpu_evaluate_transmissive_n_zero_t_boundary(GD);
     gpu_evaluate_time_boundary(GD);
+    t_boundary += MPI_Wtime() - t0;
 
     // Compute fluxes - returns local minimum timestep
+    t0 = MPI_Wtime();
     local_timestep = gpu_compute_fluxes(GD);
+    t_compute_fluxes += MPI_Wtime() - t0;
 
-    // MPI reduce to get global minimum timestep
-    if (GD->nprocs > 1) {
-        MPI_Allreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE, MPI_MIN, GD->comm);
+    static int fixed_ts_printed = 0;
+    t0 = MPI_Wtime();
+    if (GD->fixed_flux_timestep > 0.0) {
+        // Fixed timestep - skip MPI allreduce entirely
+        if (GD->rank == 0 && !fixed_ts_printed) {
+            printf("Using a fixed timestep! (dt = %e)\n", GD->fixed_flux_timestep);
+            fflush(stdout);
+            fixed_ts_printed = 1;
+        }
+        timestep = GD->fixed_flux_timestep;
+        if (timestep > max_timestep) {
+            timestep = max_timestep;
+        }
     } else {
-        global_timestep = local_timestep;
-    }
+        // MPI reduce to get global minimum timestep
+        if (GD->nprocs > 1) {
+            MPI_Allreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE, MPI_MIN, GD->comm);
+        } else {
+            global_timestep = local_timestep;
+        }
 
-    // Apply CFL condition and respect max_timestep from Python
-    timestep = GD->CFL * global_timestep;
-    if (timestep > max_timestep) {
-        timestep = max_timestep;
+        // Apply CFL condition and respect max_timestep from Python
+        timestep = GD->CFL * global_timestep;
+        if (timestep > max_timestep) {
+            timestep = max_timestep;
+        }
     }
+    t_timestep_comm += MPI_Wtime() - t0;
 
     // Apply forcing terms (Manning friction on GPU)
+    t0 = MPI_Wtime();
     if (apply_forcing) {
         gpu_manning_friction(GD);
     }
+    t_forcing += MPI_Wtime() - t0;
 
     // Update conserved quantities with computed timestep
+    t0 = MPI_Wtime();
     gpu_update_conserved_quantities(GD, timestep);
+    t_update_cq += MPI_Wtime() - t0;
 
     // Ghost exchange (MPI) - sync ghost cells between processes
+    t0 = MPI_Wtime();
     if (GD->nprocs > 1) {
         gpu_exchange_ghosts(GD);
     }
+    t_exchange += MPI_Wtime() - t0;
 
     // ========================================
     // Second Euler step
     // ========================================
 
     // Protect against negative depths
+    t0 = MPI_Wtime();
     gpu_protect(GD);
+    t_protect += MPI_Wtime() - t0;
 
     // Extrapolate to vertices and edges
+    t0 = MPI_Wtime();
     gpu_extrapolate_second_order(GD);
+    t_extrapolate += MPI_Wtime() - t0;
 
     // Evaluate boundary conditions (same as first step)
+    t0 = MPI_Wtime();
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
     gpu_evaluate_transmissive_boundary(GD);
     gpu_evaluate_transmissive_n_zero_t_boundary(GD);
     gpu_evaluate_time_boundary(GD);
+    t_boundary += MPI_Wtime() - t0;
 
     // Compute fluxes (ignore timestep from second step - use first step's timestep)
+    t0 = MPI_Wtime();
     gpu_compute_fluxes(GD);
+    t_compute_fluxes += MPI_Wtime() - t0;
 
     // Apply forcing terms (Manning friction on GPU)
+    t0 = MPI_Wtime();
     if (apply_forcing) {
         gpu_manning_friction(GD);
     }
+    t_forcing += MPI_Wtime() - t0;
 
     // Update conserved quantities (same timestep as first step)
+    t0 = MPI_Wtime();
     gpu_update_conserved_quantities(GD, timestep);
+    t_update_cq += MPI_Wtime() - t0;
 
     // ========================================
     // RK2 averaging: Q_final = 0.5 * Q_backup + 0.5 * Q_current
     // ========================================
+    t0 = MPI_Wtime();
     gpu_saxpy_conserved_quantities(GD, 0.5, 0.5);
+    t_saxpy += MPI_Wtime() - t0;
+
+    // Print timing summary periodically
+    rk2_step_count++;
+    if (rk2_step_count % timing_interval == 0) {
+        double total = t_backup + t_protect + t_extrapolate + t_boundary +
+                       t_compute_fluxes + t_timestep_comm + t_forcing +
+                       t_update_cq + t_exchange + t_saxpy;
+        printf("[Rank %d] C RK2 timing after %d steps (total %.1fs):\n",
+               GD->rank, rk2_step_count, total);
+        printf("  exchange_ghosts   %8.1fs  (%5.1f%%)\n", t_exchange, 100.0*t_exchange/total);
+        printf("  timestep_comm     %8.1fs  (%5.1f%%)\n", t_timestep_comm, 100.0*t_timestep_comm/total);
+        printf("  compute_fluxes    %8.1fs  (%5.1f%%)\n", t_compute_fluxes, 100.0*t_compute_fluxes/total);
+        printf("  extrapolate       %8.1fs  (%5.1f%%)\n", t_extrapolate, 100.0*t_extrapolate/total);
+        printf("  boundary          %8.1fs  (%5.1f%%)\n", t_boundary, 100.0*t_boundary/total);
+        printf("  update_cq         %8.1fs  (%5.1f%%)\n", t_update_cq, 100.0*t_update_cq/total);
+        printf("  forcing           %8.1fs  (%5.1f%%)\n", t_forcing, 100.0*t_forcing/total);
+        printf("  protect           %8.1fs  (%5.1f%%)\n", t_protect, 100.0*t_protect/total);
+        printf("  saxpy             %8.1fs  (%5.1f%%)\n", t_saxpy, 100.0*t_saxpy/total);
+        printf("  backup            %8.1fs  (%5.1f%%)\n", t_backup, 100.0*t_backup/total);
+        fflush(stdout);
+    }
 
     return timestep;
 }

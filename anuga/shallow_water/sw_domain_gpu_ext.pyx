@@ -111,6 +111,7 @@ cdef extern from "gpu_domain.h" nogil:
         halo_exchange halo
         double CFL
         double evolve_max_timestep
+        double fixed_flux_timestep
 
     # Function declarations - initialization and cleanup
     int gpu_domain_init(gpu_domain *GD, MPI_Comm comm, int rank, int nprocs)
@@ -341,6 +342,8 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     # Copy CFL and evolve_max_timestep to GPU domain struct (used by C RK2 loop)
     GD.CFL = domain_object.CFL
     GD.evolve_max_timestep = domain_object.evolve_max_timestep
+    fft = getattr(domain_object, 'fixed_flux_timestep', None)
+    GD.fixed_flux_timestep = fft if fft is not None else -1.0
     D.low_froude = domain_object.low_froude
     D.extrapolate_velocity_second_order = domain_object.extrapolate_velocity_second_order
 

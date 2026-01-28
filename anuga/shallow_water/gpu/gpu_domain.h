@@ -213,6 +213,7 @@ struct gpu_domain {
     // Simulation parameters for GPU kernels
     double CFL;
     double evolve_max_timestep;
+    double fixed_flux_timestep;  // <= 0 means disabled (use CFL-based timestep)
 
     // RK2 backup arrays (allocated on GPU)
     // These may already exist in base domain, but we track GPU copies here

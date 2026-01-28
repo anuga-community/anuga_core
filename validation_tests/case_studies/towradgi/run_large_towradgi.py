@@ -972,6 +972,7 @@ Creating domain from scratch.
 
 
 
+domain.fixed_flux_timestep = 0.05
 domain.set_multiprocessor_mode(multiprocessor_mode )
 domain.use_c_rk2_loop = True
 
