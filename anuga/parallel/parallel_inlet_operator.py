@@ -128,18 +128,14 @@ class Parallel_Inlet_operator(Inlet_operator):
         from anuga.utilities import parallel_abstraction as pypar
         from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
         import numpy as np
-        import sys
 
         gpu_dom = self.domain.gpu_interface.gpu_dom
         op_id = self._gpu_op_id
         volume = 0
 
-        print(f"[Rank {self.myid}] _call_gpu: entering, op_id={op_id}, procs={self.procs}, master={self.master_proc}", flush=True, file=sys.stderr)
-
         # Each proc gets local volume from GPU (small reduction)
         local_volume = gpu_ext.inlet_get_volume_gpu(gpu_dom, op_id)
         local_area = self.inlet.area
-        print(f"[Rank {self.myid}] _call_gpu: local_volume={local_volume}, local_area={local_area}", flush=True, file=sys.stderr)
 
         # MPI gather volumes/areas to master (scalars, not full domain)
         current_volume = local_volume
@@ -149,12 +145,10 @@ class Parallel_Inlet_operator(Inlet_operator):
             for i in self.procs:
                 if i == self.master_proc:
                     continue
-                print(f"[Rank {self.myid}] _call_gpu: waiting to receive from {i}", flush=True, file=sys.stderr)
                 val = pypar.receive(i)
                 current_volume += val[0]
                 total_area += val[1]
         else:
-            print(f"[Rank {self.myid}] _call_gpu: sending to master {self.master_proc}", flush=True, file=sys.stderr)
             pypar.send(numpy.array([local_volume, local_area]), self.master_proc)
 
         # Master computes Q, broadcasts
@@ -179,80 +173,83 @@ class Parallel_Inlet_operator(Inlet_operator):
             timestep = float(timestep)
 
         self.applied_Q = volume / timestep
-        print(f"[Rank {self.myid}] _call_gpu: after broadcast, volume={volume}, current_volume={current_volume}", flush=True, file=sys.stderr)
 
         # Get velocities from GPU (small D2H)
         vel_u, vel_v = gpu_ext.inlet_get_velocities_gpu(gpu_dom, op_id)
-        print(f"[Rank {self.myid}] _call_gpu: got velocities u={vel_u}, v={vel_v}", flush=True, file=sys.stderr)
 
         has_velocity = 1 if self.velocity is not None else 0
         ext_vel_u = self.velocity[0] if has_velocity else 0.0
         ext_vel_v = self.velocity[1] if has_velocity else 0.0
         zero_vel = 1 if self.zero_velocity else 0
 
-        # For set_stages_evenly in parallel, we need MPI coordination
-        # The parallel version gathers stages across procs for merge-sort
-        if volume >= 0.0:
-            print(f"[Rank {self.myid}] _call_gpu: calling set_stages_evenly({volume})", flush=True, file=sys.stderr)
-            # Parallel set_stages_evenly: small D2H of local inlet stages,
-            # MPI gather to master, master runs merge-sort, broadcasts new_stage
-            self.inlet.set_stages_evenly(volume)
-            print(f"[Rank {self.myid}] _call_gpu: set_stages_evenly done", flush=True, file=sys.stderr)
+        if len(self.procs) == 1:
+            # Single-rank inlet: use gpu_inlet_apply directly (handles
+            # set_stages_evenly + momentum entirely on GPU)
+            actual_volume = gpu_ext.inlet_apply_gpu(
+                gpu_dom, op_id, volume, current_volume, total_area,
+                vel_u, vel_v, has_velocity, ext_vel_u, ext_vel_v, zero_vel)
 
-            # Now set momentum on GPU using small transfers
-            depths = self.inlet.get_depths()
-            if zero_vel:
-                gpu_ext.inlet_apply_gpu(
-                    gpu_dom, op_id, 0.0, 0.0, total_area,
-                    None, None, 0, 0.0, 0.0, 1)
-                # Just zero momentum
-                from anuga.shallow_water import sw_domain_gpu_ext
-                # Actually for the parallel case, set_stages_evenly already
-                # wrote to CPU arrays. We need to push those to GPU.
-                # For now, fall through to CPU path for parallel case.
-                pass
-
-            self.domain.fractional_step_volume_integral += volume
-            self.total_requested_volume += volume
-
-            if has_velocity:
-                self.inlet.set_xmoms(depths * ext_vel_u)
-                self.inlet.set_ymoms(depths * ext_vel_v)
+            if volume >= 0.0:
+                self.domain.fractional_step_volume_integral += volume
+                self.total_requested_volume += volume
+            elif current_volume + volume >= 0.0:
+                self.domain.fractional_step_volume_integral += volume
+                self.total_requested_volume += volume
             else:
-                self.inlet.set_xmoms(depths * vel_u)
-                self.inlet.set_ymoms(depths * vel_v)
-
-            if zero_vel:
-                self.inlet.set_xmoms(0.0)
-                self.inlet.set_ymoms(0.0)
-
-        elif current_volume + volume >= 0.0:
-            depth = (current_volume + volume) / total_area
-            self.inlet.set_depths(depth)
-            self.domain.fractional_step_volume_integral += volume
-            self.total_requested_volume += volume
-
-            if has_velocity:
-                depths = self.inlet.get_depths()
-                self.inlet.set_xmoms(depths * ext_vel_u)
-                self.inlet.set_ymoms(depths * ext_vel_v)
-            else:
-                depths = self.inlet.get_depths()
-                self.inlet.set_xmoms(depths * vel_u)
-                self.inlet.set_ymoms(depths * vel_v)
-
-            if zero_vel:
-                self.inlet.set_xmoms(0.0)
-                self.inlet.set_ymoms(0.0)
+                self.total_requested_volume += volume
+                volume = -current_volume
+                self.applied_Q = -current_volume / timestep
+                self.domain.fractional_step_volume_integral -= current_volume
 
         else:
-            self.inlet.set_depths(0.0)
-            self.total_requested_volume += volume
-            volume = -current_volume
-            self.applied_Q = -current_volume / timestep
-            self.domain.fractional_step_volume_integral -= current_volume
-            self.inlet.set_xmoms(0.0)
-            self.inlet.set_ymoms(0.0)
+            # Multi-rank inlet: need MPI merge-sort for set_stages_evenly
+            # Sync inlet triangles from GPU to CPU, run CPU path, sync back
+            # TODO: optimise with small-buffer MPI from GPU scratch buffers
+            self.domain.gpu_interface.sync_from_device()
+
+            if volume >= 0.0:
+                self.inlet.set_stages_evenly(volume)
+                self.domain.fractional_step_volume_integral += volume
+                self.total_requested_volume += volume
+
+                depths = self.inlet.get_depths()
+                if zero_vel:
+                    self.inlet.set_xmoms(0.0)
+                    self.inlet.set_ymoms(0.0)
+                elif has_velocity:
+                    self.inlet.set_xmoms(depths * ext_vel_u)
+                    self.inlet.set_ymoms(depths * ext_vel_v)
+                else:
+                    self.inlet.set_xmoms(depths * vel_u)
+                    self.inlet.set_ymoms(depths * vel_v)
+
+            elif current_volume + volume >= 0.0:
+                depth = (current_volume + volume) / total_area
+                self.inlet.set_depths(depth)
+                self.domain.fractional_step_volume_integral += volume
+                self.total_requested_volume += volume
+
+                depths = self.inlet.get_depths()
+                if zero_vel:
+                    self.inlet.set_xmoms(0.0)
+                    self.inlet.set_ymoms(0.0)
+                elif has_velocity:
+                    self.inlet.set_xmoms(depths * ext_vel_u)
+                    self.inlet.set_ymoms(depths * ext_vel_v)
+                else:
+                    self.inlet.set_xmoms(depths * vel_u)
+                    self.inlet.set_ymoms(depths * vel_v)
+
+            else:
+                self.inlet.set_depths(0.0)
+                self.total_requested_volume += volume
+                volume = -current_volume
+                self.applied_Q = -current_volume / timestep
+                self.domain.fractional_step_volume_integral -= current_volume
+                self.inlet.set_xmoms(0.0)
+                self.inlet.set_ymoms(0.0)
+
+            self.domain.gpu_interface.sync_to_device()
 
         self.total_applied_volume += volume
 
