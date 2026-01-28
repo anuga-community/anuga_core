@@ -215,8 +215,27 @@ void gpu_inlet_get_velocities(struct gpu_domain *GD, int op_id,
 
     omp_set_default_device(GD->device_id);
 
-    // Small D2H: gather depths, xmom, ymom for inlet triangles
+    // Debug: verify all pointers are mapped
     int n = op->num_indices;
+    int present_idx = omp_target_is_present(op->indices, GD->device_id);
+    int present_sc = omp_target_is_present(GD->D.stage_centroid_values, GD->device_id);
+    int present_bc = omp_target_is_present(GD->D.bed_centroid_values, GD->device_id);
+    int present_xc = omp_target_is_present(GD->D.xmom_centroid_values, GD->device_id);
+    int present_yc = omp_target_is_present(GD->D.ymom_centroid_values, GD->device_id);
+    int present_sd = omp_target_is_present(op->scratch_depths, GD->device_id);
+    int present_sx = omp_target_is_present(op->scratch_xmom, GD->device_id);
+    int present_sy = omp_target_is_present(op->scratch_ymom, GD->device_id);
+    if (!present_idx || !present_sc || !present_bc || !present_xc || !present_yc ||
+        !present_sd || !present_sx || !present_sy) {
+        fprintf(stderr, "[Rank %d] gpu_inlet_get_velocities op=%d: MISSING mapping! "
+                "idx=%d sc=%d bc=%d xc=%d yc=%d sd=%d sx=%d sy=%d\n",
+                GD->rank, op_id, present_idx, present_sc, present_bc,
+                present_xc, present_yc, present_sd, present_sx, present_sy);
+        fflush(stderr);
+        return;
+    }
+
+    // Small D2H: gather depths, xmom, ymom for inlet triangles
     int * restrict indices = op->indices;
     double * restrict stage_c = GD->D.stage_centroid_values;
     double * restrict bed_c = GD->D.bed_centroid_values;
@@ -226,6 +245,17 @@ void gpu_inlet_get_velocities(struct gpu_domain *GD, int op_id,
     double *s_depths = op->scratch_depths;
     double *s_xmom = op->scratch_xmom;
     double *s_ymom = op->scratch_ymom;
+
+    // Debug: test if device is healthy with a trivial kernel
+    double test_val = 0.0;
+    #pragma omp target map(tofrom: test_val)
+    { test_val = 1.0; }
+    if (test_val != 1.0) {
+        fprintf(stderr, "[Rank %d] gpu_inlet_get_velocities: DEVICE BROKEN before main kernel! test_val=%f\n",
+                GD->rank, test_val);
+        fflush(stderr);
+        return;
+    }
 
     // GPU gather: read from domain arrays into scratch buffers on device
     #pragma omp target teams distribute parallel for

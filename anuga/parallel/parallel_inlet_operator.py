@@ -185,14 +185,11 @@ class Parallel_Inlet_operator(Inlet_operator):
         ext_vel_v = self.velocity[1] if has_velocity else 0.0
         zero_vel = 1 if self.zero_velocity else 0
 
-        if len(self.procs) == 1:
-            # Single-rank inlet: use gpu_inlet_apply directly (handles
-            # set_stages_evenly + momentum entirely on GPU)
-            print(f"[Rank {self.myid}] _call_gpu: calling inlet_apply_gpu vol={volume} cv={current_volume} area={total_area}", flush=True, file=sys.stderr)
+        if False and len(self.procs) == 1:
+            # DISABLED FOR DEBUGGING - use sync fallback instead
             actual_volume = gpu_ext.inlet_apply_gpu(
                 gpu_dom, op_id, volume, current_volume, total_area,
                 vel_u, vel_v, has_velocity, ext_vel_u, ext_vel_v, zero_vel)
-            print(f"[Rank {self.myid}] _call_gpu: inlet_apply_gpu returned {actual_volume}", flush=True, file=sys.stderr)
 
             if volume >= 0.0:
                 self.domain.fractional_step_volume_integral += volume
