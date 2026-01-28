@@ -151,8 +151,11 @@ class Parallel_domain(Domain):
         #generic_comms.communicate_ghosts_blocking(self)
 
     def apply_fractional_steps(self):
+        import sys
+        print(f"[Rank {self.processor}] apply_fractional_steps ENTER", flush=True, file=sys.stderr)
         # Call parent implementation which handles GPU sync logic
         super().apply_fractional_steps()
+        print(f"[Rank {self.processor}] apply_fractional_steps EXIT", flush=True, file=sys.stderr)
 
         # PETE: Make sure that there are no deadlocks here
 

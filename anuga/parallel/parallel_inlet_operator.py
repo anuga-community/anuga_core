@@ -128,10 +128,13 @@ class Parallel_Inlet_operator(Inlet_operator):
         from anuga.utilities import parallel_abstraction as pypar
         from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
         import numpy as np
+        import sys
 
         gpu_dom = self.domain.gpu_interface.gpu_dom
         op_id = self._gpu_op_id
         volume = 0
+
+        print(f"[Rank {self.myid}] _call_gpu ENTER op_id={op_id} procs={self.procs}", flush=True, file=sys.stderr)
 
         # Each proc gets local volume from GPU (small reduction)
         local_volume = gpu_ext.inlet_get_volume_gpu(gpu_dom, op_id)
@@ -185,9 +188,11 @@ class Parallel_Inlet_operator(Inlet_operator):
         if len(self.procs) == 1:
             # Single-rank inlet: use gpu_inlet_apply directly (handles
             # set_stages_evenly + momentum entirely on GPU)
+            print(f"[Rank {self.myid}] _call_gpu: calling inlet_apply_gpu vol={volume} cv={current_volume} area={total_area}", flush=True, file=sys.stderr)
             actual_volume = gpu_ext.inlet_apply_gpu(
                 gpu_dom, op_id, volume, current_volume, total_area,
                 vel_u, vel_v, has_velocity, ext_vel_u, ext_vel_v, zero_vel)
+            print(f"[Rank {self.myid}] _call_gpu: inlet_apply_gpu returned {actual_volume}", flush=True, file=sys.stderr)
 
             if volume >= 0.0:
                 self.domain.fractional_step_volume_integral += volume
@@ -252,6 +257,7 @@ class Parallel_Inlet_operator(Inlet_operator):
             self.domain.gpu_interface.sync_to_device()
 
         self.total_applied_volume += volume
+        print(f"[Rank {self.myid}] _call_gpu EXIT op_id={op_id}", flush=True, file=sys.stderr)
 
     def __call__(self):
 
