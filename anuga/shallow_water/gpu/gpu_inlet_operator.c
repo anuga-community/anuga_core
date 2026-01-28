@@ -99,10 +99,24 @@ int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices,
 
     IO->num_operators++;
 
-    if (GD->rank == 0) {
-        printf("Inlet_operator %d initialized: %d indices (GPU mapped: %d)\n",
-               op_id, num_indices, op->mapped);
+    // Bounds check indices against domain size
+    int64_t n_elements = GD->D.number_of_elements;
+    int bad = 0;
+    for (int k = 0; k < num_indices; k++) {
+        if (op->indices[k] < 0 || op->indices[k] >= n_elements) {
+            fprintf(stderr, "[Rank %d] ERROR: inlet_operator %d index[%d]=%d out of range [0,%ld)\n",
+                    GD->rank, op_id, k, op->indices[k], (long)n_elements);
+            bad = 1;
+        }
     }
+    if (bad) {
+        fprintf(stderr, "[Rank %d] ERROR: inlet_operator %d has out-of-range indices!\n",
+                GD->rank, op_id);
+    }
+
+    printf("[Rank %d] Inlet_operator %d initialized: %d indices (GPU mapped: %d)\n",
+           GD->rank, op_id, num_indices, op->mapped);
+    fflush(stdout);
 
     return op_id;
 }
