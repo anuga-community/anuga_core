@@ -98,6 +98,16 @@ int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices,
         #pragma omp target enter data map(to: idx[0:ni], ar[0:ni]) \
             map(alloc: ss[0:ni], sb[0:ni], sx[0:ni], sy[0:ni], sd[0:ni])
         op->mapped = 1;
+
+        // Verify mapping succeeded
+        int chk_idx = omp_target_is_present(idx, GD->device_id);
+        int chk_ar = omp_target_is_present(ar, GD->device_id);
+        if (!chk_idx || !chk_ar) {
+            fprintf(stderr, "[Rank %d] ERROR: Inlet_operator %d mapping FAILED after enter data! "
+                    "indices_present=%d areas_present=%d idx=%p ar=%p ni=%d\n",
+                    GD->rank, op_id, chk_idx, chk_ar, (void*)idx, (void*)ar, ni);
+            fflush(stderr);
+        }
     }
 
     IO->num_operators++;
@@ -117,8 +127,13 @@ int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices,
                 GD->rank, op_id);
     }
 
-    printf("[Rank %d] Inlet_operator %d initialized: %d indices (GPU mapped: %d)\n",
-           GD->rank, op_id, num_indices, op->mapped);
+    printf("[Rank %d] Inlet_operator %d initialized: %d indices (GPU mapped: %d) "
+           "indices=%p areas=%p scratch_s=%p scratch_b=%p scratch_x=%p scratch_y=%p scratch_d=%p\n",
+           GD->rank, op_id, num_indices, op->mapped,
+           (void*)op->indices, (void*)op->areas,
+           (void*)op->scratch_stages, (void*)op->scratch_bed,
+           (void*)op->scratch_xmom, (void*)op->scratch_ymom,
+           (void*)op->scratch_depths);
     fflush(stdout);
 
     return op_id;
