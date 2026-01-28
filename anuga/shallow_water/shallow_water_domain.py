@@ -3057,7 +3057,7 @@ class Domain(Generic_Domain):
         if self._gpu_timing_steps % self._gpu_timing_interval == 0:
             rank = getattr(self, 'processor', 0)
             total = sum(self._gpu_timings.values())
-            print(f"[Rank {rank}] GPU RK2 timing after {self._gpu_timing_steps} steps (total {total:.1f}s):")
+            #print(f"[Rank {rank}] GPU RK2 timing after {self._gpu_timing_steps} steps (total {total:.1f}s):")
             for name, t in sorted(self._gpu_timings.items(), key=lambda x: -x[1]):
                 pct = 100.0 * t / total if total > 0 else 0
                 print(f"  {name:20s} {t:8.1f}s  ({pct:5.1f}%)")
@@ -3147,9 +3147,9 @@ class Domain(Generic_Domain):
         # apply_forcing=1 enables Manning friction on GPU
         import sys
         rank = getattr(self, 'processor', 0)
-        print(f"[Rank {rank}] C_RK2 ENTER max_ts={max_timestep:.6f}", flush=True, file=sys.stderr)
+        #print(f"[Rank {rank}] C_RK2 ENTER max_ts={max_timestep:.6f}", flush=True, file=sys.stderr)
         self.timestep = evolve_one_rk2_step_gpu(gpu_dom, max_timestep, 1)
-        print(f"[Rank {rank}] C_RK2 EXIT ts={self.timestep:.6e}", flush=True, file=sys.stderr)
+        #print(f"[Rank {rank}] C_RK2 EXIT ts={self.timestep:.6e}", flush=True, file=sys.stderr)
 
         # Update internal time tracking
         self.set_relative_time(self.get_relative_time() + self.timestep)

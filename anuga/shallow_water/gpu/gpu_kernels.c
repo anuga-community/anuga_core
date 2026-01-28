@@ -802,7 +802,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     t0 = MPI_Wtime();
     gpu_backup_conserved_quantities(GD);
     t_backup += MPI_Wtime() - t0;
-    if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: backup done\n", GD->rank, rk2_step_count); fflush(stderr); }
+    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: backup done\n", GD->rank, rk2_step_count); fflush(stderr); }
 
     // ========================================
     // First Euler step
@@ -812,13 +812,13 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     t0 = MPI_Wtime();
     gpu_protect(GD);
     t_protect += MPI_Wtime() - t0;
-    if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: protect done\n", GD->rank, rk2_step_count); fflush(stderr); }
+    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: protect done\n", GD->rank, rk2_step_count); fflush(stderr); }
 
     // Extrapolate to vertices and edges
     t0 = MPI_Wtime();
     gpu_extrapolate_second_order(GD);
     t_extrapolate += MPI_Wtime() - t0;
-    if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: extrapolate done\n", GD->rank, rk2_step_count); fflush(stderr); }
+    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: extrapolate done\n", GD->rank, rk2_step_count); fflush(stderr); }
 
     // Evaluate all GPU-supported boundary conditions
     t0 = MPI_Wtime();
@@ -828,13 +828,13 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_transmissive_n_zero_t_boundary(GD);
     gpu_evaluate_time_boundary(GD);
     t_boundary += MPI_Wtime() - t0;
-    if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: boundary done\n", GD->rank, rk2_step_count); fflush(stderr); }
+    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: boundary done\n", GD->rank, rk2_step_count); fflush(stderr); }
 
     // Compute fluxes - returns local minimum timestep
     t0 = MPI_Wtime();
     local_timestep = gpu_compute_fluxes(GD);
     t_compute_fluxes += MPI_Wtime() - t0;
-    if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: fluxes done, local_ts=%e\n", GD->rank, rk2_step_count, local_timestep); fflush(stderr); }
+    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: fluxes done, local_ts=%e\n", GD->rank, rk2_step_count, local_timestep); fflush(stderr); }
 
     static int fixed_ts_printed = 0;
     t0 = MPI_Wtime();
@@ -864,7 +864,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
         }
     }
     t_timestep_comm += MPI_Wtime() - t0;
-    if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: allreduce done, ts=%e\n", GD->rank, rk2_step_count, timestep); fflush(stderr); }
+    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: allreduce done, ts=%e\n", GD->rank, rk2_step_count, timestep); fflush(stderr); }
 
     // Apply forcing terms (Manning friction on GPU)
     t0 = MPI_Wtime();
@@ -884,7 +884,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
         gpu_exchange_ghosts(GD);
     }
     t_exchange += MPI_Wtime() - t0;
-    if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: euler1 complete\n", GD->rank, rk2_step_count); fflush(stderr); }
+    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: euler1 complete\n", GD->rank, rk2_step_count); fflush(stderr); }
 
     // ========================================
     // Second Euler step
@@ -933,7 +933,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_saxpy_conserved_quantities(GD, 0.5, 0.5);
     t_saxpy += MPI_Wtime() - t0;
 
-    if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: saxpy done (RK2 complete)\n", GD->rank, rk2_step_count); fflush(stderr); }
+    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: saxpy done (RK2 complete)\n", GD->rank, rk2_step_count); fflush(stderr); }
 
     // Print timing summary periodically
     rk2_step_count++;

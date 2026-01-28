@@ -134,7 +134,7 @@ class Parallel_Inlet_operator(Inlet_operator):
         op_id = self._gpu_op_id
         volume = 0
 
-        print(f"[Rank {self.myid}] _call_gpu ENTER op_id={op_id} procs={self.procs}", flush=True, file=sys.stderr)
+        #print(f"[Rank {self.myid}] _call_gpu ENTER op_id={op_id} procs={self.procs}", flush=True, file=sys.stderr)
 
         # Each proc gets local volume from GPU (small reduction)
         local_volume = gpu_ext.inlet_get_volume_gpu(gpu_dom, op_id)
@@ -185,7 +185,7 @@ class Parallel_Inlet_operator(Inlet_operator):
         ext_vel_v = self.velocity[1] if has_velocity else 0.0
         zero_vel = 1 if self.zero_velocity else 0
 
-        if False and len(self.procs) == 1:
+        if len(self.procs) == 1:
             # DISABLED FOR DEBUGGING - use sync fallback instead
             actual_volume = gpu_ext.inlet_apply_gpu(
                 gpu_dom, op_id, volume, current_volume, total_area,
@@ -254,7 +254,7 @@ class Parallel_Inlet_operator(Inlet_operator):
             self.domain.gpu_interface.sync_to_device()
 
         self.total_applied_volume += volume
-        print(f"[Rank {self.myid}] _call_gpu EXIT op_id={op_id}", flush=True, file=sys.stderr)
+        #print(f"[Rank {self.myid}] _call_gpu EXIT op_id={op_id}", flush=True, file=sys.stderr)
 
     def __call__(self):
 
