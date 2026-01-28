@@ -175,6 +175,19 @@ double gpu_inlet_get_volume(struct gpu_domain *GD, int op_id) {
     double * restrict stage_c = GD->D.stage_centroid_values;
     double * restrict bed_c = GD->D.bed_centroid_values;
 
+    // Debug: check if pointers are present on device
+    int present_idx = omp_target_is_present(indices, omp_get_default_device());
+    int present_ar = omp_target_is_present(areas, omp_get_default_device());
+    int present_sc = omp_target_is_present(stage_c, omp_get_default_device());
+    int present_bc = omp_target_is_present(bed_c, omp_get_default_device());
+    if (!present_idx || !present_ar || !present_sc || !present_bc) {
+        fprintf(stderr, "[Rank %d] gpu_inlet_get_volume op=%d: MISSING device mapping! "
+                "indices=%d areas=%d stage_c=%d bed_c=%d\n",
+                GD->rank, op_id, present_idx, present_ar, present_sc, present_bc);
+        fflush(stderr);
+        return 0.0;
+    }
+
     double volume = 0.0;
     #pragma omp target teams distribute parallel for reduction(+:volume)
     for (int k = 0; k < num; k++) {
