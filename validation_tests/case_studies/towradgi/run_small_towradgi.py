@@ -69,15 +69,15 @@ verbose = args.verbose
 # --------------------------------------------------------------------------
 
 verbose = False
-yieldstep=600. # yield evolve loop every 10 seconds
-outputstep=600. # update sww files every 60 seconds
-finaltime=1800. #83700.
+yieldstep=60. # yield evolve loop every 10 seconds
+outputstep=60. # update sww files every 60 seconds
+finaltime=180. #83700.
 
 scale = 1 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
 # Choices are 1 (openmp) 2 (cupy)
-multiprocessor_mode = 1
+multiprocessor_mode = 2
 
 checkpoint_time = max(600/scale, 60)
 checkpoint_dir = 'CHECKPOINTS'

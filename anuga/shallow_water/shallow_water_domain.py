@@ -3326,7 +3326,9 @@ class Domain(Generic_Domain):
         from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
 
         result = False
+        cpu_only_ops = []
         for op in self.fractional_step_operators:
+            op_name = op.__class__.__name__
             if isinstance(op, Rate_operator):
                 # Force GPU initialization if not already done (lazy init causes race with caching)
                 if hasattr(op, '_init_gpu') and not getattr(op, '_gpu_initialized', False):
@@ -3339,8 +3341,18 @@ class Domain(Generic_Domain):
                 # and accumulates a scalar - doesn't need full centroid sync
                 continue
             # All other operators need CPU sync
+            cpu_only_ops.append(op_name)
             result = True
-            break
+
+        rank = getattr(self, 'processor', 0)
+        if result:
+            print(f"[Rank {rank}] WARNING: CPU-only fractional operators detected (GPU<->CPU sync every RK2 step):")
+            for name in cpu_only_ops:
+                print(f"  - {name}")
+        else:
+            if rank == 0:
+                print(f"[Rank {rank}] All fractional operators are GPU-safe, no GPU<->CPU sync needed")
+        import sys; sys.stdout.flush()
 
         self._cached_has_cpu_only_ops = result
         return result
