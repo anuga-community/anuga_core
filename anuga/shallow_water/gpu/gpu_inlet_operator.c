@@ -261,17 +261,6 @@ void gpu_inlet_get_velocities(struct gpu_domain *GD, int op_id,
     double *s_xmom = op->scratch_xmom;
     double *s_ymom = op->scratch_ymom;
 
-    // Debug: test if device is healthy with a trivial kernel
-    double test_val = 0.0;
-    #pragma omp target map(tofrom: test_val)
-    { test_val = 1.0; }
-    if (test_val != 1.0) {
-        fprintf(stderr, "[Rank %d] gpu_inlet_get_velocities: DEVICE BROKEN before main kernel! test_val=%f\n",
-                GD->rank, test_val);
-        fflush(stderr);
-        return;
-    }
-
     // GPU gather: read from domain arrays into scratch buffers on device
     #pragma omp target teams distribute parallel for
     for (int k = 0; k < n; k++) {
