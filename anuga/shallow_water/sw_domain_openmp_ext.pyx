@@ -15,28 +15,31 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	struct domain:
 		# these shouldn't change within a single timestep
 		# they are set once before the evolve loop
+
 		anuga_int number_of_elements
 		anuga_int boundary_length
 		anuga_int number_of_riverwall_edges
+		anuga_int optimise_dry_cells
+		anuga_int extrapolate_velocity_second_order
+		anuga_int low_froude
+		anuga_int timestep_fluxcalls
+		anuga_int max_flux_update_frequency
+		anuga_int ncol_riverwall_hydraulic_properties
+
 		double epsilon
 		double H0
 		double g
-		anuga_int optimise_dry_cells
 		double evolve_max_timestep
 		double evolve_min_timestep
-		anuga_int extrapolate_velocity_second_order
 		double minimum_allowed_height
 		double maximum_allowed_speed
-		anuga_int low_froude
-		anuga_int timestep_fluxcalls
 		double beta_w
 		double beta_w_dry
 		double beta_uh
 		double beta_uh_dry
 		double beta_vh
 		double beta_vh_dry
-		anuga_int max_flux_update_frequency
-		anuga_int ncol_riverwall_hydraulic_properties
+
 
 		# these pointers are set once the domain is created
 		# and are used in the evolve loop
@@ -145,29 +148,34 @@ cdef anuga_int parameter_flag = 0
 
 cdef inline get_python_domain_parameters(domain *D, object domain_py_object):
 
+	riverwallData = domain_py_object.riverwallData
+
 	# these shouldn't change within a single timestep
-	# they are set once before the evolve loop
+
 	D.number_of_elements = domain_py_object.number_of_elements
-	D.boundary_length = domain_py_object.boundary_length 
+	D.boundary_length = domain_py_object.boundary_length
 	D.number_of_riverwall_edges = domain_py_object.number_of_riverwall_edges
+	D.optimise_dry_cells = domain_py_object.optimise_dry_cells
+	D.extrapolate_velocity_second_order = domain_py_object.extrapolate_velocity_second_order
+	D.low_froude = domain_py_object.low_froude
+	D.timestep_fluxcalls = domain_py_object.timestep_fluxcalls
+	D.max_flux_update_frequency = domain_py_object.max_flux_update_frequency
+
+	D.ncol_riverwall_hydraulic_properties = riverwallData.ncol_hydraulic_properties
+
 	D.epsilon = domain_py_object.epsilon
 	D.H0 = domain_py_object.H0
 	D.g = domain_py_object.g
-	D.optimise_dry_cells = domain_py_object.optimise_dry_cells
 	D.evolve_max_timestep = domain_py_object.evolve_max_timestep
 	D.evolve_min_timestep = domain_py_object.evolve_min_timestep
 	D.minimum_allowed_height = domain_py_object.minimum_allowed_height
 	D.maximum_allowed_speed = domain_py_object.maximum_allowed_speed
-	D.timestep_fluxcalls = domain_py_object.timestep_fluxcalls
-	D.low_froude = domain_py_object.low_froude
-	D.extrapolate_velocity_second_order = domain_py_object.extrapolate_velocity_second_order
 	D.beta_w = domain_py_object.beta_w
 	D.beta_w_dry = domain_py_object.beta_w_dry
 	D.beta_uh = domain_py_object.beta_uh
 	D.beta_uh_dry = domain_py_object.beta_uh_dry
 	D.beta_vh = domain_py_object.beta_vh
 	D.beta_vh_dry = domain_py_object.beta_vh_dry
-	D.max_flux_update_frequency = domain_py_object.max_flux_update_frequency
 		
 
 cdef inline get_python_domain_pointers(domain *D, object domain_py_object):

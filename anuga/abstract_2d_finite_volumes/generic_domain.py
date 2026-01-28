@@ -1267,7 +1267,7 @@ class Generic_Domain(object):
 
 
 
-        msg += f' ({int(walltime() - self.last_walltime):d}s)'
+        msg += f' ({int(walltime() - self.last_walltime):d}s),'
 
 
 
@@ -1275,9 +1275,26 @@ class Generic_Domain(object):
             # Report cpu time since evolve was called
             # (which may be different from the time since the last call to
             # this function)
-            cpu_time = anuga.seconds_to_hhmmss(int(walltime() - self.evolve_start_walltime))
-            msg += f' cpusum ({cpu_time})'
-            msg += f' {100*self.relative_time/self.relative_finaltime:.2f}%'
+            
+            try:
+                cpu_time = walltime() - self.evolve_start_walltime
+                cpu_time_hhmmss = anuga.seconds_to_hhmmss(int(cpu_time))
+                fraction = self.relative_time/self.relative_finaltime
+                bar_len = 10
+                filled = int(bar_len * fraction)
+                
+                bar = "#" * filled + "-" * (bar_len - filled)
+                #msg += f' |{bar}|'
+
+                cpu_time_ETA_hhmmss = (
+                    anuga.seconds_to_hhmmss(int(cpu_time / fraction - cpu_time))
+                    if fraction > 0 else "??"
+                )
+
+                msg += f' elapsed ({cpu_time_hhmmss}), eta ({cpu_time_ETA_hhmmss})'
+
+            except:
+                pass
             self.last_walltime = walltime()
 
         if track_speeds is True:
@@ -1927,7 +1944,6 @@ class Generic_Domain(object):
                 self.recorded_max_timestep = self.evolve_min_timestep
                 self.number_of_steps = 0
                 self.number_of_first_order_steps = 0
-                #self.max_speed[:] = num.zeros(N, float)
                 self.max_speed[:] = 0.0
 
     def evolve_one_euler_step(self, yieldstep, finaltime):

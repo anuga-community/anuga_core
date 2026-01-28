@@ -471,7 +471,7 @@ class Domain(Generic_Domain):
     def update_domain_c_struct(self):
         """Update the C domain structure from the Python Domain object.
         """
-        from anuga.shallow_water.sw_domain_openmp_ext import update_Domain_C_struct
+        from .sw_domain_openmp_ext import update_Domain_C_struct
         update_Domain_C_struct(self)
 
 
@@ -3282,7 +3282,7 @@ class Domain(Generic_Domain):
 
         # Backup conserved_quantities centroid values
         if self.multiprocessor_mode == 1:
-            from anuga.shallow_water.sw_domain_openmp_ext import backup_conserved_quantities
+            from .sw_domain_openmp_ext import backup_conserved_quantities
             backup_conserved_quantities(self)
         elif self.multiprocessor_mode == 2:
             self.gpu_interface.backup_conserved_quantities_kernel(self)
@@ -3297,7 +3297,7 @@ class Domain(Generic_Domain):
         if self.multiprocessor_mode == 1:
             if c is None:
                 c = 1.0
-            from anuga.shallow_water.sw_domain_openmp_ext import saxpy_conserved_quantities
+            from .sw_domain_openmp_ext import saxpy_conserved_quantities
             saxpy_conserved_quantities(self, a, b, c)
         elif self.multiprocessor_mode == 2:
             # GPU version doesn't support c parameter yet
@@ -3527,9 +3527,9 @@ class Domain(Generic_Domain):
                             triangle rather than the one with the largest speed.
         """
 
-        msg = self.timestepping_statistics(*args, **kwargs)
-
-        print(msg)
+        msg = self.timestepping_statistics(*args, **kwargs) 
+            
+        print(msg, flush=True)
 
 
     def compute_boundary_flows(self):
@@ -3683,7 +3683,7 @@ class Domain(Generic_Domain):
 
         if(verbose and myid==0):
             print(' ')
-            print('    Volume V is:', Vol)
+            print(f'    Volume V at time {self.get_time()}:', Vol)
             print('    Boundary Flux integral BF: ', fluxIntegral)
             print('    (rate + inlet) Fractional Step volume integral FS: ', fracIntegral)
             print('    V - BF - FS - InitialVolume :',  Vol- fluxIntegral -fracIntegral - self.volume_history[0])
@@ -3725,7 +3725,7 @@ class Domain(Generic_Domain):
                 waveSpeed = abs(v) + gravSpeed
                 localTS = self.radii / num.maximum(waveSpeed, epsilon)
                 controlling_pt_ind = localTS.argmin()
-                print('    * Smallest LocalTS is: ', localTS[controlling_pt_ind])
+                print(f'     * Smallest LocalTS at time {self.get_time()} is approximately: ', localTS[controlling_pt_ind])
                 print('     -- Location: ', round(self.centroid_coordinates[controlling_pt_ind,0]+self.geo_reference.xllcorner,2),\
                                         round(self.centroid_coordinates[controlling_pt_ind,1]+self.geo_reference.yllcorner,2))
                 print('     -+ Speed: ', v[controlling_pt_ind])
