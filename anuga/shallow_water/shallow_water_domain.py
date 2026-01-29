@@ -2829,7 +2829,11 @@ class Domain(Generic_Domain):
         self.saxpy_conserved_quantities(0.5, 0.5) # has C, not ported
 
     def _evolve_one_rk2_step_gpu(self, yieldstep, finaltime):
-        """Direct GPU implementation of RK2 step for testing."""
+        """Python-orchestrated GPU implementation of RK2 step.
+
+        This is a fallback for when the C RK2 loop cannot be used (e.g., unsupported
+        boundary types). Prefer _evolve_one_rk2_step_c() for better performance.
+        """
         from anuga.shallow_water.sw_domain_gpu_ext import (
             backup_conserved_quantities_gpu,
             extrapolate_second_order_gpu,
@@ -2853,18 +2857,18 @@ class Domain(Generic_Domain):
 
         gpu_dom = self.gpu_interface.gpu_dom
 
-        # Supported GPU boundary types (no D2H/H2D transfer needed)
+        # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
                               'Time_boundary'}
 
         # Lazy init: identify which boundaries need CPU evaluation vs GPU
         if not hasattr(self, '_gpu_boundary_info_initialized'):
-            self._gpu_cpu_tags = []  # Tags that need CPU evaluation
-            self._gpu_all_on_gpu = True  # All boundaries can be evaluated on GPU
+            self._gpu_cpu_tags = []
+            self._gpu_all_on_gpu = True
             cpu_boundary_types = []
-            self._gpu_transmissive_n_zero_t_boundaries = []  # Boundaries needing stage updates
-            self._gpu_time_boundaries = []  # Time_boundary objects
+            self._gpu_transmissive_n_zero_t_boundaries = []
+            self._gpu_time_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -2874,49 +2878,33 @@ class Domain(Generic_Domain):
                         self._gpu_all_on_gpu = False
                         cpu_boundary_types.append((tag, btype))
                     elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
-                        # Store reference - we'll get stage value each timestep (cheap Python call)
-                        # The expensive D2H/H2D transfers are eliminated - that's the main win
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
-                        # Store reference - we'll get values each timestep from Python function
                         self._gpu_time_boundaries.append(B)
 
-            # Set up boundary edge sync if we have ANY CPU-evaluated boundaries
             if not self._gpu_all_on_gpu:
-                # Get unique cell IDs for all boundaries (CPU evaluates all in this case)
                 boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
                 init_boundary_edge_sync(gpu_dom, boundary_cell_ids)
-
-                # Warn user about CPU fallback
                 print("WARNING: GPU boundary evaluation disabled - falling back to CPU")
-                print("  The following boundary types require CPU evaluation:")
-                for tag, btype in cpu_boundary_types:
-                    print(f"    - tag '{tag}': {btype}")
-                print(f"  Supported GPU boundary types: {GPU_BOUNDARY_TYPES}")
-                print("  This adds ~1ms overhead per RK2 step due to D2H/H2D transfers.")
+                print(f"  Unsupported boundary types: {cpu_boundary_types}")
 
             self._gpu_boundary_info_initialized = True
 
         # Backup for RK2
         backup_conserved_quantities_gpu(gpu_dom)
 
-        #==========================================
+        # ==========================================
         # First Euler step
-        #==========================================
+        # ==========================================
 
-        # Protect + Extrapolate
         protect_gpu(gpu_dom)
         extrapolate_second_order_gpu(gpu_dom)
 
         # Evaluate boundaries
         if self._gpu_all_on_gpu:
-            # All boundaries are GPU-supported - evaluate entirely on GPU (no sync needed)
             evaluate_reflective_boundary_gpu(gpu_dom)
             evaluate_dirichlet_boundary_gpu(gpu_dom)
             evaluate_transmissive_boundary_gpu(gpu_dom)
-            # Update stage and evaluate transmissive_n_zero_t boundaries
-            # Python call to get_boundary_values() is cheap (~microseconds)
-            # The big win is eliminating D2H/H2D array transfers (~milliseconds)
             for B in self._gpu_transmissive_n_zero_t_boundaries:
                 stage_val = B.get_boundary_values()
                 try:
@@ -2925,13 +2913,11 @@ class Domain(Generic_Domain):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
-            # Update and evaluate Time_boundary
             for B in self._gpu_time_boundaries:
                 q = B.get_boundary_values()
                 set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
             evaluate_time_boundary_gpu(gpu_dom)
         else:
-            # Some boundaries need CPU - evaluate all on CPU to avoid sync conflicts
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
                 B = self.boundary_map[tag]
@@ -2942,33 +2928,30 @@ class Domain(Generic_Domain):
         # Compute fluxes
         self.flux_timestep = compute_fluxes_gpu(gpu_dom)
 
-        # Forcing terms (Manning friction on GPU, others sync to CPU)
+        # Forcing terms
         self.compute_forcing_terms()
 
-        # Update timestep (CPU)
+        # Update timestep
         self.update_timestep(yieldstep, finaltime)
 
         # Update conserved quantities
         update_conserved_quantities_gpu(gpu_dom, self.timestep)
 
-        #===========================
         # End of first Euler step
-        #===========================
-
         self.set_relative_time(self.get_relative_time() + self.timestep)
 
         # Ghost exchange (MPI)
         if self.ghost_layer_width < 4:
             exchange_ghosts(gpu_dom)
 
-        #=========================================
+        # =========================================
         # Second Euler step
-        #=========================================
+        # =========================================
 
         protect_gpu(gpu_dom)
         extrapolate_second_order_gpu(gpu_dom)
 
-        # Evaluate boundaries (same pattern as first step)
+        # Evaluate boundaries
         if self._gpu_all_on_gpu:
             evaluate_reflective_boundary_gpu(gpu_dom)
             evaluate_dirichlet_boundary_gpu(gpu_dom)
@@ -2981,7 +2964,6 @@ class Domain(Generic_Domain):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
-            # Update and evaluate Time_boundary
             for B in self._gpu_time_boundaries:
                 q = B.get_boundary_values()
                 set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
@@ -2997,15 +2979,13 @@ class Domain(Generic_Domain):
         # Compute fluxes (ignore timestep from second step)
         compute_fluxes_gpu(gpu_dom)
 
-        # Forcing terms (Manning friction on GPU, others sync to CPU)
+        # Forcing terms
         self.compute_forcing_terms()
 
         # Update conserved quantities
         update_conserved_quantities_gpu(gpu_dom, self.timestep)
 
-        #========================================
-        # Combine initial and final values
-        #========================================
+        # RK2 averaging
         saxpy_conserved_quantities_gpu(gpu_dom, 0.5, 0.5)
 
 
@@ -3269,9 +3249,12 @@ class Domain(Generic_Domain):
 
         from anuga.operators.rate_operators import Rate_operator
         from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
+        from anuga.structures.inlet_operator import Inlet_operator
 
         result = False
+        cpu_only_ops = []
         for op in self.fractional_step_operators:
+            op_name = op.__class__.__name__
             if isinstance(op, Rate_operator):
                 # Force GPU initialization if not already done (lazy init causes race with caching)
                 if hasattr(op, '_init_gpu') and not getattr(op, '_gpu_initialized', False):
@@ -3283,9 +3266,25 @@ class Domain(Generic_Domain):
                 # boundary_flux_integral_operator only reads boundary_flux_sum (small array)
                 # and accumulates a scalar - doesn't need full centroid sync
                 continue
+            elif isinstance(op, Inlet_operator):
+                # Force GPU initialization if not already done
+                if hasattr(op, '_init_gpu') and not getattr(op, '_gpu_initialized', False):
+                    op._init_gpu()
+                if hasattr(op, '_gpu_initialized') and op._gpu_initialized:
+                    continue  # GPU-accelerated, no sync needed
             # All other operators need CPU sync
+            cpu_only_ops.append(op_name)
             result = True
-            break
+
+        rank = getattr(self, 'processor', 0)
+        if result:
+            print(f"[Rank {rank}] WARNING: CPU-only fractional operators detected (GPU<->CPU sync every RK2 step):")
+            for name in cpu_only_ops:
+                print(f"  - {name}")
+        else:
+            if rank == 0:
+                print(f"[Rank {rank}] All fractional operators are GPU-safe, no GPU<->CPU sync needed")
+        import sys; sys.stdout.flush()
 
         self._cached_has_cpu_only_ops = result
         return result

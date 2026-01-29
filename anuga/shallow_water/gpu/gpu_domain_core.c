@@ -150,6 +150,7 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     // Default simulation parameters
     GD->CFL = 1.0;
     GD->evolve_max_timestep = 1.0e10;
+    GD->fixed_flux_timestep = -1.0;  // Disabled by default
 
     // Initialize FLOP counters (Gordon Bell profiling)
     gpu_flop_counters_init(GD);
