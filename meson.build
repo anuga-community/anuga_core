@@ -79,7 +79,7 @@ endif
 # Install the Python scripts
 #========================================================
 conf = configuration_data()
-conf.set('PYTHON', py3.path())
+conf.set('PYTHON', py3.full_path())
 
 
 message('BinDir: ' + get_option('bindir'))

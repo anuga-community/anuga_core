@@ -493,6 +493,9 @@ class Generic_Domain(object):
         self.mesh.set_georeference(*args, **kwargs)
         self.geo_reference = self.mesh.geo_reference
 
+    def build_boundary_dictionary(self, *args, **kwargs):
+        self.mesh.build_boundary_dictionary(*args, **kwargs)
+
     def build_tagged_elements_dictionary(self, *args, **kwargs):
         self.mesh.build_tagged_elements_dictionary(*args, **kwargs)
 

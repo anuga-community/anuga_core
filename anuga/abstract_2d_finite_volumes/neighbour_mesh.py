@@ -985,7 +985,15 @@ class Mesh(General_mesh):
 
 
     def statistics(self, nbins=10):
-        """Output statistics about mesh
+        """
+        Return a string containing statistics about the mesh such as
+        number of triangles, extent in x and y, area min/max,
+        histogram of areas, number of boundary segments and
+        available boundary tags.
+
+        Keyword arguments:
+        nbins -- number of bins to use for area histogram (default 10)  
+        
         """
 
         from anuga.utilities.numerical_tools import histogram, create_bins
@@ -998,7 +1006,7 @@ class Mesh(General_mesh):
 
         #Setup 10 bins for area histogram
         #print "nbins",nbins
-        bins = create_bins(areas, 10)
+        bins = create_bins(areas, nbins)
         #print "size bins",bins
         #m = max(areas)
         #bins = arange(0., m, m/10)
