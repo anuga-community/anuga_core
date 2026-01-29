@@ -127,14 +127,14 @@ int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices,
                 GD->rank, op_id);
     }
 
-    printf("[Rank %d] Inlet_operator %d initialized: %d indices (GPU mapped: %d) "
-           "indices=%p areas=%p scratch_s=%p scratch_b=%p scratch_x=%p scratch_y=%p scratch_d=%p\n",
-           GD->rank, op_id, num_indices, op->mapped,
-           (void*)op->indices, (void*)op->areas,
-           (void*)op->scratch_stages, (void*)op->scratch_bed,
-           (void*)op->scratch_xmom, (void*)op->scratch_ymom,
-           (void*)op->scratch_depths);
-    fflush(stdout);
+    //printf("[Rank %d] Inlet_operator %d initialized: %d indices (GPU mapped: %d) "
+    //       "indices=%p areas=%p scratch_s=%p scratch_b=%p scratch_x=%p scratch_y=%p scratch_d=%p\n",
+    //       GD->rank, op_id, num_indices, op->mapped,
+    //       (void*)op->indices, (void*)op->areas,
+    //       (void*)op->scratch_stages, (void*)op->scratch_bed,
+    //       (void*)op->scratch_xmom, (void*)op->scratch_ymom,
+    //       (void*)op->scratch_depths);
+    //fflush(stdout);
 
     return op_id;
 }
