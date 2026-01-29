@@ -72,9 +72,9 @@ verbose = args.verbose
 verbose = False
 yieldstep=60. # yield evolve loop every 10 seconds
 outputstep=60. # update sww files every 60 seconds
-finaltime=1800. #83700.
+finaltime=180. #83700.
 
-scale = 1 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
+scale = 0.01 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
 # Choices are 1 (openmp) 2 (cupy)
@@ -970,6 +970,10 @@ domain.set_multiprocessor_mode(multiprocessor_mode )
 # ------------------------------------------------------------------------------
 barrier()
 t0 = time.time()
+import cProfile
+import pstats
+#profiler = cProfile.Profile()
+#profiler.enable()
 
 
 for t in domain.evolve(yieldstep=yieldstep, outputstep=outputstep, finaltime=finaltime):
@@ -987,7 +991,20 @@ for t in domain.evolve(yieldstep=yieldstep, outputstep=outputstep, finaltime=fin
         print(f"  Inlet applied volume: {creek_inlet.total_applied_volume:.2f} m³")
 
 barrier()
+#profiler.disable()
 
+# Print profiling results
+#if myid == 0:
+#    print("\n" + "="*80)
+#    print("PROFILING RESULTS - Top 40 by cumulative time")
+#    print("="*80)
+#    stats = pstats.Stats(profiler)
+#    stats.sort_stats('cumulative')
+#    stats.print_stats(40)
+#
+#    # Also save to file for detailed analysis
+#    profiler.dump_stats('profile.prof')
+#    print(f"\nProfile saved to profile.prof - view with: python -m pstats profile.prof")
 for p in range(numprocs):
     if myid == p:
         print('Processor %g ' % myid)

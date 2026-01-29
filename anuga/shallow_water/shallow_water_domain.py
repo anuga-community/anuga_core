@@ -3145,11 +3145,7 @@ class Domain(Generic_Domain):
 
         # Execute full RK2 step in C (includes MPI timestep reduction)
         # apply_forcing=1 enables Manning friction on GPU
-        import sys
-        rank = getattr(self, 'processor', 0)
-        #print(f"[Rank {rank}] C_RK2 ENTER max_ts={max_timestep:.6f}", flush=True, file=sys.stderr)
         self.timestep = evolve_one_rk2_step_gpu(gpu_dom, max_timestep, 1)
-        #print(f"[Rank {rank}] C_RK2 EXIT ts={self.timestep:.6e}", flush=True, file=sys.stderr)
 
         # Update internal time tracking
         self.set_relative_time(self.get_relative_time() + self.timestep)

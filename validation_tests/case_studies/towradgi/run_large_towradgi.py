@@ -984,7 +984,6 @@ t0 = time.time()
 
 import cProfile
 import pstats
-
 profiler = cProfile.Profile()
 profiler.enable()
 

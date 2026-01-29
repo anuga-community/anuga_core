@@ -61,7 +61,7 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
     double * restrict y_centroid_work = GD->D.y_centroid_work;
 
     // Step 1: Update centroid values (compute height, optionally convert momentum to velocity)
-    #pragma omp target teams distribute parallel for 
+    #pragma omp target teams loop 
     for (anuga_int k = 0; k < n; k++) {
         double stage = stage_cv[k];
         double bed = bed_cv[k];
@@ -90,7 +90,7 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
     }
 
     // Step 2: Main extrapolation loop
-    #pragma omp target teams distribute parallel for 
+    #pragma omp target teams loop 
     for (anuga_int k = 0; k < n; k++) {
         anuga_int k2 = k * 2;
         anuga_int k3 = k * 3;
@@ -327,7 +327,7 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
 
     // Step 3: Restore centroid momentum values if we converted to velocity
     if (extrapolate_velocity_second_order == 1) {
-        #pragma omp target teams distribute parallel for 
+        #pragma omp target teams loop 
         for (anuga_int k = 0; k < n; k++) {
             xmom_cv[k] = x_centroid_work[k];
             ymom_cv[k] = y_centroid_work[k];
@@ -385,7 +385,7 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
     double local_timestep = 1.0e+100;
 
     // Main flux computation loop
-    #pragma omp target teams distribute parallel for \
+    #pragma omp target teams loop\
         reduction(min: local_timestep)
     for (anuga_int k = 0; k < n; k++) {
         double edgeflux[3];
@@ -535,7 +535,7 @@ void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
     double * restrict xmom_siu = GD->D.xmom_semi_implicit_update;
     double * restrict ymom_siu = GD->D.ymom_semi_implicit_update;
 
-    #pragma omp target teams distribute parallel for 
+    #pragma omp target teams loop 
     for (anuga_int k = 0; k < n; k++) {
         // Normalize semi-implicit update by current value
         double stage_c = stage_cv[k];
@@ -589,7 +589,7 @@ void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
     double * restrict xmom_backup = GD->D.xmom_backup_values;
     double * restrict ymom_backup = GD->D.ymom_backup_values;
 
-    #pragma omp target teams distribute parallel for 
+    #pragma omp target teams loop 
     for (anuga_int k = 0; k < n; k++) {
         stage_backup[k] = stage_cv[k];
         xmom_backup[k] = xmom_cv[k];
@@ -619,7 +619,7 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
     double * restrict height_cv = GD->D.height_centroid_values;
     double * restrict bed_cv = GD->D.bed_centroid_values;
 
-    #pragma omp target teams distribute parallel for 
+    #pragma omp target teams loop 
     for (anuga_int k = 0; k < n; k++) {
         double stage = a * stage_cv[k] + b * stage_backup[k];
         stage_cv[k] = stage;
@@ -653,7 +653,7 @@ double gpu_protect(struct gpu_domain *GD) {
     double * restrict height_cv = GD->D.height_centroid_values;
     double * restrict areas = GD->D.areas;
 
-    #pragma omp target teams distribute parallel for reduction(+:mass_error)
+    #pragma omp target teams loop reduction(+:mass_error)
     for (anuga_int k = 0; k < n; k++) {
         double h = stage_cv[k] - bed_cv[k];
 
@@ -696,7 +696,7 @@ double gpu_compute_water_volume(struct gpu_domain *GD) {
     double * restrict bed_cv = GD->D.bed_centroid_values;
     double * restrict areas = GD->D.areas;
 
-    #pragma omp target teams distribute parallel for reduction(+:volume)
+    #pragma omp target teams loop reduction(+:volume)
     for (anuga_int k = 0; k < n; k++) {
         double h = stage_cv[k] - bed_cv[k];
         if (h > 0.0) {
@@ -731,7 +731,7 @@ void gpu_manning_friction(struct gpu_domain *GD) {
     double * restrict xmom_siu = GD->D.xmom_semi_implicit_update;
     double * restrict ymom_siu = GD->D.ymom_semi_implicit_update;
 
-    #pragma omp target teams distribute parallel for 
+    #pragma omp target teams loop 
     for (anuga_int k = 0; k < n; k++) {
         double S = 0.0;
         double uh = xmom_cv[k];
@@ -786,58 +786,28 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
 
     double local_timestep, global_timestep, timestep;
 
-    // Timing accumulators (static - persist across calls)
-    static double t_backup = 0, t_protect = 0, t_extrapolate = 0;
-    static double t_boundary = 0, t_compute_fluxes = 0, t_forcing = 0;
-    static double t_timestep_comm = 0, t_update_cq = 0, t_exchange = 0, t_saxpy = 0;
-    static int rk2_step_count = 0;
-    static int timing_interval = 50000;
-    static double t_wall_start = 0;
-    if (rk2_step_count == 0) t_wall_start = MPI_Wtime();
-    double t0;
-
-    // ========================================
     // Backup conserved quantities for RK2
-    // ========================================
-    t0 = MPI_Wtime();
     gpu_backup_conserved_quantities(GD);
-    t_backup += MPI_Wtime() - t0;
-    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: backup done\n", GD->rank, rk2_step_count); fflush(stderr); }
 
     // ========================================
     // First Euler step
     // ========================================
 
-    // Protect against negative depths
-    t0 = MPI_Wtime();
     gpu_protect(GD);
-    t_protect += MPI_Wtime() - t0;
-    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: protect done\n", GD->rank, rk2_step_count); fflush(stderr); }
-
-    // Extrapolate to vertices and edges
-    t0 = MPI_Wtime();
     gpu_extrapolate_second_order(GD);
-    t_extrapolate += MPI_Wtime() - t0;
-    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: extrapolate done\n", GD->rank, rk2_step_count); fflush(stderr); }
 
     // Evaluate all GPU-supported boundary conditions
-    t0 = MPI_Wtime();
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
     gpu_evaluate_transmissive_boundary(GD);
     gpu_evaluate_transmissive_n_zero_t_boundary(GD);
     gpu_evaluate_time_boundary(GD);
-    t_boundary += MPI_Wtime() - t0;
-    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: boundary done\n", GD->rank, rk2_step_count); fflush(stderr); }
 
     // Compute fluxes - returns local minimum timestep
-    t0 = MPI_Wtime();
     local_timestep = gpu_compute_fluxes(GD);
-    t_compute_fluxes += MPI_Wtime() - t0;
-    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: fluxes done, local_ts=%e\n", GD->rank, rk2_step_count, local_timestep); fflush(stderr); }
 
+    // Compute global timestep
     static int fixed_ts_printed = 0;
-    t0 = MPI_Wtime();
     if (GD->fixed_flux_timestep > 0.0) {
         // Fixed timestep - skip MPI allreduce entirely
         if (GD->rank == 0 && !fixed_ts_printed) {
@@ -863,123 +833,47 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
             timestep = max_timestep;
         }
     }
-    t_timestep_comm += MPI_Wtime() - t0;
-    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: allreduce done, ts=%e\n", GD->rank, rk2_step_count, timestep); fflush(stderr); }
 
     // Apply forcing terms (Manning friction on GPU)
-    t0 = MPI_Wtime();
     if (apply_forcing) {
         gpu_manning_friction(GD);
     }
-    t_forcing += MPI_Wtime() - t0;
 
     // Update conserved quantities with computed timestep
-    t0 = MPI_Wtime();
     gpu_update_conserved_quantities(GD, timestep);
-    t_update_cq += MPI_Wtime() - t0;
 
     // Ghost exchange (MPI) - sync ghost cells between processes
-    t0 = MPI_Wtime();
     if (GD->nprocs > 1) {
         gpu_exchange_ghosts(GD);
     }
-    t_exchange += MPI_Wtime() - t0;
-    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: euler1 complete\n", GD->rank, rk2_step_count); fflush(stderr); }
 
     // ========================================
     // Second Euler step
     // ========================================
 
-    // Protect against negative depths
-    t0 = MPI_Wtime();
     gpu_protect(GD);
-    t_protect += MPI_Wtime() - t0;
-
-    // Extrapolate to vertices and edges
-    t0 = MPI_Wtime();
     gpu_extrapolate_second_order(GD);
-    t_extrapolate += MPI_Wtime() - t0;
 
     // Evaluate boundary conditions (same as first step)
-    t0 = MPI_Wtime();
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
     gpu_evaluate_transmissive_boundary(GD);
     gpu_evaluate_transmissive_n_zero_t_boundary(GD);
     gpu_evaluate_time_boundary(GD);
-    t_boundary += MPI_Wtime() - t0;
 
-    // Compute fluxes (ignore timestep from second step - use first step's timestep)
-    t0 = MPI_Wtime();
+    // Compute fluxes (ignore timestep from second step)
     gpu_compute_fluxes(GD);
-    t_compute_fluxes += MPI_Wtime() - t0;
 
     // Apply forcing terms (Manning friction on GPU)
-    t0 = MPI_Wtime();
     if (apply_forcing) {
         gpu_manning_friction(GD);
     }
-    t_forcing += MPI_Wtime() - t0;
 
     // Update conserved quantities (same timestep as first step)
-    t0 = MPI_Wtime();
     gpu_update_conserved_quantities(GD, timestep);
-    t_update_cq += MPI_Wtime() - t0;
 
-    // ========================================
     // RK2 averaging: Q_final = 0.5 * Q_backup + 0.5 * Q_current
-    // ========================================
-    t0 = MPI_Wtime();
     gpu_saxpy_conserved_quantities(GD, 0.5, 0.5);
-    t_saxpy += MPI_Wtime() - t0;
-
-    //if (rk2_step_count < 3) { fprintf(stderr, "[Rank %d] C_RK2 step %d: saxpy done (RK2 complete)\n", GD->rank, rk2_step_count); fflush(stderr); }
-
-    // Print timing summary periodically
-    rk2_step_count++;
-    if (rk2_step_count % timing_interval == 0) {
-        double total = t_backup + t_protect + t_extrapolate + t_boundary +
-                       t_compute_fluxes + t_timestep_comm + t_forcing +
-                       t_update_cq + t_exchange + t_saxpy;
-        struct { const char *name; double val; } entries[] = {
-            {"exchange_ghosts", t_exchange},
-            {"timestep_comm",   t_timestep_comm},
-            {"compute_fluxes",  t_compute_fluxes},
-            {"extrapolate",     t_extrapolate},
-            {"boundary",        t_boundary},
-            {"update_cq",       t_update_cq},
-            {"forcing",         t_forcing},
-            {"protect",         t_protect},
-            {"saxpy",           t_saxpy},
-            {"backup",          t_backup},
-        };
-        int n_entries = 10;
-        // Simple insertion sort by descending value
-        for (int i = 1; i < n_entries; i++) {
-            double v = entries[i].val;
-            const char *nm = entries[i].name;
-            int j = i - 1;
-            while (j >= 0 && entries[j].val < v) {
-                entries[j+1].val = entries[j].val;
-                entries[j+1].name = entries[j].name;
-                j--;
-            }
-            entries[j+1].val = v;
-            entries[j+1].name = nm;
-        }
-        double wall_now = MPI_Wtime();
-        bool super_print = false;
-        if(super_print){
-        printf("[Rank %d] C RK2 timing after %d steps (total %.1fs, wall %.1fs, avg %.3fms/step):\n",
-               GD->rank, rk2_step_count, total, wall_now - t_wall_start,
-               1000.0 * total / rk2_step_count);
-        for (int i = 0; i < n_entries; i++) {
-            printf("  %-20s %8.1fs  (%5.1f%%)\n",
-                   entries[i].name, entries[i].val, 100.0*entries[i].val/total);
-        }
-        fflush(stdout);
-        }
-    }
 
     return timestep;
 }
