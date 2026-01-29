@@ -154,10 +154,6 @@ class Parallel_domain(Domain):
         # Call parent implementation which handles GPU sync logic
         super().apply_fractional_steps()
 
-        # PETE: Make sure that there are no deadlocks here
-
-        #self.update_ghosts()
-
 
 
     def sww_merge(self, verbose=False, delete_old=False):

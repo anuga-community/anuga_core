@@ -88,10 +88,11 @@ int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
 
     RO->num_operators++;
 
-    if (GD->rank == 0) {
-        printf("Rate_operator %d initialized: %d indices, %d full (GPU mapped: %d)\n",
-               op_id, num_indices, num_full, op->mapped);
-    }
+    //printf("[Rank %d] Rate_operator %d initialized: %d indices, %d full (GPU mapped: %d) "
+    //       "indices=%p areas=%p\n",
+    //       GD->rank, op_id, num_indices, num_full, op->mapped,
+    //       (void*)op->indices, (void*)op->areas);
+    //fflush(stdout);
 
     return op_id;
 }

@@ -61,7 +61,7 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
     double * restrict y_centroid_work = GD->D.y_centroid_work;
 
     // Step 1: Update centroid values (compute height, optionally convert momentum to velocity)
-    #pragma omp target teams distribute parallel for simd
+    #pragma omp target teams loop 
     for (anuga_int k = 0; k < n; k++) {
         double stage = stage_cv[k];
         double bed = bed_cv[k];
@@ -90,7 +90,7 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
     }
 
     // Step 2: Main extrapolation loop
-    #pragma omp target teams distribute parallel for simd
+    #pragma omp target teams loop 
     for (anuga_int k = 0; k < n; k++) {
         anuga_int k2 = k * 2;
         anuga_int k3 = k * 3;
@@ -327,7 +327,7 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
 
     // Step 3: Restore centroid momentum values if we converted to velocity
     if (extrapolate_velocity_second_order == 1) {
-        #pragma omp target teams distribute parallel for simd
+        #pragma omp target teams loop 
         for (anuga_int k = 0; k < n; k++) {
             xmom_cv[k] = x_centroid_work[k];
             ymom_cv[k] = y_centroid_work[k];
@@ -385,7 +385,7 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
     double local_timestep = 1.0e+100;
 
     // Main flux computation loop
-    #pragma omp target teams distribute parallel for simd \
+    #pragma omp target teams loop\
         reduction(min: local_timestep)
     for (anuga_int k = 0; k < n; k++) {
         double edgeflux[3];
@@ -535,7 +535,7 @@ void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
     double * restrict xmom_siu = GD->D.xmom_semi_implicit_update;
     double * restrict ymom_siu = GD->D.ymom_semi_implicit_update;
 
-    #pragma omp target teams distribute parallel for simd
+    #pragma omp target teams loop 
     for (anuga_int k = 0; k < n; k++) {
         // Normalize semi-implicit update by current value
         double stage_c = stage_cv[k];
@@ -589,7 +589,7 @@ void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
     double * restrict xmom_backup = GD->D.xmom_backup_values;
     double * restrict ymom_backup = GD->D.ymom_backup_values;
 
-    #pragma omp target teams distribute parallel for simd
+    #pragma omp target teams loop 
     for (anuga_int k = 0; k < n; k++) {
         stage_backup[k] = stage_cv[k];
         xmom_backup[k] = xmom_cv[k];
@@ -619,7 +619,7 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
     double * restrict height_cv = GD->D.height_centroid_values;
     double * restrict bed_cv = GD->D.bed_centroid_values;
 
-    #pragma omp target teams distribute parallel for simd
+    #pragma omp target teams loop 
     for (anuga_int k = 0; k < n; k++) {
         double stage = a * stage_cv[k] + b * stage_backup[k];
         stage_cv[k] = stage;
@@ -653,7 +653,7 @@ double gpu_protect(struct gpu_domain *GD) {
     double * restrict height_cv = GD->D.height_centroid_values;
     double * restrict areas = GD->D.areas;
 
-    #pragma omp target teams distribute parallel for simd reduction(+:mass_error)
+    #pragma omp target teams loop reduction(+:mass_error)
     for (anuga_int k = 0; k < n; k++) {
         double h = stage_cv[k] - bed_cv[k];
 
@@ -696,7 +696,7 @@ double gpu_compute_water_volume(struct gpu_domain *GD) {
     double * restrict bed_cv = GD->D.bed_centroid_values;
     double * restrict areas = GD->D.areas;
 
-    #pragma omp target teams distribute parallel for simd reduction(+:volume)
+    #pragma omp target teams loop reduction(+:volume)
     for (anuga_int k = 0; k < n; k++) {
         double h = stage_cv[k] - bed_cv[k];
         if (h > 0.0) {
@@ -731,7 +731,7 @@ void gpu_manning_friction(struct gpu_domain *GD) {
     double * restrict xmom_siu = GD->D.xmom_semi_implicit_update;
     double * restrict ymom_siu = GD->D.ymom_semi_implicit_update;
 
-    #pragma omp target teams distribute parallel for simd
+    #pragma omp target teams loop 
     for (anuga_int k = 0; k < n; k++) {
         double S = 0.0;
         double uh = xmom_cv[k];
@@ -786,23 +786,17 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
 
     double local_timestep, global_timestep, timestep;
 
-    // ========================================
     // Backup conserved quantities for RK2
-    // ========================================
     gpu_backup_conserved_quantities(GD);
 
     // ========================================
     // First Euler step
     // ========================================
 
-    // Protect against negative depths
     gpu_protect(GD);
-
-    // Extrapolate to vertices and edges
     gpu_extrapolate_second_order(GD);
 
     // Evaluate all GPU-supported boundary conditions
-    // (Time-dependent values must be set by Python before this call)
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
     gpu_evaluate_transmissive_boundary(GD);
@@ -812,17 +806,32 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // Compute fluxes - returns local minimum timestep
     local_timestep = gpu_compute_fluxes(GD);
 
-    // MPI reduce to get global minimum timestep
-    if (GD->nprocs > 1) {
-        MPI_Allreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE, MPI_MIN, GD->comm);
+    // Compute global timestep
+    static int fixed_ts_printed = 0;
+    if (GD->fixed_flux_timestep > 0.0) {
+        // Fixed timestep - skip MPI allreduce entirely
+        if (GD->rank == 0 && !fixed_ts_printed) {
+            printf("Using a fixed timestep! (dt = %e)\n", GD->fixed_flux_timestep);
+            fflush(stdout);
+            fixed_ts_printed = 1;
+        }
+        timestep = GD->fixed_flux_timestep;
+        if (timestep > max_timestep) {
+            timestep = max_timestep;
+        }
     } else {
-        global_timestep = local_timestep;
-    }
+        // MPI reduce to get global minimum timestep
+        if (GD->nprocs > 1) {
+            MPI_Allreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE, MPI_MIN, GD->comm);
+        } else {
+            global_timestep = local_timestep;
+        }
 
-    // Apply CFL condition and respect max_timestep from Python
-    timestep = GD->CFL * global_timestep;
-    if (timestep > max_timestep) {
-        timestep = max_timestep;
+        // Apply CFL condition and respect max_timestep from Python
+        timestep = GD->CFL * global_timestep;
+        if (timestep > max_timestep) {
+            timestep = max_timestep;
+        }
     }
 
     // Apply forcing terms (Manning friction on GPU)
@@ -842,10 +851,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // Second Euler step
     // ========================================
 
-    // Protect against negative depths
     gpu_protect(GD);
-
-    // Extrapolate to vertices and edges
     gpu_extrapolate_second_order(GD);
 
     // Evaluate boundary conditions (same as first step)
@@ -855,7 +861,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_transmissive_n_zero_t_boundary(GD);
     gpu_evaluate_time_boundary(GD);
 
-    // Compute fluxes (ignore timestep from second step - use first step's timestep)
+    // Compute fluxes (ignore timestep from second step)
     gpu_compute_fluxes(GD);
 
     // Apply forcing terms (Manning friction on GPU)
@@ -866,9 +872,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // Update conserved quantities (same timestep as first step)
     gpu_update_conserved_quantities(GD, timestep);
 
-    // ========================================
     // RK2 averaging: Q_final = 0.5 * Q_backup + 0.5 * Q_current
-    // ========================================
     gpu_saxpy_conserved_quantities(GD, 0.5, 0.5);
 
     return timestep;

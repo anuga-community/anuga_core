@@ -12,6 +12,7 @@ import pytest
 import anuga
 from anuga import Reflective_boundary, Dirichlet_boundary
 from anuga import rectangular_cross_domain
+from anuga import Inlet_operator
 
 
 def gpu_available():
@@ -91,14 +92,14 @@ class Test_GPU_Kernels(unittest.TestCase):
         gpu_xmom_update = self.domain.quantities['xmomentum'].explicit_update.copy()
         gpu_ymom_update = self.domain.quantities['ymomentum'].explicit_update.copy()
 
-        # Verify
+        # Verify - use atol for near-zero values where rtol alone causes issues
         self.assertAlmostEqual(cpu_timestep, gpu_timestep, places=10,
                                msg=f"Timestep mismatch: CPU={cpu_timestep}, GPU={gpu_timestep}")
-        np.testing.assert_allclose(cpu_stage_update, gpu_stage_update, rtol=1e-10,
+        np.testing.assert_allclose(cpu_stage_update, gpu_stage_update, rtol=1e-10, atol=1e-14,
                                    err_msg="Stage explicit_update mismatch")
-        np.testing.assert_allclose(cpu_xmom_update, gpu_xmom_update, rtol=1e-10,
+        np.testing.assert_allclose(cpu_xmom_update, gpu_xmom_update, rtol=1e-10, atol=1e-14,
                                    err_msg="Xmomentum explicit_update mismatch")
-        np.testing.assert_allclose(cpu_ymom_update, gpu_ymom_update, rtol=1e-10,
+        np.testing.assert_allclose(cpu_ymom_update, gpu_ymom_update, rtol=1e-10, atol=1e-14,
                                    err_msg="Ymomentum explicit_update mismatch")
 
     def test_extrapolate_kernel(self):
@@ -130,7 +131,7 @@ class Test_GPU_Kernels(unittest.TestCase):
         gpu_stage_edge = self.domain.quantities['stage'].edge_values.copy()
 
         # Verify
-        np.testing.assert_allclose(cpu_stage_edge, gpu_stage_edge, rtol=1e-10,
+        np.testing.assert_allclose(cpu_stage_edge, gpu_stage_edge, rtol=1e-10, atol=1e-14,
                                    err_msg="Edge values mismatch after extrapolation")
 
 
@@ -274,9 +275,9 @@ class Test_GPU_Boundaries(unittest.TestCase):
         gpu_stage_bv = domain.quantities['stage'].boundary_values.copy()
         gpu_xmom_bv = domain.quantities['xmomentum'].boundary_values.copy()
 
-        np.testing.assert_allclose(cpu_stage_bv, gpu_stage_bv, rtol=1e-10,
+        np.testing.assert_allclose(cpu_stage_bv, gpu_stage_bv, rtol=1e-10, atol=1e-14,
                                    err_msg="Reflective boundary stage mismatch")
-        np.testing.assert_allclose(cpu_xmom_bv, gpu_xmom_bv, rtol=1e-10,
+        np.testing.assert_allclose(cpu_xmom_bv, gpu_xmom_bv, rtol=1e-10, atol=1e-14,
                                    err_msg="Reflective boundary xmomentum mismatch")
 
     def test_dirichlet_boundary(self):
@@ -477,6 +478,182 @@ class Test_GPU_LargeDomain(unittest.TestCase):
         stage_diff = np.abs(cpu_stage - gpu_stage)
         self.assertLess(stage_diff.max(), 1e-6,
                         f"Large domain stage difference: max={stage_diff.max():.2e}")
+
+
+@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+class Test_GPU_InletOperator(unittest.TestCase):
+    """Tests for Inlet_operator with GPU acceleration."""
+
+    def create_domain(self, name='test_inlet'):
+        """Create a test domain suitable for inlet testing."""
+        domain = rectangular_cross_domain(20, 10, len1=200., len2=100.)
+        domain.set_flow_algorithm('DE0')
+        domain.set_low_froude(0)
+        domain.set_name(name)
+        domain.set_datadir('.')
+        domain.store = False
+
+        def topography(x, y):
+            return -x / 100.0  # Gentle slope
+
+        domain.set_quantity('elevation', topography)
+        domain.set_quantity('friction', 0.03)
+        domain.set_quantity('stage', 0.0)
+
+        Br = Reflective_boundary(domain)
+        Bd = Dirichlet_boundary([0, 0, 0])
+        domain.set_boundary({'left': Bd, 'right': Bd, 'top': Br, 'bottom': Br})
+
+        return domain
+
+    def test_inlet_operator_basic(self):
+        """Test that inlet operator works on GPU."""
+        domain = self.create_domain('test_inlet_basic')
+
+        # Add inlet operator - line across left side
+        line = [[10.0, 20.0], [10.0, 80.0]]
+        Q = 10.0  # m^3/s
+        inlet = Inlet_operator(domain, line, Q, verbose=False)
+
+        # Enable GPU mode
+        domain.set_multiprocessor_mode(2)
+
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+        gpu_dom = domain.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+
+        # Evolve
+        for t in domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+
+        sync_from_device(gpu_dom)
+
+        # Verify water was added
+        water_volume = domain.get_water_volume()
+        applied_volume = inlet.total_applied_volume
+
+        self.assertGreater(water_volume, 0, "Water volume should be positive after inlet")
+        self.assertGreater(applied_volume, 0, "Inlet should have applied some volume")
+        # Volume added should be approximately Q * time = 10 * 1.0 = 10 m^3
+        self.assertAlmostEqual(applied_volume, Q * 1.0, delta=1.0,
+                               msg=f"Applied volume {applied_volume} should be close to {Q * 1.0}")
+
+    def test_inlet_operator_cpu_gpu_match(self):
+        """Test that inlet operator produces same results on CPU and GPU."""
+        # Create two identical domains
+        cpu_domain = self.create_domain('test_inlet_cpu')
+        gpu_domain = self.create_domain('test_inlet_gpu')
+
+        # Add inlet operators with same parameters
+        line = [[10.0, 20.0], [10.0, 80.0]]
+        Q = 15.0  # m^3/s
+
+        cpu_inlet = Inlet_operator(cpu_domain, line, Q, verbose=False)
+        gpu_inlet = Inlet_operator(gpu_domain, line, Q, verbose=False)
+
+        # Run CPU
+        cpu_domain.set_multiprocessor_mode(1)
+        for t in cpu_domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+
+        cpu_stage = cpu_domain.quantities['stage'].centroid_values.copy()
+        cpu_volume = cpu_domain.get_water_volume()
+        cpu_inlet_volume = cpu_inlet.total_applied_volume
+
+        # Run GPU
+        gpu_domain.set_multiprocessor_mode(2)
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+        gpu_dom = gpu_domain.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+
+        for t in gpu_domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+
+        sync_from_device(gpu_dom)
+        gpu_stage = gpu_domain.quantities['stage'].centroid_values.copy()
+        gpu_volume = gpu_domain.get_water_volume()
+        gpu_inlet_volume = gpu_inlet.total_applied_volume
+
+        # Compare inlet volumes
+        self.assertAlmostEqual(cpu_inlet_volume, gpu_inlet_volume, places=6,
+                               msg=f"Inlet volumes differ: CPU={cpu_inlet_volume}, GPU={gpu_inlet_volume}")
+
+        # Compare water volumes
+        self.assertAlmostEqual(cpu_volume, gpu_volume, delta=1e-6,
+                               msg=f"Water volumes differ: CPU={cpu_volume}, GPU={gpu_volume}")
+
+        # Compare stage values
+        stage_diff = np.abs(cpu_stage - gpu_stage)
+        self.assertLess(stage_diff.max(), 1e-8,
+                        f"Stage difference too large: max={stage_diff.max():.2e}")
+
+    def test_inlet_operator_time_varying_Q(self):
+        """Test inlet operator with time-varying discharge on GPU."""
+        domain = self.create_domain('test_inlet_timevar')
+
+        # Time-varying discharge function
+        def Q_func(t):
+            return 5.0 + 10.0 * t  # Increases with time
+
+        line = [[10.0, 20.0], [10.0, 80.0]]
+        inlet = Inlet_operator(domain, line, Q_func, verbose=False)
+
+        # Enable GPU mode
+        domain.set_multiprocessor_mode(2)
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+        gpu_dom = domain.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+
+        # Evolve
+        for t in domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+
+        sync_from_device(gpu_dom)
+
+        # Verify water was added
+        water_volume = domain.get_water_volume()
+        applied_volume = inlet.total_applied_volume
+
+        self.assertGreater(water_volume, 0, "Water volume should be positive")
+        self.assertGreater(applied_volume, 0, "Inlet should have applied some volume")
+        # With Q = 5 + 10*t, average over [0,1] is about 10, so ~10 m^3 total
+        self.assertGreater(applied_volume, 5.0, "Should have applied at least 5 m^3")
+
+    def test_inlet_operator_with_velocity(self):
+        """Test inlet operator with specified velocity on GPU."""
+        cpu_domain = self.create_domain('test_inlet_vel_cpu')
+        gpu_domain = self.create_domain('test_inlet_vel_gpu')
+
+        line = [[10.0, 20.0], [10.0, 80.0]]
+        Q = 10.0
+        velocity = [0.5, 0.0]  # Velocity in x direction
+
+        cpu_inlet = Inlet_operator(cpu_domain, line, Q, velocity=velocity, verbose=False)
+        gpu_inlet = Inlet_operator(gpu_domain, line, Q, velocity=velocity, verbose=False)
+
+        # Run CPU
+        cpu_domain.set_multiprocessor_mode(1)
+        for t in cpu_domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+
+        cpu_xmom = cpu_domain.quantities['xmomentum'].centroid_values.copy()
+
+        # Run GPU
+        gpu_domain.set_multiprocessor_mode(2)
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+        gpu_dom = gpu_domain.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+
+        for t in gpu_domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+
+        sync_from_device(gpu_dom)
+        gpu_xmom = gpu_domain.quantities['xmomentum'].centroid_values.copy()
+
+        # Compare momentum
+        xmom_diff = np.abs(cpu_xmom - gpu_xmom)
+        self.assertLess(xmom_diff.max(), 1e-8,
+                        f"Xmomentum difference too large: max={xmom_diff.max():.2e}")
 
 
 if __name__ == "__main__":

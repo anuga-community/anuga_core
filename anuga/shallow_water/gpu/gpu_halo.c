@@ -64,8 +64,19 @@ int gpu_halo_init(struct gpu_domain *GD,
 
     // Allocate communication buffers
     // 3 quantities per element: stage, xmom, ymom centroid values
+#ifdef GPU_AWARE_MPI
+    // Use omp_target_alloc for device buffers that CUDA-aware MPI can recognize
+    int dev = omp_get_default_device();
+    H->send_buffer = (double *)omp_target_alloc(3 * H->total_send_size * sizeof(double), dev);
+    H->recv_buffer = (double *)omp_target_alloc(3 * H->total_recv_size * sizeof(double), dev);
+    if (!H->send_buffer || !H->recv_buffer) {
+        fprintf(stderr, "ERROR: omp_target_alloc failed for halo buffers\n");
+        return -1;
+    }
+#else
     H->send_buffer = (double *)malloc(3 * H->total_send_size * sizeof(double));
     H->recv_buffer = (double *)malloc(3 * H->total_recv_size * sizeof(double));
+#endif
 
     // Allocate MPI request array
     H->requests = (MPI_Request *)malloc(2 * num_neighbors * sizeof(MPI_Request));
@@ -90,8 +101,14 @@ void gpu_halo_finalize(struct gpu_domain *GD) {
     if (H->recv_offsets) free(H->recv_offsets);
     if (H->flat_send_indices) free(H->flat_send_indices);
     if (H->flat_recv_indices) free(H->flat_recv_indices);
+#ifdef GPU_AWARE_MPI
+    int dev = omp_get_default_device();
+    if (H->send_buffer) omp_target_free(H->send_buffer, dev);
+    if (H->recv_buffer) omp_target_free(H->recv_buffer, dev);
+#else
     if (H->send_buffer) free(H->send_buffer);
     if (H->recv_buffer) free(H->recv_buffer);
+#endif
     if (H->requests) free(H->requests);
 
     H->num_neighbors = 0;
@@ -131,7 +148,12 @@ void gpu_exchange_ghosts(struct gpu_domain *GD) {
     int *flat_recv = H->flat_recv_indices;
 
     // Pack send buffer on GPU
+#ifdef GPU_AWARE_MPI
+    // send_buf/recv_buf are omp_target_alloc'd device pointers — use is_device_ptr
+    #pragma omp target teams distribute parallel for is_device_ptr(send_buf)
+#else
     #pragma omp target teams distribute parallel for
+#endif
     for (int idx = 0; idx < send_size; idx++) {
         int k = flat_send[idx];  // Local element index
         send_buf[3*idx + 0] = stage[k];
@@ -140,8 +162,8 @@ void gpu_exchange_ghosts(struct gpu_domain *GD) {
     }
 
 #ifdef GPU_AWARE_MPI
-    // GPU-aware MPI path: pass device pointers directly to MPI
-    #pragma omp target data use_device_addr(send_buf, recv_buf)
+    // GPU-aware MPI path: send_buf/recv_buf are already device pointers
+    // from omp_target_alloc — pass directly to MPI
     {
         int req_count = 0;
         int send_offset = 0, recv_offset = 0;
@@ -205,7 +227,11 @@ void gpu_exchange_ghosts(struct gpu_domain *GD) {
 #endif
 
     // Unpack receive buffer on GPU
+#ifdef GPU_AWARE_MPI
+    #pragma omp target teams distribute parallel for is_device_ptr(recv_buf)
+#else
     #pragma omp target teams distribute parallel for
+#endif
     for (int idx = 0; idx < recv_size; idx++) {
         int k = flat_recv[idx];  // Local ghost element index
         stage[k] = recv_buf[3*idx + 0];

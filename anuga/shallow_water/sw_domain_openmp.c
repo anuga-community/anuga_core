@@ -491,34 +491,10 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
       double max_speed_local;
 
 // For all triangles
-#ifdef __NVCOMPILER_LLVM__
-#pragma omp target teams loop shared(D, substep_count, number_of_elements) \
-    map(tofrom:D[0:1])\
-    map(tofrom:D->stage_explicit_update[0:number_of_elements], D->xmom_explicit_update[0:number_of_elements]) \
-    map(tofrom:D->ymom_explicit_update[0:number_of_elements],  D->tri_full_flag[0:number_of_elements])\
-    map(tofrom:D->radii[0:number_of_elements],  D->normals[0:6*number_of_elements])\
-    map(tofrom:D->areas[0:number_of_elements],  D->boundary_flux_sum[0:3])\
-    map(tofrom:D->stage_centroid_values[0:number_of_elements])\
-    map(tofrom:D->stage_edge_values[0:3*number_of_elements],D->xmom_edge_values[0:3*number_of_elements])\
-    map(tofrom:D->ymom_edge_values[0:3*number_of_elements],D->bed_edge_values[0:3*number_of_elements])\
-    map(tofrom:D->height_edge_values[0:3*number_of_elements],D->edgelengths[0:3*number_of_elements])\
-    map(tofrom:D->neighbours[0:3*number_of_elements],D->height_centroid_values[0:number_of_elements])\
-    map(tofrom:D->bed_centroid_values[0:number_of_elements],D->stage_boundary_values[0:boundary_length])\
-    map(tofrom:D->xmom_boundary_values[0:boundary_length],D->ymom_boundary_values[0:boundary_length])\
-    map(tofrom:D->neighbour_edges[0:3 * number_of_elements],D->edge_flux_type[0: 3*number_of_elements])\
-    map(tofrom:D->edge_river_wall_counter[0:3*number_of_elements],D->riverwall_elevation[0:n_riverwall_edges])\
-    map(tofrom:D->riverwall_hydraulic_properties[0:n_riverwall_edges])\
-    map(tofrom:D->riverwall_rowIndex[0:n_riverwall_edges])\
-    map(tofrom:D->max_speed[0:number_of_elements])\
-    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)\
-    private(pressure_flux,  max_speed_local) \
-    reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
-#else
 #pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, number_of_elements) \
     firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)\
     private(pressure_flux,  max_speed_local) \
     reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
-#endif
   for (anuga_int k = 0; k < number_of_elements; k++)
   {
       EdgeData edge_data;
@@ -829,15 +805,9 @@ static inline void update_centroid_values(struct domain *__restrict D,
                                           const double minimum_allowed_height,
                                           const anuga_int extrapolate_velocity_second_order)
 {
-#ifdef __NVCOMPILER_LLVM__
-    #pragma omp target teams loop \
-    default(none) shared(D) \
-    firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
-#else
     #pragma omp parallel for simd \
     default(none) shared(D) \
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order)
-#endif
   for (anuga_int k = 0; k < number_of_elements; ++k)
   {
     double stage = D->stage_centroid_values[k];
@@ -1057,39 +1027,12 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
   double b_tmp = 0.1; // Highest depth ratio with hfactor=0
   double c_tmp = 1.0 / (a_tmp - b_tmp);
   double d_tmp = 1.0 - (c_tmp * a_tmp);
-#ifdef __NVCOMPILER_LLVM__
-    #pragma omp target enter data\
-    map(to:D[0:1])\
-    map(to: D->bed_centroid_values[0:number_of_elements])\
-    map(to: D->beta_w_dry, D->beta_w, D->beta_uh_dry, D->beta_uh, D->beta_vh_dry, D->beta_vh)\
-    map(to: D->minimum_allowed_height, D->extrapolate_velocity_second_order)\
-    map(to: D->edge_coordinates[0:6*number_of_elements])\
-    map(to: D->centroid_coordinates[0:2*number_of_elements])\
-    map(to: D->surrogate_neighbours[0:3*number_of_elements])\
-    map(to: D->number_of_boundaries[0:number_of_elements])\
-    map(to: D->xmom_centroid_values[0:number_of_elements])\
-    map(to: D->ymom_centroid_values[0:number_of_elements])\
-    map(to: D->height_centroid_values[0:number_of_elements])\
-    map(to: D->x_centroid_work[0:number_of_elements])\
-    map(to: D->y_centroid_work[0:number_of_elements])\
-    map(to: D->stage_centroid_values[0:number_of_elements])\
-    map(to: D->stage_edge_values[0:3*number_of_elements],D->xmom_edge_values[0:3*number_of_elements])\
-    map(to: D->ymom_edge_values[0:3*number_of_elements])\
-    map(to: D->height_edge_values[0:3*number_of_elements])\
-    map(to: D->bed_edge_values[0:3*number_of_elements])
-#endif
   update_centroid_values(D, number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order);
 
 
-#ifdef __NVCOMPILER_LLVM__
-    #pragma omp target teams loop default(none)\
-    shared(D)\
-    firstprivate(number_of_elements, minimum_allowed_height, c_tmp, d_tmp)
-#else
     #pragma omp parallel for simd \
     shared(D)\
     firstprivate(number_of_elements, minimum_allowed_height, extrapolate_velocity_second_order, c_tmp, d_tmp)
-#endif
   for (anuga_int k = 0; k < number_of_elements; k++)
   {
     // // Useful indices
@@ -1273,11 +1216,7 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 // Fix xmom and ymom centroid values
 if(extrapolate_velocity_second_order == 1)
 {
-#ifdef __NVCOMPILER_LLVM__
-#pragma omp target teams loop
-#else
 #pragma omp parallel for simd schedule(static)
-#endif
   for (anuga_int k = 0; k < number_of_elements; k++)
   {
       // Convert velocity back to momenta at centroids
@@ -1287,27 +1226,6 @@ if(extrapolate_velocity_second_order == 1)
 }
 
 // We need to figure out which things we need to cpy from, i.e. what did we modify inside the loop
-#ifdef __NVCOMPILER_LLVM__
-    #pragma omp target exit data\
-    map(from: D[0:1])\
-    map(from: D->bed_centroid_values[0:number_of_elements])\
-    map(from: D->beta_w_dry, D->beta_w, D->beta_uh_dry, D->beta_uh, D->beta_vh_dry, D->beta_vh)\
-    map(from: D->minimum_allowed_height, D->extrapolate_velocity_second_order)\
-    map(from: D->edge_coordinates[0:6*number_of_elements])\
-    map(from: D->centroid_coordinates[0:2*number_of_elements])\
-    map(from: D->surrogate_neighbours[0:3*number_of_elements])\
-    map(from: D->number_of_boundaries[0:number_of_elements])\
-    map(from: D->xmom_centroid_values[0:number_of_elements])\
-    map(from: D->ymom_centroid_values[0:number_of_elements])\
-    map(from: D->height_centroid_values[0:number_of_elements])\
-    map(from: D->x_centroid_work[0:number_of_elements])\
-    map(from: D->y_centroid_work[0:number_of_elements])\
-    map(from: D->stage_centroid_values[0:number_of_elements])\
-    map(from: D->stage_edge_values[0:3*number_of_elements],D->xmom_edge_values[0:3*number_of_elements])\
-    map(from: D->ymom_edge_values[0:3*number_of_elements])\
-    map(from: D->height_edge_values[0:3*number_of_elements])\
-    map(from: D->bed_edge_values[0:3*number_of_elements])
-#endif
 }
 
 void _openmp_distribute_edges_to_vertices(struct domain *__restrict D)
@@ -1339,22 +1257,9 @@ void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict
   const double seven_thirds = 7.0 / 3.0;
 
  
-#ifdef __NVCOMPILER_LLVM__
-#pragma omp target teams loop \
-        map(tofrom: D[0:1])\
-        map(tofrom: D->xmom_centroid_values[0:number_of_elements])\
-        map(tofrom: D->ymom_centroid_values[0:number_of_elements])\
-        map(tofrom: D->friction_centroid_values[0:number_of_elements])\
-        map(tofrom: D->stage_centroid_values[0:number_of_elements])\
-        map(tofrom: D->bed_centroid_values[0:number_of_elements])\
-        map(tofrom: D->xmom_semi_implicit_update[0:number_of_elements])\
-        map(tofrom: D->ymom_semi_implicit_update[0:number_of_elements])\
-        shared(D, ETA_SMALL) firstprivate(number_of_elements, eps, g, seven_thirds)
-#else
 #pragma omp parallel for simd default(none) \
         schedule(static) \
         shared(D, ETA_SMALL) firstprivate(number_of_elements, eps, g, seven_thirds)
-#endif
   for (anuga_int k = 0; k < number_of_elements; k++)
   {
     double S = 0.0;
@@ -2395,23 +2300,8 @@ anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D,
   
 
 	// Divide semi_implicit update by conserved quantity
-#ifdef __NVCOMPILER_LLVM__
-  #pragma omp target teams loop \
-  map(tofrom: D[0:1])\
-  map(tofrom: D->stage_centroid_values[0:number_of_elements])\
-  map(tofrom: D->xmom_centroid_values[0:number_of_elements])\
-  map(tofrom: D->ymom_centroid_values[0:number_of_elements])\
-  map(tofrom: D->stage_semi_implicit_update[0:number_of_elements])\
-  map(tofrom: D->xmom_semi_implicit_update[0:number_of_elements])\
-  map(tofrom: D->ymom_semi_implicit_update[0:number_of_elements])\
-  map(to: D->stage_explicit_update[0:number_of_elements])\
-  map(to: D->xmom_explicit_update[0:number_of_elements])\
-  map(to: D->ymom_explicit_update[0:number_of_elements])\
-  shared(D) firstprivate(number_of_elements, timestep)
-#else
 	#pragma omp parallel for schedule(static) \
   shared(D) firstprivate(number_of_elements, timestep)
-#endif
 	for (int k=0; k<number_of_elements; k++) {
 
 
@@ -2493,18 +2383,7 @@ anuga_int _openmp_saxpy_conserved_quantities(const struct domain *__restrict D,
   // double bc_a = b *c /a;
   double c_inv = 1.0 / c;
 
-#ifdef __NVCOMPILER_LLVM__
-  #pragma omp target teams loop \
-  map(to:D[0:1])\
-  map(to: D->stage_backup_values[0:N])\
-  map(to: D->xmom_backup_values[0:N])\
-  map(to: D->ymom_backup_values[0:N])\
-  map(tofrom: D->stage_centroid_values[0:N])\
-  map(tofrom: D->xmom_centroid_values[0:N])\
-  map(tofrom: D->ymom_centroid_values[0:N])
-#else
   #pragma omp parallel for simd schedule(static)
-#endif
   for (anuga_int i = 0; i < N; i++)
   {
     D->stage_centroid_values[i] = a*D->stage_centroid_values[i] + b*D->stage_backup_values[i];
@@ -2514,15 +2393,7 @@ anuga_int _openmp_saxpy_conserved_quantities(const struct domain *__restrict D,
 
   if (c != 1.0)
   {
-#ifdef __NVCOMPILER_LLVM__
-  #pragma omp target teams loop \
-  map(to:D[0:1])\
-  map(tofrom: D->stage_centroid_values[0:N])\
-  map(tofrom: D->xmom_centroid_values[0:N])\
-  map(tofrom: D->ymom_centroid_values[0:N])
-#else
     #pragma omp parallel for simd schedule(static)
-#endif
     for (anuga_int i = 0; i < N; i++)
     {
       D->stage_centroid_values[i] *= c_inv;
@@ -2566,18 +2437,7 @@ anuga_int _openmp_backup_conserved_quantities(const struct domain *__restrict D)
   // double xmom_tmp[N];
   // double ymom_tmp[N];
 
-#ifdef __NVCOMPILER_LLVM__
-  #pragma omp target teams loop \
-  map(to:D[0:1])\
-  map(to:D->stage_centroid_values[0:N])\
-  map(to:D->xmom_centroid_values[0:N])\
-  map(to:D->ymom_centroid_values[0:N])\
-  map(tofrom:D->stage_backup_values[0:N])\
-  map(tofrom:D->xmom_backup_values[0:N])\
-  map(tofrom:D->ymom_backup_values[0:N])
-#else
   #pragma omp parallel for simd default(none) shared(D) schedule(static) firstprivate(N)
-#endif
   for (k = 0; k < N; k++)
   {
     D->stage_backup_values[k] = D->stage_centroid_values[k];
@@ -2604,31 +2464,7 @@ void _openmp_evaluate_reflective_segment(const struct domain *__restrict D, anug
   anuga_int number_of_edges = N;
   anuga_int number_of_elements = D->number_of_elements; 
 
-#ifdef __NVCOMPILER_LLVM__
-    #pragma omp target teams loop \
-    map(tofrom: D[0:1])\
-    map(tofrom:D->stage_boundary_values[0:boundary_length])\
-    map(tofrom:D->bed_boundary_values[0:boundary_length])\
-    map(tofrom:D->height_boundary_values[0:boundary_length])\
-    map(tofrom:D->xmom_boundary_values[0:boundary_length])\
-    map(tofrom:D->ymom_boundary_values[0:boundary_length])\
-    map(tofrom:D->xvelocity_boundary_values[0:boundary_length])\
-    map(tofrom:D->yvelocity_boundary_values[0:boundary_length])\
-    map(tofrom:D->xvelocity_edge_values[0:3*number_of_elements])\
-    map(tofrom:D->yvelocity_edge_values[0:3*number_of_elements])\
-    map(tofrom:D->xmom_edge_values[0:3*number_of_elements])\
-    map(tofrom:D->ymom_edge_values[0:3*number_of_elements])\
-    map(tofrom:D->stage_edge_values[0:3*number_of_elements])\
-    map(tofrom:D->bed_edge_values[0:3*number_of_elements])\
-    map(tofrom:D->height_edge_values[0:3*number_of_elements])\
-    map(to: edge_segment[0:number_of_edges])\
-    map(to: vol_ids[0:number_of_edges])\
-    map(to: edge_ids[0:number_of_edges])\
-    map(tofrom: D->normals[0:6*number_of_elements])\
-    shared(D) firstprivate(number_of_edges)
-#else
     #pragma omp parallel for schedule(static)
-#endif
      for(anuga_int k = 0; k < number_of_edges; k++){
 
 
