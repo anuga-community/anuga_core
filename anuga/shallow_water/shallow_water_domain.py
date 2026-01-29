@@ -2829,7 +2829,11 @@ class Domain(Generic_Domain):
         self.saxpy_conserved_quantities(0.5, 0.5) # has C, not ported
 
     def _evolve_one_rk2_step_gpu(self, yieldstep, finaltime):
-        """Direct GPU implementation of RK2 step for testing."""
+        """Python-orchestrated GPU implementation of RK2 step.
+
+        This is a fallback for when the C RK2 loop cannot be used (e.g., unsupported
+        boundary types). Prefer _evolve_one_rk2_step_c() for better performance.
+        """
         from anuga.shallow_water.sw_domain_gpu_ext import (
             backup_conserved_quantities_gpu,
             extrapolate_second_order_gpu,
@@ -2850,33 +2854,21 @@ class Domain(Generic_Domain):
             evaluate_time_boundary_gpu,
         )
         import numpy as np
-        from time import monotonic as _timer
 
         gpu_dom = self.gpu_interface.gpu_dom
 
-        # Timing instrumentation
-        if not hasattr(self, '_gpu_timings'):
-            self._gpu_timings = {
-                'backup': 0.0, 'protect': 0.0, 'extrapolate': 0.0,
-                'boundary': 0.0, 'compute_fluxes': 0.0, 'forcing': 0.0,
-                'update_timestep': 0.0, 'update_cq': 0.0,
-                'exchange_ghosts': 0.0, 'saxpy': 0.0,
-            }
-            self._gpu_timing_steps = 0
-            self._gpu_timing_interval = 10000
-
-        # Supported GPU boundary types (no D2H/H2D transfer needed)
+        # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
                               'Time_boundary'}
 
         # Lazy init: identify which boundaries need CPU evaluation vs GPU
         if not hasattr(self, '_gpu_boundary_info_initialized'):
-            self._gpu_cpu_tags = []  # Tags that need CPU evaluation
-            self._gpu_all_on_gpu = True  # All boundaries can be evaluated on GPU
+            self._gpu_cpu_tags = []
+            self._gpu_all_on_gpu = True
             cpu_boundary_types = []
-            self._gpu_transmissive_n_zero_t_boundaries = []  # Boundaries needing stage updates
-            self._gpu_time_boundaries = []  # Time_boundary objects
+            self._gpu_transmissive_n_zero_t_boundaries = []
+            self._gpu_time_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -2886,56 +2878,33 @@ class Domain(Generic_Domain):
                         self._gpu_all_on_gpu = False
                         cpu_boundary_types.append((tag, btype))
                     elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
-                        # Store reference - we'll get stage value each timestep (cheap Python call)
-                        # The expensive D2H/H2D transfers are eliminated - that's the main win
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
-                        # Store reference - we'll get values each timestep from Python function
                         self._gpu_time_boundaries.append(B)
 
-            # Set up boundary edge sync if we have ANY CPU-evaluated boundaries
             if not self._gpu_all_on_gpu:
-                # Get unique cell IDs for all boundaries (CPU evaluates all in this case)
                 boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
                 init_boundary_edge_sync(gpu_dom, boundary_cell_ids)
-
-                # Warn user about CPU fallback
                 print("WARNING: GPU boundary evaluation disabled - falling back to CPU")
-                print("  The following boundary types require CPU evaluation:")
-                for tag, btype in cpu_boundary_types:
-                    print(f"    - tag '{tag}': {btype}")
-                print(f"  Supported GPU boundary types: {GPU_BOUNDARY_TYPES}")
-                print("  This adds ~1ms overhead per RK2 step due to D2H/H2D transfers.")
+                print(f"  Unsupported boundary types: {cpu_boundary_types}")
 
             self._gpu_boundary_info_initialized = True
 
         # Backup for RK2
-        _t0 = _timer()
         backup_conserved_quantities_gpu(gpu_dom)
-        self._gpu_timings['backup'] += _timer() - _t0
 
-        #==========================================
+        # ==========================================
         # First Euler step
-        #==========================================
+        # ==========================================
 
-        # Protect + Extrapolate
-        _t0 = _timer()
         protect_gpu(gpu_dom)
-        self._gpu_timings['protect'] += _timer() - _t0
-        _t0 = _timer()
         extrapolate_second_order_gpu(gpu_dom)
-        self._gpu_timings['extrapolate'] += _timer() - _t0
 
         # Evaluate boundaries
-        _t0 = _timer()
         if self._gpu_all_on_gpu:
-            # All boundaries are GPU-supported - evaluate entirely on GPU (no sync needed)
             evaluate_reflective_boundary_gpu(gpu_dom)
             evaluate_dirichlet_boundary_gpu(gpu_dom)
             evaluate_transmissive_boundary_gpu(gpu_dom)
-            # Update stage and evaluate transmissive_n_zero_t boundaries
-            # Python call to get_boundary_values() is cheap (~microseconds)
-            # The big win is eliminating D2H/H2D array transfers (~milliseconds)
             for B in self._gpu_transmissive_n_zero_t_boundaries:
                 stage_val = B.get_boundary_values()
                 try:
@@ -2944,66 +2913,45 @@ class Domain(Generic_Domain):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
-            # Update and evaluate Time_boundary
             for B in self._gpu_time_boundaries:
                 q = B.get_boundary_values()
                 set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
             evaluate_time_boundary_gpu(gpu_dom)
         else:
-            # Some boundaries need CPU - evaluate all on CPU to avoid sync conflicts
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
                 B = self.boundary_map[tag]
                 if B is not None:
                     B.evaluate_segment(self, self.tag_boundary_cells[tag])
             sync_boundary_values(gpu_dom)
-        self._gpu_timings['boundary'] += _timer() - _t0
 
         # Compute fluxes
-        _t0 = _timer()
         self.flux_timestep = compute_fluxes_gpu(gpu_dom)
-        self._gpu_timings['compute_fluxes'] += _timer() - _t0
 
-        # Forcing terms (Manning friction on GPU, others sync to CPU)
-        _t0 = _timer()
+        # Forcing terms
         self.compute_forcing_terms()
-        self._gpu_timings['forcing'] += _timer() - _t0
 
-        # Update timestep (CPU)
-        _t0 = _timer()
+        # Update timestep
         self.update_timestep(yieldstep, finaltime)
-        self._gpu_timings['update_timestep'] += _timer() - _t0
 
         # Update conserved quantities
-        _t0 = _timer()
         update_conserved_quantities_gpu(gpu_dom, self.timestep)
-        self._gpu_timings['update_cq'] += _timer() - _t0
 
-        #===========================
         # End of first Euler step
-        #===========================
-
         self.set_relative_time(self.get_relative_time() + self.timestep)
 
         # Ghost exchange (MPI)
-        _t0 = _timer()
         if self.ghost_layer_width < 4:
             exchange_ghosts(gpu_dom)
-        self._gpu_timings['exchange_ghosts'] += _timer() - _t0
 
-        #=========================================
+        # =========================================
         # Second Euler step
-        #=========================================
+        # =========================================
 
-        _t0 = _timer()
         protect_gpu(gpu_dom)
-        self._gpu_timings['protect'] += _timer() - _t0
-        _t0 = _timer()
         extrapolate_second_order_gpu(gpu_dom)
-        self._gpu_timings['extrapolate'] += _timer() - _t0
 
-        # Evaluate boundaries (same pattern as first step)
-        _t0 = _timer()
+        # Evaluate boundaries
         if self._gpu_all_on_gpu:
             evaluate_reflective_boundary_gpu(gpu_dom)
             evaluate_dirichlet_boundary_gpu(gpu_dom)
@@ -3016,7 +2964,6 @@ class Domain(Generic_Domain):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
-            # Update and evaluate Time_boundary
             for B in self._gpu_time_boundaries:
                 q = B.get_boundary_values()
                 set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
@@ -3028,40 +2975,18 @@ class Domain(Generic_Domain):
                 if B is not None:
                     B.evaluate_segment(self, self.tag_boundary_cells[tag])
             sync_boundary_values(gpu_dom)
-        self._gpu_timings['boundary'] += _timer() - _t0
 
         # Compute fluxes (ignore timestep from second step)
-        _t0 = _timer()
         compute_fluxes_gpu(gpu_dom)
-        self._gpu_timings['compute_fluxes'] += _timer() - _t0
 
-        # Forcing terms (Manning friction on GPU, others sync to CPU)
-        _t0 = _timer()
+        # Forcing terms
         self.compute_forcing_terms()
-        self._gpu_timings['forcing'] += _timer() - _t0
 
         # Update conserved quantities
-        _t0 = _timer()
         update_conserved_quantities_gpu(gpu_dom, self.timestep)
-        self._gpu_timings['update_cq'] += _timer() - _t0
 
-        #========================================
-        # Combine initial and final values
-        #========================================
-        _t0 = _timer()
+        # RK2 averaging
         saxpy_conserved_quantities_gpu(gpu_dom, 0.5, 0.5)
-        self._gpu_timings['saxpy'] += _timer() - _t0
-
-        # Print timing summary periodically
-        self._gpu_timing_steps += 1
-        if self._gpu_timing_steps % self._gpu_timing_interval == 0:
-            rank = getattr(self, 'processor', 0)
-            total = sum(self._gpu_timings.values())
-            #print(f"[Rank {rank}] GPU RK2 timing after {self._gpu_timing_steps} steps (total {total:.1f}s):")
-            for name, t in sorted(self._gpu_timings.items(), key=lambda x: -x[1]):
-                pct = 100.0 * t / total if total > 0 else 0
-                print(f"  {name:20s} {t:8.1f}s  ({pct:5.1f}%)")
-            import sys; sys.stdout.flush()
 
 
     def _evolve_one_rk2_step_c(self, yieldstep, finaltime):
