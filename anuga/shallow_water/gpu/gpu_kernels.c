@@ -61,7 +61,7 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
     double * restrict y_centroid_work = GD->D.y_centroid_work;
 
     // Step 1: Update centroid values (compute height, optionally convert momentum to velocity)
-    #pragma omp target teams distribute parallel for simd
+    #pragma omp target teams distribute parallel for 
     for (anuga_int k = 0; k < n; k++) {
         double stage = stage_cv[k];
         double bed = bed_cv[k];
@@ -90,7 +90,7 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
     }
 
     // Step 2: Main extrapolation loop
-    #pragma omp target teams distribute parallel for simd
+    #pragma omp target teams distribute parallel for 
     for (anuga_int k = 0; k < n; k++) {
         anuga_int k2 = k * 2;
         anuga_int k3 = k * 3;
@@ -327,7 +327,7 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
 
     // Step 3: Restore centroid momentum values if we converted to velocity
     if (extrapolate_velocity_second_order == 1) {
-        #pragma omp target teams distribute parallel for simd
+        #pragma omp target teams distribute parallel for 
         for (anuga_int k = 0; k < n; k++) {
             xmom_cv[k] = x_centroid_work[k];
             ymom_cv[k] = y_centroid_work[k];
@@ -385,7 +385,7 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
     double local_timestep = 1.0e+100;
 
     // Main flux computation loop
-    #pragma omp target teams distribute parallel for simd \
+    #pragma omp target teams distribute parallel for \
         reduction(min: local_timestep)
     for (anuga_int k = 0; k < n; k++) {
         double edgeflux[3];
@@ -535,7 +535,7 @@ void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
     double * restrict xmom_siu = GD->D.xmom_semi_implicit_update;
     double * restrict ymom_siu = GD->D.ymom_semi_implicit_update;
 
-    #pragma omp target teams distribute parallel for simd
+    #pragma omp target teams distribute parallel for 
     for (anuga_int k = 0; k < n; k++) {
         // Normalize semi-implicit update by current value
         double stage_c = stage_cv[k];
@@ -589,7 +589,7 @@ void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
     double * restrict xmom_backup = GD->D.xmom_backup_values;
     double * restrict ymom_backup = GD->D.ymom_backup_values;
 
-    #pragma omp target teams distribute parallel for simd
+    #pragma omp target teams distribute parallel for 
     for (anuga_int k = 0; k < n; k++) {
         stage_backup[k] = stage_cv[k];
         xmom_backup[k] = xmom_cv[k];
@@ -619,7 +619,7 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
     double * restrict height_cv = GD->D.height_centroid_values;
     double * restrict bed_cv = GD->D.bed_centroid_values;
 
-    #pragma omp target teams distribute parallel for simd
+    #pragma omp target teams distribute parallel for 
     for (anuga_int k = 0; k < n; k++) {
         double stage = a * stage_cv[k] + b * stage_backup[k];
         stage_cv[k] = stage;
@@ -653,7 +653,7 @@ double gpu_protect(struct gpu_domain *GD) {
     double * restrict height_cv = GD->D.height_centroid_values;
     double * restrict areas = GD->D.areas;
 
-    #pragma omp target teams distribute parallel for simd reduction(+:mass_error)
+    #pragma omp target teams distribute parallel for reduction(+:mass_error)
     for (anuga_int k = 0; k < n; k++) {
         double h = stage_cv[k] - bed_cv[k];
 
@@ -696,7 +696,7 @@ double gpu_compute_water_volume(struct gpu_domain *GD) {
     double * restrict bed_cv = GD->D.bed_centroid_values;
     double * restrict areas = GD->D.areas;
 
-    #pragma omp target teams distribute parallel for simd reduction(+:volume)
+    #pragma omp target teams distribute parallel for reduction(+:volume)
     for (anuga_int k = 0; k < n; k++) {
         double h = stage_cv[k] - bed_cv[k];
         if (h > 0.0) {
@@ -731,7 +731,7 @@ void gpu_manning_friction(struct gpu_domain *GD) {
     double * restrict xmom_siu = GD->D.xmom_semi_implicit_update;
     double * restrict ymom_siu = GD->D.ymom_semi_implicit_update;
 
-    #pragma omp target teams distribute parallel for simd
+    #pragma omp target teams distribute parallel for 
     for (anuga_int k = 0; k < n; k++) {
         double S = 0.0;
         double uh = xmom_cv[k];
