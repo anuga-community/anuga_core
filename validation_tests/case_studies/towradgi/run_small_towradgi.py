@@ -74,7 +74,7 @@ yieldstep=60. # yield evolve loop every 10 seconds
 outputstep=60. # update sww files every 60 seconds
 finaltime=180. #83700.
 
-scale = 0.01 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
+scale = 1 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
 # Choices are 1 (openmp) 2 (cupy)
@@ -989,6 +989,15 @@ for t in domain.evolve(yieldstep=yieldstep, outputstep=outputstep, finaltime=fin
     # Report inlet statistics
     if myid == 0 and creek_inlet is not None:
         print(f"  Inlet applied volume: {creek_inlet.total_applied_volume:.2f} m³")
+
+    # Report statistics for GPU testing (like CDAC script)
+    stage = domain.quantities['stage']
+    max_stage = stage.get_maximum_value()
+    wet_indices = domain.get_wet_elements()
+    wet_count = len(wet_indices)
+    water_vol = domain.get_water_volume()
+    if myid == 0:
+        print(f"  Max stage: {max_stage:.4f} m, Wet elements: {wet_count}, Volume: {water_vol:.2f} m³")
 
 barrier()
 #profiler.disable()
