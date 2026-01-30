@@ -8,6 +8,7 @@
 #define SW_DOMAIN_H
 
 #include <stdint.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <inttypes.h>

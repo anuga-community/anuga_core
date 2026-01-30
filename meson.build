@@ -48,23 +48,19 @@ if openmp.found()
   # On Windows, the mingw compiler does not support OpenMP ATOMIC operations
   # so using gcc_win-64 gxx_win-64 provided by conda-forge
   # On linux, OpenMP is supported by gcc and g++
-  # On macOS, OpenMP is not supported by the Apple clang compiler so using 
+  # On macOS, OpenMP is not supported by the Apple clang compiler so using
   # clang and llvm-openmp provided by conda-forge
+  #
+  # Note: These flags are for the original mode 1 code (sw_domain_openmp_ext)
+  # The new mode 2 code (sw_domain_gpu_ext) has its own flags in shallow_water/meson.build
 
   if cc.get_id() in ['intel', 'intel-cl', 'icx']
     openmp_c_args = ['-O3', '-qopenmp', '-g']
     add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
   elif cc.get_id() == 'nvidia_hpc'
-    # Only add GPU flags if gpu option is enabled, otherwise just use multicore OpenMP
-    if get_option('gpu')
-      gpu_arch = get_option('gpu_arch')
-      openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g', '-gpu=' + gpu_arch, '-gpu=mem:separate']
-      add_project_link_arguments(['-mp=multicore,gpu', '-acc'], language: ['c', 'cpp'])
-    else
-      # CPU-only OpenMP with NVHPC (no CUDA required)
-      openmp_c_args = ['-O3', '-mp=multicore', '-g']
-      add_project_link_arguments(['-mp=multicore'], language: ['c', 'cpp'])
-    endif
+    # Mode 1 always uses CPU-only multicore OpenMP (no GPU)
+    openmp_c_args = ['-O3', '-mp=multicore', '-g']
+    add_project_link_arguments(['-mp=multicore'], language: ['c', 'cpp'])
   else
     openmp_c_args = ['-O3', '-fopenmp', '-g']
     add_project_link_arguments('-fopenmp', language: ['c', 'cpp'])

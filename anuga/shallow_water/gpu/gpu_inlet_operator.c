@@ -9,6 +9,7 @@
 #include <omp.h>
 #include "gpu_domain.h"
 #include "gpu_device_helpers.h"
+#include "gpu_omp_macros.h"
 
 // velocity_protection constant (matches anuga.config)
 #define VELOCITY_PROTECTION 1.0e-6
@@ -209,7 +210,7 @@ double gpu_inlet_get_volume(struct gpu_domain *GD, int op_id) {
     }
 
     double volume = 0.0;
-    #pragma omp target teams distribute parallel for reduction(+:volume)
+    OMP_PARALLEL_LOOP_REDUCTION_PLUS(volume)
     for (int k = 0; k < num; k++) {
         int i = indices[k];
         double depth = stage_c[i] - bed_c[i];
@@ -262,7 +263,7 @@ void gpu_inlet_get_velocities(struct gpu_domain *GD, int op_id,
     double *s_ymom = op->scratch_ymom;
 
     // GPU gather: read from domain arrays into scratch buffers on device
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         int i = indices[k];
         s_depths[k] = stage_c[i] - bed_c[i];
@@ -300,7 +301,7 @@ void gpu_inlet_set_depths(struct gpu_domain *GD, int op_id, double depth) {
     double * restrict stage_c = GD->D.stage_centroid_values;
     double * restrict bed_c = GD->D.bed_centroid_values;
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         int i = indices[k];
         stage_c[i] = bed_c[i] + depth;
@@ -316,7 +317,7 @@ void gpu_inlet_set_xmoms(struct gpu_domain *GD, int op_id, double value) {
     int * restrict indices = op->indices;
     double * restrict xmom_c = GD->D.xmom_centroid_values;
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         xmom_c[indices[k]] = value;
     }
@@ -331,7 +332,7 @@ void gpu_inlet_set_ymoms(struct gpu_domain *GD, int op_id, double value) {
     int * restrict indices = op->indices;
     double * restrict ymom_c = GD->D.ymom_centroid_values;
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         ymom_c[indices[k]] = value;
     }
@@ -352,7 +353,7 @@ void gpu_inlet_set_xmoms_array(struct gpu_domain *GD, int op_id,
     memcpy(scratch, values, n * sizeof(double));
     #pragma omp target update to(scratch[0:n])
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         xmom_c[indices[k]] = scratch[k];
     }
@@ -372,7 +373,7 @@ void gpu_inlet_set_ymoms_array(struct gpu_domain *GD, int op_id,
     memcpy(scratch, values, n * sizeof(double));
     #pragma omp target update to(scratch[0:n])
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         ymom_c[indices[k]] = scratch[k];
     }
@@ -408,7 +409,7 @@ void gpu_inlet_set_stages_evenly(struct gpu_domain *GD, int op_id, double volume
     double *bed = op->scratch_bed;
 
     // Small D2H: gather stages and bed for inlet triangles on GPU
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         int i = indices[k];
         stages[k] = stage_c[i];
@@ -471,7 +472,7 @@ void gpu_inlet_set_stages_evenly(struct gpu_domain *GD, int op_id, double volume
     // Small H2D: update stages scratch buffer on GPU, then scatter to domain array
     #pragma omp target update to(stages[0:n])
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         int i = indices[k];
         stage_c[i] = stages[k];
@@ -513,7 +514,7 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
 
         // Get depths from GPU for momentum calculation
         double *s_depths = op->scratch_depths;
-        #pragma omp target teams distribute parallel for
+        OMP_PARALLEL_LOOP
         for (int k = 0; k < n; k++) {
             int i = indices[k];
             s_depths[k] = stage_c[i] - bed_c[i];
@@ -552,7 +553,7 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
 
         // Get depths from GPU for momentum
         double *s_depths = op->scratch_depths;
-        #pragma omp target teams distribute parallel for
+        OMP_PARALLEL_LOOP
         for (int k = 0; k < n; k++) {
             int i = indices[k];
             s_depths[k] = stage_c[i] - bed_c[i];

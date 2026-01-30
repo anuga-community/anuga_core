@@ -22,10 +22,12 @@ py3.extension_module('sw_domain_openmp_ext',
 )
 
 
-# GPU extension with MPI support (optional)
-gpu_enabled = get_option('gpu')
+# New OpenMP implementation (mode 2) with MPI support
+# Can target GPU (gpu_offload=true) or CPU multicore (gpu_offload=false)
+new_omp_enabled = get_option('new_omp')
+gpu_offload = get_option('gpu_offload')
 
-if gpu_enabled
+if new_omp_enabled
   mpi_dep = dependency('mpi', language: 'c', required: true)
 
   # Get mpi4py include directory
@@ -36,7 +38,7 @@ if gpu_enabled
 
   gpu_inc_dir = include_directories('../utilities', incdir_numpy, mpi4py_incdir, 'gpu')
 
-  # GPU architecture option
+  # GPU architecture option (only used when gpu_offload=true)
   # NVIDIA: cc70 (V100), cc80 (A100), cc90 (H100)
   # AMD: gfx908 (MI100), gfx90a (MI210/MI250), gfx942 (MI300X)
   gpu_arch = get_option('gpu_arch')
@@ -44,34 +46,53 @@ if gpu_enabled
   # Detect if targeting AMD or NVIDIA based on architecture string
   is_amd_gpu = gpu_arch.startswith('gfx')
 
-  # Compiler-specific GPU offloading flags
-  if cc.get_id() == 'nvidia_hpc'
-    # NVIDIA HPC SDK - best GPU support for NVIDIA GPUs
-    gpu_c_args = ['-O3', '-mp=gpu,multicore', '-Minfo=accel', '-g', '-gpu=' + gpu_arch]
-    if get_option('gpu_aware_mpi')
-      gpu_c_args += ['-DGPU_AWARE_MPI']
-    endif
-  elif cc.get_id() == 'clang'
-    if is_amd_gpu
-      # Clang/AOMP for AMD GPUs
-      gpu_c_args = ['-O3', '-fopenmp', '-fopenmp-targets=amdgcn-amd-amdhsa',
-                    '-Xopenmp-target=amdgcn-amd-amdhsa', '-march=' + gpu_arch, '-g']
+  # Compiler-specific flags
+  # When gpu_offload=false, compile for CPU multicore (no GPU offloading)
+  # This allows multiprocessor_mode=2 to run on CPUs with any OpenMP compiler
+  if gpu_offload
+    # GPU offloading enabled
+    if cc.get_id() == 'nvidia_hpc'
+      # NVIDIA HPC SDK - best GPU support for NVIDIA GPUs
+      gpu_c_args = ['-O3', '-mp=gpu,multicore', '-Minfo=accel', '-g', '-gpu=' + gpu_arch]
+    elif cc.get_id() == 'clang'
+      if is_amd_gpu
+        # Clang/AOMP for AMD GPUs
+        gpu_c_args = ['-O3', '-fopenmp', '-fopenmp-targets=amdgcn-amd-amdhsa',
+                      '-Xopenmp-target=amdgcn-amd-amdhsa', '-march=' + gpu_arch, '-g']
+      else
+        # Clang with LLVM offloading for NVIDIA
+        # Convert cc70 -> sm_70 format for clang
+        sm_arch = 'sm_' + gpu_arch.substring(2)
+        gpu_c_args = ['-O3', '-fopenmp', '-fopenmp-targets=nvptx64-nvidia-cuda',
+                      '-Xopenmp-target=nvptx64-nvidia-cuda', '-march=' + sm_arch, '-g']
+      endif
     else
-      # Clang with LLVM offloading for NVIDIA
-      # Convert cc70 -> sm_70 format for clang
-      sm_arch = 'sm_' + gpu_arch.substring(2)
-      gpu_c_args = ['-O3', '-fopenmp', '-fopenmp-targets=nvptx64-nvidia-cuda',
-                    '-Xopenmp-target=nvptx64-nvidia-cuda', '-march=' + sm_arch, '-g']
+      # GCC with nvptx offloading (NVIDIA only, AMD not well supported)
+      gpu_c_args = ['-O3', '-fopenmp', '-foffload=nvptx-none', '-g']
     endif
-    if get_option('gpu_aware_mpi')
-      gpu_c_args += ['-DGPU_AWARE_MPI']
-    endif
+    message('GPU offloading enabled')
+    message('GPU architecture: ' + gpu_arch)
   else
-    # GCC with nvptx offloading (NVIDIA only, AMD not well supported)
-    gpu_c_args = ['-O3', '-fopenmp', '-foffload=nvptx-none', '-g']
-    if get_option('gpu_aware_mpi')
-      gpu_c_args += ['-DGPU_AWARE_MPI']
+    # CPU multicore execution (no GPU offloading)
+    # #pragma omp target teams loop becomes regular OpenMP parallel
+    if cc.get_id() == 'nvidia_hpc'
+      gpu_c_args = ['-O3', '-mp=multicore', '-Minfo=accel', '-g']
+    elif cc.get_id() == 'intel' or cc.get_id() == 'intel-cl'
+      gpu_c_args = ['-O3', '-qopenmp', '-g']
+    elif cc.get_id() == 'intel-llvm'
+      gpu_c_args = ['-O3', '-fiopenmp', '-g']
+    else
+      # GCC, Clang, and others
+      gpu_c_args = ['-O3', '-fopenmp', '-g']
     endif
+    # Define macro so code knows it's CPU-only mode
+    gpu_c_args += ['-DCPU_ONLY_MODE']
+    message('CPU multicore mode enabled (no GPU offloading)')
+  endif
+
+  if get_option('gpu_aware_mpi') and gpu_offload
+    gpu_c_args += ['-DGPU_AWARE_MPI']
+    message('GPU-aware MPI enabled')
   endif
 
   gpu_deps = openmp_deps + [mpi_dep]
@@ -94,10 +115,10 @@ if gpu_enabled
     install: true,
   )
 
-  message('GPU extension enabled')
-  message('GPU architecture: ' + gpu_arch)
-  if get_option('gpu_aware_mpi')
-    message('GPU-aware MPI enabled')
+  if gpu_offload
+    message('Mode 2 extension enabled (GPU target)')
+  else
+    message('Mode 2 extension enabled (CPU multicore target)')
   endif
 endif
 

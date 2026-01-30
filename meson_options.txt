@@ -1,8 +1,14 @@
 # ANUGA build options
 
-# GPU acceleration with OpenMP target offloading
-option('gpu', type: 'boolean', value: false,
-       description: 'Enable GPU acceleration with OpenMP target offloading')
+# New OpenMP implementation (multiprocessor_mode=2)
+# This builds the modern OpenMP-based code that can run on GPU or CPU
+option('new_omp', type: 'boolean', value: false,
+       description: 'Enable new OpenMP implementation (mode 2) - can target GPU or CPU')
+
+# GPU offload - when true, targets GPU; when false, runs on CPU multicore
+# Only relevant when new_omp=true
+option('gpu_offload', type: 'boolean', value: true,
+       description: 'Target GPU (true) or CPU multicore (false) for mode 2 code')
 
 # GPU-aware MPI for direct device-to-device communication
 option('gpu_aware_mpi', type: 'boolean', value: false,

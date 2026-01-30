@@ -8,6 +8,7 @@
 #include <omp.h>
 #include <mpi.h>
 #include "gpu_domain.h"
+#include "gpu_omp_macros.h"
 
 // Domain initialization, memory management, and sync functions
 
@@ -836,7 +837,7 @@ void gpu_boundary_edge_sync(struct gpu_domain *GD) {
     double *height_ev = GD->D.height_edge_values;
 
     // Gather on GPU into contiguous staging buffers
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int i = 0; i < nc; i++) {
         int vid = cell_ids[i];
         for (int e = 0; e < 3; e++) {

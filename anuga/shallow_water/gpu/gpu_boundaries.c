@@ -8,6 +8,7 @@
 #include <string.h>
 #include <omp.h>
 #include "gpu_domain.h"
+#include "gpu_omp_macros.h"
 
 // ============================================================================
 // Reflective Boundary Setup
@@ -105,7 +106,7 @@ void gpu_evaluate_reflective_boundary(struct gpu_domain *GD) {
     double *ymom_bv = GD->D.ymom_boundary_values;
 
     // All arrays already mapped via target enter data
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < num_edges; k++) {
         int bid = boundary_indices[k];
         int vid = vol_ids[k];
@@ -223,7 +224,7 @@ void gpu_evaluate_dirichlet_boundary(struct gpu_domain *GD) {
     double *xmom_bv = GD->D.xmom_boundary_values;
     double *ymom_bv = GD->D.ymom_boundary_values;
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < num_edges; k++) {
         int bid = boundary_indices[k];
         int vid = vol_ids[k];
@@ -335,7 +336,7 @@ void gpu_evaluate_transmissive_boundary(struct gpu_domain *GD) {
     double *xmom_bv = GD->D.xmom_boundary_values;
     double *ymom_bv = GD->D.ymom_boundary_values;
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < num_edges; k++) {
         int bid = boundary_indices[k];
         int vid = vol_ids[k];
@@ -451,7 +452,7 @@ void gpu_evaluate_transmissive_n_zero_t_boundary(struct gpu_domain *GD) {
     double *xmom_bv = GD->D.xmom_boundary_values;
     double *ymom_bv = GD->D.ymom_boundary_values;
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < num_edges; k++) {
         int bid = boundary_indices[k];
         int vid = vol_ids[k];
@@ -576,7 +577,7 @@ void gpu_evaluate_time_boundary(struct gpu_domain *GD) {
     double *xmom_bv = GD->D.xmom_boundary_values;
     double *ymom_bv = GD->D.ymom_boundary_values;
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < num_edges; k++) {
         int bid = boundary_indices[k];
         int vid = vol_ids[k];
