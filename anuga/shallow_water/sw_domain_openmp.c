@@ -457,10 +457,15 @@ void apply_weir_discharge_correction(const struct domain * __restrict D, const E
     }
 }
 
+// TODO: PORT TO core_kernels.c (HIGH PRIORITY)
+// Missing features in core_compute_fluxes_central:
+//   1. Riverwall support (weir discharge adjustments) - see apply_weir_discharge_correction()
+//   2. Boundary flux tracking (boundary_flux_sum for boundary_flux_integral_operator)
+// Once ported, enable USE_UNIFIED_KERNELS=1 to use core_compute_fluxes_central
 double _openmp_compute_fluxes_central(const struct domain *__restrict D,
                                       double timestep)
 {
-  // Local variables 
+  // Local variables
   anuga_int number_of_elements = D->number_of_elements;
   anuga_int n_riverwall_edges = D->number_of_riverwall_edges;
   //printf(" n edges %d \n", n_riverwall_edges);
@@ -1360,6 +1365,9 @@ for (k = 0; k < N; k++)
   }
 }
 
+// TODO: PORT TO core_kernels.c (MEDIUM PRIORITY)
+// Edge-based variant of sloped Manning friction
+// Currently only flat and sloped (centroid-based) semi-implicit friction are in core_kernels.c
 void _openmp_manning_friction_sloped_semi_implicit_edge_based(const struct domain *__restrict D)
 {
   anuga_int k;
@@ -1422,6 +1430,8 @@ for (k = 0; k < N; k++)
   }
 }
 
+// TODO: PORT TO core_kernels.c (LOW PRIORITY)
+// Explicit (non semi-implicit) friction - rarely used, semi-implicit is preferred
 // Original function for flat friction
 void _openmp_manning_friction_flat(const double g, const double eps, const anuga_int N,
                                    double *__restrict w, double *__restrict z_centroid,
@@ -1455,6 +1465,8 @@ void _openmp_manning_friction_flat(const double g, const double eps, const anuga
 }
 
 
+// TODO: PORT TO core_kernels.c (LOW PRIORITY)
+// Explicit (non semi-implicit) sloped friction - rarely used
 void _openmp_manning_friction_sloped(const double g, const double eps, const anuga_int N,
                                      double *__restrict x_vertex, double *__restrict w, double *__restrict z_vertex,
                                      double *__restrict uh, double *__restrict vh,
@@ -1503,6 +1515,8 @@ void _openmp_manning_friction_sloped(const double g, const double eps, const anu
   }
 }
 
+// TODO: PORT TO core_kernels.c (LOW PRIORITY)
+// Explicit (non semi-implicit) sloped edge-based friction - rarely used
 void _openmp_manning_friction_sloped_edge_based(const double g, const double eps, const anuga_int N,
                                      double *__restrict x_edge, double *__restrict w, double *__restrict z_edge,
                                      double *__restrict uh, double *__restrict vh,
@@ -1696,10 +1710,10 @@ anuga_int _openmp_gravity_wb(const struct domain *__restrict D) {
 }
 
 
-// Old function for extrapolating second order edge values from centroid values
+// DEPRECATED: Vertex-based extrapolation - replaced by edge-based approach
 // This function is now replaced by _openmp_extrapolate_second_order_edge_sw
 // which uses SIMD and OpenMP for parallelization
-// This function is kept for reference and compatibility
+// DO NOT PORT TO core_kernels.c - use edge-based extrapolation instead
 void _openmp_extrapolate_second_order_sw(const struct domain *__restrict D) {
 
 
@@ -2465,9 +2479,10 @@ void _openmp_set_omp_num_threads(anuga_int num_threads)
   omp_set_num_threads(num_threads);
 }
 
+// PORTED TO GPU: See gpu_evaluate_reflective_boundary() in sw_domain_gpu_ext.pyx
+// GPU version uses different approach - initializes boundary info once, then evaluates on GPU
 void _openmp_evaluate_reflective_segment(const struct domain *__restrict D, anuga_int N,
    anuga_int *edge_segment, anuga_int *vol_ids, anuga_int *edge_ids){
-   // JORGE TODO: PORT TO GPU
 
   anuga_int boundary_length = D->boundary_length;
   anuga_int number_of_edges = N;
