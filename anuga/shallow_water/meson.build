@@ -1,7 +1,11 @@
 
 inc_dir = include_directories('../utilities', incdir_numpy)
 
+# Include directory with GPU subfolder for unified kernels
+inc_dir_unified = include_directories('../utilities', incdir_numpy, 'gpu')
 
+# Compiler flags for unified kernels (CPU-only mode)
+unified_c_args = openmp_c_args + ['-DCPU_ONLY_MODE']
 
 # py3.extension_module('boundaries',
 #   sources: ['boundaries.pyx'],
@@ -13,9 +17,12 @@ inc_dir = include_directories('../utilities', incdir_numpy)
 
 
 py3.extension_module('sw_domain_openmp_ext',
-  sources: ['sw_domain_openmp_ext.pyx'],
-  c_args : openmp_c_args,
-  include_directories: inc_dir,
+  sources: [
+    'sw_domain_openmp_ext.pyx',
+    'gpu/core_kernels.c',
+  ],
+  c_args : unified_c_args,
+  include_directories: inc_dir_unified,
   dependencies: openmp_deps,
   subdir: 'anuga/shallow_water',
   install: true,
@@ -53,6 +60,7 @@ if new_omp_enabled
     # GPU offloading enabled
     if cc.get_id() == 'nvidia_hpc'
       # NVIDIA HPC SDK - best GPU support for NVIDIA GPUs
+      # -noacc disables OpenACC to avoid __acc_compiled symbol issues
       gpu_c_args = ['-O3', '-mp=gpu,multicore', '-Minfo=accel', '-g', '-gpu=' + gpu_arch]
     elif cc.get_id() == 'clang'
       if is_amd_gpu
@@ -107,6 +115,7 @@ if new_omp_enabled
       'gpu/gpu_rate_operator.c',
       'gpu/gpu_inlet_operator.c',
       'gpu/gpu_flop.c',
+      'gpu/core_kernels.c',
     ],
     c_args: gpu_c_args,
     include_directories: gpu_inc_dir,

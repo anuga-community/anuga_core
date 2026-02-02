@@ -59,8 +59,8 @@ if openmp.found()
     add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
   elif cc.get_id() == 'nvidia_hpc'
     # Mode 1 always uses CPU-only multicore OpenMP (no GPU)
-    openmp_c_args = ['-O3', '-mp=multicore', '-g']
-    add_project_link_arguments(['-mp=multicore'], language: ['c', 'cpp'])
+    openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g']
+    add_project_link_arguments(['-mp=gpu,multicore'], language: ['c', 'cpp'])
   else
     openmp_c_args = ['-O3', '-fopenmp', '-g']
     add_project_link_arguments('-fopenmp', language: ['c', 'cpp'])

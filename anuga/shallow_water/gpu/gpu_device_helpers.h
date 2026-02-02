@@ -7,7 +7,7 @@
 #define GPU_DEVICE_HELPERS_H
 
 #include <math.h>
-#include "gpu_domain.h"
+#include "anuga_typedefs.h"  // For anuga_int - no MPI dependency
 
 // ============================================================================
 // FLOP Counting Constants (Gordon Bell Performance Profiling)

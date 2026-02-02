@@ -14,6 +14,9 @@
 // Include pragma macros for GPU vs CPU execution
 #include "gpu_omp_macros.h"
 
+// Core kernels (shared with sw_domain_openmp_ext)
+#include "core_kernels.h"
+
 // GPU compute kernels: extrapolate, flux, protect, update, etc.
 
 // ============================================================================
@@ -385,10 +388,8 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
     double * restrict areas = GD->D.areas;
     double * restrict max_speed_array = GD->D.max_speed;
 
-    double local_timestep = 1.0e+100;
-
-    // Main flux computation loop
-    OMP_PARALLEL_LOOP_REDUCTION_MIN(local_timestep)
+    // Main flux computation loop - no reduction, compute timestep from max_speed after
+    OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
         double edgeflux[3];
         double ql[3], qr[3];
@@ -480,12 +481,8 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
             edgeflux[1] *= -length;
             edgeflux[2] *= -length;
 
-            // Update timestep based on max wave speed
-            if (max_speed_local > epsilon) {
-                double edge_timestep = radii[k] / fmax(max_speed_local, epsilon);
-                local_timestep = fmin(local_timestep, edge_timestep);
-                speed_max_last = fmax(speed_max_last, max_speed_local);
-            }
+            // Track max speed for this element
+            speed_max_last = fmax(speed_max_last, max_speed_local);
 
             // Accumulate flux contributions
             stage_eu[k] += edgeflux[0];
@@ -511,6 +508,22 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
 
     } // End element loop
 
+    // Sync max_speed from device to host for timestep computation
+#ifndef CPU_ONLY_MODE
+    #pragma omp target update from(max_speed_array[0:n])
+#endif
+
+    // Compute minimum timestep from max_speed array on host (avoids GPU reduction issues)
+    double local_timestep = 1.0e+100;
+    for (anuga_int k = 0; k < n; k++) {
+        if (max_speed_array[k] > epsilon) {
+            double cell_timestep = radii[k] / max_speed_array[k];
+            if (cell_timestep < local_timestep) {
+                local_timestep = cell_timestep;
+            }
+        }
+    }
+
     // Count FLOPs: 380 FLOPs per element (3 edges × flux function)
     if (GD->flops.enabled) {
         GD->flops.compute_fluxes_flops += (uint64_t)n * FLOPS_COMPUTE_FLUXES;
@@ -521,114 +534,40 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
 }
 
 void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
-    // Update centroid values using explicit and semi-implicit updates
-    // Q_new = (Q_old + timestep * explicit_update) / (1 - timestep * semi_implicit_update)
-    // Arrays are already mapped to GPU
-
-    anuga_int n = GD->D.number_of_elements;
-
-    double * restrict stage_cv = GD->D.stage_centroid_values;
-    double * restrict xmom_cv = GD->D.xmom_centroid_values;
-    double * restrict ymom_cv = GD->D.ymom_centroid_values;
-    double * restrict stage_eu = GD->D.stage_explicit_update;
-    double * restrict xmom_eu = GD->D.xmom_explicit_update;
-    double * restrict ymom_eu = GD->D.ymom_explicit_update;
-    double * restrict stage_siu = GD->D.stage_semi_implicit_update;
-    double * restrict xmom_siu = GD->D.xmom_semi_implicit_update;
-    double * restrict ymom_siu = GD->D.ymom_semi_implicit_update;
-
-    OMP_PARALLEL_LOOP
-    for (anuga_int k = 0; k < n; k++) {
-        // Normalize semi-implicit update by current value
-        double stage_c = stage_cv[k];
-        double xmom_c = xmom_cv[k];
-        double ymom_c = ymom_cv[k];
-
-        double stage_si = (stage_c == 0.0) ? 0.0 : stage_siu[k] / stage_c;
-        double xmom_si = (xmom_c == 0.0) ? 0.0 : xmom_siu[k] / xmom_c;
-        double ymom_si = (ymom_c == 0.0) ? 0.0 : ymom_siu[k] / ymom_c;
-
-        // Apply explicit update
-        stage_cv[k] += timestep * stage_eu[k];
-        xmom_cv[k] += timestep * xmom_eu[k];
-        ymom_cv[k] += timestep * ymom_eu[k];
-
-        // Apply semi-implicit update (from friction etc.)
-        double denom;
-
-        denom = 1.0 - timestep * stage_si;
-        if (denom > 0.0) stage_cv[k] /= denom;
-
-        denom = 1.0 - timestep * xmom_si;
-        if (denom > 0.0) xmom_cv[k] /= denom;
-
-        denom = 1.0 - timestep * ymom_si;
-        if (denom > 0.0) ymom_cv[k] /= denom;
-
-        // Reset semi-implicit update for next timestep
-        stage_siu[k] = 0.0;
-        xmom_siu[k] = 0.0;
-        ymom_siu[k] = 0.0;
-    }
+    // Delegate to core kernel
+    core_update_conserved_quantities(&GD->D, timestep);
 
     // Count FLOPs: 21 FLOPs per element (explicit + semi-implicit update)
     if (GD->flops.enabled) {
-        GD->flops.update_flops += (uint64_t)n * FLOPS_UPDATE;
+        GD->flops.update_flops += (uint64_t)GD->D.number_of_elements * FLOPS_UPDATE;
         GD->flops.update_calls++;
     }
 }
 
 void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
-    // Backup centroid values for RK2 - simple array copy
-    // Arrays are already mapped to GPU via gpu_domain_map_arrays()
-
-    anuga_int n = GD->D.number_of_elements;
-
-    double * restrict stage_cv = GD->D.stage_centroid_values;
-    double * restrict xmom_cv = GD->D.xmom_centroid_values;
-    double * restrict ymom_cv = GD->D.ymom_centroid_values;
-    double * restrict stage_backup = GD->D.stage_backup_values;
-    double * restrict xmom_backup = GD->D.xmom_backup_values;
-    double * restrict ymom_backup = GD->D.ymom_backup_values;
-
-    OMP_PARALLEL_LOOP
-    for (anuga_int k = 0; k < n; k++) {
-        stage_backup[k] = stage_cv[k];
-        xmom_backup[k] = xmom_cv[k];
-        ymom_backup[k] = ymom_cv[k];
-    }
+    // Delegate to core kernel
+    core_backup_conserved_quantities(&GD->D);
 
     // Count FLOPs: 0 FLOPs per element (memory copy only)
     if (GD->flops.enabled) {
-        GD->flops.backup_flops += (uint64_t)n * FLOPS_BACKUP;
+        GD->flops.backup_flops += (uint64_t)GD->D.number_of_elements * FLOPS_BACKUP;
         GD->flops.backup_calls++;
     }
 }
 
 void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
-    // RK2 combination: Q = a*Q_current + b*Q_backup
-    // Typically called with a=0.5, b=0.5 for standard RK2
-    // Arrays are already mapped to GPU
+    // Delegate to core kernel (c=0.0 for RK2)
+    core_saxpy_conserved_quantities(&GD->D, a, b, 0.0);
 
+    // Also update height to match the new stage (needed for volume calculation)
     anuga_int n = GD->D.number_of_elements;
-
     double * restrict stage_cv = GD->D.stage_centroid_values;
-    double * restrict xmom_cv = GD->D.xmom_centroid_values;
-    double * restrict ymom_cv = GD->D.ymom_centroid_values;
-    double * restrict stage_backup = GD->D.stage_backup_values;
-    double * restrict xmom_backup = GD->D.xmom_backup_values;
-    double * restrict ymom_backup = GD->D.ymom_backup_values;
     double * restrict height_cv = GD->D.height_centroid_values;
     double * restrict bed_cv = GD->D.bed_centroid_values;
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
-        double stage = a * stage_cv[k] + b * stage_backup[k];
-        stage_cv[k] = stage;
-        xmom_cv[k] = a * xmom_cv[k] + b * xmom_backup[k];
-        ymom_cv[k] = a * ymom_cv[k] + b * ymom_backup[k];
-        // Update height to match the new stage (needed for volume calculation)
-        height_cv[k] = fmax(stage - bed_cv[k], 0.0);
+        height_cv[k] = fmax(stage_cv[k] - bed_cv[k], 0.0);
     }
 
     // Count FLOPs: 9 FLOPs per element (3 quantities × (2 mul + 1 add) + height calc)
@@ -639,46 +578,23 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
 }
 
 double gpu_protect(struct gpu_domain *GD) {
-    // Protect against negative water depths
-    // Sets stage = bed where water depth would be negative
-    // Also zeros momentum where depth is very small
-    // Returns mass_error: total mass added to prevent negative depths
+    // Delegate to core kernel
+    double mass_error = core_protect(&GD->D);
 
+    // Also update height quantity (core_protect doesn't do this)
     anuga_int n = GD->D.number_of_elements;
-    double min_height = GD->D.minimum_allowed_height;
-    double mass_error = 0.0;
-
     double * restrict stage_cv = GD->D.stage_centroid_values;
-    double * restrict xmom_cv = GD->D.xmom_centroid_values;
-    double * restrict ymom_cv = GD->D.ymom_centroid_values;
     double * restrict bed_cv = GD->D.bed_centroid_values;
     double * restrict height_cv = GD->D.height_centroid_values;
-    double * restrict areas = GD->D.areas;
 
-    OMP_PARALLEL_LOOP_REDUCTION_PLUS(mass_error)
+    OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
-        double h = stage_cv[k] - bed_cv[k];
-
-        if (h < min_height) {
-            // Very shallow - zero momentum to prevent instability
-            xmom_cv[k] = 0.0;
-            ymom_cv[k] = 0.0;
-        }
-
-        if (h < 0.0) {
-            // Negative depth - track mass error and set stage to bed
-            mass_error += (-h) * areas[k];
-            stage_cv[k] = bed_cv[k];
-            h = 0.0;
-        }
-
-        // Update height quantity
-        height_cv[k] = h;
+        height_cv[k] = fmax(stage_cv[k] - bed_cv[k], 0.0);
     }
 
     // Count FLOPs: 5 FLOPs per element (depth check, mass error)
     if (GD->flops.enabled) {
-        GD->flops.protect_flops += (uint64_t)n * FLOPS_PROTECT;
+        GD->flops.protect_flops += (uint64_t)GD->D.number_of_elements * FLOPS_PROTECT;
         GD->flops.protect_calls++;
     }
 
@@ -710,57 +626,12 @@ double gpu_compute_water_volume(struct gpu_domain *GD) {
 }
 
 void gpu_manning_friction(struct gpu_domain *GD) {
-    // GPU implementation of Manning friction (flat, semi-implicit)
-    // Based on _openmp_manning_friction_flat_semi_implicit in sw_domain_openmp.c
-    //
-    // Adds friction contribution to semi_implicit_update arrays.
-    // The semi-implicit formulation provides better stability for friction terms.
-
-    anuga_int n = GD->D.number_of_elements;
-    double g = GD->D.g;
-    double eps = GD->D.minimum_allowed_height;
-    double seven_thirds = 7.0 / 3.0;
-
-    // Small threshold for friction coefficient
-    double eta_small = 1.0e-12;
-
-    // Extract array pointers (restrict enables better optimization)
-    double * restrict stage_cv = GD->D.stage_centroid_values;
-    double * restrict bed_cv = GD->D.bed_centroid_values;
-    double * restrict xmom_cv = GD->D.xmom_centroid_values;
-    double * restrict ymom_cv = GD->D.ymom_centroid_values;
-    double * restrict friction_cv = GD->D.friction_centroid_values;
-    double * restrict xmom_siu = GD->D.xmom_semi_implicit_update;
-    double * restrict ymom_siu = GD->D.ymom_semi_implicit_update;
-
-    OMP_PARALLEL_LOOP
-    for (anuga_int k = 0; k < n; k++) {
-        double S = 0.0;
-        double uh = xmom_cv[k];
-        double vh = ymom_cv[k];
-        double eta = friction_cv[k];
-
-        // Compute absolute momentum
-        double abs_mom = sqrt(uh * uh + vh * vh);
-
-        if (eta > eta_small) {
-            double h = stage_cv[k] - bed_cv[k];
-            if (h >= eps) {
-                // Manning friction: S = -g * n^2 * |u| / h^(7/3)
-                // Applied semi-implicitly via: du/dt = S * u
-                S = -g * eta * eta * abs_mom;
-                S /= pow(h, seven_thirds);
-            }
-        }
-
-        // Add to semi-implicit update (will be applied in update_conserved_quantities)
-        xmom_siu[k] += S * uh;
-        ymom_siu[k] += S * vh;
-    }
+    // Delegate to core kernel
+    core_manning_friction_flat_semi_implicit(&GD->D);
 
     // Count FLOPs: 15 FLOPs per element (sqrt, pow, semi-implicit)
     if (GD->flops.enabled) {
-        GD->flops.manning_flops += (uint64_t)n * FLOPS_MANNING;
+        GD->flops.manning_flops += (uint64_t)GD->D.number_of_elements * FLOPS_MANNING;
         GD->flops.manning_calls++;
     }
 }
