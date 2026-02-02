@@ -378,8 +378,8 @@ double core_compute_fluxes_central(struct domain *D, double timestep) {
     double g = D->g;
     double epsilon = D->epsilon;
     anuga_int low_froude = D->low_froude;
-    double evolve_max_timestep = D->evolve_max_timestep;
 
+    double * restrict stage_cv = D->stage_centroid_values;
     double * restrict stage_ev = D->stage_edge_values;
     double * restrict xmom_ev = D->xmom_edge_values;
     double * restrict ymom_ev = D->ymom_edge_values;
@@ -402,52 +402,62 @@ double core_compute_fluxes_central(struct domain *D, double timestep) {
     double * restrict edgelengths = D->edgelengths;
     double * restrict areas = D->areas;
     double * restrict radii = D->radii;
+    double * restrict max_speed_array = D->max_speed;
 
+    // Riverwall arrays (may be NULL if not set up)
     anuga_int * restrict edge_flux_type = D->edge_flux_type;
     anuga_int * restrict edge_river_wall_counter = D->edge_river_wall_counter;
     double * restrict riverwall_elevation = D->riverwall_elevation;
+    anuga_int * restrict riverwall_rowIndex = D->riverwall_rowIndex;
+    double * restrict riverwall_hydraulic_properties = D->riverwall_hydraulic_properties;
+    anuga_int ncol_riverwall_hydraulic_properties = D->ncol_riverwall_hydraulic_properties;
 
-    double local_timestep = evolve_max_timestep;
+    // Check if riverwall support is available
+    int has_riverwalls = (edge_flux_type != NULL && riverwall_elevation != NULL &&
+                          riverwall_rowIndex != NULL && riverwall_hydraulic_properties != NULL);
 
-    // Zero explicit updates
+    // Main flux computation loop - no reduction, compute timestep from max_speed after
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
+        double edgeflux[3];
+        double ql[3], qr[3];
+        double speed_max_last = 0.0;
+
+        // Zero the explicit updates for this element
         stage_eu[k] = 0.0;
         xmom_eu[k] = 0.0;
         ymom_eu[k] = 0.0;
-    }
 
-    // Main flux loop
-    OMP_PARALLEL_LOOP_REDUCTION_MIN(local_timestep)
-    for (anuga_int k = 0; k < n; k++) {
-        double area = areas[k];
-        double inv_area = 1.0 / area;
-        double max_speed_local = 0.0;
+        // Get centroid values for this element
+        double hc = height_cv[k];
+        double zc = bed_cv[k];
 
+        // Loop over the 3 edges
         for (int i = 0; i < 3; i++) {
-            anuga_int ki = k * 3 + i;
-            anuga_int ki2 = ki * 2;
+            int ki = 3 * k + i;
+            int ki2 = 2 * ki;
 
-            double ql[3], qr[3];
+            // Left state (this element's edge values)
             ql[0] = stage_ev[ki];
             ql[1] = xmom_ev[ki];
             ql[2] = ymom_ev[ki];
             double zl = bed_ev[ki];
             double hle = height_ev[ki];
+
+            // Edge geometry
             double length = edgelengths[ki];
+            double n1 = normals[ki2];
+            double n2 = normals[ki2 + 1];
 
-            anuga_int nb = neighbours[ki];
-            double normal_x = normals[ki2];
-            double normal_y = normals[ki2 + 1];
+            // Get neighbour info
+            anuga_int neighbour = neighbours[ki];
+            int is_boundary = (neighbour < 0);
 
-            double hc = height_cv[k];
-            double zc = bed_cv[k];
-            double hc_n, zc_n;
-            double zr, hre;
+            double zr, hre, hc_n, zc_n;
 
-            if (nb < 0) {
-                // Boundary
-                int m = -nb - 1;
+            if (is_boundary) {
+                // Boundary edge - get values from boundary arrays
+                int m = -neighbour - 1;
                 qr[0] = stage_bv[m];
                 qr[1] = xmom_bv[m];
                 qr[2] = ymom_bv[m];
@@ -456,53 +466,150 @@ double core_compute_fluxes_central(struct domain *D, double timestep) {
                 hc_n = hc;
                 zc_n = zc;
             } else {
-                hc_n = height_cv[nb];
-                zc_n = bed_cv[nb];
+                // Internal edge - get values from neighbour element
                 int m = neighbour_edges[ki];
-                int nm = nb * 3 + m;
+                int nm = neighbour * 3 + m;
                 qr[0] = stage_ev[nm];
                 qr[1] = xmom_ev[nm];
                 qr[2] = ymom_ev[nm];
                 zr = bed_ev[nm];
                 hre = height_ev[nm];
+                hc_n = height_cv[neighbour];
+                zc_n = bed_cv[neighbour];
             }
 
+            // Compute z_half (max bed elevation at edge)
             double z_half = fmax(zl, zr);
 
-            // Check for riverwall
-            if (edge_flux_type[ki] == 1) {
-                int rw_idx = edge_river_wall_counter[ki] - 1;
-                double zwall = riverwall_elevation[rw_idx];
+            // Check for riverwall elevation override (only if riverwall arrays exist)
+            int is_riverwall = 0;
+            int riverwall_idx = 0;
+            if (has_riverwalls && edge_flux_type[ki] == 1) {
+                is_riverwall = 1;
+                riverwall_idx = edge_river_wall_counter[ki] - 1;
+                double zwall = riverwall_elevation[riverwall_idx];
                 z_half = fmax(zwall, z_half);
             }
 
+            // Compute effective heights at the edge
             double h_left = fmax(hle + zl - z_half, 0.0);
             double h_right = fmax(hre + zr - z_half, 0.0);
 
-            double edgeflux[3];
-            double max_speed, pressure_flux;
+            double max_speed_local = 0.0;
+            double pressure_flux = 0.0;
 
-            gpu_flux_function_central(ql, qr, h_left, h_right, hle, hre,
-                                      normal_x, normal_y, epsilon, z_half, g,
-                                      edgeflux, &max_speed, &pressure_flux, low_froude);
+            if (h_left == 0.0 && h_right == 0.0) {
+                // Both heights zero - no flux
+                edgeflux[0] = 0.0;
+                edgeflux[1] = 0.0;
+                edgeflux[2] = 0.0;
+            } else {
+                // Compute flux using central scheme
+                gpu_flux_function_central(ql, qr,
+                                          h_left, h_right,
+                                          hle, hre,
+                                          n1, n2,
+                                          epsilon, z_half, g,
+                                          edgeflux, &max_speed_local, &pressure_flux,
+                                          low_froude);
+            }
 
-            // Accumulate flux
-            double flux_factor = length * inv_area;
-            stage_eu[k] -= edgeflux[0] * flux_factor;
-            xmom_eu[k] -= edgeflux[1] * flux_factor;
-            ymom_eu[k] -= edgeflux[2] * flux_factor;
+            // Apply weir discharge correction for riverwalls
+            if (is_riverwall) {
+                anuga_int ii = riverwall_rowIndex[riverwall_idx] * ncol_riverwall_hydraulic_properties;
+                double Qfactor = riverwall_hydraulic_properties[ii];
+                double s1 = riverwall_hydraulic_properties[ii + 1];
+                double s2 = riverwall_hydraulic_properties[ii + 2];
+                double h1_weir = riverwall_hydraulic_properties[ii + 3];
+                double h2_weir = riverwall_hydraulic_properties[ii + 4];
 
-            // Pressure gradient
-            xmom_eu[k] -= pressure_flux * normal_x * flux_factor;
-            ymom_eu[k] -= pressure_flux * normal_y * flux_factor;
+                double weir_height = fmax(riverwall_elevation[riverwall_idx] - fmin(zl, zr), 0.0);
+                double h_left_weir = fmax(stage_cv[k] - z_half, 0.0);
+                double h_right_weir = is_boundary
+                    ? fmax(hc_n + zr - z_half, 0.0)
+                    : fmax(stage_cv[neighbour] - z_half, 0.0);
 
-            max_speed_local = fmax(max_speed_local, max_speed);
-        }
+                if (riverwall_elevation[riverwall_idx] > fmax(zc, zc_n)) {
+                    // Apply weir adjustment inline
+                    if ((h_left_weir > 0.0) || (h_right_weir > 0.0)) {
+                        double minhd = fmin(h_left_weir, h_right_weir);
+                        double maxhd = fmax(h_left_weir, h_right_weir);
+                        double twothirds = 2.0 / 3.0;
 
-        // Timestep constraint
-        if (max_speed_local > epsilon) {
-            double cell_timestep = radii[k] / max_speed_local;
-            local_timestep = fmin(local_timestep, cell_timestep);
+                        double rw = Qfactor * twothirds * maxhd * sqrt(twothirds * g * maxhd);
+                        double rw2 = Qfactor * twothirds * minhd * sqrt(twothirds * g * minhd);
+                        double rwRat = rw2 / fmax(rw, 1.0e-100);
+                        double hdRat = minhd / fmax(maxhd, 1.0e-100);
+                        double hdWrRat = minhd / fmax(weir_height, 1.0e-100);
+
+                        rw = rw * pow(1.0 - rwRat, 0.385);
+                        if (h_right_weir > h_left_weir) rw *= -1.0;
+
+                        if ((hdRat < s2) && (hdWrRat < h2_weir)) {
+                            double w1 = fmin(fmax(hdRat - s1, 0.0) / (s2 - s1), 1.0);
+                            double w2 = fmin(fmax(hdWrRat - h1_weir, 0.0) / (h2_weir - h1_weir), 1.0);
+                            double newFlux = (rw * (1.0 - w1) + w1 * edgeflux[0]) * (1.0 - w2) + w2 * edgeflux[0];
+
+                            double scaleFlux = (fabs(edgeflux[0]) > 1.0e-100) ? newFlux / edgeflux[0] : 0.0;
+                            scaleFlux = fmax(scaleFlux, 0.0);
+
+                            edgeflux[0] = newFlux;
+                            edgeflux[1] *= fmin(scaleFlux, 10.0);
+                            edgeflux[2] *= fmin(scaleFlux, 10.0);
+                        }
+
+                        if (fabs(edgeflux[0]) > 0.0) {
+                            max_speed_local = sqrt(g * (maxhd + weir_height)) + fabs(edgeflux[0] / (maxhd + 1.0e-12));
+                        }
+                    }
+                }
+            }
+
+            // Multiply flux by edge length (and negate for conservation)
+            edgeflux[0] *= -length;
+            edgeflux[1] *= -length;
+            edgeflux[2] *= -length;
+
+            // Track max speed for this element
+            speed_max_last = fmax(speed_max_last, max_speed_local);
+
+            // Accumulate flux contributions
+            stage_eu[k] += edgeflux[0];
+            xmom_eu[k] += edgeflux[1];
+            ymom_eu[k] += edgeflux[2];
+
+            // Pressure gradient (gravity) terms
+            double pressuregrad_work = length * (-g * 0.5 * (h_left * h_left - hle * hle
+                                       - (hle + hc) * (zl - zc)) + pressure_flux);
+            xmom_eu[k] -= n1 * pressuregrad_work;
+            ymom_eu[k] -= n2 * pressuregrad_work;
+
+        } // End edge loop
+
+        // Store max speed for this element
+        max_speed_array[k] = speed_max_last;
+
+        // Normalize by area
+        double inv_area = 1.0 / areas[k];
+        stage_eu[k] *= inv_area;
+        xmom_eu[k] *= inv_area;
+        ymom_eu[k] *= inv_area;
+
+    } // End element loop
+
+    // Sync max_speed from device to host for timestep computation
+#ifndef CPU_ONLY_MODE
+    #pragma omp target update from(max_speed_array[0:n])
+#endif
+
+    // Compute minimum timestep from max_speed array on host (avoids GPU reduction issues)
+    double local_timestep = 1.0e+100;
+    for (anuga_int k = 0; k < n; k++) {
+        if (max_speed_array[k] > epsilon) {
+            double cell_timestep = radii[k] / max_speed_array[k];
+            if (cell_timestep < local_timestep) {
+                local_timestep = cell_timestep;
+            }
         }
     }
 

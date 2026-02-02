@@ -460,7 +460,10 @@ void apply_weir_discharge_correction(const struct domain * __restrict D, const E
 double _openmp_compute_fluxes_central(const struct domain *__restrict D,
                                       double timestep)
 {
-  // Local variables 
+#if USE_UNIFIED_KERNELS
+  return core_compute_fluxes_central((struct domain *)D, timestep);
+#else
+  // Local variables
   anuga_int number_of_elements = D->number_of_elements;
   anuga_int n_riverwall_edges = D->number_of_riverwall_edges;
   //printf(" n edges %d \n", n_riverwall_edges);
@@ -608,12 +611,15 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
   }
 
   return timestep;
+#endif
 }
 
 // Protect against the water elevation falling below the triangle bed
 double _openmp_protect(const struct domain *__restrict D)
 {
-
+#if USE_UNIFIED_KERNELS
+  return core_protect((struct domain *)D);
+#else
   double mass_error = 0.;
 
   double minimum_allowed_height = D->minimum_allowed_height;
@@ -675,6 +681,7 @@ double _openmp_protect(const struct domain *__restrict D)
   // }
 
   return mass_error;
+#endif
 }
 
 static inline anuga_int __find_qmin_and_qmax_dq1_dq2(const double dq0, const double dq1, const double dq2,
@@ -1023,6 +1030,9 @@ static inline void reconstruct_vertex_values(double *__restrict edge_values, dou
 // This is the current procedure used in evolve loop.
 void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 {
+#if USE_UNIFIED_KERNELS
+  core_extrapolate_second_order_edge(D);
+#else
   double minimum_allowed_height = D->minimum_allowed_height;
   anuga_int number_of_elements = D->number_of_elements;
   anuga_int extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
@@ -1232,6 +1242,7 @@ if(extrapolate_velocity_second_order == 1)
 }
 
 // We need to figure out which things we need to cpy from, i.e. what did we modify inside the loop
+#endif
 }
 
 void _openmp_distribute_edges_to_vertices(struct domain *__restrict D)
@@ -2300,15 +2311,19 @@ anuga_int _extrapolate_second_order_sw(anuga_int number_of_elements,
 }
 
 
-anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D, 
+anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D,
                                               const double timestep)
-      {
+{
+#if USE_UNIFIED_KERNELS
+  core_update_conserved_quantities((struct domain *)D, timestep);
+  return 0;
+#else
 	// Update centroid values based on values stored in
 	// explicit_update and semi_implicit_update as well as given timestep
 
 
   anuga_int number_of_elements = D->number_of_elements;
-  
+
 
 	// Divide semi_implicit update by conserved quantity
 	#pragma omp parallel for schedule(static) \
@@ -2367,7 +2382,7 @@ anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D,
 			//Update conserved_quantities from semi implicit updates
 			D->ymom_centroid_values[k] /= denominator;
 		}
-		
+
 		// Reset semi_implicit_update here ready for next time step
 		D->stage_semi_implicit_update[k] = 0.0;
     D->xmom_semi_implicit_update[k] = 0.0;
@@ -2375,19 +2390,24 @@ anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D,
 	}
 
 	return 0;
+#endif
 }
 
-anuga_int _openmp_saxpy_conserved_quantities(const struct domain *__restrict D, 
-                                             const double a, 
-                                             const double b, 
+anuga_int _openmp_saxpy_conserved_quantities(const struct domain *__restrict D,
+                                             const double a,
+                                             const double b,
                                              const double c)
 {
+#if USE_UNIFIED_KERNELS
+  core_saxpy_conserved_quantities((struct domain *)D, a, b, c);
+  return 0;
+#else
   // This function performs a SAXPY operation on the centroid values and backup values.
   //
   // It does a standard SAXPY operation and then multiplies through a constant c.
   // to deal with some numerical issues when using a = 1/3 and b = 2/3 and maintaining
   // positive values.
-  
+
 
   anuga_int N = D->number_of_elements;
   // double a_c = a / c;
@@ -2420,7 +2440,7 @@ anuga_int _openmp_saxpy_conserved_quantities(const struct domain *__restrict D,
   // if (c != 1.0) {
   //   anuga_dscal(N, c_inv, D->stage_centroid_values, 1);
   // }
-  
+
   // // xmom
   // anuga_dscal(N, a, D->xmom_centroid_values, 1);
   // anuga_daxpy(N, b, D->xmom_backup_values, 1, D->xmom_centroid_values, 1);
@@ -2437,6 +2457,7 @@ anuga_int _openmp_saxpy_conserved_quantities(const struct domain *__restrict D,
   // }
 
   return 0;
+#endif
 }
 
 anuga_int _openmp_backup_conserved_quantities(const struct domain *__restrict D)
