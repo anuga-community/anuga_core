@@ -762,7 +762,7 @@ void core_manning_friction_sloped_semi_implicit(struct domain *D) {
             double dzx = ((y2 - y0) * (z1 - z0) - (y1 - y0) * (z2 - z0)) / det;
             double dzy = ((x1 - x0) * (z2 - z0) - (x2 - x0) * (z1 - z0)) / det;
 
-            double slope = sqrt(dzx * dzx + dzy * dzy + 1.0e-10);
+            double slope = sqrt(1.0 + dzx * dzx + dzy * dzy);
 
             double eta = friction_cv[k];
             double xmom = xmom_cv[k];

@@ -457,11 +457,11 @@ void apply_weir_discharge_correction(const struct domain * __restrict D, const E
     }
 }
 
-// TODO: PORT TO core_kernels.c (HIGH PRIORITY)
-// Missing features in core_compute_fluxes_central:
+// TODO: UNIFY WITH core_kernels.c (HIGH PRIORITY)
+// GPU kernel exists (core_compute_fluxes_central) but missing features needed for unification:
 //   1. Riverwall support (weir discharge adjustments) - see apply_weir_discharge_correction()
 //   2. Boundary flux tracking (boundary_flux_sum for boundary_flux_integral_operator)
-// Once ported, enable USE_UNIFIED_KERNELS=1 to use core_compute_fluxes_central
+// Once these are added to core_compute_fluxes_central, enable USE_UNIFIED_KERNELS=1
 double _openmp_compute_fluxes_central(const struct domain *__restrict D,
                                       double timestep)
 {
@@ -2479,8 +2479,12 @@ void _openmp_set_omp_num_threads(anuga_int num_threads)
   omp_set_num_threads(num_threads);
 }
 
-// PORTED TO GPU: See gpu_evaluate_reflective_boundary() in sw_domain_gpu_ext.pyx
-// GPU version uses different approach - initializes boundary info once, then evaluates on GPU
+// PORTED TO GPU: See gpu_evaluate_reflective_boundary() in gpu_boundaries.c
+// TODO: NOT UNIFIED - GPU and CPU use different architectural approaches:
+//   - GPU: Pre-collects ALL boundary info during init, evaluates all edges in one kernel call
+//   - CPU: Python calls this C function per boundary segment/tag, passing arrays each time
+// Unifying would require changing how mode 1 handles boundaries (Python-side changes),
+// which could break existing functionality. Keep separate implementations for now.
 void _openmp_evaluate_reflective_segment(const struct domain *__restrict D, anuga_int N,
    anuga_int *edge_segment, anuga_int *vol_ids, anuga_int *edge_ids){
 
