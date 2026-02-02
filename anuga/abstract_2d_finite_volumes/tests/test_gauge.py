@@ -69,11 +69,12 @@ class Test_Gauge(unittest.TestCase):
         domain.reduction = mean
         
         self.domain = domain
-        
-        
+        self.sww = None  # Initialize sww for tearDown safety
+
+
     def tearDown(self):
         """Called at end of each test."""
-        if self.sww:
+        if self.sww is not None:
             os.remove(self.sww.filename)
 
     def _create_sww(self,stage=10.0, timestep=2.0):

@@ -18,7 +18,7 @@ from anuga import Inlet_operator
 def gpu_available():
     """Check if GPU OpenMP interface is available."""
     try:
-        from anuga.shallow_water.sw_domain_gpu_ext import init_gpu_domain
+        from anuga.shallow_water.sw_domain_ext import init_gpu_domain
         return True
     except ImportError:
         return False
@@ -74,7 +74,7 @@ class Test_GPU_Kernels(unittest.TestCase):
             self.domain.quantities[qname].explicit_update[:] = 0.0
 
         self.domain.set_multiprocessor_mode(2)
-        from anuga.shallow_water.sw_domain_gpu_ext import (
+        from anuga.shallow_water.sw_domain_ext import (
             sync_to_device, sync_all_from_device,
             extrapolate_second_order_gpu, compute_fluxes_gpu,
             evaluate_reflective_boundary_gpu, evaluate_dirichlet_boundary_gpu
@@ -117,7 +117,7 @@ class Test_GPU_Kernels(unittest.TestCase):
         self.domain.quantities['stage'].edge_values[:] = 0.0
 
         self.domain.set_multiprocessor_mode(2)
-        from anuga.shallow_water.sw_domain_gpu_ext import (
+        from anuga.shallow_water.sw_domain_ext import (
             sync_to_device, sync_all_from_device,
             protect_gpu, extrapolate_second_order_gpu
         )
@@ -176,7 +176,7 @@ class Test_GPU_RK2(unittest.TestCase):
 
         # Run GPU
         gpu_domain.set_multiprocessor_mode(2)
-        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+        from anuga.shallow_water.sw_domain_ext import sync_to_device, sync_from_device
 
         gpu_dom = gpu_domain.gpu_interface.gpu_dom
         sync_to_device(gpu_dom)
@@ -207,7 +207,7 @@ class Test_GPU_RK2(unittest.TestCase):
 
         # Run GPU for 1 second
         gpu_domain.set_multiprocessor_mode(2)
-        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+        from anuga.shallow_water.sw_domain_ext import sync_to_device, sync_from_device
 
         gpu_dom = gpu_domain.gpu_interface.gpu_dom
         sync_to_device(gpu_dom)
@@ -261,7 +261,7 @@ class Test_GPU_Boundaries(unittest.TestCase):
 
         # Run GPU
         domain.set_multiprocessor_mode(2)
-        from anuga.shallow_water.sw_domain_gpu_ext import (
+        from anuga.shallow_water.sw_domain_ext import (
             sync_to_device, sync_all_from_device,
             extrapolate_second_order_gpu, evaluate_reflective_boundary_gpu
         )
@@ -298,7 +298,7 @@ class Test_GPU_Boundaries(unittest.TestCase):
 
         # Run GPU evolution
         domain.set_multiprocessor_mode(2)
-        from anuga.shallow_water.sw_domain_gpu_ext import (
+        from anuga.shallow_water.sw_domain_ext import (
             sync_to_device, sync_all_from_device,
             extrapolate_second_order_gpu, evaluate_reflective_boundary_gpu,
             evaluate_dirichlet_boundary_gpu
@@ -349,7 +349,7 @@ class Test_GPU_Boundaries(unittest.TestCase):
 
         # Run one evolve step
         domain.set_multiprocessor_mode(2)
-        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_all_from_device
+        from anuga.shallow_water.sw_domain_ext import sync_to_device, sync_all_from_device
 
         gpu_dom = domain.gpu_interface.gpu_dom
         sync_to_device(gpu_dom)
@@ -386,12 +386,16 @@ class Test_GPU_Initialization(unittest.TestCase):
         domain.set_quantity('elevation', -1.0)
         domain.set_quantity('stage', 0.0)
 
-        # Do NOT set boundaries, then try to enable GPU mode
-        # This should raise RuntimeError
-        with self.assertRaises(RuntimeError) as context:
-            domain.set_multiprocessor_mode(2)
+        # Before setting boundaries, domain interface should NOT be initialized
+        self.assertIsNone(domain._domain_interface)
 
-        self.assertIn("boundaries", str(context.exception).lower())
+        # Set boundaries - this should auto-initialize the interface
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+        # After setting boundaries, domain interface should be initialized
+        self.assertIsNotNone(domain._domain_interface)
+        self.assertTrue(domain._domain_interface.initialized)
 
     def test_correct_initialization_order(self):
         """Test that correct initialization order works."""
@@ -408,11 +412,12 @@ class Test_GPU_Initialization(unittest.TestCase):
         Br = Reflective_boundary(domain)
         domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
 
-        # Then enable GPU mode - should work
-        domain.set_multiprocessor_mode(2)
+        # With unified solver, interface is auto-initialized when boundaries are set
+        # set_multiprocessor_mode is deprecated but should not break anything
+        domain.set_multiprocessor_mode(2)  # This is now a no-op with deprecation warning
 
-        self.assertIsNotNone(domain.gpu_interface)
-        self.assertTrue(domain.gpu_interface.initialized)
+        self.assertIsNotNone(domain._domain_interface)
+        self.assertTrue(domain._domain_interface.initialized)
 
 
 @pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
@@ -464,7 +469,7 @@ class Test_GPU_LargeDomain(unittest.TestCase):
 
         # Run GPU
         domain.set_multiprocessor_mode(2)
-        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+        from anuga.shallow_water.sw_domain_ext import sync_to_device, sync_from_device
 
         sync_to_device(domain.gpu_interface.gpu_dom)
 
@@ -518,7 +523,7 @@ class Test_GPU_InletOperator(unittest.TestCase):
         # Enable GPU mode
         domain.set_multiprocessor_mode(2)
 
-        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+        from anuga.shallow_water.sw_domain_ext import sync_to_device, sync_from_device
         gpu_dom = domain.gpu_interface.gpu_dom
         sync_to_device(gpu_dom)
 
@@ -562,7 +567,7 @@ class Test_GPU_InletOperator(unittest.TestCase):
 
         # Run GPU
         gpu_domain.set_multiprocessor_mode(2)
-        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+        from anuga.shallow_water.sw_domain_ext import sync_to_device, sync_from_device
         gpu_dom = gpu_domain.gpu_interface.gpu_dom
         sync_to_device(gpu_dom)
 
@@ -600,7 +605,7 @@ class Test_GPU_InletOperator(unittest.TestCase):
 
         # Enable GPU mode
         domain.set_multiprocessor_mode(2)
-        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+        from anuga.shallow_water.sw_domain_ext import sync_to_device, sync_from_device
         gpu_dom = domain.gpu_interface.gpu_dom
         sync_to_device(gpu_dom)
 
@@ -640,7 +645,7 @@ class Test_GPU_InletOperator(unittest.TestCase):
 
         # Run GPU
         gpu_domain.set_multiprocessor_mode(2)
-        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+        from anuga.shallow_water.sw_domain_ext import sync_to_device, sync_from_device
         gpu_dom = gpu_domain.gpu_interface.gpu_dom
         sync_to_device(gpu_dom)
 

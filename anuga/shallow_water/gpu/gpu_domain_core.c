@@ -63,6 +63,8 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     // Initialize GPU state
     GD->gpu_initialized = 0;
     GD->backup_arrays_mapped = 0;
+    GD->verbose = 0;  // Default off, can be set from Python
+    GD->substep_count = 0;  // For boundary flux tracking (euler=0, rk2=0/1, rk3=0/1/2)
 
     // Select GPU device (round-robin if more ranks than GPUs)
     int num_devices = omp_get_num_devices();
@@ -269,7 +271,7 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         R->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->verbose && GD->rank == 0) {
             printf("Reflective boundary arrays mapped to GPU: %d edges\n", ne);
         }
     }
@@ -285,7 +287,7 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Dir->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->verbose && GD->rank == 0) {
             printf("Dirichlet boundary arrays mapped to GPU: %d edges\n", ne);
         }
     }
@@ -301,7 +303,7 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         T->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->verbose && GD->rank == 0) {
             printf("Transmissive boundary arrays mapped to GPU: %d edges\n", ne);
         }
     }
@@ -317,7 +319,7 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Tnzt->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->verbose && GD->rank == 0) {
             printf("Transmissive_n_zero_t boundary arrays mapped to GPU: %d edges\n", ne);
         }
     }
@@ -333,7 +335,7 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->verbose && GD->rank == 0) {
             printf("Time_boundary arrays mapped to GPU: %d edges\n", ne);
         }
     }
@@ -346,6 +348,18 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: \
             stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
         GD->backup_arrays_mapped = 1;
+    }
+
+    // Map tri_full_flag (needed for boundary flux accumulation in parallel runs)
+    if (GD->D.tri_full_flag != NULL) {
+        anuga_int *tri_full_flag = GD->D.tri_full_flag;
+        #pragma omp target enter data map(to: tri_full_flag[0:n])
+    }
+
+    // Map boundary_flux_sum (3 elements for max substeps: euler/rk2/rk3)
+    if (GD->D.boundary_flux_sum != NULL) {
+        double *boundary_flux_sum = GD->D.boundary_flux_sum;
+        #pragma omp target enter data map(tofrom: boundary_flux_sum[0:3])
     }
 
     // Map halo exchange arrays if we have neighbors
@@ -363,7 +377,7 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
 
     GD->gpu_initialized = 1;
 
-    if (GD->rank == 0) {
+    if (GD->verbose && GD->rank == 0) {
         printf("GPU arrays mapped to device %d\n", GD->device_id);
     }
 }
@@ -383,7 +397,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         R->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->verbose && GD->rank == 0) {
             printf("Reflective boundary arrays mapped to GPU (late): %d edges\n", ne);
         }
     }
@@ -399,7 +413,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Dir->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->verbose && GD->rank == 0) {
             printf("Dirichlet boundary arrays mapped to GPU (late): %d edges\n", ne);
         }
     }
@@ -415,7 +429,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         T->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->verbose && GD->rank == 0) {
             printf("Transmissive boundary arrays mapped to GPU (late): %d edges\n", ne);
         }
     }
@@ -431,7 +445,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Tnzt->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->verbose && GD->rank == 0) {
             printf("Transmissive_n_zero_t boundary arrays mapped to GPU (late): %d edges\n", ne);
         }
     }
@@ -447,7 +461,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->verbose && GD->rank == 0) {
             printf("Time_boundary arrays mapped to GPU (late): %d edges\n", ne);
         }
     }
@@ -626,6 +640,12 @@ void gpu_domain_sync_from_device(struct gpu_domain *GD) {
     double *height_cv = GD->D.height_centroid_values;
 
     #pragma omp target update from(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+
+    // Also sync boundary_flux_sum if present
+    if (GD->D.boundary_flux_sum != NULL) {
+        double *boundary_flux_sum = GD->D.boundary_flux_sum;
+        #pragma omp target update from(boundary_flux_sum[0:3])
+    }
 }
 
 void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
@@ -686,6 +706,20 @@ void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
         double *ymom_backup = GD->D.ymom_backup_values;
         #pragma omp target update from(stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
     }
+
+    // Sync boundary_flux_sum if present
+    if (GD->D.boundary_flux_sum != NULL) {
+        double *boundary_flux_sum = GD->D.boundary_flux_sum;
+        #pragma omp target update from(boundary_flux_sum[0:3])
+    }
+}
+
+void gpu_set_substep_count(struct gpu_domain *GD, int substep) {
+    // Set which substep we're on for boundary flux tracking
+    // euler: always 0
+    // rk2: 0 then 1
+    // rk3: 0, 1, then 2
+    GD->substep_count = substep;
 }
 
 void gpu_sync_boundary_values(struct gpu_domain *GD) {

@@ -240,11 +240,9 @@ class Generic_Domain(object):
             self.ghost_recv_dict = ghost_recv_dict
 
         #-------------------------------
-        # Set multiprocessor mode 
-        # 1. openmp (in development)
-        # 2. cuda (in development)
-        #-------------------------------    
-        self.set_multiprocessor_mode(1)
+        # Legacy multiprocessor mode attribute for backward compatibility
+        #-------------------------------
+        self.multiprocessor_mode = 1
 
         self.processor = processor
         self.numproc = numproc
@@ -745,27 +743,19 @@ class Generic_Domain(object):
         return self.using_discontinuous_elevation
 
 
-    def set_multiprocessor_mode(self, multiprocessor_mode= 0):
-        """
-        Set multiprocessor mode 
-        
-        1. openmp (in development)
-        2. cuda (in development)
-        """
-
-        if multiprocessor_mode in [1,2]:
-            self.multiprocessor_mode = multiprocessor_mode
-        else:
-            raise Exception('multiprocessor mode {multiprocessor_mode} not supported')
+    def set_multiprocessor_mode(self, multiprocessor_mode=1):
+        """DEPRECATED: No-op in unified codebase."""
+        import warnings
+        warnings.warn(
+            "set_multiprocessor_mode() is deprecated and has no effect.",
+            DeprecationWarning,
+            stacklevel=2
+        )
+        self.multiprocessor_mode = 1
 
     def get_multiprocessor_mode(self):
-        """
-        Get multiprocessor mode 
-        
-        1. openmp (in development)
-        2. cuda (in development)
-        """
-        return self.multiprocessor_mode 
+        """DEPRECATED: Returns 1."""
+        return 1 
             
     def set_using_centroid_averaging(self, flag=True):
         """Set flag to use centroid averaging in output

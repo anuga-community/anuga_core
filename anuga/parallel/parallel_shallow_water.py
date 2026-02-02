@@ -142,8 +142,8 @@ class Parallel_domain(Domain):
         receive the information for the ghost cells
         """
 
-        # GPU mode handles ghost exchange internally via C-level MPI calls
-        if getattr(self, 'multiprocessor_mode', 0) == 2 and getattr(self, 'gpu_interface', None) is not None:
+        # Interface mode handles ghost exchange internally via C-level MPI calls
+        if getattr(self, '_domain_interface', None) is not None:
             return
 
         #generic_comms.communicate_ghosts_asynchronous(self, quantities)

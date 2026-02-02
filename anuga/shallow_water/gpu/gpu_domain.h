@@ -217,6 +217,11 @@ struct gpu_domain {
     int gpu_initialized;
     int device_id;
     int gpu_aware_mpi;           // Runtime flag: 1 if GPU-aware MPI available
+    int verbose;                 // Control debug output
+
+    // Substep tracking for boundary flux integration
+    // 0 = first substep (euler), 0/1 = rk2 substeps, 0/1/2 = rk3 substeps
+    int substep_count;
 
     // Halo exchange info
     struct halo_exchange halo;
@@ -275,6 +280,9 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD);
 void gpu_domain_sync_to_device(struct gpu_domain *GD);
 void gpu_domain_sync_from_device(struct gpu_domain *GD);
 void gpu_domain_sync_all_from_device(struct gpu_domain *GD);  // Debug: sync ALL arrays
+
+// Substep tracking for boundary flux integration (euler=0, rk2=0/1, rk3=0/1/2)
+void gpu_set_substep_count(struct gpu_domain *GD, int substep);
 
 // Sync boundary values TO GPU (after CPU boundary evaluation)
 void gpu_sync_boundary_values(struct gpu_domain *GD);
@@ -360,7 +368,8 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD);
 double gpu_compute_fluxes(struct gpu_domain *GD);
 void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep);
 void gpu_backup_conserved_quantities(struct gpu_domain *GD);
-void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b);
+void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b, double c);
+void gpu_distribute_edges_to_vertices(struct gpu_domain *GD);
 double gpu_protect(struct gpu_domain *GD);
 double gpu_compute_water_volume(struct gpu_domain *GD);
 void gpu_manning_friction(struct gpu_domain *GD);
@@ -425,5 +434,23 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
                        double *vel_u, double *vel_v, int num_vel,
                        int has_velocity, double ext_vel_u, double ext_vel_v,
                        int zero_velocity);
+
+// ============================================================================
+// Test API Functions
+// ============================================================================
+// These wrap the static inline functions from gpu_device_helpers.h so they
+// can be called from Cython for unit testing.
+
+void test_rotate(double *q, double n1, double n2);
+void test_rotate_inverse(double *q, double n1, double n2);
+double test_flux_function_central(
+    double *q_left, double *q_right,
+    double h_left, double h_right,
+    double hle, double hre,
+    double n1, double n2,
+    double epsilon, double ze, double g,
+    double *edgeflux, double *pressure_flux,
+    int low_froude
+);
 
 #endif // GPU_DOMAIN_H

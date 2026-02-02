@@ -350,11 +350,14 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
     //
     // This is the GPU version of _openmp_compute_fluxes_central
     // Arrays are already mapped to GPU via gpu_domain_map_arrays()
+    //
+    // Also accumulates boundary flux for the current substep (for boundary_flux_integral_operator)
 
     anuga_int n = GD->D.number_of_elements;
     double g = GD->D.g;
     double epsilon = GD->D.epsilon;
     anuga_int low_froude = GD->D.low_froude;
+    int substep = GD->substep_count;  // Which substep (0, 1, or 2)
 
     // Extract array pointers for GPU kernel (restrict enables better optimization)
     double * restrict stage_cv = GD->D.stage_centroid_values;
@@ -385,14 +388,30 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
     double * restrict areas = GD->D.areas;
     double * restrict max_speed_array = GD->D.max_speed;
 
+    // For boundary flux accumulation (in parallel mode, identifies full vs ghost cells)
+    anuga_int * restrict tri_full_flag = GD->D.tri_full_flag;
+    double * restrict boundary_flux_sum = GD->D.boundary_flux_sum;
+    int has_boundary_flux = (boundary_flux_sum != NULL && tri_full_flag != NULL);
+
     double local_timestep = 1.0e+100;
+    double local_boundary_flux = 0.0;
 
     // Main flux computation loop
-    OMP_PARALLEL_LOOP_REDUCTION_MIN(local_timestep)
+    // Use combined reduction for both timestep (min) and boundary flux (sum)
+    #ifdef GPU_OFFLOAD
+    #pragma omp target teams distribute parallel for reduction(min:local_timestep) reduction(+:local_boundary_flux) \
+        map(tofrom: local_timestep, local_boundary_flux)
+    #else
+    #pragma omp parallel for reduction(min:local_timestep) reduction(+:local_boundary_flux)
+    #endif
     for (anuga_int k = 0; k < n; k++) {
         double edgeflux[3];
         double ql[3], qr[3];
         double speed_max_last = 0.0;
+        double element_boundary_flux = 0.0;
+
+        // Check if this is a full (non-ghost) cell for boundary flux tracking
+        int is_full = (tri_full_flag != NULL) ? (tri_full_flag[k] == 1) : 1;
 
         // Zero the explicit updates for this element
         stage_eu[k] = 0.0;
@@ -423,6 +442,7 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
             // Get neighbour info
             anuga_int neighbour = neighbours[ki];
             int is_boundary = (neighbour < 0);
+            int neighbour_is_ghost = 0;
 
             double zr, hre, hc_n, zc_n;
 
@@ -447,6 +467,11 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
                 hre = height_ev[nm];
                 hc_n = height_cv[neighbour];
                 zc_n = bed_cv[neighbour];
+
+                // Check if neighbour is a ghost cell
+                if (tri_full_flag != NULL) {
+                    neighbour_is_ghost = (tri_full_flag[neighbour] == 0);
+                }
             }
 
             // Compute z_half (max bed elevation at edge)
@@ -492,6 +517,12 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
             xmom_eu[k] += edgeflux[1];
             ymom_eu[k] += edgeflux[2];
 
+            // Accumulate boundary flux for this edge
+            // Add flux if: (1) this cell is full AND (2) neighbour is boundary or ghost
+            if (has_boundary_flux && is_full && (is_boundary || neighbour_is_ghost)) {
+                element_boundary_flux += edgeflux[0];
+            }
+
             // Pressure gradient (gravity) terms
             double pressuregrad_work = length * (-g * 0.5 * (h_left * h_left - hle * hle
                                        - (hle + hc) * (zl - zc)) + pressure_flux);
@@ -499,6 +530,9 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
             ymom_eu[k] -= normals[ki2 + 1] * pressuregrad_work;
 
         } // End edge loop
+
+        // Accumulate element's boundary flux to thread-local sum
+        local_boundary_flux += element_boundary_flux;
 
         // Store max speed for this element
         max_speed_array[k] = speed_max_last;
@@ -510,6 +544,18 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
         ymom_eu[k] *= inv_area;
 
     } // End element loop
+
+    // Store boundary flux for this substep
+    // Write to host memory first, then sync to GPU if needed
+    if (has_boundary_flux && substep >= 0 && substep < 3) {
+        boundary_flux_sum[substep] = local_boundary_flux;
+
+        // Sync updated boundary_flux_sum to GPU (if GPU offload is enabled)
+        // This ensures the GPU copy stays consistent with host
+        #ifdef GPU_OFFLOAD
+        #pragma omp target update to(boundary_flux_sum[0:3])
+        #endif
+    }
 
     // Count FLOPs: 380 FLOPs per element (3 edges × flux function)
     if (GD->flops.enabled) {
@@ -605,9 +651,10 @@ void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
     }
 }
 
-void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
-    // RK2 combination: Q = a*Q_current + b*Q_backup
-    // Typically called with a=0.5, b=0.5 for standard RK2
+void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b, double c) {
+    // RK combination: Q = (a*Q_current + b*Q_backup) / c
+    // For RK2: called with a=0.5, b=0.5, c=1.0 -> Q = 0.5*Q + 0.5*Q_backup
+    // For RK3: called with a=2.0, b=1.0, c=3.0 -> Q = (2*Q + Q_backup) / 3
     // Arrays are already mapped to GPU
 
     anuga_int n = GD->D.number_of_elements;
@@ -621,12 +668,14 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
     double * restrict height_cv = GD->D.height_centroid_values;
     double * restrict bed_cv = GD->D.bed_centroid_values;
 
+    double inv_c = 1.0 / c;  // Pre-compute for efficiency
+
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
-        double stage = a * stage_cv[k] + b * stage_backup[k];
+        double stage = (a * stage_cv[k] + b * stage_backup[k]) * inv_c;
         stage_cv[k] = stage;
-        xmom_cv[k] = a * xmom_cv[k] + b * xmom_backup[k];
-        ymom_cv[k] = a * ymom_cv[k] + b * ymom_backup[k];
+        xmom_cv[k] = (a * xmom_cv[k] + b * xmom_backup[k]) * inv_c;
+        ymom_cv[k] = (a * ymom_cv[k] + b * ymom_backup[k]) * inv_c;
         // Update height to match the new stage (needed for volume calculation)
         height_cv[k] = fmax(stage - bed_cv[k], 0.0);
     }
@@ -635,6 +684,108 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
     if (GD->flops.enabled) {
         GD->flops.saxpy_flops += (uint64_t)n * FLOPS_SAXPY;
         GD->flops.saxpy_calls++;
+    }
+}
+
+void gpu_distribute_edges_to_vertices(struct gpu_domain *GD) {
+    // Compute vertex values from edge values for all conserved quantities
+    //
+    // For triangles, each edge is the midpoint of two vertices:
+    //   edge[i] = (vertex[(i+1)%3] + vertex[(i+2)%3]) / 2
+    //
+    // Solving for vertices gives:
+    //   vertex[0] = edge[1] + edge[2] - edge[0]
+    //   vertex[1] = edge[0] + edge[2] - edge[1]
+    //   vertex[2] = edge[0] + edge[1] - edge[2]
+    //
+    // This is needed after GPU extrapolation which only computes edge values,
+    // so that Python interpolation routines can access correct vertex values.
+    //
+    // Important: Stage vertex values are clamped to be >= bed (elevation) to
+    // ensure non-negative water depths. Momentum is zeroed where depth is small.
+
+    anuga_int n = GD->D.number_of_elements;
+    double min_height = GD->D.minimum_allowed_height;
+
+    // Extract array pointers
+    double * restrict stage_ev = GD->D.stage_edge_values;
+    double * restrict xmom_ev = GD->D.xmom_edge_values;
+    double * restrict ymom_ev = GD->D.ymom_edge_values;
+    double * restrict height_ev = GD->D.height_edge_values;
+
+    double * restrict stage_vv = GD->D.stage_vertex_values;
+    double * restrict xmom_vv = GD->D.xmom_vertex_values;
+    double * restrict ymom_vv = GD->D.ymom_vertex_values;
+    double * restrict bed_vv = GD->D.bed_vertex_values;  // Read-only for clamping
+    double * restrict height_vv = GD->D.height_vertex_values;
+
+    OMP_PARALLEL_LOOP
+    for (anuga_int k = 0; k < n; k++) {
+        anuga_int k3 = k * 3;
+
+        // Load edge values for this triangle
+        double s_e0 = stage_ev[k3];
+        double s_e1 = stage_ev[k3 + 1];
+        double s_e2 = stage_ev[k3 + 2];
+
+        double xm_e0 = xmom_ev[k3];
+        double xm_e1 = xmom_ev[k3 + 1];
+        double xm_e2 = xmom_ev[k3 + 2];
+
+        double ym_e0 = ymom_ev[k3];
+        double ym_e1 = ymom_ev[k3 + 1];
+        double ym_e2 = ymom_ev[k3 + 2];
+
+        double h_e0 = height_ev[k3];
+        double h_e1 = height_ev[k3 + 1];
+        double h_e2 = height_ev[k3 + 2];
+
+        // Load bed (elevation) vertex values for clamping
+        double bed_v0 = bed_vv[k3];
+        double bed_v1 = bed_vv[k3 + 1];
+        double bed_v2 = bed_vv[k3 + 2];
+
+        // Compute stage vertex values: vertex[i] = edge[(i+1)%3] + edge[(i+2)%3] - edge[i]
+        double s_v0 = s_e1 + s_e2 - s_e0;
+        double s_v1 = s_e0 + s_e2 - s_e1;
+        double s_v2 = s_e0 + s_e1 - s_e2;
+
+        // Clamp stage to be >= bed (elevation) to ensure non-negative depth
+        s_v0 = fmax(s_v0, bed_v0);
+        s_v1 = fmax(s_v1, bed_v1);
+        s_v2 = fmax(s_v2, bed_v2);
+
+        stage_vv[k3]     = s_v0;
+        stage_vv[k3 + 1] = s_v1;
+        stage_vv[k3 + 2] = s_v2;
+
+        // Compute height vertex values (= stage - bed)
+        double h_v0 = s_v0 - bed_v0;
+        double h_v1 = s_v1 - bed_v1;
+        double h_v2 = s_v2 - bed_v2;
+
+        height_vv[k3]     = h_v0;
+        height_vv[k3 + 1] = h_v1;
+        height_vv[k3 + 2] = h_v2;
+
+        // Compute momentum vertex values, but zero them where depth is very small
+        // to avoid division by zero when computing velocities
+        double xm_v0 = xm_e1 + xm_e2 - xm_e0;
+        double xm_v1 = xm_e0 + xm_e2 - xm_e1;
+        double xm_v2 = xm_e0 + xm_e1 - xm_e2;
+
+        double ym_v0 = ym_e1 + ym_e2 - ym_e0;
+        double ym_v1 = ym_e0 + ym_e2 - ym_e1;
+        double ym_v2 = ym_e0 + ym_e1 - ym_e2;
+
+        // Zero momentum where depth is small (to avoid huge velocities)
+        xmom_vv[k3]     = (h_v0 > min_height) ? xm_v0 : 0.0;
+        xmom_vv[k3 + 1] = (h_v1 > min_height) ? xm_v1 : 0.0;
+        xmom_vv[k3 + 2] = (h_v2 > min_height) ? xm_v2 : 0.0;
+
+        ymom_vv[k3]     = (h_v0 > min_height) ? ym_v0 : 0.0;
+        ymom_vv[k3 + 1] = (h_v1 > min_height) ? ym_v1 : 0.0;
+        ymom_vv[k3 + 2] = (h_v2 > min_height) ? ym_v2 : 0.0;
     }
 }
 
@@ -806,6 +957,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_time_boundary(GD);
 
     // Compute fluxes - returns local minimum timestep
+    GD->substep_count = 0;  // First substep for boundary flux tracking
     local_timestep = gpu_compute_fluxes(GD);
 
     // Compute global timestep
@@ -864,6 +1016,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_time_boundary(GD);
 
     // Compute fluxes (ignore timestep from second step)
+    GD->substep_count = 1;  // Second substep for boundary flux tracking
     gpu_compute_fluxes(GD);
 
     // Apply forcing terms (Manning friction on GPU)
@@ -875,8 +1028,45 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_update_conserved_quantities(GD, timestep);
 
     // RK2 averaging: Q_final = 0.5 * Q_backup + 0.5 * Q_current
-    gpu_saxpy_conserved_quantities(GD, 0.5, 0.5);
+    gpu_saxpy_conserved_quantities(GD, 0.5, 0.5, 1.0);
 
     return timestep;
+}
+
+// ============================================================================
+// Test API Functions
+// ============================================================================
+// These wrap the static inline functions from gpu_device_helpers.h so they
+// can be called from Cython for unit testing.
+
+void test_rotate(double *q, double n1, double n2) {
+    // Wrapper for gpu_rotate - rotates momentum in place
+    gpu_rotate(q, n1, n2);
+}
+
+void test_rotate_inverse(double *q, double n1, double n2) {
+    // Inverse rotation (use -n2 for inverse)
+    gpu_rotate(q, n1, -n2);
+}
+
+double test_flux_function_central(
+    double *q_left, double *q_right,
+    double h_left, double h_right,
+    double hle, double hre,
+    double n1, double n2,
+    double epsilon, double ze, double g,
+    double *edgeflux, double *pressure_flux,
+    int low_froude
+) {
+    // Wrapper for gpu_flux_function_central
+    double max_speed = 0.0;
+    gpu_flux_function_central(q_left, q_right,
+                              h_left, h_right,
+                              hle, hre,
+                              n1, n2,
+                              epsilon, ze, g,
+                              edgeflux, &max_speed, pressure_flux,
+                              low_froude);
+    return max_speed;
 }
 

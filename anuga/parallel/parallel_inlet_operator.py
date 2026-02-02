@@ -104,9 +104,9 @@ class Parallel_Inlet_operator(Inlet_operator):
     def _init_gpu(self):
         """Initialize GPU inlet operator for parallel execution."""
         try:
-            from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
+            from anuga.shallow_water import sw_domain_ext as gpu_ext
             import numpy as np
-            gpu_dom = self.domain.gpu_interface.gpu_dom
+            gpu_dom = self.domain._domain_interface.gpu_dom
 
             tri_indices = np.ascontiguousarray(
                 self.inlet.triangle_indices, dtype=np.intc)
@@ -126,10 +126,10 @@ class Parallel_Inlet_operator(Inlet_operator):
     def _call_gpu(self):
         """GPU path for parallel __call__ - small-buffer MPI."""
         from anuga.utilities import parallel_abstraction as pypar
-        from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
+        from anuga.shallow_water import sw_domain_ext as gpu_ext
         import numpy as np
 
-        gpu_dom = self.domain.gpu_interface.gpu_dom
+        gpu_dom = self.domain._domain_interface.gpu_dom
         op_id = self._gpu_op_id
         volume = 0
 
@@ -204,7 +204,7 @@ class Parallel_Inlet_operator(Inlet_operator):
             # Multi-rank inlet: need MPI merge-sort for set_stages_evenly
             # Sync inlet triangles from GPU to CPU, run CPU path, sync back
             # TODO: optimise with small-buffer MPI from GPU scratch buffers
-            self.domain.gpu_interface.sync_from_device()
+            self.domain._domain_interface.sync_from_device()
 
             if volume >= 0.0:
                 self.inlet.set_stages_evenly(volume)
@@ -248,15 +248,15 @@ class Parallel_Inlet_operator(Inlet_operator):
                 self.inlet.set_xmoms(0.0)
                 self.inlet.set_ymoms(0.0)
 
-            self.domain.gpu_interface.sync_to_device()
+            self.domain._domain_interface.sync_to_device()
 
         self.total_applied_volume += volume
 
     def __call__(self):
 
-        # GPU path: use small-buffer MPI instead of full domain sync
-        # Only use GPU path for ranks that own part of this inlet
-        if getattr(self.domain, 'multiprocessor_mode', 0) == 2 and self.myid in self.procs:
+        # Accelerated path: use small-buffer MPI instead of full domain sync
+        # Only use accelerated path for ranks that own part of this inlet
+        if getattr(self.domain, '_domain_interface', None) is not None and self.myid in self.procs:
             if not self._gpu_initialized:
                 self._init_gpu()
             if self._gpu_initialized:

@@ -53,6 +53,12 @@ cdef extern from "gpu_domain.h" nogil:
         double* ymom_edge_values
         double* bed_edge_values
         double* height_edge_values
+        # Vertex values
+        double* stage_vertex_values
+        double* xmom_vertex_values
+        double* ymom_vertex_values
+        double* bed_vertex_values
+        double* height_vertex_values
         # Updates
         double* stage_explicit_update
         double* xmom_explicit_update
@@ -87,6 +93,9 @@ cdef extern from "gpu_domain.h" nogil:
         double* y_centroid_work
         # Friction
         double* friction_centroid_values
+        # For boundary flux tracking in parallel
+        int64_t* tri_full_flag
+        double* boundary_flux_sum
 
     struct halo_exchange:
         int num_neighbors
@@ -125,6 +134,8 @@ cdef extern from "gpu_domain.h" nogil:
         int gpu_initialized
         int device_id
         int gpu_aware_mpi
+        int verbose
+        int substep_count
         halo_exchange halo
         inlet_operators inlet_ops
         double CFL
@@ -148,6 +159,7 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_domain_sync_all_from_device(gpu_domain *GD)
     void gpu_sync_boundary_values(gpu_domain *GD)
     void gpu_sync_edge_values_from_device(gpu_domain *GD)
+    void gpu_set_substep_count(gpu_domain *GD, int substep)
     int gpu_boundary_edge_sync_init(gpu_domain *GD, int num_boundary_cells, int *boundary_cell_ids)
     void gpu_boundary_edge_sync_finalize(gpu_domain *GD)
     void gpu_boundary_edge_sync(gpu_domain *GD)
@@ -194,7 +206,8 @@ cdef extern from "gpu_domain.h" nogil:
     double gpu_compute_fluxes(gpu_domain *GD)
     void gpu_update_conserved_quantities(gpu_domain *GD, double timestep)
     void gpu_backup_conserved_quantities(gpu_domain *GD)
-    void gpu_saxpy_conserved_quantities(gpu_domain *GD, double a, double b)
+    void gpu_saxpy_conserved_quantities(gpu_domain *GD, double a, double b, double c)
+    void gpu_distribute_edges_to_vertices(gpu_domain *GD)
     double gpu_protect(gpu_domain *GD)
     double gpu_compute_water_volume(gpu_domain *GD)
     void gpu_manning_friction(gpu_domain *GD)
@@ -233,6 +246,19 @@ cdef extern from "gpu_domain.h" nogil:
                            double *vel_u, double *vel_v, int num_vel,
                            int has_velocity, double ext_vel_u, double ext_vel_v,
                            int zero_velocity)
+
+    # Test API functions (wrappers for unit testing)
+    void test_rotate(double *q, double n1, double n2)
+    void test_rotate_inverse(double *q, double n1, double n2)
+    double test_flux_function_central(
+        double *q_left, double *q_right,
+        double h_left, double h_right,
+        double hle, double hre,
+        double n1, double n2,
+        double epsilon, double ze, double g,
+        double *edgeflux, double *pressure_flux,
+        int low_froude
+    )
 
     # FLOP counters (Gordon Bell performance profiling)
     void gpu_flop_counters_init(gpu_domain *GD)
@@ -453,6 +479,19 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     height_bv = height.boundary_values
     D.height_boundary_values = &height_bv[0]
 
+    # Vertex values (for interpolation after GPU extrapolation)
+    cdef double[:, ::1] stage_vv, xmom_vv, ymom_vv, bed_vv, height_vv
+    stage_vv = stage.vertex_values
+    D.stage_vertex_values = &stage_vv[0, 0]
+    xmom_vv = xmom.vertex_values
+    D.xmom_vertex_values = &xmom_vv[0, 0]
+    ymom_vv = ymom.vertex_values
+    D.ymom_vertex_values = &ymom_vv[0, 0]
+    bed_vv = elev.vertex_values
+    D.bed_vertex_values = &bed_vv[0, 0]
+    height_vv = height.vertex_values
+    D.height_vertex_values = &height_vv[0, 0]
+
     # Mesh connectivity
     neighbours = domain_object.neighbours
     D.neighbours = &neighbours[0, 0]
@@ -508,6 +547,23 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     D.stage_backup_values = &stage_backup_cv[0]
     D.xmom_backup_values = &xmom_backup_cv[0]
     D.ymom_backup_values = &ymom_backup_cv[0]
+
+    # tri_full_flag for parallel boundary flux tracking
+    # In serial runs, all elements are "full" (value 1)
+    cdef int64_t[::1] tri_full_flag
+    if hasattr(domain_object, 'tri_full_flag') and domain_object.tri_full_flag is not None:
+        tri_full_flag = domain_object.tri_full_flag
+        D.tri_full_flag = &tri_full_flag[0]
+    else:
+        D.tri_full_flag = NULL
+
+    # boundary_flux_sum for boundary flux integral operator
+    cdef double[::1] boundary_flux_sum
+    if hasattr(domain_object, 'boundary_flux_sum') and domain_object.boundary_flux_sum is not None:
+        boundary_flux_sum = domain_object.boundary_flux_sum
+        D.boundary_flux_sum = &boundary_flux_sum[0]
+    else:
+        D.boundary_flux_sum = NULL
 
 
 # ============================================================================
@@ -590,7 +646,7 @@ cdef void build_halo_from_dicts(gpu_domain *GD, object domain_object):
 # Public Python API
 # ============================================================================
 
-def init_gpu_domain(object domain_object):
+def init_gpu_domain(object domain_object, bint verbose=False):
     """
     Initialize GPU domain from Python domain object.
 
@@ -620,6 +676,9 @@ def init_gpu_domain(object domain_object):
     # Initialize C struct with MPI info
     gpu_domain_init(&gpu_dom.GD, comm, rank, nprocs)
 
+    # Set verbose flag from Python
+    gpu_dom.GD.verbose = 1 if verbose else 0
+
     # Extract array pointers from Python domain
     get_domain_pointers(&gpu_dom.GD, domain_object)
 
@@ -631,7 +690,7 @@ def init_gpu_domain(object domain_object):
     gpu_dom.python_domain = domain_object
     gpu_dom.initialized = True
 
-    if rank == 0:
+    if verbose and rank == 0:
         print(f"GPU domain initialized: {gpu_dom.GD.D.number_of_elements} elements")
         print_gpu_domain_info(&gpu_dom.GD)
 
@@ -712,6 +771,20 @@ def sync_edge_values_from_device(GPUDomain gpu_dom):
     WARNING: This is expensive - use sync_boundary_edge_values for sparse sync.
     """
     gpu_sync_edge_values_from_device(&gpu_dom.GD)
+
+
+def set_substep_count(GPUDomain gpu_dom, int substep):
+    """
+    Set which substep we're on for boundary flux tracking.
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    substep : int
+        Substep number: 0 for euler, 0/1 for rk2, 0/1/2 for rk3
+    """
+    gpu_set_substep_count(&gpu_dom.GD, substep)
 
 
 def init_boundary_edge_sync(GPUDomain gpu_dom, np.ndarray[int, ndim=1, mode="c"] boundary_cell_ids):
@@ -1108,13 +1181,14 @@ def backup_conserved_quantities_gpu(GPUDomain gpu_dom):
     gpu_backup_conserved_quantities(&gpu_dom.GD)
 
 
-def saxpy_conserved_quantities_gpu(GPUDomain gpu_dom, double a, double b):
+def saxpy_conserved_quantities_gpu(GPUDomain gpu_dom, double a, double b, double c=1.0):
     """
-    RK2 combination: Q = a*Q_current + b*Q_backup
+    RK combination: Q = (a*Q_current + b*Q_backup) / c
 
-    Typically called with a=0.5, b=0.5 for standard RK2.
+    For RK2: called with a=0.5, b=0.5, c=1.0 -> Q = 0.5*Q + 0.5*Q_backup
+    For RK3: called with a=2.0, b=1.0, c=3.0 -> Q = (2*Q + Q_backup) / 3
     """
-    gpu_saxpy_conserved_quantities(&gpu_dom.GD, a, b)
+    gpu_saxpy_conserved_quantities(&gpu_dom.GD, a, b, c)
 
 
 def protect_gpu(GPUDomain gpu_dom):
@@ -1154,6 +1228,26 @@ def manning_friction_gpu(GPUDomain gpu_dom):
     The friction is then applied during update_conserved_quantities.
     """
     gpu_manning_friction(&gpu_dom.GD)
+
+
+def distribute_edges_to_vertices_kernel(GPUDomain gpu_dom):
+    """
+    Compute vertex values from edge values for all conserved quantities.
+
+    This inverts the edge-to-vertex relationship:
+        edge[0] = (vertex[1] + vertex[2]) / 2
+        edge[1] = (vertex[2] + vertex[0]) / 2
+        edge[2] = (vertex[0] + vertex[1]) / 2
+
+    Solving gives:
+        vertex[0] = edge[1] + edge[2] - edge[0]
+        vertex[1] = edge[0] + edge[2] - edge[1]
+        vertex[2] = edge[0] + edge[1] - edge[2]
+
+    This is called after GPU extrapolation (which only computes edge values)
+    to enable interpolation at arbitrary points.
+    """
+    gpu_distribute_edges_to_vertices(&gpu_dom.GD)
 
 
 # ============================================================================
@@ -1568,3 +1662,156 @@ def flop_counters_get_global_stats(GPUDomain gpu_dom):
         'num_gpus': nprocs,
         'per_gpu_gflops_per_second': (global_flops / 1.0e9) / nprocs if nprocs > 0 else 0.0,
     }
+
+
+# ============================================================================
+# Legacy API Functions for Test Compatibility
+# ============================================================================
+# These functions provide backward compatibility with tests that used the
+# old sw_domain_openmp_ext module. They expose low-level operations that
+# are now integrated into the unified GPU kernels.
+
+def rotate(np.ndarray[double, ndim=1, mode="c"] q not None,
+           np.ndarray[double, ndim=1, mode="c"] normal not None,
+           int64_t direction=1):
+    """
+    Rotate the momentum components of q from x,y coordinates to coordinates
+    based on normal vector.
+
+    This is a thin wrapper around the C function test_rotate() from gpu_kernels.c.
+
+    Parameters
+    ----------
+    q : array of 3 doubles [w, uh, vh]
+        Conserved quantities (stage, x-momentum, y-momentum)
+    normal : array of 2 doubles [nx, ny]
+        Normal vector to edge
+    direction : int
+        1 for forward rotation, -1 for inverse rotation
+
+    Returns
+    -------
+    r : array of 3 doubles
+        Rotated quantities
+    """
+    if len(normal) != 2:
+        raise ValueError("Normal vector must have 2 elements")
+
+    cdef np.ndarray[double, ndim=1, mode="c"] r = np.copy(q)
+    cdef double n1 = normal[0]
+    cdef double n2 = normal[1]
+
+    # Call the C function (operates in-place on r)
+    if direction == 1:
+        test_rotate(&r[0], n1, n2)
+    else:
+        test_rotate_inverse(&r[0], n1, n2)
+
+    return r
+
+
+def flux_function_central(
+    np.ndarray[double, ndim=1, mode="c"] normal not None,
+    np.ndarray[double, ndim=1, mode="c"] ql not None,
+    np.ndarray[double, ndim=1, mode="c"] qr not None,
+    double h_left,
+    double h_right,
+    double hle,
+    double hre,
+    np.ndarray[double, ndim=1, mode="c"] edgeflux not None,
+    double epsilon,
+    double ze,
+    double g,
+    double H0,
+    double hc,
+    double hc_n,
+    int64_t low_froude
+):
+    """
+    Compute flux across an edge using the Kurganov-Noelle-Petrova central scheme.
+
+    This is a thin wrapper around the C function test_flux_function_central()
+    from gpu_kernels.c, which calls the actual gpu_flux_function_central()
+    from gpu_device_helpers.h.
+
+    Parameters
+    ----------
+    normal : array [nx, ny]
+        Normal vector to the edge
+    ql, qr : arrays [w, uh, vh]
+        Left and right conserved quantities
+    h_left, h_right : double
+        Water depths at left and right
+    hle, hre : double
+        Edge heights
+    edgeflux : array [3]
+        Output array for computed flux
+    epsilon, ze, g, H0 : double
+        Numerical parameters
+    hc, hc_n : double
+        Centroid depths (unused in this implementation but kept for API compat)
+    low_froude : int
+        Flag for low Froude number treatment
+
+    Returns
+    -------
+    max_speed : double
+        Maximum wave speed
+    pressure_flux : double
+        Pressure flux contribution
+    """
+    cdef double n1 = normal[0]
+    cdef double n2 = normal[1]
+    cdef double pressure_flux = 0.0
+    cdef double max_speed
+
+    # Call the C wrapper function
+    max_speed = test_flux_function_central(
+        &ql[0], &qr[0],
+        h_left, h_right,
+        hle, hre,
+        n1, n2,
+        epsilon, ze, g,
+        &edgeflux[0], &pressure_flux,
+        <int>low_froude
+    )
+
+    return max_speed, pressure_flux
+
+
+def gravity(object domain, bint update_domain_c_struct=False):
+    """
+    Apply gravity source term to the domain.
+
+    This is a legacy function for test compatibility.
+    In the unified solver, gravity is integrated into the flux computation.
+    """
+    # Gravity is now integrated into compute_fluxes for the DE scheme
+    # This function is a no-op for backward compatibility
+    pass
+
+
+def gravity_wb(object domain, bint update_domain_c_struct=False):
+    """
+    Apply well-balanced gravity source term to the domain.
+
+    This is a legacy function for test compatibility.
+    In the unified solver, gravity is integrated into the flux computation.
+    """
+    # Gravity is now integrated into compute_fluxes for the DE scheme
+    # This function is a no-op for backward compatibility
+    pass
+
+
+def extrapolate_second_order_sw(object domain, bint update_domain_c_struct=False):
+    """
+    Extrapolate quantities from centroids to vertices and edges.
+
+    This is a legacy wrapper for test compatibility.
+    """
+    # Ensure interface is initialized
+    if domain._domain_interface is None:
+        domain._ensure_interface_initialized()
+
+    # Call the unified extrapolation
+    domain._domain_interface.extrapolate_second_order_edge_sw_kernel(domain, distribute_to_vertices=True)

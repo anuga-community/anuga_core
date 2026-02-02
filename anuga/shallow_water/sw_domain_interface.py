@@ -1,23 +1,27 @@
 """
-GPU interface using OpenMP target offloading.
+Unified domain interface for CPU/GPU execution.
 
-This provides a similar interface to sw_domain_cuda.py but uses
-OpenMP target offloading via the sw_domain_gpu_ext Cython module.
+This provides the interface to the unified sw_domain_ext Cython module
+which can run on either CPU (multicore) or GPU depending on compile-time
+options (gpu_offload=true/false in meson).
 
-Key differences from CUDA approach:
+Key features:
 - Arrays stay in NumPy (OpenMP handles device mapping)
-- No explicit array copies needed
-- Uses MPI for multi-GPU (vs single-GPU CUDA approach)
+- No explicit array copies needed for CPU mode
+- Uses MPI for multi-process/multi-GPU execution
+- Compile-time GPU/CPU selection via -Dgpu_offload=true/false
+- Runtime CPU fallback via OMP_TARGET_OFFLOAD=disabled
 """
 
 import numpy as np
 
-class GPU_OMP_interface:
+class DomainInterface:
     """
-    Interface for GPU-accelerated shallow water solver using OpenMP target offloading.
+    Unified interface for shallow water solver (CPU or GPU via OpenMP).
 
     Usage:
-        domain.set_multiprocessor_mode(2)  # This will create the interface
+        # Interface is automatically created when boundaries are set
+        domain.set_boundary(boundary_map)
         # ... normal evolve loop ...
     """
 
@@ -44,14 +48,15 @@ class GPU_OMP_interface:
         if self.initialized:
             return
 
-        from anuga.shallow_water.sw_domain_gpu_ext import (
+        from anuga.shallow_water.sw_domain_ext import (
             init_gpu_domain, map_to_gpu,
             init_reflective_boundary, init_dirichlet_boundary, init_transmissive_boundary,
             init_transmissive_n_zero_t_boundary, init_time_boundary
         )
 
         # Initialize GPU domain structure
-        self.gpu_dom = init_gpu_domain(self.domain)
+        verbose = getattr(self.domain, 'verbose', False)
+        self.gpu_dom = init_gpu_domain(self.domain, verbose=verbose)
 
         # Initialize all supported boundary types BEFORE mapping to GPU
         # This allows boundary arrays to be mapped together with main arrays,
@@ -74,7 +79,7 @@ class GPU_OMP_interface:
         if not self.initialized:
             return
 
-        from anuga.shallow_water.sw_domain_gpu_ext import (
+        from anuga.shallow_water.sw_domain_ext import (
             unmap_from_gpu, finalize_gpu_domain
         )
 
@@ -89,7 +94,7 @@ class GPU_OMP_interface:
         if self.domain.boundary_map is None:
             return
 
-        from anuga.shallow_water.sw_domain_gpu_ext import (
+        from anuga.shallow_water.sw_domain_ext import (
             init_reflective_boundary, init_dirichlet_boundary, init_transmissive_boundary,
             init_transmissive_n_zero_t_boundary, init_time_boundary
         )
@@ -118,27 +123,27 @@ class GPU_OMP_interface:
 
     def sync_to_device(self):
         """Sync centroid values from host to device."""
-        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device
+        from anuga.shallow_water.sw_domain_ext import sync_to_device
         sync_to_device(self.gpu_dom)
 
     def sync_from_device(self):
         """Sync centroid values from device to host."""
-        from anuga.shallow_water.sw_domain_gpu_ext import sync_from_device
+        from anuga.shallow_water.sw_domain_ext import sync_from_device
         sync_from_device(self.gpu_dom)
 
     def sync_boundary_values(self):
         """Sync boundary values from host to device."""
-        from anuga.shallow_water.sw_domain_gpu_ext import sync_boundary_values
+        from anuga.shallow_water.sw_domain_ext import sync_boundary_values
         sync_boundary_values(self.gpu_dom)
 
     def sync_edge_values_from_device(self):
         """Sync edge values from device to host."""
-        from anuga.shallow_water.sw_domain_gpu_ext import sync_edge_values_from_device
+        from anuga.shallow_water.sw_domain_ext import sync_edge_values_from_device
         sync_edge_values_from_device(self.gpu_dom)
 
     def exchange_ghosts(self):
         """Exchange ghost cells between MPI ranks."""
-        from anuga.shallow_water.sw_domain_gpu_ext import exchange_ghosts
+        from anuga.shallow_water.sw_domain_ext import exchange_ghosts
         exchange_ghosts(self.gpu_dom)
 
     # =========================================================================
@@ -151,7 +156,7 @@ class GPU_OMP_interface:
 
         Note: distribute_to_vertices is ignored (we only do edge-based extrapolation)
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import extrapolate_second_order_gpu
+        from anuga.shallow_water.sw_domain_ext import extrapolate_second_order_gpu
         extrapolate_second_order_gpu(self.gpu_dom)
 
     def compute_fluxes_ext_central_kernel(self, domain, timestep):
@@ -163,34 +168,34 @@ class GPU_OMP_interface:
         float
             Local minimum timestep (MPI allreduce needed for global min)
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import compute_fluxes_gpu
+        from anuga.shallow_water.sw_domain_ext import compute_fluxes_gpu
         return compute_fluxes_gpu(self.gpu_dom)
 
     def protect_against_infinitesimal_and_negative_heights_kernel(self, domain):
         """Protect against negative water depths."""
-        from anuga.shallow_water.sw_domain_gpu_ext import protect_gpu
+        from anuga.shallow_water.sw_domain_ext import protect_gpu
         return protect_gpu(self.gpu_dom)
 
     def update_conserved_quantities_kernel(self, domain, timestep):
         """Update conserved quantities with explicit and semi-implicit terms."""
-        from anuga.shallow_water.sw_domain_gpu_ext import update_conserved_quantities_gpu
+        from anuga.shallow_water.sw_domain_ext import update_conserved_quantities_gpu
         update_conserved_quantities_gpu(self.gpu_dom, timestep)
         # GPU protect kernel handles negative cells, return 0 for compatibility
         return 0
 
     def backup_conserved_quantities_kernel(self, domain):
         """Backup centroid values for RK2."""
-        from anuga.shallow_water.sw_domain_gpu_ext import backup_conserved_quantities_gpu
+        from anuga.shallow_water.sw_domain_ext import backup_conserved_quantities_gpu
         backup_conserved_quantities_gpu(self.gpu_dom)
 
-    def saxpy_conserved_quantities_kernel(self, domain, a, b):
-        """RK2 combination: Q = a*Q_current + b*Q_backup."""
-        from anuga.shallow_water.sw_domain_gpu_ext import saxpy_conserved_quantities_gpu
-        saxpy_conserved_quantities_gpu(self.gpu_dom, a, b)
+    def saxpy_conserved_quantities_kernel(self, domain, a, b, c=1.0):
+        """RK combination: Q = (a*Q_current + b*Q_backup) / c."""
+        from anuga.shallow_water.sw_domain_ext import saxpy_conserved_quantities_gpu
+        saxpy_conserved_quantities_gpu(self.gpu_dom, a, b, c)
 
     def manning_friction_kernel(self, domain):
         """Apply Manning friction (semi-implicit)."""
-        from anuga.shallow_water.sw_domain_gpu_ext import manning_friction_gpu
+        from anuga.shallow_water.sw_domain_ext import manning_friction_gpu
         manning_friction_gpu(self.gpu_dom)
 
     # =========================================================================
@@ -203,7 +208,7 @@ class GPU_OMP_interface:
 
         Call this at the start of the profiling period.
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_reset
+        from anuga.shallow_water.sw_domain_ext import flop_counters_reset
         flop_counters_reset(self.gpu_dom)
 
     def flop_counters_enable(self, enable=True):
@@ -215,7 +220,7 @@ class GPU_OMP_interface:
         enable : bool
             True to enable counting, False to disable
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_enable
+        from anuga.shallow_water.sw_domain_ext import flop_counters_enable
         flop_counters_enable(self.gpu_dom, enable)
 
     def flop_counters_start_timer(self):
@@ -224,7 +229,7 @@ class GPU_OMP_interface:
 
         Call this at the start of the profiling period.
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_start_timer
+        from anuga.shallow_water.sw_domain_ext import flop_counters_start_timer
         flop_counters_start_timer(self.gpu_dom)
 
     def flop_counters_stop_timer(self):
@@ -233,7 +238,7 @@ class GPU_OMP_interface:
 
         Call this at the end of the profiling period.
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_stop_timer
+        from anuga.shallow_water.sw_domain_ext import flop_counters_stop_timer
         flop_counters_stop_timer(self.gpu_dom)
 
     def flop_counters_get_total(self):
@@ -245,7 +250,7 @@ class GPU_OMP_interface:
         int
             Total FLOPs executed since last reset
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_get_total
+        from anuga.shallow_water.sw_domain_ext import flop_counters_get_total
         return flop_counters_get_total(self.gpu_dom)
 
     def flop_counters_get_flops(self):
@@ -259,7 +264,7 @@ class GPU_OMP_interface:
         float
             FLOP/s rate
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_get_flops
+        from anuga.shallow_water.sw_domain_ext import flop_counters_get_flops
         return flop_counters_get_flops(self.gpu_dom)
 
     def flop_counters_print(self):
@@ -268,7 +273,7 @@ class GPU_OMP_interface:
 
         Shows per-kernel breakdown and total performance in GFLOP/s.
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_print
+        from anuga.shallow_water.sw_domain_ext import flop_counters_print
         flop_counters_print(self.gpu_dom)
 
     def flop_counters_get_stats(self):
@@ -280,7 +285,7 @@ class GPU_OMP_interface:
         dict
             Dictionary with per-kernel FLOPs, total, elapsed time, and GFLOP/s
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_get_stats
+        from anuga.shallow_water.sw_domain_ext import flop_counters_get_stats
         return flop_counters_get_stats(self.gpu_dom)
 
     # =========================================================================
@@ -296,7 +301,7 @@ class GPU_OMP_interface:
         int
             Total FLOPs across all GPUs since last reset
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_get_global_total
+        from anuga.shallow_water.sw_domain_ext import flop_counters_get_global_total
         return flop_counters_get_global_total(self.gpu_dom)
 
     def flop_counters_get_global_flops(self):
@@ -308,7 +313,7 @@ class GPU_OMP_interface:
         float
             Global FLOP/s rate
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_get_global_flops
+        from anuga.shallow_water.sw_domain_ext import flop_counters_get_global_flops
         return flop_counters_get_global_flops(self.gpu_dom)
 
     def flop_counters_print_global(self):
@@ -317,7 +322,7 @@ class GPU_OMP_interface:
 
         Shows per-kernel breakdown summed across all GPUs with percentages.
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_print_global
+        from anuga.shallow_water.sw_domain_ext import flop_counters_print_global
         flop_counters_print_global(self.gpu_dom)
 
     def flop_counters_get_global_stats(self):
@@ -329,5 +334,9 @@ class GPU_OMP_interface:
         dict
             Dictionary with global total, GFLOP/s, num_gpus, and per-GPU average
         """
-        from anuga.shallow_water.sw_domain_gpu_ext import flop_counters_get_global_stats
+        from anuga.shallow_water.sw_domain_ext import flop_counters_get_global_stats
         return flop_counters_get_global_stats(self.gpu_dom)
+
+
+# Backward compatibility alias
+GPU_OMP_interface = DomainInterface

@@ -42,7 +42,7 @@ int gpu_reflective_init(struct gpu_domain *GD, int num_edges,
     memcpy(R->vol_ids, vol_ids, num_edges * sizeof(int));
     memcpy(R->edge_ids, edge_ids, num_edges * sizeof(int));
 
-    if (GD->rank == 0) {
+    if (GD->verbose && GD->rank == 0) {
         printf("Reflective boundary initialized: %d edges (GPU mapping deferred)\n", num_edges);
     }
 
@@ -171,7 +171,7 @@ int gpu_dirichlet_init(struct gpu_domain *GD, int num_edges,
     memcpy(D->vol_ids, vol_ids, num_edges * sizeof(int));
     memcpy(D->edge_ids, edge_ids, num_edges * sizeof(int));
 
-    if (GD->rank == 0) {
+    if (GD->verbose && GD->rank == 0) {
         printf("Dirichlet boundary initialized: %d edges (GPU mapping deferred)\n", num_edges);
     }
 
@@ -274,7 +274,7 @@ int gpu_transmissive_init(struct gpu_domain *GD, int num_edges,
     memcpy(T->vol_ids, vol_ids, num_edges * sizeof(int));
     memcpy(T->edge_ids, edge_ids, num_edges * sizeof(int));
 
-    if (GD->rank == 0) {
+    if (GD->verbose && GD->rank == 0) {
         printf("Transmissive boundary initialized: %d edges, use_centroid=%d (GPU mapping deferred)\n",
                num_edges, use_centroid);
     }
@@ -392,7 +392,7 @@ int gpu_transmissive_n_zero_t_init(struct gpu_domain *GD, int num_edges,
     memcpy(B->vol_ids, vol_ids, num_edges * sizeof(int));
     memcpy(B->edge_ids, edge_ids, num_edges * sizeof(int));
 
-    if (GD->rank == 0) {
+    if (GD->verbose && GD->rank == 0) {
         printf("Transmissive_n_zero_t boundary initialized: %d edges (GPU mapping deferred)\n", num_edges);
     }
 
@@ -516,7 +516,7 @@ int gpu_time_boundary_init(struct gpu_domain *GD, int num_edges,
     memcpy(B->vol_ids, vol_ids, num_edges * sizeof(int));
     memcpy(B->edge_ids, edge_ids, num_edges * sizeof(int));
 
-    if (GD->rank == 0) {
+    if (GD->verbose && GD->rank == 0) {
         printf("Time_boundary initialized: %d edges (GPU mapping deferred)\n", num_edges);
     }
 

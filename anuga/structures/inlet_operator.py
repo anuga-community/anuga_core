@@ -77,8 +77,8 @@ class Inlet_operator(anuga.Operator):
     def _init_gpu(self):
         """Initialize GPU inlet operator (lazy, called on first __call__ in GPU mode)."""
         try:
-            from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
-            gpu_dom = self.domain.gpu_interface.gpu_dom
+            from anuga.shallow_water import sw_domain_ext as gpu_ext
+            gpu_dom = self.domain._domain_interface.gpu_dom
 
             tri_indices = numpy.ascontiguousarray(
                 self.inlet.triangle_indices, dtype=numpy.intc)
@@ -96,9 +96,9 @@ class Inlet_operator(anuga.Operator):
 
     def _call_gpu(self):
         """GPU path for __call__ - transfers only inlet data (~6KB)."""
-        from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
+        from anuga.shallow_water import sw_domain_ext as gpu_ext
 
-        gpu_dom = self.domain.gpu_interface.gpu_dom
+        gpu_dom = self.domain._domain_interface.gpu_dom
         op_id = self._gpu_op_id
         timestep = self.domain.get_timestep()
         t = self.domain.get_time()
@@ -144,8 +144,8 @@ class Inlet_operator(anuga.Operator):
 
     def __call__(self):
 
-        # GPU path: skip full domain sync, transfer only inlet data
-        if getattr(self.domain, 'multiprocessor_mode', 0) == 2:
+        # Accelerated path: skip full domain sync, transfer only inlet data
+        if getattr(self.domain, '_domain_interface', None) is not None:
             if not self._gpu_initialized:
                 self._init_gpu()
             if self._gpu_initialized:

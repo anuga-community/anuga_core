@@ -157,20 +157,16 @@ Parameters involving communication
         self._gpu_rate_changed = True      # Flag to indicate rate data needs to be transferred to GPU
 
     def _init_gpu(self):
-        """Initialize GPU operator for this rate operator."""
+        """Initialize accelerated operator for this rate operator."""
         if self._gpu_initialized:
             return
 
-        # Check if domain is in GPU mode
-        if not hasattr(self.domain, 'multiprocessor_mode') or self.domain.multiprocessor_mode != 2:
+        # Check if we have a domain interface
+        if not hasattr(self.domain, '_domain_interface') or self.domain._domain_interface is None:
             return
 
-        # Check if we have a GPU interface
-        if not hasattr(self.domain, 'gpu_interface') or self.domain.gpu_interface is None:
-            return
-
-        gpu_interface = self.domain.gpu_interface
-        if not hasattr(gpu_interface, 'gpu_dom') or gpu_interface.gpu_dom is None:
+        domain_interface = self.domain._domain_interface
+        if not hasattr(domain_interface, 'gpu_dom') or domain_interface.gpu_dom is None:
             return
 
         # Only support non-spatial, non-xarray rates for GPU
@@ -199,9 +195,9 @@ Parameters involving communication
             full_indices = None
 
         try:
-            from anuga.shallow_water.sw_domain_gpu_ext import init_rate_operator
+            from anuga.shallow_water.sw_domain_ext import init_rate_operator
             self._gpu_op_id = init_rate_operator(
-                gpu_interface.gpu_dom,
+                domain_interface.gpu_dom,
                 indices,
                 areas.astype(num.float64),
                 full_indices
@@ -225,9 +221,9 @@ Parameters involving communication
         if self.indices is []:
             return
 
-        # Check for GPU execution path
-        if (hasattr(self.domain, 'multiprocessor_mode') and
-            self.domain.multiprocessor_mode == 2 and
+        # Check for accelerated execution path
+        if (hasattr(self.domain, '_domain_interface') and
+            self.domain._domain_interface is not None and
             not self.rate_spatial and
             not self.rate_xarray):
 
@@ -248,24 +244,31 @@ Parameters involving communication
 
                 if self.rate_type == 'quantity':
                     # Quantity type - use array-based GPU kernel
-                    from anuga.shallow_water.sw_domain_gpu_ext import apply_rate_operator_array_gpu
+                    from anuga.shallow_water.sw_domain_ext import apply_rate_operator_array_gpu
                     # Use cached rate array if available (avoids expensive array copy every RK2 step)
                     if self._gpu_rate_array_cache is None:
                         self._gpu_rate_array_cache = num.ascontiguousarray(self.rate.centroid_values, dtype=num.float64)
-                        # Cache min/max too (avoids iterating 5M elements every call)
-                        if self.indices is None:
-                            self._gpu_rate_min_cache = self._gpu_rate_array_cache.min()
-                            self._gpu_rate_max_cache = self._gpu_rate_array_cache.max()
-                        else:
-                            self._gpu_rate_min_cache = self._gpu_rate_array_cache[self.indices].min()
-                            self._gpu_rate_max_cache = self._gpu_rate_array_cache[self.indices].max()
                         self._gpu_rate_changed = True  # New cache, needs transfer
                     rate_array = self._gpu_rate_array_cache
+
+                    # Compute statistics BEFORE kernel modifies stage values
+                    # CPU path: local_rates = max(factor*timestep*rate, -heights), then min/max / timestep
+                    if self.indices is None:
+                        heights = self.stage_c - self.elev_c
+                        local_rates = num.maximum(factor * timestep * rate_array, -heights)
+                        local_rates_for_stats = local_rates[self.full_indices]
+                    else:
+                        heights = self.stage_c[self.indices] - self.elev_c[self.indices]
+                        local_rates = num.maximum(factor * timestep * rate_array[self.indices], -heights)
+                        local_rates_for_stats = local_rates[self.full_indices]
+                    self.local_max = local_rates_for_stats.max() / timestep
+                    self.local_min = local_rates_for_stats.min() / timestep
+
                     # rate_array is full domain size, use_indices_into_rate=1
                     # Pass rate_changed flag to avoid unnecessary H2D transfer
                     rate_changed = 1 if self._gpu_rate_changed else 0
                     self.local_influx = apply_rate_operator_array_gpu(
-                        self.domain.gpu_interface.gpu_dom,
+                        self.domain._domain_interface.gpu_dom,
                         self._gpu_op_id,
                         rate_array,
                         1,  # use_indices_into_rate
@@ -274,30 +277,34 @@ Parameters involving communication
                         float(timestep)
                     )
                     self._gpu_rate_changed = False  # Data transferred, don't repeat
-                    # Use cached min/max for statistics
-                    self.local_max = self._gpu_rate_max_cache * factor
-                    self.local_min = self._gpu_rate_min_cache * factor
 
                 elif self.rate_type == 'centroid_array':
                     # Centroid array type - use array-based GPU kernel
-                    from anuga.shallow_water.sw_domain_gpu_ext import apply_rate_operator_array_gpu
+                    from anuga.shallow_water.sw_domain_ext import apply_rate_operator_array_gpu
                     # Use cached rate array if available
                     if self._gpu_rate_array_cache is None:
                         self._gpu_rate_array_cache = num.ascontiguousarray(self.rate, dtype=num.float64)
-                        # Cache min/max too
-                        if self.indices is None:
-                            self._gpu_rate_min_cache = self._gpu_rate_array_cache.min()
-                            self._gpu_rate_max_cache = self._gpu_rate_array_cache.max()
-                        else:
-                            self._gpu_rate_min_cache = self._gpu_rate_array_cache[self.indices].min()
-                            self._gpu_rate_max_cache = self._gpu_rate_array_cache[self.indices].max()
                         self._gpu_rate_changed = True  # New cache, needs transfer
                     rate_array = self._gpu_rate_array_cache
+
+                    # Compute statistics BEFORE kernel modifies stage values
+                    # CPU path: local_rates = max(factor*timestep*rate, -heights), then min/max / timestep
+                    if self.indices is None:
+                        heights = self.stage_c - self.elev_c
+                        local_rates = num.maximum(factor * timestep * rate_array, -heights)
+                        local_rates_for_stats = local_rates[self.full_indices]
+                    else:
+                        heights = self.stage_c[self.indices] - self.elev_c[self.indices]
+                        local_rates = num.maximum(factor * timestep * rate_array[self.indices], -heights)
+                        local_rates_for_stats = local_rates[self.full_indices]
+                    self.local_max = local_rates_for_stats.max() / timestep
+                    self.local_min = local_rates_for_stats.min() / timestep
+
                     # rate_array is full domain size, use_indices_into_rate=1
                     # Pass rate_changed flag to avoid unnecessary H2D transfer
                     rate_changed = 1 if self._gpu_rate_changed else 0
                     self.local_influx = apply_rate_operator_array_gpu(
-                        self.domain.gpu_interface.gpu_dom,
+                        self.domain._domain_interface.gpu_dom,
                         self._gpu_op_id,
                         rate_array,
                         1,  # use_indices_into_rate
@@ -306,29 +313,37 @@ Parameters involving communication
                         float(timestep)
                     )
                     self._gpu_rate_changed = False  # Data transferred, don't repeat
-                    # Use cached min/max for statistics
-                    self.local_max = self._gpu_rate_max_cache * factor
-                    self.local_min = self._gpu_rate_min_cache * factor
 
                 else:
                     # Scalar or time-dependent rate - use scalar GPU kernel
-                    from anuga.shallow_water.sw_domain_gpu_ext import apply_rate_operator_gpu
+                    from anuga.shallow_water.sw_domain_ext import apply_rate_operator_gpu
                     rate = self.get_non_spatial_rate(t)
                     # Handle case where rate is an array (from file_function)
                     try:
                         rate_scalar = float(rate)
                     except (TypeError, ValueError):
                         rate_scalar = float(rate[0])
+
+                    # Compute statistics BEFORE kernel modifies stage values
+                    # CPU path: local_rates = max(factor*timestep*rate, -heights), then min/max / timestep
+                    if self.indices is None:
+                        heights = self.stage_c - self.elev_c
+                        local_rates = num.maximum(factor * timestep * rate_scalar, -heights)
+                        local_rates_for_stats = local_rates[self.full_indices]
+                    else:
+                        heights = self.stage_c[self.indices] - self.elev_c[self.indices]
+                        local_rates = num.maximum(factor * timestep * rate_scalar, -heights)
+                        local_rates_for_stats = local_rates[self.full_indices]
+                    self.local_max = local_rates_for_stats.max() / timestep
+                    self.local_min = local_rates_for_stats.min() / timestep
+
                     self.local_influx = apply_rate_operator_gpu(
-                        self.domain.gpu_interface.gpu_dom,
+                        self.domain._domain_interface.gpu_dom,
                         self._gpu_op_id,
                         rate_scalar,
                         float(factor),
                         float(timestep)
                     )
-                    # Estimate min/max rate for statistics
-                    self.local_max = rate_scalar * factor if rate_scalar >= 0 else 0.0
-                    self.local_min = rate_scalar * factor if rate_scalar < 0 else 0.0
 
                 # Update tracking
                 self.cumulative_influx += self.local_influx

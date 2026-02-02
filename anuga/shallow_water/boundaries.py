@@ -26,7 +26,66 @@ from anuga.fit_interpolate.interpolate import Modeltime_too_late
 from anuga.fit_interpolate.interpolate import Modeltime_too_early
 from anuga.config import g as gravity
      
-from anuga.shallow_water.sw_domain_openmp_ext import rotate, evaluate_reflective_segment
+# Python implementations of rotate and evaluate_reflective_segment
+# (formerly imported from sw_domain_openmp_ext which is now deprecated)
+def rotate(q, normal_x, normal_y, direction=1):
+    """Rotate momentum in q given edge normal."""
+    q_rotated = np.copy(q)
+    if direction == 1:
+        q_rotated[1] = normal_x * q[1] + normal_y * q[2]
+        q_rotated[2] = -normal_y * q[1] + normal_x * q[2]
+    else:
+        q_rotated[1] = normal_x * q[1] - normal_y * q[2]
+        q_rotated[2] = normal_y * q[1] + normal_x * q[2]
+    return q_rotated
+
+def evaluate_reflective_segment(domain, segment_edges):
+    """Evaluate reflective boundary condition for a segment of edges.
+
+    Parameters
+    ----------
+    domain : Domain
+        The domain object
+    segment_edges : array-like
+        Array of boundary indices to evaluate
+    """
+    # Ensure we have a numpy array
+    bdry_ids = np.asarray(segment_edges)
+    if len(bdry_ids) == 0:
+        return
+
+    stage_ev = domain.quantities['stage'].edge_values
+    xmom_ev = domain.quantities['xmomentum'].edge_values
+    ymom_ev = domain.quantities['ymomentum'].edge_values
+    stage_bv = domain.quantities['stage'].boundary_values
+    xmom_bv = domain.quantities['xmomentum'].boundary_values
+    ymom_bv = domain.quantities['ymomentum'].boundary_values
+    normals = domain.normals
+    boundary_cells = domain.boundary_cells
+    boundary_edges = domain.boundary_edges
+
+    # Get volume and edge IDs for these boundary edges
+    vol_ids = boundary_cells[bdry_ids]
+    edge_ids = boundary_edges[bdry_ids]
+
+    # Get normals - normals array is 2D: [vol_id, 2*edge_id] and [vol_id, 2*edge_id+1]
+    normal_x = normals[vol_ids, 2*edge_ids]
+    normal_y = normals[vol_ids, 2*edge_ids + 1]
+
+    # Copy stage from edge to boundary (use advanced indexing)
+    stage_bv[bdry_ids] = stage_ev[vol_ids, edge_ids]
+
+    # Reflect momentum
+    uh = xmom_ev[vol_ids, edge_ids]
+    vh = ymom_ev[vol_ids, edge_ids]
+    # Project to normal and tangential components
+    un = normal_x * uh + normal_y * vh
+    ut = -normal_y * uh + normal_x * vh
+    # Reverse normal component (reflection)
+    un = -un
+    # Project back to x,y
+    xmom_bv[bdry_ids] = normal_x * un - normal_y * ut
+    ymom_bv[bdry_ids] = normal_y * un + normal_x * ut
 
 try:
     from numba import jit
@@ -186,12 +245,8 @@ class Reflective_boundary(Boundary):
         if domain is None:
             return
 
-        ids = segment_edges
-        vol_ids  = domain.boundary_cells[ids]
-        edge_ids = domain.boundary_edges[ids]
-        ids_array = np.array(ids, dtype=np.int64)
-
-        evaluate_reflective_segment(domain, ids_array, vol_ids, edge_ids)
+        # Pass boundary indices directly
+        evaluate_reflective_segment(domain, segment_edges)
 
 
 

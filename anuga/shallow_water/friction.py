@@ -20,35 +20,13 @@ from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a
 
 
 def manning_friction_semi_implicit(domain):
-    
-    if domain.multiprocessor_mode == 1:
-        if domain.use_sloped_mannings:
-            # OpenMP version for sloped mannings
-            from .sw_domain_openmp_ext import manning_friction_sloped_semi_implicit_edge_based
-            manning_friction_sloped_semi_implicit_edge_based(domain)
-            #from .sw_domain_openmp_ext import manning_friction_sloped_semi_implicit
-            #manning_friction_sloped_semi_implicit(domain)
-        else:
-            # OpenMP version for flat mannings
-            from .sw_domain_openmp_ext import manning_friction_flat_semi_implicit
-            manning_friction_flat_semi_implicit(domain)
-
-
-    elif domain.multiprocessor_mode == 2:
-        # GPU version not implemented yet, use openmp version
-        if domain.use_sloped_mannings:
-            # OpenMP version for sloped mannings
-            from .sw_domain_openmp_ext import manning_friction_sloped_semi_implicit_edge_based
-            manning_friction_sloped_semi_implicit_edge_based(domain)
-        else:
-            # OpenMP version for flat mannings
-            from .sw_domain_openmp_ext import manning_friction_flat_semi_implicit
-            manning_friction_flat_semi_implicit(domain)
+    """Apply Manning friction using semi-implicit method."""
+    if hasattr(domain, '_domain_interface') and domain._domain_interface is not None:
+        domain._domain_interface.manning_friction_kernel(domain)
     else:
-        raise ValueError(f"""
-manning_friction_semi_implicit:
-multiprocessor_mode {domain.multiprocessor_mode} not supported
-""")
+        raise RuntimeError(
+            "manning_friction_semi_implicit called without domain interface."
+        )
 
 # # Old code
 # def manning_friction_semi_implicit_cpu(domain):

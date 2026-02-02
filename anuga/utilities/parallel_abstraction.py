@@ -87,7 +87,10 @@ else:
   comm = MPI.COMM_WORLD
   get_processor_name = MPI.Get_processor_name
   finalize = MPI.Finalize
-  barrier = comm.barrier
+  def barrier():
+    # Check if MPI has been finalized
+    if not MPI.Is_finalized():
+        comm.barrier()
   default_tag = 1
   MAX = MPI.MAX
   MIN = MPI.MIN
@@ -175,6 +178,9 @@ else:
       print()
 
   def rank():
+    # Check if MPI has been finalized
+    if MPI.Is_finalized():
+        return 0  # Return sequential behavior after finalize
     return comm.rank
 
   def receive(source, buffer=None, vanilla=False, tag=1, return_status=False,
@@ -243,6 +249,9 @@ else:
       comm.send(x, dest=destination, tag=tag)
 
   def size():
+    # Check if MPI has been finalized
+    if MPI.Is_finalized():
+        return 1  # Return sequential behavior after finalize
     return comm.size
 
   def send_recv_via_dicts(sendDict, recvDict):
