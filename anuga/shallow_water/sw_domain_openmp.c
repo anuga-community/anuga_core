@@ -13,6 +13,7 @@
 // Ole Nielsen, GA 2004
 // Stephen Roberts, ANU 2009
 // Gareth Davies, GA 2011
+// Jorge Galvez, NCI 2026 :D
 
 #include "math.h"
 #include <math.h>
@@ -29,6 +30,9 @@
 // Core kernels for CPU/GPU (shared with sw_domain_gpu_ext)
 #include "core_kernels.h"
 
+// Shared device helper functions (flux, rotation, gradient limiting, etc.)
+#include "gpu/gpu_device_helpers.h"
+
 // Flag to use unified kernels (can be toggled for testing)
 #define USE_UNIFIED_KERNELS 1
 
@@ -40,217 +44,8 @@ anuga_uint __mod_of_power_2(anuga_uint n, anuga_uint d)
   return (n & (d - 1));
 }
 
-// Computational function for rotation
-anuga_int __rotate(double *q, const double n1, const double n2)
-{
-  /*Rotate the last  2 coordinates of q (q[1], q[2])
-    from x,y coordinates to coordinates based on normal vector (n1, n2).
-
-    Result is returned in array 2x1 r
-    To rotate in opposite direction, call rotate with (q, n1, -n2)
-
-    Contents of q are changed by this function */
-
-  double q1, q2;
-
-  // Shorthands
-  q1 = q[1]; // x coordinate
-  q2 = q[2]; // y coordinate
-
-  // Rotate
-  q[1] = n1 * q1 + n2 * q2;
-  q[2] = -n2 * q1 + n1 * q2;
-
-  return 0;
-}
-// general function to replace the repeated if statements for the velocity terms
-static inline void compute_velocity_terms(
-    const double h, const double h_edge,
-    const double uh_raw, const double vh_raw,
-    double *__restrict u, double *__restrict uh, double *__restrict v, double *__restrict vh)
-{
-  if (h_edge > 0.0)
-  {
-    double inv_h_edge = 1.0 / h_edge;
-
-    *u = uh_raw * inv_h_edge;
-    *uh = h * (*u);
-
-    *v = vh_raw * inv_h_edge;
-    *vh = h * inv_h_edge * vh_raw;
-  }
-  else
-  {
-    *u = 0.0;
-    *uh = 0.0;
-    *v = 0.0;
-    *vh = 0.0;
-  }
-}
-
-static inline double compute_local_froude(
-    const anuga_int low_froude,
-    const double u_left, const double u_right,
-    const double v_left, const double v_right,
-    const double soundspeed_left, const double soundspeed_right)
-{
-  double numerator = u_right * u_right + u_left * u_left +
-                     v_right * v_right + v_left * v_left;
-  double denominator = soundspeed_left * soundspeed_left +
-                       soundspeed_right * soundspeed_right + 1.0e-10;
-
-  if (low_froude == 1)
-  {
-    return sqrt(fmax(0.001, fmin(1.0, numerator / denominator)));
-  }
-  else if (low_froude == 2)
-  {
-    double fr = sqrt(numerator / denominator);
-    return sqrt(fmin(1.0, 0.01 + fmax(fr - 0.01, 0.0)));
-  }
-  else
-  {
-    return 1.0;
-  }
-}
-
-static inline double compute_s_max(const double u_left, const double u_right,
-                                   const double c_left, const double c_right)
-{
-  double s = fmax(u_left + c_left, u_right + c_right);
-  return (s < 0.0) ? 0.0 : s;
-}
-
-static inline double compute_s_min(const double u_left, const double u_right,
-                                   const double c_left, const double c_right)
-{
-  double s = fmin(u_left - c_left, u_right - c_right);
-  return (s > 0.0) ? 0.0 : s;
-}
-
-// Innermost flux function (using stage w=z+h)
-anuga_int __flux_function_central(double *__restrict q_left, double *__restrict q_right,
-                                const double h_left, const double h_right,
-                                const double hle, const double hre,
-                                const double n1, const double n2,
-                                const double epsilon,
-                                const double ze,
-                                const double g,
-                                double *__restrict edgeflux, double *__restrict max_speed,
-                                double *__restrict pressure_flux,
-                                const anuga_int low_froude)
-{
-
-  /*Compute fluxes between volumes for the shallow water wave equation
-    cast in terms of the 'stage', w = h+z using
-    the 'central scheme' as described in
-
-    Kurganov, Noelle, Petrova. 'Semidiscrete Central-Upwind Schemes For
-    Hyperbolic Conservation Laws and Hamilton-Jacobi Equations'.
-    Siam J. Sci. Comput. Vol. 23, No. 3, pp. 707-740.
-
-    The implemented formula is given in equation (3.15) on page 714
-
-    FIXME: Several variables in this interface are no longer used, clean up
-  */
-
-  double uh_left, vh_left, u_left;
-  double uh_right, vh_right, u_right;
-  double soundspeed_left, soundspeed_right;
-  double denom;
-  double v_right, v_left;
-  double q_left_rotated[3], q_right_rotated[3], flux_right[3], flux_left[3];
-
-
-  for (anuga_int i = 0; i < 3; i++)
-  {
-    // Rotate the conserved quantities to align with the normal vector
-    // This is done to align the x- and y-momentum with the x-axis
-    q_left_rotated[i] = q_left[i];
-    q_right_rotated[i] = q_right[i];
-  }
-
-  // Align x- and y-momentum with x-axis
-  __rotate(q_left_rotated, n1, n2);
-  __rotate(q_right_rotated, n1, n2);
-
-  // Compute speeds in x-direction
-  // w_left = q_left_rotated[0];
-  uh_left = q_left_rotated[1];
-  vh_left = q_left_rotated[2];
-  compute_velocity_terms(h_left, hle, q_left_rotated[1], q_left_rotated[2],
-                         &u_left, &uh_left, &v_left, &vh_left);
-
-  uh_right = q_right_rotated[1];
-  vh_right = q_right_rotated[2];
-  compute_velocity_terms(h_right, hre, q_right_rotated[1], q_right_rotated[2],
-                         &u_right, &uh_right, &v_right, &vh_right);
-
-  // Maximal and minimal wave speeds
-  soundspeed_left = sqrt(g * h_left);
-  soundspeed_right = sqrt(g * h_right);
-  // Something that scales like the Froude number
-  // We will use this to scale the diffusive component of the UH/VH fluxes.
-  double local_fr = compute_local_froude(
-      low_froude, u_left, u_right, v_left, v_right,
-      soundspeed_left, soundspeed_right);
-
-  double s_max = compute_s_max(u_left, u_right, soundspeed_left, soundspeed_right);
-  double s_min = compute_s_min(u_left, u_right, soundspeed_left, soundspeed_right);
-
-  // Flux formulas
-  flux_left[0] = u_left * h_left;
-  flux_left[1] = u_left * uh_left; //+ 0.5*g*h_left*h_left;
-  flux_left[2] = u_left * vh_left;
-
-  flux_right[0] = u_right * h_right;
-  flux_right[1] = u_right * uh_right; //+ 0.5*g*h_right*h_right;
-  flux_right[2] = u_right * vh_right;
-
-  // Flux computation
-  denom = s_max - s_min;
-  double inverse_denominator = 1.0 / fmax(denom, 1.0e-100);
-  double s_max_s_min = s_max * s_min;
-  if (denom < epsilon)
-  {
-    // Both wave speeds are very small
-    //memset(edgeflux, 0, 3 * sizeof(double));
-    edgeflux[0] = 0.0;
-    edgeflux[1] = 0.0;
-    edgeflux[2] = 0.0;
-
-    *max_speed = 0.0;
-    //*pressure_flux = 0.0;
-    *pressure_flux = 0.5 * g * 0.5 * (h_left * h_left + h_right * h_right);
-  }
-  else
-  {
-    // Maximal wavespeed
-    *max_speed = fmax(s_max, -s_min);
-    {
-      double flux_0 = s_max * flux_left[0] - s_min * flux_right[0];
-      flux_0 += s_max_s_min * (fmax(q_right_rotated[0], ze) - fmax(q_left_rotated[0], ze));
-      edgeflux[0] = flux_0 * inverse_denominator;
-
-      double flux_1 = s_max * flux_left[1] - s_min * flux_right[1];
-      flux_1 += local_fr * s_max_s_min * (uh_right - uh_left);
-      edgeflux[1] = flux_1 * inverse_denominator;
-
-      double flux_2 = s_max * flux_left[2] - s_min * flux_right[2];
-      flux_2 += local_fr * s_max_s_min * (vh_right - vh_left);
-      edgeflux[2] = flux_2 * inverse_denominator;
-    }
-
-    // Separate pressure flux, so we can apply different wet-dry hacks to it
-    *pressure_flux = 0.5 * g * (s_max * h_left * h_left - s_min * h_right * h_right) * inverse_denominator;
-
-    // Rotate back
-    __rotate(edgeflux, n1, -n2);
-  }
-
-  return 0;
-}
-
+// Wrapper for scalar interface (used by Cython)
+// Calls unified gpu_flux_function_central from gpu_device_helpers.h
 anuga_int __openmp__flux_function_central(double q_left0, double q_left1, double q_left2,
                                         double q_right0, double q_right1, double q_right2,
                                         double h_left, double h_right,
@@ -264,12 +59,9 @@ anuga_int __openmp__flux_function_central(double q_left0, double q_left1, double
                                         double *pressure_flux,
                                         anuga_int low_froude)
 {
-
   double edgeflux[3];
   double q_left[3];
   double q_right[3];
-
-  anuga_int ierr;
 
   edgeflux[0] = *edgeflux0;
   edgeflux[1] = *edgeflux1;
@@ -283,22 +75,20 @@ anuga_int __openmp__flux_function_central(double q_left0, double q_left1, double
   q_right[1] = q_right1;
   q_right[2] = q_right2;
 
-  ierr = __flux_function_central(q_left, q_right,
-                                 h_left, h_right,
-                                 hle, hre,
-                                 n1, n2,
-                                 epsilon,
-                                 ze,
-                                 g,
-                                 edgeflux, max_speed,
-                                 pressure_flux,
-                                 low_froude);
+  gpu_flux_function_central(q_left, q_right,
+                            h_left, h_right,
+                            hle, hre,
+                            n1, n2,
+                            epsilon, ze, g,
+                            edgeflux, max_speed,
+                            pressure_flux,
+                            low_froude);
 
   *edgeflux0 = edgeflux[0];
   *edgeflux1 = edgeflux[1];
   *edgeflux2 = edgeflux[2];
 
-  return ierr;
+  return 0;
 }
 void inline __adjust_edgeflux_with_weir(double *edgeflux,
                                    const double h_left, double h_right,
@@ -534,14 +324,14 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
       }
       else
       {
-        // Compute the fluxes using the central scheme
-        __flux_function_central(edge_data.ql, edge_data.qr,
-                                edge_data.h_left, edge_data.h_right,
-                                edge_data.hle, edge_data.hre,
-                                edge_data.normal_x, edge_data.normal_y,
-                                epsilon, edge_data.z_half, g,
-                                edgeflux, &max_speed_local, &pressure_flux,
-                                low_froude);
+        // Compute the fluxes using the central scheme (unified with GPU)
+        gpu_flux_function_central(edge_data.ql, edge_data.qr,
+                                  edge_data.h_left, edge_data.h_right,
+                                  edge_data.hle, edge_data.hre,
+                                  edge_data.normal_x, edge_data.normal_y,
+                                  epsilon, edge_data.z_half, g,
+                                  edgeflux, &max_speed_local, &pressure_flux,
+                                  low_froude);
       }
 
     // Weir flux adjustment
@@ -682,134 +472,12 @@ double _openmp_protect(const struct domain *__restrict D)
   return mass_error;
 }
 
-static inline anuga_int __find_qmin_and_qmax_dq1_dq2(const double dq0, const double dq1, const double dq2,
-                                                   double *qmin, double *qmax)
-{
-  // Considering the centroid of an FV triangle and the vertices of its
-  // auxiliary triangle, find
-  // qmin=min(q)-qc and qmax=max(q)-qc,
-  // where min(q) and max(q) are respectively min and max over the
-  // four values (at the centroid of the FV triangle and the auxiliary
-  // triangle vertices),
-  // and qc is the centroid
-  // dq0=q(vertex0)-q(centroid of FV triangle)
-  // dq1=q(vertex1)-q(vertex0)
-  // dq2=q(vertex2)-q(vertex0)
-
-  // This is a simple implementation
-  *qmax = fmax(fmax(dq0, fmax(dq0 + dq1, dq0 + dq2)), 0.0);
-  *qmin = fmin(fmin(dq0, fmin(dq0 + dq1, dq0 + dq2)), 0.0);
-
-  return 0;
-}
-
-static inline anuga_int __limit_gradient(double *__restrict dqv, double qmin, double qmax, const double beta_w)
-{
-  // Given provisional jumps dqv from the FV triangle centroid to its
-  // vertices/edges, and jumps qmin (qmax) between the centroid of the FV
-  // triangle and the minimum (maximum) of the values at the auxiliary triangle
-  // vertices (which are centroids of neighbour mesh triangles), calculate a
-  // multiplicative factor phi by which the provisional vertex jumps are to be
-  // limited
-
-  double r = 1000.0;
-  //#pragma omp parallel for simd reduction(min : r) default(none) shared(dqv, qmin, qmax, beta_w, TINY)
-  double dq_x = dqv[0];
-  double dq_y = dqv[1];
-  double dq_z = dqv[2];
-
-  if(dq_x < -TINY)
-  {
-    double r0 = qmin / dq_x;
-    r = fmin(r, r0);
-  }
-  else if (dq_x > TINY)
-  {
-    double r0 = qmax / dq_x;
-    r = fmin(r, r0);
-  }
-  if(dq_y < -TINY)
-  {
-    double r0 = qmin / dq_y;
-    r = fmin(r, r0);
-  }
-  else if (dq_y > TINY)
-  {
-    double r0 = qmax / dq_y;
-    r = fmin(r, r0);
-  }
-  if(dq_z < -TINY)
-  {
-    double r0 = qmin / dq_z;
-    r = fmin(r, r0);
-  }
-  else if (dq_z > TINY)
-  {
-    double r0 = qmax / dq_z;
-    r = fmin(r, r0);
-  }
-
-
-  double phi = fmin(r * beta_w, 1.0);
-
-  for (anuga_int i = 0; i < 3; i++)
-  {
-    dqv[i] *= phi;
-  }
-  return 0;
-}
-
-#pragma omp declare simd
-static inline void __calc_edge_values_with_gradient(
-    const double cv_k, const double cv_k0, const double cv_k1, const double cv_k2,
-    const double dxv0, const double dxv1, const double dxv2, const double dyv0, const double dyv1, const double dyv2,
-    const double dx1, const double dx2, const double dy1, const double dy2, const double inv_area2,
-    const double beta_tmp, double *__restrict edge_values)
-{
-  double dqv[3];
-  double dq0 = cv_k0 - cv_k;
-  double dq1 = cv_k1 - cv_k0;
-  double dq2 = cv_k2 - cv_k0;
-
-  double a = (dy2 * dq1 - dy1 * dq2) * inv_area2;
-  double b = (dx1 * dq2 - dx2 * dq1) * inv_area2;
-
-  dqv[0] = a * dxv0 + b * dyv0;
-  dqv[1] = a * dxv1 + b * dyv1;
-  dqv[2] = a * dxv2 + b * dyv2;
-
-  double qmin, qmax;
-  __find_qmin_and_qmax_dq1_dq2(dq0, dq1, dq2, &qmin, &qmax);
-  __limit_gradient(dqv, qmin, qmax, beta_tmp);
-
-  edge_values[0] = cv_k + dqv[0];
-  edge_values[1] = cv_k + dqv[1];
-  edge_values[2] = cv_k + dqv[2];
-}
-
-#pragma omp declare simd
-static inline void __set_constant_edge_values(const double cv_k, double *edge_values)
-{
-  edge_values[0] = cv_k;
-  edge_values[1] = cv_k;
-  edge_values[2] = cv_k;
-}
-
-#pragma omp declare simd
-static inline void compute_qmin_qmax_from_dq1(const double dq1, double *qmin, double *qmax)
-{
-  if (dq1 >= 0.0)
-  {
-    *qmin = 0.0;
-    *qmax = dq1;
-  }
-  else
-  {
-    *qmin = dq1;
-    *qmax = 0.0;
-  }
-}
-
+// Extrapolation helpers now unified in gpu_device_helpers.h:
+// - gpu_find_qmin_and_qmax_dq1_dq2
+// - gpu_limit_gradient
+// - gpu_calc_edge_values_with_gradient
+// - gpu_set_constant_edge_values
+// - gpu_compute_qmin_qmax_from_dq1
 
 static inline void update_centroid_values(struct domain *__restrict D,
                                           const anuga_int number_of_elements,
@@ -881,21 +549,7 @@ static inline anuga_int get_internal_neighbour(const struct domain *__restrict D
   return -1; // Indicates failure
 }
 
-#pragma omp declare simd
-static inline void compute_dqv_from_gradient(const double dq1, const double dx2, const double dy2,
-                                             const double dxv0, const double dxv1, const double dxv2,
-                                             const double dyv0, const double dyv1, const double dyv2,
-                                             double dqv[3])
-{
-  // Calculate the gradient between the centroid of triangle k
-  // and that of its neighbour
-  double a = dq1 * dx2;
-  double b = dq1 * dy2;
-
-  dqv[0] = a * dxv0 + b * dyv0;
-  dqv[1] = a * dxv1 + b * dyv1;
-  dqv[2] = a * dxv2 + b * dyv2;
-}
+// compute_dqv_from_gradient unified in gpu_device_helpers.h as gpu_compute_dqv_from_gradient
 
 #pragma omp declare simd
 static inline void compute_gradient_projection_between_centroids(
@@ -935,14 +589,14 @@ static inline void extrapolate_gradient_limited(
   double dq1 = centroid_values[k1] - centroid_values[k];
 
   double dqv[3];
-  compute_dqv_from_gradient(dq1, dx2, dy2,
-                            dxv0, dxv1, dxv2,
-                            dyv0, dyv1, dyv2, dqv);
+  gpu_compute_dqv_from_gradient(dq1, dx2, dy2,
+                                dxv0, dxv1, dxv2,
+                                dyv0, dyv1, dyv2, dqv);
 
   double qmin, qmax;
-  compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
+  gpu_compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
 
-  __limit_gradient(dqv, qmin, qmax, beta);
+  gpu_limit_gradient(dqv, qmin, qmax, beta);
 
   for (anuga_int i = 0; i < 3; i++)
   {
@@ -966,7 +620,7 @@ static inline void interpolate_edges_with_beta(
   double edge_vals[3];
   if (beta > 0.0)
   {
-    __calc_edge_values_with_gradient(
+    gpu_calc_edge_values_with_gradient(
         centroid_values[k],
         centroid_values[k0],
         centroid_values[k1],
@@ -980,7 +634,7 @@ static inline void interpolate_edges_with_beta(
   }
   else
   {
-    __set_constant_edge_values(centroid_values[k], edge_vals);
+    gpu_set_constant_edge_values(centroid_values[k], edge_vals);
   }
   for (anuga_int i = 0; i < 3; i++)
   {
