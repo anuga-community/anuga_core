@@ -1711,81 +1711,12 @@ anuga_int _openmp_gravity_wb(const struct domain *__restrict D) {
 
 
 
-anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D, 
+anuga_int _openmp_update_conserved_quantities(const struct domain *__restrict D,
                                               const double timestep)
-      {
-	// Update centroid values based on values stored in
-	// explicit_update and semi_implicit_update as well as given timestep
-
-
-  anuga_int number_of_elements = D->number_of_elements;
-  
-
-	// Divide semi_implicit update by conserved quantity
-	#pragma omp parallel for schedule(static) \
-  shared(D) firstprivate(number_of_elements, timestep)
-	for (int k=0; k<number_of_elements; k++) {
-
-
-    double denominator;
-
-		// use previous centroid value
-		const double stage_c = D->stage_centroid_values[k];
-    const double xmom_c = D->xmom_centroid_values[k];
-    const double ymom_c = D->ymom_centroid_values[k];
-		const double explicit_stage = D->stage_explicit_update[k];
-    const double explicit_xmom = D->xmom_explicit_update[k];
-    const double explicit_ymom = D->ymom_explicit_update[k];
-
-		if (stage_c == 0.0) {
-			D->stage_semi_implicit_update[k] = 0.0;
-		} else {
-			D->stage_semi_implicit_update[k] /= stage_c;
-		}
-
-		if (xmom_c == 0.0) {
-			D->xmom_semi_implicit_update[k] = 0.0;
-		} else {
-			D->xmom_semi_implicit_update[k] /= xmom_c;
-		}
-
-		if (ymom_c == 0.0) {
-			D->ymom_semi_implicit_update[k] = 0.0;
-		} else {
-			D->ymom_semi_implicit_update[k] /= ymom_c;
-		}
-
-		// Explicit updates
-		D->stage_centroid_values[k] += timestep*explicit_stage;
-    D->xmom_centroid_values[k]  += timestep*explicit_xmom;
-    D->ymom_centroid_values[k]  += timestep*explicit_ymom;
-
-		// Semi implicit updates
-		denominator = 1.0 - timestep*D->stage_semi_implicit_update[k];
-		if (denominator > 0.0) {
-			//Update conserved_quantities from semi implicit updates
-			D->stage_centroid_values[k] /= denominator;
-		}
-
-    denominator = 1.0 - timestep*D->xmom_semi_implicit_update[k];
-		if (denominator > 0.0) {
-			//Update conserved_quantities from semi implicit updates
-			D->xmom_centroid_values[k] /= denominator;
-		}
-
-    denominator = 1.0 - timestep*D->ymom_semi_implicit_update[k];
-		if (denominator > 0.0) {
-			//Update conserved_quantities from semi implicit updates
-			D->ymom_centroid_values[k] /= denominator;
-		}
-		
-		// Reset semi_implicit_update here ready for next time step
-		D->stage_semi_implicit_update[k] = 0.0;
-    D->xmom_semi_implicit_update[k] = 0.0;
-    D->ymom_semi_implicit_update[k] = 0.0;
-	}
-
-	return 0;
+{
+    // Unified: calls core_update_conserved_quantities from core_kernels.c
+    core_update_conserved_quantities((struct domain *)D, timestep);
+    return 0;
 }
 
 anuga_int _openmp_saxpy_conserved_quantities(const struct domain *__restrict D, 
