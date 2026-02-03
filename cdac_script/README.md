@@ -86,7 +86,7 @@ For GPU offloading:
 |--------|---------|-------------|
 | `gpu_offload` | `false` | Target GPU (`true`) or CPU multicore (`false`) |
 | `gpu_aware_mpi` | `false` | Enable GPU-aware MPI for direct device communication |
-| `gpu_arch` | `cc80` | GPU architecture: `cc70` (V100), `cc80` (A100), `cc90` (H100), or AMD `gfx*` |
+| `gpu_arch` | `cc70` | GPU architecture: `cc70` (V100), `cc80` (A100), `cc90` (H100), or AMD `gfx*` |
 
 ### CPU-only build (no CUDA required)
 
@@ -98,7 +98,7 @@ pip install -e . --no-build-isolation
 
 This uses multicore OpenMP only, no GPU flags.
 
-### GPU build (A100 - default architecture)
+### GPU build (V100 - default architecture)
 
 ```bash
 pip install -e . --no-build-isolation \
@@ -110,14 +110,14 @@ pip install -e . --no-build-isolation \
 Use the `-Dgpu_arch` flag to target different GPUs:
 
 ```bash
-# A100 (default - cc80)
+# V100 (default - cc70)
 pip install -e . --no-build-isolation \
     -Csetup-args=-Dgpu_offload=true
 
-# V100 (cc70)
+# A100 (cc80)
 pip install -e . --no-build-isolation \
     -Csetup-args=-Dgpu_offload=true \
-    -Csetup-args=-Dgpu_arch=cc70
+    -Csetup-args=-Dgpu_arch=cc80
 
 # H100 (cc90)
 pip install -e . --no-build-isolation \
@@ -138,8 +138,8 @@ pip install -e . --no-build-isolation \
 
 | GPU | Architecture | Flag |
 |-----|--------------|------|
-| NVIDIA A100 | cc80 | `-Dgpu_arch=cc80` (default) |
-| NVIDIA V100 | cc70 | `-Dgpu_arch=cc70` |
+| NVIDIA V100 | cc70 | `-Dgpu_arch=cc70` (default) |
+| NVIDIA A100 | cc80 | `-Dgpu_arch=cc80` |
 | NVIDIA H100 | cc90 | `-Dgpu_arch=cc90` |
 | AMD MI100 | gfx908 | `-Dgpu_arch=gfx908` (requires clang/AOMP) |
 | AMD MI210/MI250 | gfx90a | `-Dgpu_arch=gfx90a` (requires clang/AOMP) |
