@@ -19,10 +19,6 @@
 
 // GPU compute kernels: extrapolate, flux, protect, update, etc.
 
-// ============================================================================
-// GPU Kernel Stubs - To be implemented with ANUGA's numerical methods
-// ============================================================================
-
 void gpu_extrapolate_second_order(struct gpu_domain *GD) {
     // Delegate to core kernel (shared with CPU implementation)
     core_extrapolate_second_order_edge(&GD->D);
