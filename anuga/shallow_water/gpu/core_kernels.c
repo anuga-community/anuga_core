@@ -588,7 +588,7 @@ void core_backup_conserved_quantities(struct domain *D) {
 }
 
 // ============================================================================
-// SAXPY for RK2: Q = a*Q + b*Q_backup (+ c*something for RK3)
+// SAXPY for RK2/RK3: Q = (a*Q + b*Q_backup) / c
 // ============================================================================
 
 void core_saxpy_conserved_quantities(struct domain *D, double a, double b, double c) {
@@ -602,14 +602,24 @@ void core_saxpy_conserved_quantities(struct domain *D, double a, double b, doubl
     double * restrict xmom_bk = D->xmom_backup_values;
     double * restrict ymom_bk = D->ymom_backup_values;
 
-    // Note: c parameter currently unused (for future RK3 support)
-    (void)c;
-
+    // Standard SAXPY: Q = a*Q + b*Q_backup
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
         stage_cv[k] = a * stage_cv[k] + b * stage_bk[k];
         xmom_cv[k] = a * xmom_cv[k] + b * xmom_bk[k];
         ymom_cv[k] = a * ymom_cv[k] + b * ymom_bk[k];
+    }
+
+    // Apply c scaling if needed: Q = Q / c
+    // Used for numerical stability with RK coefficients like a=1/3, b=2/3
+    if (c != 1.0) {
+        double c_inv = 1.0 / c;
+        OMP_PARALLEL_LOOP
+        for (anuga_int k = 0; k < n; k++) {
+            stage_cv[k] *= c_inv;
+            xmom_cv[k] *= c_inv;
+            ymom_cv[k] *= c_inv;
+        }
     }
 }
 
