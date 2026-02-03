@@ -987,8 +987,8 @@ for t in domain.evolve(yieldstep=yieldstep, outputstep=outputstep, finaltime=fin
     #domain.report_cells_with_small_local_timestep()
 
     # Report inlet statistics
-    if myid == 0 and creek_inlet is not None:
-        print(f"  Inlet applied volume: {creek_inlet.total_applied_volume:.2f} m³")
+    #if myid == 0 and creek_inlet is not None:
+    #    print(f"  Inlet applied volume: {creek_inlet.total_applied_volume:.2f} m³")
 
     # Report statistics for GPU testing (like CDAC script)
     stage = domain.quantities['stage']

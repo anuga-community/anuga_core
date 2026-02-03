@@ -338,6 +338,44 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         }
     }
 
+    // Map riverwall arrays if present
+    // edge_flux_type is always mapped (size 3*n); other arrays only if riverwalls exist
+    anuga_int *edge_flux_type = GD->D.edge_flux_type;
+    if (edge_flux_type != NULL) {
+        #pragma omp target enter data map(to: edge_flux_type[0:3*n])
+    }
+
+    anuga_int n_rw_edges = GD->D.number_of_riverwall_edges;
+    if (n_rw_edges > 0) {
+        anuga_int *edge_river_wall_counter = GD->D.edge_river_wall_counter;
+        double *riverwall_elevation = GD->D.riverwall_elevation;
+        anuga_int *riverwall_rowIndex = GD->D.riverwall_rowIndex;
+        double *riverwall_hydraulic_properties = GD->D.riverwall_hydraulic_properties;
+        anuga_int ncol_hp = GD->D.ncol_riverwall_hydraulic_properties;
+        anuga_int nrow_hp = GD->D.nrow_riverwall_hydraulic_properties;
+
+        // edge_river_wall_counter has same size as edge_flux_type (3*n)
+        if (edge_river_wall_counter != NULL) {
+            #pragma omp target enter data map(to: edge_river_wall_counter[0:3*n])
+        }
+        // riverwall_elevation and riverwall_rowIndex have size n_rw_edges
+        if (riverwall_elevation != NULL) {
+            #pragma omp target enter data map(to: riverwall_elevation[0:n_rw_edges])
+        }
+        if (riverwall_rowIndex != NULL) {
+            #pragma omp target enter data map(to: riverwall_rowIndex[0:n_rw_edges])
+        }
+        // riverwall_hydraulic_properties is (nrow_hp x ncol_hp)
+        // nrow_hp = number of unique riverwall segments
+        if (riverwall_hydraulic_properties != NULL && ncol_hp > 0 && nrow_hp > 0) {
+            #pragma omp target enter data map(to: riverwall_hydraulic_properties[0:nrow_hp*ncol_hp])
+        }
+
+        if (GD->rank == 0) {
+            printf("Riverwall arrays mapped to GPU: %" PRId64 " edges, %" PRId64 " segments\n", n_rw_edges, nrow_hp);
+        }
+    }
+
     // Map backup arrays for RK2 if present
     if (GD->D.stage_backup_values != NULL) {
         double *stage_backup = GD->D.stage_backup_values;
@@ -575,6 +613,35 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *e_ids = TB->edge_ids;
         #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 0;
+    }
+
+    // Unmap riverwall arrays
+    anuga_int *edge_flux_type = GD->D.edge_flux_type;
+    if (edge_flux_type != NULL) {
+        #pragma omp target exit data map(delete: edge_flux_type[0:3*n])
+    }
+
+    anuga_int n_rw_edges = GD->D.number_of_riverwall_edges;
+    if (n_rw_edges > 0) {
+        anuga_int *edge_river_wall_counter = GD->D.edge_river_wall_counter;
+        double *riverwall_elevation = GD->D.riverwall_elevation;
+        anuga_int *riverwall_rowIndex = GD->D.riverwall_rowIndex;
+        double *riverwall_hydraulic_properties = GD->D.riverwall_hydraulic_properties;
+        anuga_int ncol_hp = GD->D.ncol_riverwall_hydraulic_properties;
+        anuga_int nrow_hp = GD->D.nrow_riverwall_hydraulic_properties;
+
+        if (edge_river_wall_counter != NULL) {
+            #pragma omp target exit data map(delete: edge_river_wall_counter[0:3*n])
+        }
+        if (riverwall_elevation != NULL) {
+            #pragma omp target exit data map(delete: riverwall_elevation[0:n_rw_edges])
+        }
+        if (riverwall_rowIndex != NULL) {
+            #pragma omp target exit data map(delete: riverwall_rowIndex[0:n_rw_edges])
+        }
+        if (riverwall_hydraulic_properties != NULL && ncol_hp > 0 && nrow_hp > 0) {
+            #pragma omp target exit data map(delete: riverwall_hydraulic_properties[0:nrow_hp*ncol_hp])
+        }
     }
 
     if (GD->backup_arrays_mapped) {

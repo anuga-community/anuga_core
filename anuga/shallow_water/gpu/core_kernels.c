@@ -474,7 +474,8 @@ void core_saxpy_conserved_quantities(struct domain *D, double a, double b, doubl
 
     // Apply c scaling if needed: Q = Q / c
     // Used for numerical stability with RK coefficients like a=1/3, b=2/3
-    if (c != 1.0) {
+    // Skip if c=0.0 (RK2 passes 0.0) or c=1.0 (no scaling needed)
+    if (c != 1.0 && c != 0.0) {
         double c_inv = 1.0 / c;
         OMP_PARALLEL_LOOP
         for (anuga_int k = 0; k < n; k++) {

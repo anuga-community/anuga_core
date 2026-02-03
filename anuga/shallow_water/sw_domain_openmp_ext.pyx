@@ -25,6 +25,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 		anuga_int timestep_fluxcalls
 		anuga_int max_flux_update_frequency
 		anuga_int ncol_riverwall_hydraulic_properties
+		anuga_int nrow_riverwall_hydraulic_properties
 
 		double epsilon
 		double H0
@@ -162,6 +163,10 @@ cdef inline get_python_domain_parameters(domain *D, object domain_py_object):
 	D.max_flux_update_frequency = domain_py_object.max_flux_update_frequency
 
 	D.ncol_riverwall_hydraulic_properties = riverwallData.ncol_hydraulic_properties
+	try:
+		D.nrow_riverwall_hydraulic_properties = len(riverwallData.names)
+	except:
+		D.nrow_riverwall_hydraulic_properties = 0
 
 	D.epsilon = domain_py_object.epsilon
 	D.H0 = domain_py_object.H0
@@ -462,6 +467,10 @@ cdef inline get_python_domain_pointers(domain *D, object domain_py_object):
 		
 
 	D.ncol_riverwall_hydraulic_properties = riverwallData.ncol_hydraulic_properties
+	try:
+		D.nrow_riverwall_hydraulic_properties = len(riverwallData.names)
+	except:
+		D.nrow_riverwall_hydraulic_properties = 0
 
 #===============================================================================
 # DomainStruct: Cython wrapper for domain struct

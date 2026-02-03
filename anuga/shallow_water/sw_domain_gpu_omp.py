@@ -44,14 +44,6 @@ class GPU_OMP_interface:
         if self.initialized:
             return
 
-        # Check for unsupported features
-        if hasattr(self.domain, 'number_of_riverwall_edges') and self.domain.number_of_riverwall_edges > 0:
-            raise NotImplementedError(
-                f"Riverwalls are not yet supported on GPU (OpenMP target offloading). "
-                f"Found {self.domain.number_of_riverwall_edges} riverwall edges. "
-                f"Please use CPU mode (multiprocessor_mode=1) for simulations with riverwalls."
-            )
-
         from anuga.shallow_water.sw_domain_gpu_ext import (
             init_gpu_domain, map_to_gpu,
             init_reflective_boundary, init_dirichlet_boundary, init_transmissive_boundary,

@@ -100,14 +100,16 @@ int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices,
             map(alloc: ss[0:ni], sb[0:ni], sx[0:ni], sy[0:ni], sd[0:ni])
         op->mapped = 1;
 
-        // Verify mapping succeeded
-        int chk_idx = omp_target_is_present(idx, GD->device_id);
-        int chk_ar = omp_target_is_present(ar, GD->device_id);
-        if (!chk_idx || !chk_ar) {
-            fprintf(stderr, "[Rank %d] ERROR: Inlet_operator %d mapping FAILED after enter data! "
-                    "indices_present=%d areas_present=%d idx=%p ar=%p ni=%d\n",
-                    GD->rank, op_id, chk_idx, chk_ar, (void*)idx, (void*)ar, ni);
-            fflush(stderr);
+        // Verify mapping succeeded (skip check in host fallback mode)
+        if (GD->device_id >= 0) {
+            int chk_idx = omp_target_is_present(idx, GD->device_id);
+            int chk_ar = omp_target_is_present(ar, GD->device_id);
+            if (!chk_idx || !chk_ar) {
+                fprintf(stderr, "[Rank %d] ERROR: Inlet_operator %d mapping FAILED after enter data! "
+                        "indices_present=%d areas_present=%d idx=%p ar=%p ni=%d\n",
+                        GD->rank, op_id, chk_idx, chk_ar, (void*)idx, (void*)ar, ni);
+                fflush(stderr);
+            }
         }
     }
 
@@ -196,17 +198,19 @@ double gpu_inlet_get_volume(struct gpu_domain *GD, int op_id) {
     double * restrict stage_c = GD->D.stage_centroid_values;
     double * restrict bed_c = GD->D.bed_centroid_values;
 
-    // Debug: check if pointers are present on device
-    int present_idx = omp_target_is_present(indices, omp_get_default_device());
-    int present_ar = omp_target_is_present(areas, omp_get_default_device());
-    int present_sc = omp_target_is_present(stage_c, omp_get_default_device());
-    int present_bc = omp_target_is_present(bed_c, omp_get_default_device());
-    if (!present_idx || !present_ar || !present_sc || !present_bc) {
-        fprintf(stderr, "[Rank %d] gpu_inlet_get_volume op=%d: MISSING device mapping! "
-                "indices=%d areas=%d stage_c=%d bed_c=%d\n",
-                GD->rank, op_id, present_idx, present_ar, present_sc, present_bc);
-        fflush(stderr);
-        return 0.0;
+    // Debug: check if pointers are present on device (skip in host fallback mode)
+    if (GD->device_id >= 0) {
+        int present_idx = omp_target_is_present(indices, omp_get_default_device());
+        int present_ar = omp_target_is_present(areas, omp_get_default_device());
+        int present_sc = omp_target_is_present(stage_c, omp_get_default_device());
+        int present_bc = omp_target_is_present(bed_c, omp_get_default_device());
+        if (!present_idx || !present_ar || !present_sc || !present_bc) {
+            fprintf(stderr, "[Rank %d] gpu_inlet_get_volume op=%d: MISSING device mapping! "
+                    "indices=%d areas=%d stage_c=%d bed_c=%d\n",
+                    GD->rank, op_id, present_idx, present_ar, present_sc, present_bc);
+            fflush(stderr);
+            return 0.0;
+        }
     }
 
     double volume = 0.0;
@@ -231,24 +235,26 @@ void gpu_inlet_get_velocities(struct gpu_domain *GD, int op_id,
 
     omp_set_default_device(GD->device_id);
 
-    // Debug: verify all pointers are mapped
+    // Debug: verify all pointers are mapped (skip in host fallback mode)
     int n = op->num_indices;
-    int present_idx = omp_target_is_present(op->indices, GD->device_id);
-    int present_sc = omp_target_is_present(GD->D.stage_centroid_values, GD->device_id);
-    int present_bc = omp_target_is_present(GD->D.bed_centroid_values, GD->device_id);
-    int present_xc = omp_target_is_present(GD->D.xmom_centroid_values, GD->device_id);
-    int present_yc = omp_target_is_present(GD->D.ymom_centroid_values, GD->device_id);
-    int present_sd = omp_target_is_present(op->scratch_depths, GD->device_id);
-    int present_sx = omp_target_is_present(op->scratch_xmom, GD->device_id);
-    int present_sy = omp_target_is_present(op->scratch_ymom, GD->device_id);
-    if (!present_idx || !present_sc || !present_bc || !present_xc || !present_yc ||
-        !present_sd || !present_sx || !present_sy) {
-        fprintf(stderr, "[Rank %d] gpu_inlet_get_velocities op=%d: MISSING mapping! "
-                "idx=%d sc=%d bc=%d xc=%d yc=%d sd=%d sx=%d sy=%d\n",
-                GD->rank, op_id, present_idx, present_sc, present_bc,
-                present_xc, present_yc, present_sd, present_sx, present_sy);
-        fflush(stderr);
-        return;
+    if (GD->device_id >= 0) {
+        int present_idx = omp_target_is_present(op->indices, GD->device_id);
+        int present_sc = omp_target_is_present(GD->D.stage_centroid_values, GD->device_id);
+        int present_bc = omp_target_is_present(GD->D.bed_centroid_values, GD->device_id);
+        int present_xc = omp_target_is_present(GD->D.xmom_centroid_values, GD->device_id);
+        int present_yc = omp_target_is_present(GD->D.ymom_centroid_values, GD->device_id);
+        int present_sd = omp_target_is_present(op->scratch_depths, GD->device_id);
+        int present_sx = omp_target_is_present(op->scratch_xmom, GD->device_id);
+        int present_sy = omp_target_is_present(op->scratch_ymom, GD->device_id);
+        if (!present_idx || !present_sc || !present_bc || !present_xc || !present_yc ||
+            !present_sd || !present_sx || !present_sy) {
+            fprintf(stderr, "[Rank %d] gpu_inlet_get_velocities op=%d: MISSING mapping! "
+                    "idx=%d sc=%d bc=%d xc=%d yc=%d sd=%d sx=%d sy=%d\n",
+                    GD->rank, op_id, present_idx, present_sc, present_bc,
+                    present_xc, present_yc, present_sd, present_sx, present_sy);
+            fflush(stderr);
+            return;
+        }
     }
 
     // Small D2H: gather depths, xmom, ymom for inlet triangles

@@ -87,6 +87,15 @@ cdef extern from "gpu_domain.h" nogil:
         double* y_centroid_work
         # Friction
         double* friction_centroid_values
+        # Riverwall arrays
+        int64_t number_of_riverwall_edges
+        int64_t ncol_riverwall_hydraulic_properties
+        int64_t nrow_riverwall_hydraulic_properties
+        int64_t* edge_flux_type
+        int64_t* edge_river_wall_counter
+        double* riverwall_elevation
+        int64_t* riverwall_rowIndex
+        double* riverwall_hydraulic_properties
 
     struct halo_exchange:
         int num_neighbors
@@ -508,6 +517,53 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     D.stage_backup_values = &stage_backup_cv[0]
     D.xmom_backup_values = &xmom_backup_cv[0]
     D.ymom_backup_values = &ymom_backup_cv[0]
+
+    # Riverwall arrays
+    cdef int64_t[::1] edge_flux_type
+    cdef int64_t[::1] edge_river_wall_counter
+    cdef double[::1] riverwall_elevation
+    cdef int64_t[::1] riverwall_rowIndex
+    cdef double[:,::1] riverwall_hydraulic_properties
+
+    # Get riverwallData object
+    riverwallData = domain_object.riverwallData
+
+    # Always extract edge_flux_type (needed to detect riverwall edges)
+    edge_flux_type = domain_object.edge_flux_type
+    D.edge_flux_type = &edge_flux_type[0]
+
+    # Extract riverwall arrays (may be empty if no riverwalls)
+    D.number_of_riverwall_edges = getattr(domain_object, 'number_of_riverwall_edges', 0)
+    D.ncol_riverwall_hydraulic_properties = riverwallData.ncol_hydraulic_properties
+
+    # nrow = number of unique riverwall segments = len(riverwallData.names)
+    try:
+        D.nrow_riverwall_hydraulic_properties = len(riverwallData.names)
+    except:
+        D.nrow_riverwall_hydraulic_properties = 0
+
+    # Extract riverwall arrays with try/except for when they don't exist
+    try:
+        riverwall_elevation = riverwallData.riverwall_elevation
+        D.riverwall_elevation = &riverwall_elevation[0]
+    except:
+        D.riverwall_elevation = NULL
+
+    try:
+        riverwall_rowIndex = riverwallData.hydraulic_properties_rowIndex
+        D.riverwall_rowIndex = &riverwall_rowIndex[0]
+    except:
+        D.riverwall_rowIndex = NULL
+
+    try:
+        riverwall_hydraulic_properties = riverwallData.hydraulic_properties
+        D.riverwall_hydraulic_properties = &riverwall_hydraulic_properties[0, 0]
+    except:
+        D.riverwall_hydraulic_properties = NULL
+
+    # edge_river_wall_counter is on domain_object, not riverwallData
+    edge_river_wall_counter = domain_object.edge_river_wall_counter
+    D.edge_river_wall_counter = &edge_river_wall_counter[0]
 
 
 # ============================================================================

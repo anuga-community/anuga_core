@@ -75,6 +75,15 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
     double * restrict areas = GD->D.areas;
     double * restrict max_speed_array = GD->D.max_speed;
 
+    // Riverwall arrays (may be NULL if no riverwalls)
+    anuga_int n_riverwall_edges = GD->D.number_of_riverwall_edges;
+    anuga_int ncol_riverwall_hp = GD->D.ncol_riverwall_hydraulic_properties;
+    anuga_int * restrict edge_flux_type = GD->D.edge_flux_type;
+    anuga_int * restrict edge_river_wall_counter = GD->D.edge_river_wall_counter;
+    double * restrict riverwall_elevation = GD->D.riverwall_elevation;
+    anuga_int * restrict riverwall_rowIndex = GD->D.riverwall_rowIndex;
+    double * restrict riverwall_hydraulic_properties = GD->D.riverwall_hydraulic_properties;
+
     // Main flux computation loop - no reduction, compute timestep from max_speed after
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
@@ -140,6 +149,23 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
             // Compute z_half (max bed elevation at edge)
             double z_half = fmax(zl, zr);
 
+            // Check for riverwall elevation override
+            int is_riverwall = 0;
+            int riverwall_index = 0;
+            double zwall = 0.0;
+            if (n_riverwall_edges > 0 && edge_flux_type != NULL &&
+                edge_river_wall_counter != NULL && riverwall_elevation != NULL &&
+                edge_flux_type[ki] == 1) {
+                is_riverwall = 1;
+                riverwall_index = edge_river_wall_counter[ki] - 1;
+                if (riverwall_index >= 0) {
+                    zwall = riverwall_elevation[riverwall_index];
+                    z_half = fmax(zwall, z_half);
+                } else {
+                    is_riverwall = 0;  // Invalid index, skip riverwall processing
+                }
+            }
+
             // Compute effective heights at the edge
             double h_left = fmax(hle + zl - z_half, 0.0);
             double h_right = fmax(hre + zr - z_half, 0.0);
@@ -161,6 +187,35 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
                                           epsilon, z_half, g,
                                           edgeflux, &max_speed_local, &pressure_flux,
                                           low_froude);
+            }
+
+            // Apply riverwall weir discharge correction if applicable
+            if (is_riverwall && zwall > fmax(zc, zc_n) &&
+                riverwall_rowIndex != NULL && riverwall_hydraulic_properties != NULL) {
+                // Get hydraulic properties for this riverwall
+                anuga_int rw_count = edge_river_wall_counter[ki];
+                anuga_int hp_row = riverwall_rowIndex[rw_count - 1];
+                anuga_int ii = hp_row * ncol_riverwall_hp;
+
+                double Qfactor = riverwall_hydraulic_properties[ii];
+                double s1 = riverwall_hydraulic_properties[ii + 1];
+                double s2 = riverwall_hydraulic_properties[ii + 2];
+                double h1 = riverwall_hydraulic_properties[ii + 3];
+                double h2 = riverwall_hydraulic_properties[ii + 4];
+
+                // Weir height above minimum bed elevation
+                double weir_height = fmax(zwall - fmin(zl, zr), 0.0);
+
+                // Compute depths above weir using centroid values
+                double h_left_weir = fmax(stage_cv[k] - z_half, 0.0);
+                double h_right_weir = is_boundary
+                    ? fmax(hc_n + zr - z_half, 0.0)
+                    : fmax(stage_cv[neighbour] - z_half, 0.0);
+
+                // Apply weir discharge correction
+                gpu_adjust_edgeflux_with_weir(edgeflux, h_left_weir, h_right_weir,
+                                              g, weir_height, Qfactor,
+                                              s1, s2, h1, h2, &max_speed_local);
             }
 
             // Multiply flux by edge length (and negate for conservation)
