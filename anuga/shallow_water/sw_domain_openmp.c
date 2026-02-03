@@ -406,70 +406,10 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
 }
 
 // Protect against the water elevation falling below the triangle bed
+// Unified: calls core_protect from core_kernels.c
 double _openmp_protect(const struct domain *__restrict D)
 {
-
-  double mass_error = 0.;
-
-  double minimum_allowed_height = D->minimum_allowed_height;
-
-  anuga_int number_of_elements = D->number_of_elements;
-
-  // wc = D->stage_centroid_values;
-  // zc = D->bed_centroid_values;
-  // wv = D->stage_vertex_values;
-  // xmomc = D->xmom_centroid_values;
-  // ymomc = D->xmom_centroid_values;
-  // areas = D->areas;
-
-  // This acts like minimum_allowed height, but scales with the vertical
-  // distance between the bed_centroid_value and the max bed_edge_value of
-  // every triangle.
-  // double minimum_relative_height=0.05;
-  // anuga_int mass_added = 0;
-
-  // Protect against inifintesimal and negative heights
-  // if (maximum_allowed_speed < epsilon) {
-#pragma omp parallel for schedule(static) reduction(+ : mass_error) firstprivate(minimum_allowed_height)
-  for (anuga_int k = 0; k < number_of_elements; k++)
-  {
-    anuga_int k3 = 3 * k;
-    double hc = D->stage_centroid_values[k] - D->bed_centroid_values[k];
-    if (hc < minimum_allowed_height * 1.0)
-    {
-      // Set momentum to zero and ensure h is non negative
-      D->xmom_centroid_values[k] = 0.;
-      D->xmom_centroid_values[k] = 0.;
-      if (hc <= 0.0)
-      {
-        double bmin = D->bed_centroid_values[k];
-        // Minimum allowed stage = bmin
-
-        // WARNING: ADDING MASS if wc[k]<bmin
-        if (D->stage_centroid_values[k] < bmin)
-        {
-          mass_error += (bmin - D->stage_centroid_values[k]) * D->areas[k];
-          // mass_added = 1; //Flag to warn of added mass
-
-          D->stage_centroid_values[k] = bmin;
-
-          // FIXME: Set vertex values as well. Seems that this shouldn't be
-          // needed. However, from memory this is important at the first
-          // time step, for 'dry' areas where the designated stage is
-          // less than the bed centroid value
-          D->stage_vertex_values[k3] = bmin;     // min(bmin, wc[k]); //zv[3*k]-minimum_allowed_height);
-          D->stage_vertex_values[k3 + 1] = bmin; // min(bmin, wc[k]); //zv[3*k+1]-minimum_allowed_height);
-          D->stage_vertex_values[k3 + 2] = bmin; // min(bmin, wc[k]); //zv[3*k+2]-minimum_allowed_height);
-        }
-      }
-    }
-  }
-
-  // if(mass_added == 1){
-  //   printf("Cumulative mass protection: %f m^3 \n", mass_error);
-  // }
-
-  return mass_error;
+    return core_protect((struct domain *)D);
 }
 
 // Extrapolation helpers now unified in gpu_device_helpers.h:
