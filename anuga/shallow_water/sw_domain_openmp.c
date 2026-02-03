@@ -488,61 +488,14 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
 
 void _openmp_distribute_edges_to_vertices(struct domain *__restrict D)
 {
-#if USE_UNIFIED_KERNELS
-  core_distribute_edges_to_vertices(D);
-#else
-  // Distribute edge values to vertices
-  anuga_int number_of_elements = D->number_of_elements;
-
-#pragma omp parallel for simd default(none) shared(D) schedule(static) firstprivate(number_of_elements)
-  for (anuga_int k = 0; k < number_of_elements; k++)
-  {
-    anuga_int k3 = 3 * k;
-
-    // Set vertex values from edge values
-    reconstruct_vertex_values(D->stage_edge_values, D->stage_vertex_values, k3);
-    reconstruct_vertex_values(D->height_edge_values, D->height_vertex_values, k3);
-    reconstruct_vertex_values(D->xmom_edge_values, D->xmom_vertex_values, k3);
-    reconstruct_vertex_values(D->ymom_edge_values, D->ymom_vertex_values, k3);
-    reconstruct_vertex_values(D->bed_edge_values, D->bed_vertex_values, k3);
-  }
-#endif
+    // Unified: calls core_distribute_edges_to_vertices from core_kernels.c
+    core_distribute_edges_to_vertices(D);
 }
 
 void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict D)
 {
-#if USE_UNIFIED_KERNELS
-  core_manning_friction_flat_semi_implicit((struct domain *)D);
-#else
-  const anuga_int number_of_elements = D->number_of_elements;
-  const double eps = D->minimum_allowed_height;
-  const double g = D->g;
-  const double seven_thirds = 7.0 / 3.0;
-
-#pragma omp parallel for simd default(none) \
-        schedule(static) \
-        shared(D, ETA_SMALL) firstprivate(number_of_elements, eps, g, seven_thirds)
-  for (anuga_int k = 0; k < number_of_elements; k++)
-  {
-    double S = 0.0;
-    const double uh = D->xmom_centroid_values[k];
-    const double vh = D->ymom_centroid_values[k];
-    const double eta = D->friction_centroid_values[k];
-    double abs_mom = sqrt( uh*uh + vh*vh );
-
-    if (eta > ETA_SMALL)
-    {
-      const double h = D->stage_centroid_values[k] - D->bed_centroid_values[k];
-      if (h >= eps)
-       {
-        S = -g * eta * eta * abs_mom;
-        S /= pow(h, seven_thirds);
-       }
-    }
-    D->xmom_semi_implicit_update[k] += S * uh;
-    D->ymom_semi_implicit_update[k] += S * vh;
-  }
-#endif
+    // Unified: calls core_manning_friction_flat_semi_implicit from core_kernels.c
+    core_manning_friction_flat_semi_implicit((struct domain *)D);
 }
 
 
@@ -552,64 +505,8 @@ void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict
 
 void _openmp_manning_friction_sloped_semi_implicit(const struct domain *__restrict D)
 {
-  anuga_int k;
-  const double one_third = 1.0 / 3.0;
-  const double seven_thirds = 7.0 / 3.0;
-
-  anuga_int N = D->number_of_elements;
-  const double  g = D->g;
-  const double  eps = D->minimum_allowed_height;
-  
-#pragma omp parallel for simd default(none) shared(D) schedule(static) \
-        firstprivate(N, eps, g, seven_thirds, one_third)
-for (k = 0; k < N; k++)
-  {
-    double S, h, z, z0, z1, z2, zs, zx, zy;
-    double x0, y0, x1, y1, x2, y2;
-    anuga_int k3, k6;
-
-    double w = D->stage_centroid_values[k];
-    double uh = D->xmom_centroid_values[k];
-    double vh = D->ymom_centroid_values[k];
-    double eta = D->friction_centroid_values[k];
-
-    S = 0.0;
-    k3 = 3 * k;
-    
-    // Get bathymetry
-    z0 = D->bed_vertex_values[k3 + 0];
-    z1 = D->bed_vertex_values[k3 + 1];
-    z2 = D->bed_vertex_values[k3 + 2];
-
-    // Compute bed slope
-    k6 = 6 * k; // base index
-
-    
-    x0 = D->vertex_coordinates[k6 + 0];
-    y0 = D->vertex_coordinates[k6 + 1];
-    x1 = D->vertex_coordinates[k6 + 2];
-    y1 = D->vertex_coordinates[k6 + 3];
-    x2 = D->vertex_coordinates[k6 + 4];
-    y2 = D->vertex_coordinates[k6 + 5];
-
-    
-    if (eta > 1.0e-16)
-    {
-      _gradient(x0, y0, x1, y1, x2, y2, z0, z1, z2, &zx, &zy);
-
-      zs = sqrt(1.0 + zx * zx + zy * zy);
-      z = (z0 + z1 + z2) * one_third;
-
-      h = w - z;
-      if (h >= eps)
-      {
-        S = -g*eta*eta*zs * sqrt((uh*uh + vh*vh));
-        S /= pow(h, seven_thirds); 
-      }
-    }
-    D->xmom_semi_implicit_update[k] += S * uh;
-    D->ymom_semi_implicit_update[k] += S * vh;
-  }
+    // Unified: calls core_manning_friction_sloped_semi_implicit from core_kernels.c
+    core_manning_friction_sloped_semi_implicit((struct domain *)D);
 }
 
 // TODO: PORT TO core_kernels.c (MEDIUM PRIORITY)
@@ -1030,21 +927,9 @@ anuga_int _openmp_saxpy_conserved_quantities(const struct domain *__restrict D,
 
 anuga_int _openmp_backup_conserved_quantities(const struct domain *__restrict D)
 {
-#if USE_UNIFIED_KERNELS
-  core_backup_conserved_quantities((struct domain *)D);
-#else
-  anuga_int k;
-  anuga_int N = D->number_of_elements;
-
-  #pragma omp parallel for simd default(none) shared(D) schedule(static) firstprivate(N)
-  for (k = 0; k < N; k++)
-  {
-    D->stage_backup_values[k] = D->stage_centroid_values[k];
-    D->xmom_backup_values[k]  = D->xmom_centroid_values[k];
-    D->ymom_backup_values[k]  = D->ymom_centroid_values[k];
-  }
-#endif
-  return 0;
+    // Unified: calls core_backup_conserved_quantities from core_kernels.c
+    core_backup_conserved_quantities((struct domain *)D);
+    return 0;
 }
 
 void _openmp_set_omp_num_threads(anuga_int num_threads)
