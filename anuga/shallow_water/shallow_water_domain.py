@@ -3278,11 +3278,14 @@ class Domain(Generic_Domain):
 
         rank = getattr(self, 'processor', 0)
         if result:
-            print(f"[Rank {rank}] WARNING: CPU-only fractional operators detected (GPU<->CPU sync every RK2 step):")
-            for name in cpu_only_ops:
-                print(f"  - {name}")
+            # Only print GPU sync warning if GPU offload is actually active
+            if getattr(self, 'gpu_offload_active', True):
+                print(f"[Rank {rank}] WARNING: CPU-only fractional operators detected (GPU<->CPU sync every RK2 step):")
+                for name in cpu_only_ops:
+                    print(f"  - {name}")
         else:
-            if rank == 0:
+            # Only print GPU-safe message if GPU offload is actually active
+            if rank == 0 and getattr(self, 'gpu_offload_active', True):
                 print(f"[Rank {rank}] All fractional operators are GPU-safe, no GPU<->CPU sync needed")
         import sys; sys.stdout.flush()
 
@@ -3716,15 +3719,19 @@ class Domain(Generic_Domain):
 
     def set_multiprocessor_mode(self, multiprocessor_mode=1):
         """
-        Set multiprocessor mode 
-         1. openmp (in development)
-         2. cupy (in development)
+        Set multiprocessor mode
+         1. openmp - Python RK2 loop (use_c_rk2_loop=False)
+         2. gpu/mpi - C RK2 loop (use_c_rk2_loop=True, keeps data on device)
         """
 
         if multiprocessor_mode not in [1,2]:
-            raise ValueError('Invalid multiprocessor mode. Must be one of [1,2] (openmp, cupy)')
+            raise ValueError('Invalid multiprocessor mode. Must be one of [1,2] (openmp, gpu/mpi)')
 
         self.multiprocessor_mode = multiprocessor_mode
+
+        # Mode 1: Python RK2 loop (more flexible, easier debugging)
+        # Mode 2: C RK2 loop (faster, data stays on GPU device)
+        self.use_c_rk2_loop = (multiprocessor_mode == 2)
 
         if self.multiprocessor_mode == 2:
             self.set_gpu_interface()
@@ -3813,9 +3820,18 @@ class Domain(Generic_Domain):
                 self.gpu_interface.setup()
                 # Only print from rank 0
                 from anuga import myid, numprocs
+                import os
+                omp_target_offload = os.environ.get('OMP_TARGET_OFFLOAD', '').lower()
+                omp_num_threads = os.environ.get('OMP_NUM_THREADS', '1')
+                # Track whether GPU offload is actually active (not disabled by env var)
+                self.gpu_offload_active = (omp_target_offload != 'disabled')
                 if myid == 0:
                     print('+==============================================================================+')
-                    print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
+                    if not self.gpu_offload_active:
+                        print(f'| WARNING: GPU mode enabled but OMP_TARGET_OFFLOAD=disabled                   |')
+                        print(f'| Running on CPUs with OMP_NUM_THREADS={omp_num_threads}')
+                    else:
+                        print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
                     print('+==============================================================================+')
                 return
             except Exception as e:
