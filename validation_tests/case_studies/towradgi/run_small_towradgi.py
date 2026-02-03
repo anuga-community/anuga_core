@@ -991,10 +991,12 @@ for t in domain.evolve(yieldstep=yieldstep, outputstep=outputstep, finaltime=fin
     #    print(f"  Inlet applied volume: {creek_inlet.total_applied_volume:.2f} m³")
 
     # Report statistics for GPU testing (like CDAC script)
-    stage = domain.quantities['stage']
-    max_stage = stage.get_maximum_value()
-    wet_indices = domain.get_wet_elements()
-    wet_count = len(wet_indices)
+    #stage = domain.quantities['stage']
+    #max_stage = stage.get_maximum_value()
+    #wet_indices = domain.get_wet_elements()
+    #wet_count = len(wet_indices)
+    max_stage = domain.get_global_max_stage()
+    wet_count = domain.get_global_wet_element_count()
     water_vol = domain.get_water_volume()
     if myid == 0:
         print(f"  Max stage: {max_stage:.4f} m, Wet elements: {wet_count}, Volume: {water_vol:.2f} m³")

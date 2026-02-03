@@ -1728,6 +1728,72 @@ class Domain(Generic_Domain):
         return self.get_quantity('elevation').\
                    get_maximum_location(indices=wet_elements)
 
+    def get_global_wet_element_count(self, indices=None, minimum_height=None):
+        """Return total number of wet elements across all MPI ranks.
+
+        Optional arguments:
+            indices: set of element ids that the operation applies to
+            minimum_height: threshold for considering an element wet
+
+        Usage:
+            count = get_global_wet_element_count()
+
+        Note: This performs MPI reduction, so all ranks get the same result.
+        """
+        from anuga import numprocs
+
+        wet_indices = self.get_wet_elements(indices, minimum_height)
+        local_count = len(wet_indices)
+
+        if numprocs == 1:
+            return local_count
+
+        from mpi4py import MPI
+        global_count = MPI.COMM_WORLD.allreduce(local_count, op=MPI.SUM)
+        return global_count
+
+    def get_global_max_stage(self, indices=None):
+        """Return maximum stage value across all MPI ranks.
+
+        Optional argument:
+            indices: set of element ids that the operation applies to
+
+        Usage:
+            max_stage = get_global_max_stage()
+
+        Note: This performs MPI reduction, so all ranks get the same result.
+        """
+        from anuga import numprocs
+
+        stage = self.get_quantity('stage')
+        local_max = stage.get_maximum_value(indices)
+
+        if numprocs == 1:
+            return local_max
+
+        from mpi4py import MPI
+        global_max = MPI.COMM_WORLD.allreduce(local_max, op=MPI.MAX)
+        return global_max
+
+    def get_global_max_speed(self):
+        """Return maximum speed across all MPI ranks.
+
+        Usage:
+            max_speed = get_global_max_speed()
+
+        Note: This performs MPI reduction, so all ranks get the same result.
+        """
+        from anuga import numprocs
+        import numpy as num
+
+        local_max = num.max(self.max_speed)
+
+        if numprocs == 1:
+            return local_max
+
+        from mpi4py import MPI
+        global_max = MPI.COMM_WORLD.allreduce(local_max, op=MPI.MAX)
+        return global_max
 
     def get_water_volume(self):
 
