@@ -77,8 +77,11 @@ else
     gpu_c_args = ['-O3', '-qopenmp', '-g']
   elif cc.get_id() == 'intel-llvm'
     gpu_c_args = ['-O3', '-fiopenmp', '-g']
+  elif cc.get_id() == 'clang'
+    # Clang with libomp (LLVM, Homebrew macOS, or AOMP)
+    gpu_c_args = ['-O3', '-fopenmp', '-g']
   else
-    # GCC, Clang, and others
+    # GCC and others
     gpu_c_args = ['-O3', '-fopenmp', '-g']
   endif
   # Define macro so code knows it's CPU-only mode
