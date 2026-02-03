@@ -90,6 +90,14 @@ anuga_int __openmp__flux_function_central(double q_left0, double q_left1, double
 
   return 0;
 }
+
+// Wrapper for Cython - calls gpu_rotate from gpu_device_helpers.h
+anuga_int __rotate(double *q, double n1, double n2)
+{
+  gpu_rotate(q, n1, n2);
+  return 0;
+}
+
 void inline __adjust_edgeflux_with_weir(double *edgeflux,
                                    const double h_left, double h_right,
                                    const double g, double weir_height,

@@ -17,9 +17,6 @@ void core_extrapolate_second_order_edge(struct domain *D);
 // Distribute edge values to vertices
 void core_distribute_edges_to_vertices(struct domain *D);
 
-// Compute fluxes across all edges, returns minimum timestep
-double core_compute_fluxes_central(struct domain *D, double timestep);
-
 // Update conserved quantities with explicit/semi-implicit updates
 void core_update_conserved_quantities(struct domain *D, double timestep);
 
