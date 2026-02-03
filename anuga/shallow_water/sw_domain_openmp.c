@@ -255,158 +255,31 @@ void apply_weir_discharge_correction(const struct domain * __restrict D, const E
     }
 }
 
-// TODO: UNIFY WITH core_kernels.c (HIGH PRIORITY)
-// GPU kernel exists (core_compute_fluxes_central) but missing features needed for unification:
-//   1. Riverwall support (weir discharge adjustments) - see apply_weir_discharge_correction()
-//   2. Boundary flux tracking (boundary_flux_sum for boundary_flux_integral_operator)
-// Once these are added to core_compute_fluxes_central, enable USE_UNIFIED_KERNELS=1
+// Unified: calls core_compute_fluxes_central from core_kernels.c
+// Handles substep tracking via static variables (per-module state)
 double _openmp_compute_fluxes_central(const struct domain *__restrict D,
                                       double timestep)
 {
-  // Local variables
-  anuga_int number_of_elements = D->number_of_elements;
-  anuga_int n_riverwall_edges = D->number_of_riverwall_edges;
-  //printf(" n edges %d \n", n_riverwall_edges);
-  // anuga_int KI, KI2, KI3, B, RW, RW5, SubSteps;
-  anuga_int substep_count;
-
-  // // FIXME: limiting_threshold is not used for DE1
-  anuga_int low_froude = D->low_froude;
-  double g = D->g;
-  double epsilon = D->epsilon;
-  anuga_int ncol_riverwall_hydraulic_properties = D->ncol_riverwall_hydraulic_properties;
-
-  static anuga_int call = 0; // Static local variable flagging already computed flux
+  // Static variables for substep tracking
+  static anuga_int call = 0;
   static anuga_int timestep_fluxcalls = 1;
   static anuga_int base_call = 1;
 
-  call++; // Flag 'id' of flux calculation for this timestep
+  call++;
 
-  if (D->timestep_fluxcalls != timestep_fluxcalls)
-  {
+  if (D->timestep_fluxcalls != timestep_fluxcalls) {
     timestep_fluxcalls = D->timestep_fluxcalls;
     base_call = call;
   }
 
-
-  anuga_int boundary_length = D->boundary_length;
   // Which substep of the timestepping method are we on?
-  substep_count = (call - base_call) % D->timestep_fluxcalls;
+  int substep_count = (call - base_call) % D->timestep_fluxcalls;
 
-  double local_timestep = 1.0e+100;
-  double boundary_flux_sum_substep = 0.0;
+  // Call unified flux computation
+  double local_timestep = core_compute_fluxes_central((struct domain *)D, substep_count, D->timestep_fluxcalls);
 
-      double pressure_flux;
-      double max_speed_local;
-
-// For all triangles
-#pragma omp parallel for simd default(none) schedule(static) shared(D, substep_count, number_of_elements) \
-    firstprivate(ncol_riverwall_hydraulic_properties, epsilon, g, low_froude)\
-    private(pressure_flux,  max_speed_local) \
-    reduction(min : local_timestep) reduction(+ : boundary_flux_sum_substep)
-  for (anuga_int k = 0; k < number_of_elements; k++)
-  {
-      EdgeData edge_data;
-      double edgeflux[3];
-    double speed_max_last = 0.0;
-    // Set explicit_update to zero for all conserved_quantities.
-    // This assumes compute_fluxes called before forcing terms
-    D->stage_explicit_update[k] = 0.0;
-    D->xmom_explicit_update[k] = 0.0;
-    D->ymom_explicit_update[k] = 0.0;
-
-    // Loop through neighbours and compute edge flux for each
-    for (anuga_int i = 0; i < 3; i++)
-    {
-      get_edge_data_central_flux(D,k,i,&edge_data);
-
-      // Edge flux computation (triangle k, edge i)
-      if (edge_data.h_left == 0.0 && edge_data.h_right == 0.0)
-      {
-        // If both heights are zero, then no flux
-        edgeflux[0] = 0.0;
-        edgeflux[1] = 0.0;
-        edgeflux[2] = 0.0;
-        max_speed_local = 0.0;
-        pressure_flux = 0.0;
-      }
-      else
-      {
-        // Compute the fluxes using the central scheme (unified with GPU)
-        gpu_flux_function_central(edge_data.ql, edge_data.qr,
-                                  edge_data.h_left, edge_data.h_right,
-                                  edge_data.hle, edge_data.hre,
-                                  edge_data.normal_x, edge_data.normal_y,
-                                  epsilon, edge_data.z_half, g,
-                                  edgeflux, &max_speed_local, &pressure_flux,
-                                  low_froude);
-      }
-
-    // Weir flux adjustment
-    if (edge_data.is_riverwall) {
-      apply_weir_discharge_correction(D, &edge_data, k, ncol_riverwall_hydraulic_properties, g, edgeflux, &max_speed_local);
-    }
-
-      // Multiply edgeflux by edgelength
-      for (anuga_int j = 0; j < 3; j++)
-      {
-        edgeflux[j] *= -1.0 * edge_data.length;
-      }
-      // Update timestep based on edge i and possibly neighbour n
-      // NOTE: We should only change the timestep on the 'first substep'
-      // of the timestepping method [substep_count==0]
-      if (substep_count == 0 && D->tri_full_flag[k] == 1 && max_speed_local > epsilon)
-      {
-        // Compute the 'edge-timesteps' (useful for setting flux_update_frequency)
-        double edge_timestep = D->radii[k] * 1.0 / fmax(max_speed_local, epsilon);
-        // Update the timestep
-        // Apply CFL condition for triangles joining this edge (triangle k and triangle n)
-        // CFL for triangle k
-        local_timestep = fmin(local_timestep, edge_timestep);
-        speed_max_last = fmax(speed_max_last, max_speed_local);
-      }
-
-      D->stage_explicit_update[k] += edgeflux[0];
-      D->xmom_explicit_update[k] += edgeflux[1];
-      D->ymom_explicit_update[k] += edgeflux[2];
-      // If this cell is not a ghost, and the neighbour is a
-      // boundary condition OR a ghost cell, then add the flux to the
-      // boundary_flux_integral
-      if (((edge_data.n < 0) & (D->tri_full_flag[k] == 1)) | ((edge_data.n >= 0) && ((D->tri_full_flag[k] == 1) & (D->tri_full_flag[edge_data.n] == 0))))
-      {
-        // boundary_flux_sum is an array with length = timestep_fluxcalls
-        // For each sub-step, we put the boundary flux sum in.
-        boundary_flux_sum_substep += edgeflux[0];
-      }
-
-      // bedslope_work contains all gravity related terms
-      double pressuregrad_work = edge_data.length * (-g * 0.5 * (edge_data.h_left * edge_data.h_left - edge_data.hle * edge_data.hle - (edge_data.hle + edge_data.hc) * (edge_data.zl - edge_data.zc)) + pressure_flux);
-      D->xmom_explicit_update[k] -= D->normals[edge_data.ki2] * pressuregrad_work;
-      D->ymom_explicit_update[k] -= D->normals[edge_data.ki2 + 1] * pressuregrad_work;
-
-    } // End edge i (and neighbour n)
-
-    // Keep track of maximal speeds
-    if (substep_count == 0){
-      D->max_speed[k] = speed_max_last; // max_speed;
-    }
-    // Normalise triangle k by area and store for when all conserved
-    // quantities get updated
-    double inv_area = 1.0 / D->areas[k];
-    D->stage_explicit_update[k] *= inv_area;
-    D->xmom_explicit_update[k] *= inv_area;
-    D->ymom_explicit_update[k] *= inv_area;
-
-  } // End triangle k
-  //    #pragma omp target exit data map(release:edgeflux)
-
-  //   // Now add up stage, xmom, ymom explicit updates
-
-  // variable to accumulate D->boundary_flux_sum[substep_count]
-  D->boundary_flux_sum[substep_count] = boundary_flux_sum_substep;
-
-  // Ensure we only update the timestep on the first call within each rk2/rk3 step
-  if (substep_count == 0){
+  // Return timestep only on first substep
+  if (substep_count == 0) {
     timestep = local_timestep;
   }
 

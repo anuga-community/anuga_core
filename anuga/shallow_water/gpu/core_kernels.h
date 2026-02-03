@@ -44,4 +44,10 @@ int core_gravity(struct domain *D);
 // Gravity term (well-balanced)
 int core_gravity_wb(struct domain *D);
 
+// Compute fluxes using central upwind scheme
+// Returns minimum timestep, stores boundary flux sum in boundary_flux_sum[substep_count]
+// substep_count: which substep of RK timestepping (0 = first, only update timestep on first)
+// timestep_fluxcalls: total number of flux calls per timestep (for boundary flux array indexing)
+double core_compute_fluxes_central(struct domain *D, int substep_count, int timestep_fluxcalls);
+
 #endif // CORE_KERNELS_H

@@ -232,6 +232,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
     // Friction array
     double *friction_cv = GD->D.friction_centroid_values;
 
+    // tri_full_flag for MPI ghost cell identification
+    anuga_int *tri_full_flag = GD->D.tri_full_flag;
+
     // Map all domain arrays to GPU - persistent for entire simulation
     #pragma omp target enter data map(to: \
         stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], \
@@ -245,7 +248,8 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         x_centroid_work[0:n], y_centroid_work[0:n], \
         normals[0:6*n], edgelengths[0:3*n], \
         areas[0:n], radii[0:n], max_speed[0:n], \
-        centroid_coords[0:2*n], edge_coords[0:6*n])
+        centroid_coords[0:2*n], edge_coords[0:6*n], \
+        tri_full_flag[0:n])
 
     // Map boundary values if present (including bed and height for reflective boundary)
     if (nb > 0) {
@@ -534,6 +538,9 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     // Friction array
     double *friction_cv = GD->D.friction_centroid_values;
 
+    // tri_full_flag for MPI ghost cell identification
+    anuga_int *tri_full_flag = GD->D.tri_full_flag;
+
     // Unmap domain arrays
     #pragma omp target exit data map(delete: \
         stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], \
@@ -547,7 +554,8 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         x_centroid_work[0:n], y_centroid_work[0:n], \
         normals[0:6*n], edgelengths[0:3*n], \
         areas[0:n], radii[0:n], max_speed[0:n], \
-        centroid_coords[0:2*n], edge_coords[0:6*n])
+        centroid_coords[0:2*n], edge_coords[0:6*n], \
+        tri_full_flag[0:n])
 
     if (nb > 0) {
         double *stage_bv = GD->D.stage_boundary_values;
