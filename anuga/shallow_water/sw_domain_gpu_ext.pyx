@@ -317,12 +317,15 @@ cdef class GPUDomain:
 # MPI Communicator Extraction
 # ============================================================================
 
-cdef MPI_Comm get_mpi_comm():
+cdef MPI_Comm get_mpi_comm() noexcept:
     """
     Extract the raw MPI_Comm handle from mpi4py.
 
     mpi4py exposes the C MPI_Comm via the .ob_mpi attribute on Comm objects.
     This is the key bridge between Python MPI and C MPI calls.
+
+    Note: noexcept is required because MPI_Comm is an int on some platforms
+    (e.g., macOS), and Cython's default error return value (NULL) is incompatible.
     """
     import anuga.utilities.parallel_abstraction as pypar
     cdef MPI.Comm comm = pypar.comm

@@ -24,15 +24,19 @@ py3.extension_module('sw_domain_openmp_ext',
 # Can target GPU (gpu_offload=true) or CPU multicore (gpu_offload=false)
 gpu_offload = get_option('gpu_offload')
 
-mpi_dep = dependency('mpi', language: 'c', required: true)
+# MPI is optional - if not found, sw_domain_gpu_ext won't be built
+mpi_dep = dependency('mpi', language: 'c', required: false)
 
-# Get mpi4py include directory
-mpi4py_incdir = run_command(py3,
-  ['-c', 'import mpi4py; print(mpi4py.get_include())'],
-  check: true
-).stdout().strip()
+# Check if mpi4py is available
+mpi4py_check = run_command(py3, ['-c', 'import mpi4py; print(mpi4py.get_include())'], check: false)
+have_mpi4py = mpi4py_check.returncode() == 0
 
-gpu_inc_dir = include_directories('../utilities', incdir_numpy, mpi4py_incdir, 'gpu')
+if mpi_dep.found() and have_mpi4py
+  mpi4py_incdir = mpi4py_check.stdout().strip()
+  gpu_inc_dir = include_directories('../utilities', incdir_numpy, mpi4py_incdir, 'gpu')
+else
+  gpu_inc_dir = include_directories('../utilities', incdir_numpy, 'gpu')
+endif
 
 # GPU architecture option (only used when gpu_offload=true)
 # NVIDIA: cc70 (V100), cc80 (A100), cc90 (H100)
@@ -96,31 +100,37 @@ if get_option('gpu_aware_mpi') and gpu_offload
   message('GPU-aware MPI enabled')
 endif
 
-gpu_deps = openmp_deps + [mpi_dep]
+# Only build sw_domain_gpu_ext if MPI and mpi4py are available
+if mpi_dep.found() and have_mpi4py
+  gpu_deps = openmp_deps + [mpi_dep]
 
-py3.extension_module('sw_domain_gpu_ext',
-  sources: [
-    'sw_domain_gpu_ext.pyx',
-    'gpu/gpu_domain_core.c',
-    'gpu/gpu_boundaries.c',
-    'gpu/gpu_kernels.c',
-    'gpu/gpu_halo.c',
-    'gpu/gpu_rate_operator.c',
-    'gpu/gpu_inlet_operator.c',
-    'gpu/gpu_flop.c',
-    'gpu/core_kernels.c',
-  ],
-  c_args: gpu_c_args,
-  include_directories: gpu_inc_dir,
-  dependencies: gpu_deps,
-  subdir: 'anuga/shallow_water',
-  install: true,
-)
+  py3.extension_module('sw_domain_gpu_ext',
+    sources: [
+      'sw_domain_gpu_ext.pyx',
+      'gpu/gpu_domain_core.c',
+      'gpu/gpu_boundaries.c',
+      'gpu/gpu_kernels.c',
+      'gpu/gpu_halo.c',
+      'gpu/gpu_rate_operator.c',
+      'gpu/gpu_inlet_operator.c',
+      'gpu/gpu_flop.c',
+      'gpu/core_kernels.c',
+    ],
+    c_args: gpu_c_args,
+    include_directories: gpu_inc_dir,
+    dependencies: gpu_deps,
+    subdir: 'anuga/shallow_water',
+    install: true,
+  )
 
-if gpu_offload
-  message('Unified extension built with GPU target')
+  if gpu_offload
+    message('Unified extension built with GPU target')
+  else
+    message('Unified extension built with CPU multicore target')
+  endif
 else
-  message('Unified extension built with CPU multicore target')
+  warning('MPI or mpi4py not found - sw_domain_gpu_ext will NOT be built')
+  warning('multiprocessor_mode=2 will not be available')
 endif
 
 
