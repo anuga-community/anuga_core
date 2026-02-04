@@ -9,6 +9,7 @@
 #include <omp.h>
 #include "gpu_domain.h"
 #include "gpu_device_helpers.h"
+#include "gpu_omp_macros.h"
 
 // velocity_protection constant (matches anuga.config)
 #define VELOCITY_PROTECTION 1.0e-6
@@ -99,14 +100,16 @@ int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices,
             map(alloc: ss[0:ni], sb[0:ni], sx[0:ni], sy[0:ni], sd[0:ni])
         op->mapped = 1;
 
-        // Verify mapping succeeded
-        int chk_idx = omp_target_is_present(idx, GD->device_id);
-        int chk_ar = omp_target_is_present(ar, GD->device_id);
-        if (!chk_idx || !chk_ar) {
-            fprintf(stderr, "[Rank %d] ERROR: Inlet_operator %d mapping FAILED after enter data! "
-                    "indices_present=%d areas_present=%d idx=%p ar=%p ni=%d\n",
-                    GD->rank, op_id, chk_idx, chk_ar, (void*)idx, (void*)ar, ni);
-            fflush(stderr);
+        // Verify mapping succeeded (skip check in host fallback mode)
+        if (GD->device_id >= 0) {
+            int chk_idx = omp_target_is_present(idx, GD->device_id);
+            int chk_ar = omp_target_is_present(ar, GD->device_id);
+            if (!chk_idx || !chk_ar) {
+                fprintf(stderr, "[Rank %d] ERROR: Inlet_operator %d mapping FAILED after enter data! "
+                        "indices_present=%d areas_present=%d idx=%p ar=%p ni=%d\n",
+                        GD->rank, op_id, chk_idx, chk_ar, (void*)idx, (void*)ar, ni);
+                fflush(stderr);
+            }
         }
     }
 
@@ -195,21 +198,23 @@ double gpu_inlet_get_volume(struct gpu_domain *GD, int op_id) {
     double * restrict stage_c = GD->D.stage_centroid_values;
     double * restrict bed_c = GD->D.bed_centroid_values;
 
-    // Debug: check if pointers are present on device
-    int present_idx = omp_target_is_present(indices, omp_get_default_device());
-    int present_ar = omp_target_is_present(areas, omp_get_default_device());
-    int present_sc = omp_target_is_present(stage_c, omp_get_default_device());
-    int present_bc = omp_target_is_present(bed_c, omp_get_default_device());
-    if (!present_idx || !present_ar || !present_sc || !present_bc) {
-        fprintf(stderr, "[Rank %d] gpu_inlet_get_volume op=%d: MISSING device mapping! "
-                "indices=%d areas=%d stage_c=%d bed_c=%d\n",
-                GD->rank, op_id, present_idx, present_ar, present_sc, present_bc);
-        fflush(stderr);
-        return 0.0;
+    // Debug: check if pointers are present on device (skip in host fallback mode)
+    if (GD->device_id >= 0) {
+        int present_idx = omp_target_is_present(indices, omp_get_default_device());
+        int present_ar = omp_target_is_present(areas, omp_get_default_device());
+        int present_sc = omp_target_is_present(stage_c, omp_get_default_device());
+        int present_bc = omp_target_is_present(bed_c, omp_get_default_device());
+        if (!present_idx || !present_ar || !present_sc || !present_bc) {
+            fprintf(stderr, "[Rank %d] gpu_inlet_get_volume op=%d: MISSING device mapping! "
+                    "indices=%d areas=%d stage_c=%d bed_c=%d\n",
+                    GD->rank, op_id, present_idx, present_ar, present_sc, present_bc);
+            fflush(stderr);
+            return 0.0;
+        }
     }
 
     double volume = 0.0;
-    #pragma omp target teams distribute parallel for reduction(+:volume)
+    OMP_PARALLEL_LOOP_REDUCTION_PLUS(volume)
     for (int k = 0; k < num; k++) {
         int i = indices[k];
         double depth = stage_c[i] - bed_c[i];
@@ -230,24 +235,26 @@ void gpu_inlet_get_velocities(struct gpu_domain *GD, int op_id,
 
     omp_set_default_device(GD->device_id);
 
-    // Debug: verify all pointers are mapped
+    // Debug: verify all pointers are mapped (skip in host fallback mode)
     int n = op->num_indices;
-    int present_idx = omp_target_is_present(op->indices, GD->device_id);
-    int present_sc = omp_target_is_present(GD->D.stage_centroid_values, GD->device_id);
-    int present_bc = omp_target_is_present(GD->D.bed_centroid_values, GD->device_id);
-    int present_xc = omp_target_is_present(GD->D.xmom_centroid_values, GD->device_id);
-    int present_yc = omp_target_is_present(GD->D.ymom_centroid_values, GD->device_id);
-    int present_sd = omp_target_is_present(op->scratch_depths, GD->device_id);
-    int present_sx = omp_target_is_present(op->scratch_xmom, GD->device_id);
-    int present_sy = omp_target_is_present(op->scratch_ymom, GD->device_id);
-    if (!present_idx || !present_sc || !present_bc || !present_xc || !present_yc ||
-        !present_sd || !present_sx || !present_sy) {
-        fprintf(stderr, "[Rank %d] gpu_inlet_get_velocities op=%d: MISSING mapping! "
-                "idx=%d sc=%d bc=%d xc=%d yc=%d sd=%d sx=%d sy=%d\n",
-                GD->rank, op_id, present_idx, present_sc, present_bc,
-                present_xc, present_yc, present_sd, present_sx, present_sy);
-        fflush(stderr);
-        return;
+    if (GD->device_id >= 0) {
+        int present_idx = omp_target_is_present(op->indices, GD->device_id);
+        int present_sc = omp_target_is_present(GD->D.stage_centroid_values, GD->device_id);
+        int present_bc = omp_target_is_present(GD->D.bed_centroid_values, GD->device_id);
+        int present_xc = omp_target_is_present(GD->D.xmom_centroid_values, GD->device_id);
+        int present_yc = omp_target_is_present(GD->D.ymom_centroid_values, GD->device_id);
+        int present_sd = omp_target_is_present(op->scratch_depths, GD->device_id);
+        int present_sx = omp_target_is_present(op->scratch_xmom, GD->device_id);
+        int present_sy = omp_target_is_present(op->scratch_ymom, GD->device_id);
+        if (!present_idx || !present_sc || !present_bc || !present_xc || !present_yc ||
+            !present_sd || !present_sx || !present_sy) {
+            fprintf(stderr, "[Rank %d] gpu_inlet_get_velocities op=%d: MISSING mapping! "
+                    "idx=%d sc=%d bc=%d xc=%d yc=%d sd=%d sx=%d sy=%d\n",
+                    GD->rank, op_id, present_idx, present_sc, present_bc,
+                    present_xc, present_yc, present_sd, present_sx, present_sy);
+            fflush(stderr);
+            return;
+        }
     }
 
     // Small D2H: gather depths, xmom, ymom for inlet triangles
@@ -262,7 +269,7 @@ void gpu_inlet_get_velocities(struct gpu_domain *GD, int op_id,
     double *s_ymom = op->scratch_ymom;
 
     // GPU gather: read from domain arrays into scratch buffers on device
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         int i = indices[k];
         s_depths[k] = stage_c[i] - bed_c[i];
@@ -300,7 +307,7 @@ void gpu_inlet_set_depths(struct gpu_domain *GD, int op_id, double depth) {
     double * restrict stage_c = GD->D.stage_centroid_values;
     double * restrict bed_c = GD->D.bed_centroid_values;
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         int i = indices[k];
         stage_c[i] = bed_c[i] + depth;
@@ -316,7 +323,7 @@ void gpu_inlet_set_xmoms(struct gpu_domain *GD, int op_id, double value) {
     int * restrict indices = op->indices;
     double * restrict xmom_c = GD->D.xmom_centroid_values;
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         xmom_c[indices[k]] = value;
     }
@@ -331,7 +338,7 @@ void gpu_inlet_set_ymoms(struct gpu_domain *GD, int op_id, double value) {
     int * restrict indices = op->indices;
     double * restrict ymom_c = GD->D.ymom_centroid_values;
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         ymom_c[indices[k]] = value;
     }
@@ -352,7 +359,7 @@ void gpu_inlet_set_xmoms_array(struct gpu_domain *GD, int op_id,
     memcpy(scratch, values, n * sizeof(double));
     #pragma omp target update to(scratch[0:n])
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         xmom_c[indices[k]] = scratch[k];
     }
@@ -372,7 +379,7 @@ void gpu_inlet_set_ymoms_array(struct gpu_domain *GD, int op_id,
     memcpy(scratch, values, n * sizeof(double));
     #pragma omp target update to(scratch[0:n])
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         ymom_c[indices[k]] = scratch[k];
     }
@@ -408,7 +415,7 @@ void gpu_inlet_set_stages_evenly(struct gpu_domain *GD, int op_id, double volume
     double *bed = op->scratch_bed;
 
     // Small D2H: gather stages and bed for inlet triangles on GPU
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         int i = indices[k];
         stages[k] = stage_c[i];
@@ -471,7 +478,7 @@ void gpu_inlet_set_stages_evenly(struct gpu_domain *GD, int op_id, double volume
     // Small H2D: update stages scratch buffer on GPU, then scatter to domain array
     #pragma omp target update to(stages[0:n])
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
         int i = indices[k];
         stage_c[i] = stages[k];
@@ -513,7 +520,7 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
 
         // Get depths from GPU for momentum calculation
         double *s_depths = op->scratch_depths;
-        #pragma omp target teams distribute parallel for
+        OMP_PARALLEL_LOOP
         for (int k = 0; k < n; k++) {
             int i = indices[k];
             s_depths[k] = stage_c[i] - bed_c[i];
@@ -552,7 +559,7 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
 
         // Get depths from GPU for momentum
         double *s_depths = op->scratch_depths;
-        #pragma omp target teams distribute parallel for
+        OMP_PARALLEL_LOOP
         for (int k = 0; k < n; k++) {
             int i = indices[k];
             s_depths[k] = stage_c[i] - bed_c[i];

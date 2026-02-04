@@ -25,6 +25,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 		anuga_int timestep_fluxcalls
 		anuga_int max_flux_update_frequency
 		anuga_int ncol_riverwall_hydraulic_properties
+		anuga_int nrow_riverwall_hydraulic_properties
 
 		double epsilon
 		double H0
@@ -119,7 +120,6 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	void _openmp_set_omp_num_threads(anuga_int num_threads)
 	double _openmp_compute_fluxes_central(domain* D, double timestep)
 	double _openmp_protect(domain* D)
-	void _openmp_extrapolate_second_order_sw(domain* D)
 	void _openmp_extrapolate_second_order_edge_sw(domain* D)
 	anuga_int _openmp_fix_negative_cells(domain* D)
 	anuga_int _openmp_gravity(domain *D)
@@ -136,11 +136,12 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	void _openmp_manning_friction_sloped(double g, double eps, anuga_int N, double* x, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom_update, double* ymom_update)
 	void _openmp_manning_friction_sloped_edge_based(double g, double eps, anuga_int N, double* x, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom_update, double* ymom_update)
 	void _openmp_evaluate_reflective_segment(domain *D, anuga_int N, anuga_int *edge_ptr, anuga_int *vol_ids_ptr, anuga_int *edge_ids_ptr)
-	anuga_int __flux_function_central(double* ql, double* qr, double h_left,
-	double h_right, double hle, double hre, double n1, double n2,
-	double epsilon, double ze, double g,
-	double* edgeflux, double* max_speed, double* pressure_flux,
-	anuga_int low_froude)
+	anuga_int __openmp__flux_function_central(double q_left0, double q_left1, double q_left2,
+	double q_right0, double q_right1, double q_right2,
+	double h_left, double h_right, double hle, double hre,
+	double n1, double n2, double epsilon, double ze, double g,
+	double* edgeflux0, double* edgeflux1, double* edgeflux2,
+	double* max_speed, double* pressure_flux, anuga_int low_froude)
 
 
 cdef anuga_int pointer_flag = 0
@@ -162,6 +163,10 @@ cdef inline get_python_domain_parameters(domain *D, object domain_py_object):
 	D.max_flux_update_frequency = domain_py_object.max_flux_update_frequency
 
 	D.ncol_riverwall_hydraulic_properties = riverwallData.ncol_hydraulic_properties
+	try:
+		D.nrow_riverwall_hydraulic_properties = len(riverwallData.names)
+	except:
+		D.nrow_riverwall_hydraulic_properties = 0
 
 	D.epsilon = domain_py_object.epsilon
 	D.H0 = domain_py_object.H0
@@ -462,6 +467,10 @@ cdef inline get_python_domain_pointers(domain *D, object domain_py_object):
 		
 
 	D.ncol_riverwall_hydraulic_properties = riverwallData.ncol_hydraulic_properties
+	try:
+		D.nrow_riverwall_hydraulic_properties = len(riverwallData.names)
+	except:
+		D.nrow_riverwall_hydraulic_properties = 0
 
 #===============================================================================
 # DomainStruct: Cython wrapper for domain struct
@@ -966,14 +975,14 @@ def extrapolate_second_order_sw(object domain_py_object, update_domain_c_struct=
 	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
 
 	with nogil:
-		_openmp_extrapolate_second_order_sw(D)
+		_openmp_extrapolate_second_order_edge_sw(D)
 
 def distribute_to_edges(object domain_py_object, update_domain_c_struct=False):
 
 	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
 
 	with nogil:
-		_openmp_extrapolate_second_order_sw(D)
+		_openmp_extrapolate_second_order_edge_sw(D)
 
 def distribute_to_edges_and_vertices(object domain_py_object, 
                                     distribute_to_vertices=True, 
@@ -1187,12 +1196,13 @@ def flux_function_central(
 	h0 = H0 * H0
 	limiting_threshold = 10 * H0
 
-	err = __flux_function_central(
-		&ql[0], &qr[0],
-		h_left, h_right, hle, hre, normal[0], normal[1],
-		epsilon, ze, g,
-		&edgeflux[0], &max_speed, &pressure_flux,
-		low_froude
+	err = __openmp__flux_function_central(
+		ql[0], ql[1], ql[2],
+		qr[0], qr[1], qr[2],
+		h_left, h_right, hle, hre,
+		normal[0], normal[1], epsilon, ze, g,
+		&edgeflux[0], &edgeflux[1], &edgeflux[2],
+		&max_speed, &pressure_flux, low_froude
 	)
 
 	assert err >= 0, "Discontinuous Elevation"

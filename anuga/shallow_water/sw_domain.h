@@ -8,6 +8,7 @@
 #define SW_DOMAIN_H
 
 #include <stdint.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdbool.h>
 #include <inttypes.h>
@@ -25,6 +26,7 @@ struct domain {
     anuga_int timestep_fluxcalls;
     anuga_int max_flux_update_frequency;
     anuga_int ncol_riverwall_hydraulic_properties;
+    anuga_int nrow_riverwall_hydraulic_properties;
 
     double epsilon;
     double H0;

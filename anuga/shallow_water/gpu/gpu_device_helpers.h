@@ -7,7 +7,7 @@
 #define GPU_DEVICE_HELPERS_H
 
 #include <math.h>
-#include "gpu_domain.h"
+#include "anuga_typedefs.h"  // For anuga_int - no MPI dependency
 
 // ============================================================================
 // FLOP Counting Constants (Gordon Bell Performance Profiling)
@@ -291,6 +291,97 @@ static inline void gpu_flux_function_central(
 
         // Rotate back
         gpu_rotate(edgeflux, n1, -n2);
+    }
+}
+
+// ============================================================================
+// Riverwall/Weir Helper Functions (device code)
+// ============================================================================
+
+// Adjust edge flux using weir discharge theory (Villemonte 1947)
+// This blends the weir discharge with shallow water solution based on
+// submergence ratio and depth ratio above weir.
+//
+// Parameters:
+//   edgeflux: [3] array of mass and momentum fluxes (modified in place)
+//   h_left, h_right: water depths above weir on left and right
+//   g: gravitational acceleration
+//   weir_height: height of weir above minimum bed elevation
+//   Qfactor: weir discharge coefficient (typically 1.0)
+//   s1, s2: submergence ratio blend parameters (typically 0.9, 0.95)
+//   h1, h2: depth ratio blend parameters (typically 1.0, 1.5)
+//   max_speed_local: pointer to max wave speed (updated)
+static inline void gpu_adjust_edgeflux_with_weir(
+    double * restrict edgeflux,
+    double h_left, double h_right,
+    double g, double weir_height,
+    double Qfactor,
+    double s1, double s2,
+    double h1, double h2,
+    double * restrict max_speed_local) {
+
+    // No flux if both sides are dry
+    if ((h_left <= 0.0) && (h_right <= 0.0)) {
+        return;
+    }
+
+    double twothirds = 2.0 / 3.0;
+    double minhd = fmin(h_left, h_right);
+    double maxhd = fmax(h_left, h_right);
+
+    // 'Raw' weir discharge = Qfactor * 2/3 * H * sqrt(2/3 * g * H)
+    double rw = Qfactor * twothirds * maxhd * sqrt(twothirds * g * maxhd);
+
+    // Factor for Villemonte correction (using minimum head)
+    double rw2 = Qfactor * twothirds * minhd * sqrt(twothirds * g * minhd);
+
+    // Useful ratios
+    double rwRat = rw2 / fmax(rw, 1.0e-100);
+    double hdRat = minhd / fmax(maxhd, 1.0e-100);
+
+    // (tailwater height above weir) / weir_height ratio
+    double hdWrRat = minhd / fmax(weir_height, 1.0e-100);
+
+    // Villemonte (1947) corrected weir flow with submergence
+    // Q = Q1 * (1 - Q2/Q1)^0.385
+    rw = rw * pow(1.0 - rwRat, 0.385);
+
+    // Negative flux if flow is from right to left
+    if (h_right > h_left) {
+        rw *= -1.0;
+    }
+
+    if ((hdRat < s2) && (hdWrRat < h2)) {
+        // Rescale the edge fluxes so that the mass flux = desired flux
+        // Linearly shift to shallow water solution between hdRat = s1 and s2
+        // and between hdWrRat = h1 and h2
+
+        // Weight to transition to shallow water equation flow
+        double w1 = fmin(fmax(hdRat - s1, 0.0) / (s2 - s1), 1.0);
+
+        // Adjust again when the head is too deep relative to the weir height
+        double w2 = fmin(fmax(hdWrRat - h1, 0.0) / (h2 - h1), 1.0);
+
+        double newFlux = (rw * (1.0 - w1) + w1 * edgeflux[0]) * (1.0 - w2) + w2 * edgeflux[0];
+
+        double scaleFlux;
+        if (fabs(edgeflux[0]) > 1.0e-100) {
+            scaleFlux = newFlux / edgeflux[0];
+        } else {
+            scaleFlux = 0.0;
+        }
+
+        scaleFlux = fmax(scaleFlux, 0.0);
+
+        // Scale momentum fluxes (cap at 10x to avoid velocity spikes)
+        edgeflux[0] = newFlux;
+        edgeflux[1] *= fmin(scaleFlux, 10.0);
+        edgeflux[2] *= fmin(scaleFlux, 10.0);
+    }
+
+    // Adjust the max speed for timestep calculation
+    if (fabs(edgeflux[0]) > 0.0) {
+        *max_speed_local = sqrt(g * (maxhd + weir_height)) + fabs(edgeflux[0] / (maxhd + 1.0e-12));
     }
 }
 
