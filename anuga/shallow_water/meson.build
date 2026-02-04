@@ -45,12 +45,14 @@ is_amd_gpu = gpu_arch.startswith('gfx')
 # Compiler-specific flags
 # When gpu_offload=false, compile for CPU multicore (no GPU offloading)
 # This allows multiprocessor_mode=2 to run on CPUs with any OpenMP compiler
+#
+# Uses effective_compiler_id to handle Cray wrappers correctly
 if gpu_offload
   # GPU offloading enabled
-  if cc.get_id() == 'nvidia_hpc'
+  if effective_compiler_id == 'nvidia_hpc'
     # NVIDIA HPC SDK - best GPU support for NVIDIA GPUs
     gpu_c_args = ['-O3', '-mp=gpu,multicore', '-Minfo=accel', '-g', '-gpu=' + gpu_arch]
-  elif cc.get_id() == 'clang'
+  elif effective_compiler_id == 'clang'
     if is_amd_gpu
       # Clang/AOMP for AMD GPUs
       gpu_c_args = ['-O3', '-fopenmp', '-fopenmp-targets=amdgcn-amd-amdhsa',
@@ -71,13 +73,13 @@ if gpu_offload
 else
   # CPU multicore execution (no GPU offloading)
   # #pragma omp target teams loop becomes regular OpenMP parallel
-  if cc.get_id() == 'nvidia_hpc'
+  if effective_compiler_id == 'nvidia_hpc'
     gpu_c_args = ['-O3', '-mp=multicore', '-Minfo=accel', '-g']
-  elif cc.get_id() == 'intel' or cc.get_id() == 'intel-cl'
+  elif effective_compiler_id == 'intel' or effective_compiler_id == 'intel-cl'
     gpu_c_args = ['-O3', '-qopenmp', '-g']
-  elif cc.get_id() == 'intel-llvm'
+  elif effective_compiler_id == 'intel-llvm'
     gpu_c_args = ['-O3', '-fiopenmp', '-g']
-  elif cc.get_id() == 'clang'
+  elif effective_compiler_id == 'clang'
     # Clang with libomp (LLVM, Homebrew macOS, or AOMP)
     gpu_c_args = ['-O3', '-fopenmp', '-g']
   else
