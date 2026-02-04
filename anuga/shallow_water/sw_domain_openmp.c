@@ -33,9 +33,6 @@
 // Shared device helper functions (flux, rotation, gradient limiting, etc.)
 #include "gpu/gpu_device_helpers.h"
 
-// Flag to use unified kernels (can be toggled for testing)
-#define USE_UNIFIED_KERNELS 1
-
 // FIXME: Perhaps use the epsilon used elsewhere.
 
 // Trick to compute n modulo d (n%d in python) when d is a power of 2
