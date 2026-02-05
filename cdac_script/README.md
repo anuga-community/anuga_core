@@ -136,6 +136,8 @@ pip install -e . --no-build-isolation \
 
 ### Supported GPU architectures
 
+AMD GPUs have not been tested as of now (2026.02.05)
+
 | GPU | Architecture | Flag |
 |-----|--------------|------|
 | NVIDIA V100 | cc70 | `-Dgpu_arch=cc70` (default) |
@@ -163,6 +165,13 @@ Both modes use the same unified `core_kernels.c`. The only difference is:
 - **Mode 2**: RK2 time-stepping in C (faster, data stays on GPU)
 
 *To enable the GPU code*: `domain.set_multiprocessor_mode(2)`
+
+The GPU and CPU code share the same base kernels, you can find these in `anuga/shallow_water/gpu/core_kernels.*`, they
+contain the main math and logic needed for the fluxes, extrapolation, etc. Data transfer kernels are defined in the GPU
+specific files. 
+
+The main difference between using the RK2 loop in Python or in C is that in C the GPU aware MPI implementation can do more
+of its own work. I could not get mpi4py to work well with GPU aware MPI due to some pointer addressing issues.
 
 ### Runtime GPU Detection
 
@@ -192,6 +201,9 @@ Example output when GPU offload is disabled:
 RuntimeError: GPU mode requires boundaries to be set before calling set_multiprocessor_mode(2).
 Please call domain.set_boundary({...}) BEFORE domain.set_multiprocessor_mode(2).
 ```
+
+This is something I aim to fix by doing some initialization checks. TODO JORGE. 
+
 
 Correct pattern:
 
@@ -233,9 +245,6 @@ GPU Domain Info (rank 0/4):
 +==============================================================================+
 GPU arrays mapped to device 0
 ```
-
-GPU aware comms DO NOT WORK at the moment. I am tired (it is 23:11 as of writing)
-
 
 ## Multi GPU execution
 
@@ -385,9 +394,6 @@ If you use an unsupported boundary type, ALL boundaries fall back to CPU evaluat
 
 ### Known Issues
 
-**Volume calculation differs**: Stage values are correct but `compute_total_volume()` may report different values between GPU and CPU modes. This is under investigation - the physics (stage values) are correct.
-
-**GPU-aware MPI not fully tested**: The `gpu_aware_mpi=true` build option exists but is not fully validated yet.
 
 
 
