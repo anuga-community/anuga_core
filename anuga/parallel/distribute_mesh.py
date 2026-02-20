@@ -97,9 +97,9 @@ def reorder(quantities, tri_index, proc_sum):
     # Reorder each quantity according to the new ordering
 
     for k in quantities:
-        q_reord[k] = num.zeros((N, 3), float)
+        q_reord[k] = num.zeros((N, 1), float)
         for i in range(N):
-            q_reord[k][index[i]] = quantities[k].vertex_values[i]
+            q_reord[k][index[i]] = quantities[k].centroid_values[i]
     del index
 
     return q_reord
@@ -118,10 +118,29 @@ def reorder_new(quantities, epart_order, proc_sum):
     # Reorder each quantity according to the new ordering
 
     for k in quantities:
-        q_reord[k] = num.zeros((N, 3), float)
-        q_reord[k][:] = quantities[k].vertex_values[epart_order]
+        q_reord[k] = num.zeros((N, 1), float)
+        q_reord[k][:] = quantities[k].centroid_values[epart_order]
 
     return q_reord
+
+def reorder_new_c(quantities, epart_order, proc_sum):
+    '''This is the same as reorder_new but for centroid values.'''
+
+    # Find the number triangles
+
+    N = len(epart_order)
+
+    # Temporary storage area
+
+    q_reord = {}
+
+    # Reorder each quantity according to the new ordering
+
+    for k in quantities:
+        q_reord[k] = num.zeros((N, 1), float)
+        q_reord[k][:,0] = quantities[k].centroid_values[epart_order]
+
+    return q_reord    
 
 
 #########################################################
@@ -141,7 +160,8 @@ def reorder_new(quantities, epart_order, proc_sum):
 
 
 def pmesh_divide_metis(domain, n_procs):
-    # Wrapper for old pmesh_divide_metis which does not return tri_index or r_tri_index
+    # Wrapper of pmesh_divide_metis_helper which does not return tri_index or r_tri_index
+
     nodes, ttriangles, boundary, triangles_per_proc, quantities, tri_index, r_tri_index = pmesh_divide_metis_helper(
         domain, n_procs)
 
@@ -149,7 +169,8 @@ def pmesh_divide_metis(domain, n_procs):
 
 
 def pmesh_divide_metis_with_map(domain, n_procs):
-
+    # Wrapper of pmesh_divide_metis_helper which returns tri_index and r_tri_index
+    
     return pmesh_divide_metis_helper(domain, n_procs)
 
 
@@ -171,6 +192,10 @@ def pmesh_divide_metis_helper(domain, n_procs):
     # Prepare variables for the metis call
 
     n_tri = len(domain.triangles)
+
+    save_keys = ["stage", "xmomentum", "ymomentum", "elevation", "friction"]
+    save_quantities = {k: domain.quantities[k] for k in save_keys if k in domain.quantities}
+
     if n_procs != 1:  # Because metis chokes on it...
 
         if metis_version == 4:
@@ -259,7 +284,7 @@ def pmesh_divide_metis_helper(domain, n_procs):
             new_boundary[proc_sum[t[0]]+t[1], b[1]] = domain.boundary[b]
 
         #quantities = reorder(domain.quantities, tri_index, proc_sum)
-        new_quantities = reorder_new(domain.quantities, epart_order, proc_sum)
+        new_quantities = reorder_new_c(save_quantities, epart_order, proc_sum)
 
     else:
         new_boundary = domain.boundary.copy()
@@ -271,10 +296,11 @@ def pmesh_divide_metis_helper(domain, n_procs):
         # This is essentially the same as a chunk of code from reorder.
 
         new_quantities = {}
-        for k in domain.quantities:
-            new_quantities[k] = num.zeros((n_tri, 3), float)
-            for i in range(n_tri):
-                new_quantities[k][i] = domain.quantities[k].vertex_values[i]
+
+        for k in save_quantities:
+            new_quantities[k] = num.zeros((n_tri, 1), float)
+            #for i in range(n_tri):
+            new_quantities[k][:, 0] = save_quantities[k].centroid_values[:]
 
     # Extract the node list
     new_nodes = domain.get_nodes().copy()
@@ -980,10 +1006,10 @@ def submesh_quantities(submesh, quantities, triangles_per_proc):
 
         for k in quantities:
             submesh["full_quan"][k].append(quantities[k][lower:upper])
-            submesh["ghost_quan"][k].append(num.zeros((M, 3), float))
+            submesh["ghost_quan"][k].append(num.zeros((M, 1), float))
             for j in range(M):
-                submesh["ghost_quan"][k][p][j] = \
-                    quantities[k][global_id[j]]
+                submesh["ghost_quan"][k][p][j, 0] = \
+                    quantities[k][global_id[j], 0]
 
         lower = upper
 
@@ -1239,7 +1265,7 @@ def build_local_mesh(submesh, lower_t, upper_t, nproc):
     for k in submesh["full_quan"]:
         Nf = len(submesh["full_quan"][k])
         Ng = len(submesh["ghost_quan"][k])
-        quantities[k] = num.zeros((Nf+Ng, 3), float)
+        quantities[k] = num.zeros((Nf+Ng, 1), float)
         quantities[k][0:Nf] = submesh["full_quan"][k]
         quantities[k][Nf:Nf+Ng] = submesh["ghost_quan"][k]
 
@@ -1524,13 +1550,13 @@ def rec_submesh_flat(p, verbose=True):
 
     submesh_cell["full_quan"] = {}
     for i in range(no_quantities):
-        x = num.zeros((no_full_triangles, 3), float)
+        x = num.zeros((no_full_triangles, 1), float)
         pypar.receive(p, buffer=x, bypass=True)
         submesh_cell["full_quan"][qkeys[i]] = x
 
     submesh_cell["ghost_quan"] = {}
     for i in range(no_quantities):
-        x = num.zeros((no_ghost_triangles, 3), float)
+        x = num.zeros((no_ghost_triangles, 1), float)
         pypar.receive(p, buffer=x, bypass=True)
         submesh_cell["ghost_quan"][qkeys[i]] = x
 

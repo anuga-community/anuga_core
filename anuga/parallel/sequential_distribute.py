@@ -310,7 +310,7 @@ def sequential_distribute_load_pickle_file(pickle_name, np=1, verbose = False):
     # Copy in quantity data
     #------------------------------------------------------------------------
     for q in quantities:
-        domain.set_quantity(q, quantities[q])
+        domain.set_quantity(q, quantities[q], location='centroids')
 
 
     #------------------------------------------------------------------------

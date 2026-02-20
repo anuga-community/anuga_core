@@ -116,12 +116,12 @@ def distribute(domain, verbose=False, debug=False, parameters = None):
     #------------------------------------------------------------------------
     for q in quantities:
         try:
-            parallel_domain.set_quantity(q, quantities[q])
+            parallel_domain.set_quantity(q, quantities[q], location='centroids')
         except KeyError:
             #print 'Try to create quantity %s'% q
             from anuga import Quantity
             Q = Quantity(parallel_domain, name=q, register=True)
-            parallel_domain.set_quantity(q, quantities[q])
+            parallel_domain.set_quantity(q, quantities[q], location='centroids')
 
     #------------------------------------------------------------------------
     # Transfer boundary conditions to each subdomain
