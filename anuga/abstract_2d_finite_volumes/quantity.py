@@ -1041,8 +1041,6 @@ class Quantity(object):
 
         if location == 'centroids':
             if len(values.shape) == 1:
-            #assert len(values.shape) == 1, 'Values array must be 1d'
-
                 if indices is None:
                     msg = 'Number of values must match number of elements'
                     assert values.shape[0] == N, msg
