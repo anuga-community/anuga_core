@@ -78,6 +78,8 @@ parser.add_argument('-ta', '--test_allreduce', action='store_true',
 parser.add_argument('-mp', '--multi_processor_mode', type=int, default=1,
                     help='set multiprocessor mode in [1,2]')
 
+parser.add_argument('-sww', '--store_sww', action='store_true', help='store sww files')
+
 parser.add_argument('-v', '--verbose', action='store_true', help='turn on verbosity')
 
 parser.add_argument('-ve', '--evolve_verbose', action='store_true', help='turn on evolve verbosity')
@@ -94,6 +96,7 @@ verbose = args.verbose
 evolve_verbose = args.evolve_verbose
 fixed_flux_timestep = args.fixed_dt
 test_allreduce = args.test_allreduce
+store_sww = args.store_sww
 
 dist_params = {}
 dist_params['ghost_layer_width'] = args.ghost_layer
@@ -121,7 +124,7 @@ if myid == 0:
                                       verbose=verbose)
 
 
-    domain.set_store(True)
+    domain.set_store(store_sww)
     domain.set_quantity('elevation', lambda x,y : -1.0-x )
     domain.set_quantity('stage', 1.0)
     domain.set_flow_algorithm('DE0')
@@ -241,7 +244,7 @@ if domain.number_of_global_triangles < 10:
     domain.dump_triangulation(filename="rectangular_cross_%g.png"% numprocs)
 
 # to save time avoid merge
-#domain.sww_merge(delete_old=True)
+domain.sww_merge(delete_old=True)
 
 
 if myid == 0:
