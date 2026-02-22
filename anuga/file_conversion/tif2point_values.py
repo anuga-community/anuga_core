@@ -21,7 +21,7 @@ def tif2point_values(filename, zone=None, south=True, points=None, verbose=False
     #print(proj.GetAttrValue('AUTHORITY',1))
     tif_epsg = tif_proj.GetAuthorityCode(None)
 
-    print(tif_epsg)
+    #print(tif_epsg)
  
     NODATA_value= raster.GetRasterBand(1).GetNoDataValue()
     Z= raster.ReadAsArray()
@@ -47,7 +47,6 @@ def tif2point_values(filename, zone=None, south=True, points=None, verbose=False
     22: 26922, 23: 26923,
     }
 
-    zone = int(zone)
 
     if tif_epsg == '4326':
         # tif file is lat long projection ie 'EPSG:4326'
@@ -79,6 +78,7 @@ def tif2point_values(filename, zone=None, south=True, points=None, verbose=False
 
 
     elif not south:
+        zone = int(zone)
         same_utm = (
         tif_epsg == str(wgs84_utm_north.get(zone)) or
         tif_epsg == str(nad83_utm_north.get(zone))
@@ -90,6 +90,7 @@ def tif2point_values(filename, zone=None, south=True, points=None, verbose=False
             raise Exception("zone and hemisphere of tif not the same as zone and hemisphere of points")
 
     elif south:
+        zone = int(zone)
         same_utm = tif_epsg == str(wgs84_utm_south.get(zone))
         if same_utm:
             affine_transform = Affine.from_gdal(*raster.GetGeoTransform())
