@@ -72,6 +72,7 @@ class Mesh(General_mesh):
                  tagged_elements=None,
                  geo_reference=None,
                  use_inscribed_circle=False,
+                 calculate_neighbours=True,
                  verbose=False):
         """
         Build Mesh
@@ -1468,6 +1469,158 @@ def segment_midpoints(segments):
         midpoints.append(midpoint)
 
     return midpoints
+
+
+def get_boundary_polygon(self, verbose=False):
+    """Return bounding polygon for mesh (counter clockwise)
+
+    Using the mesh boundary, derive a bounding polygon for this mesh.
+    If multiple vertex values are present (vertices stored uniquely),
+    the algorithm will select the path that contains the entire mesh.
+
+    All points are in absolute UTM coordinates
+    """
+
+    from anuga.utilities.numerical_tools import angle, ensure_numeric
+
+    # Get mesh extent
+    xmin, xmax, ymin, ymax = self.get_extent(absolute=True)
+    pmin = ensure_numeric([xmin, ymin])
+    pmax = ensure_numeric([xmax, ymax])
+
+    # Assemble dictionary of boundary segments and choose starting point
+    segments = {}
+    inverse_segments = {}
+    p0 = None
+
+    # Start value across entire mesh
+    mindist = num.sqrt(num.sum((pmax-pmin)**2))
+    for i, edge_id in list(self.boundary.keys()):
+        # Find vertex ids for boundary segment
+        if edge_id == 0: a = 1; b = 2
+        if edge_id == 1: a = 2; b = 0
+        if edge_id == 2: a = 0; b = 1
+
+        A = self.get_vertex_coordinate(i, a, absolute=True)    # Start
+        B = self.get_vertex_coordinate(i, b, absolute=True)    # End
+
+        # Take the point closest to pmin as starting point
+        # Note: Could be arbitrary, but nice to have
+        # a unique way of selecting
+        dist_A = num.sqrt(num.sum((A-pmin)**2))
+        dist_B = num.sqrt(num.sum((B-pmin)**2))
+
+        # Find lower leftmost point
+        if dist_A < mindist:
+            mindist = dist_A
+            p0 = A
+        if dist_B < mindist:
+            mindist = dist_B
+            p0 = B
+
+        # Sanity check
+        if p0 is None:
+            msg = 'Impossible: p0 is None!?'
+            raise Exception(msg)
+
+        # Register potential paths from A to B
+        if tuple(A) not in segments:
+            segments[tuple(A)] = []    # Empty list for candidate points
+
+        segments[tuple(A)].append(B)
+
+    # Start with smallest point and follow boundary (counter clock wise)
+    polygon = [list(p0)]# Storage for final boundary polygon
+    point_registry = {} # Keep track of storage to avoid multiple runs
+                        # around boundary. This will only be the case if
+                        # there are more than one candidate.
+                        # FIXME (Ole): Perhaps we can do away with polygon
+                        # and use only point_registry to save space.
+
+    point_registry[tuple(p0)] = 0
+
+    while len(point_registry) < len(self.boundary):
+        candidate_list = segments[tuple(p0)]
+        if len(candidate_list) > 1:
+            # Multiple points detected (this will be the case for meshes
+            # with duplicate points as those used for discontinuous
+            # triangles with vertices stored uniquely).
+            # Take the candidate that is furthest to the clockwise
+            # direction, as that will follow the boundary.
+            #
+            # This will also be the case for pathological triangles
+            # that have no neighbours.
+
+            if verbose:
+                log.critical('Point %s has multiple candidates: %s'
+                                % (str(p0), candidate_list))
+
+            # Check that previous are not in candidate list
+            #for p in candidate_list:
+            #    assert not allclose(p0, p)
+
+            # Choose vector against which all angles will be measured
+            if len(polygon) > 1:
+                v_prev = p0 - polygon[-2]    # Vector that leads to p0
+                                                # from previous point
+            else:
+                # FIXME (Ole): What do we do if the first point has
+                # multiple candidates?
+                # Being the lower left corner, perhaps we can use the
+                # vector [1, 0], but I really don't know if this is
+                # completely watertight.
+                v_prev = [1.0, 0.0]
+
+            # Choose candidate with minimum angle
+            minimum_angle = 2*pi
+            for pc in candidate_list:
+                vc = pc-p0    # Candidate vector (from p0 to candidate pt)
+
+                # Angle between each candidate and the previous vector
+                # in [-pi, pi]
+                ac = angle(vc, v_prev)
+                if ac > pi:
+                    # Give preference to angles on the right hand side
+                    # of v_prev
+                    ac = ac-2*pi
+
+                # Take the minimal angle corresponding to the
+                # rightmost vector
+                if ac < minimum_angle:
+                    minimum_angle = ac
+                    p1 = pc             # Best candidate
+
+            if verbose is True:
+                log.critical('  Best candidate %s, angle %f'
+                                % (p1, minimum_angle*180/pi))
+        else:
+            p1 = candidate_list[0]
+
+        if tuple(p1) in point_registry:
+            # We have reached a point already visited.
+            if num.allclose(p1, polygon[0]):
+                # If it is the initial point, the polygon is complete.
+                if verbose is True:
+                    log.critical('  Stop criterion fulfilled at point %s'
+                                    % str(p1))
+                    log.critical(str(polygon))
+
+                # We have completed the boundary polygon - yeehaa
+                break
+            else:
+                # The point already visited is not the initial point
+                # This would be a pathological triangle, but the
+                # algorithm must be able to deal with this
+                pass
+
+        else:
+            # We are still finding new points on the boundary
+            point_registry[tuple(p1)] = len(point_registry)
+
+        polygon.append(list(p1))    # De-numeric each point :-)
+        p0 = p1
+
+    return polygon    
 
 
 

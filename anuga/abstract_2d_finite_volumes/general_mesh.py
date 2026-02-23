@@ -52,7 +52,7 @@ class General_mesh:
       This structure is derived from coordinates and contains for each
       triangle the three x,y coordinates at the vertices.
 
-      See neighbourmesh.py for a specialisation of the general mesh class
+      See neighbour_mesh.py for a specialisation of the general mesh class
       which includes information about neighbours and the mesh boundary.
 
       The mesh object is purely geometrical and contains no information
@@ -886,3 +886,4 @@ class General_mesh:
 
     def get_georeference(self):
         return self.geo_reference
+

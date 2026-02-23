@@ -39,6 +39,7 @@ except:
 
 
 from anuga.abstract_2d_finite_volumes.neighbour_mesh import Mesh
+from anuga.abstract_2d_finite_volumes.general_mesh import General_mesh
 from anuga import indent
 
 try:
@@ -56,6 +57,8 @@ except:
     metis_version = "5_part_graph"
 
 verbose = False
+
+save_keys = ["stage", "xmomentum", "ymomentum", "elevation", "friction"]
 
 #########################################################
 #
@@ -119,28 +122,9 @@ def reorder_new(quantities, epart_order, proc_sum):
 
     for k in quantities:
         q_reord[k] = num.zeros((N, 1), float)
-        q_reord[k][:] = quantities[k].centroid_values[epart_order]
-
-    return q_reord
-
-def reorder_new_c(quantities, epart_order, proc_sum):
-    '''This is the same as reorder_new but for centroid values.'''
-
-    # Find the number triangles
-
-    N = len(epart_order)
-
-    # Temporary storage area
-
-    q_reord = {}
-
-    # Reorder each quantity according to the new ordering
-
-    for k in quantities:
-        q_reord[k] = num.zeros((N, 1), float)
         q_reord[k][:,0] = quantities[k].centroid_values[epart_order]
 
-    return q_reord    
+    return q_reord   
 
 
 #########################################################
@@ -159,22 +143,66 @@ def reorder_new_c(quantities, epart_order, proc_sum):
 #########################################################
 
 
-def pmesh_divide_metis(domain, n_procs):
-    # Wrapper of pmesh_divide_metis_helper which does not return tri_index or r_tri_index
-
-    nodes, ttriangles, boundary, triangles_per_proc, quantities, tri_index, r_tri_index = pmesh_divide_metis_helper(
-        domain, n_procs)
-
-    return nodes, ttriangles, boundary, triangles_per_proc, quantities
-
-
-def pmesh_divide_metis_with_map(domain, n_procs):
-    # Wrapper of pmesh_divide_metis_helper which returns tri_index and r_tri_index
-    
-    return pmesh_divide_metis_helper(domain, n_procs)
+def metis_partition(domain, n_procs):
+    """
+    Partition the mesh using metis. This is a wrapper for the
+    metis partitioning routines in pymetis. The partitioning
+    routine used depends on the version of metis installed. If  
+    metis 4 is installed, partMeshNodal is used. If metis 5 is
+    installed, part_mesh is used if available, otherwise part_graph
+    """
 
 
-def pmesh_divide_metis_helper(domain, n_procs):
+    if metis_version == 4:
+        n_vert = domain.get_number_of_nodes()
+        t_list2 = domain.triangles.copy()
+        t_list = num.reshape(t_list2, (-1,))
+        # The 1 here is for triangular mesh elements.
+        edgecut, epart, npart = partMeshNodal(n_tri, n_vert, t_list, 1, n_procs)
+        # print edgecut
+        # print npart
+        #print epart
+        del edgecut
+        del npart
+
+
+    if metis_version == "5_part_mesh":
+
+        objval, epart, npart = part_mesh(n_procs, domain.triangles)
+
+
+    if metis_version == "5_part_graph":
+        # build adjacency list
+        # neighbours uses negative integer-indices to denote boudary edges.
+        # pymetis totally cant handle that, so we have to delete these.
+        neigh = domain.neighbours.tolist()
+        for i in range(len(neigh)):
+            if neigh[i][2] < 0:
+                del neigh[i][2]
+            if neigh[i][1] < 0:
+                del neigh[i][1]
+            if neigh[i][0] < 0:
+                del neigh[i][0]
+
+        cutcount, partvert = part_graph(n_procs, neigh)
+
+        epart = partvert
+
+    # Sometimes (usu. on x86_64), partMeshNodal returns an array of zero
+    # dimensional arrays. Correct this.
+    # TODO: Not sure if this can still happen with metis 5
+    if type(epart[0]) == num.ndarray:
+        epart_new = num.zeros(len(epart), int)
+        epart_new[:] = epart[:][0]
+        epart = epart_new
+        del epart_new
+
+    return epart
+
+
+
+
+def pmesh_divide_metis_with_map(domain, n_procs, quantity_save_keys=save_keys):
 
     # Initialise the lists
     # List, indexed by processor of # triangles.
@@ -188,61 +216,13 @@ def pmesh_divide_metis_helper(domain, n_procs):
     # Serial to Parallel and Parallel to Serial Triangle index maps
     tri_index = {}
     r_tri_index = {}  # reverse tri index, parallel to serial triangle index mapping
-
-    # Prepare variables for the metis call
-
     n_tri = len(domain.triangles)
 
-    save_keys = ["stage", "xmomentum", "ymomentum", "elevation", "friction"]
-    save_quantities = {k: domain.quantities[k] for k in save_keys if k in domain.quantities}
+    save_quantities = {k: domain.quantities[k] for k in quantity_save_keys if k in domain.quantities}
 
     if n_procs != 1:  # Because metis chokes on it...
 
-        if metis_version == 4:
-            n_vert = domain.get_number_of_nodes()
-            t_list2 = domain.triangles.copy()
-            t_list = num.reshape(t_list2, (-1,))
-            # The 1 here is for triangular mesh elements.
-            edgecut, epart, npart = partMeshNodal(n_tri, n_vert, t_list, 1, n_procs)
-            # print edgecut
-            # print npart
-            #print epart
-            del edgecut
-            del npart
-
-
-        if metis_version == "5_part_mesh":
-
-            objval, epart, npart = part_mesh(n_procs, domain.triangles)
-
-
-        if metis_version == "5_part_graph":
-            # build adjacency list
-            # neighbours uses negative integer-indices to denote boudary edges.
-            # pymetis totally cant handle that, so we have to delete these.
-            neigh = domain.neighbours.tolist()
-            for i in range(len(neigh)):
-                if neigh[i][2] < 0:
-                    del neigh[i][2]
-                if neigh[i][1] < 0:
-                    del neigh[i][1]
-                if neigh[i][0] < 0:
-                    del neigh[i][0]
-
-            cutcount, partvert = part_graph(n_procs, neigh)
-
-            epart = partvert
-
-
-
-        # Sometimes (usu. on x86_64), partMeshNodal returns an array of zero
-        # dimensional arrays. Correct this.
-        # TODO: Not sure if this can still happen with metis 5
-        if type(epart[0]) == num.ndarray:
-            epart_new = num.zeros(len(epart), int)
-            epart_new[:] = epart[:][0]
-            epart = epart_new
-            del epart_new
+        epart = metis_partition(domain, n_procs)
 
         triangles_per_proc = num.bincount(epart)
 
@@ -284,7 +264,7 @@ def pmesh_divide_metis_helper(domain, n_procs):
             new_boundary[proc_sum[t[0]]+t[1], b[1]] = domain.boundary[b]
 
         #quantities = reorder(domain.quantities, tri_index, proc_sum)
-        new_quantities = reorder_new_c(save_quantities, epart_order, proc_sum)
+        new_quantities = reorder_new(save_quantities, epart_order, proc_sum)
 
     else:
         new_boundary = domain.boundary.copy()
@@ -306,6 +286,14 @@ def pmesh_divide_metis_helper(domain, n_procs):
     new_nodes = domain.get_nodes().copy()
 
     return new_nodes, new_triangles, new_boundary, triangles_per_proc, new_quantities, new_tri_index, epart_order
+
+def pmesh_divide_metis(domain, n_procs):
+    # Wrapper of pmesh_divide_metis_helper which does not return tri_index or r_tri_index
+
+    nodes, ttriangles, boundary, triangles_per_proc, quantities, tri_index, r_tri_index = pmesh_divide_metis_with_map(
+        domain, n_procs)
+
+    return nodes, ttriangles, boundary, triangles_per_proc, quantities
 
 #########################################################
 #
@@ -1030,7 +1018,6 @@ def submesh_quantities(submesh, quantities, triangles_per_proc):
 #
 #########################################################
 
-
 def build_submesh(nodes, triangles, boundary, quantities,
                   triangles_per_proc, parameters=None):
 
@@ -1038,7 +1025,7 @@ def build_submesh(nodes, triangles, boundary, quantities,
     # triangles and true boundary polygon\
 
     mesh = Mesh(nodes, triangles, boundary)
-    boundary_polygon = mesh.get_boundary_polygon()
+    #boundary_polygon = mesh.get_boundary_polygon()
 
     # Subdivide into non-overlapping partitions
 
@@ -1054,7 +1041,7 @@ def build_submesh(nodes, triangles, boundary, quantities,
     submesh = submesh_quantities(submeshg, quantities,
                                  triangles_per_proc)
 
-    submesh["boundary_polygon"] = boundary_polygon
+    #submesh["boundary_polygon"] = boundary_polygon
     return submesh
 
 #########################################################
