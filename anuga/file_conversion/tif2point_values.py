@@ -111,7 +111,8 @@ def tif2point_values(filename, zone=None, south=True, points=None, verbose=False
         msg = 'zone and hemisphere of tif not the same as zone and hemisphere of points'
         raise Exception(msg)
 
-    icols= ilocs[0,:].astype(int); irows= ilocs[1,:].astype(int)
+    icols= ilocs[0,:].astype(int)
+    irows= ilocs[1,:].astype(int)
 
     #pprint(icols)
     #pprint(irows)
