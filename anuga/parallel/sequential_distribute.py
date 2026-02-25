@@ -13,7 +13,7 @@ from anuga.parallel.distribute_mesh  import extract_submesh
 
 # Mesh partitioning using Metis
 from anuga.parallel.distribute_mesh import build_submesh
-from anuga.parallel.distribute_mesh import pmesh_divide_metis_with_map
+from anuga.parallel.distribute_mesh import partition_mesh
 
 from anuga.parallel.parallel_shallow_water import Parallel_domain
 
@@ -69,9 +69,9 @@ class Sequential_distribute(object):
         # Subdivide the mesh
         if verbose: print('sequential_distribute: Subdivide mesh')
 
-        new_nodes, new_triangles, new_boundary, triangles_per_proc, quantities, \
+        new_mesh, triangles_per_proc, quantities, \
                s2p_map, p2s_map = \
-               pmesh_divide_metis_with_map(domain, numprocs)
+               partition_mesh(domain, numprocs, parameters=parameters, verbose=verbose)
 
 
         # Build the mesh that should be assigned to each processor,
@@ -79,8 +79,8 @@ class Sequential_distribute(object):
         if verbose: print('sequential_distribute: Build submeshes')
         if verbose: print('sequential_distribute: parameters = ',parameters)
 
-        submesh = build_submesh(new_nodes, new_triangles, new_boundary, \
-                                quantities, triangles_per_proc, parameters=parameters)
+        submesh = build_submesh(new_mesh, quantities, triangles_per_proc, 
+                                parameters=parameters, verbose=verbose)
 
         if verbose:
             for p in range(numprocs):

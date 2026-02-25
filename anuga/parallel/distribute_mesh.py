@@ -58,7 +58,8 @@ except:
 
 verbose = False
 
-save_keys = ["stage", "xmomentum", "ymomentum", "elevation", "friction"]
+# The keys of the quantities that are to be saved and reordered.
+quantity_keys = ["stage", "xmomentum", "ymomentum", "elevation", "friction"]
 
 #########################################################
 #
@@ -108,7 +109,7 @@ def reorder(quantities, tri_index, proc_sum):
     return q_reord
 
 
-def reorder_new(quantities, epart_order, proc_sum):
+def reorder_save_quantities(quantities, epart_order, proc_sum):
 
     # Find the number triangles
 
@@ -202,7 +203,7 @@ def metis_partition(domain, n_procs):
 
 
 
-def pmesh_divide_metis_with_map(domain, n_procs, quantity_save_keys=save_keys):
+def partition_mesh(domain, n_procs, parameters=None, verbose=False):
 
     # Initialise the lists
     # List, indexed by processor of # triangles.
@@ -218,15 +219,18 @@ def pmesh_divide_metis_with_map(domain, n_procs, quantity_save_keys=save_keys):
     r_tri_index = {}  # reverse tri index, parallel to serial triangle index mapping
     n_tri = len(domain.triangles)
 
-    save_quantities = {k: domain.quantities[k] for k in quantity_save_keys if k in domain.quantities}
+    save_quantities = {k: domain.quantities[k] for k in quantity_keys if k in domain.quantities}
 
     if n_procs != 1:  # Because metis chokes on it...
 
+        # Partition the mesh using metis, through pymetis
+        # FIXME SR: Add option to use Morton ordering or 
+        # Recursive coordinate bisection instead of metis.
         epart = metis_partition(domain, n_procs)
 
         triangles_per_proc = num.bincount(epart)
 
-        msg = "Metis created a partition where at least one submesh has no triangles. "
+        msg = "Partition created where at least one submesh has no triangles. "
         msg += "Try using a smaller number of mpi processes."
         assert num.all(triangles_per_proc > 0), msg
 
@@ -264,7 +268,7 @@ def pmesh_divide_metis_with_map(domain, n_procs, quantity_save_keys=save_keys):
             new_boundary[proc_sum[t[0]]+t[1], b[1]] = domain.boundary[b]
 
         #quantities = reorder(domain.quantities, tri_index, proc_sum)
-        new_quantities = reorder_new(save_quantities, epart_order, proc_sum)
+        new_quantities = reorder_save_quantities(save_quantities, epart_order, proc_sum)
 
     else:
         new_boundary = domain.boundary.copy()
@@ -285,12 +289,19 @@ def pmesh_divide_metis_with_map(domain, n_procs, quantity_save_keys=save_keys):
     # Extract the node list
     new_nodes = domain.get_nodes().copy()
 
-    return new_nodes, new_triangles, new_boundary, triangles_per_proc, new_quantities, new_tri_index, epart_order
+    # FIXME SR: This is a bit hacky and expensive, but we need to build the mesh to find
+    # the neighbours and true boundary polygon. We can then use this information 
+    # to build the ghost layer and communication pattern.
+    # Mabye we should build a function to reorder the mesh without rebuilding the mesh
+    # as build_neighbours and build_true_boundary_polygon are expensive.
+    new_mesh = Mesh(new_nodes, new_triangles, new_boundary)
 
-def pmesh_divide_metis(domain, n_procs):
-    # Wrapper of pmesh_divide_metis_helper which does not return tri_index or r_tri_index
+    return new_mesh, triangles_per_proc, new_quantities, new_tri_index, epart_order
 
-    nodes, ttriangles, boundary, triangles_per_proc, quantities, tri_index, r_tri_index = pmesh_divide_metis_with_map(
+def partition_mesh_without_map(domain, n_procs):
+    # Wrapper of partition_mesh which does not return tri_index or r_tri_index
+
+    mesh, triangles_per_proc, quantities, tri_index, r_tri_index = partition_mesh(
         domain, n_procs)
 
     return nodes, ttriangles, boundary, triangles_per_proc, quantities
@@ -408,10 +419,6 @@ def submesh_full(mesh, triangles_per_proc):
     submesh["full_nodes"] = node_list
     submesh["full_triangles"] = triangle_list
     submesh["full_boundary"] = boundary_list
-
-    # Clean up before exiting
-
-    #del (nodemap)
 
     return submesh
 
@@ -1018,21 +1025,18 @@ def submesh_quantities(submesh, quantities, triangles_per_proc):
 #
 #########################################################
 
-def build_submesh(nodes, triangles, boundary, quantities,
-                  triangles_per_proc, parameters=None):
+def build_submesh(mesh, quantities,
+                  triangles_per_proc, parameters=None, verbose=False):
 
     # Temporarily build the mesh to find the neighbouring
     # triangles and true boundary polygon\
 
-    mesh = Mesh(nodes, triangles, boundary)
-    #boundary_polygon = mesh.get_boundary_polygon()
+    #mesh = Mesh(nodes, triangles, boundary)
 
     # Subdivide into non-overlapping partitions
-
     submeshf = submesh_full(mesh, triangles_per_proc)
 
     # Add any extra ghost boundary layer information
-
     submeshg = submesh_ghost(submeshf, mesh, triangles_per_proc, parameters)
 
     # Order the quantities information to be the same as the triangle

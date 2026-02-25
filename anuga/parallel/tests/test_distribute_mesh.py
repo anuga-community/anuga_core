@@ -7,10 +7,10 @@ from math import sqrt
 from pprint import pprint
 
 
-from anuga import Domain
+from anuga import Domain, Mesh
 from anuga import rectangular_cross
 
-from anuga.parallel.distribute_mesh import pmesh_divide_metis
+from anuga.parallel.distribute_mesh import partition_mesh
 from anuga.parallel.distribute_mesh import build_submesh
 from anuga.parallel.distribute_mesh import (
     submesh_full,
@@ -151,9 +151,13 @@ class Test_Distribute_Mesh(unittest.TestCase):
 
         # print domain.quantities['ymomentum'].centroid_values
 
-        nodes, triangles, boundary, triangles_per_proc, quantities = pmesh_divide_metis(
+        mesh, triangles_per_proc, quantities, new_tri_index, epart_order= partition_mesh(
             domain, 1
         )
+
+        nodes = mesh.nodes
+        triangles = mesh.triangles
+        boundary = mesh.boundary
 
         true_nodes = [
             [0.0, 0.0],
@@ -254,9 +258,13 @@ class Test_Distribute_Mesh(unittest.TestCase):
 
         # print domain.quantities['ymomentum'].centroid_values
 
-        nodes, triangles, boundary, triangles_per_proc, quantities = pmesh_divide_metis(
+        mesh, triangles_per_proc, quantities, new_tri_index, epart_order = partition_mesh(
             domain, 2
         )
+
+        nodes = mesh.nodes
+        triangles = mesh.triangles
+        boundary = mesh.boundary
 
         true_nodes = [
             [0.0, 0.0],
@@ -486,6 +494,9 @@ class Test_Distribute_Mesh(unittest.TestCase):
             or num.allclose(triangles_per_proc, [9, 7])
             or num.allclose(triangles_per_proc, [7, 9])
         )
+
+        print(epart_order)
+        print(new_tri_index)
 
     def test_build_submesh_3(self):
         """
@@ -2898,8 +2909,9 @@ class Test_Distribute_Mesh(unittest.TestCase):
         }
 
         # Subdivide into non-overlapping partitions
+        mesh = Mesh(nodes, triangles, boundary)
         submesh = build_submesh(
-            nodes, triangles, boundary, vertex_to_centroid(quantities), triangles_per_proc, parameters=None
+            mesh, vertex_to_centroid(quantities), triangles_per_proc, parameters=None
         )
 
         for i in range(3):
