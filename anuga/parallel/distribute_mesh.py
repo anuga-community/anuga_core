@@ -59,7 +59,7 @@ except:
 verbose = False
 
 # The keys of the quantities that are to be saved and reordered.
-quantity_keys = ["stage", "xmomentum", "ymomentum", "elevation", "friction"]
+save_and_reorder_quantity_keys = ["stage", "xmomentum", "ymomentum", "elevation", "friction"]
 
 #########################################################
 #
@@ -80,36 +80,36 @@ quantity_keys = ["stage", "xmomentum", "ymomentum", "elevation", "friction"]
 #########################################################
 
 
-def reorder(quantities, tri_index, proc_sum):
+# def reorder(quantities, tri_index, proc_sum):
 
-    # Find the number triangles
+#     # Find the number triangles
 
-    N = len(tri_index)
+#     N = len(tri_index)
 
-    # Temporary storage area
+#     # Temporary storage area
 
-    index = num.zeros(N, int)
-    q_reord = {}
+#     index = num.zeros(N, int)
+#     q_reord = {}
 
-    # Find the new ordering of the triangles
+#     # Find the new ordering of the triangles
 
-    for i in range(N):
-        bin = tri_index[i][0]
-        bin_off_set = tri_index[i][1]
-        index[i] = proc_sum[bin]+bin_off_set
+#     for i in range(N):
+#         bin = tri_index[i][0]
+#         bin_off_set = tri_index[i][1]
+#         index[i] = proc_sum[bin]+bin_off_set
 
-    # Reorder each quantity according to the new ordering
+#     # Reorder each quantity according to the new ordering
 
-    for k in quantities:
-        q_reord[k] = num.zeros((N, 1), float)
-        for i in range(N):
-            q_reord[k][index[i]] = quantities[k].centroid_values[i]
-    del index
+#     for k in quantities:
+#         q_reord[k] = num.zeros((N, 1), float)
+#         for i in range(N):
+#             q_reord[k][index[i]] = quantities[k].centroid_values[i]
+#     del index
 
-    return q_reord
+#     return q_reord
 
 
-def reorder_save_quantities(quantities, epart_order, proc_sum):
+def reorder_quantities(quantities, epart_order):
 
     # Find the number triangles
 
@@ -198,7 +198,19 @@ def metis_partition(domain, n_procs):
         epart = epart_new
         del epart_new
 
-    return epart
+
+    triangles_per_proc = num.bincount(epart)
+
+    msg = "Partition created where at least one submesh has no triangles. "
+    msg += "Try using a smaller number of mpi processes."
+    assert num.all(triangles_per_proc > 0), msg
+
+    #proc_sum = num.zeros(n_procs+1, int)
+    #proc_sum[1:] = num.cumsum(triangles_per_proc)
+
+    epart_order = num.argsort(epart, kind='mergesort')
+
+    return epart_order, triangles_per_proc
 
 
 
@@ -219,25 +231,25 @@ def partition_mesh(domain, n_procs, parameters=None, verbose=False):
     r_tri_index = {}  # reverse tri index, parallel to serial triangle index mapping
     n_tri = len(domain.triangles)
 
-    save_quantities = {k: domain.quantities[k] for k in quantity_keys if k in domain.quantities}
+    save_and_reorder_quantities = {k: domain.quantities[k] for k in save_and_reorder_quantity_keys if k in domain.quantities}
 
     if n_procs != 1:  # Because metis chokes on it...
 
         # Partition the mesh using metis, through pymetis
         # FIXME SR: Add option to use Morton ordering or 
         # Recursive coordinate bisection instead of metis.
-        epart = metis_partition(domain, n_procs)
+        epart_order, triangles_per_proc = metis_partition(domain, n_procs)
 
-        triangles_per_proc = num.bincount(epart)
+        #triangles_per_proc = num.bincount(epart)
 
-        msg = "Partition created where at least one submesh has no triangles. "
-        msg += "Try using a smaller number of mpi processes."
-        assert num.all(triangles_per_proc > 0), msg
+        #msg = "Partition created where at least one submesh has no triangles. "
+        #msg += "Try using a smaller number of mpi processes."
+        #assert num.all(triangles_per_proc > 0), msg
 
         proc_sum = num.zeros(n_procs+1, int)
         proc_sum[1:] = num.cumsum(triangles_per_proc)
 
-        epart_order = num.argsort(epart, kind='mergesort')
+        #epart_order = num.argsort(epart, kind='mergesort')
         new_triangles = domain.triangles[epart_order]
 
         #new_r_tri_index_flat = num.zeros((n_tri,3), int)
@@ -254,8 +266,8 @@ def partition_mesh(domain, n_procs, parameters=None, verbose=False):
 
         if verbose:
             from pprint import pprint
-            print('epart')
-            pprint(epart)
+            print('epart_order')
+            pprint(epart_order)
             print('new_tri_index')
             pprint(new_tri_index)
 
@@ -268,7 +280,7 @@ def partition_mesh(domain, n_procs, parameters=None, verbose=False):
             new_boundary[proc_sum[t[0]]+t[1], b[1]] = domain.boundary[b]
 
         #quantities = reorder(domain.quantities, tri_index, proc_sum)
-        new_quantities = reorder_save_quantities(save_quantities, epart_order, proc_sum)
+        new_quantities = reorder_quantities(save_and_reorder_quantities, epart_order)
 
     else:
         new_boundary = domain.boundary.copy()
@@ -281,10 +293,10 @@ def partition_mesh(domain, n_procs, parameters=None, verbose=False):
 
         new_quantities = {}
 
-        for k in save_quantities:
+        for k in save_and_reorder_quantities:
             new_quantities[k] = num.zeros((n_tri, 1), float)
             #for i in range(n_tri):
-            new_quantities[k][:, 0] = save_quantities[k].centroid_values[:]
+            new_quantities[k][:, 0] = save_and_reorder_quantities[k].centroid_values[:]
 
     # Extract the node list
     new_nodes = domain.get_nodes().copy()

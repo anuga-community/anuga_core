@@ -11,6 +11,8 @@ from .general_mesh import General_mesh
 from anuga.caching import cache
 import anuga.utilities.log as log
 
+from pprint import pprint
+
 from math import pi, sqrt
 
 import numpy as num
@@ -72,7 +74,6 @@ class Mesh(General_mesh):
                  tagged_elements=None,
                  geo_reference=None,
                  use_inscribed_circle=False,
-                 calculate_neighbours=True,
                  verbose=False):
         """
         Build Mesh
@@ -92,6 +93,8 @@ class Mesh(General_mesh):
 
         # Allocate arrays for neighbour data
 
+        if verbose: log.critical('Mesh: Allocating neighbour arrays')
+
         self.neighbours = -1*num.ones((N, 3), int)
         self.neighbour_edges = -1*num.ones((N, 3), int)
         self.number_of_boundaries = num.zeros(N, int)
@@ -99,60 +102,6 @@ class Mesh(General_mesh):
 
         #Get x,y coordinates for all triangles and store
         V = self.vertex_coordinates # Relative coordinates
-
-#        #Initialise each triangle
-#        if verbose: log.critical('Mesh: Computing centroids and radii')
-#        for i in range(N):
-#            if verbose and i % ((N+10)/10) == 0: log.critical('(%d/%d)' % (i, N))
-#
-#            x0, y0 = V[3*i, :]
-#            x1, y1 = V[3*i+1, :]
-#            x2, y2 = V[3*i+2, :]
-#
-#            #x0 = V[i, 0]; y0 = V[i, 1]
-#            #x1 = V[i, 2]; y1 = V[i, 3]
-#            #x2 = V[i, 4]; y2 = V[i, 5]
-#
-#            #Compute centroid
-#            centroid = num.array([(x0 + x1 + x2)/3, (y0 + y1 + y2)/3], float)
-#            self.centroid_coordinates[i] = centroid
-#
-#
-#            if self.use_inscribed_circle == False:
-#                #OLD code. Computed radii may exceed that of an
-#                #inscribed circle
-#
-#                #Midpoints
-#                m0 = num.array([(x1 + x2)/2, (y1 + y2)/2], float)
-#                m1 = num.array([(x0 + x2)/2, (y0 + y2)/2], float)
-#                m2 = num.array([(x1 + x0)/2, (y1 + y0)/2], float)
-#
-#                #The radius is the distance from the centroid of
-#                #a triangle to the midpoint of the side of the triangle
-#                #closest to the centroid
-#                d0 = num.sqrt(num.sum( (centroid-m0)**2 ))
-#                d1 = num.sqrt(num.sum( (centroid-m1)**2 ))
-#                d2 = num.sqrt(num.sum( (centroid-m2)**2 ))
-#
-#                self.radii[i] = min(d0, d1, d2)
-#
-#            else:
-#                #NEW code added by Peter Row. True radius
-#                #of inscribed circle is computed
-#
-#                a = num.sqrt((x0-x1)**2+(y0-y1)**2)
-#                b = num.sqrt((x1-x2)**2+(y1-y2)**2)
-#                c = num.sqrt((x2-x0)**2+(y2-y0)**2)
-#
-#                self.radii[i]=2.0*self.areas[i]/(a+b+c)
-#
-#
-#            #Initialise Neighbours (-1 means that it is a boundary neighbour)
-#            self.neighbours[i, :] = [-1, -1, -1]
-#
-#            #Initialise edge ids of neighbours
-#            #In case of boundaries this slot is not used
-#            self.neighbour_edges[i, :] = [-1, -1, -1]
 
 
         # Build neighbour structure
@@ -308,12 +257,12 @@ class Mesh(General_mesh):
         
         N = self.number_of_nodes
 
-        
         neighbour_table_ext.build_neighbour_structure(N,
                                             self.triangles,
                                             self.neighbours,
                                             self.neighbour_edges,
                                             self.number_of_boundaries)
+
  
 
     def build_surrogate_neighbour_structure(self):
@@ -332,13 +281,6 @@ class Mesh(General_mesh):
         """
 
         N = len(self) #Number of triangles
-#        for i in xrange(N):
-#            #Find all neighbouring volumes that are not boundaries
-#            for k in xrange(3):
-#                if self.neighbours[i, k] < 0:
-#                    self.surrogate_neighbours[i, k] = i #Point this triangle
-#                else:
-#                    self.surrogate_neighbours[i, k] = self.neighbours[i, k]
 
         tmp_range = num.arange(N)
         for k in range(3):
@@ -358,11 +300,10 @@ class Mesh(General_mesh):
 
         from anuga.config import default_boundary_tag
 
-        #arr_neighbours = num.array(self.neighbours)
-
-        
         if boundary is None:
             boundary = {}
+
+        #boundary = dict(sorted(boundary.items()))
 
         from .neighbour_mesh_ext import boundary_dictionary_construct
         boundary = boundary_dictionary_construct(len(self), default_boundary_tag, self.neighbours, boundary)
@@ -395,49 +336,6 @@ class Mesh(General_mesh):
     def get_tagged_elements(self):
         return self.tagged_elements
 
-#    def build_boundary_structure(self):
-#        """Traverse boundary and
-#        enumerate neighbour indices from -1 and
-#        counting down.
-#
-#        Precondition:
-#            self.boundary is defined.
-#        Post condition:
-#            neighbour array has unique negative indices for boundary
-#            boundary_segments array imposes an ordering on segments
-#            (not otherwise available from the dictionary)
-#
-#        Note: If a segment is listed in the boundary dictionary
-#        it *will* become a boundary - even if there is a neighbouring triangle.
-#        This would be the case for internal boundaries
-#        """
-#
-#        #FIXME: Now Obsolete - maybe use some comments from here in
-#        #domain.set_boundary
-#
-#        if self.boundary is None:
-#            msg = 'Boundary dictionary must be defined before '
-#            msg += 'building boundary structure'
-#            raise Exception(msg)
-#
-#
-#        self.boundary_segments = self.boundary.keys()
-#        self.boundary_segments.sort()
-#
-#        index = -1
-#        for id, edge in self.boundary_segments:
-#
-#            #FIXME: One would detect internal boundaries as follows
-#            #if self.neighbours[id, edge] > -1:
-#            #    log.critical('Internal boundary')
-#
-#            self.neighbours[id, edge] = index
-#
-#            self.boundary_enumeration[id,edge] = index
-#
-#            index -= 1
-#
-
 
     def build_boundary_neighbours(self):
         """Traverse boundary and
@@ -459,8 +357,6 @@ class Mesh(General_mesh):
             raise Exception(msg)
 
         self.boundary_enumeration = {}
-
-
 
         X = list(self.boundary.keys())
         X.sort()
@@ -1221,6 +1117,109 @@ class Mesh(General_mesh):
 
         return I
 
+    def reorder(self, new_order = None, in_place = True, verbose=False):
+
+        if new_order is None:
+            return
+
+        N = len(self) # number of triangles
+
+        msg = f"new_order should be an array of length number of triangles {N}"
+        assert len(new_order) == N
+
+        new_order = num.array(new_order)
+
+        inv_order = num.empty_like(new_order)
+        inv_order[new_order] = num.arange(new_order.size)
+
+        msg = "new_order should be a permutation of 0, 1, ..., N-1"
+        assert num.all(inv_order[new_order] == num.arange(N)), msg
+
+        if not in_place:
+            new_nodes = self.get_nodes().copy()
+            new_triangles = self.get_triangles().copy()[new_order]
+            new_boundary = {(int(inv_order[i]), j): v for (i, j), v in self.boundary.items()}
+
+            #tagged_elements = {}
+            #Check that all keys in given boundary exist
+            for tag in list(self.tagged_elements.keys()):
+                tagged_elements[tag] = num.array(inv_order[self.tagged_elements[tag]], int)
+
+            geo_reference=self.geo_reference
+            use_inscribed_circle=self.use_inscribed_circle
+
+            return Mesh(new_nodes, new_triangles, 
+                    boundary=new_boundary, 
+                    tagged_elements=tagged_elements,
+                    geo_reference=geo_reference,
+                    use_inscribed_circle=use_inscribed_circle,
+                    calculate_neighbours=calculate_neighbours,
+                    verbose=verbose)
+
+        else:
+            # Node numbering not changed
+
+            #new_nodes = self.get_nodes()
+            self.triangles = self.triangles[new_order]
+            self.boundary = {(int(inv_order[i]), j): v for (i, j), v in self.boundary.items()}
+
+
+            # First replicate actions of General_mesh.__init__
+            vertex_coordinates = self.vertex_coordinates.reshape((N,6))[new_order]
+            self.vertex_coordinates[:] = vertex_coordinates.reshape((3*N,2))
+
+            edge_midpoint_coordinates  = self.edge_midpoint_coordinates.reshape((N,6))[new_order]
+            self.edge_midpoint_coordinates[:] = edge_midpoint_coordinates.reshape((3*N,2))
+
+            self.normals[:] = self.normals[new_order]
+            self.areas[:]= self.areas[new_order]
+            self.edgelengths[:] = self.edgelengths[new_order]
+            self.centroid_coordinates[:] = self.centroid_coordinates[new_order]
+            self.radii[:] = self.radii[new_order]
+
+            # Second replicate actions of Mesh.__init__
+
+            ## self.build_neighbour_structure()
+            flat_neighbours = self.neighbours.reshape((3*N,))
+            mask = flat_neighbours >= 0
+            flat_neighbours[mask] = inv_order[flat_neighbours[mask]]
+            neighbours = flat_neighbours.reshape((N,3))
+
+            self.neighbours[:] = neighbours[new_order]
+            self.neighbour_edges[:] = self.neighbour_edges[new_order]
+            self.number_of_boundaries[:] = self.number_of_boundaries[new_order]
+
+            #self.build_surrogate_neighbour_structure()
+            self.surrogate_neighbours[:] = inv_order[self.surrogate_neighbours[new_order]]
+
+
+            # build some auxilary boundary structures that are used for domain.set_boundary 
+            # and domain.get_boundary_polygon
+            self.build_boundary_neighbours()
+
+
+            # Need to take vertex_value_indices, break down to triangle_id, vertex_id 
+            # and transform to new_triangle_id vertex_id -> 3*new_triangle_id + vertex_id
+            # For now just rebuild
+            self.build_inverted_triangle_structure()
+
+            #self.build_tagged_elements_dictionary(tagged_elements)
+            tagged_elements = {}
+
+            #Check that all keys in given boundary exist
+            for tag in list(self.tagged_elements.keys()):
+                tagged_elements[tag] = num.array(inv_order[self.tagged_elements[tag]], int)
+            self.tagged_elements = tagged_elements
+
+
+
+
+
+            
+        
+            return self
+
+
 
 class Triangle_intersection(object):
     """Store information about line segments intersecting a triangle
@@ -1620,7 +1619,13 @@ def get_boundary_polygon(self, verbose=False):
         polygon.append(list(p1))    # De-numeric each point :-)
         p0 = p1
 
-    return polygon    
+    return polygon 
+
+
+
+    
+
+           
 
 
 
