@@ -1119,7 +1119,7 @@ class Mesh(General_mesh):
 
     def reorder(self, new_order = None, in_place = True, verbose=False):
 
-        if new_order is None:
+        if new_order is None or len(new_order) == 0:
             return
 
         N = len(self) # number of triangles
@@ -1210,13 +1210,7 @@ class Mesh(General_mesh):
             for tag in list(self.tagged_elements.keys()):
                 tagged_elements[tag] = num.array(inv_order[self.tagged_elements[tag]], int)
             self.tagged_elements = tagged_elements
-
-
-
-
-
             
-        
             return self
 
 

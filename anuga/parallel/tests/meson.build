@@ -1,5 +1,6 @@
 
 python_sources = [
+  '__init__.py',
   'run_parallel_distribute_domain.py',
   'run_parallel_distribute_mesh.py',
   'run_parallel_riverwall.py',

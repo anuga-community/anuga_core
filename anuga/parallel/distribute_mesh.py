@@ -233,36 +233,26 @@ def partition_mesh(domain, n_procs, parameters=None, verbose=False):
 
     save_and_reorder_quantities = {k: domain.quantities[k] for k in save_and_reorder_quantity_keys if k in domain.quantities}
 
-    if n_procs != 1:  # Because metis chokes on it...
+    if n_procs != 1:  # Because metis chokes on single processor partitioning
 
         # Partition the mesh using metis, through pymetis
         # FIXME SR: Add option to use Morton ordering or 
         # Recursive coordinate bisection instead of metis.
         epart_order, triangles_per_proc = metis_partition(domain, n_procs)
 
-        #triangles_per_proc = num.bincount(epart)
-
-        #msg = "Partition created where at least one submesh has no triangles. "
-        #msg += "Try using a smaller number of mpi processes."
-        #assert num.all(triangles_per_proc > 0), msg
 
         proc_sum = num.zeros(n_procs+1, int)
         proc_sum[1:] = num.cumsum(triangles_per_proc)
 
-        #epart_order = num.argsort(epart, kind='mergesort')
         new_triangles = domain.triangles[epart_order]
-
-        #new_r_tri_index_flat = num.zeros((n_tri,3), int)
         new_tri_index = num.zeros((n_tri, 2), int)
+
         for i in range(n_procs):
             ids = num.arange(proc_sum[i], proc_sum[i+1])
             eids = epart_order[ids]
             nrange = num.reshape(num.arange(triangles_per_proc[i]), (-1, 1))
             nones = num.ones_like(nrange)
-            # print ids.shape
-            # print nrange.shape
             new_tri_index[eids] = num.concatenate((i*nones, nrange), axis=1)
-            #new_r_tri_index_flat[ids] = num.concatenate((i*nones, nrange, num.reshape(eids, (-1,1))), axis = 1)
 
         if verbose:
             from pprint import pprint
@@ -306,7 +296,12 @@ def partition_mesh(domain, n_procs, parameters=None, verbose=False):
     # to build the ghost layer and communication pattern.
     # Mabye we should build a function to reorder the mesh without rebuilding the mesh
     # as build_neighbours and build_true_boundary_polygon are expensive.
-    new_mesh = Mesh(new_nodes, new_triangles, new_boundary)
+
+    # new_mesh = Mesh(new_nodes, new_triangles, new_boundary)
+
+    import copy
+    new_mesh = copy.deepcopy(domain.mesh)
+    new_mesh.reorder(epart_order, in_place=True)
 
     return new_mesh, triangles_per_proc, new_quantities, new_tri_index, epart_order
 
