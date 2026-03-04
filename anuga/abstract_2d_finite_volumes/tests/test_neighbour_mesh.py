@@ -1892,7 +1892,6 @@ class Test_Mesh(unittest.TestCase):
 
         # Build test mesh
 
-        from pprint import pprint
         from numpy import array
 
         nodes = array([[0., 0.],
@@ -2007,7 +2006,6 @@ class Test_Mesh(unittest.TestCase):
         for k in new_tagged_elements:
             num.testing.assert_array_equal(new_tagged_elements[k], reorder_tagged_elements[k])
         
-        #pprint(new_neighbour_edges)
         num.testing.assert_allclose(new_neighbour_edges, reorder_neighbour_edges)
         num.testing.assert_allclose(new_number_of_boundaries, reorder_number_of_boundaries)
         num.testing.assert_allclose(new_surrogate_neighbours, reorder_surrogate_neighbours)
@@ -2029,7 +2027,6 @@ class Test_Mesh(unittest.TestCase):
 
         # Build test mesh
 
-        from pprint import pprint
         from numpy import array
 
         nodes, triangles, boundary = rectangular(2,3, 2,3)
@@ -2124,7 +2121,6 @@ class Test_Mesh(unittest.TestCase):
         num.testing.assert_allclose(new_number_of_triangles_per_node, reorder_number_of_triangles_per_node)
         num.testing.assert_allclose(new_vertex_value_indices, reorder_number_of_triangles_per_node)
         
-        #pprint(new_neighbour_edges)
         num.testing.assert_allclose(new_neighbour_edges, reorder_neighbour_edges)
         num.testing.assert_allclose(new_number_of_boundaries, reorder_number_of_boundaries)
         num.testing.assert_allclose(new_surrogate_neighbours, reorder_surrogate_neighbours)

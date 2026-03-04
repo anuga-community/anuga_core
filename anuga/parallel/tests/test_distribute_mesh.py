@@ -4,7 +4,7 @@
 import unittest
 import sys
 from math import sqrt
-from pprint import pprint
+#from pprint import pprint
 
 
 from anuga import Domain, Mesh
@@ -151,7 +151,7 @@ class Test_Distribute_Mesh(unittest.TestCase):
 
         # print domain.quantities['ymomentum'].centroid_values
 
-        mesh, triangles_per_proc, quantities, new_tri_index, epart_order= partition_mesh(
+        mesh, triangles_per_proc, quantities, new_tri_index, epart_order = partition_mesh(
             domain, 1
         )
 
@@ -474,7 +474,7 @@ class Test_Distribute_Mesh(unittest.TestCase):
 
         assert num.allclose(nodes, true_nodes)
 
-        pprint(triangles)
+        #pprint(triangles)
 
         assert (
             num.allclose(triangles, true_triangles_4)
@@ -488,15 +488,15 @@ class Test_Distribute_Mesh(unittest.TestCase):
             or num.allclose(triangles, true_triangles_meshpy_2024_1_win_1)
         )
 
-        print(triangles_per_proc)
+        #print(triangles_per_proc)
         assert (
             num.allclose(triangles_per_proc, [8, 8])
             or num.allclose(triangles_per_proc, [9, 7])
             or num.allclose(triangles_per_proc, [7, 9])
         )
 
-        print(epart_order)
-        print(new_tri_index)
+        #print(epart_order)
+        #print(new_tri_index)
 
     def test_build_submesh_3(self):
         """
@@ -2949,7 +2949,7 @@ class Test_Distribute_Mesh(unittest.TestCase):
         submesh_cell_1 = extract_submesh(submesh, triangles_per_proc, p=1)
         submesh_cell_2 = extract_submesh(submesh, triangles_per_proc, p=2)
 
-        from pprint import pprint
+        #from pprint import pprint
 
         # pprint(submesh_cell_1)
 

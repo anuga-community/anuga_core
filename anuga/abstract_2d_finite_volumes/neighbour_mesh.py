@@ -1140,7 +1140,7 @@ class Mesh(General_mesh):
             new_triangles = self.get_triangles().copy()[new_order]
             new_boundary = {(int(inv_order[i]), j): v for (i, j), v in self.boundary.items()}
 
-            #tagged_elements = {}
+            tagged_elements = {}
             #Check that all keys in given boundary exist
             for tag in list(self.tagged_elements.keys()):
                 tagged_elements[tag] = num.array(inv_order[self.tagged_elements[tag]], int)
@@ -1153,7 +1153,6 @@ class Mesh(General_mesh):
                     tagged_elements=tagged_elements,
                     geo_reference=geo_reference,
                     use_inscribed_circle=use_inscribed_circle,
-                    calculate_neighbours=calculate_neighbours,
                     verbose=verbose)
 
         else:
