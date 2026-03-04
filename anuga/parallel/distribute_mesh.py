@@ -283,7 +283,7 @@ def partition_mesh(domain, n_procs, parameters=None, verbose=False):
 
         new_quantities = reorder_quantities(save_and_reorder_quantities, epart_order)
 
-        domain.mesh.reorder(epart_order, in_place=False)
+        domain.mesh.reorder(epart_order, in_place=True)
 
         new_mesh = domain.mesh
 

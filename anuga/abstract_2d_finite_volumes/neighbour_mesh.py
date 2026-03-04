@@ -1159,7 +1159,7 @@ class Mesh(General_mesh):
             # Node numbering not changed
 
             #new_nodes = self.get_nodes()
-            self.triangles = self.triangles[new_order]
+            self.triangles[:] = self.triangles[new_order]
             self.boundary = {(int(inv_order[i]), j): v for (i, j), v in self.boundary.items()}
 
 
@@ -1182,7 +1182,7 @@ class Mesh(General_mesh):
             flat_neighbours = self.neighbours.reshape((3*N,))
             mask = flat_neighbours >= 0
             flat_neighbours[mask] = inv_order[flat_neighbours[mask]]
-            neighbours = flat_neighbours.reshape((N,3))
+            neighbours[:] = flat_neighbours.reshape((N,3))
 
             self.neighbours[:] = neighbours[new_order]
             self.neighbour_edges[:] = self.neighbour_edges[new_order]
