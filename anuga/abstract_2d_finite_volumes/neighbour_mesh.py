@@ -1179,12 +1179,11 @@ class Mesh(General_mesh):
             # Second replicate actions of Mesh.__init__
 
             ## self.build_neighbour_structure()
-            flat_neighbours = self.neighbours.reshape((3*N,))
-            mask = flat_neighbours >= 0
-            flat_neighbours[mask] = inv_order[flat_neighbours[mask]]
-            neighbours[:] = flat_neighbours.reshape((N,3))
+            flat = self.neighbours.ravel()
+            mask = flat >= 0
+            flat[mask] = inv_order[flat[mask]]
+            self.neighbours[:] = self.neighbours[new_order]
 
-            self.neighbours[:] = neighbours[new_order]
             self.neighbour_edges[:] = self.neighbour_edges[new_order]
             self.number_of_boundaries[:] = self.number_of_boundaries[new_order]
 
