@@ -1197,13 +1197,13 @@ class Mesh(General_mesh):
 
 
             # Need to take vertex_value_indices, break down to triangle_id, vertex_id 
-            # and transform to new_triangle_id vertex_id -> 3*new_triangle_id + vertex_id
+            # -> new_triangle_id vertex_id -> 3*new_triangle_id + vertex_id
             # For now just rebuild
-            self.build_inverted_triangle_structure()
+            #self.build_inverted_triangle_structure()
+            self.vertex_value_indices[:] = inv_order[self.vertex_value_indices // 3] * 3 + self.vertex_value_indices % 3
 
             #self.build_tagged_elements_dictionary(tagged_elements)
             tagged_elements = {}
-
             #Check that all keys in given boundary exist
             for tag in list(self.tagged_elements.keys()):
                 tagged_elements[tag] = num.array(inv_order[self.tagged_elements[tag]], int)
