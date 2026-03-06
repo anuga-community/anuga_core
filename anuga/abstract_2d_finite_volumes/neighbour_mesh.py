@@ -1122,6 +1122,8 @@ class Mesh(General_mesh):
         if new_order is None or len(new_order) == 0:
             return
 
+        original_method = False
+
         N = len(self) # number of triangles
 
         msg = f"new_order should be an array of length number of triangles {N}"
@@ -1135,7 +1137,7 @@ class Mesh(General_mesh):
         msg = "new_order should be a permutation of 0, 1, ..., N-1"
         assert num.all(inv_order[new_order] == num.arange(N)), msg
 
-        if not in_place:
+        if original_method:
             new_nodes = self.get_nodes().copy()
             new_triangles = self.get_triangles().copy()[new_order]
             new_boundary = {(int(inv_order[i]), j): v for (i, j), v in self.boundary.items()}
@@ -1155,61 +1157,72 @@ class Mesh(General_mesh):
                     use_inscribed_circle=use_inscribed_circle,
                     verbose=verbose)
 
+
+        if in_place is True:
+            # modify original mesh. Be careful with this as it will modify the original mesh 
+            # and all references to it.
+            new_mesh = self
         else:
-            # Node numbering not changed
+            # make a copy of the original mesh so that it is not modified
+            import copy
+            new_mesh = copy.deepcopy(self)
 
-            #new_nodes = self.get_nodes()
-            self.triangles[:] = self.triangles[new_order]
-            self.boundary = {(int(inv_order[i]), j): v for (i, j), v in self.boundary.items()}
+        new_mesh.triangles[:] = new_mesh.triangles[new_order]
+        new_mesh.boundary = {(int(inv_order[i]), j): v for (i, j), v in new_mesh.boundary.items()}
 
+        # First replicate actions of General_mesh.__init__
 
-            # First replicate actions of General_mesh.__init__
-            vertex_coordinates = self.vertex_coordinates.reshape((N,6))[new_order]
-            self.vertex_coordinates[:] = vertex_coordinates.reshape((3*N,2))
+        #self.build_inverted_triangle_structure()
+        #new_mesh.vertex_value_indices[:] = num.argsort(new_mesh.triangles.flat).astype(int)
+        new_mesh.vertex_value_indices[:] = inv_order[new_mesh.vertex_value_indices // 3] * 3 + new_mesh.vertex_value_indices % 3
 
-            edge_midpoint_coordinates  = self.edge_midpoint_coordinates.reshape((N,6))[new_order]
-            self.edge_midpoint_coordinates[:] = edge_midpoint_coordinates.reshape((3*N,2))
+        vertex_coordinates = new_mesh.vertex_coordinates.reshape((N,6))[new_order]
+        new_mesh.vertex_coordinates[:] = vertex_coordinates.reshape((3*N,2))
 
-            self.normals[:] = self.normals[new_order]
-            self.areas[:]= self.areas[new_order]
-            self.edgelengths[:] = self.edgelengths[new_order]
-            self.centroid_coordinates[:] = self.centroid_coordinates[new_order]
-            self.radii[:] = self.radii[new_order]
+        edge_midpoint_coordinates  = new_mesh.edge_midpoint_coordinates.reshape((N,6))[new_order]
+        new_mesh.edge_midpoint_coordinates[:] = edge_midpoint_coordinates.reshape((3*N,2))
 
-            # Second replicate actions of Mesh.__init__
-
-            ## self.build_neighbour_structure()
-            flat = self.neighbours.ravel()
-            mask = flat >= 0
-            flat[mask] = inv_order[flat[mask]]
-            self.neighbours[:] = self.neighbours[new_order]
-
-            self.neighbour_edges[:] = self.neighbour_edges[new_order]
-            self.number_of_boundaries[:] = self.number_of_boundaries[new_order]
-
-            #self.build_surrogate_neighbour_structure()
-            self.surrogate_neighbours[:] = inv_order[self.surrogate_neighbours[new_order]]
+        new_mesh.normals[:] = new_mesh.normals[new_order]
+        new_mesh.areas[:]= new_mesh.areas[new_order]
+        new_mesh.edgelengths[:] = new_mesh.edgelengths[new_order]
+        new_mesh.centroid_coordinates[:] = new_mesh.centroid_coordinates[new_order]
+        new_mesh.radii[:] = new_mesh.radii[new_order]
 
 
-            # build some auxilary boundary structures that are used for domain.set_boundary 
-            # and domain.get_boundary_polygon
-            self.build_boundary_neighbours()
+        # Second replicate actions of Mesh.__init__
+
+        ## self.build_neighbour_structure()
+        flat = new_mesh.neighbours.ravel()
+        mask = flat >= 0
+        flat[mask] = inv_order[flat[mask]]
+        new_mesh.neighbours[:] = new_mesh.neighbours[new_order]
+
+        new_mesh.neighbour_edges[:] = new_mesh.neighbour_edges[new_order]
+        new_mesh.number_of_boundaries[:] = new_mesh.number_of_boundaries[new_order]
+
+        #self.build_surrogate_neighbour_structure()
+        new_mesh.surrogate_neighbours[:] = inv_order[new_mesh.surrogate_neighbours[new_order]]
 
 
-            # Need to take vertex_value_indices, break down to triangle_id, vertex_id 
-            # -> new_triangle_id vertex_id -> 3*new_triangle_id + vertex_id
-            # For now just rebuild
-            #self.build_inverted_triangle_structure()
-            self.vertex_value_indices[:] = inv_order[self.vertex_value_indices // 3] * 3 + self.vertex_value_indices % 3
+        # build some auxilary boundary structures that are used for domain.set_boundary 
+        # and domain.get_boundary_polygon
+        new_mesh.build_boundary_neighbours()
 
-            #self.build_tagged_elements_dictionary(tagged_elements)
-            tagged_elements = {}
-            #Check that all keys in given boundary exist
-            for tag in list(self.tagged_elements.keys()):
-                tagged_elements[tag] = num.array(inv_order[self.tagged_elements[tag]], int)
-            self.tagged_elements = tagged_elements
-            
-            return self
+
+        
+
+
+        #pprint(self.vertex_value_indices)
+        #self.vertex_value_indices[:] = inv_order[self.vertex_value_indices // 3] * 3 + self.vertex_value_indices % 3
+
+        #self.build_tagged_elements_dictionary(tagged_elements)
+        tagged_elements = {}
+        #Check that all keys in given boundary exist
+        for tag in list(new_mesh.tagged_elements.keys()):
+            tagged_elements[tag] = num.array(inv_order[new_mesh.tagged_elements[tag]], int)
+        new_mesh.tagged_elements = tagged_elements
+        
+        return new_mesh
 
 
 

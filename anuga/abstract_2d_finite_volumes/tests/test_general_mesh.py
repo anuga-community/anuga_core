@@ -326,7 +326,7 @@ class Test_General_Mesh(unittest.TestCase):
 
         # One node
         L = domain.get_triangles_and_vertices_per_node(node=2)
-        print(L)
+        #print(L)
         # latest numpy > 1.24 seem to order these differently
         assert num.allclose(L[0], [0, 2]) or num.allclose(L[0], [1, 1])
         assert num.allclose(L[1], [1, 1]) or num.allclose(L[1], [2, 1])

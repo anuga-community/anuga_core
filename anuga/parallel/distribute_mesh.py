@@ -153,6 +153,20 @@ def metis_partition(domain, n_procs):
     installed, part_mesh is used if available, otherwise part_graph
     """
 
+    n_tri = domain.number_of_triangles
+
+    if n_procs > n_tri:
+        raise ValueError("Number of processors must be less than or equal to the number of triangles")  
+
+    if n_procs == 1:
+        epart_order = num.arange(n_tri, dtype=int)
+        triangles_per_proc = [n_tri]
+        return epart_order, triangles_per_proc
+
+    # Use metis to partition the mesh. 
+    # The partitioning routine used depends on the version of metis installed. 
+    # If metis 4 is installed, partMeshNodal is used. If metis 5 is installed, 
+    # part_mesh is used if available, otherwise part_graph
 
     if metis_version == 4:
         n_vert = domain.get_number_of_nodes()
@@ -215,7 +229,7 @@ def metis_partition(domain, n_procs):
 
 
 
-def partition_mesh(domain, n_procs, parameters=None, verbose=False):
+def partition_mesh(domain, n_procs, parameters=None, in_place=False, verbose=False):
 
     # Initialise the lists
     # List, indexed by processor of # triangles.
@@ -233,107 +247,22 @@ def partition_mesh(domain, n_procs, parameters=None, verbose=False):
 
     save_and_reorder_quantities = {k: domain.quantities[k] for k in save_and_reorder_quantity_keys if k in domain.quantities}
 
-    if n_procs != 1:  # Because metis chokes on single processor partitioning
+    epart_order, triangles_per_proc = metis_partition(domain, n_procs)
 
-        # Partition the mesh using metis, through pymetis
-        # FIXME SR: Add option to use Morton ordering or 
-        # Recursive coordinate bisection instead of metis.
-        # epart_order, triangles_per_proc = metis_partition(domain, n_procs)
+    # Build processor IDs and local indices in a fully vectorized way
+    proc_ids = num.repeat(num.arange(n_procs, dtype=int), triangles_per_proc)
+    local_ids = num.concatenate(
+        [num.arange(k, dtype=int) for k in triangles_per_proc]
+    )
 
+    new_tri_index = num.empty((n_tri, 2), dtype=int)
+    new_tri_index[epart_order] = num.column_stack((proc_ids, local_ids))
 
-        # proc_sum = num.zeros(n_procs+1, int)
-        # proc_sum[1:] = num.cumsum(triangles_per_proc)
+    new_quantities = reorder_quantities(save_and_reorder_quantities, epart_order)
 
-        # new_tri_index = num.zeros((n_tri, 2), int)
-
-        # for i in range(n_procs):
-        #     ids = num.arange(proc_sum[i], proc_sum[i+1])
-        #     eids = epart_order[ids]
-        #     nrange = num.reshape(num.arange(triangles_per_proc[i]), (-1, 1))
-        #     nones = num.ones_like(nrange)
-        #     new_tri_index[eids] = num.concatenate((i*nones, nrange), axis=1)
-
-        # if verbose:
-        #     from pprint import pprint
-        #     print('epart_order')
-        #     pprint(epart_order)
-        #     print('new_tri_index')
-        #     pprint(new_tri_index)
-
-
-
-        epart_order, triangles_per_proc = metis_partition(domain, n_procs)
-
-        proc_sum = num.zeros(n_procs + 1, int)
-        proc_sum[1:] = num.cumsum(triangles_per_proc)
-
-        # Build processor IDs and local indices in a fully vectorized way
-        proc_ids = num.repeat(num.arange(n_procs, dtype=int), triangles_per_proc)
-        local_ids = num.concatenate(
-            [num.arange(k, dtype=int) for k in triangles_per_proc]
-        )
-
-        new_tri_index = num.empty((n_tri, 2), dtype=int)
-        new_tri_index[epart_order] = num.column_stack((proc_ids, local_ids))
-
-        inv_order = num.empty_like(epart_order)
-        inv_order[epart_order] = num.arange(epart_order.size)
-
-        new_boundary = {(int(inv_order[i]), j): v for (i, j), v in domain.boundary.items()}
-
-        new_quantities = reorder_quantities(save_and_reorder_quantities, epart_order)
-
-        domain.mesh.reorder(epart_order, in_place=True)
-
-        new_mesh = domain.mesh
-
-    else:
-        #new_nodes = domain.get_nodes().copy()
-        #new_triangles = domain.triangles.copy()
-        #new_boundary = domain.boundary.copy()
-
-        new_mesh = domain.mesh
-        
-        triangles_per_proc = [n_tri]
-        new_tri_index = []
-        epart_order = []
-        #new_new_boundary = new_boundary
-
-        # This is essentially the same as a chunk of code from reorder.
-
-        new_quantities = {}
-
-        for k in save_and_reorder_quantities:
-            new_quantities[k] = num.zeros((n_tri, 1), float)
-            #for i in range(n_tri):
-            new_quantities[k][:, 0] = save_and_reorder_quantities[k].centroid_values[:]
-
-    # Extract the node list
-    #new_nodes = domain.get_nodes().copy()
-
-    # FIXME SR: This is a bit hacky and expensive, but we need to build the mesh to find
-    # the neighbours and true boundary polygon. We can then use this information 
-    # to build the ghost layer and communication pattern.
-    # Mabye we should build a function to reorder the mesh without rebuilding the mesh
-    # as build_neighbours and build_true_boundary_polygon are expensive.
-
-    # new_mesh = Mesh(new_nodes, new_triangles, new_boundary)
-
-    #import copy
-    #new_mesh = copy.deepcopy(domain.mesh)
-    #new_mesh.reorder(epart_order, in_place=True)
-
-    #new_mesh = domain.mesh.reorder(epart_order, in_place=False)
-
-    # from pprint import pprint
-    # print('epart_order')
-    # pprint(epart_order)
-    # print('new_tri_index')
-    # pprint(new_tri_index)
-    # print('new_boundary')
-    # pprint(new_boundary)
-    #print('new_new_boundary')
-    #pprint(new_new_boundary)    
+    # If you are justdistributing the sequential domain and will not be using 
+    # it again, then some memory can be saved by setting in_place = true
+    new_mesh = domain.mesh.reorder(epart_order, in_place=in_place)  
 
     return new_mesh, triangles_per_proc, new_quantities, new_tri_index, epart_order
 

@@ -305,10 +305,10 @@ class Test_Quantity(unittest.TestCase):
 
             # z = z[::-1,:]
 
-            print(z)
-            print(z.shape)
-            print(x)
-            print(y)
+            # print(z)
+            # print(z.shape)
+            # print(x)
+            # print(y)
 
             nrows = z.shape[0]
             ncols = z.shape[1]
@@ -2365,8 +2365,8 @@ Parameters
         # Read in an interpolate from tif file
         quantity1.set_values_from_tif_file(filename=tif_file , location='vertices')
 
-        pprint(quantity1.centroid_values)
-        pprint(quantity1.vertex_values)
+        # pprint(quantity1.centroid_values)
+        # pprint(quantity1.vertex_values)
 
         centroid_values_ex = numpy.array(
             [0.17639186, 0.34223889, 0.44878893, 0.72498227])
@@ -2392,8 +2392,8 @@ Parameters
         # Read in an interpolate from tif file
         quantity2.set_values(filename=tif_file , location='vertices')
 
-        pprint(quantity2.centroid_values)
-        pprint(quantity2.vertex_values)
+        # pprint(quantity2.centroid_values)
+        # pprint(quantity2.vertex_values)
 
 
         assert num.allclose(quantity2.centroid_values, centroid_values_ex) or \
