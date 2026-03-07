@@ -170,11 +170,6 @@ def distribute_mesh(domain, verbose=False, debug=False, parameters=None):
            s2p_map, p2s_map = \
            partition_mesh(domain, numprocs)
 
-    #PETE: s2p_map (maps serial domain triangles to parallel domain triangles)
-    #      sp2_map (maps parallel domain triangles to domain triangles)
-
-
-    #new_mesh = Mesh(new_nodes, new_triangles, new_boundary)
 
     # Build the mesh that should be assigned to each processor,
     # this includes ghost nodes and the communication pattern

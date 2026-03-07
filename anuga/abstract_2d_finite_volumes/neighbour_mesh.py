@@ -1117,12 +1117,22 @@ class Mesh(General_mesh):
 
         return I
 
-    def reorder(self, new_order = None, in_place = True, verbose=False):
+    def reorder(self, new_order = None, in_place = True, original_method = False, verbose=False):
+        """
+        Reorder the mesh using new_order which is a list or int array of length number of triangles which
+        defines a permutation of triangle numbering.
 
+        param new_order: list or int array of length number of triangles which 
+        defines a permutation of triangle numbering.
+        param in_place: if True, the original mesh will be modified. Be careful with this as 
+        it will modify the original mesh and all references to it. If False, a new mesh will be 
+        created and returned, and the original mesh will not be modified.
+        param original_method: if True, the original method of reordering will be used, 
+        which is simpler but less efficient. If False, the new method will be used.
+        param verbose: if True, print verbose output during reordering.
+        """
         if new_order is None or len(new_order) == 0:
             return
-
-        original_method = False
 
         N = len(self) # number of triangles
 

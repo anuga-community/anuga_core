@@ -48,13 +48,6 @@ except:
     from . import config as config
 
 
-from pymetis import part_graph
-
-try:
-    from pymetis import part_mesh
-    metis_version = "5_part_mesh"
-except:
-    metis_version = "5_part_graph"
 
 verbose = False
 
@@ -128,117 +121,53 @@ def reorder_quantities(quantities, epart_order):
     return q_reord   
 
 
-#########################################################
-#
-# Divide the mesh using a call to metis, through pymetis.
-#
-# -------------------------------------------------------
-#
-# *)  The nodes, triangles, boundary, and quantities are
-# returned. triangles_per_proc defines the subdivision.
-# The first triangles_per_proc[0] triangles are assigned
-# to processor 0, the next triangles_per_proc[1] are
-# assigned to processor 1 etc. The boundary and quantites
-# are ordered the same way as the triangles
-#
-#########################################################
 
 
-def metis_partition(domain, n_procs):
+
+def partition_mesh(domain, n_procs, parameters=None, in_place=False, partition_scheme='metis', verbose=False):
     """
-    Partition the mesh using metis. This is a wrapper for the
-    metis partitioning routines in pymetis. The partitioning
-    routine used depends on the version of metis installed. If  
-    metis 4 is installed, partMeshNodal is used. If metis 5 is
-    installed, part_mesh is used if available, otherwise part_graph
+    Partition a mesh across multiple processors using METIS or Morton partitioning.
+
+    This function takes a serial mesh and distributes it across multiple processors
+    by reordering triangles according to a partitioning scheme. It generates
+    mappings between serial and parallel triangle indices and reorders mesh quantities
+    accordingly.
+    Parameters
+    ----------
+    domain : Domain
+        The serial domain object containing the mesh and quantities to be partitioned.
+    n_procs : int
+        Number of processors to partition the mesh across.
+    parameters : dict, optional
+        Additional parameters for the partitioning algorithm. Default is None.
+    in_place : bool, optional
+        If True, reorder the mesh in place to save memory. If False, create a new
+        reordered mesh. Default is False.
+    partition_scheme : str, optional
+        Partitioning scheme to use. Options are 'metis' (default) or 'morton'.
+    verbose : bool, optional
+        If True, print verbose output during partitioning. Default is False.
+    Returns
+    -------
+    new_mesh : Mesh
+        The reordered mesh distributed across processors.
+    triangles_per_proc : ndarray
+        Array containing the number of triangles assigned to each processor.
+    new_quantities : dict
+        Dictionary of reordered quantities corresponding to the new mesh ordering.
+    new_tri_index : ndarray
+        Array of shape (n_triangles, 2) mapping serial triangle indices to
+        (processor_id, local_index) pairs.
+    epart_order : ndarray
+        Array containing the reordering indices used to partition the mesh.
+    Notes
+    -----
+    The function uses either METIS or Morton partitioning to distribute triangles 
+    across processors. Sets `in_place=True` if the original sequential domain will 
+    not be used again to save memory.
     """
 
-    n_tri = domain.number_of_triangles
-
-    if n_procs > n_tri:
-        raise ValueError("Number of processors must be less than or equal to the number of triangles")  
-
-    if n_procs == 1:
-        epart_order = num.arange(n_tri, dtype=int)
-        triangles_per_proc = [n_tri]
-        return epart_order, triangles_per_proc
-
-    # Use metis to partition the mesh. 
-    # The partitioning routine used depends on the version of metis installed. 
-    # If metis 4 is installed, partMeshNodal is used. If metis 5 is installed, 
-    # part_mesh is used if available, otherwise part_graph
-
-    if metis_version == 4:
-        n_vert = domain.get_number_of_nodes()
-        t_list2 = domain.triangles.copy()
-        t_list = num.reshape(t_list2, (-1,))
-        # The 1 here is for triangular mesh elements.
-        edgecut, epart, npart = partMeshNodal(n_tri, n_vert, t_list, 1, n_procs)
-        # print edgecut
-        # print npart
-        #print epart
-        del edgecut
-        del npart
-
-
-    if metis_version == "5_part_mesh":
-
-        objval, epart, npart = part_mesh(n_procs, domain.triangles)
-
-
-    if metis_version == "5_part_graph":
-        # build adjacency list
-        # neighbours uses negative integer-indices to denote boudary edges.
-        # pymetis totally cant handle that, so we have to delete these.
-        neigh = domain.neighbours.tolist()
-        for i in range(len(neigh)):
-            if neigh[i][2] < 0:
-                del neigh[i][2]
-            if neigh[i][1] < 0:
-                del neigh[i][1]
-            if neigh[i][0] < 0:
-                del neigh[i][0]
-
-        cutcount, partvert = part_graph(n_procs, neigh)
-
-        epart = partvert
-
-    # Sometimes (usu. on x86_64), partMeshNodal returns an array of zero
-    # dimensional arrays. Correct this.
-    # TODO: Not sure if this can still happen with metis 5
-    if type(epart[0]) == num.ndarray:
-        epart_new = num.zeros(len(epart), int)
-        epart_new[:] = epart[:][0]
-        epart = epart_new
-        del epart_new
-
-
-    triangles_per_proc = num.bincount(epart)
-
-    msg = "Partition created where at least one submesh has no triangles. "
-    msg += "Try using a smaller number of mpi processes."
-    assert num.all(triangles_per_proc > 0), msg
-
-    #proc_sum = num.zeros(n_procs+1, int)
-    #proc_sum[1:] = num.cumsum(triangles_per_proc)
-
-    epart_order = num.argsort(epart, kind='mergesort')
-
-    return epart_order, triangles_per_proc
-
-
-
-
-def partition_mesh(domain, n_procs, parameters=None, in_place=False, verbose=False):
-
-    # Initialise the lists
-    # List, indexed by processor of # triangles.
-
-    #triangles_per_proc = []
-
-    # List of lists, indexed by processor of vertex numbers
-
-    #tri_list = []
+ 
 
     # Serial to Parallel and Parallel to Serial Triangle index maps
     tri_index = {}
@@ -247,7 +176,12 @@ def partition_mesh(domain, n_procs, parameters=None, in_place=False, verbose=Fal
 
     save_and_reorder_quantities = {k: domain.quantities[k] for k in save_and_reorder_quantity_keys if k in domain.quantities}
 
-    epart_order, triangles_per_proc = metis_partition(domain, n_procs)
+    from anuga.parallel.partitioning import metis_partition, morton_partition
+
+    if partition_scheme == 'morton':
+        epart_order, triangles_per_proc = morton_partition(domain, n_procs)
+    else:
+        epart_order, triangles_per_proc = metis_partition(domain, n_procs)
 
     # Build processor IDs and local indices in a fully vectorized way
     proc_ids = num.repeat(num.arange(n_procs, dtype=int), triangles_per_proc)
@@ -260,7 +194,7 @@ def partition_mesh(domain, n_procs, parameters=None, in_place=False, verbose=Fal
 
     new_quantities = reorder_quantities(save_and_reorder_quantities, epart_order)
 
-    # If you are justdistributing the sequential domain and will not be using 
+    # If you are just distributing the sequential domain and will not be using 
     # it again, then some memory can be saved by setting in_place = true
     new_mesh = domain.mesh.reorder(epart_order, in_place=in_place)  
 

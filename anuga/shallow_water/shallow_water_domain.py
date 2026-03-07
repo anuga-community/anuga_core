@@ -1228,10 +1228,10 @@ class Domain(Generic_Domain):
     def set_checkpointing(self, checkpoint= True, checkpoint_dir = 'CHECKPOINTS', checkpoint_step=10, checkpoint_time = None):
         """Set up checkpointing.
 
-        @param checkpoint: Default = True. Set to False will turn off checkpointing
-        @param checkpoint_dir: Where to store checkpointing files
-        @param checkpoint_step: Save checkpoint files after this many yieldsteps
-        @param checkpoint_time: If set, over-rides checkpoint_step. save checkpoint files
+        param checkpoint: Default = True. Set to False will turn off checkpointing
+        param checkpoint_dir: Where to store checkpointing files
+        param checkpoint_step: Save checkpoint files after this many yieldsteps
+        param checkpoint_time: If set, over-rides checkpoint_step. save checkpoint files
         after this amount of walltime
         """
 
@@ -2459,14 +2459,36 @@ class Domain(Generic_Domain):
 
 
     def update_centroids_of_momentum_from_velocity(self):
-        """Calculate the centroid value of x and y momentum from height and velocities
+        """
+        Calculate the centroid value of x and y momentum from height and velocities.
 
-        Assumes centroids of height and velocities are up to date
+        This method computes the centroid values of x and y momentum (xmomentum and 
+        ymomentum) by multiplying the centroid velocities by the centroid height values.
+        The method assumes that the centroids of height and velocities are already 
+        up to date.
 
-        Useful for kinematic viscosity calculations
+        This is particularly useful for kinematic viscosity calculations where momentum
+        values at cell centroids are required.
+
+        The method updates:
+        - xmomentum.centroid_values: product of xvelocity and height at centroids
+        - ymomentum.centroid_values: product of yvelocity and height at centroids
+
+        After updating centroid values, the method distributes these values to vertices 
+        and edges via distribute_to_vertices_and_edges().
+
+        Notes
+        -----
+        This method modifies the centroid_values arrays in-place for both xmomentum 
+        and ymomentum quantities.
+
+        See Also
+        --------
+        distribute_to_vertices_and_edges : Distribute centroid values to vertices and edges
         """
 
         # For shallow water we need to update height xvelocity and yvelocity
+
         #Shortcuts
         UH = self.quantities['xmomentum']
         VH = self.quantities['ymomentum']
@@ -2507,14 +2529,22 @@ class Domain(Generic_Domain):
                skip_initial_step=False):
         """Evolve method from Domain class.
 
+        Parameters
+        ----------
+        yieldstep : float, optional
+            Yield every yieldstep time period
+        outputstep : float, optional
+            Output to sww file every outputstep time period. outputstep should be 
+            an integer multiple of yieldstep.
+        finaltime : float or datetime, optional
+            Evolve until finaltime (can be a float in seconds or a datetime object)
+        duration : float, optional
+            Evolve for a time of length duration (seconds)
+        skip_initial_step : bool, optional
+            Can be used to restart a simulation (not often used).
 
-        :param float yieldstep: yield every yieldstep time period
-        :param float outputstep: Output to sww file every outputstep time period. outputstep should be an integer multiple of yieldstep.
-        :param float finaltime: evolve until finaltime (can be a float (secs) or a datetime object)
-        :param float duration: evolve for a time of length duration (secs)
-        :param boolean skip_initial_step: Can be used to restart a simulation (not often used).
-
-
+        Notes
+        -----
         If outputstep is None, the output to sww file happens every yieldstep.
         If yieldstep is None then simply evolve to finaltime or for a duration.
         """
@@ -2919,14 +2949,25 @@ class Domain(Generic_Domain):
                                 datetime=False):
         """Return string with time stepping statistics for printing or logging
 
-        :param time_units: 'sec', 'min', 'hr', 'day'
-        :param bool datetime: flag to use timestamp or datetime
-        :param track_speed: Optional boolean keyword track_speeds decides whether
-                            to report location of smallest timestep as well as a
-                            histogram and percentile report.
-        :param bool relative_time: Flag to report relative time instead of absolute time
-        :param int triangle_id: Can be used to specify a particular
-                            triangle rather than the one with the largest speed.
+        Parameters
+        ----------
+        time_units : str, optional
+            Time units for reporting. Options are 'sec', 'min', 'hr', 'day'.
+        datetime : bool, optional
+            Flag to use timestamp or datetime.
+        track_speeds : bool, optional
+            Optional boolean keyword that decides whether to report location of 
+            smallest timestep as well as a histogram and percentile report.
+        relative_time : bool, optional
+            Flag to report relative time instead of absolute time.
+        triangle_id : int, optional
+            Can be used to specify a particular triangle rather than the one with 
+            the largest speed.
+        
+        Returns
+        -------
+        str
+            Formatted string with time stepping statistics.
         """
 
         from anuga.config import epsilon, g
@@ -3053,16 +3094,22 @@ class Domain(Generic_Domain):
         return msg
 
     def print_timestepping_statistics(self, *args, **kwargs):
-        """Print time stepping statistics
+        """Print time stepping statistics.
 
-        :param time_units: 'sec', 'min', 'hr', 'day'
-        :param bool datetime: flag to use timestamp or datetime
-        :param track_speed: Optional boolean keyword track_speeds decides whether
-                            to report location of smallest timestep as well as a
-                            histogram and percentile report.
-        :param bool relative_time: Flag to report relative time instead of absolute time
-        :param int triangle_id: Can be used to specify a particular
-                            triangle rather than the one with the largest speed.
+        Parameters
+        ----------
+        time_units : str, optional
+            Time units for reporting. Options are 'sec', 'min', 'hr', 'day'.
+        datetime : bool, optional
+            Flag to use timestamp or datetime.
+        track_speed : bool, optional
+            Optional boolean keyword that decides whether to report location of 
+            smallest timestep as well as a histogram and percentile report.
+        relative_time : bool, optional
+            Flag to report relative time instead of absolute time.
+        triangle_id : int, optional
+            Can be used to specify a particular triangle rather than the one with 
+            the largest speed.
         """
 
         msg = self.timestepping_statistics(*args, **kwargs) 
@@ -3073,15 +3120,23 @@ class Domain(Generic_Domain):
     def compute_boundary_flows(self):
         """Compute boundary flows at current timestep.
 
-        Quantities computed are:
-           Total inflow across boundary
-           Total outflow across boundary
-           Flow across each tagged boundary segment
+        Computes the total inflow and outflow across the domain boundary,
+        as well as the flow across each tagged boundary segment.
 
+        Returns
+        -------
+        boundary_flows : dict
+            Flow rates [m^3/s] for each boundary tag
+        total_boundary_inflow : float
+            Total inflow across boundary [m^3/s]
+        total_boundary_outflow : float
+            Total outflow across boundary [m^3/s]
+
+        Notes
+        -----
         These calculations are only approximate since they don't use the
-        flux calculation used in evolve
-
-        See get_boundary_flux_integral for an exact computation
+        flux calculation used in evolve. For exact computation, see
+        get_boundary_flux_integral.
         """
 
         # Run through boundary array and compute for each segment
