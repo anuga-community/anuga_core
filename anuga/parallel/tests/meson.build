@@ -10,6 +10,7 @@ python_sources = [
   'skip_parallel_boyd_box_operator.py',
   'skip_parallel_boyd_pipe_operator.py',
   'skip_parallel_distribute_mesh.py',
+  'test_partitioning.py',
   'test_distribute_mesh.py',
   'test_failure.py',
   'test_parallel_boyd_box_operator_consistency.py',

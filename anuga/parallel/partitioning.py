@@ -1,6 +1,6 @@
 
 
-import numpy as num
+import numpy as np
 
 
 
@@ -62,7 +62,7 @@ def metis_partition(domain, n_procs):
         raise ValueError("Number of processors must be less than or equal to the number of triangles")  
 
     if n_procs == 1:
-        epart_order = num.arange(n_tri, dtype=int)
+        epart_order = np.arange(n_tri, dtype=int)
         triangles_per_proc = [n_tri]
         return epart_order, triangles_per_proc
 
@@ -74,7 +74,7 @@ def metis_partition(domain, n_procs):
     if metis_version == 4:
         n_vert = domain.get_number_of_nodes()
         t_list2 = domain.triangles.copy()
-        t_list = num.reshape(t_list2, (-1,))
+        t_list = np.reshape(t_list2, (-1,))
         # The 1 here is for triangular mesh elements.
         edgecut, epart, npart = partMeshNodal(n_tri, n_vert, t_list, 1, n_procs)
         # print edgecut
@@ -109,23 +109,23 @@ def metis_partition(domain, n_procs):
     # Sometimes (usu. on x86_64), partMeshNodal returns an array of zero
     # dimensional arrays. Correct this.
     # TODO: Not sure if this can still happen with metis 5
-    if type(epart[0]) == num.ndarray:
-        epart_new = num.zeros(len(epart), int)
+    if type(epart[0]) == np.ndarray:
+        epart_new = np.zeros(len(epart), int)
         epart_new[:] = epart[:][0]
         epart = epart_new
         del epart_new
 
 
-    triangles_per_proc = num.bincount(epart)
+    triangles_per_proc = np.bincount(epart)
 
     msg = "Partition created where at least one submesh has no triangles. "
     msg += "Try using a smaller number of mpi processes."
-    assert num.all(triangles_per_proc > 0), msg
+    assert np.all(triangles_per_proc > 0), msg
 
-    #proc_sum = num.zeros(n_procs+1, int)
-    #proc_sum[1:] = num.cumsum(triangles_per_proc)
+    #proc_sum = np.zeros(n_procs+1, int)
+    #proc_sum[1:] = np.cumsum(triangles_per_proc)
 
-    epart_order = num.argsort(epart, kind='mergesort')
+    epart_order = np.argsort(epart, kind='mergesort')
 
     return epart_order, triangles_per_proc
 
@@ -183,7 +183,7 @@ def morton_partition(domain, n_procs):
     # Now we have an ordering of the triangles based on their centroids' Morton codes.
     # We can divide this ordering into contiguous blocks for each processor.
 
-    triangles_per_proc = num.full(n_procs, n_tri // n_procs, dtype=int)
+    triangles_per_proc = np.full(n_procs, n_tri // n_procs, dtype=int)
     remainder = n_tri % n_procs
     if remainder > 0:
         triangles_per_proc[:remainder] += 1
@@ -192,78 +192,108 @@ def morton_partition(domain, n_procs):
 
     return order, triangles_per_proc
 
-def _part1by1_32(n):
-    """Expand 16 lower bits so that there is one zero bit between each.
-
+def morton_encode_2d(x, y):
+    """
+    Encode 2D coordinates to Morton codes.
+    Uses 32 bits per dimension for 64-bit Morton codes.
+    
     Parameters
     ----------
-    n : ndarray of uint32
-        Input values. Only the lower 16 bits are used.
-
+    x: np.ndarray of floats
+    y: np.ndarray of floats
+        
     Returns
     -------
-    ndarray of uint32
-        Values with bits of ``n`` separated by one zero bit, suitable
-        for use in 2D Morton encoding.
+    codes: np.ndarray
+        Morton codes as uint64
     """
-    n &= np.uint32(0x0000FFFF)
-    n = (n | (n << 8)) & np.uint32(0x00FF00FF)
-    n = (n | (n << 4)) & np.uint32(0x0F0F0F0F)
-    n = (n | (n << 2)) & np.uint32(0x33333333)
-    n = (n | (n << 1)) & np.uint32(0x55555555)
-    return n
+    x = np.asarray(x, dtype=np.float64)
+    y = np.asarray(y, dtype=np.float64)
+    
+    # Ensure x and y have the same shape
+    x, y = np.broadcast_arrays(x, y)
+    
+    min_x, max_x = np.min(x), np.max(x)
+    min_y, max_y = np.min(y), np.max(y)
+    
+    # Add small padding to avoid edge cases
+    x_range = max_x - min_x
+    y_range = max_y - min_y
+    padding = 1e-12  # Smaller padding for maximum resolution
+    
+    if x_range == 0:
+        x_range = 1.0
+        padding = 0.5
+    if y_range == 0:
+        y_range = 1.0
+        padding = 0.5
+        
+    min_x -= x_range * padding
+    max_x += x_range * padding
+    min_y -= y_range * padding
+    max_y += y_range * padding
+    
+    # Scale coordinates to [0, 2^32 - 1] for maximum resolution
+    max_coord = 0xFFFFFFFF  # 2^32 - 1
+    
+    x_scaled = ((x - min_x) / (max_x - min_x) * max_coord).astype(np.uint64)
+    y_scaled = ((y - min_y) / (max_y - min_y) * max_coord).astype(np.uint64)
+    
+    # Clamp to valid range
+    x_scaled = np.clip(x_scaled, 0, max_coord)
+    y_scaled = np.clip(y_scaled, 0, max_coord)
+    
+    # Dilate bits for 32-bit values - maximum resolution bit interleaving
+    def dilate_bits_32(vals):
+        """Dilate 32-bit values by inserting zeros between bits"""
+        vals = vals & 0xFFFFFFFF  # Ensure 32-bit
+        vals = (vals | (vals << 32)) & 0x00000000FFFFFFFF
+        vals = (vals | (vals << 16)) & 0x0000FFFF0000FFFF
+        vals = (vals | (vals << 8))  & 0x00FF00FF00FF00FF
+        vals = (vals | (vals << 4))  & 0x0F0F0F0F0F0F0F0F
+        vals = (vals | (vals << 2))  & 0x3333333333333333
+        vals = (vals | (vals << 1))  & 0x5555555555555555
+        return vals
+    
+    # Dilate and interleave: x gets odd positions, y gets even positions
+    x_dilated = dilate_bits_32(x_scaled)
+    y_dilated = dilate_bits_32(y_scaled)
+    
+    # Interleave by shifting y left by 1 and OR-ing with x
+    morton_codes = x_dilated | (y_dilated << 1)
+    
+    return morton_codes
 
 
-def morton2d_uint32(ix, iy):
-    """Compute 2D Morton (Z-order) codes for integer coordinates.
-
-    This uses a 32-bit encoder with 16 bits per axis, suitable for
-    integer coordinates in the range [0, 2**16 - 1].
-
-    Parameters
-    ----------
-    ix : array_like of uint32
-        X coordinates mapped to integers in [0, 2**16 - 1].
-    iy : array_like of uint32
-        Y coordinates mapped to integers in [0, 2**16 - 1].
-
-    Returns
-    -------
-    ndarray of uint32
-        Morton code for each pair ``(ix[i], iy[i])``.
+def morton_order_from_points(points):
     """
-    ix = ix.astype(np.uint32)
-    iy = iy.astype(np.uint32)
-    return _part1by1_32(ix) | (_part1by1_32(iy) << np.uint32(1))
-
-
-def morton_order_from_points(points, grid_bits=16):
-    """Return Morton ordering of triangles from point coordinates.
+    Return Morton ordering of triangles from point coordinates.
 
     The points are first normalized to the unit square based on their
-    bounding box, then mapped to an integer grid with ``2**grid_bits``
-    cells per axis. A 2D Morton code is computed for each point and
-    used to derive a permutation that is spatially locality-preserving.
+    bounding box, then mapped to an integer grid and a 2D Morton code
+    is computed for each point. The resulting permutation is spatially
+    locality-preserving.
 
     Parameters
     ----------
-    points : array_like, shape (N, 2)
-        Points as ``(x, y)`` coordinates.
-    grid_bits : int, optional
-        Number of bits per axis for the integer grid. Must be
-        ``<= 16`` for this implementation. The effective resolution
-        per axis is ``2**grid_bits``. Default is 16.
+    points : ndarray, shape (N, 2)
+        Points as (x, y) coordinates.
 
     Returns
     -------
     order : ndarray of int, shape (N,)
         Indices that sort the points in Morton (Z-order) order.
 
+    Raises
+    ------
+    ValueError
+        If points is not a 2D array with shape (N, 2).
+
     Notes
     -----
     This function is well suited for reordering per-element quantities
-    in a finite-volume or finite-element code to improve cache
-    locality. For example, for an ANUGA domain, you can pass
+    in a finite-volume or finite-element code to improve cache locality.
+    For example, for an ANUGA domain, you can pass
     ``domain.centroid_coordinates`` as ``points`` and then reorder
     per-triangle arrays with the returned permutation.
     """
@@ -271,22 +301,77 @@ def morton_order_from_points(points, grid_bits=16):
     if points.ndim != 2 or points.shape[1] != 2:
         raise ValueError("points must have shape (N, 2)")
 
-    if grid_bits < 1 or grid_bits > 16:
-        raise ValueError("grid_bits must be in the range [1, 16]")
-
-    mins = points.min(axis=0)
-    maxs = points.max(axis=0)
-    span = maxs - mins
-
-    # Avoid zero span in a degenerate direction.
-    span[span == 0.0] = 1.0
-
-    norm = (points - mins) / span
-
-    max_int = np.uint32((1 << grid_bits) - 1)
-    ix = np.minimum((norm[:, 0] * max_int).astype(np.uint32), max_int)
-    iy = np.minimum((norm[:, 1] * max_int).astype(np.uint32), max_int)
-
-    codes = morton2d_uint32(ix, iy)
+    codes = morton_encode_2d(points[:, 0], points[:, 1])
     order = np.argsort(codes, kind="mergesort")
+    return order
+
+
+import numpy as np
+
+def hilbert_index_2d(x, y, p):
+    """Integer 2D Hilbert indices for coords in [0, 2**p - 1]."""
+    x = np.asarray(x, dtype=np.uint64)
+    y = np.asarray(y, dtype=np.uint64)
+    x, y = np.broadcast_arrays(x, y)
+    x = x.copy()
+    y = y.copy()
+
+    M = np.uint64(1) << (p - 1)
+    Q = M
+    while Q > 1:
+        P = Q - 1
+        mask = (x & Q) != 0
+        y ^= P * mask
+        mask = (y & Q) != 0
+        tmp = (x ^ y) & (P * mask)
+        x ^= tmp
+        y ^= tmp
+        Q >>= 1
+
+    t = (x ^ y) >> 1
+    y ^= x
+    x ^= t
+
+    h = np.zeros_like(x, dtype=np.uint64)
+    for i in range(p):
+        bit = np.uint64(1) << i
+        h |= ((x & bit) << i) | ((y & bit) << (i + 1))
+
+    return h.ravel()
+
+
+def hilbert_order_from_points(points, p=16):
+    """Hilbert order for 2D float points via normalization to 2**p grid.
+
+    Parameters
+    ----------
+    points : array_like, shape (N, 2)
+        2D coordinates (e.g. centroids) as floats.
+    p : int
+        Bits per axis; grid is 2**p by 2**p.
+
+    Returns
+    -------
+    order : ndarray of int, shape (N,)
+        Indices that sort points along the 2D Hilbert curve.
+    """
+    pts = np.asarray(points, dtype=np.float64)
+    if pts.ndim != 2 or pts.shape[1] != 2:
+        raise ValueError("points must have shape (N, 2)")
+
+    # Normalize to [0, 1]
+    mins = pts.min(axis=0)
+    maxs = pts.max(axis=0)
+    span = maxs - mins
+    span[span == 0.0] = 1.0
+    norm = (pts - mins) / span
+
+    # Map to integer grid [0, 2**p - 1]
+    max_int = (1 << p) - 1
+    ij = np.clip((norm * max_int).astype(np.uint64), 0, max_int)
+    x = ij[:, 0]
+    y = ij[:, 1]
+
+    h = hilbert_index_2d(x, y, p)
+    order = np.argsort(h, kind="mergesort")
     return order
