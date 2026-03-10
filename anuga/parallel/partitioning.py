@@ -2,7 +2,14 @@
 
 import numpy as np
 
+#==============================================================================================================
+# Code for partitioning meshes using METIS, Morton codes, and Hilbert codes.
+#==============================================================================================================
 
+
+#==============================================================================================================
+# Partitioning using METIS. This minimizes edge cuts and is ideal for parallel computations.
+#==============================================================================================================
 
 def metis_partition(domain, n_procs):
     """
@@ -130,12 +137,12 @@ def metis_partition(domain, n_procs):
     return epart_order, triangles_per_proc
 
 
-#==============================================================
+#==============================================================================================================
 # Code for computing Morton (Z-order) codes for 2D points, 
 # used for spatial locality-preserving ordering of mesh elements.
 # This is based on the "Bit Twiddling Hacks" by Sean Eron Anderson:
 # https://graphics.stanford.edu/~seander/bithacks.html#InterleaveTables
-#==============================================================
+#==============================================================================================================
 
 
 def morton_partition(domain, n_procs):
@@ -305,8 +312,66 @@ def morton_order_from_points(points):
     order = np.argsort(codes, kind="mergesort")
     return order
 
+#==============================================================================================================
+# Code for computing Hilbert (space-filling curve) codes for 2D points,
+# used for spatial locality-preserving ordering of mesh elements.
+# This is based on the Hilbert curve algorithms described by John Skilling:
+# https://www.johndcook.com/blog/2018/10/16/hilbert-curve-algorithms/
+#==============================================================================================================
 
-import numpy as np
+def hilbert_partition(domain, n_procs):
+    """
+    Partition a mesh using Hilbert (space-filling curve) codes.
+
+    This function computes Hilbert codes for the centroids of the triangles
+    in the domain, sorts the triangles by these codes, and then divides them
+    into contiguous blocks for each processor. This is a simple spatial
+    partitioning method that can improve cache locality in parallel computations.
+
+    Parameters
+    ----------
+    domain : object
+        Domain object containing mesh information including number of triangles,
+        nodes, triangle connectivity, and neighbor information.
+    n_procs : int
+        Number of processors to partition the mesh across.
+
+    Returns
+    -------
+    epart_order : ndarray
+        Integer array of indices that sort elements by Hilbert code order.
+        Can be used to reorder triangles such that all triangles assigned to
+        the same processor are contiguous.
+    triangles_per_proc : ndarray
+        Integer array of length n_procs where triangles_per_proc[i] is the
+        number of triangles assigned to processor i.
+
+    Raises
+    ------
+    ValueError
+        If n_procs is greater than the number of triangles in the domain.
+    """
+
+    n_tri = domain.number_of_triangles
+
+    if n_procs > n_tri:
+        raise ValueError("Number of processors must be less than or equal to the number of triangles")  
+
+
+    points = domain.centroid_coordinates
+    order = hilbert_order_from_points(points)
+
+    # Now we have an ordering of the triangles based on their centroids' Hilbert codes.
+    # We can divide this ordering into contiguous blocks for each processor.
+
+    triangles_per_proc = np.full(n_procs, n_tri // n_procs, dtype=int)
+    remainder = n_tri % n_procs
+    if remainder > 0:
+        triangles_per_proc[:remainder] += 1
+
+    assert triangles_per_proc.sum() == n_tri, "Total number of triangles must match after partitioning"
+
+    return order, triangles_per_proc
 
 def hilbert_index_2d(x, y, p):
     """Integer 2D Hilbert indices for coords in [0, 2**p - 1]."""

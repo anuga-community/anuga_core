@@ -52,7 +52,7 @@ except:
 verbose = False
 
 # The keys of the quantities that are to be saved and reordered.
-save_and_reorder_quantity_keys = ["stage", "xmomentum", "ymomentum", "elevation", "friction"]
+DEFAULT_DISTRIBUTE_QUANTITY_NAMES = ["stage", "xmomentum", "ymomentum", "elevation", "friction"]
 
 #########################################################
 #
@@ -124,14 +124,16 @@ def reorder_quantities(quantities, epart_order):
 
 
 
-def partition_mesh(domain, n_procs, parameters=None, in_place=False, partition_scheme='metis', verbose=False):
-    """
-    Partition a mesh across multiple processors using METIS or Morton partitioning.
+def partition_mesh(domain, n_procs, 
+                   parameters=None,  
+                   verbose=False):
+    """Partition a mesh across multiple processors using METIS or Morton partitioning.
 
     This function takes a serial mesh and distributes it across multiple processors
     by reordering triangles according to a partitioning scheme. It generates
     mappings between serial and parallel triangle indices and reorders mesh quantities
     accordingly.
+
     Parameters
     ----------
     domain : Domain
@@ -139,14 +141,17 @@ def partition_mesh(domain, n_procs, parameters=None, in_place=False, partition_s
     n_procs : int
         Number of processors to partition the mesh across.
     parameters : dict, optional
-        Additional parameters for the partitioning algorithm. Default is None.
+        Additional parameters for the partitioning algorithm, by default None.
     in_place : bool, optional
         If True, reorder the mesh in place to save memory. If False, create a new
-        reordered mesh. Default is False.
+        reordered mesh, by default False.
     partition_scheme : str, optional
-        Partitioning scheme to use. Options are 'metis' (default) or 'morton'.
+        Partitioning scheme to use ('metis' or 'morton'), by default 'metis'.
+    distribute_quantity_names : list, optional
+        Names of quantities to distribute, by default None (uses DEFAULT_DISTRIBUTE_QUANTITY_NAMES).
     verbose : bool, optional
-        If True, print verbose output during partitioning. Default is False.
+        If True, print verbose output during partitioning, by default False.
+
     Returns
     -------
     new_mesh : Mesh
@@ -160,26 +165,52 @@ def partition_mesh(domain, n_procs, parameters=None, in_place=False, partition_s
         (processor_id, local_index) pairs.
     epart_order : ndarray
         Array containing the reordering indices used to partition the mesh.
+
     Notes
     -----
-    The function uses either METIS or Morton partitioning to distribute triangles 
-    across processors. Sets `in_place=True` if the original sequential domain will 
+    The function uses either METIS, Morton, or Hilbert partitioning to distribute triangles
+    across processors. Set `in_place=True` if the original sequential domain will
     not be used again to save memory.
     """
 
- 
+    # Set default parameters
+    distribute_quantity_names = DEFAULT_DISTRIBUTE_QUANTITY_NAMES
+    in_place = False
+    partition_scheme = 'metis'
+
+    # Override defaults with user-provided parameters
+    if parameters is None:
+        parameters = {}
+    
+    if 'partition_scheme' in parameters:
+        partition_scheme = parameters['partition_scheme']
+    if 'distribute_quantity_names' in parameters:
+        distribute_quantity_names = parameters['distribute_quantity_names']
+    if 'in_place' in parameters:
+        in_place = bool(parameters['in_place'])
+    if 'verbose' in parameters:
+        verbose = bool(parameters['verbose'])
+        
+    # Output partitioning parameters if verbose
+    if verbose:
+        print(indent + "Partitioning mesh using {} partitioning...".format(partition_scheme.upper()))
+        print(indent + "Number of processors: {}".format(n_procs))
+        print(indent + "In-place reordering: {}".format(in_place))
+        print(indent + "Quantities to distribute: {}".format(distribute_quantity_names))
 
     # Serial to Parallel and Parallel to Serial Triangle index maps
     tri_index = {}
     r_tri_index = {}  # reverse tri index, parallel to serial triangle index mapping
     n_tri = len(domain.triangles)
 
-    save_and_reorder_quantities = {k: domain.quantities[k] for k in save_and_reorder_quantity_keys if k in domain.quantities}
+    distribute_quantities = {k: domain.quantities[k] for k in distribute_quantity_names if k in domain.quantities}
 
-    from anuga.parallel.partitioning import metis_partition, morton_partition
+    from anuga.parallel.partitioning import metis_partition, morton_partition, hilbert_partition
 
     if partition_scheme == 'morton':
         epart_order, triangles_per_proc = morton_partition(domain, n_procs)
+    elif partition_scheme == 'hilbert':
+        epart_order, triangles_per_proc = hilbert_partition(domain, n_procs)
     else:
         epart_order, triangles_per_proc = metis_partition(domain, n_procs)
 
@@ -192,7 +223,7 @@ def partition_mesh(domain, n_procs, parameters=None, in_place=False, partition_s
     new_tri_index = num.empty((n_tri, 2), dtype=int)
     new_tri_index[epart_order] = num.column_stack((proc_ids, local_ids))
 
-    new_quantities = reorder_quantities(save_and_reorder_quantities, epart_order)
+    new_quantities = reorder_quantities(distribute_quantities, epart_order)
 
     # If you are just distributing the sequential domain and will not be using 
     # it again, then some memory can be saved by setting in_place = true
