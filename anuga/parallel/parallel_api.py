@@ -69,9 +69,43 @@ def collect_value(value):
 
 
 def distribute(domain, verbose=False, debug=False, parameters = None):
-    """ Distribute the domain to all processes
+    """Distribute the domain to all processes in a parallel computing environment.
 
-    parameters allows user to change size of ghost layer
+    This function partitions a computational domain across multiple processes and
+    creates parallel domain instances on each process. The master process (myid=0)
+    handles the domain partitioning and distributes submeshes to worker processes,
+    while worker processes receive their respective submesh data.
+
+    Parameters
+    ----------
+    domain : Domain
+        The computational domain to be distributed across processes.
+    verbose : bool, optional
+        If True, print detailed information during distribution process.
+        Default is False.
+    debug : bool, optional
+        If True, enable debug mode for additional diagnostics.
+        Default is False.
+    parameters : dict, optional
+        User-defined parameters to customize distribution behavior,
+        particularly the size of ghost layers. Default is None.
+
+    Returns
+    -------
+    Parallel_domain or Domain
+        A Parallel_domain object containing the distributed submesh data and
+        quantities specific to the current process. If mpi4py is not available
+        or only one process is running, returns the original domain unchanged.
+
+    Notes
+    -----
+    - Requires mpi4py for parallel communication
+    - Only functions with multiple processes (numprocs > 1)
+    - The master process (myid=0) partitions the domain and distributes data
+    - All other processes receive submesh data from the master process
+    - Boundary conditions are transferred as ghost boundaries
+    - Domain attributes (flow algorithm, georeferencing, etc.) are preserved
+      in the parallel domain instances
     """
 
     if not pypar_available or numprocs == 1 : return domain # Bypass

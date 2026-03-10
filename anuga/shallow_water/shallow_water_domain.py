@@ -737,15 +737,16 @@ class Domain(Generic_Domain):
         self.maximum_allowed_speed=0.0
 
         if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print('# Using discontinuous elevation solver DE0')
-            print('#')
-            print('# First order timestepping')
-            print('#')
-            print('# Make sure you use centroid values when reporting on important output quantities')
-            print('#')
-            print('##########################################################################')
+            print('Domain: Using discontinuous elevation solver DE0')
+            # print('##########################################################################')
+            # print('#')
+            # print('# Using discontinuous elevation solver DE0')
+            # print('#')
+            # print('# First order timestepping')
+            # print('#')
+            # print('# Make sure you use centroid values when reporting on important output quantities')
+            # print('#')
+            # print('##########################################################################')
 
 
     def _set_DE1_defaults(self):
@@ -989,15 +990,16 @@ class Domain(Generic_Domain):
         self.maximum_allowed_speed=0.0
 
         if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print('# Using discontinuous elevation solver DE0_7')
-            print('#')
-            print('# A slightly less diffusive version than DE0, uses euler timestepping')
-            print('#')
-            print('# Make sure you use centroid values when reporting on important output quantities')
-            print('#')
-            print('##########################################################################')
+            print('Domain: Using discontinuous elevation solver DE0_7')
+            # print('##########################################################################')
+            # print('#')
+            # print('# Using discontinuous elevation solver DE0_7')
+            # print('#')
+            # print('# A slightly less diffusive version than DE0, uses euler timestepping')
+            # print('#')
+            # print('# Make sure you use centroid values when reporting on important output quantities')
+            # print('#')
+            # print('##########################################################################')
 
 
 

@@ -278,7 +278,7 @@ class General_mesh:
 
 
         # Build structure listing which triangles belong to which node.
-        if verbose: log.critical('General Mesh: Building inverted triangle structure')
+        if verbose: log.critical('General_mesh: Building inverted triangle structure')
         self.build_inverted_triangle_structure()
 
         if verbose: log.timingInfo("aoi, '%s'" % self.get_area())
