@@ -11,6 +11,7 @@ python_sources = [
 'internal_boundary_operator.py',
 'riverwall.py',
 'structure_operator.py',
+'gpu_culvert_manager.py',
 'weir_orifice_trapezoid_operator.py',
   ]
 

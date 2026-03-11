@@ -167,6 +167,89 @@ struct inlet_operators {
     int num_operators;
 };
 
+// Culvert operator types
+#define MAX_CULVERTS 64
+#define MAX_INLET_TRIANGLES 64
+#define CULVERT_TYPE_BOX  0
+#define CULVERT_TYPE_PIPE 1
+
+// Static geometry parameters for one culvert
+struct culvert_params {
+    int type;                    // CULVERT_TYPE_BOX or CULVERT_TYPE_PIPE
+    double width;                // Box width [m]
+    double height;               // Box height [m]
+    double diameter;             // Pipe diameter [m]
+    double length;               // Culvert length [m]
+    double manning;              // Manning's n for culvert
+    double sum_loss;             // Sum of loss coefficients
+    double blockage;             // Blockage fraction [0,1]
+    double barrels;              // Number of barrels
+    int use_velocity_head;
+    int use_momentum_jet;
+    int use_old_momentum_method;
+    int always_use_Q_wetdry_adjustment;
+    double max_velocity;
+    double smoothing_timescale;
+    double outward_vector_0[2];
+    double outward_vector_1[2];
+    double invert_elevation_0;
+    double invert_elevation_1;
+    int has_invert_elevation_0;
+    int has_invert_elevation_1;
+};
+
+// Per-culvert indexing into domain arrays
+struct culvert_indices {
+    int enquiry_index_0;         // -1 if not on this rank
+    int enquiry_index_1;         // -1 if not on this rank
+    int inlet0_num;              // 0 if no local triangles
+    int inlet0_indices[MAX_INLET_TRIANGLES];
+    double inlet0_areas[MAX_INLET_TRIANGLES];
+    double inlet0_total_area;    // LOCAL area (partial if cross-boundary)
+    int inlet1_num;
+    int inlet1_indices[MAX_INLET_TRIANGLES];
+    double inlet1_areas[MAX_INLET_TRIANGLES];
+    double inlet1_total_area;
+
+    // MPI topology (for cross-boundary culverts)
+    int master_proc;             // Rank that computes discharge
+    int enquiry_proc[2];         // Rank owning each enquiry point
+    int inlet_master_proc[2];    // Master rank for each inlet region
+    int is_local;                // 1 = fully local (no MPI), 0 = cross-boundary
+    int mpi_tag_base;            // Base MPI tag for this culvert's messages
+};
+
+// Per-culvert dynamic state (smoothing)
+struct culvert_state {
+    double smooth_delta_total_energy;
+    double smooth_Q;
+};
+
+// Culvert manager (lives inside gpu_domain)
+struct culvert_operators {
+    int num_culverts;
+    struct culvert_params params[MAX_CULVERTS];
+    struct culvert_indices indices[MAX_CULVERTS];
+    struct culvert_state state[MAX_CULVERTS];
+    int initialized;
+
+    // Scratch buffers for batched gather/scatter
+    double *scratch_stage;
+    double *scratch_xmom;
+    double *scratch_ymom;
+    double *scratch_elev;
+
+    int total_inlet_triangles;
+    int *scratch_inlet_indices;
+    double *scratch_inlet_areas;
+    double *scratch_inlet_stage;
+    double *scratch_inlet_xmom;
+    double *scratch_inlet_ymom;
+    double *scratch_inlet_elev;
+
+    int mapped;
+};
+
 // FLOP counter structure for performance profiling (Gordon Bell)
 // Counts floating-point operations per kernel for FLOPS reporting
 struct flop_counters {
@@ -236,6 +319,9 @@ struct gpu_domain {
 
     // Inlet operators (GPU-accelerated inlet flow)
     struct inlet_operators inlet_ops;
+
+    // Culvert operators (Boyd box/pipe - batched GPU gather/scatter)
+    struct culvert_operators culvert_ops;
 
     // Simulation parameters for GPU kernels
     double CFL;
@@ -425,5 +511,19 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
                        double *vel_u, double *vel_v, int num_vel,
                        int has_velocity, double ext_vel_u, double ext_vel_v,
                        int zero_velocity);
+
+// Culvert operators (Boyd box/pipe - batched GPU gather/scatter with MPI)
+int gpu_culvert_init(struct gpu_domain *GD,
+                     const struct culvert_params *params,
+                     int enquiry_index_0, int enquiry_index_1,
+                     int inlet0_num, int *inlet0_indices, double *inlet0_areas,
+                     int inlet1_num, int *inlet1_indices, double *inlet1_areas,
+                     int master_proc, int enquiry_proc_0, int enquiry_proc_1,
+                     int inlet_master_proc_0, int inlet_master_proc_1,
+                     int is_local, int mpi_tag_base);
+void gpu_culvert_finalize(struct gpu_domain *GD, int culvert_id);
+void gpu_culverts_finalize_all(struct gpu_domain *GD);
+void gpu_culverts_map(struct gpu_domain *GD);
+void gpu_culverts_apply_all(struct gpu_domain *GD, double timestep);
 
 #endif // GPU_DOMAIN_H

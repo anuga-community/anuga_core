@@ -302,6 +302,7 @@ class Domain(Generic_Domain):
         self.fractional_step_operators = []
         self.kv_operator = None
         self.dplotter = None
+        self.gpu_culvert_manager = None  # Initialized when GPU mode + Boyd operators
 
         #-------------------------------
         # Set flow defaults
@@ -3305,7 +3306,8 @@ class Domain(Generic_Domain):
 
         Rate_operators with GPU support don't need CPU sync.
         boundary_flux_integral_operator is GPU-safe (only reads boundary_flux_sum).
-        Boyd_box_operator, Inlet_operator, etc. do need CPU sync.
+        Boyd_box_operator/Boyd_pipe_operator are GPU-safe via GPUCulvertManager.
+        Inlet_operator with GPU support doesn't need CPU sync.
 
         Result is cached after first call since operators don't change during simulation.
         """
@@ -3316,6 +3318,14 @@ class Domain(Generic_Domain):
         from anuga.operators.rate_operators import Rate_operator
         from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
         from anuga.structures.inlet_operator import Inlet_operator
+        from anuga.structures.gpu_culvert_manager import GPUCulvertManager
+
+        # Initialize GPU culvert manager for Boyd operators if needed
+        has_boyd_ops = any(GPUCulvertManager.is_boyd_operator(op)
+                          for op in self.fractional_step_operators)
+        if has_boyd_ops and self.gpu_culvert_manager is None:
+            self.gpu_culvert_manager = GPUCulvertManager(self)
+            self.gpu_culvert_manager.register_all()
 
         result = False
         cpu_only_ops = []
@@ -3338,6 +3348,11 @@ class Domain(Generic_Domain):
                     op._init_gpu()
                 if hasattr(op, '_gpu_initialized') and op._gpu_initialized:
                     continue  # GPU-accelerated, no sync needed
+            elif GPUCulvertManager.is_boyd_operator(op):
+                # Handled by GPUCulvertManager (local + cross-boundary via MPI in C)
+                if (self.gpu_culvert_manager is not None
+                        and op in self.gpu_culvert_manager.operators):
+                    continue
             # All other operators need CPU sync
             cpu_only_ops.append(op_name)
             result = True
@@ -3359,22 +3374,33 @@ class Domain(Generic_Domain):
         return result
 
     def apply_fractional_steps(self):
-        """Override to sync GPU data before fractional step operators run."""
+        """Override to sync GPU data before fractional step operators run.
+
+        Boyd culvert operators are handled via GPUCulvertManager (batched,
+        only 2 GPU sync points) instead of the per-operator Python loop.
+        """
+        gpu_mode = (self.multiprocessor_mode == 2 and self.gpu_interface is not None)
+        gpu_culverts_active = (gpu_mode and self.gpu_culvert_manager is not None
+                               and self.gpu_culvert_manager.num_culverts > 0)
         needs_cpu_sync = False
-        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            # Only sync if there are operators that actually need CPU execution
-            # GPU-accelerated Rate_operators don't need sync
+
+        if gpu_mode:
             needs_cpu_sync = self._has_cpu_only_fractional_operators()
             if needs_cpu_sync:
                 self.gpu_interface.sync_from_device()
 
-        # Call parent implementation
-        super().apply_fractional_steps()
+            # Execute all Boyd culverts in one batched GPU cycle
+            if gpu_culverts_active:
+                self.gpu_culvert_manager.apply_all()
 
-        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            # Sync changes back to GPU only if we synced from device
-            if needs_cpu_sync:
-                self.gpu_interface.sync_to_device()
+        # Run remaining operators (skip Boyd operators handled by GPU manager)
+        for operator in self.fractional_step_operators:
+            if gpu_culverts_active and operator in self.gpu_culvert_manager.operators:
+                continue  # Already handled by GPUCulvertManager
+            operator()
+
+        if gpu_mode and needs_cpu_sync:
+            self.gpu_interface.sync_to_device()
 
     def update_ghosts(self, quantities=None):
         """Override to use GPU ghost exchange when in GPU mode."""
