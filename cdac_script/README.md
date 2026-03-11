@@ -394,6 +394,6 @@ If you use an unsupported boundary type, ALL boundaries fall back to CPU evaluat
 
 ### Known Issues
 
-
+mpi4py failure due to lack of GPU awareness, fix by: `CC=mpicc pip install mpi4py --no-cache-dir --no-binary mpi4py ` rebuilding mpi4py locally with a GPU aware MPI install
 
 
