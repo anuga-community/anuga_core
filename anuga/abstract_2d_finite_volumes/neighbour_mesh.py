@@ -111,20 +111,8 @@ class Mesh(General_mesh):
 
 
         # Build neighbour structure
-        if triangle_neighbors is not None:
-            # Use the pre-computed neighbour array (e.g. from Pmesh/triangle library)
-            if verbose: log.critical('Mesh: Using provided triangle_neighbors')
-            self.neighbours = num.array(triangle_neighbors, int)
-            self.number_of_boundaries = (self.neighbours < 0).sum(axis=1).astype(int)
-            # For each valid (i, j), find edge m of neighbour k that points back to i
-            valid_i, valid_j = num.where(self.neighbours >= 0)
-            k = self.neighbours[valid_i, valid_j]
-            for m in range(3):
-                matches = (self.neighbours[k, m] == valid_i)
-                self.neighbour_edges[valid_i[matches], valid_j[matches]] = m
-        else:
-            if verbose: log.critical('Mesh: Building neigbour structure')
-            self.build_neighbour_structure()
+        if verbose: log.critical('Mesh: Building neigbour structure')
+        self.build_neighbour_structure(triangle_neighbors=triangle_neighbors)
 
         # Build surrogate neighbour structure
         if verbose: log.critical('Mesh: Building surrogate neigbour structure')
@@ -261,25 +249,40 @@ class Mesh(General_mesh):
                 self.neighbour_edges[i, 1] = neighbourdict[a,c][1]
                 self.number_of_boundaries[i] -= 1
 
-    def build_neighbour_structure(self):
+    def build_neighbour_structure(self, triangle_neighbors=None):
         """Update all registered triangles to point to their neighbours.
 
         Also, keep a tally of the number of boundaries for each triangle
+
+        If triangle_neighbors is provided (an (N, 3) integer array of
+        neighbouring triangle indices, -1 for boundary edges, as produced
+        by the triangle library), the neighbour structure is assigned
+        directly rather than recomputed from the triangles.
 
         Postconditions:
           neighbours and neighbour_edges is populated
           number_of_boundaries integer array is defined.
         """
 
-        from . import neighbour_table_ext
-        
-        N = self.number_of_nodes
+        if triangle_neighbors is not None:
+            self.neighbours = num.array(triangle_neighbors, int)
+            self.number_of_boundaries = (self.neighbours < 0).sum(axis=1).astype(int)
+            # For each valid (i, j), find edge m of neighbour k that points back to i
+            valid_i, valid_j = num.where(self.neighbours >= 0)
+            k = self.neighbours[valid_i, valid_j]
+            for m in range(3):
+                matches = (self.neighbours[k, m] == valid_i)
+                self.neighbour_edges[valid_i[matches], valid_j[matches]] = m
+        else:
+            from . import neighbour_table_ext
 
-        neighbour_table_ext.build_neighbour_structure(N,
-                                            self.triangles,
-                                            self.neighbours,
-                                            self.neighbour_edges,
-                                            self.number_of_boundaries)
+            N = self.number_of_nodes
+
+            neighbour_table_ext.build_neighbour_structure(N,
+                                                self.triangles,
+                                                self.neighbours,
+                                                self.neighbour_edges,
+                                                self.number_of_boundaries)
 
  
 
