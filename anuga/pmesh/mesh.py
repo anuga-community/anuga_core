@@ -445,7 +445,7 @@ class Rigid_triangulation(object):
         return area
 
 
-class Mesh(object):
+class Pmesh(object):
     """
     Representation of a 2D triangular mesh.
     User attributes describe the mesh region/segments/vertices/attributes
@@ -2184,7 +2184,7 @@ def importMeshFromFile(ofile):
         dict['region_tags'] = []
         dict['region_max_areas'] = []
         dict['holes'] = []
-        newmesh = Mesh(geo_reference=geospatial.geo_reference)
+        newmesh = Pmesh(geo_reference=geospatial.geo_reference)
         newmesh.IOOutline2Mesh(dict)
         counter = newmesh.removeDuplicatedUserVertices()
         if (counter > 0):
@@ -2196,7 +2196,7 @@ def importMeshFromFile(ofile):
         # print "zq mesh.dict",dict
         # print "********"
 
-        newmesh = Mesh()
+        newmesh = Pmesh()
         newmesh.IOOutline2Mesh(dict)
         newmesh.IOTriangulation2Mesh(dict)
     else:
@@ -2241,12 +2241,12 @@ def square_outline(side_length=1, up="top", left="left", right="right",
         r3 = Region(3.*side_length/ 4,
                     side_length/ 2, tag=right)
         r4 = Region(side_length/ 2, 1.*side_length/4, tag=down)
-        mesh = Mesh(userVertices=[a, b, c, d, e],
-                    userSegments=[s2, s3, s4, s5, s6, s7, s8, s9],
-                    regions=[r1, r2, r3, r4])
+        mesh = Pmesh(userVertices=[a, b, c, d, e],
+                     userSegments=[s2, s3, s4, s5, s6, s7, s8, s9],
+                     regions=[r1, r2, r3, r4])
     else:
-        mesh = Mesh(userVertices=[a, b, c, d],
-                    userSegments=[s2, s3, s4, s5])
+        mesh = Pmesh(userVertices=[a, b, c, d],
+                     userSegments=[s2, s3, s4, s5])
 
     return mesh
 
@@ -2454,5 +2454,9 @@ def cmp_to_key(mycmp):
 #
 
 # instead of functionName
+
+# Backward-compatibility alias
+Mesh = Pmesh
+
 if __name__ == "__main__":
     pass

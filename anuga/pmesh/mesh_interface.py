@@ -12,9 +12,9 @@ import warnings
 # This is due to pmesh being a package and a module and
 # the current dir being unknown
 try:
-    from anuga.pmesh.mesh import Mesh
+    from anuga.pmesh.mesh import Pmesh
 except ImportError:
-    from .mesh import Mesh
+    from .mesh import Pmesh
 
 
 class PolygonError(Exception):
@@ -260,7 +260,7 @@ def _create_mesh_from_regions(bounding_polygon,
                                            yllcorner=yllcorner,
                                            zone=zone)
 
-    m = Mesh(geo_reference=mesh_geo_reference)
+    m = Pmesh(geo_reference=mesh_geo_reference)
 
     # build a list of discrete segments from the breakline polygons
     if breaklines is not None:

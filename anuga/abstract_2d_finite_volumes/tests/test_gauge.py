@@ -14,7 +14,7 @@ import anuga
 
 from anuga.abstract_2d_finite_volumes.gauge import sww2csv_gauges
 from anuga.utilities.numerical_tools import mean
-from anuga.pmesh.mesh import Mesh
+from anuga.pmesh.mesh import Pmesh
 from anuga.file.sww import SWW_file
 
 
@@ -33,7 +33,7 @@ class Test_Gauge(unittest.TestCase):
         mesh_file = tempfile.mktemp(".tsh")
 
         points = [[0.0,0.0],[6.0,0.0],[6.0,6.0],[0.0,6.0]]
-        m = Mesh()
+        m = Pmesh()
         m.add_vertices(points)
         m.auto_segment()
         m.generate_mesh(verbose=False)
@@ -163,7 +163,7 @@ point2, 0.5, 2.0, 9.0\n")
 
 
     def test_sww2csv_gauges1(self):
-        from anuga.pmesh.mesh import Mesh
+        from anuga.pmesh.mesh import Pmesh
         from csv import reader,writer
         import time
         import string
@@ -314,7 +314,7 @@ point2, 0.5, 2.0, 9.0\n")
 
        
     def test_sww2csv_gauge_point_off_mesh(self):
-        from anuga.pmesh.mesh import Mesh
+        from anuga.pmesh.mesh import Pmesh
         from csv import reader,writer
         import time
         import string

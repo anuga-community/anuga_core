@@ -24,7 +24,7 @@ from math import sqrt
 
 from anuga.fit_interpolate.interpolate import Interpolate
 from anuga.fit_interpolate.fit import Fit
-from anuga.pmesh.mesh import Mesh
+from anuga.pmesh.mesh import Pmesh
 from anuga.geospatial_data.geospatial_data import Geospatial_data
 from anuga.shallow_water.shallow_water_domain import Domain
 from anuga.fit_interpolate.fit import Fit, fit_to_mesh
@@ -274,7 +274,7 @@ class BenchmarkLeastSquares(object):
 
         # don't pass in the geo ref.
         # it is applied in domain
-        m = Mesh() #geo_reference=geo)
+        m = Pmesh() #geo_reference=geo)
         m.addUserVertex(0,0)
         m.addUserVertex(1.0,0)
         m.addUserVertex(0,1.0)
