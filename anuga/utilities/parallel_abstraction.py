@@ -54,6 +54,21 @@ except:
   def send(*args, **kwargs):
       pass
 
+  class _FakeRequest:
+      def __init__(self):
+          pass
+      def wait(self):
+          return None
+
+  def isend(*args, **kwargs):
+      return _FakeRequest()
+
+  def irecv(*args, **kwargs):
+      return _FakeRequest()
+
+  def waitall(requests):
+      pass
+
   def print0(*args):
     """ Print arguments
     """
@@ -241,6 +256,18 @@ else:
       comm.Send(np.ascontiguousarray(x), dest=destination, tag=tag)
     else:
       comm.send(x, dest=destination, tag=tag)
+
+  def isend(x, destination, tag=1):
+    """Non-blocking send of a Python object. Returns a Request."""
+    return comm.isend(x, dest=destination, tag=tag)
+
+  def irecv(source, tag=1):
+    """Non-blocking receive of a Python object. Returns a Request."""
+    return comm.irecv(source=source, tag=tag)
+
+  def waitall(requests):
+    """Wait for all requests in the list to complete."""
+    MPI.Request.Waitall(requests)
 
   def size():
     return comm.size

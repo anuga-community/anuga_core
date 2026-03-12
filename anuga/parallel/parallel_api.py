@@ -11,6 +11,7 @@ import numpy as num
 # The abstract Python-MPI interface
 from anuga.utilities.parallel_abstraction import size, rank, get_processor_name
 from anuga.utilities.parallel_abstraction import finalize, send, receive, reduce
+from anuga.utilities.parallel_abstraction import isend, waitall
 from anuga.utilities.parallel_abstraction import pypar_available, barrier
 
 from anuga.parallel.sequential_distribute import sequential_distribute_dump
@@ -124,11 +125,14 @@ def distribute(domain, verbose=False, debug=False, parameters = None):
                 domain_quantities_to_be_stored, domain_smooth, domain_low_froude \
                  = partition.extract_submesh(0)
 
+        requests = []
         for p in range(1, numprocs):
 
             tostore = partition.extract_submesh(p)
 
-            send(tostore,p)
+            requests.append(isend(tostore, p))
+
+        waitall(requests)
 
     else:
 
