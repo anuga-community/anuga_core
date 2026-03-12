@@ -18,16 +18,32 @@ import anuga.utilities.log as log
 
 def pmesh_to_domain_instance(source, DomainClass, use_cache=False,
                              verbose=False):
-    """Converts a mesh file(.tsh or .msh), to a Domain instance.
+    """Convert a mesh file to a Domain instance.
 
-    file_name is the name of the mesh file to convert, including the extension
-
-    DomainClass is the Class that will be returned.
-    It must be a subclass of Domain, with the same interface as domain.
-
-    use_cache: True means that caching is attempted for the computed domain.    
+    Parameters
+    ----------
+    source : str
+        The name of the mesh file to convert, including the extension.
+        Supported formats: .tsh, .msh
+    DomainClass : type
+        The Class that will be returned. Must be a subclass of Domain,
+        with the same interface as domain.
+    use_cache : bool, optional
+        If True, caching is attempted for the computed domain.
+        Default is False.
+    verbose : bool, optional
+        If True, print verbose output during processing.
+        Default is False.
+    Returns
+    -------
+    Domain
+        An instance of DomainClass initialized from the mesh file.
+    Notes
+    -----
+    When caching is enabled, the function uses the anuga.caching module
+    to cache the computed domain based on the source file and DomainClass.
     """
-
+    
     if use_cache is True:
         from anuga.caching import cache
         result = cache(_pmesh_to_domain_instance, (source, DomainClass),
