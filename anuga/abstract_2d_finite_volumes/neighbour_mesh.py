@@ -274,15 +274,44 @@ class Mesh(General_mesh):
                 matches = (self.neighbours[k, m] == valid_i)
                 self.neighbour_edges[valid_i[matches], valid_j[matches]] = m
         else:
-            from . import neighbour_table_ext
+            N = len(self.triangles)
+            a = self.triangles[:, 0]
+            b = self.triangles[:, 1]
+            c = self.triangles[:, 2]
 
-            N = self.number_of_nodes
+            # All 3N directed edges with their triangle and edge indices.
+            # Edge 0: b→c,  Edge 1: c→a,  Edge 2: a→b
+            tri_ids  = num.tile(num.arange(N), 3)
+            edge_ids = num.repeat(num.arange(3), N)
+            starts   = num.concatenate([b, c, a])
+            ends     = num.concatenate([c, a, b])
 
-            neighbour_table_ext.build_neighbour_structure(N,
-                                                self.triangles,
-                                                self.neighbours,
-                                                self.neighbour_edges,
-                                                self.number_of_boundaries)
+            # Encode each directed edge (u, v) as a single int64 key u*M + v,
+            # then sort to allow binary search for the reverse edge (v, u).
+            M = int(self.triangles.max()) + 1
+            keys = starts.astype(num.int64) * M + ends.astype(num.int64)
+
+            sort_idx    = num.argsort(keys)
+            sorted_keys = keys[sort_idx]
+
+            # Detect duplicate directed edges (invalid mesh topology)
+            dup = num.where(sorted_keys[1:] == sorted_keys[:-1])[0]
+            if len(dup) > 0:
+                d = sort_idx[dup[0]]
+                d2 = sort_idx[dup[0] + 1]
+                raise Exception(
+                    'Edge %d of triangle %d is duplicating edge %d of triangle %d.\n'
+                    % (edge_ids[d2], tri_ids[d2], edge_ids[d], tri_ids[d]))
+
+            reverse_keys = ends.astype(num.int64) * M + starts.astype(num.int64)
+            pos     = num.searchsorted(sorted_keys, reverse_keys)
+            clamped = num.minimum(pos, len(sorted_keys) - 1)
+            valid   = sorted_keys[clamped] == reverse_keys
+
+            matched = sort_idx[clamped]
+            self.neighbours[tri_ids[valid], edge_ids[valid]]     = tri_ids[matched[valid]]
+            self.neighbour_edges[tri_ids[valid], edge_ids[valid]] = edge_ids[matched[valid]]
+            self.number_of_boundaries = (self.neighbours < 0).sum(axis=1).astype(int)
 
  
 
