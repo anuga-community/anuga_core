@@ -74,12 +74,18 @@ class Mesh(General_mesh):
                  tagged_elements=None,
                  geo_reference=None,
                  use_inscribed_circle=False,
+                 triangle_neighbors=None,
                  verbose=False):
         """
         Build Mesh
 
             Input x,y coordinates (sequence of 2-tuples or Mx2 numeric array of floats)
             triangles (sequence of 3-tuples or Nx3 numeric array of non-negative integers).
+
+        triangle_neighbors: optional (N, 3) integer array of neighbouring triangle
+            indices (-1 for boundary edges), as produced by the triangle library
+            (available from Pmesh.tri_mesh.triangle_neighbors). If provided,
+            the neighbour structure is not recomputed from the triangles.
         """
 
         General_mesh.__init__(self, coordinates, triangles,
@@ -105,8 +111,20 @@ class Mesh(General_mesh):
 
 
         # Build neighbour structure
-        if verbose: log.critical('Mesh: Building neigbour structure')
-        self.build_neighbour_structure()
+        if triangle_neighbors is not None:
+            # Use the pre-computed neighbour array (e.g. from Pmesh/triangle library)
+            if verbose: log.critical('Mesh: Using provided triangle_neighbors')
+            self.neighbours = num.array(triangle_neighbors, int)
+            self.number_of_boundaries = (self.neighbours < 0).sum(axis=1).astype(int)
+            # For each valid (i, j), find edge m of neighbour k that points back to i
+            valid_i, valid_j = num.where(self.neighbours >= 0)
+            k = self.neighbours[valid_i, valid_j]
+            for m in range(3):
+                matches = (self.neighbours[k, m] == valid_i)
+                self.neighbour_edges[valid_i[matches], valid_j[matches]] = m
+        else:
+            if verbose: log.critical('Mesh: Building neigbour structure')
+            self.build_neighbour_structure()
 
         # Build surrogate neighbour structure
         if verbose: log.critical('Mesh: Building surrogate neigbour structure')

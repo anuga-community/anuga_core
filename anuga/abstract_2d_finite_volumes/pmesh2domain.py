@@ -16,6 +16,41 @@ import anuga.utilities.log as log
 
 
 
+def pmesh_to_mesh(pmesh_instance, verbose=False):
+    """Convert a Pmesh instance to a neighbour_mesh.Mesh instance.
+
+    Parameters
+    ----------
+    pmesh_instance : anuga.pmesh.mesh.Pmesh
+        A Pmesh instance with a completed triangulation (i.e. generate_mesh
+        has been called).
+    verbose : bool, optional
+        If True, print verbose output. Default is False.
+
+    Returns
+    -------
+    anuga.abstract_2d_finite_volumes.neighbour_mesh.Mesh
+        A Mesh instance built from the Pmesh triangulation.
+    """
+    from anuga.abstract_2d_finite_volumes.neighbour_mesh import Mesh
+
+    mesh_dict = pmesh_instance.Mesh2IODict()
+
+    vertex_coordinates = mesh_dict['vertices']
+    triangles = mesh_dict['triangles']
+    geo_reference = mesh_dict['geo_reference']
+    triangle_neighbors = mesh_dict.get('triangle_neighbors')
+    tagged_elements = build_tagged_elements_dictionary(mesh_dict)
+    boundary = pmesh_dict_to_tag_dict(mesh_dict)
+
+    return Mesh(vertex_coordinates, triangles,
+                boundary=boundary,
+                tagged_elements=tagged_elements,
+                geo_reference=geo_reference,
+                triangle_neighbors=triangle_neighbors,
+                verbose=verbose)
+
+
 def pmesh_to_domain_instance(source, DomainClass, use_cache=False,
                              verbose=False):
     """Convert a mesh file to a Domain instance.
