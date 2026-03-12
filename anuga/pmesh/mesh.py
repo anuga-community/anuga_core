@@ -365,10 +365,10 @@ class Rigid_triangulation(object):
             that's where the info is from, and it'll fit easier into
             this file..
 
-             Removing the loners is difficult, since all the vert's
-             after it must be removed.
+            Removing the loners is difficult, since all the vert's
+            after it must be removed.
 
-             This happens in set_triangulation.
+            This happens in set_triangulation.
 
     """
 
@@ -1048,13 +1048,31 @@ class Mesh(object):
     def generateMesh(self, mode=None, maxArea=None, minAngle=None,
                      isRegionalMaxAreas=True, verbose=False):
         """
-        Based on the current user vaules, holes and regions
-        generate a new mesh
-        mode is a string that sets conditions on the mesh generations
-        see triangle_instructions.txt for a definition of the commands
+        Generate a new mesh based on current user values, holes, and regions.
 
-        PreCondition: maxArea is a double between 1e-20 and 1e30 or is a
-        string.
+        The mesh generation is controlled by various parameters that set
+        conditions on the mesh generation. See triangle_instructions.txt
+        for a definition of the mode commands.
+
+        Parameters
+        ----------
+        mode : str, optional
+            String that sets conditions on mesh generation.
+        maxArea : float or str, optional
+            Maximum triangle area. Must be a double between 1e-20 and 1e30
+            or a string representation of a number.
+        minAngle : float, optional
+            Minimum triangle angle in degrees.
+        isRegionalMaxAreas : bool, optional
+            Whether to use regional maximum areas. Default is True.
+        verbose : bool, optional
+            If True, output information about mesh generation progress.
+            Default is False.
+
+        Preconditions
+        --------------
+        maxArea : float or str
+            Must be between 1e-20 and 1e30 or a string representation.
         """
         # print "mode ",mode
         if mode is None:
