@@ -21,7 +21,6 @@ py3.extension_module('neighbour_mesh_ext',
 
 py3.extension_module('neighbour_table_ext',
   sources: ['neighbour_table_ext.pyx'],
-  override_options : ['cython_language=cpp'],
   include_directories: inc_dir,
   dependencies: dependencies,
   subdir: 'anuga/abstract_2d_finite_volumes',
