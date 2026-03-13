@@ -92,7 +92,7 @@ def urs_ungridded2sww(basename_in='o', basename_out=None, verbose=False,
     """
 
     from anuga.mesh_engine.mesh_engine import NoTrianglesError
-    from anuga.pmesh.mesh import Mesh
+    from anuga.pmesh.mesh import Pmesh
 
     files_in = [basename_in + WAVEHEIGHT_MUX_LABEL,
                 basename_in + EAST_VELOCITY_LABEL,
@@ -125,7 +125,7 @@ def urs_ungridded2sww(basename_in='o', basename_out=None, verbose=False,
     # A boundary is needed around these points.
     # But if the zone of points is obvious enough auto-segment should do
     # a good boundary.
-    mesh = Mesh()
+    mesh = Pmesh()
     mesh.add_vertices(points_utm)
     mesh.auto_segment(smooth_indents=True, expand_pinch=True)
 

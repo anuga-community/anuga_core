@@ -1040,21 +1040,30 @@ class Quantity(object):
         N = self.centroid_values.shape[0]
 
         if location == 'centroids':
-            assert len(values.shape) == 1, 'Values array must be 1d'
+            if len(values.shape) == 1:
+                if indices is None:
+                    msg = 'Number of values must match number of elements'
+                    assert values.shape[0] == N, msg
 
-            if indices is None:
-                msg = 'Number of values must match number of elements'
-                assert values.shape[0] == N, msg
+                    self.centroid_values[:] = values
+                else:
+                    msg = 'Number of values must match number of indices'
+                    assert values.shape[0] == indices.shape[0], msg
 
-                self.centroid_values[:] = values
+                    self.centroid_values[indices] = values
+            elif len(values.shape) == 2:
+                # Centroid values are given as a triplet for each triangle
+                msg = 'Array must be N x 1'
+                assert values.shape[1] == 1, msg
+
+                if indices is None:
+                    self.centroid_values[:] = values[:, 0]
+                else:
+                    self.centroid_values[indices] = values[:, 0]
             else:
-                msg = 'Number of values must match number of indices'
-                assert values.shape[0] == indices.shape[0], msg
+                msg = 'Values array must be 1d or 2d N X 1'
+                raise Exception(msg)
 
-                # Brute force
-                self.centroid_values[indices] = values
-                #for i in range(len(indices)):
-                #    self.centroid_values[indices[i]] = values[i]
         elif location == 'unique vertices':
             msg = 'Values array must be 1d'
             assert len(values.shape) == 1 or num.allclose(values.shape[1:], 1), msg

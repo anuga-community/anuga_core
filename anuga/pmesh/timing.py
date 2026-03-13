@@ -39,7 +39,7 @@ tinitial = time.time()
 mem_initial = mem_usage()
 print("mem_initial", mem_initial)
 #------------------------------------------
-mesh = Mesh()
+mesh = Pmesh()
 id = 0
 for i in range(n):
     for j in range(n):

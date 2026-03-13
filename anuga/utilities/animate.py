@@ -40,7 +40,7 @@ class Domain_plotter(object):
             self.y = domain.nodes[:, 1] + self.yllcorner
 
             self.xc = domain.centroid_coordinates[:, 0] + self.xllcorner
-            self.yc = domain.centroid_coordinates[:, 1] + self.xllcorner
+            self.yc = domain.centroid_coordinates[:, 1] + self.yllcorner
 
 
         import matplotlib.tri as tri
@@ -523,6 +523,7 @@ class SWW_plotter(object):
         self.xllcorner = p.xllcorner
         self.yllcorner = p.yllcorner
         self.zone = p.zone
+        self.timezone = p.timezone
         self.starttime = p.starttime
 
         if absolute is True:
@@ -530,7 +531,7 @@ class SWW_plotter(object):
             self.y[:] = self.y + self.yllcorner
 
             self.xc[:] = self.xc + self.xllcorner
-            self.yc[:] = self.yc + self.xllcorner
+            self.yc[:] = self.yc + self.yllcorner
 
 
         self.elev = np.array(p.variables['elevation_c'])

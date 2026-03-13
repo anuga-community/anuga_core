@@ -25,7 +25,7 @@ from anuga.file_conversion.file_conversion import timefile2netcdf
 from anuga.utilities.file_utils import del_dir
 
 from anuga.utilities.numerical_tools import NAN
-from anuga.pmesh.mesh import Mesh
+from anuga.pmesh.mesh import Pmesh
 
 from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
 from anuga.coordinate_transforms.geo_reference import Geo_reference

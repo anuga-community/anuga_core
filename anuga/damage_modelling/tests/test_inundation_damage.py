@@ -16,7 +16,7 @@ seed(17) #, version=1) # Make probabilistic tests reproducible
 #from anuga.damage.inundation_damage import _calc_collapse_structures
 from anuga.damage_modelling.inundation_damage import *
 from anuga.geospatial_data.geospatial_data import Geospatial_data
-from anuga.pmesh.mesh import Mesh
+from anuga.pmesh.mesh import Pmesh
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 from anuga.utilities.numerical_tools import mean
 from anuga.utilities import system_tools
@@ -66,7 +66,7 @@ class Test_inundation_damage(unittest.TestCase):
 
         geo =  Geo_reference(56,400000,6000000)
         spat.set_geo_reference(geo)
-        m = Mesh()
+        m = Pmesh()
         m.add_vertices(spat)
         m.auto_segment()
         m.generate_mesh(verbose=False)
@@ -136,7 +136,7 @@ class Test_inundation_damage(unittest.TestCase):
 
         geo =  Geo_reference(56,400000,6000000)
         spat.set_geo_reference(geo)
-        m = Mesh()
+        m = Pmesh()
         m.add_vertices(spat)
         m.auto_segment()
         m.generate_mesh(verbose=False)
@@ -257,7 +257,7 @@ class Test_inundation_damage(unittest.TestCase):
         # create mesh
         mesh_file = tempfile.mktemp(".tsh")
         points = [[0.0,0.0],[6.0,0.0],[6.0,6.0],[0.0,6.0]]
-        m = Mesh()
+        m = Pmesh()
         m.add_vertices(points)
         m.auto_segment()
         m.generate_mesh(verbose=False)
@@ -330,7 +330,7 @@ class Test_inundation_damage(unittest.TestCase):
         # create mesh
         mesh_file = tempfile.mktemp(".tsh")
         points = [[0.0,0.0],[6.0,0.0],[6.0,6.0],[0.0,6.0]]
-        m = Mesh()
+        m = Pmesh()
         m.add_vertices(points)
         m.auto_segment()
         m.generate_mesh(verbose=False)

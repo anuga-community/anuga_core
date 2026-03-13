@@ -365,10 +365,10 @@ class Rigid_triangulation(object):
             that's where the info is from, and it'll fit easier into
             this file..
 
-             Removing the loners is difficult, since all the vert's
-             after it must be removed.
+            Removing the loners is difficult, since all the vert's
+            after it must be removed.
 
-             This happens in set_triangulation.
+            This happens in set_triangulation.
 
     """
 
@@ -445,7 +445,7 @@ class Rigid_triangulation(object):
         return area
 
 
-class Mesh(object):
+class Pmesh(object):
     """
     Representation of a 2D triangular mesh.
     User attributes describe the mesh region/segments/vertices/attributes
@@ -1048,13 +1048,31 @@ class Mesh(object):
     def generateMesh(self, mode=None, maxArea=None, minAngle=None,
                      isRegionalMaxAreas=True, verbose=False):
         """
-        Based on the current user vaules, holes and regions
-        generate a new mesh
-        mode is a string that sets conditions on the mesh generations
-        see triangle_instructions.txt for a definition of the commands
+        Generate a new mesh based on current user values, holes, and regions.
 
-        PreCondition: maxArea is a double between 1e-20 and 1e30 or is a
-        string.
+        The mesh generation is controlled by various parameters that set
+        conditions on the mesh generation. See triangle_instructions.txt
+        for a definition of the mode commands.
+
+        Parameters
+        ----------
+        mode : str, optional
+            String that sets conditions on mesh generation.
+        maxArea : float or str, optional
+            Maximum triangle area. Must be a double between 1e-20 and 1e30
+            or a string representation of a number.
+        minAngle : float, optional
+            Minimum triangle angle in degrees.
+        isRegionalMaxAreas : bool, optional
+            Whether to use regional maximum areas. Default is True.
+        verbose : bool, optional
+            If True, output information about mesh generation progress.
+            Default is False.
+
+        Preconditions
+        --------------
+        maxArea : float or str
+            Must be between 1e-20 and 1e30 or a string representation.
         """
         # print "mode ",mode
         if mode is None:
@@ -2166,7 +2184,7 @@ def importMeshFromFile(ofile):
         dict['region_tags'] = []
         dict['region_max_areas'] = []
         dict['holes'] = []
-        newmesh = Mesh(geo_reference=geospatial.geo_reference)
+        newmesh = Pmesh(geo_reference=geospatial.geo_reference)
         newmesh.IOOutline2Mesh(dict)
         counter = newmesh.removeDuplicatedUserVertices()
         if (counter > 0):
@@ -2178,7 +2196,7 @@ def importMeshFromFile(ofile):
         # print "zq mesh.dict",dict
         # print "********"
 
-        newmesh = Mesh()
+        newmesh = Pmesh()
         newmesh.IOOutline2Mesh(dict)
         newmesh.IOTriangulation2Mesh(dict)
     else:
@@ -2223,12 +2241,12 @@ def square_outline(side_length=1, up="top", left="left", right="right",
         r3 = Region(3.*side_length/ 4,
                     side_length/ 2, tag=right)
         r4 = Region(side_length/ 2, 1.*side_length/4, tag=down)
-        mesh = Mesh(userVertices=[a, b, c, d, e],
-                    userSegments=[s2, s3, s4, s5, s6, s7, s8, s9],
-                    regions=[r1, r2, r3, r4])
+        mesh = Pmesh(userVertices=[a, b, c, d, e],
+                     userSegments=[s2, s3, s4, s5, s6, s7, s8, s9],
+                     regions=[r1, r2, r3, r4])
     else:
-        mesh = Mesh(userVertices=[a, b, c, d],
-                    userSegments=[s2, s3, s4, s5])
+        mesh = Pmesh(userVertices=[a, b, c, d],
+                     userSegments=[s2, s3, s4, s5])
 
     return mesh
 
@@ -2436,5 +2454,9 @@ def cmp_to_key(mycmp):
 #
 
 # instead of functionName
+
+# Backward-compatibility alias
+Mesh = Pmesh
+
 if __name__ == "__main__":
     pass

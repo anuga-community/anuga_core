@@ -182,30 +182,37 @@ def generate_mesh(points=None,
             pointlist = num.ascontiguousarray(out_tri['vertices'])
         else:
             pointlist = num.empty((0,2),dtype=float)
+
         if 'vertex_markers' in out_tri:
             pointmarkerlist = num.ascontiguousarray(out_tri['vertex_markers'].reshape(-1))
         else:
             pointmarkerlist = num.empty(pointlist.shape[0],dtype=num.int32)
+
         if 'triangles' in out_tri:
             trianglelist = num.ascontiguousarray(out_tri['triangles'])
         else:
             trianglelist = num.empty((0,3),dtype=num.int32)
+
         if 'vertex_attributes' in out_tri:
             pointattributelist = num.ascontiguousarray(out_tri['vertex_attributes'])
         else:
             pointattributelist = num.empty((pointlist.shape[0],0),dtype=float)
+
         if 'triangle_attributes' in out_tri:
             triangleattributelist = num.ascontiguousarray(out_tri['triangle_attributes'])
         else:
             triangleattributelist = num.empty((trianglelist.shape[0],0),dtype=float)
+
         if 'segments' in out_tri:
             segmentlist = num.ascontiguousarray(out_tri['segments'])
         else:
             segmentlist = num.empty((0,2),dtype=num.int32)
+
         if 'segment_markers' in out_tri:
             segmentmarkerlist = num.ascontiguousarray(out_tri['segment_markers'].reshape(-1))
         else:
             segmentmarkerlist = num.empty(segmentlist.shape[0],dtype=num.int32)
+
         if 'neighbors' in out_tri:
             neighborlist = num.ascontiguousarray(out_tri['neighbors'])
         else:
@@ -227,9 +234,6 @@ def generate_mesh(points=None,
             for i, region in enumerate(regions):
                 in_tri.regions[i] = region
 
-        #for i, att in enumerate(in_tri.point_attributes):
-        #    print(i,att)
-        
 
         if pointatts.size != 0:
             in_tri.number_of_point_attributes = pointatts.shape[1]
@@ -240,8 +244,6 @@ def generate_mesh(points=None,
                     in_tri.point_attributes[i] = pointatt[0]
                 else:
                     in_tri.point_attributes[i] = pointatt
-
-                
 
 
         if verbose:
@@ -259,6 +261,10 @@ def generate_mesh(points=None,
             print(70*'=')
             in_tri.dump()
 
+    
+        # Triangle is a C library driven via string options; 
+        # numeric parameters (e.g. a0.01) are parsed using C’s locale‑aware routines, 
+        # which expect a . decimal separator under the "C" locale.
         try:
             import locale
         except ImportError:
@@ -276,17 +282,6 @@ def generate_mesh(points=None,
             # restore previous locale if we've changed it
             if have_locale:
                 locale.setlocale(locale.LC_NUMERIC, prev_num_locale)
-
-        """
-            "points", "point_attributes", "point_markers",
-            "elements", "element_attributes", "element_volumes",
-            "neighbors",
-            "facets", "facet_markers",
-            "holes",
-            "regions",
-            "faces", "face_markers",
-            "normals",
-        """
 
         if verbose:
             print(70*'=')
@@ -354,33 +349,34 @@ def generate_mesh(points=None,
     mesh_dict['generatedtriangleneighborlist'] = neighborlist
     mesh_dict['qaz'] = 1 #debugging
 
+
+
+
+    mesh_dict['generatedtriangleattributelist'] = triangleattributelist
+
+    if mesh_dict['generatedtriangleattributelist'].shape[1] == 0:
+        mesh_dict['generatedtriangleattributelist'] = None
+
+    if mesh_dict['generatedpointattributelist'].shape[1] == 0:
+        mesh_dict['generatedpointattributelist'] = None
+
+    if mesh_dict['generatedtriangleneighborlist'].shape[1] == 0:
+        mesh_dict['generatedtriangleneighborlist'] = None
+
     if verbose:
         from pprint import pprint
         pprint(mesh_dict)
 
-    #mesh_dict['triangleattributelist'] = triangleattributelist
-    if True:
-        mesh_dict['generatedtriangleattributelist'] = triangleattributelist
-
-        if mesh_dict['generatedtriangleattributelist'].shape[1] == 0:
-            mesh_dict['generatedtriangleattributelist'] = None
-
-        if mesh_dict['generatedpointattributelist'].shape[1] == 0:
-            mesh_dict['generatedpointattributelist'] = None
-
-        if mesh_dict['generatedtriangleneighborlist'].shape[1] == 0:
-            mesh_dict['generatedtriangleneighborlist'] = None
-
-        if trianglelist.shape[0] == 0:
-            # There are no triangles.
-            # this is used by urs_ungridded2sww
-            raise NoTrianglesError
+    if trianglelist.shape[0] == 0:
+        # There are no triangles.
+        # this is used by urs_ungridded2sww
+        raise NoTrianglesError
 
 
     a = mesh_dict['generatedtriangleattributelist']
-    # the structure of generatedtriangleattributelist is an list of
+    # the structure of generatedtriangleattributelist is a list of
     # list of integers.  It is transformed into a list of list of
-    # strings later on.  This is then inputted into an triangle
+    # strings later on.  This is then inputted into a triangle
     # object.  The triangle object outputs a list of strings.  Note
     # the subtle change!  How should I handle this?  For my code, when
     # the list of list of integers is transformed, transform it into a
