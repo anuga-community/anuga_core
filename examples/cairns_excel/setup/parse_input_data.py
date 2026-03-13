@@ -99,7 +99,7 @@ class ProjectData(object):
 
         if isinstance(self.projection_information, float):
             self.projection_information = int(self.projection_information)
-        if isinstance(self.projection_information, unicode):
+        if isinstance(self.projection_information, str):
             self.projection_information = str(self.projection_information)
 
         self.flow_algorithm = data_source.get_var(

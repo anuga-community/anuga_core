@@ -189,8 +189,9 @@ if myid == 0:
             bounding_polygon=project.bounding_polygon,
             proj4string=project.proj4string,
             cell_size=project.output_tif_cellsize)
-    except:
-        print('GeoTif creation failed, you can try manually using' + \
+    except Exception as e:
+        print('GeoTif creation failed: ' + str(e))
+        print('You can try manually using'
               ' raster_outputs.py or anuga.utilities.plot_utils.Make_Geotif')
 
 barrier()

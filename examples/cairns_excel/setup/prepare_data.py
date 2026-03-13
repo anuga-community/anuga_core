@@ -96,17 +96,8 @@ class PrepareData(ProjectData):
             '_' + self.scenario
 
         if ((make_directories) and (myid == 0)):
-            try:
-                os.mkdir(self.output_basedir)
-            except:
-                pass
-
-            # Make the output directory
-
-            try:
-                os.mkdir(self.output_dir)
-            except:
-                pass
+            os.makedirs(self.output_basedir, exist_ok=True)
+            os.makedirs(self.output_dir, exist_ok=True)
 
             print('OUTPUT_DIRECTORY: ' + str(self.output_dir))
 
@@ -222,7 +213,16 @@ class PrepareData(ProjectData):
             # meshes
             mesh_dependency_information.append([time_number])
 
-        self.mesh_id_hash = hashlib.md5(json.dumps(mesh_dependency_information)).hexdigest()
+        class _NumpyEncoder(json.JSONEncoder):
+            def default(self, obj):
+                if isinstance(obj, numpy.ndarray):
+                    return obj.tolist()
+                return super().default(obj)
+
+        self.mesh_id_hash = hashlib.md5(
+            json.dumps(mesh_dependency_information,
+                       cls=_NumpyEncoder, sort_keys=True).encode()
+        ).hexdigest()
 
         # Fix the output tif bounding polygon
         if self.output_tif_bounding_polygon is None:
@@ -271,34 +271,14 @@ class PrepareData(ProjectData):
         """
         if myid == 0:
 
-            # Make the partitions directory (2 steps as it is recursive)
-
-            try:
-                os.mkdir(self.partition_basedir)
-            except:
-                pass
-
-            try:
-                os.mkdir(self.partition_dir)
-            except:
-                pass
-
-            # Make the spatialTxt directory
-
-            try:
-                os.mkdir(self.spatial_text_output_dir)
-            except:
-                pass
+            os.makedirs(self.partition_dir, exist_ok=True)
+            os.makedirs(self.spatial_text_output_dir, exist_ok=True)
 
             # Copy code files to output dir. This should be 'nearly the first'
             # thing we do
             code_output_dir = self.output_dir + '/code'
             setup_code_output_dir = code_output_dir + '/setup'
-            try:
-                os.mkdir(code_output_dir)
-                os.mkdir(setup_code_output_dir)
-            except:
-                pass
+            os.makedirs(setup_code_output_dir, exist_ok=True)
 
             model_files = glob.glob('*.py') + glob.glob('*.sh') + \
                 [self.config_filename]
@@ -327,19 +307,19 @@ class PrepareData(ProjectData):
             return
 
         if myid == 0:
-            if self.interior_regions is not []:
-                for i in range(len(self.interior_regions)):
-                    sav_lines(self.interior_regions[i][0],
+            if self.interior_regions != []:
+                for i, region in enumerate(self.interior_regions):
+                    sav_lines(region[0],
                               filename=self.spatial_text_output_dir
                               + '/interior_region_' + str(i) + '.txt')
-            if self.breaklines is not {}:
-                for i in range(len(self.breaklines)):
-                    sav_lines(self.breaklines.values()[i],
+            if self.breaklines != {}:
+                for i, vals in enumerate(self.breaklines.values()):
+                    sav_lines(vals,
                               filename=self.spatial_text_output_dir +
                               '/breakline_' + str(i) + '.txt')
-            if self.riverwalls is not {}:
-                for i in range(len(self.riverwalls)):
-                    sav_lines(self.riverwalls.values()[i],
+            if self.riverwalls != {}:
+                for i, vals in enumerate(self.riverwalls.values()):
+                    sav_lines(vals,
                               filename=self.spatial_text_output_dir +
                               '/riverwall_' + str(i) + '.txt')
 

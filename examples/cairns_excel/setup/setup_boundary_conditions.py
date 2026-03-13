@@ -34,7 +34,7 @@ def setup_boundary_conditions(domain, project):
             # Simple reflective boundary
             boundary_tags_and_conditions[boundary_tag] = \
                 anuga.Reflective_boundary(domain)
-        elif ((boundary_condition_type == 'Stage') |
+        elif ((boundary_condition_type == 'Stage') or
               (boundary_condition_type == 'Flather_Stage')):
             # Here we read a timeseries, offset the starttime, and then pass
             # that function as a set stage transmissive or flather boundary
@@ -71,14 +71,13 @@ def setup_boundary_conditions(domain, project):
         else:
             msg = 'Boundary condition type ' + boundary_condition_type +\
                   ' for tag ' + boundary_tag + ' is not implemented'
+            raise NotImplementedError(msg)
 
     # Check that all tags in boundary_info have been set
 
-    for i in range(len(project.boundary_tags)):
-        tag = project.boundary_tags.keys()[i]
-        if not (tag in boundary_tags_and_conditions.keys()):
-            msg = 'Need to set boundary_tags_and_conditions for tag = ' \
-                + tag
+    for tag in project.boundary_tags:
+        if tag not in boundary_tags_and_conditions:
+            msg = 'Need to set boundary_tags_and_conditions for tag = ' + tag
             raise Exception(msg)
 
     # Set the boundary
