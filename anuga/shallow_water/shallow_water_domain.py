@@ -3918,10 +3918,13 @@ class Domain(Generic_Domain):
                 # Track whether GPU offload is actually active (not disabled by env var)
                 self.gpu_offload_active = (omp_target_offload != 'disabled')
                 if myid == 0:
+                    device_id = self.gpu_interface.gpu_dom.device_id
                     print('+==============================================================================+')
                     if not self.gpu_offload_active:
                         print(f'| WARNING: GPU mode enabled but OMP_TARGET_OFFLOAD=disabled                   |')
                         print(f'| Running on CPUs with OMP_NUM_THREADS={omp_num_threads}')
+                    elif device_id < 0:
+                        print(f'| WARNING: No GPU devices found, running on CPU via OpenMP target offloading  |')
                     else:
                         print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
                     print('+==============================================================================+')

@@ -15,7 +15,6 @@
 #include "gpu_culvert_operator.h"
 #include "gpu_omp_macros.h"
 
-#define G 9.81
 #define VELOCITY_PROTECTION 1.0e-6
 
 // ============================================================================
@@ -49,8 +48,8 @@ void boyd_box_discharge(const struct culvert_params *p,
     }
 
     // Inlet control: unsubmerged vs submerged
-    double Q_inlet_unsubmerged = 0.544 * sqrt(G) * bf * width * barrels * pow(driving_energy, 1.50);
-    double Q_inlet_submerged = 0.702 * sqrt(G) * bf * width * barrels * pow(depth, 0.89) * pow(driving_energy, 0.61);
+    double Q_inlet_unsubmerged = 0.544 * sqrt(p->g) * bf * width * barrels * pow(driving_energy, 1.50);
+    double Q_inlet_submerged = 0.702 * sqrt(p->g) * bf * width * barrels * pow(depth, 0.89) * pow(driving_energy, 0.61);
 
     double Q, dcrit, flow_area, perimeter;
 
@@ -60,7 +59,7 @@ void boyd_box_discharge(const struct culvert_params *p,
         Q = Q_inlet_submerged;
     }
 
-    dcrit = pow(Q * Q / G / pow(bf * width * barrels, 2.0), 0.333333);
+    dcrit = pow(Q * Q / p->g / pow(bf * width * barrels, 2.0), 0.333333);
 
     if (dcrit > depth) {
         dcrit = depth;
@@ -74,7 +73,7 @@ void boyd_box_discharge(const struct culvert_params *p,
     double outlet_culvert_depth = dcrit;
 
     // Recompute dcrit (matches Python exactly)
-    dcrit = pow(Q * Q / G / pow(bf * width * barrels, 2.0), 0.333333);
+    dcrit = pow(Q * Q / p->g / pow(bf * width * barrels, 2.0), 0.333333);
     outlet_culvert_depth = dcrit;
 
     if (outlet_culvert_depth > depth) {
@@ -87,7 +86,7 @@ void boyd_box_discharge(const struct culvert_params *p,
     }
 
     double hyd_rad = flow_area / perimeter;
-    double culvert_velocity = sqrt(delta_total_energy / ((sum_loss / 2.0 / G) +
+    double culvert_velocity = sqrt(delta_total_energy / ((sum_loss / 2.0 / p->g) +
                                     (manning * manning * length) / pow(hyd_rad, 1.33333)));
     double Q_outlet_tailwater = flow_area * culvert_velocity;
 
@@ -99,7 +98,7 @@ void boyd_box_discharge(const struct culvert_params *p,
             flow_area = bf * width * barrels * depth;
             perimeter = 2.0 * (bf * width * barrels + depth);
         } else {
-            dcrit = pow(Q * Q / G / pow(bf * width * barrels, 2.0), 0.333333);
+            dcrit = pow(Q * Q / p->g / pow(bf * width * barrels, 2.0), 0.333333);
             outlet_culvert_depth = dcrit;
             if (outlet_culvert_depth > depth) {
                 outlet_culvert_depth = depth;
@@ -112,7 +111,7 @@ void boyd_box_discharge(const struct culvert_params *p,
         }
 
         hyd_rad = flow_area / perimeter;
-        culvert_velocity = sqrt(delta_total_energy / ((sum_loss / 2.0 / G) +
+        culvert_velocity = sqrt(delta_total_energy / ((sum_loss / 2.0 / p->g) +
                                 (manning * manning * length) / pow(hyd_rad, 1.33333)));
         Q_outlet_tailwater = flow_area * culvert_velocity;
 
@@ -165,14 +164,14 @@ void boyd_pipe_discharge(const struct culvert_params *p,
     }
 
     // Inlet control
-    double Q_inlet_unsubmerged = barrels * (0.421 * sqrt(G) * pow(bf * diameter, 0.87) * pow(driving_energy, 1.63));
-    double Q_inlet_submerged = barrels * (0.530 * sqrt(G) * pow(bf * diameter, 1.87) * pow(driving_energy, 0.63));
+    double Q_inlet_unsubmerged = barrels * (0.421 * sqrt(p->g) * pow(bf * diameter, 0.87) * pow(driving_energy, 1.63));
+    double Q_inlet_submerged = barrels * (0.530 * sqrt(p->g) * pow(bf * diameter, 1.87) * pow(driving_energy, 0.63));
 
     double Q = (Q_inlet_unsubmerged < Q_inlet_submerged) ? Q_inlet_unsubmerged : Q_inlet_submerged;
 
     // Critical depth estimation (two formulas)
-    double dcrit1 = (bf * diameter) / 1.26 * pow(Q / sqrt(G) / pow(bf * diameter, 2.5), 1.0 / 3.75);
-    double dcrit2 = (bf * diameter) / 0.95 * pow(Q / sqrt(G) / pow(bf * diameter, 2.5), 1.0 / 1.95);
+    double dcrit1 = (bf * diameter) / 1.26 * pow(Q / sqrt(p->g) / pow(bf * diameter, 2.5), 1.0 / 3.75);
+    double dcrit2 = (bf * diameter) / 0.95 * pow(Q / sqrt(p->g) / pow(bf * diameter, 2.5), 1.0 / 1.95);
 
     double outlet_culvert_depth;
     if (dcrit1 / (bf * diameter) > 0.85) {
@@ -209,8 +208,8 @@ void boyd_pipe_discharge(const struct culvert_params *p,
             flow_width = barrels * bd;
         } else {
             // Partial flow - recalculate critical depth
-            dcrit1 = bd / 1.26 * pow(Q / sqrt(G) / pow(bd, 2.5), 1.0 / 3.75);
-            dcrit2 = bd / 0.95 * pow(Q / sqrt(G) / pow(bd, 2.5), 1.0 / 1.95);
+            dcrit1 = bd / 1.26 * pow(Q / sqrt(p->g) / pow(bd, 2.5), 1.0 / 3.75);
+            dcrit2 = bd / 0.95 * pow(Q / sqrt(p->g) / pow(bd, 2.5), 1.0 / 1.95);
 
             if (dcrit1 / bd > 0.85)
                 outlet_culvert_depth = dcrit2;
@@ -232,7 +231,7 @@ void boyd_pipe_discharge(const struct culvert_params *p,
     }
 
     double hyd_rad = flow_area / perimeter;
-    double culvert_velocity = sqrt(delta_total_energy / ((sum_loss / 2.0 / G) +
+    double culvert_velocity = sqrt(delta_total_energy / ((sum_loss / 2.0 / p->g) +
                                     (manning * manning * length) / pow(hyd_rad, 1.33333)));
     double Q_outlet_tailwater = flow_area * culvert_velocity;
 
@@ -333,7 +332,7 @@ static void compute_enquiry_values(const struct inlet_data *data,
     double u = water_depth * data->enquiry_xmom / denom;
     double v = water_depth * data->enquiry_ymom / denom;
     double speed_sq = u * u + v * v;
-    *velocity_head = 0.5 * speed_sq / G;
+    *velocity_head = 0.5 * speed_sq / p->g;
 
     *total_energy = *velocity_head + data->enquiry_stage;
     *specific_energy = *velocity_head + d;

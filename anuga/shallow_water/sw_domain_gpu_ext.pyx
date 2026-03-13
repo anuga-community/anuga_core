@@ -247,6 +247,7 @@ cdef extern from "gpu_domain.h" nogil:
     # Culvert operators (Boyd box/pipe - batched GPU gather/scatter)
     struct culvert_params:
         int type
+        double g
         double width
         double height
         double diameter
@@ -1536,6 +1537,7 @@ def init_culvert_operator(GPUDomain gpu_dom,
     memset(&p, 0, sizeof(culvert_params))
 
     p.type = culvert_type
+    p.g = gpu_dom.GD.D.g
     p.width = width
     p.height = height
     p.diameter = diameter

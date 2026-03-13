@@ -176,6 +176,7 @@ struct inlet_operators {
 // Static geometry parameters for one culvert
 struct culvert_params {
     int type;                    // CULVERT_TYPE_BOX or CULVERT_TYPE_PIPE
+    double g;                    // Gravity [m/s^2] (from domain)
     double width;                // Box width [m]
     double height;               // Box height [m]
     double diameter;             // Pipe diameter [m]
