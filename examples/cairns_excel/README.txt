@@ -34,6 +34,20 @@ or (in parallel, with 6 cores in this example):
 
 See the xls file for explanation of the configuration.
 
+## TOML configuration (alternative to Excel) ##
+
+A plain-text TOML configuration file is provided as an alternative to the
+Excel interface:
+> python run_model.py cairns_example.toml
+> mpirun -np 6 python run_model.py cairns_example.toml
+
+TOML files are human-readable, version-control friendly (clean diffs), and
+require no external dependencies on Python 3.11+.  For older Python versions
+install the 'tomli' package (pip install tomli).
+
+See cairns_example.toml for a fully commented example of every available
+setting.
+
 ## Post Processing ##
 
 There are also various post-processing scripts (see them for details):

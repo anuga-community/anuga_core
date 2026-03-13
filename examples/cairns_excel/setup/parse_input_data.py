@@ -33,9 +33,16 @@ class ProjectData(object):
 
         if file_extension in ['.xls', '.xlsx']:
             self.get_data_from_excel(filename)
+        elif file_extension == '.toml':
+            self.get_data_from_toml(filename)
         else:
             msg = 'File type not supported'
             raise ValueError(msg)
+
+    def get_data_from_toml(self, filename):
+        from .parse_input_data_toml import ProjectDataTOML
+        toml_data = ProjectDataTOML(filename)
+        self.__dict__.update(toml_data.__dict__)
 
     def get_data_from_excel(self, filename):
         """Get data from xls or xlsx file
