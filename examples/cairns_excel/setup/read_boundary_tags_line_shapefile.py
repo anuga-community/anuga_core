@@ -5,9 +5,10 @@ Gareth Davies, Geoscience Australia 2014+
 """
 
 import os
-import ogr
 import numpy
 import subprocess
+from osgeo import ogr
+from anuga.utilities import spatialInputUtil as su
 
 ############################################################
 def check_output(list_of_commands):
@@ -109,13 +110,10 @@ def get_boundary_tags_from_ogrinfo(shapefile_name,
 
     """
 
-    # Hack work around for python < 2.7
-    try:
-        ogr_info = subprocess.check_output('ogrinfo -al ' + shapefile_name)
-    except:
-        ogr_info = check_output(['ogrinfo', '-al', shapefile_name])
+    ogr_info = subprocess.check_output(
+        ['ogrinfo', '-al', shapefile_name]).decode('utf-8', errors='replace')
 
-    ogr_info = ogr_info.split(os.linesep)
+    ogr_info = ogr_info.splitlines()
 
     boundary_line_and_tags = parse_ogr_info_text(ogr_info, tag_attribute)
 
@@ -124,18 +122,52 @@ def get_boundary_tags_from_ogrinfo(shapefile_name,
 
 
 def read_boundary_tags_line_shapefile(shapefile_name,
-                                      tag_attribute='bndryTag'):
+                                      tag_attribute='bndryTag',
+                                      explicit_tags=None):
     """
     Read in the boundary lines + tags from an appropriately structured line
-    shapefile. (Update: It can now alternatively be a csv file)
+    shapefile, or from a plain CSV polygon with explicit edge tags.
 
-    Return the bounding polygon + dict with tags + indices
+    Parameters
+    ----------
+    shapefile_name : str
+        Path to an OGR-readable line shapefile, OR a plain x,y CSV polygon
+        file when explicit_tags is provided.
+    tag_attribute : str
+        Name of the shapefile attribute that carries the boundary tag label.
+        Ignored when explicit_tags is provided.
+    explicit_tags : list of dict, optional
+        Required when shapefile_name is a CSV.  Each dict has:
+            {'tag': <str>, 'edges': [<int>, ...]}
+        where edge indices refer to the segments of the CSV polygon.
+
+    Returns
+    -------
+    (bounding_polygon, boundary_tags)
     """
 
     if not os.path.exists(shapefile_name):
         msg = 'Cannot find file ' + shapefile_name
         raise ValueError(msg)
 
+    # --- CSV path: polygon + explicit edge-tag mapping ---
+    if os.path.splitext(shapefile_name)[1].lower() == '.csv':
+        if explicit_tags is None:
+            raise ValueError(
+                f'bounding_polygon {shapefile_name!r} is a CSV file. '
+                f'You must supply boundary_tags in the mesh config section.')
+        bounding_polygon = su.read_polygon(shapefile_name)
+        boundary_tags = {}
+        for entry in explicit_tags:
+            tag   = entry['tag']
+            edges = list(entry['edges'])
+            if tag in boundary_tags:
+                boundary_tags[tag] = boundary_tags[tag] + edges
+            else:
+                boundary_tags[tag] = edges
+        return (bounding_polygon, boundary_tags)
+
+    # --- Shapefile / OGR path ---
     # Step 1: Read the data
     try:
         # Read from a vector GIS file using gdal python interface
@@ -148,14 +180,23 @@ def read_boundary_tags_line_shapefile(shapefile_name,
 
         boundary_line_and_tags = []
 
+        layer_defn = layer.GetLayerDefn()
+        field_names = [layer_defn.GetFieldDefn(i).GetName()
+                       for i in range(layer_defn.GetFieldCount())]
+        if tag_attribute not in field_names:
+            raise ValueError(
+                f'Attribute {tag_attribute!r} not found in {shapefile_name!r}. '
+                f'Available fields: {field_names}')
+
         for feature in layer:
             line = feature.GetGeometryRef().GetPoints()
             line = [list(l) for l in line]
             tag = feature.GetField(tag_attribute)
             boundary_line_and_tags.append([line, tag])
-    except:
-        # Try to use ogrinfo to get the answer
-
+    except ValueError:
+        raise
+    except Exception:
+        # OGR Python bindings unavailable — fall back to ogrinfo command line
         boundary_line_and_tags = get_boundary_tags_from_ogrinfo(shapefile_name,
             tag_attribute)
 

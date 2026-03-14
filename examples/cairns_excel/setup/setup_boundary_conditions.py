@@ -9,6 +9,8 @@ Gareth Davies, Geoscience Australia 2014+
 """
 
 
+import sys
+import traceback
 import numpy
 import scipy
 import scipy.interpolate
@@ -22,6 +24,16 @@ def setup_boundary_conditions(domain, project):
     Edit this if new types of boundary conditions need to be supported
     """
 
+    try:
+        _setup_boundary_conditions_inner(domain, project)
+    except Exception:
+        sys.__stdout__.write('\nERROR in setup_boundary_conditions:\n')
+        traceback.print_exc(file=sys.__stdout__)
+        sys.__stdout__.flush()
+        raise
+
+
+def _setup_boundary_conditions_inner(domain, project):
     # Dict to hold { boundary_tag: boundary_condition_function }
     boundary_tags_and_conditions = {}
 
@@ -41,7 +53,7 @@ def setup_boundary_conditions(domain, project):
             boundary_data_file = bd[2]
             start_time = bd[3]
             # Read data
-            boundary_data = scipy.genfromtxt(
+            boundary_data = numpy.genfromtxt(
                 boundary_data_file,
                 delimiter=',',
                 skip_header=1)

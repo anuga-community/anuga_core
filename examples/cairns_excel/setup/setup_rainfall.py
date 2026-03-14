@@ -37,7 +37,7 @@ def setup_rainfall(domain, project):
         else:
             multiplier = 1.0
 
-        rain_timeseries = scipy.genfromtxt(
+        rain_timeseries = numpy.genfromtxt(
             timeseries_file, delimiter=',', skip_header=1)
 
         # Adjust starttime

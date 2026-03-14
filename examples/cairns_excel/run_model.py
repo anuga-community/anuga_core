@@ -32,7 +32,7 @@ import sys
 import anuga
 from anuga.parallel import myid, numprocs, finalize, barrier
 from anuga.operators.collect_max_quantities_operator import \
-    collect_max_quantities_operator
+    Collect_max_quantities_operator
 
 # Routines to setup the domain
 
@@ -62,27 +62,28 @@ else:
 
 project = PrepareData(input_file, output_log='Simulation_logfile.log')
 
+
+def progress(msg):
+    """Print a setup milestone to the terminal regardless of log redirection."""
+    sys.__stdout__.write(msg + '\n')
+    sys.__stdout__.flush()
+
+
 ###########################################################################
 #
-# SETUP DOMAIN AND INITIAL CONDITIONS 
+# SETUP DOMAIN AND INITIAL CONDITIONS
 #
 ###########################################################################
 
-set_initial_conditions_in_parallel = False
+progress('Building mesh')
+domain = setup_mesh.setup_mesh(project)
 
-if not set_initial_conditions_in_parallel:
-    print('Making domain and initial conditions in serial')
-    domain = setup_mesh.setup_mesh(project, 
-        setup_initial_conditions=setup_initial_conditions)
-else:
-    print('Making domain in serial')
-    domain = setup_mesh.setup_mesh(project)
-    print('Making initial conditions in parallel')
-    setup_initial_conditions.setup_initial_conditions(domain, project)
-    
+progress('Setting initial conditions')
+setup_initial_conditions.setup_initial_conditions(domain, project)
+
 
 # Riverwalls must be added AFTER any distribute step
-print('Adding riverwalls')
+progress('Adding riverwalls')
 setup_riverwalls.setup_riverwalls(domain, project)
 
 ##########################################################################
@@ -91,16 +92,16 @@ setup_riverwalls.setup_riverwalls(domain, project)
 #
 ##########################################################################
 
-print('Making rainfall ')
+progress('Making rainfall')
 setup_rainfall.setup_rainfall(domain, project)
 
-print('Making inlets ')
+progress('Making inlets')
 setup_inlets.setup_inlets(domain, project)
 
-print('Making bridges ')
+progress('Making bridges')
 setup_bridges.setup_bridges(domain, project)
 
-print('Making pumping stations ')
+progress('Making pumping stations')
 setup_pumping_stations.setup_pumping_stations(domain, project)
 
 ##########################################################################
@@ -109,7 +110,7 @@ setup_pumping_stations.setup_pumping_stations(domain, project)
 #
 ##########################################################################
 
-print('Making boundary conditions ')
+progress('Making boundary conditions')
 setup_boundary_conditions.setup_boundary_conditions(domain, project)
 
 ##########################################################################
@@ -118,7 +119,7 @@ setup_boundary_conditions.setup_boundary_conditions(domain, project)
 #
 ##########################################################################
 
-max_quantities = collect_max_quantities_operator(
+max_quantities = Collect_max_quantities_operator(
     domain,
     update_frequency=project.max_quantity_update_frequency,
     collection_start_time=project.max_quantity_collection_start_time,
@@ -133,11 +134,14 @@ max_quantities = collect_max_quantities_operator(
 
 print('Evolving')
 
+_logfile = sys.stdout  # Logger or normal stdout
 barrier()
 for t in domain.evolve(yieldstep=project.yieldstep,
                        finaltime=project.finaltime):
     if myid == 0:
+        sys.stdout = sys.__stdout__
         domain.print_timestepping_statistics()
+        sys.stdout = _logfile
 
     if project.report_mass_conservation_statistics:
         domain.report_water_volume_statistics()

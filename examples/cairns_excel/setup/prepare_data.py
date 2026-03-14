@@ -38,6 +38,9 @@ class Logger(object):
         self.log.write(message)
         self.log.flush()
 
+    def flush(self):
+        self.log.flush()
+
 
 class PrepareData(ProjectData):
 
@@ -151,7 +154,8 @@ class PrepareData(ProjectData):
         bounding_polygon_and_tags = \
             read_boundary_tags_line_shapefile(
                 self.bounding_polygon_and_tags_file,
-                self.boundary_tags_attribute_name)
+                self.boundary_tags_attribute_name,
+                explicit_tags=getattr(self, 'bounding_polygon_explicit_tags', None))
         self.bounding_polygon = bounding_polygon_and_tags[0]
         self.boundary_tags = bounding_polygon_and_tags[1]
 
@@ -217,6 +221,8 @@ class PrepareData(ProjectData):
             def default(self, obj):
                 if isinstance(obj, numpy.ndarray):
                     return obj.tolist()
+                if isinstance(obj, range):
+                    return list(obj)
                 return super().default(obj)
 
         self.mesh_id_hash = hashlib.md5(

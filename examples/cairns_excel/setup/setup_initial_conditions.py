@@ -10,6 +10,7 @@ Gareth Davies, Geoscience Australia 2014+
 """
 
 
+import sys
 import numpy
 import glob
 import anuga
@@ -111,23 +112,42 @@ def setup_initial_conditions(domain, project):
         domain.set_quantity(quantity_name, quantity_function,
                             location=location)
 
-        # Treat additions
-        quantity_addition_function = \
-            qs.composite_quantity_setting_function(
-                quantity_additions, domain, nan_treatment='fall_through')
-        domain.add_quantity(quantity_name, quantity_addition_function,
-            location=location)
+        # Treat additions (skip if none defined)
+        if quantity_additions:
+            quantity_addition_function = \
+                qs.composite_quantity_setting_function(
+                    quantity_additions, domain, nan_treatment='fall_through')
+            domain.add_quantity(quantity_name, quantity_addition_function,
+                location=location)
+    import traceback
+
+    def _progress(msg):
+        sys.__stdout__.write('  ' + msg + '\n')
+        sys.__stdout__.flush()
+
+    def _run(label, **kwargs):
+        _progress(f'Setting {label}...')
+        try:
+            quick_set_quantity(**kwargs)
+            _progress(f'  {label} done.')
+        except Exception:
+            sys.__stdout__.write(f'\nERROR setting {label}:\n')
+            traceback.print_exc(file=sys.__stdout__)
+            sys.__stdout__.flush()
+            raise
+
     ##########################################################################
 
     # Elevation
-    quick_set_quantity(quantity_name='elevation',
-                       quantity_data=project.elevation_data,
-                       domain=domain,
-                       quantity_clip_range=project.elevation_clip_range,
-                       quantity_mean=project.elevation_mean,
-                       quantity_additions=project.elevation_additions,
-                       location='centroids',
-                       mean_type='mean')
+    _run('elevation',
+         quantity_name='elevation',
+         quantity_data=project.elevation_data,
+         domain=domain,
+         quantity_clip_range=project.elevation_clip_range,
+         quantity_mean=project.elevation_mean,
+         quantity_additions=project.elevation_additions,
+         location='centroids',
+         mean_type='mean')
 
     # Friction -- if averaging is used, harmonic mean is probably a better
     # averaging method, although no method will be perfect.
@@ -137,42 +157,44 @@ def setup_initial_conditions(domain, project):
     # Say Sf is fixed (by topography for steady uniform flow)
     # Say d^(2/3) is ~ 1.
     # Then mean(U) and mean(Ud) are preserved by taking n = 1/mean(1/n)
-    quick_set_quantity(quantity_name='friction',
-                       quantity_data=project.friction_data,
-                       domain=domain,
-                       quantity_clip_range=project.friction_clip_range,
-                       quantity_mean=project.friction_mean,
-                       quantity_additions=project.friction_additions,
-                       location='centroids',
-                       mean_type='harmonic_mean')
-    # Stage
-    quick_set_quantity(quantity_name='stage',
-                       quantity_data=project.stage_data,
-                       domain=domain,
-                       quantity_clip_range=project.stage_clip_range,
-                       quantity_mean=project.stage_mean,
-                       quantity_additions=project.stage_additions,
-                       location='centroids',
-                       mean_type='mean')
+    _run('friction',
+         quantity_name='friction',
+         quantity_data=project.friction_data,
+         domain=domain,
+         quantity_clip_range=project.friction_clip_range,
+         quantity_mean=project.friction_mean,
+         quantity_additions=project.friction_additions,
+         location='centroids',
+         mean_type='harmonic_mean')
 
-    # xmomentum
-    quick_set_quantity(quantity_name='xmomentum',
-                       quantity_data=project.xmomentum_data,
-                       domain=domain,
-                       quantity_clip_range=project.xmomentum_clip_range,
-                       quantity_mean=project.xmomentum_mean,
-                       quantity_additions=project.xmomentum_additions,
-                       location='centroids',
-                       mean_type='mean')
+    _run('stage',
+         quantity_name='stage',
+         quantity_data=project.stage_data,
+         domain=domain,
+         quantity_clip_range=project.stage_clip_range,
+         quantity_mean=project.stage_mean,
+         quantity_additions=project.stage_additions,
+         location='centroids',
+         mean_type='mean')
 
-    # ymomentum
-    quick_set_quantity(quantity_name='ymomentum',
-                       quantity_data=project.ymomentum_data,
-                       domain=domain,
-                       quantity_clip_range=project.ymomentum_clip_range,
-                       quantity_mean=project.ymomentum_mean,
-                       quantity_additions=project.ymomentum_additions,
-                       location='centroids',
-                       mean_type='mean')
+    _run('xmomentum',
+         quantity_name='xmomentum',
+         quantity_data=project.xmomentum_data,
+         domain=domain,
+         quantity_clip_range=project.xmomentum_clip_range,
+         quantity_mean=project.xmomentum_mean,
+         quantity_additions=project.xmomentum_additions,
+         location='centroids',
+         mean_type='mean')
+
+    _run('ymomentum',
+         quantity_name='ymomentum',
+         quantity_data=project.ymomentum_data,
+         domain=domain,
+         quantity_clip_range=project.ymomentum_clip_range,
+         quantity_mean=project.ymomentum_mean,
+         quantity_additions=project.ymomentum_additions,
+         location='centroids',
+         mean_type='mean')
 
     return
