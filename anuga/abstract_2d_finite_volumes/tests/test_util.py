@@ -150,6 +150,7 @@ class Test_Util(unittest.TestCase):
         domain1.set_datadir('.')
         sww_file = 'spatio_temporal_boundary_source_%d' %(id(self))
         domain1.set_name(sww_file)
+        self.addCleanup(lambda: os.remove(sww_file + '.sww') if os.path.exists(sww_file + '.sww') else None)
 
         #Bed-slope, friction and IC at vertices (and interpolated elsewhere)
         domain1.set_quantity('elevation', 0)
@@ -358,6 +359,7 @@ class Test_Util(unittest.TestCase):
         domain1.store = True
         domain1.set_datadir('.')
         domain1.set_name('spatio_temporal_boundary_source_%d' %(id(self)))
+        self.addCleanup(lambda: os.remove('spatio_temporal_boundary_source_%d.sww' % id(self)) if os.path.exists('spatio_temporal_boundary_source_%d.sww' % id(self)) else None)
 
         #Bed-slope, friction and IC at vertices (and interpolated elsewhere)
         domain1.set_quantity('elevation', 0)
