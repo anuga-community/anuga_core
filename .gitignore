@@ -3,6 +3,7 @@
 
 .#*
 [#]*#
+*.code-workspace
 *~
 *$
 *.csv
