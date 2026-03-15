@@ -132,13 +132,17 @@ max_quantities = Collect_max_quantities_operator(
 #
 ##########################################################################
 
+domain.set_multiprocessor_mode(project.multiprocessor_mode)
+domain.set_omp_num_threads(project.omp_num_threads)
+
 print('Evolving')
 
 import io
 _logfile = sys.stdout  # Logger or normal stdout
 barrier()
 for t in domain.evolve(yieldstep=project.yieldstep,
-                       finaltime=project.finaltime):
+                       finaltime=project.finaltime,
+                       outputstep=project.outputstep):
     if myid == 0:
         buf = io.StringIO()
         sys.stdout = buf

@@ -175,6 +175,17 @@ class ProjectDataTOML:
         self.report_peak_velocity_statistics          = bool(p.get('report_peak_velocity_statistics', False))
         self.report_smallest_edge_timestep_statistics = bool(p.get('report_smallest_edge_timestep_statistics', False))
 
+        # Number of OpenMP threads (None = use OMP_NUM_THREADS env var)
+        raw_omp = p.get('omp_num_threads', None)
+        self.omp_num_threads = int(raw_omp) if raw_omp is not None else None
+
+        # Multiprocessor mode: 1 = OpenMP (default), 2 = CuPy/GPU
+        self.multiprocessor_mode = int(p.get('multiprocessor_mode', 1))
+
+        # SWW output interval [seconds]; None means write every yieldstep.
+        raw_os = p.get('outputstep', None)
+        self.outputstep = float(raw_os) if raw_os is not None else None
+
     # -----------------------------------------------------------------------
     # Mesh
     # -----------------------------------------------------------------------

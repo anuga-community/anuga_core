@@ -64,6 +64,19 @@ report_mass_conservation_statistics      = false
 report_peak_velocity_statistics          = false
 report_smallest_edge_timestep_statistics = false
 
+# Number of OpenMP threads for the flow solver.
+# Omit (or set to 1) to use a single thread; reads OMP_NUM_THREADS env var if present.
+# omp_num_threads = 4
+
+# Multiprocessor mode:
+#   1 = OpenMP (default)
+#   2 = CuPy / GPU
+multiprocessor_mode = 1
+
+# SWW output interval [seconds].  Must be an integer multiple of yieldstep.
+# Omit to write SWW output every yieldstep (the default).
+# outputstep = 600.0
+
 
 # =============================================================================
 # Mesh
