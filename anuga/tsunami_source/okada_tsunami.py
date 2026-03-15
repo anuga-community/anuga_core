@@ -26,7 +26,7 @@ import numpy
 
 try:
     import okada_tsunami_fortran
-except:
+except ImportError:
     raise Exception('okada_tsunami_fortran does not appear to be compiled.\n \
     You can compile it by running the command:\n \
     "f2py -c okada_tsunami_fortran.f -m okada_tsunami_fortran"\n \

@@ -6,7 +6,7 @@ from anuga.rain.calibrated_radar_rain import Calibrated_radar_rain
 
 try:
     import ipdb as pdb
-except:
+except ImportError:
     import pdb
 
 

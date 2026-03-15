@@ -28,7 +28,7 @@ import numpy as num
 
 try:
     import numpy.lib.arraysetops as numset
-except:
+except ImportError:
     import numpy as numset
 
 
@@ -38,7 +38,7 @@ from anuga import indent
 
 try:
     import local_config as config
-except:
+except ImportError:
     from . import config as config
 
 

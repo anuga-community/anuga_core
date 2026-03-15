@@ -1474,7 +1474,7 @@ class Test_Util(unittest.TestCase):
             import matplotlib
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
-        except:
+        except ImportError:
             #print "Couldn't import module from matplotlib, probably you need to update matplotlib"
             return
         

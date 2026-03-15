@@ -104,7 +104,7 @@ except ImportError:
 
 try:
     import dill as pickle
-except:
+except ImportError:
     import pickle
 
 from anuga.abstract_2d_finite_volumes.generic_domain \
@@ -132,13 +132,13 @@ def nvtxRangePop(*arg):
 try:
     from cupy.cuda.nvtx import RangePush as nvtxRangePush
     from cupy.cuda.nvtx import RangePop  as nvtxRangePop
-except:
+except ImportError:
     pass
 
 try:
     from nvtx import range_push as nvtxRangePush
     from nvtx import range_pop  as nvtxRangePop
-except:
+except ImportError:
     pass
 
 
@@ -1055,7 +1055,7 @@ class Domain(Generic_Domain):
 
         try:
             from zoneinfo import ZoneInfo
-        except:
+        except ImportError:
             from backports.zoneinfo import ZoneInfo
 
         if tz is None:
@@ -1085,7 +1085,7 @@ class Domain(Generic_Domain):
         
         try:
             from datetime import UTC
-        except:
+        except ImportError:
             from datetime import timezone
             UTC = timezone.utc 
 

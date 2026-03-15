@@ -30,7 +30,7 @@ from anuga.shallow_water.sw_domain_openmp_ext import rotate, evaluate_reflective
 
 try:
     from numba import jit
-except:
+except ImportError:
     def jit(nopython=True):
         """Dummy decorator for numba"""
         def dummy_decorator(func):

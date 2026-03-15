@@ -14,7 +14,7 @@ import numpy as np
 try:
   from mpi4py import MPI
   
-except:
+except ImportError:
   print ('WARNING: Could not import mpi4py - '
       'defining sequential interface')
 

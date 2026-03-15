@@ -38,7 +38,7 @@ import Pmw
 
 try:
     from . import ProgressBar
-except:
+except ImportError:
     import anuga.pmesh.ProgressBar as ProgressBar
 
 

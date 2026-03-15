@@ -168,7 +168,7 @@ class Region(object):
             #matplotlib.use('Agg')
             import matplotlib.pyplot as plt
             import matplotlib.tri as tri
-        except:
+        except ImportError:
             msg ="Couldn't import module from matplotlib, probably you need to update matplotlib"
             raise msg
 

@@ -491,7 +491,7 @@ def test(cachedir=None, verbose=False, compression=None):
 
   try:
     import zlib
-  except:
+  except ImportError:
     log.critical()
     log.critical('*** Could not find zlib, default to no-compression      ***')
     log.critical('*** Installing zlib will improve performance of caching ***')
@@ -1352,7 +1352,7 @@ def mysave(T, file, compression):
   if compression:
     try:
       import zlib
-    except:
+    except ImportError:
       log.critical()
       log.critical('*** Could not find zlib ***')
       log.critical('*** Try to run caching with compression off ***')

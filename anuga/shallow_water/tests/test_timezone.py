@@ -9,7 +9,7 @@ from datetime import datetime
 
 try:
     from zoneinfo import ZoneInfo
-except:
+except ImportError:
     from backports.zoneinfo import ZoneInfo
 
 #from zoneinfo import ZoneInfo

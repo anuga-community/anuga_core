@@ -110,7 +110,7 @@ Parameters involving communication
         #-------------------------------
         try:
             import xarray
-        except:
+        except ImportError:
             pass
         else:
             if type(rate) is xarray.core.dataarray.DataArray:

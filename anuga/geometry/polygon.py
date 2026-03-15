@@ -764,7 +764,7 @@ def plot_polygons(polygons_points,
         matplotlib.use('Agg')
         from matplotlib.pyplot import plot, savefig, xlabel, \
             ylabel, title, close, title, fill
-    except:
+    except ImportError:
         return
 
     assert type(polygons_points) == list, \

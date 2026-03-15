@@ -285,7 +285,7 @@ class Test_Numerical_Tools(unittest.TestCase):
         FN = 'util_ext.c'
         try:
             import anuga.utilities.util_ext as util_ext
-        except:
+        except ImportError:
             from anuga.utilities.compile import compile
 
             try:

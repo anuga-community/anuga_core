@@ -13,11 +13,6 @@ from warnings import warn
 from copy import deepcopy
 import copy
 
-try:
-    from exceptions import Exception
-except:
-    pass
-
 from anuga.file.netcdf import NetCDFFile
 import numpy as num
 from numpy.random import randint, seed

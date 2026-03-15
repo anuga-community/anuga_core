@@ -25,11 +25,6 @@ from anuga.utilities import log
 
 import numpy as num
 
-# Python 2.7 Hack
-try:
-    from exceptions import Exception
-except:
-    pass
 class AlphaError(Exception):pass
 class PointError(AlphaError): pass
 class FlagError(AlphaError): pass

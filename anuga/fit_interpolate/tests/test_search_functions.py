@@ -22,7 +22,7 @@ class Test_search_functions(unittest.TestCase):
         FN = 'search_functions_ext.c'
         try:
             import search_functions_ext
-        except:
+        except ImportError:
             from compile import compile
 
             try:

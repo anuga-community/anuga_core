@@ -321,7 +321,7 @@ from anuga.config import velocity_protection
 # --------------------------------------
 try:
     from importlib import reload
-except:
+except ImportError:
     pass
 reload(sys)
 sys.stdout = _stdout
