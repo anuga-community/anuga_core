@@ -57,7 +57,7 @@ def run_script(script, args=None, np=1, alg=None, verbose=False, allow_parallel=
         
         return 0 
     
-    except:
+    except Exception:
         return 1
     
     

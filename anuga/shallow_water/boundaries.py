@@ -270,11 +270,11 @@ class Transmissive_momentum_set_stage_boundary(Boundary):
         value = self.function(t)
         try:
             x = float(value)
-        except:
+        except (ValueError, TypeError):
             x = float(value[0])
 
         q[0] = x
-           
+
         return q
 
         # FIXME: Consider this (taken from File_boundary) to allow
@@ -367,7 +367,7 @@ class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
         value = self.get_boundary_values()
         try:
             x = float(value)
-        except:
+        except (ValueError, TypeError):
             x = float(value[0])
 
         q[0] = x
@@ -407,10 +407,10 @@ class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
         value = self.get_boundary_values()
         try:
             x = float(value)
-        except:
+        except (ValueError, TypeError):
             x = float(value[0])
-       
-        # Set stage 
+
+        # Set stage
         Stage.boundary_values[ids]  = x
        
         # Compute flux normal to edge
@@ -499,7 +499,7 @@ class Time_stage_zero_momentum_boundary(Boundary):
 
         try:
             q = float(q)
-        except:
+        except (ValueError, TypeError):
             msg = 'Return value from time boundary function could '
             msg += 'not be converted into a float.\n'
             msg += 'I got %s' %str(q)
@@ -607,7 +607,7 @@ class Characteristic_stage_boundary(Boundary):
         value = self.function(t)
         try:
             w_outside = float(value)
-        except:
+        except (ValueError, TypeError):
             w_outside = float(value[0])
 
         q = np.zeros(len(self.conserved_quantities), float)
@@ -682,7 +682,7 @@ class Characteristic_stage_boundary(Boundary):
         value = self.function(t)
         try:
             w_outside = float(value)
-        except:
+        except (ValueError, TypeError):
             w_outside = float(value[0])
 
         # Transfer these quantities to the boundary array
@@ -1085,7 +1085,7 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
         value = self.function(t)
         try:
             stage_outside = float(value)
-        except:
+        except (ValueError, TypeError):
             stage_outside = float(value[0])
 
         if(depth_inside==0.):
@@ -1167,7 +1167,7 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
         value = self.function(t)
         try:
             stage_outside = float(value)
-        except:
+        except (ValueError, TypeError):
             stage_outside = float(value[0])
 
         # Transfer these quantities to the boundary array

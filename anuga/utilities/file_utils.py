@@ -69,7 +69,7 @@ def check_dir(path, verbose=None):
 
             if verbose:
                 log.critical('MESSAGE: Directory %s created.' % path)
-        except:
+        except OSError:
             log.critical('WARNING: Directory %s could not be created.' % path)
             if unix:
                 try:

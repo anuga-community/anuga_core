@@ -27,10 +27,10 @@ except ImportError:
   def get_processor_name():
       try:
           hostname = os.environ['HOST']
-      except:
+      except KeyError:
           try:
               hostname = os.environ['HOSTNAME']
-          except:
+          except KeyError:
               hostname = 'Unknown'
 
       return hostname

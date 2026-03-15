@@ -40,7 +40,7 @@ def rectangular_cross_domain(*args, **kwargs):
 
     try:
         verbose = kwargs.pop('verbose')
-    except:
+    except KeyError:
         verbose = False
 
 

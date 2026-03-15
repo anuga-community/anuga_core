@@ -64,7 +64,7 @@ try:
     print('Catchment File')
     print(Catchment_file)
     #print p2
-except:
+except Exception:
     p2 = None
     pass
 
@@ -73,7 +73,7 @@ try:
     print('State_boundary_file')
     print(State_boundary_file)
     #print p3
-except:
+except Exception:
     p3 = None
     pass
     

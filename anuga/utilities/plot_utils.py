@@ -242,9 +242,9 @@ def _read_output(filename, minimum_allowed_height, timeSlices):
     else:
         try:
             inds = list(timeSlices)
-        except:
+        except TypeError:
             inds = [timeSlices]
-    
+
     if(inds != 'max'):
         time = time[inds]
     else:
@@ -252,7 +252,7 @@ def _read_output(filename, minimum_allowed_height, timeSlices):
         # technically the right thing -- if not misleading
         time = time.max()
 
-    
+
     # Get lower-left
     xllcorner = fid.xllcorner
     yllcorner = fid.yllcorner
@@ -395,7 +395,7 @@ def _getCentVar(fid, varkey_c, time_indices, absMax=False,  vols = None, space_i
             tmp = fid.variables[newkey][:]
             try: # array contain time slices
                 tmp=(tmp[:,vols0]+tmp[:,vols1]+tmp[:,vols2])/3.0
-            except:
+            except IndexError:
                 tmp=(tmp[vols0]+tmp[vols1]+tmp[vols2])/3.0
             var_cent=getInds(tmp, timeSlices=time_indices, absMax=absMax)
     else:
@@ -504,9 +504,9 @@ def _get_centroid_values(p, velocity_extrapolation, verbose, timeSlices,
     else:
         try:
             inds = list(timeSlices)
-        except:
+        except TypeError:
             inds = [timeSlices]
-    
+
     if(inds != 'max'):
         time = time[inds]
     else:
@@ -534,7 +534,7 @@ def _get_centroid_values(p, velocity_extrapolation, verbose, timeSlices,
     # Friction might not be stored at all
     try:
         friction_cent = _getCentVar(fid, 'friction_c', time_indices=inds, vols=vols)
-    except:
+    except Exception:
         friction_cent = elev_cent*0.+numpy.nan
     
     # Trick to treat the case where inds == 'max'
@@ -1053,7 +1053,7 @@ def Make_Geotif(swwFile=None,
     # Make output_dir
     try:
         os.mkdir(output_dir)
-    except:
+    except OSError:
         pass
 
     if(swwFile is not None):
@@ -1261,7 +1261,7 @@ def plot_triangles(p, adjustLowerLeft=False, values=None, values_cmap=matplotlib
     else:
         try:
             lv = len(values)
-        except:
+        except TypeError:
             values = numpy.array(len(p.vols)*[values])
             lv = len(values)
 

@@ -2197,14 +2197,14 @@ class Quantity(object):
             # Take default from domain
             try:
                 smooth = self.domain.smooth
-            except:
+            except AttributeError:
                 smooth = False
 
         if centroid_averaging is None:
             # Take default from domain
             try:
                 centroid_averaging = self.domain.get_using_centroid_averaging()
-            except:
+            except AttributeError:
                 centroid_averaging = False
                 
         if precision is None:

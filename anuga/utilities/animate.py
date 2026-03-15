@@ -591,7 +591,7 @@ class SWW_plotter(object):
         
         try:
             elev = self.elev[frame, :]
-        except:
+        except IndexError:
             elev = self.elev
 
         ims = []
@@ -670,7 +670,7 @@ class SWW_plotter(object):
         
         try:
             elev = self.elev[frame, :]
-        except:
+        except IndexError:
             elev = self.elev
 
         ims = []
@@ -747,7 +747,7 @@ class SWW_plotter(object):
         
         try:
             elev = self.elev[frame, :]
-        except:
+        except IndexError:
             elev = self.elev
 
         ims = []
@@ -821,7 +821,7 @@ class SWW_plotter(object):
         
         try:
             elev = self.elev[frame, :]
-        except:
+        except IndexError:
             elev = self.elev
         speed = self.speed[frame, :]
 

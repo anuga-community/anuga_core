@@ -718,13 +718,13 @@ class Flat_slice_erosion_operator(Erosion_operator):
                     value = self.elevation(t)
                     self.elev_c[ind] = num.where(self.elev_c[ind] >  value, value, self.elev_c[ind])
                     self.stage_c[ind] = self.elev_c[ind] + height
-                except:
+                except Exception:
                     pass
             else:
                 try:
                     value = self.elevation(t)
                     self.elev_v[ind] = num.where(self.elev_v[ind] >  value, value, self.elev_v[ind])
-                except:
+                except Exception:
                     pass
 
 
@@ -805,22 +805,22 @@ class Flat_fill_slice_erosion_operator(Erosion_operator):
                     value = self.elevation(t)
                     height = self.stage_c[ind] - self.elev_c[ind]
                     if value > num.max(self.elev_c[ind]):
-                        self.elev_c[ind] = num.where(self.elev_c[ind] <  value, value, self.elev_c[ind])    
+                        self.elev_c[ind] = num.where(self.elev_c[ind] <  value, value, self.elev_c[ind])
                     else:
                         self.elev_c[ind] = num.where(self.elev_c[ind] >  value, value, self.elev_c[ind])
                     self.stage_c[ind] = self.elev_c[ind] + height
-                except:
+                except Exception:
                     pass
-                
+
             else:
                 try:
                     value = self.elevation(t)
                     print(value)
                     if value > num.max(self.elev_v[ind]):
-                        self.elev_v[ind] = num.where(self.elev_v[ind] <  value, value, self.elev_v[ind])    
+                        self.elev_v[ind] = num.where(self.elev_v[ind] <  value, value, self.elev_v[ind])
                     else:
                         self.elev_v[ind] = num.where(self.elev_v[ind] >  value, value, self.elev_v[ind])
-                except:
+                except Exception:
                     pass
 
 

@@ -922,7 +922,7 @@ def allocate_inlet_procs(domain, region, enquiry_point = None, master_proc = 0, 
             else:
                 if verbose: print("P%d contains ghost copy of enq point %s" %(myid, enquiry_point))
                 has_enq_point = False
-        except:
+        except Exception:
             if verbose: print("P%d does not contain enq point %s" %(myid, enquiry_point))
             has_enq_point = False
 

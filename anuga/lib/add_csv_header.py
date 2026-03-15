@@ -26,7 +26,7 @@ def add_csv_header(file, header_list, be_green=False):
     except IOError as e:
         msg = "Can't open file '%s': %s" % (file, str(e))
         raise Exception(msg)
-    except:
+    except Exception:
         msg = "Can't open file '%s'" % file
         raise Exception(msg)
 

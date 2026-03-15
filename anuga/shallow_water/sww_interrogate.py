@@ -516,7 +516,7 @@ def get_maximum_inundation_data(filename, polygon=None, time_interval=None,
             elevation = num.array(fid.variables['elevation_c'][:], float)
             stage     = num.array(fid.variables['stage_c'][:], float)
             found_c_values = True
-        except:
+        except (KeyError, AttributeError):
             elevation = num.array(fid.variables['elevation'][:], float)
             stage     = num.array(fid.variables['stage'][:], float)
             found_c_values = False

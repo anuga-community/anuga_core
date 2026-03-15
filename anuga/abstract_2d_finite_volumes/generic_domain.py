@@ -764,7 +764,7 @@ class Generic_Domain(object):
 
         try:
             self.evolve_max_timestep = min(self.evolve_max_timestep, max_timestep)
-        except:
+        except AttributeError:
             self.evolve_max_timestep = max_timestep
 
     def get_evolve_max_timestep(self):
@@ -1234,7 +1234,7 @@ class Generic_Domain(object):
 
                 try:
                     apply_expression_to_dictionary(polygon, self.quantities)
-                except:  # FIXME(Ole): Use proper exception
+                except Exception:  # FIXME(Ole): Use proper exception
                     # At least polygon wasn't expression involving quantitites
                     pass
                 else:
@@ -1361,7 +1361,7 @@ class Generic_Domain(object):
 
                 msg += f' elapsed ({cpu_time_hhmmss}), eta ({cpu_time_ETA_hhmmss})'
 
-            except:
+            except Exception:
                 pass
             self.last_walltime = walltime()
 

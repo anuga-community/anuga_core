@@ -387,7 +387,7 @@ class Elliptic_operator(Operator):
         #Right multiply with scalar
         try:
             other = float(other)
-        except:
+        except (ValueError, TypeError):
             msg = 'Sparse matrix can only "right-multiply" onto a scalar'
             raise TypeError(msg)
         else:

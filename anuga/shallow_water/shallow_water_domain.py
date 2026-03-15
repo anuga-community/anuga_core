@@ -3431,7 +3431,7 @@ class Domain(Generic_Domain):
                 import cupy as cp
                 test_cupy_array = cp.array([1,2,3])
 
-            except:
+            except (ImportError, Exception):
                 print('+==============================================================================+')
                 print('|                                                                              |')
                 print('| WARNING: cupy or gpu not available, so falling back to multiprocessor_mode 1 |')

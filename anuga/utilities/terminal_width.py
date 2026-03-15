@@ -37,7 +37,7 @@ def terminal_width():
         else:
             width = 80      # can't determine size - return default values
     # No, try Linux
-    except:
+    except Exception:
         width = 0
         try:
             import struct, fcntl, termios
@@ -50,7 +50,7 @@ def terminal_width():
         if width <= 0:
             try:
                 width = int(os.environ['COLUMNS'])
-            except:
+            except (KeyError, ValueError):
                 pass
         if width <= 0:
             width = 80      # can't determine size - return default values

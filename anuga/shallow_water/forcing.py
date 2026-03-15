@@ -47,7 +47,7 @@ def check_forcefield(f):
 
         try:
             q = num.array(q, float)
-        except:
+        except (ValueError, TypeError):
             msg = ('Return value from vector function %s could not '
                    'be converted into a numeric array of floats.\nSpecified '
                    'function should return either list or array.' % f)
@@ -60,7 +60,7 @@ def check_forcefield(f):
         func_msg = 'Function %s (defined in %s, line %d)' % func_info
         try:
             result_len = len(q)
-        except:
+        except TypeError:
             msg = '%s must return vector' % func_msg
             raise Exception(msg)
         msg = '%s must return vector of length %d' % (func_msg, N)
@@ -68,7 +68,7 @@ def check_forcefield(f):
     else:
         try:
             f = float(f)
-        except:
+        except (ValueError, TypeError):
             msg = ('Force field %s must be a scalar value coercible to float.'
                    % str(f))
             raise Exception(msg)
@@ -178,7 +178,7 @@ class Wind_stress(object):
             # Assume s is a scalar
             try:
                 s_vec = self.speed * num.ones(N, float)
-            except:
+            except (ValueError, TypeError):
                 msg = 'Speed must be either callable or a scalar: %s' %self.s
                 raise Exception(msg)
 
@@ -195,7 +195,7 @@ class Wind_stress(object):
 
             try:
                 phi_vec = self.phi * num.ones(N, float)
-            except:
+            except (ValueError, TypeError):
                 msg = 'Angle must be either callable or a scalar: %s' %self.phi
                 raise Exception(msg)
 
@@ -398,7 +398,7 @@ class General_forcing(object):
             # Check that default_rate is a function of one argument
             try:
                 default_rate(0.0)
-            except:
+            except TypeError:
                 raise Exception(msg)
 
         self.default_rate = default_rate
@@ -917,7 +917,7 @@ class Barometric_pressure(object):
             # Assume s is a scalar
             try:
                 p_vec = self.pressure * num.ones(N, float)
-            except:
+            except (ValueError, TypeError):
                 msg = 'Pressure must be either callable or a scalar: %s' %self.s
                 raise Exception(msg)
 
@@ -1115,7 +1115,7 @@ class Barometric_pressure_fast(object):
             # Assume s is a scalar
             try:
                 self.p_vec[:] = self.pressure
-            except:
+            except (ValueError, TypeError):
                 msg = 'Pressure must be either callable function or a scalar: %s' %self.s
                 raise Exception(msg)
 
@@ -1301,7 +1301,7 @@ class Wind_stress_fast(object):
             # Assume s is a scalar
             try:
                 self.s_vec[:] = self.speed
-            except:
+            except (ValueError, TypeError):
                 msg = 'Speed must be either callable or a scalar: %s' %self.s
                 raise Exception(msg)
 
@@ -1323,7 +1323,7 @@ class Wind_stress_fast(object):
 
             try:
                 self.phi_vec[:] = self.phi
-            except:
+            except (ValueError, TypeError):
                 msg = 'Angle must be either callable or a scalar: %s' %self.phi
                 raise Exception(msg)
 

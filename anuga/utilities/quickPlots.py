@@ -29,7 +29,7 @@ def quickPlots(swwFile=None, ocean_land_threshold=None, fig_dir=None, figScale=N
     # Make directory for figures
     try:
         os.mkdir(fig_dir)
-    except:
+    except OSError:
         'Cannot make directory'
         pass
 
@@ -56,7 +56,7 @@ def quickPlots(swwFile=None, ocean_land_threshold=None, fig_dir=None, figScale=N
         pyplot.colorbar()
         pyplot.savefig(fig_dir+'/Friction.png')
         pyplot.close()
-    except:
+    except Exception:
         print('Cannot plot friction')
 
     # Plot elevation
@@ -68,7 +68,7 @@ def quickPlots(swwFile=None, ocean_land_threshold=None, fig_dir=None, figScale=N
         pyplot.colorbar()
         pyplot.savefig(fig_dir+'/Elevation.png')
         pyplot.close()
-    except:
+    except Exception:
         print('Cannot plot elevation')
 
     # Plot Initial Stage (where elevation<ocean_land_threshold)
@@ -161,5 +161,5 @@ if __name__=='__main__':
 
     try:
         quickPlots(swwFile, ocean_land_threshold, fig_dir, figScale)
-    except:
+    except Exception:
         print('Error in quick_plots')

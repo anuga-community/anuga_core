@@ -460,7 +460,7 @@ def inside_polygon(points, polygon, closed=True, verbose=False):
         points = ensure_absolute(points)
     except NameError as err:
         raise NameError(err)
-    except:
+    except (ValueError, TypeError):
         # If this fails it is going to be because the points can't be
         # converted to a numeric array.
         msg = 'Points could not be converted to numeric array'
@@ -470,7 +470,7 @@ def inside_polygon(points, polygon, closed=True, verbose=False):
         polygon = ensure_absolute(polygon)
     except NameError as e:
         raise NameError(e)
-    except:
+    except (ValueError, TypeError):
         # If this fails it is going to be because the points can't be
         # converted to a numeric array.
         msg = ('Polygon %s could not be converted to numeric array'
@@ -521,7 +521,7 @@ def outside_polygon(points, polygon, closed=True, verbose=False):
         points = ensure_numeric(points, float)
     except NameError as e:
         raise NameError(e)
-    except:
+    except (ValueError, TypeError):
         msg = 'Points could not be converted to numeric array'
         raise Exception(msg)
 
@@ -529,7 +529,7 @@ def outside_polygon(points, polygon, closed=True, verbose=False):
         polygon = ensure_numeric(polygon, float)
     except NameError as e:
         raise NameError(e)
-    except:
+    except (ValueError, TypeError):
         msg = 'Polygon could not be converted to numeric array'
         raise Exception(msg)
 
@@ -561,7 +561,7 @@ def in_and_outside_polygon(points, polygon, closed=True, verbose=False):
         points = ensure_numeric(points, float)
     except NameError as e:
         raise NameError(e)
-    except:
+    except (ValueError, TypeError):
         msg = 'Points could not be converted to numeric array'
         raise Exception(msg)
 
@@ -569,7 +569,7 @@ def in_and_outside_polygon(points, polygon, closed=True, verbose=False):
         polygon = ensure_numeric(polygon, float)
     except NameError as e:
         raise NameError(e)
-    except:
+    except (ValueError, TypeError):
         msg = 'Polygon could not be converted to numeric array'
         raise Exception(msg)
 
@@ -645,7 +645,7 @@ def separate_points_by_polygon(points, polygon,
             points = ensure_numeric(points, float)
         except NameError as e:
             raise NameError(e)
-        except:
+        except (ValueError, TypeError):
             msg = 'Points could not be converted to numeric array'
             raise Exception(msg)
 
@@ -653,7 +653,7 @@ def separate_points_by_polygon(points, polygon,
             polygon = ensure_numeric(polygon, float)
         except NameError as e:
             raise NameError(e)
-        except:
+        except (ValueError, TypeError):
             msg = 'Polygon could not be converted to numeric array'
             raise Exception(msg)
 
@@ -833,7 +833,7 @@ def _poly_xy(polygon):
         polygon = ensure_numeric(polygon, float)
     except NameError as err:
         raise NameError(err)
-    except:
+    except (ValueError, TypeError):
         msg = ('Polygon %s could not be converted to numeric array'
                % (str(polygon)))
         raise Exception(msg)

@@ -60,7 +60,7 @@ def metis_partition(domain, n_procs):
     try:
         from pymetis import part_mesh
         metis_version = "5_part_mesh"
-    except:
+    except ImportError:
         metis_version = "5_part_graph"
 
     n_tri = domain.number_of_triangles

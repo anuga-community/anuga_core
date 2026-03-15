@@ -46,7 +46,7 @@ class Write_sts(object):
 
         try:
             revision_number = anuga.get_revision_number()
-        except:
+        except Exception:
             revision_number = None
 
         # Allow None to be stored as a string

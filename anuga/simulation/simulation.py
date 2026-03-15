@@ -55,7 +55,7 @@ class Simulation(object):
                 self.domain = load_checkpoint_file(domain_name = self.outname, checkpoint_dir = self.checkpoint_dir)
                 if myid == 0 and self.verbose:
                     print('OPENNED CHECKPOINT FILE at time = {}'.format(self.domain.get_time()))
-            except:
+            except Exception:
                 self.initialize_simulation()
 
             self.domain.set_checkpointing(checkpoint_time = self.checkpoint_time)
@@ -278,7 +278,7 @@ def parse_args_and_parameters(argument_adder=None, from_commandline=False, **kwa
         del project_dict['__name__']
         del project_dict['__package__']
         del project_dict['join']
-    except:
+    except KeyError:
         project_dict = {}
 
     # add any benchmark-specific arguments

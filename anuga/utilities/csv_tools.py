@@ -42,7 +42,7 @@ def read_csv_file(filename, key_col, data_col):
             key_data = line[key_index].strip()
             data_data = line[data_index].strip()
             result.append((key_data, data_data))
-        except:
+        except (IndexError, AttributeError):
             pass
 
     fd.close()

@@ -1591,7 +1591,7 @@ def extract_submesh(submesh, triangles_per_proc, p2s_map=None, p=0):
     else:
         try:
             tri_l2g = p2s_map[tri_l2g]
-        except:
+        except (IndexError, KeyError):
             tri_l2g = p2s_map
 
     return points, vertices, boundary, quantities, ghost_recv_dict, \

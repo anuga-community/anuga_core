@@ -160,7 +160,7 @@ def earthquake_source(
         # Open file
         try:
            lns = open(filename).readlines()
-        except:
+        except OSError:
            raise Exception('Cannot read okada file %s' % filename)
         # Pack into 'source'
         source = []

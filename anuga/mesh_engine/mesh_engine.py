@@ -8,7 +8,7 @@ class NoTrianglesError(Exception): pass
 try:
     import meshpy.triangle as triang
     TRILIB = 'meshpy'
-except:
+except ImportError:
     import triangle as triang
     TRILIB = 'triangle'
 
@@ -300,7 +300,7 @@ def generate_mesh(points=None,
         try:
             unit = out_tri.point_attributes.unit
             pointattributelist = num.ascontiguousarray(out_tri.point_attributes).reshape(-1,unit)
-        except:
+        except AttributeError:
             pointattributelist = num.empty((pointlist.shape[0],0),dtype=float)
 
         if len(out_tri.elements) != 0:
@@ -311,7 +311,7 @@ def generate_mesh(points=None,
         try:
             unit = out_tri.element_attributes.unit
             triangleattributelist = num.ascontiguousarray(out_tri.element_attributes).reshape(-1,unit)
-        except:
+        except AttributeError:
             triangleattributelist = num.empty((trianglelist.shape[0],0),dtype=float)
 
         if len(out_tri.facets) != 0:
@@ -326,7 +326,7 @@ def generate_mesh(points=None,
 
         try:
             neighborlist = num.ascontiguousarray(out_tri.neighbors).reshape(-1,3)
-        except:
+        except AttributeError:
             neighborlist = num.zeros((trianglelist.shape[0],3),dtype=num.int32)        
 
     if verbose:

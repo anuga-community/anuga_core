@@ -163,13 +163,13 @@ def store_parameters(verbose=False, **kwargs):
     if completed:
         try:
             file_name = str(kwargs['file_name'])
-        except:
+        except KeyError:
             raise Exception('kwargs must have file_name')
     else:
         # write temp file in output directory
         try:
             file_name = str(kwargs['output_dir']) + 'detail_temp.csv'
-        except:
+        except KeyError:
             raise Exception('kwargs must have output_dir')
 
     # extracts the header info and the new line info
@@ -207,7 +207,7 @@ def store_parameters(verbose=False, **kwargs):
             fid.write(header)
             fid.close()
             file_header=header
-        except:
+        except OSError:
             msg = 'cannot create new file: %s' % file
             raise Exception(msg)
 

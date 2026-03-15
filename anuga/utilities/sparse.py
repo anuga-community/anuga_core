@@ -22,7 +22,7 @@ class Sparse:
         if len(args) == 1:
             try:
                 A = num.array(args[0])
-            except:
+            except (ValueError, TypeError):
                 raise Exception('Input must be convertable to a numeric array')
 
             assert len(A.shape) == 2, 'Input must be a 2d matrix'
@@ -106,7 +106,7 @@ class Sparse:
 
         try:
             B = num.array(other)
-        except:
+        except (ValueError, TypeError):
             msg = 'FIXME: Only numeric types implemented so far'
             raise Exception(msg)
 
@@ -165,7 +165,7 @@ class Sparse:
 
         try:
             other = float(other)
-        except:
+        except (ValueError, TypeError):
             msg = 'Sparse matrix can only "right-multiply" onto a scalar'
             raise TypeError(msg)
         else:
@@ -185,7 +185,7 @@ class Sparse:
 
         try:
             B = num.array(other)
-        except:
+        except (ValueError, TypeError):
             print('FIXME: Only numeric types implemented so far')
 
         # Assume numeric types from now on
@@ -314,7 +314,7 @@ class Sparse_CSR(object):
 
         try:
             B = num.array(other)
-        except:
+        except (ValueError, TypeError):
             print('FIXME: Only numeric types implemented so far')
 
         return csr_mv(self, B)

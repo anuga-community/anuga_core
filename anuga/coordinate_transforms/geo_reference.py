@@ -217,7 +217,7 @@ class Geo_reference(object):
         self.zone = int(infile.zone)
         try:
             self.hemisphere = str(infile.hemisphere)
-        except:
+        except AttributeError:
             self.hemisphere = DEFAULT_HEMISPHERE
 
         self.false_easting = int(infile.false_easting)

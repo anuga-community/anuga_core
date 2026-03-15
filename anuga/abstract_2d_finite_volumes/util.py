@@ -116,7 +116,7 @@ def get_textual_float(value, format = '%.2f'):
     else:
         try:
             float(value)
-        except:
+        except (ValueError, TypeError):
             # May this is a vector
             if len(value) > 1:
                 s = '('
