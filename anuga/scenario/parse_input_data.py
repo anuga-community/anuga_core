@@ -11,7 +11,6 @@ Gareth Davies, Geoscience Australia 2014+
 
 
 import os
-import xlrd
 import glob
 from anuga.utilities import spatialInputUtil as su
 
@@ -45,6 +44,12 @@ class ProjectData(object):
         self.__dict__.update(toml_data.__dict__)
 
     def get_data_from_excel(self, filename):
+        try:
+            import openpyxl  # noqa: F401 — checked here; used inside AnugaXls
+        except ImportError:
+            raise ImportError(
+                'Reading Excel files requires openpyxl '
+                '(pip install openpyxl)')
         """Get data from xls or xlsx file
 
             print statements are directed to self.print_info,
@@ -412,19 +417,16 @@ class AnugaXls(object):
     """
 
     def __init__(self, filename):
-
-        workbook = xlrd.open_workbook(filename)
-
-        self.worksheet_names = workbook.sheet_names()
-
+        import openpyxl
+        workbook = openpyxl.load_workbook(filename, read_only=True,
+                                          data_only=True)
+        self.worksheet_names = workbook.sheetnames
         self.worksheet_data = {}
-
         for worksheet_name in self.worksheet_names:
-            worksheet = workbook.sheet_by_name(worksheet_name)
+            worksheet = workbook[worksheet_name]
             self.worksheet_data[worksheet_name] = \
                 get_worksheet_as_list(worksheet)
-
-        return
+        workbook.close()
 
     def get_var(
         self,
@@ -637,23 +639,15 @@ def find_matching_row(sheet_data, flag, worksheet_name = ""):
 
 
 def get_worksheet_as_list(worksheet):
-    """Read a particular xls (xlsx) file worksheet as a list of lists
+    """Read an openpyxl worksheet as a list of lists.
 
-    [
-    [cell 0 0, cell 0 1, cell 0 2, ...],
-    [cell 1 0, cell 1 1, cell 1 2, ...],
-    ...
-    ]
-
+    Empty cells (None) are converted to '' to match the xlrd behaviour
+    that the rest of the code expects.
     """
-
     worksheet_data = []
-
-    for i in range(worksheet.nrows):
-        worksheet_data.append([])
-        for j in range(worksheet.ncols):
-            worksheet_data[i].extend([worksheet.cell_value(i, j)])
-
+    for row in worksheet.iter_rows(values_only=True):
+        worksheet_data.append(
+            ['' if v is None else v for v in row])
     return worksheet_data
 
 
@@ -673,7 +667,7 @@ def string_or_float(value):
     If value is anything else, return value of type str
     """
 
-    if isinstance(value, (int, long, float, complex)):
+    if isinstance(value, (int, float, complex)):
         return float(value)
     else:
         return str(value)
