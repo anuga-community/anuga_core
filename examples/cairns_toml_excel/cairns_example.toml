@@ -63,6 +63,8 @@ spatial_text_output_dir = "SPATIAL_TEXT"
 report_mass_conservation_statistics      = false
 report_peak_velocity_statistics          = false
 report_smallest_edge_timestep_statistics = false
+# Print rainfall/inlet discharge at each yieldstep (requires user_functions.py)
+report_operator_statistics               = false
 
 # Number of OpenMP threads for the flow solver.
 # Omit (or set to 1) to use a single thread; reads OMP_NUM_THREADS env var if present.

@@ -174,7 +174,7 @@ for t in domain.evolve(yieldstep=project.yieldstep,
     if project.report_smallest_edge_timestep_statistics:
         domain.report_cells_with_small_local_timestep()
 
-    if _have_user_functions:
+    if project.report_operator_statistics and _have_user_functions:
         user_functions.print_operator_inputs(domain)
 
 barrier()

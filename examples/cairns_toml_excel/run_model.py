@@ -47,8 +47,12 @@ from anuga.scenario import setup_riverwalls
 from anuga.scenario import raster_outputs
 from anuga.scenario.prepare_data import PrepareData
 
-# Routines defined by the user
-import user_functions
+# Routines defined by the user (optional — absence is not an error)
+try:
+    import user_functions
+    _have_user_functions = True
+except ImportError:
+    _have_user_functions = False
 
 # Record the time so we can report how long the simulation takes
 t0 = time.time()
@@ -156,14 +160,14 @@ for t in domain.evolve(yieldstep=project.yieldstep,
     if project.report_mass_conservation_statistics:
         domain.report_water_volume_statistics()
 
-    if project.report_peak_velocity_statistics:
+    if project.report_peak_velocity_statistics and _have_user_functions:
         user_functions.print_velocity_statistics(domain, max_quantities)
 
     if project.report_smallest_edge_timestep_statistics:
         domain.report_cells_with_small_local_timestep()
 
-    # Print instantaneous operator info
-    user_functions.print_operator_inputs(domain)
+    if project.report_operator_statistics and _have_user_functions:
+        user_functions.print_operator_inputs(domain)
 
 barrier()
 

@@ -174,6 +174,7 @@ class ProjectDataTOML:
         self.report_mass_conservation_statistics      = bool(p.get('report_mass_conservation_statistics', False))
         self.report_peak_velocity_statistics          = bool(p.get('report_peak_velocity_statistics', False))
         self.report_smallest_edge_timestep_statistics = bool(p.get('report_smallest_edge_timestep_statistics', False))
+        self.report_operator_statistics               = bool(p.get('report_operator_statistics', False))
 
         # Number of OpenMP threads (None = use OMP_NUM_THREADS env var)
         raw_omp = p.get('omp_num_threads', None)
