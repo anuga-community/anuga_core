@@ -36,16 +36,16 @@ from anuga.operators.collect_max_quantities_operator import \
 
 # Routines to setup the domain
 
-from setup import setup_boundary_conditions
-from setup import setup_rainfall
-from setup import setup_inlets
-from setup import setup_bridges
-from setup import setup_pumping_stations
-from setup import setup_mesh
-from setup import setup_initial_conditions
-from setup import setup_riverwalls
-from setup import raster_outputs
-from setup.prepare_data import PrepareData
+from anuga.scenario import setup_boundary_conditions
+from anuga.scenario import setup_rainfall
+from anuga.scenario import setup_inlets
+from anuga.scenario import setup_bridges
+from anuga.scenario import setup_pumping_stations
+from anuga.scenario import setup_mesh
+from anuga.scenario import setup_initial_conditions
+from anuga.scenario import setup_riverwalls
+from anuga.scenario import raster_outputs
+from anuga.scenario.prepare_data import PrepareData
 
 # Routines defined by the user
 import user_functions

@@ -103,6 +103,14 @@ configure_file(
     install_mode: 'rwxr-xr-x'
 )
 
+configure_file(
+    input: 'scripts/anuga_run_toml.py',
+    output: 'anuga_run_toml',
+    configuration: conf,
+    install_dir: get_option('bindir'),
+    install_mode: 'rwxr-xr-x'
+)
+
 # Add subdirectories which contains python sources
 subdir('anuga')
 
