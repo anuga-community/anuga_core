@@ -25,6 +25,7 @@ It is now developed and maintained by a community of volunteers.
    background
    installation/index
    setup_anuga_script/index
+   toml_scenario/index
    examples/index
    visualisation/index
    parallel/index

@@ -1193,18 +1193,19 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
         #
         # (note: When cells are dry, this calculation will throw invalid
         # values, but such values will never be selected to be returned)
-        sqrt_g_on_depth_inside = (gravity/depth_inside)**0.5
-        ndotq_inside = (n1 * Xmom.boundary_values[ids] + 
-            n2 * Ymom.boundary_values[ids])
-        # w1 =  u - sqrt(g/depth)*(Stage_outside)  -- uses 'outside' info
-        w1 = 0.0 - sqrt_g_on_depth_inside * stage_outside
-        # w2 = v [velocity parallel to boundary] -- uses 'inside' or 'outside'
-        # info as required
-        w2 = np.where(ndotq_inside > 0.0,
-            (n2 * Xmom.boundary_values[ids] - n1 * Ymom.boundary_values[ids])/depth_inside, 
-            0.0 * ndotq_inside)
-        # w3 = u + sqrt(g/depth)*(Stage_inside) -- uses 'inside info'
-        w3 = ndotq_inside/depth_inside + sqrt_g_on_depth_inside*Stage.boundary_values[ids]
+        with np.errstate(invalid='ignore', divide='ignore'):
+            sqrt_g_on_depth_inside = (gravity/depth_inside)**0.5
+            ndotq_inside = (n1 * Xmom.boundary_values[ids] +
+                n2 * Ymom.boundary_values[ids])
+            # w1 =  u - sqrt(g/depth)*(Stage_outside)  -- uses 'outside' info
+            w1 = 0.0 - sqrt_g_on_depth_inside * stage_outside
+            # w2 = v [velocity parallel to boundary] -- uses 'inside' or 'outside'
+            # info as required
+            w2 = np.where(ndotq_inside > 0.0,
+                (n2 * Xmom.boundary_values[ids] - n1 * Ymom.boundary_values[ids])/depth_inside,
+                0.0 * ndotq_inside)
+            # w3 = u + sqrt(g/depth)*(Stage_inside) -- uses 'inside info'
+            w3 = ndotq_inside/depth_inside + sqrt_g_on_depth_inside*Stage.boundary_values[ids]
             
         q0_wet = (w3 - w1)/(2.0 * sqrt_g_on_depth_inside)
 
