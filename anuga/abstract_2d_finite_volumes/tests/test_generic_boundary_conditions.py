@@ -8,10 +8,6 @@
     The boundaries in this model can be applied universally across all
     domain models, without being tied to a particular implementation.
 """
-
-
-from builtins import str
-from builtins import range
 import unittest
 from math import sqrt, pi
 

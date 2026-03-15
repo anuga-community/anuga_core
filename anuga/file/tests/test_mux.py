@@ -1,6 +1,3 @@
-#from builtins import zip
-#from builtins import map
-#from builtins import range
 import unittest
 import tempfile
 import numpy as num

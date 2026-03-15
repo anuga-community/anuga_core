@@ -1,5 +1,3 @@
-from builtins import map
-from builtins import str
 from anuga.file.urs import Read_urs
 
 def urs2txt(basename_in, location_index=None):

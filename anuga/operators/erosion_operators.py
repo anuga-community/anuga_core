@@ -147,7 +147,7 @@ class Erosion_operator(Operator, Region):
         """
 
 
-        if self.indices is []:
+        if self.indices is not None and len(self.indices) == 0:
             return
 
         #------------------------------------------

@@ -1,7 +1,4 @@
 #!/usr/bin/env python
-
-
-from builtins import range
 import unittest
 from anuga.pmesh.mesh_quadtree import MeshQuadtree
 

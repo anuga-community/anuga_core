@@ -19,10 +19,6 @@
 #            Steve Roberts, Aug 2009 (updating to numpy)
 #
 #=========================================================================
-
-
-from builtins import zip
-from builtins import range
 import sys
 from os import sep
 from sys import path

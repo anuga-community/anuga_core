@@ -1,9 +1,6 @@
 """
 Script to measure how long pmesh spends doing various methods
 """
-
-
-from builtins import range
 from .mesh import *
 from anuga.pmesh import *
 import time

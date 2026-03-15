@@ -1,4 +1,3 @@
-from builtins import str
 import unittest
 import copy
 import os

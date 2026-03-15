@@ -1,7 +1,5 @@
 
 # External modules
-from builtins import zip
-from builtins import range
 from anuga.file.netcdf import NetCDFFile
 import sys
 import unittest

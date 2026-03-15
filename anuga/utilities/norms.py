@@ -1,7 +1,5 @@
 """Definitions of common norm functions, for consistency checks.
 """
-
-from builtins import map
 from math import fabs,sqrt
 from functools import reduce
 

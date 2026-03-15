@@ -2,11 +2,6 @@
 
 # To change this template, choose Tools | Templates
 # and open the template in the editor.
-
-
-
-from builtins import str
-from builtins import range
 import os.path
 import sys
 

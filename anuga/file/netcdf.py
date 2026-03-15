@@ -1,8 +1,5 @@
 """ This module is responsible for loading and saving NetCDF NC files
 """
-
-from builtins import range
-from builtins import object
 import numpy as num
 
 from anuga.coordinate_transforms.redfearn import \

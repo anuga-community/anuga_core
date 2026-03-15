@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-
-from builtins import range
 import sys
 
 class NoTrianglesError(Exception): pass

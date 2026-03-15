@@ -1,10 +1,6 @@
 '''
     Operations to extract information from an SWW file.
 '''
-
-
-
-from builtins import range
 import os
 import anuga.utilities.log as log
 import numpy as num

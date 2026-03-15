@@ -11,9 +11,6 @@
    Ole Nielsen, Stephen Roberts, Duncan Gray
    Geoscience Australia
 """
-
-from builtins import range
-from builtins import object
 from time import time as walltime
 
 from anuga.config import max_smallsteps, beta_w, epsilon

@@ -143,7 +143,7 @@ class Region(object):
                 self._setup_indices_line()
                 self.type = 'line'
         else:
-            assert self.indices is None or self.indices is []
+            assert self.indices is None or len(self.indices) == 0
 
 
         if self.indices is None:

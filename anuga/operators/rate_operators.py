@@ -4,8 +4,6 @@ Rate operators (such as rain)
 Constraints: See GPL license in the user guide
 Version: 1.0 ($Revision: 7731 $)
 """
-
-from builtins import str
 __author__="steve"
 __date__ ="$09/03/2012 4:46:39 PM$"
 
@@ -155,7 +153,7 @@ Parameters involving communication
         otherwise apply for the specific indices
         """
 
-        if self.indices is []:
+        if self.indices is not None and len(self.indices) == 0:
             return
 
         if self.rate_xarray:
@@ -426,8 +424,8 @@ Parameters involving communication
             self.areas = self.domain.areas
             return
 
-        if self.indices is []:
-            self.areas = []
+        if self.indices is not None and len(self.indices) == 0:
+            self.areas = num.array([])
             return
 
         self.areas = self.domain.areas[self.indices]
@@ -438,8 +436,8 @@ Parameters involving communication
             self.full_indices = num.where(self.domain.tri_full_flag ==1)[0]
             return
 
-        if self.indices is []:
-            self.full_indices = []
+        if self.indices is not None and len(self.indices) == 0:
+            self.full_indices = num.array([], dtype=int)
             return
 
         self.full_indices = num.where(self.domain.tri_full_flag[self.indices] == 1)[0]

@@ -1,11 +1,4 @@
 #!/usr/bin/env python
-
-
-
-from builtins import zip
-from builtins import str
-from builtins import range
-from builtins import object
 import unittest, os, time
 import os.path
 from math import pi, sqrt

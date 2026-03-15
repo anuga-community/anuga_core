@@ -1,7 +1,3 @@
-
-from builtins import str
-from builtins import range
-from builtins import object
 import sys
 
 from anuga.shallow_water.forcing import Inflow, General_forcing

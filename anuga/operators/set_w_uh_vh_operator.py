@@ -4,8 +4,6 @@ Set w_uh_vh operator
 Constraints: See GPL license in the user guide
 Version: 1.0 ($Revision: 7731 $)
 """
-
-from builtins import str
 __author__="steve"
 __date__ ="$09/03/2012 4:46:39 PM$"
 
@@ -78,7 +76,7 @@ class Set_w_uh_vh_operator(Operator, Region):
         """
 
 
-        if self.indices is []:
+        if self.indices is not None and len(self.indices) == 0:
             return
 
         w_uh_vh = self.get_w_uh_vh()

@@ -4,8 +4,6 @@ Set stage operator
 Constraints: See GPL license in the user guide
 Version: 1.0 ($Revision: 7731 $)
 """
-
-from builtins import str
 __author__="steve"
 __date__ ="$09/03/2012 4:46:39 PM$"
 

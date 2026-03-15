@@ -11,11 +11,6 @@ Geoscience Australia, 2005
 Modified by Linda Stals, March 2006, to include ghost boundaries
 
 """
-
-
-
-from builtins import range
-from builtins import object
 import sys
 import numpy as num
 

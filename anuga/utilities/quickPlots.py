@@ -1,7 +1,4 @@
 
-
-from builtins import str
-
 """""
 
 Quick code to plot ANUGA outputs

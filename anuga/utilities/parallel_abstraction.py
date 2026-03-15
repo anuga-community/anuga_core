@@ -5,10 +5,6 @@
 
     mpi4py wrap added 20130503 by Roberto Vidmar rvidmar@inogs.it
 """
-
-
-from builtins import range
-from builtins import object
 import sys
 import os
 import time

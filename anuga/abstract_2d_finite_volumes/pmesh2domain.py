@@ -5,11 +5,6 @@
    Ole Nielsen, Stephen Roberts, Duncan Gray, Christopher Zoppou
    Geoscience Australia
 """
-
-
-from builtins import map
-from builtins import zip
-from builtins import range
 import sys
 import numpy as num
 import anuga.utilities.log as log

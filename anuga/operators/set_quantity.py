@@ -95,7 +95,7 @@ class Set_quantity(object):
         otherwise apply for the specific indices
         """
 
-        if self.region.indices is []:
+        if self.region.indices is not None and len(self.region.indices) == 0:
             return
 
 

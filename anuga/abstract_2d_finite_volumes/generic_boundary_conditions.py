@@ -2,10 +2,6 @@
 """
 boundary.py - Classes for implementing boundary conditions
 """
-
-
-from builtins import str
-from builtins import object
 from warnings import warn
 
 from anuga.utilities.numerical_tools import NAN    

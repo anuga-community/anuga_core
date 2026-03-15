@@ -8,7 +8,6 @@
 
 # Allow children to be slightly bigger than their parents to prevent
 # straddling of a boundary
-from builtins import object
 SPLIT_BORDER_RATIO    = 0.55
 
 class AABB(object):

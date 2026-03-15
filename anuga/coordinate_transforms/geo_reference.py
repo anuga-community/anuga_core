@@ -5,9 +5,6 @@
 
 #FIXME: Ensure that all attributes of a georef are treated everywhere
 #and unit test
-
-from builtins import str
-from builtins import object
 import sys
 import copy
 

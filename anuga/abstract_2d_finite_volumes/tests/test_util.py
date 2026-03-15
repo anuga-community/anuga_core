@@ -1,10 +1,4 @@
 #!/usr/bin/env python
-
-
-
-
-from builtins import str
-from builtins import range
 import unittest
 import time
 import tempfile

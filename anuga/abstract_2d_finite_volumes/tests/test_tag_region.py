@@ -1,6 +1,4 @@
 #!/usr/bin/env python
-
-from builtins import str
 import unittest
 from math import sqrt
 

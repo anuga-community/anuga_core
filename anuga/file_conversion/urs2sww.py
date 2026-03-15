@@ -1,5 +1,3 @@
-from builtins import map
-from builtins import range
 import os
 import numpy as num
 from anuga.file.netcdf import NetCDFFile

@@ -17,11 +17,6 @@ we have an intuitive description of what is called the alpha-shape.
 
 Author: Vanessa Robins, ANU
 """
-
-
-from builtins import filter
-from builtins import range
-from builtins import object
 import random
 
 from anuga.load_mesh.loadASCII import export_boundary_file
