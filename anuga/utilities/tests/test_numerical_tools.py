@@ -290,7 +290,7 @@ class Test_Numerical_Tools(unittest.TestCase):
 
             try:
                 compile(FN)
-            except:
+            except Exception:
                 raise Exception('Could not compile %s' % FN)
             else:
                 import anuga.utilities.util_ext as util_ext

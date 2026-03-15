@@ -25,7 +25,7 @@ class Test_DE_openmp(unittest.TestCase):
         for file in ['domain_base.sww', 'domain_openmp.sww', 'domain_openmp_depth_yeah.asc', 'domain_openmp_depth_yeah.prj']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass 
 
 

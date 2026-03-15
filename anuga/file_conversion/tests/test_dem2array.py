@@ -106,7 +106,7 @@ Parameters
             os.remove(root + '.dem')
             os.remove(root + '.asc')
             os.remove(root + '.prj')
-        except:
+        except OSError:
             # Expect error on windows
             pass
 

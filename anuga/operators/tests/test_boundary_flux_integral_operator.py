@@ -15,13 +15,13 @@ class Test_boundary_flux_integral_operator(unittest.TestCase):
     def tearDown(self):
         try:
             os.remove('test_boundaryfluxintegral.msh')
-        except:
+        except OSError:
             pass
 
 
         try:
             os.remove('test_boundaryfluxintegral.sww')
-        except:
+        except OSError:
             pass
 
     def create_domain(self, flowalg):

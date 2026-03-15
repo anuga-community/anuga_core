@@ -43,7 +43,7 @@ class Test_Polygon(unittest.TestCase):
 
             try:
                 compile(FN)
-            except:
+            except Exception:
                 raise Exception('Could not compile %s' % FN)
             else:
                 import anuga.geometry.polygon_ext as polygon_ext

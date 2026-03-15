@@ -36,12 +36,12 @@ class Test_riverwall_structure(unittest.TestCase):
     def tearDown(self):
         try:
             os.remove('test_riverwall.sww')
-        except:
+        except OSError:
             pass
 
         try:
             os.remove('testRiverwall.msh')
-        except:
+        except OSError:
             pass
     
     def create_domain_DE0(self, wallHeight, InitialOceanStage, InitialLandStage, riverWall=None, riverWall_Par=None):

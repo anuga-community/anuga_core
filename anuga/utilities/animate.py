@@ -432,7 +432,7 @@ class Domain_plotter(object):
                 if clobber:
                     try:
                         os.remove("%s/*" % plot_dir)
-                    except:
+                    except OSError:
                         pass
                 else:
                     raise IOError(
@@ -954,7 +954,7 @@ class SWW_plotter(object):
                 if clobber:
                     try:
                         os.remove("%s/*" % plot_dir)
-                    except:
+                    except OSError:
                         pass
                 else:
                     raise IOError(

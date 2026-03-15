@@ -27,7 +27,7 @@ class Test_search_functions(unittest.TestCase):
 
             try:
                 compile(FN)
-            except:
+            except Exception:
                 raise Exception('Could not compile %s' % FN)
             else:
                 import search_functions_ext

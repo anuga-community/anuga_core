@@ -63,7 +63,7 @@ class Test_csv2sts(unittest.TestCase):
             csv2sts('somename_not_here.csv', sts_out, 10, 20)
         except IOError as e:
             got_except = True
-        except:
+        except Exception:
             assert False, 'Missing file raised wrong exception.'
 
         assert got_except is True, 'Missing file did not raise an exception.'

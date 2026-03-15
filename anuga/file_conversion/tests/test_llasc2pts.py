@@ -24,7 +24,7 @@ class Test_LLAsc2Pts(unittest.TestCase):
         for file in ['demtest2.pts']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass 
      
     def test_llasc2pts_bounding_box_v2(self):
@@ -114,7 +114,7 @@ NODATA_value  %g
             os.remove(root + '.dem')
             os.remove(root + '.asc')
             os.remove(root + '.prj')
-        except:
+        except OSError:
             pass
 
 

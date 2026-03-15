@@ -280,7 +280,7 @@ class Test_Shallow_Water(unittest.TestCase):
         # Check error check
         try:
             rotate(r, num.array([1, 1, 1]))
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should have raised an exception')
@@ -3547,7 +3547,7 @@ class Test_Shallow_Water(unittest.TestCase):
         # on a circle affecting triangles #0 and #1 (bac and bce)
         try:
             Inflow(domain, rate=2.0, center=(1,1.1), radius=0.01)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have raised exception'
@@ -6894,7 +6894,7 @@ class Test_Shallow_Water(unittest.TestCase):
         try:
             for t in domain2.evolve(yieldstep=1, finaltime=finaltime):
                 pass
-        except:
+        except Exception:
             pass
         else:
             msg = 'This should have caught NAN at boundary'
@@ -9071,7 +9071,7 @@ friction  \n \
             os.remove(txt_file)
             os.remove(txt_file_prj)
             os.remove(txt_file_dem)
-        except:
+        except OSError:
             pass
 
     def test_that_mesh_methods_exist(self):

@@ -16,7 +16,7 @@ class ungenerateTestCase(unittest.TestCase):
         for filename in ['swamp.tsh']:
             try:
                 os.remove(filename)
-            except:
+            except OSError:
                 pass
         
     def test_ungenerateFileLoading(self):

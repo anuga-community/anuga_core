@@ -1059,7 +1059,7 @@ class Test_Interpolate(unittest.TestCase):
         #Must raise an exception, no points specified
         try:
             z = interp.interpolate(f)
-        except:
+        except Exception:
             pass
         
     def xxtest_interpolate_reuse_if_same(self):
@@ -1170,14 +1170,14 @@ class Test_Interpolate(unittest.TestCase):
         #Out of bounds checks
         try:
             I(time[0]-1) 
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should raise exception')
 
         try:
             I(time[-1]+1) 
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should raise exception')
@@ -1235,7 +1235,7 @@ class Test_Interpolate(unittest.TestCase):
 
         try:    
             I(1)
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should raise exception')
@@ -1294,7 +1294,7 @@ class Test_Interpolate(unittest.TestCase):
 
         try:    
             I(1)
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should raise exception')
@@ -1504,7 +1504,7 @@ class Test_Interpolate(unittest.TestCase):
             
         try:    
             I(1)
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should raise exception')
@@ -1667,7 +1667,7 @@ class Test_Interpolate(unittest.TestCase):
                                        triangles = triangles, 
                                        interpolation_points = interpolation_points,
                                        verbose = False)
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should raise exception due to time being non-monotoneous')

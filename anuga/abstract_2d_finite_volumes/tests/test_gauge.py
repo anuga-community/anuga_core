@@ -154,7 +154,7 @@ point2, 0.5, 2.0, 9.0\n")
             os.remove(points_file)
             os.remove(point1_filename)
             os.remove(point2_filename)
-        except:
+        except OSError:
             pass
 
 
@@ -230,7 +230,7 @@ point2, 0.5, 2.0\n")
             os.remove(points_file)
             os.remove(point1_filename)
             os.remove(point2_filename)
-        except:
+        except OSError:
             pass       
         
 
@@ -304,7 +304,7 @@ point2, 0.5, 2.0, 9.0\n")
             os.remove(points_file)
             os.remove(point1_filename)
             os.remove(point2_filename)
-        except:
+        except OSError:
             pass
 
 
@@ -356,7 +356,7 @@ offmesh2, 50.5, 20.25\n")
         # clean up
         try:
             os.remove(points_file)
-        except:
+        except OSError:
             pass
         
         
@@ -430,7 +430,7 @@ point2, 4.5, 4.0, 9.0\n")
             os.remove(points_file)
             os.remove(point1_filename)
             os.remove(point2_filename)
-        except:
+        except OSError:
             pass
 
 
@@ -481,7 +481,7 @@ point1, 2.5, 4.25, 3.0\n")
         try:
             os.remove(points_file)
             os.remove(point1_filename)
-        except:
+        except OSError:
             pass
 
     def test_sww2csv_multiple_files(self):
@@ -575,7 +575,7 @@ point2, 0.5, 2.0\n")
             os.remove(point2_filename)
             #remove second swwfile not removed by tearDown
             os.remove(basename+".sww")
-        except:
+        except OSError:
             pass       
 
 

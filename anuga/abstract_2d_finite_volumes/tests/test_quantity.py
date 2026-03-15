@@ -141,7 +141,7 @@ class Test_Quantity(unittest.TestCase):
 
         try:
             quantity = Quantity()
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should have raised empty quantity exception')
@@ -208,7 +208,7 @@ class Test_Quantity(unittest.TestCase):
 
         try:
             quantity.set_boundary_values([10.0, 4.0, 5.0, 8.0])
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught this'
@@ -517,14 +517,14 @@ class Test_Quantity(unittest.TestCase):
         try:
             quantity.set_values([[1, 2, 3], [5, 5, 5], [0, 0, 9], [-6, 3, 3]],
                                 location='bas kamel tuba')
-        except:
+        except Exception:
             pass
 
         try:
             quantity.set_values([[1, 2, 3], [0, 0, 9]])
         except ValueError:
             pass
-        except:
+        except Exception:
             raise Exception('should have raised ValueeError')
 
     def test_set_values_const(self):
@@ -709,7 +709,7 @@ class Test_Quantity(unittest.TestCase):
         # Test input checking
         try:
             quantity.set_values(3.14, polygon=polygon, indices=[0, 2])
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught this'
@@ -1590,7 +1590,7 @@ Parameters
             os.remove(txt_file)
             os.remove(txt_file_prj)
             os.remove(txt_file_dem)
-        except:
+        except OSError:
             pass
 
     def test_set_values_from_ll_grid_file(self):
@@ -1726,7 +1726,7 @@ Parameters
 
         try:
             os.remove(txt_file)
-        except:
+        except OSError:
             pass
 
     def test_set_values_from_ll_grid_file_northern(self):
@@ -1861,7 +1861,7 @@ Parameters
 
         try:
             os.remove(txt_file)
-        except:
+        except OSError:
             pass
 
     def test_set_values_from_ll_grid_file_indices(self):
@@ -2001,7 +2001,7 @@ Parameters
 
         try:
             os.remove(txt_file)
-        except:
+        except OSError:
             pass
 
     def test_set_values_from_ll_grid_file_with_nan(self):
@@ -2146,7 +2146,7 @@ Parameters
 
         try:
             os.remove(txt_file)
-        except:
+        except OSError:
             pass
 
     def test_set_values_from_ll_grid_file_with_indices_nan(self):
@@ -2287,7 +2287,7 @@ Parameters
 
         try:
             os.remove(txt_file)
-        except:
+        except OSError:
             pass
 
     @pytest.mark.skipif('osgeo' not in sys.modules,

@@ -97,7 +97,7 @@ def del_dir(path):
             else:
                 try:
                     os.remove(X)
-                except:
+                except OSError:
                     log.critical("Could not remove file %s" % X)
 
         os.rmdir(path)

@@ -18,7 +18,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
     def tearDown(self):
         try:
             os.remove('domain.sww')
-        except:
+        except OSError:
             pass
 
         

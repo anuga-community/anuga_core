@@ -28,7 +28,7 @@ class Test_read_sww(unittest.TestCase):
         for filename in ['read_sww_test0.sww', 'read_sww_test_c0.sww']:
             try:
                 os.remove(filename)
-            except:
+            except OSError:
                 pass
 
     def test_read_sww(self):

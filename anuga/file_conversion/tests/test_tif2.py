@@ -656,7 +656,7 @@ class Test_tif2(unittest.TestCase):
 
         try:
             Z = tif2point_values('PointData_test_utm.tif', zone=56, south=False, points = points)
-        except:
+        except Exception:
             pass
         else:
             # Expected Exception as tif is southern hemisphere, tif2point_values called with south=False

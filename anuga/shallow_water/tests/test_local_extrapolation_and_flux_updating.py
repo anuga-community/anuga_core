@@ -15,7 +15,7 @@ class Test_local_extrapolation_and_flux_updating(unittest.TestCase):
         for file in ['domain.sww', 'test_boundaryfluxintegral.msh', 'test_boundaryfluxintegral.sww']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass        
 
 
@@ -100,7 +100,7 @@ class Test_local_extrapolation_and_flux_updating(unittest.TestCase):
         try:
             domain.set_local_extrapolation_and_flux_updating(nlevels=8)
             Failed=False
-        except:
+        except Exception:
             pass
 
         assert(Failed==True)

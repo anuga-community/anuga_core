@@ -34,7 +34,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
 
         try:
             b.evaluate()
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should have raised exception')
@@ -44,7 +44,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
 
         try:
             Bd = Dirichlet_boundary()
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should have raised exception')
@@ -92,7 +92,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
         #Test time bdry, you need to provide a domain and function
         try:
             T = Time_boundary(domain)
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should have raised exception')
@@ -100,7 +100,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
         #Test time bdry, you need to provide a function
         try:
             T = Time_boundary()
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should have raised exception')
@@ -158,7 +158,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
         #Test time space bdry, you need to provide a domain and function
         try:
             T = Time_space_boundary(domain)
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should have raised exception')
@@ -166,7 +166,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
         #Test time bdry, you need to provide a function
         try:
             T = Time_space_boundary()
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should have raised exception')
@@ -230,7 +230,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
         #Test transmissve bdry
         try:
             T = Transmissive_boundary()
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should have raised exception')
@@ -421,7 +421,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
         try:
             F = File_boundary(filename + '.tms',
                               domain)
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should have raised an exception')

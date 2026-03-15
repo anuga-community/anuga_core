@@ -223,7 +223,7 @@ class Test_File_Conversion(unittest.TestCase):
         for file in ['timefile2netcdf_seconds.tms', 'timefile2netcdf.tms']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass
 
     def test_ferret2sww1(self):
@@ -962,7 +962,7 @@ class Test_File_Conversion(unittest.TestCase):
         # Expecting error to be raised
         try:
             timefile2netcdf(file_text)
-        except:
+        except Exception:
             pass
 
         # Should pass
@@ -1102,7 +1102,7 @@ Parameters
             os.remove(root + '.dem')
             os.remove(root + '.asc')
             os.remove(root + '.prj')
-        except:
+        except OSError:
             # Expect error on windows
             pass
 #-------------------------------------------------------------

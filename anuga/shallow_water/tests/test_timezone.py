@@ -22,7 +22,7 @@ class Test_Timzone(unittest.TestCase):
         for file in ['domain.sww']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass
         
 
