@@ -10,7 +10,6 @@ dependencies:
   - cython
   - dill
   - gdal
-  - gitpython
   - libpython
   - gcc_win-64
   - gxx_win-64
@@ -30,7 +29,6 @@ dependencies:
   - pyproj
   - pytest
   - scipy
-  - toml
   - utm
   - wheel
   - xarray

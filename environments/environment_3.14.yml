@@ -10,7 +10,6 @@ dependencies:
   - cython
   - dill
   - gdal
-  - gitpython
   - matplotlib
   - meshpy
   - meson
@@ -27,7 +26,6 @@ dependencies:
   - pyproj
   - pytest
   - scipy
-  - toml
   - utm
   - wheel
   - xarray

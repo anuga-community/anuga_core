@@ -2,18 +2,17 @@
 build-backend = 'mesonpy'
 requires = [
     "meson-python",
-    "meson", 
+    "meson",
     "ninja",
-    "Cython",   
+    "Cython",
     "pybind11",
     "numpy",
-    "toml",
     "libpython; sys_platform == 'win32'",
 ]
 
 [project]
 name = 'anuga'
-version = '3.3.0dev'
+dynamic = ['version']
 description = 'A set of python modules for tsunami and flood modelling'
 readme = 'README.rst'
 license-files = ["LICENSE.txt"]

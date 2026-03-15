@@ -13,8 +13,6 @@ scipy
 netcdf4
 matplotlib
 dill
-gitpython
-toml
 utm
 pyproj
 affine
