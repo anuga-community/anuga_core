@@ -2,9 +2,9 @@
 #
 # Plain-text replacement for the Excel (.xls) interface.
 # Run with:
-#   python run_model.py cairns_example.toml
+#   anuga_run_toml.py cairns_example.toml
 # or in parallel:
-#   mpirun -np 6 python run_model.py cairns_example.toml
+#   mpirun -np 6 anuga_run_toml.py cairns_example.toml
 
 
 # =============================================================================
@@ -20,6 +20,10 @@ output_base_directory = "OUTPUT/"
 
 # Interval between SWW output writes [seconds]
 yieldstep = 120.0
+
+# SWW output interval [seconds].  Must be an integer multiple of yieldstep.
+# Omit to write SWW output every yieldstep (the default).
+# outputstep = 600.0
 
 # Total simulation duration [seconds]
 finaltime = 21600.0
@@ -75,9 +79,7 @@ report_operator_statistics               = false
 #   2 = CuPy / GPU
 multiprocessor_mode = 1
 
-# SWW output interval [seconds].  Must be an integer multiple of yieldstep.
-# Omit to write SWW output every yieldstep (the default).
-# outputstep = 600.0
+
 
 
 # =============================================================================
