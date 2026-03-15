@@ -219,8 +219,7 @@ def communicate_ghosts_non_blocking(domain, quantities=None):
     # we might be overwriting the send buffers before the data has been sent.
     #-----------------------------------------
     import mpi4py
-    re=mpi4py.MPI.Request.Waitall(recv_requests)
-    se=mpi4py.MPI.Request.Waitall(send_requests)
+    mpi4py.MPI.Request.Waitall(recv_requests + send_requests)
 
     # Now copy data from receive buffers to the domain
     for recv_proc in recvDict:
