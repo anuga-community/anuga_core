@@ -96,65 +96,57 @@ def setup_mesh(project, setup_initial_conditions=None):
     OUTPUT: domain
     """
 
-    if myid == 0:
+    # ------------------------------------------------------------------
+    # Serial shortcut: build the mesh directly, no pickle/partition cycle
+    # ------------------------------------------------------------------
+    if numprocs == 1:
+        domain = build_mesh(project)
 
-        if verbose:
-            print('Hello from processor ', myid)
+        if setup_initial_conditions is not None:
+            setup_initial_conditions.setup_initial_conditions(domain, project)
 
-        #
-        # HERE, WE MAKE/PARTITION/READ THE MESH
-        # This can lead to memory savings in parallel runs
-        # (possibly because of limitations of python memory management)
-        #
+    # ------------------------------------------------------------------
+    # Parallel path: partition via pickle so each rank loads only its
+    # portion (reduces peak memory)
+    # ------------------------------------------------------------------
+    else:
+        if myid == 0:
 
-        # Let's see if we have already pickled this domain
-
-        pickle_name = 'domain' + '_P%g_%g.pickle' % (1, 0)
-        pickle_name = join(project.partition_dir, pickle_name)
-
-        if os.path.exists(pickle_name):
             if verbose:
-                print('Saved domain seems to already exist')
-        else:
-            if verbose:
-                print('CREATING PARTITIONED DOMAIN')
-            domain = build_mesh(project)
+                print('Hello from processor ', myid)
 
-            if setup_initial_conditions is not None:
-                # Set the initial conditions in serial
-                setup_initial_conditions.setup_initial_conditions(domain,
-                    project)
+            pickle_name = 'domain' + '_P%g_%g.pickle' % (1, 0)
+            pickle_name = join(project.partition_dir, pickle_name)
 
-            # If pypar is not available don't use sequential_distribute stuff
-            # (it will fail)
+            if os.path.exists(pickle_name):
+                if verbose:
+                    print('Saved domain seems to already exist')
+            else:
+                if verbose:
+                    print('CREATING PARTITIONED DOMAIN')
+                domain = build_mesh(project)
 
-            if pypar_available:
+                if setup_initial_conditions is not None:
+                    setup_initial_conditions.setup_initial_conditions(
+                        domain, project)
+
                 if verbose:
                     print('Saving Domain')
                 sequential_distribute_dump(domain, 1,
                                            partition_dir=project.partition_dir,
                                            verbose=verbose)
 
-        # If pypar is not available don't use sequential_distribute stuff (it
-        # will fail)
+            par_pickle_name = 'domain' + '_P%g_%g.pickle' % (numprocs, 0)
+            par_pickle_name = join(project.partition_dir, par_pickle_name)
 
-        if pypar_available:
-
-            # Now partition the domain
-
-            par_pickle_name = 'domain' + '_P%g_%g.pickle' % (numprocs,
-                                                             0)
-            par_pickle_name = join(project.partition_dir,
-                                   par_pickle_name)
             if os.path.exists(par_pickle_name):
                 if verbose:
                     print('Saved partitioned domain seems to already exist')
             else:
                 if verbose:
                     print('Load in saved sequential pickled domain')
-                domain = \
-                    sequential_distribute_load_pickle_file(
-                        pickle_name, np=1, verbose=verbose)
+                domain = sequential_distribute_load_pickle_file(
+                    pickle_name, np=1, verbose=verbose)
 
                 if verbose:
                     print('Dump partitioned domains')
@@ -162,35 +154,22 @@ def setup_mesh(project, setup_initial_conditions=None):
                     domain, numprocs,
                     partition_dir=project.partition_dir, verbose=verbose)
 
-            # This can reduce the memory demands if the domain was made above
-            # Even better to have an existing partition (i.e. stop here and
-            # rerun)
-
             domain = None
             gc.collect()
-    else:
 
-        domain = None
-        if verbose:
-            print('Hello from processor ', myid)
+        else:
+            domain = None
+            if verbose:
+                print('Hello from processor ', myid)
 
-    barrier()
+        barrier()
 
-    # print 'Distributing domain'
-    # domain=distribute(domain)
-    # barrier()
-
-    # If pypar is not available don't use sequential_distribute stuff (it will
-    # fail)
-
-    if pypar_available:
         if myid == 0:
             print('LOADING PARTITIONED DOMAIN')
 
-        domain = \
-            sequential_distribute_load(
-                filename=join(project.partition_dir, 'domain'),
-                verbose=verbose)
+        domain = sequential_distribute_load(
+            filename=join(project.partition_dir, 'domain'),
+            verbose=verbose)
 
     # #########################################################################
     # Set output directories
