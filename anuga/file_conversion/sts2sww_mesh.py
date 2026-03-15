@@ -20,7 +20,7 @@ def sts2sww_mesh(basename_in, basename_out=None,
                  spatial_thinning=1, verbose=False):
     
     from anuga.mesh_engine.mesh_engine import NoTrianglesError
-    from anuga.pmesh.mesh import Mesh
+    from anuga.pmesh.mesh import Pmesh
     if verbose:
         print("Starting sts2sww_mesh")
     
@@ -82,7 +82,7 @@ def sts2sww_mesh(basename_in, basename_out=None,
     if verbose:
         print("Generating sww triangulation of gems data")
 
-    mesh = Mesh()
+    mesh = Pmesh()
     mesh.add_vertices(points_utm)
     mesh.auto_segment(smooth_indents=True, expand_pinch=True)
     mesh.auto_segment(mesh.shape.get_alpha() * 1.1)

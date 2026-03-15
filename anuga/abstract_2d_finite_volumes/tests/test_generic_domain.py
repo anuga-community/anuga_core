@@ -11,7 +11,7 @@ from anuga.abstract_2d_finite_volumes.generic_domain import *
 from anuga.pmesh.mesh_interface import create_mesh_from_regions
 from anuga.config import epsilon
 import numpy as num
-from anuga.pmesh.mesh import Segment, Vertex, Mesh
+from anuga.pmesh.mesh import Segment, Vertex, Pmesh
 
 
 def add_to_verts(tag, elements, domain):

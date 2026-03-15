@@ -153,6 +153,22 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->evolve_max_timestep = 1.0e10;
     GD->fixed_flux_timestep = -1.0;  // Disabled by default
 
+    // Initialize culvert operators to empty
+    GD->culvert_ops.num_culverts = 0;
+    GD->culvert_ops.initialized = 0;
+    GD->culvert_ops.mapped = 0;
+    GD->culvert_ops.total_inlet_triangles = 0;
+    GD->culvert_ops.scratch_stage = NULL;
+    GD->culvert_ops.scratch_xmom = NULL;
+    GD->culvert_ops.scratch_ymom = NULL;
+    GD->culvert_ops.scratch_elev = NULL;
+    GD->culvert_ops.scratch_inlet_indices = NULL;
+    GD->culvert_ops.scratch_inlet_areas = NULL;
+    GD->culvert_ops.scratch_inlet_stage = NULL;
+    GD->culvert_ops.scratch_inlet_xmom = NULL;
+    GD->culvert_ops.scratch_inlet_ymom = NULL;
+    GD->culvert_ops.scratch_inlet_elev = NULL;
+
     // Initialize FLOP counters (Gordon Bell profiling)
     gpu_flop_counters_init(GD);
 
@@ -176,6 +192,9 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
 
     // Free boundary edge sync structures
     gpu_boundary_edge_sync_finalize(GD);
+
+    // Free culvert operator structures
+    gpu_culverts_finalize_all(GD);
 
     GD->gpu_initialized = 0;
 }

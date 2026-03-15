@@ -29,7 +29,7 @@ from anuga.file.sww import SWW_file
 from anuga.shallow_water.shallow_water_domain import Domain
 from anuga.abstract_2d_finite_volumes.quantity import Quantity
 from anuga.geospatial_data.geospatial_data import Geospatial_data
-from anuga.pmesh.mesh import Mesh
+from anuga.pmesh.mesh import Pmesh
 from anuga.file.netcdf import NetCDFFile
 
 from pprint import pprint
@@ -1789,7 +1789,7 @@ class Test_Interpolate(unittest.TestCase):
         # Create mesh
         mesh_file = tempfile.mktemp(".tsh")    
         points = [[0.0,0.0],[6.0,0.0],[6.0,6.0],[0.0,6.0]]
-        m = Mesh()
+        m = Pmesh()
         m.add_vertices(points)
         m.auto_segment()
         m.generate_mesh(verbose=False)

@@ -37,6 +37,17 @@ def tif2point_values(filename, zone=None, south=True, points=None, verbose=False
     #print(tif_epsg)
     #print(south)
 
+    wgs84_utm_north = {zone: 32600 + zone for zone in range(1, 61)}
+    wgs84_utm_south = {zone: 32700 + zone for zone in range(1, 61)}
+
+    nad83_utm_north = {
+    10: 26910, 11: 26911, 12: 26912, 13: 26913,
+    14: 26914, 15: 26915, 16: 26916, 17: 26917,
+    18: 26918, 19: 26919, 20: 26920, 21: 26921,
+    22: 26922, 23: 26923,
+    }
+
+
     if tif_epsg == '4326':
         # tif file is lat long projection ie 'EPSG:4326'
         tif_georeference= CRS(raster.GetProjection())
@@ -65,26 +76,43 @@ def tif2point_values(filename, zone=None, south=True, points=None, verbose=False
 
         ilocs= np.array(~ affine_transform * (points_lon,points_lat))
 
-    elif (tif_epsg == str(32600 + int(zone))) and not south:
-        # no need for transformation
-        affine_transform= Affine.from_gdal(*raster.GetGeoTransform())
-        ilocs= np.array(~ affine_transform * (points[:,0],points[:,1]))
 
-    elif (tif_epsg == str(32700 + int(zone))) and south:
-        # no need for transformation
-        affine_transform= Affine.from_gdal(*raster.GetGeoTransform())
-        ilocs= np.array(~ affine_transform * (points[:,0],points[:,1]))
+    elif not south:
+        zone = int(zone)
+        same_utm = (
+        tif_epsg == str(wgs84_utm_north.get(zone)) or
+        tif_epsg == str(nad83_utm_north.get(zone))
+        )
+        if same_utm:
+            affine_transform = Affine.from_gdal(*raster.GetGeoTransform())
+            ilocs = np.array(~affine_transform * (points[:, 0], points[:, 1]))
+        else:
+            raise Exception("zone and hemisphere of tif not the same as zone and hemisphere of points")
 
-    elif (tif_epsg == str(7800 + int(zone)))  and south:
-        # no need for transformation
-        affine_transform= Affine.from_gdal(*raster.GetGeoTransform())
-        ilocs= np.array(~ affine_transform * (points[:,0],points[:,1]))
+    elif south:
+        zone = int(zone)
+        same_utm = tif_epsg == str(wgs84_utm_south.get(zone))
+        if same_utm:
+            affine_transform = Affine.from_gdal(*raster.GetGeoTransform())
+            ilocs = np.array(~affine_transform * (points[:, 0], points[:, 1]))
+        else:
+            raise Exception("zone and hemisphere of tif not the same as zone and hemisphere of points")
+
+
+
+
+        
+    # elif (tif_epsg == str(7800 + int(zone)))  and south:
+    #     # no need for transformation
+    #     affine_transform= Affine.from_gdal(*raster.GetGeoTransform())
+    #     ilocs= np.array(~ affine_transform * (points[:,0],points[:,1]))
         
     else:
         msg = 'zone and hemisphere of tif not the same as zone and hemisphere of points'
         raise Exception(msg)
 
-    icols= ilocs[0,:].astype(int); irows= ilocs[1,:].astype(int)
+    icols= ilocs[0,:].astype(int)
+    irows= ilocs[1,:].astype(int)
 
     #pprint(icols)
     #pprint(irows)

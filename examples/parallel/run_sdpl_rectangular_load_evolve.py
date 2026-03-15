@@ -136,7 +136,8 @@ if myid == 0 :
 
 
 
-# FIXME: THis should be able to be set in the sequential domain
+# FIXME: This should be able to be set in the sequential domain
+domain.set_store(store_sww)
 domain.set_fixed_flux_timestep(fixed_flux_timestep)
 domain.set_CFL(1.0)
 if myid == 0: 
@@ -200,8 +201,7 @@ if domain.number_of_global_triangles < 10:
         print ('Create dump of triangulation for %g triangles' % domain.number_of_global_triangles)
     domain.dump_triangulation(filename="rectangular_cross_%g.png"% numprocs)
 
-# to save time avoid merge
-#domain.sww_merge(delete_old=True)
+domain.sww_merge(delete_old=True)
 
 total_time = time.time() - domain.initial_walltime
 

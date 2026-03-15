@@ -302,6 +302,7 @@ class Domain(Generic_Domain):
         self.fractional_step_operators = []
         self.kv_operator = None
         self.dplotter = None
+        self.gpu_culvert_manager = None  # Initialized when GPU mode + Boyd operators
 
         #-------------------------------
         # Set flow defaults
@@ -738,15 +739,16 @@ class Domain(Generic_Domain):
         self.maximum_allowed_speed=0.0
 
         if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print('# Using discontinuous elevation solver DE0')
-            print('#')
-            print('# First order timestepping')
-            print('#')
-            print('# Make sure you use centroid values when reporting on important output quantities')
-            print('#')
-            print('##########################################################################')
+            print('Domain: Using discontinuous elevation solver DE0')
+            # print('##########################################################################')
+            # print('#')
+            # print('# Using discontinuous elevation solver DE0')
+            # print('#')
+            # print('# First order timestepping')
+            # print('#')
+            # print('# Make sure you use centroid values when reporting on important output quantities')
+            # print('#')
+            # print('##########################################################################')
 
 
     def _set_DE1_defaults(self):
@@ -990,15 +992,16 @@ class Domain(Generic_Domain):
         self.maximum_allowed_speed=0.0
 
         if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print('# Using discontinuous elevation solver DE0_7')
-            print('#')
-            print('# A slightly less diffusive version than DE0, uses euler timestepping')
-            print('#')
-            print('# Make sure you use centroid values when reporting on important output quantities')
-            print('#')
-            print('##########################################################################')
+            print('Domain: Using discontinuous elevation solver DE0_7')
+            # print('##########################################################################')
+            # print('#')
+            # print('# Using discontinuous elevation solver DE0_7')
+            # print('#')
+            # print('# A slightly less diffusive version than DE0, uses euler timestepping')
+            # print('#')
+            # print('# Make sure you use centroid values when reporting on important output quantities')
+            # print('#')
+            # print('##########################################################################')
 
 
 
@@ -1229,10 +1232,10 @@ class Domain(Generic_Domain):
     def set_checkpointing(self, checkpoint= True, checkpoint_dir = 'CHECKPOINTS', checkpoint_step=10, checkpoint_time = None):
         """Set up checkpointing.
 
-        @param checkpoint: Default = True. Set to False will turn off checkpointing
-        @param checkpoint_dir: Where to store checkpointing files
-        @param checkpoint_step: Save checkpoint files after this many yieldsteps
-        @param checkpoint_time: If set, over-rides checkpoint_step. save checkpoint files
+        param checkpoint: Default = True. Set to False will turn off checkpointing
+        param checkpoint_dir: Where to store checkpointing files
+        param checkpoint_step: Save checkpoint files after this many yieldsteps
+        param checkpoint_time: If set, over-rides checkpoint_step. save checkpoint files
         after this amount of walltime
         """
 
@@ -2577,14 +2580,36 @@ class Domain(Generic_Domain):
 
 
     def update_centroids_of_momentum_from_velocity(self):
-        """Calculate the centroid value of x and y momentum from height and velocities
+        """
+        Calculate the centroid value of x and y momentum from height and velocities.
 
-        Assumes centroids of height and velocities are up to date
+        This method computes the centroid values of x and y momentum (xmomentum and 
+        ymomentum) by multiplying the centroid velocities by the centroid height values.
+        The method assumes that the centroids of height and velocities are already 
+        up to date.
 
-        Useful for kinematic viscosity calculations
+        This is particularly useful for kinematic viscosity calculations where momentum
+        values at cell centroids are required.
+
+        The method updates:
+        - xmomentum.centroid_values: product of xvelocity and height at centroids
+        - ymomentum.centroid_values: product of yvelocity and height at centroids
+
+        After updating centroid values, the method distributes these values to vertices 
+        and edges via distribute_to_vertices_and_edges().
+
+        Notes
+        -----
+        This method modifies the centroid_values arrays in-place for both xmomentum 
+        and ymomentum quantities.
+
+        See Also
+        --------
+        distribute_to_vertices_and_edges : Distribute centroid values to vertices and edges
         """
 
         # For shallow water we need to update height xvelocity and yvelocity
+
         #Shortcuts
         UH = self.quantities['xmomentum']
         VH = self.quantities['ymomentum']
@@ -2625,14 +2650,22 @@ class Domain(Generic_Domain):
                skip_initial_step=False):
         """Evolve method from Domain class.
 
+        Parameters
+        ----------
+        yieldstep : float, optional
+            Yield every yieldstep time period
+        outputstep : float, optional
+            Output to sww file every outputstep time period. outputstep should be 
+            an integer multiple of yieldstep.
+        finaltime : float or datetime, optional
+            Evolve until finaltime (can be a float in seconds or a datetime object)
+        duration : float, optional
+            Evolve for a time of length duration (seconds)
+        skip_initial_step : bool, optional
+            Can be used to restart a simulation (not often used).
 
-        :param float yieldstep: yield every yieldstep time period
-        :param float outputstep: Output to sww file every outputstep time period. outputstep should be an integer multiple of yieldstep.
-        :param float finaltime: evolve until finaltime (can be a float (secs) or a datetime object)
-        :param float duration: evolve for a time of length duration (secs)
-        :param boolean skip_initial_step: Can be used to restart a simulation (not often used).
-
-
+        Notes
+        -----
         If outputstep is None, the output to sww file happens every yieldstep.
         If yieldstep is None then simply evolve to finaltime or for a duration.
         """
@@ -3305,7 +3338,8 @@ class Domain(Generic_Domain):
 
         Rate_operators with GPU support don't need CPU sync.
         boundary_flux_integral_operator is GPU-safe (only reads boundary_flux_sum).
-        Boyd_box_operator, Inlet_operator, etc. do need CPU sync.
+        Boyd_box_operator/Boyd_pipe_operator are GPU-safe via GPUCulvertManager.
+        Inlet_operator with GPU support doesn't need CPU sync.
 
         Result is cached after first call since operators don't change during simulation.
         """
@@ -3316,6 +3350,14 @@ class Domain(Generic_Domain):
         from anuga.operators.rate_operators import Rate_operator
         from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
         from anuga.structures.inlet_operator import Inlet_operator
+        from anuga.structures.gpu_culvert_manager import GPUCulvertManager
+
+        # Initialize GPU culvert manager for Boyd operators if needed
+        has_boyd_ops = any(GPUCulvertManager.is_boyd_operator(op)
+                          for op in self.fractional_step_operators)
+        if has_boyd_ops and self.gpu_culvert_manager is None:
+            self.gpu_culvert_manager = GPUCulvertManager(self)
+            self.gpu_culvert_manager.register_all()
 
         result = False
         cpu_only_ops = []
@@ -3338,6 +3380,11 @@ class Domain(Generic_Domain):
                     op._init_gpu()
                 if hasattr(op, '_gpu_initialized') and op._gpu_initialized:
                     continue  # GPU-accelerated, no sync needed
+            elif GPUCulvertManager.is_boyd_operator(op):
+                # Handled by GPUCulvertManager (local + cross-boundary via MPI in C)
+                if (self.gpu_culvert_manager is not None
+                        and op in self.gpu_culvert_manager.operators):
+                    continue
             # All other operators need CPU sync
             cpu_only_ops.append(op_name)
             result = True
@@ -3359,22 +3406,33 @@ class Domain(Generic_Domain):
         return result
 
     def apply_fractional_steps(self):
-        """Override to sync GPU data before fractional step operators run."""
+        """Override to sync GPU data before fractional step operators run.
+
+        Boyd culvert operators are handled via GPUCulvertManager (batched,
+        only 2 GPU sync points) instead of the per-operator Python loop.
+        """
+        gpu_mode = (self.multiprocessor_mode == 2 and self.gpu_interface is not None)
+        gpu_culverts_active = (gpu_mode and self.gpu_culvert_manager is not None
+                               and self.gpu_culvert_manager.num_culverts > 0)
         needs_cpu_sync = False
-        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            # Only sync if there are operators that actually need CPU execution
-            # GPU-accelerated Rate_operators don't need sync
+
+        if gpu_mode:
             needs_cpu_sync = self._has_cpu_only_fractional_operators()
             if needs_cpu_sync:
                 self.gpu_interface.sync_from_device()
 
-        # Call parent implementation
-        super().apply_fractional_steps()
+            # Execute all Boyd culverts in one batched GPU cycle
+            if gpu_culverts_active:
+                self.gpu_culvert_manager.apply_all()
 
-        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
-            # Sync changes back to GPU only if we synced from device
-            if needs_cpu_sync:
-                self.gpu_interface.sync_to_device()
+        # Run remaining operators (skip Boyd operators handled by GPU manager)
+        for operator in self.fractional_step_operators:
+            if gpu_culverts_active and operator in self.gpu_culvert_manager.operators:
+                continue  # Already handled by GPUCulvertManager
+            operator()
+
+        if gpu_mode and needs_cpu_sync:
+            self.gpu_interface.sync_to_device()
 
     def update_ghosts(self, quantities=None):
         """Override to use GPU ghost exchange when in GPU mode."""
@@ -3394,14 +3452,25 @@ class Domain(Generic_Domain):
                                 datetime=False):
         """Return string with time stepping statistics for printing or logging
 
-        :param time_units: 'sec', 'min', 'hr', 'day'
-        :param bool datetime: flag to use timestamp or datetime
-        :param track_speed: Optional boolean keyword track_speeds decides whether
-                            to report location of smallest timestep as well as a
-                            histogram and percentile report.
-        :param bool relative_time: Flag to report relative time instead of absolute time
-        :param int triangle_id: Can be used to specify a particular
-                            triangle rather than the one with the largest speed.
+        Parameters
+        ----------
+        time_units : str, optional
+            Time units for reporting. Options are 'sec', 'min', 'hr', 'day'.
+        datetime : bool, optional
+            Flag to use timestamp or datetime.
+        track_speeds : bool, optional
+            Optional boolean keyword that decides whether to report location of 
+            smallest timestep as well as a histogram and percentile report.
+        relative_time : bool, optional
+            Flag to report relative time instead of absolute time.
+        triangle_id : int, optional
+            Can be used to specify a particular triangle rather than the one with 
+            the largest speed.
+        
+        Returns
+        -------
+        str
+            Formatted string with time stepping statistics.
         """
 
         from anuga.config import epsilon, g
@@ -3528,16 +3597,22 @@ class Domain(Generic_Domain):
         return msg
 
     def print_timestepping_statistics(self, *args, **kwargs):
-        """Print time stepping statistics
+        """Print time stepping statistics.
 
-        :param time_units: 'sec', 'min', 'hr', 'day'
-        :param bool datetime: flag to use timestamp or datetime
-        :param track_speed: Optional boolean keyword track_speeds decides whether
-                            to report location of smallest timestep as well as a
-                            histogram and percentile report.
-        :param bool relative_time: Flag to report relative time instead of absolute time
-        :param int triangle_id: Can be used to specify a particular
-                            triangle rather than the one with the largest speed.
+        Parameters
+        ----------
+        time_units : str, optional
+            Time units for reporting. Options are 'sec', 'min', 'hr', 'day'.
+        datetime : bool, optional
+            Flag to use timestamp or datetime.
+        track_speed : bool, optional
+            Optional boolean keyword that decides whether to report location of 
+            smallest timestep as well as a histogram and percentile report.
+        relative_time : bool, optional
+            Flag to report relative time instead of absolute time.
+        triangle_id : int, optional
+            Can be used to specify a particular triangle rather than the one with 
+            the largest speed.
         """
 
         msg = self.timestepping_statistics(*args, **kwargs) 
@@ -3548,15 +3623,23 @@ class Domain(Generic_Domain):
     def compute_boundary_flows(self):
         """Compute boundary flows at current timestep.
 
-        Quantities computed are:
-           Total inflow across boundary
-           Total outflow across boundary
-           Flow across each tagged boundary segment
+        Computes the total inflow and outflow across the domain boundary,
+        as well as the flow across each tagged boundary segment.
 
+        Returns
+        -------
+        boundary_flows : dict
+            Flow rates [m^3/s] for each boundary tag
+        total_boundary_inflow : float
+            Total inflow across boundary [m^3/s]
+        total_boundary_outflow : float
+            Total outflow across boundary [m^3/s]
+
+        Notes
+        -----
         These calculations are only approximate since they don't use the
-        flux calculation used in evolve
-
-        See get_boundary_flux_integral for an exact computation
+        flux calculation used in evolve. For exact computation, see
+        get_boundary_flux_integral.
         """
 
         # Run through boundary array and compute for each segment
@@ -3892,10 +3975,13 @@ class Domain(Generic_Domain):
                 # Track whether GPU offload is actually active (not disabled by env var)
                 self.gpu_offload_active = (omp_target_offload != 'disabled')
                 if myid == 0:
+                    device_id = self.gpu_interface.gpu_dom.device_id
                     print('+==============================================================================+')
                     if not self.gpu_offload_active:
                         print(f'| WARNING: GPU mode enabled but OMP_TARGET_OFFLOAD=disabled                   |')
                         print(f'| Running on CPUs with OMP_NUM_THREADS={omp_num_threads}')
+                    elif device_id < 0:
+                        print(f'| WARNING: No GPU devices found, running on CPU via OpenMP target offloading  |')
                     else:
                         print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
                     print('+==============================================================================+')

@@ -113,6 +113,7 @@ if mpi_dep.found() and have_mpi4py
       'gpu/gpu_halo.c',
       'gpu/gpu_rate_operator.c',
       'gpu/gpu_inlet_operator.c',
+      'gpu/gpu_culvert_operator.c',
       'gpu/gpu_flop.c',
       'gpu/core_kernels.c',
     ],

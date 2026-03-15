@@ -83,23 +83,81 @@ class Generic_Domain(object):
                  number_of_full_nodes=None,
                  number_of_full_triangles=None,
                  ghost_layer_width=2):
+        """Instantiate a generic computational Domain.
 
-        """Instantiate generic computational Domain.
+        This initializes a computational domain for finite volume simulations,
+        setting up the mesh, quantities, and simulation parameters.
 
-        Input:
-          source:    Either a mesh filename or coordinates of mesh vertices.
-                     If it is a filename values specified for triangles will
-                     be overridden.
-          triangles: Mesh connectivity (see mesh.py for more information)
-          boundary:  See mesh.py for more information
-
-          conserved_quantities: List of quantity names entering the
-                                conservation equations
-          evolved_quantities:   List of all quantities that evolve
-          other_quantities:     List of other quantity names
-
-          tagged_elements:
-          ...
+        Parameters
+        ----------
+        source : str or Mesh or array-like, optional
+            Either a mesh filename, a Mesh object, or coordinates of mesh vertices.
+            If a filename is provided, values specified for `triangles` will be
+            overridden. Default is None.
+        triangles : array-like, optional
+            Mesh connectivity array. See mesh.py for more information.
+            Default is None.
+        boundary : dict, optional
+            Boundary information. See mesh.py for more information.
+            Default is None.
+        conserved_quantities : list of str, optional
+            List of quantity names entering the conservation equations.
+            Default is None.
+        evolved_quantities : list of str, optional
+            List of all quantities that evolve during simulation.
+            Default is None.
+        other_quantities : list of str, optional
+            List of other quantity names that do not enter conservation equations.
+            Default is None.
+        tagged_elements : dict, optional
+            Dictionary mapping tags to element indices.
+            Default is None.
+        geo_reference : GeoReference, optional
+            Georeferencing information for the mesh.
+            Default is None.
+        use_inscribed_circle : bool, optional
+            Whether to use inscribed circle for mesh calculations.
+            Default is False.
+        mesh_filename : str, optional
+            Path to mesh file. Overrides source if provided.
+            Default is None.
+        use_cache : bool, optional
+            Whether to use cached mesh data.
+            Default is False.
+        verbose : bool, optional
+            Enable verbose logging output.
+            Default is False.
+        full_send_dict : dict, optional
+            Dictionary of ghost cell communication buffers for sending.
+            Default is None.
+        ghost_recv_dict : dict, optional
+            Dictionary of ghost cell communication buffers for receiving.
+            Default is None.
+        starttime : float, optional
+            Physical start time for the simulation.
+            Default is 0.0.
+        processor : int, optional
+            Processor rank in parallel computation.
+            Default is 0.
+        numproc : int, optional
+            Total number of processors in parallel computation.
+            Default is 1.
+        number_of_full_nodes : int, optional
+            Number of non-ghost nodes. Currently unused (set to None internally).
+            Default is None.
+        number_of_full_triangles : int, optional
+            Number of non-ghost triangles. Currently unused (set to None internally).
+            Default is None.
+        ghost_layer_width : int, optional
+            Width of ghost cell layer in parallel computation.
+            Default is 2.
+            
+        Notes
+        -----
+        - Conserved quantities must be the first entries of evolved_quantities.
+        - The domain initializes mesh attributes, quantity objects, and
+            communication buffers for parallel computation.
+        - Full nodes are identified as those intersecting full (non-ghost) triangles.
         """
 
         if verbose:
@@ -111,9 +169,13 @@ class Generic_Domain(object):
         number_of_full_nodes = None
         number_of_full_triangles = None
 
+        mesh_input = None
+
         # Determine whether source is a mesh filename or coordinates
         if isinstance(source, str):
             mesh_filename = source
+        elif isinstance(source, Mesh):
+            mesh_input = source
         else:
             coordinates = source
 
@@ -126,15 +188,21 @@ class Generic_Domain(object):
                                     use_cache=use_cache,
                                     verbose=verbose)
 
-        # Initialise underlying mesh structure
-        self.mesh = Mesh(coordinates, triangles,
-                         boundary=boundary,
-                         tagged_elements=tagged_elements,
-                         geo_reference=geo_reference,
-                         use_inscribed_circle=use_inscribed_circle,
-                         # number_of_full_nodes=number_of_full_nodes,
-                         # number_of_full_triangles=number_of_full_triangles,
-                         verbose=verbose)
+        if mesh_input is not None:
+
+            self.mesh = mesh_input
+            # FIXME: We should update tagged_elements 
+
+        else:
+            # Initialise underlying mesh structure
+            self.mesh = Mesh(coordinates, triangles,
+                            boundary=boundary,
+                            tagged_elements=tagged_elements,
+                            geo_reference=geo_reference,
+                            use_inscribed_circle=use_inscribed_circle,
+                            # number_of_full_nodes=number_of_full_nodes,
+                            # number_of_full_triangles=number_of_full_triangles,
+                            verbose=verbose)
         
         if verbose:
             log.critical('Domain: Expose mesh attributes')
@@ -492,6 +560,9 @@ class Generic_Domain(object):
     def set_georeference(self, *args, **kwargs):
         self.mesh.set_georeference(*args, **kwargs)
         self.geo_reference = self.mesh.geo_reference
+
+    def build_boundary_dictionary(self, *args, **kwargs):
+        self.mesh.build_boundary_dictionary(*args, **kwargs)
 
     def build_tagged_elements_dictionary(self, *args, **kwargs):
         self.mesh.build_tagged_elements_dictionary(*args, **kwargs)

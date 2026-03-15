@@ -27,11 +27,14 @@ import sys
 import math
 from xml import dom
 import anuga
+import numpy as np
 
 
 #----------------------------
 # Sequential interface
 #---------------------------
+from anuga import rectangular_cross
+from anuga import Domain, Mesh
 from anuga import Transmissive_boundary, Reflective_boundary
 from anuga import rectangular_cross_domain
 from anuga import Set_stage
@@ -78,9 +81,14 @@ parser.add_argument('-ta', '--test_allreduce', action='store_true',
 parser.add_argument('-mp', '--multi_processor_mode', type=int, default=1,
                     help='set multiprocessor mode in [1,2]')
 
+parser.add_argument('-sww', '--store_sww', action='store_true', help='store sww files')
+
 parser.add_argument('-v', '--verbose', action='store_true', help='turn on verbosity')
 
 parser.add_argument('-ve', '--evolve_verbose', action='store_true', help='turn on evolve verbosity')
+
+parser.add_argument('-ps', '--partition_scheme', type=str, default='metis',
+                    help='set partition scheme in [metis, morton, hilbert]')
 
 args = parser.parse_args()
 
@@ -94,9 +102,12 @@ verbose = args.verbose
 evolve_verbose = args.evolve_verbose
 fixed_flux_timestep = args.fixed_dt
 test_allreduce = args.test_allreduce
+store_sww = args.store_sww
 
 dist_params = {}
 dist_params['ghost_layer_width'] = args.ghost_layer
+dist_params['partition_scheme'] = args.partition_scheme
+
 
 if fixed_flux_timestep == 0.0:
     fixed_flux_timestep = None
@@ -111,17 +122,26 @@ if fixed_flux_timestep == 0.0:
 #--------------------------------------------------------------------------
 if myid == 0:
 
-    #nvtx marker
-    #rng = nvtx.start_range(message="rect_example_creat_time", color="blue")
+    # nodes, triangles, boundary = rectangular_cross(sqrtN, sqrtN,
+    #                         len1=length, len2=width, 
+    #                         origin=(-length/2, -width/2))
 
+    # mesh = Mesh(nodes, triangles, boundary)
 
-    domain = rectangular_cross_domain(sqrtN, sqrtN,
+    # from anuga.parallel.partitioning import morton_order_from_points
+
+    # points = mesh.get_centroid_coordinates()
+    # morton_order = morton_order_from_points(points)
+
+    # mesh.reorder(morton_order, in_place=True)
+    # domain = Domain(mesh, verbose=verbose)
+
+    domain = rectangular_cross_domain(sqrtN, sqrtN, 
                                       len1=length, len2=width, 
-                                      origin=(-length/2, -width/2), 
-                                      verbose=verbose)
+                                      origin=(-length/2, -width/2), verbose=verbose)
 
 
-    domain.set_store(True)
+    domain.set_store(store_sww)
     domain.set_quantity('elevation', lambda x,y : -1.0-x )
     domain.set_quantity('stage', 1.0)
     domain.set_flow_algorithm('DE0')
@@ -157,7 +177,7 @@ barrier()
 # nvtx marker
 #rng = nvtx.start_range(message="rectangular_exam_domain_distr", color="blue")
 
-domain = distribute(domain,verbose=verbose,parameters=dist_params)
+domain = distribute(domain,verbose=verbose, parameters=dist_params)
 # nvtx marker
 #nvtx.end_range(rng)
 
@@ -241,7 +261,7 @@ if domain.number_of_global_triangles < 10:
     domain.dump_triangulation(filename="rectangular_cross_%g.png"% numprocs)
 
 # to save time avoid merge
-#domain.sww_merge(delete_old=True)
+domain.sww_merge(delete_old=True)
 
 
 if myid == 0:
