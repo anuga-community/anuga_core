@@ -288,12 +288,24 @@ class PrepareData(ProjectData):
 
             model_files = glob.glob('*.py') + glob.glob('*.sh') + \
                 [self.config_filename]
+
+            # If the runner script (sys.argv[0]) lives outside the scenario
+            # directory (e.g. anuga_run_toml installed in bindir), copy it too.
+            import sys as _sys
+            runner = os.path.abspath(_sys.argv[0])
+            if os.path.isfile(runner) and \
+                    os.path.dirname(runner) != os.path.abspath('.'):
+                model_files.append(runner)
+
             for model_file in model_files:
                 anuga.copy_code_files(code_output_dir, model_file)
 
-            model_files = glob.glob('setup/*.py')
-            for model_file in model_files:
-                anuga.copy_code_files(setup_code_output_dir, model_file)
+            # Copy local setup/*.py if present (legacy layout).
+            # When using anuga.scenario the setup/ dir does not exist.
+            local_setup_files = glob.glob('setup/*.py')
+            if local_setup_files:
+                for model_file in local_setup_files:
+                    anuga.copy_code_files(setup_code_output_dir, model_file)
 
         return
 
