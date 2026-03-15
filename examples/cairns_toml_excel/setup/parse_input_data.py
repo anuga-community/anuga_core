@@ -38,6 +38,19 @@ class ProjectData(object):
             msg = 'File type not supported'
             raise ValueError(msg)
 
+        # Apply defaults for attributes introduced in the TOML interface
+        # that may not be set by the Excel reader.
+        _defaults = {
+            'multiprocessor_mode':               1,
+            'omp_num_threads':                   None,
+            'outputstep':                        None,
+            'report_operator_statistics':        False,
+            'bounding_polygon_explicit_tags':    None,
+        }
+        for attr, default in _defaults.items():
+            if not hasattr(self, attr):
+                setattr(self, attr, default)
+
     def get_data_from_toml(self, filename):
         from .parse_input_data_toml import ProjectDataTOML
         toml_data = ProjectDataTOML(filename)
