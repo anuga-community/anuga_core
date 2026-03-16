@@ -30,15 +30,17 @@ class Set_stage(Set_quantity):
     def __init__(self,
                  domain,
                  stage=None,
+                 region=None,
                  indices=None,
                  polygon=None,
                  center=None,
                  radius=None,
                  line=None,
-                 verbose = False):
+                 verbose=False):
 
         Set_quantity.__init__(self, domain, 'stage',
                               value=stage,
+                              region=region,
                               indices=indices,
                               polygon=polygon,
                               center=center,
@@ -52,7 +54,6 @@ class Set_stage(Set_quantity):
         #------------------------------------------
         self.stage_c = self.domain.quantities['stage'].centroid_values
         self.elev_c = self.domain.quantities['elevation'].centroid_values
-        self.height_c = self.domain.quantities['height'].centroid_values
 
         #------------------------------------------
         # x,y coordinates of vertices of cells that are
@@ -106,12 +107,6 @@ class Set_stage(Set_quantity):
                 return
 
         #print('call ', type(self.indices), self.indices)
-
-        #value = self.get_value()
-        
-        from pprint import pprint
-        #print 'value'
-        #pprint(value)
 
 
 

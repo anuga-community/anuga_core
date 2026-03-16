@@ -78,7 +78,7 @@ class Set_quantity_operator(Operator, Set_quantity):
 
     def statistics(self):
 
-        message = self.label + ': Set_elevation_operator'
+        message = self.label + ': Set_quantity_operator'
         message = message + ' on triangles '+ str(self.indices)
         return message
 
@@ -143,12 +143,12 @@ class Polygonal_set_quantity_operator(Set_quantity_operator):
 
 
 
-        Set_elevation_operator.__init__(self,
-                               domain,
-                               quantity,
-                               value=value,
-                               polygon=polygon,
-                               verbose=verbose)
+        Set_quantity_operator.__init__(self,
+                                       domain,
+                                       quantity,
+                                       value=value,
+                                       polygon=polygon,
+                                       verbose=verbose)
 
 
 

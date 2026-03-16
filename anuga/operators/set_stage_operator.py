@@ -15,18 +15,21 @@ import anuga.utilities.log as log
 
 from anuga.geometry.polygon import inside_polygon
 
-from anuga.operators.set_quantity_operator import Set_quantity_operator
+from anuga.operators.base_operator import Operator
+from anuga.operators.set_stage import Set_stage
 from anuga.config import indent
 
 
 
-class Set_stage_operator(Set_quantity_operator):
+class Set_stage_operator(Operator, Set_stage):
     """
-    Set the stage over a region
+    Set the stage over a region, enforcing stage >= elevation.
     """
 
-    get_stage = Set_quantity_operator.get_value
-    set_stage = Set_quantity_operator.set_value
+    __call__ = Set_stage.__call__
+
+    get_stage = Set_stage.get_value
+    set_stage = Set_stage.set_value
 
     def __init__(self,
                  domain,
@@ -37,26 +40,22 @@ class Set_stage_operator(Set_quantity_operator):
                  center=None,
                  radius=None,
                  line=None,
-                 description = None,
-                 label = None,
-                 logging = False,
-                 verbose = False):
+                 description=None,
+                 label=None,
+                 logging=False,
+                 verbose=False):
 
+        Set_stage.__init__(self, domain,
+                           stage=stage,
+                           region=region,
+                           indices=indices,
+                           polygon=polygon,
+                           center=center,
+                           radius=radius,
+                           line=line,
+                           verbose=verbose)
 
-        Set_quantity_operator.__init__(self, domain,
-                                       quantity = 'stage',
-                                       value = stage,
-                                       region = region,
-                                       indices = indices,
-                                       polygon = polygon,
-                                       center = center,
-                                       radius = radius,
-                                       line = line,
-                                       description = description,
-                                       label = label,
-                                       logging = logging,
-                                       verbose = verbose,
-                                       test_stage=False)
+        Operator.__init__(self, domain, description, label, logging, verbose)
 
 
 
