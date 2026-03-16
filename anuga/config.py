@@ -112,6 +112,21 @@ low_froude = 0
 sloped_mannings_function = False
 
 ################################################################################
+# Multiprocessor modes
+################################################################################
+
+MULTIPROCESSOR_OPENMP = 1  # OpenMP CPU parallelism (default)
+MULTIPROCESSOR_GPU    = 2  # GPU offloading (OpenMP target or CUDA)
+
+################################################################################
+# Low Froude correction modes
+################################################################################
+
+LOW_FROUDE_OFF = 0  # No low Froude correction
+LOW_FROUDE_1   = 1  # Low Froude correction type 1
+LOW_FROUDE_2   = 2  # Low Froude correction type 2
+
+################################################################################
 # Timestepping
 ################################################################################
 

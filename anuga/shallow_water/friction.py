@@ -12,6 +12,7 @@ from copy import copy
 
 import anuga
 from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
 
 
 # --------------------------------------------------------------------------
@@ -21,7 +22,7 @@ from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a
 
 def manning_friction_semi_implicit(domain):
     
-    if domain.multiprocessor_mode == 1:
+    if domain.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
         if domain.use_sloped_mannings:
             # OpenMP version for sloped mannings
             from .sw_domain_openmp_ext import manning_friction_sloped_semi_implicit_edge_based
@@ -34,7 +35,7 @@ def manning_friction_semi_implicit(domain):
             manning_friction_flat_semi_implicit(domain)
 
 
-    elif domain.multiprocessor_mode == 2:
+    elif domain.multiprocessor_mode == MULTIPROCESSOR_GPU:
         # GPU version not implemented yet, use openmp version
         if domain.use_sloped_mannings:
             # OpenMP version for sloped mannings
@@ -114,7 +115,7 @@ multiprocessor_mode {domain.multiprocessor_mode} not supported
 #     Wrapper for c version
 #     """
 
-#     if domain.multiprocessor_mode == 2:
+#     if domain.multiprocessor_mode == MULTIPROCESSOR_GPU:
 #         from .sw_domain_openmp_ext import manning_friction_flat
 #         from .sw_domain_openmp_ext import manning_friction_sloped
 #     else:

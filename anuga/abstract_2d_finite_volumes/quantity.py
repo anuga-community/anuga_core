@@ -11,6 +11,7 @@ from anuga.geospatial_data.geospatial_data import Geospatial_data
 from anuga.fit_interpolate.fit import fit_to_mesh
 from anuga.config import points_file_block_line_size as default_block_line_size
 from anuga.config import epsilon
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
 from anuga.caching import cache
 import anuga.utilities.log as log
 
@@ -2293,9 +2294,9 @@ class Quantity(object):
         # (either from this module or C-extension)
 
 
-        if self.domain.multiprocessor_mode == 1:
+        if self.domain.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .quantity_openmp_ext import update
-        if self.domain.multiprocessor_mode == 2:
+        if self.domain.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # FIXME SR: Change this when gpu version is available
             from .quantity_openmp_ext import update
         else:

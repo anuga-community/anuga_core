@@ -314,6 +314,8 @@ from anuga.utilities import log as log
 
 from anuga.config import g
 from anuga.config import velocity_protection
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
+from anuga.config import LOW_FROUDE_OFF, LOW_FROUDE_1, LOW_FROUDE_2
 
 # --------------------------------------
 # NetCDF changes stdout to the terminal

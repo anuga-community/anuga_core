@@ -10,6 +10,7 @@ __date__ ="$09/03/2012 4:46:39 PM$"
 
 
 from anuga.config import indent
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
 import numpy as num
 import anuga.utilities.log as log
 from anuga.utilities.function_utils import evaluate_temporal_function
@@ -160,7 +161,7 @@ Parameters involving communication
             return
 
         # Check if domain is in GPU mode
-        if not hasattr(self.domain, 'multiprocessor_mode') or self.domain.multiprocessor_mode != 2:
+        if not hasattr(self.domain, 'multiprocessor_mode') or self.domain.multiprocessor_mode != MULTIPROCESSOR_GPU:
             return
 
         # Check if we have a GPU interface
@@ -225,7 +226,7 @@ Parameters involving communication
 
         # Check for GPU execution path
         if (hasattr(self.domain, 'multiprocessor_mode') and
-            self.domain.multiprocessor_mode == 2 and
+            self.domain.multiprocessor_mode == MULTIPROCESSOR_GPU and
             not self.rate_spatial and
             not self.rate_xarray):
 
