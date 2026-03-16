@@ -10,6 +10,7 @@ __date__ ="$09/03/2012 4:46:39 PM$"
 
 
 from anuga.config import indent
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
 import numpy as num
 import anuga.utilities.log as log
 from anuga.utilities.function_utils import evaluate_temporal_function

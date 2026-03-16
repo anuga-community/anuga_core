@@ -14,6 +14,7 @@
 from time import time as walltime
 
 from anuga.config import max_smallsteps, beta_w, epsilon
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
 from anuga.config import CFL
 from anuga.config import timestepping_method
 from anuga.config import protect_against_isolated_degenerate_timesteps
@@ -309,7 +310,7 @@ class Generic_Domain(object):
         # 1. openmp (in development)
         # 2. cuda (in development)
         #-------------------------------    
-        self.set_multiprocessor_mode(1)
+        self.set_multiprocessor_mode(MULTIPROCESSOR_OPENMP)
 
         self.processor = processor
         self.numproc = numproc
