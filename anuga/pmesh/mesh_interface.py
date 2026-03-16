@@ -304,7 +304,7 @@ def _create_mesh_from_regions(bounding_polygon,
         for n, polygon in enumerate(interior_holes):
             try:
                 tags = hole_tags[n]
-            except (KeyError, IndexError):
+            except (KeyError, IndexError, TypeError):
                 tags = {}
             m.add_hole_from_polygon(polygon,
                                     segment_tags=tags,

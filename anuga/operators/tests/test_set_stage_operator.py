@@ -101,7 +101,7 @@ class Test_set_stage_operators(unittest.TestCase):
         domain = Domain(points, vertices)
 
         #Flat surface with 1m of water
-        domain.set_quantity('elevation', lambda x,y : -2*x)
+        domain.set_quantity('elevation', lambda x,y : -10*x)
         domain.set_quantity('stage', 1.0)
         domain.set_quantity('friction', 0)
 

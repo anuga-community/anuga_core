@@ -794,7 +794,7 @@ class Culvert_flow_general(object):
         # Log timeseries to file
         try:
             fid = open(self.timeseries_filename, 'a')
-        except OSError:
+        except (OSError, AttributeError):
             pass
         else:
             fid.write('%.2f, %.2f\n' %(time, Q))

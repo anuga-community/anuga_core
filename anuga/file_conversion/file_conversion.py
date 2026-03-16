@@ -212,7 +212,7 @@ def timefile2netcdf(file_text, file_out = None, quantity_names=None, \
     for i in range(Q.shape[1]):
         try:
             name = quantity_names[i]
-        except (IndexError, KeyError):
+        except (IndexError, KeyError, TypeError):
             name = 'Attribute%d' % i
 
         fid.createVariable(name, netcdf_float, ('number_of_timesteps',))
