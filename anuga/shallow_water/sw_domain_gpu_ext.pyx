@@ -12,6 +12,7 @@ Key responsibilities:
 import cython
 from libc.stdint cimport int64_t, int32_t, uint64_t
 from libc.stdlib cimport malloc, free
+from libc.string cimport memset
 
 import numpy as np
 cimport numpy as np
@@ -87,6 +88,15 @@ cdef extern from "gpu_domain.h" nogil:
         double* y_centroid_work
         # Friction
         double* friction_centroid_values
+        # Riverwall arrays
+        int64_t number_of_riverwall_edges
+        int64_t ncol_riverwall_hydraulic_properties
+        int64_t nrow_riverwall_hydraulic_properties
+        int64_t* edge_flux_type
+        int64_t* edge_river_wall_counter
+        double* riverwall_elevation
+        int64_t* riverwall_rowIndex
+        double* riverwall_hydraulic_properties
 
     struct halo_exchange:
         int num_neighbors
@@ -234,6 +244,43 @@ cdef extern from "gpu_domain.h" nogil:
                            int has_velocity, double ext_vel_u, double ext_vel_v,
                            int zero_velocity)
 
+    # Culvert operators (Boyd box/pipe - batched GPU gather/scatter)
+    struct culvert_params:
+        int type
+        double g
+        double width
+        double height
+        double diameter
+        double length
+        double manning
+        double sum_loss
+        double blockage
+        double barrels
+        int use_velocity_head
+        int use_momentum_jet
+        int use_old_momentum_method
+        int always_use_Q_wetdry_adjustment
+        double max_velocity
+        double smoothing_timescale
+        double outward_vector_0[2]
+        double outward_vector_1[2]
+        double invert_elevation_0
+        double invert_elevation_1
+        int has_invert_elevation_0
+        int has_invert_elevation_1
+
+    int gpu_culvert_init(gpu_domain *GD, const culvert_params *params,
+                         int enquiry_index_0, int enquiry_index_1,
+                         int inlet0_num, int *inlet0_indices, double *inlet0_areas,
+                         int inlet1_num, int *inlet1_indices, double *inlet1_areas,
+                         int master_proc, int enquiry_proc_0, int enquiry_proc_1,
+                         int inlet_master_proc_0, int inlet_master_proc_1,
+                         int is_local, int mpi_tag_base)
+    void gpu_culvert_finalize(gpu_domain *GD, int culvert_id)
+    void gpu_culverts_finalize_all(gpu_domain *GD)
+    void gpu_culverts_map(gpu_domain *GD)
+    void gpu_culverts_apply_all(gpu_domain *GD, double timestep)
+
     # FLOP counters (Gordon Bell performance profiling)
     void gpu_flop_counters_init(gpu_domain *GD)
     void gpu_flop_counters_reset(gpu_domain *GD)
@@ -308,12 +355,15 @@ cdef class GPUDomain:
 # MPI Communicator Extraction
 # ============================================================================
 
-cdef MPI_Comm get_mpi_comm():
+cdef MPI_Comm get_mpi_comm() noexcept:
     """
     Extract the raw MPI_Comm handle from mpi4py.
 
     mpi4py exposes the C MPI_Comm via the .ob_mpi attribute on Comm objects.
     This is the key bridge between Python MPI and C MPI calls.
+
+    Note: noexcept is required because MPI_Comm is an int on some platforms
+    (e.g., macOS), and Cython's default error return value (NULL) is incompatible.
     """
     import anuga.utilities.parallel_abstraction as pypar
     cdef MPI.Comm comm = pypar.comm
@@ -508,6 +558,53 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     D.stage_backup_values = &stage_backup_cv[0]
     D.xmom_backup_values = &xmom_backup_cv[0]
     D.ymom_backup_values = &ymom_backup_cv[0]
+
+    # Riverwall arrays
+    cdef int64_t[::1] edge_flux_type
+    cdef int64_t[::1] edge_river_wall_counter
+    cdef double[::1] riverwall_elevation
+    cdef int64_t[::1] riverwall_rowIndex
+    cdef double[:,::1] riverwall_hydraulic_properties
+
+    # Get riverwallData object
+    riverwallData = domain_object.riverwallData
+
+    # Always extract edge_flux_type (needed to detect riverwall edges)
+    edge_flux_type = domain_object.edge_flux_type
+    D.edge_flux_type = &edge_flux_type[0]
+
+    # Extract riverwall arrays (may be empty if no riverwalls)
+    D.number_of_riverwall_edges = getattr(domain_object, 'number_of_riverwall_edges', 0)
+    D.ncol_riverwall_hydraulic_properties = riverwallData.ncol_hydraulic_properties
+
+    # nrow = number of unique riverwall segments = len(riverwallData.names)
+    try:
+        D.nrow_riverwall_hydraulic_properties = len(riverwallData.names)
+    except:
+        D.nrow_riverwall_hydraulic_properties = 0
+
+    # Extract riverwall arrays with try/except for when they don't exist
+    try:
+        riverwall_elevation = riverwallData.riverwall_elevation
+        D.riverwall_elevation = &riverwall_elevation[0]
+    except:
+        D.riverwall_elevation = NULL
+
+    try:
+        riverwall_rowIndex = riverwallData.hydraulic_properties_rowIndex
+        D.riverwall_rowIndex = &riverwall_rowIndex[0]
+    except:
+        D.riverwall_rowIndex = NULL
+
+    try:
+        riverwall_hydraulic_properties = riverwallData.hydraulic_properties
+        D.riverwall_hydraulic_properties = &riverwall_hydraulic_properties[0, 0]
+    except:
+        D.riverwall_hydraulic_properties = NULL
+
+    # edge_river_wall_counter is on domain_object, not riverwallData
+    edge_river_wall_counter = domain_object.edge_river_wall_counter
+    D.edge_river_wall_counter = &edge_river_wall_counter[0]
 
 
 # ============================================================================
@@ -1394,6 +1491,128 @@ def inlet_apply_gpu(GPUDomain gpu_dom, int op_id, double volume,
                            u_ptr, v_ptr, n_vel,
                            has_velocity, ext_vel_u, ext_vel_v,
                            zero_velocity)
+
+
+# ============================================================================
+# Culvert Operator API (Boyd box/pipe - batched GPU gather/scatter)
+# ============================================================================
+
+def init_culvert_operator(GPUDomain gpu_dom,
+                          int culvert_type,
+                          double width, double height, double diameter,
+                          double length, double manning, double sum_loss,
+                          double blockage, double barrels,
+                          int use_velocity_head, int use_momentum_jet,
+                          int use_old_momentum_method,
+                          int always_use_Q_wetdry_adjustment,
+                          double max_velocity, double smoothing_timescale,
+                          outward_vector_0, outward_vector_1,
+                          double invert_elevation_0, double invert_elevation_1,
+                          int has_invert_elevation_0, int has_invert_elevation_1,
+                          int enquiry_index_0, int enquiry_index_1,
+                          np.ndarray[int, ndim=1, mode="c"] inlet0_indices,
+                          np.ndarray[double, ndim=1, mode="c"] inlet0_areas,
+                          np.ndarray[int, ndim=1, mode="c"] inlet1_indices,
+                          np.ndarray[double, ndim=1, mode="c"] inlet1_areas,
+                          int master_proc=-1,
+                          int enquiry_proc_0=-1,
+                          int enquiry_proc_1=-1,
+                          int inlet_master_proc_0=-1,
+                          int inlet_master_proc_1=-1,
+                          int is_local=1,
+                          int mpi_tag_base=0):
+    """
+    Register a culvert (Boyd box or pipe) with the GPU culvert manager.
+
+    For cross-boundary (parallel) culverts, pass MPI topology:
+      master_proc: rank that computes discharge
+      enquiry_proc_0/1: ranks owning each enquiry point
+      inlet_master_proc_0/1: master rank for each inlet region
+      is_local: 0 for cross-boundary, 1 for fully local
+      mpi_tag_base: unique MPI tag base for this culvert
+
+    Returns culvert_id (0..63) or -1 on error.
+    """
+    cdef culvert_params p
+    memset(&p, 0, sizeof(culvert_params))
+
+    p.type = culvert_type
+    p.g = gpu_dom.GD.D.g
+    p.width = width
+    p.height = height
+    p.diameter = diameter
+    p.length = length
+    p.manning = manning
+    p.sum_loss = sum_loss
+    p.blockage = blockage
+    p.barrels = barrels
+    p.use_velocity_head = use_velocity_head
+    p.use_momentum_jet = use_momentum_jet
+    p.use_old_momentum_method = use_old_momentum_method
+    p.always_use_Q_wetdry_adjustment = always_use_Q_wetdry_adjustment
+    p.max_velocity = max_velocity
+    p.smoothing_timescale = smoothing_timescale
+    p.outward_vector_0[0] = outward_vector_0[0]
+    p.outward_vector_0[1] = outward_vector_0[1]
+    p.outward_vector_1[0] = outward_vector_1[0]
+    p.outward_vector_1[1] = outward_vector_1[1]
+    p.invert_elevation_0 = invert_elevation_0
+    p.invert_elevation_1 = invert_elevation_1
+    p.has_invert_elevation_0 = has_invert_elevation_0
+    p.has_invert_elevation_1 = has_invert_elevation_1
+
+    cdef int n0 = len(inlet0_indices)
+    cdef int n1 = len(inlet1_indices)
+
+    # Default MPI topology: fully local (this rank owns everything)
+    if master_proc < 0:
+        master_proc = gpu_dom.GD.rank
+    if enquiry_proc_0 < 0:
+        enquiry_proc_0 = gpu_dom.GD.rank
+    if enquiry_proc_1 < 0:
+        enquiry_proc_1 = gpu_dom.GD.rank
+    if inlet_master_proc_0 < 0:
+        inlet_master_proc_0 = gpu_dom.GD.rank
+    if inlet_master_proc_1 < 0:
+        inlet_master_proc_1 = gpu_dom.GD.rank
+
+    cdef int *p_inlet0 = &inlet0_indices[0] if n0 > 0 else NULL
+    cdef double *p_area0 = &inlet0_areas[0] if n0 > 0 else NULL
+    cdef int *p_inlet1 = &inlet1_indices[0] if n1 > 0 else NULL
+    cdef double *p_area1 = &inlet1_areas[0] if n1 > 0 else NULL
+
+    return gpu_culvert_init(&gpu_dom.GD, &p,
+                            enquiry_index_0, enquiry_index_1,
+                            n0, p_inlet0, p_area0,
+                            n1, p_inlet1, p_area1,
+                            master_proc, enquiry_proc_0, enquiry_proc_1,
+                            inlet_master_proc_0, inlet_master_proc_1,
+                            is_local, mpi_tag_base)
+
+
+def finalize_culvert_operator(GPUDomain gpu_dom, int culvert_id):
+    """Finalize a single culvert operator."""
+    gpu_culvert_finalize(&gpu_dom.GD, culvert_id)
+
+
+def finalize_all_culvert_operators(GPUDomain gpu_dom):
+    """Finalize all culvert operators and free scratch buffers."""
+    gpu_culverts_finalize_all(&gpu_dom.GD)
+
+
+def map_culvert_operators(GPUDomain gpu_dom):
+    """Map culvert scratch buffers to GPU. Call after all culverts registered."""
+    gpu_culverts_map(&gpu_dom.GD)
+
+
+def apply_all_culvert_operators(GPUDomain gpu_dom, double timestep):
+    """
+    Execute all registered culverts for one timestep.
+
+    Performs batched GPU gather -> CPU discharge calc -> GPU scatter.
+    Only 2 GPU sync points regardless of number of culverts.
+    """
+    gpu_culverts_apply_all(&gpu_dom.GD, timestep)
 
 
 # ============================================================================

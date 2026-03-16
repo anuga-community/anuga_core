@@ -20,10 +20,10 @@ Usage:
 
 For further use, make sure the msh file gets redirected as `${resolution}sqm.msh`
 
-## partition_mahadani.py
+## partition_mahanadi.py
 
-This basically invokes metis to partition the domain and INITIALIZE it. It needs to be run from the `300_data` directory or the pahts inside the script
-need to be ammended. 
+This basically invokes metis to partition the domain and INITIALIZE it. It needs to be run from the `300_data` directory or the paths inside the script
+need to be amended. 
 
 
 ```
@@ -61,10 +61,32 @@ This is why it is nice to call things `${resolution}sqm.msh` so that I can just 
 
 Requirements:
 
-- Preferrably the conda_env_3.13 environment, 3.12 was evil (memory leak)
-- An nvidia-hpc-sdk install (tested 25.5 and 25.7)
-- CUDA for GPU code generation
+- Preferably the conda_env_3.13 environment, 3.12 was evil (memory leak)
+- A supported compiler with OpenMP support (see table below)
+- CUDA for GPU code generation (NVIDIA GPUs)
 - Depending on the behaviour of your system `module load your-mpi` mpi4py seems to come with one, but be careful!
+
+### Supported Compilers
+
+| Compiler | CPU Multicore | GPU Offload | Notes |
+|----------|---------------|-------------|-------|
+| GCC | ✅ | ✅ (nvptx) | `-fopenmp`, GPU via libgomp offloading |
+| Clang/LLVM | ✅ | ✅ (NVIDIA/AMD) | `-fopenmp`, GPU via LLVM offloading |
+| NVIDIA HPC SDK | ✅ | ✅ (NVIDIA) | `-mp=multicore` / `-mp=gpu`, best NVIDIA support |
+| Intel oneAPI | ✅ | ❌ | `-qopenmp` or `-fiopenmp` |
+| Apple Clang | ✅ | ❌ | Requires libomp from Homebrew |
+
+For GPU offloading:
+- **NVIDIA GPUs**: Use NVIDIA HPC SDK (recommended) or Clang with LLVM offloading
+- **AMD GPUs**: Use Clang/AOMP with ROCm
+
+### Build Options
+
+| Option | Default | Description |
+|--------|---------|-------------|
+| `gpu_offload` | `false` | Target GPU (`true`) or CPU multicore (`false`) |
+| `gpu_aware_mpi` | `false` | Enable GPU-aware MPI for direct device communication |
+| `gpu_arch` | `cc70` | GPU architecture: `cc70` (V100), `cc80` (A100), `cc90` (H100), or AMD `gfx*` |
 
 ### CPU-only build (no CUDA required)
 
@@ -76,10 +98,11 @@ pip install -e . --no-build-isolation
 
 This uses multicore OpenMP only, no GPU flags.
 
-### Basic GPU build (V100 - default)
+### GPU build (V100 - default architecture)
 
 ```bash
-pip install -e . --no-build-isolation -Csetup-args=-Dgpu=true
+pip install -e . --no-build-isolation \
+    -Csetup-args=-Dgpu_offload=true
 ```
 
 ### Specifying GPU architecture
@@ -88,16 +111,32 @@ Use the `-Dgpu_arch` flag to target different GPUs:
 
 ```bash
 # V100 (default - cc70)
-pip install -e . --no-build-isolation -Csetup-args=-Dgpu=true
+pip install -e . --no-build-isolation \
+    -Csetup-args=-Dgpu_offload=true
 
 # A100 (cc80)
-pip install -e . --no-build-isolation -Csetup-args=-Dgpu=true -Csetup-args=-Dgpu_arch=cc80
+pip install -e . --no-build-isolation \
+    -Csetup-args=-Dgpu_offload=true \
+    -Csetup-args=-Dgpu_arch=cc80
 
 # H100 (cc90)
-pip install -e . --no-build-isolation -Csetup-args=-Dgpu=true -Csetup-args=-Dgpu_arch=cc90
+pip install -e . --no-build-isolation \
+    -Csetup-args=-Dgpu_offload=true \
+    -Csetup-args=-Dgpu_arch=cc90
+```
+
+### GPU build with GPU-aware MPI
+
+```bash
+pip install -e . --no-build-isolation \
+    -Csetup-args=-Dgpu_offload=true \
+    -Csetup-args=-Dgpu_arch=cc80 \
+    -Csetup-args=-Dgpu_aware_mpi=true
 ```
 
 ### Supported GPU architectures
+
+AMD GPUs have not been tested as of now (2026.02.05)
 
 | GPU | Architecture | Flag |
 |-----|--------------|------|
@@ -110,11 +149,49 @@ pip install -e . --no-build-isolation -Csetup-args=-Dgpu=true -Csetup-args=-Dgpu
 
 ### Runtime settings
 
-To ensure GPU execution: `export OMP_TARGET_OFFLOAD=mandatory` 
+To ensure GPU execution: `export OMP_TARGET_OFFLOAD=mandatory`
 
 All unit tests pass, using `pytest --pyargs anuga`. It will be slow-ish because there's many of them.
 
+### Multiprocessor Modes
+
+| Mode | RK2 Loop | Use Case |
+|------|----------|----------|
+| `set_multiprocessor_mode(1)` | Python (`use_c_rk2_loop=False`) | Debugging, flexibility, Python callbacks |
+| `set_multiprocessor_mode(2)` | C (`use_c_rk2_loop=True`) | Performance, GPU (data stays on device) |
+
+Both modes use the same unified `core_kernels.c`. The only difference is:
+- **Mode 1**: RK2 time-stepping orchestrated by Python (more flexible)
+- **Mode 2**: RK2 time-stepping in C (faster, data stays on GPU)
+
 *To enable the GPU code*: `domain.set_multiprocessor_mode(2)`
+
+The GPU and CPU code share the same base kernels, you can find these in `anuga/shallow_water/gpu/core_kernels.*`, they
+contain the main math and logic needed for the fluxes, extrapolation, etc. Data transfer kernels are defined in the GPU
+specific files. 
+
+The main difference between using the RK2 loop in Python or in C is that in C the GPU aware MPI implementation can do more
+of its own work. I could not get mpi4py to work well with GPU aware MPI due to some pointer addressing issues.
+
+### Runtime GPU Detection
+
+The domain tracks whether GPU offload is actually active via `domain.gpu_offload_active`:
+- Checks `OMP_TARGET_OFFLOAD` environment variable at runtime
+- If `OMP_TARGET_OFFLOAD=disabled`, prints warning and suppresses GPU-specific messages
+
+| Build Flag | Runtime Env | Result |
+|------------|-------------|--------|
+| `gpu_offload=true` | (default) | GPU offload active |
+| `gpu_offload=true` | `OMP_TARGET_OFFLOAD=disabled` | CPU execution (warning shown) |
+| `gpu_offload=false` | (any) | CPU execution (no warning) |
+
+Example output when GPU offload is disabled:
+```
++==============================================================================+
+| WARNING: GPU mode enabled but OMP_TARGET_OFFLOAD=disabled                   |
+| Running on CPUs with OMP_NUM_THREADS=4
++==============================================================================+
+```
 
 ### Script Order (IMPORTANT!)
 
@@ -124,6 +201,9 @@ All unit tests pass, using `pytest --pyargs anuga`. It will be slow-ish because 
 RuntimeError: GPU mode requires boundaries to be set before calling set_multiprocessor_mode(2).
 Please call domain.set_boundary({...}) BEFORE domain.set_multiprocessor_mode(2).
 ```
+
+This is something I aim to fix by doing some initialization checks. TODO JORGE. 
+
 
 Correct pattern:
 
@@ -166,9 +246,6 @@ GPU Domain Info (rank 0/4):
 GPU arrays mapped to device 0
 ```
 
-GPU aware comms DO NOT WORK at the moment. I am tired (it is 23:11 as of writing)
-
-
 ## Multi GPU execution
 
 The code is GPU aware by design, `mpirun -np X python run_my_sim.py` will use X GPUs. If you ask for more processes than there are GPUs you will 
@@ -180,17 +257,6 @@ For example that line would run a 16 node, 64 GPU job for the partitioned scheme
 
 
 ## GPU Gotchas & Troubleshooting
-
-### Supported Boundary Types
-
-These boundary types run entirely on GPU (no CPU fallback):
-- `Reflective_boundary`
-- `Dirichlet_boundary`
-- `Transmissive_boundary`
-- `Transmissive_n_momentum_zero_t_momentum_set_stage_boundary`
-- `Time_boundary`
-
-If you use an unsupported boundary type, ALL boundaries fall back to CPU evaluation (with a warning).
 
 ### Wrong Results Checklist
 
@@ -304,9 +370,30 @@ Run with CPU fallback to compare:
 OMP_TARGET_OFFLOAD=disabled python your_script.py
 ```
 
+## GPU Feature Status
+
+### Fully Supported on GPU
+
+- **Unified kernel architecture**: CPU (mode 1) and GPU (mode 2) share ALL kernel code in `core_kernels.c`
+- **Riverwall/weir support**: Weir discharge adjustments work on GPU (Villemonte submergence, blending)
+- **Boundary flux tracking**: For `boundary_flux_integral_operator`
+- **MPI ghost cell handling**: `tri_full_flag` checks for MPI domains
+- **All friction models**: Manning friction (flat and sloped, semi-implicit)
+- **Second-order extrapolation**: Edge-based gradient limiting
+
+### Supported Boundary Types (GPU-native)
+
+These boundary types run entirely on GPU (no CPU fallback):
+- `Reflective_boundary`
+- `Dirichlet_boundary`
+- `Transmissive_boundary`
+- `Transmissive_n_momentum_zero_t_momentum_set_stage_boundary`
+- `Time_boundary`
+
+If you use an unsupported boundary type, ALL boundaries fall back to CPU evaluation (with a warning).
+
 ### Known Issues
 
-**Volume calculation differs**: Stage values are correct but `compute_total_volume()` may report different values between GPU and CPU modes. This is under investigation - the physics (stage values) are correct.
-
+mpi4py failure due to lack of GPU awareness, fix by: `CC=mpicc pip install mpi4py --no-cache-dir --no-binary mpi4py ` rebuilding mpi4py locally with a GPU aware MPI install
 
 

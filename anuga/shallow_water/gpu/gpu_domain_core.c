@@ -8,6 +8,7 @@
 #include <omp.h>
 #include <mpi.h>
 #include "gpu_domain.h"
+#include "gpu_omp_macros.h"
 
 // Domain initialization, memory management, and sync functions
 
@@ -152,6 +153,22 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->evolve_max_timestep = 1.0e10;
     GD->fixed_flux_timestep = -1.0;  // Disabled by default
 
+    // Initialize culvert operators to empty
+    GD->culvert_ops.num_culverts = 0;
+    GD->culvert_ops.initialized = 0;
+    GD->culvert_ops.mapped = 0;
+    GD->culvert_ops.total_inlet_triangles = 0;
+    GD->culvert_ops.scratch_stage = NULL;
+    GD->culvert_ops.scratch_xmom = NULL;
+    GD->culvert_ops.scratch_ymom = NULL;
+    GD->culvert_ops.scratch_elev = NULL;
+    GD->culvert_ops.scratch_inlet_indices = NULL;
+    GD->culvert_ops.scratch_inlet_areas = NULL;
+    GD->culvert_ops.scratch_inlet_stage = NULL;
+    GD->culvert_ops.scratch_inlet_xmom = NULL;
+    GD->culvert_ops.scratch_inlet_ymom = NULL;
+    GD->culvert_ops.scratch_inlet_elev = NULL;
+
     // Initialize FLOP counters (Gordon Bell profiling)
     gpu_flop_counters_init(GD);
 
@@ -175,6 +192,9 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
 
     // Free boundary edge sync structures
     gpu_boundary_edge_sync_finalize(GD);
+
+    // Free culvert operator structures
+    gpu_culverts_finalize_all(GD);
 
     GD->gpu_initialized = 0;
 }
@@ -231,6 +251,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
     // Friction array
     double *friction_cv = GD->D.friction_centroid_values;
 
+    // tri_full_flag for MPI ghost cell identification
+    anuga_int *tri_full_flag = GD->D.tri_full_flag;
+
     // Map all domain arrays to GPU - persistent for entire simulation
     #pragma omp target enter data map(to: \
         stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], \
@@ -244,7 +267,8 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         x_centroid_work[0:n], y_centroid_work[0:n], \
         normals[0:6*n], edgelengths[0:3*n], \
         areas[0:n], radii[0:n], max_speed[0:n], \
-        centroid_coords[0:2*n], edge_coords[0:6*n])
+        centroid_coords[0:2*n], edge_coords[0:6*n], \
+        tri_full_flag[0:n])
 
     // Map boundary values if present (including bed and height for reflective boundary)
     if (nb > 0) {
@@ -334,6 +358,44 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
 
         if (GD->rank == 0) {
             printf("Time_boundary arrays mapped to GPU: %d edges\n", ne);
+        }
+    }
+
+    // Map riverwall arrays if present
+    // edge_flux_type is always mapped (size 3*n); other arrays only if riverwalls exist
+    anuga_int *edge_flux_type = GD->D.edge_flux_type;
+    if (edge_flux_type != NULL) {
+        #pragma omp target enter data map(to: edge_flux_type[0:3*n])
+    }
+
+    anuga_int n_rw_edges = GD->D.number_of_riverwall_edges;
+    if (n_rw_edges > 0) {
+        anuga_int *edge_river_wall_counter = GD->D.edge_river_wall_counter;
+        double *riverwall_elevation = GD->D.riverwall_elevation;
+        anuga_int *riverwall_rowIndex = GD->D.riverwall_rowIndex;
+        double *riverwall_hydraulic_properties = GD->D.riverwall_hydraulic_properties;
+        anuga_int ncol_hp = GD->D.ncol_riverwall_hydraulic_properties;
+        anuga_int nrow_hp = GD->D.nrow_riverwall_hydraulic_properties;
+
+        // edge_river_wall_counter has same size as edge_flux_type (3*n)
+        if (edge_river_wall_counter != NULL) {
+            #pragma omp target enter data map(to: edge_river_wall_counter[0:3*n])
+        }
+        // riverwall_elevation and riverwall_rowIndex have size n_rw_edges
+        if (riverwall_elevation != NULL) {
+            #pragma omp target enter data map(to: riverwall_elevation[0:n_rw_edges])
+        }
+        if (riverwall_rowIndex != NULL) {
+            #pragma omp target enter data map(to: riverwall_rowIndex[0:n_rw_edges])
+        }
+        // riverwall_hydraulic_properties is (nrow_hp x ncol_hp)
+        // nrow_hp = number of unique riverwall segments
+        if (riverwall_hydraulic_properties != NULL && ncol_hp > 0 && nrow_hp > 0) {
+            #pragma omp target enter data map(to: riverwall_hydraulic_properties[0:nrow_hp*ncol_hp])
+        }
+
+        if (GD->rank == 0) {
+            printf("Riverwall arrays mapped to GPU: %" PRId64 " edges, %" PRId64 " segments\n", n_rw_edges, nrow_hp);
         }
     }
 
@@ -495,6 +557,9 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     // Friction array
     double *friction_cv = GD->D.friction_centroid_values;
 
+    // tri_full_flag for MPI ghost cell identification
+    anuga_int *tri_full_flag = GD->D.tri_full_flag;
+
     // Unmap domain arrays
     #pragma omp target exit data map(delete: \
         stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], \
@@ -508,7 +573,8 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         x_centroid_work[0:n], y_centroid_work[0:n], \
         normals[0:6*n], edgelengths[0:3*n], \
         areas[0:n], radii[0:n], max_speed[0:n], \
-        centroid_coords[0:2*n], edge_coords[0:6*n])
+        centroid_coords[0:2*n], edge_coords[0:6*n], \
+        tri_full_flag[0:n])
 
     if (nb > 0) {
         double *stage_bv = GD->D.stage_boundary_values;
@@ -574,6 +640,35 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *e_ids = TB->edge_ids;
         #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 0;
+    }
+
+    // Unmap riverwall arrays
+    anuga_int *edge_flux_type = GD->D.edge_flux_type;
+    if (edge_flux_type != NULL) {
+        #pragma omp target exit data map(delete: edge_flux_type[0:3*n])
+    }
+
+    anuga_int n_rw_edges = GD->D.number_of_riverwall_edges;
+    if (n_rw_edges > 0) {
+        anuga_int *edge_river_wall_counter = GD->D.edge_river_wall_counter;
+        double *riverwall_elevation = GD->D.riverwall_elevation;
+        anuga_int *riverwall_rowIndex = GD->D.riverwall_rowIndex;
+        double *riverwall_hydraulic_properties = GD->D.riverwall_hydraulic_properties;
+        anuga_int ncol_hp = GD->D.ncol_riverwall_hydraulic_properties;
+        anuga_int nrow_hp = GD->D.nrow_riverwall_hydraulic_properties;
+
+        if (edge_river_wall_counter != NULL) {
+            #pragma omp target exit data map(delete: edge_river_wall_counter[0:3*n])
+        }
+        if (riverwall_elevation != NULL) {
+            #pragma omp target exit data map(delete: riverwall_elevation[0:n_rw_edges])
+        }
+        if (riverwall_rowIndex != NULL) {
+            #pragma omp target exit data map(delete: riverwall_rowIndex[0:n_rw_edges])
+        }
+        if (riverwall_hydraulic_properties != NULL && ncol_hp > 0 && nrow_hp > 0) {
+            #pragma omp target exit data map(delete: riverwall_hydraulic_properties[0:nrow_hp*ncol_hp])
+        }
     }
 
     if (GD->backup_arrays_mapped) {
@@ -836,7 +931,7 @@ void gpu_boundary_edge_sync(struct gpu_domain *GD) {
     double *height_ev = GD->D.height_edge_values;
 
     // Gather on GPU into contiguous staging buffers
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int i = 0; i < nc; i++) {
         int vid = cell_ids[i];
         for (int e = 0; e < 3; e++) {

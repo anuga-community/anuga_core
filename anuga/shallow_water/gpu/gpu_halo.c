@@ -8,6 +8,7 @@
 #include <omp.h>
 #include <mpi.h>
 #include "gpu_domain.h"
+#include "gpu_omp_macros.h"
 
 // Halo exchange setup and MPI ghost exchange
 
@@ -152,7 +153,7 @@ void gpu_exchange_ghosts(struct gpu_domain *GD) {
     // send_buf/recv_buf are omp_target_alloc'd device pointers — use is_device_ptr
     #pragma omp target teams distribute parallel for is_device_ptr(send_buf)
 #else
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
 #endif
     for (int idx = 0; idx < send_size; idx++) {
         int k = flat_send[idx];  // Local element index
@@ -230,7 +231,7 @@ void gpu_exchange_ghosts(struct gpu_domain *GD) {
 #ifdef GPU_AWARE_MPI
     #pragma omp target teams distribute parallel for is_device_ptr(recv_buf)
 #else
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
 #endif
     for (int idx = 0; idx < recv_size; idx++) {
         int k = flat_recv[idx];  // Local ghost element index

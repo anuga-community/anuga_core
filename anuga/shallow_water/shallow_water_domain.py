@@ -305,6 +305,7 @@ class Domain(Generic_Domain):
         self.fractional_step_operators = []
         self.kv_operator = None
         self.dplotter = None
+        self.gpu_culvert_manager = None  # Initialized when GPU mode + Boyd operators
 
         #-------------------------------
         # Set flow defaults
@@ -1733,6 +1734,72 @@ class Domain(Generic_Domain):
         return self.get_quantity('elevation').\
                    get_maximum_location(indices=wet_elements)
 
+    def get_global_wet_element_count(self, indices=None, minimum_height=None):
+        """Return total number of wet elements across all MPI ranks.
+
+        Optional arguments:
+            indices: set of element ids that the operation applies to
+            minimum_height: threshold for considering an element wet
+
+        Usage:
+            count = get_global_wet_element_count()
+
+        Note: This performs MPI reduction, so all ranks get the same result.
+        """
+        from anuga import numprocs
+
+        wet_indices = self.get_wet_elements(indices, minimum_height)
+        local_count = len(wet_indices)
+
+        if numprocs == 1:
+            return local_count
+
+        from mpi4py import MPI
+        global_count = MPI.COMM_WORLD.allreduce(local_count, op=MPI.SUM)
+        return global_count
+
+    def get_global_max_stage(self, indices=None):
+        """Return maximum stage value across all MPI ranks.
+
+        Optional argument:
+            indices: set of element ids that the operation applies to
+
+        Usage:
+            max_stage = get_global_max_stage()
+
+        Note: This performs MPI reduction, so all ranks get the same result.
+        """
+        from anuga import numprocs
+
+        stage = self.get_quantity('stage')
+        local_max = stage.get_maximum_value(indices)
+
+        if numprocs == 1:
+            return local_max
+
+        from mpi4py import MPI
+        global_max = MPI.COMM_WORLD.allreduce(local_max, op=MPI.MAX)
+        return global_max
+
+    def get_global_max_speed(self):
+        """Return maximum speed across all MPI ranks.
+
+        Usage:
+            max_speed = get_global_max_speed()
+
+        Note: This performs MPI reduction, so all ranks get the same result.
+        """
+        from anuga import numprocs
+        import numpy as num
+
+        local_max = num.max(self.max_speed)
+
+        if numprocs == 1:
+            return local_max
+
+        from mpi4py import MPI
+        global_max = MPI.COMM_WORLD.allreduce(local_max, op=MPI.MAX)
+        return global_max
 
     def get_water_volume(self):
 
@@ -3274,7 +3341,8 @@ class Domain(Generic_Domain):
 
         Rate_operators with GPU support don't need CPU sync.
         boundary_flux_integral_operator is GPU-safe (only reads boundary_flux_sum).
-        Boyd_box_operator, Inlet_operator, etc. do need CPU sync.
+        Boyd_box_operator/Boyd_pipe_operator are GPU-safe via GPUCulvertManager.
+        Inlet_operator with GPU support doesn't need CPU sync.
 
         Result is cached after first call since operators don't change during simulation.
         """
@@ -3285,6 +3353,14 @@ class Domain(Generic_Domain):
         from anuga.operators.rate_operators import Rate_operator
         from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
         from anuga.structures.inlet_operator import Inlet_operator
+        from anuga.structures.gpu_culvert_manager import GPUCulvertManager
+
+        # Initialize GPU culvert manager for Boyd operators if needed
+        has_boyd_ops = any(GPUCulvertManager.is_boyd_operator(op)
+                          for op in self.fractional_step_operators)
+        if has_boyd_ops and self.gpu_culvert_manager is None:
+            self.gpu_culvert_manager = GPUCulvertManager(self)
+            self.gpu_culvert_manager.register_all()
 
         result = False
         cpu_only_ops = []
@@ -3307,17 +3383,25 @@ class Domain(Generic_Domain):
                     op._init_gpu()
                 if hasattr(op, '_gpu_initialized') and op._gpu_initialized:
                     continue  # GPU-accelerated, no sync needed
+            elif GPUCulvertManager.is_boyd_operator(op):
+                # Handled by GPUCulvertManager (local + cross-boundary via MPI in C)
+                if (self.gpu_culvert_manager is not None
+                        and op in self.gpu_culvert_manager.operators):
+                    continue
             # All other operators need CPU sync
             cpu_only_ops.append(op_name)
             result = True
 
         rank = getattr(self, 'processor', 0)
         if result:
-            print(f"[Rank {rank}] WARNING: CPU-only fractional operators detected (GPU<->CPU sync every RK2 step):")
-            for name in cpu_only_ops:
-                print(f"  - {name}")
+            # Only print GPU sync warning if GPU offload is actually active
+            if getattr(self, 'gpu_offload_active', True):
+                print(f"[Rank {rank}] WARNING: CPU-only fractional operators detected (GPU<->CPU sync every RK2 step):")
+                for name in cpu_only_ops:
+                    print(f"  - {name}")
         else:
-            if rank == 0:
+            # Only print GPU-safe message if GPU offload is actually active
+            if rank == 0 and getattr(self, 'gpu_offload_active', True):
                 print(f"[Rank {rank}] All fractional operators are GPU-safe, no GPU<->CPU sync needed")
         import sys; sys.stdout.flush()
 
@@ -3325,22 +3409,33 @@ class Domain(Generic_Domain):
         return result
 
     def apply_fractional_steps(self):
-        """Override to sync GPU data before fractional step operators run."""
+        """Override to sync GPU data before fractional step operators run.
+
+        Boyd culvert operators are handled via GPUCulvertManager (batched,
+        only 2 GPU sync points) instead of the per-operator Python loop.
+        """
+        gpu_mode = (self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None)
+        gpu_culverts_active = (gpu_mode and self.gpu_culvert_manager is not None
+                               and self.gpu_culvert_manager.num_culverts > 0)
         needs_cpu_sync = False
-        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
-            # Only sync if there are operators that actually need CPU execution
-            # GPU-accelerated Rate_operators don't need sync
+
+        if gpu_mode:
             needs_cpu_sync = self._has_cpu_only_fractional_operators()
             if needs_cpu_sync:
                 self.gpu_interface.sync_from_device()
 
-        # Call parent implementation
-        super().apply_fractional_steps()
+            # Execute all Boyd culverts in one batched GPU cycle
+            if gpu_culverts_active:
+                self.gpu_culvert_manager.apply_all()
 
-        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
-            # Sync changes back to GPU only if we synced from device
-            if needs_cpu_sync:
-                self.gpu_interface.sync_to_device()
+        # Run remaining operators (skip Boyd operators handled by GPU manager)
+        for operator in self.fractional_step_operators:
+            if gpu_culverts_active and operator in self.gpu_culvert_manager.operators:
+                continue  # Already handled by GPUCulvertManager
+            operator()
+
+        if gpu_mode and needs_cpu_sync:
+            self.gpu_interface.sync_to_device()
 
     def update_ghosts(self, quantities=None):
         """Override to use GPU ghost exchange when in GPU mode."""
@@ -3776,15 +3871,19 @@ class Domain(Generic_Domain):
 
     def set_multiprocessor_mode(self, multiprocessor_mode=1):
         """
-        Set multiprocessor mode 
-         1. openmp (in development)
-         2. cupy (in development)
+        Set multiprocessor mode
+         1. openmp - Python RK2 loop (use_c_rk2_loop=False)
+         2. gpu/mpi - C RK2 loop (use_c_rk2_loop=True, keeps data on device)
         """
 
         if multiprocessor_mode not in [MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU]:
-            raise ValueError('Invalid multiprocessor mode. Must be one of [1,2] (openmp, cupy)')
+            raise ValueError('Invalid multiprocessor mode. Must be one of [1,2] (openmp, gpu/mpi)')
 
         self.multiprocessor_mode = multiprocessor_mode
+
+        # Mode 1: Python RK2 loop (more flexible, easier debugging)
+        # Mode 2: C RK2 loop (faster, data stays on GPU device)
+        self.use_c_rk2_loop = (multiprocessor_mode == MULTIPROCESSOR_GPU)
 
         if self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             self.set_gpu_interface()
@@ -3794,7 +3893,7 @@ class Domain(Generic_Domain):
         Get multiprocessor mode 
         
         1. openmp (in development)
-        2. cupy (in development)
+        2. gpu/mpi (in development)
         """
         return self.multiprocessor_mode 
 
@@ -3873,9 +3972,21 @@ class Domain(Generic_Domain):
                 self.gpu_interface.setup()
                 # Only print from rank 0
                 from anuga import myid, numprocs
+                import os
+                omp_target_offload = os.environ.get('OMP_TARGET_OFFLOAD', '').lower()
+                omp_num_threads = os.environ.get('OMP_NUM_THREADS', '1')
+                # Track whether GPU offload is actually active (not disabled by env var)
+                self.gpu_offload_active = (omp_target_offload != 'disabled')
                 if myid == 0:
+                    device_id = self.gpu_interface.gpu_dom.device_id
                     print('+==============================================================================+')
-                    print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
+                    if not self.gpu_offload_active:
+                        print(f'| WARNING: GPU mode enabled but OMP_TARGET_OFFLOAD=disabled                   |')
+                        print(f'| Running on CPUs with OMP_NUM_THREADS={omp_num_threads}')
+                    elif device_id < 0:
+                        print(f'| WARNING: No GPU devices found, running on CPU via OpenMP target offloading  |')
+                    else:
+                        print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
                     print('+==============================================================================+')
                 return
             except Exception as e:

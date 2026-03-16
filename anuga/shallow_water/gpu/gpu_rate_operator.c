@@ -9,6 +9,7 @@
 #include <mpi.h>
 #include "gpu_domain.h"
 #include "gpu_device_helpers.h"
+#include "gpu_omp_macros.h"
 
 // Rate operators (rain, extraction, etc.)
 
@@ -177,7 +178,7 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
     if (rate >= 0.0) {
         // Simple positive rate - just add to stage
         // Reduction for mass tracking
-        #pragma omp target teams distribute parallel for reduction(+:local_influx)
+        OMP_PARALLEL_LOOP_REDUCTION_PLUS(local_influx)
         for (int k = 0; k < num_indices; k++) {
             int i = indices[k];
             stage_c[i] += local_rate;
@@ -185,7 +186,7 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
         }
     } else {
         // Negative rate (extraction) - need to limit and scale momentum
-        #pragma omp target teams distribute parallel for reduction(+:local_influx)
+        OMP_PARALLEL_LOOP_REDUCTION_PLUS(local_influx)
         for (int k = 0; k < num_indices; k++) {
             int i = indices[k];
 
@@ -291,7 +292,7 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
 
     if (use_indices_into_rate) {
         // gpu_rate_array is full domain size, index with indices[k]
-        #pragma omp target teams distribute parallel for reduction(+:local_influx)
+        OMP_PARALLEL_LOOP_REDUCTION_PLUS(local_influx)
         for (int k = 0; k < num_indices; k++) {
             int i = indices[k];
             double rate = gpu_rate_array[i];
@@ -315,7 +316,7 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
         }
     } else {
         // gpu_rate_array matches indices size, index with k
-        #pragma omp target teams distribute parallel for reduction(+:local_influx)
+        OMP_PARALLEL_LOOP_REDUCTION_PLUS(local_influx)
         for (int k = 0; k < num_indices; k++) {
             int i = indices[k];
             double rate = gpu_rate_array[k];
