@@ -300,7 +300,6 @@ def generate_mesh(points=None,
         try:
             unit = out_tri.point_attributes.unit
             pointattributelist = num.ascontiguousarray(out_tri.point_attributes).reshape(-1,unit)
-<<<<<<< HEAD
         except (AttributeError, RuntimeError, ValueError):
             pointattributelist = num.empty((pointlist.shape[0],0),dtype=float)
 
