@@ -202,13 +202,13 @@ class Test_Data_Manager(Test_Mux):
             #print 'Trying to remove', self.test_MOST_file + ext
             try:
                 os.remove(self.test_MOST_file + ext)
-            except:
+            except OSError:
                 pass
             
         for file in ['domain.sww', 'outline_meshed.tsh', 'outline.tsh']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass
 
     def test_sww_constant(self):
@@ -262,7 +262,7 @@ class Test_Data_Manager(Test_Mux):
         sww_revision = fid.revision_number
         try:
             revision_number = get_revision_number()
-        except:
+        except Exception:
             revision_number = None
             
         assert str(revision_number) == sww_revision
@@ -817,7 +817,7 @@ class Test_Data_Manager(Test_Mux):
 
         try:
             os.remove(sts_file+'.sts')
-        except:
+        except OSError:
             # Windoze can't remove this file for some reason 
             pass
         

@@ -293,7 +293,7 @@ class Draw(AppShell.AppShell):
         """
         Build the data structures for storing the mesh objects
         """
-        self.mesh = mesh.Mesh()
+        self.mesh = mesh.Pmesh()
 
         self.Vertices = visualmesh.vPoints(mesh.Vertex)
         self.Segments = visualmesh.vSegments(mesh.Segment)
@@ -1276,7 +1276,7 @@ class Draw(AppShell.AppShell):
 
         r1 = mesh.Region(0.3, 0.3)
 
-        m = mesh.Mesh(userVertices=[a,d,f,g], userSegments=[s1,s2,s3], regions=[r1] )
+        m = mesh.Pmesh(userVertices=[a,d,f,g], userSegments=[s1,s2,s3], regions=[r1] )
 
         fd.close()
         log.critical('returning m')

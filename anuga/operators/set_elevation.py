@@ -108,7 +108,7 @@ class Set_elevation(Set_quantity):
         if self.value is None:
             return
 
-        if self.indices is []:
+        if self.indices is not None and len(self.indices) == 0:
             return
 
         #------------------------------------------
@@ -254,7 +254,7 @@ class Set_elevation(Set_quantity):
 
 
 
-        if self.indices is None or self.indices is []:
+        if self.indices is None or len(self.indices) == 0:
             self.vol_ids  = None
             self.vols = None
             self.vert_ids = None

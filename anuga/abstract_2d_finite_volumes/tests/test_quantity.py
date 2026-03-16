@@ -1,10 +1,6 @@
 #!/usr/bin/env python
 
 
-# from builtins import zip
-# from builtins import map
-# from builtins import str
-# from builtins import range
 import unittest
 from math import sqrt, pi
 import tempfile
@@ -145,7 +141,7 @@ class Test_Quantity(unittest.TestCase):
 
         try:
             quantity = Quantity()
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should have raised empty quantity exception')
@@ -212,7 +208,7 @@ class Test_Quantity(unittest.TestCase):
 
         try:
             quantity.set_boundary_values([10.0, 4.0, 5.0, 8.0])
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught this'
@@ -305,10 +301,10 @@ class Test_Quantity(unittest.TestCase):
 
             # z = z[::-1,:]
 
-            print(z)
-            print(z.shape)
-            print(x)
-            print(y)
+            # print(z)
+            # print(z.shape)
+            # print(x)
+            # print(y)
 
             nrows = z.shape[0]
             ncols = z.shape[1]
@@ -521,14 +517,14 @@ class Test_Quantity(unittest.TestCase):
         try:
             quantity.set_values([[1, 2, 3], [5, 5, 5], [0, 0, 9], [-6, 3, 3]],
                                 location='bas kamel tuba')
-        except:
+        except Exception:
             pass
 
         try:
             quantity.set_values([[1, 2, 3], [0, 0, 9]])
         except ValueError:
             pass
-        except:
+        except Exception:
             raise Exception('should have raised ValueeError')
 
     def test_set_values_const(self):
@@ -713,7 +709,7 @@ class Test_Quantity(unittest.TestCase):
         # Test input checking
         try:
             quantity.set_values(3.14, polygon=polygon, indices=[0, 2])
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught this'
@@ -1594,7 +1590,7 @@ Parameters
             os.remove(txt_file)
             os.remove(txt_file_prj)
             os.remove(txt_file_dem)
-        except:
+        except OSError:
             pass
 
     def test_set_values_from_ll_grid_file(self):
@@ -1730,7 +1726,7 @@ Parameters
 
         try:
             os.remove(txt_file)
-        except:
+        except OSError:
             pass
 
     def test_set_values_from_ll_grid_file_northern(self):
@@ -1865,7 +1861,7 @@ Parameters
 
         try:
             os.remove(txt_file)
-        except:
+        except OSError:
             pass
 
     def test_set_values_from_ll_grid_file_indices(self):
@@ -2005,7 +2001,7 @@ Parameters
 
         try:
             os.remove(txt_file)
-        except:
+        except OSError:
             pass
 
     def test_set_values_from_ll_grid_file_with_nan(self):
@@ -2150,7 +2146,7 @@ Parameters
 
         try:
             os.remove(txt_file)
-        except:
+        except OSError:
             pass
 
     def test_set_values_from_ll_grid_file_with_indices_nan(self):
@@ -2291,7 +2287,7 @@ Parameters
 
         try:
             os.remove(txt_file)
-        except:
+        except OSError:
             pass
 
     @pytest.mark.skipif('osgeo' not in sys.modules,
@@ -2365,8 +2361,8 @@ Parameters
         # Read in an interpolate from tif file
         quantity1.set_values_from_tif_file(filename=tif_file , location='vertices')
 
-        pprint(quantity1.centroid_values)
-        pprint(quantity1.vertex_values)
+        # pprint(quantity1.centroid_values)
+        # pprint(quantity1.vertex_values)
 
         centroid_values_ex = numpy.array(
             [0.17639186, 0.34223889, 0.44878893, 0.72498227])
@@ -2392,8 +2388,8 @@ Parameters
         # Read in an interpolate from tif file
         quantity2.set_values(filename=tif_file , location='vertices')
 
-        pprint(quantity2.centroid_values)
-        pprint(quantity2.vertex_values)
+        # pprint(quantity2.centroid_values)
+        # pprint(quantity2.vertex_values)
 
 
         assert num.allclose(quantity2.centroid_values, centroid_values_ex) or \

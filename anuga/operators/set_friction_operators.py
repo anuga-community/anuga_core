@@ -3,8 +3,6 @@ Set friction operators
 
 
 """
-
-from builtins import str
 __author__="steve"
 __date__ ="$09/03/2012 4:46:39 PM$"
 
@@ -89,7 +87,7 @@ class Set_depth_friction_operator(Operator):
         Change friction based on depth
         """
 
-        if self.region.indices is []:
+        if self.region.indices is not None and len(self.region.indices) == 0:
             return
 
 

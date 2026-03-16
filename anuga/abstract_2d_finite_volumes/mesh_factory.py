@@ -1,8 +1,6 @@
 """Library of standard meshes and facilities for reading various
 mesh file formats
 """
-
-from builtins import object
 import anuga.utilities.log as log
 import numpy as num
 

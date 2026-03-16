@@ -386,7 +386,7 @@ class Test_urs2sts_parallel(Test_Mux):
                     fbound_proc_tri_ids.append(k)
                 else:
                     fbound_proc_tri_ids.append(-1)            
-            except:
+            except Exception:
                 fbound_proc_tri_ids.append(-2)
 
 
@@ -438,7 +438,7 @@ class Test_urs2sts_parallel(Test_Mux):
                     drchlt_proc_tri_ids.append(k)
                 else:
                     drchlt_proc_tri_ids.append(-1)            
-            except:
+            except Exception:
                 drchlt_proc_tri_ids.append(-2)
 
 

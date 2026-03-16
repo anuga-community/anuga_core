@@ -13,11 +13,6 @@ from warnings import warn
 from copy import deepcopy
 import copy
 
-try:
-    from exceptions import Exception
-except:
-    pass
-
 from anuga.file.netcdf import NetCDFFile
 import numpy as num
 from numpy.random import randint, seed
@@ -225,7 +220,7 @@ class Geospatial_data(object):
         for key in list(attributes.keys()):
             try:
                 attributes[key] = ensure_numeric(attributes[key])
-            except:
+            except (ValueError, TypeError):
                 msg = ("Attribute '%s' (%s) could not be converted to a"
                        "numeric vector" % (str(key), str(attributes[key])))
                 raise Exception(msg)
@@ -1089,7 +1084,7 @@ def _read_pts_file_header(fid, verbose=False):
 
     try:  # netcdf4
         number_of_points = len(fid.dimensions['number_of_points'])
-    except:  # scientific python
+    except (TypeError, AttributeError):  # scientific python
         number_of_points = fid.dimensions['number_of_points']
 
     return geo_reference, keys, number_of_points

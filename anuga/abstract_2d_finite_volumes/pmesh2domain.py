@@ -5,29 +5,75 @@
    Ole Nielsen, Stephen Roberts, Duncan Gray, Christopher Zoppou
    Geoscience Australia
 """
-
-
-from builtins import map
-from builtins import zip
-from builtins import range
 import sys
 import numpy as num
 import anuga.utilities.log as log
 
 
 
+def pmesh_to_mesh(pmesh_instance, verbose=False):
+    """Convert a Pmesh instance to a neighbour_mesh.Mesh instance.
+
+    Parameters
+    ----------
+    pmesh_instance : anuga.pmesh.mesh.Pmesh
+        A Pmesh instance with a completed triangulation (i.e. generate_mesh
+        has been called).
+    verbose : bool, optional
+        If True, print verbose output. Default is False.
+
+    Returns
+    -------
+    anuga.abstract_2d_finite_volumes.neighbour_mesh.Mesh
+        A Mesh instance built from the Pmesh triangulation.
+    """
+    from anuga.abstract_2d_finite_volumes.neighbour_mesh import Mesh
+
+    mesh_dict = pmesh_instance.Mesh2IODict()
+
+    vertex_coordinates = mesh_dict['vertices']
+    triangles = mesh_dict['triangles']
+    geo_reference = mesh_dict['geo_reference']
+    triangle_neighbors = mesh_dict.get('triangle_neighbors')
+    tagged_elements = build_tagged_elements_dictionary(mesh_dict)
+    boundary = pmesh_dict_to_tag_dict(mesh_dict)
+
+    return Mesh(vertex_coordinates, triangles,
+                boundary=boundary,
+                tagged_elements=tagged_elements,
+                geo_reference=geo_reference,
+                triangle_neighbors=triangle_neighbors,
+                verbose=verbose)
+
+
 def pmesh_to_domain_instance(source, DomainClass, use_cache=False,
                              verbose=False):
-    """Converts a mesh file(.tsh or .msh), to a Domain instance.
+    """Convert a mesh file to a Domain instance.
 
-    file_name is the name of the mesh file to convert, including the extension
-
-    DomainClass is the Class that will be returned.
-    It must be a subclass of Domain, with the same interface as domain.
-
-    use_cache: True means that caching is attempted for the computed domain.    
+    Parameters
+    ----------
+    source : str
+        The name of the mesh file to convert, including the extension.
+        Supported formats: .tsh, .msh
+    DomainClass : type
+        The Class that will be returned. Must be a subclass of Domain,
+        with the same interface as domain.
+    use_cache : bool, optional
+        If True, caching is attempted for the computed domain.
+        Default is False.
+    verbose : bool, optional
+        If True, print verbose output during processing.
+        Default is False.
+    Returns
+    -------
+    Domain
+        An instance of DomainClass initialized from the mesh file.
+    Notes
+    -----
+    When caching is enabled, the function uses the anuga.caching module
+    to cache the computed domain based on the source file and DomainClass.
     """
-
+    
     if use_cache is True:
         from anuga.caching import cache
         result = cache(_pmesh_to_domain_instance, (source, DomainClass),

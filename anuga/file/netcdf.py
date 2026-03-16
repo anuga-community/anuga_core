@@ -1,8 +1,5 @@
 """ This module is responsible for loading and saving NetCDF NC files
 """
-
-from builtins import range
-from builtins import object
 import numpy as num
 
 from anuga.coordinate_transforms.redfearn import \
@@ -37,7 +34,7 @@ def NetCDFFile(file_name, netcdf_mode=netcdf_mode_r):
     try: # works with netcdf4
         number_of_timesteps = len(fid.dimensions['number_of_timesteps'])
         number_of_points = len(fid.dimensions['number_of_points'])
-    except: # works with Scientific.IO.NetCDF
+    except (TypeError, AttributeError): # works with Scientific.IO.NetCDF
         number_of_timesteps = fid.dimensions['number_of_timesteps']
         number_of_points = fid.dimensions['number_of_points']
     
@@ -48,7 +45,7 @@ def NetCDFFile(file_name, netcdf_mode=netcdf_mode_r):
     try:
         from netCDF4 import Dataset
         using_netcdf4 = True
-    except: 
+    except ImportError: 
         from Scientific.IO.NetCDF import NetCDFFile
         using_scientific = True
 

@@ -1,10 +1,4 @@
 #!/usr/bin/env python
-
-
-
-
-from builtins import str
-from builtins import range
 import unittest
 import time
 import tempfile
@@ -25,7 +19,7 @@ from anuga.file_conversion.file_conversion import timefile2netcdf
 from anuga.utilities.file_utils import del_dir
 
 from anuga.utilities.numerical_tools import NAN
-from anuga.pmesh.mesh import Mesh
+from anuga.pmesh.mesh import Pmesh
 
 from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
 from anuga.coordinate_transforms.geo_reference import Geo_reference
@@ -150,6 +144,7 @@ class Test_Util(unittest.TestCase):
         domain1.set_datadir('.')
         sww_file = 'spatio_temporal_boundary_source_%d' %(id(self))
         domain1.set_name(sww_file)
+        self.addCleanup(lambda: os.remove(sww_file + '.sww') if os.path.exists(sww_file + '.sww') else None)
 
         #Bed-slope, friction and IC at vertices (and interpolated elsewhere)
         domain1.set_quantity('elevation', 0)
@@ -358,6 +353,7 @@ class Test_Util(unittest.TestCase):
         domain1.store = True
         domain1.set_datadir('.')
         domain1.set_name('spatio_temporal_boundary_source_%d' %(id(self)))
+        self.addCleanup(lambda: os.remove('spatio_temporal_boundary_source_%d.sww' % id(self)) if os.path.exists('spatio_temporal_boundary_source_%d.sww' % id(self)) else None)
 
         #Bed-slope, friction and IC at vertices (and interpolated elsewhere)
         domain1.set_quantity('elevation', 0)
@@ -1478,7 +1474,7 @@ class Test_Util(unittest.TestCase):
             import matplotlib
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
-        except:
+        except ImportError:
             #print "Couldn't import module from matplotlib, probably you need to update matplotlib"
             return
         

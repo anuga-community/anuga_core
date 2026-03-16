@@ -44,7 +44,7 @@ class Test_Urs2Sts(Test_Mux):
         for file in ['domain.sww', 'urs_test_mesh.tsh' ]:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass
                 
     def test_urs2sts0(self):
@@ -813,7 +813,7 @@ class Test_Urs2Sts(Test_Mux):
                     mean_stage=tide,
                     verbose=False)  
             os.remove(ordering_filename)            
-        except:
+        except OSError:
             pass
         else:
             msg = 'Should have caught wrong lat longs'

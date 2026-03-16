@@ -5,7 +5,7 @@ import os
 import unittest
 import tempfile
 
-from anuga.pmesh.mesh import Vertex, Segment, Mesh
+from anuga.pmesh.mesh import Vertex, Segment, Pmesh
 from anuga.file.ungenerate import load_ungenerate
 
 class ungenerateTestCase(unittest.TestCase):
@@ -16,7 +16,7 @@ class ungenerateTestCase(unittest.TestCase):
         for filename in ['swamp.tsh']:
             try:
                 os.remove(filename)
-            except:
+            except OSError:
                 pass
         
     def test_ungenerateFileLoading(self):
@@ -50,7 +50,7 @@ END\n")
         s3 = Segment(c,d)
         s4 = Segment(d,a)
      
-        m = Mesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
         dict = load_ungenerate(fileName)
         #os.remove(fileName)
 
@@ -83,7 +83,7 @@ END\n")
         s3 = Segment(c,d)
         s4 = Segment(d,a)
      
-        m = Mesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
 
         tag = "DSG"        
         initial_tag = "PIG"
@@ -140,7 +140,7 @@ END\n")
         s3 = Segment(c,d)
         s4 = Segment(d,a)
      
-        m = Mesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
         dict = load_ungenerate(fileName)
         #os.remove(fileName)
 
@@ -164,7 +164,7 @@ END\n")
         s3 = Segment(c,d)
         s4 = Segment(d,a)
      
-        m = Mesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
         tag = "DSG"        
         initial_tag = "PIG"
         Segment.set_default_tag(initial_tag)
@@ -221,7 +221,7 @@ END\n")
         s3 = Segment(c,d)
         s4 = Segment(d,a)
      
-        m = Mesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
         dict = load_ungenerate(fileName)
         #os.remove(fileName)
 
@@ -245,7 +245,7 @@ END\n")
         s3 = Segment(c,d)
         s4 = Segment(d,a)
      
-        m = Mesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
         tag = "DSG"        
         initial_tag = "PIG"
         Segment.set_default_tag(initial_tag)

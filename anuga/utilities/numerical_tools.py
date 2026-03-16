@@ -183,7 +183,7 @@ def err(x, y=0, n=2, relative=True):
         if relative is True:
             try:
                 err = err/norm(y)
-            except:
+            except ZeroDivisionError:
                 pass
 
     else:
@@ -191,7 +191,7 @@ def err(x, y=0, n=2, relative=True):
         if relative is True:
             try:
                 err = err/max(abs(y))
-            except:
+            except ZeroDivisionError:
                 pass
 
     return err

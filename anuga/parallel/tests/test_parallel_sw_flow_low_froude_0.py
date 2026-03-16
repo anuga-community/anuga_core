@@ -123,7 +123,7 @@ def run_simulation(parallel=False, G = None, seq_interpolation_points=None, verb
                 tri_ids.append(k)
             else:
                 tri_ids.append(-1)
-        except:
+        except Exception:
             tri_ids.append(-2)
 
         #print "  tri_ids ",myid, i, tri_ids[-1]

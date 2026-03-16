@@ -2309,7 +2309,7 @@ class Test_Sww2Dem(unittest.TestCase):
 
         try:
             os.remove('teg*.sww')
-        except:
+        except OSError:
             pass
 
 
@@ -2396,7 +2396,7 @@ class Test_Sww2Dem(unittest.TestCase):
 
         try:
             os.remove('teg*.sww')
-        except:
+        except OSError:
             pass
 
         domain = anuga.rectangular_cross_domain(64,64)
@@ -2488,7 +2488,7 @@ class Test_Sww2Dem(unittest.TestCase):
 
         try:
             os.remove('teg*.sww')
-        except:
+        except OSError:
             pass
 
         # Setup
@@ -2623,7 +2623,7 @@ class Test_Sww2Dem(unittest.TestCase):
 
         try:
             os.remove('teg*.sww')
-        except:
+        except OSError:
             pass
 
         # Setup
@@ -2765,7 +2765,7 @@ class Test_Sww2Dem(unittest.TestCase):
 
         try:
             os.remove('teg*.sww')
-        except:
+        except OSError:
             pass
 
         # Setup
@@ -2896,7 +2896,7 @@ class Test_Sww2Dem(unittest.TestCase):
 
         try:
             os.remove('teg*.sww')
-        except:
+        except OSError:
             pass
 
         # Setup
@@ -3045,7 +3045,7 @@ class Test_Sww2Dem(unittest.TestCase):
         # Remove old log file
         try:
             os.remove(LOG_FILENAME)
-        except:
+        except OSError:
             pass
         filehandler = log.logging.FileHandler(LOG_FILENAME)
         filehandler.setLevel(log.logging.CRITICAL)
@@ -3127,22 +3127,22 @@ Statistics of SWW file:
             # cleanup
             try:
                 os.remove(prjfile)
-            except:
+            except OSError:
                 pass
             try:
                 os.remove(ascfile)
-            except:
+            except OSError:
                 pass
             try:
                 os.remove(swwfile)
-            except:
+            except OSError:
                 pass
     #     os.remove(LOG_FILENAME)
         log.logging.disable(log.logging.CRITICAL)
 
         try:    
             os.remove(LOG_FILENAME)
-        except:
+        except OSError:
             pass
         
         

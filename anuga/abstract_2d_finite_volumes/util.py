@@ -116,7 +116,7 @@ def get_textual_float(value, format = '%.2f'):
     else:
         try:
             float(value)
-        except:
+        except (ValueError, TypeError):
             # May this is a vector
             if len(value) > 1:
                 s = '('
@@ -446,7 +446,7 @@ def csv2timeseries_graphs(directories_dic={},
         import matplotlib
         matplotlib.use('Agg')
         import matplotlib.pyplot as pylab
-    except:
+    except ImportError:
         #print "Couldn't import module from matplotlib, probably you need to update matplotlib"
         return
 

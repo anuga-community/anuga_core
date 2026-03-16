@@ -112,7 +112,7 @@ def store_svn_revision_info(destination_path='.', verbose=False):
     try:
         # FIXME (Ole): Use git module here via get_revision_number/date
         txt = subprocess.Popen('svn info', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0]
-    except:
+    except OSError:
         txt = 'Revision: 0'
     else:    
         if verbose: print('response ',txt)
@@ -363,7 +363,7 @@ def get_web_file(file_url, file_name, auth=None, blocksize=1024*1024):
     # unpack auth info
     try:
         (httpproxy, proxyuser, proxypass) = auth
-    except:
+    except (TypeError, ValueError):
         (httpproxy, proxyuser, proxypass) = (None, None, None)
 
     # fill in any gaps from the environment
@@ -500,7 +500,7 @@ def _VmB(VmKey):
         t = open(_proc_status)
         v = t.read()
         t.close()
-    except:
+    except OSError:
         return 0.0  # non-Linux?
      # get VmKey line e.g. 'VmRSS:  9999  kB\n ...'
     i = v.index(VmKey)

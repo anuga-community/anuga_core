@@ -22,9 +22,9 @@
 
 
 
-from .revision import  __git_sha__
-from .revision import __git_committed_datetime__
-from .revision import __version__
+from ._version import __git_sha__
+from ._version import __git_committed_datetime__
+from ._version import __version__
 
 # ----------------------------------
 # NetCDF changes stdout to terminal
@@ -86,7 +86,8 @@ from anuga.geometry.polygon_function import Polygon_function
 from anuga.coordinate_transforms.lat_long_UTM_conversion import LLtoUTM, UTMtoLL
 
 from anuga.abstract_2d_finite_volumes.pmesh2domain import \
-                                            pmesh_to_domain_instance
+                                            pmesh_to_domain_instance, \
+                                            pmesh_to_mesh
 
 from anuga.fit_interpolate.fit import fit_to_mesh_file
 from anuga.fit_interpolate.fit import fit_to_mesh
@@ -320,7 +321,7 @@ from anuga.config import velocity_protection
 # --------------------------------------
 try:
     from importlib import reload
-except:
+except ImportError:
     pass
 reload(sys)
 sys.stdout = _stdout

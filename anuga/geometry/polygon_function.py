@@ -52,7 +52,7 @@ class Polygon_function(object):
 
         try:
             len(regions)
-        except:
+        except TypeError:
             msg = ('Polygon_function takes a list of pairs (polygon, value).'
                    'Got %s' % str(regions))
             raise Exception(msg)
@@ -67,7 +67,7 @@ class Polygon_function(object):
 
         try:
             num_region_components = len(first_region)
-        except:
+        except TypeError:
             msg = ('Polygon_function takes a list of pairs (polygon, value). '
                    'Got %s' % str(num_region_components))
             raise Exception(msg)

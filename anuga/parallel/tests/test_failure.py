@@ -143,7 +143,7 @@ def run_simulation(parallel = False, control_data = None, test_points = None, ve
                 tri_ids.append(k)
             else:
                 tri_ids.append(-1)            
-        except:
+        except Exception:
             tri_ids.append(-2)
 
     if verbose: print('P%d has points = %s' %(myid, tri_ids))

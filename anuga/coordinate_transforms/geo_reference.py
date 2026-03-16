@@ -5,9 +5,6 @@
 
 #FIXME: Ensure that all attributes of a georef are treated everywhere
 #and unit test
-
-from builtins import str
-from builtins import object
 import sys
 import copy
 
@@ -220,7 +217,7 @@ class Geo_reference(object):
         self.zone = int(infile.zone)
         try:
             self.hemisphere = str(infile.hemisphere)
-        except:
+        except AttributeError:
             self.hemisphere = DEFAULT_HEMISPHERE
 
         self.false_easting = int(infile.false_easting)

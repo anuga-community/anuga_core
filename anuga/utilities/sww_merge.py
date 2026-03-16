@@ -2,11 +2,6 @@
 """
     Merge a list of .sww files together into a single file.
 """
-
-
-from builtins import zip
-from builtins import str
-from builtins import range
 import numpy as num
 from anuga.utilities.numerical_tools import ensure_numeric
 
@@ -33,7 +28,7 @@ def sww_merge_parallel(domain_global_name, np, verbose=False, delete_old=False):
     try: # works with netcdf4
         number_of_volumes = len(fid.dimensions['number_of_volumes'])
         number_of_points = len(fid.dimensions['number_of_points'])
-    except: # works with scientific.io.netcdf
+    except (TypeError, AttributeError): # works with scientific.io.netcdf
         number_of_volumes = int(fid.dimensions['number_of_volumes'])
         number_of_points = int(fid.dimensions['number_of_points'])
 
@@ -123,7 +118,7 @@ def _sww_merge(swwfiles, output, verbose=False):
 
         try: # works with netcdf4
             num_pts = len(fid.dimensions['number_of_points'])
-        except: # works with scientific.io.netcdf
+        except (TypeError, AttributeError): # works with scientific.io.netcdf
             num_pts = int(fid.dimensions['number_of_points'])
 
         tri_offset += num_pts

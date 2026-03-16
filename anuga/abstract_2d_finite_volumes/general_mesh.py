@@ -1,6 +1,3 @@
-#from builtins import str
-#from builtins import range
-#from builtins import object
 import copy
 import numpy as num
 
@@ -52,7 +49,7 @@ class General_mesh:
       This structure is derived from coordinates and contains for each
       triangle the three x,y coordinates at the vertices.
 
-      See neighbourmesh.py for a specialisation of the general mesh class
+      See neighbour_mesh.py for a specialisation of the general mesh class
       which includes information about neighbours and the mesh boundary.
 
       The mesh object is purely geometrical and contains no information
@@ -277,104 +274,8 @@ class General_mesh:
             self.radii[:] = 2.0 * self.areas / (a+b+c)
 
 
-
-#        for i in range(N):
-#            if verbose and i % ((N+10)/10) == 0: log.critical('(%d/%d)' % (i, N))
-#
-#            x0, y0 = V[3*i, :]
-#            x1, y1 = V[3*i+1, :]
-#            x2, y2 = V[3*i+2, :]
-#
-#
-#            i0 = self.triangles[i][0]
-#            i1 = self.triangles[i][1]
-#            i2 = self.triangles[i][2]
-#
-##            assert x0 == self.nodes[i0][0]
-##            assert y0 == self.nodes[i0][1]
-##
-##            assert x1 == self.nodes[i1][0]
-##            assert y1 == self.nodes[i1][1]
-##
-##            assert x2 == self.nodes[i2][0]
-##            assert y2 == self.nodes[i2][1]
-#
-##            # Area
-##            self.areas[i] = abs((x1*y0-x0*y1) + (x2*y1-x1*y2) + (x0*y2-x2*y0))/2
-##
-##            msg = 'Triangle %g (%f,%f), (%f,%f), (%f, %f)' % (i,x0,y0,x1,y1,x2,y2)
-##            msg += ' is degenerate:  area == %f' % self.areas[i]
-##            assert self.areas[i] > 0.0, msg
-#
-#            # Normals
-#            # The normal vectors
-#            #   - point outward from each edge
-#            #   - are orthogonal to the edge
-#            #   - have unit length
-#            #   - Are enumerated according to the opposite corner:
-#            #     (First normal is associated with the edge opposite
-#            #     the first vertex, etc)
-#            #   - Stored as six floats n0x,n0y,n1x,n1y,n2x,n2y per triangle
-#            n0 = num.array([x2-x1, y2-y1], float)
-#            l0 = num.sqrt(num.sum(n0**2))
-#
-#            n1 = num.array([x0-x2, y0-y2], float)
-#            l1 = num.sqrt(num.sum(n1**2))
-#
-#            n2 = num.array([x1-x0, y1-y0], float)
-#            l2 = num.sqrt(num.sum(n2**2))
-#
-#            # Normalise
-#            n0 /= l0
-#            n1 /= l1
-#            n2 /= l2
-#
-##            # Compute and store
-##            self.normals[i, :] = [n0[1], -n0[0],
-##                                  n1[1], -n1[0],
-##                                  n2[1], -n2[0]]
-#
-#            # Edgelengths
-#            #self.edgelengths[i, :] = [l0, l1, l2]
-#
-#
-#
-#            #Compute centroid
-##            centroid = num.array([(x0 + x1 + x2)/3, (y0 + y1 + y2)/3], float)
-###            self.centroid_coordinates[i] = centroid
-##
-##
-##            if self.use_inscribed_circle == False:
-##                #OLD code. Computed radii may exceed that of an
-##                #inscribed circle
-##
-##                #Midpoints
-##                m0 = num.array([(x1 + x2)/2, (y1 + y2)/2], float)
-##                m1 = num.array([(x0 + x2)/2, (y0 + y2)/2], float)
-##                m2 = num.array([(x1 + x0)/2, (y1 + y0)/2], float)
-##
-##                #The radius is the distance from the centroid of
-##                #a triangle to the midpoint of the side of the triangle
-##                #closest to the centroid
-##                d0 = num.sqrt(num.sum( (centroid-m0)**2 ))
-##                d1 = num.sqrt(num.sum( (centroid-m1)**2 ))
-##                d2 = num.sqrt(num.sum( (centroid-m2)**2 ))
-##
-##                #self.radii[i] = min(d0, d1, d2)
-##
-##            else:
-##                #NEW code added by Peter Row. True radius
-##                #of inscribed circle is computed
-##
-##                a = num.sqrt((x0-x1)**2+(y0-y1)**2)
-##                b = num.sqrt((x1-x2)**2+(y1-y2)**2)
-##                c = num.sqrt((x2-x0)**2+(y2-y0)**2)
-##
-##                self.radii[i]=2.0*self.areas[i]/(a+b+c)
-
-
         # Build structure listing which triangles belong to which node.
-        if verbose: log.critical('General Mesh: Building inverted triangle structure')
+        if verbose: log.critical('General_mesh: Building inverted triangle structure')
         self.build_inverted_triangle_structure()
 
         if verbose: log.timingInfo("aoi, '%s'" % self.get_area())
@@ -886,3 +787,4 @@ class General_mesh:
 
     def get_georeference(self):
         return self.geo_reference
+

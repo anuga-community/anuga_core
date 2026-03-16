@@ -1,10 +1,4 @@
 #!/usr/bin/env python
-#
-
-from builtins import zip
-from builtins import map
-from builtins import str
-from builtins import range
 import tempfile
 import unittest
 
@@ -57,7 +51,7 @@ class meshTestCase(unittest.TestCase):
     def testdeleteUserVertex(self):
 
         
-        mesh = Mesh()
+        mesh = Pmesh()
         a = mesh.addUserVertex(0.0, 0.0)
         b = mesh.addUserVertex (0.0, 2.0)
         c = mesh.addUserVertex (2.0,0.0)
@@ -87,7 +81,7 @@ class meshTestCase(unittest.TestCase):
 
         r1 = Region(0.3, 0.3, tag = 1.3, maxArea = .6)
         #print r1
-        m = Mesh(userVertices=[a,d,f], userSegments=[s1,s2,s3], regions=[r1] )
+        m = Pmesh(userVertices=[a,d,f], userSegments=[s1,s2,s3], regions=[r1] )
         
         m.generateMesh("Q", maxArea = 2.1 )         
 
@@ -122,7 +116,7 @@ class meshTestCase(unittest.TestCase):
 
         r1 = Region(3, 1,tag = 1.3)
         #print r1
-        m = Mesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5], regions=[r1] )
+        m = Pmesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5], regions=[r1] )
         
         m.generateMesh("Q", maxArea = 36 )         
 
@@ -135,7 +129,7 @@ class meshTestCase(unittest.TestCase):
         ## Another test case
         r1 = Region(3, 1,tag = 1.3)
         r2 = Region(1, 3,tag = 1.3, maxArea = 8)
-        m = Mesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
+        m = Pmesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
                  regions=[r1,r2] )
         m.generateMesh("Q", maxArea = 36 )
         
@@ -146,7 +140,7 @@ class meshTestCase(unittest.TestCase):
         ## Another test case
         r1 = Region(3, 1, tag = 1.3, maxArea = 8)
         r2 = Region(1, 3, tag = 1.3, maxArea = 8)
-        m = Mesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
+        m = Pmesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
                  regions=[r1,r2] )
         m.generateMesh("Q", maxArea = 36 )  
         #print "len(m.meshTriangles)",len(m.meshTriangles)
@@ -158,7 +152,7 @@ class meshTestCase(unittest.TestCase):
         ## Another test case
         r1 = Region(3, 1, tag = 1.3 )
         r2 = Region(1, 3, tag = 1.3, maxArea = 8)
-        m = Mesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
+        m = Pmesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
                  regions=[r1,r2] )
         m.generateMesh("Q", maxArea = 8 ) 
         self.assertTrue(len(m.getTriangulation()) >= 8,
@@ -168,7 +162,7 @@ class meshTestCase(unittest.TestCase):
         ## Another test case
         r1 = Region(3, 1,tag = 1.3, maxArea = 8)
         r2 = Region(1, 3,tag = 1.3, maxArea = 8)
-        m = Mesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
+        m = Pmesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
                  regions=[r1,r2] )
         m.generateMesh("Q", maxArea = 36,isRegionalMaxAreas = False )      
         self.assertTrue(len(m.getTriangulation()) == 2, 
@@ -177,7 +171,7 @@ class meshTestCase(unittest.TestCase):
         ## Another test case
         r1 = Region(3, 1,tag = 1.3, maxArea = 8)
         r2 = Region(1, 3,tag = 1.3, maxArea = 8)
-        m = Mesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
+        m = Pmesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
                  regions=[r1,r2] )
         m.generateMesh("Q",isRegionalMaxAreas = False )
         self.assertTrue(len(m.getTriangulation()) == 2, 
@@ -197,7 +191,7 @@ class meshTestCase(unittest.TestCase):
 
         r1 = Region(3, 1,tag = 1.3)
         #print r1
-        m = Mesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
+        m = Pmesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
                  regions=[r1] )
         
         m.generate_mesh(maximum_triangle_area=36,verbose=False)         
@@ -208,7 +202,7 @@ class meshTestCase(unittest.TestCase):
         ## Another test case
         r1 = Region(3, 1,tag = 1.3)
         r2 = Region(1, 3,tag = 1.3, maxArea = 8)
-        m = Mesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
+        m = Pmesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
                  regions=[r1,r2] )
         m.generate_mesh(maximum_triangle_area=36,verbose=False)  
         
@@ -218,7 +212,7 @@ class meshTestCase(unittest.TestCase):
         ## Another test case
         r1 = Region(3, 1, tag = 1.3, maxArea = 8)
         r2 = Region(1, 3, tag = 1.3, maxArea = 8)
-        m = Mesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
+        m = Pmesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
                  regions=[r1,r2] )
         m.generate_mesh(maximum_triangle_area=36,verbose=False)         
         #print "len(m.getTriangulation())",len(m.getTriangulation())
@@ -229,7 +223,7 @@ class meshTestCase(unittest.TestCase):
         ## Another test case
         r1 = Region(3, 1, tag = 1.3 )
         r2 = Region(1, 3, tag = 1.3, maxArea = 8)
-        m = Mesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
+        m = Pmesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
                  regions=[r1,r2] )
         m.generate_mesh(maximum_triangle_area=8,verbose=False)    
         self.assertTrue(len(m.getTriangulation()) >= 8,
@@ -237,7 +231,7 @@ class meshTestCase(unittest.TestCase):
 
         ## Another test case r1 = Region(3, 1,tag = 1.3, maxArea = 8)
         r2 = Region(1, 3,tag = 1.3, maxArea = 8)
-        m = Mesh(userVertices=[v0,v1,v2,v3],
+        m = Pmesh(userVertices=[v0,v1,v2,v3],
         userSegments=[s1,s2,s3,s4,s5], regions=[r1,r2] )
         m.generate_mesh(verbose=False)
         #print "en(m.getTriangulation())", len(m.getTriangulation())
@@ -245,7 +239,7 @@ class meshTestCase(unittest.TestCase):
         'You have issues!')
         
     def testdeleteUserVertex(self):
-        mesh = Mesh()
+        mesh = Pmesh()
         a = mesh.addUserVertex(0.0, 0.0)
         b = mesh.addUserVertex (0.0, 2.0)
         c = mesh.addUserVertex (2.0,0.0)
@@ -265,7 +259,7 @@ class meshTestCase(unittest.TestCase):
                         'Vertex deleted, instead of segment.')
 
     def testisUserSegmentNew (self):
-        mesh = Mesh()
+        mesh = Pmesh()
         a = mesh.addUserVertex(0.0, 0.0)
         b = mesh.addUserVertex (0.0, 2.0)
         c = mesh.addUserVertex (2.0,0.0)
@@ -282,7 +276,7 @@ class meshTestCase(unittest.TestCase):
 
 
     def testisUserSegmentNewII (self):
-        mesh = Mesh()
+        mesh = Pmesh()
         a = mesh.addUserVertex(0.0, 0.0)
         b = mesh.addUserVertex (0.0, 2.0)
         c = mesh.addUserVertex (2.0,0.0)
@@ -305,7 +299,7 @@ class meshTestCase(unittest.TestCase):
 
         s1 = Segment(p0,p1)
         
-        m = Mesh(userVertices=[p0, p1, p2, p3], userSegments=[s1] ) 
+        m = Pmesh(userVertices=[p0, p1, p2, p3], userSegments=[s1] ) 
         m.auto_segment()
         
         #print 'Len', len(m.userSegments)
@@ -328,7 +322,7 @@ class meshTestCase(unittest.TestCase):
         s1 = Segment(p2,p3)
         s2 = Segment(p4,p5)
         
-        m = Mesh(userVertices=[p0, p1, p2, p3, p4, p5],
+        m = Pmesh(userVertices=[p0, p1, p2, p3, p4, p5],
                  userSegments=[s1, s2])     
 
         m.auto_segment()
@@ -395,7 +389,7 @@ class meshTestCase(unittest.TestCase):
         r2 = Region(0.1,2.1,tag="11")
         r3 = Region(2.1,0.1)
         
-        m = Mesh(userVertices=[a,b,c,d,e,f,g], userSegments=[s1,s2,s3,s4,s5,s6,s7,s8,s9,s10], regions=[r1,r2,r3] )
+        m = Pmesh(userVertices=[a,b,c,d,e,f,g], userSegments=[s1,s2,s3,s4,s5,s6,s7,s8,s9,s10], regions=[r1,r2,r3] )
         m.generateMesh("Q", maxArea = 2.1 )
 
         # FIXME test the region
@@ -426,7 +420,7 @@ class meshTestCase(unittest.TestCase):
      
         r1 = Region(0.3, 0.3, tag = 88.9)
      
-        m = Mesh(userVertices=[a,d,f], userSegments=[s1,s2,s3], regions=[r1])
+        m = Pmesh(userVertices=[a,d,f], userSegments=[s1,s2,s3], regions=[r1])
 
         m.generateMesh("Q", maxArea = 2.1)
 
@@ -454,7 +448,7 @@ class meshTestCase(unittest.TestCase):
      
         r1 = Region(0.3, 0.3, tag = 88.9)
      
-        m = Mesh(userVertices=[a,d,f], userSegments=[s1,s2,s3], regions=[r1])
+        m = Pmesh(userVertices=[a,d,f], userSegments=[s1,s2,s3], regions=[r1])
 
         m.generateMesh("Q", maxArea = 2.1 )
 
@@ -473,7 +467,7 @@ class meshTestCase(unittest.TestCase):
         s2 = Segment(d,f,tag = 7)
         s3 = Segment(a,f,tag = 9)
      
-        m = Mesh(userVertices=[a,d,f], userSegments=[s1,s2,s3])
+        m = Pmesh(userVertices=[a,d,f], userSegments=[s1,s2,s3])
 
         m.generateMesh("Q", maxArea = 2.1 )
 
@@ -504,7 +498,7 @@ class meshTestCase(unittest.TestCase):
         s3 = Segment(a,f)
         s4 = Segment(a,e)
      
-        m = Mesh(userVertices=[a,d,f,e], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,d,f,e], userSegments=[s1,s2,s3,s4])
 
         m.generateMesh("Q", maxArea = 2.1)
 
@@ -528,7 +522,7 @@ class meshTestCase(unittest.TestCase):
         s3 = Segment(a,f)
         s4 = Segment(a,e)
      
-        m = Mesh(userVertices=[a,d,f,e], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,d,f,e], userSegments=[s1,s2,s3,s4])
 
         m.generateMesh("Q", maxArea = 2.1 )
         seg = m.getMeshSegments()
@@ -601,7 +595,7 @@ class meshTestCase(unittest.TestCase):
         s3 = Segment(a,f)
         s4 = Segment(a,e)
      
-        m = Mesh(userVertices=[a,d,f,e], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,d,f,e], userSegments=[s1,s2,s3,s4])
 
         m.generateMesh("Q", maxArea = 2.1 )
 
@@ -680,7 +674,7 @@ class meshTestCase(unittest.TestCase):
         v7 = Vertex(12,9)
         v8 = Vertex(15,3)
         v9 = Vertex(24,3)
-        m = Mesh(userVertices = [v1,v2,v3,v4,v5,v6,v7,v8,v9])
+        m = Pmesh(userVertices = [v1,v2,v3,v4,v5,v6,v7,v8,v9])
         m.thinoutVertices(10)
          
         self.assertTrue(v1 in m.userVertices,
@@ -732,7 +726,7 @@ class meshTestCase(unittest.TestCase):
      
         r1 = Region(0.3, 0.3,tag = "1.3")
         geo = Geo_reference(55, 8.9,8.9)
-        m = Mesh(userVertices=[a,d,f,e],
+        m = Pmesh(userVertices=[a,d,f,e],
                  userSegments=[s1,s2,s3,s4],
                  regions=[r1],
                  geo_reference=geo)
@@ -775,7 +769,7 @@ class meshTestCase(unittest.TestCase):
      
         r1 = Region(0.3, 0.3,tag = "1.3")
         geo = Geo_reference(55,8.9,8.9)
-        m = Mesh(userVertices=[a,d,f,e],
+        m = Pmesh(userVertices=[a,d,f,e],
                  userSegments=[s1,s2,s3,s4],
                  regions=[r1],
                  geo_reference=geo)
@@ -819,7 +813,7 @@ class meshTestCase(unittest.TestCase):
         s4 = Segment(f,a, tag = 20)
      
         r1 = Region(0.3, 0.3,tag = 1.3)
-        m = Mesh(userVertices=[a,d,f,e],
+        m = Pmesh(userVertices=[a,d,f,e],
                  userSegments=[s1,s2,s3,s4],
                  regions=[r1])
         m.normaliseMesh(1,0,1)
@@ -850,7 +844,7 @@ class meshTestCase(unittest.TestCase):
      
         r1 = Region(2, 1,tag = "1.3")
         h1 = Hole(1,4)
-        m = Mesh(userVertices=[a,b,c,d,e],
+        m = Pmesh(userVertices=[a,b,c,d,e],
                  userSegments=[s1,s2,s3],
                  regions=[r1],
                  holes = [h1])      
@@ -917,7 +911,7 @@ class meshTestCase(unittest.TestCase):
      
         r1 = Region(2, 1,tag = "1.3")
         h1 = Hole(1,4)
-        m = Mesh(userVertices=[a,b,c,d,e],
+        m = Pmesh(userVertices=[a,b,c,d,e],
                  userSegments=[s1,s2,s3,s4],
                  regions=[r1],
                  holes = [h1])      
@@ -1004,7 +998,7 @@ class meshTestCase(unittest.TestCase):
         r1 = Region(2, 1,tag = 1.3)
         h1 = Hole(1,4)
         # Warning mesh can't produce this type of data structure its self
-        m = Mesh(userVertices=[a,b,c,d,e],
+        m = Pmesh(userVertices=[a,b,c,d,e],
                  userSegments=[s1,s2,s3],
                  regions=[r1],
                  holes = [h1])
@@ -1064,7 +1058,7 @@ class meshTestCase(unittest.TestCase):
         r1 = Region(2, 1,tag = 1.3)
         h1 = Hole(1,4)
         # Warning mesh can't produce this type of data structure its self
-        m = Mesh(userVertices=[a,b,c,d,e],
+        m = Pmesh(userVertices=[a,b,c,d,e],
                  userSegments=[s1,s2,s3],
                  regions=[r1],
                  holes = [h1])
@@ -1111,7 +1105,7 @@ class meshTestCase(unittest.TestCase):
         
     def NOTtest_exportPointsFilefile2(self):
         #geospatial needs at least one point
-        m = Mesh()
+        m = Pmesh()
         
         fileName = tempfile.mktemp(".csv")
         m.exportPointsFile(fileName)
@@ -1213,7 +1207,7 @@ class meshTestCase(unittest.TestCase):
         g.index = 6
         inputVerts_noDups = [a,b,c,d,e]
         
-        m = Mesh(userVertices=[a,b,c,d,e,f,g])
+        m = Pmesh(userVertices=[a,b,c,d,e,f,g])
         counter = m.removeDuplicatedUserVertices()
         UserVerts = m.getUserVertices()
         
@@ -1227,7 +1221,7 @@ class meshTestCase(unittest.TestCase):
 
         
     def test_addVertsSegs(self):
-        m = Mesh()
+        m = Pmesh()
         Segment.set_default_tag("food")
         dict = {}
         dict['points'] = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
@@ -1249,7 +1243,7 @@ class meshTestCase(unittest.TestCase):
         
     def test_addVertsSegs2(self):
         geo = Geo_reference(56,5,10)
-        m = Mesh(geo_reference=geo)
+        m = Pmesh(geo_reference=geo)
         dict = {}
         dict['points'] = [[2.0, 1.0], [3.0, 1.0], [2.0, 2.0]]
         dict['segments'] = [[0, 1], [1, 2], [2,0]]
@@ -1257,7 +1251,7 @@ class meshTestCase(unittest.TestCase):
         m.addVertsSegs(dict)
 
     def test_addVertsSegs_done_twice(self):
-        m = Mesh()
+        m = Pmesh()
         dict = {}
         dict['points'] = [[0.0, 0.0], [5.0, 0.0], [5.0, 5.0]]
         dict['segments'] = [[0, 1], [1, 2], [2,0]]
@@ -1277,7 +1271,7 @@ class meshTestCase(unittest.TestCase):
                         'Wrong vertex connected.')
             
     def test_add_points_and_segments(self):
-        m = Mesh()
+        m = Pmesh()
         Segment.set_default_tag("food")
         dict = {}
         points =  [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
@@ -1299,7 +1293,7 @@ class meshTestCase(unittest.TestCase):
                         'Wrong segment tag.')
         
     def test_add_points_and_segmentsII(self):
-        m = Mesh()
+        m = Pmesh()
         Segment.set_default_tag("food")
         dict = {}
         points =  [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0]]
@@ -1342,7 +1336,7 @@ class meshTestCase(unittest.TestCase):
 
         h1 = Hole(0.2,0.6)
         
-        m = Mesh(userVertices=[a,d,f,e],
+        m = Pmesh(userVertices=[a,d,f,e],
                  userSegments=[s1,s2,s3,s4],
                  regions=[r1],
                  holes=[h1])
@@ -1385,7 +1379,7 @@ class meshTestCase(unittest.TestCase):
         s4 = Segment(a,e, tag = "20")
      
         r1 = Region(0.3, 0.3,tag = "1.3", maxArea = 45)
-        m = Mesh(userVertices=[a,d,f,e],
+        m = Pmesh(userVertices=[a,d,f,e],
                  userSegments=[s1,s2,s3,s4],
                  regions=[r1])
 
@@ -1415,7 +1409,7 @@ class meshTestCase(unittest.TestCase):
         s4 = Segment(a,e, tag = "20")
      
         r1 = Region(0.3, 0.3,tag = "1.3", maxArea = 45)
-        m = Mesh(userVertices=[a,d,f,e],
+        m = Pmesh(userVertices=[a,d,f,e],
                  userSegments=[s1,s2,s3,s4],
                  regions=[r1])
         titles = ['ele','friction'] #Feed in directly!
@@ -1478,7 +1472,7 @@ class meshTestCase(unittest.TestCase):
         s4 = Segment(a,e, tag = "20")
      
         r1 = Region(0.3, 0.3,tag = "1.3", maxArea = 45)
-        m = Mesh(userVertices=[a,d,f,e],
+        m = Pmesh(userVertices=[a,d,f,e],
                  userSegments=[s1,s2,s3,s4],
                  regions=[r1])
         titles = ['ele','friction']
@@ -1567,7 +1561,7 @@ class meshTestCase(unittest.TestCase):
         s4 = Segment(a,e, tag = "20")
      
         r1 = Region(0.3, 0.3,tag = "1.3", maxArea = 45)
-        m = Mesh(userVertices=[a,d,f,e],
+        m = Pmesh(userVertices=[a,d,f,e],
                  userSegments=[s1,s2,s3,s4],
                  regions=[r1])
         titles = ['ele','friction']
@@ -1615,7 +1609,7 @@ class meshTestCase(unittest.TestCase):
 
 
     def test_add_region_from_polygon(self):
-        m=Mesh()
+        m=Pmesh()
         region = m.add_region_from_polygon([[0,0],[1,0],[0,1]],
                                   max_triangle_area = 88,
                                            region_tag='cassady')
@@ -1631,7 +1625,7 @@ class meshTestCase(unittest.TestCase):
                         'FAILED!')
        
     def test_add_region_from_polygon2(self):
-        m=Mesh()
+        m=Pmesh()
         m.add_region_from_polygon([[0,0],[1,0],[1,1],[0,1]],
                                {'tagin':[0,1],'bom':[2]},
                                   max_triangle_area=10)
@@ -1655,7 +1649,7 @@ class meshTestCase(unittest.TestCase):
     def test_add_region_from_polygon3(self):
         x=-500
         y=-1000
-        m=Mesh(geo_reference=Geo_reference(56,x,y))
+        m=Pmesh(geo_reference=Geo_reference(56,x,y))
 
         # These are the absolute values
         polygon_absolute = [[0,0],[1,0],[1,1],[0,1]]
@@ -1712,7 +1706,7 @@ class meshTestCase(unittest.TestCase):
     def test_add_region_from_polygon4(self):
         x=50000
         y=1000
-        m=Mesh(geo_reference=Geo_reference(56,x,y))
+        m=Pmesh(geo_reference=Geo_reference(56,x,y))
         polygon = [[0,0],[1,0],[1,1],[0,1]]
         
         m.add_region_from_polygon(polygon,
@@ -1753,7 +1747,7 @@ class meshTestCase(unittest.TestCase):
     def test_add_hole_from_polygon(self):
         x=-500
         y=-1000
-        m=Mesh(geo_reference=Geo_reference(56,x,y))
+        m=Pmesh(geo_reference=Geo_reference(56,x,y))
 
         # These are the absolute values
         polygon_absolute = [[0,0],[1,0],[1,1],[0,1]]
@@ -1814,7 +1808,7 @@ class meshTestCase(unittest.TestCase):
     def test_add_hole_from_polygon_none_tag(self):
         x=-500
         y=-1000
-        m=Mesh(geo_reference=Geo_reference(56,x,y))
+        m=Pmesh(geo_reference=Geo_reference(56,x,y))
 
         # These are the absolute values
         polygon_absolute = [[0,0],[1,0],[1,1],[0,1]]
@@ -1873,7 +1867,7 @@ class meshTestCase(unittest.TestCase):
     def test_add_circle(self):
         x=-500
         y=-1000
-        m=Mesh(geo_reference=Geo_reference(56,x,y))
+        m=Pmesh(geo_reference=Geo_reference(56,x,y))
 
         # These are the absolute values
         tag = 'hey'
@@ -1917,7 +1911,7 @@ class meshTestCase(unittest.TestCase):
     def NOTIMPLEMENTEDtest_auto_set_geo_reference(self):
         x=50000
         y=1000
-        m=Mesh(geo_reference=Geo_reference(56,x,y))
+        m=Pmesh(geo_reference=Geo_reference(56,x,y))
         polygon = [[0,0],[1,0],[1,1],[0,1]]
         
         m.add_region_from_polygon(polygon,
@@ -1942,7 +1936,7 @@ class meshTestCase(unittest.TestCase):
         s5 = Segment(e,a, tag = "20")
 
         
-        m = Mesh(userVertices=[a,b,c,d,e],
+        m = Pmesh(userVertices=[a,b,c,d,e],
                  userSegments=[s1,s2,s3,s4,s5])
 
         seg = m.getUserSegments()
@@ -1984,7 +1978,7 @@ class meshTestCase(unittest.TestCase):
         s5 = Segment(e,a, tag = "20")
 
         
-        m = Mesh(userVertices=[a,b,c,d,e,f],
+        m = Pmesh(userVertices=[a,b,c,d,e,f],
                  userSegments=[s1,s2,s3,s4,s5])
 
         seg = m.getUserSegments()
@@ -2016,7 +2010,7 @@ class meshTestCase(unittest.TestCase):
         spat = Geospatial_data(points, geo_reference=geo)
         
         geo_mesh =  Geo_reference(56,100,200)
-        m = Mesh(geo_reference=geo_mesh)
+        m = Pmesh(geo_reference=geo_mesh)
         m.add_vertices(spat)
 
         vert = m.getUserVertices()
@@ -2033,7 +2027,7 @@ class meshTestCase(unittest.TestCase):
         points = [[0.1,1],[0.4,.2],[7,5],[10,5]]
         #spat = Geospatial_data(points)
         
-        m = Mesh()
+        m = Pmesh()
         m.add_vertices(points)
 
         vert = m.getUserVertices()
@@ -2052,7 +2046,7 @@ class meshTestCase(unittest.TestCase):
         spat = Geospatial_data(data_points=points_lat_long,
                                points_are_lats_longs=True)
         points_ab = spat.get_data_points( absolute = True)
-        m = Mesh()
+        m = Pmesh()
         m.add_vertices(spat)
 
         vert = m.getUserVertices()
@@ -2069,7 +2063,7 @@ class meshTestCase(unittest.TestCase):
         points_ab = spat.get_data_points( absolute = True)
         geo =  Geo_reference(56,400000,6000000)
         spat.set_geo_reference(geo)
-        m = Mesh()
+        m = Pmesh()
         m.add_vertices(spat)
 
         vert = m.getUserVertices()
@@ -2091,7 +2085,7 @@ class meshTestCase(unittest.TestCase):
         spat = Geospatial_data(points, geo_reference=geo)
         
         geo_mesh =  Geo_reference(56,100,200)
-        m = Mesh(geo_reference=geo_mesh)
+        m = Pmesh(geo_reference=geo_mesh)
         m.add_vertices(spat)
 
         vert = m.getUserVertices()
@@ -2135,7 +2129,7 @@ class meshTestCase(unittest.TestCase):
 
         r1 = Region(0.3, 0.3,tag = 1.3,maxArea = .6)
         #print r1
-        m = Mesh(userVertices=[a,d,f], userSegments=[s1,s2,s3], regions=[r1] )
+        m = Pmesh(userVertices=[a,d,f], userSegments=[s1,s2,s3], regions=[r1] )
         
         m.generateMesh("Q", maxArea = 2.1 )
         calc_mesh_area = m.tri_mesh.calc_mesh_area()

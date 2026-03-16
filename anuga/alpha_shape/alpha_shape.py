@@ -17,11 +17,6 @@ we have an intuitive description of what is called the alpha-shape.
 
 Author: Vanessa Robins, ANU
 """
-
-
-from builtins import filter
-from builtins import range
-from builtins import object
 import random
 
 from anuga.load_mesh.loadASCII import export_boundary_file
@@ -30,11 +25,6 @@ from anuga.utilities import log
 
 import numpy as num
 
-# Python 2.7 Hack
-try:
-    from exceptions import Exception
-except:
-    pass
 class AlphaError(Exception):pass
 class PointError(AlphaError): pass
 class FlagError(AlphaError): pass

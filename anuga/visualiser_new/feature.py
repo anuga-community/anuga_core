@@ -1,4 +1,3 @@
-from builtins import object
 from types import FloatType
 from vtk import vtkActor
 class Feature(object):

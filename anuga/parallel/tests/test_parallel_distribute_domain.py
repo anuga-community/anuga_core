@@ -83,7 +83,7 @@ class Test_parallel_distribute_domain(unittest.TestCase):
         try:
             os.remove(sequential_file)
             os.remove(parallel_file)
-        except:
+        except OSError:
             pass
 
     def test_that_sequential_and_parallel_outputs_are_identical(self):

@@ -12,9 +12,9 @@ import warnings
 # This is due to pmesh being a package and a module and
 # the current dir being unknown
 try:
-    from anuga.pmesh.mesh import Mesh
+    from anuga.pmesh.mesh import Pmesh
 except ImportError:
-    from .mesh import Mesh
+    from .mesh import Pmesh
 
 
 class PolygonError(Exception):
@@ -40,60 +40,61 @@ def create_mesh_from_regions(bounding_polygon,
                              fail_if_polygons_outside=True,
                              use_cache=False,
                              verbose=True):
+
     """Create mesh from bounding polygons, and resolutions.
 
-    bounding_polygon is a list of points in Eastings and Northings,
-    relative to the poly_geo_reference.
+        Parameters
+        ----------
+        bounding_polygon : list of points
+            Points in Eastings and Northings, relative to the poly_geo_reference.
+        boundary_tags : dict
+            Symbolic tags with lists of indices referring to segments associated 
+            with each tag. If a segment is omitted an Exception will be raised.
+        maximum_triangle_area : float, optional
+            Maximal area per triangle for the bounding polygon, excluding the 
+            interior regions.
+        interior_regions : list of tuples, optional
+            List of (polygon, resolution) tuples for each region to be separately 
+            refined. Polygon lines should not cross or overlap, and should not be 
+            close to each other.
+        interior_holes : list of polygons, optional
+            List of polygons for each hole.
+        hole_tags : list, optional
+            Boundary tags for the holes, see boundary_tags parameter.
+        poly_geo_reference : Geo_reference, optional
+            Geo reference of the bounding polygon and interior polygons.
+            If None, assume absolute. Please pass one though, since absolute 
+            references have a zone.
+        mesh_geo_reference : Geo_reference, optional
+            Geo reference of the mesh to be created. If None, one will be 
+            automatically generated using the lower left hand corner of 
+            bounding_polygon (absolute) as x and y values.
+        breaklines : list of polygons, optional
+            Lines to be preserved by the triangulation algorithm (e.g., coastlines, 
+            walls). The polygons are not closed.
+        regionPtArea : list, optional
+            User-specified point-based regions with max area.
+        minimum_triangle_angle : float, optional
+            Minimum angle for triangles (default: 28.0).
+        fail_if_polygons_outside : bool, optional
+            If True (default), raise Exception when interior polygons fall outside 
+            bounding polygon. If False, ignore these polygons.
+        use_cache : bool, optional
+            Whether to use caching (default: False).
+        verbose : bool, optional
+            Verbosity flag (default: True).
 
-    Boundary tags is a dictionary of symbolic tags. For every tag there
-    is a list of indices referring to segments associated with that tag.
-    If a segment is omitted an Exception will be raised.
+        Returns
+        -------
+        mesh : Mesh
+            The generated mesh instance if no filename is given.
 
-    maximum_triangle_area is the maximal area per triangle
-    for the bounding polygon, excluding the  interior regions.
-
-    Interior_regions is a list of tuples consisting of (polygon,
-    resolution) for each region to be separately refined. Do not have
-    polygon lines cross or be on-top of each other.  Also do not have
-    polygon close to each other.
-
-    NOTE: If a interior_region is outside the bounding_polygon it should
-    throw an error
-
-    Interior_holes is a list of polygons for each hole.
-    hole_tags is an optional list of boundary tags for the holes, see
-                boundary_tags parameter.
-
-    This function does not allow segments to share points - use underlying
-    pmesh functionality for that
-
-    poly_geo_reference is the geo_reference of the bounding polygon and
-    the interior polygons.
-    If none, assume absolute.  Please pass one though, since absolute
-    references have a zone.
-
-    mesh_geo_reference is the geo_reference of the mesh to be created.
-    If none is given one will be automatically generated.  It was use
-    the lower left hand corner of  bounding_polygon (absolute)
-    as the x and y values for the geo_ref.
-
-    breaklines is a list of polygons. These lines will be preserved by the
-               triangulation algorithm - useful for coastlines, walls, etc.
-               The polygons are not closed.
-
-    regionPtArea is a list of user-specified point-based regions with max area
-
-    Returns the mesh instance if no filename is given
-
-    Note, interior regions should be fully nested, as overlaps may cause
-    unintended resolutions.
-
-    fail_if_polygons_outside: If True (the default) Exception in thrown
-    where interior polygons fall outside bounding polygon. If False, these
-    will be ignored and execution continued.
-
-
-    """
+        Notes
+        -----
+        Interior regions should be fully nested, as overlaps may cause unintended 
+        resolutions. This function does not allow segments to share points - use 
+        underlying pmesh functionality for that.
+        """
 
     if verbose:
         log.resource_usage_timing(log.logging.CRITICAL, "start_")
@@ -126,7 +127,7 @@ def create_mesh_from_regions(bounding_polygon,
     if use_cache is True:
         try:
             from anuga.caching import cache
-        except:
+        except ImportError:
             msg = 'Caching was requested, but caching module' +\
                   'could not be imported'
             raise Exception(msg)
@@ -223,26 +224,6 @@ def _create_mesh_from_regions(bounding_polygon,
         interior_regions = polygons_inside_boundary
 
 
-# the following segment of code could be used to Test that all the
-# interior polygons are inside the bounding_poly... however it might need
-# to be change a bit
-#
-#count = 0
-# for i in range(len(interior_regions)):
-#    region = interior_regions[i]
-#    interior_polygon = region[0]
-#    if len(inside_polygon(interior_polygon, bounding_polygon,
-#                   closed = True, verbose = False)) <> len(interior_polygon):
-#        print 'WARNING: interior polygon %d is outside bounding polygon' %(i)
-#        count += 1
-
-# if count == 0:
-#    print 'interior regions OK'
-# else:
-#    print 'check out your interior polygons'
-#    print 'check %s in production directory' %figname
-#    import sys; sys.exit()
-
     if interior_holes is not None:
         # Test that all the interior polygons are inside the bounding_poly
         for interior_polygon in interior_holes:
@@ -279,7 +260,7 @@ def _create_mesh_from_regions(bounding_polygon,
                                            yllcorner=yllcorner,
                                            zone=zone)
 
-    m = Mesh(geo_reference=mesh_geo_reference)
+    m = Pmesh(geo_reference=mesh_geo_reference)
 
     # build a list of discrete segments from the breakline polygons
     if breaklines is not None:
@@ -312,20 +293,6 @@ def _create_mesh_from_regions(bounding_polygon,
     inner.setMaxArea(maximum_triangle_area)
 
     # Do interior regions
-#    if interior_regions is not None:
-#        for polygon, res in interior_regions:
-#            m.add_region_from_polygon(polygon,
-#                                      geo_reference=poly_geo_reference)
-#            # convert bounding poly to absolute values
-#            if poly_geo_reference is not None:
-#                polygon_absolute = \
-#                    poly_geo_reference.get_absolute(polygon)
-#            else:
-#                polygon_absolute = polygon
-#            inner_point = point_in_polygon(polygon_absolute)
-#            region = m.add_region(inner_point[0], inner_point[1])
-#            region.setMaxArea(res)
-
     if interior_regions is not None:
         for polygon, res in interior_regions:
             m.add_region_from_polygon(polygon,
@@ -337,7 +304,7 @@ def _create_mesh_from_regions(bounding_polygon,
         for n, polygon in enumerate(interior_holes):
             try:
                 tags = hole_tags[n]
-            except:
+            except (KeyError, IndexError):
                 tags = {}
             m.add_hole_from_polygon(polygon,
                                     segment_tags=tags,

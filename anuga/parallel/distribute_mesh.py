@@ -1,7 +1,6 @@
 
 
-#########################################################
-#
+#=========================================================================
 #
 #  Read in a data file and subdivide the triangle list
 #
@@ -19,12 +18,7 @@
 #            Jack Kelly, Nov 2005
 #            Steve Roberts, Aug 2009 (updating to numpy)
 #
-#
-#########################################################
-
-
-from builtins import zip
-from builtins import range
+#=========================================================================
 import sys
 from os import sep
 from sys import path
@@ -34,30 +28,27 @@ import numpy as num
 
 try:
     import numpy.lib.arraysetops as numset
-except:
+except ImportError:
     import numpy as numset
 
 
 from anuga.abstract_2d_finite_volumes.neighbour_mesh import Mesh
+from anuga.abstract_2d_finite_volumes.general_mesh import General_mesh
 from anuga import indent
 
 try:
     import local_config as config
-except:
+except ImportError:
     from . import config as config
 
 
-from pymetis import part_graph
-
-try:
-    from pymetis import part_mesh
-    metis_version = "5_part_mesh"
-except:
-    metis_version = "5_part_graph"
 
 verbose = False
 
-#########################################################
+# The keys of the quantities that are to be saved and reordered.
+DEFAULT_DISTRIBUTE_QUANTITY_NAMES = ["stage", "xmomentum", "ymomentum", "elevation", "friction"]
+
+#=========================================================================
 #
 # If the triangles list is reordered, the quantities
 # assigned to the triangles must also be reorded.
@@ -73,39 +64,39 @@ verbose = False
 #
 # *) The quantaties are returned in the new ordering
 #
-#########################################################
+#=========================================================================#
 
 
-def reorder(quantities, tri_index, proc_sum):
+# def reorder(quantities, tri_index, proc_sum):
 
-    # Find the number triangles
+#     # Find the number triangles
 
-    N = len(tri_index)
+#     N = len(tri_index)
 
-    # Temporary storage area
+#     # Temporary storage area
 
-    index = num.zeros(N, int)
-    q_reord = {}
+#     index = num.zeros(N, int)
+#     q_reord = {}
 
-    # Find the new ordering of the triangles
+#     # Find the new ordering of the triangles
 
-    for i in range(N):
-        bin = tri_index[i][0]
-        bin_off_set = tri_index[i][1]
-        index[i] = proc_sum[bin]+bin_off_set
+#     for i in range(N):
+#         bin = tri_index[i][0]
+#         bin_off_set = tri_index[i][1]
+#         index[i] = proc_sum[bin]+bin_off_set
 
-    # Reorder each quantity according to the new ordering
+#     # Reorder each quantity according to the new ordering
 
-    for k in quantities:
-        q_reord[k] = num.zeros((N, 3), float)
-        for i in range(N):
-            q_reord[k][index[i]] = quantities[k].vertex_values[i]
-    del index
+#     for k in quantities:
+#         q_reord[k] = num.zeros((N, 1), float)
+#         for i in range(N):
+#             q_reord[k][index[i]] = quantities[k].centroid_values[i]
+#     del index
 
-    return q_reord
+#     return q_reord
 
 
-def reorder_new(quantities, epart_order, proc_sum):
+def reorder_quantities(quantities, epart_order):
 
     # Find the number triangles
 
@@ -118,170 +109,141 @@ def reorder_new(quantities, epart_order, proc_sum):
     # Reorder each quantity according to the new ordering
 
     for k in quantities:
-        q_reord[k] = num.zeros((N, 3), float)
-        q_reord[k][:] = quantities[k].vertex_values[epart_order]
+        q_reord[k] = num.zeros((N, 1), float)
+        q_reord[k][:,0] = quantities[k].centroid_values[epart_order]
 
-    return q_reord
-
-
-#########################################################
-#
-# Divide the mesh using a call to metis, through pymetis.
-#
-# -------------------------------------------------------
-#
-# *)  The nodes, triangles, boundary, and quantities are
-# returned. triangles_per_proc defines the subdivision.
-# The first triangles_per_proc[0] triangles are assigned
-# to processor 0, the next triangles_per_proc[1] are
-# assigned to processor 1 etc. The boundary and quantites
-# are ordered the same way as the triangles
-#
-#########################################################
+    return q_reord   
 
 
-def pmesh_divide_metis(domain, n_procs):
-    # Wrapper for old pmesh_divide_metis which does not return tri_index or r_tri_index
-    nodes, ttriangles, boundary, triangles_per_proc, quantities, tri_index, r_tri_index = pmesh_divide_metis_helper(
-        domain, n_procs)
-
-    return nodes, ttriangles, boundary, triangles_per_proc, quantities
 
 
-def pmesh_divide_metis_with_map(domain, n_procs):
 
-    return pmesh_divide_metis_helper(domain, n_procs)
+def partition_mesh(domain, n_procs, 
+                   parameters=None,  
+                   verbose=False):
+    """Partition a mesh across multiple processors using METIS, Morton, or Hilbert partitioning.
 
+    This function takes a serial mesh and distributes it across multiple processors
+    by reordering triangles according to a partitioning scheme. It generates
+    mappings between serial and parallel triangle indices and reorders mesh quantities
+    accordingly.
 
-def pmesh_divide_metis_helper(domain, n_procs):
+    Parameters
+    ----------
+    domain : Domain
+        The serial domain object containing the mesh and quantities to be partitioned.
+    n_procs : int
+        Number of processors to partition the mesh across.
+    parameters : dict, optional
+        Additional parameters for the partitioning algorithm. Supported keys:
+        
+        - 'partition_scheme' : str, default 'metis'
+            Partitioning scheme ('metis', 'morton', or 'hilbert')
+        - 'distribute_quantity_names' : list, default DEFAULT_DISTRIBUTE_QUANTITY_NAMES
+            Names of quantities to distribute
+        - 'in_place' : bool, default False
+            If True, reorder mesh in place to save memory
+        - 'verbose' : bool, default False
+            If True, print verbose output during partitioning
+            
+    verbose : bool, optional
+        If True, print verbose output during partitioning, by default False.
 
-    # Initialise the lists
-    # List, indexed by processor of # triangles.
+    Returns
+    -------
+    new_mesh : Mesh
+        The reordered mesh distributed across processors.
+    triangles_per_proc : ndarray
+        Array of shape (n_procs,) containing the number of triangles assigned 
+        to each processor.
+    new_quantities : dict
+        Dictionary of reordered quantities corresponding to the new mesh ordering.
+    new_tri_index : ndarray
+        Array of shape (n_triangles, 2) mapping serial triangle indices to
+        (processor_id, local_index) pairs.
+    epart_order : ndarray
+        Array of reordering indices used to partition the mesh from serial to 
+        parallel ordering.
 
-    #triangles_per_proc = []
+    Notes
+    -----
+    The function uses METIS, Morton, or Hilbert partitioning to distribute triangles
+    across processors. Set `in_place=True` in parameters if the original sequential 
+    domain will not be used again to save memory.
+    
+    Examples
+    --------
+    >>> new_mesh, tpp, quantities, tri_idx, epart = partition_mesh(
+    ...     domain, 4, parameters={'partition_scheme': 'metis'})
+    """
 
-    # List of lists, indexed by processor of vertex numbers
+    # Set default parameters
+    distribute_quantity_names = DEFAULT_DISTRIBUTE_QUANTITY_NAMES
+    in_place = False
+    partition_scheme = 'metis'
 
-    #tri_list = []
+    # Override defaults with user-provided parameters
+    if parameters is None:
+        parameters = {}
+    
+    if 'partition_scheme' in parameters:
+        partition_scheme = parameters['partition_scheme']
+    if 'distribute_quantity_names' in parameters:
+        distribute_quantity_names = parameters['distribute_quantity_names']
+    if 'in_place' in parameters:
+        in_place = bool(parameters['in_place'])
+    if 'verbose' in parameters:
+        verbose = bool(parameters['verbose'])
+        
+    # Output partitioning parameters if verbose
+    if verbose:
+        print("partition_mesh: Number of processors: {}".format(n_procs))
+        print("partition_mesh: In-place reordering: {}".format(in_place))
+        print("partition_mesh: Quantities to distribute: {}".format(distribute_quantity_names))
 
     # Serial to Parallel and Parallel to Serial Triangle index maps
     tri_index = {}
     r_tri_index = {}  # reverse tri index, parallel to serial triangle index mapping
-
-    # Prepare variables for the metis call
-
     n_tri = len(domain.triangles)
-    if n_procs != 1:  # Because metis chokes on it...
 
-        if metis_version == 4:
-            n_vert = domain.get_number_of_nodes()
-            t_list2 = domain.triangles.copy()
-            t_list = num.reshape(t_list2, (-1,))
-            # The 1 here is for triangular mesh elements.
-            edgecut, epart, npart = partMeshNodal(n_tri, n_vert, t_list, 1, n_procs)
-            # print edgecut
-            # print npart
-            #print epart
-            del edgecut
-            del npart
+    distribute_quantities = {k: domain.quantities[k] for k in distribute_quantity_names if k in domain.quantities}
 
+    from anuga.parallel.partitioning import metis_partition, morton_partition, hilbert_partition
 
-        if metis_version == "5_part_mesh":
-
-            objval, epart, npart = part_mesh(n_procs, domain.triangles)
-
-
-        if metis_version == "5_part_graph":
-            # build adjacency list
-            # neighbours uses negative integer-indices to denote boudary edges.
-            # pymetis totally cant handle that, so we have to delete these.
-            neigh = domain.neighbours.tolist()
-            for i in range(len(neigh)):
-                if neigh[i][2] < 0:
-                    del neigh[i][2]
-                if neigh[i][1] < 0:
-                    del neigh[i][1]
-                if neigh[i][0] < 0:
-                    del neigh[i][0]
-
-            cutcount, partvert = part_graph(n_procs, neigh)
-
-            epart = partvert
-
-
-
-        # Sometimes (usu. on x86_64), partMeshNodal returns an array of zero
-        # dimensional arrays. Correct this.
-        # TODO: Not sure if this can still happen with metis 5
-        if type(epart[0]) == num.ndarray:
-            epart_new = num.zeros(len(epart), int)
-            epart_new[:] = epart[:][0]
-            epart = epart_new
-            del epart_new
-
-        triangles_per_proc = num.bincount(epart)
-
-        msg = "Metis created a partition where at least one submesh has no triangles. "
-        msg += "Try using a smaller number of mpi processes."
-        assert num.all(triangles_per_proc > 0), msg
-
-        proc_sum = num.zeros(n_procs+1, int)
-        proc_sum[1:] = num.cumsum(triangles_per_proc)
-
-        epart_order = num.argsort(epart, kind='mergesort')
-        new_triangles = domain.triangles[epart_order]
-
-        #new_r_tri_index_flat = num.zeros((n_tri,3), int)
-        new_tri_index = num.zeros((n_tri, 2), int)
-        for i in range(n_procs):
-            ids = num.arange(proc_sum[i], proc_sum[i+1])
-            eids = epart_order[ids]
-            nrange = num.reshape(num.arange(triangles_per_proc[i]), (-1, 1))
-            nones = num.ones_like(nrange)
-            # print ids.shape
-            # print nrange.shape
-            new_tri_index[eids] = num.concatenate((i*nones, nrange), axis=1)
-            #new_r_tri_index_flat[ids] = num.concatenate((i*nones, nrange, num.reshape(eids, (-1,1))), axis = 1)
-
-        if verbose:
-            from pprint import pprint
-            print('epart')
-            pprint(epart)
-            print('new_tri_index')
-            pprint(new_tri_index)
-
-        # print 50*'='
-
-        new_boundary = {}
-        for b in domain.boundary:
-            t = new_tri_index[b[0]]
-            # print t
-            new_boundary[proc_sum[t[0]]+t[1], b[1]] = domain.boundary[b]
-
-        #quantities = reorder(domain.quantities, tri_index, proc_sum)
-        new_quantities = reorder_new(domain.quantities, epart_order, proc_sum)
-
+    if verbose: print("partition_mesh: Computing partitioning using {}...".format(partition_scheme))
+    if partition_scheme == 'morton':
+        epart_order, triangles_per_proc = morton_partition(domain, n_procs)
+    elif partition_scheme == 'hilbert':
+        epart_order, triangles_per_proc = hilbert_partition(domain, n_procs)
     else:
-        new_boundary = domain.boundary.copy()
-        triangles_per_proc = [n_tri]
-        new_triangles = domain.triangles.copy()
-        new_tri_index = []
-        epart_order = []
+        epart_order, triangles_per_proc = metis_partition(domain, n_procs)
 
-        # This is essentially the same as a chunk of code from reorder.
+    # Build processor IDs and local indices in a fully vectorized way
+    proc_ids = num.repeat(num.arange(n_procs, dtype=int), triangles_per_proc)
+    local_ids = num.concatenate(
+        [num.arange(k, dtype=int) for k in triangles_per_proc]
+    )
 
-        new_quantities = {}
-        for k in domain.quantities:
-            new_quantities[k] = num.zeros((n_tri, 3), float)
-            for i in range(n_tri):
-                new_quantities[k][i] = domain.quantities[k].vertex_values[i]
+    new_tri_index = num.empty((n_tri, 2), dtype=int)
+    new_tri_index[epart_order] = num.column_stack((proc_ids, local_ids))
 
-    # Extract the node list
-    new_nodes = domain.get_nodes().copy()
+    new_quantities = reorder_quantities(distribute_quantities, epart_order)
 
-    return new_nodes, new_triangles, new_boundary, triangles_per_proc, new_quantities, new_tri_index, epart_order
+    # If you are just distributing the sequential domain and will not be using 
+    # it again, then some memory can be saved by setting in_place = true
+    new_mesh = domain.mesh.reorder(epart_order, in_place=in_place)  
 
-#########################################################
+    return new_mesh, triangles_per_proc, new_quantities, new_tri_index, epart_order
+
+def partition_mesh_without_map(domain, n_procs):
+    # Wrapper of partition_mesh which does not return tri_index or r_tri_index
+
+    mesh, triangles_per_proc, quantities, tri_index, r_tri_index = partition_mesh(
+        domain, n_procs)
+
+    return nodes, ttriangles, boundary, triangles_per_proc, quantities
+
+#=========================================================================
 #
 # Subdivide the domain. This module is primarily
 # responsible for building the ghost layer and
@@ -293,10 +255,10 @@ def pmesh_divide_metis_helper(domain, n_procs):
 #            Steve Roberts, Aug 2009 (convert to numpy)
 #
 #
-#########################################################
+#=========================================================================
 
 
-#########################################################
+#=========================================================================
 #
 # Subdivide the triangles into non-overlapping domains.
 #
@@ -317,7 +279,7 @@ def pmesh_divide_metis_helper(domain, n_procs):
 # returned. The node information consists of
 # [global_id, x_coord, y_coord].
 #
-#########################################################
+#=========================================================================
 
 def submesh_full(mesh, triangles_per_proc):
 
@@ -395,14 +357,10 @@ def submesh_full(mesh, triangles_per_proc):
     submesh["full_triangles"] = triangle_list
     submesh["full_boundary"] = boundary_list
 
-    # Clean up before exiting
-
-    #del (nodemap)
-
     return submesh
 
 
-#########################################################
+#=========================================================================
 #
 # Build the ghost layer of triangles
 #
@@ -424,7 +382,7 @@ def submesh_full(mesh, triangles_per_proc):
 #  *) The triangle information consists of
 # [triangle number, t], where t = [v1, v2, v3].
 #
-#########################################################
+#=========================================================================
 
 def ghost_layer_old(submesh, mesh, p, tupper, tlower, parameters=None):
 
@@ -578,7 +536,7 @@ def ghost_layer(submesh, mesh, p, tupper, tlower, parameters=None):
 
     return new_subnodes, new_subtriangles, layer_width
 
-#########################################################
+#=========================================================================
 #
 # Find the edges of the ghost trianlges that do not
 # have a neighbour in the current cell. These are
@@ -604,7 +562,7 @@ def ghost_layer(submesh, mesh, p, tupper, tlower, parameters=None):
 # assigned to the key is 'ghost'
 #
 #
-#########################################################
+#=========================================================================
 
 
 def is_in_processor(ghost_list, tlower, tupper, n):
@@ -713,7 +671,7 @@ def ghost_bnd_layer(ghosttri, tlower, tupper, mesh, p):
 
     return subboundary
 
-#########################################################
+#=======================================================================
 #
 # The ghost triangles on the current processor will need
 # to get updated information from the neighbouring
@@ -727,7 +685,7 @@ def ghost_bnd_layer(ghosttri, tlower, tupper, mesh, p):
 #  *) The ghost communication pattern consists of
 # [global node number, neighbour processor number].
 #
-#########################################################
+#=========================================================================
 
 
 def ghost_commun_pattern_old(subtri, p, tri_per_proc):
@@ -787,7 +745,7 @@ def ghost_commun_pattern(subtri, p, tri_per_proc_range):
 
     return ghost_commun
 
-#########################################################
+#=========================================================================
 #
 # The full triangles in this processor must communicate
 # updated information to neighbouring processor that
@@ -809,7 +767,7 @@ def ghost_commun_pattern(subtri, p, tri_per_proc_range):
 # [global id, [p1, p2, ...]], where p1, p2 etc contain
 # a ghost node copy of the triangle global id.
 #
-#########################################################
+#=========================================================================
 
 
 def full_commun_pattern(submesh, tri_per_proc):
@@ -847,7 +805,7 @@ def full_commun_pattern(submesh, tri_per_proc):
     return full_commun
 
 
-#########################################################
+#=========================================================================
 #
 # Given the non-overlapping grid partition, an extra layer
 # of triangles are included to help with the computations.
@@ -871,7 +829,7 @@ def full_commun_pattern(submesh, tri_per_proc):
 #
 #  *) The ghost_triangles, ghost_nodes, ghost_boundary,
 # ghost_commun and full_commun is added to submesh
-#########################################################
+#=========================================================================
 
 def submesh_ghost(submesh, mesh, triangles_per_proc, parameters=None):
 
@@ -931,7 +889,7 @@ def submesh_ghost(submesh, mesh, triangles_per_proc, parameters=None):
     return submesh
 
 
-#########################################################
+#=========================================================================
 #
 # Certain quantities may be assigned to the triangles,
 # these quantities must be subdivided in the same way
@@ -947,7 +905,7 @@ def submesh_ghost(submesh, mesh, triangles_per_proc, parameters=None):
 #
 #  *) The quantities attached to the ghost triangles are
 # stored in ghost_quan
-#########################################################
+#=========================================================================
 
 def submesh_quantities(submesh, quantities, triangles_per_proc):
 
@@ -980,16 +938,16 @@ def submesh_quantities(submesh, quantities, triangles_per_proc):
 
         for k in quantities:
             submesh["full_quan"][k].append(quantities[k][lower:upper])
-            submesh["ghost_quan"][k].append(num.zeros((M, 3), float))
+            submesh["ghost_quan"][k].append(num.zeros((M, 1), float))
             for j in range(M):
-                submesh["ghost_quan"][k][p][j] = \
-                    quantities[k][global_id[j]]
+                submesh["ghost_quan"][k][p][j, 0] = \
+                    quantities[k][global_id[j], 0]
 
         lower = upper
 
     return submesh
 
-#########################################################
+#=========================================================================
 #
 # Build the grid partition on the host.
 #
@@ -1002,24 +960,20 @@ def submesh_quantities(submesh, quantities, triangles_per_proc):
 # full_nodes, full_boundary, ghost_triangles, ghost_nodes,
 # ghost_boundary, ghost_commun and full_commun and true boundary polygon is returned.
 #
-#########################################################
+#=========================================================================
 
-
-def build_submesh(nodes, triangles, boundary, quantities,
-                  triangles_per_proc, parameters=None):
+def build_submesh(mesh, quantities,
+                  triangles_per_proc, parameters=None, verbose=False):
 
     # Temporarily build the mesh to find the neighbouring
     # triangles and true boundary polygon\
 
-    mesh = Mesh(nodes, triangles, boundary)
-    boundary_polygon = mesh.get_boundary_polygon()
+    #mesh = Mesh(nodes, triangles, boundary)
 
     # Subdivide into non-overlapping partitions
-
     submeshf = submesh_full(mesh, triangles_per_proc)
 
     # Add any extra ghost boundary layer information
-
     submeshg = submesh_ghost(submeshf, mesh, triangles_per_proc, parameters)
 
     # Order the quantities information to be the same as the triangle
@@ -1028,10 +982,10 @@ def build_submesh(nodes, triangles, boundary, quantities,
     submesh = submesh_quantities(submeshg, quantities,
                                  triangles_per_proc)
 
-    submesh["boundary_polygon"] = boundary_polygon
+    #submesh["boundary_polygon"] = boundary_polygon
     return submesh
 
-#########################################################
+#=========================================================================
 #
 #  Given the subdivision of the grid assigned to the
 # current processor convert it into a form that is
@@ -1049,10 +1003,10 @@ def build_submesh(nodes, triangles, boundary, quantities,
 #            Steve Roberts, Aug 2009 (updating to numpy)
 #
 #
-#########################################################
+#=========================================================================
 
 
-#########################################################
+#=========================================================================#
 # Convert the format of the data to that used by ANUGA
 #
 #
@@ -1067,7 +1021,7 @@ def build_submesh(nodes, triangles, boundary, quantities,
 # *) The nodes, triangles and boundary edges defined by
 # the new numbering scheme are returned
 #
-#########################################################
+#=========================================================================
 
 def build_local_GA(nodes, triangles, boundaries, tri_map):
 
@@ -1106,7 +1060,7 @@ def build_local_GA(nodes, triangles, boundaries, tri_map):
     return GAnodes, GAtriangles, GAboundaries, node_map
 
 
-#########################################################
+#=========================================================================
 # Change the communication format to that needed by the
 # parallel advection file.
 #
@@ -1127,7 +1081,7 @@ def build_local_GA(nodes, triangles, boundaries, tri_map):
 # local and global id do not need to be
 # compared when the information is sent/received.
 #
-#########################################################
+#=========================================================================
 
 def build_local_commun(tri_map, ghostc, fullc, nproc):
 
@@ -1174,7 +1128,7 @@ def build_local_commun(tri_map, ghostc, fullc, nproc):
     return ghost_recv, full_send
 
 
-#########################################################
+#=========================================================================
 # Convert the format of the data to that used by ANUGA
 #
 #
@@ -1191,7 +1145,7 @@ def build_local_commun(tri_map, ghostc, fullc, nproc):
 # *) The nodes, triangles, boundary edges and communication
 # pattern defined by the new numbering scheme are returned
 #
-#########################################################
+#=========================================================================
 
 def build_local_mesh(submesh, lower_t, upper_t, nproc):
 
@@ -1239,7 +1193,7 @@ def build_local_mesh(submesh, lower_t, upper_t, nproc):
     for k in submesh["full_quan"]:
         Nf = len(submesh["full_quan"][k])
         Ng = len(submesh["ghost_quan"][k])
-        quantities[k] = num.zeros((Nf+Ng, 3), float)
+        quantities[k] = num.zeros((Nf+Ng, 1), float)
         quantities[k][0:Nf] = submesh["full_quan"][k]
         quantities[k][Nf:Nf+Ng] = submesh["ghost_quan"][k]
 
@@ -1258,7 +1212,7 @@ def build_local_mesh(submesh, lower_t, upper_t, nproc):
         full_send, tri_map, node_map, tri_l2g, node_l2g, ghost_layer_width
 
 
-#########################################################
+#=========================================================================
 #
 # Handle the communication between the host machine
 # (processor 0) and the processors. The host machine is
@@ -1275,10 +1229,10 @@ def build_local_mesh(submesh, lower_t, upper_t, nproc):
 #            Steve Roberts, Aug 2009 (update to numpy)
 #
 #
-#########################################################
+#=========================================================================
 
 
-#########################################################
+#=========================================================================
 #
 # Send the submesh to processor p.
 #
@@ -1289,7 +1243,7 @@ def build_local_mesh(submesh, lower_t, upper_t, nproc):
 #
 # *) All of the information has been sent to processor p.
 #
-#########################################################
+#=========================================================================
 
 def send_submesh(submesh, triangles_per_proc, p, verbose=True):
 
@@ -1400,7 +1354,7 @@ def send_submesh(submesh, triangles_per_proc, p, verbose=True):
         pypar.send(x, p, bypass=True)
 
 
-#########################################################
+#=====================================================================
 #
 # Receive the submesh from processor p.
 #
@@ -1415,7 +1369,7 @@ def send_submesh(submesh, triangles_per_proc, p, verbose=True):
 # *) The information is returned in a form needed by the
 # GA datastructure.
 #
-#########################################################
+#=====================================================================
 
 def rec_submesh_flat(p, verbose=True):
 
@@ -1524,13 +1478,13 @@ def rec_submesh_flat(p, verbose=True):
 
     submesh_cell["full_quan"] = {}
     for i in range(no_quantities):
-        x = num.zeros((no_full_triangles, 3), float)
+        x = num.zeros((no_full_triangles, 1), float)
         pypar.receive(p, buffer=x, bypass=True)
         submesh_cell["full_quan"][qkeys[i]] = x
 
     submesh_cell["ghost_quan"] = {}
     for i in range(no_quantities):
-        x = num.zeros((no_ghost_triangles, 3), float)
+        x = num.zeros((no_ghost_triangles, 1), float)
         pypar.receive(p, buffer=x, bypass=True)
         submesh_cell["ghost_quan"][qkeys[i]] = x
 
@@ -1538,7 +1492,7 @@ def rec_submesh_flat(p, verbose=True):
         no_full_nodes, no_full_triangles
 
 
-#########################################################
+#=========================================================================
 #
 # Receive the submesh from processor p.
 #
@@ -1553,7 +1507,7 @@ def rec_submesh_flat(p, verbose=True):
 # *) The information is returned in a form needed by the
 # GA datastructure.
 #
-#########################################################
+#=====================================================================
 
 def rec_submesh(p, verbose=True):
 
@@ -1587,7 +1541,7 @@ def rec_submesh(p, verbose=True):
         tri_l2g, node_l2g, ghost_layer_width
 
 
-#########################################################
+#=========================================================================
 #
 # Extract the submesh that will belong to the
 # processor 0 (i.e. processor zero)
@@ -1601,7 +1555,7 @@ def rec_submesh(p, verbose=True):
 # ghost_boundary, ghost_commun and full_commun belonging
 # to processor zero are returned.
 #
-#########################################################
+#=========================================================================#
 def extract_submesh(submesh, triangles_per_proc, p2s_map=None, p=0):
 
     submesh_cell = {}
@@ -1637,7 +1591,7 @@ def extract_submesh(submesh, triangles_per_proc, p2s_map=None, p=0):
     else:
         try:
             tri_l2g = p2s_map[tri_l2g]
-        except:
+        except (IndexError, KeyError):
             tri_l2g = p2s_map
 
     return points, vertices, boundary, quantities, ghost_recv_dict, \

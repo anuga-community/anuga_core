@@ -11,10 +11,7 @@ Values will be interpolated across the surface of the mesh. Holes in the mesh
 have an undefined value.
 
 """
-
-from builtins import str
 from six import string_types
-from builtins import range
 
 import numpy as num
 
@@ -131,7 +128,7 @@ def file_function(filename,
     if use_cache is True:
         try:
             from anuga.caching import cache
-        except:
+        except ImportError:
             msg = 'Caching was requested, but caching module'+\
                   'could not be imported'
             raise Exception(msg)

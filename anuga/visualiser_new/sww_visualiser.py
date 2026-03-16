@@ -1,4 +1,3 @@
-from builtins import range
 from Numeric import array, Float
 from anuga.file.netcdf import NetCDFFile
 from visualiser import Visualiser

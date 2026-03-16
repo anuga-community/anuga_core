@@ -1,9 +1,6 @@
 """
 Script to measure how long pmesh spends doing various methods
 """
-
-
-from builtins import range
 from .mesh import *
 from anuga.pmesh import *
 import time
@@ -39,7 +36,7 @@ tinitial = time.time()
 mem_initial = mem_usage()
 print("mem_initial", mem_initial)
 #------------------------------------------
-mesh = Mesh()
+mesh = Pmesh()
 id = 0
 for i in range(n):
     for j in range(n):

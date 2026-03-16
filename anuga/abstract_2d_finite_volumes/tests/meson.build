@@ -11,6 +11,7 @@ python_sources = [
     'test_generic_domain.py',
     'test_ghost.py',
     'test_neighbour_mesh.py',
+    'test_neighbour_mesh_reorder.py',
     'test_pmesh2domain.py',
     'test_quantity.py',
     'test_region.py',

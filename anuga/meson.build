@@ -7,13 +7,25 @@ python_sources = [
     'extras.py',
     '__init__.py',
     '__metadata__.py',
-    'revision.py',
 ]
-
 
 py3.install_sources(
   python_sources,
   subdir: 'anuga'
+)
+
+# Generate _version.py from git metadata at build time
+_version_conf = configuration_data()
+_version_conf.set('VERSION', meson.project_version())
+_version_conf.set('GIT_SHA',  _git_sha)
+_version_conf.set('GIT_DATE', _git_date)
+
+configure_file(
+  input:         '_version.py.in',
+  output:        '_version.py',
+  configuration: _version_conf,
+  install:       true,
+  install_dir:   py3.get_install_dir() / 'anuga',
 )
 
 
@@ -37,6 +49,7 @@ subdir('operators')
 subdir('parallel')
 subdir('pmesh')
 subdir('rain')
+subdir('scenario')
 subdir('shallow_water')
 subdir('simulation')
 subdir('structures')

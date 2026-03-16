@@ -1,8 +1,9 @@
 
 python_sources = [
+  '__init__.py',
   'config.py',
   'distribute_mesh.py',
-  '__init__.py',
+  'partitioning.py',
   'parallel_advection.py',
   'parallel_api.py',
   'parallel_boyd_box_operator.py',

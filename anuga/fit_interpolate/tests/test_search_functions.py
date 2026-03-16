@@ -1,7 +1,4 @@
 #!/usr/bin/env python
-
-
-from builtins import range
 import unittest
 from anuga.pmesh.mesh_quadtree import MeshQuadtree
 
@@ -25,12 +22,12 @@ class Test_search_functions(unittest.TestCase):
         FN = 'search_functions_ext.c'
         try:
             import search_functions_ext
-        except:
+        except ImportError:
             from compile import compile
 
             try:
                 compile(FN)
-            except:
+            except Exception:
                 raise Exception('Could not compile %s' % FN)
             else:
                 import search_functions_ext

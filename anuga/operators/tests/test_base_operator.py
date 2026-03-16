@@ -37,7 +37,7 @@ class Test_Operator(unittest.TestCase):
         
         try:
             operator()
-        except:
+        except Exception:
             pass
         else:
             raise Exception('should have raised an exception')

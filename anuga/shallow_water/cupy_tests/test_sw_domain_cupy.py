@@ -26,7 +26,7 @@ class Test_DE_cuda(unittest.TestCase):
         for file in ['domain_cuda.sww', 'domain_original.sww', 'domain_cuda_depth_yeah.asc', 'domain_cuda_depth_yeah.prj']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass 
 
 

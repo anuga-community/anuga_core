@@ -92,10 +92,10 @@ if gdal_available:
             msg= shapefile +' is not a polygon shapefile'
             raise Exception(msg)
 
-        # Need a single polygon 
+        # Need a single polygon
         try:
             assert(len(layer)==1)
-        except:
+        except AssertionError:
             print(shapefile)
         
         boundary_poly=[]
@@ -134,10 +134,10 @@ if gdal_available:
             msg= shapefile +' is not a line shapefile'
             raise Exception(msg) 
 
-        # Need a single line 
+        # Need a single line
         try:
             assert len(layer)==1
-        except:
+        except AssertionError:
             print(shapefile)
         
         line_all=[]
@@ -194,11 +194,11 @@ if gdal_available:
             try:
                 outPol=readShp_1PolyGeo(filename, dropLast = (not close_polygon_shapefiles))
                 assert len(outPol)>1
-            except:
+            except Exception:
                 try:
                     outPol= readShp_1LineGeo(filename)
                     assert len(outPol)>1
-                except:
+                except Exception:
                     msg= 'Could not read '+ filename +\
                          ' as either polygon or line shapefile'
                     raise Exception(msg)
@@ -207,7 +207,7 @@ if gdal_available:
                 outPol = read_csv_optional_header(filename)
                 # Only take the first 2 columns
                 outPol = outPol[:,0:2].tolist()
-            except:
+            except Exception:
                 msg = 'Failed reading polygon '+ filename +\
                       ' with anuga.utilities.spatialInputUtils.read_polygon'
                 raise Exception(msg)
@@ -270,8 +270,8 @@ if gdal_available:
         if fileExtension=='.shp':
             try:
                 points = readShpPts(filename)
-            except:
-                msg = 'Could not read points from ' + filename 
+            except Exception:
+                msg = 'Could not read points from ' + filename
                 raise Exception(msg)
         else:
             # Assume txt format
@@ -279,7 +279,7 @@ if gdal_available:
                 #points=numpy.genfromtxt(filename,delimiter=',',skip_header=1)
                 #points=points[:,0:2].tolist()
                 points=anuga.read_polygon(filename)
-            except:
+            except Exception:
                 msg = 'Could not read points from ' + filename +\
                       '. Make sure it has a single header row, ' +\
                       'with comma separator, and the first 2 columns are x,y'
