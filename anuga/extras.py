@@ -137,7 +137,6 @@ def create_domain_from_file(filename, DomainClass=Domain):
 def create_domain_from_regions(bounding_polygon,
                                boundary_tags,
                                maximum_triangle_area=None,
-                               mesh_filename=None,
                                interior_regions=None,
                                interior_holes=None,
                                hole_tags=None,
@@ -213,13 +212,12 @@ def create_domain_from_regions(bounding_polygon,
     args = (bounding_polygon,
             boundary_tags)
     
-    if mesh_filename is None:
-        import tempfile
-        import time
-        mesh_filename = 'mesh_%d.msh'%int(time.time())
+    # if mesh_filename is None:
+    #     import tempfile
+    #     import time
+    #     mesh_filename = 'mesh_%d.msh'%int(time.time())
     
     kwargs = {'maximum_triangle_area': maximum_triangle_area,
-              'mesh_filename': mesh_filename,
               'interior_regions': interior_regions,
               'interior_holes': interior_holes,
               'hole_tags': hole_tags,
@@ -257,8 +255,7 @@ def create_domain_from_regions(bounding_polygon,
         
 def _create_domain_from_regions(bounding_polygon,
                                 boundary_tags,
-                                maximum_triangle_area=None,
-                                mesh_filename=None,                           
+                                maximum_triangle_area=None,                         
                                 interior_regions=None,
                                 interior_holes=None,
                                 hole_tags=None,
@@ -281,7 +278,6 @@ def _create_domain_from_regions(bounding_polygon,
                              boundary_tags,
                              maximum_triangle_area=maximum_triangle_area,
                              interior_regions=interior_regions,
-                             filename=mesh_filename,
                              interior_holes=interior_holes,
                              hole_tags=hole_tags,
                              poly_geo_reference=poly_geo_reference,
