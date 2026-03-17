@@ -53,11 +53,13 @@ def rectangular_with_neighbours(m, n, len1=1.0, len2=1.0, origin=(0.0, 0.0)):
     points = num.empty(((m+1)*(n+1), 2), dtype=float)
     elements = num.empty((2*m*n, 3), dtype=num.int64)
     neighbours = num.full((2*m*n, 3), -1, dtype=num.int64)
+    neighbour_edges = num.full((2*m*n, 3), -1, dtype=num.int64)
 
     from .mesh_factory_ext import rectangular_construct
-    boundary = rectangular_construct(params, arrOrigin, points, elements, neighbours)
+    boundary = rectangular_construct(params, arrOrigin, points, elements,
+                                     neighbours, neighbour_edges)
 
-    return points, elements, boundary, neighbours
+    return points, elements, boundary, neighbours, neighbour_edges
 
 def rectangular(m, n, len1=1.0, len2=1.0, origin = (0.0, 0.0)):
     """
@@ -85,8 +87,9 @@ def rectangular(m, n, len1=1.0, len2=1.0, origin = (0.0, 0.0)):
         Dictionary mapping boundary edge tags to edge vertex indices.
     """
 
-    points, elements, boundary, neighbours = rectangular_with_neighbours(m, n, len1, len2, origin)
-    
+    points, elements, boundary, neighbours, neighbour_edges = \
+        rectangular_with_neighbours(m, n, len1, len2, origin)
+
     return points, elements, boundary
 
 
@@ -125,39 +128,34 @@ def rectangular_cross_with_neighbours(m, n, len1=1.0, len2=1.0, origin = (0.0, 0
     neighbours : ndarray
         Array of shape (4*m*n, 3) containing the neighbour element indices
         for each element. -1 indicates no neighbour (boundary edge).
+    neighbour_edges : ndarray
+        Array of shape (4*m*n, 3) containing, for each edge of each element,
+        the edge index of the neighbouring element that connects back.
+        -1 for boundary edges.
     Notes
     -----
-    This function uses a C extension module (mesh_factory_ext) for efficient
-    mesh construction.
+    This function uses a Cython extension module (mesh_factory_ext) for
+    efficient mesh construction.
     """
-
-
-    len1 = float(len1)
-    len2 = float(len2)
-    neighbours = num.zeros((4*m*n, 3), int) - 1
 
     m = int(m)
     n = int(n)
+    len1 = float(len1)
+    len2 = float(len2)
 
-    params = []
-    params.append(m)
-    params.append(n)
-    params.append(len1)
-    params.append(len2)
-
-    arrParams = num.array(params, dtype=float)
+    arrParams = num.array([m, n, len1, len2], dtype=float)
     arrOrigin = num.array(origin, dtype=float)
-    
-    points = num.empty([(m+1)*(n+1)+m*n,2], dtype=float)
-    elements = num.empty([4*m*n,3], dtype=int)
+
+    points = num.empty([(m+1)*(n+1)+m*n, 2], dtype=float)
+    elements = num.empty([4*m*n, 3], dtype=num.int64)
+    neighbours = num.full([4*m*n, 3], -1, dtype=num.int64)
+    neighbour_edges = num.full([4*m*n, 3], -1, dtype=num.int64)
 
     from .mesh_factory_ext import rectangular_cross_construct
-    boundary = rectangular_cross_construct(arrParams, arrOrigin, points, elements, neighbours)
+    boundary = rectangular_cross_construct(arrParams, arrOrigin, points, elements,
+                                           neighbours, neighbour_edges)
 
-    #points = list(arrPoints)
-    #elements = list(arrElements)
-
-    return points, elements, boundary, neighbours
+    return points, elements, boundary, neighbours, neighbour_edges
 
 def rectangular_cross(m, n, len1=1.0, len2=1.0, origin = (0.0, 0.0)):
     """
@@ -193,7 +191,8 @@ def rectangular_cross(m, n, len1=1.0, len2=1.0, origin = (0.0, 0.0)):
 
 
 
-    points, elements, boundary, neighbours = rectangular_cross_with_neighbours(m, n, len1, len2, origin)
+    points, elements, boundary, neighbours, neighbour_edges = \
+        rectangular_cross_with_neighbours(m, n, len1, len2, origin)
 
     return points, elements, boundary
 

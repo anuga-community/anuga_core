@@ -44,11 +44,14 @@ def rectangular_cross_domain(*args, **kwargs):
         verbose = False
 
 
-    points, vertices, boundary, neighbours = rectangular_cross_with_neighbours(*args, **kwargs)
+    points, vertices, boundary, neighbours, neighbour_edges = \
+        rectangular_cross_with_neighbours(*args, **kwargs)
 
-    mesh = Mesh(points, vertices, boundary, triangle_neighbours=neighbours)
+    mesh = Mesh(points, vertices, boundary,
+                triangle_neighbours=neighbours,
+                triangle_neighbour_edges=neighbour_edges)
 
-    return Domain(mesh, verbose= verbose)
+    return Domain(mesh, verbose=verbose)
 
 def rectangular_cross_mesh(*args, **kwargs):
     """Create a rectangular mesh.
@@ -84,9 +87,12 @@ def rectangular_cross_mesh(*args, **kwargs):
         verbose = False
 
 
-    points, vertices, boundary, neighbours = rectangular_cross_with_neighbours(*args, **kwargs)
+    points, vertices, boundary, neighbours, neighbour_edges = \
+        rectangular_cross_with_neighbours(*args, **kwargs)
 
-    mesh = Mesh(points, vertices, boundary, triangle_neighbours=neighbours)
+    mesh = Mesh(points, vertices, boundary,
+                triangle_neighbours=neighbours,
+                triangle_neighbour_edges=neighbour_edges)
 
     return mesh
 

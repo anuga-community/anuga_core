@@ -34,18 +34,20 @@ def _make_mesh_cross(m=3, n=4, len1=1.0, len2=1.0):
     """Return a Mesh built from rectangular_cross_with_neighbours."""
     from anuga.abstract_2d_finite_volumes.mesh_factory import \
         rectangular_cross_with_neighbours
-    points, triangles, boundary, neighbours = \
+    points, triangles, boundary, neighbours, neighbour_edges = \
         rectangular_cross_with_neighbours(m, n, len1, len2)
-    return Mesh(points, triangles, boundary, triangle_neighbours=neighbours)
+    return Mesh(points, triangles, boundary, triangle_neighbours=neighbours,
+                triangle_neighbour_edges=neighbour_edges)
 
 
 def _make_mesh_rect(m=3, n=4, len1=1.0, len2=1.0):
     """Return a Mesh built from rectangular_with_neighbours."""
     from anuga.abstract_2d_finite_volumes.mesh_factory import \
         rectangular_with_neighbours
-    points, triangles, boundary, neighbours = \
+    points, triangles, boundary, neighbours, neighbour_edges = \
         rectangular_with_neighbours(m, n, len1, len2)
-    return Mesh(points, triangles, boundary, triangle_neighbours=neighbours)
+    return Mesh(points, triangles, boundary, triangle_neighbours=neighbours,
+                triangle_neighbour_edges=neighbour_edges)
 
 
 _TSH_CONTENT = """\
@@ -255,7 +257,7 @@ class Test_Domain_from_raw_arrays(unittest.TestCase):
         from anuga.abstract_2d_finite_volumes.mesh_factory import \
             rectangular_cross_with_neighbours
         m, n = 2, 2
-        self.points, self.triangles, self.boundary, _ = \
+        self.points, self.triangles, self.boundary, _, _ = \
             rectangular_cross_with_neighbours(m, n)
         self.m, self.n = m, n
         self.domain = Domain(self.points, self.triangles, self.boundary)

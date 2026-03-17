@@ -21,13 +21,13 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
 
     def test_array_shapes(self):
         m, n = 3, 4
-        points, elements, boundary, neighbours = self._call(m, n)
+        points, elements, boundary, neighbours, neighbour_edges = self._call(m, n)
         self.assertEqual(points.shape,     ((m+1)*(n+1), 2))
         self.assertEqual(elements.shape,   (2*m*n, 3))
         self.assertEqual(neighbours.shape, (2*m*n, 3))
 
     def test_1x1_mesh(self):
-        points, elements, boundary, neighbours = self._call(1, 1)
+        points, elements, boundary, neighbours, neighbour_edges = self._call(1, 1)
         self.assertEqual(points.shape,   (4, 2))
         self.assertEqual(elements.shape, (2, 3))
 
@@ -36,7 +36,7 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_unit_square_corners(self):
-        points, _, _, _ = self._call(2, 2)
+        points, _, _, _, _ = self._call(2, 2)
         # index(i,j) = j + i*(n+1), so corner indices are:
         # (0,0)->0, (0,2)->2, (2,0)->6, (2,2)->8
         num.testing.assert_allclose(points[0],  [0.0, 0.0])
@@ -45,19 +45,19 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
         num.testing.assert_allclose(points[8],  [1.0, 1.0])
 
     def test_origin_offset(self):
-        points, _, _, _ = self._call(2, 2, origin=(5.0, 10.0))
+        points, _, _, _, _ = self._call(2, 2, origin=(5.0, 10.0))
         num.testing.assert_allclose(points[0], [5.0, 10.0])
         num.testing.assert_allclose(points[8], [6.0, 11.0])
 
     def test_non_unit_lengths(self):
-        points, _, _, _ = self._call(2, 3, len1=4.0, len2=6.0)
+        points, _, _, _, _ = self._call(2, 3, len1=4.0, len2=6.0)
         # point at index(2,3) = 3 + 2*4 = 11
         num.testing.assert_allclose(points[11], [4.0, 6.0])
 
     def test_point_spacing(self):
         m, n = 4, 3
         len1, len2 = 2.0, 3.0
-        points, _, _, _ = self._call(m, n, len1=len1, len2=len2)
+        points, _, _, _, _ = self._call(m, n, len1=len1, len2=len2)
         delta1 = len1 / m
         delta2 = len2 / n
         for i in range(m+1):
@@ -72,7 +72,7 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
 
     def test_element_vertices_in_range(self):
         m, n = 3, 4
-        points, elements, _, _ = self._call(m, n)
+        points, elements, _, _, _ = self._call(m, n)
         np_pts = (m+1)*(n+1)
         self.assertTrue(num.all(elements >= 0))
         self.assertTrue(num.all(elements < np_pts))
@@ -80,14 +80,14 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
     def test_element_vertices_1x1(self):
         # index(i,j)=j+i*2: a=0,b=1,c=2,d=3
         # lower [c,d,a]=[2,3,0], upper [b,a,d]=[1,0,3]
-        _, elements, _, _ = self._call(1, 1)
+        _, elements, _, _, _ = self._call(1, 1)
         num.testing.assert_array_equal(elements[0], [2, 3, 0])  # lower
         num.testing.assert_array_equal(elements[1], [1, 0, 3])  # upper
 
     def test_no_degenerate_elements(self):
         """All three vertices of every element must be distinct."""
         m, n = 5, 5
-        _, elements, _, _ = self._call(m, n)
+        _, elements, _, _, _ = self._call(m, n)
         for k, tri in enumerate(elements):
             self.assertEqual(len(set(tri)), 3, f"Degenerate element {k}: {tri}")
 
@@ -97,7 +97,7 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
 
     def test_boundary_tag_counts(self):
         m, n = 3, 4
-        _, _, boundary, _ = self._call(m, n)
+        _, _, boundary, _, _ = self._call(m, n)
         bottom = [v for v in boundary.values() if v == 'bottom']
         top    = [v for v in boundary.values() if v == 'top']
         left   = [v for v in boundary.values() if v == 'left']
@@ -110,7 +110,7 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
     def test_boundary_edge_indices(self):
         """Boundary edges must use edge index 1 (bottom/top) or 2 (left/right)."""
         m, n = 2, 2
-        _, _, boundary, _ = self._call(m, n)
+        _, _, boundary, _, _ = self._call(m, n)
         for (elem, edge), tag in boundary.items():
             if tag in ('bottom', 'top'):
                 self.assertEqual(edge, 1, f"Expected edge 1 for {tag}, got {edge}")
@@ -119,7 +119,7 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
 
     def test_boundary_element_indices_in_range(self):
         m, n = 3, 3
-        _, elements, boundary, _ = self._call(m, n)
+        _, elements, boundary, _, _ = self._call(m, n)
         for (elem, edge), tag in boundary.items():
             self.assertGreaterEqual(elem, 0)
             self.assertLess(elem, len(elements))
@@ -130,13 +130,13 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
 
     def test_neighbours_shape(self):
         m, n = 3, 4
-        _, _, _, neighbours = self._call(m, n)
+        _, _, _, neighbours, _ = self._call(m, n)
         self.assertEqual(neighbours.shape, (2*m*n, 3))
 
     def test_neighbours_values_in_range(self):
         """All neighbour entries are either -1 or a valid element index."""
         m, n = 4, 5
-        _, _, _, neighbours = self._call(m, n)
+        _, _, _, neighbours, _ = self._call(m, n)
         Nt = 2*m*n
         for val in neighbours.flat:
             self.assertTrue(val == -1 or (0 <= val < Nt),
@@ -145,7 +145,7 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
     def test_neighbours_symmetry(self):
         """If element A lists B as a neighbour on some edge, B must list A."""
         m, n = 4, 5
-        _, _, _, neighbours = self._call(m, n)
+        _, _, _, neighbours, _ = self._call(m, n)
         Nt = 2*m*n
         for a in range(Nt):
             for edge in range(3):
@@ -157,7 +157,7 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
     def test_boundary_edges_are_minus_one(self):
         """Edges tagged as boundary must have neighbour -1."""
         m, n = 3, 4
-        _, _, boundary, neighbours = self._call(m, n)
+        _, _, boundary, neighbours, _ = self._call(m, n)
         for (elem, edge), tag in boundary.items():
             self.assertEqual(neighbours[elem, edge], -1,
                              f"Boundary edge ({elem},{edge}) tag={tag} "
@@ -166,7 +166,7 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
     def test_internal_edges_not_minus_one(self):
         """Internal edges (not in boundary dict) must have a valid neighbour."""
         m, n = 3, 4
-        _, _, boundary, neighbours = self._call(m, n)
+        _, _, boundary, neighbours, _ = self._call(m, n)
         Nt = 2*m*n
         for elem in range(Nt):
             for edge in range(3):
@@ -181,14 +181,14 @@ class Test_rectangular_with_neighbours(unittest.TestCase):
         # m=n=1: lower=0, upper=1
         # lower [c,d,a]: edge0->upper(1), edge1->-1(bottom), edge2->-1(right)
         # upper [b,a,d]: edge0->lower(0), edge1->-1(top),    edge2->-1(left)
-        _, _, _, neighbours = self._call(1, 1)
+        _, _, _, neighbours, _ = self._call(1, 1)
         num.testing.assert_array_equal(neighbours[0], [ 1, -1, -1])
         num.testing.assert_array_equal(neighbours[1], [ 0, -1, -1])
 
     def test_2x2_diagonal_shared(self):
         """In every cell the two triangles must be mutual edge-0 neighbours."""
         m, n = 2, 2
-        _, _, _, neighbours = self._call(m, n)
+        _, _, _, neighbours, _ = self._call(m, n)
         for i in range(m):
             for j in range(n):
                 lower = 2*(i*n+j)
@@ -209,13 +209,13 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
 
     def test_array_shapes(self):
         m, n = 3, 4
-        points, elements, boundary, neighbours = self._call(m, n)
+        points, elements, boundary, neighbours, neighbour_edges = self._call(m, n)
         self.assertEqual(points.shape,     ((m+1)*(n+1) + m*n, 2))
         self.assertEqual(elements.shape,   (4*m*n, 3))
         self.assertEqual(neighbours.shape, (4*m*n, 3))
 
     def test_1x1_mesh(self):
-        points, elements, boundary, neighbours = self._call(1, 1)
+        points, elements, boundary, neighbours, neighbour_edges = self._call(1, 1)
         self.assertEqual(points.shape,   (5, 2))
         self.assertEqual(elements.shape, (4, 3))
 
@@ -224,7 +224,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
     # ------------------------------------------------------------------
 
     def test_unit_square_corners(self):
-        points, _, _, _ = self._call(2, 2)
+        points, _, _, _, _ = self._call(2, 2)
         # Corner grid points: vertices[i,j] = j + i*(n+1) (as in rectangular_cross_construct)
         # For m=n=2 corners: (0,0)->0, (0,2)->2, (2,0)->6, (2,2)->8
         num.testing.assert_allclose(points[0], [0.0, 0.0], atol=1e-12)
@@ -235,7 +235,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
     def test_centre_points_are_cell_centroids(self):
         m, n = 2, 3
         len1, len2 = 2.0, 3.0
-        points, _, _, _ = self._call(m, n, len1=len1, len2=len2)
+        points, _, _, _, _ = self._call(m, n, len1=len1, len2=len2)
         delta1 = len1 / m
         delta2 = len2 / n
         # Centre points start at index (m+1)*(n+1)
@@ -251,7 +251,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
                                             err_msg=f"Centre y wrong for cell ({i},{j})")
 
     def test_origin_offset(self):
-        points, _, _, _ = self._call(1, 1, origin=(3.0, 7.0))
+        points, _, _, _, _ = self._call(1, 1, origin=(3.0, 7.0))
         num.testing.assert_allclose(points[0], [3.0, 7.0], atol=1e-12)
 
     # ------------------------------------------------------------------
@@ -260,14 +260,14 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
 
     def test_element_vertices_in_range(self):
         m, n = 3, 4
-        points, elements, _, _ = self._call(m, n)
+        points, elements, _, _, _ = self._call(m, n)
         np_pts = (m+1)*(n+1) + m*n
         self.assertTrue(num.all(elements >= 0))
         self.assertTrue(num.all(elements < np_pts))
 
     def test_no_degenerate_elements(self):
         m, n = 4, 5
-        _, elements, _, _ = self._call(m, n)
+        _, elements, _, _, _ = self._call(m, n)
         for k, tri in enumerate(elements):
             self.assertEqual(len(set(tri)), 3, f"Degenerate element {k}: {tri}")
 
@@ -277,7 +277,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
 
     def test_boundary_tag_counts(self):
         m, n = 3, 4
-        _, _, boundary, _ = self._call(m, n)
+        _, _, boundary, _, _ = self._call(m, n)
         bottom = [v for v in boundary.values() if v == 'bottom']
         top    = [v for v in boundary.values() if v == 'top']
         left   = [v for v in boundary.values() if v == 'left']
@@ -289,7 +289,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
 
     def test_all_boundary_edges_use_edge_1(self):
         m, n = 2, 3
-        _, _, boundary, _ = self._call(m, n)
+        _, _, boundary, _, _ = self._call(m, n)
         for (elem, edge), tag in boundary.items():
             self.assertEqual(edge, 1,
                              f"Expected all boundary edges to be index 1, "
@@ -297,7 +297,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
 
     def test_boundary_element_indices_in_range(self):
         m, n = 3, 3
-        _, elements, boundary, _ = self._call(m, n)
+        _, elements, boundary, _, _ = self._call(m, n)
         for (elem, edge), tag in boundary.items():
             self.assertGreaterEqual(elem, 0)
             self.assertLess(elem, len(elements))
@@ -308,7 +308,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
 
     def test_neighbours_values_in_range(self):
         m, n = 4, 5
-        _, _, _, neighbours = self._call(m, n)
+        _, _, _, neighbours, _ = self._call(m, n)
         Nt = 4*m*n
         for val in neighbours.flat:
             self.assertTrue(val == -1 or (0 <= val < Nt),
@@ -316,7 +316,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
 
     def test_neighbours_symmetry(self):
         m, n = 4, 5
-        _, _, _, neighbours = self._call(m, n)
+        _, _, _, neighbours, _ = self._call(m, n)
         Nt = 4*m*n
         for a in range(Nt):
             for edge in range(3):
@@ -327,7 +327,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
 
     def test_boundary_edges_are_minus_one(self):
         m, n = 3, 4
-        _, _, boundary, neighbours = self._call(m, n)
+        _, _, boundary, neighbours, _ = self._call(m, n)
         for (elem, edge), tag in boundary.items():
             self.assertEqual(neighbours[elem, edge], -1,
                              f"Boundary edge ({elem},{edge}) tag={tag} "
@@ -335,7 +335,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
 
     def test_internal_edges_not_minus_one(self):
         m, n = 3, 4
-        _, _, boundary, neighbours = self._call(m, n)
+        _, _, boundary, neighbours, _ = self._call(m, n)
         Nt = 4*m*n
         for elem in range(Nt):
             for edge in range(3):
@@ -350,7 +350,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
         # 4 triangles: base+0=left, base+1=bottom, base+2=right, base+3=top
         # All external edges (edge 1) should be -1
         # Internal edges connect within the cell
-        _, _, _, neighbours = self._call(1, 1)
+        _, _, _, neighbours, _ = self._call(1, 1)
         # left (0): edge0->top(3), edge1->-1, edge2->bottom(1)
         num.testing.assert_array_equal(neighbours[0], [3, -1, 1])
         # bottom (1): edge0->left(0), edge1->-1, edge2->right(2)
@@ -363,7 +363,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
     def test_internal_cell_neighbours_symmetric(self):
         """Within every cell the 4 triangles form a consistent ring."""
         m, n = 3, 4
-        _, _, _, neighbours = self._call(m, n)
+        _, _, _, neighbours, _ = self._call(m, n)
         for i in range(m):
             for j in range(n):
                 base = 4*(i*n+j)
@@ -387,7 +387,7 @@ class Test_rectangular_cross_with_neighbours(unittest.TestCase):
     def test_cross_cell_neighbours(self):
         """Check cross-cell neighbour links for an interior mesh."""
         m, n = 3, 4
-        _, _, _, neighbours = self._call(m, n)
+        _, _, _, neighbours, _ = self._call(m, n)
         # Pick an interior cell (1,1): base=4*(1*4+1)=20
         i, j = 1, 1
         base       = 4*(i*n+j)
@@ -414,7 +414,7 @@ class Test_rectangular_cross_matches_python(unittest.TestCase):
             rectangular_cross_python, rectangular_cross_with_neighbours)
         m, n = 3, 4
         pts_py, _, _, = rectangular_cross_python(m, n)
-        pts_cy, _, _, _ = rectangular_cross_with_neighbours(m, n)
+        pts_cy, _, _, _, _ = rectangular_cross_with_neighbours(m, n)
         pts_py = num.array(pts_py)
         num.testing.assert_allclose(pts_cy, pts_py, rtol=1e-12)
 
@@ -423,7 +423,7 @@ class Test_rectangular_cross_matches_python(unittest.TestCase):
             rectangular_cross_python, rectangular_cross_with_neighbours)
         m, n = 3, 4
         _, elems_py, _ = rectangular_cross_python(m, n)
-        _, elems_cy, _, _ = rectangular_cross_with_neighbours(m, n)
+        _, elems_cy, _, _, _ = rectangular_cross_with_neighbours(m, n)
         elems_py = num.array(elems_py)
         num.testing.assert_array_equal(elems_cy, elems_py)
 
@@ -432,7 +432,7 @@ class Test_rectangular_cross_matches_python(unittest.TestCase):
             rectangular_cross_python, rectangular_cross_with_neighbours)
         m, n = 3, 4
         _, _, bnd_py = rectangular_cross_python(m, n)
-        _, _, bnd_cy, _ = rectangular_cross_with_neighbours(m, n)
+        _, _, bnd_cy, _, _ = rectangular_cross_with_neighbours(m, n)
         self.assertEqual(bnd_cy, bnd_py)
 
 
