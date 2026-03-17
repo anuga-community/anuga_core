@@ -42,7 +42,7 @@ def pmesh_to_mesh(pmesh_instance, verbose=False):
                 boundary=boundary,
                 tagged_elements=tagged_elements,
                 geo_reference=geo_reference,
-                triangle_neighbors=triangle_neighbors,
+                triangle_neighbours=triangle_neighbors,
                 verbose=verbose)
 
 

@@ -1,14 +1,14 @@
 
 from anuga.shallow_water.shallow_water_domain import Domain
-from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_cross, \
-                                                        rectangular
+from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_with_neighbours, rectangular_cross_with_neighbours
+from anuga.abstract_2d_finite_volumes.neighbour_mesh import Mesh
 
-from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_to_domain_instance
+from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_to_domain_instance, pmesh_to_mesh
 
 
 
 #-----------------------------
-# rectangular domains
+# rectangular domains and meshes
 #-----------------------------
 def rectangular_cross_domain(*args, **kwargs):
     """Create a rectangular domain.
@@ -44,8 +44,51 @@ def rectangular_cross_domain(*args, **kwargs):
         verbose = False
 
 
-    points, vertices, boundary = rectangular_cross(*args, **kwargs)
-    return Domain(points, vertices, boundary, verbose= verbose)
+    points, vertices, boundary, neighbours = rectangular_cross_with_neighbours(*args, **kwargs)
+
+    mesh = Mesh(points, vertices, boundary, triangle_neighbours=neighbours)
+
+    return Domain(mesh, verbose= verbose)
+
+def rectangular_cross_mesh(*args, **kwargs):
+    """Create a rectangular mesh.
+
+    The triangular mesh is made up of m by n uniform rectangular cells divided
+    into 4 triangles in a cross pattern
+
+    Parameters
+    ----------
+    m : int
+        Number of cells in x direction
+    n : int
+        Number of cells in y direction
+    len1 : float, optional
+        Length of domain in x direction (left to right) (default 1.0)
+    len2 : float, optional
+        Length of domain in y direction (bottom to top) (default 1.0)
+    origin : tuple, optional
+        Tuple (x, y) specifying location of lower left corner of domain 
+        (default (0, 0))
+    verbose : bool, optional
+        Boolean flag to output information (default False)
+
+    Returns
+    -------
+    mesh
+        Mesh instance
+    """
+
+    try:
+        verbose = kwargs.pop('verbose')
+    except KeyError:
+        verbose = False
+
+
+    points, vertices, boundary, neighbours = rectangular_cross_with_neighbours(*args, **kwargs)
+
+    mesh = Mesh(points, vertices, boundary, triangle_neighbours=neighbours)
+
+    return mesh
 
 #----------------------------
 # Create domain from file
@@ -228,7 +271,7 @@ def _create_domain_from_regions(bounding_polygon,
     #from anuga.shallow_water.shallow_water_domain import Domain
     from anuga.pmesh.mesh_interface import create_mesh_from_regions
     
-    create_mesh_from_regions(bounding_polygon,
+    pmesh = create_mesh_from_regions(bounding_polygon,
                              boundary_tags,
                              maximum_triangle_area=maximum_triangle_area,
                              interior_regions=interior_regions,
@@ -244,7 +287,9 @@ def _create_domain_from_regions(bounding_polygon,
                              use_cache=False,
                              verbose=verbose)
 
-    domain = Domain(mesh_filename, use_cache=False, verbose=verbose)
+    mesh = pmesh_to_mesh(pmesh)
+
+    domain = Domain(mesh, use_cache=False, verbose=verbose)
 
 
     return domain

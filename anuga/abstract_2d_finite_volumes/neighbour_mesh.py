@@ -74,7 +74,7 @@ class Mesh(General_mesh):
                  tagged_elements=None,
                  geo_reference=None,
                  use_inscribed_circle=False,
-                 triangle_neighbors=None,
+                 triangle_neighbours=None,
                  verbose=False):
         """
         Build Mesh
@@ -82,7 +82,7 @@ class Mesh(General_mesh):
             Input x,y coordinates (sequence of 2-tuples or Mx2 numeric array of floats)
             triangles (sequence of 3-tuples or Nx3 numeric array of non-negative integers).
 
-        triangle_neighbors: optional (N, 3) integer array of neighbouring triangle
+        triangle_neighbours: optional (N, 3) integer array of neighbouring triangle
             indices (-1 for boundary edges), as produced by the triangle library
             (available from Pmesh.tri_mesh.triangle_neighbors). If provided,
             the neighbour structure is not recomputed from the triangles.
@@ -111,11 +111,11 @@ class Mesh(General_mesh):
 
 
         # Build neighbour structure
-        if verbose: log.critical('Mesh: Building neigbour structure')
-        self.build_neighbour_structure(triangle_neighbors=triangle_neighbors)
+        if verbose: log.critical('Mesh: Building neighbour structure')
+        self.build_neighbour_structure(triangle_neighbours=triangle_neighbours)
 
         # Build surrogate neighbour structure
-        if verbose: log.critical('Mesh: Building surrogate neigbour structure')
+        if verbose: log.critical('Mesh: Building surrogate neighbour structure')
         self.build_surrogate_neighbour_structure()
 
         # Build boundary dictionary mapping (id, edge) to symbolic tags
@@ -249,12 +249,12 @@ class Mesh(General_mesh):
                 self.neighbour_edges[i, 1] = neighbourdict[a,c][1]
                 self.number_of_boundaries[i] -= 1
 
-    def build_neighbour_structure(self, triangle_neighbors=None):
+    def build_neighbour_structure(self, triangle_neighbours=None):
         """Update all registered triangles to point to their neighbours.
 
         Also, keep a tally of the number of boundaries for each triangle
 
-        If triangle_neighbors is provided (an (N, 3) integer array of
+        If triangle_neighbours is provided (an (N, 3) integer array of
         neighbouring triangle indices, -1 for boundary edges, as produced
         by the triangle library), the neighbour structure is assigned
         directly rather than recomputed from the triangles.
@@ -264,8 +264,8 @@ class Mesh(General_mesh):
           number_of_boundaries integer array is defined.
         """
 
-        if triangle_neighbors is not None:
-            self.neighbours = num.array(triangle_neighbors, int)
+        if triangle_neighbours is not None:
+            self.neighbours[:] = num.array(triangle_neighbours, int)
             self.number_of_boundaries = (self.neighbours < 0).sum(axis=1).astype(int)
             # For each valid (i, j), find edge m of neighbour k that points back to i
             valid_i, valid_j = num.where(self.neighbours >= 0)
