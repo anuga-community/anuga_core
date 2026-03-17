@@ -34,7 +34,6 @@ def load_checkpoint_file(domain_name = 'domain', checkpoint_dir = '.', time = No
 
         times = list(times)
         times.sort()
-        #print times
     else:
         times = [float(time)]
 

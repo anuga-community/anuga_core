@@ -29,6 +29,12 @@ def pmesh_to_mesh(pmesh_instance, verbose=False):
     """
     from anuga.abstract_2d_finite_volumes.neighbour_mesh import Mesh
 
+    # create_mesh_from_regions only calls generate_mesh when a filename is
+    # supplied; if the caller passed the raw pmesh object we may need to
+    # triangulate it first.
+    if pmesh_instance.tri_mesh is None:
+        pmesh_instance.generate_mesh(verbose=verbose)
+
     mesh_dict = pmesh_instance.Mesh2IODict()
 
     vertex_coordinates = mesh_dict['vertices']
