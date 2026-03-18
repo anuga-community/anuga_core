@@ -357,96 +357,6 @@ def submesh_full(mesh, triangles_per_proc):
 #
 #=========================================================================
 
-def ghost_layer_old(submesh, mesh, p, tupper, tlower, parameters=None):
-
-    ncoord = mesh.number_of_nodes
-    ntriangles = mesh.number_of_triangles
-
-    if parameters is None:
-        layer_width = 2
-    else:
-        layer_width = parameters['ghost_layer_width']
-
-    trianglemap = num.zeros(ntriangles, int)
-
-    # Find the first layer of boundary triangles
-    for t in range(tlower, tupper):
-
-        n = mesh.neighbours[t, 0]
-        if n >= 0:
-            if n < tlower or n >= tupper:
-                trianglemap[n] = 1
-
-        n = mesh.neighbours[t, 1]
-        if n >= 0:
-            if n < tlower or n >= tupper:
-                trianglemap[n] = 1
-
-        n = mesh.neighbours[t, 2]
-        if n >= 0:
-            if n < tlower or n >= tupper:
-                trianglemap[n] = 1
-
-    # Find the subsequent layers of ghost triangles
-    for i in range(layer_width-1):
-
-        for t in range(ntriangles):
-            if trianglemap[t] == i+1:
-
-                n = mesh.neighbours[t, 0]
-                if n >= 0:
-                    if (n < tlower or n >= tupper) and trianglemap[n] == 0:
-                        trianglemap[n] = i+2
-
-                n = mesh.neighbours[t, 1]
-                if n >= 0:
-                    if (n < tlower or n >= tupper) and trianglemap[n] == 0:
-                        trianglemap[n] = i+2
-
-                n = mesh.neighbours[t, 2]
-                if n >= 0:
-                    if (n < tlower or n >= tupper) and trianglemap[n] == 0:
-                        trianglemap[n] = i+2
-
-    # Build the triangle list and make note of the vertices
-
-    nodemap = num.zeros(ncoord, int)
-    fullnodes = submesh["full_nodes"][p]
-
-    subtriangles = []
-    for i in range(ntriangles):
-        if trianglemap[i] != 0:
-            t = list(mesh.triangles[i])
-            nodemap[t[0]] = 1
-            nodemap[t[1]] = 1
-            nodemap[t[2]] = 1
-
-    trilist = num.reshape(num.arange(ntriangles), (ntriangles, 1))
-    tsubtriangles = num.concatenate((trilist, mesh.triangles), 1)
-    subtriangles = tsubtriangles.take(num.flatnonzero(trianglemap), axis=0)
-
-    # Keep a record of the triangle vertices, if they are not already there
-
-    for n in fullnodes:
-        nodemap[int(n[0])] = 0
-
-    nodelist = num.reshape(num.arange(ncoord), (ncoord, 1))
-    tsubnodes = num.concatenate((nodelist, mesh.get_nodes()), 1)
-    subnodes = tsubnodes.take(num.flatnonzero(nodemap), axis=0)
-
-    # Clean up before exiting
-
-    del (nodelist)
-    del (trilist)
-    del (tsubnodes)
-    del (nodemap)
-    del (trianglemap)
-
-    # Return the triangles and vertices sitting on the boundary layer
-
-    return subnodes, subtriangles, layer_width
-
-
 def ghost_layer(submesh, mesh, p, tupper, tlower, parameters=None):
 
     if parameters is None:
@@ -504,109 +414,23 @@ def ghost_layer(submesh, mesh, p, tupper, tlower, parameters=None):
 #=========================================================================
 
 
-def is_in_processor(ghost_list, tlower, tupper, n):
-
-    return num.equal(ghost_list, n).any() or (tlower <= n and tupper > n)
-
-
-def ghost_bnd_layer_old(ghosttri, tlower, tupper, mesh, p):
-
-    boundary = mesh.boundary
-
-    ghost_list = []
-    subboundary = {}
-
-    # FIXME SR: For larger layers need to pass through the correct
-    # boundary tag!
-
-    for t in ghosttri:
-        ghost_list.append(t[0])
-
-    for t in ghosttri:
-
-        n = mesh.neighbours[t[0], 0]
-        if not is_in_processor(ghost_list, tlower, tupper, n):
-            if (t[0], 0) in boundary:
-                subboundary[t[0], 0] = boundary[t[0], 0]
-            else:
-                subboundary[t[0], 0] = 'ghost'
-
-        n = mesh.neighbours[t[0], 1]
-        if not is_in_processor(ghost_list, tlower, tupper, n):
-            if (t[0], 1) in boundary:
-                subboundary[t[0], 1] = boundary[t[0], 1]
-            else:
-                subboundary[t[0], 1] = 'ghost'
-
-        n = mesh.neighbours[t[0], 2]
-        if not is_in_processor(ghost_list, tlower, tupper, n):
-            if (t[0], 2) in boundary:
-                subboundary[t[0], 2] = boundary[t[0], 2]
-            else:
-                subboundary[t[0], 2] = 'ghost'
-
-    return subboundary
-
-
 def ghost_bnd_layer(ghosttri, tlower, tupper, mesh, p):
 
+    from .distribute_mesh_ext import ghost_bnd_layer_classify
+
     boundary = mesh.boundary
 
-    ghost_list = []
-    subboundary = {}
+    ghost_ids = num.ascontiguousarray(ghosttri[:, 0], dtype=num.int64)
+    neighbours = num.ascontiguousarray(mesh.neighbours, dtype=num.int64)
 
-    new_ghost_list = ghosttri[:, 0]
+    tri_ids, edge_ids = ghost_bnd_layer_classify(
+        neighbours, ghost_ids, int(tlower), int(tupper))
 
-    # print new_ghost_list
-
-    # 0 edge boundaries
-    nghb0 = mesh.neighbours[new_ghost_list, 0]
-    gl0 = num.extract(num.logical_or(
-        nghb0 < tlower, nghb0 >= tupper), new_ghost_list)
-    nghb0 = mesh.neighbours[gl0, 0]
-    flag = numset.isin(nghb0, new_ghost_list)
-    gl0 = num.extract(num.logical_not(flag), gl0)
-    edge0 = 0*num.ones_like(gl0)
-    n0 = len(edge0)
-    values0 = ['ghost']*n0
-
-    # 1 edge boundary
-    nghb1 = mesh.neighbours[new_ghost_list, 1]
-    gl1 = num.extract(num.logical_or(
-        nghb1 < tlower, nghb1 >= tupper), new_ghost_list)
-    nghb1 = mesh.neighbours[gl1, 1]
-    flag = numset.isin(nghb1, new_ghost_list)
-    gl1 = num.extract(num.logical_not(flag), gl1)
-    edge1 = 1*num.ones_like(gl1)
-    n1 = len(edge1)
-    values1 = ['ghost']*n1
-
-    # 2 edge boundary
-    nghb2 = mesh.neighbours[new_ghost_list, 2]
-    gl2 = num.extract(num.logical_or(
-        nghb2 < tlower, nghb2 >= tupper), new_ghost_list)
-    nghb2 = mesh.neighbours[gl2, 2]
-    flag = numset.isin(nghb2, new_ghost_list)
-    gl2 = num.extract(num.logical_not(flag), gl2)
-    edge2 = 2*num.ones_like(gl2)
-    n2 = len(edge2)
-    values2 = ['ghost']*n2
-
-    gl = num.concatenate((gl0, gl1, gl2))
-    edge = num.concatenate((edge0, edge1, edge2))
-    values = values0 + values1 + values2
-#    print gl
-#    print edge
-#    print values
-
-    subboundary = dict(list(zip(list(zip(gl, edge)), values)))
-    # intersect with boundary
-
-    # FIXME SR: these keys should be viewkeys but need python 2.7
-    subboundary.update((k, boundary[k]) for k in set(
-        subboundary.keys()) & set(boundary.keys()))
-
-    # print subboundary
+    # All classified edges start as 'ghost'; real boundary tags override.
+    subboundary = {(int(t), int(e)): 'ghost'
+                   for t, e in zip(tri_ids, edge_ids)}
+    subboundary.update((k, boundary[k])
+                       for k in subboundary.keys() & boundary.keys())
 
     return subboundary
 
@@ -625,53 +449,6 @@ def ghost_bnd_layer(ghosttri, tlower, tupper, mesh, p):
 # [global node number, neighbour processor number].
 #
 #=========================================================================
-
-
-def ghost_commun_pattern_old(subtri, p, tri_per_proc):
-
-    # Loop over the ghost triangles
-
-    ghost_commun = num.zeros((len(subtri), 2), int)
-
-    for i in range(len(subtri)):
-        global_no = subtri[i][0]
-
-        # Find which processor contains the full triangle
-
-        nproc = len(tri_per_proc)
-        neigh = nproc-1
-        sum = 0
-        for q in range(nproc-1):
-            if (global_no < sum+tri_per_proc[q]):
-                neigh = q
-                break
-            sum = sum+tri_per_proc[q]
-
-        # Keep a copy of the neighbour processor number
-
-        ghost_commun[i] = [global_no, neigh]
-
-    return ghost_commun
-
-
-def ghost_commun_pattern_old_2(subtri, p, tri_per_proc_range):
-
-    # Loop over the ghost triangles
-
-    ghost_commun = num.zeros((len(subtri), 2), int)
-
-    # print tri_per_proc_range
-    # print tri_per_proc
-
-    for i in range(len(subtri)):
-        global_no = subtri[i][0]
-
-        # Find which processor contains the full triangle
-        new_neigh = num.searchsorted(tri_per_proc_range, global_no)
-
-        ghost_commun[i] = [global_no, new_neigh]
-
-    return ghost_commun
 
 
 def ghost_commun_pattern(subtri, p, tri_per_proc_range):

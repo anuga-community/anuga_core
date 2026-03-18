@@ -70,3 +70,65 @@ def ghost_layer_bfs(int64_t[:,::1] neighbours not None,
 
     # All ghost triangles have state > 1.  np.where returns sorted indices.
     return np.where(state_np > 1)[0].astype(np.int64)
+
+
+def ghost_bnd_layer_classify(int64_t[:,::1] neighbours not None,
+                              int64_t[::1] ghost_ids not None,
+                              int64_t tlower,
+                              int64_t tupper):
+    """Classify ghost-triangle edges as ghost boundaries.
+
+    For each ghost triangle, checks its three edges.  An edge is a ghost
+    boundary if the neighbour on that edge is neither a full triangle
+    (in [tlower, tupper)) nor another ghost triangle.  Negative neighbours
+    (mesh boundary sentinels) also count as ghost boundaries.
+
+    Uses a uint8 `in_proc` membership array for O(1) lookup instead of
+    the O(n) isin() calls in the pure-Python version.
+
+    Parameters
+    ----------
+    neighbours : int64 array, shape (ntriangles, 3), C-contiguous
+    ghost_ids  : int64 array, shape (G,), sorted ghost triangle global IDs
+    tlower, tupper : int64 — half-open range of full triangles [tlower, tupper)
+
+    Returns
+    -------
+    tri_ids  : int64 ndarray  — global triangle ID for each ghost boundary edge
+    edge_ids : int64 ndarray  — edge index (0, 1, or 2) for each entry
+    """
+    cdef int64_t ntriangles = neighbours.shape[0]
+    cdef int64_t G = ghost_ids.shape[0]
+    cdef int64_t g, t, nb, count
+    cdef int edge
+
+    # Mark all triangles in this processor (full + ghost) as in_proc.
+    in_proc_np = np.zeros(ntriangles, dtype=np.uint8)
+    cdef uint8_t[::1] in_proc = in_proc_np
+
+    with nogil:
+        for t in range(tlower, tupper):
+            in_proc[t] = 1
+        for g in range(G):
+            in_proc[ghost_ids[g]] = 1
+
+    # Upper bound: at most 3*G ghost boundary edges.
+    tri_buf_np  = np.empty(3 * G, dtype=np.int64)
+    edge_buf_np = np.empty(3 * G, dtype=np.int64)
+    cdef int64_t[::1] tri_buf  = tri_buf_np
+    cdef int64_t[::1] edge_buf = edge_buf_np
+
+    count = 0
+    with nogil:
+        for g in range(G):
+            t = ghost_ids[g]
+            for edge in range(3):
+                nb = neighbours[t, edge]
+                # Ghost boundary: neighbour is outside the processor set,
+                # including mesh-boundary sentinels (nb < 0).
+                if nb < 0 or in_proc[nb] == 0:
+                    tri_buf[count]  = t
+                    edge_buf[count] = edge
+                    count += 1
+
+    return tri_buf_np[:count].copy(), edge_buf_np[:count].copy()
