@@ -176,7 +176,6 @@ class Generic_Domain(object):
             coordinates = None
         elif isinstance(source, Mesh):
             mesh_input = source
-            mesh_filename = None
             coordinates = None
         else:
             # Check if source is a pmesh Pmesh object (returned by
@@ -190,11 +189,9 @@ class Generic_Domain(object):
                     coordinates = None
                 else:
                     coordinates = source
-                    mesh_filename = None
                     mesh_input = None
             except ImportError:
                 coordinates = source
-                mesh_filename = None
                 mesh_input = None
 
         # In case a filename has been specified, extract content
