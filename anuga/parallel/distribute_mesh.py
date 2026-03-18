@@ -359,10 +359,7 @@ def submesh_full(mesh, triangles_per_proc):
 
 def ghost_layer(submesh, mesh, p, tupper, tlower, parameters=None):
 
-    if parameters is None:
-        layer_width = 2
-    else:
-        layer_width = parameters['ghost_layer_width']
+    layer_width = (parameters or {}).get('ghost_layer_width', 2)
 
     from .distribute_mesh_ext import ghost_layer_bfs
 
@@ -487,36 +484,58 @@ def ghost_commun_pattern(subtri, p, tri_per_proc_range):
 
 
 def full_commun_pattern(submesh, tri_per_proc):
-    tlower = 0
     nproc = len(tri_per_proc)
-    full_commun = []
 
-    # Loop over the processor
+    # Sparse dicts: only triangles that are ghost-copied somewhere get an entry.
+    # The old O(N_triangles) pre-fill loop is not needed because build_local_commun
+    # only iterates over keys that have non-empty lists.
+    full_commun = [{} for _ in range(nproc)]
 
+    if nproc == 1:
+        return full_commun
+
+    # Stack all ghost_commun arrays and record the ghost-side processor.
+    # ghost_commun[p] has shape (G_p, 2): col0 = global_id, col1 = owner_proc.
+    gc_list = submesh["ghost_commun"]
+    parts = []
     for p in range(nproc):
+        gc = gc_list[p]
+        if len(gc) == 0:
+            continue
+        ghost_col = num.full(len(gc), p, dtype=int)
+        parts.append(num.column_stack([gc, ghost_col]))   # (G_p, 3)
 
-        # Loop over the full triangles in the current processor
-        # and build an empty dictionary
+    if not parts:
+        return full_commun
 
-        fcommun = {}
-        tupper = tri_per_proc[p]+tlower
-        for i in range(tlower, tupper):
-            fcommun[i] = []
-        full_commun.append(fcommun)
-        tlower = tupper
+    # all_gc columns: [global_id, owner_proc, ghost_proc]
+    all_gc      = num.vstack(parts)
+    global_ids  = all_gc[:, 0]
+    owner_procs = all_gc[:, 1]
+    ghost_procs = all_gc[:, 2]
 
-    # Loop over the processor again
+    # Sort by owner_proc (primary) then global_id (secondary) so each
+    # unique (owner, global_id) pair forms a contiguous run.
+    sort_idx = num.lexsort((global_ids, owner_procs))
+    s_global = global_ids[sort_idx]
+    s_owner  = owner_procs[sort_idx]
+    s_ghost  = ghost_procs[sort_idx]
 
-    for p in range(nproc):
+    # Locate the start of every new (owner, global_id) group.
+    pair_changes = num.empty(len(s_global), dtype=bool)
+    pair_changes[0] = True
+    pair_changes[1:] = (
+        (s_global[1:] != s_global[:-1]) | (s_owner[1:] != s_owner[:-1])
+    )
+    starts = num.where(pair_changes)[0]
+    ends   = num.empty_like(starts)
+    ends[:-1] = starts[1:]
+    ends[-1]  = len(s_global)
 
-        # Loop over the ghost triangles in the current processor,
-        # find which processor contains the corresponding full copy
-        # and note that the processor must send updates to this
-        # processor
-
-        for g in submesh["ghost_commun"][p]:
-            neigh = g[1]
-            full_commun[neigh][g[0]].append(p)
+    for lo, hi in zip(starts, ends):
+        owner = int(s_owner[lo])
+        gid   = int(s_global[lo])
+        full_commun[owner][gid] = s_ghost[lo:hi].tolist()
 
     return full_commun
 
@@ -670,28 +689,82 @@ def submesh_quantities(submesh, quantities, triangles_per_proc):
 #
 #=========================================================================
 
+def _submesh_structure_hash(mesh, triangles_per_proc, parameters):
+    """SHA-256 fingerprint of the mesh topology + partition + layer_width.
+
+    Only mesh.triangles is hashed (the neighbour array is derived from it).
+    For a 50 M-triangle mesh this costs ~1-2 s — negligible vs the minutes
+    saved by avoiding a full rebuild.
+    """
+    import hashlib
+    layer_width = (parameters or {}).get('ghost_layer_width', 2)
+    h = hashlib.sha256()
+    h.update(mesh.triangles.tobytes())
+    h.update(triangles_per_proc.tobytes())
+    h.update(str(layer_width).encode())
+    return h.hexdigest()[:20]
+
+
 def build_submesh(mesh, quantities,
                   triangles_per_proc, parameters=None, verbose=False):
+    """Build the full submesh data structure for all processors.
 
-    # Temporarily build the mesh to find the neighbouring
-    # triangles and true boundary polygon\
+    Parameters
+    ----------
+    mesh : Mesh
+    quantities : dict
+    triangles_per_proc : ndarray
+    parameters : dict, optional
+        Recognised keys (in addition to existing ones):
 
-    #mesh = Mesh(nodes, triangles, boundary)
+        ``cache_dir`` : str or path-like, optional
+            Directory in which to cache the mesh *structure* (ghost layers,
+            communication pattern) between runs.  The quantities are never
+            cached because they may differ between runs.  Cache files are
+            keyed by a SHA-256 hash of the mesh topology, partition, and
+            ghost-layer width, so the cache is automatically invalidated
+            whenever any of those change.
+
+            Example::
+
+                parameters = {'cache_dir': '.partition_cache'}
+
+    verbose : bool, optional
+    """
+    import pathlib, pickle, hashlib
+
+    cache_dir = None
+    if parameters is not None:
+        cache_dir = parameters.get('cache_dir', None)
+
+    if cache_dir is not None:
+        cache_dir = pathlib.Path(cache_dir)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        key = _submesh_structure_hash(mesh, triangles_per_proc, parameters)
+        P = len(triangles_per_proc)
+        cache_file = cache_dir / f'anuga_submesh_{key}_P{P}.pkl'
+
+        if cache_file.exists():
+            if verbose:
+                print(f'build_submesh: loading cached structure from {cache_file}')
+            with open(cache_file, 'rb') as f:
+                submeshg = pickle.load(f)
+            # Quantities may differ between runs — always recompute.
+            return submesh_quantities(submeshg, quantities, triangles_per_proc)
 
     # Subdivide into non-overlapping partitions
     submeshf = submesh_full(mesh, triangles_per_proc)
 
-    # Add any extra ghost boundary layer information
+    # Add ghost boundary layer and communication pattern
     submeshg = submesh_ghost(submeshf, mesh, triangles_per_proc, parameters)
 
-    # Order the quantities information to be the same as the triangle
-    # information
+    if cache_dir is not None:
+        if verbose:
+            print(f'build_submesh: saving structure to cache {cache_file}')
+        with open(cache_file, 'wb') as f:
+            pickle.dump(submeshg, f, protocol=pickle.HIGHEST_PROTOCOL)
 
-    submesh = submesh_quantities(submeshg, quantities,
-                                 triangles_per_proc)
-
-    #submesh["boundary_polygon"] = boundary_polygon
-    return submesh
+    return submesh_quantities(submeshg, quantities, triangles_per_proc)
 
 #=========================================================================
 #
