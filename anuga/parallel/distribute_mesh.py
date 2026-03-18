@@ -568,58 +568,74 @@ def full_commun_pattern(submesh, tri_per_proc):
 
 def submesh_ghost(submesh, mesh, triangles_per_proc, parameters=None):
 
-    nproc = len(triangles_per_proc)
-    tlower = 0
-    ghost_triangles = []
-    ghost_nodes = []
-    ghost_commun = []
-    ghost_bnd = []
-    ghost_layer_width = []
+    from .distribute_mesh_ext import ghost_layer_bfs_all, ghost_bnd_layer_classify_all
 
-    # Loop over the processors
+    nproc = len(triangles_per_proc)
+    layer_width = (parameters or {}).get('ghost_layer_width', 2)
+
+    # Build per-processor range arrays for the batch Cython calls.
+    cumsum      = num.concatenate([[0], num.cumsum(triangles_per_proc)])
+    tlower_arr  = num.ascontiguousarray(cumsum[:-1], dtype=num.int64)
+    tupper_arr  = num.ascontiguousarray(cumsum[1:],  dtype=num.int64)
+    neighbours  = num.ascontiguousarray(mesh.neighbours, dtype=num.int64)
+
+    # Step 1 — parallel BFS ghost-layer expansion (OpenMP prange over P procs).
+    ghost_id_list = ghost_layer_bfs_all(
+        neighbours, tlower_arr, tupper_arr, layer_width)
+
+    # Step 2 — parallel ghost-boundary classification (OpenMP prange over P procs).
+    bnd_results = ghost_bnd_layer_classify_all(
+        neighbours, ghost_id_list, tlower_arr, tupper_arr)
+
+    # Step 3 — assemble submesh entries (serial; all operations are cheap numpy).
+    ghost_triangles    = []
+    ghost_nodes        = []
+    ghost_commun       = []
+    ghost_bnd          = []
+    ghost_layer_widths = []
     triangles_per_proc_ranges = num.cumsum(triangles_per_proc) - 1
+    boundary = mesh.boundary
 
     for p in range(nproc):
+        ghost_ids = ghost_id_list[p]
+        tlo = int(tlower_arr[p])
+        tup = int(tupper_arr[p])
 
-        # Find the full triangles in this processor
+        # Ghost triangles: [global_id, v0, v1, v2]
+        subtri = num.concatenate(
+            (num.reshape(ghost_ids, (-1, 1)), mesh.triangles[ghost_ids]), 1)
 
-        tupper = triangles_per_proc[p]+tlower
+        # Ghost nodes: unique vertices touched by ghost triangles, minus full nodes.
+        full_node_ids = num.array(submesh["full_nodes"][p][:, 0], int)
+        new_nodes = numset.setdiff1d(num.unique(mesh.triangles[ghost_ids].flat),
+                                     full_node_ids)
+        subnodes = num.concatenate(
+            (num.reshape(new_nodes, (-1, 1)), mesh.nodes[new_nodes]), 1)
 
-        # Build the ghost boundary layer
-
-        [subnodes, subtri, layer_width] = \
-            ghost_layer(submesh, mesh, p, tupper, tlower, parameters)
-        ghost_layer_width.append(layer_width)
         ghost_triangles.append(subtri)
         ghost_nodes.append(subnodes)
+        ghost_layer_widths.append(layer_width)
 
-        # Find the new boundary formed by the ghost triangles
-
-        subbnd = ghost_bnd_layer(subtri, tlower, tupper, mesh, p)
+        # Ghost boundary dict: start with 'ghost' tags, override with real tags.
+        tri_ids, edge_ids = bnd_results[p]
+        subbnd = {(int(t), int(e)): 'ghost'
+                  for t, e in zip(tri_ids, edge_ids)}
+        subbnd.update((k, boundary[k])
+                      for k in subbnd.keys() & boundary.keys())
         ghost_bnd.append(subbnd)
 
-        # Build the communication pattern for the ghost nodes
-        gcommun = \
-            ghost_commun_pattern(subtri, p, triangles_per_proc_ranges)
+        # Ghost communication pattern.
+        gcommun = ghost_commun_pattern(subtri, p, triangles_per_proc_ranges)
         ghost_commun.append(gcommun)
 
-        # Move to the next processor
-
-        tlower = tupper
-
-    # Record the ghost layer and communication pattern
-    submesh["ghost_layer_width"] = ghost_layer_width
-    submesh["ghost_nodes"] = ghost_nodes
-    submesh["ghost_triangles"] = ghost_triangles
-    submesh["ghost_commun"] = ghost_commun
-    submesh["ghost_boundary"] = ghost_bnd
-
-    # Build the communication pattern for the full triangles
+    submesh["ghost_layer_width"] = ghost_layer_widths
+    submesh["ghost_nodes"]       = ghost_nodes
+    submesh["ghost_triangles"]   = ghost_triangles
+    submesh["ghost_commun"]      = ghost_commun
+    submesh["ghost_boundary"]    = ghost_bnd
 
     full_commun = full_commun_pattern(submesh, triangles_per_proc)
     submesh["full_commun"] = full_commun
-
-    # Return the submesh
 
     return submesh
 

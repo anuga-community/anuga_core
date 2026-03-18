@@ -2,6 +2,9 @@
 import numpy as np
 cimport numpy as np
 from libc.stdint cimport int64_t, uint8_t
+from libc.stdlib cimport malloc, free, calloc
+from libc.string cimport memcpy as c_memcpy
+from cython.parallel cimport prange, parallel
 
 
 def ghost_layer_bfs(int64_t[:,::1] neighbours not None,
@@ -132,3 +135,190 @@ def ghost_bnd_layer_classify(int64_t[:,::1] neighbours not None,
                     count += 1
 
     return tri_buf_np[:count].copy(), edge_buf_np[:count].copy()
+
+
+def ghost_layer_bfs_all(int64_t[:,::1] neighbours not None,
+                         int64_t[::1] tlower_arr not None,
+                         int64_t[::1] tupper_arr not None,
+                         int layer_width):
+    """BFS ghost-layer expansion for all P processors in parallel (OpenMP).
+
+    Each OpenMP thread runs one processor's BFS independently, using a
+    heap-allocated uint8 state array (calloc'd to zero).  Peak extra memory
+    equals ``num_threads × ntriangles`` bytes — e.g. 8 threads × 50 MB for a
+    50 M-triangle mesh.  When OpenMP is unavailable the loop degrades to serial.
+
+    Parameters
+    ----------
+    neighbours : int64 array, shape (ntriangles, 3), C-contiguous
+    tlower_arr, tupper_arr : int64 arrays, shape (P,)
+        Half-open ranges [tlower, tupper) of full triangle IDs per processor.
+    layer_width : int
+        Number of ghost layers (default in ANUGA is 2).
+
+    Returns
+    -------
+    list of P int64 ndarrays
+        Each element contains the sorted global triangle IDs of every ghost
+        triangle for that processor.
+    """
+    cdef int P = tlower_arr.shape[0]
+    cdef int64_t ntriangles = neighbours.shape[0]
+    cdef int p, i, edge
+    cdef int64_t t, nb, tlo, tup
+    cdef uint8_t* state_p   # thread-private inside prange
+
+    # One state-array pointer per processor; each is malloc'd inside the prange
+    # (at most num_threads are live simultaneously) and freed after extraction.
+    cdef uint8_t** states = <uint8_t**>malloc(P * sizeof(uint8_t*))
+    if states == NULL:
+        raise MemoryError("ghost_layer_bfs_all: failed to allocate state pointer array")
+
+    with nogil, parallel():
+        for p in prange(P, schedule='dynamic'):
+            tlo = tlower_arr[p]
+            tup = tupper_arr[p]
+
+            # calloc zeros the bytes — avoids an explicit memset.
+            states[p] = <uint8_t*>calloc(ntriangles, sizeof(uint8_t))
+
+            # Mark full triangles (state = 1)
+            for t in range(tlo, tup):
+                states[p][t] = 1
+
+            # Layer 0: mark immediate neighbours outside the full region (state = 2)
+            for t in range(tlo, tup):
+                for edge in range(3):
+                    nb = neighbours[t, edge]
+                    if nb >= 0 and states[p][nb] == 0:
+                        states[p][nb] = 2
+
+            # Additional layers: scan the full state array for the current frontier.
+            # O(layer_width × ntriangles) per processor — typically layer_width = 2.
+            for i in range(1, layer_width):
+                for t in range(ntriangles):
+                    if states[p][t] == i + 1:
+                        for edge in range(3):
+                            nb = neighbours[t, edge]
+                            if nb >= 0 and states[p][nb] == 0:
+                                states[p][nb] = i + 2
+
+    # Extract ghost IDs from each state array using numpy's fast C scan.
+    # np.asarray wraps the malloc'd memory without copying; np.where does
+    # a single O(ntriangles) C pass to collect indices where state > 1.
+    results = []
+    cdef uint8_t[::1] state_view
+    for p in range(P):
+        state_view = <uint8_t[:ntriangles:1]>states[p]
+        results.append(np.where(np.asarray(state_view) > 1)[0].astype(np.int64))
+        free(states[p])
+    free(states)
+
+    return results
+
+
+def ghost_bnd_layer_classify_all(int64_t[:,::1] neighbours not None,
+                                  ghost_id_list,
+                                  int64_t[::1] tlower_arr not None,
+                                  int64_t[::1] tupper_arr not None):
+    """Classify ghost boundary edges for all processors in parallel (OpenMP).
+
+    For each processor p, every edge of every ghost triangle is examined.  An
+    edge is a ghost boundary if its neighbour is outside the processor set
+    (neither full nor ghost) or is a mesh-boundary sentinel (nb < 0).
+
+    Each thread uses a heap-allocated ``uint8 in_proc[ntriangles]`` membership
+    array and writes results to a malloc'd output buffer (at most 3×G entries).
+
+    Parameters
+    ----------
+    neighbours : int64 array, shape (ntriangles, 3), C-contiguous
+    ghost_id_list : list of P int64 ndarrays (from ghost_layer_bfs_all)
+    tlower_arr, tupper_arr : int64 arrays, shape (P,)
+
+    Returns
+    -------
+    list of P (tri_ids, edge_ids) tuples of int64 ndarrays.
+    """
+    cdef int P = tlower_arr.shape[0]
+    cdef int64_t ntriangles = neighbours.shape[0]
+    cdef int p, edge
+    cdef int64_t t, nb, g, G, tlo, tup
+    cdef uint8_t* in_proc_p   # thread-private inside prange
+
+    # Pre-extract raw C pointers to the ghost-ID arrays so they are
+    # accessible inside nogil.  Arrays must remain alive for the prange duration.
+    cdef int64_t** ghost_ptrs = <int64_t**>malloc(P * sizeof(int64_t*))
+    cdef int64_t*  ghost_lens = <int64_t*>malloc(P * sizeof(int64_t))
+    cdef int64_t[::1] garr
+    for p in range(P):
+        ghost_lens[p] = len(ghost_id_list[p])
+        if ghost_lens[p] > 0:
+            garr = ghost_id_list[p]
+            ghost_ptrs[p] = &garr[0]
+        else:
+            ghost_ptrs[p] = NULL
+
+    # Per-processor output buffers (malloc'd inside prange, freed after copy).
+    cdef int64_t** tri_bufs  = <int64_t**>malloc(P * sizeof(int64_t*))
+    cdef int64_t** edge_bufs = <int64_t**>malloc(P * sizeof(int64_t*))
+    cdef int64_t*  counts    = <int64_t*>malloc(P * sizeof(int64_t))
+
+    with nogil, parallel():
+        for p in prange(P, schedule='dynamic'):
+            tlo = tlower_arr[p]
+            tup = tupper_arr[p]
+            G   = ghost_lens[p]
+
+            # Mark full and ghost triangles as in-processor.
+            in_proc_p = <uint8_t*>calloc(ntriangles, sizeof(uint8_t))
+            for t in range(tlo, tup):
+                in_proc_p[t] = 1
+            for g in range(G):
+                in_proc_p[ghost_ptrs[p][g]] = 1
+
+            # Allocate output (upper bound: 3 edges per ghost triangle).
+            if G > 0:
+                tri_bufs[p]  = <int64_t*>malloc(3 * G * sizeof(int64_t))
+                edge_bufs[p] = <int64_t*>malloc(3 * G * sizeof(int64_t))
+            else:
+                tri_bufs[p]  = NULL
+                edge_bufs[p] = NULL
+            counts[p] = 0
+
+            for g in range(G):
+                t = ghost_ptrs[p][g]
+                for edge in range(3):
+                    nb = neighbours[t, edge]
+                    if nb < 0 or in_proc_p[nb] == 0:
+                        tri_bufs[p][counts[p]]  = t
+                        edge_bufs[p][counts[p]] = edge
+                        counts[p] += 1
+
+            free(in_proc_p)
+
+    # Copy results into numpy arrays (requires GIL) then free C buffers.
+    results = []
+    cdef int64_t cnt
+    cdef int64_t[::1] tri_view, edge_view
+    for p in range(P):
+        cnt = counts[p]
+        tri_arr  = np.empty(cnt, dtype=np.int64)
+        edge_arr = np.empty(cnt, dtype=np.int64)
+        if cnt > 0:
+            tri_view  = tri_arr
+            edge_view = edge_arr
+            c_memcpy(&tri_view[0],  tri_bufs[p],  cnt * sizeof(int64_t))
+            c_memcpy(&edge_view[0], edge_bufs[p], cnt * sizeof(int64_t))
+        if tri_bufs[p] != NULL:
+            free(tri_bufs[p])
+            free(edge_bufs[p])
+        results.append((tri_arr, edge_arr))
+
+    free(ghost_ptrs)
+    free(ghost_lens)
+    free(tri_bufs)
+    free(edge_bufs)
+    free(counts)
+
+    return results
