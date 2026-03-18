@@ -172,10 +172,27 @@ class Generic_Domain(object):
         # Determine whether source is a mesh filename or coordinates
         if isinstance(source, str):
             mesh_filename = source
+            mesh_input = None
+            coordinates = None
         elif isinstance(source, Mesh):
             mesh_input = source
+            coordinates = None
         else:
-            coordinates = source
+            # Check if source is a pmesh Pmesh object (returned by
+            # create_mesh_from_regions) and convert it to an anuga Mesh.
+            try:
+                from anuga.pmesh.mesh import Mesh as Pmesh
+                if isinstance(source, Pmesh):
+                    from .pmesh2domain import pmesh_to_mesh
+                    mesh_input = pmesh_to_mesh(source, verbose=verbose)
+                    mesh_filename = None
+                    coordinates = None
+                else:
+                    coordinates = source
+                    mesh_input = None
+            except ImportError:
+                coordinates = source
+                mesh_input = None
 
         # In case a filename has been specified, extract content
         if mesh_filename is not None:

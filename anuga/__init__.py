@@ -110,6 +110,7 @@ from anuga.utilities.parse_time import seconds_to_hhmmss
 # Parallel api
 # ----------------------------
 from anuga.parallel.parallel_api import distribute
+from anuga.parallel.parallel_api import distribute_collaborative
 from anuga.parallel.parallel_api import myid, numprocs, get_processor_name
 from anuga.parallel.parallel_api import send, receive, reduce
 from anuga.parallel.parallel_api import pypar_available, barrier, finalize
