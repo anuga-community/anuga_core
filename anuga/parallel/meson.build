@@ -1,4 +1,14 @@
 
+inc_dir = include_directories('../utilities', incdir_numpy)
+
+py3.extension_module('distribute_mesh_ext',
+  sources: ['distribute_mesh_ext.pyx'],
+  include_directories: inc_dir,
+  dependencies: dependencies,
+  subdir: 'anuga/parallel',
+  install: true,
+)
+
 python_sources = [
   '__init__.py',
   'config.py',
