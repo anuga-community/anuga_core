@@ -14,12 +14,6 @@ class Test_boundary_flux_integral_operator(unittest.TestCase):
 
     def tearDown(self):
         try:
-            os.remove('test_boundaryfluxintegral.msh')
-        except OSError:
-            pass
-
-
-        try:
             os.remove('test_boundaryfluxintegral.sww')
         except OSError:
             pass
@@ -33,7 +27,6 @@ class Test_boundary_flux_integral_operator(unittest.TestCase):
                                                 'top': [1],
                                                 'right': [2],
                                                 'bottom': [3]},
-                                   mesh_filename='test_boundaryfluxintegral.msh',
                                    maximum_triangle_area = 200.,
                                    minimum_triangle_angle = 28.0,
                                    use_cache=False,
