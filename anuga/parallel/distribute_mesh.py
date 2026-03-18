@@ -921,27 +921,19 @@ def submesh_quantities(submesh, quantities, triangles_per_proc):
         submesh["full_quan"][k] = []
         submesh["ghost_quan"][k] = []
 
-    # Loop trough the subdomains
+    # Loop through the subdomains
 
     for p in range(nproc):
-        upper = lower+triangles_per_proc[p]
+        upper = lower + triangles_per_proc[p]
 
-        # Find the global ID of the ghost triangles
+        # Global IDs of ghost triangles for processor p — column 0 of the
+        # ghost_triangles array (shape M×4: [global_id, v0, v1, v2]).
+        global_id = submesh["ghost_triangles"][p][:, 0]
 
-        global_id = []
-        M = len(submesh["ghost_triangles"][p])
-        for j in range(M):
-            global_id.append(submesh["ghost_triangles"][p][j][0])
-
-        # Use the global ID to extract the quantites information from
-        # the full domain
-
+        # Use the global IDs to extract quantity values for ghost triangles
         for k in quantities:
             submesh["full_quan"][k].append(quantities[k][lower:upper])
-            submesh["ghost_quan"][k].append(num.zeros((M, 1), float))
-            for j in range(M):
-                submesh["ghost_quan"][k][p][j, 0] = \
-                    quantities[k][global_id[j], 0]
+            submesh["ghost_quan"][k].append(quantities[k][global_id])
 
         lower = upper
 
