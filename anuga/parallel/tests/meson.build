@@ -1,6 +1,7 @@
 
 python_sources = [
   '__init__.py',
+  'run_parallel_collaborative_domain.py',
   'run_parallel_distribute_domain.py',
   'run_parallel_distribute_mesh.py',
   'run_parallel_riverwall.py',
@@ -15,6 +16,7 @@ python_sources = [
   'test_failure.py',
   'test_parallel_boyd_box_operator_consistency.py',
   'test_parallel_boyd_box_operator.py',
+  'test_parallel_collaborative_domain.py',
   'test_parallel_distribute_domain.py',
   'test_parallel_dist_settings.py',
   'test_parallel_file_boundary.py',
