@@ -283,72 +283,45 @@ def partition_mesh_without_map(domain, n_procs):
 
 def submesh_full(mesh, triangles_per_proc):
 
-    # Initialise
-
-    # print triangles_per_proc
-
     nodes = mesh.nodes
     triangles = mesh.triangles
     boundary = mesh.boundary
 
     tlower = 0
     nproc = len(triangles_per_proc)
-    nnodes = len(nodes)
     node_list = []
     triangle_list = []
     boundary_list = []
     submesh = {}
 
-#    node_range = num.reshape(num.arange(nnodes),(nnodes,1))
-#
-#    #print node_range
-#    tsubnodes = num.concatenate((node_range, nodes), 1)
+    # Pre-sort boundary keys by triangle id so each processor's slice can be
+    # found with a binary search — O(|boundary| log|boundary| + P log|boundary|)
+    # instead of the naive O(P x |boundary|).
+    sorted_bnd_keys = sorted(boundary.keys(), key=lambda k: k[0])
+    sorted_bnd_tri_ids = num.array([k[0] for k in sorted_bnd_keys], dtype=int)
 
-    # print node_range
-    # print nodes
     # Loop over processors
-
     for p in range(nproc):
 
         # Find triangles on processor p
-
-        tupper = triangles_per_proc[p]+tlower
+        tupper = triangles_per_proc[p] + tlower
         subtriangles = triangles[tlower:tupper]
         triangle_list.append(subtriangles)
 
-        # Find the boundary edges on processor p
-
-        subboundary = {}
-        for k in boundary:
-            if (k[0] >= tlower and k[0] < tupper):
-                subboundary[k] = boundary[k]
+        # Find the boundary edges on processor p using binary search
+        lo = int(num.searchsorted(sorted_bnd_tri_ids, tlower))
+        hi = int(num.searchsorted(sorted_bnd_tri_ids, tupper))
+        subboundary = {sorted_bnd_keys[i]: boundary[sorted_bnd_keys[i]]
+                       for i in range(lo, hi)}
         boundary_list.append(subboundary)
 
         # Find nodes in processor p
-
-#        nodemap = num.zeros(nnodes, 'i')
-#        for t in subtriangles:
-#            nodemap[t[0]]=1
-#            nodemap[t[1]]=1
-#            nodemap[t[2]]=1
-#
-#        y = tsubnodes.take(num.flatnonzero(nodemap),axis=0)
-
-        # node_list.append(y)
-
         ids = num.unique(subtriangles.flat)
-
         lnodes = nodes[ids]
-#       print nodes.shape
-#       print ids.shape
-#       print lnodes.shape
         x = num.concatenate((num.reshape(ids, (-1, 1)), lnodes), 1)
-#       print x
-#       print y
         node_list.append(x)
 
         # Move to the next processor
-
         tlower = tupper
 
     # Put the results in a dictionary
