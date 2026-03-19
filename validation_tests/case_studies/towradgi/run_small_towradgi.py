@@ -70,11 +70,11 @@ verbose = args.verbose
 # --------------------------------------------------------------------------
 
 verbose = False
-yieldstep=60. # yield evolve loop every 10 seconds
-outputstep=60. # update sww files every 60 seconds
-finaltime=180. #83700.
+yieldstep=1800. # yield evolve loop every 10 seconds
+outputstep=1800. # update sww files every 60 seconds
+finaltime=3600. #83700.
 
-scale = 10 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
+scale = 1 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
 # Choices are 1 (openmp) 2 (cupy)
