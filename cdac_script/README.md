@@ -101,8 +101,7 @@ This uses multicore OpenMP only, no GPU flags.
 ### GPU build (V100 - default architecture)
 
 ```bash
-pip install -e . --no-build-isolation \
-    -Csetup-args=-Dgpu_offload=true
+pip install -e . --no-build-isolation -Csetup-args=-Dgpu_offload=true
 ```
 
 ### Specifying GPU architecture
