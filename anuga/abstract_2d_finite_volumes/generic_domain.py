@@ -11,12 +11,10 @@
    Ole Nielsen, Stephen Roberts, Duncan Gray
    Geoscience Australia
 """
-
-from builtins import range
-from builtins import object
 from time import time as walltime
 
 from anuga.config import max_smallsteps, beta_w, epsilon
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
 from anuga.config import CFL
 from anuga.config import timestepping_method
 from anuga.config import protect_against_isolated_degenerate_timesteps
@@ -46,13 +44,13 @@ def nvtxRangePop(*arg):
 try:
     from nvtx import range_push as nvtxRangePush
     from nvtx import range_pop  as nvtxRangePop
-except:
+except ImportError:
     pass
 
 try:
     from cupy.cuda.nvtx import RangePush as nvtxRangePush
     from cupy.cuda.nvtx import RangePop  as nvtxRangePop
-except:
+except ImportError:
     pass
 # ---------------- wrapper for nvtx marker
 
@@ -312,7 +310,7 @@ class Generic_Domain(object):
         # 1. openmp (in development)
         # 2. cuda (in development)
         #-------------------------------    
-        self.set_multiprocessor_mode(1)
+        self.set_multiprocessor_mode(MULTIPROCESSOR_OPENMP)
 
         self.processor = processor
         self.numproc = numproc
@@ -767,7 +765,7 @@ class Generic_Domain(object):
 
         try:
             self.evolve_max_timestep = min(self.evolve_max_timestep, max_timestep)
-        except:
+        except AttributeError:
             self.evolve_max_timestep = max_timestep
 
     def get_evolve_max_timestep(self):
@@ -1237,7 +1235,7 @@ class Generic_Domain(object):
 
                 try:
                     apply_expression_to_dictionary(polygon, self.quantities)
-                except:  # FIXME(Ole): Use proper exception
+                except Exception:  # FIXME(Ole): Use proper exception
                     # At least polygon wasn't expression involving quantitites
                     pass
                 else:
@@ -1364,7 +1362,7 @@ class Generic_Domain(object):
 
                 msg += f' elapsed ({cpu_time_hhmmss}), eta ({cpu_time_ETA_hhmmss})'
 
-            except:
+            except Exception:
                 pass
             self.last_walltime = walltime()
 

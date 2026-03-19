@@ -31,7 +31,7 @@ def interpolate_linearly(x, xvec, yvec):
     msg += 'to numerical scalar: x = %s' % str(x)
     try:
         x = float(x)
-    except:
+    except (ValueError, TypeError):
         raise Exception(msg)
 
 
@@ -793,10 +793,10 @@ class Culvert_flow_general(object):
             
         # Log timeseries to file
         try:
-            fid = open(self.timeseries_filename, 'a')        
-        except:
+            fid = open(self.timeseries_filename, 'a')
+        except (OSError, AttributeError):
             pass
-        else:    
+        else:
             fid.write('%.2f, %.2f\n' %(time, Q))
             fid.close()
 
@@ -804,7 +804,6 @@ class Culvert_flow_general(object):
         self.last_time = time
 
 
-            
 
 
 
@@ -1114,10 +1113,10 @@ class Culvert_flow_rating(object):
 
             # Log timeseries to file
             try:
-                fid = open(self.timeseries_filename, 'a')        
-            except:
+                fid = open(self.timeseries_filename, 'a')
+            except OSError:
                 pass
-            else:    
+            else:
                 fid.write('%.2f, %.2f\n' %(time, Q))
                 fid.close()
 

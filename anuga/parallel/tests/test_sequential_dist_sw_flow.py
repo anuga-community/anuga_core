@@ -260,6 +260,9 @@ def run_simulation(parallel=False, verbose=False):
         #os.remove('odomain_P4_3.pickle')
         import glob
         [ os.remove(fl) for fl in glob.glob('*.npy') ]
+        for fl in ['odomain.txt', 'pdomain.txt', 'sdomain.txt']:
+            if os.path.exists(fl):
+                os.remove(fl)
         
         
 def setup_and_evolve(domain, verbose=False):

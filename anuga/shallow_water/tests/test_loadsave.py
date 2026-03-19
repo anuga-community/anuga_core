@@ -84,7 +84,7 @@ class Test_LoadSave(unittest.TestCase):
         for file in ['domain.sww', 'domain_pickle.pickle']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass
         
     def test_get_flow_through_cross_section_with_geo(self):

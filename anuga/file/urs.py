@@ -202,7 +202,7 @@ def calculate_boundary_points(boundary_polygon, zone, ll_lat,
     if use_cache is True:
         try:
             from anuga.caching import cache
-        except:
+        except ImportError:
             msg = 'Caching was requested, but caching module' \
                   'could not be imported'
             raise Exception(msg)

@@ -1,6 +1,3 @@
-
-
-from builtins import object
 from anuga.utilities.system_tools import log_to_file
 
 

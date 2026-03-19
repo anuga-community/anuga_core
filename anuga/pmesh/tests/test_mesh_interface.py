@@ -500,7 +500,7 @@ class TestCase(unittest.TestCase):
                                          10000000,
                                          interior_regions=interior_regions,
                                          verbose=False)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Interior polygon sticking outside bounding polygon should '
@@ -568,7 +568,7 @@ class TestCase(unittest.TestCase):
                                          10000000,
                                          interior_regions=interior_regions,
                                          verbose=False)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Interior polygon sticking outside bounding polygon should '
@@ -609,7 +609,7 @@ class TestCase(unittest.TestCase):
                                          boundary_tags,
                                          10000000,
                                          interior_regions=interior_regions)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Tags are listed repeatedly, but create mesh from regions '
@@ -640,7 +640,7 @@ class TestCase(unittest.TestCase):
                                          boundary_tags,
                                          10000000,
                                          interior_regions=interior_regions)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Tags are listed repeatedly, but create mesh from regions '
@@ -707,7 +707,7 @@ class TestCase(unittest.TestCase):
                                      boundary_tags,
                                      10000000,
                                      interior_holes=interior_poly1)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Passing a single polygon should have raised an error '
@@ -722,7 +722,7 @@ class TestCase(unittest.TestCase):
                                      boundary_tags,
                                      10000000,
                                      interior_holes=[interior_poly3])
-        except:
+        except Exception:
             pass
         else:
             msg = 'Passing a single polygon should have raised an error '
@@ -987,7 +987,7 @@ END\n')
                                          boundary_tags,
                                          10000000,
                                          interior_regions=interior_regions)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Segment out of bounds not caught '

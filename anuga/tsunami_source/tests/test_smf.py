@@ -11,7 +11,7 @@ class Test_smf(unittest.TestCase):
     def tearDown(self):
         try:
             os.remove('test.msh')
-        except:
+        except OSError:
             pass
 
 

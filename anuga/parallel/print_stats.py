@@ -15,9 +15,6 @@
 #
 #
 #########################################################
-
-
-from builtins import range
 import sys
 
 from anuga.utilities import parallel_abstraction as pypar

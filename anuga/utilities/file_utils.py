@@ -69,7 +69,7 @@ def check_dir(path, verbose=None):
 
             if verbose:
                 log.critical('MESSAGE: Directory %s created.' % path)
-        except:
+        except OSError:
             log.critical('WARNING: Directory %s could not be created.' % path)
             if unix:
                 try:
@@ -97,7 +97,7 @@ def del_dir(path):
             else:
                 try:
                     os.remove(X)
-                except:
+                except OSError:
                     log.critical("Could not remove file %s" % X)
 
         os.rmdir(path)

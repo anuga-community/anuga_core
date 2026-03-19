@@ -40,7 +40,7 @@ class Test_sww_Interrogate(unittest.TestCase):
         for file in ['flowtest.sww', 'flowtest_uniquely.sww', 'runup_test_2.sww']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass     
     
 
@@ -1051,7 +1051,7 @@ class Test_sww_Interrogate(unittest.TestCase):
         try:
             pass
             #os.remove(domain.get_name() + '.sww')
-        except:
+        except OSError:
             pass
             #FIXME(Ole): Windows won't allow removal of this
 

@@ -51,7 +51,7 @@ class Inlet_enquiry(inlet.Inlet):
 
         try:
             self.enquiry_index = self.domain.get_triangle_containing_point(self.enquiry_pt)
-        except:
+        except Exception:
             msg = "Enquiry point %s doesn't intersect mesh, maybe inside a building, try reducing enquiry_gap" % str(self.enquiry_pt)
             raise Exception(msg)
 

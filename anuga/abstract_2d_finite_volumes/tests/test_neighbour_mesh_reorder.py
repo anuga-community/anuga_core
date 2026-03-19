@@ -5,10 +5,6 @@
 #FIXME: Seperate the tests for mesh and general_mesh
 
 #FIXME (Ole): Maxe this test independent of anything that inherits from General_mesh (namely shallow_water)
-
-
-from builtins import str
-from builtins import range
 import unittest
 from math import sqrt
 import copy

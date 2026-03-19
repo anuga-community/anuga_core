@@ -5,10 +5,6 @@
 #FIXME: Seperate the tests for mesh and general_mesh
 
 #FIXME (Ole): Maxe this test independent of anything that inherits from General_mesh (namely shallow_water)
-
-
-from builtins import str
-from builtins import range
 import unittest
 from math import sqrt
 
@@ -41,7 +37,7 @@ class Test_Mesh(unittest.TestCase):
 
         try:
             mesh = Mesh(points, vertices)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have raised exception'
@@ -396,7 +392,7 @@ class Test_Mesh(unittest.TestCase):
                       [5, 2, 3]]
         try:
             mesh = Mesh(points, triangles)
-        except:
+        except Exception:
             pass
         else:
             raise Exception("triangle edge duplicates not caught")
@@ -1216,7 +1212,7 @@ class Test_Mesh(unittest.TestCase):
 
         try:
             id = mesh.get_triangle_containing_point([3.0, 5.0])
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught point outside polygon (Non)'            
@@ -1253,7 +1249,7 @@ class Test_Mesh(unittest.TestCase):
 
         try:
             id = mesh.get_triangle_near_point([3.0, 5.0], tolerance=1.0)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught point further than tolerance from centroid'            

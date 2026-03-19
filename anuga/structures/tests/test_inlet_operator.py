@@ -29,7 +29,7 @@ class Test_inlet_operator(unittest.TestCase):
     def tearDown(self):
         try:
             os.remove('Test_Outlet_Inlet.sww')
-        except:
+        except OSError:
             pass
         
     

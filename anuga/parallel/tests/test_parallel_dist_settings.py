@@ -139,7 +139,7 @@ def run_simulation(parallel=False, verbose=False):
                 os.remove('odomain_P4_3.pickle')
                 import glob
                 [ os.remove(fl) for fl in glob.glob('*.npy') ]
-            except: 
+            except OSError: 
                 if verbose: print('remove files failed')
 
         if myid == 0 and verbose : print('FINISHED')

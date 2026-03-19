@@ -22,9 +22,9 @@
 
 
 
-from .revision import  __git_sha__
-from .revision import __git_committed_datetime__
-from .revision import __version__
+from ._version import __git_sha__
+from ._version import __git_committed_datetime__
+from ._version import __version__
 
 # ----------------------------------
 # NetCDF changes stdout to terminal
@@ -314,6 +314,8 @@ from anuga.utilities import log as log
 
 from anuga.config import g
 from anuga.config import velocity_protection
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
+from anuga.config import LOW_FROUDE_OFF, LOW_FROUDE_1, LOW_FROUDE_2
 
 # --------------------------------------
 # NetCDF changes stdout to the terminal
@@ -321,7 +323,7 @@ from anuga.config import velocity_protection
 # --------------------------------------
 try:
     from importlib import reload
-except:
+except ImportError:
     pass
 reload(sys)
 sys.stdout = _stdout

@@ -4,14 +4,13 @@ Rate operators (such as rain)
 Constraints: See GPL license in the user guide
 Version: 1.0 ($Revision: 7731 $)
 """
-
-from builtins import str
 __author__="steve"
 __date__ ="$09/03/2012 4:46:39 PM$"
 
 
 
 from anuga.config import indent
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
 import numpy as num
 import anuga.utilities.log as log
 from anuga.utilities.function_utils import evaluate_temporal_function
@@ -112,7 +111,7 @@ Parameters involving communication
         #-------------------------------
         try:
             import xarray
-        except:
+        except ImportError:
             pass
         else:
             if type(rate) is xarray.core.dataarray.DataArray:
@@ -162,7 +161,7 @@ Parameters involving communication
             return
 
         # Check if domain is in GPU mode
-        if not hasattr(self.domain, 'multiprocessor_mode') or self.domain.multiprocessor_mode != 2:
+        if not hasattr(self.domain, 'multiprocessor_mode') or self.domain.multiprocessor_mode != MULTIPROCESSOR_GPU:
             return
 
         # Check if we have a GPU interface
@@ -222,12 +221,12 @@ Parameters involving communication
         otherwise apply for the specific indices
         """
 
-        if self.indices is []:
+        if self.indices is not None and len(self.indices) == 0:
             return
 
         # Check for GPU execution path
         if (hasattr(self.domain, 'multiprocessor_mode') and
-            self.domain.multiprocessor_mode == 2 and
+            self.domain.multiprocessor_mode == MULTIPROCESSOR_GPU and
             not self.rate_spatial and
             not self.rate_xarray):
 
@@ -427,7 +426,7 @@ Parameters involving communication
         try:
             self.local_max = (local_rates[fid].max()/timestep)
             self.local_min = (local_rates[fid].min()/timestep)
-        except:
+        except (TypeError, IndexError):
             self.local_max = local_rates/timestep
             self.local_min = local_rates/timestep
 
@@ -612,8 +611,8 @@ Parameters involving communication
             self.areas = self.domain.areas
             return
 
-        if self.indices is []:
-            self.areas = []
+        if self.indices is not None and len(self.indices) == 0:
+            self.areas = num.array([])
             return
 
         self.areas = self.domain.areas[self.indices]
@@ -624,8 +623,8 @@ Parameters involving communication
             self.full_indices = num.where(self.domain.tri_full_flag ==1)[0]
             return
 
-        if self.indices is []:
-            self.full_indices = []
+        if self.indices is not None and len(self.indices) == 0:
+            self.full_indices = num.array([], dtype=int)
             return
 
         self.full_indices = num.where(self.domain.tri_full_flag[self.indices] == 1)[0]
@@ -692,7 +691,7 @@ Parameters involving communication
             # Check that default_rate is a function of one argument
             try:
                 default_rate(0.0)
-            except:
+            except TypeError:
                 raise Exception(msg)
 
         self.default_rate = default_rate
@@ -719,7 +718,7 @@ Parameters involving communication
         try:
             data_dt = (self.xa['time'][1].values.astype('int64')-self.xa['time'][0].values.astype('int64'))/1.0e9
             self.domain.set_evolve_max_timestep(min(data_dt, self.domain.get_evolve_max_timestep()))
-        except:  # if we can't determine the timestep probably means there is just one timeslice so just
+        except Exception:  # if we can't determine the timestep probably means there is just one timeslice so just
             pass
 
         from scipy.spatial import KDTree
@@ -765,7 +764,7 @@ Parameters involving communication
             else:
                 Q_numpy = Q_ref[self.ii].to_numpy()
                   
-        except:
+        except Exception:
             Q_numpy = self.default_rate
             if self.verbose:
                 print(f"UTC time {current_utc_datetime64} Using default rate Q = {Q_numpy(self.get_time())}")

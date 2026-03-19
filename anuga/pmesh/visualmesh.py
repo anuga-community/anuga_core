@@ -2,7 +2,7 @@
 
 try:
     from . import mesh
-except:
+except ImportError:
     import mesh
 
 from tkinter.simpledialog import Dialog,askfloat, askinteger, askstring

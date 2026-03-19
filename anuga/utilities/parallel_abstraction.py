@@ -5,10 +5,6 @@
 
     mpi4py wrap added 20130503 by Roberto Vidmar rvidmar@inogs.it
 """
-
-
-from builtins import range
-from builtins import object
 import sys
 import os
 import time
@@ -18,7 +14,7 @@ import numpy as np
 try:
   from mpi4py import MPI
   
-except:
+except ImportError:
   print ('WARNING: Could not import mpi4py - '
       'defining sequential interface')
 
@@ -31,10 +27,10 @@ except:
   def get_processor_name():
       try:
           hostname = os.environ['HOST']
-      except:
+      except KeyError:
           try:
               hostname = os.environ['HOSTNAME']
-          except:
+          except KeyError:
               hostname = 'Unknown'
 
       return hostname

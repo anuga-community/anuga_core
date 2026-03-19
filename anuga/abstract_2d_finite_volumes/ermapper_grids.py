@@ -165,7 +165,7 @@ def write_ermapper_data(grid, ofile, data_format=num.float32):
 
     try:
         data_format = celltype_map[data_format]
-    except:
+    except KeyError:
         pass
 
 

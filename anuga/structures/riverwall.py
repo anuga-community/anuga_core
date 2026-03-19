@@ -704,7 +704,7 @@ class RiverWall(object):
             # Make output directory
             try: 
                 os.mkdir(output_dir)
-            except:
+            except OSError:
                 pass
             # Make output files with empty contents
             for i, riverWallFile in enumerate(self.names):

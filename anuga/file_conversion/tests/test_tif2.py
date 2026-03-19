@@ -1,4 +1,3 @@
-from builtins import str
 import unittest
 import copy
 import os
@@ -555,7 +554,8 @@ class Test_tif2(unittest.TestCase):
 
         assert numpy.allclose(Z, Z_exact) or numpy.allclose(Z, Z_exact_win) or numpy.allclose(Z, Z_exact_mac)
 
-        #os.remove('PointData_test_ll.tif')
+        if os.path.exists('PointData_test_ll.tif'):
+            os.remove('PointData_test_ll.tif')
 
     @pytest.mark.skipif('osgeo' not in sys.modules,
                     reason="requires the gdal module")
@@ -577,12 +577,15 @@ class Test_tif2(unittest.TestCase):
         points = numpy.vstack((xG,yG)).T
 
         try:
-            Z = tif2point_values('PointData_test_ll.tif', zone=56, south=True, points = points) 
+            Z = tif2point_values('PointData_test_ll.tif', zone=56, south=True, points = points)
         except ValueError:
             pass
         else:
             #Expected ValueError
-            raise Exception()       
+            raise Exception()
+        finally:
+            if os.path.exists('PointData_test_ll.tif'):
+                os.remove('PointData_test_ll.tif')
 
     @pytest.mark.skipif('osgeo' not in sys.modules,
                     reason="requires the gdal module")
@@ -653,7 +656,7 @@ class Test_tif2(unittest.TestCase):
 
         try:
             Z = tif2point_values('PointData_test_utm.tif', zone=56, south=False, points = points)
-        except:
+        except Exception:
             pass
         else:
             # Expected Exception as tif is southern hemisphere, tif2point_values called with south=False

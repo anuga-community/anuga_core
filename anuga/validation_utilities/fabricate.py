@@ -331,7 +331,7 @@ class AtimesRunner(Runner):
             try:
                 try:
                     f = os.fdopen(handle, 'wb')
-                except:
+                except OSError:
                     os.close(handle)
                     raise
                 try:
@@ -666,7 +666,7 @@ class StraceRunner(Runner):
         try:
             try:
                 outfile = os.fdopen(handle, 'r')
-            except:
+            except OSError:
                 os.close(handle)
                 raise
             try:
@@ -1427,7 +1427,7 @@ def main(globals_dict=None, build_dir=None, extra_options=None, builder=None,
     if None in [globals_dict, build_dir]:
         try:
             frame = sys._getframe(1)
-        except:
+        except AttributeError:
             printerr("Your Python version doesn't support sys._getframe(1),")
             printerr("call main(globals(), build_dir) explicitly")
             sys.exit(1)

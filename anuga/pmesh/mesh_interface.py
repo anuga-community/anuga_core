@@ -127,7 +127,7 @@ def create_mesh_from_regions(bounding_polygon,
     if use_cache is True:
         try:
             from anuga.caching import cache
-        except:
+        except ImportError:
             msg = 'Caching was requested, but caching module' +\
                   'could not be imported'
             raise Exception(msg)
@@ -304,7 +304,7 @@ def _create_mesh_from_regions(bounding_polygon,
         for n, polygon in enumerate(interior_holes):
             try:
                 tags = hole_tags[n]
-            except:
+            except (KeyError, IndexError, TypeError):
                 tags = {}
             m.add_hole_from_polygon(polygon,
                                     segment_tags=tags,

@@ -9,7 +9,7 @@ from os.path import join
 
 try:
     import ipdb as pdb
-except:
+except ImportError:
     import pdb
 
 

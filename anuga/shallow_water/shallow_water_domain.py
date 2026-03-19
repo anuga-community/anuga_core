@@ -104,11 +104,14 @@ except ImportError:
 
 try:
     import dill as pickle
-except:
+except ImportError:
     import pickle
 
 from anuga.abstract_2d_finite_volumes.generic_domain \
                     import Generic_Domain
+
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
+from anuga.config import LOW_FROUDE_OFF, LOW_FROUDE_1, LOW_FROUDE_2
 
 from anuga.shallow_water.forcing import Cross_section
 from anuga.utilities.numerical_tools import mean
@@ -132,13 +135,13 @@ def nvtxRangePop(*arg):
 try:
     from cupy.cuda.nvtx import RangePush as nvtxRangePush
     from cupy.cuda.nvtx import RangePop  as nvtxRangePop
-except:
+except ImportError:
     pass
 
 try:
     from nvtx import range_push as nvtxRangePush
     from nvtx import range_pop  as nvtxRangePop
-except:
+except ImportError:
     pass
 
 
@@ -316,7 +319,7 @@ class Domain(Generic_Domain):
         #-------------------------------
         self.gpu_interface = None
         self.use_c_rk2_loop = True  # Use C RK2 loop (faster) vs Python-orchestrated GPU loop
-        self.set_multiprocessor_mode(1)  # Default to OpenMP (use set_multiprocessor_mode(2) for GPU)
+        self.set_multiprocessor_mode(MULTIPROCESSOR_OPENMP)  # Default to OpenMP (use MULTIPROCESSOR_GPU for GPU)
 
         #-------------------------------
         # C extension domain structure
@@ -1057,7 +1060,7 @@ class Domain(Generic_Domain):
 
         try:
             from zoneinfo import ZoneInfo
-        except:
+        except ImportError:
             from backports.zoneinfo import ZoneInfo
 
         if tz is None:
@@ -1087,7 +1090,7 @@ class Domain(Generic_Domain):
         
         try:
             from datetime import UTC
-        except:
+        except ImportError:
             from datetime import timezone
             UTC = timezone.utc 
 
@@ -1461,7 +1464,7 @@ class Domain(Generic_Domain):
         flux calculations which minimize the damping in this case.
         """
 
-        assert low_froude in [0,1,2]
+        assert low_froude in [LOW_FROUDE_OFF, LOW_FROUDE_1, LOW_FROUDE_2]
 
         self.low_froude = low_froude
 
@@ -1803,7 +1806,7 @@ class Domain(Generic_Domain):
         from anuga import numprocs
 
         # GPU path: compute volume directly on GPU (avoids expensive D2H sync)
-        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
             from anuga.shallow_water.sw_domain_gpu_ext import compute_water_volume_gpu
             volume = compute_water_volume_gpu(self.gpu_interface.gpu_dom)
         elif not self.evolved_called:
@@ -1984,9 +1987,9 @@ class Domain(Generic_Domain):
 
         nvtxRangePush("compute_fluxes")
         # Choose the correct extension module
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import compute_fluxes_ext_central
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # change over to cuda routines as developed
             # from .sw_domain_simd_ext import compute_fluxes_ext_central
             # FIXME SR: 2023_10_16 currently compute_fluxes and distribute together
@@ -2012,7 +2015,7 @@ class Domain(Generic_Domain):
         nvtxRangePush('update_boundary')
 
         # GPU mode - use GPU boundary functions if all boundaries are GPU-supported
-        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
             from anuga.shallow_water.sw_domain_gpu_ext import (
                 evaluate_reflective_boundary_gpu,
                 evaluate_dirichlet_boundary_gpu,
@@ -2113,7 +2116,7 @@ class Domain(Generic_Domain):
 
         nvtxRangePush('compute_forcing_terms')
 
-        if self.multiprocessor_mode == 2:
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # GPU mode: use GPU Manning friction, fall back to CPU for others
             for f in self.forcing_terms:
                 if f.__name__ == 'manning_friction_semi_implicit':
@@ -2136,7 +2139,7 @@ class Domain(Generic_Domain):
         nvtxRangePush('distribute_to_vertices_and_edges')
 
         # Sync from GPU if in GPU mode (needed before CPU reads data at yieldsteps)
-        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
             self.gpu_interface.sync_from_device()
 
         # Do protection step
@@ -2144,9 +2147,9 @@ class Domain(Generic_Domain):
 
         # Do extrapolation step
         # Choose the correct extension module
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
         else:
             raise Exception('Not implemented')
@@ -2165,10 +2168,10 @@ class Domain(Generic_Domain):
 
         # Do extrapolation step
         # Choose the correct extension module
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import distribute_to_edges as extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw(self)
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # change over to cuda routines as developed
             #from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
@@ -2187,10 +2190,10 @@ class Domain(Generic_Domain):
 
         nvtxRangePush('distribute_edges_to_vertices')
 
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             # Using OpenMP extension
             from .sw_domain_openmp_ext import distribute_edges_to_vertices as distribute_edges_to_vertices_ext
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # Using cupy extension
             # FIXME SR: Not implemented yet so use OpenMP version
             from .sw_domain_openmp_ext import distribute_edges_to_vertices as distribute_edges_to_vertices_ext
@@ -2361,9 +2364,9 @@ class Domain(Generic_Domain):
 
         # nvtxRangePush('protect_new')
         # Choose the correct extension module
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import protect_new
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # change over to cuda routines as developed
             # # from .sw_domain_simd_ext import  protect_new
             #from .sw_domain_openmp_ext import protect_new
@@ -2468,9 +2471,9 @@ class Domain(Generic_Domain):
         # Update height based on discontinuous elevation 
         assert self.get_using_discontinuous_elevation()
 
-        if self.multiprocessor_mode == 1:  
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:  
             from .sw_domain_openmp_ext import update_conserved_quantities
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             update_conserved_quantities = self.gpu_interface.update_conserved_quantities_kernel
         else:
             raise Exception('Not implemented')
@@ -2837,7 +2840,7 @@ class Domain(Generic_Domain):
 
         # Ghost exchange (MPI) - required for multi-GPU operation
         # Note: update_ghosts() is a no-op in GPU mode, so we call exchange_ghosts directly
-        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
             if self.ghost_layer_width < 4:
                 from anuga.shallow_water.sw_domain_gpu_ext import exchange_ghosts
                 exchange_ghosts(self.gpu_interface.gpu_dom)
@@ -2852,7 +2855,7 @@ class Domain(Generic_Domain):
         """
 
         # GPU mode: use C RK2 loop (faster) or Python-orchestrated GPU loop
-        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
             if self.use_c_rk2_loop:
                 self._evolve_one_rk2_step_c(yieldstep, finaltime)
             else:
@@ -3305,10 +3308,10 @@ class Domain(Generic_Domain):
     def backup_conserved_quantities(self):
 
         # Backup conserved_quantities centroid values
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import backup_conserved_quantities
             backup_conserved_quantities(self)
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             self.gpu_interface.backup_conserved_quantities_kernel(self)
         else:
             for name in self.conserved_quantities:
@@ -3318,12 +3321,12 @@ class Domain(Generic_Domain):
     def saxpy_conserved_quantities(self, a, b, c=None):
 
         # saxpy conserved_quantities centroid values with backup values
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             if c is None:
                 c = 1.0
             from .sw_domain_openmp_ext import saxpy_conserved_quantities
             saxpy_conserved_quantities(self, a, b, c)
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # GPU version doesn't support c parameter yet
             self.gpu_interface.saxpy_conserved_quantities_kernel(self, a, b)
         else:
@@ -3411,7 +3414,7 @@ class Domain(Generic_Domain):
         Boyd culvert operators are handled via GPUCulvertManager (batched,
         only 2 GPU sync points) instead of the per-operator Python loop.
         """
-        gpu_mode = (self.multiprocessor_mode == 2 and self.gpu_interface is not None)
+        gpu_mode = (self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None)
         gpu_culverts_active = (gpu_mode and self.gpu_culvert_manager is not None
                                and self.gpu_culvert_manager.num_culverts > 0)
         needs_cpu_sync = False
@@ -3436,7 +3439,7 @@ class Domain(Generic_Domain):
 
     def update_ghosts(self, quantities=None):
         """Override to use GPU ghost exchange when in GPU mode."""
-        if self.multiprocessor_mode == 2 and self.gpu_interface is not None:
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
             # GPU RK2 loop handles ghost exchange internally via exchange_ghosts(gpu_dom)
             # Don't do another exchange here - it would cause MPI message conflicts
             pass
@@ -3743,9 +3746,9 @@ class Domain(Generic_Domain):
 
         nvtxRangePush('compute_flux_update_frequency')
         # Choose the correct extension module
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import compute_flux_update_frequency
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # change over to cuda routines as developed
             from .sw_domain_openmp_ext import compute_flux_update_frequency
         else:
@@ -3873,16 +3876,16 @@ class Domain(Generic_Domain):
          2. gpu/mpi - C RK2 loop (use_c_rk2_loop=True, keeps data on device)
         """
 
-        if multiprocessor_mode not in [1,2]:
+        if multiprocessor_mode not in [MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU]:
             raise ValueError('Invalid multiprocessor mode. Must be one of [1,2] (openmp, gpu/mpi)')
 
         self.multiprocessor_mode = multiprocessor_mode
 
         # Mode 1: Python RK2 loop (more flexible, easier debugging)
         # Mode 2: C RK2 loop (faster, data stays on GPU device)
-        self.use_c_rk2_loop = (multiprocessor_mode == 2)
+        self.use_c_rk2_loop = (multiprocessor_mode == MULTIPROCESSOR_GPU)
 
-        if self.multiprocessor_mode == 2:
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             self.set_gpu_interface()
 
     def get_multiprocessor_mode(self):
@@ -3890,7 +3893,7 @@ class Domain(Generic_Domain):
         Get multiprocessor mode 
         
         1. openmp (in development)
-        2. cupy (in development)
+        2. gpu/mpi (in development)
         """
         return self.multiprocessor_mode 
 
@@ -3943,7 +3946,7 @@ class Domain(Generic_Domain):
 
     def set_gpu_interface(self):
 
-        if self.multiprocessor_mode == 2 and self.gpu_interface is None:
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is None:
 
             # Check that boundaries are properly set before GPU initialization
             # After distribute(), boundary_map may be {'exterior': None, 'ghost': None}
@@ -3998,7 +4001,7 @@ class Domain(Generic_Domain):
                 self.gpu_interface.allocate_gpu_arrays()
                 self.gpu_interface.compile_gpu_kernels()
                 return
-            except:
+            except Exception:
                 pass
 
             # No GPU available

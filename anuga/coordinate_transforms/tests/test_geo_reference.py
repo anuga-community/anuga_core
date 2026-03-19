@@ -1,8 +1,4 @@
 #!/usr/bin/env python
-#
-
-from builtins import zip
-from builtins import str
 import unittest
 import tempfile
 import os
@@ -482,7 +478,7 @@ class geo_referenceTestCase(unittest.TestCase):
 
         try:
             g1.reconcile_zones(g2)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have raised an exception'
@@ -500,7 +496,7 @@ class geo_referenceTestCase(unittest.TestCase):
         # Generate exception with invalid hemisphere value
         try:
             g1.set_hemisphere('bogus')
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have raised an exception' 
@@ -532,7 +528,7 @@ class geo_referenceTestCase(unittest.TestCase):
         # Generate exception with invalid zone value
         try:
             g1.set_zone(0)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have raised an exception'  

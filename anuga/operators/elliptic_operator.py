@@ -1,5 +1,3 @@
-
-from builtins import range
 from anuga import Domain
 from anuga import Quantity
 from anuga.utilities.sparse import Sparse, Sparse_CSR
@@ -389,7 +387,7 @@ class Elliptic_operator(Operator):
         #Right multiply with scalar
         try:
             other = float(other)
-        except:
+        except (ValueError, TypeError):
             msg = 'Sparse matrix can only "right-multiply" onto a scalar'
             raise TypeError(msg)
         else:

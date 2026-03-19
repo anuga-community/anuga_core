@@ -61,7 +61,7 @@ class Parallel_Inlet_enquiry(parallel_inlet.Parallel_Inlet):
                 has_enq_point = True
             else:
                 has_enq_point = False
-        except:
+        except Exception:
             has_enq_point = False
 
         if has_enq_point:

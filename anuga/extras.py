@@ -40,7 +40,7 @@ def rectangular_cross_domain(*args, **kwargs):
 
     try:
         verbose = kwargs.pop('verbose')
-    except:
+    except KeyError:
         verbose = False
 
 
@@ -190,7 +190,7 @@ def create_domain_from_regions(bounding_polygon,
     if use_cache is True:
         try:
             from anuga.caching import cache
-        except:
+        except ImportError:
             msg = 'Caching was requested, but caching module'+\
                   'could not be imported'
             raise (msg)

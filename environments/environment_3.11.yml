@@ -8,9 +8,7 @@ dependencies:
   - cartopy
   - cython
   - dill
-  - future
   - gdal
-  - gitpython
   - matplotlib
   - meshpy
   - meson
@@ -27,7 +25,6 @@ dependencies:
   - pyproj
   - pytest
   - scipy
-  - toml
   - utm
   - wheel
   - xarray

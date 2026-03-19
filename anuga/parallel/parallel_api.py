@@ -2,10 +2,6 @@
 
 
 """
-
-
-
-from builtins import range
 import numpy as num
 
 # The abstract Python-MPI interface

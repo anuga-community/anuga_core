@@ -1,7 +1,4 @@
 #!/usr/bin/env python
-
-
-from builtins import range
 import unittest
 from math import sqrt
 
@@ -80,7 +77,7 @@ class Test_Domain(unittest.TestCase):
 
         try:
             domain.set_CFL(-0.1)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught a negative cfl'
@@ -95,7 +92,7 @@ class Test_Domain(unittest.TestCase):
 
         try:
             domain.set_CFL(3.0)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have warned of cfl>2.0'
@@ -265,7 +262,7 @@ class Test_Domain(unittest.TestCase):
         # Check that invalid requests are dealt with
         try:
             domain.set_quantities_to_be_monitored(['yyyyy'])        
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught illegal quantity'
@@ -281,7 +278,7 @@ class Test_Domain(unittest.TestCase):
 
         try:
             domain.set_quantities_to_be_monitored('stage', 'stage-elevation')
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught too many arguments'
@@ -289,7 +286,7 @@ class Test_Domain(unittest.TestCase):
 
         try:
             domain.set_quantities_to_be_monitored('stage', 'blablabla')
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught polygon as a string'
@@ -456,7 +453,7 @@ class Test_Domain(unittest.TestCase):
         # Check that invalid requests are dealt with
         try:
             domain.set_timestepping_method('eee')        
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught illegal method'
@@ -637,7 +634,7 @@ class Test_Domain(unittest.TestCase):
                             conserved_quantities = ['stage', 'xmomentum', 'ymomentum'],
                             evolved_quantities =\
                                    ['stage', 'xmomentum', 'xvelocity', 'ymomentum', 'yvelocity'])
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught the evolved quantities not being in order'

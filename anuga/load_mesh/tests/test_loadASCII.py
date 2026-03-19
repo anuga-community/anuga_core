@@ -1,7 +1,4 @@
 #!/usr/bin/env python
-
-from builtins import zip
-from builtins import str
 import tempfile
 import unittest
 import os

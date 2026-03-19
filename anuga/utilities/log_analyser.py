@@ -1,5 +1,3 @@
-
-from builtins import zip
 import sys
 import os
 import re

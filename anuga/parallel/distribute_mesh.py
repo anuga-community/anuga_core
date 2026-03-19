@@ -19,10 +19,6 @@
 #            Steve Roberts, Aug 2009 (updating to numpy)
 #
 #=========================================================================
-
-
-from builtins import zip
-from builtins import range
 import sys
 from os import sep
 from sys import path
@@ -32,7 +28,7 @@ import numpy as num
 
 try:
     import numpy.lib.arraysetops as numset
-except:
+except ImportError:
     import numpy as numset
 
 
@@ -42,7 +38,7 @@ from anuga import indent
 
 try:
     import local_config as config
-except:
+except ImportError:
     from . import config as config
 
 
@@ -1595,7 +1591,7 @@ def extract_submesh(submesh, triangles_per_proc, p2s_map=None, p=0):
     else:
         try:
             tri_l2g = p2s_map[tri_l2g]
-        except:
+        except (IndexError, KeyError):
             tri_l2g = p2s_map
 
     return points, vertices, boundary, quantities, ghost_recv_dict, \
