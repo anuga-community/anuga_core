@@ -186,6 +186,96 @@ def distribute(domain, verbose=False, debug=False, parameters = None):
 
 
 
+def _shared_bcast_ndarray(arr_on_root, comm, node_comm):
+    """Broadcast a numpy array from global rank 0 using shared memory within nodes.
+
+    Within each node, a single physical copy is held in an
+    ``MPI.Win.Allocate_shared`` window; all ranks on the node map a numpy
+    view into that window.  Between nodes, a Bcast among node leaders
+    (rank 0 within each node) distributes the data.
+
+    Parameters
+    ----------
+    arr_on_root : ndarray or None
+        Array to broadcast.  Only meaningful on global rank 0; pass None
+        on all other ranks.
+    comm : MPI.Comm
+        Global communicator.
+    node_comm : MPI.Comm
+        Shared-memory communicator obtained via
+        ``comm.Split_type(MPI.COMM_TYPE_SHARED)``.
+
+    Returns
+    -------
+    arr : ndarray
+        View into shared memory (valid until ``win.Free()`` is called).
+    win : MPI.Win
+        Shared memory window.  Caller must call ``win.Free()`` when
+        finished with ``arr``.
+    """
+    from mpi4py import MPI
+    myid      = comm.Get_rank()
+    node_rank = node_comm.Get_rank()
+
+    # Broadcast shape/dtype from global rank 0.
+    meta = (arr_on_root.shape, arr_on_root.dtype.str) if myid == 0 else None
+    shape, dtype_str = comm.bcast(meta, root=0)
+    dtype  = num.dtype(dtype_str)
+    nbytes = int(num.prod(shape)) * dtype.itemsize
+
+    # Node leaders allocate the full buffer; non-leaders allocate nothing.
+    win = MPI.Win.Allocate_shared(
+        nbytes if node_rank == 0 else 0,
+        dtype.itemsize, MPI.INFO_NULL, node_comm)
+
+    # All ranks on the node get a numpy view into the leader's buffer.
+    buf, _ = win.Shared_query(0)
+    arr = num.ndarray(shape, dtype=dtype, buffer=buf)
+
+    # Node leaders form a communicator for inter-node Bcast.
+    leader_comm = comm.Split(0 if node_rank == 0 else MPI.UNDEFINED, myid)
+    if node_rank == 0:
+        if myid == 0:
+            arr[...] = arr_on_root
+        leader_comm.Bcast(arr, root=0)
+        leader_comm.Free()
+
+    # Barrier so all node members see the populated data before returning.
+    node_comm.Barrier()
+    return arr, win
+
+
+def _scatterv_quantity(arr_on_root, cumsum, comm):
+    """Scatter a 1-D float64 quantity array: rank p receives arr[cumsum[p]:cumsum[p+1]].
+
+    Parameters
+    ----------
+    arr_on_root : 1-D float64 ndarray or None
+        Full quantity array on rank 0; None on all other ranks.
+    cumsum : 1-D int array, length numprocs+1
+        Cumulative triangle counts (``cumsum[p]`` = first triangle of rank p).
+    comm : MPI.Comm
+
+    Returns
+    -------
+    recvbuf : 1-D float64 ndarray, length ``cumsum[myid+1] - cumsum[myid]``
+    """
+    from mpi4py import MPI
+    myid  = comm.Get_rank()
+    nproc = comm.Get_size()
+    count   = int(cumsum[myid + 1] - cumsum[myid])
+    recvbuf = num.empty(count, dtype=num.float64)
+    if myid == 0:
+        sendcounts = [int(cumsum[p + 1] - cumsum[p]) for p in range(nproc)]
+        displs     = [int(cumsum[p])                  for p in range(nproc)]
+        comm.Scatterv(
+            [arr_on_root.astype(num.float64, copy=False), sendcounts, displs, MPI.DOUBLE],
+            recvbuf, root=0)
+    else:
+        comm.Scatterv(None, recvbuf, root=0)
+    return recvbuf
+
+
 def distribute_collaborative(domain, verbose=False, debug=False, parameters=None):
     """MPI-collaborative domain distribution — eliminates the rank-0 bottleneck.
 
@@ -193,15 +283,23 @@ def distribute_collaborative(domain, verbose=False, debug=False, parameters=None
     on rank 0 — O(P × N) work.  This function instead:
 
     1. Rank 0 partitions the mesh (METIS / Morton / Hilbert).
-    2. All ranks receive the full mesh topology via MPI broadcast.
+    2. Mesh topology (nodes, triangles, neighbours) is distributed using
+       ``MPI.Win.Allocate_shared``: one physical copy per node, shared by
+       all ranks on that node.  Between nodes a single Bcast among node
+       leaders transfers the data.
     3. Each rank independently builds its own ghost layer using the
        Cython BFS kernel (``ghost_layer_bfs`` / ``ghost_bnd_layer_classify``).
-    4. One ``MPI_Allgather`` of ghost-communication arrays lets every rank
-       derive its own ``full_commun`` table without further coordination.
+    4. Full-triangle quantities are distributed with ``MPI_Scatterv``
+       (each rank receives only its O(N/P) rows).  Ghost quantities are
+       sent by rank 0 via targeted ``MPI_Isend`` after an
+       ``MPI_Allgather`` of ghost-communication arrays reveals every
+       rank's ghost triangle IDs.
     5. Each rank calls ``build_local_mesh`` locally.
 
-    The only serial bottleneck remaining on rank 0 is the METIS partition call,
-    which is O(N) and typically a small fraction of total setup time.
+    Memory per rank: O(N/nodes × topology) + O(N/P + G) for quantities,
+    compared to O(N) per rank in the original ``distribute_collaborative``.
+    The only serial bottleneck remaining on rank 0 is the METIS partition
+    call, which is O(N) and typically a small fraction of total setup time.
 
     Parameters
     ----------
@@ -236,6 +334,10 @@ def distribute_collaborative(domain, verbose=False, debug=False, parameters=None
         verbose = True
 
     layer_width = (parameters or {}).get('ghost_layer_width', 2)
+
+    # Shared-memory communicator: all ranks on the same node.
+    # Used by _shared_bcast_ndarray to avoid P copies of the mesh topology.
+    node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
 
     # ── Step 1: rank 0 partitions ────────────────────────────────────────
     if myid == 0:
@@ -274,26 +376,20 @@ def distribute_collaborative(domain, verbose=False, debug=False, parameters=None
     tpp          = comm.bcast(tpp,          root=0)
     quant_keys   = comm.bcast(quant_keys,   root=0)
 
-    # ── Step 3: broadcast mesh topology (large numpy arrays) ─────────────
-    def _bcast_ndarray(arr_on_root):
-        """Broadcast one numpy array from rank 0. arr_on_root is None on other ranks."""
-        meta = (arr_on_root.shape, arr_on_root.dtype.str) if myid == 0 else None
-        shape, dtype_str = comm.bcast(meta, root=0)
-        buf = num.empty(shape, dtype=num.dtype(dtype_str))
-        if myid == 0:
-            buf[...] = arr_on_root
-        comm.Bcast(buf, root=0)
-        return buf
+    # ── Step 3: shared-memory broadcast of mesh topology ─────────────────
+    # One physical copy per node via MPI.Win.Allocate_shared; inter-node
+    # transfer is a Bcast among node leaders only.
+    nodes,      _win_nodes = _shared_bcast_ndarray(
+        new_mesh.nodes      if myid == 0 else None, comm, node_comm)
+    triangles,  _win_tri   = _shared_bcast_ndarray(
+        new_mesh.triangles  if myid == 0 else None, comm, node_comm)
+    neighbours, _win_nbrs  = _shared_bcast_ndarray(
+        new_mesh.neighbours if myid == 0 else None, comm, node_comm)
+    boundary = comm.bcast(new_mesh.boundary if myid == 0 else None, root=0)
 
-    nodes      = _bcast_ndarray(new_mesh.nodes      if myid == 0 else None)
-    triangles  = _bcast_ndarray(new_mesh.triangles  if myid == 0 else None)
-    neighbours = _bcast_ndarray(new_mesh.neighbours if myid == 0 else None)
-    boundary   = comm.bcast(new_mesh.boundary if myid == 0 else None, root=0)
-
-    # ── Step 4: broadcast quantities ─────────────────────────────────────
-    # Each rank will extract its own full and ghost slices after the BFS.
-    quant_all = {k: _bcast_ndarray(quantities[k] if myid == 0 else None)
-                 for k in quant_keys}
+    # ── Step 4: Scatterv full-triangle quantities ─────────────────────────
+    # Each rank receives only its own N/P rows — O(N/P) per rank vs O(N).
+    # Ghost quantities are fetched after the BFS identifies ghost_ids.
 
     # ── Step 5: each rank builds its own ghost layer ──────────────────────
     cumsum  = num.concatenate([[0], num.cumsum(tpp)])
@@ -304,27 +400,34 @@ def distribute_collaborative(domain, verbose=False, debug=False, parameters=None
 
     from .distribute_mesh_ext import ghost_layer_bfs, ghost_bnd_layer_classify
 
-    ghost_ids            = ghost_layer_bfs(neighbours_c, tlower, tupper, layer_width)
-    tri_ids, edge_ids    = ghost_bnd_layer_classify(neighbours_c, ghost_ids,
-                                                    tlower, tupper)
+    ghost_ids         = ghost_layer_bfs(neighbours_c, tlower, tupper, layer_width)
+    tri_ids, edge_ids = ghost_bnd_layer_classify(neighbours_c, ghost_ids,
+                                                 tlower, tupper)
 
     # ── Step 6: assemble local submesh_cell ──────────────────────────────
-    # Full triangles and nodes
-    full_triangles = triangles[tlower:tupper]           # (N_full, 3)
-    full_node_ids  = num.unique(full_triangles.flat)
-    full_nodes_col = num.concatenate(                   # (N_fn, 3): [gid, x, y]
+    # Extract all needed data as private copies from shared arrays, then
+    # free the windows so shared memory is released promptly.
+
+    full_triangles  = triangles[tlower:tupper].copy()   # copy: slice is a view
+    full_node_ids   = num.unique(full_triangles.flat)
+    full_nodes_col  = num.concatenate(                  # (N_fn, 3): [gid, x, y]
         [full_node_ids.reshape(-1, 1), nodes[full_node_ids]], axis=1)
 
-    # Ghost triangles and nodes
-    ghost_tri_verts = triangles[ghost_ids]              # (G, 3)
+    ghost_tri_verts = triangles[ghost_ids]              # fancy-index → already a copy
     ghost_node_ids  = num.setdiff1d(num.unique(ghost_tri_verts.flat), full_node_ids)
     ghost_nodes_col = num.concatenate(                  # (G_n, 3): [gid, x, y]
         [ghost_node_ids.reshape(-1, 1), nodes[ghost_node_ids]], axis=1)
     ghost_tris_col  = num.concatenate(                  # (G, 4): [gid, v0, v1, v2]
         [ghost_ids.reshape(-1, 1), ghost_tri_verts], axis=1)
 
+    # Topology arrays no longer needed — release shared-memory windows.
+    _win_nodes.Free()
+    _win_tri.Free()
+    _win_nbrs.Free()
+    node_comm.Free()
+
     # Full boundary: binary-search into the sorted global boundary dict
-    sorted_bnd_keys    = sorted(boundary.keys(), key=lambda k: k[0])
+    sorted_bnd_keys = sorted(boundary.keys(), key=lambda k: k[0])
     if sorted_bnd_keys:
         sorted_bnd_tids = num.array([k[0] for k in sorted_bnd_keys], dtype=int)
         lo = int(num.searchsorted(sorted_bnd_tids, tlower))
@@ -345,8 +448,10 @@ def distribute_collaborative(domain, verbose=False, debug=False, parameters=None
     ghost_commun = ghost_commun_pattern(ghost_tris_col, myid, tri_per_proc_ranges)
 
     # ── Step 7: allgather ghost_commun → each rank derives full_commun ───
-    # ghost_commun[p] has shape (G_p, 2): col0 = global_id, col1 = owner_proc.
+    # ghost_commun has shape (G_p, 2): col0 = global_id, col1 = owner_proc.
     # After allgather, rank myid filters for entries where owner == myid.
+    # The allgather result also tells rank 0 every other rank's ghost_ids,
+    # which is used below to send targeted ghost quantities.
     all_ghost_commun = comm.allgather(ghost_commun)
 
     full_commun = {}
@@ -359,6 +464,38 @@ def distribute_collaborative(domain, verbose=False, debug=False, parameters=None
                     full_commun[gid] = []
                 full_commun[gid].append(q)
 
+    # ── Step 4b: full-triangle quantities via Scatterv ────────────────────
+    # quantities[k] has shape (N, 1); Scatterv works on flattened rows so we
+    # pass the 1-D view and reshape back to (N/P, 1) on receipt.
+    quant_full = {k: _scatterv_quantity(
+                        quantities[k][:, 0] if myid == 0 else None, cumsum, comm
+                     ).reshape(-1, 1)
+                  for k in quant_keys}
+
+    # ── Step 4c: ghost quantities via targeted Isend/Recv ─────────────────
+    # Rank 0 has full quantities; it knows every rank's ghost_ids from
+    # all_ghost_commun (col 0 = global triangle id).
+    all_ghost_ids = [gc[:, 0].astype(num.int64) if len(gc) > 0
+                     else num.empty(0, dtype=num.int64)
+                     for gc in all_ghost_commun]
+
+    quant_ghost = {}
+    for ki, k in enumerate(quant_keys):
+        tag = ki
+        if myid == 0:
+            # quantities[k] has shape (N, 1); flatten to 1-D for send.
+            q = quantities[k][:, 0].astype(num.float64, copy=False)
+            reqs = [comm.Isend(q[all_ghost_ids[p]], dest=p, tag=tag)
+                    for p in range(1, numprocs)]
+            quant_ghost[k] = q[ghost_ids].reshape(-1, 1).copy()
+            MPI.Request.Waitall(reqs)
+        else:
+            G   = len(ghost_ids)
+            buf = num.empty(G, dtype=num.float64)
+            if G > 0:
+                comm.Recv(buf, source=0, tag=tag)
+            quant_ghost[k] = buf.reshape(-1, 1)
+
     # ── Step 8: build local mesh in GA format ────────────────────────────
     submesh_cell = {
         'ghost_layer_width': layer_width,
@@ -370,8 +507,8 @@ def distribute_collaborative(domain, verbose=False, debug=False, parameters=None
         'ghost_boundary':    ghost_boundary,
         'ghost_commun':      ghost_commun,
         'full_commun':       full_commun,
-        'full_quan':  {k: quant_all[k][tlower:tupper] for k in quant_keys},
-        'ghost_quan': {k: quant_all[k][ghost_ids]     for k in quant_keys},
+        'full_quan':         quant_full,
+        'ghost_quan':        quant_ghost,
     }
 
     points, vertices, boundary_local, quantities_local, ghost_recv_dict, \
