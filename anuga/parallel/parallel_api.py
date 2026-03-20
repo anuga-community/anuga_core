@@ -223,25 +223,37 @@ def _shared_bcast_ndarray(arr_on_root, comm, node_comm):
     dtype  = num.dtype(dtype_str)
     nbytes = int(num.prod(shape)) * dtype.itemsize
 
-    # Node leaders allocate the full buffer; non-leaders allocate nothing.
-    win = MPI.Win.Allocate_shared(
-        nbytes if node_rank == 0 else 0,
-        dtype.itemsize, MPI.INFO_NULL, node_comm)
+    # Attempt shared-memory allocation.  Fall back to a plain private buffer
+    # if Win.Allocate_shared is unsupported (e.g. some MPI configurations).
+    try:
+        # Node leaders allocate the full buffer; non-leaders allocate nothing.
+        win = MPI.Win.Allocate_shared(
+            nbytes if node_rank == 0 else 0,
+            dtype.itemsize, MPI.INFO_NULL, node_comm)
 
-    # All ranks on the node get a numpy view into the leader's buffer.
-    buf, _ = win.Shared_query(0)
-    arr = num.ndarray(shape, dtype=dtype, buffer=buf)
+        # All ranks on the node get a numpy view into the leader's buffer.
+        buf, _ = win.Shared_query(0)
+        arr = num.ndarray(shape, dtype=dtype, buffer=buf)
 
-    # Node leaders form a communicator for inter-node Bcast.
-    leader_comm = comm.Split(0 if node_rank == 0 else MPI.UNDEFINED, myid)
-    if node_rank == 0:
+        # Node leaders form a communicator for inter-node Bcast.
+        leader_comm = comm.Split(0 if node_rank == 0 else MPI.UNDEFINED, myid)
+        if node_rank == 0:
+            if myid == 0:
+                arr[...] = arr_on_root
+            leader_comm.Bcast(arr, root=0)
+            leader_comm.Free()
+
+        # Barrier so all node members see the populated data before returning.
+        node_comm.Barrier()
+
+    except (MPI.Exception, NotImplementedError):
+        # Shared memory unavailable — fall back to a private copy via Bcast.
+        win = None
+        arr = num.empty(shape, dtype=dtype)
         if myid == 0:
             arr[...] = arr_on_root
-        leader_comm.Bcast(arr, root=0)
-        leader_comm.Free()
+        comm.Bcast(arr, root=0)
 
-    # Barrier so all node members see the populated data before returning.
-    node_comm.Barrier()
     return arr, win
 
 
@@ -421,9 +433,10 @@ def distribute_collaborative(domain, verbose=False, debug=False, parameters=None
         [ghost_ids.reshape(-1, 1), ghost_tri_verts], axis=1)
 
     # Topology arrays no longer needed — release shared-memory windows.
-    _win_nodes.Free()
-    _win_tri.Free()
-    _win_nbrs.Free()
+    # (win is None when the shared-memory fallback path was used.)
+    for _win in (_win_nodes, _win_tri, _win_nbrs):
+        if _win is not None:
+            _win.Free()
     node_comm.Free()
 
     # Full boundary: binary-search into the sorted global boundary dict
