@@ -495,8 +495,11 @@ def distribute_collaborative(domain, verbose=False, debug=False, parameters=None
         new_mesh.nodes      if myid == 0 else None, comm, node_comm)
     triangles,  _win_tri   = _shared_bcast_ndarray(
         new_mesh.triangles  if myid == 0 else None, comm, node_comm)
+    # Cast to int64 before sharing so that ascontiguousarray(neighbours, int64)
+    # below is a zero-copy no-op (avoids a full private copy per rank).
     neighbours, _win_nbrs  = _shared_bcast_ndarray(
-        new_mesh.neighbours if myid == 0 else None, comm, node_comm)
+        new_mesh.neighbours.astype(num.int64, copy=False) if myid == 0 else None,
+        comm, node_comm)
     boundary = comm.bcast(new_mesh.boundary if myid == 0 else None, root=0)
 
     # ── Step 4: Scatterv full-triangle quantities ─────────────────────────
