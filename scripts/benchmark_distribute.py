@@ -192,10 +192,14 @@ def make_domain(mesh_filename=None, grid_size=None):
 
 def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval,
                     parameters=None):
-    """Run fn `reps` times; return (times, pss_sum_mbs, rss_max_mbs) lists."""
+    """Run fn `reps` times; return (times, pss_sum_mbs, rss_max_mbs, ghost_stats).
+
+    ghost_stats is (ghost_sum, ghost_max, ghost_min) from the final rep.
+    """
     times       = []
     pss_sum_mbs = []   # PSS sum: true physical-memory footprint of the job
     rss_max_mbs = []   # RSS max: worst-case single-rank footprint
+    ghost_stats = (0, 0, 0)
 
     label = fn.__name__
 
@@ -219,6 +223,9 @@ def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval,
         peak_rss = max(mon.peak_rss_mb, _rss_mb())
         peak_pss = max(mon.peak_pss_mb, _pss_mb())
 
+        # Ghost triangle counts (partition quality — same every rep).
+        ghost_stats = collect_ghost_stats(pd)
+
         # Reduce timing and memory across all ranks.
         wall    = comm.reduce(elapsed,  op=MPI.MAX, root=0)
         pss_sum = comm.reduce(peak_pss, op=MPI.SUM, root=0)
@@ -231,7 +238,7 @@ def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval,
 
         del pd
 
-    return times, pss_sum_mbs, rss_max_mbs
+    return times, pss_sum_mbs, rss_max_mbs, ghost_stats
 
 
 # ── Timed dump + load ─────────────────────────────────────────────────────────
@@ -244,16 +251,18 @@ def time_dump_load(mesh_filename, grid_size, reps, ticker_interval,
     (e.g. Lustre scratch on Gadi). A temporary directory is created under
     the system's default tempdir; set TMPDIR to redirect if needed.
 
-    Returns (times_dump, times_load, pss_sum_mbs, rss_max_mbs) where:
+    Returns (times_dump, times_load, pss_sum_mbs, rss_max_mbs, ghost_stats) where:
         times_dump   -- wall time for the serial dump on rank 0
         times_load   -- max wall time across ranks for the parallel load
         pss_sum_mbs  -- PSS sum across ranks during the load phase
         rss_max_mbs  -- peak RSS on the busiest rank during the load phase
+        ghost_stats  -- (ghost_sum, ghost_max, ghost_min) from the final rep
     """
     times_dump  = []
     times_load  = []
     pss_sum_mbs = []
     rss_max_mbs = []
+    ghost_stats = (0, 0, 0)
 
     for rep in range(reps):
         gc.collect()
@@ -299,6 +308,8 @@ def time_dump_load(mesh_filename, grid_size, reps, ticker_interval,
         peak_rss = max(mon_load.peak_rss_mb, _rss_mb())
         peak_pss = max(mon_load.peak_pss_mb, _pss_mb())
 
+        ghost_stats = collect_ghost_stats(pd)
+
         dump_wall = comm.bcast(dump_elapsed, root=0)
         load_wall = comm.reduce(load_elapsed, op=MPI.MAX, root=0)
         pss_sum   = comm.reduce(peak_pss,     op=MPI.SUM, root=0)
@@ -316,7 +327,24 @@ def time_dump_load(mesh_filename, grid_size, reps, ticker_interval,
             shutil.rmtree(tmpdir, ignore_errors=True)
         comm.Barrier()
 
-    return times_dump, times_load, pss_sum_mbs, rss_max_mbs
+    return times_dump, times_load, pss_sum_mbs, rss_max_mbs, ghost_stats
+
+
+# ── Ghost-triangle statistics ─────────────────────────────────────────────────
+
+def collect_ghost_stats(pd):
+    """Return (ghost_sum, ghost_max, ghost_min) across all ranks for domain pd.
+
+    Ghost triangles are those where tri_full_flag == 0.  The returned values
+    are reduced to rank 0 (ghost_sum / ghost_max / ghost_min are only valid
+    on rank 0; other ranks receive 0 / 0 / 0).
+    """
+    import numpy as np
+    n_ghost = int(np.sum(pd.tri_full_flag == 0))
+    ghost_sum = comm.reduce(n_ghost, op=MPI.SUM, root=0)
+    ghost_max = comm.reduce(n_ghost, op=MPI.MAX, root=0)
+    ghost_min = comm.reduce(n_ghost, op=MPI.MIN, root=0)
+    return (ghost_sum or 0), (ghost_max or 0), (ghost_min or 0)
 
 
 # ── Formatting ────────────────────────────────────────────────────────────────
@@ -391,21 +419,21 @@ def main():
 
     comm.Barrier()
 
-    times_std, pss_std, rss_std = time_distribute(
+    times_std, pss_std, rss_std, ghost_std = time_distribute(
         distribute, mesh_filename, grid_size, args.reps, args.interval,
         parameters=parameters)
 
     gc.collect()
     comm.Barrier()
 
-    times_collab, pss_collab, rss_collab = time_distribute(
+    times_collab, pss_collab, rss_collab, ghost_collab = time_distribute(
         distribute_collaborative, mesh_filename, grid_size, args.reps, args.interval,
         parameters=parameters)
 
     gc.collect()
     comm.Barrier()
 
-    times_dump, times_load, pss_dl, rss_dl = time_dump_load(
+    times_dump, times_load, pss_dl, rss_dl, ghost_dl = time_dump_load(
         mesh_filename, grid_size, args.reps, args.interval,
         parameters=parameters)
 
@@ -461,6 +489,35 @@ def main():
                             ('collaborative()', pss_collab),
                             ('dump()+load() load-phase', pss_dl)]:
             print(f'    {label:<30}  {fmt_mem(pss)}')
+
+        # ── Partition quality ─────────────────────────────────────────────
+        print()
+        print(f'  Partition quality  ({args.scheme}, {nproc} ranks, '
+              f'{ntri:,} triangles):')
+        print(f'  {"":30}  {"distribute()":>14}  '
+              f'{"collaborative()":>14}  {"dump()+load()":>14}')
+
+        def fmt_ghost(gs, ntri_val):
+            g_sum, g_max, g_min = gs
+            if g_sum == 0:
+                return f'{"n/a":>14}', f'{"n/a":>14}', f'{"n/a":>14}'
+            pct     = 100.0 * g_sum / ntri_val
+            avg     = g_sum / nproc
+            s_total = f'{g_sum:,}  ({pct:.1f}%)'
+            s_avg   = f'{avg:,.0f}'
+            s_mm    = f'{g_min:,} – {g_max:,}'
+            return s_total, s_avg, s_mm
+
+        tot_std,   avg_std,   mm_std   = fmt_ghost(ghost_std,   ntri)
+        tot_col,   avg_col,   mm_col   = fmt_ghost(ghost_collab, ntri)
+        tot_dl,    avg_dl,    mm_dl    = fmt_ghost(ghost_dl,    ntri)
+
+        print(f'  {"Ghost total  (% of mesh)":<30}  '
+              f'{tot_std:>14}  {tot_col:>14}  {tot_dl:>14}')
+        print(f'  {"Ghost avg per rank":<30}  '
+              f'{avg_std:>14}  {avg_col:>14}  {avg_dl:>14}')
+        print(f'  {"Ghost min – max per rank":<30}  '
+              f'{mm_std:>14}  {mm_col:>14}  {mm_dl:>14}')
         print()
 
 
