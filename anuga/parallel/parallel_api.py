@@ -31,6 +31,107 @@ if pypar_available:
 
 from anuga.abstract_2d_finite_volumes.neighbour_mesh import Mesh
 
+
+def _isend_submesh(comm, tostore, dest):
+    """Send an extracted submesh tuple to `dest` using buffer-protocol Isend
+    for the large numpy arrays and pickle for the small metadata.
+
+    The large arrays (points, vertices, quantities, tri_l2g, node_l2g) are
+    sent via ``comm.Isend()`` (zero-copy on RDMA networks).  Everything else
+    is bundled into a single small metadata pickle sent via ``comm.isend()``.
+
+    Returns a list of MPI Request objects.  The caller must call
+    ``MPI.Request.Waitall(reqs)`` before allowing the source arrays to be
+    garbage-collected.
+    """
+    from mpi4py import MPI
+
+    (kwargs, points, vertices, boundary, quantities, boundary_map,
+     domain_name, domain_dir, domain_store, domain_store_centroids,
+     domain_minimum_storable_height, domain_minimum_allowed_height,
+     domain_flow_algorithm, domain_georef,
+     domain_quantities_to_be_stored, domain_smooth, domain_low_froude) = tostore
+
+    quant_keys = list(quantities.keys())
+    nq = len(quant_keys)
+
+    # Pull the large numpy arrays out of kwargs (copy so we don't mutate).
+    tri_l2g  = kwargs['tri_l2g']
+    node_l2g = kwargs['node_l2g']
+    kwargs_small = {k: v for k, v in kwargs.items()
+                    if k not in ('tri_l2g', 'node_l2g')}
+
+    # Tag layout:  0=metadata  1=points  2=vertices  3..3+nq-1=quantities
+    #              3+nq=tri_l2g  3+nq+1=node_l2g
+    meta = (kwargs_small, quant_keys,
+            boundary, boundary_map,
+            domain_name, domain_dir, domain_store, domain_store_centroids,
+            domain_minimum_storable_height, domain_minimum_allowed_height,
+            domain_flow_algorithm, domain_georef,
+            domain_quantities_to_be_stored, domain_smooth, domain_low_froude,
+            points.shape,   points.dtype.str,
+            vertices.shape, vertices.dtype.str,
+            tri_l2g.shape,  tri_l2g.dtype.str,
+            node_l2g.shape, node_l2g.dtype.str)
+
+    reqs = [comm.isend(meta, dest=dest, tag=0)]
+    reqs.append(comm.Isend(num.ascontiguousarray(points),   dest=dest, tag=1))
+    reqs.append(comm.Isend(num.ascontiguousarray(vertices), dest=dest, tag=2))
+    for ki, k in enumerate(quant_keys):
+        reqs.append(comm.Isend(num.ascontiguousarray(quantities[k]),
+                               dest=dest, tag=3 + ki))
+    reqs.append(comm.Isend(num.ascontiguousarray(tri_l2g),  dest=dest, tag=3 + nq))
+    reqs.append(comm.Isend(num.ascontiguousarray(node_l2g), dest=dest, tag=3 + nq + 1))
+    return reqs
+
+
+def _recv_submesh(comm, source):
+    """Receive an extracted submesh from `source`.
+
+    Counterpart to :func:`_isend_submesh`.  Blocks on the metadata receive
+    (needed for array shapes), then issues blocking Recv calls for each
+    large array.  Returns the same tuple as ``extract_submesh()``.
+    """
+    (kwargs_small, quant_keys,
+     boundary, boundary_map,
+     domain_name, domain_dir, domain_store, domain_store_centroids,
+     domain_minimum_storable_height, domain_minimum_allowed_height,
+     domain_flow_algorithm, domain_georef,
+     domain_quantities_to_be_stored, domain_smooth, domain_low_froude,
+     points_shape,   points_dtype,
+     vertices_shape, vertices_dtype,
+     tri_l2g_shape,  tri_l2g_dtype,
+     node_l2g_shape, node_l2g_dtype) = comm.recv(source=source, tag=0)
+
+    nq = len(quant_keys)
+
+    points   = num.empty(points_shape,   dtype=num.dtype(points_dtype))
+    vertices = num.empty(vertices_shape, dtype=num.dtype(vertices_dtype))
+    comm.Recv(points,   source=source, tag=1)
+    comm.Recv(vertices, source=source, tag=2)
+
+    quantities = {}
+    for ki, k in enumerate(quant_keys):
+        arr = num.empty(vertices_shape[:1] + (1,), dtype=num.float64)
+        comm.Recv(arr, source=source, tag=3 + ki)
+        quantities[k] = arr
+
+    tri_l2g  = num.empty(tri_l2g_shape,  dtype=num.dtype(tri_l2g_dtype))
+    node_l2g = num.empty(node_l2g_shape, dtype=num.dtype(node_l2g_dtype))
+    comm.Recv(tri_l2g,  source=source, tag=3 + nq)
+    comm.Recv(node_l2g, source=source, tag=3 + nq + 1)
+
+    kwargs = dict(kwargs_small)
+    kwargs['tri_l2g']  = tri_l2g
+    kwargs['node_l2g'] = node_l2g
+
+    return (kwargs, points, vertices, boundary, quantities, boundary_map,
+            domain_name, domain_dir, domain_store, domain_store_centroids,
+            domain_minimum_storable_height, domain_minimum_allowed_height,
+            domain_flow_algorithm, domain_georef,
+            domain_quantities_to_be_stored, domain_smooth, domain_low_froude)
+
+
 #------------------------------------------------------------------------------
 # Read in processor information
 #------------------------------------------------------------------------------
@@ -123,23 +224,22 @@ def distribute(domain, verbose=False, debug=False, parameters = None):
                 domain_quantities_to_be_stored, domain_smooth, domain_low_froude \
                  = partition.extract_submesh(0)
 
-        requests = []
+        from mpi4py import MPI as _MPI
+        all_reqs = []
         for p in range(1, numprocs):
-
             tostore = partition.extract_submesh(p)
-
-            requests.append(isend(tostore, p))
-
-        waitall(requests)
+            all_reqs.extend(_isend_submesh(_MPI.COMM_WORLD, tostore, p))
+        _MPI.Request.Waitall(all_reqs)
 
     else:
 
+        from mpi4py import MPI as _MPI
         kwargs, points, vertices, boundary, quantities, boundary_map, \
             domain_name, domain_dir, domain_store, domain_store_centroids, \
             domain_minimum_storable_height, domain_minimum_allowed_height, \
             domain_flow_algorithm, domain_georef, \
-            domain_quantities_to_be_stored, domain_smooth, domain_low_froude\
-             = receive(0)
+            domain_quantities_to_be_stored, domain_smooth, domain_low_froude \
+             = _recv_submesh(_MPI.COMM_WORLD, 0)
 
     #---------------------------------------------------------------------------
     # Now Create parallel domain
