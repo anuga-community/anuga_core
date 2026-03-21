@@ -284,9 +284,9 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
         partition._release_submesh_rank(p)
         del tostore, lst
 
-        # Run GC periodically to actually free the released arrays.
-        if p % 8 == 7:
-            gc.collect()
+        # Run GC every rank — cyclic references inside submesh dicts are not
+        # freed by refcounting alone and must be collected explicitly.
+        gc.collect()
 
     gc.collect()
     return
