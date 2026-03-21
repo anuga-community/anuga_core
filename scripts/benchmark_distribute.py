@@ -21,7 +21,9 @@ Options
 import argparse
 import gc
 import os
+import shutil
 import statistics
+import tempfile
 import threading
 import time
 
@@ -29,6 +31,8 @@ from mpi4py import MPI
 
 import anuga
 from anuga.parallel.parallel_api import distribute, distribute_collaborative
+from anuga.parallel.sequential_distribute import (
+    sequential_distribute_dump, sequential_distribute_load)
 from anuga import create_domain_from_file
 from anuga.utilities.system_tools import get_pathname_from_package
 
@@ -189,6 +193,89 @@ def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval):
     return times, pss_sum_mbs, rss_max_mbs
 
 
+# ── Timed dump + load ─────────────────────────────────────────────────────────
+
+def time_dump_load(mesh_filename, grid_size, reps, ticker_interval):
+    """Benchmark sequential_distribute_dump (rank-0 only) + load (all ranks).
+
+    The partition directory must be on a filesystem visible to all ranks
+    (e.g. Lustre scratch on Gadi). A temporary directory is created under
+    the system's default tempdir; set TMPDIR to redirect if needed.
+
+    Returns (times_dump, times_load, pss_sum_mbs, rss_max_mbs) where:
+        times_dump   -- wall time for the serial dump on rank 0
+        times_load   -- max wall time across ranks for the parallel load
+        pss_sum_mbs  -- PSS sum across ranks during the load phase
+        rss_max_mbs  -- peak RSS on the busiest rank during the load phase
+    """
+    times_dump  = []
+    times_load  = []
+    pss_sum_mbs = []
+    rss_max_mbs = []
+
+    for rep in range(reps):
+        gc.collect()
+        comm.Barrier()
+
+        # All ranks need the same tmpdir path (shared filesystem).
+        if myid == 0:
+            tmpdir = tempfile.mkdtemp(prefix='anuga_bench_')
+        else:
+            tmpdir = None
+        tmpdir = comm.bcast(tmpdir, root=0)
+
+        domain = make_domain(mesh_filename, grid_size)
+        domain_name = domain.get_name()
+        comm.Barrier()
+
+        # ── Dump phase: rank 0 partitions and writes files ────────────────
+        if myid == 0:
+            mon_dump = MemoryMonitor(label='dump', interval=ticker_interval,
+                                     print_ticker=True)
+            with mon_dump:
+                t0 = MPI.Wtime()
+                sequential_distribute_dump(domain, nproc, partition_dir=tmpdir)
+                t1 = MPI.Wtime()
+            dump_elapsed = t1 - t0
+        else:
+            dump_elapsed = 0.0
+
+        del domain
+        comm.Barrier()   # ensure all files are written before load
+
+        # ── Load phase: every rank reads its own partition files ──────────
+        mon_load = MemoryMonitor(label='load', interval=ticker_interval,
+                                 print_ticker=(myid == 0))
+        with mon_load:
+            t0 = MPI.Wtime()
+            pd = sequential_distribute_load(filename=domain_name,
+                                            partition_dir=tmpdir)
+            t1 = MPI.Wtime()
+
+        load_elapsed = t1 - t0
+        peak_rss = max(mon_load.peak_rss_mb, _rss_mb())
+        peak_pss = max(mon_load.peak_pss_mb, _pss_mb())
+
+        dump_wall = comm.bcast(dump_elapsed, root=0)
+        load_wall = comm.reduce(load_elapsed, op=MPI.MAX, root=0)
+        pss_sum   = comm.reduce(peak_pss,     op=MPI.SUM, root=0)
+        rss_max   = comm.reduce(peak_rss,     op=MPI.MAX, root=0)
+
+        if myid == 0:
+            times_dump.append(dump_wall)
+            times_load.append(load_wall)
+            pss_sum_mbs.append(pss_sum)
+            rss_max_mbs.append(rss_max)
+
+        del pd
+
+        if myid == 0:
+            shutil.rmtree(tmpdir, ignore_errors=True)
+        comm.Barrier()
+
+    return times_dump, times_load, pss_sum_mbs, rss_max_mbs
+
+
 # ── Formatting ────────────────────────────────────────────────────────────────
 
 def fmt_time(times):
@@ -251,44 +338,70 @@ def main():
     times_std, pss_std, rss_std = time_distribute(
         distribute, mesh_filename, grid_size, args.reps, args.interval)
 
-    # gc between the two functions to clear residual memory.
     gc.collect()
     comm.Barrier()
 
     times_collab, pss_collab, rss_collab = time_distribute(
         distribute_collaborative, mesh_filename, grid_size, args.reps, args.interval)
 
+    gc.collect()
+    comm.Barrier()
+
+    times_dump, times_load, pss_dl, rss_dl = time_dump_load(
+        mesh_filename, grid_size, args.reps, args.interval)
+
     if myid == 0:
-        print(f'\n{"─"*66}')
-        print(f'  {"":32}  {"distribute()":>14}  {"collaborative()":>14}')
-        print(f'{"─"*66}')
-        print(f'  {"Wall time (max across ranks)":<32}  '
-              f'{fmt_time(times_std):>14}  {fmt_time(times_collab):>14}')
-        print(f'  {"Peak PSS — sum (physical total)":<32}  '
-              f'{fmt_mem(pss_std):>14}  {fmt_mem(pss_collab):>14}')
-        print(f'  {"Peak RSS — max single rank":<32}  '
-              f'{fmt_mem(rss_std):>14}  {fmt_mem(rss_collab):>14}')
-        print(f'{"─"*66}')
+        # Total dump+load time per rep.
+        times_dl_total = [d + l for d, l in zip(times_dump, times_load)]
+
+        W = 32
+        C = 16
+        sep = '─' * (W + 2 + 3 * (C + 2))
+        hdr = (f'  {"":>{W}}  {"distribute()":>{C}}  '
+               f'{"collaborative()":>{C}}  {"dump()+load()":>{C}}')
+        print(f'\n{sep}')
+        print(hdr)
+        print(sep)
+        print(f'  {"Wall time (max across ranks)":<{W}}  '
+              f'{fmt_time(times_std):>{C}}  '
+              f'{fmt_time(times_collab):>{C}}  '
+              f'{fmt_time(times_dl_total):>{C}}')
+        print(f'  {"Peak PSS — sum (physical total)":<{W}}  '
+              f'{fmt_mem(pss_std):>{C}}  '
+              f'{fmt_mem(pss_collab):>{C}}  '
+              f'{fmt_mem(pss_dl):>{C}}')
+        print(f'  {"Peak RSS — max single rank":<{W}}  '
+              f'{fmt_mem(rss_std):>{C}}  '
+              f'{fmt_mem(rss_collab):>{C}}  '
+              f'{fmt_mem(rss_dl):>{C}}')
+        print(sep)
         print(f'  Note: PSS sums shared pages proportionally — '
               f'reflects true physical memory.')
+        if len(times_dump) > 0:
+            med_dump = statistics.median(times_dump)
+            med_load = statistics.median(times_load)
+            print(f'  dump()+load() breakdown: '
+                  f'dump (serial) {med_dump:.3f}s  +  '
+                  f'load (parallel) {med_load:.3f}s')
 
-        med_std    = statistics.median(times_std)
-        med_collab = statistics.median(times_collab)
-        if med_collab > 0:
-            speedup = med_std / med_collab
-            faster  = 'collaborative' if speedup > 1 else 'distribute'
-            ratio   = speedup if speedup > 1 else 1.0 / speedup
-            print(f'\n  Speedup: {ratio:.2f}x faster with {faster}')
+        candidates = [
+            ('distribute()',    statistics.median(times_std)),
+            ('collaborative()', statistics.median(times_collab)),
+            ('dump()+load()',   statistics.median(times_dl_total)),
+        ]
+        best_name, best_time = min(candidates, key=lambda x: x[1])
+        print(f'\n  Fastest: {best_name}  ({best_time:.3f}s)')
 
-        med_pss_std    = statistics.median(pss_std)
-        med_pss_collab = statistics.median(pss_collab)
-        if med_pss_collab > 0 and med_pss_std > 0:
-            if med_pss_std >= med_pss_collab:
-                mem_ratio = med_pss_std / med_pss_collab
-                print(f'  Memory:  {mem_ratio:.2f}x less physical memory with collaborative')
-            else:
-                mem_ratio = med_pss_collab / med_pss_std
-                print(f'  Memory:  {mem_ratio:.2f}x more physical memory with collaborative')
+        for label, t in candidates:
+            if label != best_name and t > 0:
+                print(f'    vs {label}: {t / best_time:.2f}x slower')
+
+        print()
+        print('  Physical memory (PSS sum):')
+        for label, pss in [('distribute()', pss_std),
+                            ('collaborative()', pss_collab),
+                            ('dump()+load() load-phase', pss_dl)]:
+            print(f'    {label:<30}  {fmt_mem(pss)}')
         print()
 
 
