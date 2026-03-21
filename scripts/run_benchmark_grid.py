@@ -159,7 +159,8 @@ def parse_output(text):
         r['load_time'] = float(dl.group(2))
 
     # Ghost stats (from distribute() column -- all three columns are identical)
-    g_tot = re.search(r'Ghost total[^(]+\(([\d.]+)%\)', text)
+    # Use [^\n]+? to skip the "(% of mesh)" label text before the first number.
+    g_tot = re.search(r'Ghost total[^\n]+?([\d.]+)%\)', text)
     if g_tot:
         r['ghost_pct'] = float(g_tot.group(1))
 
@@ -167,7 +168,9 @@ def parse_output(text):
     if g_avg:
         r['ghost_avg'] = int(g_avg.group(1).replace(',', ''))
 
-    g_mm = re.search(r'Ghost min.*?([\d,]+)\s*[-\-]\s*([\d,]+)', text)
+    # Separator may be ASCII '-' or Unicode en-dash (U+2013) depending on
+    # which version of the benchmark script produced the output file.
+    g_mm = re.search(r'Ghost min[^\n]+?([\d,]+)\s*[-\u2013]\s*([\d,]+)', text)
     if g_mm:
         r['ghost_min'] = int(g_mm.group(1).replace(',', ''))
         r['ghost_max'] = int(g_mm.group(2).replace(',', ''))
