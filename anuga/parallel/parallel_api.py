@@ -452,9 +452,6 @@ def distribute_basic_mesh(basic_mesh, verbose=False, parameters=None):
     parallel_domain = Parallel_domain(points, vertices, boundary_recv,
                                       **kwargs)
 
-    # Set the ghost boundary tag so evolve() can handle ghost edges.
-    parallel_domain.boundary['ghost'] = None
-
     return parallel_domain
 
 

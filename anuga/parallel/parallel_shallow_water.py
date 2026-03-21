@@ -107,6 +107,25 @@ class Parallel_domain(Domain):
         self.ghost_counter = 0
 
 
+    def set_boundary(self, boundary_map):
+        """Set boundary conditions, automatically handling ghost edges.
+
+        Parallel domains always have ghost edges (tagged 'ghost' in the
+        mesh boundary dict).  Mesh.build_boundary_dictionary also adds
+        'exterior' as the default tag for any boundary edge not explicitly
+        classified during distribution.  This override injects both
+        'ghost': None and 'exterior': None into the boundary_map so the
+        user never needs to specify them explicitly.
+        """
+        parallel_internal_tags = {'ghost', 'exterior'}
+        missing = parallel_internal_tags - set(boundary_map.keys())
+        if missing:
+            boundary_map = dict(boundary_map)
+            for tag in missing:
+                boundary_map[tag] = None
+        Domain.set_boundary(self, boundary_map)
+
+
     def set_name(self, name):
         """Assign name based on processor number
         """
