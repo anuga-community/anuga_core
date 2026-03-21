@@ -34,7 +34,7 @@ from datetime import datetime
 from pathlib import Path
 
 
-# ── Argument parsing ───────────────────────────────────────────────────────────
+# -- Argument parsing -----------------------------------------------------------
 
 def parse_args():
     p = argparse.ArgumentParser(add_help=True)
@@ -67,7 +67,7 @@ def find_benchmark_script(explicit=None):
         'Cannot find benchmark_distribute.py; use --script to specify it.')
 
 
-# ── Running ────────────────────────────────────────────────────────────────────
+# -- Running --------------------------------------------------------------------
 
 def output_path(outdir, np_val, scheme):
     return Path(outdir) / f'bench_np{np_val}_{scheme}.txt'
@@ -81,7 +81,7 @@ def run_one(mpirun, script, np_val, scheme, size, reps, interval,
            '--interval', str(interval),
            '--scheme', scheme]
     print(f'  $ {" ".join(cmd)}')
-    print(f'    → {outfile}')
+    print(f'    -> {outfile}')
     if dry_run:
         return True
     try:
@@ -92,7 +92,7 @@ def run_one(mpirun, script, np_val, scheme, size, reps, interval,
             text += f'\n[STDERR]\n{result.stderr}'
         Path(outfile).write_text(text)
         if result.returncode != 0:
-            print(f'    [FAILED — exit code {result.returncode}]')
+            print(f'    [FAILED -- exit code {result.returncode}]')
             return False
         return True
     except subprocess.TimeoutExpired:
@@ -103,7 +103,7 @@ def run_one(mpirun, script, np_val, scheme, size, reps, interval,
         return False
 
 
-# ── Parsing ────────────────────────────────────────────────────────────────────
+# -- Parsing --------------------------------------------------------------------
 
 def _first_float(pattern, text, group=1):
     m = re.search(pattern, text)
@@ -129,7 +129,7 @@ def parse_output(text):
                                 or type('', (), {'group': lambda s, n: ''})()
                                 ).group(1).lower()
 
-    # Main table — three columns: distribute / collaborative / dump+load
+    # Main table -- three columns: distribute / collaborative / dump+load
     wall = re.search(
         r'Wall time[^\d]+([\d.]+)s\s+([\d.]+)s\s+([\d.]+)s', text)
     if wall:
@@ -158,7 +158,7 @@ def parse_output(text):
         r['dump_time'] = float(dl.group(1))
         r['load_time'] = float(dl.group(2))
 
-    # Ghost stats (from distribute() column — all three columns are identical)
+    # Ghost stats (from distribute() column -- all three columns are identical)
     g_tot = re.search(r'Ghost total[^(]+\(([\d.]+)%\)', text)
     if g_tot:
         r['ghost_pct'] = float(g_tot.group(1))
@@ -167,7 +167,7 @@ def parse_output(text):
     if g_avg:
         r['ghost_avg'] = int(g_avg.group(1).replace(',', ''))
 
-    g_mm = re.search(r'Ghost min.*?([\d,]+)\s*[–\-]\s*([\d,]+)', text)
+    g_mm = re.search(r'Ghost min.*?([\d,]+)\s*[-\-]\s*([\d,]+)', text)
     if g_mm:
         r['ghost_min'] = int(g_mm.group(1).replace(',', ''))
         r['ghost_max'] = int(g_mm.group(2).replace(',', ''))
@@ -175,12 +175,12 @@ def parse_output(text):
     return r
 
 
-# ── Formatting helpers ─────────────────────────────────────────────────────────
+# -- Formatting helpers ---------------------------------------------------------
 
 def _t(val, bold=False):
     """Format a time value in seconds."""
     if val is None:
-        return '  —   '
+        return '  --   '
     s = f'{val:6.2f}s'
     return f'*{s}*' if bold else f' {s} '
 
@@ -188,23 +188,23 @@ def _t(val, bold=False):
 def _g(val):
     """Format a memory value in GiB."""
     if val is None:
-        return '   —  '
+        return '   --  '
     return f'{val:6.2f}'
 
 
 def _pct(val):
     if val is None:
-        return '  —  '
+        return '  --  '
     return f'{val:5.1f}%'
 
 
 def _num(val):
     if val is None:
-        return '    —  '
+        return '    --  '
     return f'{val:>8,}'
 
 
-# ── Summary printer ────────────────────────────────────────────────────────────
+# -- Summary printer ------------------------------------------------------------
 
 def print_summary(results, args, ntri, outdir):
     """Print consolidated summary tables to stdout and save to summary.txt."""
@@ -218,7 +218,7 @@ def print_summary(results, args, ntri, outdir):
     W = 72
     out('=' * W)
     out('  ANUGA distribute() benchmark grid summary')
-    out(f'  Mesh:      synthetic {args.size}×{args.size}'
+    out(f'  Mesh:      synthetic {args.size}x{args.size}'
         f'  ({ntri:,} triangles)')
     out(f'  np values: {args.np_values}')
     out(f'  Schemes:   {args.scheme_list}')
@@ -226,15 +226,15 @@ def print_summary(results, args, ntri, outdir):
     out(f'  Generated: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}')
     out('=' * W)
 
-    # ── Wall time table ────────────────────────────────────────────────────
+    # -- Wall time table ----------------------------------------------------
     out()
     out('  Wall time (seconds)')
     out(f'  {"np":>4}  {"scheme":<8}  '
         f'{"distribute()":>13}  {"collaborative()":>15}  '
         f'{"dump+load":>10}  {"dump":>7}  {"load":>6}  '
         f'{"collab/dist":>11}')
-    out(f'  {"─"*4}  {"─"*8}  {"─"*13}  {"─"*15}  '
-        f'{"─"*10}  {"─"*7}  {"─"*6}  {"─"*11}')
+    out(f'  {"-"*4}  {"-"*8}  {"-"*13}  {"-"*15}  '
+        f'{"-"*10}  {"-"*7}  {"-"*6}  {"-"*11}')
     for np_val in args.np_values:
         for scheme in args.scheme_list:
             key = (np_val, scheme)
@@ -247,20 +247,20 @@ def print_summary(results, args, ntri, outdir):
             wdl = r.get('wall_dl')
             dt  = r.get('dump_time')
             lt  = r.get('load_time')
-            spd = (f'{wd/wc:.2f}×'
-                   if wd and wc and wc > 0 else '  —  ')
+            spd = (f'{wd/wc:.2f}x'
+                   if wd and wc and wc > 0 else '  --  ')
             out(f'  {np_val:>4}  {scheme:<8}  '
                 f'{_t(wd):>13}  {_t(wc):>15}  '
                 f'{_t(wdl):>10}  {_t(dt):>7}  {_t(lt):>6}  '
                 f'{spd:>11}')
 
-    # ── Memory table ──────────────────────────────────────────────────────
+    # -- Memory table ------------------------------------------------------
     out()
-    out('  Peak PSS — physical memory total across all ranks (GiB)')
+    out('  Peak PSS -- physical memory total across all ranks (GiB)')
     out(f'  {"np":>4}  {"scheme":<8}  '
         f'{"distribute()":>13}  {"collaborative()":>15}  '
         f'{"dump+load load-phase":>20}')
-    out(f'  {"─"*4}  {"─"*8}  {"─"*13}  {"─"*15}  {"─"*20}')
+    out(f'  {"-"*4}  {"-"*8}  {"-"*13}  {"-"*15}  {"-"*20}')
     for np_val in args.np_values:
         for scheme in args.scheme_list:
             key = (np_val, scheme)
@@ -272,17 +272,17 @@ def print_summary(results, args, ntri, outdir):
                 f'{_g(r.get("pss_collab")):>15}  '
                 f'{_g(r.get("pss_dl")):>20}')
 
-    # ── Ghost triangle table ───────────────────────────────────────────────
+    # -- Ghost triangle table -----------------------------------------------
     has_ghost = any('ghost_pct' in r
                     for r in results.values())
     if has_ghost:
         out()
-        out('  Partition quality — ghost triangles')
+        out('  Partition quality -- ghost triangles')
         out(f'  {"np":>4}  {"scheme":<8}  '
             f'{"ghost %":>8}  {"avg/rank":>10}  {"min/rank":>10}  '
-            f'{"max/rank":>10}  {"min–max ratio":>13}')
-        out(f'  {"─"*4}  {"─"*8}  {"─"*8}  {"─"*10}  {"─"*10}  '
-            f'{"─"*10}  {"─"*13}')
+            f'{"max/rank":>10}  {"min-max ratio":>13}')
+        out(f'  {"-"*4}  {"-"*8}  {"-"*8}  {"-"*10}  {"-"*10}  '
+            f'{"-"*10}  {"-"*13}')
         for np_val in args.np_values:
             for scheme in args.scheme_list:
                 key = (np_val, scheme)
@@ -293,15 +293,15 @@ def print_summary(results, args, ntri, outdir):
                 avg  = r.get('ghost_avg')
                 gmin = r.get('ghost_min')
                 gmax = r.get('ghost_max')
-                ratio = (f'{gmax/gmin:.2f}×'
-                         if gmin and gmax and gmin > 0 else '  —  ')
+                ratio = (f'{gmax/gmin:.2f}x'
+                         if gmin and gmax and gmin > 0 else '  --  ')
                 out(f'  {np_val:>4}  {scheme:<8}  '
                     f'{_pct(pct):>8}  {_num(avg):>10}  '
                     f'{_num(gmin):>10}  {_num(gmax):>10}  '
                     f'{ratio:>13}')
     else:
         out()
-        out('  (Ghost triangle stats not available — '
+        out('  (Ghost triangle stats not available -- '
             'run with updated benchmark_distribute.py)')
 
     out()
@@ -313,7 +313,7 @@ def print_summary(results, args, ntri, outdir):
     print(f'\n  Summary saved to {summary_path}')
 
 
-# ── Main ───────────────────────────────────────────────────────────────────────
+# -- Main -----------------------------------------------------------------------
 
 def main():
     args = parse_args()

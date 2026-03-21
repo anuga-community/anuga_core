@@ -13,7 +13,7 @@ Options
 -------
 --reps R      Number of timed repetitions per function (default: 3).
 --mesh PATH   Path to a .tsh mesh file (uses merimbula by default).
---size M      Use a synthetic M×M rectangular mesh (overrides --mesh).
+--size M      Use a synthetic MxM rectangular mesh (overrides --mesh).
               Each cell is split into 4 triangles, giving 4*M*M triangles.
 --interval S  Memory-ticker sample interval in seconds (default: 1.0).
 """
@@ -41,7 +41,7 @@ myid  = comm.Get_rank()
 nproc = comm.Get_size()
 
 
-# ── Memory sampling ───────────────────────────────────────────────────────────
+# -- Memory sampling -----------------------------------------------------------
 
 def _rss_mb():
     """Return current RSS of this process in MiB (Linux /proc, no dependencies)."""
@@ -49,7 +49,7 @@ def _rss_mb():
         with open('/proc/self/status') as fh:
             for line in fh:
                 if line.startswith('VmRSS:'):
-                    return int(line.split()[1]) / 1024.0   # kB → MiB
+                    return int(line.split()[1]) / 1024.0   # kB -> MiB
     except OSError:
         pass
     return 0.0
@@ -60,14 +60,14 @@ def _pss_mb():
 
     PSS counts shared memory pages proportionally (divided by the number of
     processes that map them), so summing PSS across ranks gives the true
-    physical-memory footprint of the job — unlike VmRSS which double-counts
+    physical-memory footprint of the job -- unlike VmRSS which double-counts
     pages shared via MPI.Win.Allocate_shared.
     """
     try:
         with open('/proc/self/smaps_rollup') as fh:
             for line in fh:
                 if line.startswith('Pss:'):
-                    return int(line.split()[1]) / 1024.0   # kB → MiB
+                    return int(line.split()[1]) / 1024.0   # kB -> MiB
     except OSError:
         pass
     # Fallback: parse /proc/self/smaps (slower but always present)
@@ -134,7 +134,7 @@ class MemoryMonitor:
                       flush=True)
 
 
-# ── Shared-memory diagnostic ──────────────────────────────────────────────────
+# -- Shared-memory diagnostic --------------------------------------------------
 
 def check_shmem():
     """Test whether MPI.Win.Allocate_shared works on this system.
@@ -174,7 +174,7 @@ def import_numpy_view(buf):
     return np.ndarray((1,), dtype=np.float64, buffer=buf)
 
 
-# ── Domain construction ───────────────────────────────────────────────────────
+# -- Domain construction -------------------------------------------------------
 
 def make_domain(mesh_filename=None, grid_size=None):
     """Build domain from file or synthetic rectangular mesh."""
@@ -188,7 +188,7 @@ def make_domain(mesh_filename=None, grid_size=None):
     return domain
 
 
-# ── Timed run ─────────────────────────────────────────────────────────────────
+# -- Timed run -----------------------------------------------------------------
 
 def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval,
                     parameters=None):
@@ -223,7 +223,7 @@ def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval,
         peak_rss = max(mon.peak_rss_mb, _rss_mb())
         peak_pss = max(mon.peak_pss_mb, _pss_mb())
 
-        # Ghost triangle counts (partition quality — same every rep).
+        # Ghost triangle counts (partition quality -- same every rep).
         ghost_stats = collect_ghost_stats(pd)
 
         # Reduce timing and memory across all ranks.
@@ -241,7 +241,7 @@ def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval,
     return times, pss_sum_mbs, rss_max_mbs, ghost_stats
 
 
-# ── Timed dump + load ─────────────────────────────────────────────────────────
+# -- Timed dump + load ---------------------------------------------------------
 
 def time_dump_load(mesh_filename, grid_size, reps, ticker_interval,
                    parameters=None):
@@ -279,7 +279,7 @@ def time_dump_load(mesh_filename, grid_size, reps, ticker_interval,
         domain_name = domain.get_name()
         comm.Barrier()
 
-        # ── Dump phase: rank 0 partitions and writes files ────────────────
+        # -- Dump phase: rank 0 partitions and writes files ----------------
         if myid == 0:
             mon_dump = MemoryMonitor(label='dump', interval=ticker_interval,
                                      print_ticker=True)
@@ -295,7 +295,7 @@ def time_dump_load(mesh_filename, grid_size, reps, ticker_interval,
         del domain
         comm.Barrier()   # ensure all files are written before load
 
-        # ── Load phase: every rank reads its own partition files ──────────
+        # -- Load phase: every rank reads its own partition files ----------
         mon_load = MemoryMonitor(label='load', interval=ticker_interval,
                                  print_ticker=(myid == 0))
         with mon_load:
@@ -330,7 +330,7 @@ def time_dump_load(mesh_filename, grid_size, reps, ticker_interval,
     return times_dump, times_load, pss_sum_mbs, rss_max_mbs, ghost_stats
 
 
-# ── Ghost-triangle statistics ─────────────────────────────────────────────────
+# -- Ghost-triangle statistics -------------------------------------------------
 
 def collect_ghost_stats(pd):
     """Return (ghost_sum, ghost_max, ghost_min) across all ranks for domain pd.
@@ -347,7 +347,7 @@ def collect_ghost_stats(pd):
     return (ghost_sum or 0), (ghost_max or 0), (ghost_min or 0)
 
 
-# ── Formatting ────────────────────────────────────────────────────────────────
+# -- Formatting ----------------------------------------------------------------
 
 def fmt_time(times):
     if len(times) == 1:
@@ -364,14 +364,14 @@ def fmt_mem(mbs):
     return f'{med:.0f} MiB'
 
 
-# ── Main ──────────────────────────────────────────────────────────────────────
+# -- Main ----------------------------------------------------------------------
 
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument('--reps',     type=int,   default=3)
     p.add_argument('--mesh',     type=str,   default=None)
     p.add_argument('--size',     type=int,   default=None,
-                   help='Grid size M for synthetic M×M mesh (~4*M*M triangles)')
+                   help='Grid size M for synthetic MxM mesh (~4*M*M triangles)')
     p.add_argument('--interval', type=float, default=1.0,
                    help='Memory ticker sample interval in seconds (default: 1.0)')
     p.add_argument('--scheme',   type=str,   default='metis',
@@ -386,7 +386,7 @@ def main():
     grid_size = args.size
     if grid_size is not None:
         mesh_filename = None
-        mesh_label = f'synthetic {grid_size}×{grid_size}'
+        mesh_label = f'synthetic {grid_size}x{grid_size}'
     elif args.mesh is not None:
         mesh_filename = args.mesh
         mesh_label = os.path.basename(mesh_filename)
@@ -406,7 +406,7 @@ def main():
         nnodes = domain_info.number_of_nodes
         del domain_info
         shmem_status = ('yes' if shmem_ok
-                        else f'NO — falling back to Bcast ({shmem_reason})')
+                        else f'NO -- falling back to Bcast ({shmem_reason})')
         print(f'\n{"="*62}')
         print(f'  distribute() benchmark')
         print(f'  Mesh:       {mesh_label}')
@@ -443,7 +443,7 @@ def main():
 
         W = 32
         C = 16
-        sep = '─' * (W + 2 + 3 * (C + 2))
+        sep = '-' * (W + 2 + 3 * (C + 2))
         hdr = (f'  {"":>{W}}  {"distribute()":>{C}}  '
                f'{"collaborative()":>{C}}  {"dump()+load()":>{C}}')
         print(f'\n{sep}')
@@ -453,16 +453,16 @@ def main():
               f'{fmt_time(times_std):>{C}}  '
               f'{fmt_time(times_collab):>{C}}  '
               f'{fmt_time(times_dl_total):>{C}}')
-        print(f'  {"Peak PSS — sum (physical total)":<{W}}  '
+        print(f'  {"Peak PSS -- sum (physical total)":<{W}}  '
               f'{fmt_mem(pss_std):>{C}}  '
               f'{fmt_mem(pss_collab):>{C}}  '
               f'{fmt_mem(pss_dl):>{C}}')
-        print(f'  {"Peak RSS — max single rank":<{W}}  '
+        print(f'  {"Peak RSS -- max single rank":<{W}}  '
               f'{fmt_mem(rss_std):>{C}}  '
               f'{fmt_mem(rss_collab):>{C}}  '
               f'{fmt_mem(rss_dl):>{C}}')
         print(sep)
-        print(f'  Note: PSS sums shared pages proportionally — '
+        print(f'  Note: PSS sums shared pages proportionally -- '
               f'reflects true physical memory.')
         if len(times_dump) > 0:
             med_dump = statistics.median(times_dump)
@@ -490,7 +490,7 @@ def main():
                             ('dump()+load() load-phase', pss_dl)]:
             print(f'    {label:<30}  {fmt_mem(pss)}')
 
-        # ── Partition quality ─────────────────────────────────────────────
+        # -- Partition quality ---------------------------------------------
         print()
         print(f'  Partition quality  ({args.scheme}, {nproc} ranks, '
               f'{ntri:,} triangles):')
@@ -505,7 +505,7 @@ def main():
             avg     = g_sum / nproc
             s_total = f'{g_sum:,}  ({pct:.1f}%)'
             s_avg   = f'{avg:,.0f}'
-            s_mm    = f'{g_min:,} – {g_max:,}'
+            s_mm    = f'{g_min:,} - {g_max:,}'
             return s_total, s_avg, s_mm
 
         tot_std,   avg_std,   mm_std   = fmt_ghost(ghost_std,   ntri)
@@ -516,7 +516,7 @@ def main():
               f'{tot_std:>14}  {tot_col:>14}  {tot_dl:>14}')
         print(f'  {"Ghost avg per rank":<30}  '
               f'{avg_std:>14}  {avg_col:>14}  {avg_dl:>14}')
-        print(f'  {"Ghost min – max per rank":<30}  '
+        print(f'  {"Ghost min - max per rank":<30}  '
               f'{mm_std:>14}  {mm_col:>14}  {mm_dl:>14}')
         print()
 
