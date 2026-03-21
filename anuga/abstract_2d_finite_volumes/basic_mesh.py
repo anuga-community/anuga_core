@@ -183,3 +183,55 @@ class BasicMesh:
                 target._centroid_coordinates[new_order])
 
         return target
+
+
+# ---------------------------------------------------------------------------
+# Factory functions
+# ---------------------------------------------------------------------------
+
+def rectangular_basic_mesh(m, n, len1=1.0, len2=1.0, origin=(0.0, 0.0)):
+    """Create a BasicMesh from a rectangular grid (2*m*n triangles).
+
+    Parameters
+    ----------
+    m, n : int
+        Number of cells in x and y directions.
+    len1, len2 : float
+        Physical dimensions in x and y.
+    origin : (float, float)
+        Bottom-left corner coordinates.
+
+    Returns
+    -------
+    BasicMesh with 2*m*n triangles and (m+1)*(n+1) nodes.
+    """
+    from anuga.abstract_2d_finite_volumes.mesh_factory import \
+        rectangular_with_neighbours
+    points, elements, boundary, neighbours, neighbour_edges = \
+        rectangular_with_neighbours(m, n, len1, len2, origin)
+    return BasicMesh(points, elements, boundary=boundary,
+                     triangle_neighbours=neighbours)
+
+
+def rectangular_cross_basic_mesh(m, n, len1=1.0, len2=1.0, origin=(0.0, 0.0)):
+    """Create a BasicMesh from a rectangular-cross grid (4*m*n triangles).
+
+    Parameters
+    ----------
+    m, n : int
+        Number of cells in x and y directions.
+    len1, len2 : float
+        Physical dimensions in x and y.
+    origin : (float, float)
+        Bottom-left corner coordinates.
+
+    Returns
+    -------
+    BasicMesh with 4*m*n triangles and (m+1)*(n+1) + m*n nodes.
+    """
+    from anuga.abstract_2d_finite_volumes.mesh_factory import \
+        rectangular_cross_with_neighbours
+    points, elements, boundary, neighbours, neighbour_edges = \
+        rectangular_cross_with_neighbours(m, n, len1, len2, origin)
+    return BasicMesh(points, elements, boundary=boundary,
+                     triangle_neighbours=neighbours)

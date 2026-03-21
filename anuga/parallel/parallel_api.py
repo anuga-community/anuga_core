@@ -285,7 +285,7 @@ def distribute(domain, verbose=False, debug=False, parameters = None):
     return parallel_domain
 
 
-def distribute_mesh(basic_mesh, verbose=False, parameters=None):
+def distribute_basic_mesh(basic_mesh, verbose=False, parameters=None):
     """Distribute a BasicMesh and return a Parallel_domain on each rank.
 
     This is the mesh-first alternative to distribute().  Only mesh topology

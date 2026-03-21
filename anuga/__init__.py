@@ -90,7 +90,8 @@ from anuga.abstract_2d_finite_volumes.pmesh2domain import \
                                             pmesh_to_mesh, \
                                             pmesh_to_basic_mesh
 
-from anuga.abstract_2d_finite_volumes.basic_mesh import BasicMesh
+from anuga.abstract_2d_finite_volumes.basic_mesh import (
+    BasicMesh, rectangular_basic_mesh, rectangular_cross_basic_mesh)
 
 from anuga.fit_interpolate.fit import fit_to_mesh_file
 from anuga.fit_interpolate.fit import fit_to_mesh

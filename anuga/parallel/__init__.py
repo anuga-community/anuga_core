@@ -12,7 +12,7 @@ test = PytestTester(__name__)
 del PytestTester
 
 
-from .parallel_api import distribute, distribute_mesh
+from .parallel_api import distribute, distribute_basic_mesh
 from .parallel_api import myid, numprocs, get_processor_name
 from .parallel_api import send, receive
 from .parallel_api import pypar_available, barrier, finalize
