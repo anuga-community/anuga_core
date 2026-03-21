@@ -87,7 +87,10 @@ from anuga.coordinate_transforms.lat_long_UTM_conversion import LLtoUTM, UTMtoLL
 
 from anuga.abstract_2d_finite_volumes.pmesh2domain import \
                                             pmesh_to_domain_instance, \
-                                            pmesh_to_mesh
+                                            pmesh_to_mesh, \
+                                            pmesh_to_basic_mesh
+
+from anuga.abstract_2d_finite_volumes.basic_mesh import BasicMesh
 
 from anuga.fit_interpolate.fit import fit_to_mesh_file
 from anuga.fit_interpolate.fit import fit_to_mesh

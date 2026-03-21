@@ -285,6 +285,178 @@ def distribute(domain, verbose=False, debug=False, parameters = None):
     return parallel_domain
 
 
+def distribute_mesh(basic_mesh, verbose=False, parameters=None):
+    """Distribute a BasicMesh and return a Parallel_domain on each rank.
+
+    This is the mesh-first alternative to distribute().  Only mesh topology
+    is distributed -- no quantities.  The caller sets initial conditions,
+    boundaries, operators and structures on the returned Parallel_domain.
+
+    Parameters
+    ----------
+    basic_mesh : BasicMesh
+        The mesh to distribute.  Only rank 0 needs to supply a meaningful
+        value; other ranks may pass None.
+    verbose : bool, optional
+    parameters : dict, optional
+        Passed to partition_mesh / build_submesh (e.g. ghost layer width,
+        partition_scheme).
+
+    Returns
+    -------
+    Parallel_domain (numprocs > 1) or a plain Domain (numprocs == 1).
+
+    Example
+    -------
+    >>> from anuga.parallel import distribute_mesh, finalize, myid
+    >>> from anuga.abstract_2d_finite_volumes.basic_mesh import BasicMesh
+    >>> from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_to_basic_mesh
+    >>>
+    >>> if myid == 0:
+    ...     pmesh = create_mesh_from_regions(...)
+    ...     bm = pmesh_to_basic_mesh(pmesh)
+    ... else:
+    ...     bm = None
+    >>>
+    >>> domain = distribute_mesh(bm)
+    >>> domain.set_quantity('elevation', lambda x, y: -x / 100)
+    >>> domain.set_quantity('stage', 0.0)
+    >>> domain.set_boundary({'exterior': Reflective_boundary(domain)})
+    >>> for t in domain.evolve(yieldstep=60, finaltime=3600):
+    ...     pass
+    >>> finalize()
+    """
+    from .distribute_mesh import partition_mesh, build_submesh, extract_submesh
+    from .parallel_shallow_water import Parallel_domain
+
+    if not pypar_available or numprocs == 1:
+        # Serial fallback: build a plain Domain directly from the BasicMesh.
+        from anuga.shallow_water.shallow_water_domain import Domain
+        return Domain(basic_mesh.nodes, basic_mesh.triangles,
+                      boundary=basic_mesh.boundary,
+                      geo_reference=basic_mesh.geo_reference)
+
+    if myid == 0:
+        domain_georef = basic_mesh.geo_reference
+        n_global_tri  = basic_mesh.number_of_triangles
+        n_global_nodes = basic_mesh.number_of_nodes
+
+        # Partition the mesh topology (quantities will be empty).
+        new_mesh, triangles_per_proc, quantities, s2p_map, p2s_map = \
+            partition_mesh(basic_mesh, numprocs,
+                           parameters=parameters, verbose=verbose)
+
+        # Build ghost layers and communication patterns (no quantity data).
+        submesh = build_submesh(new_mesh, quantities, triangles_per_proc,
+                                parameters=parameters, verbose=verbose)
+
+        # Defaults for domain metadata -- the user sets what they need after.
+        _defaults = dict(
+            boundary_map={},
+            domain_name='domain',
+            domain_dir='.',
+            domain_store=True,
+            domain_store_centroids=False,
+            domain_minimum_storable_height=0.001,
+            domain_minimum_allowed_height=1.0e-05,
+            domain_flow_algorithm='1_5_order',
+            domain_georef=domain_georef,
+            domain_quantities_to_be_stored={
+                'stage': 2, 'xmomentum': 2, 'ymomentum': 2},
+            domain_smooth=True,
+            domain_low_froude=0,
+        )
+
+        # Extract rank 0's submesh directly.
+        (points, vertices, boundary, quantities0,
+         ghost_recv_dict, full_send_dict,
+         tri_map, node_map, tri_l2g, node_l2g, ghost_layer_width) = \
+            extract_submesh(submesh, triangles_per_proc, p2s_map, 0)
+
+        kwargs0 = {
+            'full_send_dict':           full_send_dict,
+            'ghost_recv_dict':          ghost_recv_dict,
+            'number_of_full_nodes':     len(submesh['full_nodes'][0]),
+            'number_of_full_triangles': len(submesh['full_triangles'][0]),
+            'geo_reference':            domain_georef,
+            'number_of_global_triangles': n_global_tri,
+            'number_of_global_nodes':     n_global_nodes,
+            'processor':    0,
+            'numproc':      numprocs,
+            's2p_map':      None,
+            'p2s_map':      None,
+            'tri_l2g':      tri_l2g,
+            'node_l2g':     node_l2g,
+            'ghost_layer_width': ghost_layer_width,
+        }
+
+        # Send all other ranks using the existing _isend_submesh protocol.
+        # Build the full tostore tuple with empty quantities and defaults.
+        from mpi4py import MPI as _MPI
+        comm = _MPI.COMM_WORLD
+        all_reqs = []
+        for p in range(1, numprocs):
+            (pts_p, verts_p, bnd_p, quant_p,
+             ghost_recv_p, full_send_p,
+             tri_map_p, node_map_p, tri_l2g_p, node_l2g_p, glw_p) = \
+                extract_submesh(submesh, triangles_per_proc, p2s_map, p)
+
+            kwargs_p = {
+                'full_send_dict':           full_send_p,
+                'ghost_recv_dict':          ghost_recv_p,
+                'number_of_full_nodes':     len(submesh['full_nodes'][p]),
+                'number_of_full_triangles': len(submesh['full_triangles'][p]),
+                'geo_reference':            domain_georef,
+                'number_of_global_triangles': n_global_tri,
+                'number_of_global_nodes':     n_global_nodes,
+                'processor':    p,
+                'numproc':      numprocs,
+                's2p_map':      None,
+                'p2s_map':      None,
+                'tri_l2g':      tri_l2g_p,
+                'node_l2g':     node_l2g_p,
+                'ghost_layer_width': glw_p,
+            }
+            tostore_p = (
+                kwargs_p, pts_p, verts_p, bnd_p, {},
+                _defaults['boundary_map'],
+                _defaults['domain_name'],
+                _defaults['domain_dir'],
+                _defaults['domain_store'],
+                _defaults['domain_store_centroids'],
+                _defaults['domain_minimum_storable_height'],
+                _defaults['domain_minimum_allowed_height'],
+                _defaults['domain_flow_algorithm'],
+                _defaults['domain_georef'],
+                _defaults['domain_quantities_to_be_stored'],
+                _defaults['domain_smooth'],
+                _defaults['domain_low_froude'],
+            )
+            all_reqs.extend(_isend_submesh(comm, tostore_p, p))
+        _MPI.Request.Waitall(all_reqs)
+
+        kwargs   = kwargs0
+        boundary_recv = boundary
+
+    else:
+        from mpi4py import MPI as _MPI
+        comm = _MPI.COMM_WORLD
+        (kwargs, points, vertices, boundary_recv, quantities_recv,
+         boundary_map_recv,
+         domain_name, domain_dir, domain_store, domain_store_centroids,
+         domain_minimum_storable_height, domain_minimum_allowed_height,
+         domain_flow_algorithm, domain_georef,
+         domain_quantities_to_be_stored, domain_smooth,
+         domain_low_froude) = _recv_submesh(comm, 0)
+
+    parallel_domain = Parallel_domain(points, vertices, boundary_recv,
+                                      **kwargs)
+
+    # Set the ghost boundary tag so evolve() can handle ghost edges.
+    parallel_domain.boundary['ghost'] = None
+
+    return parallel_domain
+
 
 def _shared_bcast_ndarray(arr_on_root, comm, node_comm):
     """Broadcast a numpy array from global rank 0 using shared memory within nodes.

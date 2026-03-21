@@ -1,0 +1,185 @@
+"""BasicMesh -- minimal mesh for partitioning and parallel distribution.
+
+Stores only nodes, triangles, boundary tags, and geo_reference.
+All geometric arrays needed by the finite-volume solver (normals,
+edge lengths, areas, radii, vertex_coordinates) are NOT computed here --
+they are deferred to when each rank constructs its Parallel_domain from
+the distributed submesh.
+
+The neighbours array and centroid_coordinates are computed lazily on
+first access, since they are needed by the partitioning algorithms.
+"""
+
+import numpy as num
+from anuga.coordinate_transforms.geo_reference import Geo_reference
+
+
+class BasicMesh:
+    """Minimal mesh for partitioning and parallel distribution.
+
+    Unlike the full Mesh class (neighbour_mesh.Mesh), BasicMesh skips
+    computation of normals, edge lengths, areas, radii, vertex_coordinates,
+    and edge_midpoint_coordinates at construction time.  Those arrays are
+    only needed by the finite-volume solver and will be computed later when
+    each MPI rank constructs its Parallel_domain from the distributed submesh.
+
+    neighbours and centroid_coordinates are computed lazily on first access
+    (needed by the partitioning algorithms).
+
+    If the triangulation was produced by the triangle library (via
+    create_mesh_from_regions / pmesh_to_basic_mesh), the pre-computed
+    triangle_neighbours array can be passed directly and the neighbour
+    structure is not recomputed from scratch.
+
+    Parameters
+    ----------
+    nodes : array_like, shape (M, 2)
+        Node x, y coordinates (relative to geo_reference).
+    triangles : array_like, shape (N, 3)
+        Triangle vertex indices into nodes.
+    boundary : dict, optional
+        Boundary tag dict mapping (triangle_id, edge_index) -> tag string.
+        If None an empty dict is used.
+    geo_reference : Geo_reference, optional
+        Coordinate origin and zone.  Defaults to Geo_reference().
+    triangle_neighbours : array_like, shape (N, 3), optional
+        Pre-computed neighbour array (-1 for boundary edges), as produced
+        by the triangle library.  If supplied the neighbour structure is
+        assigned directly rather than recomputed.
+    """
+
+    def __init__(self, nodes, triangles, boundary=None,
+                 geo_reference=None, triangle_neighbours=None):
+
+        self.nodes = num.array(nodes, float)
+        self.triangles = num.array(triangles, int)
+        self.number_of_triangles = len(self.triangles)
+        self.number_of_nodes = len(self.nodes)
+
+        if geo_reference is None:
+            self.geo_reference = Geo_reference()
+        else:
+            self.geo_reference = geo_reference
+
+        self.boundary = {} if boundary is None else boundary
+
+        # Store pre-computed neighbours if supplied by the triangulator.
+        self._triangle_neighbours = (
+            num.array(triangle_neighbours, int)
+            if triangle_neighbours is not None else None)
+
+        # Lazily computed.
+        self._neighbours = None
+        self._centroid_coordinates = None
+
+    # ------------------------------------------------------------------
+    # Container protocol
+    # ------------------------------------------------------------------
+
+    def __len__(self):
+        return self.number_of_triangles
+
+    def __repr__(self):
+        return ('BasicMesh: %d triangles, %d nodes'
+                % (self.number_of_triangles, self.number_of_nodes))
+
+    # ------------------------------------------------------------------
+    # Lazy properties
+    # ------------------------------------------------------------------
+
+    @property
+    def neighbours(self):
+        """(N, 3) int array of neighbour triangle indices (-1 = boundary)."""
+        if self._neighbours is None:
+            self._build_neighbours()
+        return self._neighbours
+
+    def _build_neighbours(self):
+        N = self.number_of_triangles
+        if self._triangle_neighbours is not None:
+            self._neighbours = self._triangle_neighbours.copy()
+        else:
+            from anuga.abstract_2d_finite_volumes import neighbour_table_ext
+            nbrs = -num.ones((N, 3), int)
+            nbr_edges = -num.ones((N, 3), int)
+            n_boundaries = num.zeros(N, int)
+            neighbour_table_ext.build_neighbour_structure(
+                self.number_of_nodes,
+                self.triangles,
+                nbrs,
+                nbr_edges,
+                n_boundaries,
+            )
+            self._neighbours = nbrs
+
+    @property
+    def centroid_coordinates(self):
+        """(N, 2) float array of triangle centroid x, y coordinates."""
+        if self._centroid_coordinates is None:
+            t = self.triangles
+            n = self.nodes
+            self._centroid_coordinates = (
+                (n[t[:, 0]] + n[t[:, 1]] + n[t[:, 2]]) / 3.0)
+        return self._centroid_coordinates
+
+    # ------------------------------------------------------------------
+    # Methods expected by partition_mesh and the partitioning algorithms
+    # ------------------------------------------------------------------
+
+    def get_number_of_nodes(self):
+        return self.number_of_nodes
+
+    def reorder(self, new_order, in_place=True):
+        """Reorder triangles by a permutation array.
+
+        Called by partition_mesh after computing the partition ordering.
+
+        Parameters
+        ----------
+        new_order : array_like of int, length N
+            Permutation of 0..N-1 giving the new triangle ordering.
+        in_place : bool
+            If True (default) reorder this mesh in-place and return self.
+            If False return a new BasicMesh sharing the nodes array.
+
+        Returns
+        -------
+        BasicMesh
+        """
+        new_order = num.array(new_order, int)
+        N = self.number_of_triangles
+        inv_order = num.empty_like(new_order)
+        inv_order[new_order] = num.arange(N, dtype=int)
+
+        if in_place:
+            target = self
+        else:
+            import copy
+            target = copy.copy(self)
+            # nodes are not reordered -- share the array
+            target.nodes = self.nodes
+            target.triangles = self.triangles.copy()
+            target.boundary = dict(self.boundary)
+            target._neighbours = (
+                self._neighbours.copy()
+                if self._neighbours is not None else None)
+            target._centroid_coordinates = (
+                self._centroid_coordinates.copy()
+                if self._centroid_coordinates is not None else None)
+
+        target.triangles = target.triangles[new_order]
+        target.boundary = {(int(inv_order[i]), j): v
+                           for (i, j), v in target.boundary.items()}
+
+        if target._neighbours is not None:
+            # Remap neighbour indices then reorder rows.
+            flat = target._neighbours.ravel()
+            mask = flat >= 0
+            flat[mask] = inv_order[flat[mask]]
+            target._neighbours = target._neighbours[new_order]
+
+        if target._centroid_coordinates is not None:
+            target._centroid_coordinates = (
+                target._centroid_coordinates[new_order])
+
+        return target

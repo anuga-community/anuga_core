@@ -206,7 +206,14 @@ def partition_mesh(domain, n_procs,
     r_tri_index = {}  # reverse tri index, parallel to serial triangle index mapping
     n_tri = len(domain.triangles)
 
-    distribute_quantities = {k: domain.quantities[k] for k in distribute_quantity_names if k in domain.quantities}
+    # Support both a full Domain (has .quantities and .mesh) and a
+    # BasicMesh (no quantities; reorder is called on the object itself).
+    if hasattr(domain, 'quantities'):
+        distribute_quantities = {k: domain.quantities[k]
+                                 for k in distribute_quantity_names
+                                 if k in domain.quantities}
+    else:
+        distribute_quantities = {}
 
     from anuga.parallel.partitioning import metis_partition, morton_partition, hilbert_partition
 
@@ -229,9 +236,11 @@ def partition_mesh(domain, n_procs,
 
     new_quantities = reorder_quantities(distribute_quantities, epart_order)
 
-    # If you are just distributing the sequential domain and will not be using 
-    # it again, then some memory can be saved by setting in_place = true
-    new_mesh = domain.mesh.reorder(epart_order, in_place=in_place)  
+    # If you are just distributing the sequential domain and will not be using
+    # it again, then some memory can be saved by setting in_place = true.
+    # For a BasicMesh there is no separate .mesh attribute -- reorder directly.
+    mesh_obj = getattr(domain, 'mesh', domain)
+    new_mesh = mesh_obj.reorder(epart_order, in_place=in_place)
 
     return new_mesh, triangles_per_proc, new_quantities, new_tri_index, epart_order
 
