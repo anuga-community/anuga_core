@@ -208,6 +208,24 @@ class Sequential_distribute(object):
         return tostore
 
 
+    def _release_submesh_rank(self, p):
+        """Null out submesh data for rank p to allow garbage collection.
+
+        Called by sequential_distribute_dump after rank p's files have been
+        written.  Once all arrays for rank p are released the GC can recover
+        the memory before proceeding to rank p+1.
+        """
+        submesh = self.submesh
+        for key in ('full_nodes', 'full_triangles', 'full_boundary',
+                    'ghost_nodes', 'ghost_triangles', 'ghost_commun',
+                    'ghost_boundary', 'ghost_layer_width', 'full_commun'):
+            lst = submesh.get(key)
+            if lst is not None and p < len(lst):
+                lst[p] = None
+        for k in submesh.get('full_quan', {}):
+            submesh['full_quan'][k][p] = None
+        for k in submesh.get('ghost_quan', {}):
+            submesh['ghost_quan'][k][p] = None
 
 
 
@@ -216,6 +234,8 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
     """ Distribute the domain, create parallel domain and pickle result
     """
 
+    import gc
+    import pickle
     from os.path import join
 
     partition = Sequential_distribute(domain, verbose, debug, parameters)
@@ -224,9 +244,7 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
     partition.distribute(numprocs)
 
     # Make sure the partition_dir exists
-    if partition_dir == '.' :
-        pass
-    else:
+    if partition_dir != '.':
         import os
         import errno
         try:
@@ -235,17 +253,14 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
             if exception.errno != errno.EEXIST:
                 raise
 
-    import pickle
-
     if verbose: print('sequential_distribute_dump: Dumping partitions to %s'%partition_dir)
-    
+
     for p in range(0, numprocs):
 
         tostore = partition.extract_submesh(p)
 
         pickle_name = partition.domain_name + '_P%g_%g.pickle'% (numprocs,p)
         pickle_name = join(partition_dir,pickle_name)
-        f = open(pickle_name, 'wb')
 
         lst = list(tostore)
 
@@ -255,12 +270,25 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
         num.save(pickle_name+".np2",tostore[2])
         lst[2] = pickle_name+".np2.npy"
 
-        # Write each quantity to it's own file
+        # Write each quantity to its own file
         for k in tostore[4]:
-            num.save(pickle_name+".np4."+k,num.array(tostore[4][k]))
+            num.save(pickle_name+".np4."+k, num.asarray(tostore[4][k]))
             lst[4][k] = pickle_name+".np4."+k+".npy"
 
-        pickle.dump( tuple(lst), f, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(pickle_name, 'wb') as f:
+            pickle.dump(tuple(lst), f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        # Release this rank's submesh data so memory can be reclaimed before
+        # processing the next rank.  Without this, all P subdomains' arrays
+        # remain live throughout the entire dump loop.
+        partition._release_submesh_rank(p)
+        del tostore, lst
+
+        # Run GC periodically to actually free the released arrays.
+        if p % 8 == 7:
+            gc.collect()
+
+    gc.collect()
     return
 
 
