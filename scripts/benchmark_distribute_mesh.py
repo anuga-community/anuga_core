@@ -245,7 +245,7 @@ def run_evolve_check(grid_size, scheme):
         'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
 
     t0 = time.perf_counter()
-    for t in domain.evolve(yieldstep=1, finaltime=1):
+    for t in domain.evolve(yieldstep=0.01, finaltime=0.01):
         pass
     dt = time.perf_counter() - t0
 
