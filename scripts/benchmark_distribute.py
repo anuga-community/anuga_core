@@ -190,7 +190,8 @@ def make_domain(mesh_filename=None, grid_size=None):
 
 # ── Timed run ─────────────────────────────────────────────────────────────────
 
-def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval):
+def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval,
+                    parameters=None):
     """Run fn `reps` times; return (times, pss_sum_mbs, rss_max_mbs) lists."""
     times       = []
     pss_sum_mbs = []   # PSS sum: true physical-memory footprint of the job
@@ -210,7 +211,7 @@ def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval):
                             print_ticker=(myid == 0))
         with mon:
             t0 = MPI.Wtime()
-            pd = fn(domain)
+            pd = fn(domain, parameters=parameters)
             t1 = MPI.Wtime()
 
         elapsed  = t1 - t0
@@ -235,7 +236,8 @@ def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval):
 
 # ── Timed dump + load ─────────────────────────────────────────────────────────
 
-def time_dump_load(mesh_filename, grid_size, reps, ticker_interval):
+def time_dump_load(mesh_filename, grid_size, reps, ticker_interval,
+                   parameters=None):
     """Benchmark sequential_distribute_dump (rank-0 only) + load (all ranks).
 
     The partition directory must be on a filesystem visible to all ranks
@@ -274,7 +276,8 @@ def time_dump_load(mesh_filename, grid_size, reps, ticker_interval):
                                      print_ticker=True)
             with mon_dump:
                 t0 = MPI.Wtime()
-                sequential_distribute_dump(domain, nproc, partition_dir=tmpdir)
+                sequential_distribute_dump(domain, nproc, partition_dir=tmpdir,
+                                           parameters=parameters)
                 t1 = MPI.Wtime()
             dump_elapsed = t1 - t0
         else:
@@ -343,6 +346,9 @@ def parse_args():
                    help='Grid size M for synthetic M×M mesh (~4*M*M triangles)')
     p.add_argument('--interval', type=float, default=1.0,
                    help='Memory ticker sample interval in seconds (default: 1.0)')
+    p.add_argument('--scheme',   type=str,   default='metis',
+                   choices=['metis', 'morton', 'hilbert'],
+                   help='Partitioning scheme (default: metis)')
     return p.parse_args()
 
 
@@ -361,6 +367,8 @@ def main():
         mesh_filename = os.path.join(mod_path, 'data', 'merimbula_10785_1.tsh')
         mesh_label = os.path.basename(mesh_filename)
 
+    parameters = {'partition_scheme': args.scheme}
+
     # Check shared-memory capability before timing (all ranks must call).
     shmem_ok, node_size, shmem_reason = check_shmem()
 
@@ -377,25 +385,29 @@ def main():
         print(f'  Triangles:  {ntri:,}   Nodes: {nnodes:,}')
         print(f'  MPI ranks:  {nproc}   Repetitions: {args.reps}')
         print(f'  Ranks/node: {node_size}')
+        print(f'  Scheme:     {args.scheme}')
         print(f'  Shared mem: {shmem_status}')
         print(f'{"="*62}\n')
 
     comm.Barrier()
 
     times_std, pss_std, rss_std = time_distribute(
-        distribute, mesh_filename, grid_size, args.reps, args.interval)
+        distribute, mesh_filename, grid_size, args.reps, args.interval,
+        parameters=parameters)
 
     gc.collect()
     comm.Barrier()
 
     times_collab, pss_collab, rss_collab = time_distribute(
-        distribute_collaborative, mesh_filename, grid_size, args.reps, args.interval)
+        distribute_collaborative, mesh_filename, grid_size, args.reps, args.interval,
+        parameters=parameters)
 
     gc.collect()
     comm.Barrier()
 
     times_dump, times_load, pss_dl, rss_dl = time_dump_load(
-        mesh_filename, grid_size, args.reps, args.interval)
+        mesh_filename, grid_size, args.reps, args.interval,
+        parameters=parameters)
 
     if myid == 0:
         # Total dump+load time per rep.
