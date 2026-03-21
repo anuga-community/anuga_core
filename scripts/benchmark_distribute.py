@@ -19,6 +19,7 @@ Options
 """
 
 import argparse
+import gc
 import os
 import statistics
 import threading
@@ -50,6 +51,34 @@ def _rss_mb():
     return 0.0
 
 
+def _pss_mb():
+    """Return Proportional Set Size in MiB.
+
+    PSS counts shared memory pages proportionally (divided by the number of
+    processes that map them), so summing PSS across ranks gives the true
+    physical-memory footprint of the job — unlike VmRSS which double-counts
+    pages shared via MPI.Win.Allocate_shared.
+    """
+    try:
+        with open('/proc/self/smaps_rollup') as fh:
+            for line in fh:
+                if line.startswith('Pss:'):
+                    return int(line.split()[1]) / 1024.0   # kB → MiB
+    except OSError:
+        pass
+    # Fallback: parse /proc/self/smaps (slower but always present)
+    try:
+        total = 0
+        with open('/proc/self/smaps') as fh:
+            for line in fh:
+                if line.startswith('Pss:'):
+                    total += int(line.split()[1])
+        return total / 1024.0
+    except OSError:
+        pass
+    return 0.0
+
+
 class MemoryMonitor:
     """Background thread that samples this process's RSS every `interval` seconds.
 
@@ -61,16 +90,23 @@ class MemoryMonitor:
     """
 
     def __init__(self, label='', interval=1.0, print_ticker=False):
-        self.label       = label
-        self.interval    = interval
+        self.label        = label
+        self.interval     = interval
         self.print_ticker = print_ticker
-        self.peak_mb     = 0.0
-        self._stop       = threading.Event()
-        self._thread     = threading.Thread(target=self._run, daemon=True)
+        self.peak_rss_mb  = 0.0
+        self.peak_pss_mb  = 0.0
+        self._stop        = threading.Event()
+        self._thread      = threading.Thread(target=self._run, daemon=True)
+
+    # Keep backward-compatible alias
+    @property
+    def peak_mb(self):
+        return self.peak_rss_mb
 
     def __enter__(self):
-        self.peak_mb = _rss_mb()
-        self._t0     = time.time()
+        self.peak_rss_mb = _rss_mb()
+        self.peak_pss_mb = _pss_mb()
+        self._t0         = time.time()
         self._stop.clear()
         self._thread.start()
         return self
@@ -81,12 +117,16 @@ class MemoryMonitor:
 
     def _run(self):
         while not self._stop.wait(self.interval):
-            mb = _rss_mb()
-            if mb > self.peak_mb:
-                self.peak_mb = mb
+            rss = _rss_mb()
+            pss = _pss_mb()
+            if rss > self.peak_rss_mb:
+                self.peak_rss_mb = rss
+            if pss > self.peak_pss_mb:
+                self.peak_pss_mb = pss
             if self.print_ticker:
                 elapsed = time.time() - self._t0
-                print(f'  [{self.label}]  t={elapsed:6.1f}s  rank-0 RSS={mb:,.0f} MiB',
+                print(f'  [{self.label}]  t={elapsed:6.1f}s  '
+                      f'rank-0 RSS={rss:,.0f} MiB  PSS={pss:,.0f} MiB',
                       flush=True)
 
 
@@ -107,14 +147,16 @@ def make_domain(mesh_filename=None, grid_size=None):
 # ── Timed run ─────────────────────────────────────────────────────────────────
 
 def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval):
-    """Run fn `reps` times; return (times, peak_sum_mb, peak_max_mb) lists."""
-    times        = []
-    peak_sum_mbs = []
-    peak_max_mbs = []
+    """Run fn `reps` times; return (times, pss_sum_mbs, rss_max_mbs) lists."""
+    times       = []
+    pss_sum_mbs = []   # PSS sum: true physical-memory footprint of the job
+    rss_max_mbs = []   # RSS max: worst-case single-rank footprint
 
     label = fn.__name__
 
     for rep in range(reps):
+        # Drain residual memory from the previous run/rep before measuring.
+        gc.collect()
         comm.Barrier()
         domain = make_domain(mesh_filename, grid_size)
         comm.Barrier()
@@ -128,21 +170,23 @@ def time_distribute(fn, mesh_filename, grid_size, reps, ticker_interval):
             t1 = MPI.Wtime()
 
         elapsed  = t1 - t0
-        peak_mb  = max(mon.peak_mb, _rss_mb())   # capture final sample too
+        # Capture a final sample in case the thread missed the peak.
+        peak_rss = max(mon.peak_rss_mb, _rss_mb())
+        peak_pss = max(mon.peak_pss_mb, _pss_mb())
 
         # Reduce timing and memory across all ranks.
-        wall     = comm.reduce(elapsed, op=MPI.MAX, root=0)
-        peak_sum = comm.reduce(peak_mb, op=MPI.SUM, root=0)
-        peak_max = comm.reduce(peak_mb, op=MPI.MAX, root=0)
+        wall    = comm.reduce(elapsed,  op=MPI.MAX, root=0)
+        pss_sum = comm.reduce(peak_pss, op=MPI.SUM, root=0)
+        rss_max = comm.reduce(peak_rss, op=MPI.MAX, root=0)
 
         if myid == 0:
             times.append(wall)
-            peak_sum_mbs.append(peak_sum)
-            peak_max_mbs.append(peak_max)
+            pss_sum_mbs.append(pss_sum)
+            rss_max_mbs.append(rss_max)
 
         del pd
 
-    return times, peak_sum_mbs, peak_max_mbs
+    return times, pss_sum_mbs, rss_max_mbs
 
 
 # ── Formatting ────────────────────────────────────────────────────────────────
@@ -204,33 +248,47 @@ def main():
 
     comm.Barrier()
 
-    times_std, psum_std, pmax_std = time_distribute(
+    times_std, pss_std, rss_std = time_distribute(
         distribute, mesh_filename, grid_size, args.reps, args.interval)
 
-    times_collab, psum_collab, pmax_collab = time_distribute(
+    # gc between the two functions to clear residual memory.
+    gc.collect()
+    comm.Barrier()
+
+    times_collab, pss_collab, rss_collab = time_distribute(
         distribute_collaborative, mesh_filename, grid_size, args.reps, args.interval)
 
     if myid == 0:
-        w = 30
-        print(f'\n{"─"*62}')
-        print(f'  {"":28}  {"distribute()":>14}  {"collaborative()":>14}')
-        print(f'{"─"*62}')
-        print(f'  {"Wall time (max across ranks)":<28}  '
+        print(f'\n{"─"*66}')
+        print(f'  {"":32}  {"distribute()":>14}  {"collaborative()":>14}')
+        print(f'{"─"*66}')
+        print(f'  {"Wall time (max across ranks)":<32}  '
               f'{fmt_time(times_std):>14}  {fmt_time(times_collab):>14}')
-        print(f'  {"Peak RSS — sum across ranks":<28}  '
-              f'{fmt_mem(psum_std):>14}  {fmt_mem(psum_collab):>14}')
-        print(f'  {"Peak RSS — max single rank":<28}  '
-              f'{fmt_mem(pmax_std):>14}  {fmt_mem(pmax_collab):>14}')
-        print(f'{"─"*62}')
+        print(f'  {"Peak PSS — sum (physical total)":<32}  '
+              f'{fmt_mem(pss_std):>14}  {fmt_mem(pss_collab):>14}')
+        print(f'  {"Peak RSS — max single rank":<32}  '
+              f'{fmt_mem(rss_std):>14}  {fmt_mem(rss_collab):>14}')
+        print(f'{"─"*66}')
+        print(f'  Note: PSS sums shared pages proportionally — '
+              f'reflects true physical memory.')
 
         med_std    = statistics.median(times_std)
         med_collab = statistics.median(times_collab)
         if med_collab > 0:
             speedup = med_std / med_collab
-            print(f'\n  Speedup: {speedup:.2f}x  (distribute / collaborative)')
+            faster  = 'collaborative' if speedup > 1 else 'distribute'
+            ratio   = speedup if speedup > 1 else 1.0 / speedup
+            print(f'\n  Speedup: {ratio:.2f}x faster with {faster}')
 
-        mem_ratio = statistics.median(psum_std) / max(statistics.median(psum_collab), 1)
-        print(f'  Memory:  {mem_ratio:.2f}x less total RSS with collaborative')
+        med_pss_std    = statistics.median(pss_std)
+        med_pss_collab = statistics.median(pss_collab)
+        if med_pss_collab > 0 and med_pss_std > 0:
+            if med_pss_std >= med_pss_collab:
+                mem_ratio = med_pss_std / med_pss_collab
+                print(f'  Memory:  {mem_ratio:.2f}x less physical memory with collaborative')
+            else:
+                mem_ratio = med_pss_collab / med_pss_std
+                print(f'  Memory:  {mem_ratio:.2f}x more physical memory with collaborative')
         print()
 
 
