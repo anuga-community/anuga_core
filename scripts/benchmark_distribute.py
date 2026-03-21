@@ -134,6 +134,46 @@ class MemoryMonitor:
                       flush=True)
 
 
+# ── Shared-memory diagnostic ──────────────────────────────────────────────────
+
+def check_shmem():
+    """Test whether MPI.Win.Allocate_shared works on this system.
+
+    Returns (works: bool, node_size: int, reason: str).
+    Allocates a tiny 1-element window, writes a sentinel from the node
+    leader, and verifies all node members see it.
+    """
+    node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
+    node_rank = node_comm.Get_rank()
+    node_size = node_comm.Get_size()
+    try:
+        win = MPI.Win.Allocate_shared(
+            8 if node_rank == 0 else 0,
+            8, MPI.INFO_NULL, node_comm)
+        buf, _ = win.Shared_query(0)
+        arr = import_numpy_view(buf)
+        if node_rank == 0:
+            arr[0] = 42.0
+        node_comm.Barrier()
+        ok = float(arr[0]) == 42.0
+        win.Free()
+        node_comm.Free()
+        reason = 'Win.Allocate_shared OK' if ok else 'shared query returned wrong value'
+        return ok, node_size, reason
+    except Exception as e:
+        try:
+            node_comm.Free()
+        except Exception:
+            pass
+        return False, node_size, f'exception: {e}'
+
+
+def import_numpy_view(buf):
+    """Wrap a buffer as a 1-element float64 numpy array."""
+    import numpy as np
+    return np.ndarray((1,), dtype=np.float64, buffer=buf)
+
+
 # ── Domain construction ───────────────────────────────────────────────────────
 
 def make_domain(mesh_filename=None, grid_size=None):
@@ -321,16 +361,23 @@ def main():
         mesh_filename = os.path.join(mod_path, 'data', 'merimbula_10785_1.tsh')
         mesh_label = os.path.basename(mesh_filename)
 
+    # Check shared-memory capability before timing (all ranks must call).
+    shmem_ok, node_size, shmem_reason = check_shmem()
+
     if myid == 0:
         domain_info = make_domain(mesh_filename, grid_size)
         ntri   = domain_info.number_of_triangles
         nnodes = domain_info.number_of_nodes
         del domain_info
+        shmem_status = ('yes' if shmem_ok
+                        else f'NO — falling back to Bcast ({shmem_reason})')
         print(f'\n{"="*62}')
         print(f'  distribute() benchmark')
         print(f'  Mesh:       {mesh_label}')
         print(f'  Triangles:  {ntri:,}   Nodes: {nnodes:,}')
         print(f'  MPI ranks:  {nproc}   Repetitions: {args.reps}')
+        print(f'  Ranks/node: {node_size}')
+        print(f'  Shared mem: {shmem_status}')
         print(f'{"="*62}\n')
 
     comm.Barrier()
