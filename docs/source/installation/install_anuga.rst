@@ -33,8 +33,8 @@ On some systems you may need to manually install `mpi4py` to match the
 version of `mpi` you are using.
 
 
-This has setup and activated a `conda` environment `anuga_env` which is using python 3.12. 
-(This version of ANUGA has be tested on 3.9 - 3.13)    
+This has set up and activated a ``conda`` environment ``anuga_env`` using Python 3.12.
+ANUGA supports Python 3.10 – 3.14.
 
 We are now ready to use ANUGA. 
 

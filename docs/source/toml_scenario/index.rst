@@ -37,6 +37,93 @@ that contains the TOML file, so the script can be invoked from any working
 directory.
 
 
+Working example — Cairns tsunami scenario
+------------------------------------------
+
+A complete, ready-to-run example is provided in
+``examples/cairns_toml_excel/`` of the repository.  It models a synthetic
+tsunami entering Cairns Harbour (Queensland, Australia) and exercises most
+TOML features: a shapefile boundary, a DEM elevation raster, Flather open-
+ocean boundaries, and the bridge/pumping-station stubs.
+
+.. code-block:: bash
+
+   cd examples/cairns_toml_excel
+   anuga_run_toml cairns_example.toml          # serial
+   mpirun -np 4 anuga_run_toml cairns_example.toml   # parallel
+
+
+Minimal annotated TOML
+-----------------------
+
+The snippet below is the smallest valid TOML that will run a real simulation.
+Copy it, adjust the file paths, and add extra sections as needed.
+
+.. code-block:: toml
+
+   # ── Project ───────────────────────────────────────────────────────────────
+   [project]
+   scenario                  = "my_run"      # name for the SWW file & output dir
+   output_base_directory     = "OUTPUT/"
+   yieldstep                 = 120.0         # seconds between evolve yields
+   finaltime                 = 21600.0       # total simulation duration [s]
+   projection_information    = -55           # UTM zone (negative = southern hemisphere)
+   flow_algorithm            = "DE0"         # "DE0" (fast) or "DE1" (accurate)
+   output_tif_cellsize       = 50.0          # cell size [m] for output GeoTiff rasters
+
+   # ── Mesh ──────────────────────────────────────────────────────────────────
+   [mesh]
+   bounding_polygon          = "mesh/boundary.shp"   # shapefile with boundary tags
+   default_res               = 1000000.0             # default triangle area [m²]
+   # [[mesh.interior_regions]]
+   # polygon    = "mesh/fine_zone.csv"
+   # resolution = 10000.0   # finer triangles inside this polygon [m²]
+
+   # ── Boundary conditions ───────────────────────────────────────────────────
+   [boundary_conditions]
+   boundary_tags_attribute_name = "Boundary"   # shapefile attribute holding tag names
+
+   [[boundary_conditions.boundaries]]
+   tag        = "Ocean"
+   type       = "Flather_Stage"                # weakly-reflecting open boundary
+   file       = "boundarycond/tide.csv"        # CSV: columns time_s, stage_m
+   start_time = 0.0
+
+   [[boundary_conditions.boundaries]]
+   tag  = "Land"
+   type = "Reflective"                         # solid wall — no file needed
+
+   # ── Initial conditions ────────────────────────────────────────────────────
+   [initial_conditions]
+
+   [[initial_conditions.elevation]]
+   polygon  = "Extent"                         # full extent of the raster
+   value    = "initialcond/dem.asc"            # GDAL raster (asc, tif, …)
+   clip_min = -inf
+   clip_max = inf
+
+   [[initial_conditions.elevation]]
+   polygon  = "All"                            # catch-all fallback
+   value    = 0.0
+   clip_min = -inf
+   clip_max = inf
+
+   [[initial_conditions.friction]]
+   polygon  = "All"
+   value    = 0.03                             # Manning's n
+   clip_min = 0.01
+   clip_max = 0.5
+
+   [[initial_conditions.stage]]
+   polygon  = "All"
+   value    = 0.0                              # start domain dry
+   clip_min = -inf
+   clip_max = inf
+
+The full reference for every key is in the `Configuration File Reference`_
+section below.
+
+
 Scenario Directory Layout
 --------------------------
 
@@ -151,7 +238,7 @@ Top-level simulation settings.
    # Number of OpenMP threads.  Omit to read OMP_NUM_THREADS env var (default 1).
    # omp_num_threads = 4
 
-   # Multiprocessor mode: 1 = OpenMP (default), 2 = CuPy / GPU
+   # Multiprocessor mode: 1 = OpenMP CPU (default), 2 = OpenMP GPU offload (experimental, branch sp26)
    multiprocessor_mode = 1
 
 .. _toml-mesh:

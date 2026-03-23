@@ -205,6 +205,63 @@ Example scripts are in ``examples/parallel/``:
      - ``distribute_basic_mesh_collaborative``
 
 
+Merging parallel SWW files
+---------------------------
+
+At the end of a parallel run each MPI rank writes its own per-rank SWW
+file.  ``domain.sww_merge()`` (called from rank 0) reassembles them into
+a single global SWW file.
+
+By default the merge reads all timesteps from every per-rank file at
+once, which is the fastest approach but requires enough RAM to hold the
+full merged time series for each dynamic quantity:
+
+.. code-block:: python
+
+   domain.sww_merge(delete_old=True)   # default: all timesteps in RAM
+
+For large simulations where the full time series does not fit in RAM, use
+the ``chunk_size`` parameter to process only *N* timesteps at a time.
+The merge will make multiple passes through the input files — more I/O,
+but peak memory is bounded to approximately
+``chunk_size × n_global_nodes × 4 bytes`` per dynamic quantity:
+
+.. code-block:: python
+
+   # Process 50 timesteps per pass — reduces peak RAM substantially
+   domain.sww_merge(delete_old=True, chunk_size=50)
+
+As a rough sizing guide:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 30 35 35
+
+   * - Global nodes (smooth) / vertices (non-smooth)
+     - chunk_size=50 peak RAM (MB)
+     - chunk_size=200 peak RAM (MB)
+   * - 100 000
+     - ~20 MB
+     - ~80 MB
+   * - 1 000 000
+     - ~200 MB
+     - ~800 MB
+   * - 10 000 000
+     - ~2 GB
+     - ~8 GB
+
+*(figures are per dynamic quantity and assume float32 storage)*
+
+You can also call ``sww_merge_parallel`` directly from post-processing
+scripts without a running domain:
+
+.. code-block:: python
+
+   from anuga.utilities.sww_merge import sww_merge_parallel
+
+   sww_merge_parallel('cairns', np=8, delete_old=True, chunk_size=100)
+
+
 Choosing the number of processes
 ----------------------------------
 

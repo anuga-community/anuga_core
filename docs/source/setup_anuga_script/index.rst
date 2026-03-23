@@ -16,6 +16,7 @@ Script Structure
    boundaries
    operators
    evolve
+   checkpointing
    
 .. only:: html
 

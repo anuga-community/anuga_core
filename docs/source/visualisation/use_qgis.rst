@@ -13,7 +13,7 @@ Opening sww files in QGIS
 
 Open QGIS. 
 
-This document uses QGIS version 3.42
+This document uses QGIS 3.x (tested with version 3.42).
 
 From the "layer" menu choose "Data Source Manager"
 
