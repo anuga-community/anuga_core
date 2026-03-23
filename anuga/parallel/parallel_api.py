@@ -286,7 +286,7 @@ def distribute(domain, verbose=False, debug=False, parameters = None):
 
 
 def distribute_basic_mesh(basic_mesh, verbose=False, parameters=None):
-    """Distribute a BasicMesh and return a Parallel_domain on each rank.
+    """Distribute a Basic_mesh and return a Parallel_domain on each rank.
 
     This is the mesh-first alternative to distribute().  Only mesh topology
     is distributed -- no quantities.  The caller sets initial conditions,
@@ -294,7 +294,7 @@ def distribute_basic_mesh(basic_mesh, verbose=False, parameters=None):
 
     Parameters
     ----------
-    basic_mesh : BasicMesh
+    basic_mesh : Basic_mesh
         The mesh to distribute.  Only rank 0 needs to supply a meaningful
         value; other ranks may pass None.
     verbose : bool, optional
@@ -309,7 +309,7 @@ def distribute_basic_mesh(basic_mesh, verbose=False, parameters=None):
     Example
     -------
     >>> from anuga.parallel import distribute_mesh, finalize, myid
-    >>> from anuga.abstract_2d_finite_volumes.basic_mesh import BasicMesh
+    >>> from anuga.abstract_2d_finite_volumes.basic_mesh import Basic_mesh
     >>> from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_to_basic_mesh
     >>>
     >>> if myid == 0:
@@ -330,7 +330,7 @@ def distribute_basic_mesh(basic_mesh, verbose=False, parameters=None):
     from .parallel_shallow_water import Parallel_domain
 
     if not pypar_available or numprocs == 1:
-        # Serial fallback: build a plain Domain directly from the BasicMesh.
+        # Serial fallback: build a plain Domain directly from the Basic_mesh.
         from anuga.shallow_water.shallow_water_domain import Domain
         return Domain(basic_mesh.nodes, basic_mesh.triangles,
                       boundary=basic_mesh.boundary,
@@ -437,6 +437,7 @@ def distribute_basic_mesh(basic_mesh, verbose=False, parameters=None):
 
         kwargs   = kwargs0
         boundary_recv = boundary
+        domain_name = _defaults['domain_name']
 
     else:
         from mpi4py import MPI as _MPI
@@ -451,6 +452,204 @@ def distribute_basic_mesh(basic_mesh, verbose=False, parameters=None):
 
     parallel_domain = Parallel_domain(points, vertices, boundary_recv,
                                       **kwargs)
+
+    # Apply the rank suffix to the domain name so each rank writes to its own
+    # SWW file (e.g. domain_P2_0.sww, domain_P2_1.sww).  The user can call
+    # set_name() again afterwards to choose a different base name.
+    parallel_domain.set_name(domain_name)
+
+    return parallel_domain
+
+
+def distribute_basic_mesh_collaborative(basic_mesh, verbose=False, parameters=None):
+    """Distribute a Basic_mesh using the collaborative (shared-memory) approach.
+
+    Combines the mesh-first interface of :func:`distribute_basic_mesh` with
+    the scalable distribution strategy of :func:`distribute_collaborative`:
+
+    1. Rank 0 partitions the mesh topology only (no quantities).
+    2. The full mesh topology (nodes, triangles, neighbours) is broadcast to
+       all ranks using ``MPI.Win.Allocate_shared`` — one physical copy per
+       node, with a single Bcast between node leaders.
+    3. Each rank independently builds its own ghost layer using the BFS
+       Cython kernel.
+    4. Each rank calls ``build_local_mesh`` locally (no quantity data).
+    5. A ``Parallel_domain`` is returned with no quantities set; the caller
+       sets initial conditions, boundaries, operators and structures after
+       the call, exactly as with :func:`distribute_basic_mesh`.
+
+    This avoids both the rank-0 ``build_submesh`` bottleneck of
+    :func:`distribute_basic_mesh` (which builds all P submeshes sequentially
+    on rank 0) and the need to distribute quantity arrays (which are set
+    per-rank after the call).
+
+    Parameters
+    ----------
+    basic_mesh : Basic_mesh or None
+        The mesh to distribute.  Only rank 0 needs a real value; all other
+        ranks should pass ``None``.
+    verbose : bool, optional
+        Print partitioning progress.  Default ``False``.
+    parameters : dict, optional
+        Partitioning options, e.g. ``{'partition_scheme': 'metis'}``.
+        Also accepts ``'ghost_layer_width'`` (default 2).
+
+    Returns
+    -------
+    Parallel_domain (numprocs > 1) or plain Domain (numprocs == 1).
+    """
+    from .distribute_mesh import partition_mesh, ghost_commun_pattern, build_local_mesh
+    from .parallel_shallow_water import Parallel_domain
+
+    if not pypar_available or numprocs == 1:
+        from anuga.shallow_water.shallow_water_domain import Domain
+        return Domain(basic_mesh.nodes, basic_mesh.triangles,
+                      boundary=basic_mesh.boundary,
+                      geo_reference=basic_mesh.geo_reference)
+
+    from mpi4py import MPI
+    comm     = MPI.COMM_WORLD
+    myid     = comm.Get_rank()
+    nprocs   = comm.Get_size()
+
+    layer_width = (parameters or {}).get('ghost_layer_width', 2)
+
+    node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
+
+    # ── Step 1: rank 0 partitions ─────────────────────────────────────────
+    if myid == 0:
+        new_mesh, tpp, _quantities, _s2p, _p2s = partition_mesh(
+            basic_mesh, nprocs, parameters=parameters, verbose=verbose)
+
+        domain_attrs = {
+            'geo_reference':            basic_mesh.geo_reference,
+            'num_global_tri':           basic_mesh.number_of_triangles,
+            'num_global_nodes':         basic_mesh.number_of_nodes,
+            'domain_name':              'domain',
+        }
+    else:
+        new_mesh = tpp = domain_attrs = None
+
+    # ── Step 2: broadcast small metadata ─────────────────────────────────
+    domain_attrs = comm.bcast(domain_attrs, root=0)
+    tpp          = comm.bcast(tpp,          root=0)
+
+    # ── Step 3: shared-memory broadcast of mesh topology ─────────────────
+    nodes,      _win_nodes = _shared_bcast_ndarray(
+        new_mesh.nodes      if myid == 0 else None, comm, node_comm)
+    triangles,  _win_tri   = _shared_bcast_ndarray(
+        new_mesh.triangles  if myid == 0 else None, comm, node_comm)
+    neighbours, _win_nbrs  = _shared_bcast_ndarray(
+        new_mesh.neighbours.astype(num.int64, copy=False) if myid == 0 else None,
+        comm, node_comm)
+    boundary = comm.bcast(new_mesh.boundary if myid == 0 else None, root=0)
+
+    # ── Step 4: each rank builds its own ghost layer ──────────────────────
+    cumsum  = num.concatenate([[0], num.cumsum(tpp)])
+    tlower  = int(cumsum[myid])
+    tupper  = int(cumsum[myid + 1])
+
+    neighbours_c = num.ascontiguousarray(neighbours, dtype=num.int64)
+
+    from .distribute_mesh_ext import ghost_layer_bfs, ghost_bnd_layer_classify
+
+    ghost_ids         = ghost_layer_bfs(neighbours_c, tlower, tupper, layer_width)
+    tri_ids, edge_ids = ghost_bnd_layer_classify(neighbours_c, ghost_ids,
+                                                 tlower, tupper)
+
+    # ── Step 5: assemble local submesh ────────────────────────────────────
+    full_triangles  = triangles[tlower:tupper].copy()
+    full_node_ids   = num.unique(full_triangles.flat)
+    full_nodes_col  = num.concatenate(
+        [full_node_ids.reshape(-1, 1), nodes[full_node_ids]], axis=1)
+
+    ghost_tri_verts = triangles[ghost_ids]
+    ghost_node_ids  = num.setdiff1d(num.unique(ghost_tri_verts.flat), full_node_ids)
+    ghost_nodes_col = num.concatenate(
+        [ghost_node_ids.reshape(-1, 1), nodes[ghost_node_ids]], axis=1)
+    ghost_tris_col  = num.concatenate(
+        [ghost_ids.reshape(-1, 1), ghost_tri_verts], axis=1)
+
+    # Release shared-memory windows.
+    for _win in (_win_nodes, _win_tri, _win_nbrs):
+        if _win is not None:
+            _win.Free()
+    node_comm.Free()
+
+    # Full boundary: binary-search into the sorted global boundary dict.
+    sorted_bnd_keys = sorted(boundary.keys(), key=lambda k: k[0])
+    if sorted_bnd_keys:
+        sorted_bnd_tids = num.array([k[0] for k in sorted_bnd_keys], dtype=int)
+        lo = int(num.searchsorted(sorted_bnd_tids, tlower))
+        hi = int(num.searchsorted(sorted_bnd_tids, tupper))
+        full_boundary = {sorted_bnd_keys[i]: boundary[sorted_bnd_keys[i]]
+                         for i in range(lo, hi)}
+    else:
+        full_boundary = {}
+
+    ghost_boundary = {(int(t), int(e)): 'ghost'
+                      for t, e in zip(tri_ids, edge_ids)}
+    ghost_boundary.update((k, boundary[k])
+                          for k in ghost_boundary.keys() & boundary.keys())
+
+    tri_per_proc_ranges = cumsum[1:] - 1
+    ghost_commun = ghost_commun_pattern(ghost_tris_col, myid, tri_per_proc_ranges)
+
+    # ── Step 6: allgather ghost_commun → derive full_commun ──────────────
+    all_ghost_commun = comm.allgather(ghost_commun)
+
+    full_commun = {}
+    for q, gc in enumerate(all_ghost_commun):
+        for row in gc:
+            gid   = int(row[0])
+            owner = int(row[1])
+            if owner == myid:
+                if gid not in full_commun:
+                    full_commun[gid] = []
+                full_commun[gid].append(q)
+
+    # ── Step 7: build local mesh (no quantities) ──────────────────────────
+    submesh_cell = {
+        'ghost_layer_width': layer_width,
+        'full_nodes':        full_nodes_col,
+        'ghost_nodes':       ghost_nodes_col,
+        'full_triangles':    full_triangles,
+        'ghost_triangles':   ghost_tris_col,
+        'full_boundary':     full_boundary,
+        'ghost_boundary':    ghost_boundary,
+        'ghost_commun':      ghost_commun,
+        'full_commun':       full_commun,
+        'full_quan':         {},
+        'ghost_quan':        {},
+    }
+
+    points, vertices, boundary_local, _quantities_local, ghost_recv_dict, \
+        full_send_dict, _tri_map, _node_map, tri_l2g, node_l2g, glw = \
+        build_local_mesh(submesh_cell, tlower, tupper, nprocs)
+
+    number_of_full_nodes     = len(full_nodes_col)
+    number_of_full_triangles = tupper - tlower
+
+    # ── Step 8: create Parallel_domain ───────────────────────────────────
+    kwargs = {
+        'full_send_dict':             full_send_dict,
+        'ghost_recv_dict':            ghost_recv_dict,
+        'number_of_full_nodes':       number_of_full_nodes,
+        'number_of_full_triangles':   number_of_full_triangles,
+        'geo_reference':              domain_attrs['geo_reference'],
+        'number_of_global_triangles': domain_attrs['num_global_tri'],
+        'number_of_global_nodes':     domain_attrs['num_global_nodes'],
+        'processor':                  myid,
+        'numproc':                    nprocs,
+        's2p_map':                    None,
+        'p2s_map':                    None,
+        'tri_l2g':                    tri_l2g,
+        'node_l2g':                   node_l2g,
+        'ghost_layer_width':          glw,
+    }
+
+    parallel_domain = Parallel_domain(points, vertices, boundary_local, **kwargs)
+    parallel_domain.set_name(domain_attrs['domain_name'])
 
     return parallel_domain
 

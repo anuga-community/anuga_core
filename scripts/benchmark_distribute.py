@@ -522,4 +522,13 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    import sys
+    import traceback
+    try:
+        main()
+    except Exception as e:
+        print(f'\n[rank {myid}] ERROR: {e}', flush=True)
+        traceback.print_exc()
+        comm.Abort(1)
+        sys.exit(1)
+    MPI.Finalize()

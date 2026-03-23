@@ -1,7 +1,7 @@
 """Tests for distribute_basic_mesh() -- mesh-first parallel workflow.
 
 Tests cover:
-  1. BasicMesh construction (rectangular and rectangular_cross).
+  1. Basic_mesh construction (rectangular and rectangular_cross).
   2. Serial fallback: distribute_basic_mesh with numprocs==1 returns a plain Domain.
   3. Parallel distribution: distribute_basic_mesh returns a Parallel_domain that can
      evolve and produces results matching the traditional distribute() workflow.
@@ -34,7 +34,7 @@ from anuga import (
     finalize,
 )
 from anuga.abstract_2d_finite_volumes.basic_mesh import (
-    BasicMesh,
+    Basic_mesh,
     rectangular_basic_mesh,
     rectangular_cross_basic_mesh,
 )
@@ -98,11 +98,11 @@ def stage_at_gauges(domain, points):
 
 
 # ---------------------------------------------------------------------------
-# Test 1: BasicMesh construction
+# Test 1: Basic_mesh construction
 # ---------------------------------------------------------------------------
 
-class TestBasicMeshConstruction(unittest.TestCase):
-    """Test that BasicMesh factory functions produce the right topology."""
+class TestBasic_meshConstruction(unittest.TestCase):
+    """Test that Basic_mesh factory functions produce the right topology."""
 
     def test_rectangular_basic_mesh_shape(self):
         bm = rectangular_basic_mesh(M, N, len1=1.0, len2=1.0)
@@ -148,7 +148,7 @@ class TestBasicMeshConstruction(unittest.TestCase):
 # Test 2: Serial fallback (numprocs == 1)
 # ---------------------------------------------------------------------------
 
-class TestDistributeBasicMeshSerial(unittest.TestCase):
+class TestDistributeBasic_meshSerial(unittest.TestCase):
     """When numprocs==1, distribute_basic_mesh should return a plain Domain."""
 
     def test_returns_domain(self):
@@ -346,7 +346,7 @@ def run_basic_mesh_no_sww(verbose=False):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.skipif(not mpi4py_available, reason='requires mpi4py')
-class TestDistributeBasicMeshParallel(unittest.TestCase):
+class TestDistributeBasic_meshParallel(unittest.TestCase):
 
     def test_parallel_evolve(self):
         """Run the parallel distribute_basic_mesh evolve test via mpirun."""
@@ -365,9 +365,9 @@ if __name__ == '__main__':
         runner = unittest.TextTestRunner(verbosity=2)
         suite = unittest.TestSuite()
         suite.addTests(unittest.TestLoader().loadTestsFromTestCase(
-            TestBasicMeshConstruction))
+            TestBasic_meshConstruction))
         suite.addTests(unittest.TestLoader().loadTestsFromTestCase(
-            TestDistributeBasicMeshSerial))
+            TestDistributeBasic_meshSerial))
         runner.run(suite)
     else:
         from anuga.utilities.parallel_abstraction import global_except_hook

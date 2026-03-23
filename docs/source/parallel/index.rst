@@ -13,6 +13,7 @@ ANUGA uses two main approaches to parallelisation: MPI-based and threading-based
 
    use_parallel_openmp
    use_parallel_mpi
+   use_distribute_basic_mesh
 
    
    

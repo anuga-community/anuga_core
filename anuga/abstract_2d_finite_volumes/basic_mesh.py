@@ -1,4 +1,4 @@
-"""BasicMesh -- minimal mesh for partitioning and parallel distribution.
+"""Basic_mesh -- minimal mesh for partitioning and parallel distribution.
 
 Stores only nodes, triangles, boundary tags, and geo_reference.
 All geometric arrays needed by the finite-volume solver (normals,
@@ -14,10 +14,10 @@ import numpy as num
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 
 
-class BasicMesh:
+class Basic_mesh:
     """Minimal mesh for partitioning and parallel distribution.
 
-    Unlike the full Mesh class (neighbour_mesh.Mesh), BasicMesh skips
+    Unlike the full Mesh class (neighbour_mesh.Mesh), Basic_mesh skips
     computation of normals, edge lengths, areas, radii, vertex_coordinates,
     and edge_midpoint_coordinates at construction time.  Those arrays are
     only needed by the finite-volume solver and will be computed later when
@@ -80,7 +80,7 @@ class BasicMesh:
         return self.number_of_triangles
 
     def __repr__(self):
-        return ('BasicMesh: %d triangles, %d nodes'
+        return ('Basic_mesh: %d triangles, %d nodes'
                 % (self.number_of_triangles, self.number_of_nodes))
 
     # ------------------------------------------------------------------
@@ -140,11 +140,11 @@ class BasicMesh:
             Permutation of 0..N-1 giving the new triangle ordering.
         in_place : bool
             If True (default) reorder this mesh in-place and return self.
-            If False return a new BasicMesh sharing the nodes array.
+            If False return a new Basic_mesh sharing the nodes array.
 
         Returns
         -------
-        BasicMesh
+        Basic_mesh
         """
         new_order = num.array(new_order, int)
         N = self.number_of_triangles
@@ -190,7 +190,7 @@ class BasicMesh:
 # ---------------------------------------------------------------------------
 
 def rectangular_basic_mesh(m, n, len1=1.0, len2=1.0, origin=(0.0, 0.0)):
-    """Create a BasicMesh from a rectangular grid (2*m*n triangles).
+    """Create a Basic_mesh from a rectangular grid (2*m*n triangles).
 
     Parameters
     ----------
@@ -203,18 +203,18 @@ def rectangular_basic_mesh(m, n, len1=1.0, len2=1.0, origin=(0.0, 0.0)):
 
     Returns
     -------
-    BasicMesh with 2*m*n triangles and (m+1)*(n+1) nodes.
+    Basic_mesh with 2*m*n triangles and (m+1)*(n+1) nodes.
     """
     from anuga.abstract_2d_finite_volumes.mesh_factory import \
         rectangular_with_neighbours
     points, elements, boundary, neighbours, neighbour_edges = \
         rectangular_with_neighbours(m, n, len1, len2, origin)
-    return BasicMesh(points, elements, boundary=boundary,
-                     triangle_neighbours=neighbours)
+    return Basic_mesh(points, elements, boundary=boundary,
+                      triangle_neighbours=neighbours)
 
 
 def rectangular_cross_basic_mesh(m, n, len1=1.0, len2=1.0, origin=(0.0, 0.0)):
-    """Create a BasicMesh from a rectangular-cross grid (4*m*n triangles).
+    """Create a Basic_mesh from a rectangular-cross grid (4*m*n triangles).
 
     Parameters
     ----------
@@ -227,11 +227,11 @@ def rectangular_cross_basic_mesh(m, n, len1=1.0, len2=1.0, origin=(0.0, 0.0)):
 
     Returns
     -------
-    BasicMesh with 4*m*n triangles and (m+1)*(n+1) + m*n nodes.
+    Basic_mesh with 4*m*n triangles and (m+1)*(n+1) + m*n nodes.
     """
     from anuga.abstract_2d_finite_volumes.mesh_factory import \
         rectangular_cross_with_neighbours
     points, elements, boundary, neighbours, neighbour_edges = \
         rectangular_cross_with_neighbours(m, n, len1, len2, origin)
-    return BasicMesh(points, elements, boundary=boundary,
-                     triangle_neighbours=neighbours)
+    return Basic_mesh(points, elements, boundary=boundary,
+                      triangle_neighbours=neighbours)

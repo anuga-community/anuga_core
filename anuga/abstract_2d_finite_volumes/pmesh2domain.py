@@ -12,9 +12,9 @@ import anuga.utilities.log as log
 
 
 def pmesh_to_basic_mesh(pmesh_instance, verbose=False):
-    """Convert a Pmesh instance to a BasicMesh instance.
+    """Convert a Pmesh instance to a Basic_mesh instance.
 
-    Like pmesh_to_mesh but returns a BasicMesh, which omits computation of
+    Like pmesh_to_mesh but returns a Basic_mesh, which omits computation of
     normals, edge lengths, areas, radii, and vertex_coordinates.  Use when
     only mesh topology is needed (e.g. for parallel distribution without a
     pre-built Domain).
@@ -29,9 +29,9 @@ def pmesh_to_basic_mesh(pmesh_instance, verbose=False):
 
     Returns
     -------
-    BasicMesh
+    Basic_mesh
     """
-    from anuga.abstract_2d_finite_volumes.basic_mesh import BasicMesh
+    from anuga.abstract_2d_finite_volumes.basic_mesh import Basic_mesh
 
     if pmesh_instance.tri_mesh is None:
         pmesh_instance.generate_mesh(verbose=verbose)
@@ -44,7 +44,7 @@ def pmesh_to_basic_mesh(pmesh_instance, verbose=False):
     triangle_neighbors = mesh_dict.get('triangle_neighbors')
     boundary           = pmesh_dict_to_tag_dict(mesh_dict)
 
-    return BasicMesh(vertex_coordinates, triangles,
+    return Basic_mesh(vertex_coordinates, triangles,
                      boundary=boundary,
                      geo_reference=geo_reference,
                      triangle_neighbours=triangle_neighbors)

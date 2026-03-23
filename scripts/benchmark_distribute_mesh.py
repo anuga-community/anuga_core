@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Benchmark distribute_basic_mesh() -- the mesh-first parallel workflow.
 
-Creates a BasicMesh on rank 0 (no quantities), distributes it to all ranks,
+Creates a Basic_mesh on rank 0 (no quantities), distributes it to all ranks,
 then sets initial conditions on the local Parallel_domain.  Compares timing
 and memory against the traditional distribute() approach where a full Domain
 with quantities is built on rank 0 first.
@@ -122,11 +122,11 @@ def parse_args():
 
 
 # ---------------------------------------------------------------------------
-# BasicMesh creation
+# Basic_mesh creation
 # ---------------------------------------------------------------------------
 
 def make_basic_mesh(grid_size, scheme):
-    """Rank 0: build BasicMesh.  Others: return None."""
+    """Rank 0: build Basic_mesh.  Others: return None."""
     if myid != 0:
         return None
     from anuga.abstract_2d_finite_volumes.basic_mesh import \
@@ -326,6 +326,14 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    try:
+        main()
+    except Exception as e:
+        import traceback
+        print(f'\n[rank {myid}] ERROR: {e}', flush=True)
+        traceback.print_exc()
+        if mpi_available:
+            comm.Abort(1)
+        sys.exit(1)
     if mpi_available:
         MPI.Finalize()
