@@ -1,0 +1,1175 @@
+"""
+Unit tests for anuga.scenario.parse_input_data_toml
+
+Tests cover the three module-level helpers (_load_toml, _glob_files,
+_parse_quantity_entries) and all private parsing methods of ProjectDataTOML
+via its public constructor.
+"""
+import math
+import os
+import tempfile
+import textwrap
+import unittest
+from unittest.mock import patch, MagicMock
+
+try:
+    from anuga.scenario.parse_input_data_toml import (
+        _load_toml, _glob_files, _parse_quantity_entries, ProjectDataTOML)
+    from anuga.scenario.parse_input_data import ProjectData
+    HAS_MODULE = True
+    SKIP_REASON = ''
+except ImportError as _e:
+    HAS_MODULE = False
+    SKIP_REASON = str(_e)
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared across test cases
+# ---------------------------------------------------------------------------
+
+_MINIMAL_PROJECT = """\
+    [project]
+    scenario = "test_scenario"
+    output_base_directory = "OUTPUT/"
+    yieldstep = 60.0
+    finaltime = 3600.0
+    projection_information = -55
+    flow_algorithm = "DE0"
+
+    [mesh]
+    bounding_polygon = "extent.shp"
+    default_res = 1000000.0
+"""
+
+
+def _write_toml(path, content):
+    """Write *content* (a str) to *path* as a UTF-8 binary file (tomllib requirement)."""
+    with open(path, 'wb') as fh:
+        fh.write(textwrap.dedent(content).encode())
+
+
+def _touch(path):
+    """Create an empty file at *path*."""
+    open(path, 'w').close()
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestLoadToml(unittest.TestCase):
+    """Tests for the _load_toml helper."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _toml_path(self, name='config.toml'):
+        return os.path.join(self.tmpdir, name)
+
+    def test_simple_key_value(self):
+        p = self._toml_path()
+        _write_toml(p, '[project]\nscenario = "test"\n')
+        result = _load_toml(p)
+        self.assertEqual(result['project']['scenario'], 'test')
+
+    def test_integer_and_float(self):
+        p = self._toml_path()
+        _write_toml(p, '[s]\na = 42\nb = 3.14\n')
+        r = _load_toml(p)
+        self.assertEqual(r['s']['a'], 42)
+        self.assertAlmostEqual(r['s']['b'], 3.14)
+
+    def test_boolean_values(self):
+        p = self._toml_path()
+        _write_toml(p, '[s]\nflag_true = true\nflag_false = false\n')
+        r = _load_toml(p)
+        self.assertIs(r['s']['flag_true'], True)
+        self.assertIs(r['s']['flag_false'], False)
+
+    def test_array_of_tables(self):
+        p = self._toml_path()
+        _write_toml(p, '[[items]]\nname = "a"\n[[items]]\nname = "b"\n')
+        r = _load_toml(p)
+        self.assertEqual(len(r['items']), 2)
+        self.assertEqual(r['items'][1]['name'], 'b')
+
+    def test_missing_file_raises(self):
+        with self.assertRaises((FileNotFoundError, OSError)):
+            _load_toml(os.path.join(self.tmpdir, 'nonexistent.toml'))
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestGlobFiles(unittest.TestCase):
+    """Tests for the _glob_files helper."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_empty_list_returns_empty(self):
+        self.assertEqual(_glob_files([]), [])
+
+    def test_single_exact_match(self):
+        f = os.path.join(self.tmpdir, 'line.csv')
+        _touch(f)
+        result = _glob_files([f])
+        self.assertEqual(result, [f])
+
+    def test_glob_pattern_matches_multiple(self):
+        for name in ('a.csv', 'b.csv', 'c.csv'):
+            _touch(os.path.join(self.tmpdir, name))
+        pattern = os.path.join(self.tmpdir, '*.csv')
+        result = _glob_files([pattern])
+        self.assertEqual(len(result), 3)
+        self.assertTrue(all(r.endswith('.csv') for r in result))
+
+    def test_multiple_patterns_concatenated(self):
+        for name in ('x.csv', 'y.txt'):
+            _touch(os.path.join(self.tmpdir, name))
+        result = _glob_files([
+            os.path.join(self.tmpdir, '*.csv'),
+            os.path.join(self.tmpdir, '*.txt'),
+        ])
+        self.assertEqual(len(result), 2)
+
+    def test_pattern_no_match_raises(self):
+        with self.assertRaises(FileNotFoundError):
+            _glob_files([os.path.join(self.tmpdir, '*.csv')])
+
+    def test_results_are_sorted(self):
+        for name in ('c.csv', 'a.csv', 'b.csv'):
+            _touch(os.path.join(self.tmpdir, name))
+        result = _glob_files([os.path.join(self.tmpdir, '*.csv')])
+        self.assertEqual(result, sorted(result))
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestParseQuantityEntries(unittest.TestCase):
+    """Tests for the _parse_quantity_entries helper."""
+
+    def _parse(self, entries):
+        info = []
+        return _parse_quantity_entries(entries, info), info
+
+    def test_empty_entries(self):
+        (data, clip), _ = self._parse([])
+        self.assertEqual(data, [])
+        self.assertEqual(clip, [])
+
+    def test_single_all_polygon_numeric_value(self):
+        (data, clip), _ = self._parse([{'polygon': 'All', 'value': 5.0}])
+        self.assertEqual(data, [['All', 5.0]])
+        self.assertEqual(clip[0][0], float('-inf'))
+        self.assertEqual(clip[0][1], float('inf'))
+
+    def test_string_value_preserved(self):
+        (data, clip), _ = self._parse([{'polygon': 'Extent', 'value': 'dem.asc'}])
+        self.assertEqual(data[0][1], 'dem.asc')
+
+    def test_explicit_clip_range(self):
+        entry = {'polygon': 'All', 'value': 0.0, 'clip_min': -10.0, 'clip_max': 10.0}
+        (data, clip), _ = self._parse([entry])
+        self.assertAlmostEqual(clip[0][0], -10.0)
+        self.assertAlmostEqual(clip[0][1], 10.0)
+
+    def test_default_clip_is_inf(self):
+        (data, clip), _ = self._parse([{'polygon': 'None', 'value': 1.0}])
+        self.assertTrue(math.isinf(clip[0][0]) and clip[0][0] < 0)
+        self.assertTrue(math.isinf(clip[0][1]) and clip[0][1] > 0)
+
+    def test_multiple_entries_accumulate(self):
+        entries = [
+            {'polygon': 'All', 'value': 0.0},
+            {'polygon': 'sub.csv', 'value': 5.0},
+        ]
+        (data, clip), _ = self._parse(entries)
+        self.assertEqual(len(data), 2)
+        self.assertEqual(len(clip), 2)
+        self.assertEqual(data[1], ['sub.csv', 5.0])
+
+    def test_special_polygons_not_treated_as_globs(self):
+        """'All', 'None', 'Extent' must be passed through unchanged."""
+        for special in ('All', 'None', 'Extent'):
+            (data, _), _ = self._parse([{'polygon': special, 'value': 0.0}])
+            self.assertEqual(data[0][0], special)
+
+    def test_wildcard_more_than_two_files_raises(self):
+        """A glob matching >2 files should raise ValueError."""
+        with tempfile.TemporaryDirectory() as d:
+            for name in ('a.csv', 'b.csv', 'c.csv'):
+                _touch(os.path.join(d, name))
+            pattern = os.path.join(d, '*.csv')
+            with self.assertRaises(ValueError):
+                self._parse([{'polygon': pattern, 'value': 1.0}])
+
+    def test_wildcard_two_files_calls_polygon_join(self):
+        """A glob matching exactly 2 files should call polygon_from_matching_breaklines."""
+        with tempfile.TemporaryDirectory() as d:
+            for name in ('left.csv', 'right.csv'):
+                _touch(os.path.join(d, name))
+            pattern = os.path.join(d, '*.csv')
+            fake_polygon = [(0, 0), (1, 0), (1, 1), (0, 1)]
+            with patch('anuga.scenario.parse_input_data_toml.su') as mock_su:
+                mock_su.read_polygon.return_value = [(0, 0), (1, 1)]
+                mock_su.polygon_from_matching_breaklines.return_value = fake_polygon
+                (data, _), info = self._parse([{'polygon': pattern, 'value': 2.0}])
+            # The polygon in data should be the joined result
+            self.assertEqual(data[0][0], fake_polygon)
+            # An info message should have been appended
+            self.assertTrue(any('Combining' in m for m in info))
+
+    def test_print_info_populated_for_wildcard(self):
+        with tempfile.TemporaryDirectory() as d:
+            for name in ('l.csv', 'r.csv'):
+                _touch(os.path.join(d, name))
+            pattern = os.path.join(d, '*.csv')
+            with patch('anuga.scenario.parse_input_data_toml.su') as mock_su:
+                mock_su.read_polygon.return_value = []
+                mock_su.polygon_from_matching_breaklines.return_value = []
+                (_, _), info = self._parse([{'polygon': pattern, 'value': 0.0}])
+            self.assertEqual(len(info), 1)
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestProjectSection(unittest.TestCase):
+    """Tests for ProjectDataTOML._parse_project via the constructor."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.toml_path = os.path.join(self.tmpdir, 'config.toml')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _make(self, project_extra='', mesh_extra=''):
+        content = textwrap.dedent(f"""\
+            [project]
+            scenario = "test_scenario"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            {project_extra}
+
+            [mesh]
+            bounding_polygon = "extent.shp"
+            default_res = 1000000.0
+            {mesh_extra}
+        """)
+        _write_toml(self.toml_path, content)
+        return ProjectDataTOML(self.toml_path)
+
+    def test_required_fields_parsed(self):
+        p = self._make()
+        self.assertEqual(p.scenario, 'test_scenario')
+        self.assertEqual(p.output_basedir, 'OUTPUT/')
+        self.assertAlmostEqual(p.yieldstep, 60.0)
+        self.assertAlmostEqual(p.finaltime, 3600.0)
+        self.assertEqual(p.flow_algorithm, 'DE0')
+
+    def test_projection_information_as_int(self):
+        p = self._make()
+        self.assertEqual(p.projection_information, -55)
+        self.assertIsInstance(p.projection_information, int)
+
+    def test_projection_information_as_string(self):
+        # Write a TOML where projection_information is a proj4 string (not int)
+        content = textwrap.dedent("""\
+            [project]
+            scenario = "test_scenario"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = "+proj=utm +zone=55 +south"
+            flow_algorithm = "DE0"
+
+            [mesh]
+            bounding_polygon = "extent.shp"
+            default_res = 1000000.0
+        """)
+        _write_toml(self.toml_path, content)
+        p = ProjectDataTOML(self.toml_path)
+        self.assertEqual(p.projection_information, '+proj=utm +zone=55 +south')
+
+    def test_optional_defaults(self):
+        p = self._make()
+        self.assertFalse(p.use_local_extrapolation_and_flux_updating)
+        self.assertAlmostEqual(p.output_tif_cellsize, 50.0)
+        self.assertIsNone(p.output_tif_bounding_polygon)
+        self.assertEqual(p.max_quantity_update_frequency, 1)
+        self.assertAlmostEqual(p.max_quantity_collection_start_time, 0.0)
+        self.assertFalse(p.store_vertices_uniquely)
+        self.assertFalse(p.store_elevation_every_timestep)
+        self.assertFalse(p.report_mass_conservation_statistics)
+        self.assertFalse(p.report_peak_velocity_statistics)
+        self.assertFalse(p.report_smallest_edge_timestep_statistics)
+        self.assertFalse(p.report_operator_statistics)
+        self.assertIsNone(p.omp_num_threads)
+        self.assertEqual(p.multiprocessor_mode, 1)
+        self.assertIsNone(p.outputstep)
+
+    def test_optional_overrides(self):
+        extra = textwrap.dedent("""\
+            use_local_extrapolation_and_flux_updating = true
+            output_tif_cellsize = 25.0
+            output_tif_bounding_polygon = "clip.shp"
+            max_quantity_update_frequency = 5
+            store_vertices_uniquely = true
+            omp_num_threads = 4
+            multiprocessor_mode = 2
+            outputstep = 120.0
+        """)
+        p = self._make(project_extra=extra)
+        self.assertTrue(p.use_local_extrapolation_and_flux_updating)
+        self.assertAlmostEqual(p.output_tif_cellsize, 25.0)
+        self.assertEqual(p.output_tif_bounding_polygon, 'clip.shp')
+        self.assertEqual(p.max_quantity_update_frequency, 5)
+        self.assertTrue(p.store_vertices_uniquely)
+        self.assertEqual(p.omp_num_threads, 4)
+        self.assertEqual(p.multiprocessor_mode, 2)
+        self.assertAlmostEqual(p.outputstep, 120.0)
+
+    def test_collection_starttime_exceeds_finaltime_raises(self):
+        extra = 'max_quantity_collection_starttime = 7200.0'
+        with self.assertRaises(ValueError):
+            self._make(project_extra=extra)
+
+    def test_config_filename_attribute(self):
+        p = self._make()
+        self.assertEqual(p.config_filename, self.toml_path)
+
+    def test_print_info_is_list(self):
+        p = self._make()
+        self.assertIsInstance(p.print_info, list)
+        self.assertTrue(len(p.print_info) > 0)
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestMeshSection(unittest.TestCase):
+    """Tests for ProjectDataTOML._parse_mesh via the constructor."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.toml_path = os.path.join(self.tmpdir, 'config.toml')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _make(self, mesh_extra=''):
+        content = textwrap.dedent(f"""\
+            [project]
+            scenario = "test"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+
+            [mesh]
+            bounding_polygon = "extent.shp"
+            default_res = 500000.0
+            {mesh_extra}
+        """)
+        _write_toml(self.toml_path, content)
+        return ProjectDataTOML(self.toml_path)
+
+    def test_defaults(self):
+        p = self._make()
+        self.assertFalse(p.use_existing_mesh_pickle)
+        self.assertEqual(p.bounding_polygon_and_tags_file, 'extent.shp')
+        self.assertAlmostEqual(p.default_res, 500000.0)
+        self.assertEqual(p.interior_regions_data, [])
+        self.assertIsNone(p.bounding_polygon_explicit_tags)
+        self.assertEqual(p.breakline_files, [])
+        self.assertEqual(p.riverwall_csv_files, [])
+        self.assertEqual(p.break_line_intersect_point_movement_threshold, 'ignore')
+        self.assertIsNone(p.pt_areas)
+
+    def test_interior_regions_parsed(self):
+        extra = textwrap.dedent("""\
+            [[mesh.interior_regions]]
+            polygon = "region_a.shp"
+            resolution = 10000.0
+            [[mesh.interior_regions]]
+            polygon = "region_b.shp"
+            resolution = 5000.0
+        """)
+        p = self._make(mesh_extra=extra)
+        self.assertEqual(len(p.interior_regions_data), 2)
+        self.assertEqual(p.interior_regions_data[0], ['region_a.shp', 10000.0])
+        self.assertEqual(p.interior_regions_data[1], ['region_b.shp', 5000.0])
+
+    def test_boundary_tags_parsed(self):
+        extra = textwrap.dedent("""\
+            [[mesh.boundary_tags]]
+            tag = "ocean"
+            edges = [0, 1, 2]
+            [[mesh.boundary_tags]]
+            tag = "land"
+            edges = [3]
+        """)
+        p = self._make(mesh_extra=extra)
+        self.assertIsNotNone(p.bounding_polygon_explicit_tags)
+        self.assertEqual(len(p.bounding_polygon_explicit_tags), 2)
+        self.assertEqual(p.bounding_polygon_explicit_tags[0]['tag'], 'ocean')
+        self.assertEqual(p.bounding_polygon_explicit_tags[0]['edges'], [0, 1, 2])
+
+    def test_numeric_breakline_threshold(self):
+        p = self._make('breakline_intersection_threshold = 0.5')
+        self.assertAlmostEqual(p.break_line_intersect_point_movement_threshold, 0.5)
+
+    def test_interior_regions_and_breaklines_conflict_raises(self):
+        """Cannot have both interior_regions and breakline_files."""
+        bl = os.path.join(self.tmpdir, 'line.csv')
+        _touch(bl)
+        extra = textwrap.dedent(f"""\
+            breakline_files = ["{bl}"]
+            [[mesh.interior_regions]]
+            polygon = "reg.shp"
+            resolution = 1000.0
+        """)
+        with self.assertRaises(ValueError):
+            self._make(mesh_extra=extra)
+
+    def test_region_areas_type_length(self):
+        areas_file = os.path.join(self.tmpdir, 'areas.csv')
+        _touch(areas_file)
+        extra = textwrap.dedent(f"""\
+            region_areas_file = "{areas_file}"
+            region_areas_type = "length"
+        """)
+        p = self._make(mesh_extra=extra)
+        self.assertTrue(p.region_resolutions_from_length)
+
+    def test_region_areas_type_area(self):
+        areas_file = os.path.join(self.tmpdir, 'areas.csv')
+        _touch(areas_file)
+        extra = textwrap.dedent(f"""\
+            region_areas_file = "{areas_file}"
+            region_areas_type = "area"
+        """)
+        p = self._make(mesh_extra=extra)
+        self.assertFalse(p.region_resolutions_from_length)
+
+    def test_region_areas_type_invalid_raises(self):
+        areas_file = os.path.join(self.tmpdir, 'areas.csv')
+        _touch(areas_file)
+        extra = textwrap.dedent(f"""\
+            region_areas_file = "{areas_file}"
+            region_areas_type = "banana"
+        """)
+        with self.assertRaises(ValueError):
+            self._make(mesh_extra=extra)
+
+    def test_breakline_files_expanded(self):
+        for name in ('bl_a.csv', 'bl_b.csv'):
+            _touch(os.path.join(self.tmpdir, name))
+        pattern = os.path.join(self.tmpdir, 'bl_*.csv')
+        extra = f'breakline_files = ["{pattern}"]'
+        p = self._make(mesh_extra=extra)
+        self.assertEqual(len(p.breakline_files), 2)
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestInitialConditions(unittest.TestCase):
+    """Tests for ProjectDataTOML._parse_initial_conditions."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.toml_path = os.path.join(self.tmpdir, 'config.toml')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _make(self, ic_section='', ic_add_section=''):
+        content = textwrap.dedent(f"""\
+            [project]
+            scenario = "test"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+
+            [mesh]
+            bounding_polygon = "extent.shp"
+            default_res = 1000000.0
+
+            {ic_section}
+            {ic_add_section}
+        """)
+        _write_toml(self.toml_path, content)
+        return ProjectDataTOML(self.toml_path)
+
+    def test_all_quantities_initialised_empty(self):
+        p = self._make()
+        for q in ('elevation', 'friction', 'stage', 'xmomentum', 'ymomentum'):
+            self.assertEqual(getattr(p, f'{q}_data'), [])
+            self.assertEqual(getattr(p, f'{q}_clip_range'), [])
+            self.assertIsNone(getattr(p, f'{q}_mean'))
+            self.assertEqual(getattr(p, f'{q}_additions'), [])
+
+    def test_elevation_entry(self):
+        ic = textwrap.dedent("""\
+            [initial_conditions]
+            [[initial_conditions.elevation]]
+            polygon = "All"
+            value = 0.0
+            clip_min = -100.0
+            clip_max = 200.0
+        """)
+        p = self._make(ic_section=ic)
+        self.assertEqual(p.elevation_data, [['All', 0.0]])
+        self.assertAlmostEqual(p.elevation_clip_range[0][0], -100.0)
+        self.assertAlmostEqual(p.elevation_clip_range[0][1], 200.0)
+
+    def test_multiple_elevation_entries_ordered(self):
+        ic = textwrap.dedent("""\
+            [initial_conditions]
+            [[initial_conditions.elevation]]
+            polygon = "All"
+            value = 0.0
+            [[initial_conditions.elevation]]
+            polygon = "sub.shp"
+            value = "local.asc"
+        """)
+        p = self._make(ic_section=ic)
+        self.assertEqual(len(p.elevation_data), 2)
+        self.assertEqual(p.elevation_data[1][0], 'sub.shp')
+
+    def test_spatial_average(self):
+        ic = textwrap.dedent("""\
+            [initial_conditions]
+            elevation_spatial_average = 25.0
+        """)
+        p = self._make(ic_section=ic)
+        self.assertAlmostEqual(p.elevation_mean, 25.0)
+
+    def test_additions_parsed(self):
+        add = textwrap.dedent("""\
+            [initial_condition_additions]
+            [[initial_condition_additions.elevation]]
+            polygon = "All"
+            value = 1.5
+        """)
+        p = self._make(ic_add_section=add)
+        self.assertEqual(p.elevation_additions, [['All', 1.5]])
+
+    def test_friction_entry(self):
+        ic = textwrap.dedent("""\
+            [initial_conditions]
+            [[initial_conditions.friction]]
+            polygon = "All"
+            value = 0.03
+        """)
+        p = self._make(ic_section=ic)
+        self.assertEqual(p.friction_data, [['All', 0.03]])
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestBoundaryConditions(unittest.TestCase):
+    """Tests for ProjectDataTOML._parse_boundary_conditions."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.toml_path = os.path.join(self.tmpdir, 'config.toml')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _make(self, bc_section=''):
+        content = textwrap.dedent(f"""\
+            [project]
+            scenario = "test"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+
+            [mesh]
+            bounding_polygon = "extent.shp"
+            default_res = 1000000.0
+
+            {bc_section}
+        """)
+        _write_toml(self.toml_path, content)
+        return ProjectDataTOML(self.toml_path)
+
+    def test_empty_boundary_conditions(self):
+        p = self._make()
+        self.assertEqual(p.boundary_data, [])
+
+    def test_default_attribute_name(self):
+        p = self._make()
+        self.assertEqual(p.boundary_tags_attribute_name, 'bnd_tag')
+
+    def test_custom_attribute_name(self):
+        bc = '[boundary_conditions]\nboundary_tags_attribute_name = "TAG"\n'
+        p = self._make(bc_section=bc)
+        self.assertEqual(p.boundary_tags_attribute_name, 'TAG')
+
+    def test_reflective_boundary(self):
+        bc = textwrap.dedent("""\
+            [boundary_conditions]
+            [[boundary_conditions.boundaries]]
+            tag = "land"
+            type = "Reflective"
+        """)
+        p = self._make(bc_section=bc)
+        self.assertEqual(len(p.boundary_data), 1)
+        self.assertEqual(p.boundary_data[0], ['land', 'Reflective'])
+
+    def test_stage_boundary_with_file(self):
+        tfile = os.path.join(self.tmpdir, 'tide.csv')
+        _touch(tfile)
+        bc = textwrap.dedent(f"""\
+            [boundary_conditions]
+            [[boundary_conditions.boundaries]]
+            tag = "ocean"
+            type = "Stage"
+            file = "{tfile}"
+            start_time = 100.0
+        """)
+        p = self._make(bc_section=bc)
+        row = p.boundary_data[0]
+        self.assertEqual(row[0], 'ocean')
+        self.assertEqual(row[1], 'Stage')
+        self.assertEqual(row[2], tfile)
+        self.assertAlmostEqual(row[3], 100.0)
+
+    def test_flather_stage_boundary(self):
+        tfile = os.path.join(self.tmpdir, 'wave.csv')
+        _touch(tfile)
+        bc = textwrap.dedent(f"""\
+            [boundary_conditions]
+            [[boundary_conditions.boundaries]]
+            tag = "east"
+            type = "Flather_Stage"
+            file = "{tfile}"
+        """)
+        p = self._make(bc_section=bc)
+        self.assertEqual(p.boundary_data[0][1], 'Flather_Stage')
+
+    def test_stage_boundary_default_start_time_zero(self):
+        tfile = os.path.join(self.tmpdir, 'tide.csv')
+        _touch(tfile)
+        bc = textwrap.dedent(f"""\
+            [boundary_conditions]
+            [[boundary_conditions.boundaries]]
+            tag = "ocean"
+            type = "Stage"
+            file = "{tfile}"
+        """)
+        p = self._make(bc_section=bc)
+        self.assertAlmostEqual(p.boundary_data[0][3], 0.0)
+
+    def test_stage_boundary_missing_file_raises(self):
+        bc = textwrap.dedent("""\
+            [boundary_conditions]
+            [[boundary_conditions.boundaries]]
+            tag = "ocean"
+            type = "Stage"
+            file = "nonexistent_tide.csv"
+        """)
+        with self.assertRaises(FileNotFoundError):
+            self._make(bc_section=bc)
+
+    def test_unknown_boundary_type_raises(self):
+        bc = textwrap.dedent("""\
+            [boundary_conditions]
+            [[boundary_conditions.boundaries]]
+            tag = "weird"
+            type = "Transmissive"
+        """)
+        with self.assertRaises(ValueError):
+            self._make(bc_section=bc)
+
+    def test_multiple_boundaries(self):
+        tfile = os.path.join(self.tmpdir, 'tide.csv')
+        _touch(tfile)
+        bc = textwrap.dedent(f"""\
+            [boundary_conditions]
+            [[boundary_conditions.boundaries]]
+            tag = "ocean"
+            type = "Stage"
+            file = "{tfile}"
+            [[boundary_conditions.boundaries]]
+            tag = "land"
+            type = "Reflective"
+        """)
+        p = self._make(bc_section=bc)
+        self.assertEqual(len(p.boundary_data), 2)
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestInlets(unittest.TestCase):
+    """Tests for ProjectDataTOML._parse_inlets."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.toml_path = os.path.join(self.tmpdir, 'config.toml')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _make(self, inlet_section=''):
+        content = textwrap.dedent(f"""\
+            [project]
+            scenario = "test"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+
+            [mesh]
+            bounding_polygon = "extent.shp"
+            default_res = 1000000.0
+
+            {inlet_section}
+        """)
+        _write_toml(self.toml_path, content)
+        return ProjectDataTOML(self.toml_path)
+
+    def test_no_inlets(self):
+        p = self._make()
+        self.assertEqual(p.inlet_data, [])
+
+    def test_single_inlet(self):
+        lfile = os.path.join(self.tmpdir, 'inlet_line.csv')
+        tfile = os.path.join(self.tmpdir, 'inlet_ts.csv')
+        _touch(lfile)
+        _touch(tfile)
+        section = textwrap.dedent(f"""\
+            [[inlets]]
+            name = "inlet_1"
+            line_file = "{lfile}"
+            timeseries_file = "{tfile}"
+            start_time = 30.0
+        """)
+        p = self._make(inlet_section=section)
+        self.assertEqual(len(p.inlet_data), 1)
+        row = p.inlet_data[0]
+        self.assertEqual(row[0], 'inlet_1')
+        self.assertEqual(row[1], lfile)
+        self.assertEqual(row[2], tfile)
+        self.assertAlmostEqual(row[3], 30.0)
+
+    def test_default_start_time_zero(self):
+        lfile = os.path.join(self.tmpdir, 'l.csv')
+        tfile = os.path.join(self.tmpdir, 't.csv')
+        _touch(lfile)
+        _touch(tfile)
+        section = textwrap.dedent(f"""\
+            [[inlets]]
+            name = "q1"
+            line_file = "{lfile}"
+            timeseries_file = "{tfile}"
+        """)
+        p = self._make(inlet_section=section)
+        self.assertAlmostEqual(p.inlet_data[0][3], 0.0)
+
+    def test_missing_line_file_raises(self):
+        tfile = os.path.join(self.tmpdir, 't.csv')
+        _touch(tfile)
+        section = textwrap.dedent(f"""\
+            [[inlets]]
+            name = "q1"
+            line_file = "nonexistent.csv"
+            timeseries_file = "{tfile}"
+        """)
+        with self.assertRaises(FileNotFoundError):
+            self._make(inlet_section=section)
+
+    def test_missing_timeseries_file_raises(self):
+        lfile = os.path.join(self.tmpdir, 'l.csv')
+        _touch(lfile)
+        section = textwrap.dedent(f"""\
+            [[inlets]]
+            name = "q1"
+            line_file = "{lfile}"
+            timeseries_file = "nonexistent.csv"
+        """)
+        with self.assertRaises(FileNotFoundError):
+            self._make(inlet_section=section)
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestRainfall(unittest.TestCase):
+    """Tests for ProjectDataTOML._parse_rainfall."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.toml_path = os.path.join(self.tmpdir, 'config.toml')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _make(self, rain_section=''):
+        content = textwrap.dedent(f"""\
+            [project]
+            scenario = "test"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+
+            [mesh]
+            bounding_polygon = "extent.shp"
+            default_res = 1000000.0
+
+            {rain_section}
+        """)
+        _write_toml(self.toml_path, content)
+        return ProjectDataTOML(self.toml_path)
+
+    def test_no_rainfall(self):
+        p = self._make()
+        self.assertEqual(p.rain_data, [])
+
+    def test_rainfall_polygon_all(self):
+        tfile = os.path.join(self.tmpdir, 'rain.csv')
+        _touch(tfile)
+        section = textwrap.dedent(f"""\
+            [[rainfall]]
+            timeseries_file = "{tfile}"
+            polygon = "All"
+            multiplier = 2.0
+        """)
+        p = self._make(rain_section=section)
+        row = p.rain_data[0]
+        self.assertEqual(row[0], tfile)
+        self.assertAlmostEqual(row[1], 0.0)       # start_time default
+        self.assertEqual(row[2], 'linear')         # interpolation_type default
+        self.assertEqual(row[3], 'All')
+        self.assertAlmostEqual(row[4], 2.0)
+
+    def test_rainfall_with_polygon_file(self):
+        tfile = os.path.join(self.tmpdir, 'rain.csv')
+        pfile = os.path.join(self.tmpdir, 'rain_area.shp')
+        _touch(tfile)
+        _touch(pfile)
+        section = textwrap.dedent(f"""\
+            [[rainfall]]
+            timeseries_file = "{tfile}"
+            polygon = "{pfile}"
+        """)
+        p = self._make(rain_section=section)
+        self.assertEqual(p.rain_data[0][3], pfile)
+
+    def test_missing_timeseries_raises(self):
+        section = textwrap.dedent("""\
+            [[rainfall]]
+            timeseries_file = "nonexistent.csv"
+        """)
+        with self.assertRaises(FileNotFoundError):
+            self._make(rain_section=section)
+
+    def test_missing_polygon_file_raises(self):
+        tfile = os.path.join(self.tmpdir, 'rain.csv')
+        _touch(tfile)
+        section = textwrap.dedent(f"""\
+            [[rainfall]]
+            timeseries_file = "{tfile}"
+            polygon = "missing_area.shp"
+        """)
+        with self.assertRaises(FileNotFoundError):
+            self._make(rain_section=section)
+
+    def test_default_values(self):
+        tfile = os.path.join(self.tmpdir, 'rain.csv')
+        _touch(tfile)
+        section = textwrap.dedent(f"""\
+            [[rainfall]]
+            timeseries_file = "{tfile}"
+        """)
+        p = self._make(rain_section=section)
+        row = p.rain_data[0]
+        self.assertAlmostEqual(row[1], 0.0)
+        self.assertEqual(row[2], 'linear')
+        self.assertEqual(row[3], 'All')
+        self.assertAlmostEqual(row[4], 1.0)
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestBridges(unittest.TestCase):
+    """Tests for ProjectDataTOML._parse_bridges."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.toml_path = os.path.join(self.tmpdir, 'config.toml')
+        # Create stub files for a valid bridge
+        for name in ('deck.csv', 'exchange0.csv', 'exchange1.csv', 'curve.csv'):
+            _touch(os.path.join(self.tmpdir, name))
+        self.deck  = os.path.join(self.tmpdir, 'deck.csv')
+        self.ex0   = os.path.join(self.tmpdir, 'exchange0.csv')
+        self.ex1   = os.path.join(self.tmpdir, 'exchange1.csv')
+        self.curve = os.path.join(self.tmpdir, 'curve.csv')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _make(self, bridge_section=''):
+        content = textwrap.dedent(f"""\
+            [project]
+            scenario = "test"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+
+            [mesh]
+            bounding_polygon = "extent.shp"
+            default_res = 1000000.0
+
+            {bridge_section}
+        """)
+        _write_toml(self.toml_path, content)
+        return ProjectDataTOML(self.toml_path)
+
+    def _bridge_toml(self, label='bridge_1', extra=''):
+        return textwrap.dedent(f"""\
+            [[bridges]]
+            label = "{label}"
+            deck_file = "{self.deck}"
+            deck_elevation = 5.0
+            exchange_line_0 = "{self.ex0}"
+            exchange_line_1 = "{self.ex1}"
+            enquiry_gap = 1.0
+            internal_boundary_curve_file = "{self.curve}"
+            {extra}
+        """)
+
+    def test_no_bridges(self):
+        p = self._make()
+        self.assertEqual(p.bridge_data, [])
+
+    def test_disabled_bridge_skipped(self):
+        p = self._make(self._bridge_toml(extra='enabled = false'))
+        self.assertEqual(p.bridge_data, [])
+        # elevation_data should not have been modified
+        self.assertEqual(p.elevation_data, [])
+
+    def test_valid_bridge_row(self):
+        p = self._make(self._bridge_toml())
+        self.assertEqual(len(p.bridge_data), 1)
+        row = p.bridge_data[0]
+        self.assertEqual(row[0], 'bridge_1')
+        self.assertEqual(row[1], self.deck)
+        self.assertAlmostEqual(row[2], 5.0)
+        self.assertEqual(row[3], self.ex0)
+        self.assertEqual(row[4], self.ex1)
+        self.assertAlmostEqual(row[5], 1.0)
+        self.assertEqual(row[6], self.curve)
+        self.assertAlmostEqual(row[7], 0.0)   # vertical_datum_offset default
+        self.assertAlmostEqual(row[8], 0.0)   # smoothing_timescale default
+
+    def test_bridge_prepended_to_breakline_files(self):
+        p = self._make(self._bridge_toml())
+        # deck file should be first in breakline_files
+        self.assertEqual(p.breakline_files[0], self.deck)
+
+    def test_bridge_prepended_to_elevation_data(self):
+        p = self._make(self._bridge_toml())
+        # deck should be first elevation entry with deck_elevation as value
+        self.assertEqual(p.elevation_data[0], [self.deck, 5.0])
+        self.assertEqual(p.elevation_clip_range[0], [float('-inf'), float('inf')])
+
+    def test_bridge_optional_fields(self):
+        extra = 'vertical_datum_offset = 0.3\nsmoothing_timescale = 60.0'
+        p = self._make(self._bridge_toml(extra=extra))
+        row = p.bridge_data[0]
+        self.assertAlmostEqual(row[7], 0.3)
+        self.assertAlmostEqual(row[8], 60.0)
+
+    def test_missing_deck_file_raises(self):
+        section = textwrap.dedent(f"""\
+            [[bridges]]
+            label = "b"
+            deck_file = "nonexistent.csv"
+            deck_elevation = 5.0
+            exchange_line_0 = "{self.ex0}"
+            exchange_line_1 = "{self.ex1}"
+            enquiry_gap = 1.0
+            internal_boundary_curve_file = "{self.curve}"
+        """)
+        with self.assertRaises(FileNotFoundError):
+            self._make(section)
+
+    def test_two_bridges_both_prepended(self):
+        deck2 = os.path.join(self.tmpdir, 'deck2.csv')
+        _touch(deck2)
+        section = self._bridge_toml('bridge_1') + self._bridge_toml('bridge_2')
+        # Both bridges use same deck; replace deck2 via extra for bridge_2
+        deck2_section = textwrap.dedent(f"""\
+            [[bridges]]
+            label = "bridge_2"
+            deck_file = "{deck2}"
+            deck_elevation = 3.0
+            exchange_line_0 = "{self.ex0}"
+            exchange_line_1 = "{self.ex1}"
+            enquiry_gap = 2.0
+            internal_boundary_curve_file = "{self.curve}"
+        """)
+        p = self._make(self._bridge_toml('bridge_1') + deck2_section)
+        self.assertEqual(len(p.bridge_data), 2)
+        # elevation_data: bridge_2 prepended last so is at index 0,
+        # bridge_1 at index 1
+        self.assertEqual(p.elevation_data[0][0], deck2)
+        self.assertEqual(p.elevation_data[1][0], self.deck)
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestPumpingStations(unittest.TestCase):
+    """Tests for ProjectDataTOML._parse_pumping_stations."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.toml_path = os.path.join(self.tmpdir, 'config.toml')
+        for name in ('basin.shp', 'ex0.csv', 'ex1.csv'):
+            _touch(os.path.join(self.tmpdir, name))
+        self.basin = os.path.join(self.tmpdir, 'basin.shp')
+        self.ex0   = os.path.join(self.tmpdir, 'ex0.csv')
+        self.ex1   = os.path.join(self.tmpdir, 'ex1.csv')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _make(self, ps_section=''):
+        content = textwrap.dedent(f"""\
+            [project]
+            scenario = "test"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+
+            [mesh]
+            bounding_polygon = "extent.shp"
+            default_res = 1000000.0
+
+            {ps_section}
+        """)
+        _write_toml(self.toml_path, content)
+        return ProjectDataTOML(self.toml_path)
+
+    def _ps_toml(self, label='ps_1', extra=''):
+        return textwrap.dedent(f"""\
+            [[pumping_stations]]
+            label = "{label}"
+            pump_capacity = 5.0
+            pump_rate_of_increase = 1.0
+            pump_rate_of_decrease = 1.0
+            hw_to_start_pumping = 2.0
+            hw_to_stop_pumping = 1.0
+            basin_polygon_file = "{self.basin}"
+            basin_elevation = -1.5
+            exchange_line_0 = "{self.ex0}"
+            exchange_line_1 = "{self.ex1}"
+            {extra}
+        """)
+
+    def test_no_pumping_stations(self):
+        p = self._make()
+        self.assertEqual(p.pumping_station_data, [])
+
+    def test_disabled_station_skipped(self):
+        p = self._make(self._ps_toml(extra='enabled = false'))
+        self.assertEqual(p.pumping_station_data, [])
+
+    def test_valid_station_row(self):
+        p = self._make(self._ps_toml())
+        self.assertEqual(len(p.pumping_station_data), 1)
+        row = p.pumping_station_data[0]
+        self.assertEqual(row[0], 'ps_1')
+        self.assertAlmostEqual(row[1], 5.0)   # pump_capacity
+        self.assertAlmostEqual(row[4], 2.0)   # hw_to_start_pumping
+        self.assertAlmostEqual(row[5], 1.0)   # hw_to_stop_pumping
+        self.assertEqual(row[6], self.basin)
+        self.assertAlmostEqual(row[7], -1.5)  # basin_elevation
+        self.assertEqual(row[8], self.ex0)
+        self.assertEqual(row[9], self.ex1)
+        self.assertAlmostEqual(row[10], 0.0)  # smoothing_timescale default
+
+    def test_station_prepended_to_elevation_data(self):
+        p = self._make(self._ps_toml())
+        self.assertEqual(p.elevation_data[0], [self.basin, -1.5])
+
+    def test_station_prepended_to_breakline_files(self):
+        p = self._make(self._ps_toml())
+        self.assertEqual(p.breakline_files[0], self.basin)
+
+    def test_missing_basin_file_raises(self):
+        section = textwrap.dedent(f"""\
+            [[pumping_stations]]
+            label = "ps"
+            pump_capacity = 1.0
+            pump_rate_of_increase = 1.0
+            pump_rate_of_decrease = 1.0
+            hw_to_start_pumping = 1.0
+            hw_to_stop_pumping = 0.5
+            basin_polygon_file = "nonexistent.shp"
+            basin_elevation = 0.0
+            exchange_line_0 = "{self.ex0}"
+            exchange_line_1 = "{self.ex1}"
+        """)
+        with self.assertRaises(FileNotFoundError):
+            self._make(section)
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestProjectDataWrapper(unittest.TestCase):
+    """Tests for the ProjectData wrapper in parse_input_data.py."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.toml_path = os.path.join(self.tmpdir, 'config.toml')
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _write_minimal(self):
+        _write_toml(self.toml_path, _MINIMAL_PROJECT)
+
+    def test_toml_extension_dispatches_correctly(self):
+        self._write_minimal()
+        p = ProjectData(self.toml_path)
+        self.assertEqual(p.scenario, 'test_scenario')
+
+    def test_unsupported_extension_raises(self):
+        bad = os.path.join(self.tmpdir, 'config.json')
+        _touch(bad)
+        with self.assertRaises(ValueError):
+            ProjectData(bad)
+
+    def test_defaults_injected_for_toml_only_attrs(self):
+        """Attributes introduced in TOML but absent from Excel get defaults."""
+        self._write_minimal()
+        p = ProjectData(self.toml_path)
+        # These are set by _parse_project but also listed in _defaults
+        self.assertIsNotNone(p.multiprocessor_mode)
+        self.assertIsNone(p.outputstep)
+        self.assertIsNone(p.omp_num_threads)
+        self.assertFalse(p.report_operator_statistics)
+
+
+if __name__ == '__main__':
+    unittest.main()
