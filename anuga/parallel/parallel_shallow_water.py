@@ -176,12 +176,18 @@ class Parallel_domain(Domain):
 
 
 
-    def sww_merge(self, verbose=False, delete_old=False):
+    def sww_merge(self, verbose=False, delete_old=False, chunk_size=None):
         """Merge all the sub domain sww files into a global sww file
 
         :param bool verbose: Flag to produce more output
         :param bool delete_old: Flag to delete sub domain sww files after
             creating global sww file
+        :param chunk_size: Maximum number of timesteps to hold in RAM at once
+            during the merge.  ``None`` (default) reads all timesteps in a
+            single pass (fastest).  Set to a positive integer (e.g. 100) to
+            bound peak memory use when the full merged time series does not
+            fit in RAM.
+        :type chunk_size: int or None
 
         """
 
@@ -195,7 +201,8 @@ class Parallel_domain(Domain):
 
             global_name = join(self.get_datadir(),self.get_global_name())
 
-            merge.sww_merge_parallel(global_name,self.numproc,verbose,delete_old)
+            merge.sww_merge_parallel(global_name, self.numproc, verbose,
+                                     delete_old, chunk_size=chunk_size)
 
         # make sure all the merge completes on processor 0 before other
         # processors complete (like when finalize is forgotten in main script)

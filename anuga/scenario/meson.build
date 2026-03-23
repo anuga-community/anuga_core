@@ -21,3 +21,5 @@ py3.install_sources(
     python_sources,
     subdir: 'anuga/scenario'
 )
+
+subdir('tests')
