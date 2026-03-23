@@ -53,6 +53,15 @@ def _touch(path):
     open(path, 'w').close()
 
 
+def _tp(path):
+    """Return a TOML-safe path string.
+
+    TOML basic strings treat backslash as an escape character, so Windows
+    paths must use forward slashes (which Windows also accepts).
+    """
+    return str(path).replace('\\', '/')
+
+
 @unittest.skipUnless(HAS_MODULE, SKIP_REASON)
 class TestLoadToml(unittest.TestCase):
     """Tests for the _load_toml helper."""
@@ -430,7 +439,7 @@ class TestMeshSection(unittest.TestCase):
         bl = os.path.join(self.tmpdir, 'line.csv')
         _touch(bl)
         extra = textwrap.dedent(f"""\
-            breakline_files = ["{bl}"]
+            breakline_files = ["{_tp(bl)}"]
             [[mesh.interior_regions]]
             polygon = "reg.shp"
             resolution = 1000.0
@@ -442,7 +451,7 @@ class TestMeshSection(unittest.TestCase):
         areas_file = os.path.join(self.tmpdir, 'areas.csv')
         _touch(areas_file)
         extra = textwrap.dedent(f"""\
-            region_areas_file = "{areas_file}"
+            region_areas_file = "{_tp(areas_file)}"
             region_areas_type = "length"
         """)
         p = self._make(mesh_extra=extra)
@@ -452,7 +461,7 @@ class TestMeshSection(unittest.TestCase):
         areas_file = os.path.join(self.tmpdir, 'areas.csv')
         _touch(areas_file)
         extra = textwrap.dedent(f"""\
-            region_areas_file = "{areas_file}"
+            region_areas_file = "{_tp(areas_file)}"
             region_areas_type = "area"
         """)
         p = self._make(mesh_extra=extra)
@@ -462,7 +471,7 @@ class TestMeshSection(unittest.TestCase):
         areas_file = os.path.join(self.tmpdir, 'areas.csv')
         _touch(areas_file)
         extra = textwrap.dedent(f"""\
-            region_areas_file = "{areas_file}"
+            region_areas_file = "{_tp(areas_file)}"
             region_areas_type = "banana"
         """)
         with self.assertRaises(ValueError):
@@ -472,7 +481,7 @@ class TestMeshSection(unittest.TestCase):
         for name in ('bl_a.csv', 'bl_b.csv'):
             _touch(os.path.join(self.tmpdir, name))
         pattern = os.path.join(self.tmpdir, 'bl_*.csv')
-        extra = f'breakline_files = ["{pattern}"]'
+        extra = f'breakline_files = ["{_tp(pattern)}"]'
         p = self._make(mesh_extra=extra)
         self.assertEqual(len(p.breakline_files), 2)
 
@@ -637,7 +646,7 @@ class TestBoundaryConditions(unittest.TestCase):
             [[boundary_conditions.boundaries]]
             tag = "ocean"
             type = "Stage"
-            file = "{tfile}"
+            file = "{_tp(tfile)}"
             start_time = 100.0
         """)
         p = self._make(bc_section=bc)
@@ -655,7 +664,7 @@ class TestBoundaryConditions(unittest.TestCase):
             [[boundary_conditions.boundaries]]
             tag = "east"
             type = "Flather_Stage"
-            file = "{tfile}"
+            file = "{_tp(tfile)}"
         """)
         p = self._make(bc_section=bc)
         self.assertEqual(p.boundary_data[0][1], 'Flather_Stage')
@@ -668,7 +677,7 @@ class TestBoundaryConditions(unittest.TestCase):
             [[boundary_conditions.boundaries]]
             tag = "ocean"
             type = "Stage"
-            file = "{tfile}"
+            file = "{_tp(tfile)}"
         """)
         p = self._make(bc_section=bc)
         self.assertAlmostEqual(p.boundary_data[0][3], 0.0)
@@ -702,7 +711,7 @@ class TestBoundaryConditions(unittest.TestCase):
             [[boundary_conditions.boundaries]]
             tag = "ocean"
             type = "Stage"
-            file = "{tfile}"
+            file = "{_tp(tfile)}"
             [[boundary_conditions.boundaries]]
             tag = "land"
             type = "Reflective"
@@ -754,8 +763,8 @@ class TestInlets(unittest.TestCase):
         section = textwrap.dedent(f"""\
             [[inlets]]
             name = "inlet_1"
-            line_file = "{lfile}"
-            timeseries_file = "{tfile}"
+            line_file = "{_tp(lfile)}"
+            timeseries_file = "{_tp(tfile)}"
             start_time = 30.0
         """)
         p = self._make(inlet_section=section)
@@ -774,8 +783,8 @@ class TestInlets(unittest.TestCase):
         section = textwrap.dedent(f"""\
             [[inlets]]
             name = "q1"
-            line_file = "{lfile}"
-            timeseries_file = "{tfile}"
+            line_file = "{_tp(lfile)}"
+            timeseries_file = "{_tp(tfile)}"
         """)
         p = self._make(inlet_section=section)
         self.assertAlmostEqual(p.inlet_data[0][3], 0.0)
@@ -787,7 +796,7 @@ class TestInlets(unittest.TestCase):
             [[inlets]]
             name = "q1"
             line_file = "nonexistent.csv"
-            timeseries_file = "{tfile}"
+            timeseries_file = "{_tp(tfile)}"
         """)
         with self.assertRaises(FileNotFoundError):
             self._make(inlet_section=section)
@@ -798,7 +807,7 @@ class TestInlets(unittest.TestCase):
         section = textwrap.dedent(f"""\
             [[inlets]]
             name = "q1"
-            line_file = "{lfile}"
+            line_file = "{_tp(lfile)}"
             timeseries_file = "nonexistent.csv"
         """)
         with self.assertRaises(FileNotFoundError):
@@ -845,7 +854,7 @@ class TestRainfall(unittest.TestCase):
         _touch(tfile)
         section = textwrap.dedent(f"""\
             [[rainfall]]
-            timeseries_file = "{tfile}"
+            timeseries_file = "{_tp(tfile)}"
             polygon = "All"
             multiplier = 2.0
         """)
@@ -864,8 +873,8 @@ class TestRainfall(unittest.TestCase):
         _touch(pfile)
         section = textwrap.dedent(f"""\
             [[rainfall]]
-            timeseries_file = "{tfile}"
-            polygon = "{pfile}"
+            timeseries_file = "{_tp(tfile)}"
+            polygon = "{_tp(pfile)}"
         """)
         p = self._make(rain_section=section)
         self.assertEqual(p.rain_data[0][3], pfile)
@@ -883,7 +892,7 @@ class TestRainfall(unittest.TestCase):
         _touch(tfile)
         section = textwrap.dedent(f"""\
             [[rainfall]]
-            timeseries_file = "{tfile}"
+            timeseries_file = "{_tp(tfile)}"
             polygon = "missing_area.shp"
         """)
         with self.assertRaises(FileNotFoundError):
@@ -894,7 +903,7 @@ class TestRainfall(unittest.TestCase):
         _touch(tfile)
         section = textwrap.dedent(f"""\
             [[rainfall]]
-            timeseries_file = "{tfile}"
+            timeseries_file = "{_tp(tfile)}"
         """)
         p = self._make(rain_section=section)
         row = p.rain_data[0]
@@ -946,12 +955,12 @@ class TestBridges(unittest.TestCase):
         return textwrap.dedent(f"""\
             [[bridges]]
             label = "{label}"
-            deck_file = "{self.deck}"
+            deck_file = "{_tp(self.deck)}"
             deck_elevation = 5.0
-            exchange_line_0 = "{self.ex0}"
-            exchange_line_1 = "{self.ex1}"
+            exchange_line_0 = "{_tp(self.ex0)}"
+            exchange_line_1 = "{_tp(self.ex1)}"
             enquiry_gap = 1.0
-            internal_boundary_curve_file = "{self.curve}"
+            internal_boundary_curve_file = "{_tp(self.curve)}"
             {extra}
         """)
 
@@ -1003,10 +1012,10 @@ class TestBridges(unittest.TestCase):
             label = "b"
             deck_file = "nonexistent.csv"
             deck_elevation = 5.0
-            exchange_line_0 = "{self.ex0}"
-            exchange_line_1 = "{self.ex1}"
+            exchange_line_0 = "{_tp(self.ex0)}"
+            exchange_line_1 = "{_tp(self.ex1)}"
             enquiry_gap = 1.0
-            internal_boundary_curve_file = "{self.curve}"
+            internal_boundary_curve_file = "{_tp(self.curve)}"
         """)
         with self.assertRaises(FileNotFoundError):
             self._make(section)
@@ -1019,12 +1028,12 @@ class TestBridges(unittest.TestCase):
         deck2_section = textwrap.dedent(f"""\
             [[bridges]]
             label = "bridge_2"
-            deck_file = "{deck2}"
+            deck_file = "{_tp(deck2)}"
             deck_elevation = 3.0
-            exchange_line_0 = "{self.ex0}"
-            exchange_line_1 = "{self.ex1}"
+            exchange_line_0 = "{_tp(self.ex0)}"
+            exchange_line_1 = "{_tp(self.ex1)}"
             enquiry_gap = 2.0
-            internal_boundary_curve_file = "{self.curve}"
+            internal_boundary_curve_file = "{_tp(self.curve)}"
         """)
         p = self._make(self._bridge_toml('bridge_1') + deck2_section)
         self.assertEqual(len(p.bridge_data), 2)
@@ -1079,10 +1088,10 @@ class TestPumpingStations(unittest.TestCase):
             pump_rate_of_decrease = 1.0
             hw_to_start_pumping = 2.0
             hw_to_stop_pumping = 1.0
-            basin_polygon_file = "{self.basin}"
+            basin_polygon_file = "{_tp(self.basin)}"
             basin_elevation = -1.5
-            exchange_line_0 = "{self.ex0}"
-            exchange_line_1 = "{self.ex1}"
+            exchange_line_0 = "{_tp(self.ex0)}"
+            exchange_line_1 = "{_tp(self.ex1)}"
             {extra}
         """)
 
@@ -1127,8 +1136,8 @@ class TestPumpingStations(unittest.TestCase):
             hw_to_stop_pumping = 0.5
             basin_polygon_file = "nonexistent.shp"
             basin_elevation = 0.0
-            exchange_line_0 = "{self.ex0}"
-            exchange_line_1 = "{self.ex1}"
+            exchange_line_0 = "{_tp(self.ex0)}"
+            exchange_line_1 = "{_tp(self.ex1)}"
         """)
         with self.assertRaises(FileNotFoundError):
             self._make(section)
