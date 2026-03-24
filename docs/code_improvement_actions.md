@@ -1,0 +1,261 @@
+# Code Improvement Actions
+
+Generated from a systematic review of `anuga_core`.
+Date: 2026-03-23
+
+Work through each section in order.  Tick the checkbox when done and add a
+*(Done YYYY-MM-DD)* note so progress is visible across sessions.
+
+---
+
+## Priority 1 — Quick wins (bug risk, no behaviour change)
+
+### 1.1  Fix mutable default arguments (~43 functions)
+
+`def f(x=[])` and `def f(x={})` share state between calls — a subtle but
+real bug source.  Replace with `None` and create the object inside the body.
+
+Key files (check whole repo with `grep -rn "def .*=\[\]" anuga/`):
+
+- [x] `anuga/caching/caching.py:145` — `cache(..., kwargs={})` *(Done 2026-03-24)*
+- [x] `anuga/file/sww.py:535` — `Write_sww.__init__(..., static_c_quantities=[])` *(Done 2026-03-24)*
+- [x] `anuga/parallel/parallel_boyd_box_operator.py:22` — multiple list defaults *(Done 2026-03-24)*
+- [x] `anuga/abstract_2d_finite_volumes/ermapper_grids.py:8,88,203` — dict/list defaults *(Done 2026-03-24)*
+- [x] Audit full repo and fix remaining instances — also fixed parallel_structure_operator, parallel_boyd_pipe_operator, parallel_weir_orifice_trapezoid_operator, parallel_internal_boundary_operator, parallel_operator_factory, riverwall, util.py *(Done 2026-03-24)*
+
+### 1.2  Replace bare `except:` with specific exception types
+
+Bare `except:` catches `KeyboardInterrupt` and `SystemExit`, masking
+serious failures.
+
+- [x] `anuga/utilities/system_tools.py` — no bare except found, already using typed handlers *(Done 2026-03-24)*
+- [x] `anuga/shallow_water/boundaries.py` — no bare except found *(Done 2026-03-24)*
+- [x] `anuga/caching/caching.py` — no bare except found *(Done 2026-03-24)*
+- [x] `anuga/abstract_2d_finite_volumes/tests/test_quantity.py` — no bare except found *(Done 2026-03-24)*
+- [x] `anuga/abstract_2d_finite_volumes/tests/test_generic_domain.py` — no bare except found *(Done 2026-03-24)*
+- [x] `anuga/file_conversion/dem2pts.py` — no bare except found *(Done 2026-03-24)*
+
+### 1.3  Convert file operations to use `with` statements
+
+Prevents file-handle leaks when exceptions occur.
+
+- [x] `anuga/file/csv_file.py:47,196,206,216,224` *(Done 2026-03-24)*
+- [x] `anuga/file/ungenerate.py:16` *(Done 2026-03-24)*
+- [ ] `anuga/file/urs.py:29` — skipped: file handle stored as `self.mux_file` for iterator lifecycle, `with` not applicable
+- [x] `anuga/utilities/system_tools.py:29` *(Done 2026-03-24)*
+- [ ] Audit `anuga/file/` and `anuga/utilities/` for remaining bare `open()` calls
+
+### 1.4  Fix invalid escape sequences in docstrings
+
+These generate `DeprecationWarning` in Python 3.12 and will become
+`SyntaxError` in a future version.  Prefix affected docstrings with `r`.
+
+- [x] `anuga/utilities/norms.py:15` *(Done 2026-03-24)*
+- [x] `anuga/utilities/system_tools.py:133` — no invalid escape found at that line *(Done 2026-03-24)*
+- [x] Run `python -W error::DeprecationWarning -c "import anuga"` — no warnings remain *(Done 2026-03-24)*
+
+### 1.5  Delete large commented-out dead code
+
+No behaviour change — purely cleanup.
+
+- [x] `anuga/file_conversion/dem2pts.py:164–281` — 118-line pre-vectorisation loop deleted *(Done 2026-03-24)*
+- [x] `anuga/abstract_2d_finite_volumes/neighbour_mesh.py:615–668` — 53-line disabled validation block deleted *(Done 2026-03-24)*
+- [ ] Grep for `#.*for i in range` and similar large legacy comment blocks
+      across `shallow_water/` and `operators/`
+
+---
+
+## Priority 2 — Correctness and stability
+
+### 2.1  Fix silent error suppression in quantity update
+
+`anuga/operators/set_quantity.py:116–121` catches `ValueError` and does
+nothing — if the update fails every timestep the simulation silently
+produces wrong results.
+
+- [ ] Replace bare `except ValueError: pass` with at minimum a logged warning
+- [ ] Investigate whether the `ValueError` case is actually expected; if so,
+      document why with a comment
+
+### 2.2  Log xarray import failures properly
+
+`anuga/operators/rate_operators.py:112–116` — `ImportError` from xarray is
+silently swallowed.  A broken partial install is indistinguishable from
+xarray not being present.
+
+- [ ] Add `import logging; log = logging.getLogger(__name__)` at top of file
+      if not already present
+- [ ] Replace silent `except ImportError: pass` with
+      `except ImportError: log.debug("xarray not available: %s", e)`
+
+### 2.3  Address FIXME items left in production code
+
+- [ ] `anuga/structures/boyd_box_operator.py:119` — `max_velocity = 10.0`
+      is hardcoded; the FIXME says it should be a configurable parameter.
+      Add as keyword argument with the current value as default.
+- [ ] `anuga/fit_interpolate/fit.py:119–121` — smoothing matrix is built even
+      when `alpha=0`.  Add an early-exit branch to skip the construction.
+- [ ] `anuga/geometry/polygon.py:133` — FIXME "Write this in C" for
+      `intersection()`.  Either implement a Cython version or remove the
+      comment and document why the Python version is acceptable.
+- [ ] `anuga/operators/rate_operators.py` — FIXME about rate factor
+      file/array support being incomplete.  Either complete the feature or
+      document the limitation clearly.
+
+---
+
+## Priority 3 — Test coverage
+
+### 3.1  Add tests for untested operator classes
+
+None of the following have any test coverage:
+
+- [ ] `Bed_shear_erosion_operator` — `anuga/operators/erosion_operators.py`
+- [ ] `Circular_erosion_operator` — `anuga/operators/erosion_operators.py`
+- [ ] `Flat_slice_erosion_operator` — `anuga/operators/erosion_operators.py`
+- [ ] `Flat_fill_slice_erosion_operator` — `anuga/operators/erosion_operators.py`
+- [ ] `Collect_max_quantities_operator` — `anuga/operators/collect_max_quantities_operator.py`
+- [ ] `Collect_max_stage_operator` — `anuga/operators/collect_max_stage_operator.py`
+- [ ] `Elliptic_operator` — `anuga/operators/elliptic_operator.py`
+- [ ] `Circular_rate_operator` — `anuga/operators/rate_operators.py` (partial)
+- [ ] `Circular_set_quantity_operator` — `anuga/operators/set_quantity_operator.py`
+- [ ] `Circular_set_stage_operator` — `anuga/operators/set_stage_operator.py`
+
+Target test files: `anuga/operators/tests/test_erosion_operators.py`,
+`test_collect_operators.py`, `test_elliptic_operator.py`.
+
+### 3.2  Add tests for untested structure classes
+
+- [ ] `Structure_operator` (base class) — `anuga/structures/structure_operator.py`
+      At minimum: construction, basic attribute access, `__repr__`
+- [ ] `Internal_boundary_operator` — `anuga/structures/internal_boundary_operator.py`
+- [ ] `RiverWall` — `anuga/structures/riverwall.py`
+- [ ] `Inlet_enquiry` — `anuga/structures/inlet_enquiry.py`
+
+Target test file: `anuga/structures/tests/test_internal_boundary_operator.py`,
+`anuga/structures/tests/test_riverwall.py`.
+
+### 3.3  Add tests for untested scenario module
+
+- [ ] Scenario module (`anuga/scenario/`) has only the TOML parser tests added
+      in this session.  Add tests for:
+      - `prepare_data.py` — `PrepareData` class (directory setup, data export)
+      - `setup_boundary_conditions.py`
+      - `setup_rainfall.py`
+      - `setup_inlets.py`
+
+---
+
+## Priority 4 — API and code quality
+
+### 4.1  Reduce parameter counts on worst-offending functions
+
+Functions with 15+ parameters are unusable without constantly consulting the
+docs.  Introduce config dataclasses or use `**kwargs` consolidation.
+
+- [ ] `anuga/abstract_2d_finite_volumes/gauge.py:616` — `_generate_figures()`
+      19 parameters → group plot-style options into a `PlotConfig` dataclass
+- [ ] `anuga/abstract_2d_finite_volumes/gauge.py:263` — `sww2timeseries()`
+      16 parameters → same approach
+- [ ] `anuga/abstract_2d_finite_volumes/generic_domain.py:63` —
+      `Generic_Domain.__init__()` 21 parameters → split mesh/numerics/output
+      options into separate config objects or keyword-only arguments
+- [ ] `anuga/structures/boyd_box_operator.py:25` — `Boyd_box_operator.__init__()`
+      21 parameters → group hydraulic and geometry parameters
+
+### 4.2  Standardise naming conventions in `pmesh/`
+
+`anuga/pmesh/mesh.py` has 49 camelCase methods alongside 31 snake_case ones.
+The module is not in the primary public API but is used internally.
+
+- [ ] Create snake_case aliases for all camelCase public methods
+- [ ] Add deprecation warnings to the camelCase names
+- [ ] Update all internal callers to use the snake_case names
+- [ ] `anuga/pmesh/visualmesh.py` — same treatment (11 camelCase methods)
+
+### 4.3  Deprecate legacy camelCase methods in shallow_water_domain
+
+`anuga/shallow_water/shallow_water_domain.py` has 7 legacy camelCase methods
+that are part of the public-facing API.
+
+- [ ] Identify the 7 methods (grep for `def [A-Z]` in that file)
+- [ ] Add `warnings.warn(..., DeprecationWarning, stacklevel=2)` wrappers
+- [ ] Document the snake_case replacements in the deprecation message
+
+### 4.4  Add `__all__` to major public modules
+
+Only 2 files in the codebase currently define `__all__`.  Adding it to the
+main public modules makes the API contract explicit and improves IDE support.
+
+- [ ] `anuga/__init__.py` — this is the primary public API (~1000 lines);
+      audit and add `__all__` listing all intended public names
+- [ ] `anuga/shallow_water/__init__.py`
+- [ ] `anuga/operators/__init__.py`
+- [ ] `anuga/structures/__init__.py`
+- [ ] `anuga/file/__init__.py`
+
+---
+
+## Priority 5 — Performance
+
+### 5.1  Vectorise Python loops over numpy arrays
+
+- [ ] `anuga/fit_interpolate/fit.py:598` —
+      ```python
+      for i in range(len(old_point_attributes)):
+          old_point_attributes[i].extend(new_point_attributes[i])
+      ```
+      Replace with a list comprehension or `numpy.vstack`.
+
+- [ ] `anuga/file/csv_file.py:136` —
+      ```python
+      for i, x in enumerate(X[col_title]):
+          ret[i, index] = float(x)
+      ```
+      Replace with `ret[:, index] = numpy.array(X[col_title], dtype=float)`.
+
+- [ ] `anuga/abstract_2d_finite_volumes/util.py:279,301,786` — gauge/timeseries
+      extraction loops that build Python lists element-by-element; profile
+      first, then replace with numpy slicing where beneficial.
+
+### 5.2  Consider Cython implementation of `polygon.intersection()`
+
+`anuga/geometry/polygon.py:133` — the FIXME notes this should be in C.
+`intersection()` is called during mesh generation and can be a bottleneck
+for large meshes with many polygon regions.
+
+- [ ] Profile mesh generation for a large domain to confirm this is a hotspot
+- [ ] If confirmed, implement `intersection_c` in the existing
+      `anuga/geometry/polygon_ext.pyx` and add a Python fallback
+
+---
+
+## Priority 6 — Documentation improvements
+
+### 6.1  Expand incomplete docstrings in structures
+
+- [ ] `anuga/structures/boyd_box_operator.py:50–77` — document all 21
+      constructor parameters with types, units, and valid ranges
+- [ ] `anuga/structures/boyd_pipe_operator.py` — same treatment
+- [ ] `anuga/structures/weir_orifice_trapezoid_operator.py` — same treatment
+
+### 6.2  Add "Returns" sections to operator docstrings
+
+Many operator `__call__` and `update` methods have no documented return value.
+
+- [ ] `anuga/operators/rate_operators.py` — add Returns section
+- [ ] `anuga/operators/erosion_operators.py` — add Returns section
+
+---
+
+## Tracking
+
+| Priority | Total actions | Done |
+|----------|--------------|------|
+| 1 — Quick wins | 14 | 12 |
+| 2 — Correctness | 6 | 0 |
+| 3 — Test coverage | 17 | 0 |
+| 4 — API quality | 13 | 0 |
+| 5 — Performance | 5 | 0 |
+| 6 — Documentation | 5 | 0 |
+| **Total** | **60** | **12** |
