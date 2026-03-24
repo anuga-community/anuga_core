@@ -45,7 +45,8 @@ class Boyd_box_operator(anuga.Structure_operator):
                  label=None,
                  structure_type='boyd_box',
                  logging=False,
-                 verbose=False):
+                 verbose=False,
+                 max_velocity=10.0):
 
         """Create a box culvert using Boyd flow algorithm
 
@@ -73,7 +74,8 @@ class Boyd_box_operator(anuga.Structure_operator):
         :param structure_type:
         :param logging:
         :param verbose:
-        
+        :param max_velocity: Maximum allowable culvert velocity (m/s). Default 10.0.
+
         """
 
         anuga.Structure_operator.__init__(self,
@@ -116,8 +118,7 @@ class Boyd_box_operator(anuga.Structure_operator):
         self.culvert_blockage = self.get_culvert_blockage()
         self.culvert_barrels = self.get_culvert_barrels()
 
-        #FIXME SR: Why is this hard coded!
-        self.max_velocity = 10.0
+        self.max_velocity = max_velocity
 
         self.inlets = self.get_inlets()
 

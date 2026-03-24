@@ -116,13 +116,13 @@ class Fit(FitInterpolate):
         self.D = None
         self.point_count = 0
 
-        # NOTE PADARN: NEEDS FIXING - currently need smoothing matrix
-        # even if alpha is zero, due to C function expecting it. This
-        # could and should be removed.
-        if True:
-            if verbose:
-                log.critical('Building smoothing matrix')
-            self.D = self._build_smoothing_matrix_D()
+        # The smoothing matrix D is always built, even when alpha=0, because
+        # the underlying C solver (fit_ext) expects the D array to be present.
+        # Skipping construction when alpha=0 would require changes to the C
+        # interface and is deferred.
+        if verbose:
+            log.critical('Building smoothing matrix')
+        self.D = self._build_smoothing_matrix_D()
 
         bd_poly = self.mesh.get_boundary_polygon()
         self.mesh_boundary_polygon = ensure_numeric(bd_poly)

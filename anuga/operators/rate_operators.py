@@ -111,9 +111,10 @@ Parameters involving communication
         #-------------------------------
         try:
             import xarray
-        except ImportError:
-            pass
-        else:
+        except ImportError as e:
+            log.debug('xarray not available, xarray rate inputs disabled: %s', e)
+            xarray = None
+        if xarray is not None:
             if type(rate) is xarray.core.dataarray.DataArray:
                 self.rate_xarray = True
                 xa = rate
@@ -127,9 +128,11 @@ Parameters involving communication
 
         #------------------------------
         # Setting up factor, can be a scalar
-        # or a function of time
+        # or a function of time.
+        # Limitation: factor does not currently support time-series files
+        # or arrays.  Only scalars and callables of the form f(t) are
+        # accepted.  Extend set_factor() if file/array support is needed.
         #------------------------------
-        # FIXME SR: maybe also allow time, factor file or array
 
         self.factor_callable = False
         self.set_factor(factor)

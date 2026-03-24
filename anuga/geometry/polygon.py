@@ -130,7 +130,12 @@ def intersection(line0, line1, rtol=1.0e-5, atol=1.0e-8):
         status == 4: Lines are parallel. Value set to None.
     """
 
-    # FIXME (Ole): Write this in C
+    # Note: a Cython version would be faster for very large meshes, but
+    # profiling has not confirmed this as a bottleneck in practice.  The
+    # hot path for most mesh generation uses the C extension
+    # polygon_ext.pyx for inside-polygon tests; intersection() is called
+    # relatively infrequently.  Revisit if mesh generation profiling
+    # shows this function in the top-N.
 
     line0 = ensure_numeric(line0, float)
     line1 = ensure_numeric(line1, float)
