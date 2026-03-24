@@ -73,9 +73,9 @@ No behaviour change — purely cleanup.
 nothing — if the update fails every timestep the simulation silently
 produces wrong results.
 
-- [ ] Replace bare `except ValueError: pass` with at minimum a logged warning
-- [ ] Investigate whether the `ValueError` case is actually expected; if so,
-      document why with a comment
+- [x] Replace bare `except ValueError: pass` with at minimum a logged warning *(Done 2026-03-24)*
+- [x] Investigate whether the `ValueError` case is actually expected; if so,
+      document why with a comment — yes, expected for time-series outside range; documented *(Done 2026-03-24)*
 
 ### 2.2  Log xarray import failures properly
 
@@ -83,24 +83,17 @@ produces wrong results.
 silently swallowed.  A broken partial install is indistinguishable from
 xarray not being present.
 
-- [ ] Add `import logging; log = logging.getLogger(__name__)` at top of file
-      if not already present
-- [ ] Replace silent `except ImportError: pass` with
-      `except ImportError: log.debug("xarray not available: %s", e)`
+- [x] Add `import logging; log = logging.getLogger(__name__)` at top of file
+      if not already present — `log` was already imported via `anuga.utilities.log` *(Done 2026-03-24)*
+- [x] Replace silent `except ImportError: pass` with
+      `except ImportError: log.debug("xarray not available: %s", e)` *(Done 2026-03-24)*
 
 ### 2.3  Address FIXME items left in production code
 
-- [ ] `anuga/structures/boyd_box_operator.py:119` — `max_velocity = 10.0`
-      is hardcoded; the FIXME says it should be a configurable parameter.
-      Add as keyword argument with the current value as default.
-- [ ] `anuga/fit_interpolate/fit.py:119–121` — smoothing matrix is built even
-      when `alpha=0`.  Add an early-exit branch to skip the construction.
-- [ ] `anuga/geometry/polygon.py:133` — FIXME "Write this in C" for
-      `intersection()`.  Either implement a Cython version or remove the
-      comment and document why the Python version is acceptable.
-- [ ] `anuga/operators/rate_operators.py` — FIXME about rate factor
-      file/array support being incomplete.  Either complete the feature or
-      document the limitation clearly.
+- [x] `anuga/structures/boyd_box_operator.py:119` — `max_velocity = 10.0` made a keyword argument (also in parallel version) *(Done 2026-03-24)*
+- [x] `anuga/fit_interpolate/fit.py:119–121` — early-exit not possible (C solver requires D matrix); replaced misleading `if True:` with explanatory comment *(Done 2026-03-24)*
+- [x] `anuga/geometry/polygon.py:133` — removed FIXME; documented why Python version is acceptable *(Done 2026-03-24)*
+- [x] `anuga/operators/rate_operators.py` — documented factor file/array limitation clearly *(Done 2026-03-24)*
 
 ---
 
@@ -253,9 +246,9 @@ Many operator `__call__` and `update` methods have no documented return value.
 | Priority | Total actions | Done |
 |----------|--------------|------|
 | 1 — Quick wins | 14 | 12 |
-| 2 — Correctness | 6 | 0 |
+| 2 — Correctness | 6 | 6 |
 | 3 — Test coverage | 17 | 0 |
 | 4 — API quality | 13 | 0 |
 | 5 — Performance | 5 | 0 |
 | 6 — Documentation | 5 | 0 |
-| **Total** | **60** | **12** |
+| **Total** | **60** | **18** |
