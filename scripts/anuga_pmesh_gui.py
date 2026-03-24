@@ -418,7 +418,7 @@ class Draw(AppShell.AppShell):
         # Redraw all of the vertices, holes and regions,
         #so the squares representing vertices
         # don't get bigger
-        vertices = self.mesh.get_user_vertices()
+        vertices = self.mesh.get_user_vertices_list()
         holes = self.mesh.get_holes()
         regions = self.mesh.get_regions()
         MeshObjects  = vertices + holes + regions
@@ -528,7 +528,7 @@ class Draw(AppShell.AppShell):
         add Segments to bound all vertices
 
         """
-        if len(self.mesh.get_user_vertices()) >= 3:
+        if len(self.mesh.get_user_vertices_list()) >= 3:
             try:
                 newsegs, ObjectsToVisuallyDelete, self.meshLastAlpha = \
                      self.mesh.auto_segment(alpha=alpha,
@@ -588,7 +588,7 @@ class Draw(AppShell.AppShell):
         need to userstand toolbarbutton.py to know how to
         get rid of it.
         """
-        if len(self.mesh.get_user_vertices()) >= 3:
+        if len(self.mesh.get_user_vertices_list()) >= 3:
             newsegs = self.mesh.join_vertices()
             for segment in newsegs:
                 self.serial +=1
@@ -925,7 +925,7 @@ class Draw(AppShell.AppShell):
                                     self.uniqueID,
                                     self.canvas,
                                     self.SCALE)
-        for vertex in mesh.get_user_vertices():
+        for vertex in mesh.get_user_vertices_list():
             self.serial +=1
             self.uniqueID = 'M*%d' % self.serial
             self.Vertices.visualise(vertex,
@@ -1119,7 +1119,7 @@ class Draw(AppShell.AppShell):
 
     def ResizeToFit(self):
         """Visualise the mesh so it fits in the window"""
-        if self.mesh.get_user_vertices() == []:
+        if self.mesh.get_user_vertices_list() == []:
             return #There are no vertices!
         # Resize the window
         self.scrolledcanvas.resizescrollregion()
