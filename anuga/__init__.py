@@ -314,6 +314,7 @@ from anuga.utilities.mem_time_equation import estimate_time_mem
 from anuga.extras import create_domain_from_regions
 from anuga.extras import create_domain_from_file
 from anuga.extras import rectangular_cross_domain
+from anuga.extras import create_basic_mesh_from_regions
 
 from anuga.utilities import log as log
 
@@ -461,6 +462,7 @@ __all__ = [
     'read_multi_poly_file_value',
     'read_polygon_dir',
     # Domain creation
+    'create_basic_mesh_from_regions',
     'create_domain_from_file',
     'create_domain_from_regions',
     'create_mesh_from_regions',
