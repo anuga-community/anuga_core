@@ -298,11 +298,11 @@ def make_plots_from_csv_file(directories_dic={dir:['gauge', 0, 0]},
                                  assess_all_csv_files)
 
 
-def csv2timeseries_graphs(directories_dic={},
+def csv2timeseries_graphs(directories_dic=None,
                           output_dir='',
                           base_name=None,
                           plot_numbers='',
-                          quantities=['stage'],
+                          quantities=None,
                           extra_plot_name='',
                           assess_all_csv_files=True,
                           create_latex=False,
@@ -442,6 +442,11 @@ def csv2timeseries_graphs(directories_dic={},
 #             #rely on pylab being installed 
 #         return
     
+    if directories_dic is None:
+        directories_dic = {}
+    if quantities is None:
+        quantities = ['stage']
+
     try:
         import matplotlib
         matplotlib.use('Agg')

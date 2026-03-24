@@ -45,9 +45,14 @@ class Parallel_Boyd_box_operator(Parallel_Structure_operator):
                  verbose=False,
                  master_proc = 0,
                  procs = None,
-                 inlet_master_proc = [0,0],
+                 inlet_master_proc = None,
                  inlet_procs = None,
-                 enquiry_proc = [0,0]):
+                 enquiry_proc = None):
+
+        if inlet_master_proc is None:
+            inlet_master_proc = [0, 0]
+        if enquiry_proc is None:
+            enquiry_proc = [0, 0]
 
         Parallel_Structure_operator.__init__(self,
                                           domain=domain,

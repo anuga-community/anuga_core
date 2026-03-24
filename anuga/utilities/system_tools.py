@@ -26,10 +26,9 @@ def log_to_file(filename, s, verbose=False, mode='a'):
     """Log string to file name
     """
 
-    fid = open(filename, mode)
-    if verbose: print(s)
-    fid.write(s + '\n')
-    fid.close()
+    with open(filename, mode) as fid:
+        if verbose: print(s)
+        fid.write(s + '\n')
 
 
 def get_user_name():

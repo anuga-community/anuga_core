@@ -148,9 +148,9 @@ class RiverWall(object):
         self.input_riverwallPar=None
 
 
-    def create_riverwalls(self, riverwalls, riverwallPar={ },
-                          default_riverwallPar={ },
-                          tol=1.0e-4, verbose=True, 
+    def create_riverwalls(self, riverwalls, riverwallPar=None,
+                          default_riverwallPar=None,
+                          tol=1.0e-4, verbose=True,
                           output_dir=None):
         """Add riverwalls at chosen locations along the mesh
 
@@ -232,6 +232,11 @@ class RiverWall(object):
         #    print ' '
         #    print '  It works in parallel, but you must use domain.create_riverwall AFTER distributing the mesh'
         #    print ' '
+
+        if riverwallPar is None:
+            riverwallPar = {}
+        if default_riverwallPar is None:
+            default_riverwallPar = {}
 
         # NOTE: domain.riverwallData is initialised in shallow_water_domain.py for DE algorithms
         domain=self.domain
