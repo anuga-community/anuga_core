@@ -290,7 +290,7 @@ def _create_mesh_from_regions(bounding_polygon,
 
     inner_point = point_in_polygon(bounding_polygon_absolute)
     inner = m.add_region(inner_point[0], inner_point[1])
-    inner.setMaxArea(maximum_triangle_area)
+    inner.set_max_area(maximum_triangle_area)
 
     # Do interior regions
     if interior_regions is not None:
@@ -315,7 +315,7 @@ def _create_mesh_from_regions(bounding_polygon,
     if(regionPtArea is not None):
         for i in range(len(regionPtArea)):
             inner = m.add_region(regionPtArea[i][0], regionPtArea[i][1])
-            inner.setMaxArea(regionPtArea[i][2])
+            inner.set_max_area(regionPtArea[i][2])
 
     # NOTE (Ole): This was moved here as it is annoying if mesh is always
     # stored irrespective of whether the computation
