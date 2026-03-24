@@ -655,8 +655,13 @@ class Generic_Domain(object):
 
     def get_CFL(self):
         """get CFL
-        """
 
+        .. deprecated::
+            Use :meth:`get_cfl` instead.
+        """
+        import warnings
+        warnings.warn('get_CFL is deprecated, use get_cfl instead',
+                      DeprecationWarning, stacklevel=2)
         return self.CFL
 
     def get_cfl(self):
@@ -667,18 +672,30 @@ class Generic_Domain(object):
 
     def set_CFL(self, cfl=1.0):
         """Set CFL parameter, warn if greater than 2.0
+
+        .. deprecated::
+            Use :meth:`set_cfl` instead.
         """
+        import warnings
+        warnings.warn('set_CFL is deprecated, use set_cfl instead',
+                      DeprecationWarning, stacklevel=2)
         if cfl > 2.0:
-            self.CFL = cfl
             msg = 'Setting CFL > 2.0'
-            import warnings
             warnings.warn(msg)
-            # log.warning(msg)
 
         assert cfl > 0.0
         self.CFL = cfl
 
-    set_cfl = set_CFL
+    def set_cfl(self, cfl=1.0):
+        """Set CFL parameter, warn if greater than 2.0
+        """
+        if cfl > 2.0:
+            msg = 'Setting CFL > 2.0'
+            import warnings
+            warnings.warn(msg)
+
+        assert cfl > 0.0
+        self.CFL = cfl
 
 
     def set_relative_time(self, time = 0.0):

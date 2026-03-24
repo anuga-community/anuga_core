@@ -6,7 +6,7 @@ import unittest
 import os
 import pytest
 
-from anuga.pmesh.mesh import importMeshFromFile
+from anuga.pmesh.mesh import import_mesh_from_file
 from anuga.pmesh.mesh_interface import create_mesh_from_regions
 from anuga.pmesh.mesh_interface import _create_mesh_from_regions
 from anuga.load_mesh.loadASCII import *
@@ -56,7 +56,7 @@ class TestCase(unittest.TestCase):
 
         # Test the mesh instance
         self.assertTrue(len(m.regions)==3, 'FAILED!')
-        segs = m.getUserSegments()
+        segs = m.get_user_segments()
         self.assertTrue(len(segs)==12, 'FAILED!')
         self.assertTrue(len(m.userVertices)==12, 'FAILED!')
         self.assertTrue(segs[0].tag=='walls', 'FAILED!')
@@ -157,7 +157,7 @@ class TestCase(unittest.TestCase):
 
         # Test the mesh instance
         self.assertTrue(len(m.regions)==3, 'FAILED!')
-        segs = m.getUserSegments()
+        segs = m.get_user_segments()
         self.assertTrue(len(segs)==12, 'FAILED!')
         self.assertTrue(len(m.userVertices)==12, 'FAILED!')
         self.assertTrue(segs[0].tag=='walls', 'FAILED!')
@@ -243,7 +243,7 @@ class TestCase(unittest.TestCase):
 
         # Test the mesh instance
         self.assertTrue(len(m.regions)==3, 'FAILED!')
-        segs = m.getUserSegments()
+        segs = m.get_user_segments()
         self.assertTrue(len(segs)==12, 'FAILED!')
         self.assertTrue(len(m.userVertices)==12, 'FAILED!')
         self.assertTrue(segs[0].tag=='walls', 'FAILED!')
@@ -284,7 +284,7 @@ class TestCase(unittest.TestCase):
 
         # Test the mesh instance
         self.assertTrue(len(m.regions) == 3, 'FAILED!')
-        segs = m.getUserSegments()
+        segs = m.get_user_segments()
         self.assertTrue(len(segs) == 12, 'FAILED!')
         self.assertTrue(len(m.userVertices) == 12, 'FAILED!')
         self.assertTrue(segs[0].tag == 'walls', 'FAILED!')
@@ -322,11 +322,11 @@ class TestCase(unittest.TestCase):
                                  interior_regions=interior_regions,
                                  filename=file_name, verbose=False)
 
-        m = importMeshFromFile(file_name)
+        m = import_mesh_from_file(file_name)
 
-        self.assertTrue(len(m.getTriangulation()) <= 900,
+        self.assertTrue(len(m.get_triangulation()) <= 900,
                         'Test mesh interface failed!')
-        self.assertTrue(len(m.getTriangulation()) >= 200,
+        self.assertTrue(len(m.get_triangulation()) >= 200,
                         'Test mesh interface failed!')
 
         create_mesh_from_regions(polygon_outer,
@@ -335,9 +335,9 @@ class TestCase(unittest.TestCase):
                                  filename=file_name,
                                  verbose=False)
 
-        m = importMeshFromFile(file_name)
+        m = import_mesh_from_file(file_name)
 
-        self.assertTrue(len(m.getTriangulation()) <= 100,
+        self.assertTrue(len(m.get_triangulation()) <= 100,
                         'Test mesh interface failed!')
 
         os.remove(file_name)
@@ -370,10 +370,10 @@ class TestCase(unittest.TestCase):
                                  filename=file_name,
                                  verbose=False)
 
-        m = importMeshFromFile(file_name)
-        self.assertTrue(len(m.getTriangulation()) <= 2000,
+        m = import_mesh_from_file(file_name)
+        self.assertTrue(len(m.get_triangulation()) <= 2000,
                         'Test mesh interface failed!')
-        self.assertTrue(len(m.getTriangulation()) >= 900,
+        self.assertTrue(len(m.get_triangulation()) >= 900,
                         'Test mesh interface failed!')
 
         os.remove(file_name)
@@ -413,10 +413,10 @@ class TestCase(unittest.TestCase):
                                  filename=file_name,
                                  verbose=False)
 
-        m = importMeshFromFile(file_name)
-        self.assertTrue(len(m.getTriangulation()) <= 2000,
+        m = import_mesh_from_file(file_name)
+        self.assertTrue(len(m.get_triangulation()) <= 2000,
                         'Test mesh interface failed!')
-        self.assertTrue(len(m.getTriangulation()) >= 900,
+        self.assertTrue(len(m.get_triangulation()) >= 900,
                         'Test mesh interface failed!')
 
         os.remove(file_name)
@@ -459,10 +459,10 @@ class TestCase(unittest.TestCase):
                                  filename=file_name,
                                  verbose=False)
 
-        m = importMeshFromFile(file_name)
-        self.assertTrue(len(m.getTriangulation()) <= 3000,
+        m = import_mesh_from_file(file_name)
+        self.assertTrue(len(m.get_triangulation()) <= 3000,
                         'Test mesh interface failed!')
-        self.assertTrue(len(m.getTriangulation()) >= 2000,
+        self.assertTrue(len(m.get_triangulation()) >= 2000,
                         'Test mesh interface failed!')
 
         os.remove(file_name)
@@ -660,7 +660,7 @@ class TestCase(unittest.TestCase):
                                      breaklines=[[[50,50],[2000,2000]]])
 
         self.assertTrue(len(m.regions) == 1, 'FAILED!')
-        segs = m.getUserSegments()
+        segs = m.get_user_segments()
         self.assertTrue(len(segs) == 5, 'FAILED!')
         self.assertTrue(len(m.userVertices) == 6, 'FAILED!')
 
@@ -681,7 +681,7 @@ class TestCase(unittest.TestCase):
                                      10000000,
                                      interior_holes=[interior_poly1])
 
-        self.assertTrue(len(m.getUserSegments()) == 7, 'FAILED!')
+        self.assertTrue(len(m.get_user_segments()) == 7, 'FAILED!')
         self.assertTrue(len(m.userVertices) == 7, 'FAILED!')
 
 
@@ -690,10 +690,10 @@ class TestCase(unittest.TestCase):
                                      boundary_tags,
                                      10000000,
                                      interior_holes=[interior_poly1, interior_poly2])
-        #print len(m.getUserSegments())
+        #print len(m.get_user_segments())
         #print len(m.userVertices)
         
-        self.assertTrue(len(m.getUserSegments()) == 10, 'FAILED!')
+        self.assertTrue(len(m.get_user_segments()) == 10, 'FAILED!')
         self.assertTrue(len(m.userVertices) == 10, 'FAILED!')
 
         #-------------------------------------
@@ -746,12 +746,12 @@ class TestCase(unittest.TestCase):
                                      interior_holes=[interior_poly1],
                                      hole_tags=[{'edge0' : [0], 'edge1': [1], 'edge2': [2]}])
 
-        self.assertTrue(len(m.getUserSegments()) == 7, 'FAILED!')
+        self.assertTrue(len(m.get_user_segments()) == 7, 'FAILED!')
         self.assertTrue(len(m.userVertices) == 7, 'FAILED!')
 
         m.generate_mesh()
         
-        tags_list = m.getMeshSegmentTags()
+        tags_list = m.get_mesh_segment_tags()
         
         assert len([x for x in tags_list if x == 'edge0']) == 7
         assert len([x for x in tags_list if x == 'edge1']) == 6

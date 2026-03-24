@@ -56,7 +56,7 @@ END\n")
 
         tag = "DSG"
         Segment.set_default_tag(tag)
-        m.addVertsSegs(dict)
+        m.add_verts_segs(dict)
 
         # have to reset this , since it's a class attribute
         Segment.set_default_tag("")
@@ -146,7 +146,7 @@ END\n")
 
         tag = "DSG"
         Segment.set_default_tag(tag)
-        m.addVertsSegs(dict)
+        m.add_verts_segs(dict)
 
         self.assertTrue(len(m.userSegments) ==11,
                         'Wrong segment list length.')
@@ -182,9 +182,9 @@ END\n")
                         'Wrong vertex list length.')
         self.assertTrue(len(m.regions) == 2,
                         'Wrong regions list length.')
-        self.assertTrue(m.regions[0].getTag() == "swamp",
+        self.assertTrue(m.regions[0].get_tag() == "swamp",
                         'Wrong regions tag.')
-        self.assertTrue(m.regions[1].getTag() == "swamp",
+        self.assertTrue(m.regions[1].get_tag() == "swamp",
                         'Wrong regions 1 tag.')
         
         # have to reset this , since it's a class attribute
@@ -227,7 +227,7 @@ END\n")
 
         tag = "DSG"
         Segment.set_default_tag(tag)
-        m.addVertsSegs(dict)
+        m.add_verts_segs(dict)
 
         self.assertTrue(len(m.userSegments) ==11,
                         'Wrong segment list length.')
@@ -263,9 +263,9 @@ END\n")
                         'Wrong vertex list length.')
         self.assertTrue(len(m.regions) == 2,
                         'Wrong regions list length.')
-        self.assertTrue(m.regions[0].getTag() == "swamp",
+        self.assertTrue(m.regions[0].get_tag() == "swamp",
                         'Wrong regions tag.')
-        self.assertTrue(m.regions[1].getTag() == "coastalp",
+        self.assertTrue(m.regions[1].get_tag() == "coastalp",
                         'Wrong regions 1 tag.')
         
         

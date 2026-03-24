@@ -77,7 +77,7 @@ class Point(MeshObject):
         self.x = X
         self.y = Y
 
-    def DistanceToPoint(self, OtherPoint):
+    def distance_to_point(self, OtherPoint):
         """
         Returns the distance from this point to another
         """
@@ -85,16 +85,30 @@ class Point(MeshObject):
                        ((self.y - OtherPoint.y)**2)
         return math.sqrt(SumOfSquares)
 
-    def IsInsideCircle(self, Center, Radius):
+    def DistanceToPoint(self, OtherPoint):
+        """Deprecated: use distance_to_point instead."""
+        import warnings
+        warnings.warn('DistanceToPoint is deprecated, use distance_to_point instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.distance_to_point(OtherPoint)
+
+    def is_inside_circle(self, Center, Radius):
         """
-        Return 1 if this point is inside the circle, 
+        Return 1 if this point is inside the circle,
         0 otherwise
         """
 
-        if (self.DistanceToPoint(Center) < Radius):
+        if (self.distance_to_point(Center) < Radius):
             return 1
         else:
             return 0
+
+    def IsInsideCircle(self, Center, Radius):
+        """Deprecated: use is_inside_circle instead."""
+        import warnings
+        warnings.warn('IsInsideCircle is deprecated, use is_inside_circle instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.is_inside_circle(Center, Radius)
 
     def __repr__(self):
         return "(%f,%f)" % (self.x, self.y)
@@ -137,10 +151,17 @@ class Vertex(Point):
         if not attributes is None:
             self.attributes = attributes
 
-    def setAttributes(self, attributes):
+    def set_attributes(self, attributes):
         """attributes is a list. """
 
         self.attributes = attributes
+
+    def setAttributes(self, attributes):
+        """Deprecated: use set_attributes instead."""
+        import warnings
+        warnings.warn('setAttributes is deprecated, use set_attributes instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.set_attributes(attributes)
 
     def draw(self, canvas, tags, colour='black', scale=1, xoffset=0,
              yoffset=0, ):
@@ -220,36 +241,78 @@ class Region(Point):
             self.attributes.append(tag)  # this is a string
 
         if maxArea is not None:
-            self.setMaxArea(maxArea)  # maxArea is a number
+            self.set_max_area(maxArea)  # maxArea is a number
 
-    def getTag(self,):
+    def get_tag(self,):
         return self.attributes[self.TAG]
 
-    def setTag(self, tag):
+    def getTag(self,):
+        """Deprecated: use get_tag instead."""
+        import warnings
+        warnings.warn('getTag is deprecated, use get_tag instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.get_tag()
+
+    def set_tag(self, tag):
         self.attributes[self.TAG] = tag
 
-    def getMaxArea(self):
+    def setTag(self, tag):
+        """Deprecated: use set_tag instead."""
+        import warnings
+        warnings.warn('setTag is deprecated, use set_tag instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.set_tag(tag)
+
+    def get_max_area(self):
         """ Returns the Max Area of a Triangle or
         None, if the Max Area has not been set.
         """
-        if self.isMaxArea():
+        if self.is_max_area():
             return self.attributes[1]
         else:
             return None
 
-    def setMaxArea(self, MaxArea):
+    def getMaxArea(self):
+        """Deprecated: use get_max_area instead."""
+        import warnings
+        warnings.warn('getMaxArea is deprecated, use get_max_area instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.get_max_area()
+
+    def set_max_area(self, MaxArea):
         if MaxArea is not None:
-            if self.isMaxArea():
+            if self.is_max_area():
                 self.attributes[self.MAXAREA] = float(MaxArea)
             else:
                 self.attributes.append(float(MaxArea))
 
-    def deleteMaxArea(self):
-        if self.isMaxArea():
+    def setMaxArea(self, MaxArea):
+        """Deprecated: use set_max_area instead."""
+        import warnings
+        warnings.warn('setMaxArea is deprecated, use set_max_area instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.set_max_area(MaxArea)
+
+    def delete_max_area(self):
+        if self.is_max_area():
             self.attributes.pop(self.MAXAREA)
 
-    def isMaxArea(self):
+    def deleteMaxArea(self):
+        """Deprecated: use delete_max_area instead."""
+        import warnings
+        warnings.warn('deleteMaxArea is deprecated, use delete_max_area instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.delete_max_area()
+
+    def is_max_area(self):
         return len(self.attributes) > 1
+
+    def isMaxArea(self):
+        """Deprecated: use is_max_area instead."""
+        import warnings
+        warnings.warn('isMaxArea is deprecated, use is_max_area instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.is_max_area()
 
     def draw(self, canvas, tags, scale=1, xoffset=0, yoffset=0,
              colour="black"):
@@ -279,13 +342,13 @@ class Region(Point):
                                      outline=colour, fill='')
 
     def __repr__(self):
-        if self.isMaxArea():
-            area = self.getMaxArea()
+        if self.is_max_area():
+            area = self.get_max_area()
             return "(%f,%f,%s,%f)" % (self.x, self.y,
-                                      self.getTag(), self.getMaxArea())
+                                      self.get_tag(), self.get_max_area())
         else:
             return "(%f,%f,%s)" % (self.x, self.y,
-                                   self.getTag())
+                                   self.get_tag())
 
 
 class Segment(MeshObject):
@@ -459,23 +522,23 @@ class Pmesh(object):
 
     def __repr__(self):
         return """
-        mesh Triangles: %s 
-        mesh Attribute Titles: %s 
-        mesh Segments: %s 
-        mesh Segment Tags: %s 
-        mesh Vertices: %s 
-        user Segments: %s  
-        user Vertices: %s 
-        holes: %s 
-        regions: %s""" % (self.getTriangulation(),
+        mesh Triangles: %s
+        mesh Attribute Titles: %s
+        mesh Segments: %s
+        mesh Segment Tags: %s
+        mesh Vertices: %s
+        user Segments: %s
+        user Vertices: %s
+        holes: %s
+        regions: %s""" % (self.get_triangulation(),
                           self.attributeTitles,
-                          self.getMeshSegments().tolist(),
-                          self.getMeshSegmentTags(),
-                          self.getMeshVertices().tolist(),
-                          self.getUserSegments(),
-                          self.getUserVertices(),
-                          self.getHoles(),
-                          self.getRegions())
+                          self.get_mesh_segments().tolist(),
+                          self.get_mesh_segment_tags(),
+                          self.get_mesh_vertices().tolist(),
+                          self.get_user_segments(),
+                          self.get_user_vertices(),
+                          self.get_holes(),
+                          self.get_regions())
 
     def __init__(self,
                  userSegments=None,
@@ -567,19 +630,33 @@ class Pmesh(object):
                 self.geo_reference == other.geo_reference)
     
         
-    def addUserPoint(self, pointType, x, y):
+    def add_user_point(self, pointType, x, y):
         if pointType == Vertex:
-            point = self.addUserVertex(x, y)
+            point = self.add_user_vertex(x, y)
         if pointType == Hole:
             point = self._addHole(x, y)
         if pointType == Region:
             point = self._addRegion(x, y)
         return point
 
-    def addUserVertex(self, x, y):
+    def addUserPoint(self, pointType, x, y):
+        """Deprecated: use add_user_point instead."""
+        import warnings
+        warnings.warn('addUserPoint is deprecated, use add_user_point instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.add_user_point(pointType, x, y)
+
+    def add_user_vertex(self, x, y):
         v = Vertex(x, y)
         self.userVertices.append(v)
         return v
+
+    def addUserVertex(self, x, y):
+        """Deprecated: use add_user_vertex instead."""
+        import warnings
+        warnings.warn('addUserVertex is deprecated, use add_user_vertex instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.add_user_vertex(x, y)
 
     def _addHole(self, x, y):
         h = Hole(x, y)
@@ -615,7 +692,7 @@ class Pmesh(object):
                                                             points_geo_ref=geo_reference)
         region = self._addRegion(x, y)
         if tag is not None:
-            region.setTag(tag)
+            region.set_tag(tag)
         return region
 
     def build_grid(self,  vert_rows, vert_columns):
@@ -630,9 +707,9 @@ class Pmesh(object):
 
         for i in range(vert_rows):
             for j in range(vert_columns):
-                self.addUserVertex(j, i)
+                self.add_user_vertex(j, i)
         self.auto_segment()
-        self.generateMesh(mode="Q", minAngle=20.0)
+        self._generateMesh_impl(mode="Q", minAngle=20.0)
 
     def add_vertices(self, point_data):
         """
@@ -705,9 +782,9 @@ class Pmesh(object):
                                              geo_reference=geo_reference,
                                              region=create_region)
         if max_triangle_area is not None:
-            region.setMaxArea(max_triangle_area)
+            region.set_max_area(max_triangle_area)
         if region_tag is not None:
-            region.setTag(region_tag)
+            region.set_tag(region_tag)
 
         return region
 
@@ -761,7 +838,7 @@ class Pmesh(object):
         region_dict['segment_tags'] = self._tag_dict2list(segment_tags, N,
                                                           hole=hole)
 
-        self.addVertsSegs(region_dict)  # this is passing absolute values
+        self.add_verts_segs(region_dict)  # this is passing absolute values
 
         if region is True:
             # get inner point - absolute values
@@ -913,12 +990,12 @@ class Pmesh(object):
         region_dict['segments'] = segments
         region_dict['segment_tags'] = self._tag_dict2list(segment_tags,
                                                           len(segments))
-        self.addVertsSegs(region_dict)
+        self.add_verts_segs(region_dict)
 
-    def addVertsSegs(self, outlineDict):
+    def add_verts_segs(self, outlineDict):
         """
         Add out-line (user Mesh) attributes given a dictionary of the lists
-        points: [(x1,y1),(x2,y2),...] (Tuples of doubles)  
+        points: [(x1,y1),(x2,y2),...] (Tuples of doubles)
         segments: [(point1,point2),(p3,p4),...] (Tuples of integers)
         segment_tags: [S1Tag, S2Tag, ...] (list of strings)
 
@@ -949,15 +1026,29 @@ class Pmesh(object):
                 segObject.set_tag(seg_tag)
             self.userSegments.append(segObject)
 
-    def get_triangle_count(self):
-        return len(self.getTriangulation())
+    def addVertsSegs(self, outlineDict):
+        """Deprecated: use add_verts_segs instead."""
+        import warnings
+        warnings.warn('addVertsSegs is deprecated, use add_verts_segs instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.add_verts_segs(outlineDict)
 
-    def getUserVertices(self):
+    def get_triangle_count(self):
+        return len(self.get_triangulation())
+
+    def get_user_vertices_list(self):
         """
         Note: The x,y values will be relative to the mesh geo_reference
         This returns a list of vertex objects
         """
         return self.userVertices
+
+    def getUserVertices(self):
+        """Deprecated: use get_user_vertices_list instead."""
+        import warnings
+        warnings.warn('getUserVertices is deprecated, use get_user_vertices_list instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.get_user_vertices_list()
 
     def get_user_vertices(self, absolute=True):
         """
@@ -971,66 +1062,150 @@ class Pmesh(object):
         spat = Geospatial_data(pointlist, geo_reference=self.geo_reference)
         return spat.get_data_points(absolute=absolute)
 
-    def getUserSegments(self):
+    def get_user_segments(self):
         allSegments = self.userSegments + self.alphaUserSegments
         # print "self.userSegments",self.userSegments
         # print "self.alphaUserSegments",self.alphaUserSegments
         # print "allSegments",allSegments
         return allSegments
 
-    def deleteUserSegments(self, seg):
+    def getUserSegments(self):
+        """Deprecated: use get_user_segments instead."""
+        import warnings
+        warnings.warn('getUserSegments is deprecated, use get_user_segments instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.get_user_segments()
+
+    def delete_user_segments(self, seg):
         if self.userSegments.count(seg) == 0:
             self.alphaUserSegments.remove(seg)
             pass
         else:
             self.userSegments.remove(seg)
 
-    def clearUserSegments(self):
+    def deleteUserSegments(self, seg):
+        """Deprecated: use delete_user_segments instead."""
+        import warnings
+        warnings.warn('deleteUserSegments is deprecated, use delete_user_segments instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.delete_user_segments(seg)
+
+    def clear_user_segments(self):
         self.userSegments = []
         self.alphaUserSegments = []
 
+    def clearUserSegments(self):
+        """Deprecated: use clear_user_segments instead."""
+        import warnings
+        warnings.warn('clearUserSegments is deprecated, use clear_user_segments instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.clear_user_segments()
+
     # FIXME see where this is used. return an array instead
-    def getTriangulation(self):
+    def get_triangulation(self):
         # return self.meshTriangles
         return self.tri_mesh.triangles.tolist()
 
-    def getMeshVertices(self):
+    def getTriangulation(self):
+        """Deprecated: use get_triangulation instead."""
+        import warnings
+        warnings.warn('getTriangulation is deprecated, use get_triangulation instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.get_triangulation()
+
+    def get_mesh_vertices(self):
         # return self.meshVertices
         return self.tri_mesh.vertices
 
-    def getMeshVerticeAttributes(self):
+    def getMeshVertices(self):
+        """Deprecated: use get_mesh_vertices instead."""
+        import warnings
+        warnings.warn('getMeshVertices is deprecated, use get_mesh_vertices instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.get_mesh_vertices()
+
+    def get_mesh_vertice_attributes(self):
         # return self.meshVertices
         return self.tri_mesh.vertex_attributes
 
-    def getMeshSegments(self):
+    def getMeshVerticeAttributes(self):
+        """Deprecated: use get_mesh_vertice_attributes instead."""
+        import warnings
+        warnings.warn('getMeshVerticeAttributes is deprecated, use get_mesh_vertice_attributes instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.get_mesh_vertice_attributes()
+
+    def get_mesh_segments(self):
         # return self.meshSegments
         return self.tri_mesh.segments
 
-    def getMeshSegmentTags(self):
+    def getMeshSegments(self):
+        """Deprecated: use get_mesh_segments instead."""
+        import warnings
+        warnings.warn('getMeshSegments is deprecated, use get_mesh_segments instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.get_mesh_segments()
+
+    def get_mesh_segment_tags(self):
         # return self.meshSegments
         return self.tri_mesh.segment_tags
 
-    def getHoles(self):
+    def getMeshSegmentTags(self):
+        """Deprecated: use get_mesh_segment_tags instead."""
+        import warnings
+        warnings.warn('getMeshSegmentTags is deprecated, use get_mesh_segment_tags instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.get_mesh_segment_tags()
+
+    def get_holes(self):
         return self.holes
 
-    def getRegions(self):
+    def getHoles(self):
+        """Deprecated: use get_holes instead."""
+        import warnings
+        warnings.warn('getHoles is deprecated, use get_holes instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.get_holes()
+
+    def get_regions(self):
         return self.regions
 
-    def isTriangulation(self):
+    def getRegions(self):
+        """Deprecated: use get_regions instead."""
+        import warnings
+        warnings.warn('getRegions is deprecated, use get_regions instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.get_regions()
+
+    def is_triangulation(self):
         if self.meshVertices == []:
             return False
         else:
             return True
 
-    def addUserSegment(self, v1, v2):
+    def isTriangulation(self):
+        """Deprecated: use is_triangulation instead."""
+        import warnings
+        warnings.warn('isTriangulation is deprecated, use is_triangulation instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.is_triangulation()
+
+    def add_user_segment(self, v1, v2):
         """
         PRECON: A segment between the two vertices is not already present.
-        Check by calling isUserSegmentNew before calling this function.
+        Check by calling is_user_segment_new before calling this function.
 
         """
         s = Segment(v1, v2)
         self.userSegments.append(s)
         return s
+
+    def addUserSegment(self, v1, v2):
+        """Deprecated: use add_user_segment instead."""
+        import warnings
+        warnings.warn('addUserSegment is deprecated, use add_user_segment instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.add_user_segment(v1, v2)
 
     def generate_mesh(self,
                       maximum_triangle_area="",
@@ -1040,13 +1215,24 @@ class Pmesh(object):
             silent = ''
         else:
             silent = 'Q'
-        self.generateMesh(mode=silent + "pzq"+str(minimum_triangle_angle)
-                          + "a"+str(maximum_triangle_area)
-                          + "a", verbose=verbose)
+        self._generateMesh_impl(mode=silent + "pzq"+str(minimum_triangle_angle)
+                                + "a"+str(maximum_triangle_area)
+                                + "a", verbose=verbose)
         # The last a is so areas for regions will be used
 
     def generateMesh(self, mode=None, maxArea=None, minAngle=None,
                      isRegionalMaxAreas=True, verbose=False):
+        """Deprecated: use generate_mesh instead."""
+        import warnings
+        warnings.warn('generateMesh is deprecated, use generate_mesh instead',
+                      DeprecationWarning, stacklevel=2)
+        return self._generateMesh_impl(mode=mode, maxArea=maxArea,
+                                       minAngle=minAngle,
+                                       isRegionalMaxAreas=isRegionalMaxAreas,
+                                       verbose=verbose)
+
+    def _generateMesh_impl(self, mode=None, maxArea=None, minAngle=None,
+                           isRegionalMaxAreas=True, verbose=False):
         """
         Generate a new mesh based on current user values, holes, and regions.
 
@@ -1166,25 +1352,38 @@ class Pmesh(object):
         # print "################  FROM TRIANGLE"
         # print "generatedMesh",generatedMesh
         # print "##################"
-        self.setTriangulation(generatedMesh)
+        self.set_triangulation(generatedMesh)
 
-    def clearTriangulation(self):
-
+    def clear_triangulation(self):
         # Clear the current generated mesh values
         self.meshTriangles = []
         self.meshSegments = []
         self.meshVertices = []
 
-    def removeDuplicatedUserVertices(self):
+    def clearTriangulation(self):
+        """Deprecated: use clear_triangulation instead."""
+        import warnings
+        warnings.warn('clearTriangulation is deprecated, use clear_triangulation instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.clear_triangulation()
+
+    def remove_duplicated_user_vertices(self):
         """Pre-condition: There are no user segments
         This function will keep the first duplicate
         """
-        assert self.getUserSegments() == []
-        self.userVertices, counter = self.removeDuplicatedVertices(
+        assert self.get_user_segments() == []
+        self.userVertices, counter = self.remove_duplicated_vertices(
             self.userVertices)
         return counter
 
-    def removeDuplicatedVertices(self, Vertices):
+    def removeDuplicatedUserVertices(self):
+        """Deprecated: use remove_duplicated_user_vertices instead."""
+        import warnings
+        warnings.warn('removeDuplicatedUserVertices is deprecated, use remove_duplicated_user_vertices instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.remove_duplicated_user_vertices()
+
+    def remove_duplicated_vertices(self, Vertices):
         """
         This function will keep the first duplicate, remove all others
         Precondition: Each vertex has a dupindex, which is the list
@@ -1201,7 +1400,7 @@ class Pmesh(object):
         t = list(Vertices)
 
         # Using https://docs.python.org/3/howto/sorting.html
-        t.sort(key=cmp_to_key(Point.cmp_xy)) # For Python 3.x
+        t.sort(key=cmp_to_key(Point.cmp_xy))  # For Python 3.x
         #t.sort(Point.cmp_xy)  # For Python2.7
 
         length = len(t)
@@ -1228,12 +1427,19 @@ class Pmesh(object):
             del v.dupindex
         return Vertices, counter
 
+    def removeDuplicatedVertices(self, Vertices):
+        """Deprecated: use remove_duplicated_vertices instead."""
+        import warnings
+        warnings.warn('removeDuplicatedVertices is deprecated, use remove_duplicated_vertices instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.remove_duplicated_vertices(Vertices)
+
     # FIXME (DSG-DSG) Move this to geospatial
-    def thinoutVertices(self, delta):
+    def thinout_vertices(self, delta):
         """Pre-condition: There are no user segments
         This function will keep the first duplicate
         """
-        assert self.getUserSegments() == []
+        assert self.get_user_segments() == []
         #t = self.userVertices
         #self.userVertices =[]
         boxedVertices = {}
@@ -1252,46 +1458,67 @@ class Pmesh(object):
             bestVert = None
             tagVert = Vertex(tag[0], tag[1])
             for v in verts:
-                dist = v.DistanceToPoint(tagVert)
+                dist = v.distance_to_point(tagVert)
                 if (dist < min):
                     min = dist
                     bestVert = v
             thinnedUserVertices.append(bestVert)
         self.userVertices = thinnedUserVertices
 
-    def isUserSegmentNew(self, v1, v2):
-        identicalSegs = [x for x in self.getUserSegments()
+    def thinoutVertices(self, delta):
+        """Deprecated: use thinout_vertices instead."""
+        import warnings
+        warnings.warn('thinoutVertices is deprecated, use thinout_vertices instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.thinout_vertices(delta)
+
+    def is_user_segment_new(self, v1, v2):
+        identicalSegs = [x for x in self.get_user_segments()
                          if (x.vertices[0] == v1 and x.vertices[1] == v2)
                          or (x.vertices[0] == v2 and x.vertices[1] == v1)]
 
         return len(identicalSegs) == 0
 
-    def deleteSegsOfVertex(self, delVertex):
+    def isUserSegmentNew(self, v1, v2):
+        """Deprecated: use is_user_segment_new instead."""
+        import warnings
+        warnings.warn('isUserSegmentNew is deprecated, use is_user_segment_new instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.is_user_segment_new(v1, v2)
+
+    def delete_segs_of_vertex(self, delVertex):
         """
         Delete this vertex and any segments that connect to it.
         """
         # Find segments that connect to delVertex
         deletedSegments = []
-        for seg in self.getUserSegments():
+        for seg in self.get_user_segments():
             if (delVertex in seg.vertices):
                 deletedSegments.append(seg)
         # Delete segments that connect to delVertex
         for seg in deletedSegments:
-            self.deleteUserSegments(seg)
+            self.delete_user_segments(seg)
         return deletedSegments
 
-    def deleteMeshObject(self, MeshObject):
+    def deleteSegsOfVertex(self, delVertex):
+        """Deprecated: use delete_segs_of_vertex instead."""
+        import warnings
+        warnings.warn('deleteSegsOfVertex is deprecated, use delete_segs_of_vertex instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.delete_segs_of_vertex(delVertex)
+
+    def delete_mesh_object(self, MeshObject):
         """
         Returns a list of all objects that were removed
         """
         deletedObs = []
         if isinstance(MeshObject, Vertex):
-            deletedObs = self.deleteSegsOfVertex(MeshObject)
+            deletedObs = self.delete_segs_of_vertex(MeshObject)
             deletedObs.append(MeshObject)
             self.userVertices.remove(MeshObject)
         elif isinstance(MeshObject, Segment):
             deletedObs.append(MeshObject)
-            self.deleteUserSegments(MeshObject)
+            self.delete_user_segments(MeshObject)
         elif isinstance(MeshObject, Hole):
             deletedObs.append(MeshObject)
             self.holes.remove(MeshObject)
@@ -1299,6 +1526,13 @@ class Pmesh(object):
             deletedObs.append(MeshObject)
             self.regions.remove(MeshObject)
         return deletedObs
+
+    def deleteMeshObject(self, MeshObject):
+        """Deprecated: use delete_mesh_object instead."""
+        import warnings
+        warnings.warn('deleteMeshObject is deprecated, use delete_mesh_object instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.delete_mesh_object(MeshObject)
 
     def Mesh2triangList(self, userVertices=None,
                         userSegments=None,
@@ -1318,13 +1552,13 @@ class Pmesh(object):
         Used to produce output to triangle
         """
         if userVertices is None:
-            userVertices = self.getUserVertices()
+            userVertices = self.get_user_vertices_list()
         if userSegments is None:
-            userSegments = self.getUserSegments()
+            userSegments = self.get_user_segments()
         if holes is None:
-            holes = self.getHoles()
+            holes = self.get_holes()
         if regions is None:
-            regions = self.getRegions()
+            regions = self.get_regions()
 
         meshDict = {}
 
@@ -1355,11 +1589,11 @@ class Pmesh(object):
 
         regionlist = []
         for region in regions:
-            if (region.getMaxArea() != None):
-                regionlist.append((region.x, region.y, region.getTag(),
-                                   region.getMaxArea()))
+            if (region.get_max_area() != None):
+                regionlist.append((region.x, region.y, region.get_tag(),
+                                   region.get_max_area()))
             else:
-                regionlist.append((region.x, region.y, region.getTag()))
+                regionlist.append((region.x, region.y, region.get_tag()))
         meshDict['regionlist'] = regionlist
         # print "*(*("
         # print meshDict
@@ -1436,11 +1670,11 @@ class Pmesh(object):
             dic[element] = dic_mesh[element]
         return dic
 
-    def setTriangulation(self, genDict):
+    def set_triangulation(self, genDict):
         """
         Set the mesh attributes given a dictionary of the lists
-        returned from the triang module       
-        generated point list: [(x1,y1),(x2,y2),...] (Tuples of doubles)  
+        returned from the triang module
+        generated point list: [(x1,y1),(x2,y2),...] (Tuples of doubles)
         generated point attribute list:[(P1att1,P1attt2, ...),
             (P2att1,P2attt2,...),...]- not implemented
         generated point attribute title list:[A1Title, A2Title ...]
@@ -1462,10 +1696,17 @@ class Pmesh(object):
                 'generatedtriangleneighborlist'], genDict['generatedsegmentmarkerlist'], genDict['generatedpointattributelist'], genDict['generatedpointattributetitlelist']
         )
 
-    def setMesh(self, genDict):
+    def setTriangulation(self, genDict):
+        """Deprecated: use set_triangulation instead."""
+        import warnings
+        warnings.warn('setTriangulation is deprecated, use set_triangulation instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.set_triangulation(genDict)
+
+    def set_mesh(self, genDict):
         """
         Set the user Mesh attributes given a dictionary of the lists
-        point list: [(x1,y1),(x2,y2),...] (Tuples of doubles)  
+        point list: [(x1,y1),(x2,y2),...] (Tuples of doubles)
         point attribute list:[(P1att1,P1attt2, ...),(P2att1,P2attt2,...),...]
         segment list: [(point1,point2),(p3,p4),...] (Tuples of integers)
         segment tag list: [S1Tag, S2Tag, ...] (list of ints)
@@ -1476,7 +1717,7 @@ class Pmesh(object):
         mesh is an instance of a mesh object
         """
         # Clear the current user mesh values
-        self.clearUserSegments()
+        self.clear_user_segments()
         self.userVertices = []
         self.Holes = []
         self.Regions = []
@@ -1531,6 +1772,13 @@ class Pmesh(object):
             #index +=1
             self.regions.append(Object)
 
+    def setMesh(self, genDict):
+        """Deprecated: use set_mesh instead."""
+        import warnings
+        warnings.warn('setMesh is deprecated, use set_mesh instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.set_mesh(genDict)
+
     def Testauto_segment(self):
         newsegs = []
         s1 = Segment(self.userVertices[0],
@@ -1539,20 +1787,27 @@ class Pmesh(object):
                      self.userVertices[2])
         s3 = Segment(self.userVertices[2],
                      self.userVertices[1])
-        if self.isUserSegmentNew(s1.vertices[0], s1.vertices[1]):
+        if self.is_user_segment_new(s1.vertices[0], s1.vertices[1]):
             newsegs.append(s1)
-        if self.isUserSegmentNew(s2.vertices[0], s2.vertices[1]):
+        if self.is_user_segment_new(s2.vertices[0], s2.vertices[1]):
             newsegs.append(s2)
-        if self.isUserSegmentNew(s3.vertices[0], s3.vertices[1]):
+        if self.is_user_segment_new(s3.vertices[0], s3.vertices[1]):
             newsegs.append(s3)
         # DSG!!!
         self.userSegments.extend(newsegs)
         return newsegs
 
-    def savePickle(self, currentName):
+    def save_pickle(self, currentName):
         fd = open(currentName, 'w')
         pickle.dump(self, fd)
         fd.close()
+
+    def savePickle(self, currentName):
+        """Deprecated: use save_pickle instead."""
+        import warnings
+        warnings.warn('savePickle is deprecated, use save_pickle instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.save_pickle(currentName)
 
     def auto_segmentFilter(self, raw_boundary=True,
                            remove_holes=False,
@@ -1588,7 +1843,7 @@ class Pmesh(object):
         """
         """
         points = []
-        for vertex in self.getUserVertices():
+        for vertex in self.get_user_vertices_list():
             points.append((vertex.x, vertex.y))
         self.shape = anuga.alpha_shape.alpha_shape.Alpha_Shape(points,
                                                                alpha=alpha)
@@ -1632,7 +1887,7 @@ class Pmesh(object):
         self.alphaUserSegments = alpha_segs_no_user_segs
         return alpha_segs_no_user_segs, segs2delete, optimum_alpha
 
-    def representedAlphaUserSegment(self, v1, v2):
+    def represented_alpha_user_segment(self, v1, v2):
         identicalSegs = [x for x in self.alphaUserSegments
                          if (x.vertices[0] == v1 and x.vertices[1] == v2)
                          or (x.vertices[0] == v2 and x.vertices[1] == v1)]
@@ -1643,7 +1898,14 @@ class Pmesh(object):
             # Only return the first one.
             return identicalSegs[0]
 
-    def representedUserSegment(self, v1, v2):
+    def representedAlphaUserSegment(self, v1, v2):
+        """Deprecated: use represented_alpha_user_segment instead."""
+        import warnings
+        warnings.warn('representedAlphaUserSegment is deprecated, use represented_alpha_user_segment instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.represented_alpha_user_segment(v1, v2)
+
+    def represented_user_segment(self, v1, v2):
         identicalSegs = [x for x in self.userSegments
                          if (x.vertices[0] == v1 and x.vertices[1] == v2)
                          or (x.vertices[0] == v2 and x.vertices[1] == v1)]
@@ -1654,7 +1916,14 @@ class Pmesh(object):
             # Only return the first one.
             return identicalSegs[0]
 
-    def joinVertices(self):
+    def representedUserSegment(self, v1, v2):
+        """Deprecated: use represented_user_segment instead."""
+        import warnings
+        warnings.warn('representedUserSegment is deprecated, use represented_user_segment instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.represented_user_segment(v1, v2)
+
+    def join_vertices(self):
         """
         Return list of segments connecting all userVertices
         in the order they were given
@@ -1666,14 +1935,14 @@ class Pmesh(object):
 
         v1 = self.userVertices[0]
         for v2 in self.userVertices[1:]:
-            if self.isUserSegmentNew(v1, v2):
+            if self.is_user_segment_new(v1, v2):
                 newseg = Segment(v1, v2)
                 newsegs.append(newseg)
             v1 = v2
 
         # Connect last point to the first
         v2 = self.userVertices[0]
-        if self.isUserSegmentNew(v1, v2):
+        if self.is_user_segment_new(v1, v2):
             newseg = Segment(v1, v2)
             newsegs.append(newseg)
 
@@ -1682,11 +1951,18 @@ class Pmesh(object):
         self.userSegments.extend(newsegs)
         return newsegs
 
-    def normaliseMesh(self, scale, offset, height_scale):
+    def joinVertices(self):
+        """Deprecated: use join_vertices instead."""
+        import warnings
+        warnings.warn('joinVertices is deprecated, use join_vertices instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.join_vertices()
+
+    def normalise_mesh(self, scale, offset, height_scale):
         [xmin, ymin, xmax, ymax] = self.boxsize()
-        [attmin0, attmax0] = self.maxMinVertAtt(0)
+        [attmin0, attmax0] = self.max_min_vert_att(0)
         # print "[attmin0, attmax0]" ,[attmin0, attmax0]
-        [attmin1, attmax1] = self.maxMinVertAtt(1)
+        [attmin1, attmax1] = self.max_min_vert_att(1)
         #print [xmin, ymin, xmax, ymax]
         xrange = xmax - xmin
         yrange = ymax - ymin
@@ -1695,7 +1971,7 @@ class Pmesh(object):
         else:
             min, max = ymin, ymax
 
-        for obj in self.getUserVertices():
+        for obj in self.get_user_vertices_list():
             obj.x = (obj.x - xmin)/ (max - min)*scale + offset
             obj.y = (obj.y - ymin)/ (max - min)*scale + offset
             if len(obj.attributes) > 0 and attmin0 != attmax0:
@@ -1703,7 +1979,7 @@ class Pmesh(object):
             if len(obj.attributes) > 1 and attmin1 != attmax1:
                 obj.attributes[1] = (obj.attributes[1]-attmin1)/(attmax1-attmin1)*height_scale
 
-        for obj in self.getMeshVertices():
+        for obj in self.get_mesh_vertices():
             obj.x = (obj.x - xmin)/ (max - min)*scale + offset
             obj.y = (obj.y - ymin)/ (max - min)*scale + offset
             if len(obj.attributes) > 0 and attmin0 != attmax0:
@@ -1711,20 +1987,27 @@ class Pmesh(object):
             if len(obj.attributes) > 1 and attmin1 != attmax1:
                 obj.attributes[1] = (obj.attributes[1]-attmin1)/(attmax1-attmin1)*height_scale
 
-        for obj in self.getHoles():
+        for obj in self.get_holes():
             obj.x = (obj.x - xmin)/ (max - min)*scale + offset
             obj.y = (obj.y - ymin)/ (max - min)*scale + offset
-        for obj in self.getRegions():
+        for obj in self.get_regions():
             obj.x = (obj.x - xmin)/ (max - min)*scale + offset
             obj.y = (obj.y - ymin)/ (max - min)*scale + offset
         [xmin, ymin, xmax, ymax] = self.boxsize()
         #print [xmin, ymin, xmax, ymax]
 
-    def boxsizeVerts(self):
+    def normaliseMesh(self, scale, offset, height_scale):
+        """Deprecated: use normalise_mesh instead."""
+        import warnings
+        warnings.warn('normaliseMesh is deprecated, use normalise_mesh instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.normalise_mesh(scale, offset, height_scale)
+
+    def boxsize_verts(self):
         """
         Returns a list of verts denoting a box or triangle that contains
         verts on the xmin, ymin, xmax and ymax axis.
-        Structure: list of verts 
+        Structure: list of verts
         """
 
         large = kinds.default_float_kind.MAX
@@ -1746,12 +2029,19 @@ class Pmesh(object):
             if vertex.y > ymax:
                 ymax = vertex.y
                 ymaxVert = vertex
-        verts, count = self.removeDuplicatedVertices([xminVert,
-                                                      xmaxVert,
-                                                      yminVert,
-                                                      ymaxVert])
+        verts, count = self.remove_duplicated_vertices([xminVert,
+                                                        xmaxVert,
+                                                        yminVert,
+                                                        ymaxVert])
 
         return verts
+
+    def boxsizeVerts(self):
+        """Deprecated: use boxsize_verts instead."""
+        import warnings
+        warnings.warn('boxsizeVerts is deprecated, use boxsize_verts instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.boxsize_verts()
 
     def boxsize(self):
         """
@@ -1777,11 +2067,11 @@ class Pmesh(object):
                 ymax = vertex.y
         return [xmin, ymin, xmax, ymax]
 
-    def maxMinVertAtt(self, iatt):
+    def max_min_vert_att(self, iatt):
         """
         Returns a list denoting a box that contains the entire structure
         of vertices
-        Structure: [xmin, ymin, xmax, ymax] 
+        Structure: [xmin, ymin, xmax, ymax]
         """
 
         large = kinds.default_float_kind.MAX
@@ -1800,6 +2090,13 @@ class Pmesh(object):
                 if vertex.attributes[iatt] > max:
                     max = vertex.attributes[iatt]
         return [min, max]
+
+    def maxMinVertAtt(self, iatt):
+        """Deprecated: use max_min_vert_att instead."""
+        import warnings
+        warnings.warn('maxMinVertAtt is deprecated, use max_min_vert_att instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.max_min_vert_att(iatt)
 
     def scaleoffset(self, WIDTH, HEIGHT):
         """
@@ -1822,17 +2119,24 @@ class Pmesh(object):
         yoffset = HEIGHT - b
         return [SCALE, xoffset, yoffset]
 
-    def exportASCIIobj(self, ofile):
+    def export_ascii_obj(self, ofile):
         """
         export a file, ofile, with the format
          lines:  v <x> <y> <first attribute>
         f <vertex #>  <vertex #> <vertex #> (of the triangles)
         """
         fd = open(ofile, 'w')
-        self.writeASCIIobj(fd)
+        self.write_ascii_obj(fd)
         fd.close()
 
-    def writeASCIIobj(self, fd):
+    def exportASCIIobj(self, ofile):
+        """Deprecated: use export_ascii_obj instead."""
+        import warnings
+        warnings.warn('exportASCIIobj is deprecated, use export_ascii_obj instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.export_ascii_obj(ofile)
+
+    def write_ascii_obj(self, fd):
         fd.write(" # Triangulation as an obj file\n")
         numVert = str(len(self.meshVertices))
 
@@ -1852,20 +2156,34 @@ class Pmesh(object):
                      + str(tri.vertices[1].index1) + " "
                      + str(tri.vertices[2].index1) + "\n")
 
-    def exportASCIIsegmentoutlinefile(self, ofile):
+    def writeASCIIobj(self, fd):
+        """Deprecated: use write_ascii_obj instead."""
+        import warnings
+        warnings.warn('writeASCIIobj is deprecated, use write_ascii_obj instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.write_ascii_obj(fd)
+
+    def export_ascii_segment_outline_file(self, ofile):
         """Write the boundary user mesh info, eg
          vertices that are connected to segments,
          segments
         """
 
         verts = {}
-        for seg in self.getUserSegments():
+        for seg in self.get_user_segments():
             verts[seg.vertices[0]] = seg.vertices[0]
             verts[seg.vertices[1]] = seg.vertices[1]
         meshDict = self.Mesh2IOOutlineDict(userVertices=list(verts.values()))
         export_mesh_file(ofile, meshDict)
 
-        # exportASCIImeshfile   - this function is used
+    def exportASCIIsegmentoutlinefile(self, ofile):
+        """Deprecated: use export_ascii_segment_outline_file instead."""
+        import warnings
+        warnings.warn('exportASCIIsegmentoutlinefile is deprecated, use export_ascii_segment_outline_file instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.export_ascii_segment_outline_file(ofile)
+
+    # exportASCIImeshfile   - this function is used
     def export_mesh_file(self, ofile):
         """
         export a file, ofile, with the format
@@ -1878,7 +2196,7 @@ class Pmesh(object):
     # One for the outline points.
     # One for the mesh points.
     # Note: this function is not in the gui
-    def exportPointsFile(self, ofile):
+    def export_points_file(self, ofile):
         """
         export a points file, ofile.
 
@@ -1899,6 +2217,13 @@ class Pmesh(object):
                                   geo_reference=self.geo_reference)
 
         geo.export_points_file(ofile, absolute=True)
+
+    def exportPointsFile(self, ofile):
+        """Deprecated: use export_points_file instead."""
+        import warnings
+        warnings.warn('exportPointsFile is deprecated, use export_points_file instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.export_points_file(ofile)
 
     def import_ungenerate_file(self, ofile, tag=None, region_tag=None):
         """
@@ -1923,7 +2248,7 @@ class Pmesh(object):
             Segment.set_default_tag(str(tag))
 
         if region_tag is None:
-            self.addVertsSegs(dict)
+            self.add_verts_segs(dict)
         else:
             if not isinstance(region_tag, list):
                 region_tag = [region_tag]*len(dict['polygons'])
@@ -2025,13 +2350,13 @@ class Pmesh(object):
         """
 
         if userVertices is None:
-            userVertices = self.getUserVertices()
+            userVertices = self.get_user_vertices_list()
         if userSegments is None:
-            userSegments = self.getUserSegments()
+            userSegments = self.get_user_segments()
         if holes is None:
-            holes = self.getHoles()
+            holes = self.get_holes()
         if regions is None:
-            regions = self.getRegions()
+            regions = self.get_regions()
 
         meshDict = {}
         # print "userVertices",userVertices
@@ -2066,10 +2391,10 @@ class Pmesh(object):
         regionmaxarealist = []
         for region in regions:
             regionlist.append([region.x, region.y])
-            regiontaglist.append(region.getTag())
+            regiontaglist.append(region.get_tag())
 
-            if (region.getMaxArea() != None):
-                regionmaxarealist.append(region.getMaxArea())
+            if (region.get_max_area() != None):
+                regionmaxarealist.append(region.get_max_area())
             else:
                 regionmaxarealist.append(NOMAXAREA)
         meshDict['regions'] = regionlist
@@ -2103,7 +2428,7 @@ class Pmesh(object):
         mesh is an instance of a mesh object
         """
         # Clear the current user mesh values
-        self.clearUserSegments()
+        self.clear_user_segments()
         self.userVertices = []
         self.Holes = []
         self.Regions = []
@@ -2168,7 +2493,7 @@ class Pmesh(object):
             self.regions.append(Object)
 
 
-def importMeshFromFile(ofile):
+def import_mesh_from_file(ofile):
     """returns a mesh object, made from a points file or .tsh/.msh file
     Often raises IOError,RuntimeError
     """
@@ -2186,7 +2511,7 @@ def importMeshFromFile(ofile):
         dict['holes'] = []
         newmesh = Pmesh(geo_reference=geospatial.geo_reference)
         newmesh.IOOutline2Mesh(dict)
-        counter = newmesh.removeDuplicatedUserVertices()
+        counter = newmesh.remove_duplicated_user_vertices()
         if (counter > 0):
             log.critical(
                 "%i duplicate vertices removed from dataset" % counter)
@@ -2208,11 +2533,27 @@ def importMeshFromFile(ofile):
     return newmesh
 
 
-def loadPickle(currentName):
+def importMeshFromFile(ofile):
+    """Deprecated: use import_mesh_from_file instead."""
+    import warnings
+    warnings.warn('importMeshFromFile is deprecated, use import_mesh_from_file instead',
+                  DeprecationWarning, stacklevel=2)
+    return import_mesh_from_file(ofile)
+
+
+def load_pickle(currentName):
     fd = open(currentName)
     mesh = pickle.load(fd)
     fd.close()
     return mesh
+
+
+def loadPickle(currentName):
+    """Deprecated: use load_pickle instead."""
+    import warnings
+    warnings.warn('loadPickle is deprecated, use load_pickle instead',
+                  DeprecationWarning, stacklevel=2)
+    return load_pickle(currentName)
 
 
 def square_outline(side_length=1, up="top", left="left", right="right",

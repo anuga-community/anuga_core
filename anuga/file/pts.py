@@ -13,13 +13,13 @@ def load_pts_as_polygon(points_file, minimum_triangle_angle=3.0):
              returns one polygon.
     """
 
-    from anuga.pmesh.mesh import importMeshFromFile
+    from anuga.pmesh.mesh import import_mesh_from_file
     from anuga.shallow_water.shallow_water_domain import Domain
 
-    mesh = importMeshFromFile(points_file)
+    mesh = import_mesh_from_file(points_file)
     mesh.auto_segment()
     mesh.exportASCIIsegmentoutlinefile("outline.tsh")
-    mesh2 = importMeshFromFile("outline.tsh")
+    mesh2 = import_mesh_from_file("outline.tsh")
     mesh2.generate_mesh(maximum_triangle_area=1000000000,
                         minimum_triangle_angle=minimum_triangle_angle,
                         verbose=False)

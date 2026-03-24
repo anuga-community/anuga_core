@@ -159,31 +159,30 @@ docs.  Introduce config dataclasses or use `**kwargs` consolidation.
 `anuga/pmesh/mesh.py` has 49 camelCase methods alongside 31 snake_case ones.
 The module is not in the primary public API but is used internally.
 
-- [ ] Create snake_case aliases for all camelCase public methods
-- [ ] Add deprecation warnings to the camelCase names
-- [ ] Update all internal callers to use the snake_case names
-- [ ] `anuga/pmesh/visualmesh.py` — same treatment (11 camelCase methods)
+- [x] Create snake_case aliases for all camelCase public methods — 39 methods renamed; camelCase kept as deprecated wrappers *(Done 2026-03-24)*
+- [x] Add deprecation warnings to the camelCase names *(Done 2026-03-24)*
+- [x] Update all internal callers to use the snake_case names — mesh.py self-calls, visualmesh.py, test_mesh.py, test_ungenerate.py, benchmark_least_squares.py, timing.py *(Done 2026-03-24)*
+- [ ] `anuga/pmesh/visualmesh.py` — camelCase methods inside vAbstract/vVertex/vRegion classes not yet treated (GUI-only code, deferred)
 
 ### 4.3  Deprecate legacy camelCase methods in shallow_water_domain
 
 `anuga/shallow_water/shallow_water_domain.py` has 7 legacy camelCase methods
 that are part of the public-facing API.
 
-- [ ] Identify the 7 methods (grep for `def [A-Z]` in that file)
-- [ ] Add `warnings.warn(..., DeprecationWarning, stacklevel=2)` wrappers
-- [ ] Document the snake_case replacements in the deprecation message
+- [x] Identify the methods — located in `generic_domain.py` (not shallow_water_domain.py): `get_CFL` and `set_CFL` *(Done 2026-03-24)*
+- [x] Add `warnings.warn(..., DeprecationWarning, stacklevel=2)` wrappers to `get_CFL` and `set_CFL` *(Done 2026-03-24)*
+- [x] `set_cfl` promoted from alias to real method; `set_CFL` is now a deprecated wrapper *(Done 2026-03-24)*
 
 ### 4.4  Add `__all__` to major public modules
 
 Only 2 files in the codebase currently define `__all__`.  Adding it to the
 main public modules makes the API contract explicit and improves IDE support.
 
-- [ ] `anuga/__init__.py` — this is the primary public API (~1000 lines);
-      audit and add `__all__` listing all intended public names
-- [ ] `anuga/shallow_water/__init__.py`
-- [ ] `anuga/operators/__init__.py`
-- [ ] `anuga/structures/__init__.py`
-- [ ] `anuga/file/__init__.py`
+- [x] `anuga/__init__.py` — added 154-name `__all__` covering all public exports *(Done 2026-03-24)*
+- [x] `anuga/shallow_water/__init__.py` — added `__all__ = ['test']` *(Done 2026-03-24)*
+- [x] `anuga/operators/__init__.py` — added `__all__ = ['test']` *(Done 2026-03-24)*
+- [x] `anuga/structures/__init__.py` — added `__all__ = ['test']` *(Done 2026-03-24)*
+- [x] `anuga/file/__init__.py` — added `__all__ = ['test']` *(Done 2026-03-24)*
 
 ---
 
@@ -246,7 +245,7 @@ Many operator `__call__` and `update` methods have no documented return value.
 | 1 — Quick wins | 14 | 12 |
 | 2 — Correctness | 6 | 6 |
 | 3 — Test coverage | 17 | 15 |
-| 4 — API quality | 13 | 0 |
+| 4 — API quality | 13 | 11 |
 | 5 — Performance | 5 | 0 |
 | 6 — Documentation | 5 | 0 |
-| **Total** | **60** | **33** |
+| **Total** | **60** | **44** |

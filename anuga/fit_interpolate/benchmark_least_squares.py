@@ -275,39 +275,39 @@ class BenchmarkLeastSquares(object):
         # don't pass in the geo ref.
         # it is applied in domain
         m = Pmesh() #geo_reference=geo)
-        m.addUserVertex(0,0)
-        m.addUserVertex(1.0,0)
-        m.addUserVertex(0,1.0)
-        m.addUserVertex(1.0,1.0)
-        
-        m.auto_segment(alpha = 100 )
+        m.add_user_vertex(0, 0)
+        m.add_user_vertex(1.0, 0)
+        m.add_user_vertex(0, 1.0)
+        m.add_user_vertex(1.0, 1.0)
+
+        m.auto_segment(alpha=100)
 
         if is_segments:
             dict = {}
-            dict['points'] = [[.10,.10],[.90,.20]]
-            dict['segments'] = [[0,1]] 
-            dict['segment_tags'] = ['wall1']   
-            m.addVertsSegs(dict)
-    
-            dict = {}
-            dict['points'] = [[.10,.90],[.40,.20]]
-            dict['segments'] = [[0,1]] 
-            dict['segment_tags'] = ['wall2']   
-            m.addVertsSegs(dict)
-        
-            dict = {}
-            dict['points'] = [[.20,.90],[.60,.60]]
-            dict['segments'] = [[0,1]] 
-            dict['segment_tags'] = ['wall3'] 
-            m.addVertsSegs(dict)
-        
-            dict = {}
-            dict['points'] = [[.60,.20],[.90,.90]]
-            dict['segments'] = [[0,1]] 
-            dict['segment_tags'] = ['wall4']   
-            m.addVertsSegs(dict)
+            dict['points'] = [[.10, .10], [.90, .20]]
+            dict['segments'] = [[0, 1]]
+            dict['segment_tags'] = ['wall1']
+            m.add_verts_segs(dict)
 
-        m.generateMesh(mode = "Q", maxArea = maxArea, minAngle=20.0)       
+            dict = {}
+            dict['points'] = [[.10, .90], [.40, .20]]
+            dict['segments'] = [[0, 1]]
+            dict['segment_tags'] = ['wall2']
+            m.add_verts_segs(dict)
+
+            dict = {}
+            dict['points'] = [[.20, .90], [.60, .60]]
+            dict['segments'] = [[0, 1]]
+            dict['segment_tags'] = ['wall3']
+            m.add_verts_segs(dict)
+
+            dict = {}
+            dict['points'] = [[.60, .20], [.90, .90]]
+            dict['segments'] = [[0, 1]]
+            dict['segment_tags'] = ['wall4']
+            m.add_verts_segs(dict)
+
+        m._generateMesh_impl(mode="Q", maxArea=maxArea, minAngle=20.0)
         if save is True:
             m.export_mesh_file("aaaa.tsh")
         mesh_dict =  m.Mesh2IOTriangulationDict()
