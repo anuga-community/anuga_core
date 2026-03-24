@@ -1,14 +1,14 @@
 
 from anuga.shallow_water.shallow_water_domain import Domain
-from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_cross, \
-                                                        rectangular
+from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_with_neighbours, rectangular_cross_with_neighbours
+from anuga.abstract_2d_finite_volumes.neighbour_mesh import Mesh
 
-from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_to_domain_instance
+from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_to_domain_instance, pmesh_to_mesh
 
 
 
 #-----------------------------
-# rectangular domains
+# rectangular domains and meshes
 #-----------------------------
 def rectangular_cross_domain(*args, **kwargs):
     """Create a rectangular domain.
@@ -44,8 +44,57 @@ def rectangular_cross_domain(*args, **kwargs):
         verbose = False
 
 
-    points, vertices, boundary = rectangular_cross(*args, **kwargs)
-    return Domain(points, vertices, boundary, verbose= verbose)
+    points, vertices, boundary, neighbours, neighbour_edges = \
+        rectangular_cross_with_neighbours(*args, **kwargs)
+
+    mesh = Mesh(points, vertices, boundary,
+                triangle_neighbours=neighbours,
+                triangle_neighbour_edges=neighbour_edges)
+
+    return Domain(mesh, verbose=verbose)
+
+def rectangular_cross_mesh(*args, **kwargs):
+    """Create a rectangular mesh.
+
+    The triangular mesh is made up of m by n uniform rectangular cells divided
+    into 4 triangles in a cross pattern
+
+    Parameters
+    ----------
+    m : int
+        Number of cells in x direction
+    n : int
+        Number of cells in y direction
+    len1 : float, optional
+        Length of domain in x direction (left to right) (default 1.0)
+    len2 : float, optional
+        Length of domain in y direction (bottom to top) (default 1.0)
+    origin : tuple, optional
+        Tuple (x, y) specifying location of lower left corner of domain 
+        (default (0, 0))
+    verbose : bool, optional
+        Boolean flag to output information (default False)
+
+    Returns
+    -------
+    mesh
+        Mesh instance
+    """
+
+    try:
+        verbose = kwargs.pop('verbose')
+    except KeyError:
+        verbose = False
+
+
+    points, vertices, boundary, neighbours, neighbour_edges = \
+        rectangular_cross_with_neighbours(*args, **kwargs)
+
+    mesh = Mesh(points, vertices, boundary,
+                triangle_neighbours=neighbours,
+                triangle_neighbour_edges=neighbour_edges)
+
+    return mesh
 
 #----------------------------
 # Create domain from file
@@ -88,7 +137,6 @@ def create_domain_from_file(filename, DomainClass=Domain):
 def create_domain_from_regions(bounding_polygon,
                                boundary_tags,
                                maximum_triangle_area=None,
-                               mesh_filename=None,
                                interior_regions=None,
                                interior_holes=None,
                                hole_tags=None,
@@ -164,13 +212,12 @@ def create_domain_from_regions(bounding_polygon,
     args = (bounding_polygon,
             boundary_tags)
     
-    if mesh_filename is None:
-        import tempfile
-        import time
-        mesh_filename = 'mesh_%d.msh'%int(time.time())
+    # if mesh_filename is None:
+    #     import tempfile
+    #     import time
+    #     mesh_filename = 'mesh_%d.msh'%int(time.time())
     
     kwargs = {'maximum_triangle_area': maximum_triangle_area,
-              'mesh_filename': mesh_filename,
               'interior_regions': interior_regions,
               'interior_holes': interior_holes,
               'hole_tags': hole_tags,
@@ -208,8 +255,7 @@ def create_domain_from_regions(bounding_polygon,
         
 def _create_domain_from_regions(bounding_polygon,
                                 boundary_tags,
-                                maximum_triangle_area=None,
-                                mesh_filename=None,                           
+                                maximum_triangle_area=None,                         
                                 interior_regions=None,
                                 interior_holes=None,
                                 hole_tags=None,
@@ -228,11 +274,10 @@ def _create_domain_from_regions(bounding_polygon,
     #from anuga.shallow_water.shallow_water_domain import Domain
     from anuga.pmesh.mesh_interface import create_mesh_from_regions
     
-    create_mesh_from_regions(bounding_polygon,
+    pmesh = create_mesh_from_regions(bounding_polygon,
                              boundary_tags,
                              maximum_triangle_area=maximum_triangle_area,
                              interior_regions=interior_regions,
-                             filename=mesh_filename,
                              interior_holes=interior_holes,
                              hole_tags=hole_tags,
                              poly_geo_reference=poly_geo_reference,
@@ -244,7 +289,9 @@ def _create_domain_from_regions(bounding_polygon,
                              use_cache=False,
                              verbose=verbose)
 
-    domain = Domain(mesh_filename, use_cache=False, verbose=verbose)
+    mesh = pmesh_to_mesh(pmesh)
+
+    domain = Domain(mesh, use_cache=False, verbose=verbose)
 
 
     return domain

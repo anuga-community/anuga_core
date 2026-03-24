@@ -36,18 +36,37 @@ def _load_toml(filename):
         return tomllib.load(f)
 
 
+def _normpath(path):
+    """Normalise *path* to the OS-native directory separator.
+
+    TOML files conventionally use forward slashes (``/``) for portability.
+    On Windows this function converts them to backslashes so that downstream
+    ANUGA code receives native paths.  On Linux/macOS the path is unchanged.
+
+    The special quantity-polygon keywords ``'All'``, ``'None'``, and
+    ``'Extent'`` are returned unchanged as they are not filesystem paths.
+    """
+    if path in ('All', 'None', 'Extent'):
+        return path
+    return os.path.normpath(path)
+
+
 def _glob_files(patterns):
     """Expand a list of glob patterns into a flat, sorted list of file paths.
+
+    Patterns may use either forward or backward slashes; both are normalised
+    to the OS-native separator before globbing and in the returned paths.
 
     Raises FileNotFoundError if any pattern matches nothing.
     """
     files = []
     for pattern in patterns:
-        matches = sorted(glob_module.glob(pattern))
+        native = os.path.normpath(pattern)
+        matches = sorted(glob_module.glob(native))
         if not matches:
             raise FileNotFoundError(
                 f'No files matched pattern: {pattern!r}')
-        files.extend(matches)
+        files.extend(os.path.normpath(m) for m in matches)
     return files
 
 
@@ -66,8 +85,10 @@ def _parse_quantity_entries(entries, print_info):
     clip_range = []
 
     for entry in entries:
-        polygon  = entry['polygon']
+        polygon  = _normpath(str(entry['polygon']))
         value    = entry['value']
+        if isinstance(value, str):
+            value = _normpath(value)
         clip_min = entry.get('clip_min', float('-inf'))
         clip_max = entry.get('clip_max', float('inf'))
 
@@ -194,11 +215,11 @@ class ProjectDataTOML:
 
     def _parse_mesh(self, m):
         self.use_existing_mesh_pickle       = bool(m.get('use_existing_mesh_pickle', False))
-        self.bounding_polygon_and_tags_file = str(m['bounding_polygon'])
+        self.bounding_polygon_and_tags_file = _normpath(str(m['bounding_polygon']))
         self.default_res                    = float(m['default_res'])
 
         self.interior_regions_data = [
-            [str(ir['polygon']), float(ir['resolution'])]
+            [_normpath(str(ir['polygon'])), float(ir['resolution'])]
             for ir in m.get('interior_regions', [])
         ]
 
@@ -223,7 +244,7 @@ class ProjectDataTOML:
             self.break_line_intersect_point_movement_threshold = float(threshold)
 
         region_file = m.get('region_areas_file', '')
-        self.pt_areas = str(region_file) if region_file else None
+        self.pt_areas = _normpath(str(region_file)) if region_file else None
 
         if self.pt_areas is not None:
             areas_type = str(m.get('region_areas_type', 'area'))
@@ -283,7 +304,7 @@ class ProjectDataTOML:
             tag   = str(b['tag'])
             btype = str(b['type'])
             if btype in ('Stage', 'Flather_Stage'):
-                fpath = str(b['file'])
+                fpath = _normpath(str(b['file']))
                 if not os.path.exists(fpath):
                     raise FileNotFoundError(
                         f"Boundary '{tag}': timeseries file not found: {fpath!r}")
@@ -304,8 +325,8 @@ class ProjectDataTOML:
         self.inlet_data = []
         for i in inlets:
             name  = str(i['name'])
-            lfile = str(i['line_file'])
-            tfile = str(i['timeseries_file'])
+            lfile = _normpath(str(i['line_file']))
+            tfile = _normpath(str(i['timeseries_file']))
             if not os.path.exists(lfile):
                 raise FileNotFoundError(
                     f"Inlet '{name}': line_file not found: {lfile!r}")
@@ -322,11 +343,11 @@ class ProjectDataTOML:
     def _parse_rainfall(self, rainfall):
         self.rain_data = []
         for r in rainfall:
-            tfile = str(r['timeseries_file'])
+            tfile = _normpath(str(r['timeseries_file']))
             if not os.path.exists(tfile):
                 raise FileNotFoundError(
                     f"Rainfall: timeseries_file not found: {tfile!r}")
-            polygon = str(r.get('polygon', 'All'))
+            polygon = _normpath(str(r.get('polygon', 'All')))
             if polygon not in ('All',) and not os.path.exists(polygon):
                 raise FileNotFoundError(
                     f"Rainfall: polygon file not found: {polygon!r}")
@@ -350,15 +371,15 @@ class ProjectDataTOML:
                 continue
 
             row = [
-                str(b['label']),                   # [0]
-                str(b['deck_file']),               # [1] — also used as breakline
-                float(b['deck_elevation']),        # [2] — also used as elevation value
-                str(b['exchange_line_0']),         # [3]
-                str(b['exchange_line_1']),         # [4]
-                float(b['enquiry_gap']),           # [5]
-                str(b['internal_boundary_curve_file']),  # [6]
-                float(b.get('vertical_datum_offset', 0.0)),  # [7]
-                float(b.get('smoothing_timescale', 0.0)),    # [8]
+                str(b['label']),                             # [0]
+                _normpath(str(b['deck_file'])),              # [1] — also used as breakline
+                float(b['deck_elevation']),                  # [2] — also used as elevation value
+                _normpath(str(b['exchange_line_0'])),        # [3]
+                _normpath(str(b['exchange_line_1'])),        # [4]
+                float(b['enquiry_gap']),                     # [5]
+                _normpath(str(b['internal_boundary_curve_file'])),  # [6]
+                float(b.get('vertical_datum_offset', 0.0)), # [7]
+                float(b.get('smoothing_timescale', 0.0)),   # [8]
             ]
 
             for idx, desc in [(1, 'deck_file'),
@@ -387,17 +408,17 @@ class ProjectDataTOML:
                 continue
 
             row = [
-                str(ps['label']),                      # [0]
-                float(ps['pump_capacity']),            # [1]
-                float(ps['pump_rate_of_increase']),    # [2]
-                float(ps['pump_rate_of_decrease']),    # [3]
-                float(ps['hw_to_start_pumping']),      # [4]
-                float(ps['hw_to_stop_pumping']),       # [5]
-                str(ps['basin_polygon_file']),         # [6] — also breakline + elevation
-                float(ps['basin_elevation']),          # [7] — elevation value
-                str(ps['exchange_line_0']),            # [8]
-                str(ps['exchange_line_1']),            # [9]
-                float(ps.get('smoothing_timescale', 0.0)),  # [10]
+                str(ps['label']),                           # [0]
+                float(ps['pump_capacity']),                 # [1]
+                float(ps['pump_rate_of_increase']),         # [2]
+                float(ps['pump_rate_of_decrease']),         # [3]
+                float(ps['hw_to_start_pumping']),           # [4]
+                float(ps['hw_to_stop_pumping']),            # [5]
+                _normpath(str(ps['basin_polygon_file'])),   # [6] — also breakline + elevation
+                float(ps['basin_elevation']),               # [7] — elevation value
+                _normpath(str(ps['exchange_line_0'])),      # [8]
+                _normpath(str(ps['exchange_line_1'])),      # [9]
+                float(ps.get('smoothing_timescale', 0.0)), # [10]
             ]
 
             for idx, desc in [(6, 'basin_polygon_file'),

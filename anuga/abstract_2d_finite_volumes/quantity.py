@@ -2294,7 +2294,7 @@ class Quantity(object):
         # (either from this module or C-extension)
 
 
-        if self.domain.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
+        if self.domain.multiprocessor_mode == MULTIPROCESSOR_GPU:
             from .quantity_openmp_ext import update
         if self.domain.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # FIXME SR: Change this when gpu version is available

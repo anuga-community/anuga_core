@@ -11,6 +11,45 @@ import anuga.utilities.log as log
 
 
 
+def pmesh_to_basic_mesh(pmesh_instance, verbose=False):
+    """Convert a Pmesh instance to a Basic_mesh instance.
+
+    Like pmesh_to_mesh but returns a Basic_mesh, which omits computation of
+    normals, edge lengths, areas, radii, and vertex_coordinates.  Use when
+    only mesh topology is needed (e.g. for parallel distribution without a
+    pre-built Domain).
+
+    The triangle_neighbours array produced by the triangle library is passed
+    through directly, so the neighbour structure is not recomputed.
+
+    Parameters
+    ----------
+    pmesh_instance : anuga.pmesh.mesh.Pmesh
+    verbose : bool, optional
+
+    Returns
+    -------
+    Basic_mesh
+    """
+    from anuga.abstract_2d_finite_volumes.basic_mesh import Basic_mesh
+
+    if pmesh_instance.tri_mesh is None:
+        pmesh_instance.generate_mesh(verbose=verbose)
+
+    mesh_dict = pmesh_instance.Mesh2IODict()
+
+    vertex_coordinates = mesh_dict['vertices']
+    triangles          = mesh_dict['triangles']
+    geo_reference      = mesh_dict['geo_reference']
+    triangle_neighbors = mesh_dict.get('triangle_neighbors')
+    boundary           = pmesh_dict_to_tag_dict(mesh_dict)
+
+    return Basic_mesh(vertex_coordinates, triangles,
+                     boundary=boundary,
+                     geo_reference=geo_reference,
+                     triangle_neighbours=triangle_neighbors)
+
+
 def pmesh_to_mesh(pmesh_instance, verbose=False):
     """Convert a Pmesh instance to a neighbour_mesh.Mesh instance.
 
@@ -29,6 +68,12 @@ def pmesh_to_mesh(pmesh_instance, verbose=False):
     """
     from anuga.abstract_2d_finite_volumes.neighbour_mesh import Mesh
 
+    # create_mesh_from_regions only calls generate_mesh when a filename is
+    # supplied; if the caller passed the raw pmesh object we may need to
+    # triangulate it first.
+    if pmesh_instance.tri_mesh is None:
+        pmesh_instance.generate_mesh(verbose=verbose)
+
     mesh_dict = pmesh_instance.Mesh2IODict()
 
     vertex_coordinates = mesh_dict['vertices']
@@ -42,7 +87,7 @@ def pmesh_to_mesh(pmesh_instance, verbose=False):
                 boundary=boundary,
                 tagged_elements=tagged_elements,
                 geo_reference=geo_reference,
-                triangle_neighbors=triangle_neighbors,
+                triangle_neighbours=triangle_neighbors,
                 verbose=verbose)
 
 

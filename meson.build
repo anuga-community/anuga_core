@@ -127,6 +127,7 @@ if openmp.found()
   endif
   openmp_deps = dependencies + [openmp]
 else
+  openmp_c_args = []
   openmp_deps = dependencies
 endif
 

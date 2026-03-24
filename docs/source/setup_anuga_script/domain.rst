@@ -75,6 +75,14 @@ Check here for full documentation of the :func:`create_domain_from_regions` func
 and check the :doc:`../../examples/notebook_create_domain_from_regions` for an example of how to use it.
 
 
+.. seealso::
+
+   `ANUGA User Manual — Chapter 7: The Domain
+   <https://github.com/anuga-community/anuga_user_manual>`_
+   covers domain construction in depth, including mesh generation from
+   polygon regions, geo-referencing, flow algorithm choices, and domain
+   attributes.
+
 Reference
 ---------
 

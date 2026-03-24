@@ -3,8 +3,11 @@ Install ANUGA for Developers
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you want to use the very latest version of ANUGA (or to develop ANUGA code) then you need
-to download the `anuga_core` repository from `github` and then `pip` install 
+to download the `anuga_core` repository from `github` and then `pip` install
 ANUGA from the source. These steps will require that the following package `git` is installed.
+
+ANUGA supports **Python 3.10 – 3.14**.  Environment files for each supported
+version are provided under ``environments/`` (e.g. ``environment_3.12.yml``).
 
 
 The process involves downloading the `anuga_core` repository from `github` and then running the `install_miniforge.sh` 
@@ -129,11 +132,55 @@ and its dependencies.
     The `--no-build-isolation` option is needed to ensure that the dependencies (in particular the compilers)
     installed in the `conda` environment are used during the build process.
 
+MPI parallel support
+^^^^^^^^^^^^^^^^^^^^
+
+To run ANUGA simulations in parallel across multiple processes (using
+``mpiexec`` / ``mpirun``), two additional packages are required:
+
+* **mpi4py** — Python bindings for MPI.  Provides the communication layer
+  used by ``anuga.distribute``, ``anuga.distribute_basic_mesh``, and related
+  functions.
+* **pymetis** — Python wrapper for the METIS graph-partitioning library.
+  Used by ANUGA to decompose the mesh into balanced subdomains before
+  distributing to MPI ranks.
+
+Both packages are already included in the conda environment files under
+``environments/``.  For example, ``environment_3.12.yml`` lists them at
+lines 16 and 24 respectively, so the standard ``conda env create`` step
+installs them automatically.
+
+If you need to add them to an existing environment:
+
+.. code-block:: bash
+
+    conda activate anuga_env_3.12
+    conda install -c conda-forge mpi4py pymetis
+
+Verify MPI is working:
+
+.. code-block:: bash
+
+    python -c "from mpi4py import MPI; print('MPI size:', MPI.COMM_WORLD.Get_size())"
+    mpiexec -np 4 python -c "from mpi4py import MPI; print(MPI.COMM_WORLD.Get_rank())"
+
+See :doc:`../parallel/index` for how to write and run parallel ANUGA scripts.
+
+.. note::
+
+    On HPC clusters, load the system MPI module *before* activating the
+    conda environment so that ``mpi4py`` links against the optimised
+    system MPI rather than the bundled conda-forge one::
+
+        module load openmpi/4.1.5   # use your cluster's module name
+        conda activate anuga_env_3.12
+
+
 Testing the installation
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
 Once the installation is complete you can activate the `anuga_env_3.12` environment
-and run the unit tests to check that everything is working. 
+and run the unit tests to check that everything is working.
 
 Test the installation.
 

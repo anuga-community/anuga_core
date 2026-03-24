@@ -87,7 +87,11 @@ from anuga.coordinate_transforms.lat_long_UTM_conversion import LLtoUTM, UTMtoLL
 
 from anuga.abstract_2d_finite_volumes.pmesh2domain import \
                                             pmesh_to_domain_instance, \
-                                            pmesh_to_mesh
+                                            pmesh_to_mesh, \
+                                            pmesh_to_basic_mesh
+
+from anuga.abstract_2d_finite_volumes.basic_mesh import (
+    Basic_mesh, rectangular_basic_mesh, rectangular_cross_basic_mesh)
 
 from anuga.fit_interpolate.fit import fit_to_mesh_file
 from anuga.fit_interpolate.fit import fit_to_mesh
@@ -110,6 +114,7 @@ from anuga.utilities.parse_time import seconds_to_hhmmss
 # Parallel api
 # ----------------------------
 from anuga.parallel.parallel_api import distribute
+from anuga.parallel.parallel_api import distribute_collaborative
 from anuga.parallel.parallel_api import myid, numprocs, get_processor_name
 from anuga.parallel.parallel_api import send, receive, reduce
 from anuga.parallel.parallel_api import pypar_available, barrier, finalize

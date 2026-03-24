@@ -61,6 +61,7 @@ python_sources = [
   'ermapper_grids.py',
   'file_function.py',
   'gauge.py',
+  'basic_mesh.py',
   'general_mesh.py',
   'generic_boundary_conditions.py',
   'generic_domain.py',
