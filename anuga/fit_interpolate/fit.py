@@ -588,19 +588,15 @@ def fit_to_mesh_file(mesh_file, point_file, mesh_output_file,
     if verbose:
         log.critical("finished fitting to mesh")
 
-    # convert array to list of lists
-    new_point_attributes = f.tolist()
     # FIXME have this overwrite attributes with the same title - DSG
     # Put the newer attributes last
     if old_title_list != []:
         old_title_list.extend(title_list)
-        # FIXME can this be done a faster way? - DSG
-        for i in range(len(old_point_attributes)):
-            old_point_attributes[i].extend(new_point_attributes[i])
-        mesh_dict['vertex_attributes'] = old_point_attributes
+        combined = num.hstack([num.array(old_point_attributes), f])
+        mesh_dict['vertex_attributes'] = combined.tolist()
         mesh_dict['vertex_attribute_titles'] = old_title_list
     else:
-        mesh_dict['vertex_attributes'] = new_point_attributes
+        mesh_dict['vertex_attributes'] = f.tolist()
         mesh_dict['vertex_attribute_titles'] = title_list
 
     if verbose:

@@ -379,7 +379,7 @@ if __name__ == '__main__':
         run_distribute_basic_mesh_parallel(verbose=VERBOSE)
         barrier()
 
-        if myid == 0:
-            print('All parallel distribute_basic_mesh tests passed.')
+        #if myid == 0:
+        #    print('All parallel distribute_basic_mesh tests passed.')
 
         finalize()

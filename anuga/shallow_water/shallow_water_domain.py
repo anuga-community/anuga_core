@@ -662,7 +662,7 @@ class Domain(Generic_Domain):
         parameters['distribute_to_vertices_and_edges_method'] = \
                          self.get_distribute_to_vertices_and_edges_method()
         parameters['flow_algorithm']          = self.get_flow_algorithm()
-        parameters['CFL']                     = self.get_CFL()
+        parameters['CFL']                     = self.get_cfl()
         parameters['timestepping_method']     = self.get_timestepping_method()
 
         parameters['optimised_gradient_limiter']        = self.optimised_gradient_limiter
@@ -695,7 +695,7 @@ class Domain(Generic_Domain):
 
         self._set_config_defaults()
 
-        self.set_CFL(0.9)
+        self.set_cfl(0.9)
         self.set_use_kinematic_viscosity(False)
         #self.timestepping_method='rk2'#'rk3'#'euler'#'rk2'
         self.set_timestepping_method('euler')
@@ -759,7 +759,7 @@ class Domain(Generic_Domain):
 
         self._set_config_defaults()
 
-        self.set_CFL(1.0)
+        self.set_cfl(1.0)
         self.set_use_kinematic_viscosity(False)
         #self.timestepping_method='rk2'#'rk3'#'euler'#'rk2'
         self.set_timestepping_method(2)
@@ -822,7 +822,7 @@ class Domain(Generic_Domain):
 
         self._set_config_defaults()
 
-        self.set_CFL(1.0)
+        self.set_cfl(1.0)
         self.set_use_kinematic_viscosity(False)
         #self.timestepping_method='rk2'#'rk3'#'euler'#'rk2'
         self.set_timestepping_method(3)
@@ -885,7 +885,7 @@ class Domain(Generic_Domain):
 
         self._set_config_defaults()
 
-        self.set_CFL(1.0)
+        self.set_cfl(1.0)
         self.set_use_kinematic_viscosity(False)
         #self.timestepping_method='rk2'#'rk3'#'euler'#'rk2'
         self.set_timestepping_method(2)
@@ -948,7 +948,7 @@ class Domain(Generic_Domain):
 
         self._set_config_defaults()
 
-        self.set_CFL(0.9)
+        self.set_cfl(0.9)
         self.set_use_kinematic_viscosity(False)
         #self.timestepping_method='rk2'#'rk3'#'euler'#'rk2'
         self.set_timestepping_method(1)

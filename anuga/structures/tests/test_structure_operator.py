@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import unittest
+import warnings
 
 import numpy
 import anuga
@@ -10,6 +11,10 @@ from anuga.structures.inlet_enquiry import Inlet_enquiry
 
 
 verbose = False
+
+# This end-point geometry places enquiry points inside inlet triangles on
+# this small test mesh — expected behaviour that raises a UserWarning.
+_INLET_WARNING = 'Enquiry point.*is in an inlet triangle'
 
 
 def make_domain():
@@ -29,9 +34,13 @@ class Test_Structure_operator(unittest.TestCase):
 
     def setUp(self):
         self.domain = make_domain()
+        self._warning_ctx = warnings.catch_warnings()
+        self._warning_ctx.__enter__()
+        warnings.filterwarnings('ignore', message=_INLET_WARNING,
+                                category=UserWarning)
 
     def tearDown(self):
-        pass
+        self._warning_ctx.__exit__(None, None, None)
 
     def _make_operator(self):
         """Helper: create a Structure_operator with all required parameters.
@@ -48,9 +57,23 @@ class Test_Structure_operator(unittest.TestCase):
             verbose=verbose)
 
     def test_construction(self):
-        """Structure_operator can be constructed without error."""
-        op = self._make_operator()
+        """Structure_operator construction warns when enquiry points are in
+        inlet triangles (expected for this test mesh geometry)."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            op = anuga.Structure_operator(
+                self.domain,
+                end_points=[[3., 2.5], [7., 2.5]],
+                width=1.0,
+                manning=0.013,
+                enquiry_gap=0.0,
+                verbose=verbose)
         self.assertIsNotNone(op)
+        inlet_warnings = [w for w in caught
+                          if issubclass(w.category, UserWarning)
+                          and 'inlet triangle' in str(w.message)]
+        self.assertGreater(len(inlet_warnings), 0,
+                           'Expected inlet-triangle UserWarning was not raised')
 
     def test_get_culvert_length(self):
         """get_culvert_length returns a positive value."""

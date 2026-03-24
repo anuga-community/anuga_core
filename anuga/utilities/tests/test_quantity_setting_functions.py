@@ -52,7 +52,7 @@ class Test_quantity_setting_functions(unittest.TestCase):
 
         boundaryPolygon = [[minX, minY], [minX, minY+100.],
                            [minX+100., minY+100.], [minX+100., minY]]
-        anuga.create_mesh_from_regions(
+        anuga.create_pmesh_from_regions(
             boundaryPolygon,
             boundary_tags={'left': [0],
                            'top': [1],

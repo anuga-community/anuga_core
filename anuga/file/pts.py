@@ -18,7 +18,7 @@ def load_pts_as_polygon(points_file, minimum_triangle_angle=3.0):
 
     mesh = import_mesh_from_file(points_file)
     mesh.auto_segment()
-    mesh.exportASCIIsegmentoutlinefile("outline.tsh")
+    mesh.export_ascii_segment_outline_file("outline.tsh")
     mesh2 = import_mesh_from_file("outline.tsh")
     mesh2.generate_mesh(maximum_triangle_area=1000000000,
                         minimum_triangle_angle=minimum_triangle_angle,

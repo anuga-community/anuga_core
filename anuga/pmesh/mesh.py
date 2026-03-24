@@ -593,16 +593,16 @@ class Pmesh(object):
         # other_dict = other.Mesh2MeshDic()        
         
         # A dic for the initial m
-        dic = self.Mesh2triangList()
-        dic_mesh = self.Mesh2MeshList()
+        dic = self.mesh2triang_list()
+        dic_mesh = self.mesh2mesh_list()
         for element in list(dic_mesh.keys()):
             dic[element] = dic_mesh[element]
         for element in list(dic.keys()):
             dic[element].sort()
 
         # A dic for the exported/imported m
-        dic_other = other.Mesh2triangList()
-        dic_mesh = other.Mesh2MeshList()
+        dic_other = other.mesh2triang_list()
+        dic_mesh = other.mesh2mesh_list()
         for element in list(dic_mesh.keys()):
             dic_other[element] = dic_mesh[element]
         for element in list(dic.keys()):
@@ -623,8 +623,8 @@ class Pmesh(object):
 
     def __eq__(self, other):
 
-        self_dict = self.Mesh2MeshDic()
-        other_dict = other.Mesh2MeshDic()        
+        self_dict = self.mesh2mesh_dic()
+        other_dict = other.mesh2mesh_dic()        
         
         return (self_dict == other_dict and
                 self.geo_reference == other.geo_reference)
@@ -1279,8 +1279,11 @@ class Pmesh(object):
         if self.mode.find('A') < 0:
             self.mode += 'A'  # A - output region attribute list for triangles
 
-        if not self.mode.find('V') and not self.mode.find('Q'):
-            self.mode += 'V'  # V - output info about what Triangle is doing
+        if 'V' not in self.mode and 'Q' not in self.mode:
+            if verbose:
+                self.mode += 'V'  # V - output info about what Triangle is doing
+            else:
+                self.mode += 'Q'  # Q - quiet mode, no output
 
         if self.mode.find('q') < 0 and minAngle is not None:
             #   print "**********8minAngle******** ",minAngle
@@ -1298,7 +1301,7 @@ class Pmesh(object):
         if isRegionalMaxAreas:
             self.mode += 'a'
         # print "mesh#generateMesh# self.mode",self.mode
-        meshDict = self.Mesh2triangList()
+        meshDict = self.mesh2triang_list()
 
         # FIXME (DSG-DSG)  move below section into generate_mesh.py
         #                  & 4 functions eg segment_strings2ints
@@ -1534,7 +1537,7 @@ class Pmesh(object):
                       DeprecationWarning, stacklevel=2)
         return self.delete_mesh_object(MeshObject)
 
-    def Mesh2triangList(self, userVertices=None,
+    def mesh2triang_list(self, userVertices=None,
                         userSegments=None,
                         holes=None,
                         regions=None):
@@ -1543,7 +1546,7 @@ class Pmesh(object):
         triang module
         points list: [(x1,y1),(x2,y2),...] (Tuples of doubles)
         pointattributelist: [(a11,a12,...),(a21,a22),...] (Tuples of doubles)
-        segment list: [(point1,point2),(p3,p4),...] (Tuples of integers) 
+        segment list: [(point1,point2),(p3,p4),...] (Tuples of integers)
         hole list: [(x1,y1),...](Tuples of doubles, one inside each hole)
         regionlist: [ (x1,y1,tag, max area),...] (Tuple of 3-4 doubles)
 
@@ -1601,7 +1604,20 @@ class Pmesh(object):
         # print "*(*("
         return meshDict
 
-    def Mesh2MeshList(self):
+    def Mesh2triangList(self, userVertices=None,
+                        userSegments=None,
+                        holes=None,
+                        regions=None):
+        """Deprecated: use mesh2triang_list instead."""
+        import warnings
+        warnings.warn('Mesh2triangList is deprecated, use mesh2triang_list instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.mesh2triang_list(userVertices=userVertices,
+                                     userSegments=userSegments,
+                                     holes=holes,
+                                     regions=regions)
+
+    def mesh2mesh_list(self):
         """
         Convert the Mesh to a dictionary of lists describing the
         triangulation variables;
@@ -1659,16 +1675,30 @@ class Pmesh(object):
 
         return meshDict
 
-    def Mesh2MeshDic(self):
+    def Mesh2MeshList(self):
+        """Deprecated: use mesh2mesh_list instead."""
+        import warnings
+        warnings.warn('Mesh2MeshList is deprecated, use mesh2mesh_list instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.mesh2mesh_list()
+
+    def mesh2mesh_dic(self):
         """
         Convert the user and generated info of a mesh to a dictionary
         structure
         """
-        dic = self.Mesh2triangList()
-        dic_mesh = self.Mesh2MeshList()
+        dic = self.mesh2triang_list()
+        dic_mesh = self.mesh2mesh_list()
         for element in list(dic_mesh.keys()):
             dic[element] = dic_mesh[element]
         return dic
+
+    def Mesh2MeshDic(self):
+        """Deprecated: use mesh2mesh_dic instead."""
+        import warnings
+        warnings.warn('Mesh2MeshDic is deprecated, use mesh2mesh_dic instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.mesh2mesh_dic()
 
     def set_triangulation(self, genDict):
         """
@@ -2173,7 +2203,7 @@ class Pmesh(object):
         for seg in self.get_user_segments():
             verts[seg.vertices[0]] = seg.vertices[0]
             verts[seg.vertices[1]] = seg.vertices[1]
-        meshDict = self.Mesh2IOOutlineDict(userVertices=list(verts.values()))
+        meshDict = self.mesh2io_outline_dict(userVertices=list(verts.values()))
         export_mesh_file(ofile, meshDict)
 
     def exportASCIIsegmentoutlinefile(self, ofile):
@@ -2189,7 +2219,7 @@ class Pmesh(object):
         export a file, ofile, with the format
         """
 
-        dict = self.Mesh2IODict()
+        dict = self.mesh2io_dict()
         export_mesh_file(ofile, dict)
 
     # FIXME(DSG-DSG):Break this into two functions.
@@ -2202,7 +2232,7 @@ class Pmesh(object):
 
         """
 
-        mesh_dict = self.Mesh2IODict()
+        mesh_dict = self.mesh2io_dict()
         #point_dict = {}
         # point_dict['attributelist'] = {} #this will need to be expanded..
         # if attributes are brought back in.
@@ -2288,13 +2318,13 @@ class Pmesh(object):
         
         """
 
-    def Mesh2IODict(self):
+    def mesh2io_dict(self):
         """
         Convert the triangulation and outline info of a mesh to a dictionary
         structure
         """
-        dict = self.Mesh2IOTriangulationDict()
-        dict_mesh = self.Mesh2IOOutlineDict()
+        dict = self.mesh2io_triangulation_dict()
+        dict_mesh = self.mesh2io_outline_dict()
         for element in list(dict_mesh.keys()):
             dict[element] = dict_mesh[element]
 
@@ -2302,7 +2332,14 @@ class Pmesh(object):
         dict['geo_reference'] = self.geo_reference
         return dict
 
-    def Mesh2IOTriangulationDict(self):
+    def Mesh2IODict(self):
+        """Deprecated: use mesh2io_dict instead."""
+        import warnings
+        warnings.warn('Mesh2IODict is deprecated, use mesh2io_dict instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.mesh2io_dict()
+
+    def mesh2io_triangulation_dict(self):
         """
         Convert the Mesh to a dictionary of lists describing the
         triangulation variables;
@@ -2336,10 +2373,17 @@ class Pmesh(object):
 
         return meshDict
 
-    def Mesh2IOOutlineDict(self, userVertices=None,
-                           userSegments=None,
-                           holes=None,
-                           regions=None):
+    def Mesh2IOTriangulationDict(self):
+        """Deprecated: use mesh2io_triangulation_dict instead."""
+        import warnings
+        warnings.warn('Mesh2IOTriangulationDict is deprecated, use mesh2io_triangulation_dict instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.mesh2io_triangulation_dict()
+
+    def mesh2io_outline_dict(self, userVertices=None,
+                             userSegments=None,
+                             holes=None,
+                             regions=None):
         """
         Convert the mesh outline to a dictionary of the lists needed for the
         triang module;
@@ -2405,6 +2449,19 @@ class Pmesh(object):
         # print meshDict['regionlist']
         # print "*(*("
         return meshDict
+
+    def Mesh2IOOutlineDict(self, userVertices=None,
+                           userSegments=None,
+                           holes=None,
+                           regions=None):
+        """Deprecated: use mesh2io_outline_dict instead."""
+        import warnings
+        warnings.warn('Mesh2IOOutlineDict is deprecated, use mesh2io_outline_dict instead',
+                      DeprecationWarning, stacklevel=2)
+        return self.mesh2io_outline_dict(userVertices=userVertices,
+                                         userSegments=userSegments,
+                                         holes=holes,
+                                         regions=regions)
 
     def IOTriangulation2Mesh(self, genDict):
         """

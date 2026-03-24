@@ -310,7 +310,7 @@ class BenchmarkLeastSquares(object):
         m._generateMesh_impl(mode="Q", maxArea=maxArea, minAngle=20.0)
         if save is True:
             m.export_mesh_file("aaaa.tsh")
-        mesh_dict =  m.Mesh2IOTriangulationDict()
+        mesh_dict =  m.mesh2io_triangulation_dict()
 
         #Add vert attribute info to the mesh
         mesh_dict['vertex_attributes'] = []

@@ -1832,7 +1832,7 @@ Parameters
 
         # check order of vertices
 
-        print(quantity.vertex_values)
+        #print(quantity.vertex_values)
 
         answer = [[240.6, 240.0, 240.2], [240.6, 240.2, 240.8], [241.2, 240.6, 240.8]]
 

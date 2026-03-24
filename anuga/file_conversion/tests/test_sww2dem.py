@@ -29,20 +29,31 @@ from pprint import pprint
 
 from io import StringIO, BytesIO
 import sys
+import logging
 
 class Capturing(list):
+    """Context manager that captures stdout and suppresses console logging."""
     def __enter__(self):
         self._stdout = sys.stdout
-        if sys.version_info[0] > 2:
-            sys.stdout = self._stringio = StringIO()
-            
-        else: 
-            sys.stdout = self._stringio = BytesIO()
-            
+        sys.stdout = self._stringio = StringIO()
+        # Also remove logging StreamHandlers so log.critical() output
+        # doesn't leak to the console during verbose tests.
+        root = logging.getLogger('')
+        self._removed_handlers = [
+            h for h in list(root.handlers)
+            if isinstance(h, logging.StreamHandler)
+            and not isinstance(h, logging.FileHandler)
+        ]
+        for h in self._removed_handlers:
+            root.removeHandler(h)
         return self
+
     def __exit__(self, *args):
         self.extend(self._stringio.getvalue().splitlines())
         sys.stdout = self._stdout
+        root = logging.getLogger('')
+        for h in self._removed_handlers:
+            root.addHandler(h)
 
 class Test_Sww2Dem(unittest.TestCase):
     def setUp(self):
@@ -3084,11 +3095,11 @@ class Test_Sww2Dem(unittest.TestCase):
               
         log_critical_msg = open(LOG_FILENAME)
         output = log_critical_msg.read()
-        print(' ')
-        print('-----------------------') 
-        print(f' Multiproccessor Mode {self.domain.multiprocessor_mode}')       
-        print(output)
-        print('-----------------------')        
+        #print(' ')
+        #print('-----------------------')
+        #print(f' Multiproccessor Mode {self.domain.multiprocessor_mode}')
+        #print(output)
+        #print('-----------------------')
         log_critical_msg.close()
         output = output.split('\n')
 
@@ -3120,9 +3131,9 @@ Statistics of SWW file:
         for output_verbose_True_line, line in zip(output_verbose_True,
                                                   output[:len(output_verbose_True)-1]):
 
-            print(str(line))
-            print(str(output_verbose_True_line))
-            print()
+            #print(str(line))
+            #print(str(output_verbose_True_line))
+            #print()
             assert str(line).lstrip() == output_verbose_True_line.lstrip()
             # cleanup
             try:

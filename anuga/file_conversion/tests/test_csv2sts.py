@@ -90,8 +90,8 @@ class Test_csv2sts(unittest.TestCase):
         
         os.system(cmd)
 
-        print(os.getcwd() + "\n")
-        print(os.listdir())
+        #print(os.getcwd() + "\n")
+        #print(os.listdir())
 
         self._check_generated_sts()
 

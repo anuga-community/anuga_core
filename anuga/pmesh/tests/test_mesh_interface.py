@@ -67,7 +67,7 @@ class TestCase(unittest.TestCase):
         # Assuming the order of the region points is known.
         # (This isn't true, if you consider create_pmesh_from_regions
         # a black box)
-        poly_point = m.getRegions()[0]
+        poly_point = m.get_regions()[0]
 
         # poly_point values are relative to the mesh geo-ref
         # make them absolute
@@ -81,7 +81,7 @@ class TestCase(unittest.TestCase):
         # Assuming the order of the region points is known.
         # (This isn't true, if you consider create_pmesh_from_regions
         # a black box)
-        poly_point = m.getRegions()[1]
+        poly_point = m.get_regions()[1]
 
         # poly_point values are relative to the mesh geo-ref
         # make them absolute
@@ -93,7 +93,7 @@ class TestCase(unittest.TestCase):
         # Assuming the order of the region points is known.
         # (This isn't true, if you consider create_pmesh_from_regions
         # a black box)
-        poly_point = m.getRegions()[2]
+        poly_point = m.get_regions()[2]
 
         # poly_point values are relative to the mesh geo-ref
         # make them absolute
@@ -102,7 +102,7 @@ class TestCase(unittest.TestCase):
                                           closed=False),
                         'FAILED!')
 
-    
+
     def test_create_mesh_from_regions_with_caching(self):
         x=-500
         y=-1000
@@ -168,7 +168,7 @@ class TestCase(unittest.TestCase):
         # Assuming the order of the region points is known.
         # (This isn't true, if you consider create_pmesh_from_regions
         # a black box)
-        poly_point = m.getRegions()[0]
+        poly_point = m.get_regions()[0]
 
         # poly_point values are relative to the mesh geo-ref
         # make them absolute
@@ -180,7 +180,7 @@ class TestCase(unittest.TestCase):
         # Assuming the order of the region points is known.
         # (This isn't true, if you consider create_pmesh_from_regions
         # a black box)
-        poly_point = m.getRegions()[1]
+        poly_point = m.get_regions()[1]
 
         # poly_point values are relative to the mesh geo-ref
         # make them absolute
@@ -192,7 +192,7 @@ class TestCase(unittest.TestCase):
         # Assuming the order of the region points is known.
         # (This isn't true, if you consider create_pmesh_from_regions
         # a black box)
-        poly_point = m.getRegions()[2]
+        poly_point = m.get_regions()[2]
 
         # poly_point values are relative to the mesh geo-ref
         # make them absolute

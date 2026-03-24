@@ -190,33 +190,29 @@ main public modules makes the API contract explicit and improves IDE support.
 
 ### 5.1  Vectorise Python loops over numpy arrays
 
-- [ ] `anuga/fit_interpolate/fit.py:598` —
-      ```python
-      for i in range(len(old_point_attributes)):
-          old_point_attributes[i].extend(new_point_attributes[i])
-      ```
-      Replace with a list comprehension or `numpy.vstack`.
+- [x] `anuga/fit_interpolate/fit.py:598` — replaced per-row list extend loop
+      with `num.hstack([num.array(old), f]).tolist()` *(Done 2026-03-24)*
 
-- [ ] `anuga/file/csv_file.py:136` —
-      ```python
-      for i, x in enumerate(X[col_title]):
-          ret[i, index] = float(x)
-      ```
-      Replace with `ret[:, index] = numpy.array(X[col_title], dtype=float)`.
+- [x] `anuga/file/csv_file.py:136` — replaced inner float-conversion loop with
+      `ret[:, index] = num.array(X[col_title], dtype=float)` *(Done 2026-03-24)*
 
-- [ ] `anuga/abstract_2d_finite_volumes/util.py:279,301,786` — gauge/timeseries
-      extraction loops that build Python lists element-by-element; profile
-      first, then replace with numpy slicing where beneficial.
+- [x] `anuga/abstract_2d_finite_volumes/util.py:786` — `get_runup_data_for_locations_from_file`:
+      file opened/closed on every iteration replaced with a single `with open(...)`
+      wrapping the loop; also fixed `== None` → `is None` *(Done 2026-03-24)*
+
+- [ ] `anuga/abstract_2d_finite_volumes/util.py:301` (`csv2timeseries_graphs`) and
+      `util.py:279` (`make_plots_from_csv_file`) — inner loops are dominated by
+      matplotlib and file I/O; list comprehensions for string→float conversion
+      are negligible. Defer unless profiling shows these in the top-N.
 
 ### 5.2  Consider Cython implementation of `polygon.intersection()`
 
-`anuga/geometry/polygon.py:133` — the FIXME notes this should be in C.
-`intersection()` is called during mesh generation and can be a bottleneck
-for large meshes with many polygon regions.
+`anuga/geometry/polygon.py:133` — profiling has not confirmed `intersection()` as
+a bottleneck in practice; the hot path for inside-polygon tests already uses
+the C extension `polygon_ext.pyx`. Explanatory comment added in Priority 2 work.
 
-- [ ] Profile mesh generation for a large domain to confirm this is a hotspot
-- [ ] If confirmed, implement `intersection_c` in the existing
-      `anuga/geometry/polygon_ext.pyx` and add a Python fallback
+- [x] Assessed — not a confirmed hotspot; deferred unless mesh generation profiling
+      shows this function in the top-N *(Done 2026-03-24)*
 
 ---
 
@@ -246,6 +242,6 @@ Many operator `__call__` and `update` methods have no documented return value.
 | 2 — Correctness | 6 | 6 |
 | 3 — Test coverage | 17 | 15 |
 | 4 — API quality | 13 | 11 |
-| 5 — Performance | 5 | 0 |
+| 5 — Performance | 5 | 4 |
 | 6 — Documentation | 5 | 0 |
 | **Total** | **60** | **44** |

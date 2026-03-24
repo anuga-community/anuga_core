@@ -164,16 +164,16 @@ class meshTestCase(unittest.TestCase):
         r2 = Region(1, 3,tag = 1.3, maxArea = 8)
         m = Pmesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
                  regions=[r1,r2] )
-        m.generateMesh(maxArea = 36,isRegionalMaxAreas = False )      
-        self.assertTrue(len(m.get_triangulation()) == 2, 
+        m._generateMesh_impl(maxArea=36, isRegionalMaxAreas=False)
+        self.assertTrue(len(m.get_triangulation()) == 2,
                         'test_regionalMaxArea 5:generated mesh is wrong!')
-        
+
         ## Another test case
         r1 = Region(3, 1,tag = 1.3, maxArea = 8)
         r2 = Region(1, 3,tag = 1.3, maxArea = 8)
         m = Pmesh(userVertices=[v0,v1,v2,v3], userSegments=[s1,s2,s3,s4,s5],
                  regions=[r1,r2] )
-        m.generateMesh(isRegionalMaxAreas = False )
+        m._generateMesh_impl(isRegionalMaxAreas=False)
         self.assertTrue(len(m.get_triangulation()) == 2, 
                         'test_regionalMaxArea 5:generated mesh is wrong!')
         
@@ -1387,7 +1387,7 @@ class meshTestCase(unittest.TestCase):
 
         seg = m.get_mesh_segments()
         points = m.get_mesh_vertices()
-        dict = m.Mesh2MeshList()
+        dict = m.mesh2mesh_list()
         #print "dict",dict 
         # test not finished...
   
@@ -1420,7 +1420,7 @@ class meshTestCase(unittest.TestCase):
         verts = m.get_mesh_vertices()
         vert_as = m.get_mesh_vertice_attributes()
         seg_tags = m.get_mesh_segment_tags()
-        dict = m.Mesh2IOTriangulationDict()
+        dict = m.mesh2io_triangulation_dict()
         #print "dict",dict 
         
         self.assertTrue( dict['vertex_attribute_titles'] == titles,
@@ -1482,7 +1482,7 @@ class meshTestCase(unittest.TestCase):
         seg = m.get_mesh_segments()
         verts = m.get_mesh_vertices()
         vert_as = m.get_mesh_vertice_attributes()
-        dict = m.Mesh2IODict()
+        dict = m.mesh2io_dict()
         seg_tags = m.get_mesh_segment_tags()
         #print "dict",dict 
         
@@ -1570,7 +1570,7 @@ class meshTestCase(unittest.TestCase):
 
         seg = m.get_mesh_segments()
         verts = m.get_mesh_vertices()
-        dict = m.Mesh2IOOutlineDict()
+        dict = m.mesh2io_outline_dict()
         
         seg = m.get_user_segments()
         points = m.get_user_vertices_list()

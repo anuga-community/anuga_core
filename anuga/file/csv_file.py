@@ -132,8 +132,7 @@ def load_csv_as_matrix(file_name, delimiter = ','):
     for col_title in col_titles:
         index = title_indices[col_title]
         header.append(col_title)
-        for i, x in enumerate(X[col_title]):
-            ret[i, index] = float(x)
+        ret[:, index] = num.array(X[col_title], dtype=float)
 
     return header, ret
 

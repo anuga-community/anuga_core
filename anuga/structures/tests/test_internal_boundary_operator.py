@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import unittest
+import warnings
 
 import numpy
 import anuga
@@ -10,6 +11,11 @@ from anuga.structures.internal_boundary_operator import Internal_boundary_operat
 
 
 verbose = False
+
+# This end-point geometry places one enquiry point inside an inlet triangle,
+# which is expected for this small test mesh and triggers a UserWarning.
+_END_POINTS = [[3., 2.5], [7., 2.5]]
+_INLET_WARNING = 'Enquiry point.*is in an inlet triangle'
 
 
 def make_culvert_domain():
@@ -34,26 +40,40 @@ class Test_Internal_boundary_operator(unittest.TestCase):
 
     def setUp(self):
         self.domain = make_culvert_domain()
+        # Suppress the known inlet-triangle warning for all tests except
+        # test_construction which asserts it explicitly.
+        self._warning_ctx = warnings.catch_warnings()
+        self._warning_ctx.__enter__()
+        warnings.filterwarnings('ignore', message=_INLET_WARNING,
+                                category=UserWarning)
 
     def tearDown(self):
-        pass
+        self._warning_ctx.__exit__(None, None, None)
 
     def test_construction(self):
-        """Internal_boundary_operator can be constructed without error."""
-        op = Internal_boundary_operator(
-            self.domain,
-            internal_boundary_function=simple_ibf,
-            end_points=[[3., 2.5], [7., 2.5]],
-            width=1.0,
-            verbose=verbose)
+        """Internal_boundary_operator construction warns when enquiry point is
+        in an inlet triangle (expected for this test mesh geometry)."""
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            op = Internal_boundary_operator(
+                self.domain,
+                internal_boundary_function=simple_ibf,
+                end_points=_END_POINTS,
+                width=1.0,
+                verbose=verbose)
         self.assertIsNotNone(op)
+        inlet_warnings = [w for w in caught
+                          if issubclass(w.category, UserWarning)
+                          and 'inlet triangle' in str(w.message)]
+        self.assertGreater(len(inlet_warnings), 0,
+                           'Expected inlet-triangle UserWarning was not raised')
 
     def test_structure_type(self):
         """structure_type attribute is set to 'internal_boundary'."""
         op = Internal_boundary_operator(
             self.domain,
             internal_boundary_function=simple_ibf,
-            end_points=[[3., 2.5], [7., 2.5]],
+            end_points=_END_POINTS,
             width=1.0,
             verbose=verbose)
         self.assertEqual(op.structure_type, 'internal_boundary')
@@ -63,7 +83,7 @@ class Test_Internal_boundary_operator(unittest.TestCase):
         op = Internal_boundary_operator(
             self.domain,
             internal_boundary_function=simple_ibf,
-            end_points=[[3., 2.5], [7., 2.5]],
+            end_points=_END_POINTS,
             width=1.0,
             verbose=verbose)
         self.assertAlmostEqual(op.get_culvert_width(), 1.0)
@@ -73,7 +93,7 @@ class Test_Internal_boundary_operator(unittest.TestCase):
         op = Internal_boundary_operator(
             self.domain,
             internal_boundary_function=simple_ibf,
-            end_points=[[3., 2.5], [7., 2.5]],
+            end_points=_END_POINTS,
             width=1.0,
             verbose=verbose)
         self.domain.timestep = 0.1
@@ -86,7 +106,7 @@ class Test_Internal_boundary_operator(unittest.TestCase):
         op = Internal_boundary_operator(
             self.domain,
             internal_boundary_function=simple_ibf,
-            end_points=[[3., 2.5], [7., 2.5]],
+            end_points=_END_POINTS,
             width=1.0,
             verbose=verbose)
         result = op.statistics()

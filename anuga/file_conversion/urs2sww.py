@@ -140,7 +140,7 @@ def urs_ungridded2sww(basename_in='o', basename_out=None, verbose=False,
         mesh.holes = []
         mesh.generate_mesh(minimum_triangle_angle=0.0, verbose=False)
 
-    mesh_dic = mesh.Mesh2MeshList()
+    mesh_dic = mesh.mesh2mesh_list()
 
     #mesh.export_mesh_file(basename_in + '_168.tsh')
     #import sys; sys.exit()

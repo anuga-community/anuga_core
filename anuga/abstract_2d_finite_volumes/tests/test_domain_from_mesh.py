@@ -88,12 +88,12 @@ friction
 
 def _make_domain_from_pmesh():
     """Return (domain, tsh_path) created via pmesh_to_mesh → Domain."""
-    from anuga.pmesh.mesh import importMeshFromFile
+    from anuga.pmesh.mesh import import_mesh_from_file
     from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_to_mesh
     fd, path = tempfile.mkstemp(suffix='.tsh')
     with os.fdopen(fd, 'w') as f:
         f.write(_TSH_CONTENT)
-    pmesh = importMeshFromFile(path)
+    pmesh = import_mesh_from_file(path)
     mesh = pmesh_to_mesh(pmesh)
     return Domain(mesh), path
 

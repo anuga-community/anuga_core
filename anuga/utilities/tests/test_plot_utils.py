@@ -31,7 +31,7 @@ class Test_plot_utils(unittest.TestCase):
          that we can use for testing
         """
         boundaryPolygon = [[0., 0.], [0., 100.], [100.0, 100.0], [100.0, 0.0]]
-        anuga.create_mesh_from_regions(boundaryPolygon,
+        anuga.create_pmesh_from_regions(boundaryPolygon,
                                        boundary_tags={'left': [0],
                                                       'top': [1],
                                                       'right': [2],
