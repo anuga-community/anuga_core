@@ -25,76 +25,85 @@ class SegmentError(Exception):
     pass
 
 
-def create_mesh_from_regions(bounding_polygon,
-                             boundary_tags,
-                             maximum_triangle_area=None,
-                             filename=None,
-                             interior_regions=None,
-                             interior_holes=None,
-                             hole_tags=None,
-                             poly_geo_reference=None,
-                             mesh_geo_reference=None,
-                             breaklines=None,
-                             regionPtArea=None,
-                             minimum_triangle_angle=28.0,
-                             fail_if_polygons_outside=True,
-                             use_cache=False,
-                             verbose=True):
+def create_pmesh_from_regions(bounding_polygon,
+                              boundary_tags,
+                              maximum_triangle_area=None,
+                              filename=None,
+                              interior_regions=None,
+                              interior_holes=None,
+                              hole_tags=None,
+                              poly_geo_reference=None,
+                              mesh_geo_reference=None,
+                              breaklines=None,
+                              regionPtArea=None,
+                              minimum_triangle_angle=28.0,
+                              fail_if_polygons_outside=True,
+                              use_cache=False,
+                              verbose=True):
+    """Create a Pmesh from bounding polygons and resolutions.
 
-    """Create mesh from bounding polygons, and resolutions.
+    Parameters
+    ----------
+    bounding_polygon : list of points
+        Points in Eastings and Northings, relative to the poly_geo_reference.
+    boundary_tags : dict
+        Symbolic tags with lists of indices referring to segments associated
+        with each tag. If a segment is omitted an Exception will be raised.
+    maximum_triangle_area : float, optional
+        Maximal area per triangle for the bounding polygon, excluding the
+        interior regions.
+    filename : str, optional
+        If given, generate the triangulation and export it to this file
+        (supported formats: .tsh, .msh). The Pmesh object is still returned.
+    interior_regions : list of tuples, optional
+        List of (polygon, resolution) tuples for each region to be separately
+        refined. Polygon lines should not cross or overlap, and should not be
+        close to each other.
+    interior_holes : list of polygons, optional
+        List of polygons for each hole.
+    hole_tags : list, optional
+        Boundary tags for the holes, see boundary_tags parameter.
+    poly_geo_reference : Geo_reference, optional
+        Geo reference of the bounding polygon and interior polygons.
+        If None, assume absolute. Please pass one though, since absolute
+        references have a zone.
+    mesh_geo_reference : Geo_reference, optional
+        Geo reference of the mesh to be created. If None, one will be
+        automatically generated using the lower left hand corner of
+        bounding_polygon (absolute) as x and y values.
+    breaklines : list of polygons, optional
+        Lines to be preserved by the triangulation algorithm (e.g., coastlines,
+        walls). The polygons are not closed.
+    regionPtArea : list, optional
+        User-specified point-based regions with max area.
+    minimum_triangle_angle : float, optional
+        Minimum angle for triangles (default: 28.0).
+    fail_if_polygons_outside : bool, optional
+        If True (default), raise Exception when interior polygons fall outside
+        bounding polygon. If False, ignore these polygons.
+    use_cache : bool, optional
+        Whether to use caching (default: False).
+    verbose : bool, optional
+        Verbosity flag (default: True).
 
-        Parameters
-        ----------
-        bounding_polygon : list of points
-            Points in Eastings and Northings, relative to the poly_geo_reference.
-        boundary_tags : dict
-            Symbolic tags with lists of indices referring to segments associated 
-            with each tag. If a segment is omitted an Exception will be raised.
-        maximum_triangle_area : float, optional
-            Maximal area per triangle for the bounding polygon, excluding the 
-            interior regions.
-        interior_regions : list of tuples, optional
-            List of (polygon, resolution) tuples for each region to be separately 
-            refined. Polygon lines should not cross or overlap, and should not be 
-            close to each other.
-        interior_holes : list of polygons, optional
-            List of polygons for each hole.
-        hole_tags : list, optional
-            Boundary tags for the holes, see boundary_tags parameter.
-        poly_geo_reference : Geo_reference, optional
-            Geo reference of the bounding polygon and interior polygons.
-            If None, assume absolute. Please pass one though, since absolute 
-            references have a zone.
-        mesh_geo_reference : Geo_reference, optional
-            Geo reference of the mesh to be created. If None, one will be 
-            automatically generated using the lower left hand corner of 
-            bounding_polygon (absolute) as x and y values.
-        breaklines : list of polygons, optional
-            Lines to be preserved by the triangulation algorithm (e.g., coastlines, 
-            walls). The polygons are not closed.
-        regionPtArea : list, optional
-            User-specified point-based regions with max area.
-        minimum_triangle_angle : float, optional
-            Minimum angle for triangles (default: 28.0).
-        fail_if_polygons_outside : bool, optional
-            If True (default), raise Exception when interior polygons fall outside 
-            bounding polygon. If False, ignore these polygons.
-        use_cache : bool, optional
-            Whether to use caching (default: False).
-        verbose : bool, optional
-            Verbosity flag (default: True).
+    Returns
+    -------
+    Pmesh
+        The Pmesh instance (triangulated if filename was given, otherwise
+        un-triangulated — call generate_mesh() or pass to pmesh_to_mesh /
+        pmesh_to_basic_mesh to triangulate).
 
-        Returns
-        -------
-        mesh : Mesh
-            The generated mesh instance if no filename is given.
+    Notes
+    -----
+    Interior regions should be fully nested, as overlaps may cause unintended
+    resolutions. This function does not allow segments to share points - use
+    underlying pmesh functionality for that.
 
-        Notes
-        -----
-        Interior regions should be fully nested, as overlaps may cause unintended 
-        resolutions. This function does not allow segments to share points - use 
-        underlying pmesh functionality for that.
-        """
+    See Also
+    --------
+    create_basic_mesh_from_regions : returns a Basic_mesh (topology only).
+    create_domain_from_regions : returns a full shallow-water Domain.
+    """
 
     if verbose:
         log.resource_usage_timing(log.logging.CRITICAL, "start_")
@@ -132,34 +141,69 @@ def create_mesh_from_regions(bounding_polygon,
                   'could not be imported'
             raise Exception(msg)
 
-        m = cache(_create_mesh_from_regions,
+        m = cache(_create_pmesh_from_regions,
                   args, kwargs,
                   verbose=verbose,
                   compression=False)
     else:
-        m = _create_mesh_from_regions(*args, **kwargs)
+        m = _create_pmesh_from_regions(*args, **kwargs)
 
     return m
 
 
-def _create_mesh_from_regions(bounding_polygon,
-                              boundary_tags,
-                              maximum_triangle_area=None,
-                              filename=None,
-                              interior_regions=None,
-                              interior_holes=None,
-                              hole_tags=None,
-                              poly_geo_reference=None,
-                              mesh_geo_reference=None,
-                              minimum_triangle_angle=28.0,
-                              fail_if_polygons_outside=True,
-                              breaklines=None,
-                              verbose=True,
-                              regionPtArea=None):
-    """_create_mesh_from_regions - internal function.
+def create_mesh_from_regions(bounding_polygon,
+                             boundary_tags,
+                             maximum_triangle_area=None,
+                             filename=None,
+                             interior_regions=None,
+                             interior_holes=None,
+                             hole_tags=None,
+                             poly_geo_reference=None,
+                             mesh_geo_reference=None,
+                             breaklines=None,
+                             regionPtArea=None,
+                             minimum_triangle_angle=28.0,
+                             fail_if_polygons_outside=True,
+                             use_cache=False,
+                             verbose=True):
+    """Deprecated: use create_pmesh_from_regions instead."""
+    import warnings
+    warnings.warn(
+        'create_mesh_from_regions is deprecated, '
+        'use create_pmesh_from_regions instead',
+        DeprecationWarning, stacklevel=2)
+    return create_pmesh_from_regions(
+        bounding_polygon, boundary_tags,
+        maximum_triangle_area=maximum_triangle_area,
+        filename=filename,
+        interior_regions=interior_regions,
+        interior_holes=interior_holes,
+        hole_tags=hole_tags,
+        poly_geo_reference=poly_geo_reference,
+        mesh_geo_reference=mesh_geo_reference,
+        breaklines=breaklines,
+        regionPtArea=regionPtArea,
+        minimum_triangle_angle=minimum_triangle_angle,
+        fail_if_polygons_outside=fail_if_polygons_outside,
+        use_cache=use_cache,
+        verbose=verbose)
 
-    See create_mesh_from_regions for documentation.
-    """
+
+def _create_pmesh_from_regions(bounding_polygon,
+                               boundary_tags,
+                               maximum_triangle_area=None,
+                               filename=None,
+                               interior_regions=None,
+                               interior_holes=None,
+                               hole_tags=None,
+                               poly_geo_reference=None,
+                               mesh_geo_reference=None,
+                               minimum_triangle_angle=28.0,
+                               fail_if_polygons_outside=True,
+                               breaklines=None,
+                               verbose=True,
+                               regionPtArea=None):
+    """Internal implementation — see create_pmesh_from_regions."""
 
     # check the segment indexes - throw an error if they are out of bounds
     if boundary_tags is not None:

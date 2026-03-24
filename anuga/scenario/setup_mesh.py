@@ -42,7 +42,7 @@ def build_mesh(project):
 
     # Make the mesh
 
-    anuga.create_mesh_from_regions(
+    anuga.create_pmesh_from_regions(
         project.bounding_polygon,
         boundary_tags=project.boundary_tags,
         maximum_triangle_area=project.default_res,

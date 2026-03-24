@@ -172,7 +172,7 @@ def create_basic_mesh_from_regions(bounding_polygon,
 
     See Also
     --------
-    create_mesh_from_regions : returns the raw Pmesh object.
+    create_pmesh_from_regions : returns the raw Pmesh object.
     create_domain_from_regions : returns a full shallow-water Domain.
     """
 
@@ -222,9 +222,9 @@ def _create_basic_mesh_from_regions(bounding_polygon,
                                     verbose=True):
     """Internal implementation — see create_basic_mesh_from_regions."""
 
-    from anuga.pmesh.mesh_interface import create_mesh_from_regions
+    from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 
-    pmesh = create_mesh_from_regions(bounding_polygon,
+    pmesh = create_pmesh_from_regions(bounding_polygon,
                                      boundary_tags,
                                      maximum_triangle_area=maximum_triangle_area,
                                      interior_regions=interior_regions,
@@ -418,9 +418,9 @@ def _create_domain_from_regions(bounding_polygon,
     """
 
     #from anuga.shallow_water.shallow_water_domain import Domain
-    from anuga.pmesh.mesh_interface import create_mesh_from_regions
+    from anuga.pmesh.mesh_interface import create_pmesh_from_regions
     
-    pmesh = create_mesh_from_regions(bounding_polygon,
+    pmesh = create_pmesh_from_regions(bounding_polygon,
                              boundary_tags,
                              maximum_triangle_area=maximum_triangle_area,
                              interior_regions=interior_regions,

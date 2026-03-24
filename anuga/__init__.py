@@ -222,7 +222,8 @@ from anuga.simulation.simulation import Simulation
 # -----------------------------
 # Mesh API
 # -----------------------------
-from anuga.pmesh.mesh_interface import create_mesh_from_regions
+from anuga.pmesh.mesh_interface import create_pmesh_from_regions
+from anuga.pmesh.mesh_interface import create_mesh_from_regions  # deprecated alias
 
 # -----------------------------
 # SWW file access
@@ -465,7 +466,8 @@ __all__ = [
     'create_basic_mesh_from_regions',
     'create_domain_from_file',
     'create_domain_from_regions',
-    'create_mesh_from_regions',
+    'create_mesh_from_regions',   # deprecated alias for create_pmesh_from_regions
+    'create_pmesh_from_regions',
     # System / utility
     'acos',
     'cache',
