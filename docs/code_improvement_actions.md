@@ -220,17 +220,22 @@ the C extension `polygon_ext.pyx`. Explanatory comment added in Priority 2 work.
 
 ### 6.1  Expand incomplete docstrings in structures
 
-- [ ] `anuga/structures/boyd_box_operator.py:50–77` — document all 21
-      constructor parameters with types, units, and valid ranges
-- [ ] `anuga/structures/boyd_pipe_operator.py` — same treatment
-- [ ] `anuga/structures/weir_orifice_trapezoid_operator.py` — same treatment
+- [x] `anuga/structures/boyd_box_operator.py` — full NumPy-style Parameters
+      section added for all 21 constructor parameters with types, units, and
+      valid ranges *(Done 2026-03-24)*
+- [x] `anuga/structures/boyd_pipe_operator.py` — full NumPy-style Parameters
+      section added *(Done 2026-03-24)*
+- [x] `anuga/structures/weir_orifice_trapezoid_operator.py` — full NumPy-style
+      Parameters section added *(Done 2026-03-24)*
 
 ### 6.2  Add "Returns" sections to operator docstrings
 
 Many operator `__call__` and `update` methods have no documented return value.
 
-- [ ] `anuga/operators/rate_operators.py` — add Returns section
-- [ ] `anuga/operators/erosion_operators.py` — add Returns section
+- [x] `anuga/operators/rate_operators.py` — NumPy-style Returns section added
+      to `__call__` *(Done 2026-03-24)*
+- [x] `anuga/operators/erosion_operators.py` — NumPy-style Returns section
+      added to `__call__` *(Done 2026-03-24)*
 
 ---
 
@@ -243,5 +248,5 @@ Many operator `__call__` and `update` methods have no documented return value.
 | 3 — Test coverage | 17 | 15 |
 | 4 — API quality | 13 | 11 |
 | 5 — Performance | 5 | 4 |
-| 6 — Documentation | 5 | 0 |
-| **Total** | **60** | **44** |
+| 6 — Documentation | 5 | 5 |
+| **Total** | **60** | **49** |

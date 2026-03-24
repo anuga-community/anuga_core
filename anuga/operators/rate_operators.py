@@ -149,12 +149,21 @@ Parameters involving communication
         self.local_min = 0.0
 
     def __call__(self):
-        """
-        Apply rate to those triangles defined in indices
+        """Apply rate operator to the domain for one timestep.
 
-        indices == [], then don't apply anywhere
-        indices is None, then apply everywhere
-        otherwise apply for the specific indices
+        Adds water (or removes it when the rate is negative) to the stage
+        quantity of each triangle selected by ``indices``, scaled by the
+        current timestep and factor.
+
+        - If ``indices`` is an empty list, no triangles are modified.
+        - If ``indices`` is None, all triangles are modified.
+        - Otherwise only the triangles at the given indices are modified.
+
+        Returns
+        -------
+        None
+            Modifies ``domain.quantities['stage']`` (and momentum quantities
+            when the rate is negative) in place.
         """
 
         if self.indices is not None and len(self.indices) == 0:

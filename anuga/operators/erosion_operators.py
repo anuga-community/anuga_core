@@ -138,12 +138,21 @@ class Erosion_operator(Operator, Region):
 
 
     def __call__(self):
-        """
-        Apply rate to those triangles defined in indices
+        """Apply erosion operator to the domain for one timestep.
 
-        indices == [], then don't apply anywhere
-        indices is None, then apply everywhere
-        otherwise apply for the specific indices
+        Updates the elevation quantity of each triangle selected by ``indices``
+        according to the erosion model, then adjusts stage to maintain
+        consistency with the new bed level.
+
+        - If ``indices`` is an empty list, no triangles are modified.
+        - If ``indices`` is None, all triangles are modified.
+        - Otherwise only the triangles at the given indices are modified.
+
+        Returns
+        -------
+        None
+            Modifies ``domain.quantities['elevation']`` and
+            ``domain.quantities['stage']`` in place.
         """
 
 
