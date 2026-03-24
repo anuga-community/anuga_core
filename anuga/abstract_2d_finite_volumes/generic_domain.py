@@ -689,13 +689,11 @@ class Generic_Domain(object):
     def set_cfl(self, cfl=1.0):
         """Set CFL parameter, warn if greater than 2.0
         """
-        if cfl > 2.0:
-            msg = 'Setting CFL > 2.0'
-            import warnings
-            warnings.warn(msg)
-
         assert cfl > 0.0
         self.CFL = cfl
+        if cfl > 2.0:
+            import warnings
+            warnings.warn('Setting CFL > 2.0')
 
 
     def set_relative_time(self, time = 0.0):
