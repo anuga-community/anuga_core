@@ -103,39 +103,37 @@ xarray not being present.
 
 None of the following have any test coverage:
 
-- [ ] `Bed_shear_erosion_operator` — `anuga/operators/erosion_operators.py`
-- [ ] `Circular_erosion_operator` — `anuga/operators/erosion_operators.py`
-- [ ] `Flat_slice_erosion_operator` — `anuga/operators/erosion_operators.py`
-- [ ] `Flat_fill_slice_erosion_operator` — `anuga/operators/erosion_operators.py`
-- [ ] `Collect_max_quantities_operator` — `anuga/operators/collect_max_quantities_operator.py`
-- [ ] `Collect_max_stage_operator` — `anuga/operators/collect_max_stage_operator.py`
-- [ ] `Elliptic_operator` — `anuga/operators/elliptic_operator.py`
-- [ ] `Circular_rate_operator` — `anuga/operators/rate_operators.py` (partial)
-- [ ] `Circular_set_quantity_operator` — `anuga/operators/set_quantity_operator.py`
-- [ ] `Circular_set_stage_operator` — `anuga/operators/set_stage_operator.py`
+- [x] `Bed_shear_erosion_operator` — `anuga/operators/erosion_operators.py` *(Done 2026-03-24)*
+- [x] `Circular_erosion_operator` — `anuga/operators/erosion_operators.py` *(Done 2026-03-24)*
+- [x] `Flat_slice_erosion_operator` — `anuga/operators/erosion_operators.py` *(Done 2026-03-24)*
+- [x] `Flat_fill_slice_erosion_operator` — `anuga/operators/erosion_operators.py` *(Done 2026-03-24)*
+- [x] `Collect_max_quantities_operator` — `test_collect_operators.py` (new) *(Done 2026-03-24)*
+- [x] `Collect_max_stage_operator` — `test_collect_operators.py` (new) *(Done 2026-03-24)*
+- [x] `Elliptic_operator` — `test_elliptic_operator.py` (new) *(Done 2026-03-24)*
+- [x] `Circular_rate_operator` — added to `test_erosion_operators.py` *(Done 2026-03-24)*
+- [x] `Circular_set_quantity_operator` — added to `test_erosion_operators.py` *(Done 2026-03-24)*
+- [x] `Circular_set_stage_operator` — added to `test_erosion_operators.py` *(Done 2026-03-24)*
 
 Target test files: `anuga/operators/tests/test_erosion_operators.py`,
 `test_collect_operators.py`, `test_elliptic_operator.py`.
 
 ### 3.2  Add tests for untested structure classes
 
-- [ ] `Structure_operator` (base class) — `anuga/structures/structure_operator.py`
-      At minimum: construction, basic attribute access, `__repr__`
-- [ ] `Internal_boundary_operator` — `anuga/structures/internal_boundary_operator.py`
-- [ ] `RiverWall` — `anuga/structures/riverwall.py`
-- [ ] `Inlet_enquiry` — `anuga/structures/inlet_enquiry.py`
+- [x] `Structure_operator` (base class) — `test_structure_operator.py` (new): construction, dimensions, repr, statistics, discharge_routine raises *(Done 2026-03-24)*
+- [x] `Internal_boundary_operator` — `test_internal_boundary_operator.py` (new): construction, type, width, call, statistics *(Done 2026-03-24)*
+- [ ] `RiverWall` — `anuga/structures/riverwall.py` — deferred; requires full mesh with breaklines
+- [x] `Inlet_enquiry` — covered in `test_structure_operator.py` *(Done 2026-03-24)*
 
 Target test file: `anuga/structures/tests/test_internal_boundary_operator.py`,
 `anuga/structures/tests/test_riverwall.py`.
 
 ### 3.3  Add tests for untested scenario module
 
-- [ ] Scenario module (`anuga/scenario/`) has only the TOML parser tests added
-      in this session.  Add tests for:
-      - `prepare_data.py` — `PrepareData` class (directory setup, data export)
-      - `setup_boundary_conditions.py`
-      - `setup_rainfall.py`
-      - `setup_inlets.py`
+- [ ] Scenario module (`anuga/scenario/`) — deferred. `prepare_data.py`,
+      `setup_boundary_conditions.py`, `setup_rainfall.py`, `setup_inlets.py`
+      all depend on `spatialInputUtil` (compiled C extension) and real
+      shapefile/Excel data; meaningful unit tests require significant mocking
+      infrastructure or test data that is not in the repo.
 
 ---
 
@@ -247,8 +245,8 @@ Many operator `__call__` and `update` methods have no documented return value.
 |----------|--------------|------|
 | 1 — Quick wins | 14 | 12 |
 | 2 — Correctness | 6 | 6 |
-| 3 — Test coverage | 17 | 0 |
+| 3 — Test coverage | 17 | 15 |
 | 4 — API quality | 13 | 0 |
 | 5 — Performance | 5 | 0 |
 | 6 — Documentation | 5 | 0 |
-| **Total** | **60** | **18** |
+| **Total** | **60** | **33** |
