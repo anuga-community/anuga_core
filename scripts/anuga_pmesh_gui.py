@@ -650,11 +650,11 @@ class Draw(AppShell.AppShell):
         """
         tempMesh = mesh
         try:
-            tempMesh.generate_mesh(mode = "pzq"+str(minAngle)
-                                  +"a"+str(maxArea)
-                                  +"a") #So areas for regions will be used
+            tempMesh._generateMesh_impl(mode = "pzq"+str(minAngle)
+                                       +"a"+str(maxArea)
+                                       +"a") #So areas for regions will be used
         except AttributeError : # can't catch PyEval_RestoreThread
-            # This doesn't catch tempMesh.generate_mesh failing
+            # This doesn't catch tempMesh._generateMesh_impl failing
             tempMesh = mesh
         return tempMesh
 
@@ -669,9 +669,9 @@ class Draw(AppShell.AppShell):
         #
         tempMesh = mesh
         try:
-            tempMesh.generate_mesh("pzq1")
+            tempMesh._generateMesh_impl("pzq1")
         except AttributeError : # can't catch PyEval_RestoreThread
-            # This doesn't catch tempMesh.generate_mesh failing
+            # This doesn't catch tempMesh._generateMesh_impl failing
             pass
         meshArea = 0
         meshArea = tempMesh.tri_mesh.calc_mesh_area()
