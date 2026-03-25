@@ -33,7 +33,7 @@ from anuga.utilities.file_utils import del_dir
 from anuga.utilities.numerical_tools import ensure_numeric, mean
 from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a
 from anuga.config import netcdf_float, epsilon, g
-from anuga.pmesh.mesh_interface import create_mesh_from_regions
+from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 from anuga.file_conversion.sww2dem import sww2dem_batch
 from anuga.file.csv_file import load_csv_as_dict, load_csv_as_array, \
                                 load_csv_as_building_polygons, \
@@ -763,7 +763,7 @@ class Test_Data_Manager(Test_Mux):
         
         # have to change boundary tags from last example because now bounding
         # polygon starts in different place.
-        create_mesh_from_regions(boundary_polygon,
+        create_pmesh_from_regions(boundary_polygon,
                                  boundary_tags=boundary_tags,
                                  maximum_triangle_area=extent_res,
                                  filename=meshname,

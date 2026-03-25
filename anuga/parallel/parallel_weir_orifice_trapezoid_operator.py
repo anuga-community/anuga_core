@@ -46,10 +46,10 @@ class Parallel_Weir_orifice_trapezoid_operator(Parallel_Structure_operator):
                  verbose=False,
                  master_proc = 0,
                  procs = None,
-                 inlet_master_proc = [0,0],
+                 inlet_master_proc = None,
                  inlet_procs = None,
-                 enquiry_proc = [0,0]):
-                     
+                 enquiry_proc = None):
+
         Parallel_Structure_operator.__init__(self,
                                           domain=domain,
                                           end_points=end_points,

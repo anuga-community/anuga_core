@@ -5,7 +5,7 @@ from math import sqrt
 import anuga
 
 from anuga.abstract_2d_finite_volumes.generic_domain import *
-from anuga.pmesh.mesh_interface import create_mesh_from_regions
+from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 from anuga.config import epsilon
 import numpy as num
 from anuga.pmesh.mesh import Segment, Vertex, Pmesh
@@ -76,7 +76,7 @@ class Test_Domain(unittest.TestCase):
                         conserved_quantities, evolved_quantities, other_quantities)
 
         try:
-            domain.set_CFL(-0.1)
+            domain.set_cfl(-0.1)
         except Exception:
             pass
         else:
@@ -91,7 +91,7 @@ class Test_Domain(unittest.TestCase):
         warnings.simplefilter("error")
 
         try:
-            domain.set_CFL(3.0)
+            domain.set_cfl(3.0)
         except Exception:
             pass
         else:
@@ -99,7 +99,7 @@ class Test_Domain(unittest.TestCase):
             raise Exception(msg)
 
         assert domain.CFL == 3.0
-        
+
         warnings.simplefilter("default")
         
 

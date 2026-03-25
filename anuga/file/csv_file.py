@@ -44,34 +44,33 @@ def load_csv_as_dict(file_name, title_check_list=None, delimiter=',',
     title_index_dic = {}
     titles_stripped = [] # List of titles
 
-    fid = open(file_name)
-    reader = csv.reader(fid, delimiter=delimiter)
+    with open(file_name) as fid:
+        reader = csv.reader(fid, delimiter=delimiter)
 
-    # Read in and manipulate the title info
-    titles = next(reader)
-    for i, title in enumerate(titles):
-        header = title.strip()
-        titles_stripped.append(header)
-        title_index_dic[header] = i
-    title_count = len(titles_stripped)
+        # Read in and manipulate the title info
+        titles = next(reader)
+        for i, title in enumerate(titles):
+            header = title.strip()
+            titles_stripped.append(header)
+            title_index_dic[header] = i
+        title_count = len(titles_stripped)
 
-    # Check required columns
-    if title_check_list is not None:
-        for title_check in title_check_list:
-            if title_check not in title_index_dic:
-                msg = 'Reading error. This row is not present %s' % title_check
+        # Check required columns
+        if title_check_list is not None:
+            for title_check in title_check_list:
+                if title_check not in title_index_dic:
+                    msg = 'Reading error. This row is not present %s' % title_check
+                    raise IOError(msg)
+
+        # Create a dictionary of column values, indexed by column title
+        for line in reader:
+            n = len(line) # Number of entries
+            if n < title_count:
+                msg = 'Entry in file %s had %d columns ' % (file_name, n)
+                msg += 'although there were %d headers' % title_count
                 raise IOError(msg)
-
-
-    # Create a dictionary of column values, indexed by column title
-    for line in reader:
-        n = len(line) # Number of entries
-        if n < title_count:
-            msg = 'Entry in file %s had %d columns ' % (file_name, n)
-            msg += 'although there were %d headers' % title_count
-            raise IOError(msg)
-        for i, val in enumerate(line[:title_count]):  # skip trailing data
-            attribute_dic.setdefault(titles_stripped[i], []).append(d_type(val))
+            for i, val in enumerate(line[:title_count]):  # skip trailing data
+                attribute_dic.setdefault(titles_stripped[i], []).append(d_type(val))
 
     return attribute_dic, title_index_dic
 
@@ -133,8 +132,7 @@ def load_csv_as_matrix(file_name, delimiter = ','):
     for col_title in col_titles:
         index = title_indices[col_title]
         header.append(col_title)
-        for i, x in enumerate(X[col_title]):
-            ret[i, index] = float(x)
+        ret[:, index] = num.array(X[col_title], dtype=float)
 
     return header, ret
 
@@ -193,9 +191,8 @@ def store_parameters(verbose=False, **kwargs):
     # checks the header info, if the same, then write, if not create a new file
     # try to open!
     try:
-        fid = open(file_name, 'r')
-        file_header = fid.readline()
-        fid.close()
+        with open(file_name, 'r') as fid:
+            file_header = fid.readline()
         if verbose: log.critical('read file header %s' % file_header)
     except Exception:
         msg = 'try to create new file: %s' % file_name
@@ -203,28 +200,25 @@ def store_parameters(verbose=False, **kwargs):
             log.critical(msg)
         #tries to open file, maybe directory is bad
         try:
-            fid = open(file_name, 'w')
-            fid.write(header)
-            fid.close()
-            file_header=header
+            with open(file_name, 'w') as fid:
+                fid.write(header)
+            file_header = header
         except OSError:
             msg = 'cannot create new file: %s' % file
             raise Exception(msg)
 
     # if header is same or this is a new file
     if file_header == str(header):
-        fid = open(file_name, 'a')
-        fid.write(line)
-        fid.close()
+        with open(file_name, 'a') as fid:
+            fid.write(line)
     else:
         # backup plan,
         # if header is different and has completed will append info to
         # end of details_temp.cvs file in output directory
         file_name = str(kwargs['output_dir']) + 'detail_temp.csv'
-        fid = open(file_name, 'a')
-        fid.write(header)
-        fid.write(line)
-        fid.close()
+        with open(file_name, 'a') as fid:
+            fid.write(header)
+            fid.write(line)
 
         if verbose:
             log.critical('file %s', file_header.strip('\n'))

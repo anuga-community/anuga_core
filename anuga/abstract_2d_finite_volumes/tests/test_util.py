@@ -765,20 +765,20 @@ class Test_Util(unittest.TestCase):
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
         from shallow_water import Domain
         import anuga.shallow_water.data_manager 
-        from anuga.pmesh.mesh_interface import create_mesh_from_regions
+        from anuga.pmesh.mesh_interface import create_pmesh_from_regions
         finaltime = 1200
-        
+
         filename = tempfile.mktemp()
-        #print "filename",filename 
+        #print "filename",filename
         filename = 'test_file_function'
 
         meshfilename = tempfile.mktemp(".tsh")
 
         boundary_tags = {'walls':[0,1],'bom':[2]}
-        
+
         polygon_absolute = [[0,-20],[10,-20],[10,15],[-20,15]]
-        
-        create_mesh_from_regions(polygon_absolute,
+
+        create_pmesh_from_regions(polygon_absolute,
                                  boundary_tags,
                                  10000000,
                                  filename=meshfilename)
@@ -880,7 +880,7 @@ class Test_Util(unittest.TestCase):
         interpolation_points = [[0,-20], [1,0], [0,1], [1.1, 3.14]] #, [10,-12.5]] - this point doesn't work WHY?
         interpolation_points = [[10,-12.5]]
             
-        print("len(interpolation_points)",len(interpolation_points)) 
+        #print("len(interpolation_points)",len(interpolation_points))
         F = file_function(filename + '.sww', domain,
                           quantities = domain.conserved_quantities,
                           interpolation_points = interpolation_points)
@@ -909,13 +909,13 @@ class Test_Util(unittest.TestCase):
                 else:
                     actual = (k*q1 + (6-k)*q0)/6
                 q = F(t, point_id=id)
-                print("############")
-                print("id, x, y ", id, x, y) #k, t, q
-                print("t", t)
+                #print("############")
+                #print("id, x, y ", id, x, y) #k, t, q
+                #print("t", t)
                 #print ' ', q0
                 #print ' ', q1
-                print("q",q)
-                print("actual", actual)
+                #print("q",q)
+                #print("actual", actual)
                 #print
                 if q0 == NAN:
                      self.assertTrue( q == actual, 'Fail!')

@@ -23,11 +23,12 @@ import anuga
 from anuga import (
     Reflective_boundary,
     Transmissive_n_momentum_zero_t_momentum_set_stage_boundary,
-    myid, numprocs, finalize, barrier,
+    myid, numprocs, finalize, barrier, memory_stats, distribute_basic_mesh,
+    basic_mesh_from_mesh_file
 )
-from anuga.abstract_2d_finite_volumes.basic_mesh import Basic_mesh
-from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_dict_to_tag_dict
-from anuga.parallel.parallel_api import distribute_basic_mesh
+
+from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_dict_to_tag_dict 
+
 
 # ---------------------------------------------------------------------------
 # Parameters
@@ -51,27 +52,40 @@ verbose = True
 t0 = time.time()
 
 if myid == 0:
-    from anuga.load_mesh.loadASCII import import_mesh_file
 
     if verbose:
-        print('Reading mesh file:', mesh_filename)
+         print('Reading mesh file:', mesh_filename)
+         print(f'Before reading mesh_file: {memory_stats()}')
 
-    mesh_dict = import_mesh_file(mesh_filename)
+    bm = basic_mesh_from_mesh_file(mesh_filename, verbose=True)
 
-    nodes       = mesh_dict['vertices']          # (M, 2) float
-    triangles   = mesh_dict['triangles']         # (N, 3) int
-    geo_ref     = mesh_dict['geo_reference']
-    boundary    = pmesh_dict_to_tag_dict(mesh_dict)
+    # Access vertex attributes by name
+    if 'elevation' in bm.vertex_attribute_titles:
+        idx = bm.vertex_attribute_titles.index('elevation')
+        elevation_v = bm.vertex_attributes[:, idx]   # shape (M,)
+        nodes = bm.nodes
 
-    # Extract per-vertex elevation stored in the .tsh file.
-    vertex_atts    = np.array(mesh_dict['vertex_attributes'])  # (M, n_atts)
-    vertex_titles  = mesh_dict['vertex_attribute_titles']
-    elev_idx       = vertex_titles.index('elevation')
-    elevation_v    = vertex_atts[:, elev_idx].astype(float)    # (M,)
 
-    bm = Basic_mesh(nodes, triangles,
-                    boundary=boundary,
-                    geo_reference=geo_ref)
+    # from anuga.load_mesh.loadASCII import import_mesh_file
+
+
+
+    # mesh_dict = import_mesh_file(mesh_filename)
+
+    # nodes       = mesh_dict['vertices']          # (M, 2) float
+    # triangles   = mesh_dict['triangles']         # (N, 3) int
+    # geo_ref     = mesh_dict['geo_reference']
+    # boundary    = pmesh_dict_to_tag_dict(mesh_dict)
+
+    # # Extract per-vertex elevation stored in the .tsh file.
+    # vertex_atts    = np.array(mesh_dict['vertex_attributes'])  # (M, n_atts)
+    # vertex_titles  = mesh_dict['vertex_attribute_titles']
+    # elev_idx       = vertex_titles.index('elevation')
+    # elevation_v    = vertex_atts[:, elev_idx].astype(float)    # (M,)
+
+    # bm = Basic_mesh(nodes, triangles,
+    #                 boundary=boundary,
+    #                 geo_reference=geo_ref)
 
     if verbose:
         print(f'Basic_mesh: {bm.number_of_triangles} triangles, '
@@ -108,6 +122,9 @@ global_elevation = bcast_data['elevation']   # (M,)
 from scipy.interpolate import LinearNDInterpolator
 elevation_func = LinearNDInterpolator(global_nodes, global_elevation)
 
+if myid == 0:
+    print(f'Before distribute: {memory_stats()}')
+
 # ---------------------------------------------------------------------------
 # Step 3: Distribute the mesh to all ranks.
 # ---------------------------------------------------------------------------
@@ -118,6 +135,9 @@ if myid == 0 and verbose:
 
 domain = distribute_basic_mesh(bm, verbose=verbose)
 domain.set_name('merimbula_basic_mesh')
+
+if myid == 0:
+    print(f'After distribute: {memory_stats()}')
 
 t2 = time.time()
 if myid == 0:

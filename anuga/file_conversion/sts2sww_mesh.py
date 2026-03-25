@@ -93,7 +93,7 @@ def sts2sww_mesh(basename_in, basename_out=None,
         mesh.holes = []
         mesh.generate_mesh(minimum_triangle_angle=0.0, verbose=False)
 
-    mesh_dic = mesh.Mesh2MeshList()
+    mesh_dic = mesh.mesh2mesh_list()
 
     points_utm=ensure_numeric(points_utm)
     assert num.all(ensure_numeric(mesh_dic['generatedpointlist'])

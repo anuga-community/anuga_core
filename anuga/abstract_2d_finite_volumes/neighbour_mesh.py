@@ -612,62 +612,7 @@ class Mesh(General_mesh):
         # Get x,y coordinates for all vertices for all triangles
         V = self.get_vertex_coordinates()
 
-#        # Check each triangle
-#        for i in xrange(0):
-#
-#            x0, y0 = V[3*i, :]
-#            x1, y1 = V[3*i+1, :]
-#            x2, y2 = V[3*i+2, :]
-#
-#            # Check that area hasn't been compromised
-#            area = self.areas[i]
-#            ref = -((x1*y0-x0*y1)+(x2*y1-x1*y2)+(x0*y2-x2*y0))/2
-#            msg = 'Triangle %i (%f,%f), (%f,%f), (%f, %f)' % (i, x0,y0,x1,y1,x2,y2)
-#            msg += 'Wrong area: %f  %f'\
-#                  %(area, ref)
-#            assert abs((area - ref)/area) < epsilon, msg
-#
-#            msg = 'Triangle %i (%f,%f), (%f,%f), (%f, %f)' % (i, x0,y0,x1,y1,x2,y2)
-#            msg += ' is degenerate:  area == %f' % self.areas[i]
-#            assert area > 0.0, msg
-#
-#            # Check that points are arranged in counter clock-wise order
-#            v0 = [x1-x0, y1-y0]
-#            v1 = [x2-x1, y2-y1]
-#            v2 = [x0-x2, y0-y2]
-#            a0 = anglediff(v1, v0)
-#            a1 = anglediff(v2, v1)
-#            a2 = anglediff(v0, v2)
-#
-#            msg = '''Vertices (%s,%s), (%s,%s), (%s,%s) are not arranged
-#            in counter clockwise order''' %(x0, y0, x1, y1, x2, y2)
-#            assert a0 < pi and a1 < pi and a2 < pi, msg
-#
-#            # Check that normals are orthogonal to edge vectors
-#            # Note that normal[k] lies opposite vertex k
-#
-#            normal0 = self.normals[i, 0:2]
-#            normal1 = self.normals[i, 2:4]
-#            normal2 = self.normals[i, 4:6]
-#
-#            for u, v in [ (v0, normal2), (v1, normal0), (v2, normal1) ]:
-#
-#                # Normalise
-#                l_u = num.sqrt(u[0]*u[0] + u[1]*u[1])
-#                l_v = num.sqrt(v[0]*v[0] + v[1]*v[1])
-#
-#                msg = 'Normal vector in triangle %d does not have unit length' %i
-#                assert num.allclose(l_v, 1), msg
-#
-#                x = (u[0]*v[0] + u[1]*v[1])/l_u # Inner product
-#
-#                msg = 'Normal vector (%f,%f) is not perpendicular to' %tuple(v)
-#                msg += ' edge (%f,%f) in triangle %d.' %(tuple(u) + (i,))
-#                msg += ' Inner product is %e.' %x
-#                assert x < epsilon, msg
-
-
-        # let's try numpy constructs
+        # numpy constructs
 
         x0 = V[0::3, 0]
         y0 = V[0::3, 1]

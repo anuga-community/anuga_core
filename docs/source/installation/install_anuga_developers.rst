@@ -179,23 +179,56 @@ See :doc:`../parallel/index` for how to write and run parallel ANUGA scripts.
 Testing the installation
 ^^^^^^^^^^^^^^^^^^^^^^^^
 
-Once the installation is complete you can activate the `anuga_env_3.12` environment
+Once the installation is complete you can activate the ``anuga_env_3.12`` environment
 and run the unit tests to check that everything is working.
-
-Test the installation.
 
 .. code-block:: bash
 
     cd sandpit
-    conda activate anuga_env_3.12   
+    conda activate anuga_env_3.12
     pytest --pyargs anuga
 
-ANUGA also comes with a validation test suite which verifies the correctness of 
+This runs the full test suite (~1 600 tests, approximately 3 minutes).
+
+Fast test run
+"""""""""""""
+
+For a quick feedback loop during development, pass ``--run-fast`` to skip the
+slow tests (MPI-based parallel tests and a handful of individually marked
+long-running tests):
+
+.. code-block:: bash
+
+    pytest --pyargs anuga --run-fast
+
+This runs approximately 1 500 tests in around 40 seconds.
+
+Tests are considered *slow* if they:
+
+* live under ``anuga/parallel/tests/`` (MPI tests that spawn subprocesses), or
+* are decorated with ``@pytest.mark.slow`` (individually identified long-running
+  tests in other modules).
+
+To run *only* the slow tests:
+
+.. code-block:: bash
+
+    pytest --pyargs anuga -m slow
+
+To mark a new test as slow, add the decorator before the test method::
+
+    import pytest
+
+    @pytest.mark.slow
+    def test_my_expensive_computation(self):
+        ...
+
+ANUGA also comes with a validation test suite which verifies the correctness of
 real life hydraulic scenarios. You can run them as follows:
 
 .. code-block:: bash
 
-    cd validation_tests 
+    cd validation_tests
     python run_auto_validation_tests.py
 
 Using the installation

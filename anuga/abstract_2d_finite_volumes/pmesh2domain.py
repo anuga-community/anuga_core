@@ -36,7 +36,7 @@ def pmesh_to_basic_mesh(pmesh_instance, verbose=False):
     if pmesh_instance.tri_mesh is None:
         pmesh_instance.generate_mesh(verbose=verbose)
 
-    mesh_dict = pmesh_instance.Mesh2IODict()
+    mesh_dict = pmesh_instance.mesh2io_dict()
 
     vertex_coordinates = mesh_dict['vertices']
     triangles          = mesh_dict['triangles']
@@ -74,7 +74,7 @@ def pmesh_to_mesh(pmesh_instance, verbose=False):
     if pmesh_instance.tri_mesh is None:
         pmesh_instance.generate_mesh(verbose=verbose)
 
-    mesh_dict = pmesh_instance.Mesh2IODict()
+    mesh_dict = pmesh_instance.mesh2io_dict()
 
     vertex_coordinates = mesh_dict['vertices']
     triangles = mesh_dict['triangles']
@@ -211,7 +211,7 @@ def _pmesh_to_domain(file_name=None, mesh_instance=None, use_cache=False,
 
     # get data from mesh instance or file
     if file_name is None:
-        mesh_dict = mesh_instance.Mesh2IODict()
+        mesh_dict = mesh_instance.mesh2io_dict()
     else:
         mesh_dict = import_mesh_file(file_name)
 

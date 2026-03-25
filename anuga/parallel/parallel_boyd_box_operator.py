@@ -45,9 +45,15 @@ class Parallel_Boyd_box_operator(Parallel_Structure_operator):
                  verbose=False,
                  master_proc = 0,
                  procs = None,
-                 inlet_master_proc = [0,0],
+                 inlet_master_proc = None,
                  inlet_procs = None,
-                 enquiry_proc = [0,0]):
+                 enquiry_proc = None,
+                 max_velocity = 10.0):
+
+        if inlet_master_proc is None:
+            inlet_master_proc = [0, 0]
+        if enquiry_proc is None:
+            enquiry_proc = [0, 0]
 
         Parallel_Structure_operator.__init__(self,
                                           domain=domain,
@@ -99,7 +105,7 @@ class Parallel_Boyd_box_operator(Parallel_Structure_operator):
         self.culvert_blockage = self.get_culvert_blockage()
         self.culvert_barrels = self.get_culvert_barrels()
 
-        self.max_velocity = 10.0
+        self.max_velocity = max_velocity
 
         self.inlets = self.get_inlets()
 

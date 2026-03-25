@@ -11,12 +11,13 @@ Covers:
   - verbose flag doesn't raise
 """
 
+import logging
 import os
 import unittest
 import tempfile
 import numpy as num
 
-from anuga.pmesh.mesh import importMeshFromFile
+from anuga.pmesh.mesh import import_mesh_from_file
 from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_to_mesh
 
 
@@ -72,7 +73,7 @@ class Test_pmesh_to_mesh_return_type(unittest.TestCase):
 
     def setUp(self):
         self.tsh = _write_tsh(_TSH_TWO_TRIANGLES)
-        self.pmesh = importMeshFromFile(self.tsh)
+        self.pmesh = import_mesh_from_file(self.tsh)
 
     def tearDown(self):
         os.remove(self.tsh)
@@ -83,14 +84,19 @@ class Test_pmesh_to_mesh_return_type(unittest.TestCase):
         self.assertIsInstance(mesh, Mesh)
 
     def test_verbose_does_not_raise(self):
-        pmesh_to_mesh(self.pmesh, verbose=True)
+        # Suppress the expected verbose logging output from General_mesh/Mesh
+        logging.disable(logging.CRITICAL)
+        try:
+            pmesh_to_mesh(self.pmesh, verbose=True)
+        finally:
+            logging.disable(logging.NOTSET)
 
 
 class Test_pmesh_to_mesh_vertices(unittest.TestCase):
 
     def setUp(self):
         self.tsh = _write_tsh(_TSH_TWO_TRIANGLES)
-        self.pmesh = importMeshFromFile(self.tsh)
+        self.pmesh = import_mesh_from_file(self.tsh)
         self.mesh = pmesh_to_mesh(self.pmesh)
 
     def tearDown(self):
@@ -105,7 +111,7 @@ class Test_pmesh_to_mesh_vertices(unittest.TestCase):
         self.assertTrue(num.all(num.isfinite(self.mesh.nodes)))
 
     def test_vertex_coordinates_match_pmesh(self):
-        mesh_dict = self.pmesh.Mesh2IODict()
+        mesh_dict = self.pmesh.mesh2io_dict()
         # nodes holds unique vertex coordinates in the same order as the source
         num.testing.assert_allclose(
             self.mesh.nodes,
@@ -116,7 +122,7 @@ class Test_pmesh_to_mesh_triangles(unittest.TestCase):
 
     def setUp(self):
         self.tsh = _write_tsh(_TSH_TWO_TRIANGLES)
-        self.pmesh = importMeshFromFile(self.tsh)
+        self.pmesh = import_mesh_from_file(self.tsh)
         self.mesh = pmesh_to_mesh(self.pmesh)
 
     def tearDown(self):
@@ -133,7 +139,7 @@ class Test_pmesh_to_mesh_triangles(unittest.TestCase):
                 self.assertLess(v, n_verts)
 
     def test_triangles_match_pmesh(self):
-        mesh_dict = self.pmesh.Mesh2IODict()
+        mesh_dict = self.pmesh.mesh2io_dict()
         num.testing.assert_array_equal(
             self.mesh.triangles,
             num.array(mesh_dict['triangles'], dtype=int))
@@ -148,7 +154,7 @@ class Test_pmesh_to_mesh_geo_reference(unittest.TestCase):
 
     def setUp(self):
         self.tsh = _write_tsh(_TSH_TWO_TRIANGLES)
-        self.pmesh = importMeshFromFile(self.tsh)
+        self.pmesh = import_mesh_from_file(self.tsh)
         self.mesh = pmesh_to_mesh(self.pmesh)
 
     def tearDown(self):
@@ -168,7 +174,7 @@ class Test_pmesh_to_mesh_boundary(unittest.TestCase):
 
     def setUp(self):
         self.tsh = _write_tsh(_TSH_TWO_TRIANGLES)
-        self.pmesh = importMeshFromFile(self.tsh)
+        self.pmesh = import_mesh_from_file(self.tsh)
         self.mesh = pmesh_to_mesh(self.pmesh)
 
     def tearDown(self):
@@ -213,7 +219,7 @@ class Test_pmesh_to_mesh_tagged_elements(unittest.TestCase):
 
     def setUp(self):
         self.tsh = _write_tsh(_TSH_TWO_TRIANGLES)
-        self.pmesh = importMeshFromFile(self.tsh)
+        self.pmesh = import_mesh_from_file(self.tsh)
         self.mesh = pmesh_to_mesh(self.pmesh)
 
     def tearDown(self):
@@ -244,7 +250,7 @@ class Test_pmesh_to_mesh_neighbours(unittest.TestCase):
 
     def setUp(self):
         self.tsh = _write_tsh(_TSH_TWO_TRIANGLES)
-        self.pmesh = importMeshFromFile(self.tsh)
+        self.pmesh = import_mesh_from_file(self.tsh)
         self.mesh = pmesh_to_mesh(self.pmesh)
 
     def tearDown(self):
@@ -295,20 +301,20 @@ class Test_pmesh_to_mesh_larger(unittest.TestCase):
 
     def setUp(self):
         import tempfile
-        from anuga.pmesh.mesh_interface import create_mesh_from_regions
+        from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 
         self.tsh = tempfile.mktemp(suffix='.tsh')
         bounding_polygon = [[0.0, 0.0], [1.0, 0.0],
                             [1.0, 1.0], [0.0, 1.0]]
         boundary_tags = {'bottom': [0], 'right': [1],
                          'top':    [2], 'left':  [3]}
-        create_mesh_from_regions(
+        create_pmesh_from_regions(
             bounding_polygon,
             boundary_tags=boundary_tags,
             maximum_triangle_area=0.05,
             filename=self.tsh,
             verbose=False)
-        self.pmesh = importMeshFromFile(self.tsh)
+        self.pmesh = import_mesh_from_file(self.tsh)
         self.mesh = pmesh_to_mesh(self.pmesh)
 
     def tearDown(self):

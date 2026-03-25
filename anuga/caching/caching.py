@@ -142,10 +142,10 @@ def set_option(key, value):
 # -----------------------------------------------------------------------------
 # Function cache - the main routine
 
-def cache(my_F, 
-          args=(), 
-          kwargs={}, 
-          dependencies=None, 
+def cache(my_F,
+          args=(),
+          kwargs=None,
+          dependencies=None,
           cachedir=None,
           verbose=None, 
           compression=None, 
@@ -318,10 +318,13 @@ def cache(my_F,
   # Force singleton arg into a tuple
   if not isinstance(args, tuple):
     args = tuple([args])
-  
+
+  if kwargs is None:
+    kwargs = {}
+
   # Check that kwargs is a dictionary
   if not isinstance(kwargs, dict):
-    raise TypeError    
+    raise TypeError
     
   # Hash arguments (and keyword args) to integer
   arghash = myhash((args, kwargs))
