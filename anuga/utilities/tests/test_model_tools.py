@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 
+import pytest
 import unittest
 import numpy as num
 from numpy.random import uniform, seed
@@ -87,6 +88,7 @@ class Test_Model_Tools(unittest.TestCase):
 
                                 i = i+1
 
+    @pytest.mark.slow
     def test_create_culvert_bridge_operator(self):
         
         import os

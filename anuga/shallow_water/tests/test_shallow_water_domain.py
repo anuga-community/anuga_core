@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import pytest
 import unittest, os, time
 import os.path
 from math import pi, sqrt
@@ -8087,6 +8088,7 @@ friction  \n \
             assert num.allclose(max(elevation[i,:]), i * inc)
 
 
+    @pytest.mark.slow
     def test_inflow_using_flowline(self):
         """test_inflow_using_flowline
 

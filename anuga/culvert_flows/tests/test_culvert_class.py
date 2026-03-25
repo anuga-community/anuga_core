@@ -10,6 +10,7 @@ from anuga.geometry.polygon_function import Polygon_function
 from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_cross
 from anuga.abstract_2d_finite_volumes.quantity import Quantity
 
+import pytest
 import anuga
 
 from anuga.culvert_flows.culvert_class import Culvert_flow, \
@@ -135,6 +136,7 @@ class Test_Culvert(unittest.TestCase):
         pass
 
 
+    @pytest.mark.slow
     def test_that_culvert_runs_rating(self):
         """test_that_culvert_runs_rating
         
@@ -703,6 +705,7 @@ class Test_Culvert(unittest.TestCase):
 
     
 
+    @pytest.mark.slow
     def test_momentum_jet(self):
         """test_momentum_jet
         

@@ -4,6 +4,7 @@ import unittest
 import os.path
 import sys
 
+import pytest
 import anuga
 
 from anuga.utilities.system_tools import get_pathname_from_package
@@ -133,6 +134,7 @@ class Test_Culvert(unittest.TestCase):
         pass
 
 
+    @pytest.mark.slow
     def test_that_culvert_runs_rating(self):
         """test_that_culvert_runs_rating
         
@@ -365,6 +367,7 @@ class Test_Culvert(unittest.TestCase):
     
         os.remove('Test_culvert_dry.sww')
         
+    @pytest.mark.slow
     def test_that_culvert_flows_conserves_volume(self):
         """test_that_culvert_flows_conserves_volume
 
@@ -708,6 +711,7 @@ class Test_Culvert(unittest.TestCase):
 
     
 
+    @pytest.mark.slow
     def test_momentum_jet(self):
         """test_momentum_jet
         

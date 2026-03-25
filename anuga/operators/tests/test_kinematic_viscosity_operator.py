@@ -1,4 +1,7 @@
 
+import pytest
+pytestmark = pytest.mark.slow
+
 from anuga import Domain
 from anuga import Quantity
 from anuga import Dirichlet_boundary

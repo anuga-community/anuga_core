@@ -57,4 +57,7 @@ minversion = '6.0'
 testpaths = [
     'anuga'
 ]
+markers = [
+    "slow: marks tests as slow — skipped by default, run with --run-slow to include",
+]
 

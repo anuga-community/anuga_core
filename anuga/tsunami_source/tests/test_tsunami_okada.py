@@ -1,4 +1,7 @@
 
+import pytest
+pytestmark = pytest.mark.slow
+
 import unittest
 import os
 import numpy as num
