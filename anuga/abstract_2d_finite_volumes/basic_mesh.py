@@ -235,3 +235,85 @@ def rectangular_cross_basic_mesh(m, n, len1=1.0, len2=1.0, origin=(0.0, 0.0)):
         rectangular_cross_with_neighbours(m, n, len1, len2, origin)
     return Basic_mesh(points, elements, boundary=boundary,
                       triangle_neighbours=neighbours)
+
+
+def basic_mesh_from_mesh_file(mesh_filename, verbose=False):
+    """Read a .tsh or .msh mesh file and return a Basic_mesh.
+
+    Vertex attributes and triangle region tags stored in the file are attached
+    to the returned object as extra instance attributes so the caller does not
+    need to re-open the file.
+
+    Parameters
+    ----------
+    mesh_filename : str or Path
+        Path to the mesh file (.tsh or .msh format).
+    verbose : bool, optional
+        If True, print progress and summary messages. Default False.
+
+    Returns
+    -------
+    Basic_mesh
+        The mesh object, with the following additional instance attributes:
+
+        ``vertex_attributes`` : numpy.ndarray, shape (M, n) or None
+            Per-vertex attribute values in the same row order as
+            ``bm.nodes``.  None when the file contains no attributes.
+        ``vertex_attribute_titles`` : list of str
+            Column names for ``vertex_attributes``; empty list when None.
+        ``triangle_tags`` : list of str
+            Region tag string for each triangle (length N); empty list when
+            the file contains no region tags.
+
+    Examples
+    --------
+    >>> bm = basic_mesh_from_mesh_file('my_mesh.tsh', verbose=True)
+    >>> elev_idx = bm.vertex_attribute_titles.index('elevation')
+    >>> elevation = bm.vertex_attributes[:, elev_idx]
+    """
+    from anuga.load_mesh.loadASCII import import_mesh_file
+    from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_dict_to_tag_dict
+
+    if verbose:
+        print(f'Reading mesh file: {mesh_filename}')
+
+    mesh_dict = import_mesh_file(str(mesh_filename))
+
+    nodes     = mesh_dict['vertices']
+    triangles = mesh_dict['triangles']
+    geo_ref   = mesh_dict['geo_reference']
+    boundary  = pmesh_dict_to_tag_dict(mesh_dict)
+
+    bm = Basic_mesh(nodes, triangles,
+                    boundary=boundary,
+                    geo_reference=geo_ref)
+
+    # --- vertex attributes ---
+    raw_va = mesh_dict.get('vertex_attributes')
+    titles = mesh_dict.get('vertex_attribute_titles') or []
+    if raw_va is not None and len(raw_va) > 0:
+        bm.vertex_attributes = num.array(raw_va, dtype=float)
+        bm.vertex_attribute_titles = list(titles)
+        if verbose:
+            print(f'  vertex attributes ({bm.vertex_attributes.shape[1]}): '
+                  f'{bm.vertex_attribute_titles}')
+    else:
+        bm.vertex_attributes = None
+        bm.vertex_attribute_titles = []
+        if verbose:
+            print('  no vertex attributes')
+
+    # --- triangle tags (region labels) ---
+    tri_tags = mesh_dict.get('triangle_tags') or []
+    bm.triangle_tags = list(tri_tags)
+    if verbose:
+        unique_tags = sorted(set(t for t in tri_tags if t))
+        if unique_tags:
+            print(f'  triangle tags: {unique_tags}')
+        else:
+            print('  no triangle tags')
+
+    if verbose:
+        print(f'  {bm}')
+
+    return bm

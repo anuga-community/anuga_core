@@ -1398,6 +1398,9 @@ class Generic_Domain(object):
                 pass
             self.last_walltime = walltime()
 
+        from anuga.utilities.system_tools import memory_stats
+        msg += f', {memory_stats()}'
+
         if track_speeds is True:
             msg += '\n'
 

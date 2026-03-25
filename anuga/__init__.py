@@ -91,7 +91,8 @@ from anuga.abstract_2d_finite_volumes.pmesh2domain import \
                                             pmesh_to_basic_mesh
 
 from anuga.abstract_2d_finite_volumes.basic_mesh import (
-    Basic_mesh, rectangular_basic_mesh, rectangular_cross_basic_mesh)
+    Basic_mesh, rectangular_basic_mesh, rectangular_cross_basic_mesh,
+    basic_mesh_from_mesh_file)
 
 from anuga.fit_interpolate.fit import fit_to_mesh_file
 from anuga.fit_interpolate.fit import fit_to_mesh
@@ -115,6 +116,8 @@ from anuga.utilities.parse_time import seconds_to_hhmmss
 # ----------------------------
 from anuga.parallel.parallel_api import distribute
 from anuga.parallel.parallel_api import distribute_collaborative
+from anuga.parallel.parallel_api import distribute_basic_mesh
+from anuga.parallel.parallel_api import distribute_basic_mesh_collaborative
 from anuga.parallel.parallel_api import myid, numprocs, get_processor_name
 from anuga.parallel.parallel_api import send, receive, reduce
 from anuga.parallel.parallel_api import pypar_available, barrier, finalize
@@ -307,6 +310,8 @@ from anuga.utilities.system_tools import get_version
 
 from anuga.utilities.system_tools import get_revision_number
 from anuga.utilities.system_tools import get_revision_date
+from anuga.utilities.system_tools import memory_stats
+from anuga.utilities.system_tools import print_memory_stats
 from anuga.utilities.mem_time_equation import estimate_time_mem
 
 # -------------------------
@@ -330,6 +335,7 @@ from anuga.config import LOW_FROUDE_OFF, LOW_FROUDE_1, LOW_FROUDE_2
 __all__ = [
     # Core classes
     'Basic_mesh',
+    'basic_mesh_from_mesh_file',
     'Domain',
     'Domain_plotter',
     'Generic_Domain',
@@ -434,6 +440,8 @@ __all__ = [
     'barrier',
     'collect_value',
     'distribute',
+    'distribute_basic_mesh',
+    'distribute_basic_mesh_collaborative',
     'distribute_collaborative',
     'finalize',
     'mpi_extra_options',
@@ -480,6 +488,8 @@ __all__ = [
     'get_revision_number',
     'get_user_name',
     'get_version',
+    'memory_stats',
+    'print_memory_stats',
     'log',
     'parse_standard_args',
     'parse_time',
