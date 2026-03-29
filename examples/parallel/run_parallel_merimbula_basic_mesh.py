@@ -23,11 +23,9 @@ import anuga
 from anuga import (
     Reflective_boundary,
     Transmissive_n_momentum_zero_t_momentum_set_stage_boundary,
-    myid, numprocs, finalize, barrier, memory_stats, distribute_basic_mesh,
-    basic_mesh_from_mesh_file
+    myid, numprocs, finalize, barrier, memory_stats, 
+    distribute_basic_mesh, basic_mesh_from_mesh_file, Geo_reference,
 )
-
-from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_dict_to_tag_dict 
 
 
 # ---------------------------------------------------------------------------
@@ -44,6 +42,7 @@ yieldstep = 10
 finaltime = 50
 
 verbose = True
+georef = Geo_reference(zone = 55,  hemisphere = 'southern')
 
 # ---------------------------------------------------------------------------
 # Step 1: Rank 0 reads the mesh file and builds a Basic_mesh.
@@ -64,28 +63,6 @@ if myid == 0:
         idx = bm.vertex_attribute_titles.index('elevation')
         elevation_v = bm.vertex_attributes[:, idx]   # shape (M,)
         nodes = bm.nodes
-
-
-    # from anuga.load_mesh.loadASCII import import_mesh_file
-
-
-
-    # mesh_dict = import_mesh_file(mesh_filename)
-
-    # nodes       = mesh_dict['vertices']          # (M, 2) float
-    # triangles   = mesh_dict['triangles']         # (N, 3) int
-    # geo_ref     = mesh_dict['geo_reference']
-    # boundary    = pmesh_dict_to_tag_dict(mesh_dict)
-
-    # # Extract per-vertex elevation stored in the .tsh file.
-    # vertex_atts    = np.array(mesh_dict['vertex_attributes'])  # (M, n_atts)
-    # vertex_titles  = mesh_dict['vertex_attribute_titles']
-    # elev_idx       = vertex_titles.index('elevation')
-    # elevation_v    = vertex_atts[:, elev_idx].astype(float)    # (M,)
-
-    # bm = Basic_mesh(nodes, triangles,
-    #                 boundary=boundary,
-    #                 geo_reference=geo_ref)
 
     if verbose:
         print(f'Basic_mesh: {bm.number_of_triangles} triangles, '
@@ -134,6 +111,8 @@ if myid == 0 and verbose:
     sys.stdout.flush()
 
 domain = distribute_basic_mesh(bm, verbose=verbose)
+domain.set_georeference(georef)
+domain.set_timezone('Australia/Sydney')
 domain.set_name('merimbula_basic_mesh')
 
 if myid == 0:
@@ -205,7 +184,7 @@ for p in range(numprocs):
 # ---------------------------------------------------------------------------
 # Step 7: Merge per-rank SWW files into one.
 # ---------------------------------------------------------------------------
-domain.sww_merge(delete_old=True)
+domain.sww_merge(delete_old=False)
 
 if myid == 0:
     print(50 * '=')
