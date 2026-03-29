@@ -778,6 +778,264 @@ class geo_referenceTestCase(unittest.TestCase):
                         "was '%s' type" % type(g.yllcorner))
 
         
+    # ------------------------------------------------------------------
+    # EPSG tests
+    # ------------------------------------------------------------------
+
+    def test_epsg_auto_southern(self):
+        """WGS84 UTM southern hemisphere: epsg auto-computed from zone."""
+        g = Geo_reference(56, hemisphere='southern')
+        self.assertEqual(g.epsg, 32756)
+        self.assertEqual(g.get_epsg(), 32756)
+
+    def test_epsg_auto_northern(self):
+        """WGS84 UTM northern hemisphere: epsg auto-computed from zone."""
+        g = Geo_reference(31, hemisphere='northern')
+        self.assertEqual(g.epsg, 32631)
+
+    def test_epsg_default_zone_returns_none(self):
+        """DEFAULT_ZONE (-1) gives epsg == None."""
+        g = Geo_reference()
+        self.assertIsNone(g.epsg)
+
+    def test_epsg_undefined_hemisphere_returns_none(self):
+        """Zone set but hemisphere undefined gives epsg == None."""
+        g = Geo_reference(55)
+        self.assertIsNone(g.epsg)
+
+    def test_epsg_explicit_overrides_auto(self):
+        """Explicitly supplied epsg is returned even if zone/hemisphere match."""
+        g = Geo_reference(55, hemisphere='southern', epsg=32755)
+        self.assertEqual(g.epsg, 32755)
+
+    def test_epsg_infers_zone_and_hemisphere_south(self):
+        """Constructing with epsg only (southern UTM) infers zone and hemisphere."""
+        g = Geo_reference(epsg=32756)
+        self.assertEqual(g.zone, 56)
+        self.assertEqual(g.hemisphere, 'southern')
+        self.assertEqual(g.epsg, 32756)
+
+    def test_epsg_infers_zone_and_hemisphere_north(self):
+        """Constructing with epsg only (northern UTM) infers zone and hemisphere."""
+        g = Geo_reference(epsg=32655)
+        self.assertEqual(g.zone, 55)
+        self.assertEqual(g.hemisphere, 'northern')
+        self.assertEqual(g.epsg, 32655)
+
+    def test_epsg_non_utm_stored_without_inference(self):
+        """Non-UTM EPSG stored as-is; zone and hemisphere unchanged."""
+        g = Geo_reference(epsg=4326)  # WGS84 geographic
+        self.assertEqual(g.epsg, 4326)
+        self.assertEqual(g.zone, DEFAULT_ZONE)
+        self.assertEqual(g.hemisphere, DEFAULT_HEMISPHERE)
+
+    def test_epsg_setter(self):
+        """epsg property setter updates value and infers zone/hemisphere."""
+        g = Geo_reference()
+        g.epsg = 32755
+        self.assertEqual(g.epsg, 32755)
+        self.assertEqual(g.zone, 55)
+        self.assertEqual(g.hemisphere, 'southern')
+
+    def test_epsg_roundtrip_netcdf(self):
+        """EPSG survives a write/read NetCDF round-trip."""
+        from anuga.file.netcdf import NetCDFFile
+        from anuga.config import netcdf_mode_w, netcdf_mode_r
+
+        g = Geo_reference(56, 308500.0, 6189000.0, hemisphere='southern')
+        self.assertEqual(g.epsg, 32756)
+
+        fd, fname = tempfile.mkstemp(suffix='.nc')
+        os.close(fd)
+        try:
+            fid = NetCDFFile(fname, netcdf_mode_w)
+            g.write_NetCDF(fid)
+            fid.close()
+
+            fid = NetCDFFile(fname, netcdf_mode_r)
+            g2 = Geo_reference(NetCDFObject=fid)
+            fid.close()
+
+            self.assertEqual(g2.epsg, 32756)
+            self.assertEqual(g2.zone, 56)
+            self.assertEqual(g2.hemisphere, 'southern')
+        finally:
+            os.remove(fname)
+
+    def test_epsg_old_netcdf_no_attribute(self):
+        """Reading NetCDF without epsg attribute sets epsg to auto-computed value."""
+        from anuga.file.netcdf import NetCDFFile
+        from anuga.config import netcdf_mode_w, netcdf_mode_r
+
+        g = Geo_reference(56, 308500.0, 6189000.0, hemisphere='southern')
+
+        fd, fname = tempfile.mkstemp(suffix='.nc')
+        os.close(fd)
+        try:
+            # Write without epsg (simulate old SWW file)
+            fid = NetCDFFile(fname, netcdf_mode_w)
+            fid.xllcorner = g.xllcorner
+            fid.yllcorner = g.yllcorner
+            fid.zone = g.zone
+            fid.hemisphere = g.hemisphere
+            fid.false_easting = g.false_easting
+            fid.false_northing = g.false_northing
+            fid.datum = g.datum
+            fid.projection = g.projection
+            fid.units = g.units
+            # deliberately omit fid.epsg
+            fid.close()
+
+            fid = NetCDFFile(fname, netcdf_mode_r)
+            g2 = Geo_reference(NetCDFObject=fid)
+            fid.close()
+
+            # Should auto-compute from zone + hemisphere
+            self.assertEqual(g2.epsg, 32756)
+        finally:
+            os.remove(fname)
+
+    def test_epsg_repr_includes_code(self):
+        """__repr__ includes the EPSG code when known."""
+        g = Geo_reference(56, 308500.0, 6189000.0, hemisphere='southern')
+        self.assertIn('epsg=32756', repr(g))
+
+    def test_epsg_repr_omitted_when_unknown(self):
+        """__repr__ omits EPSG when zone is DEFAULT_ZONE."""
+        g = Geo_reference()
+        self.assertNotIn('epsg', repr(g))
+
+    # ------------------------------------------------------------------
+    # Non-UTM EPSG tests (national grids, etc.)
+    # ------------------------------------------------------------------
+
+    def test_non_utm_epsg_stored(self):
+        """Non-UTM EPSG (Netherlands RD New) is stored and returned."""
+        g = Geo_reference(epsg=28992)
+        self.assertEqual(g.epsg, 28992)
+
+    def test_non_utm_epsg_zone_stays_default(self):
+        """Non-UTM EPSG leaves zone as DEFAULT_ZONE — no UTM zone to infer."""
+        g = Geo_reference(epsg=28992)
+        self.assertEqual(g.zone, DEFAULT_ZONE)
+
+    def test_non_utm_epsg_hemisphere_stays_undefined(self):
+        """Non-UTM EPSG leaves hemisphere undefined."""
+        g = Geo_reference(epsg=28992)
+        self.assertEqual(g.hemisphere, 'undefined')
+
+    def test_non_utm_epsg_with_origin(self):
+        """Non-UTM EPSG with explicit origin stores correctly."""
+        g = Geo_reference(epsg=28992, xllcorner=155000.0, yllcorner=463000.0)
+        self.assertEqual(g.epsg, 28992)
+        self.assertAlmostEqual(g.xllcorner, 155000.0)
+        self.assertAlmostEqual(g.yllcorner, 463000.0)
+
+    def test_non_utm_epsg_roundtrip_netcdf(self):
+        """Non-UTM EPSG survives a write/read NetCDF round-trip."""
+        from anuga.file.netcdf import NetCDFFile
+        from anuga.config import netcdf_mode_w, netcdf_mode_r
+
+        g = Geo_reference(epsg=28992, xllcorner=155000.0, yllcorner=463000.0)
+
+        fd, fname = tempfile.mkstemp(suffix='.nc')
+        os.close(fd)
+        try:
+            fid = NetCDFFile(fname, netcdf_mode_w)
+            g.write_NetCDF(fid)
+            fid.close()
+
+            fid = NetCDFFile(fname, netcdf_mode_r)
+            g2 = Geo_reference(NetCDFObject=fid)
+            fid.close()
+
+            self.assertEqual(g2.epsg, 28992)
+            self.assertAlmostEqual(g2.xllcorner, 155000.0)
+            self.assertAlmostEqual(g2.yllcorner, 463000.0)
+        finally:
+            os.remove(fname)
+
+    def test_non_utm_repr_shows_crs_not_zone(self):
+        """Non-UTM EPSG __repr__ shows crs= rather than zone= and hemisphere=."""
+        g = Geo_reference(epsg=27700)  # British National Grid
+        r = repr(g)
+        self.assertIn('epsg=27700', r)
+        self.assertNotIn('hemisphere', r)
+
+    def test_non_utm_false_easting_northing_rd_new(self):
+        """EPSG:28992 (RD New) false easting/northing come from pyproj."""
+        try:
+            import pyproj  # noqa: F401
+        except ImportError:
+            self.skipTest('pyproj not installed')
+        g = Geo_reference(epsg=28992)
+        self.assertEqual(g.false_easting, 155000)
+        self.assertEqual(g.false_northing, 463000)
+
+    def test_non_utm_false_easting_northing_bng(self):
+        """EPSG:27700 (British National Grid) false easting/northing from pyproj."""
+        try:
+            import pyproj  # noqa: F401
+        except ImportError:
+            self.skipTest('pyproj not installed')
+        g = Geo_reference(epsg=27700)
+        self.assertEqual(g.false_easting, 400000)
+        self.assertEqual(g.false_northing, -100000)
+
+    def test_non_utm_false_easting_northing_roundtrip(self):
+        """Non-UTM false easting/northing survive a NetCDF round-trip."""
+        try:
+            import pyproj  # noqa: F401
+        except ImportError:
+            self.skipTest('pyproj not installed')
+        from anuga.file.netcdf import NetCDFFile
+        from anuga.config import netcdf_mode_w, netcdf_mode_r
+
+        g = Geo_reference(epsg=28992, xllcorner=155000.0, yllcorner=463000.0)
+        self.assertEqual(g.false_easting, 155000)
+        self.assertEqual(g.false_northing, 463000)
+
+        fd, fname = tempfile.mkstemp(suffix='.nc')
+        os.close(fd)
+        try:
+            fid = NetCDFFile(fname, netcdf_mode_w)
+            g.write_NetCDF(fid)
+            fid.close()
+
+            fid = NetCDFFile(fname, netcdf_mode_r)
+            g2 = Geo_reference(NetCDFObject=fid)
+            fid.close()
+
+            self.assertEqual(g2.false_easting, 155000)
+            self.assertEqual(g2.false_northing, 463000)
+        finally:
+            os.remove(fname)
+
+    # ------------------------------------------------------------------
+    # is_located tests
+    # ------------------------------------------------------------------
+
+    def test_is_located_utm(self):
+        """UTM zone set → is_located() is True."""
+        g = Geo_reference(56, hemisphere='southern')
+        self.assertTrue(g.is_located())
+
+    def test_is_located_non_utm_epsg(self):
+        """Non-UTM EPSG with zone=-1 → is_located() is still True."""
+        g = Geo_reference(epsg=28992)
+        self.assertTrue(g.is_located())
+
+    def test_is_located_wavetank(self):
+        """No zone, no EPSG (wavetank simulation) → is_located() is False."""
+        g = Geo_reference()
+        self.assertFalse(g.is_located())
+
+    def test_is_located_default_zone_with_epsg(self):
+        """Explicit EPSG with default zone is located."""
+        g = Geo_reference(epsg=4326)  # WGS84 geographic
+        self.assertTrue(g.is_located())
+
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
