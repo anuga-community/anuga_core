@@ -23,6 +23,29 @@ authors = [
 requires-python = ">=3.10, <3.15"
 dependencies = [
     'numpy>=2.0.0',
+    'dill>=0.3.7',
+    'matplotlib>=3.7',
+    'netCDF4>=1.6',
+    'scipy>=1.11',
+    'meshpy>=2022.1',
+]
+
+[project.optional-dependencies]
+parallel = [
+    'mpi4py',
+    'pymetis>=2023.1',
+]
+data = [
+    'pyproj>=3.6',
+    'affine>=2.4',
+    'xarray',
+    'pandas',
+    'openpyxl',
+    'tomli; python_version < "3.11"',
+]
+dev = [
+    'pytest',
+    'psutil',
 ]
 classifiers = [
     'Intended Audience :: Science/Research',
@@ -36,7 +59,6 @@ classifiers = [
     'Operating System :: POSIX',
     'Operating System :: Unix',
     'Operating System :: MacOS',
-    'Programming Language :: Python :: 3.9',
     'Programming Language :: Python :: 3.10',
     'Programming Language :: Python :: 3.11',
     'Programming Language :: Python :: 3.12',
@@ -58,6 +80,6 @@ testpaths = [
     'anuga'
 ]
 markers = [
-    "slow: marks tests as slow — skipped by default, run with --run-slow to include",
+    "slow: marks tests as slow — omit --run-fast to include in the default run",
 ]
 
