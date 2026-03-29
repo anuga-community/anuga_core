@@ -86,7 +86,7 @@ class Set_w_uh_vh_operator(Operator, Region):
 
         if self.verbose is True:
             log.critical('w_uh_vh of %s at time = %.2f = %f'
-                         % (self.quantity_name, domain.get_time(), stage))
+                         % (self.quantity_name, self.domain.get_time(), w_uh_vh[0]))
 
         if self.indices is None:
             self.stage_c[:] = w_uh_vh[0]

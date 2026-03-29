@@ -14,6 +14,7 @@
 import csv
 import numpy as num
 import anuga.utilities.log as log
+from anuga.geometry.polygon import inside_polygon
 
 
 def load_csv_as_dict(file_name, title_check_list=None, delimiter=',',
@@ -204,7 +205,7 @@ def store_parameters(verbose=False, **kwargs):
                 fid.write(header)
             file_header = header
         except OSError:
-            msg = 'cannot create new file: %s' % file
+            msg = 'cannot create new file: %s' % file_name
             raise Exception(msg)
 
     # if header is same or this is a new file

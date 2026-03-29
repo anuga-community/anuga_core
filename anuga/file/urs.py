@@ -3,7 +3,7 @@ from struct import pack, unpack
 import array as p_array
 import numpy as num
 
-
+from anuga.anuga_exceptions import ANUGAError
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 
 from anuga.geospatial_data.geospatial_data import ensure_absolute, \

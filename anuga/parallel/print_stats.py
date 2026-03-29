@@ -19,7 +19,7 @@ import sys
 
 from anuga.utilities import parallel_abstraction as pypar
 
-from numpy import array, zeros, ones, take, nonzero, float
+from numpy import array, zeros, ones, take, nonzero, int8, float64
 from anuga.utilities.norms import l1_norm, l2_norm, linf_norm
 
 #########################################################
@@ -44,7 +44,7 @@ from anuga.utilities.norms import l1_norm, l2_norm, linf_norm
 
 def build_full_flag(domain, ghost_recv_dict):
 
-    tri_full_flag = ones(len(domain.get_triangles()), Int8)
+    tri_full_flag = ones(len(domain.get_triangles()), int8)
     for i in list(ghost_recv_dict.keys()):
         for id in ghost_recv_dict[i][0]:
             tri_full_flag[id] = 0
@@ -73,8 +73,8 @@ def print_l1_stats(full_edge):
     numprocs = pypar.size()
     myid = pypar.rank()
     
-    tri_norm = zeros(3, Float)
-    recv_norm = zeros(3, Float)
+    tri_norm = zeros(3, float64)
+    recv_norm = zeros(3, float64)
     tri_norm[0] = l1_norm(full_edge[:, 0])
     tri_norm[1] = l1_norm(full_edge[:, 1])
     tri_norm[2] = l1_norm(full_edge[:, 2])
@@ -110,8 +110,8 @@ def print_l2_stats(full_edge):
     numprocs = pypar.size()
     myid = pypar.rank()
     
-    tri_norm = zeros(3, Float)
-    recv_norm = zeros(3, Float)
+    tri_norm = zeros(3, float64)
+    recv_norm = zeros(3, float64)
     tri_norm[0] = pow(l2_norm(full_edge[:, 0]), 2)
     tri_norm[1] = pow(l2_norm(full_edge[:, 1]), 2)
     tri_norm[2] = pow(l2_norm(full_edge[:, 2]), 2)
@@ -148,8 +148,8 @@ def print_linf_stats(full_edge):
     numprocs = pypar.size()
     myid = pypar.rank()
     
-    tri_norm = zeros(3, Float)
-    recv_norm = zeros(3, Float)
+    tri_norm = zeros(3, float64)
+    recv_norm = zeros(3, float64)
         
     tri_norm[0] = linf_norm(full_edge[:, 0])
     tri_norm[1] = linf_norm(full_edge[:, 1])

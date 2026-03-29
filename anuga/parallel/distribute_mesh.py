@@ -250,7 +250,7 @@ def partition_mesh_without_map(domain, n_procs):
     mesh, triangles_per_proc, quantities, tri_index, r_tri_index = partition_mesh(
         domain, n_procs)
 
-    return nodes, ttriangles, boundary, triangles_per_proc, quantities
+    return mesh, triangles_per_proc, quantities
 
 #=========================================================================
 #

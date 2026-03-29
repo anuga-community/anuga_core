@@ -11,6 +11,7 @@ ModifiedBy:
 
 from warnings import warn
 import numpy as num
+import anuga.utilities.log as log
 from copy import copy
 
 from anuga.abstract_2d_finite_volumes.neighbour_mesh import segment_midpoints
