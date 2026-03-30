@@ -79,7 +79,6 @@ tracker       = "https://github.com/anuga-community/anuga_core/issues"
 
 [tool.pytest.ini_options]
 minversion = '6.0'
-addopts = "--import-mode=importlib"
 testpaths = [
     'anuga'
 ]

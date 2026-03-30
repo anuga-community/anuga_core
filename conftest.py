@@ -16,7 +16,27 @@ To run *only* slow tests::
     pytest -m slow
 """
 
+import sys
+import pathlib
 import pytest
+
+# ---------------------------------------------------------------------------
+# Ensure the installed package takes precedence over the source tree.
+#
+# When pytest loads this conftest.py it inserts the repo root into sys.path
+# so that conftest.py itself is importable.  That causes `import anuga` to
+# resolve to the source tree, which on a fresh clone lacks the meson-
+# generated _version.py and raises:
+#     ModuleNotFoundError: No module named 'anuga._version'
+#
+# Moving the repo root to the END of sys.path lets site-packages win while
+# still keeping the repo root on the path (needed for conftest resolution).
+# Editable installs are unaffected: their import hooks still point at src.
+# ---------------------------------------------------------------------------
+_repo_root = str(pathlib.Path(__file__).parent.resolve())
+if _repo_root in sys.path:
+    sys.path.remove(_repo_root)
+    sys.path.append(_repo_root)
 
 
 # ---------------------------------------------------------------------------
