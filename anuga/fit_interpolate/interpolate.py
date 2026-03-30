@@ -52,8 +52,8 @@ import numpy as num
 
 # Interpolation specific exceptions
 
-class Modeltime_too_late(BaseException): pass
-class Modeltime_too_early(BaseException): pass
+class Modeltime_too_late(Exception): pass
+class Modeltime_too_early(Exception): pass
 
 
 def interpolate(vertex_coordinates,
@@ -844,7 +844,7 @@ class Interpolation_function(object):
             try:
                 self.interpolation_points = \
                     interpolation_points = ensure_numeric(interpolation_points)
-            except:
+            except (ValueError, TypeError):
                 msg = 'Interpolation points must be an N x 2 numeric array ' \
                       'or a list of points\n'
                 msg += 'Got: %s.' %(str(self.interpolation_points)[:60] + '...')
@@ -1103,7 +1103,7 @@ class Interpolation_function(object):
             else:
                 try:
                     N = len(x)
-                except:
+                except TypeError:
                     return q
                 else:
                     # x is a vector - Create one constant column for each value

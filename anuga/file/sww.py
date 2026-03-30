@@ -532,8 +532,8 @@ class Write_sww(Write_sts):
     def __init__(self,
                  static_quantities,
                  dynamic_quantities,
-                 static_c_quantities=[],
-                 dynamic_c_quantities=[]):
+                 static_c_quantities=None,
+                 dynamic_c_quantities=None):
         """Initialise Write_sww with two (or 4) list af quantity names:
 
         static_quantities (e.g. elevation or friction):
@@ -553,8 +553,8 @@ class Write_sww(Write_sts):
         """
         self.static_quantities = static_quantities
         self.dynamic_quantities = dynamic_quantities
-        self.static_c_quantities = static_c_quantities
-        self.dynamic_c_quantities = dynamic_c_quantities
+        self.static_c_quantities = static_c_quantities if static_c_quantities is not None else []
+        self.dynamic_c_quantities = dynamic_c_quantities if dynamic_c_quantities is not None else []
 
         self.store_centroids = False
         if static_c_quantities or dynamic_c_quantities:
@@ -603,8 +603,8 @@ class Write_sww(Write_sts):
 
         try:
             revision_number = get_revision_number()
-        except:
-            # This will be triggered if the system cannot get the 
+        except Exception:
+            # This will be triggered if the system cannot get the
             # revision number.
             revision_number = None
         # Allow None to be stored as a string
@@ -612,8 +612,8 @@ class Write_sww(Write_sts):
         
         try:
             revision_date = get_revision_date()
-        except:
-            # This will be triggered if the system cannot get the 
+        except Exception:
+            # This will be triggered if the system cannot get the
             # revision date.
             revision_date = None
         # Allow None to be stored as a string
@@ -621,7 +621,7 @@ class Write_sww(Write_sts):
 
         try:
             anuga_version = get_version()
-        except:
+        except Exception:
             # This will be triggered if the system cannot get the
             # version.
             version = None
@@ -1180,7 +1180,7 @@ def Xload_sww_as_domain(filename, boundary=None, t=None,
     # get geo_reference
     try:                             # sww files don't have to have a geo_ref
         geo_reference = Geo_reference(NetCDFObject=fid)
-    except:  # AttributeError, e:
+    except Exception:  # AttributeError, e:
         geo_reference = None
 
     if verbose:
@@ -1204,13 +1204,13 @@ def Xload_sww_as_domain(filename, boundary=None, t=None,
         dynamic_quantities.remove('ymomentum_c')
         dynamic_quantities.remove('elevation_c')
         dynamic_quantities.remove('friction_c')
-    except:
+    except ValueError:
         pass
 
     try:
         static_quantities.remove('elevation_c')
         static_quantities.remove('friction_c')
-    except:
+    except ValueError:
         pass
 
     static_quantities.remove('x')
@@ -1223,7 +1223,7 @@ def Xload_sww_as_domain(filename, boundary=None, t=None,
         static_quantities.remove('ymomentum_range')
         static_quantities.remove('elevation_range')
         static_quantities.remove('friction_range')
-    except:
+    except ValueError:
         pass
 
     dynamic_quantities.remove('time')
@@ -1266,7 +1266,7 @@ def Xload_sww_as_domain(filename, boundary=None, t=None,
     for quantity in static_quantities:
         try:
             NaN = fid.variables[quantity].missing_value
-        except:
+        except AttributeError:
             pass                       # quantity has no missing_value number
         X = fid.variables[quantity][:]
         if very_verbose:
@@ -1291,7 +1291,7 @@ def Xload_sww_as_domain(filename, boundary=None, t=None,
     for quantity in dynamic_quantities:
         try:
             NaN = fid.variables[quantity].missing_value
-        except:
+        except AttributeError:
             pass                       # quantity has no missing_value number
         X = interpolated_quantities[quantity]
         if very_verbose:
@@ -1367,7 +1367,7 @@ def get_mesh_and_quantities_from_file(filename,
     # Get geo_reference
     try:
         geo_reference = Geo_reference(NetCDFObject=fid)
-    except:  # AttributeError, e:
+    except Exception:  # AttributeError, e:
         # Sww files don't have to have a geo_ref
         geo_reference = None
 
@@ -1401,7 +1401,7 @@ def get_mesh_and_quantities_from_file(filename,
 
             try:
                 num.add.at(a, indices, b)
-            except:
+            except AttributeError:
                 n_ids = len(indices)
                 b_array = num.zeros_like(indices, dtype=float)
                 b_array[:] = b

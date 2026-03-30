@@ -6,8 +6,6 @@ Ole Nielsen, Stephen Roberts, Duncan Gray, Christopher Zoppou
 Geoscience Australia, 2004-2010
 
 """
-
-from builtins import range
 import numpy as num
 
 import anuga.utilities.parallel_abstraction as pypar
@@ -214,10 +212,12 @@ def communicate_ghosts_non_blocking(domain, quantities=None):
     # Now complete communication.
     # We could put some computation between the 
     # communication calls above and this call.
+    # Question: Do we need to wait for the sends to complete as well?
+    # Answer: Yes, we should wait for the sends to complete as well, otherwise
+    # we might be overwriting the send buffers before the data has been sent.
     #-----------------------------------------
     import mpi4py
-    re=mpi4py.MPI.Request.Waitall(recv_requests)
-
+    mpi4py.MPI.Request.Waitall(recv_requests + send_requests)
 
     # Now copy data from receive buffers to the domain
     for recv_proc in recvDict:

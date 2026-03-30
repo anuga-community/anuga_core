@@ -245,7 +245,7 @@ class Inlet_operator(anuga.Operator):
             # Check that default_rate is a function of one argument
             try:
                 default(0.0)
-            except:
+            except TypeError:
                 msg = "could not call default"
                 raise Exception(msg)
 

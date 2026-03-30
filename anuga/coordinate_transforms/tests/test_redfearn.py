@@ -352,7 +352,7 @@ class TestCase(unittest.TestCase):
             zone, easting, northing = redfearn(lat, lon,
                                                zone=50, 
                                                central_meridian=137.5)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have raised exception'

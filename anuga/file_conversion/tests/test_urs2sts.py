@@ -25,7 +25,7 @@ from anuga.abstract_2d_finite_volumes.generic_boundary_conditions\
      import Transmissive_boundary, Dirichlet_boundary, \
             Time_boundary, File_boundary, AWI_boundary
 
-from anuga.pmesh.mesh_interface import create_mesh_from_regions
+from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 
 from anuga.file_conversion.urs2sts import urs2sts
 
@@ -44,7 +44,7 @@ class Test_Urs2Sts(Test_Mux):
         for file in ['domain.sww', 'urs_test_mesh.tsh' ]:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass
                 
     def test_urs2sts0(self):
@@ -813,7 +813,7 @@ class Test_Urs2Sts(Test_Mux):
                     mean_stage=tide,
                     verbose=False)  
             os.remove(ordering_filename)            
-        except:
+        except OSError:
             pass
         else:
             msg = 'Should have caught wrong lat longs'
@@ -1368,7 +1368,7 @@ class Test_Urs2Sts(Test_Mux):
         meshname = 'urs_test_mesh' + '.tsh'
         interior_regions=None
         boundary_tags={'ocean': [0,1], 'otherocean': [2,3,4]}
-        create_mesh_from_regions(bounding_polygon,
+        create_pmesh_from_regions(bounding_polygon,
                                  boundary_tags=boundary_tags,
                                  maximum_triangle_area=extent_res,
                                  filename=meshname,
@@ -1508,7 +1508,7 @@ class Test_Urs2Sts(Test_Mux):
         meshname = 'urs_test_mesh' + '.tsh'
         interior_regions=None
         boundary_tags={'ocean': [0,1], 'otherocean': [2,3,4]}
-        create_mesh_from_regions(bounding_polygon,
+        create_pmesh_from_regions(bounding_polygon,
                                  boundary_tags=boundary_tags,
                                  maximum_triangle_area=extent_res,
                                  filename=meshname,
@@ -1650,7 +1650,7 @@ class Test_Urs2Sts(Test_Mux):
         meshname = 'urs_test_mesh' + '.tsh'
         interior_regions=None
         boundary_tags={'ocean': [0,1], 'otherocean': [2,3,4]}
-        create_mesh_from_regions(bounding_polygon,
+        create_pmesh_from_regions(bounding_polygon,
                                  boundary_tags=boundary_tags,
                                  maximum_triangle_area=extent_res,
                                  filename=meshname,
@@ -1759,7 +1759,7 @@ class Test_Urs2Sts(Test_Mux):
         boundary_tags={'ocean': [0,1], 'otherocean': [2,3,4]}
         # have to change boundary tags from last example because now bounding
         # polygon starts in different place.
-        create_mesh_from_regions(bounding_polygon,boundary_tags=boundary_tags,
+        create_pmesh_from_regions(bounding_polygon,boundary_tags=boundary_tags,
                          maximum_triangle_area=extent_res,filename=meshname,
                          interior_regions=interior_regions,verbose=False)
         
@@ -1907,7 +1907,7 @@ class Test_Urs2Sts(Test_Mux):
         
         # have to change boundary tags from last example because now bounding
         # polygon starts in different place.
-        create_mesh_from_regions(boundary_polygon,boundary_tags=boundary_tags,
+        create_pmesh_from_regions(boundary_polygon,boundary_tags=boundary_tags,
                          maximum_triangle_area=extent_res,filename=meshname,
                          interior_regions=interior_regions,verbose=False)
         
@@ -2080,7 +2080,7 @@ class Test_Urs2Sts(Test_Mux):
         
         # have to change boundary tags from last example because now bounding
         # polygon starts in different place.
-        create_mesh_from_regions(boundary_polygon,
+        create_pmesh_from_regions(boundary_polygon,
                                  boundary_tags=boundary_tags,
                                  maximum_triangle_area=extent_res,
                                  filename=meshname,
@@ -2114,8 +2114,8 @@ class Test_Urs2Sts(Test_Mux):
                                domain_fbound, 
                                time_limit=-1+starttime,
                                boundary_polygon=boundary_polygon)            
-            time_vec = Bf.F.get_time()    
-            print(time_vec)    
+            time_vec = Bf.F.get_time()
+            #print(time_vec)
         except AssertionError:
             pass
         else:

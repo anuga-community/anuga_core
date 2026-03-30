@@ -5,7 +5,7 @@ import os
 import unittest
 import tempfile
 
-from anuga.pmesh.mesh import Vertex, Segment, Mesh
+from anuga.pmesh.mesh import Vertex, Segment, Pmesh
 from anuga.file.ungenerate import load_ungenerate
 
 class ungenerateTestCase(unittest.TestCase):
@@ -16,7 +16,7 @@ class ungenerateTestCase(unittest.TestCase):
         for filename in ['swamp.tsh']:
             try:
                 os.remove(filename)
-            except:
+            except OSError:
                 pass
         
     def test_ungenerateFileLoading(self):
@@ -50,13 +50,13 @@ END\n")
         s3 = Segment(c,d)
         s4 = Segment(d,a)
      
-        m = Mesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
         dict = load_ungenerate(fileName)
         #os.remove(fileName)
 
         tag = "DSG"
         Segment.set_default_tag(tag)
-        m.addVertsSegs(dict)
+        m.add_verts_segs(dict)
 
         # have to reset this , since it's a class attribute
         Segment.set_default_tag("")
@@ -83,7 +83,7 @@ END\n")
         s3 = Segment(c,d)
         s4 = Segment(d,a)
      
-        m = Mesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
 
         tag = "DSG"        
         initial_tag = "PIG"
@@ -140,13 +140,13 @@ END\n")
         s3 = Segment(c,d)
         s4 = Segment(d,a)
      
-        m = Mesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
         dict = load_ungenerate(fileName)
         #os.remove(fileName)
 
         tag = "DSG"
         Segment.set_default_tag(tag)
-        m.addVertsSegs(dict)
+        m.add_verts_segs(dict)
 
         self.assertTrue(len(m.userSegments) ==11,
                         'Wrong segment list length.')
@@ -164,7 +164,7 @@ END\n")
         s3 = Segment(c,d)
         s4 = Segment(d,a)
      
-        m = Mesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
         tag = "DSG"        
         initial_tag = "PIG"
         Segment.set_default_tag(initial_tag)
@@ -182,9 +182,9 @@ END\n")
                         'Wrong vertex list length.')
         self.assertTrue(len(m.regions) == 2,
                         'Wrong regions list length.')
-        self.assertTrue(m.regions[0].getTag() == "swamp",
+        self.assertTrue(m.regions[0].get_tag() == "swamp",
                         'Wrong regions tag.')
-        self.assertTrue(m.regions[1].getTag() == "swamp",
+        self.assertTrue(m.regions[1].get_tag() == "swamp",
                         'Wrong regions 1 tag.')
         
         # have to reset this , since it's a class attribute
@@ -221,13 +221,13 @@ END\n")
         s3 = Segment(c,d)
         s4 = Segment(d,a)
      
-        m = Mesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
         dict = load_ungenerate(fileName)
         #os.remove(fileName)
 
         tag = "DSG"
         Segment.set_default_tag(tag)
-        m.addVertsSegs(dict)
+        m.add_verts_segs(dict)
 
         self.assertTrue(len(m.userSegments) ==11,
                         'Wrong segment list length.')
@@ -245,7 +245,7 @@ END\n")
         s3 = Segment(c,d)
         s4 = Segment(d,a)
      
-        m = Mesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
+        m = Pmesh(userVertices=[a,b,c,d], userSegments=[s1,s2,s3,s4])
         tag = "DSG"        
         initial_tag = "PIG"
         Segment.set_default_tag(initial_tag)
@@ -263,9 +263,9 @@ END\n")
                         'Wrong vertex list length.')
         self.assertTrue(len(m.regions) == 2,
                         'Wrong regions list length.')
-        self.assertTrue(m.regions[0].getTag() == "swamp",
+        self.assertTrue(m.regions[0].get_tag() == "swamp",
                         'Wrong regions tag.')
-        self.assertTrue(m.regions[1].getTag() == "coastalp",
+        self.assertTrue(m.regions[1].get_tag() == "coastalp",
                         'Wrong regions 1 tag.')
         
         

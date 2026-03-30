@@ -157,7 +157,7 @@ def sww2dem(name_in, name_out,
     try: # works with netcdf4
         number_of_timesteps = len(fid.dimensions['number_of_timesteps'])
         number_of_points = len(fid.dimensions['number_of_points'])
-    except: #works with scientific.io.netcdf
+    except (TypeError, AttributeError): #works with scientific.io.netcdf
         number_of_timesteps = fid.dimensions['number_of_timesteps']
         number_of_points = fid.dimensions['number_of_points']
 

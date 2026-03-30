@@ -11,6 +11,7 @@ from anuga.geospatial_data.geospatial_data import Geospatial_data
 from anuga.fit_interpolate.fit import fit_to_mesh
 from anuga.config import points_file_block_line_size as default_block_line_size
 from anuga.config import epsilon
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
 from anuga.caching import cache
 import anuga.utilities.log as log
 
@@ -1040,21 +1041,30 @@ class Quantity(object):
         N = self.centroid_values.shape[0]
 
         if location == 'centroids':
-            assert len(values.shape) == 1, 'Values array must be 1d'
+            if len(values.shape) == 1:
+                if indices is None:
+                    msg = 'Number of values must match number of elements'
+                    assert values.shape[0] == N, msg
 
-            if indices is None:
-                msg = 'Number of values must match number of elements'
-                assert values.shape[0] == N, msg
+                    self.centroid_values[:] = values
+                else:
+                    msg = 'Number of values must match number of indices'
+                    assert values.shape[0] == indices.shape[0], msg
 
-                self.centroid_values[:] = values
+                    self.centroid_values[indices] = values
+            elif len(values.shape) == 2:
+                # Centroid values are given as a triplet for each triangle
+                msg = 'Array must be N x 1'
+                assert values.shape[1] == 1, msg
+
+                if indices is None:
+                    self.centroid_values[:] = values[:, 0]
+                else:
+                    self.centroid_values[indices] = values[:, 0]
             else:
-                msg = 'Number of values must match number of indices'
-                assert values.shape[0] == indices.shape[0], msg
+                msg = 'Values array must be 1d or 2d N X 1'
+                raise Exception(msg)
 
-                # Brute force
-                self.centroid_values[indices] = values
-                #for i in range(len(indices)):
-                #    self.centroid_values[indices[i]] = values[i]
         elif location == 'unique vertices':
             msg = 'Values array must be 1d'
             assert len(values.shape) == 1 or num.allclose(values.shape[1:], 1), msg
@@ -2188,14 +2198,14 @@ class Quantity(object):
             # Take default from domain
             try:
                 smooth = self.domain.smooth
-            except:
+            except AttributeError:
                 smooth = False
 
         if centroid_averaging is None:
             # Take default from domain
             try:
                 centroid_averaging = self.domain.get_using_centroid_averaging()
-            except:
+            except AttributeError:
                 centroid_averaging = False
                 
         if precision is None:
@@ -2294,7 +2304,7 @@ class Quantity(object):
         # (either from this module or C-extension)
 
 
-        if self.domain.multiprocessor_mode == 2:
+        if self.domain.multiprocessor_mode == MULTIPROCESSOR_GPU:
             from .quantity_openmp_ext import update
         if self.domain.multiprocessor_mode == 3:
             from .quantity_openmp_ext import update

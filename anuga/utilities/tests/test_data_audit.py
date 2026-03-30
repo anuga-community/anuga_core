@@ -79,7 +79,7 @@ class Test_data_audit(unittest.TestCase):
         os.remove(license_filename)
         try:
             os.remove(tmp_name)
-        except:
+        except OSError:
             # FIXME(DSG) Windows seems to have a problem deleting this file
             # This is a work-a-round. It doesn't fix the root problem
             # It does delete the file though.
@@ -148,7 +148,7 @@ class Test_data_audit(unittest.TestCase):
         fid.close()
         try:
             os.remove(tmp_name)
-        except:
+        except OSError:
             # FIXME(DSG) Windows seems to have a problem deleting this file
             # This is a work-a-round. It doesn't fix the root problem
             # It does delete the file though.

@@ -52,7 +52,7 @@ from anuga.coordinate_transforms.redfearn import redfearn
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 
 from anuga import rectangular_cross_domain
-from anuga.pmesh.mesh_interface import create_mesh_from_regions
+from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 from anuga import create_domain_from_file
 
 from anuga.parallel import distribute, myid, numprocs, send, receive, barrier, finalize
@@ -162,7 +162,7 @@ class Test_urs2sts_parallel(Test_Mux):
         # have to change boundary tags from last example because now bounding
         # polygon starts in different place.
         if myid==0:
-            create_mesh_from_regions(boundary_polygon,
+            create_pmesh_from_regions(boundary_polygon,
                                      boundary_tags=boundary_tags,
                                      maximum_triangle_area=extent_res,
                                      filename=meshname,
@@ -334,7 +334,7 @@ class Test_urs2sts_parallel(Test_Mux):
         # is read in by each slave processor when needed
         #------------------------------------------------------------
         if myid==0:
-            create_mesh_from_regions(boundary_polygon,
+            create_pmesh_from_regions(boundary_polygon,
                                      boundary_tags=boundary_tags,
                                      maximum_triangle_area=extent_res,
                                      filename=meshname,
@@ -386,7 +386,7 @@ class Test_urs2sts_parallel(Test_Mux):
                     fbound_proc_tri_ids.append(k)
                 else:
                     fbound_proc_tri_ids.append(-1)            
-            except:
+            except Exception:
                 fbound_proc_tri_ids.append(-2)
 
 
@@ -438,7 +438,7 @@ class Test_urs2sts_parallel(Test_Mux):
                     drchlt_proc_tri_ids.append(k)
                 else:
                     drchlt_proc_tri_ids.append(-1)            
-            except:
+            except Exception:
                 drchlt_proc_tri_ids.append(-2)
 
 

@@ -43,12 +43,12 @@ class Test_rate_operators(unittest.TestCase):
     def tearDown(self):
         try:
             os.remove('test_file_function.txt')
-        except:
+        except OSError:
             pass
 
         try:
             os.remove('test_file_function.tms')
-        except:
+        except OSError:
             pass
 
 
@@ -1448,7 +1448,7 @@ class Test_rate_operators(unittest.TestCase):
         try: 
             operator = Rate_operator(domain, rate=rate_array, factor=factor, \
                                  indices=indices)
-        except:
+        except Exception:
             # expect exception as f is not a function of t
             pass
 

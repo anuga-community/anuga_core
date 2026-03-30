@@ -6,8 +6,6 @@ knowing info about the actual triangles, and that is not how the user should
 operate.
 """
 # FIXME (DSG-DSG) add better comments
-
-from builtins import object
 import numpy as num
 
 

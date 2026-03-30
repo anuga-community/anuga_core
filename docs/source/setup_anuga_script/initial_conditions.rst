@@ -6,9 +6,9 @@ Setting up Initial Conditions
 The domain class incorporates a number of important quantities
 
  - stage
- - elevation (or bed)
- - xmomentum (xmom)
- - ymomentum (ymom)
+ - elevation
+ - xmomentum
+ - ymomentum
  - friction
 
 These variables are stored in the domain as quantities. 
@@ -31,6 +31,14 @@ the following code can be used:
 The `set_quantity` method can also be used to set the initial conditions 
 for the xmomentum, ymomentum and friction, indeed any quantity that is 
 stored in the domain.
+
+.. seealso::
+
+   `ANUGA User Manual — Chapter 8: Initial Conditions and set_quantity
+   <https://github.com/anuga-community/anuga_user_manual>`_
+   covers ``set_quantity`` in depth, including raster file inputs, spatial
+   averaging, expressions involving other quantities, and fitting point clouds
+   onto the mesh.
 
 Reference
 ---------

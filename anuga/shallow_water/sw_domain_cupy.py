@@ -18,13 +18,13 @@ def nvtxRangePop(*arg):
 try:
     from cupy.cuda.nvtx import RangePush as nvtxRangePush
     from cupy.cuda.nvtx import RangePop  as nvtxRangePop
-except:
+except ImportError:
     pass
 
 try:
     from nvtx import range_push as nvtxRangePush
     from nvtx import range_pop  as nvtxRangePop
-except:
+except ImportError:
     pass
 
 

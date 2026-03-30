@@ -78,7 +78,7 @@ def _dem2pts(name_in, name_out=None, verbose=False,
     elif name_in[-4:] != '.dem':
         raise IOError('Input file %s should be of type .asc or .dem.' % name_in)
 
-    if name_out != None and basename_out[-4:] != '.pts':
+    if name_out != None and name_out[-4:] != '.pts':
         raise IOError('Input file %s should be of type .pts.' % name_out)
 
     # Get NetCDF
@@ -156,134 +156,6 @@ def _dem2pts(name_in, name_out=None, verbose=False,
     #dem_elevation_r = num.reshape(dem_elevation, (nrows, ncols))
     totalnopoints = nrows*ncols
 
-
-
-
-
-
-#    #=======================================================================
-#    # Calculating number of NODATA_values for each row in clipped region
-#    # FIXME: use array operations to do faster
-#    nn = 0
-#    k = 0
-#    i1_0 = 0
-#    j1_0 = 0
-#    thisj = 0
-#    thisi = 0
-#    for i in range(nrows):
-#        y = (nrows-i-1)*cellsize + yllcorner
-#        for j in range(ncols):
-#            x = j*cellsize + xllcorner
-#            if easting_min <= x <= easting_max \
-#               and northing_min <= y <= northing_max:
-#                thisj = j
-#                thisi = i
-#                if dem_elevation_r[i,j] == NODATA_value:
-#                    nn += 1
-#
-#                if k == 0:
-#                    i1_0 = i
-#                    j1_0 = j
-#
-#                k += 1
-#
-#    index1 = j1_0
-#    index2 = thisj
-#
-#    # Dimension definitions
-#    nrows_in_bounding_box = int(round((northing_max-northing_min)/cellsize))
-#    ncols_in_bounding_box = int(round((easting_max-easting_min)/cellsize))
-#
-#    clippednopoints = (thisi+1-i1_0)*(thisj+1-j1_0)
-#    nopoints = clippednopoints-nn
-#
-#    clipped_dem_elev = dem_elevation_r[i1_0:thisi+1,j1_0:thisj+1]
-#
-#    if verbose:
-#        log.critical('There are %d values in the elevation' % totalnopoints)
-#        log.critical('There are %d values in the clipped elevation'
-#                     % clippednopoints)
-#        log.critical('There are %d NODATA_values in the clipped elevation' % nn)
-#
-#    outfile.createDimension('number_of_points', nopoints)
-#    outfile.createDimension('number_of_dimensions', 2) #This is 2d data
-#
-#    # Variable definitions
-#    outfile.createVariable('points', netcdf_float, ('number_of_points',
-#                                                    'number_of_dimensions'))
-#    outfile.createVariable('elevation', netcdf_float, ('number_of_points',))
-#
-#    # Get handles to the variables
-#    points = outfile.variables['points']
-#    elevation = outfile.variables['elevation']
-#
-#    # Number of points
-#    N = points.shape[0]
-#
-#    lenv = index2-index1+1
-#
-#    # Store data
-#    global_index = 0
-#    # for i in range(nrows):
-#    for i in range(i1_0, thisi+1, 1):
-#        if verbose and i % ((nrows+10)/10) == 0:
-#            log.critical('Processing row %d of %d' % (i, nrows))
-#
-#        lower_index = global_index
-#
-#        v = dem_elevation_r[i,index1:index2+1]
-#        no_NODATA = num.sum(v == NODATA_value)
-#        if no_NODATA > 0:
-#            newcols = lenv - no_NODATA  # ncols_in_bounding_box - no_NODATA
-#        else:
-#            newcols = lenv              # ncols_in_bounding_box
-#
-#        telev = num.zeros(newcols, float)
-#        tpoints = num.zeros((newcols, 2), float)
-#
-#        local_index = 0
-#
-#        y = (nrows-i-1)*cellsize + yllcorner
-#        #for j in range(ncols):
-#        for j in range(j1_0,index2+1,1):
-#            x = j*cellsize + xllcorner
-#            if easting_min <= x <= easting_max \
-#               and northing_min <= y <= northing_max \
-#               and dem_elevation_r[i,j] != NODATA_value:
-#
-#                #print [x-easting_min, y-northing_min]
-#                #print x , y
-#                #print easting_min, northing_min
-#                #print xllcorner, yllcorner
-#                #print cellsize
-#
-#                tpoints[local_index, :] = [x-easting_min, y-northing_min]
-#                telev[local_index] = dem_elevation_r[i, j]
-#                global_index += 1
-#                local_index += 1
-#
-#        upper_index = global_index
-#
-#        if upper_index == lower_index + newcols:
-#
-#            # Seems to be an error with the windows version of
-#            # Netcdf. The following gave errors
-#
-#            try:
-#                points[lower_index:upper_index, :] = tpoints
-#                elevation[lower_index:upper_index] = telev
-#            except:
-#                # so used the following if an error occurs
-#                for index in range(newcols):
-#                    points[index+lower_index, :] = tpoints[index,:]
-#                    elevation[index+lower_index] = telev[index]
-#
-#    assert global_index == nopoints, 'index not equal to number of points'
-
-
-    #========================================
-    # Do the preceeding with numpy
-    #========================================
     y = num.arange(nrows,dtype=float)
     y = yllcorner + (nrows-1)*cellsize - y*cellsize
 

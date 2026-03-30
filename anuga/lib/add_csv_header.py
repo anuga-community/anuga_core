@@ -26,7 +26,7 @@ def add_csv_header(file, header_list, be_green=False):
     except IOError as e:
         msg = "Can't open file '%s': %s" % (file, str(e))
         raise Exception(msg)
-    except:
+    except Exception:
         msg = "Can't open file '%s'" % file
         raise Exception(msg)
 
@@ -37,7 +37,7 @@ def add_csv_header(file, header_list, be_green=False):
     tmp_fd = os.fdopen(tmp_f, 'w')
 
     # check the header, create header _string.
-    if header_list is None or header_list is []:
+    if header_list is None or header_list == []:
         msg = "add_csv_header: header_list can't be None or []"
         raise Exception(msg)
 

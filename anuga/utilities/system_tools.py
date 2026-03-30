@@ -26,10 +26,9 @@ def log_to_file(filename, s, verbose=False, mode='a'):
     """Log string to file name
     """
 
-    fid = open(filename, mode)
-    if verbose: print(s)
-    fid.write(s + '\n')
-    fid.close()
+    with open(filename, mode) as fid:
+        if verbose: print(s)
+        fid.write(s + '\n')
 
 
 def get_user_name():
@@ -112,7 +111,7 @@ def store_svn_revision_info(destination_path='.', verbose=False):
     try:
         # FIXME (Ole): Use git module here via get_revision_number/date
         txt = subprocess.Popen('svn info', shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()[0]
-    except:
+    except OSError:
         txt = 'Revision: 0'
     else:    
         if verbose: print('response ',txt)
@@ -363,7 +362,7 @@ def get_web_file(file_url, file_name, auth=None, blocksize=1024*1024):
     # unpack auth info
     try:
         (httpproxy, proxyuser, proxypass) = auth
-    except:
+    except (TypeError, ValueError):
         (httpproxy, proxyuser, proxypass) = (None, None, None)
 
     # fill in any gaps from the environment
@@ -500,7 +499,7 @@ def _VmB(VmKey):
         t = open(_proc_status)
         v = t.read()
         t.close()
-    except:
+    except OSError:
         return 0.0  # non-Linux?
      # get VmKey line e.g. 'VmRSS:  9999  kB\n ...'
     i = v.index(VmKey)
@@ -522,5 +521,57 @@ def MemoryUpdate(print_msg=None,str_return=False):
     #if print_msg is not None:
     mem_diff = _total_memory - _last_memory
     return (mem_diff,_total_memory)
+
+
+def _get_rss_mb():
+    """Return current resident set size in MB.
+
+    Uses psutil if available, otherwise falls back to /proc/self/status on
+    Linux.  Returns 0.0 if neither source is available.
+    """
+    try:
+        import psutil
+        return psutil.Process(os.getpid()).memory_info().rss / 1024**2
+    except ImportError:
+        rss = _VmB('VmRSS:')
+        return rss  # already in MB from _VmB
+
+
+def memory_stats():
+    """Return a formatted string showing the current process memory usage.
+
+    Uses the resident set size (RSS) — physical RAM currently occupied by
+    the process.  Values below 1 GB are reported in MB; values at or above
+    1 GB are reported in GB.
+
+    Returns
+    -------
+    str
+        Memory usage string, e.g. ``'mem=342MB'`` or ``'mem=1.50GB'``.
+
+    Examples
+    --------
+    >>> from anuga import memory_stats
+    >>> print(memory_stats())
+    mem=342MB
+    """
+    rss_mb = _get_rss_mb()
+    if rss_mb >= 1024:
+        return f'mem={rss_mb / 1024:.2f}GB'
+    return f'mem={rss_mb:.0f}MB'
+
+
+def print_memory_stats():
+    """Print the current process memory usage to stdout.
+
+    Convenience wrapper around :func:`memory_stats`.
+
+    Examples
+    --------
+    >>> from anuga import print_memory_stats
+    >>> print_memory_stats()
+    mem=342MB
+    """
+    print(memory_stats())
     
 

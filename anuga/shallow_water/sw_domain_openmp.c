@@ -2460,8 +2460,7 @@ anuga_int _openmp_backup_conserved_quantities(const struct domain *__restrict D)
 
   }
 
-// #pragma omp parallel for simd default(none) shared(D, stage_tmp, xmom_tmp, ymom_tmp) \
-//         schedule(static) firstprivate(N)
+// #pragma omp parallel for simd default(none) shared(D, stage_tmp, xmom_tmp, ymom_tmp) schedule(static) firstprivate(N)
 //   for (k = 0; k < N; k++)
 //   {
 //     stage_tmp[k] = D->stage_centroid_values[k];
@@ -2469,8 +2468,7 @@ anuga_int _openmp_backup_conserved_quantities(const struct domain *__restrict D)
 //     ymom_tmp[k]  = D->ymom_centroid_values[k];
 // }
 
-// #pragma omp parallel for simd default(none) shared(D, stage_tmp, xmom_tmp, ymom_tmp) \
-//         schedule(static) firstprivate(N)
+// #pragma omp parallel for simd default(none) shared(D, stage_tmp, xmom_tmp, ymom_tmp) schedule(static) firstprivate(N)
 //   for (k = 0; k < N; k++)
 //   {
 //     D->stage_backup_values[k] = stage_tmp[k];

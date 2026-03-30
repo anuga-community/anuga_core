@@ -138,16 +138,25 @@ class Erosion_operator(Operator, Region):
 
 
     def __call__(self):
+        """Apply erosion operator to the domain for one timestep.
+
+        Updates the elevation quantity of each triangle selected by ``indices``
+        according to the erosion model, then adjusts stage to maintain
+        consistency with the new bed level.
+
+        - If ``indices`` is an empty list, no triangles are modified.
+        - If ``indices`` is None, all triangles are modified.
+        - Otherwise only the triangles at the given indices are modified.
+
+        Returns
+        -------
+        None
+            Modifies ``domain.quantities['elevation']`` and
+            ``domain.quantities['stage']`` in place.
         """
-        Apply rate to those triangles defined in indices
-
-        indices == [], then don't apply anywhere
-        indices is None, then apply everywhere
-        otherwise apply for the specific indices
-        """
 
 
-        if self.indices is []:
+        if self.indices is not None and len(self.indices) == 0:
             return
 
         #------------------------------------------
@@ -262,7 +271,7 @@ class Erosion_operator(Operator, Region):
             #matplotlib.use('Agg')
             import matplotlib.pyplot as plt
             import matplotlib.tri as tri
-        except:
+        except ImportError:
             print("Couldn't import module from matplotlib, probably you need to update matplotlib")
             raise
 
@@ -718,13 +727,13 @@ class Flat_slice_erosion_operator(Erosion_operator):
                     value = self.elevation(t)
                     self.elev_c[ind] = num.where(self.elev_c[ind] >  value, value, self.elev_c[ind])
                     self.stage_c[ind] = self.elev_c[ind] + height
-                except:
+                except Exception:
                     pass
             else:
                 try:
                     value = self.elevation(t)
                     self.elev_v[ind] = num.where(self.elev_v[ind] >  value, value, self.elev_v[ind])
-                except:
+                except Exception:
                     pass
 
 
@@ -805,22 +814,22 @@ class Flat_fill_slice_erosion_operator(Erosion_operator):
                     value = self.elevation(t)
                     height = self.stage_c[ind] - self.elev_c[ind]
                     if value > num.max(self.elev_c[ind]):
-                        self.elev_c[ind] = num.where(self.elev_c[ind] <  value, value, self.elev_c[ind])    
+                        self.elev_c[ind] = num.where(self.elev_c[ind] <  value, value, self.elev_c[ind])
                     else:
                         self.elev_c[ind] = num.where(self.elev_c[ind] >  value, value, self.elev_c[ind])
                     self.stage_c[ind] = self.elev_c[ind] + height
-                except:
+                except Exception:
                     pass
-                
+
             else:
                 try:
                     value = self.elevation(t)
                     print(value)
                     if value > num.max(self.elev_v[ind]):
-                        self.elev_v[ind] = num.where(self.elev_v[ind] <  value, value, self.elev_v[ind])    
+                        self.elev_v[ind] = num.where(self.elev_v[ind] <  value, value, self.elev_v[ind])
                     else:
                         self.elev_v[ind] = num.where(self.elev_v[ind] >  value, value, self.elev_v[ind])
-                except:
+                except Exception:
                     pass
 
 

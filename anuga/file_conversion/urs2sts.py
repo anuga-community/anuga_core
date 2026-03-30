@@ -142,7 +142,7 @@ def urs2sts(basename_in, basename_out=None,
             file_header = fid.readline().split(',')
             ordering_lines = fid.readlines()
             fid.close()
-        except:
+        except OSError:
             msg = 'Cannot open %s' % ordering_filename
             raise Exception(msg)
 

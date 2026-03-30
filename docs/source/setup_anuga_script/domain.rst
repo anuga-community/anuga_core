@@ -75,6 +75,18 @@ Check here for full documentation of the :func:`create_domain_from_regions` func
 and check the :doc:`../../examples/notebook_create_domain_from_regions` for an example of how to use it.
 
 
+.. seealso::
+
+   :doc:`coordinate_reference`
+      How to attach a coordinate reference system (UTM zone, national grid,
+      or arbitrary local CRS) to a domain via :class:`Geo_reference`.
+
+   `ANUGA User Manual — Chapter 7: The Domain
+   <https://github.com/anuga-community/anuga_user_manual>`_
+      Covers domain construction in depth, including mesh generation from
+      polygon regions, geo-referencing, flow algorithm choices, and domain
+      attributes.
+
 Reference
 ---------
 

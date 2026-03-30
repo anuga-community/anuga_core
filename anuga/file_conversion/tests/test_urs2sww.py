@@ -1,7 +1,5 @@
 
 # External modules
-from builtins import zip
-from builtins import range
 from anuga.file.netcdf import NetCDFFile
 import sys
 import unittest
@@ -379,7 +377,7 @@ class Test_Dem2Pts(Test_Mux):
                           origin =(50,23432,4343),
                           mint=301, maxt=399,
                               verbose=self.verbose)
-        except: 
+        except Exception: 
             pass
         else:
             self.assertTrue(0 ==1, 'Bad input did not throw exception error!')
@@ -401,7 +399,7 @@ class Test_Dem2Pts(Test_Mux):
                           origin =(50,23432,4343),
                           mint=301, maxt=301,
                               verbose=self.verbose)
-        except: 
+        except Exception: 
             pass
         else:
             self.assertTrue(0 ==1, 'Bad input did not throw exception error!')

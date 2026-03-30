@@ -2,11 +2,6 @@
 
 # To change this template, choose Tools | Templates
 # and open the template in the editor.
-
-
-
-from builtins import str
-from builtins import range
 import os.path
 import sys
 
@@ -665,9 +660,9 @@ def Internal_boundary_operator(domain,
                                verbose=True,
                                master_proc = 0,
                                procs = None,
-                               inlet_master_proc = [0,0],
+                               inlet_master_proc = None,
                                inlet_procs = None,
-                               enquiry_proc = [0,0]):
+                               enquiry_proc = None):
 
     # If not parallel domain then allocate serial Internal boundary operator
     if isinstance(domain, Parallel_domain) is False:
@@ -927,7 +922,7 @@ def allocate_inlet_procs(domain, region, enquiry_point = None, master_proc = 0, 
             else:
                 if verbose: print("P%d contains ghost copy of enq point %s" %(myid, enquiry_point))
                 has_enq_point = False
-        except:
+        except Exception:
             if verbose: print("P%d does not contain enq point %s" %(myid, enquiry_point))
             has_enq_point = False
 

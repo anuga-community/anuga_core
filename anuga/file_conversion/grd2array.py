@@ -5,6 +5,7 @@
 import numpy as num
 import os
 
+import anuga.utilities.log as log
 from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_float
 
 def grd2array(filename, verbose=False):

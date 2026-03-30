@@ -1,4 +1,3 @@
-from builtins import range
 import sys
 import unittest
 import numpy as num
@@ -25,7 +24,7 @@ class Test_Dem2Pts(unittest.TestCase):
         for file in ['demtest2.pts']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass 
      
     def test_dem2pts_bounding_box_v2(self):

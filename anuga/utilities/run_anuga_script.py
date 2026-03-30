@@ -1,8 +1,4 @@
 #! /usr/bin/python
-
-
-
-from builtins import str
 __author__="stephen"
 __date__ ="$20/08/2012 11:20:00 PM$"
 
@@ -61,7 +57,7 @@ def run_script(script, args=None, np=1, alg=None, verbose=False, allow_parallel=
         
         return 0 
     
-    except:
+    except Exception:
         return 1
     
     

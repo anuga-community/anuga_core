@@ -13,7 +13,7 @@ from anuga.parallel.distribute_mesh  import extract_submesh
 
 # Mesh partitioning using Metis
 from anuga.parallel.distribute_mesh import build_submesh
-from anuga.parallel.distribute_mesh import pmesh_divide_metis_with_map
+from anuga.parallel.distribute_mesh import partition_mesh
 
 from anuga.parallel.parallel_shallow_water import Parallel_domain
 
@@ -69,24 +69,24 @@ class Sequential_distribute(object):
         # Subdivide the mesh
         if verbose: print('sequential_distribute: Subdivide mesh')
 
-        new_nodes, new_triangles, new_boundary, triangles_per_proc, quantities, \
+        new_mesh, triangles_per_proc, quantities, \
                s2p_map, p2s_map = \
-               pmesh_divide_metis_with_map(domain, numprocs)
+               partition_mesh(domain, numprocs, parameters=parameters, verbose=verbose)
 
 
         # Build the mesh that should be assigned to each processor,
         # this includes ghost nodes and the communication pattern
         if verbose: print('sequential_distribute: Build submeshes')
-        if verbose: print('sequential_distribute: parameters = ',parameters)
+        if verbose: print('sequential_distribute: parameters: ',parameters)
 
-        submesh = build_submesh(new_nodes, new_triangles, new_boundary, \
-                                quantities, triangles_per_proc, parameters=parameters)
+        submesh = build_submesh(new_mesh, quantities, triangles_per_proc, 
+                                parameters=parameters, verbose=verbose)
 
         if verbose:
             for p in range(numprocs):
                 N = len(submesh['ghost_nodes'][p])
                 M = len(submesh['ghost_triangles'][p])
-                print('There are %d ghost nodes and %d ghost triangles on proc %d'\
+                print('sequential_distribute: There are %d ghost nodes and %d ghost triangles on proc %d'\
                       %(N, M, p))
 
 
@@ -122,35 +122,22 @@ class Sequential_distribute(object):
         if debug:
             import pprint
             print(50*"=")
-            print('NODE_L2G')
+            print('sequential_distribute: NODE_L2G')
             pprint.pprint(node_l2g)
 
             pprint.pprint(node_l2g[vertices[:,0]])
 
-            print('VERTICES')
+            print('sequential_distribute: VERTICES')
             pprint.pprint(vertices[:,0])
-            pprint.pprint(new_triangles[tri_l2g,0])
+            # FIXME: new_triangles, new_nodes, original_triangles, tri_l2orig
+            # are not available in this scope — these assertions are incomplete
 
-            assert num.allclose(node_l2g[vertices[:,0]], new_triangles[tri_l2g,0])
-            assert num.allclose(node_l2g[vertices[:,1]], new_triangles[tri_l2g,1])
-            assert num.allclose(node_l2g[vertices[:,2]], new_triangles[tri_l2g,2])
-
-
-            print('POINTS')
+            print('sequential_distribute: POINTS')
             pprint.pprint(points)
 
-            assert num.allclose(points[:,0], new_nodes[node_l2g,0])
-            assert num.allclose(points[:,1], new_nodes[node_l2g,1])
-
-
-            print('TRI')
+            print('sequential_distribute: TRI')
             pprint.pprint(tri_l2g)
             pprint.pprint(p2s_map[tri_l2g])
-
-
-            assert num.allclose(original_triangles[tri_l2orig,0],node_l2g[vertices[:,0]])
-            assert num.allclose(original_triangles[tri_l2orig,1],node_l2g[vertices[:,1]])
-            assert num.allclose(original_triangles[tri_l2orig,2],node_l2g[vertices[:,2]])
 
             print('NODES')
             pprint.pprint(node_map)
@@ -208,6 +195,24 @@ class Sequential_distribute(object):
         return tostore
 
 
+    def _release_submesh_rank(self, p):
+        """Null out submesh data for rank p to allow garbage collection.
+
+        Called by sequential_distribute_dump after rank p's files have been
+        written.  Once all arrays for rank p are released the GC can recover
+        the memory before proceeding to rank p+1.
+        """
+        submesh = self.submesh
+        for key in ('full_nodes', 'full_triangles', 'full_boundary',
+                    'ghost_nodes', 'ghost_triangles', 'ghost_commun',
+                    'ghost_boundary', 'ghost_layer_width', 'full_commun'):
+            lst = submesh.get(key)
+            if lst is not None and p < len(lst):
+                lst[p] = None
+        for k in submesh.get('full_quan', {}):
+            submesh['full_quan'][k][p] = None
+        for k in submesh.get('ghost_quan', {}):
+            submesh['ghost_quan'][k][p] = None
 
 
 
@@ -216,6 +221,8 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
     """ Distribute the domain, create parallel domain and pickle result
     """
 
+    import gc
+    import pickle
     from os.path import join
 
     partition = Sequential_distribute(domain, verbose, debug, parameters)
@@ -224,9 +231,7 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
     partition.distribute(numprocs)
 
     # Make sure the partition_dir exists
-    if partition_dir == '.' :
-        pass
-    else:
+    if partition_dir != '.':
         import os
         import errno
         try:
@@ -235,17 +240,14 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
             if exception.errno != errno.EEXIST:
                 raise
 
-    import pickle
-
     if verbose: print('sequential_distribute_dump: Dumping partitions to %s'%partition_dir)
-    
+
     for p in range(0, numprocs):
 
         tostore = partition.extract_submesh(p)
 
         pickle_name = partition.domain_name + '_P%g_%g.pickle'% (numprocs,p)
         pickle_name = join(partition_dir,pickle_name)
-        f = open(pickle_name, 'wb')
 
         lst = list(tostore)
 
@@ -255,12 +257,25 @@ def sequential_distribute_dump(domain, numprocs=1, verbose=False, partition_dir=
         num.save(pickle_name+".np2",tostore[2])
         lst[2] = pickle_name+".np2.npy"
 
-        # Write each quantity to it's own file
+        # Write each quantity to its own file
         for k in tostore[4]:
-            num.save(pickle_name+".np4."+k,num.array(tostore[4][k]))
+            num.save(pickle_name+".np4."+k, num.asarray(tostore[4][k]))
             lst[4][k] = pickle_name+".np4."+k+".npy"
 
-        pickle.dump( tuple(lst), f, protocol=pickle.HIGHEST_PROTOCOL)
+        with open(pickle_name, 'wb') as f:
+            pickle.dump(tuple(lst), f, protocol=pickle.HIGHEST_PROTOCOL)
+
+        # Release this rank's submesh data so memory can be reclaimed before
+        # processing the next rank.  Without this, all P subdomains' arrays
+        # remain live throughout the entire dump loop.
+        partition._release_submesh_rank(p)
+        del tostore, lst
+
+        # Run GC every rank — cyclic references inside submesh dicts are not
+        # freed by refcounting alone and must be collected explicitly.
+        gc.collect()
+
+    gc.collect()
     return
 
 
@@ -293,6 +308,8 @@ def sequential_distribute_load_pickle_file(pickle_name, np=1, verbose = False):
                    domain_low_froude = pickle.load(f)
     f.close()
 
+    # Note that quantities is a dictionary with quantity name keys and filenames of numpy arrays.
+    # points and vertices are filenames of numpy arrays. These need to be loaded.
     for k in quantities:
         quantities[k] = num.load(quantities[k])
     points = num.load(points)
@@ -310,7 +327,7 @@ def sequential_distribute_load_pickle_file(pickle_name, np=1, verbose = False):
     # Copy in quantity data
     #------------------------------------------------------------------------
     for q in quantities:
-        domain.set_quantity(q, quantities[q])
+        domain.set_quantity(q, quantities[q], location='centroids')
 
 
     #------------------------------------------------------------------------

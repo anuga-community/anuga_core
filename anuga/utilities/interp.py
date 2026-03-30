@@ -62,8 +62,6 @@
 
 
 #------------------------ Non-Private Function -------------------------
-
-from builtins import range
 def interp(y, x, xinterp, missing=1e+20):
     """Simple linear interpolation for ordinate with missing values.
 

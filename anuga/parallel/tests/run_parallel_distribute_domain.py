@@ -1,9 +1,6 @@
 #------------------------------------------------------------------------------
 # Import necessary modules
 #------------------------------------------------------------------------------
-
-from builtins import range
-from builtins import object
 import unittest
 import os
 import sys

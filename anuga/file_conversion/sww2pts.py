@@ -1,8 +1,7 @@
-
-from builtins import range
 import numpy as num
 import os
 
+import anuga.utilities.log as log
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 
 def sww2pts(name_in, name_out=None,
@@ -68,7 +67,7 @@ def sww2pts(name_in, name_out=None,
     try: # works with netcdf4
         number_of_timesteps = len(fid.dimensions['number_of_timesteps'])
         number_of_points = len(fid.dimensions['number_of_points'])
-    except: #works with scientific.io.netcdf
+    except (TypeError, AttributeError): #works with scientific.io.netcdf
         number_of_timesteps = fid.dimensions['number_of_timesteps']
         number_of_points = fid.dimensions['number_of_points']
 
@@ -97,7 +96,7 @@ def sww2pts(name_in, name_out=None,
         times = fid.variables['time'][:]
         log.critical('------------------------------------------------')
         log.critical('Statistics of SWW file:')
-        log.critical('  Name: %s' % swwfile)
+        log.critical('  Name: %s' % name_in)
         log.critical('  Reference:')
         log.critical('    Lower left corner: [%f, %f]' % (xllcorner, yllcorner))
         log.critical('    Start time: %f' % fid.starttime[0])

@@ -4,13 +4,13 @@
 import unittest
 import sys
 from math import sqrt
-from pprint import pprint
+#from pprint import pprint
 
 
-from anuga import Domain
+from anuga import Domain, Mesh
 from anuga import rectangular_cross
 
-from anuga.parallel.distribute_mesh import pmesh_divide_metis
+from anuga.parallel.distribute_mesh import partition_mesh
 from anuga.parallel.distribute_mesh import build_submesh
 from anuga.parallel.distribute_mesh import (
     submesh_full,
@@ -20,6 +20,50 @@ from anuga.parallel.distribute_mesh import (
 from anuga.parallel.distribute_mesh import extract_submesh, rec_submesh, send_submesh
 
 import numpy as num
+
+def vertex_to_centroid_array(quantities_vertex):
+    """Convert N x 3 vertex values to N x 1 centroid values.
+
+    quantities_vertex: dict[name -> ndarray] with shape (N, 3) for each quantity.
+    Returns: dict[name -> ndarray] with shape (N, 1) for each quantity.
+    """
+
+    # vals: (N, 3) → mean over the 3 vertices
+    c = num.mean(quantities_vertex, axis=1)           # (N,)
+    quantities_centroid = c[:, None]          # (N, 1)
+
+    return quantities_centroid
+
+def vertex_to_centroid(quantities_vertex):
+    """Convert N x 3 vertex values to N x 1 centroid values.
+
+    quantities_vertex: dict[name -> ndarray] with shape (N, 3) for each quantity.
+    Returns: dict[name -> ndarray] with shape (N, 1) for each quantity.
+    """
+    quantities_centroid = {}
+    for name, vals in quantities_vertex.items():
+        # vals: (N, 3) → mean over the 3 vertices
+        c = num.mean(vals, axis=1)           # (N,)
+        quantities_centroid[name] = c[:, None]  # (N, 1)
+    return quantities_centroid
+
+def vertex_to_centroid_list(quantities_vertex):
+    """Convert N x 3 vertex values to N x 1 centroid values.
+
+    quantities_vertex: dict[name -> ndarray] with shape (N, 3) for each quantity.
+    Returns: dict[name -> ndarray] with shape (N, 1) for each quantity.
+    """
+    quantities_centroid = {}
+    for name, vals in quantities_vertex.items():
+        arrays = []
+        for array in vals:
+            # vals: (N, 3) → mean over the 3 vertices
+            c = num.mean(array, axis=1) 
+            arrays.append(c[:, None])          # (N, 1)
+        quantities_centroid[name] = arrays
+    return quantities_centroid
+
+   
 
 # Setup to skip test if mpi4py not available
 import sys
@@ -107,9 +151,13 @@ class Test_Distribute_Mesh(unittest.TestCase):
 
         # print domain.quantities['ymomentum'].centroid_values
 
-        nodes, triangles, boundary, triangles_per_proc, quantities = pmesh_divide_metis(
+        mesh, triangles_per_proc, quantities, new_tri_index, epart_order = partition_mesh(
             domain, 1
         )
+
+        nodes = mesh.nodes
+        triangles = mesh.triangles
+        boundary = mesh.boundary
 
         true_nodes = [
             [0.0, 0.0],
@@ -210,9 +258,13 @@ class Test_Distribute_Mesh(unittest.TestCase):
 
         # print domain.quantities['ymomentum'].centroid_values
 
-        nodes, triangles, boundary, triangles_per_proc, quantities = pmesh_divide_metis(
+        mesh, triangles_per_proc, quantities, new_tri_index, epart_order = partition_mesh(
             domain, 2
         )
+
+        nodes = mesh.nodes
+        triangles = mesh.triangles
+        boundary = mesh.boundary
 
         true_nodes = [
             [0.0, 0.0],
@@ -422,7 +474,7 @@ class Test_Distribute_Mesh(unittest.TestCase):
 
         assert num.allclose(nodes, true_nodes)
 
-        pprint(triangles)
+        #pprint(triangles)
 
         assert (
             num.allclose(triangles, true_triangles_4)
@@ -436,12 +488,15 @@ class Test_Distribute_Mesh(unittest.TestCase):
             or num.allclose(triangles, true_triangles_meshpy_2024_1_win_1)
         )
 
-        print(triangles_per_proc)
+        #print(triangles_per_proc)
         assert (
             num.allclose(triangles_per_proc, [8, 8])
             or num.allclose(triangles_per_proc, [9, 7])
             or num.allclose(triangles_per_proc, [7, 9])
         )
+
+        #print(epart_order)
+        #print(new_tri_index)
 
     def test_build_submesh_3(self):
         """
@@ -740,7 +795,7 @@ class Test_Distribute_Mesh(unittest.TestCase):
             ],
             "full_commun": [
                 {0: [1, 2], 1: [1, 2], 2: [1, 2], 3: [2], 4: [1]},
-                {5: [0, 2], 6: [0, 2], 7: [], 8: [0], 9: [0], 10: [0]},
+                {5: [0, 2], 6: [0, 2], 8: [0], 9: [0], 10: [0]},
                 {11: [0, 1], 12: [0, 1], 13: [0], 14: [0], 15: [0]},
             ],
             "ghost_commun": [
@@ -1135,15 +1190,18 @@ class Test_Distribute_Mesh(unittest.TestCase):
         # Order the quantities information to be the same as the triangle
         # information
 
-        submesh = submesh_quantities(submesh, quantities, triangles_per_proc)
+
+        submesh = submesh_quantities(submesh, vertex_to_centroid(quantities), triangles_per_proc)
 
         for key, value in true_submesh["ghost_quan"].items():
             for i in range(3):
                 assert num.allclose(
-                    true_submesh["ghost_quan"][key][i], submesh["ghost_quan"][key][i]
+                    vertex_to_centroid_array(true_submesh["ghost_quan"][key][i]), 
+                    vertex_to_centroid_array(submesh["ghost_quan"][key][i])
                 )
                 assert num.allclose(
-                    true_submesh["full_quan"][key][i], submesh["full_quan"][key][i]
+                    vertex_to_centroid_array(true_submesh["full_quan"][key][i]), 
+                    vertex_to_centroid_array(submesh["full_quan"][key][i])
                 )
 
         submesh["boundary_polygon"] = boundary_polygon
@@ -1470,7 +1528,7 @@ class Test_Distribute_Mesh(unittest.TestCase):
             ],
             "full_commun": [
                 {0: [1, 2], 1: [1, 2], 2: [1, 2], 3: [2], 4: [1]},
-                {5: [0, 2], 6: [0, 2], 7: [], 8: [0], 9: [0], 10: [0]},
+                {5: [0, 2], 6: [0, 2], 8: [0], 9: [0], 10: [0]},
                 {11: [0, 1], 12: [0, 1], 13: [0], 14: [0], 15: [0]},
             ],
             "ghost_commun": [
@@ -1924,9 +1982,9 @@ class Test_Distribute_Mesh(unittest.TestCase):
             )
 
         true_submesh["full_commun"] = [
-            {0: [1, 2], 1: [1], 2: [2], 3: [], 4: []},
-            {5: [2], 6: [0], 7: [], 8: [], 9: [0], 10: []},
-            {11: [0, 1], 12: [0], 13: [], 14: [], 15: [0]},
+            {0: [1, 2], 1: [1], 2: [2]},
+            {5: [2], 6: [0], 9: [0]},
+            {11: [0, 1], 12: [0], 15: [0]},
         ]
 
         assert true_submesh["full_commun"] == submesh["full_commun"]
@@ -1934,7 +1992,7 @@ class Test_Distribute_Mesh(unittest.TestCase):
         # Order the quantities information to be the same as the triangle
         # information
 
-        submesh = submesh_quantities(submesh, quantities, triangles_per_proc)
+        submesh = submesh_quantities(submesh, vertex_to_centroid(quantities), triangles_per_proc)
 
         # print submesh['full_quan']
 
@@ -2186,10 +2244,12 @@ class Test_Distribute_Mesh(unittest.TestCase):
         for key, value in true_submesh["ghost_quan"].items():
             for i in range(3):
                 assert num.allclose(
-                    true_submesh["ghost_quan"][key][i], submesh["ghost_quan"][key][i]
+                    vertex_to_centroid_array(true_submesh["ghost_quan"][key][i]), 
+                    vertex_to_centroid_array(submesh["ghost_quan"][key][i])
                 )
                 assert num.allclose(
-                    true_submesh["full_quan"][key][i], submesh["full_quan"][key][i]
+                    vertex_to_centroid_array(true_submesh["full_quan"][key][i]), 
+                    vertex_to_centroid_array(submesh["full_quan"][key][i])
                 )
 
         submesh["boundary_polygon"] = boundary_polygon
@@ -2491,7 +2551,7 @@ class Test_Distribute_Mesh(unittest.TestCase):
             ],
             "full_commun": [
                 {0: [1, 2], 1: [1, 2], 2: [1, 2], 3: [2], 4: [1]},
-                {5: [0, 2], 6: [0, 2], 7: [], 8: [0], 9: [0], 10: [0]},
+                {5: [0, 2], 6: [0, 2], 8: [0], 9: [0], 10: [0]},
                 {11: [0, 1], 12: [0, 1], 13: [0], 14: [0], 15: [0]},
             ],
             "ghost_commun": [
@@ -2849,8 +2909,9 @@ class Test_Distribute_Mesh(unittest.TestCase):
         }
 
         # Subdivide into non-overlapping partitions
+        mesh = Mesh(nodes, triangles, boundary)
         submesh = build_submesh(
-            nodes, triangles, boundary, quantities, triangles_per_proc, parameters=None
+            mesh, vertex_to_centroid(quantities), triangles_per_proc, parameters=None
         )
 
         for i in range(3):
@@ -2874,10 +2935,12 @@ class Test_Distribute_Mesh(unittest.TestCase):
         for key, value in true_submesh["ghost_quan"].items():
             for i in range(3):
                 assert num.allclose(
-                    true_submesh["ghost_quan"][key][i], submesh["ghost_quan"][key][i]
+                    vertex_to_centroid_array(true_submesh["ghost_quan"][key][i]), 
+                    vertex_to_centroid_array(submesh["ghost_quan"][key][i])
                 )
                 assert num.allclose(
-                    true_submesh["full_quan"][key][i], submesh["full_quan"][key][i]
+                    vertex_to_centroid_array(true_submesh["full_quan"][key][i]), 
+                    vertex_to_centroid_array(submesh["full_quan"][key][i])
                 )
 
         # Now test the extract_submesh for the 3 processors
@@ -2886,7 +2949,7 @@ class Test_Distribute_Mesh(unittest.TestCase):
         submesh_cell_1 = extract_submesh(submesh, triangles_per_proc, p=1)
         submesh_cell_2 = extract_submesh(submesh, triangles_per_proc, p=2)
 
-        from pprint import pprint
+        #from pprint import pprint
 
         # pprint(submesh_cell_1)
 

@@ -12,10 +12,12 @@ Script Structure
    :maxdepth: 1
 
    domain
+   coordinate_reference
    initial_conditions
    boundaries
    operators
    evolve
+   checkpointing
    
 .. only:: html
 

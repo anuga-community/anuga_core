@@ -1,11 +1,5 @@
 #!/usr/bin/env python
-
-
-
-from builtins import zip
-from builtins import str
-from builtins import range
-from builtins import object
+import pytest
 import unittest, os, time
 import os.path
 from math import pi, sqrt
@@ -287,7 +281,7 @@ class Test_Shallow_Water(unittest.TestCase):
         # Check error check
         try:
             rotate(r, num.array([1, 1, 1]))
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should have raised an exception')
@@ -2371,7 +2365,7 @@ class Test_Shallow_Water(unittest.TestCase):
         points are tested.
         """
 
-        from anuga.pmesh.mesh_interface import create_mesh_from_regions
+        from anuga.pmesh.mesh_interface import create_pmesh_from_regions
         from anuga.abstract_2d_finite_volumes.mesh_factory \
                 import rectangular_cross
 
@@ -3554,7 +3548,7 @@ class Test_Shallow_Water(unittest.TestCase):
         # on a circle affecting triangles #0 and #1 (bac and bce)
         try:
             Inflow(domain, rate=2.0, center=(1,1.1), radius=0.01)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have raised exception'
@@ -6901,7 +6895,7 @@ class Test_Shallow_Water(unittest.TestCase):
         try:
             for t in domain2.evolve(yieldstep=1, finaltime=finaltime):
                 pass
-        except:
+        except Exception:
             pass
         else:
             msg = 'This should have caught NAN at boundary'
@@ -7298,7 +7292,7 @@ friction  \n \
         verbose = False
 
         from anuga.shallow_water.shallow_water_domain import Domain
-        from anuga.pmesh.mesh_interface import create_mesh_from_regions
+        from anuga.pmesh.mesh_interface import create_pmesh_from_regions
         from anuga.geospatial_data.geospatial_data import Geospatial_data
 
 
@@ -7319,7 +7313,7 @@ friction  \n \
                         [E-border, N-border], [W+border, N-border]]
 
         meshname = 'offending_mesh.msh'
-        create_mesh_from_regions(bounding_polygon,
+        create_pmesh_from_regions(bounding_polygon,
                                  boundary_tags={'south': [0], 'east': [1],
                                                 'north': [2], 'west': [3]},
                                  maximum_triangle_area=1000000,
@@ -7362,7 +7356,7 @@ friction  \n \
         verbose = False
 
         from anuga.shallow_water.shallow_water_domain import Domain
-        from anuga.pmesh.mesh_interface import create_mesh_from_regions
+        from anuga.pmesh.mesh_interface import create_pmesh_from_regions
         from anuga.geospatial_data.geospatial_data import Geospatial_data
 
 
@@ -7416,7 +7410,7 @@ friction  \n \
             interior_regions.append( [polygon, 100] )
 
         meshname = 'offending_mesh_1.msh'
-        create_mesh_from_regions(bounding_polygon,
+        create_pmesh_from_regions(bounding_polygon,
                                  boundary_tags={'south': [0], 'east': [1],
                                                 'north': [2], 'west': [3]},
                                  maximum_triangle_area=1000000,
@@ -7475,7 +7469,7 @@ friction  \n \
         verbose = False
 
         from anuga.shallow_water.shallow_water_domain import Domain
-        from anuga.pmesh.mesh_interface import create_mesh_from_regions
+        from anuga.pmesh.mesh_interface import create_pmesh_from_regions
         from anuga.geospatial_data import Geospatial_data
 
         # Get path where this test is run
@@ -7491,7 +7485,7 @@ friction  \n \
 
         bounding_polygon = [[W, S], [E, S], [E, N], [W, N]]
 
-        create_mesh_from_regions(bounding_polygon,
+        create_pmesh_from_regions(bounding_polygon,
                                  boundary_tags={'south': [0],
                                                 'east': [1],
                                                 'north': [2],
@@ -8094,6 +8088,7 @@ friction  \n \
             assert num.allclose(max(elevation[i,:]), i * inc)
 
 
+    @pytest.mark.slow
     def test_inflow_using_flowline(self):
         """test_inflow_using_flowline
 
@@ -9078,7 +9073,7 @@ friction  \n \
             os.remove(txt_file)
             os.remove(txt_file_prj)
             os.remove(txt_file_dem)
-        except:
+        except OSError:
             pass
 
     def test_that_mesh_methods_exist(self):

@@ -9,9 +9,9 @@ dependencies:
   - cartopy
   - cython
   - dill
-  - future
-  - gdal
-  - gitpython
+  - rasterio
+  - fiona
+  - shapely
   - libpython
   - gcc_win-64
   - gxx_win-64
@@ -31,7 +31,6 @@ dependencies:
   - pyproj
   - pytest
   - scipy
-  - toml
   - utm
   - wheel
   - xarray

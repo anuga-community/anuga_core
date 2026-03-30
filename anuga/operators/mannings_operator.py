@@ -4,6 +4,7 @@ __date__ ="$11/11/2011 1:52:17 PM$"
 
 from anuga.operators.base_operator import Operator
 import numpy as num
+import anuga.utilities.log as log
 
 
 class Mannings_operator(Operator):

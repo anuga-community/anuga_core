@@ -25,7 +25,7 @@ def typeset_report(report_name='report', verbose=True):
         out = subprocess.check_output('bibtex %s' % report_name)
         out = subprocess.check_output(cmd, shell=True)
         out = subprocess.check_output(cmd, shell=True)
-    except:
+    except (subprocess.CalledProcessError, OSError):
         pass
             
     #os.system('pdflatex -shell-escape  -interaction=batchmode %s.tex' % report_name)
