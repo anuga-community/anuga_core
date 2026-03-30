@@ -23,7 +23,7 @@ import os
 # See if osgeo is installed
 import sys
 try:
-    import osgeo
+    import rasterio
 except ImportError:
     pass
 import pytest
@@ -174,8 +174,8 @@ class Test_quantity_setting_functions(unittest.TestCase):
 
         return
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_composite_quantity_setting_function(self):
         # Test the composite_quantity_setting_function
 
@@ -366,8 +366,8 @@ class Test_quantity_setting_functions(unittest.TestCase):
 
         return
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_quantity_from_Pt_Pol_Data_and_Raster(self):
         #
         #

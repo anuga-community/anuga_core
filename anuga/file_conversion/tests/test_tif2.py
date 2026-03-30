@@ -8,7 +8,7 @@ from pprint import pprint
 # not, skip subsequent tests
 import sys
 try:
-    import osgeo
+    import rasterio
 except ImportError:
     pass
 
@@ -86,8 +86,8 @@ def make_a_ll_tif():
 class Test_tif2(unittest.TestCase):
 
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_tif2array_utm_south(self):
 
         import os
@@ -156,8 +156,8 @@ class Test_tif2(unittest.TestCase):
 
         os.remove('PointData_test_utm.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_tif2array_utm_north(self):
 
         import os
@@ -226,8 +226,8 @@ class Test_tif2(unittest.TestCase):
 
         os.remove('PointData_test_utm.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_tif2array_ll(self):
 
         import os
@@ -451,8 +451,8 @@ class Test_tif2(unittest.TestCase):
 
         os.remove('PointData_test_ll.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module") 
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio") 
     def test_tif2point_values_ll(self):
 
         import os
@@ -557,8 +557,8 @@ class Test_tif2(unittest.TestCase):
         if os.path.exists('PointData_test_ll.tif'):
             os.remove('PointData_test_ll.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_tif_lat_lon_too_small(self):
 
         import os
@@ -587,8 +587,8 @@ class Test_tif2(unittest.TestCase):
             if os.path.exists('PointData_test_ll.tif'):
                 os.remove('PointData_test_ll.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_tif2point_values_utm(self):
 
         import os
@@ -629,8 +629,8 @@ class Test_tif2(unittest.TestCase):
 
         os.remove('PointData_test_utm.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_tif2point_values_utm_wrong_hemisphere(self):
 
         import os

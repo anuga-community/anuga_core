@@ -118,11 +118,10 @@ def _sww_merge(swwfiles, output, verbose=False):
             order          = fid.order
             xllcorner      = fid.xllcorner
             yllcorner      = fid.yllcorner
-            zone           = fid.zone
-            false_easting  = fid.false_easting
-            false_northing = fid.false_northing
-            datum          = fid.datum
-            projection     = fid.projection
+            timezone       = getattr(fid, 'timezone', 'UTC')
+
+            from anuga.coordinate_transforms.geo_reference import Geo_reference
+            geo_reference = Geo_reference(NetCDFObject=fid)
 
             description = 'merged:' + getattr(fid, 'description')
             first_file = False
@@ -176,21 +175,16 @@ def _sww_merge(swwfiles, output, verbose=False):
                              len(out_tris),
                              len(points),
                              description=description,
-                             sww_precision=netcdf_float32)
+                             sww_precision=netcdf_float32,
+                             timezone=timezone)
 
-    from anuga.coordinate_transforms.geo_reference import Geo_reference
-    geo_reference = Geo_reference()
+    sww.store_triangulation(fido, points, out_tris,
+                            points_georeference=Geo_reference())
 
-    sww.store_triangulation(fido, points, out_tris, points_georeference=geo_reference)
-
-    fido.order          = order
-    fido.xllcorner      = xllcorner
-    fido.yllcorner      = yllcorner
-    fido.zone           = zone
-    fido.false_easting  = false_easting
-    fido.false_northing = false_northing
-    fido.datum          = datum
-    fido.projection     = projection
+    fido.order     = order
+    fido.xllcorner = xllcorner
+    fido.yllcorner = yllcorner
+    geo_reference.write_NetCDF(fido)
 
     sww.store_static_quantities(fido, verbose=verbose, **out_s_quantities)
 
@@ -259,11 +253,10 @@ def _sww_merge_parallel_smooth(swwfiles, output, verbose=False, delete_old=False
             order          = fid.order
             xllcorner      = fid.xllcorner
             yllcorner      = fid.yllcorner
-            zone           = fid.zone
-            false_easting  = fid.false_easting
-            false_northing = fid.false_northing
-            datum          = fid.datum
-            projection     = fid.projection
+            timezone       = getattr(fid, 'timezone', 'UTC')
+
+            from anuga.coordinate_transforms.geo_reference import Geo_reference
+            geo_reference = Geo_reference(NetCDFObject=fid)
 
             g_volumes = num.zeros((number_of_global_triangles, 3), int)
             g_points  = num.zeros((number_of_global_nodes, 2), num.float32)
@@ -354,20 +347,16 @@ def _sww_merge_parallel_smooth(swwfiles, output, verbose=False, delete_old=False
                      number_of_global_triangles,
                      number_of_global_nodes,
                      description=description,
-                     sww_precision=netcdf_float32)
+                     sww_precision=netcdf_float32,
+                     timezone=timezone)
 
-    from anuga.coordinate_transforms.geo_reference import Geo_reference
     sww.store_triangulation(fido, g_points, g_volumes,
                             points_georeference=Geo_reference())
 
-    fido.order          = order
-    fido.xllcorner      = xllcorner
-    fido.yllcorner      = yllcorner
-    fido.zone           = zone
-    fido.false_easting  = false_easting
-    fido.false_northing = false_northing
-    fido.datum          = datum
-    fido.projection     = projection
+    fido.order     = order
+    fido.xllcorner = xllcorner
+    fido.yllcorner = yllcorner
+    geo_reference.write_NetCDF(fido)
 
     sww.store_static_quantities(fido, verbose=verbose, **out_s_quantities)
     sww.store_static_quantities_centroid(fido, verbose=verbose, **out_s_c_quantities)
@@ -487,13 +476,12 @@ def _sww_merge_parallel_non_smooth(swwfiles, output, verbose=False, delete_old=F
 
 
             order      = fid.order
-            xllcorner  = fid.xllcorner;
-            yllcorner  = fid.yllcorner ;
-            zone       = fid.zone;
-            false_easting  = fid.false_easting;
-            false_northing = fid.false_northing;
-            datum      = fid.datum;
-            projection = fid.projection;
+            xllcorner  = fid.xllcorner
+            yllcorner  = fid.yllcorner
+            timezone   = getattr(fid, 'timezone', 'UTC')
+
+            from anuga.coordinate_transforms.geo_reference import Geo_reference
+            geo_reference = Geo_reference(NetCDFObject=fid)
 
             g_volumes = num.arange(number_of_global_triangles*3).reshape(-1,3)
 
@@ -596,22 +584,17 @@ def _sww_merge_parallel_non_smooth(swwfiles, output, verbose=False, delete_old=F
                              number_of_global_triangles,
                              number_of_global_triangles*3,
                              description=description,
-                             sww_precision=netcdf_float32)
+                             sww_precision=netcdf_float32,
+                             timezone=timezone)
 
 
-    from anuga.coordinate_transforms.geo_reference import Geo_reference
-    geo_reference = Geo_reference()
+    sww.store_triangulation(fido, g_points, g_volumes,
+                            points_georeference=Geo_reference())
 
-    sww.store_triangulation(fido, g_points, g_volumes, points_georeference=geo_reference)
-
-    fido.order      = order
-    fido.xllcorner  = xllcorner;
-    fido.yllcorner  = yllcorner ;
-    fido.zone       = zone;
-    fido.false_easting  = false_easting;
-    fido.false_northing = false_northing;
-    fido.datum      = datum;
-    fido.projection = projection;
+    fido.order     = order
+    fido.xllcorner = xllcorner
+    fido.yllcorner = yllcorner
+    geo_reference.write_NetCDF(fido)
 
     sww.store_static_quantities(fido, verbose=verbose, **out_s_quantities)
     sww.store_static_quantities_centroid(fido, verbose=verbose, **out_s_c_quantities)

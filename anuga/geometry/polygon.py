@@ -191,37 +191,6 @@ def intersection(line0, line1, rtol=1.0e-5, atol=1.0e-8):
             return 0, None
 
 
-def NEW_C_intersection(line0, line1):
-    """Returns intersecting point between two line segments.
-
-    However, if parallel lines coincide partly (i.e. share a common segment),
-    the line segment where lines coincide is returned
-
-    Inputs:
-        line0, line1: Each defined by two end points as in: [[x0, y0], [x1, y1]]
-                      A line can also be a 2x2 numpy array with each row
-                      corresponding to a point.
-
-    Output:
-        status, value - where status and value is interpreted as follows:
-        status == 0: no intersection, value set to None.
-        status == 1: intersection point found and returned in value as [x,y].
-        status == 2: Collinear overlapping lines found.
-                     Value takes the form [[x0,y0], [x1,y1]].
-        status == 3: Collinear non-overlapping lines. Value set to None.
-        status == 4: Lines are parallel. Value set to None.
-    """
-
-    line0 = ensure_numeric(line0, float)
-    line1 = ensure_numeric(line1, float)
-
-    status, value = _intersection(line0[0, 0], line0[0, 1],
-                                  line0[1, 0], line0[1, 1],
-                                  line1[0, 0], line1[0, 1],
-                                  line1[1, 0], line1[1, 1])
-
-    return status, value
-
 
 def polygon_overlap(triangles, polygon, verbose=False):
     """Determine if a polygon and triangle overlap

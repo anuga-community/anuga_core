@@ -129,28 +129,15 @@ class Sequential_distribute(object):
 
             print('sequential_distribute: VERTICES')
             pprint.pprint(vertices[:,0])
-            pprint.pprint(new_triangles[tri_l2g,0])
-
-            assert num.allclose(node_l2g[vertices[:,0]], new_triangles[tri_l2g,0])
-            assert num.allclose(node_l2g[vertices[:,1]], new_triangles[tri_l2g,1])
-            assert num.allclose(node_l2g[vertices[:,2]], new_triangles[tri_l2g,2])
-
+            # FIXME: new_triangles, new_nodes, original_triangles, tri_l2orig
+            # are not available in this scope — these assertions are incomplete
 
             print('sequential_distribute: POINTS')
             pprint.pprint(points)
 
-            assert num.allclose(points[:,0], new_nodes[node_l2g,0])
-            assert num.allclose(points[:,1], new_nodes[node_l2g,1])
-
-
             print('sequential_distribute: TRI')
             pprint.pprint(tri_l2g)
             pprint.pprint(p2s_map[tri_l2g])
-
-
-            assert num.allclose(original_triangles[tri_l2orig,0],node_l2g[vertices[:,0]])
-            assert num.allclose(original_triangles[tri_l2orig,1],node_l2g[vertices[:,1]])
-            assert num.allclose(original_triangles[tri_l2orig,2],node_l2g[vertices[:,2]])
 
             print('NODES')
             pprint.pprint(node_map)

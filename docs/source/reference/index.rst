@@ -116,6 +116,37 @@ that fall inside the polygon.  Operators use regions to apply forcing
 :doc:`Full Region API <anuga.Region>`
 
 
+Geo_reference
+-------------
+
+``Geo_reference`` records the coordinate reference system (CRS) and local
+origin of an ANUGA domain.  It supports WGS84 UTM zones (auto-computed EPSG),
+national grids such as RD New (EPSG:28992) or British National Grid
+(EPSG:27700), and arbitrary local systems for wavetank simulations.
+
+.. code-block:: python
+
+   geo_ref = anuga.Geo_reference(zone=55, hemisphere='southern',
+                                 xllcorner=363000.0, yllcorner=8132000.0)
+   geo_ref.epsg          # 32755  (auto-computed)
+   geo_ref.is_located()  # True
+
+   # Or supply EPSG directly (zone and hemisphere inferred for UTM codes):
+   geo_ref = anuga.Geo_reference(epsg=32755, xllcorner=363000.0, yllcorner=8132000.0)
+
+   # National grids work too:
+   geo_ref = anuga.Geo_reference(epsg=28992)   # Netherlands RD New
+
+See :doc:`../setup_anuga_script/coordinate_reference` for full usage guidance.
+
+.. toctree::
+   :hidden:
+
+   anuga.Geo_reference
+
+:doc:`Full Geo_reference API <anuga.Geo_reference>`
+
+
 File format reference
 ---------------------
 

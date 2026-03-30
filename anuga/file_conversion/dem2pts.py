@@ -78,7 +78,7 @@ def _dem2pts(name_in, name_out=None, verbose=False,
     elif name_in[-4:] != '.dem':
         raise IOError('Input file %s should be of type .asc or .dem.' % name_in)
 
-    if name_out != None and basename_out[-4:] != '.pts':
+    if name_out != None and name_out[-4:] != '.pts':
         raise IOError('Input file %s should be of type .pts.' % name_out)
 
     # Get NetCDF

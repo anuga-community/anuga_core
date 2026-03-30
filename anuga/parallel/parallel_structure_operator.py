@@ -756,7 +756,7 @@ class Parallel_Structure_operator(anuga.Operator):
     # Get id of processors associated with first and second inlet enquiry points
     def get_enquiry_proc(self, id=None):
 
-        if id is none:
+        if id is None:
             return self.enquiry_proc
         else:
             return self.enquiry_proc[id]

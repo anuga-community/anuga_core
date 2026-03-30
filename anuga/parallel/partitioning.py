@@ -78,19 +78,6 @@ def metis_partition(domain, n_procs):
     # If metis 4 is installed, partMeshNodal is used. If metis 5 is installed, 
     # part_mesh is used if available, otherwise part_graph
 
-    if metis_version == 4:
-        n_vert = domain.get_number_of_nodes()
-        t_list2 = domain.triangles.copy()
-        t_list = np.reshape(t_list2, (-1,))
-        # The 1 here is for triangular mesh elements.
-        edgecut, epart, npart = partMeshNodal(n_tri, n_vert, t_list, 1, n_procs)
-        # print edgecut
-        # print npart
-        #print epart
-        del edgecut
-        del npart
-
-
     if metis_version == "5_part_mesh":
 
         objval, epart, npart = part_mesh(n_procs, domain.triangles)

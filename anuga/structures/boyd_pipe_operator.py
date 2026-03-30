@@ -239,7 +239,7 @@ class Boyd_pipe_operator(anuga.Structure_operator):
                 anuga.log.critical('Specific E & Deltat Tot E = %s, %s'
                              % (str(self.inflow.get_enquiry_specific_energy()),
                                 str(self.delta_total_energy)))
-                anuga.log.critical('culvert type = %s' % str(culvert_type))
+                anuga.log.critical('culvert type = %s' % self.__class__.__name__)
             # Water has risen above inlet
 
 

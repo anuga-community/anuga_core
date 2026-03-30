@@ -1,6 +1,7 @@
 import numpy as num
 import os
 
+import anuga.utilities.log as log
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 
 def sww2pts(name_in, name_out=None,
@@ -95,7 +96,7 @@ def sww2pts(name_in, name_out=None,
         times = fid.variables['time'][:]
         log.critical('------------------------------------------------')
         log.critical('Statistics of SWW file:')
-        log.critical('  Name: %s' % swwfile)
+        log.critical('  Name: %s' % name_in)
         log.critical('  Reference:')
         log.critical('    Lower left corner: [%f, %f]' % (xllcorner, yllcorner))
         log.critical('    Start time: %f' % fid.starttime[0])
