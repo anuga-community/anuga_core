@@ -157,7 +157,7 @@ def run_simulation(parallel=False, verbose=False):
         if verbose:
             
             order = 2
-            print('PDOMAIN CENTROID VALUES')
+            print('|| PDOMAIN - ODOMAIN ||_2 CENTROID VALUES')
             print(num.linalg.norm(odomain_c.x-pdomain_c.x,ord=order))
             print(num.linalg.norm(odomain_c.y-pdomain_c.y,ord=order))
             print(num.linalg.norm(odomain_c.stage[-1]-pdomain_c.stage[-1],ord=order))
@@ -167,7 +167,7 @@ def run_simulation(parallel=False, verbose=False):
             print(num.linalg.norm(odomain_c.yvel[-1]-pdomain_c.yvel[-1],ord=order))        
             
              
-            print('SDOMAIN CENTROID VALUES')        
+            print('|| SDOMAIN - ODOMAIN ||_2 CENTROID VALUES')        
             print(num.linalg.norm(odomain_c.x-sdomain_c.x,ord=order))
             print(num.linalg.norm(odomain_c.y-sdomain_c.y,ord=order))
             print(num.linalg.norm(odomain_c.stage[-1]-sdomain_c.stage[-1],ord=order))
@@ -176,14 +176,14 @@ def run_simulation(parallel=False, verbose=False):
             print(num.linalg.norm(odomain_c.xvel[-1]-sdomain_c.xvel[-1],ord=order))
             print(num.linalg.norm(odomain_c.yvel[-1]-sdomain_c.yvel[-1],ord=order))
             
-            print('PDOMAIN VERTEX VALUES')        
+            print('|| PDOMAIN - ODOMAIN ||_2 VERTEX VALUES')        
             print(num.linalg.norm(odomain_v.stage[-1]-pdomain_v.stage[-1],ord=order))
             print(num.linalg.norm(odomain_v.xmom[-1]-pdomain_v.xmom[-1],ord=order))
             print(num.linalg.norm(odomain_v.ymom[-1]-pdomain_v.ymom[-1],ord=order))
             print(num.linalg.norm(odomain_v.xvel[-1]-pdomain_v.xvel[-1],ord=order))
             print(num.linalg.norm(odomain_v.yvel[-1]-pdomain_v.yvel[-1],ord=order))
             
-            print('SDOMAIN VERTEX VALUES')     
+            print('|| ODOMAIN - SDOMAIN ||_2 VERTEX VALUES')     
             print(num.linalg.norm(odomain_v.stage[-1]-sdomain_v.stage[-1],ord=order))
             print(num.linalg.norm(odomain_v.xmom[-1]-sdomain_v.xmom[-1],ord=order))
             print(num.linalg.norm(odomain_v.ymom[-1]-sdomain_v.ymom[-1],ord=order))
@@ -260,6 +260,9 @@ def run_simulation(parallel=False, verbose=False):
         #os.remove('odomain_P4_3.pickle')
         import glob
         [ os.remove(fl) for fl in glob.glob('*.npy') ]
+        for fl in ['odomain.txt', 'pdomain.txt', 'sdomain.txt']:
+            if os.path.exists(fl):
+                os.remove(fl)
         
         
 def setup_and_evolve(domain, verbose=False):
@@ -297,7 +300,7 @@ def setup_and_evolve(domain, verbose=False):
 
 @pytest.mark.skipif('mpi4py' not in sys.modules,
                     reason="requires the mpi4py module")
-class Test_parallel_sw_flow(unittest.TestCase):
+class Test_sequential_dist_sw_flow(unittest.TestCase):
     def test_parallel_sw_flow(self):
         if verbose : print("Expect this test to fail if not run from the parallel directory.")
 
@@ -316,7 +319,7 @@ def assert_(condition, msg="Assertion Failed"):
 if __name__=="__main__":
     if numprocs == 1: 
         runner = unittest.TextTestRunner()
-        suite = unittest.TestLoader().loadTestsFromTestCase(Test_parallel_sw_flow)
+        suite = unittest.TestLoader().loadTestsFromTestCase(Test_sequential_dist_sw_flow)
         runner.run(suite)
     else:
 

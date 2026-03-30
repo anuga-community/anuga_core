@@ -10,7 +10,7 @@ from anuga.abstract_2d_finite_volumes.generic_boundary_conditions \
                         import Dirichlet_boundary
 
 from anuga.coordinate_transforms.geo_reference import Geo_reference
-from anuga.pmesh.mesh import importMeshFromFile
+from anuga.pmesh.mesh import import_mesh_from_file
 
 import numpy as num
 
@@ -155,7 +155,7 @@ friction  \n \
 120 \n")
         fid.close()
 
-        mesh_instance = importMeshFromFile(fileName)
+        mesh_instance = import_mesh_from_file(fileName)
 
         tags = {}
         b1 = Dirichlet_boundary(dirichlet_values=num.array([0.0]))

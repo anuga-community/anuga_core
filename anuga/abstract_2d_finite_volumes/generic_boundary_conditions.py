@@ -2,10 +2,6 @@
 """
 boundary.py - Classes for implementing boundary conditions
 """
-
-
-from builtins import str
-from builtins import object
 from warnings import warn
 
 from anuga.utilities.numerical_tools import NAN    
@@ -338,7 +334,7 @@ class Time_boundary(Boundary):
 
         try:
             q = num.array(q, float)
-        except:
+        except (ValueError, TypeError):
             msg = 'Return value from time boundary function could '
             msg += 'not be converted into a numeric array of floats.\n'
             msg += 'Specified function should return either list or array.\n'
@@ -457,7 +453,7 @@ class Time_space_boundary(Boundary):
 
         try:
             q = num.array(q, float)
-        except:
+        except (ValueError, TypeError):
             msg = 'Return value from time_space_boundary function could '
             msg += 'not be converted into a numeric array of floats.\n'
             msg += 'Specified function should return either list or array.\n'

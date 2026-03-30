@@ -14,9 +14,9 @@ SET ANUGA_CORE_PATH=%CD%\..
 POPD
 
 REM Check allowed Python versions
-ECHO %PY% | FINDSTR /R "^3\.9 ^3\.10 ^3\.11 ^3\.12 ^3.13" > NUL
+ECHO %PY% | FINDSTR /R "^3\.9 ^3\.10 ^3\.11 ^3\.12 ^3\.13 ^3\.14" > NUL
 IF ERRORLEVEL 1 (
-    ECHO Python version must be greater than 3.8 and less than 3.14
+    ECHO Python version must be greater/equal than 3.9 and less than 3.15
     EXIT /B 1
 ) ELSE (
     ECHO Requested python version is %PY%

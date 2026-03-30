@@ -272,7 +272,7 @@ def resource_usage(level=logging.INFO):
         try:
             import ctypes
             import winreg
-        except:
+        except ImportError:
             log(level, 'Windows resource usage not available')
             return
 
@@ -367,7 +367,7 @@ def resource_usage_timing(level=logging.INFO, prefix =""):
         try:
             import ctypes
             import winreg
-        except:
+        except ImportError:
             log(level, 'Windows resource usage not available')
             return
 

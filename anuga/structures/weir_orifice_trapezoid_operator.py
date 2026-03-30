@@ -24,8 +24,8 @@ class Weir_orifice_trapezoid_operator(anuga.Structure_operator):
 
     def __init__(self,
                  domain,
-                 losses,
-                 width,
+                 losses=0.0,
+                 width=None,
                  height=None,
                  barrels=1.0,
                  blockage=0.0,
@@ -47,6 +47,86 @@ class Weir_orifice_trapezoid_operator(anuga.Structure_operator):
                  structure_type='weir_orifice_trapezoid',
                  logging=False,
                  verbose=False):
+
+        """Create a weir/orifice culvert with a trapezoidal cross-section.
+
+        Computes discharge using combined weir and orifice flow formulae,
+        transitioning smoothly between flow regimes based on the headwater-to-
+        height ratio.
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+            Shallow-water domain to which the structure is attached.
+        losses : float or list of float or dict, optional
+            Head-loss coefficients. A scalar is used directly; a list is summed;
+            a dict maps loss names to coefficients and the values are summed.
+            Default 0.0.
+        width : float
+            Bottom width (m) of the trapezoidal cross-section.
+        height : float or None, optional
+            Height (m) of the trapezoidal cross-section. If None, defaults to
+            ``width``. Default None.
+        barrels : float, optional
+            Number of parallel identical barrels. Total discharge is multiplied
+            by this value. Default 1.0.
+        blockage : float, optional
+            Fractional blockage of the culvert cross-section. Must be in
+            [0, 1]; 0.0 is fully open, 1.0 is fully blocked. Default 0.0.
+        z1 : float, optional
+            Side slope (horizontal/vertical) of the left trapezoidal wall.
+            0.0 gives a rectangular section. Default 0.0.
+        z2 : float, optional
+            Side slope (horizontal/vertical) of the right trapezoidal wall.
+            Default 0.0.
+        end_points : list of [float, float], optional
+            ``[[x1, y1], [x2, y2]]`` — centre coordinates (m) of each culvert
+            end face. Exactly one of ``end_points`` or ``exchange_lines`` must
+            be provided.
+        exchange_lines : list of two 2-point lines, optional
+            ``[[[x1,y1],[x2,y2]], [[x1,y1],[x2,y2]]]`` — line segments defining
+            the inlet and outlet faces. Alternative to ``end_points``.
+        enquiry_points : list of [float, float] or None, optional
+            ``[[x1, y1], [x2, y2]]`` — explicit locations for the upstream and
+            downstream head-enquiry points. Computed automatically from
+            ``end_points`` and ``apron`` when None. Default None.
+        invert_elevations : list of float or None, optional
+            ``[e1, e2]`` — invert (floor) elevations (m AHD) at each structure
+            end. Read from the mesh when None. Default None.
+        apron : float, optional
+            Width (m) of the approach apron at each structure end, used to
+            offset the enquiry point from the face. Default 0.1.
+        manning : float, optional
+            Manning's roughness coefficient for the culvert barrel
+            (dimensionless). Default 0.013.
+        enquiry_gap : float, optional
+            Additional gap (m) beyond the apron edge for the head-enquiry point.
+            Default 0.0.
+        smoothing_timescale : float, optional
+            Timescale (s) for exponential smoothing of computed discharge to
+            reduce numerical oscillations. Set to 0.0 to disable. Default 0.0.
+        use_momentum_jet : bool, optional
+            If True, momentum is injected into the outflow cell along the
+            structure axis. If False, outflow momentum is zeroed. Default True.
+        use_velocity_head : bool, optional
+            If True, the velocity head at the inlet is included in the total
+            driving energy. Default True.
+        description : str or None, optional
+            Human-readable description of the structure, stored in statistics
+            output. Default None.
+        label : str or None, optional
+            Short label used as a filename prefix for the CSV log when
+            ``logging=True``. Default None.
+        structure_type : str, optional
+            Internal type identifier written to output files. Default
+            ``'weir_orifice_trapezoid'``.
+        logging : bool, optional
+            If True, write per-timestep flow statistics to a CSV file named
+            ``<label>_<structure_type>.csv``. Default False.
+        verbose : bool, optional
+            If True, print diagnostic messages during construction and
+            discharge calculations. Default False.
+        """
 
         anuga.Structure_operator.__init__(self,
                                           domain,

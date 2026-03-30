@@ -1,6 +1,3 @@
-
-from builtins import zip
-from builtins import str
 import csv
 import unittest, os
 import tempfile

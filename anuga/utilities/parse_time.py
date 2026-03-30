@@ -19,51 +19,51 @@ def parse_time(time = None, verbose=False, debug=False):
     
     try:
         year = int(time[0:4])
-    except:
+    except (ValueError, TypeError):
         year, month, day = 1970,1,1
-        
-        
+
+
     #month = int(time[4:6])
-    
+
     try:
         month = int(time[4:6])
-    except:
+    except (ValueError, TypeError):
         month = 1
-        
+
     try:
         day = int(time[6:8])
-    except:
+    except (ValueError, TypeError):
         day = 1
-            
+
     try:
         dash = time[8:9]
         assert dash == '_' or dash == ':' or dash == '/' or dash == ' '
-    except:
+    except (AssertionError, IndexError):
         dash = None
 
-            
+
     try:
         if dash is None:
             hour = int(time[8:10])
         else:
             hour = int(time[9:11])
-    except:
+    except (ValueError, TypeError):
         hour = 0
-            
+
     try:
         if dash is None:
             minute = int(time[10:12])
         else:
             minute = int(time[11:13])
-    except:
+    except (ValueError, TypeError):
         minute = 0
-         
+
     try:
         if dash is None:
             second = int(time[12:14])
         else:
             second = int(time[13:15])
-    except:
+    except (ValueError, TypeError):
         second = 0         
        
     if debug:
@@ -78,3 +78,18 @@ def parse_time(time = None, verbose=False, debug=False):
     if debug: print(time)
     
     return float(time)
+
+def seconds_to_hhmmss(seconds):
+    hours = seconds // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+
+    parts = []
+    if hours:
+        parts.append(f"{hours}h")
+    if minutes:
+        parts.append(f"{minutes}m")
+    if secs or not parts:
+        parts.append(f"{secs}s")
+
+    return ':'.join(parts)

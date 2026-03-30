@@ -5,7 +5,7 @@ import numpy as num
 celltype_map = {'IEEE4ByteReal': num.float32, 'IEEE8ByteReal': num.float64}
 
 
-def write_ermapper_grid(ofile, data, header = {}):
+def write_ermapper_grid(ofile, data, header=None):
     """
     write_ermapper_grid(ofile, data, header = {}):
 
@@ -54,6 +54,9 @@ def write_ermapper_grid(ofile, data, header = {}):
         header_file = ofile + '.ers'
 
 
+    if header is None:
+        header = {}
+
     # Check that the data is a 2 dimensional array
     data_size = num.shape(data)
     assert len(data_size) == 2
@@ -85,7 +88,7 @@ def read_ermapper_grid(ifile):
     return data
 
 
-def write_ermapper_header(ofile, header = {}):
+def write_ermapper_header(ofile, header=None):
 
     header = create_default_header(header)
     # Determine if the dataset is in lats/longs or eastings/northings and set header parameters
@@ -165,7 +168,7 @@ def write_ermapper_data(grid, ofile, data_format=num.float32):
 
     try:
         data_format = celltype_map[data_format]
-    except:
+    except KeyError:
         pass
 
 
@@ -200,12 +203,13 @@ def read_ermapper_data(ifile, data_format = num.float32):
     grid_as_float = num.frombuffer(input_string,data_format)
     return grid_as_float
 
-def create_default_header(header = {}):
+def create_default_header(header=None):
     # fill any blanks in a header dictionary with default values
     # input parameters:
     # header:   a dictionary containing fields that are not meant
     #           to be filled with default values
-
+    if header is None:
+        header = {}
 
     if 'datum' not in header:
         header['datum'] = '"GDA94"'

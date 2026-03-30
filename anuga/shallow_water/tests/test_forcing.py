@@ -219,7 +219,7 @@ class Test_Forcing(unittest.TestCase):
         for file in ['domain.sww']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass
         
     def write_wind_pressure_field_sts(self,
@@ -269,7 +269,7 @@ class Test_Forcing(unittest.TestCase):
                 angle=float(angle)
                 pressure=float(pressure)
                 use_function=False
-            except:
+            except (ValueError, TypeError):
                 msg = ('Force fields must be a scalar value coercible to float.')
                 raise(Exception, msg)
 
@@ -687,7 +687,7 @@ class Test_Forcing(unittest.TestCase):
 
         try:
             domain.forcing_terms.append(Wind_stress(s=speed, phi='xx'))
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have raised exception'
@@ -2371,7 +2371,7 @@ class Test_Forcing(unittest.TestCase):
         # on a circle affecting triangles #0 and #1 (bac and bce)
         try:
             Inflow(domain, rate=2.0, center=(1,1.1), radius=0.01)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have raised exception'

@@ -142,10 +142,10 @@ def set_option(key, value):
 # -----------------------------------------------------------------------------
 # Function cache - the main routine
 
-def cache(my_F, 
-          args=(), 
-          kwargs={}, 
-          dependencies=None, 
+def cache(my_F,
+          args=(),
+          kwargs=None,
+          dependencies=None,
           cachedir=None,
           verbose=None, 
           compression=None, 
@@ -318,10 +318,13 @@ def cache(my_F,
   # Force singleton arg into a tuple
   if not isinstance(args, tuple):
     args = tuple([args])
-  
+
+  if kwargs is None:
+    kwargs = {}
+
   # Check that kwargs is a dictionary
   if not isinstance(kwargs, dict):
-    raise TypeError    
+    raise TypeError
     
   # Hash arguments (and keyword args) to integer
   arghash = myhash((args, kwargs))
@@ -486,12 +489,12 @@ def test(cachedir=None, verbose=False, compression=None):
   else:
     try:
       set_option('compression', compression)
-    except:
+    except Exception:
       logtesterror('Set option failed')      
 
   try:
     import zlib
-  except:
+  except ImportError:
     log.critical()
     log.critical('*** Could not find zlib, default to no-compression      ***')
     log.critical('*** Installing zlib will improve performance of caching ***')
@@ -530,7 +533,7 @@ def test(cachedir=None, verbose=False, compression=None):
     Depfile.write('We are the knights who say NI!')
     Depfile.close()
     logtestOK('Wrote file %s' %DepFN)
-  except:
+  except OSError:
     logtesterror('Could not open file %s for writing - check your environment' \
                % DepFN)
 
@@ -540,7 +543,7 @@ def test(cachedir=None, verbose=False, compression=None):
     set_option('savestat',0)
     assert(options['savestat'] == 0)
     logtestOK('Set option')
-  except:
+  except Exception:
     logtesterror('Set option failed')    
     
   # Make some test input arguments
@@ -567,11 +570,11 @@ def test(cachedir=None, verbose=False, compression=None):
     try:
       T1 = cache(f,(a,b,c,N), {'x':x, 'y':y}, evaluate=1, \
                    verbose=verbose, compression=comp)
-      if comp:                   
+      if comp:
         logtestOK('Caching evaluation with compression')
-      else:     
-        logtestOK('Caching evaluation without compression')      
-    except:
+      else:
+        logtestOK('Caching evaluation without compression')
+    except Exception:
       if comp:
         logtesterror('Caching evaluation with compression failed - try caching.test(compression=0)')
       else:
@@ -583,11 +586,11 @@ def test(cachedir=None, verbose=False, compression=None):
       T2 = cache(f,(a,b,c,N), {'x':x, 'y':y}, verbose=verbose, \
                    compression=comp) 
 
-      if comp:                   
+      if comp:
         logtestOK('Caching retrieval with compression')
-      else:     
-        logtestOK('Caching retrieval without compression')      
-    except:
+      else:
+        logtestOK('Caching retrieval without compression')
+    except Exception:
       if comp:
         logtesterror('Caching retrieval with compression failed - try caching.test(compression=0)')
       else:                                      
@@ -613,7 +616,7 @@ def test(cachedir=None, verbose=False, compression=None):
                  return_filename=1)    
     assert(FN[:2] == 'f[')
     logtestOK('Return of cache filename')
-  except:
+  except Exception:
     logtesterror('Return of cache filename failed')
 
   # Test existence of cachefiles
@@ -626,7 +629,7 @@ def test(cachedir=None, verbose=False, compression=None):
     datafile.close()
     argsfile.close()
     admfile.close()
-  except:
+  except OSError:
     logtesterror('Expected cache files did not exist') 
               
   # Test 'test' function when cache is present
@@ -638,7 +641,7 @@ def test(cachedir=None, verbose=False, compression=None):
     assert(T1 == T4)
 
     logtestOK("Option 'test' when cache file present")
-  except:
+  except Exception:
     logtesterror("Option 'test' when cache file present failed")      
 
   # Test that 'clear' works
@@ -649,9 +652,9 @@ def test(cachedir=None, verbose=False, compression=None):
   #except:
   #  logtesterror('Clear does not work')
   try:
-    cache(f,(a,b,c,N), {'x':x, 'y':y}, verbose=verbose, clear=1)    
+    cache(f,(a,b,c,N), {'x':x, 'y':y}, verbose=verbose, clear=1)
     logtestOK('Clearing of cache files')
-  except:
+  except Exception:
     logtesterror('Clear does not work')  
 
   
@@ -662,7 +665,7 @@ def test(cachedir=None, verbose=False, compression=None):
     T4 = cache(f,(a,b,c,N), {'x':x, 'y':y}, verbose=verbose, test=1)
     assert(T4 is None)
     logtestOK("Option 'test' when cache absent")
-  except:
+  except Exception:
     logtesterror("Option 'test' when cache absent failed")      
           
   # Test dependencies
@@ -743,8 +746,8 @@ def test(cachedir=None, verbose=False, compression=None):
       if string.find(FN,statsfile) >= 0:
         fid = open(CD+FN,'r')
         fid.close()
-    logtestOK('Statistics files present') 
-  except:
+    logtestOK('Statistics files present')
+  except OSError:
     logtestOK('Statistics files cannot be opened')          
       
   print_header_box('Show sample output of the caching function:')
@@ -761,7 +764,7 @@ def test(cachedir=None, verbose=False, compression=None):
       import time
       t = time.strptime('2030','%Y')
       cachestat()
-    except:  
+    except Exception:
       log.critical('cachestat() does not work here, because it relies on '
                    'time.strptime() which is unavailable in Windows')
       
@@ -1246,12 +1249,12 @@ def myopen(FN, mode, compression=True):
       file = open(FN+'.z','r')
       file.close()
       new_file = 0
-    except:
+    except OSError:
       try:
-        file = open(FN,'r') 
+        file = open(FN,'r')
         file.close()
         new_file = 0
-      except:
+      except OSError:
         new_file = 1
   else:
     new_file = 0 #Assume it exists if mode was not 'w'
@@ -1262,19 +1265,19 @@ def myopen(FN, mode, compression=True):
     try:
       file = open(FN+'.z',mode)
       compressed = 1
-    except:
+    except OSError:
       try:
         file = open(FN,mode)
-      except:
+      except OSError:
         file = None
   else:
     try:
       file = open(FN,mode)
-    except:
+    except OSError:
       try:
         file = open(FN+'.z',mode)
         compressed = 1
-      except:
+      except OSError:
         file = None
 
   # Now set access rights if it is a new file
@@ -1304,7 +1307,7 @@ def myload(file, compressed):
       RsC = file.read()
       try:
         Rs  = zlib.decompress(RsC)
-      except:
+      except Exception:
         #  File "./caching.py", line 1032, in load_from_cache
         #  T = myload(datafile,compressed)
         #  File "./caching.py", line 1124, in myload
@@ -1321,7 +1324,7 @@ def myload(file, compressed):
       try:
         R = pickler.load(file)
       #except EOFError, e:
-      except:
+      except Exception:
         #Catch e.g., file with 0 length or corrupted
         reason = 6  # Unreadable file
         return None, reason
@@ -1352,7 +1355,7 @@ def mysave(T, file, compression):
   if compression:
     try:
       import zlib
-    except:
+    except ImportError:
       log.critical()
       log.critical('*** Could not find zlib ***')
       log.critical('*** Try to run caching with compression off ***')
@@ -1562,16 +1565,16 @@ def compare(A, B, ids=None):
         # Fall back to general code
         try:
             identical = (A == B)
-        except:
+        except Exception:
             import pickle
             # Use pickle to compare data
             # The native pickler must be used
-            # since the faster cPickle does not 
+            # since the faster cPickle does not
             # guarantee a unique translation
             # FIXME (Ole): Try to fall back on the dill pickler
             try:
                 identical = (pickle.dumps(A,0) == pickle.dumps(B,0))
-            except:
+            except Exception:
                 identical = False
 
     # Record result of comparison and return            
@@ -1755,7 +1758,7 @@ def filestat(FN):
     atime = stats[7]
     mtime = stats[8]
     ctime = stats[9]
-  except:
+  except OSError:
 
     # Hack to get the results anyway (works only on Unix at the moment)
     #
@@ -1783,7 +1786,7 @@ def filestat(FN):
       try:
         exitcode=os.system('rm '+tmp)
         # FIXME: Gives error if file doesn't exist
-      except:
+      except OSError:
         pass
     else:
       pass
@@ -1856,7 +1859,7 @@ def checkdir(CD, verbose=None, warn=False):
       else:
         pass  # FIXME: What about acces rights under Windows?
       if verbose: log.critical('MESSAGE: Directory %s created.' % CD)
-    except:
+    except OSError:
       if warn is True:
         log.critical('WARNING: Directory %s could not be created.' % CD)
       if unix:
@@ -1902,7 +1905,7 @@ def addstatsline(CD, funcname, FN, Retrieved, reason, comptime, loadtime,
     #    exitcode=os.system('chmod 666 '+SFN)
     #  except:
     #    pass
-  except:
+  except OSError:
     log.critical('Warning: Stat file could not be opened')
 
   try:
@@ -1945,7 +1948,7 @@ def addstatsline(CD, funcname, FN, Retrieved, reason, comptime, loadtime,
             
     statfile.write(entry)
     statfile.close()
-  except:
+  except OSError:
     log.critical('Warning: Writing of stat file failed')
 
 # -----------------------------------------------------------------------------
@@ -2027,7 +2030,7 @@ def __cachestat(sortidx=4, period=-1, showuser=None, cachedir=None):
         
           try:
             t = mktime(strptime(timestamp))
-          except:
+          except (ValueError, OverflowError):
             total_discarded = total_discarded + 1         
             continue    
              
@@ -2432,7 +2435,7 @@ def msg8(reason):
     
   try:
     R = Reason_msg[reason]
-  except:
+  except KeyError:
     R = 'Unknown'  
   
   log.critical(str.ljust('| Reason:', textwidth1) + R)

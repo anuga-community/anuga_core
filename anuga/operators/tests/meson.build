@@ -2,6 +2,8 @@
 python_sources = [
 'test_base_operator.py',
 'test_boundary_flux_integral_operator.py',
+'test_collect_operators.py',
+'test_elliptic_operator.py',
 'test_erosion_operators.py',
 'test_kinematic_viscosity_operator.py',
 'test_rate_operators.py',

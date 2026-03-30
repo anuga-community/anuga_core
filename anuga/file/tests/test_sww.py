@@ -33,7 +33,7 @@ class Test_sww(unittest.TestCase):
                          'test_get_mesh_and_quantities_from_sww_file.sww']:
             try:
                 os.remove(filename)
-            except:
+            except OSError:
                 pass
 
     def test_default_boundary(self):
@@ -193,7 +193,7 @@ class Test_sww(unittest.TestCase):
 
         try:
             os.remove(filename)  # Clean up
-        except:
+        except OSError:
             pass        
 
         bits = ['vertex_coordinates']
@@ -335,7 +335,7 @@ class Test_sww(unittest.TestCase):
 
         try:
             os.remove(filename)  # Clean up
-        except:
+        except OSError:
             pass
 
 
@@ -724,7 +724,7 @@ class Test_sww(unittest.TestCase):
 
         try:
             os.remove(filename)  # Clean up
-        except:
+        except OSError:
             pass        
 
 
@@ -768,7 +768,7 @@ class Test_sww(unittest.TestCase):
 
         try:
             os.remove(filename)  # Clean up
-        except:
+        except OSError:
             pass        
 
         
@@ -811,7 +811,7 @@ class Test_sww(unittest.TestCase):
         
         try:
             os.remove(filename)  # Clean up
-        except:
+        except OSError:
             pass
         
     def test_triangulation_points_georeference(self):
@@ -851,7 +851,7 @@ class Test_sww(unittest.TestCase):
 
         try:
             os.remove(filename)  # Clean up
-        except:
+        except OSError:
             pass
         
     def test_triangulation_2_geo_refs(self):
@@ -895,7 +895,7 @@ class Test_sww(unittest.TestCase):
 
         try:
             os.remove(filename)  # Clean up
-        except:
+        except OSError:
             pass
 
 

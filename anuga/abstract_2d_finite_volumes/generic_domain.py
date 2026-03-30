@@ -11,12 +11,10 @@
    Ole Nielsen, Stephen Roberts, Duncan Gray
    Geoscience Australia
 """
-
-from builtins import range
-from builtins import object
 from time import time as walltime
 
 from anuga.config import max_smallsteps, beta_w, epsilon
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
 from anuga.config import CFL
 from anuga.config import timestepping_method
 from anuga.config import protect_against_isolated_degenerate_timesteps
@@ -46,13 +44,13 @@ def nvtxRangePop(*arg):
 try:
     from nvtx import range_push as nvtxRangePush
     from nvtx import range_pop  as nvtxRangePop
-except:
+except ImportError:
     pass
 
 try:
     from cupy.cuda.nvtx import RangePush as nvtxRangePush
     from cupy.cuda.nvtx import RangePop  as nvtxRangePop
-except:
+except ImportError:
     pass
 # ---------------- wrapper for nvtx marker
 
@@ -83,23 +81,81 @@ class Generic_Domain(object):
                  number_of_full_nodes=None,
                  number_of_full_triangles=None,
                  ghost_layer_width=2):
+        """Instantiate a generic computational Domain.
 
-        """Instantiate generic computational Domain.
+        This initializes a computational domain for finite volume simulations,
+        setting up the mesh, quantities, and simulation parameters.
 
-        Input:
-          source:    Either a mesh filename or coordinates of mesh vertices.
-                     If it is a filename values specified for triangles will
-                     be overridden.
-          triangles: Mesh connectivity (see mesh.py for more information)
-          boundary:  See mesh.py for more information
-
-          conserved_quantities: List of quantity names entering the
-                                conservation equations
-          evolved_quantities:   List of all quantities that evolve
-          other_quantities:     List of other quantity names
-
-          tagged_elements:
-          ...
+        Parameters
+        ----------
+        source : str or Mesh or array-like, optional
+            Either a mesh filename, a Mesh object, or coordinates of mesh vertices.
+            If a filename is provided, values specified for `triangles` will be
+            overridden. Default is None.
+        triangles : array-like, optional
+            Mesh connectivity array. See mesh.py for more information.
+            Default is None.
+        boundary : dict, optional
+            Boundary information. See mesh.py for more information.
+            Default is None.
+        conserved_quantities : list of str, optional
+            List of quantity names entering the conservation equations.
+            Default is None.
+        evolved_quantities : list of str, optional
+            List of all quantities that evolve during simulation.
+            Default is None.
+        other_quantities : list of str, optional
+            List of other quantity names that do not enter conservation equations.
+            Default is None.
+        tagged_elements : dict, optional
+            Dictionary mapping tags to element indices.
+            Default is None.
+        geo_reference : GeoReference, optional
+            Georeferencing information for the mesh.
+            Default is None.
+        use_inscribed_circle : bool, optional
+            Whether to use inscribed circle for mesh calculations.
+            Default is False.
+        mesh_filename : str, optional
+            Path to mesh file. Overrides source if provided.
+            Default is None.
+        use_cache : bool, optional
+            Whether to use cached mesh data.
+            Default is False.
+        verbose : bool, optional
+            Enable verbose logging output.
+            Default is False.
+        full_send_dict : dict, optional
+            Dictionary of ghost cell communication buffers for sending.
+            Default is None.
+        ghost_recv_dict : dict, optional
+            Dictionary of ghost cell communication buffers for receiving.
+            Default is None.
+        starttime : float, optional
+            Physical start time for the simulation.
+            Default is 0.0.
+        processor : int, optional
+            Processor rank in parallel computation.
+            Default is 0.
+        numproc : int, optional
+            Total number of processors in parallel computation.
+            Default is 1.
+        number_of_full_nodes : int, optional
+            Number of non-ghost nodes. Currently unused (set to None internally).
+            Default is None.
+        number_of_full_triangles : int, optional
+            Number of non-ghost triangles. Currently unused (set to None internally).
+            Default is None.
+        ghost_layer_width : int, optional
+            Width of ghost cell layer in parallel computation.
+            Default is 2.
+            
+        Notes
+        -----
+        - Conserved quantities must be the first entries of evolved_quantities.
+        - The domain initializes mesh attributes, quantity objects, and
+            communication buffers for parallel computation.
+        - Full nodes are identified as those intersecting full (non-ghost) triangles.
         """
 
         if verbose:
@@ -111,11 +167,32 @@ class Generic_Domain(object):
         number_of_full_nodes = None
         number_of_full_triangles = None
 
+        mesh_input = None
+
         # Determine whether source is a mesh filename or coordinates
         if isinstance(source, str):
             mesh_filename = source
+            mesh_input = None
+            coordinates = None
+        elif isinstance(source, Mesh):
+            mesh_input = source
+            coordinates = None
         else:
-            coordinates = source
+            # Check if source is a pmesh Pmesh object (returned by
+            # create_mesh_from_regions) and convert it to an anuga Mesh.
+            try:
+                from anuga.pmesh.mesh import Mesh as Pmesh
+                if isinstance(source, Pmesh):
+                    from .pmesh2domain import pmesh_to_mesh
+                    mesh_input = pmesh_to_mesh(source, verbose=verbose)
+                    mesh_filename = None
+                    coordinates = None
+                else:
+                    coordinates = source
+                    mesh_input = None
+            except ImportError:
+                coordinates = source
+                mesh_input = None
 
         # In case a filename has been specified, extract content
         if mesh_filename is not None:
@@ -126,15 +203,21 @@ class Generic_Domain(object):
                                     use_cache=use_cache,
                                     verbose=verbose)
 
-        # Initialise underlying mesh structure
-        self.mesh = Mesh(coordinates, triangles,
-                         boundary=boundary,
-                         tagged_elements=tagged_elements,
-                         geo_reference=geo_reference,
-                         use_inscribed_circle=use_inscribed_circle,
-                         # number_of_full_nodes=number_of_full_nodes,
-                         # number_of_full_triangles=number_of_full_triangles,
-                         verbose=verbose)
+        if mesh_input is not None:
+
+            self.mesh = mesh_input
+            # FIXME: We should update tagged_elements 
+
+        else:
+            # Initialise underlying mesh structure
+            self.mesh = Mesh(coordinates, triangles,
+                            boundary=boundary,
+                            tagged_elements=tagged_elements,
+                            geo_reference=geo_reference,
+                            use_inscribed_circle=use_inscribed_circle,
+                            # number_of_full_nodes=number_of_full_nodes,
+                            # number_of_full_triangles=number_of_full_triangles,
+                            verbose=verbose)
         
         if verbose:
             log.critical('Domain: Expose mesh attributes')
@@ -244,7 +327,7 @@ class Generic_Domain(object):
         # 1. openmp (in development)
         # 2. cuda (in development)
         #-------------------------------    
-        self.set_multiprocessor_mode(1)
+        self.set_multiprocessor_mode(MULTIPROCESSOR_OPENMP)
 
         self.processor = processor
         self.numproc = numproc
@@ -354,7 +437,10 @@ class Generic_Domain(object):
         self.flux_timestep = 0.0
         self.evolved_called = False
 
-        self.last_walltime = walltime()
+        self.last_walltime    = walltime()
+        self.initial_walltime = self.last_walltime
+        self.evolve_start_walltime = self.last_walltime
+        self.relative_finaltime = None
 
         # Monitoring
         self.quantities_to_be_monitored = None
@@ -490,6 +576,9 @@ class Generic_Domain(object):
         self.mesh.set_georeference(*args, **kwargs)
         self.geo_reference = self.mesh.geo_reference
 
+    def build_boundary_dictionary(self, *args, **kwargs):
+        self.mesh.build_boundary_dictionary(*args, **kwargs)
+
     def build_tagged_elements_dictionary(self, *args, **kwargs):
         self.mesh.build_tagged_elements_dictionary(*args, **kwargs)
 
@@ -566,8 +655,13 @@ class Generic_Domain(object):
 
     def get_CFL(self):
         """get CFL
-        """
 
+        .. deprecated::
+            Use :meth:`get_cfl` instead.
+        """
+        import warnings
+        warnings.warn('get_CFL is deprecated, use get_cfl instead',
+                      DeprecationWarning, stacklevel=2)
         return self.CFL
 
     def get_cfl(self):
@@ -578,18 +672,28 @@ class Generic_Domain(object):
 
     def set_CFL(self, cfl=1.0):
         """Set CFL parameter, warn if greater than 2.0
+
+        .. deprecated::
+            Use :meth:`set_cfl` instead.
         """
+        import warnings
+        warnings.warn('set_CFL is deprecated, use set_cfl instead',
+                      DeprecationWarning, stacklevel=2)
         if cfl > 2.0:
-            self.CFL = cfl
             msg = 'Setting CFL > 2.0'
-            import warnings
             warnings.warn(msg)
-            # log.warning(msg)
 
         assert cfl > 0.0
         self.CFL = cfl
 
-    set_cfl = set_CFL
+    def set_cfl(self, cfl=1.0):
+        """Set CFL parameter, warn if greater than 2.0
+        """
+        assert cfl > 0.0
+        self.CFL = cfl
+        if cfl > 2.0:
+            import warnings
+            warnings.warn('Setting CFL > 2.0')
 
 
     def set_relative_time(self, time = 0.0):
@@ -693,7 +797,7 @@ class Generic_Domain(object):
 
         try:
             self.evolve_max_timestep = min(self.evolve_max_timestep, max_timestep)
-        except:
+        except AttributeError:
             self.evolve_max_timestep = max_timestep
 
     def get_evolve_max_timestep(self):
@@ -1163,7 +1267,7 @@ class Generic_Domain(object):
 
                 try:
                     apply_expression_to_dictionary(polygon, self.quantities)
-                except:  # FIXME(Ole): Use proper exception
+                except Exception:  # FIXME(Ole): Use proper exception
                     # At least polygon wasn't expression involving quantitites
                     pass
                 else:
@@ -1264,8 +1368,38 @@ class Generic_Domain(object):
 
 
 
-        msg += ' (%ds)' % (walltime() - self.last_walltime)
-        self.last_walltime = walltime()
+        msg += f' ({int(walltime() - self.last_walltime):d}s),'
+
+
+
+        if self.evolved_called:
+            # Report cpu time since evolve was called
+            # (which may be different from the time since the last call to
+            # this function)
+            
+            try:
+                cpu_time = walltime() - self.evolve_start_walltime
+                cpu_time_hhmmss = anuga.seconds_to_hhmmss(int(cpu_time))
+                fraction = self.relative_time/self.relative_finaltime
+                bar_len = 10
+                filled = int(bar_len * fraction)
+                
+                bar = "#" * filled + "-" * (bar_len - filled)
+                #msg += f' |{bar}|'
+
+                cpu_time_ETA_hhmmss = (
+                    anuga.seconds_to_hhmmss(int(cpu_time / fraction - cpu_time))
+                    if fraction > 0 else "??"
+                )
+
+                msg += f' elapsed ({cpu_time_hhmmss}), eta ({cpu_time_ETA_hhmmss})'
+
+            except Exception:
+                pass
+            self.last_walltime = walltime()
+
+        from anuga.utilities.system_tools import memory_stats
+        msg += f', {memory_stats()}'
 
         if track_speeds is True:
             msg += '\n'
@@ -1707,6 +1841,9 @@ class Generic_Domain(object):
         All times are given in seconds
         """
 
+        self.evolve_start_walltime = walltime()
+        self.last_walltime = self.evolve_start_walltime
+
         for t in self._evolve_base(yieldstep=yieldstep,
                                    finaltime=finaltime, duration=duration,
                                    skip_initial_step=skip_initial_step):
@@ -1911,7 +2048,7 @@ class Generic_Domain(object):
                 self.recorded_max_timestep = self.evolve_min_timestep
                 self.number_of_steps = 0
                 self.number_of_first_order_steps = 0
-                self.max_speed = num.zeros(N, float)
+                self.max_speed[:] = 0.0
 
     def evolve_one_euler_step(self, yieldstep, finaltime):
         """One Euler Time Step
@@ -2296,7 +2433,7 @@ class Generic_Domain(object):
         quantity in domain.
         """
 
-        #import pdb; pdb.set_trace()
+        nvtxRangePush('update_boundary')
         for tag in self.tag_boundary_cells:
             B = self.boundary_map[tag]
 
@@ -2306,6 +2443,8 @@ class Generic_Domain(object):
             boundary_segment_edges = self.tag_boundary_cells[tag]
 
             B.evaluate_segment(self, boundary_segment_edges)
+        
+        nvtxRangePop()
 
     def compute_fluxes(self):
         msg = 'Method compute_fluxes must be overridden by Domain subclass'
@@ -2359,10 +2498,11 @@ class Generic_Domain(object):
         # disable variable timestepping
         if self.fixed_flux_timestep is not None:
             self.flux_timestep = self.fixed_flux_timestep
-
-        # self.timestep is calculated from speed of characteristics
-        # Apply CFL condition here
-        timestep = min(self.CFL * self.flux_timestep, self.evolve_max_timestep)
+            timestep = self.fixed_flux_timestep
+        else:
+            # self.timestep is calculated from speed of characteristics
+            # Apply CFL condition here
+            timestep = min(self.CFL * self.flux_timestep, self.evolve_max_timestep)
 
         # Record maximal and minimal values of timestep for reporting
         self.recorded_max_timestep = max(timestep, self.recorded_max_timestep)
@@ -2470,12 +2610,6 @@ class Generic_Domain(object):
                 Q_cv = self.quantities[q].centroid_values
                 num.put(Q_cv, Idg, num.take(Q_cv, Idf, axis=0))
 
-#    def update_special_conditions(self):
-#        """There may be a need to change the values of the conserved
-#        quantities to satisfy special conditions at the very lowest level
-#        the fluid flow calculation
-#        """
-#        pass
 
     def update_other_quantities(self):
         """ There may be a need to calculates some of the other quantities

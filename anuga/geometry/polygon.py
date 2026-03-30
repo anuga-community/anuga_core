@@ -130,7 +130,12 @@ def intersection(line0, line1, rtol=1.0e-5, atol=1.0e-8):
         status == 4: Lines are parallel. Value set to None.
     """
 
-    # FIXME (Ole): Write this in C
+    # Note: a Cython version would be faster for very large meshes, but
+    # profiling has not confirmed this as a bottleneck in practice.  The
+    # hot path for most mesh generation uses the C extension
+    # polygon_ext.pyx for inside-polygon tests; intersection() is called
+    # relatively infrequently.  Revisit if mesh generation profiling
+    # shows this function in the top-N.
 
     line0 = ensure_numeric(line0, float)
     line1 = ensure_numeric(line1, float)
@@ -186,37 +191,6 @@ def intersection(line0, line1, rtol=1.0e-5, atol=1.0e-8):
             return 0, None
 
 
-def NEW_C_intersection(line0, line1):
-    """Returns intersecting point between two line segments.
-
-    However, if parallel lines coincide partly (i.e. share a common segment),
-    the line segment where lines coincide is returned
-
-    Inputs:
-        line0, line1: Each defined by two end points as in: [[x0, y0], [x1, y1]]
-                      A line can also be a 2x2 numpy array with each row
-                      corresponding to a point.
-
-    Output:
-        status, value - where status and value is interpreted as follows:
-        status == 0: no intersection, value set to None.
-        status == 1: intersection point found and returned in value as [x,y].
-        status == 2: Collinear overlapping lines found.
-                     Value takes the form [[x0,y0], [x1,y1]].
-        status == 3: Collinear non-overlapping lines. Value set to None.
-        status == 4: Lines are parallel. Value set to None.
-    """
-
-    line0 = ensure_numeric(line0, float)
-    line1 = ensure_numeric(line1, float)
-
-    status, value = _intersection(line0[0, 0], line0[0, 1],
-                                  line0[1, 0], line0[1, 1],
-                                  line1[0, 0], line1[0, 1],
-                                  line1[1, 0], line1[1, 1])
-
-    return status, value
-
 
 def polygon_overlap(triangles, polygon, verbose=False):
     """Determine if a polygon and triangle overlap
@@ -262,12 +236,14 @@ def line_intersect(triangles, line, verbose=False):
     """Determine which of a list of triangles intersect a line
 
     """
-    line = ensure_numeric(line)
-    triangles = ensure_numeric(triangles)
+    line = ensure_numeric(line, float)
+    triangles = ensure_numeric(triangles, float)
 
     M = triangles.shape[0]// 3  # Number of triangles
 
     indices = num.zeros(M, int)
+
+    #import pdb; pdb.set_trace()
 
     count = _line_intersect(line, triangles, indices)
 
@@ -458,7 +434,7 @@ def inside_polygon(points, polygon, closed=True, verbose=False):
         points = ensure_absolute(points)
     except NameError as err:
         raise NameError(err)
-    except:
+    except (ValueError, TypeError):
         # If this fails it is going to be because the points can't be
         # converted to a numeric array.
         msg = 'Points could not be converted to numeric array'
@@ -468,7 +444,7 @@ def inside_polygon(points, polygon, closed=True, verbose=False):
         polygon = ensure_absolute(polygon)
     except NameError as e:
         raise NameError(e)
-    except:
+    except (ValueError, TypeError):
         # If this fails it is going to be because the points can't be
         # converted to a numeric array.
         msg = ('Polygon %s could not be converted to numeric array'
@@ -519,7 +495,7 @@ def outside_polygon(points, polygon, closed=True, verbose=False):
         points = ensure_numeric(points, float)
     except NameError as e:
         raise NameError(e)
-    except:
+    except (ValueError, TypeError):
         msg = 'Points could not be converted to numeric array'
         raise Exception(msg)
 
@@ -527,7 +503,7 @@ def outside_polygon(points, polygon, closed=True, verbose=False):
         polygon = ensure_numeric(polygon, float)
     except NameError as e:
         raise NameError(e)
-    except:
+    except (ValueError, TypeError):
         msg = 'Polygon could not be converted to numeric array'
         raise Exception(msg)
 
@@ -559,7 +535,7 @@ def in_and_outside_polygon(points, polygon, closed=True, verbose=False):
         points = ensure_numeric(points, float)
     except NameError as e:
         raise NameError(e)
-    except:
+    except (ValueError, TypeError):
         msg = 'Points could not be converted to numeric array'
         raise Exception(msg)
 
@@ -567,7 +543,7 @@ def in_and_outside_polygon(points, polygon, closed=True, verbose=False):
         polygon = ensure_numeric(polygon, float)
     except NameError as e:
         raise NameError(e)
-    except:
+    except (ValueError, TypeError):
         msg = 'Polygon could not be converted to numeric array'
         raise Exception(msg)
 
@@ -643,7 +619,7 @@ def separate_points_by_polygon(points, polygon,
             points = ensure_numeric(points, float)
         except NameError as e:
             raise NameError(e)
-        except:
+        except (ValueError, TypeError):
             msg = 'Points could not be converted to numeric array'
             raise Exception(msg)
 
@@ -651,7 +627,7 @@ def separate_points_by_polygon(points, polygon,
             polygon = ensure_numeric(polygon, float)
         except NameError as e:
             raise NameError(e)
-        except:
+        except (ValueError, TypeError):
             msg = 'Polygon could not be converted to numeric array'
             raise Exception(msg)
 
@@ -762,7 +738,7 @@ def plot_polygons(polygons_points,
         matplotlib.use('Agg')
         from matplotlib.pyplot import plot, savefig, xlabel, \
             ylabel, title, close, title, fill
-    except:
+    except ImportError:
         return
 
     assert type(polygons_points) == list, \
@@ -831,7 +807,7 @@ def _poly_xy(polygon):
         polygon = ensure_numeric(polygon, float)
     except NameError as err:
         raise NameError(err)
-    except:
+    except (ValueError, TypeError):
         msg = ('Polygon %s could not be converted to numeric array'
                % (str(polygon)))
         raise Exception(msg)

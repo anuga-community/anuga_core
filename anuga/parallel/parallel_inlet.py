@@ -588,7 +588,7 @@ class Parallel_Inlet(Inlet):
                     message += 'Enquiry Index:'
                     message += '%s' % self.enquiry_index
                     message += '\n'
-                except:
+                except Exception:
                     pass
 
 

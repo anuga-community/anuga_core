@@ -83,24 +83,28 @@ parser.add_argument('-ve', '--evolve_verbose', action='store_true', help='turn o
 
 parser.add_argument('-sww', '--store_sww', action='store_true', help='turn on storing sww file')
 
+parser.add_argument('-ps', '--partition_scheme', type=str, default='metis',
+                    help='set partition scheme in [metis, morton, hilbert]')
+
 args = parser.parse_args()
 
 print(args)
 
-sqrtN = args.sqrtN
-yieldstep = args.yieldstep
-finaltime = args.finaltime
-verbose = args.verbose
-evolve_verbose = args.evolve_verbose
+sqrtN               = args.sqrtN
+yieldstep           = args.yieldstep
+finaltime           = args.finaltime
+verbose             = args.verbose
+evolve_verbose      = args.evolve_verbose
 fixed_flux_timestep = args.fixed_dt
-test_allreduce = args.test_allreduce
-ghost_layer = args.ghost_layer
-store_sww = args.store_sww
+test_allreduce      = args.test_allreduce
+ghost_layer         = args.ghost_layer
+store_sww           = args.store_sww
 
-ncpus = args.numprocs
+ncpus               = args.numprocs
 
 dist_params = {}
 dist_params['ghost_layer_width'] = ghost_layer
+dist_params['partition_scheme'] = args.partition_scheme
 
 if fixed_flux_timestep == 0.0:
     fixed_flux_timestep = None
@@ -136,8 +140,8 @@ creation_time = t1-t0
 
 domain.creation_time = creation_time
 
-print ('Creation of sequential domain: Time =',t1-t0)
-print ('Creation of sequential domain: Number of Triangles =',domain.number_of_global_triangles)
+print ('Creation of sequential domain: Time ='.upper(),t1-t0)
+print ('Creation of sequential domain: Number of Triangles: '.upper(),domain.number_of_global_triangles)
 
  
 print ('DISTRIBUTING DOMAIN')
@@ -149,9 +153,13 @@ sys.stdout.flush()
 
 t2 = time.time()
 
-anuga.sequential_distribute_dump(domain,numprocs=ncpus, verbose=verbose, partition_dir=partition_dir)
+anuga.sequential_distribute_dump(domain,
+                                 numprocs=ncpus, 
+                                 verbose=verbose, 
+                                 partition_dir=partition_dir,
+                                 parameters=dist_params)
 
 t3 = time.time()
 
 distribute_time = t3-t2
-print ('Dump Domain: Time ',distribute_time)
+print ('Dump Domain: Time: '.upper(),distribute_time)

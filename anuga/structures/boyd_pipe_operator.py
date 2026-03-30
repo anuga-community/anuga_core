@@ -22,7 +22,7 @@ class Boyd_pipe_operator(anuga.Structure_operator):
 
     def __init__(self,
                  domain,
-                 losses,
+                 losses=0.0,
                  diameter=None,
                  barrels=1.0,
                  blockage=0.0,
@@ -44,11 +44,87 @@ class Boyd_pipe_operator(anuga.Structure_operator):
                  logging=False,
                  verbose=False):
 
+        """Create a circular pipe culvert using the Boyd (1987) flow algorithm.
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+            Shallow-water domain to which the culvert is attached.
+        losses : float or list of float or dict, optional
+            Head-loss coefficients. A scalar is used directly; a list is summed;
+            a dict maps loss names to coefficients and the values are summed.
+            Typical values: 0.5 for a sharp-edged inlet, 1.0 for a re-entrant
+            inlet. Default 0.0.
+        diameter : float
+            Internal diameter (m) of the circular pipe barrel.
+        barrels : float, optional
+            Number of parallel identical barrels. Total discharge is multiplied
+            by this value. Default 1.0.
+        blockage : float, optional
+            Fractional blockage of the culvert cross-section. Must be in
+            [0, 1]; 0.0 is fully open, 1.0 is fully blocked. Default 0.0.
+        z1 : float, optional
+            Batter slope (rise/run) of the embankment at the first culvert end,
+            used when computing the invert elevation from the DEM. Default 0.0.
+        z2 : float, optional
+            Batter slope (rise/run) of the embankment at the second culvert end.
+            Default 0.0.
+        end_points : list of [float, float], optional
+            ``[[x1, y1], [x2, y2]]`` — centre coordinates (m) of each culvert
+            end face. Exactly one of ``end_points`` or ``exchange_lines`` must
+            be provided.
+        exchange_lines : list of two 2-point lines, optional
+            ``[[[x1,y1],[x2,y2]], [[x1,y1],[x2,y2]]]`` — line segments defining
+            the inlet and outlet faces. Alternative to ``end_points``.
+        enquiry_points : list of [float, float] or None, optional
+            ``[[x1, y1], [x2, y2]]`` — explicit locations for the upstream and
+            downstream head-enquiry points. Computed automatically from
+            ``end_points`` and ``apron`` when None. Default None.
+        invert_elevations : list of float or None, optional
+            ``[e1, e2]`` — invert (floor) elevations (m AHD) at each culvert
+            end. Read from the mesh when None. Default None.
+        apron : float, optional
+            Width (m) of the approach apron at each culvert end, used to offset
+            the enquiry point from the inlet/outlet face. Default 0.1.
+        manning : float, optional
+            Manning's roughness coefficient for the culvert barrel
+            (dimensionless). Typical values: 0.012 for smooth concrete,
+            0.024 for corrugated-steel pipe. Default 0.013.
+        enquiry_gap : float, optional
+            Additional gap (m) beyond the apron edge for the head-enquiry point.
+            Default 0.2.
+        smoothing_timescale : float, optional
+            Timescale (s) for exponential smoothing of computed discharge to
+            reduce numerical oscillations. Set to 0.0 to disable. Default 0.0.
+        use_momentum_jet : bool, optional
+            If True, momentum is injected into the outflow cell along the
+            culvert axis (momentum-jet model). If False, outflow momentum is
+            zeroed. Default True.
+        use_velocity_head : bool, optional
+            If True, the velocity head at the inlet is included in the total
+            driving energy. Default True.
+        description : str or None, optional
+            Human-readable description of the culvert, stored in statistics
+            output. Default None.
+        label : str or None, optional
+            Short label used as a filename prefix for the CSV log when
+            ``logging=True``. Default None.
+        structure_type : str, optional
+            Internal type identifier written to output files. Default
+            ``'boyd_pipe'``.
+        logging : bool, optional
+            If True, write per-timestep flow statistics to a CSV file named
+            ``<label>_<structure_type>.csv``. Default False.
+        verbose : bool, optional
+            If True, print diagnostic messages during construction and
+            discharge calculations. Default False.
+        """
+
         anuga.Structure_operator.__init__(self,
                                           domain,
-                                          end_points,
-                                          exchange_lines,
-                                          enquiry_points,
+                                          end_points=end_points,
+                                          exchange_lines=exchange_lines,
+                                          enquiry_points=enquiry_points,
                                           invert_elevations=invert_elevations,
                                           width=None,
                                           height=None,
@@ -163,7 +239,7 @@ class Boyd_pipe_operator(anuga.Structure_operator):
                 anuga.log.critical('Specific E & Deltat Tot E = %s, %s'
                              % (str(self.inflow.get_enquiry_specific_energy()),
                                 str(self.delta_total_energy)))
-                anuga.log.critical('culvert type = %s' % str(culvert_type))
+                anuga.log.critical('culvert type = %s' % self.__class__.__name__)
             # Water has risen above inlet
 
 

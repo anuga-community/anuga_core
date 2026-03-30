@@ -230,7 +230,7 @@ def get_polygon_dictionary(dir):
     
     try:
         attribute_values = os.listdir(dir)  # Create the Attribute from the Directory Name
-    except:
+    except OSError:
         msg = 'Directory %s was not found' % dir
         raise Exception(msg)
     D = {}   # Create Empty Dictionary
@@ -262,7 +262,7 @@ def get_polygon_value_list(dir):
             numb_bits = key.split('_')
             attribute = float(numb_bits[0]+'.'+numb_bits[1])
             #print 'Polygon Attribute = ' + str(attribute)
-        except:
+        except (ValueError, IndexError):
             print('Non numerical attributes not yet implemented. I got %s' % key)
             return []
         for polygon in D[key]:
@@ -350,7 +350,7 @@ def read_multi_poly_file(multi_P_file):
         fields = line.split(delimiter)
         try:
             polygon.append([float(fields[0]), float(fields[1])])
-        except:
+        except (ValueError, IndexError):
             # Found a line without correct data, assume this signifies the start of a new polygon
             polygons.append(polygon)
             polygon = []
@@ -409,7 +409,7 @@ def read_multi_poly_file_value(multi_P_file,attribute):
         fields = line.split(delimiter)
         try:
             polygon.append([float(fields[0]), float(fields[1])])
-        except:
+        except (ValueError, IndexError):
             # Found a line without correct data, assume this signifies the start of a new polygon
             pair = [polygon, attribute] # create polygon , value pair....
             polygon_value_list.append(pair) # add it to the list....
@@ -425,24 +425,81 @@ def read_multi_poly_file_value(multi_P_file,attribute):
 
 
 # Define a function to read Culvert and Bridge data from Files in Directory
-def Create_culvert_bridge_Operator(domain,culvert_bridge_file):
+def Create_culvert_bridge_Operator(domain,culvert_bridge_file, verbose=False):
     """This script reads in culvert and bridge data files
-    and populates Operator parameters.    
-    
+    and creates culvert operators using the parameters provided in the file.
+    The file should contain key=value pairs, one per line.
+    For example:
+
+    height=2.0
+    width=3.0
+    length=10.0
+    z1=5.0
+    z2=5.5
+    manning=0.015
+
+    will create a Boyd_box_operator.
+
+    Depending on the parameters provided, it will create either a Boyd_box_operator,
+    Boyd_pipe_operator, or Weir_orifice_trapezoid_operator.
+   
+    Called by:
+    User ANUGA Model SCRIPT
+    Purpose:
+    To create culvert or bridge operators based on parameters read from a file.
+    Calls one of the following functions based on the parameters provided:
+    anuga.Boyd_box_operator
+    anuga.Boyd_pipe_operator
+    anuga.Weir_orifice_trapezoid_operator
     """
     #print culvert_bridge_file
-    globals={}
-    locals={}    
+    local_vars = {}    
     
-    exec(open(culvert_bridge_file).read(), globals, locals) 
-    #print locals
-    #if 'height' and 'z1' and 'z2' in locals:
-    if 'z1' and 'z2' in locals:
-        culvert = Weir_orifice_trapezoid_operator(domain, **locals)
-    elif 'diameter' in locals:
-        culvert = Boyd_pipe_operator(domain, **locals)
-    elif 'height' in locals:
-        culvert = Boyd_box_operator(domain, **locals)
+    with open(culvert_bridge_file, 'r') as f:
+        multiline_key = None
+        multiline_value = ''
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if multiline_key:
+                # Continue collecting multiline value
+                if line.endswith(',') or line.endswith('\\'):
+                    multiline_value += line + '\n'
+                    continue
+                else:
+                    multiline_value += line
+                    value = multiline_value
+                    key = multiline_key
+                    multiline_key = None
+                    multiline_value = ''
+            elif '=' in line:
+                key, value = line.split('=', 1)
+                key = key.strip()
+                value = value.strip()
+                if value.endswith(',') or value.endswith('\\'):
+                    multiline_key = key
+                    multiline_value = value + '\n'
+                    continue
+            else:
+                continue
+
+            local_vars[key] = eval(value)
+            
+            # try:
+            #     local_vars[key] = eval(value)
+            # except Exception:
+            #     local_vars[key] = value
+
+    #print(local_vars)
+
+
+    if 'z1' in local_vars and 'z2' in local_vars:
+        culvert = Weir_orifice_trapezoid_operator(domain, **local_vars)
+    elif 'diameter' in local_vars:
+        culvert = Boyd_pipe_operator(domain, **local_vars)
+    elif 'height' in local_vars:
+        culvert = Boyd_box_operator(domain, **local_vars)
     else:
         raise Exception('Cant create culvert')
 

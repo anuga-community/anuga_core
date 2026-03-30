@@ -87,23 +87,22 @@ class Test_results(unittest.TestCase):
 
         print(indent+'Errors in xvelocity: ',eu10, eu50, eu100)
 
-        assert eh10 < 0.01,  'L^1 error %g greater than 1\%'% eh10
-        assert eh50 < 0.01,  'L^1 error %g greater than 1\%'% eh50
-        assert eh100 < 0.01, 'L^1 error %g greater than 1\%'% eh100
+        assert eh10 < 0.01,  f'L^1 error {eh10} greater than 0.01'
+        assert eh50 < 0.01,  f'L^1 error {eh50} greater than 0.01'
+        assert eh100 < 0.01, f'L^1 error {eh100} greater than 0.01'
 
-        assert euh10 < 0.02,  'L^1 error %g greater than 2\%'% euh10
-        assert euh50 < 0.01,  'L^1 error %g greater than 1\%'% euh50
-        assert euh100 < 0.01, 'L^1 error %g greater than 1\%'% euh100
+        assert euh10 < 0.02,  f'L^1 error {euh10} greater than 0.02'
+        assert euh50 < 0.01,  f'L^1 error {euh50} greater than 0.01'
+        assert euh100 < 0.01, f'L^1 error {euh100} greater than 0.01'
 
-        assert eu10 < 0.02,  'L^1 error %g greater than 2\%'% eu10
-        assert eu50 < 0.01,  'L^1 error %g greater than 1\%'% eu50
-        assert eu100 < 0.01, 'L^1 error %g greater than 1\%'% eu100
+        assert eu10 < 0.02,  f'L^1 error {eu10} greater than 0.02'
+        assert eu50 < 0.01,  f'L^1 error {eu50} greater than 0.01'
+        assert eu100 < 0.01, f'L^1 error {eu100} greater than 0.01'
  
 
 
 
 #-------------------------------------------------------------
 if __name__ == '__main__':
-    suite = unittest.makeSuite(Test_results, 'test')
-    runner = unittest.TextTestRunner(verbosity=2)
-    runner.run(suite)
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_results)
+    unittest.TextTestRunner(verbosity=2).run(suite)

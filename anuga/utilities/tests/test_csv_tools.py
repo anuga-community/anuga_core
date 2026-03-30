@@ -55,11 +55,11 @@ class Test_CSV_utils(unittest.TestCase):
         for fn in self.filenames:
             try:
                 os.remove(fn)
-            except:
+            except OSError:
                 pass
         try:
             os.remove(self.OUTPUT_FILE)
-        except:
+        except OSError:
             pass
 
     def test_merge_one_file(self):
@@ -307,7 +307,7 @@ class Test_CSV_utils(unittest.TestCase):
 
         try:
             os.remove(test_filename)
-        except:
+        except OSError:
             pass
 
     def test_different_key_values(self):
@@ -396,7 +396,7 @@ class Test_CSV_utils(unittest.TestCase):
             os.remove('alpha.csv')
             os.remove('beta.csv')
             os.remove('gamma.csv')
-        except:
+        except OSError:
             pass
 
     def str_cmp(self, str1, str2):

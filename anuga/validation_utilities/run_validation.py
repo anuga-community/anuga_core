@@ -1,8 +1,4 @@
 #! /usr/bin/python
-
-
-
-from builtins import str
 __author__="stephen"
 __date__ ="$20/08/2012 11:20:00 PM$"
 

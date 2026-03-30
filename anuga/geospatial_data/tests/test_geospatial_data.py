@@ -1,7 +1,4 @@
 #!/usr/bin/env python
-
-from builtins import str
-from builtins import range
 import unittest
 import os
 import tempfile
@@ -1788,7 +1785,7 @@ class Test_Geospatial_data(unittest.TestCase):
         # below is a workaround until randint works on cyclones compute nodes
         if get_host_name()[8:9]!='0':
             from cmath import cos
-            from anuga.pmesh.mesh_interface import create_mesh_from_regions
+            from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 
             filename = tempfile.mktemp('.csv')
             file = open(filename, 'w')
@@ -1806,7 +1803,7 @@ class Test_Geospatial_data(unittest.TestCase):
             internal_poly=[[[[1,1], [1,-1], [-1,-1], [-1,1]], .5]]
             mesh_filename= tempfile.mktemp('.msh')
 
-            create_mesh_from_regions(poly,
+            create_pmesh_from_regions(poly,
                                      boundary_tags={'back': [2],
                                                     'side': [1,3],
                                                     'ocean': [0]},
@@ -1837,7 +1834,7 @@ class Test_Geospatial_data(unittest.TestCase):
         '''
 
         from cmath import cos
-        from anuga.pmesh.mesh_interface import create_mesh_from_regions
+        from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 
         filename = tempfile.mktemp('.csv')
         mesh_filename= tempfile.mktemp('.msh')

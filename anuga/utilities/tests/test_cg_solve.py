@@ -17,7 +17,7 @@ class Test_CG_Solve(unittest.TestCase):
     def tearDown(self):
         try:
             os.remove('anuga.log')
-        except:
+        except OSError:
             pass
 
     def test_sparse_solve(self):

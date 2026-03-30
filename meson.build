@@ -1,8 +1,24 @@
 # Meson build file for ANUGA core.
-# version read from pyproject.toml
-# This ensures that the version is consistent across the project files
-# and avoids the need for manual updates in multiple places.
-project('anuga', 'c', 'cpp', 'cython', version: run_command('python', ['-c', 'import toml; print(toml.load("pyproject.toml")["project"]["version"])']).stdout().strip()  , default_options: ['cpp_std=c++17'])
+# Version is derived from git tags via `git describe`.
+# Tag releases as `3.3.0`, `3.3.1`, etc. — no `v` prefix, matching the
+# existing tag convention. Between releases the version will look like
+# `3.3.0-4-gabcdef` (4 commits past the tag, short SHA).
+#
+# Note: project() must be the first statement in meson.build.
+# The version is computed inline; git sha/date are fetched after.
+project('anuga', 'c', 'cpp', 'cython',
+  version: run_command('python', ['_git_version.py'], check: false).stdout().strip(),
+  default_options: ['cpp_std=c++17'])
+
+# Fetch additional git metadata for the generated _version.py
+git = find_program('git', required: false, native: true)
+if git.found()
+  _git_sha  = run_command(git, ['rev-parse', 'HEAD'], check: false).stdout().strip()
+  _git_date = run_command(git, ['log', '-1', '--format=%ci', 'HEAD'], check: false).stdout().strip()
+else
+  _git_sha  = 'unknown'
+  _git_date = 'unknown'
+endif
 
 add_project_arguments('-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', language: 'cpp')
 add_project_arguments('-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', language: 'c')
@@ -66,6 +82,7 @@ if openmp.found()
   openmp_deps = dependencies + [openmp]
 
 else
+  openmp_c_args = []
   openmp_deps = dependencies
 endif
 
@@ -75,7 +92,7 @@ endif
 # Install the Python scripts
 #========================================================
 conf = configuration_data()
-conf.set('PYTHON', py3.path())
+conf.set('PYTHON', py3.full_path())
 
 
 message('BinDir: ' + get_option('bindir'))
@@ -98,6 +115,14 @@ configure_file(
 configure_file(
     input: 'scripts/anuga_benchmark_omp.py',
     output: 'anuga_benchmark_omp',
+    configuration: conf,
+    install_dir: get_option('bindir'),
+    install_mode: 'rwxr-xr-x'
+)
+
+configure_file(
+    input: 'scripts/anuga_run_toml.py',
+    output: 'anuga_run_toml',
     configuration: conf,
     install_dir: get_option('bindir'),
     install_mode: 'rwxr-xr-x'

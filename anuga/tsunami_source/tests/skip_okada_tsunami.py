@@ -434,7 +434,6 @@ class Test_okada_tsunami(unittest.TestCase):
         ##     save('-ascii', file=pic_filename, 'uZ')
         ## end
 
-if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_okada_tsunami, 'test')
-    runner = unittest.TextTestRunner(verbosity=1)
-    runner.run(suite)
+if __name__ == '__main__':
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_results)
+    unittest.TextTestRunner(verbosity=2).run(suite)

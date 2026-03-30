@@ -4,6 +4,7 @@ import unittest
 import os.path
 import sys
 
+import pytest
 import anuga
 
 from anuga.utilities.system_tools import get_pathname_from_package
@@ -133,6 +134,7 @@ class Test_Culvert(unittest.TestCase):
         pass
 
 
+    @pytest.mark.slow
     def test_that_culvert_runs_rating(self):
         """test_that_culvert_runs_rating
         
@@ -365,6 +367,7 @@ class Test_Culvert(unittest.TestCase):
     
         os.remove('Test_culvert_dry.sww')
         
+    @pytest.mark.slow
     def test_that_culvert_flows_conserves_volume(self):
         """test_that_culvert_flows_conserves_volume
 
@@ -486,20 +489,20 @@ class Test_Culvert(unittest.TestCase):
         # Evolve system through time
         #-----------------------------------------------------------------------
 
-        print('depth', 0.1)
+        #print('depth', 0.1)
         ref_volume = domain.get_quantity('stage').get_integral()
         for t in domain.evolve(yieldstep = 0.1, finaltime = 25):
             new_volume = domain.get_quantity('stage').get_integral()
 
             msg = ('Total volume has changed: Is %.8f m^3 should have been %.8f m^3'
                    % (new_volume, ref_volume))
-            assert num.allclose(new_volume, ref_volume, rtol=1.0e-10), msg        
-        
-        
+            assert num.allclose(new_volume, ref_volume, rtol=1.0e-10), msg
+
+
         return # why?
         # Now try this again for a depth of 10 cm and for a range of other depths
         for depth in [0.1, 0.2, 0.5, 1.0]:
-            print('depth', depth)
+            #print('depth', depth)
             domain.set_time(0.0)
             
             domain.set_quantity('elevation', topography) 
@@ -708,6 +711,7 @@ class Test_Culvert(unittest.TestCase):
 
     
 
+    @pytest.mark.slow
     def test_momentum_jet(self):
         """test_momentum_jet
         

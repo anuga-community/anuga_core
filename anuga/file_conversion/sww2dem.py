@@ -108,8 +108,9 @@ def sww2dem(name_in, name_out,
     if out_ext not in ['.asc', '.ers']:
         raise IOError('Format for %s must be either asc or ers.' % name_out)
 
-    false_easting = 500000
-    false_northing = 10000000
+
+
+
 
     if quantity is None:
         quantity = 'elevation'
@@ -138,6 +139,12 @@ def sww2dem(name_in, name_out,
     from anuga.file.netcdf import NetCDFFile
     fid = NetCDFFile(name_in)
 
+    false_easting = fid.false_easting
+    false_northing = fid.false_northing
+
+    hemisphere = fid.hemisphere
+    zone = fid.zone
+
     #Get extent and reference
     x = num.array(fid.variables['x'][:], float)
     y = num.array(fid.variables['y'][:], float)
@@ -150,7 +157,7 @@ def sww2dem(name_in, name_out,
     try: # works with netcdf4
         number_of_timesteps = len(fid.dimensions['number_of_timesteps'])
         number_of_points = len(fid.dimensions['number_of_points'])
-    except: #works with scientific.io.netcdf
+    except (TypeError, AttributeError): #works with scientific.io.netcdf
         number_of_timesteps = fid.dimensions['number_of_timesteps']
         number_of_points = fid.dimensions['number_of_points']
 

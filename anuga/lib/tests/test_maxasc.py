@@ -155,6 +155,5 @@ class Test_MaxAsc(unittest.TestCase):
         self.assertTrue(FilesEqual('test3.out.asc', expected_file))
 
 if __name__ == '__main__':
-    suite = unittest.makeSuite(Test_MaxAsc,'test')
-    runner = unittest.TextTestRunner(verbosity=1)
-    runner.run(suite)
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_MaxAsc)
+    unittest.TextTestRunner(verbosity=2).run(suite)

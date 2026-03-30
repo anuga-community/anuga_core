@@ -11,6 +11,8 @@ from .general_mesh import General_mesh
 from anuga.caching import cache
 import anuga.utilities.log as log
 
+from pprint import pprint
+
 from math import pi, sqrt
 
 import numpy as num
@@ -72,12 +74,19 @@ class Mesh(General_mesh):
                  tagged_elements=None,
                  geo_reference=None,
                  use_inscribed_circle=False,
+                 triangle_neighbours=None,
+                 triangle_neighbour_edges=None,
                  verbose=False):
         """
         Build Mesh
 
             Input x,y coordinates (sequence of 2-tuples or Mx2 numeric array of floats)
             triangles (sequence of 3-tuples or Nx3 numeric array of non-negative integers).
+
+        triangle_neighbours: optional (N, 3) integer array of neighbouring triangle
+            indices (-1 for boundary edges), as produced by the triangle library
+            (available from Pmesh.tri_mesh.triangle_neighbors). If provided,
+            the neighbour structure is not recomputed from the triangles.
         """
 
         General_mesh.__init__(self, coordinates, triangles,
@@ -91,6 +100,8 @@ class Mesh(General_mesh):
 
         # Allocate arrays for neighbour data
 
+        if verbose: log.critical('Mesh: Allocating neighbour arrays')
+
         self.neighbours = -1*num.ones((N, 3), int)
         self.neighbour_edges = -1*num.ones((N, 3), int)
         self.number_of_boundaries = num.zeros(N, int)
@@ -99,67 +110,14 @@ class Mesh(General_mesh):
         #Get x,y coordinates for all triangles and store
         V = self.vertex_coordinates # Relative coordinates
 
-#        #Initialise each triangle
-#        if verbose: log.critical('Mesh: Computing centroids and radii')
-#        for i in range(N):
-#            if verbose and i % ((N+10)/10) == 0: log.critical('(%d/%d)' % (i, N))
-#
-#            x0, y0 = V[3*i, :]
-#            x1, y1 = V[3*i+1, :]
-#            x2, y2 = V[3*i+2, :]
-#
-#            #x0 = V[i, 0]; y0 = V[i, 1]
-#            #x1 = V[i, 2]; y1 = V[i, 3]
-#            #x2 = V[i, 4]; y2 = V[i, 5]
-#
-#            #Compute centroid
-#            centroid = num.array([(x0 + x1 + x2)/3, (y0 + y1 + y2)/3], float)
-#            self.centroid_coordinates[i] = centroid
-#
-#
-#            if self.use_inscribed_circle == False:
-#                #OLD code. Computed radii may exceed that of an
-#                #inscribed circle
-#
-#                #Midpoints
-#                m0 = num.array([(x1 + x2)/2, (y1 + y2)/2], float)
-#                m1 = num.array([(x0 + x2)/2, (y0 + y2)/2], float)
-#                m2 = num.array([(x1 + x0)/2, (y1 + y0)/2], float)
-#
-#                #The radius is the distance from the centroid of
-#                #a triangle to the midpoint of the side of the triangle
-#                #closest to the centroid
-#                d0 = num.sqrt(num.sum( (centroid-m0)**2 ))
-#                d1 = num.sqrt(num.sum( (centroid-m1)**2 ))
-#                d2 = num.sqrt(num.sum( (centroid-m2)**2 ))
-#
-#                self.radii[i] = min(d0, d1, d2)
-#
-#            else:
-#                #NEW code added by Peter Row. True radius
-#                #of inscribed circle is computed
-#
-#                a = num.sqrt((x0-x1)**2+(y0-y1)**2)
-#                b = num.sqrt((x1-x2)**2+(y1-y2)**2)
-#                c = num.sqrt((x2-x0)**2+(y2-y0)**2)
-#
-#                self.radii[i]=2.0*self.areas[i]/(a+b+c)
-#
-#
-#            #Initialise Neighbours (-1 means that it is a boundary neighbour)
-#            self.neighbours[i, :] = [-1, -1, -1]
-#
-#            #Initialise edge ids of neighbours
-#            #In case of boundaries this slot is not used
-#            self.neighbour_edges[i, :] = [-1, -1, -1]
-
 
         # Build neighbour structure
-        if verbose: log.critical('Mesh: Building neigbour structure')
-        self.build_neighbour_structure()
+        if verbose: log.critical('Mesh: Building neighbour structure')
+        self.build_neighbour_structure(triangle_neighbours=triangle_neighbours,
+                                       triangle_neighbour_edges=triangle_neighbour_edges)
 
         # Build surrogate neighbour structure
-        if verbose: log.critical('Mesh: Building surrogate neigbour structure')
+        if verbose: log.critical('Mesh: Building surrogate neighbour structure')
         self.build_surrogate_neighbour_structure()
 
         # Build boundary dictionary mapping (id, edge) to symbolic tags
@@ -293,26 +251,52 @@ class Mesh(General_mesh):
                 self.neighbour_edges[i, 1] = neighbourdict[a,c][1]
                 self.number_of_boundaries[i] -= 1
 
-    def build_neighbour_structure(self):
+    def build_neighbour_structure(self, triangle_neighbours=None,
+                                  triangle_neighbour_edges=None):
         """Update all registered triangles to point to their neighbours.
 
         Also, keep a tally of the number of boundaries for each triangle
+
+        If triangle_neighbours is provided (an (N, 3) integer array of
+        neighbouring triangle indices, -1 for boundary edges, as produced
+        by the triangle library or the mesh factory Cython functions), the
+        neighbour structure is assigned directly rather than recomputed from
+        the triangles.
+
+        If triangle_neighbour_edges is also provided (an (N, 3) integer array
+        giving, for each edge of each triangle, the edge index of the
+        corresponding neighbour that connects back — -1 for boundary edges),
+        it is assigned directly, skipping the reverse-lookup loop entirely.
+        This is valid for structured meshes where the pattern is known
+        analytically (e.g. rectangular and rectangular-cross meshes).
 
         Postconditions:
           neighbours and neighbour_edges is populated
           number_of_boundaries integer array is defined.
         """
 
-        from . import neighbour_table_ext
-        
-        N = self.number_of_nodes
+        if triangle_neighbours is not None:
+            self.neighbours[:] = num.array(triangle_neighbours, int)
+            self.number_of_boundaries = (self.neighbours < 0).sum(axis=1).astype(int)
+            if triangle_neighbour_edges is not None:
+                # Pre-computed: assign directly without the reverse-lookup loop
+                self.neighbour_edges[:] = num.array(triangle_neighbour_edges, int)
+            else:
+                # For each valid (i, j), find edge m of neighbour k that points back to i
+                valid_i, valid_j = num.where(self.neighbours >= 0)
+                k = self.neighbours[valid_i, valid_j]
+                for m in range(3):
+                    matches = (self.neighbours[k, m] == valid_i)
+                    self.neighbour_edges[valid_i[matches], valid_j[matches]] = m
+        else:
+            from . import neighbour_table_ext
 
-        
-        neighbour_table_ext.build_neighbour_structure(N,
-                                            self.triangles,
-                                            self.neighbours,
-                                            self.neighbour_edges,
-                                            self.number_of_boundaries)
+            neighbour_table_ext.build_neighbour_structure(self.number_of_nodes,
+                                                          self.triangles,
+                                                          self.neighbours,
+                                                          self.neighbour_edges,
+                                                          self.number_of_boundaries)
+
  
 
     def build_surrogate_neighbour_structure(self):
@@ -331,13 +315,6 @@ class Mesh(General_mesh):
         """
 
         N = len(self) #Number of triangles
-#        for i in xrange(N):
-#            #Find all neighbouring volumes that are not boundaries
-#            for k in xrange(3):
-#                if self.neighbours[i, k] < 0:
-#                    self.surrogate_neighbours[i, k] = i #Point this triangle
-#                else:
-#                    self.surrogate_neighbours[i, k] = self.neighbours[i, k]
 
         tmp_range = num.arange(N)
         for k in range(3):
@@ -357,11 +334,10 @@ class Mesh(General_mesh):
 
         from anuga.config import default_boundary_tag
 
-        #arr_neighbours = num.array(self.neighbours)
-
-        
         if boundary is None:
             boundary = {}
+
+        #boundary = dict(sorted(boundary.items()))
 
         from .neighbour_mesh_ext import boundary_dictionary_construct
         boundary = boundary_dictionary_construct(len(self), default_boundary_tag, self.neighbours, boundary)
@@ -394,49 +370,6 @@ class Mesh(General_mesh):
     def get_tagged_elements(self):
         return self.tagged_elements
 
-#    def build_boundary_structure(self):
-#        """Traverse boundary and
-#        enumerate neighbour indices from -1 and
-#        counting down.
-#
-#        Precondition:
-#            self.boundary is defined.
-#        Post condition:
-#            neighbour array has unique negative indices for boundary
-#            boundary_segments array imposes an ordering on segments
-#            (not otherwise available from the dictionary)
-#
-#        Note: If a segment is listed in the boundary dictionary
-#        it *will* become a boundary - even if there is a neighbouring triangle.
-#        This would be the case for internal boundaries
-#        """
-#
-#        #FIXME: Now Obsolete - maybe use some comments from here in
-#        #domain.set_boundary
-#
-#        if self.boundary is None:
-#            msg = 'Boundary dictionary must be defined before '
-#            msg += 'building boundary structure'
-#            raise Exception(msg)
-#
-#
-#        self.boundary_segments = self.boundary.keys()
-#        self.boundary_segments.sort()
-#
-#        index = -1
-#        for id, edge in self.boundary_segments:
-#
-#            #FIXME: One would detect internal boundaries as follows
-#            #if self.neighbours[id, edge] > -1:
-#            #    log.critical('Internal boundary')
-#
-#            self.neighbours[id, edge] = index
-#
-#            self.boundary_enumeration[id,edge] = index
-#
-#            index -= 1
-#
-
 
     def build_boundary_neighbours(self):
         """Traverse boundary and
@@ -458,8 +391,6 @@ class Mesh(General_mesh):
             raise Exception(msg)
 
         self.boundary_enumeration = {}
-
-
 
         X = list(self.boundary.keys())
         X.sort()
@@ -681,62 +612,7 @@ class Mesh(General_mesh):
         # Get x,y coordinates for all vertices for all triangles
         V = self.get_vertex_coordinates()
 
-#        # Check each triangle
-#        for i in xrange(0):
-#
-#            x0, y0 = V[3*i, :]
-#            x1, y1 = V[3*i+1, :]
-#            x2, y2 = V[3*i+2, :]
-#
-#            # Check that area hasn't been compromised
-#            area = self.areas[i]
-#            ref = -((x1*y0-x0*y1)+(x2*y1-x1*y2)+(x0*y2-x2*y0))/2
-#            msg = 'Triangle %i (%f,%f), (%f,%f), (%f, %f)' % (i, x0,y0,x1,y1,x2,y2)
-#            msg += 'Wrong area: %f  %f'\
-#                  %(area, ref)
-#            assert abs((area - ref)/area) < epsilon, msg
-#
-#            msg = 'Triangle %i (%f,%f), (%f,%f), (%f, %f)' % (i, x0,y0,x1,y1,x2,y2)
-#            msg += ' is degenerate:  area == %f' % self.areas[i]
-#            assert area > 0.0, msg
-#
-#            # Check that points are arranged in counter clock-wise order
-#            v0 = [x1-x0, y1-y0]
-#            v1 = [x2-x1, y2-y1]
-#            v2 = [x0-x2, y0-y2]
-#            a0 = anglediff(v1, v0)
-#            a1 = anglediff(v2, v1)
-#            a2 = anglediff(v0, v2)
-#
-#            msg = '''Vertices (%s,%s), (%s,%s), (%s,%s) are not arranged
-#            in counter clockwise order''' %(x0, y0, x1, y1, x2, y2)
-#            assert a0 < pi and a1 < pi and a2 < pi, msg
-#
-#            # Check that normals are orthogonal to edge vectors
-#            # Note that normal[k] lies opposite vertex k
-#
-#            normal0 = self.normals[i, 0:2]
-#            normal1 = self.normals[i, 2:4]
-#            normal2 = self.normals[i, 4:6]
-#
-#            for u, v in [ (v0, normal2), (v1, normal0), (v2, normal1) ]:
-#
-#                # Normalise
-#                l_u = num.sqrt(u[0]*u[0] + u[1]*u[1])
-#                l_v = num.sqrt(v[0]*v[0] + v[1]*v[1])
-#
-#                msg = 'Normal vector in triangle %d does not have unit length' %i
-#                assert num.allclose(l_v, 1), msg
-#
-#                x = (u[0]*v[0] + u[1]*v[1])/l_u # Inner product
-#
-#                msg = 'Normal vector (%f,%f) is not perpendicular to' %tuple(v)
-#                msg += ' edge (%f,%f) in triangle %d.' %(tuple(u) + (i,))
-#                msg += ' Inner product is %e.' %x
-#                assert x < epsilon, msg
-
-
-        # let's try numpy constructs
+        # numpy constructs
 
         x0 = V[0::3, 0]
         y0 = V[0::3, 1]
@@ -985,7 +861,15 @@ class Mesh(General_mesh):
 
 
     def statistics(self, nbins=10):
-        """Output statistics about mesh
+        """
+        Return a string containing statistics about the mesh such as
+        number of triangles, extent in x and y, area min/max,
+        histogram of areas, number of boundary segments and
+        available boundary tags.
+
+        Keyword arguments:
+        nbins -- number of bins to use for area histogram (default 10)  
+        
         """
 
         from anuga.utilities.numerical_tools import histogram, create_bins
@@ -998,14 +882,13 @@ class Mesh(General_mesh):
 
         #Setup 10 bins for area histogram
         #print "nbins",nbins
-        bins = create_bins(areas, 10)
+        bins = create_bins(areas, nbins)
         #print "size bins",bins
         #m = max(areas)
         #bins = arange(0., m, m/10)
         hist = histogram(areas, bins)
 
         str =  '------------------------------------------------\n'
-        str += ' Jorge openmp version \n'
         str += 'Mesh statistics:\n'
         str += '  Number of triangles = %d\n' %len(self)
         str += '  Extent [m]:\n'
@@ -1105,7 +988,7 @@ class Mesh(General_mesh):
             return tid
 
 
-    def get_triangles_inside_polygon(self, polygon):
+    def get_triangles_inside_polygon(self, polygon, verbose=False):
         """Return triangle ids for triangles whose centroid is inside given polygon
         """
 
@@ -1212,6 +1095,124 @@ class Mesh(General_mesh):
             self.interpolation_object = I
 
         return I
+
+    def reorder(self, new_order = None, in_place = True, original_method = False, verbose=False):
+        """
+        Reorder the mesh using new_order which is a list or int array of length number of triangles which
+        defines a permutation of triangle numbering.
+
+        param new_order: list or int array of length number of triangles which 
+        defines a permutation of triangle numbering.
+        param in_place: if True, the original mesh will be modified. Be careful with this as 
+        it will modify the original mesh and all references to it. If False, a new mesh will be 
+        created and returned, and the original mesh will not be modified.
+        param original_method: if True, the original method of reordering will be used, 
+        which is simpler but less efficient. If False, the new method will be used.
+        param verbose: if True, print verbose output during reordering.
+        """
+        if new_order is None or len(new_order) == 0:
+            return
+
+        N = len(self) # number of triangles
+
+        msg = f"new_order should be an array of length number of triangles {N}"
+        assert len(new_order) == N
+
+        new_order = num.array(new_order)
+
+        inv_order = num.empty_like(new_order)
+        inv_order[new_order] = num.arange(new_order.size)
+
+        msg = "new_order should be a permutation of 0, 1, ..., N-1"
+        assert num.all(inv_order[new_order] == num.arange(N)), msg
+
+        if original_method:
+            new_nodes = self.get_nodes().copy()
+            new_triangles = self.get_triangles().copy()[new_order]
+            new_boundary = {(int(inv_order[i]), j): v for (i, j), v in self.boundary.items()}
+
+            tagged_elements = {}
+            #Check that all keys in given boundary exist
+            for tag in list(self.tagged_elements.keys()):
+                tagged_elements[tag] = num.array(inv_order[self.tagged_elements[tag]], int)
+
+            geo_reference=self.geo_reference
+            use_inscribed_circle=self.use_inscribed_circle
+
+            return Mesh(new_nodes, new_triangles, 
+                    boundary=new_boundary, 
+                    tagged_elements=tagged_elements,
+                    geo_reference=geo_reference,
+                    use_inscribed_circle=use_inscribed_circle,
+                    verbose=verbose)
+
+
+        if in_place is True:
+            # modify original mesh. Be careful with this as it will modify the original mesh 
+            # and all references to it.
+            new_mesh = self
+        else:
+            # make a copy of the original mesh so that it is not modified
+            import copy
+            new_mesh = copy.deepcopy(self)
+
+        new_mesh.triangles[:] = new_mesh.triangles[new_order]
+        new_mesh.boundary = {(int(inv_order[i]), j): v for (i, j), v in new_mesh.boundary.items()}
+
+        # First replicate actions of General_mesh.__init__
+
+        #self.build_inverted_triangle_structure()
+        #new_mesh.vertex_value_indices[:] = num.argsort(new_mesh.triangles.flat).astype(int)
+        new_mesh.vertex_value_indices[:] = inv_order[new_mesh.vertex_value_indices // 3] * 3 + new_mesh.vertex_value_indices % 3
+
+        vertex_coordinates = new_mesh.vertex_coordinates.reshape((N,6))[new_order]
+        new_mesh.vertex_coordinates[:] = vertex_coordinates.reshape((3*N,2))
+
+        edge_midpoint_coordinates  = new_mesh.edge_midpoint_coordinates.reshape((N,6))[new_order]
+        new_mesh.edge_midpoint_coordinates[:] = edge_midpoint_coordinates.reshape((3*N,2))
+
+        new_mesh.normals[:] = new_mesh.normals[new_order]
+        new_mesh.areas[:]= new_mesh.areas[new_order]
+        new_mesh.edgelengths[:] = new_mesh.edgelengths[new_order]
+        new_mesh.centroid_coordinates[:] = new_mesh.centroid_coordinates[new_order]
+        new_mesh.radii[:] = new_mesh.radii[new_order]
+
+
+        # Second replicate actions of Mesh.__init__
+
+        ## self.build_neighbour_structure()
+        flat = new_mesh.neighbours.ravel()
+        mask = flat >= 0
+        flat[mask] = inv_order[flat[mask]]
+        new_mesh.neighbours[:] = new_mesh.neighbours[new_order]
+
+        new_mesh.neighbour_edges[:] = new_mesh.neighbour_edges[new_order]
+        new_mesh.number_of_boundaries[:] = new_mesh.number_of_boundaries[new_order]
+
+        #self.build_surrogate_neighbour_structure()
+        new_mesh.surrogate_neighbours[:] = inv_order[new_mesh.surrogate_neighbours[new_order]]
+
+
+        # build some auxilary boundary structures that are used for domain.set_boundary 
+        # and domain.get_boundary_polygon
+        new_mesh.build_boundary_neighbours()
+
+
+        
+
+
+        #pprint(self.vertex_value_indices)
+        #self.vertex_value_indices[:] = inv_order[self.vertex_value_indices // 3] * 3 + self.vertex_value_indices % 3
+
+        #self.build_tagged_elements_dictionary(tagged_elements)
+        tagged_elements = {}
+        #Check that all keys in given boundary exist
+        for tag in list(new_mesh.tagged_elements.keys()):
+            tagged_elements[tag] = num.array(inv_order[new_mesh.tagged_elements[tag]], int)
+        new_mesh.tagged_elements = tagged_elements
+        
+        return new_mesh
+
 
 
 class Triangle_intersection(object):
@@ -1461,6 +1462,164 @@ def segment_midpoints(segments):
         midpoints.append(midpoint)
 
     return midpoints
+
+
+def get_boundary_polygon(self, verbose=False):
+    """Return bounding polygon for mesh (counter clockwise)
+
+    Using the mesh boundary, derive a bounding polygon for this mesh.
+    If multiple vertex values are present (vertices stored uniquely),
+    the algorithm will select the path that contains the entire mesh.
+
+    All points are in absolute UTM coordinates
+    """
+
+    from anuga.utilities.numerical_tools import angle, ensure_numeric
+
+    # Get mesh extent
+    xmin, xmax, ymin, ymax = self.get_extent(absolute=True)
+    pmin = ensure_numeric([xmin, ymin])
+    pmax = ensure_numeric([xmax, ymax])
+
+    # Assemble dictionary of boundary segments and choose starting point
+    segments = {}
+    inverse_segments = {}
+    p0 = None
+
+    # Start value across entire mesh
+    mindist = num.sqrt(num.sum((pmax-pmin)**2))
+    for i, edge_id in list(self.boundary.keys()):
+        # Find vertex ids for boundary segment
+        if edge_id == 0: a = 1; b = 2
+        if edge_id == 1: a = 2; b = 0
+        if edge_id == 2: a = 0; b = 1
+
+        A = self.get_vertex_coordinate(i, a, absolute=True)    # Start
+        B = self.get_vertex_coordinate(i, b, absolute=True)    # End
+
+        # Take the point closest to pmin as starting point
+        # Note: Could be arbitrary, but nice to have
+        # a unique way of selecting
+        dist_A = num.sqrt(num.sum((A-pmin)**2))
+        dist_B = num.sqrt(num.sum((B-pmin)**2))
+
+        # Find lower leftmost point
+        if dist_A < mindist:
+            mindist = dist_A
+            p0 = A
+        if dist_B < mindist:
+            mindist = dist_B
+            p0 = B
+
+        # Sanity check
+        if p0 is None:
+            msg = 'Impossible: p0 is None!?'
+            raise Exception(msg)
+
+        # Register potential paths from A to B
+        if tuple(A) not in segments:
+            segments[tuple(A)] = []    # Empty list for candidate points
+
+        segments[tuple(A)].append(B)
+
+    # Start with smallest point and follow boundary (counter clock wise)
+    polygon = [list(p0)]# Storage for final boundary polygon
+    point_registry = {} # Keep track of storage to avoid multiple runs
+                        # around boundary. This will only be the case if
+                        # there are more than one candidate.
+                        # FIXME (Ole): Perhaps we can do away with polygon
+                        # and use only point_registry to save space.
+
+    point_registry[tuple(p0)] = 0
+
+    while len(point_registry) < len(self.boundary):
+        candidate_list = segments[tuple(p0)]
+        if len(candidate_list) > 1:
+            # Multiple points detected (this will be the case for meshes
+            # with duplicate points as those used for discontinuous
+            # triangles with vertices stored uniquely).
+            # Take the candidate that is furthest to the clockwise
+            # direction, as that will follow the boundary.
+            #
+            # This will also be the case for pathological triangles
+            # that have no neighbours.
+
+            if verbose:
+                log.critical('Point %s has multiple candidates: %s'
+                                % (str(p0), candidate_list))
+
+            # Check that previous are not in candidate list
+            #for p in candidate_list:
+            #    assert not allclose(p0, p)
+
+            # Choose vector against which all angles will be measured
+            if len(polygon) > 1:
+                v_prev = p0 - polygon[-2]    # Vector that leads to p0
+                                                # from previous point
+            else:
+                # FIXME (Ole): What do we do if the first point has
+                # multiple candidates?
+                # Being the lower left corner, perhaps we can use the
+                # vector [1, 0], but I really don't know if this is
+                # completely watertight.
+                v_prev = [1.0, 0.0]
+
+            # Choose candidate with minimum angle
+            minimum_angle = 2*pi
+            for pc in candidate_list:
+                vc = pc-p0    # Candidate vector (from p0 to candidate pt)
+
+                # Angle between each candidate and the previous vector
+                # in [-pi, pi]
+                ac = angle(vc, v_prev)
+                if ac > pi:
+                    # Give preference to angles on the right hand side
+                    # of v_prev
+                    ac = ac-2*pi
+
+                # Take the minimal angle corresponding to the
+                # rightmost vector
+                if ac < minimum_angle:
+                    minimum_angle = ac
+                    p1 = pc             # Best candidate
+
+            if verbose is True:
+                log.critical('  Best candidate %s, angle %f'
+                                % (p1, minimum_angle*180/pi))
+        else:
+            p1 = candidate_list[0]
+
+        if tuple(p1) in point_registry:
+            # We have reached a point already visited.
+            if num.allclose(p1, polygon[0]):
+                # If it is the initial point, the polygon is complete.
+                if verbose is True:
+                    log.critical('  Stop criterion fulfilled at point %s'
+                                    % str(p1))
+                    log.critical(str(polygon))
+
+                # We have completed the boundary polygon - yeehaa
+                break
+            else:
+                # The point already visited is not the initial point
+                # This would be a pathological triangle, but the
+                # algorithm must be able to deal with this
+                pass
+
+        else:
+            # We are still finding new points on the boundary
+            point_registry[tuple(p1)] = len(point_registry)
+
+        polygon.append(list(p1))    # De-numeric each point :-)
+        p0 = p1
+
+    return polygon 
+
+
+
+    
+
+           
 
 
 

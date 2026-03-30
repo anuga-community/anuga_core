@@ -5,16 +5,12 @@
 #FIXME: Seperate the tests for mesh and general_mesh
 
 #FIXME (Ole): Maxe this test independent of anything that inherits from General_mesh (namely shallow_water)
-
-
-from builtins import str
-from builtins import range
 import unittest
 from math import sqrt
 
 
 from anuga.abstract_2d_finite_volumes.neighbour_mesh import *
-from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
+from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_cross, rectangular
 from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_periodic
 from anuga.config import epsilon
 
@@ -41,7 +37,7 @@ class Test_Mesh(unittest.TestCase):
 
         try:
             mesh = Mesh(points, vertices)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have raised exception'
@@ -396,7 +392,7 @@ class Test_Mesh(unittest.TestCase):
                       [5, 2, 3]]
         try:
             mesh = Mesh(points, triangles)
-        except:
+        except Exception:
             pass
         else:
             raise Exception("triangle edge duplicates not caught")
@@ -1216,7 +1212,7 @@ class Test_Mesh(unittest.TestCase):
 
         try:
             id = mesh.get_triangle_containing_point([3.0, 5.0])
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught point outside polygon (Non)'            
@@ -1253,7 +1249,7 @@ class Test_Mesh(unittest.TestCase):
 
         try:
             id = mesh.get_triangle_near_point([3.0, 5.0], tolerance=1.0)
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught point further than tolerance from centroid'            
@@ -1840,34 +1836,12 @@ class Test_Mesh(unittest.TestCase):
                 assert num.allclose(x.segment, ((1.5, 1.0), (2, 1.5)))
 
 
-      # Internal test that sum of line segments add up
-      # to length of input line
-      #
-      # Could be useful perhaps
-      #
-      #xi1 = line[1][0]
-      #eta1 = line[1][1]
-      #linevector = num.array([xi1-xi0, eta1-eta0])
-      #linelength = sqrt(sum(linevector**2))
-      #
-      #segmentlength = 0
-      #for segment in triangle_intersections:
-      #    vector = array([segment[1][0] - segment[0][0],
-      #                    segment[1][1] - segment[0][1]])
-      #    length = sqrt(sum(vector**2))      
-      #    segmentlength += length
-      #
-      #msg = 'Sum of intersecting segments do not add up'    
-      #assert allclose(segmentlength, linelength), msg    
-
-
-
 
     def test_get_intersecting_segments7(self):
         """test_get_intersecting_segments(self):
 
         Check that line can stop inside a triangle - this is from
-        flow throug a cross sections example in test_datamanager.
+        flow through a cross sections example in test_datamanager.
         
         """
 
@@ -1904,6 +1878,7 @@ class Test_Mesh(unittest.TestCase):
             ref_length = line[1][1] - line[0][1]
             #print ref_length, total_length
             assert num.allclose(total_length, ref_length)
+
 
 
 #-------------------------------------------------------------

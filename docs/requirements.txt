@@ -11,7 +11,6 @@ pymetis
 meshpy
 scipy
 netcdf4
-gitpython
 dill
 future
 Pmw
@@ -26,4 +25,5 @@ matplotlib
 
 nbsphinx
 sphinx_rtd_theme
+sphinx-copybutton
 sphinx

@@ -1,10 +1,13 @@
 
 Install ANUGA for Developers
-----------------------------
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 If you want to use the very latest version of ANUGA (or to develop ANUGA code) then you need
-to download the `anuga_core` repository from `github` and then `pip` install 
+to download the `anuga_core` repository from `github` and then `pip` install
 ANUGA from the source. These steps will require that the following package `git` is installed.
+
+ANUGA supports **Python 3.10 – 3.14**.  Environment files for each supported
+version are provided under ``environments/`` (e.g. ``environment_3.12.yml``).
 
 
 The process involves downloading the `anuga_core` repository from `github` and then running the `install_miniforge.sh` 
@@ -15,7 +18,7 @@ and finally `pip` install ANUGA in editable mode via the `-e` option of the `pip
 Here are the details.
 
 Download ANUGA from `github`
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 We need to download (clone) the ANUGA source code from `github`
 
@@ -37,7 +40,7 @@ This creates a directory `anuga_core`.
         git clone git@github.com:anuga-community/anuga_core.git
 
 Install ANUGA using Script
-~~~~~~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^^^^^
 
 We have a scripts in the `anuga_core/tools` directory that will install `Miniforge` 
 and ANUGA and its dependencies.
@@ -129,29 +132,107 @@ and its dependencies.
     The `--no-build-isolation` option is needed to ensure that the dependencies (in particular the compilers)
     installed in the `conda` environment are used during the build process.
 
-Testing the installation
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Once the installation is complete you can activate the `anuga_env_3.12` environment
-and run the unit tests to check that everything is working. 
+MPI parallel support
+^^^^^^^^^^^^^^^^^^^^
 
-Test the installation.
+To run ANUGA simulations in parallel across multiple processes (using
+``mpiexec`` / ``mpirun``), two additional packages are required:
+
+* **mpi4py** — Python bindings for MPI.  Provides the communication layer
+  used by ``anuga.distribute``, ``anuga.distribute_basic_mesh``, and related
+  functions.
+* **pymetis** — Python wrapper for the METIS graph-partitioning library.
+  Used by ANUGA to decompose the mesh into balanced subdomains before
+  distributing to MPI ranks.
+
+Both packages are already included in the conda environment files under
+``environments/``.  For example, ``environment_3.12.yml`` lists them at
+lines 16 and 24 respectively, so the standard ``conda env create`` step
+installs them automatically.
+
+If you need to add them to an existing environment:
+
+.. code-block:: bash
+
+    conda activate anuga_env_3.12
+    conda install -c conda-forge mpi4py pymetis
+
+Verify MPI is working:
+
+.. code-block:: bash
+
+    python -c "from mpi4py import MPI; print('MPI size:', MPI.COMM_WORLD.Get_size())"
+    mpiexec -np 4 python -c "from mpi4py import MPI; print(MPI.COMM_WORLD.Get_rank())"
+
+See :doc:`../parallel/index` for how to write and run parallel ANUGA scripts.
+
+.. note::
+
+    On HPC clusters, load the system MPI module *before* activating the
+    conda environment so that ``mpi4py`` links against the optimised
+    system MPI rather than the bundled conda-forge one::
+
+        module load openmpi/4.1.5   # use your cluster's module name
+        conda activate anuga_env_3.12
+
+
+Testing the installation
+^^^^^^^^^^^^^^^^^^^^^^^^
+
+Once the installation is complete you can activate the ``anuga_env_3.12`` environment
+and run the unit tests to check that everything is working.
 
 .. code-block:: bash
 
     cd sandpit
-    conda activate anuga_env_3.12   
+    conda activate anuga_env_3.12
     pytest --pyargs anuga
 
-ANUGA also comes with a validation test suite which verifies the correctness of 
+This runs the full test suite (~1 600 tests, approximately 3 minutes).
+
+Fast test run
+"""""""""""""
+
+For a quick feedback loop during development, pass ``--run-fast`` to skip the
+slow tests (MPI-based parallel tests and a handful of individually marked
+long-running tests):
+
+.. code-block:: bash
+
+    pytest --pyargs anuga --run-fast
+
+This runs approximately 1 500 tests in around 40 seconds.
+
+Tests are considered *slow* if they:
+
+* live under ``anuga/parallel/tests/`` (MPI tests that spawn subprocesses), or
+* are decorated with ``@pytest.mark.slow`` (individually identified long-running
+  tests in other modules).
+
+To run *only* the slow tests:
+
+.. code-block:: bash
+
+    pytest --pyargs anuga -m slow
+
+To mark a new test as slow, add the decorator before the test method::
+
+    import pytest
+
+    @pytest.mark.slow
+    def test_my_expensive_computation(self):
+        ...
+
+ANUGA also comes with a validation test suite which verifies the correctness of
 real life hydraulic scenarios. You can run them as follows:
 
 .. code-block:: bash
 
-    cd validation_tests 
+    cd validation_tests
     python run_auto_validation_tests.py
 
 Using the installation
-~~~~~~~~~~~~~~~~~~~~~~
+^^^^^^^^^^^^^^^^^^^^^^
 
 You can now use ANUGA by activating the `anuga_env_3.12` environment and then running your python scripts
 that use ANUGA.
@@ -172,7 +253,7 @@ You can set the environment variable `OMP_NUM_THREADS=4`, as such:
 
 
 Updating
-~~~~~~~~
+^^^^^^^^^
 
 From time to time you might like to update your version of anuga to the latest version on 
 github. You can do this by going to the `anuga_core` directory and `pulling` the latest

@@ -3,7 +3,7 @@ from struct import pack, unpack
 import array as p_array
 import numpy as num
 
-
+from anuga.anuga_exceptions import ANUGAError
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 
 from anuga.geospatial_data.geospatial_data import ensure_absolute, \
@@ -202,7 +202,7 @@ def calculate_boundary_points(boundary_polygon, zone, ll_lat,
     if use_cache is True:
         try:
             from anuga.caching import cache
-        except:
+        except ImportError:
             msg = 'Caching was requested, but caching module' \
                   'could not be imported'
             raise Exception(msg)

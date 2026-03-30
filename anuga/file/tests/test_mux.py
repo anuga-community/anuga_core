@@ -1,6 +1,3 @@
-#from builtins import zip
-#from builtins import map
-#from builtins import range
 import unittest
 import tempfile
 import numpy as num
@@ -121,7 +118,7 @@ class Test_Mux(unittest.TestCase):
         for file in files:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass
         
     def write_mux2(self, lat_long_points, time_step_count, time_step,

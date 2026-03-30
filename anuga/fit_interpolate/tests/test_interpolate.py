@@ -29,7 +29,7 @@ from anuga.file.sww import SWW_file
 from anuga.shallow_water.shallow_water_domain import Domain
 from anuga.abstract_2d_finite_volumes.quantity import Quantity
 from anuga.geospatial_data.geospatial_data import Geospatial_data
-from anuga.pmesh.mesh import Mesh
+from anuga.pmesh.mesh import Pmesh
 from anuga.file.netcdf import NetCDFFile
 
 from pprint import pprint
@@ -1059,7 +1059,7 @@ class Test_Interpolate(unittest.TestCase):
         #Must raise an exception, no points specified
         try:
             z = interp.interpolate(f)
-        except:
+        except Exception:
             pass
         
     def xxtest_interpolate_reuse_if_same(self):
@@ -1170,14 +1170,14 @@ class Test_Interpolate(unittest.TestCase):
         #Out of bounds checks
         try:
             I(time[0]-1) 
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should raise exception')
 
         try:
             I(time[-1]+1) 
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should raise exception')
@@ -1235,7 +1235,7 @@ class Test_Interpolate(unittest.TestCase):
 
         try:    
             I(1)
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should raise exception')
@@ -1294,7 +1294,7 @@ class Test_Interpolate(unittest.TestCase):
 
         try:    
             I(1)
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should raise exception')
@@ -1504,7 +1504,7 @@ class Test_Interpolate(unittest.TestCase):
             
         try:    
             I(1)
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should raise exception')
@@ -1667,7 +1667,7 @@ class Test_Interpolate(unittest.TestCase):
                                        triangles = triangles, 
                                        interpolation_points = interpolation_points,
                                        verbose = False)
-        except:
+        except Exception:
             pass
         else:
             raise Exception('Should raise exception due to time being non-monotoneous')
@@ -1789,7 +1789,7 @@ class Test_Interpolate(unittest.TestCase):
         # Create mesh
         mesh_file = tempfile.mktemp(".tsh")    
         points = [[0.0,0.0],[6.0,0.0],[6.0,6.0],[0.0,6.0]]
-        m = Mesh()
+        m = Pmesh()
         m.add_vertices(points)
         m.auto_segment()
         m.generate_mesh(verbose=False)

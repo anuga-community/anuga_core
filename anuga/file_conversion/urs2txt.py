@@ -1,6 +1,7 @@
-from builtins import map
-from builtins import str
 from anuga.file.urs import Read_urs
+from anuga.file.mux import WAVEHEIGHT_MUX_LABEL, EAST_VELOCITY_LABEL, \
+                            NORTH_VELOCITY_LABEL
+from anuga.coordinate_transforms.redfearn import convert_from_latlon_to_utm
 
 def urs2txt(basename_in, location_index=None):
     """

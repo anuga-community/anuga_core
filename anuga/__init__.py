@@ -22,9 +22,9 @@
 
 
 
-from .revision import  __git_sha__
-from .revision import __git_committed_datetime__
-from .revision import __version__
+from ._version import __git_sha__
+from ._version import __git_committed_datetime__
+from ._version import __version__
 
 # ----------------------------------
 # NetCDF changes stdout to terminal
@@ -86,7 +86,13 @@ from anuga.geometry.polygon_function import Polygon_function
 from anuga.coordinate_transforms.lat_long_UTM_conversion import LLtoUTM, UTMtoLL
 
 from anuga.abstract_2d_finite_volumes.pmesh2domain import \
-                                            pmesh_to_domain_instance
+                                            pmesh_to_domain_instance, \
+                                            pmesh_to_mesh, \
+                                            pmesh_to_basic_mesh
+
+from anuga.abstract_2d_finite_volumes.basic_mesh import (
+    Basic_mesh, rectangular_basic_mesh, rectangular_cross_basic_mesh,
+    basic_mesh_from_mesh_file)
 
 from anuga.fit_interpolate.fit import fit_to_mesh_file
 from anuga.fit_interpolate.fit import fit_to_mesh
@@ -103,11 +109,15 @@ from os.path import join
 from anuga.config import indent
 
 from anuga.utilities.parse_time import parse_time
+from anuga.utilities.parse_time import seconds_to_hhmmss
 
 # ----------------------------
 # Parallel api
 # ----------------------------
 from anuga.parallel.parallel_api import distribute
+from anuga.parallel.parallel_api import distribute_collaborative
+from anuga.parallel.parallel_api import distribute_basic_mesh
+from anuga.parallel.parallel_api import distribute_basic_mesh_collaborative
 from anuga.parallel.parallel_api import myid, numprocs, get_processor_name
 from anuga.parallel.parallel_api import send, receive, reduce
 from anuga.parallel.parallel_api import pypar_available, barrier, finalize
@@ -215,7 +225,8 @@ from anuga.simulation.simulation import Simulation
 # -----------------------------
 # Mesh API
 # -----------------------------
-from anuga.pmesh.mesh_interface import create_mesh_from_regions
+from anuga.pmesh.mesh_interface import create_pmesh_from_regions
+from anuga.pmesh.mesh_interface import create_mesh_from_regions  # deprecated alias
 
 # -----------------------------
 # SWW file access
@@ -299,6 +310,8 @@ from anuga.utilities.system_tools import get_version
 
 from anuga.utilities.system_tools import get_revision_number
 from anuga.utilities.system_tools import get_revision_date
+from anuga.utilities.system_tools import memory_stats
+from anuga.utilities.system_tools import print_memory_stats
 from anuga.utilities.mem_time_equation import estimate_time_mem
 
 # -------------------------
@@ -307,11 +320,201 @@ from anuga.utilities.mem_time_equation import estimate_time_mem
 from anuga.extras import create_domain_from_regions
 from anuga.extras import create_domain_from_file
 from anuga.extras import rectangular_cross_domain
+from anuga.extras import create_basic_mesh_from_regions
 
 from anuga.utilities import log as log
 
 from anuga.config import g
 from anuga.config import velocity_protection
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
+from anuga.config import LOW_FROUDE_OFF, LOW_FROUDE_1, LOW_FROUDE_2
+
+# --------------------------------------
+# Public API — names exported by `import anuga`
+# --------------------------------------
+__all__ = [
+    # Core classes
+    'Basic_mesh',
+    'basic_mesh_from_mesh_file',
+    'Domain',
+    'Domain_plotter',
+    'Generic_Domain',
+    'Geo_reference',
+    'Geospatial_data',
+    'Mesh',
+    'Operator',
+    'Quantity',
+    'Region',
+    'Simulation',
+    'Structure_operator',
+    'SWW_plotter',
+    # Boundaries
+    'Characteristic_stage_boundary',
+    'Compute_fluxes_boundary',
+    'Dirichlet_boundary',
+    'Field_boundary',
+    'File_boundary',
+    'Flather_external_stage_zero_velocity_boundary',
+    'Reflective_boundary',
+    'Time_boundary',
+    'Time_space_boundary',
+    'Time_stage_zero_momentum_boundary',
+    'Transmissive_boundary',
+    'Transmissive_momentum_set_stage_boundary',
+    'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+    'Transmissive_stage_zero_momentum_boundary',
+    # Operators
+    'Bed_shear_erosion_operator',
+    'Flat_fill_slice_erosion_operator',
+    'Flat_slice_erosion_operator',
+    'Kinematic_viscosity_operator',
+    'Rate_operator',
+    'Sanddune_erosion_operator',
+    'Set_depth_friction_operator',
+    'Set_elevation',
+    'Set_elevation_operator',
+    'Set_quantity',
+    'Set_quantity_operator',
+    'Set_stage',
+    'Set_stage_operator',
+    # Structure operators (parallel or serial depending on pypar)
+    'Boyd_box_operator',
+    'Boyd_pipe_operator',
+    'Inlet_operator',
+    'Internal_boundary_operator',
+    'Weir_orifice_trapezoid_operator',
+    # Forcing (legacy)
+    'Inflow',
+    'Rainfall',
+    'Wind_stress',
+    # Geometry and polygon utilities
+    'inside_polygon',
+    'plot_polygons',
+    'Polygon_function',
+    'polygon_area',
+    'read_polygon',
+    # Mesh factory helpers
+    'rectangular',
+    'rectangular_basic_mesh',
+    'rectangular_cross',
+    'rectangular_cross_basic_mesh',
+    'rectangular_cross_domain',
+    # pmesh helpers
+    'pmesh_to_basic_mesh',
+    'pmesh_to_domain_instance',
+    'pmesh_to_mesh',
+    # File and format conversion
+    'asc2dem',
+    'create_sts_boundary',
+    'dem2dem',
+    'dem2pts',
+    'esri2sww',
+    'ferret2sww',
+    'llasc2pts',
+    'load_checkpoint_file',
+    'load_csv_as_building_polygons',
+    'load_csv_as_polygons',
+    'load_ungenerate',
+    'sww2array',
+    'sww2csv_gauges',
+    'sww2dem',
+    'sww2dem_batch',
+    'sww2obj',
+    'sww2timeseries',
+    'sww_merge',
+    'timefile2netcdf',
+    'tsh2sww',
+    'urs2nc',
+    'urs2sts',
+    'urs2sww',
+    'xya2pts',
+    # Fitting and interpolation
+    'fit_to_mesh',
+    'fit_to_mesh_file',
+    'file_function',
+    'csv2timeseries_graphs',
+    # Coordinate transforms
+    'LLtoUTM',
+    'UTMtoLL',
+    # Parallel API
+    'barrier',
+    'collect_value',
+    'distribute',
+    'distribute_basic_mesh',
+    'distribute_basic_mesh_collaborative',
+    'distribute_collaborative',
+    'finalize',
+    'mpi_extra_options',
+    'mpicmd',
+    'myid',
+    'numprocs',
+    'get_processor_name',
+    'pypar_available',
+    'receive',
+    'reduce',
+    'send',
+    'sequential_distribute_dump',
+    'sequential_distribute_load',
+    # Model tools / polygon utilities
+    'Create_culvert_bridge_Operator',
+    'get_polygon_dictionary',
+    'get_polygon_from_single_file',
+    'get_polygon_list_from_files',
+    'get_polygon_value_list',
+    'get_polygons_from_Mid_Mif',
+    'get_WCC_2002_Blockage_factor',
+    'get_WCC_2016_Blockage_factor',
+    'pumping_station_function',
+    'read_hole_dir_multi_files_with_single_poly',
+    'read_hole_dir_single_file_with_multi_poly',
+    'read_multi_poly_file',
+    'read_multi_poly_file_value',
+    'read_polygon_dir',
+    # Domain creation
+    'create_basic_mesh_from_regions',
+    'create_domain_from_file',
+    'create_domain_from_regions',
+    'create_mesh_from_regions',   # deprecated alias for create_pmesh_from_regions
+    'create_pmesh_from_regions',
+    # System / utility
+    'acos',
+    'cache',
+    'copy_code_files',
+    'estimate_time_mem',
+    'file_length',
+    'get_args',
+    'get_host_name',
+    'get_revision_date',
+    'get_revision_number',
+    'get_user_name',
+    'get_version',
+    'memory_stats',
+    'print_memory_stats',
+    'log',
+    'parse_standard_args',
+    'parse_time',
+    'plot_utils',
+    'run_anuga_script',
+    'seconds_to_hhmmss',
+    # Tsunami source
+    'slide_tsunami',
+    'slump_tsunami',
+    # Interrogation
+    'get_flow_through_cross_section',
+    # Config constants
+    'g',
+    'indent',
+    'LOW_FROUDE_1',
+    'LOW_FROUDE_2',
+    'LOW_FROUDE_OFF',
+    'MULTIPROCESSOR_GPU',
+    'MULTIPROCESSOR_OPENMP',
+    'velocity_protection',
+    # Parsing
+    'create_standard_parser',
+    # Testing
+    'test',
+]
 
 # --------------------------------------
 # NetCDF changes stdout to the terminal
@@ -319,7 +522,7 @@ from anuga.config import velocity_protection
 # --------------------------------------
 try:
     from importlib import reload
-except:
+except ImportError:
     pass
 reload(sys)
 sys.stdout = _stdout

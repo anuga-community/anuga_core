@@ -21,8 +21,8 @@ class Parallel_Boyd_box_operator(Parallel_Structure_operator):
 
     def __init__(self,
                  domain,
-                 losses,
-                 width,
+                 losses=0.0,
+                 width=None,
                  blockage=0.0,
                  barrels=1.0,
                  z1=0.0,
@@ -45,9 +45,15 @@ class Parallel_Boyd_box_operator(Parallel_Structure_operator):
                  verbose=False,
                  master_proc = 0,
                  procs = None,
-                 inlet_master_proc = [0,0],
+                 inlet_master_proc = None,
                  inlet_procs = None,
-                 enquiry_proc = [0,0]):
+                 enquiry_proc = None,
+                 max_velocity = 10.0):
+
+        if inlet_master_proc is None:
+            inlet_master_proc = [0, 0]
+        if enquiry_proc is None:
+            enquiry_proc = [0, 0]
 
         Parallel_Structure_operator.__init__(self,
                                           domain=domain,
@@ -99,7 +105,7 @@ class Parallel_Boyd_box_operator(Parallel_Structure_operator):
         self.culvert_blockage = self.get_culvert_blockage()
         self.culvert_barrels = self.get_culvert_barrels()
 
-        self.max_velocity = 10.0
+        self.max_velocity = max_velocity
 
         self.inlets = self.get_inlets()
 
@@ -269,7 +275,7 @@ class Parallel_Boyd_box_operator(Parallel_Structure_operator):
                                  % (str(inflow_enq_specific_energy),
                                     str(self.delta_total_energy)))
 
-                    anuga.log.critical('culvert type = %s' % str(culvert_type))
+                    anuga.log.critical('culvert type = %s' % self.__class__.__name__)
 
                 # Water has risen above inlet
 

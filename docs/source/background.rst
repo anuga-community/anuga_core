@@ -1,5 +1,5 @@
 Background
-==========
+----------
 
 Modelling the effects on the built environment of natural hazards such
 as riverine flooding, storm surges and tsunami is critical for
@@ -46,4 +46,6 @@ structures.
 The visualisation tool developed for ANUGA is based on
 OpenSceneGraph, an Open Source Software (OSS) component allowing high
 level interaction with sophisticated graphics primitives.
-See \cite{nielsen2005} for more background on ANUGA.
+See :doc:`mathematical_background` for a full derivation of the governing
+equations, the finite volume discretisation, and the flux and slope limiting
+schemes used by ANUGA.

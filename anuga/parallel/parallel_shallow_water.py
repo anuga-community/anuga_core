@@ -107,6 +107,25 @@ class Parallel_domain(Domain):
         self.ghost_counter = 0
 
 
+    def set_boundary(self, boundary_map):
+        """Set boundary conditions, automatically handling ghost edges.
+
+        Parallel domains always have ghost edges (tagged 'ghost' in the
+        mesh boundary dict).  Mesh.build_boundary_dictionary also adds
+        'exterior' as the default tag for any boundary edge not explicitly
+        classified during distribution.  This override injects both
+        'ghost': None and 'exterior': None into the boundary_map so the
+        user never needs to specify them explicitly.
+        """
+        parallel_internal_tags = {'ghost', 'exterior'}
+        missing = parallel_internal_tags - set(boundary_map.keys())
+        if missing:
+            boundary_map = dict(boundary_map)
+            for tag in missing:
+                boundary_map[tag] = None
+        Domain.set_boundary(self, boundary_map)
+
+
     def set_name(self, name):
         """Assign name based on processor number
         """
@@ -129,7 +148,9 @@ class Parallel_domain(Domain):
         """Calculate local timestep
         """
 
-        generic_comms.communicate_flux_timestep(self, yieldstep, finaltime)
+        # Only need to communicate fluxes and timesteps if fixed timestep is not used
+        if self.fixed_flux_timestep is None:
+            generic_comms.communicate_flux_timestep(self, yieldstep, finaltime)
 
         Domain.update_timestep(self, yieldstep, finaltime)
 
@@ -155,12 +176,18 @@ class Parallel_domain(Domain):
 
 
 
-    def sww_merge(self, verbose=False, delete_old=False):
+    def sww_merge(self, verbose=False, delete_old=False, chunk_size=None):
         """Merge all the sub domain sww files into a global sww file
 
         :param bool verbose: Flag to produce more output
         :param bool delete_old: Flag to delete sub domain sww files after
             creating global sww file
+        :param chunk_size: Maximum number of timesteps to hold in RAM at once
+            during the merge.  ``None`` (default) reads all timesteps in a
+            single pass (fastest).  Set to a positive integer (e.g. 100) to
+            bound peak memory use when the full merged time series does not
+            fit in RAM.
+        :type chunk_size: int or None
 
         """
 
@@ -174,7 +201,8 @@ class Parallel_domain(Domain):
 
             global_name = join(self.get_datadir(),self.get_global_name())
 
-            merge.sww_merge_parallel(global_name,self.numproc,verbose,delete_old)
+            merge.sww_merge_parallel(global_name, self.numproc, verbose,
+                                     delete_old, chunk_size=chunk_size)
 
         # make sure all the merge completes on processor 0 before other
         # processors complete (like when finalize is forgotten in main script)
@@ -200,7 +228,7 @@ class Parallel_domain(Domain):
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
             import matplotlib.tri as tri
-        except:
+        except ImportError:
             print("Couldn't import module from matplotlib, probably you need to update matplotlib")
             raise
 
@@ -274,7 +302,7 @@ class Parallel_domain(Domain):
             matplotlib.use('Agg')
             import matplotlib.pyplot as plt
             import matplotlib.tri as tri
-        except:
+        except ImportError:
             print("Couldn't import module from matplotlib, probably you need to update matplotlib")
             raise
 

@@ -6,8 +6,6 @@ Ole Nielsen, Stephen Roberts, Duncan Gray, Christopher Zoppou
 Geoscience Australia, 2004-2010
 
 """
-
-from builtins import range
 import numpy as num
 
 import anuga.utilities.parallel_abstraction as pypar
@@ -62,31 +60,16 @@ def communicate_flux_timestep(domain, yieldstep, finaltime):
     #                  buffer=domain.global_timestep,
     #                  bypass=True)
 
-    from mpi4py import MPI
-    #pypar.comm.Barrier()
-    pypar.comm.Allreduce(local_timestep, global_timestep, op=MPI.MIN)
-    #pypar.comm.Barrier()
-
+    from mpi4py.MPI import MIN
+    pypar.comm.Allreduce(local_timestep, global_timestep, op=MIN)
 
     domain.communication_reduce_time += time.time()-t0
 
-#    pypar.reduce(domain.local_timestep, pypar.MIN, 0,
-#                      buffer=domain.global_timestep,
-#                      bypass=True)
-#
-#
-#    domain.communication_reduce_time += time.time()-t0
-
-
-    #Broadcast minimal timestep to all processors
     t0 = time.time()
-    #pypar.broadcast(domain.global_timestep, 0)#, bypass=True)
 
     domain.communication_broadcast_time += time.time()-t0
-
-    #old_flux_timestep = domain.flux_timestep
-    domain.flux_timestep = domain.global_timestep[0]
     
+    domain.flux_timestep = domain.global_timestep[0]
     
 
 def communicate_ghosts_blocking(domain, quantities=None):
@@ -229,10 +212,12 @@ def communicate_ghosts_non_blocking(domain, quantities=None):
     # Now complete communication.
     # We could put some computation between the 
     # communication calls above and this call.
+    # Question: Do we need to wait for the sends to complete as well?
+    # Answer: Yes, we should wait for the sends to complete as well, otherwise
+    # we might be overwriting the send buffers before the data has been sent.
     #-----------------------------------------
     import mpi4py
-    re=mpi4py.MPI.Request.Waitall(recv_requests)
-
+    mpi4py.MPI.Request.Waitall(recv_requests + send_requests)
 
     # Now copy data from receive buffers to the domain
     for recv_proc in recvDict:

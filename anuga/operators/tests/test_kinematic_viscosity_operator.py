@@ -1,4 +1,7 @@
 
+import pytest
+pytestmark = pytest.mark.slow
+
 from anuga import Domain
 from anuga import Quantity
 from anuga import Dirichlet_boundary
@@ -18,7 +21,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
     def tearDown(self):
         try:
             os.remove('domain.sww')
-        except:
+        except OSError:
             pass
 
         

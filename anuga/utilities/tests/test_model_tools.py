@@ -1,12 +1,12 @@
 #!/usr/bin/env python
 
 
+import pytest
 import unittest
 import numpy as num
 from numpy.random import uniform, seed
 
 from math import sqrt, pi
-from anuga.config import epsilon
 from anuga.utilities.model_tools import *
 verbose = False
 
@@ -19,6 +19,8 @@ class Test_Model_Tools(unittest.TestCase):
         pass
 
     def test_WCC_2016_blockage_factor(self):
+
+        from anuga.utilities.model_tools import get_WCC_2016_Blockage_factor
 
         Wm = [0.3, 0.45, 0.6, 0.9, 1.025, 1.2, 1.5, 1.8, 2.1, 2.4,
               2.7, 3.0, 3.3, 3.6, 4.2, 4.8, 5.4, 6.0, 7.2, 8.0, 10.0]
@@ -86,6 +88,27 @@ class Test_Model_Tools(unittest.TestCase):
 
                                 i = i+1
 
+    @pytest.mark.slow
+    def test_create_culvert_bridge_operator(self):
+        
+        import os
+        import subprocess
+        
+        path = os.path.dirname(__file__)  # Get folder where this script lives
+        run_filename = os.path.join(path, 'run_create_culvert_bridge_operator.py')
+
+        #-----------------------        
+        # Run the models
+        #-----------------------
+        cmd = 'python ' + run_filename
+        if verbose: 
+            print(cmd)        
+            
+        result = subprocess.run(cmd.split(), capture_output=True)
+        if result.returncode != 0:
+            print(result.stdout)
+            print(result.stderr)
+            raise Exception(result.stderr)        
 
 
 ################################################################################

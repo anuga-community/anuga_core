@@ -1,4 +1,3 @@
-from builtins import str
 import unittest
 import copy
 import os
@@ -9,7 +8,7 @@ from pprint import pprint
 # not, skip subsequent tests
 import sys
 try:
-    import osgeo
+    import rasterio
 except ImportError:
     pass
 
@@ -87,8 +86,8 @@ def make_a_ll_tif():
 class Test_tif2(unittest.TestCase):
 
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_tif2array_utm_south(self):
 
         import os
@@ -157,8 +156,8 @@ class Test_tif2(unittest.TestCase):
 
         os.remove('PointData_test_utm.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_tif2array_utm_north(self):
 
         import os
@@ -227,8 +226,8 @@ class Test_tif2(unittest.TestCase):
 
         os.remove('PointData_test_utm.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_tif2array_ll(self):
 
         import os
@@ -445,15 +444,15 @@ class Test_tif2(unittest.TestCase):
         assert numpy.allclose(x,x_exact)
         assert numpy.allclose(y,y_exact)
 
-        pprint(Z[11,:])
+        #pprint(Z[11,:])
 
         assert numpy.allclose(Z[11,:],Z_row_11) or numpy.allclose(Z[11,:],Z_row_11_win) or numpy.allclose(Z[11,:],Z_row_11_mac)
 
 
         os.remove('PointData_test_ll.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module") 
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio") 
     def test_tif2point_values_ll(self):
 
         import os
@@ -551,14 +550,15 @@ class Test_tif2(unittest.TestCase):
                                     1.21      ])
                            
 
-        pprint(Z)
+        #pprint(Z)
 
         assert numpy.allclose(Z, Z_exact) or numpy.allclose(Z, Z_exact_win) or numpy.allclose(Z, Z_exact_mac)
 
-        #os.remove('PointData_test_ll.tif')
+        if os.path.exists('PointData_test_ll.tif'):
+            os.remove('PointData_test_ll.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_tif_lat_lon_too_small(self):
 
         import os
@@ -577,15 +577,18 @@ class Test_tif2(unittest.TestCase):
         points = numpy.vstack((xG,yG)).T
 
         try:
-            Z = tif2point_values('PointData_test_ll.tif', zone=56, south=True, points = points) 
+            Z = tif2point_values('PointData_test_ll.tif', zone=56, south=True, points = points)
         except ValueError:
             pass
         else:
             #Expected ValueError
-            raise Exception()       
+            raise Exception()
+        finally:
+            if os.path.exists('PointData_test_ll.tif'):
+                os.remove('PointData_test_ll.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_tif2point_values_utm(self):
 
         import os
@@ -626,8 +629,8 @@ class Test_tif2(unittest.TestCase):
 
         os.remove('PointData_test_utm.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_tif2point_values_utm_wrong_hemisphere(self):
 
         import os
@@ -653,7 +656,7 @@ class Test_tif2(unittest.TestCase):
 
         try:
             Z = tif2point_values('PointData_test_utm.tif', zone=56, south=False, points = points)
-        except:
+        except Exception:
             pass
         else:
             # Expected Exception as tif is southern hemisphere, tif2point_values called with south=False
@@ -663,7 +666,6 @@ class Test_tif2(unittest.TestCase):
 
 
 #################################################################################
-if __name__ == "__main__":
-    suite = unittest.makeSuite(Test_tif2, 'test')
-    runner = unittest.TextTestRunner(verbosity=1)
-    runner.run(suite)
+if __name__ == '__main__':
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_tif2)
+    unittest.TextTestRunner(verbosity=2).run(suite)

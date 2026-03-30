@@ -7,9 +7,6 @@ Check pyvolution.run_profile for an example of how to use the python profile
 module.
 
 """
-
-
-from builtins import str
 from .benchmark_least_squares import BenchmarkLeastSquares
 
 ben = BenchmarkLeastSquares()
