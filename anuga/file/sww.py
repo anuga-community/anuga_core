@@ -532,8 +532,8 @@ class Write_sww(Write_sts):
     def __init__(self,
                  static_quantities,
                  dynamic_quantities,
-                 static_c_quantities=[],
-                 dynamic_c_quantities=[]):
+                 static_c_quantities=None,
+                 dynamic_c_quantities=None):
         """Initialise Write_sww with two (or 4) list af quantity names:
 
         static_quantities (e.g. elevation or friction):
@@ -553,8 +553,8 @@ class Write_sww(Write_sts):
         """
         self.static_quantities = static_quantities
         self.dynamic_quantities = dynamic_quantities
-        self.static_c_quantities = static_c_quantities
-        self.dynamic_c_quantities = dynamic_c_quantities
+        self.static_c_quantities = static_c_quantities if static_c_quantities is not None else []
+        self.dynamic_c_quantities = dynamic_c_quantities if dynamic_c_quantities is not None else []
 
         self.store_centroids = False
         if static_c_quantities or dynamic_c_quantities:

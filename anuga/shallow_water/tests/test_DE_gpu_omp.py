@@ -662,7 +662,7 @@ class Test_GPU_Riverwall(unittest.TestCase):
 
     def create_riverwall_domain(self, name='test_riverwall'):
         """Create a test domain with a riverwall."""
-        from anuga import create_mesh_from_regions, create_domain_from_file
+        from anuga import create_mesh_from_regions, create_domain_from_file, create_domain_from_regions
         import os
 
         mesh_filename = f'{name}.msh'
@@ -684,20 +684,19 @@ class Test_GPU_Riverwall(unittest.TestCase):
         regionPtAreas = [[25., 50., 5.0*5.0*0.5],
                          [75., 50., 5.0*5.0*0.5]]
 
-        create_mesh_from_regions(boundaryPolygon,
+        domain = create_domain_from_regions(boundaryPolygon,
                                  boundary_tags={'left': [0],
                                                 'top': [1],
                                                 'right': [2],
                                                 'bottom': [3]},
                                  maximum_triangle_area=10.0*10.0*0.5,
                                  minimum_triangle_angle=28.0,
-                                 filename=mesh_filename,
                                  breaklines=list(riverWall.values()),
                                  use_cache=False,
                                  verbose=False,
                                  regionPtArea=regionPtAreas)
 
-        domain = create_domain_from_file(mesh_filename)
+        #domain = create_domain_from_file(mesh_filename)
         domain.set_flow_algorithm('DE0')
         domain.set_low_froude(0)
         domain.set_name(name)
@@ -716,9 +715,6 @@ class Test_GPU_Riverwall(unittest.TestCase):
 
         # Create the riverwalls
         domain.riverwallData.create_riverwalls(riverWall, riverWall_Par, verbose=False)
-
-        # Clean up mesh file
-        os.remove(mesh_filename)
 
         return domain
 

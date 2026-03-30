@@ -1,6 +1,7 @@
 
 python_sources = [
   '__init__.py',
+  'run_parallel_collaborative_domain.py',
   'run_parallel_distribute_domain.py',
   'run_parallel_distribute_mesh.py',
   'run_parallel_riverwall.py',
@@ -12,9 +13,11 @@ python_sources = [
   'skip_parallel_distribute_mesh.py',
   'test_partitioning.py',
   'test_distribute_mesh.py',
+  'test_distribute_basic_mesh.py',
   'test_failure.py',
   'test_parallel_boyd_box_operator_consistency.py',
   'test_parallel_boyd_box_operator.py',
+  'test_parallel_collaborative_domain.py',
   'test_parallel_distribute_domain.py',
   'test_parallel_dist_settings.py',
   'test_parallel_file_boundary.py',
@@ -27,6 +30,7 @@ python_sources = [
   'test_parallel_sw_flow_low_froude_0.py',
   'test_parallel_sw_flow_low_froude_1.py',
   'test_parallel_sw_flow.py',
+  'test_parallel_meshes.py',
   'test_sequential_dist_sw_flow.py',
 ]
 

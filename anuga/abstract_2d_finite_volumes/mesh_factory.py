@@ -5,170 +5,194 @@ import anuga.utilities.log as log
 import numpy as num
 
 
-def rectangular_old(m, n, len1=1.0, len2=1.0, origin = (0.0, 0.0)):
 
-    """Setup a rectangular grid of triangles
-    with m+1 by n+1 grid points
-    and side lengths len1, len2. If side lengths are omitted
-    the mesh defaults to the unit square.
-
-    len1: x direction (left to right)
-    len2: y direction (bottom to top)
-
-    Return to lists: points and elements suitable for creating a Mesh or
-    FVMesh object, e.g. Mesh(points, elements)
+def rectangular_with_neighbours(m, n, len1=1.0, len2=1.0, origin=(0.0, 0.0)):
+    """
+    Create a rectangular mesh with neighbouring triangle information.
+    Generates a structured rectangular mesh divided into triangles, with points,
+    elements, boundary tags, and neighbour connectivity information.
+    Parameters
+    ----------
+    m : int
+        Number of divisions along the first axis (x-direction).
+    n : int
+        Number of divisions along the second axis (y-direction).
+    len1 : float, optional
+        Length of the mesh in the first dimension (default is 1.0).
+    len2 : float, optional
+        Length of the mesh in the second dimension (default is 1.0).
+    origin : tuple of float, optional
+        Coordinates of the mesh origin as (x, y) (default is (0.0, 0.0)).
+    Returns
+    -------
+    points : ndarray
+        Array of shape ((m+1)*(n+1), 2) containing the coordinates of mesh vertices.
+    elements : ndarray
+        Array of shape (2*m*n, 3) containing vertex indices for each triangle.
+    boundary : dict
+        Dictionary mapping (element_index, edge_index) tuples to boundary tags
+        ('left', 'right', 'top', 'bottom') for boundary edges.
+    neighbours : ndarray
+        Array of shape (2*m*n, 3) initialized with -1 values for neighbour information.
+    Notes
+    -----
+    The mesh is constructed by dividing each rectangular cell into two triangles.
+    Each triangle is defined by three vertex indices. Boundary conditions are
+    assigned to the outer edges of the mesh.
     """
 
-    from anuga.config import epsilon
-
-    deltax = float(len1)/m
-    deltay = float(len2)/n
-
-    #Dictionary of vertex objects
-    vertices = {}
-    points = []
-
-    for i in range(m+1):
-        for j in range(n+1):
-            vertices[i,j] = len(points)
-            points.append([i*delta1 + origin[0], j*delta2 + origin[1]])
-
-
-    #Construct 2 triangles per rectangular element and assign tags to boundary
-    elements = []
-    boundary = {}
-    for i in range(m):
-        for j in range(n):
-            v1 = vertices[i,j+1]
-            v2 = vertices[i,j]
-            v3 = vertices[i+1,j+1]
-            v4 = vertices[i+1,j]
-
-            #Update boundary dictionary and create elements
-            if i == m-1:
-                boundary[(len(elements), 2)] = 'right'
-            if j == 0:
-                boundary[(len(elements), 1)] = 'bottom'
-            elements.append([v4,v3,v2]) #Lower element
-
-            if i == 0:
-                boundary[(len(elements), 2)] = 'left'
-            if j == n-1:
-                boundary[(len(elements), 1)] = 'top'
-            elements.append([v1,v2,v3]) #Upper element
-
-    return points, elements, boundary
-
-def rectangular(m, n, len1=1.0, len2=1.0, origin = (0.0, 0.0)):
-
-    """Setup a rectangular grid of triangles
-    with m+1 by n+1 grid points
-    and side lengths len1, len2. If side lengths are omitted
-    the mesh defaults to the unit square.
-
-    len1: x direction (left to right)
-    len2: y direction (bottom to top)
-
-    Return to lists: points and elements suitable for creating a Mesh or
-    FVMesh object, e.g. Mesh(points, elements)
-    """
-
-    from anuga.config import epsilon
-
-    delta1 = float(len1)/m
-    delta2 = float(len2)/n
-
-    #Calculate number of points
-    Np = (m+1)*(n+1)
-
-    class Index(object):
-
-        def __init__(self, n,m):
-            self.n = n
-            self.m = m
-
-        def __call__(self, i,j):
-            return j+i*(self.n+1)
-
-
-    index = Index(n,m)
-
-    points = num.zeros((Np, 2), float)
-
-    for i in range(m+1):
-        for j in range(n+1):
-
-            points[index(i,j),:] = [i*delta1 + origin[0], j*delta2 + origin[1]]
-
-    #Construct 2 triangles per rectangular element and assign tags to boundary
-    #Calculate number of triangles
-    Nt = 2*m*n
-
-
-    elements = num.zeros((Nt, 3), int)
-    boundary = {}
-    nt = -1
-    for i in range(m):
-        for j in range(n):
-            nt = nt + 1
-            i1 = index(i,j+1)
-            i2 = index(i,j)
-            i3 = index(i+1,j+1)
-            i4 = index(i+1,j)
-
-
-            #Update boundary dictionary and create elements
-            if i == m-1:
-                boundary[nt, 2] = 'right'
-            if j == 0:
-                boundary[nt, 1] = 'bottom'
-            elements[nt,:] = [i4,i3,i2] #Lower element
-            nt = nt + 1
-
-            if i == 0:
-                boundary[nt, 2] = 'left'
-            if j == n-1:
-                boundary[nt, 1] = 'top'
-            elements[nt,:] = [i1,i2,i3] #Upper element
-
-    return points, elements, boundary
-
-def rectangular_cross(m, n, len1=1.0, len2=1.0, origin = (0.0, 0.0)):
-    """Setup a rectangular grid of triangles
-    with m+1 by n+1 grid points
-    and side lengths len1, len2. If side lengths are omitted
-    the mesh defaults to the unit square.
-
-    len1: x direction (left to right)
-    len2: y direction (bottom to top)
-
-    Return to lists: points and elements suitable for creating a Mesh or
-    Domain object, e.g. Mesh(points, elements)
-    """
-
-    len1 = float(len1)
-    len2 = float(len2)
 
     m = int(m)
     n = int(n)
+    len1 = float(len1)
+    len2 = float(len2)
 
-    params = []
-    params.append(m)
-    params.append(n)
-    params.append(len1)
-    params.append(len2)
-
-    arrParams = num.array(params, dtype=float)
+    params = num.array([m, n, len1, len2], dtype=float)
     arrOrigin = num.array(origin, dtype=float)
-    
-    points = num.empty([(m+1)*(n+1)+m*n,2], dtype=float)
-    elements = num.empty([4*m*n,3], dtype=int)
+
+    points = num.empty(((m+1)*(n+1), 2), dtype=float)
+    elements = num.empty((2*m*n, 3), dtype=num.int64)
+    neighbours = num.full((2*m*n, 3), -1, dtype=num.int64)
+    neighbour_edges = num.full((2*m*n, 3), -1, dtype=num.int64)
+
+    from .mesh_factory_ext import rectangular_construct
+    boundary = rectangular_construct(params, arrOrigin, points, elements,
+                                     neighbours, neighbour_edges)
+
+    return points, elements, boundary, neighbours, neighbour_edges
+
+def rectangular(m, n, len1=1.0, len2=1.0, origin = (0.0, 0.0)):
+    """
+    Create a rectangular mesh with the specified dimensions.
+    Parameters
+    ----------
+    m : int
+        Number of subdivisions in the x-direction.
+    n : int
+        Number of subdivisions in the y-direction.
+    len1 : float, optional
+        Length of the mesh in the x-direction. Default is 1.0.
+    len2 : float, optional
+        Length of the mesh in the y-direction. Default is 1.0.
+    origin : tuple of float, optional
+        Coordinates (x, y) of the bottom-left corner of the mesh.
+        Default is (0.0, 0.0).
+    Returns
+    -------
+    points : ndarray
+        Coordinates of the mesh vertices with shape (num_vertices, 2).
+    elements : ndarray
+        Vertex indices for each triangular element with shape (num_elements, 3).
+    boundary : dict
+        Dictionary mapping boundary edge tags to edge vertex indices.
+    """
+
+    points, elements, boundary, neighbours, neighbour_edges = \
+        rectangular_with_neighbours(m, n, len1, len2, origin)
+
+    return points, elements, boundary
+
+
+
+
+
+def rectangular_cross_with_neighbours(m, n, len1=1.0, len2=1.0, origin = (0.0, 0.0)):
+    """
+    Create a rectangular cross mesh with boundary information.
+    This function generates a rectangular cross-structured mesh consisting of
+    triangular elements arranged in a grid pattern. It computes the coordinates
+    of mesh points, the connectivity of elements, boundary information, and
+    neighbour relationships.
+    Parameters
+    ----------
+    m : int
+        Number of columns in the mesh grid.
+    n : int
+        Number of rows in the mesh grid.
+    len1 : float, optional
+        Length of the mesh in the x-direction. Default is 1.0.
+    len2 : float, optional
+        Length of the mesh in the y-direction. Default is 1.0.
+    origin : tuple of float, optional
+        Coordinates (x, y) of the mesh origin. Default is (0.0, 0.0).
+    Returns
+    -------
+    points : ndarray
+        Array of shape ((m+1)*(n+1)+m*n, 2) containing the coordinates of
+        all mesh points as (x, y) pairs.
+    elements : ndarray
+        Array of shape (4*m*n, 3) containing the vertex indices of each
+        triangular element.
+    boundary : ndarray
+        Boundary information describing the mesh edges and boundary segments.
+    neighbours : ndarray
+        Array of shape (4*m*n, 3) containing the neighbour element indices
+        for each element. -1 indicates no neighbour (boundary edge).
+    neighbour_edges : ndarray
+        Array of shape (4*m*n, 3) containing, for each edge of each element,
+        the edge index of the neighbouring element that connects back.
+        -1 for boundary edges.
+    Notes
+    -----
+    This function uses a Cython extension module (mesh_factory_ext) for
+    efficient mesh construction.
+    """
+
+    m = int(m)
+    n = int(n)
+    len1 = float(len1)
+    len2 = float(len2)
+
+    arrParams = num.array([m, n, len1, len2], dtype=float)
+    arrOrigin = num.array(origin, dtype=float)
+
+    points = num.empty([(m+1)*(n+1)+m*n, 2], dtype=float)
+    elements = num.empty([4*m*n, 3], dtype=num.int64)
+    neighbours = num.full([4*m*n, 3], -1, dtype=num.int64)
+    neighbour_edges = num.full([4*m*n, 3], -1, dtype=num.int64)
 
     from .mesh_factory_ext import rectangular_cross_construct
-    boundary = rectangular_cross_construct(arrParams, arrOrigin, points, elements)
+    boundary = rectangular_cross_construct(arrParams, arrOrigin, points, elements,
+                                           neighbours, neighbour_edges)
 
-    #points = list(arrPoints)
-    #elements = list(arrElements)
+    return points, elements, boundary, neighbours, neighbour_edges
+
+def rectangular_cross(m, n, len1=1.0, len2=1.0, origin = (0.0, 0.0)):
+    """
+    Create a rectangular mesh with triangular elements arranged in a cross pattern.
+
+    Parameters
+    ----------
+    m : int
+        Number of subdivisions in the x-direction.
+    n : int
+        Number of subdivisions in the y-direction.
+    len1 : float, optional
+        Length of the mesh in the x-direction. Default is 1.0.
+    len2 : float, optional
+        Length of the mesh in the y-direction. Default is 1.0.
+    origin : tuple of float, optional
+        Coordinates (x, y) of the bottom-left corner of the mesh. Default is (0.0, 0.0).
+
+    Returns
+    -------
+    points : ndarray
+        Array of shape (num_points, 2) containing the coordinates of mesh vertices.
+    elements : ndarray
+        Array of shape (num_elements, 3) containing triangle vertex indices.
+    boundary : dict
+        Dictionary mapping boundary segment indices to their types or labels.
+
+    Notes
+    -----
+    This function creates a rectangular mesh by subdividing a rectangle into m x n
+    cells and arranging them in a cross pattern using triangular elements.
+    """
+
+
+
+    points, elements, boundary, neighbours, neighbour_edges = \
+        rectangular_cross_with_neighbours(m, n, len1, len2, origin)
 
     return points, elements, boundary
 
@@ -725,7 +749,7 @@ def strang_mesh(filename):
                               int(float(fields[1]))-1,
                               int(float(fields[2]))-1])
         else:
-            raise Excetion('wrong format in %s' % filename)
+            raise Exception('wrong format in %s' % filename)
 
     elements = [] #Final list of elements
 

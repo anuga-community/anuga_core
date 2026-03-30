@@ -2,6 +2,7 @@
 import os
 import sys
 import unittest
+import pytest
 import numpy as num
 from anuga.file.netcdf import NetCDFFile
 from anuga.utilities.system_tools import get_pathname_from_package
@@ -75,6 +76,7 @@ class Test_csv2sts(unittest.TestCase):
         csv2sts(testfile_csv, sts_out, latitude = lat, longitude = lon)
         self._check_generated_sts()
         
+    @pytest.mark.slow
     def test_run_via_commandline(self):
         """
         Make sure that the python file functions as a command-line tool.
@@ -90,8 +92,8 @@ class Test_csv2sts(unittest.TestCase):
         
         os.system(cmd)
 
-        print(os.getcwd() + "\n")
-        print(os.listdir())
+        #print(os.getcwd() + "\n")
+        #print(os.listdir())
 
         self._check_generated_sts()
 

@@ -45,35 +45,91 @@ class Boyd_box_operator(anuga.Structure_operator):
                  label=None,
                  structure_type='boyd_box',
                  logging=False,
-                 verbose=False):
+                 verbose=False,
+                 max_velocity=10.0):
 
-        """Create a box culvert using Boyd flow algorithm
+        """Create a box culvert using the Boyd (1987) flow algorithm.
 
-
-        :param domain: Culvert applied to this domain
-        :param losses: Losses 
-        :param width: Width of culvert
-        :param height: height of culvert
-        :param barrels: Number of barrels
-        :param blockage: Set between 0.0 - 1.0 Set to 1.0 to close off culvert
-        :param z1: Elevation of end of Culvert
-        :param z2: Elevation of other end of Culvert
-        :param end_points: [[x1,y1], [x2,y2]] of centre of ends of culvert
-        :param exchange_lines: [ [[x1,y1], [x2,y2]], [[x1,y1], [x2,y2]] ] list of two lines defining ends of culvert
-        :param enquiry_points: [[x1,y1], [x2,y2]] location of enquiry points
-        :param invert_elevations: [ e1, e2 ] invert elevations of culvert inlets
-        :param apron: 
-        :param manning:
-        :param enquiry_gap:
-        :param smoothing_timescale:
-        :param use_momentum_jet:
-        :param use_velocity_head:
-        :param description:
-        :param label:
-        :param structure_type:
-        :param logging:
-        :param verbose:
-        
+        Parameters
+        ----------
+        domain : anuga.Domain
+            Shallow-water domain to which the culvert is attached.
+        losses : float or list of float or dict, optional
+            Head-loss coefficients. A scalar is used directly; a list is summed;
+            a dict maps loss names to coefficients and the values are summed.
+            Typical values: 0.5 for a sharp-edged inlet, 1.0 for a re-entrant
+            inlet. Default 0.0.
+        width : float
+            Internal width (m) of the culvert barrel. If ``height`` is None the
+            section is treated as square (width × width).
+        height : float or None, optional
+            Internal height (m) of the culvert barrel. Defaults to ``width``
+            when None. Default None.
+        barrels : float, optional
+            Number of parallel identical barrels. Total discharge is multiplied
+            by this value. Default 1.0.
+        blockage : float, optional
+            Fractional blockage of the culvert cross-section. Must be in
+            [0, 1]; 0.0 is fully open, 1.0 is fully blocked. Default 0.0.
+        z1 : float, optional
+            Batter slope (rise/run) of the embankment at the first culvert end,
+            used when computing the invert elevation from the DEM. Default 0.0.
+        z2 : float, optional
+            Batter slope (rise/run) of the embankment at the second culvert end.
+            Default 0.0.
+        end_points : list of [float, float], optional
+            ``[[x1, y1], [x2, y2]]`` — centre coordinates (m) of each culvert
+            end face. Exactly one of ``end_points`` or ``exchange_lines`` must
+            be provided.
+        exchange_lines : list of two 2-point lines, optional
+            ``[[[x1,y1],[x2,y2]], [[x1,y1],[x2,y2]]]`` — line segments defining
+            the inlet and outlet faces. Alternative to ``end_points``.
+        enquiry_points : list of [float, float] or None, optional
+            ``[[x1, y1], [x2, y2]]`` — explicit locations for the upstream and
+            downstream head-enquiry points. Computed automatically from
+            ``end_points`` and ``apron`` when None. Default None.
+        invert_elevations : list of float or None, optional
+            ``[e1, e2]`` — invert (floor) elevations (m AHD) at each culvert
+            end. Read from the mesh when None. Default None.
+        apron : float, optional
+            Width (m) of the approach apron at each culvert end, used to offset
+            the enquiry point from the inlet/outlet face. Default 0.1.
+        manning : float, optional
+            Manning's roughness coefficient for the culvert barrel
+            (dimensionless). Typical values: 0.012 for smooth concrete,
+            0.024 for corrugated-steel pipe. Default 0.013.
+        enquiry_gap : float, optional
+            Additional gap (m) beyond the apron edge for the head-enquiry point.
+            Default 0.0.
+        smoothing_timescale : float, optional
+            Timescale (s) for exponential smoothing of computed discharge to
+            reduce numerical oscillations. Set to 0.0 to disable. Default 0.0.
+        use_momentum_jet : bool, optional
+            If True, momentum is injected into the outflow cell along the
+            culvert axis (momentum-jet model). If False, outflow momentum is
+            zeroed. Default True.
+        use_velocity_head : bool, optional
+            If True, the velocity head at the inlet is included in the total
+            driving energy. Default True.
+        description : str or None, optional
+            Human-readable description of the culvert, stored in statistics
+            output. Default None.
+        label : str or None, optional
+            Short label used as a filename prefix for the CSV log when
+            ``logging=True``. Default None.
+        structure_type : str, optional
+            Internal type identifier written to output files. Default
+            ``'boyd_box'``.
+        logging : bool, optional
+            If True, write per-timestep flow statistics to a CSV file named
+            ``<label>_<structure_type>.csv``. Default False.
+        verbose : bool, optional
+            If True, print diagnostic messages during construction and
+            discharge calculations. Default False.
+        max_velocity : float, optional
+            Maximum allowable mean velocity (m/s) in the culvert barrel; the
+            discharge is capped so that this velocity is not exceeded.
+            Default 10.0.
         """
 
         anuga.Structure_operator.__init__(self,
@@ -116,8 +172,7 @@ class Boyd_box_operator(anuga.Structure_operator):
         self.culvert_blockage = self.get_culvert_blockage()
         self.culvert_barrels = self.get_culvert_barrels()
 
-        #FIXME SR: Why is this hard coded!
-        self.max_velocity = 10.0
+        self.max_velocity = max_velocity
 
         self.inlets = self.get_inlets()
 

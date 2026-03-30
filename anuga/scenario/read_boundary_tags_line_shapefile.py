@@ -7,7 +7,7 @@ Gareth Davies, Geoscience Australia 2014+
 import os
 import numpy
 import subprocess
-from osgeo import ogr
+import fiona
 from anuga.utilities import spatialInputUtil as su
 
 ############################################################
@@ -170,33 +170,24 @@ def read_boundary_tags_line_shapefile(shapefile_name,
     # --- Shapefile / OGR path ---
     # Step 1: Read the data
     try:
-        # Read from a vector GIS file using gdal python interface
-        data_source = ogr.Open(shapefile_name)
+        # Read from a vector GIS file using fiona
+        with fiona.open(shapefile_name) as src:
+            field_names = list(src.schema['properties'].keys())
+            if tag_attribute not in field_names:
+                raise ValueError(
+                    f'Attribute {tag_attribute!r} not found in {shapefile_name!r}. '
+                    f'Available fields: {field_names}')
 
-        assert data_source.GetLayerCount() == 1, \
-            ' Bounding polygon + boundary tags file can only have 1 layer'
-
-        layer = data_source.GetLayer()
-
-        boundary_line_and_tags = []
-
-        layer_defn = layer.GetLayerDefn()
-        field_names = [layer_defn.GetFieldDefn(i).GetName()
-                       for i in range(layer_defn.GetFieldCount())]
-        if tag_attribute not in field_names:
-            raise ValueError(
-                f'Attribute {tag_attribute!r} not found in {shapefile_name!r}. '
-                f'Available fields: {field_names}')
-
-        for feature in layer:
-            line = feature.GetGeometryRef().GetPoints()
-            line = [list(l) for l in line]
-            tag = feature.GetField(tag_attribute)
-            boundary_line_and_tags.append([line, tag])
+            boundary_line_and_tags = []
+            for feature in src:
+                coords = feature['geometry']['coordinates']
+                line = [list(pt) for pt in coords]
+                tag = feature['properties'][tag_attribute]
+                boundary_line_and_tags.append([line, tag])
     except ValueError:
         raise
     except Exception:
-        # OGR Python bindings unavailable — fall back to ogrinfo command line
+        # fiona unavailable — fall back to ogrinfo command line
         boundary_line_and_tags = get_boundary_tags_from_ogrinfo(shapefile_name,
             tag_attribute)
 

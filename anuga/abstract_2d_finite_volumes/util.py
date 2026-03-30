@@ -298,11 +298,11 @@ def make_plots_from_csv_file(directories_dic={dir:['gauge', 0, 0]},
                                  assess_all_csv_files)
 
 
-def csv2timeseries_graphs(directories_dic={},
+def csv2timeseries_graphs(directories_dic=None,
                           output_dir='',
                           base_name=None,
                           plot_numbers='',
-                          quantities=['stage'],
+                          quantities=None,
                           extra_plot_name='',
                           assess_all_csv_files=True,
                           create_latex=False,
@@ -442,6 +442,11 @@ def csv2timeseries_graphs(directories_dic={},
 #             #rely on pylab being installed 
 #         return
     
+    if directories_dic is None:
+        directories_dic = {}
+    if quantities is None:
+        quantities = ['stage']
+
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -747,10 +752,9 @@ def get_runup_data_for_locations_from_file(gauge_filename,
     from anuga.shallow_water.data_manager import \
         get_maximum_inundation_data
                                                  
-    file = open(runup_filename, "w")
-    file.write("easting,northing,runup \n ")
-    file.close()
-    
+    with open(runup_filename, "w") as file:
+        file.write("easting,northing,runup \n ")
+
     #read gauge csv file to dictionary
     attribute_dic, title_index_dic = load_csv_as_dict(gauge_filename)
     northing = [float(x) for x in attribute_dic["y"]]
@@ -758,30 +762,26 @@ def get_runup_data_for_locations_from_file(gauge_filename,
 
     log.critical('Reading %s' % sww_filename)
 
-    runup_locations=[]
-    for i, x in enumerate(northing):
-        poly = [[int(easting[i]+size),int(northing[i]+size)],
-                [int(easting[i]+size),int(northing[i]-size)],
-                [int(easting[i]-size),int(northing[i]-size)],
-                [int(easting[i]-size),int(northing[i]+size)]]
-        
-        run_up, x_y = get_maximum_inundation_data(filename=sww_filename,
-                                                  polygon=poly,
-                                                  verbose=False) 
+    with open(runup_filename, "a") as runup_file:
+        for i, x in enumerate(northing):
+            poly = [[int(easting[i]+size),int(northing[i]+size)],
+                    [int(easting[i]+size),int(northing[i]-size)],
+                    [int(easting[i]-size),int(northing[i]-size)],
+                    [int(easting[i]-size),int(northing[i]+size)]]
 
-        #if no runup will return 0 instead of NONE
-        if run_up==None: run_up=0
-        if x_y==None: x_y=[0,0]
-        
-        if verbose:
-            log.critical('maximum inundation runup near %s is %s meters'
-                         % (x_y, run_up))
-        
-        #writes to file
-        file = open(runup_filename, "a")
-        temp = '%s,%s,%s \n' % (x_y[0], x_y[1], run_up)
-        file.write(temp)
-        file.close()
+            run_up, x_y = get_maximum_inundation_data(filename=sww_filename,
+                                                      polygon=poly,
+                                                      verbose=False)
+
+            #if no runup will return 0 instead of NONE
+            if run_up is None: run_up = 0
+            if x_y is None: x_y = [0, 0]
+
+            if verbose:
+                log.critical('maximum inundation runup near %s is %s meters'
+                             % (x_y, run_up))
+
+            runup_file.write('%s,%s,%s \n' % (x_y[0], x_y[1], run_up))
 
 def sww2csv_gauges(sww_file,
                    gauge_file,

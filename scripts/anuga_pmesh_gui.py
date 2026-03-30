@@ -343,7 +343,7 @@ class Draw(AppShell.AppShell):
             v_old = v
         self.drawSegment(v,v_first)
         region = self.drawRegion(x_origin, y_origin, 0)
-        region.setTag("setheight5")
+        region.set_tag("setheight5")
 
 
         x_origin = 30-offset_x
@@ -367,7 +367,7 @@ class Draw(AppShell.AppShell):
             v_old = v
         self.drawSegment(v,v_first)
         region = self.drawRegion(x_origin, y_origin, 0)
-        region.setTag("setheight10")
+        region.set_tag("setheight10")
         self.mesh.geo_reference = Geo_reference(zone=DEFAULT_ZONE,
                                                 xllcorner=offset_x,
                                                 yllcorner=offset_y)
@@ -418,9 +418,9 @@ class Draw(AppShell.AppShell):
         # Redraw all of the vertices, holes and regions,
         #so the squares representing vertices
         # don't get bigger
-        vertices = self.mesh.getUserVertices()
-        holes = self.mesh.getHoles()
-        regions = self.mesh.getRegions()
+        vertices = self.mesh.get_user_vertices_list()
+        holes = self.mesh.get_holes()
+        regions = self.mesh.get_regions()
         MeshObjects  = vertices + holes + regions
 
         # make a list of tags to delete
@@ -528,7 +528,7 @@ class Draw(AppShell.AppShell):
         add Segments to bound all vertices
 
         """
-        if len(self.mesh.getUserVertices()) >= 3:
+        if len(self.mesh.get_user_vertices_list()) >= 3:
             try:
                 newsegs, ObjectsToVisuallyDelete, self.meshLastAlpha = \
                      self.mesh.auto_segment(alpha=alpha,
@@ -588,8 +588,8 @@ class Draw(AppShell.AppShell):
         need to userstand toolbarbutton.py to know how to
         get rid of it.
         """
-        if len(self.mesh.getUserVertices()) >= 3:
-            newsegs = self.mesh.joinVertices()
+        if len(self.mesh.get_user_vertices_list()) >= 3:
+            newsegs = self.mesh.join_vertices()
             for segment in newsegs:
                 self.serial +=1
                 self.uniqueID = 'M*%d' % self.serial
@@ -650,11 +650,11 @@ class Draw(AppShell.AppShell):
         """
         tempMesh = mesh
         try:
-            tempMesh.generateMesh(mode = "pzq"+str(minAngle)
-                                  +"a"+str(maxArea)
-                                  +"a") #So areas for regions will be used
+            tempMesh._generateMesh_impl(mode = "pzq"+str(minAngle)
+                                       +"a"+str(maxArea)
+                                       +"a") #So areas for regions will be used
         except AttributeError : # can't catch PyEval_RestoreThread
-            # This doesn't catch tempMesh.generateMesh failing
+            # This doesn't catch tempMesh._generateMesh_impl failing
             tempMesh = mesh
         return tempMesh
 
@@ -669,9 +669,9 @@ class Draw(AppShell.AppShell):
         #
         tempMesh = mesh
         try:
-            tempMesh.generateMesh("pzq1")
+            tempMesh._generateMesh_impl("pzq1")
         except AttributeError : # can't catch PyEval_RestoreThread
-            # This doesn't catch tempMesh.generateMesh failing
+            # This doesn't catch tempMesh._generateMesh_impl failing
             pass
         meshArea = 0
         meshArea = tempMesh.tri_mesh.calc_mesh_area()
@@ -742,7 +742,7 @@ class Draw(AppShell.AppShell):
             #first deselect the vertex, for selecting a segment
             if self.selVertex:
                 self.deselectVertex(self.selVertex, self.selVertexTag)
-            ObjectsToVisuallyDelete = self.mesh.deleteMeshObject (self.selMeshObject)
+            ObjectsToVisuallyDelete = self.mesh.delete_mesh_object(self.selMeshObject)
             for drawOb in ObjectsToVisuallyDelete:
                 self.UserMesh.unvisualise(drawOb, self.canvas)
 
@@ -861,7 +861,7 @@ class Draw(AppShell.AppShell):
         if found:
             #A vertex has been selected!
             if self.selVertex:
-                if self.mesh.isUserSegmentNew(self.selVertex,vertex):
+                if self.mesh.is_user_segment_new(self.selVertex,vertex):
                     #vertex is the 2nd vertex
                     self.drawSegment(vertex,self.selVertex)
                     self.deselectVertex(self.selVertex, self.selVertexTag)
@@ -918,14 +918,14 @@ class Draw(AppShell.AppShell):
             except:
                 pass
 
-        for segment in mesh.getUserSegments():
+        for segment in mesh.get_user_segments():
             self.serial +=1
             self.uniqueID = 'M*%d' % self.serial
             self.Segments.visualise(segment,
                                     self.uniqueID,
                                     self.canvas,
                                     self.SCALE)
-        for vertex in mesh.getUserVertices():
+        for vertex in mesh.get_user_vertices_list():
             self.serial +=1
             self.uniqueID = 'M*%d' % self.serial
             self.Vertices.visualise(vertex,
@@ -933,14 +933,14 @@ class Draw(AppShell.AppShell):
                                     self.canvas,
                                     self.SCALE)
 
-        for hole in mesh.getHoles():
+        for hole in mesh.get_holes():
             self.serial +=1
             self.uniqueID = 'M*%d' % self.serial
             self.Holes.visualise(hole,
                                     self.uniqueID,
                                     self.canvas,
                                     self.SCALE)
-        for region in mesh.getRegions():
+        for region in mesh.get_regions():
             self.serial +=1
             self.uniqueID = 'M*%d' % self.serial
             self.Regions.visualise(region,
@@ -952,7 +952,7 @@ class Draw(AppShell.AppShell):
         if self.mesh:
             self.clearSelections()
             self.canvas.delete(ALL)
-            self.mesh.normaliseMesh(400,-200,20)
+            self.mesh.normalise_mesh(400,-200,20)
             self.visualiseMesh(self.mesh)
             self.ResizeToFit()
             self.ResizeToFit()
@@ -961,7 +961,7 @@ class Draw(AppShell.AppShell):
         if self.mesh:
             self.clearSelections()
             self.canvas.delete(ALL)
-            self.mesh.normaliseMesh(1,0,1)
+            self.mesh.normalise_mesh(1,0,1)
             self.visualiseMesh(self.mesh)
             self.ResizeToFit()
             self.ResizeToFit()
@@ -989,7 +989,7 @@ class Draw(AppShell.AppShell):
             if ofile[jumpback:] != addOn:
                 ofile = ofile + addOn
             try:
-                self.mesh.exportASCIIobj(ofile)
+                self.mesh.export_ascii_obj(ofile)
             except IOError:
                 showerror('Export ASCII file',
                                    'Can not write to file.')
@@ -1011,7 +1011,7 @@ class Draw(AppShell.AppShell):
             self.clearSelections()
             self.canvas.delete(ALL)
             dict = mesh.importUngenerateFile(ofile)
-            self.mesh.addVertsSegs(dict)
+            self.mesh.add_verts_segs(dict)
 
         except SyntaxError:
             # This is assuming that the SyntaxError is thrown in
@@ -1043,7 +1043,7 @@ class Draw(AppShell.AppShell):
                 self.currentFilePathName = ofile + ".tsh"
 
             try:
-                self.mesh.exportASCIIsegmentoutlinefile(ofile)
+                self.mesh.export_ascii_segment_outline_file(ofile)
             except IOError: #FIXME should this function be throwing any errors?
                 showerror('Export ASCII file',
                                    'Can not write to file.')
@@ -1061,7 +1061,7 @@ class Draw(AppShell.AppShell):
                 self.currentFilePathName = ofile + ".csv"
 
             try:
-                self.mesh.exportPointsFile(ofile)
+                self.mesh.export_points_file(ofile)
             except IOError:
                 showerror('Export ASCII file',
                                    'Can not write to file.')
@@ -1082,7 +1082,7 @@ class Draw(AppShell.AppShell):
             return
 
         try:
-            newmesh = mesh.importMeshFromFile(ofile)
+            newmesh = mesh.import_mesh_from_file(ofile)
             self.currentPath, dummy = os.path.split(ofile)
             self.currentFilePathName = ofile
             self.clearMesh()
@@ -1119,7 +1119,7 @@ class Draw(AppShell.AppShell):
 
     def ResizeToFit(self):
         """Visualise the mesh so it fits in the window"""
-        if self.mesh.getUserVertices() == []:
+        if self.mesh.get_user_vertices_list() == []:
             return #There are no vertices!
         # Resize the window
         self.scrolledcanvas.resizescrollregion()
@@ -1180,7 +1180,7 @@ class Draw(AppShell.AppShell):
         the user has done a change, and the mesh hasn't been generated.  If
         there is no generated mesh do not prompt.
         """
-        if (self.UserMeshChanged) and self.mesh.isTriangulation():
+        if (self.UserMeshChanged) and self.mesh.is_triangulation():
 
             m = _show("Warning",
                                    "A triangulation has not been generated, after mesh changes.  Generate triangulation before saving?",

@@ -8,7 +8,7 @@ if __name__ == "__main__":
         from anuga.shallow_water import Domain, Reflective_boundary, \
                             Dirichlet_boundary
        
-        from anuga.pmesh.mesh_interface import create_mesh_from_regions
+        from anuga.pmesh.mesh_interface import create_pmesh_from_regions
         
         # Create a scenario outline.
         polygon = [[0,0],[100,0],[100,100],[0,100]]
@@ -23,7 +23,7 @@ if __name__ == "__main__":
         
         max_area = 1
         interior_regions = [(inner1_polygon, 5),(inner2_polygon, 10)]
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      max_area,
                                      interior_regions=interior_regions)

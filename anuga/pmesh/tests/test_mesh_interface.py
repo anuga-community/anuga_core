@@ -6,9 +6,9 @@ import unittest
 import os
 import pytest
 
-from anuga.pmesh.mesh import importMeshFromFile
-from anuga.pmesh.mesh_interface import create_mesh_from_regions
-from anuga.pmesh.mesh_interface import _create_mesh_from_regions
+from anuga.pmesh.mesh import import_mesh_from_file
+from anuga.pmesh.mesh_interface import create_pmesh_from_regions
+from anuga.pmesh.mesh_interface import _create_pmesh_from_regions
 from anuga.load_mesh.loadASCII import *
 from anuga.geometry.polygon import is_inside_polygon
 from anuga.coordinate_transforms.geo_reference import Geo_reference,DEFAULT_ZONE
@@ -47,7 +47,7 @@ class TestCase(unittest.TestCase):
 
         interior_regions = [(inner1_polygon, 5), (inner2_polygon, 10)]
 
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      interior_regions=interior_regions,
@@ -56,7 +56,7 @@ class TestCase(unittest.TestCase):
 
         # Test the mesh instance
         self.assertTrue(len(m.regions)==3, 'FAILED!')
-        segs = m.getUserSegments()
+        segs = m.get_user_segments()
         self.assertTrue(len(segs)==12, 'FAILED!')
         self.assertTrue(len(m.userVertices)==12, 'FAILED!')
         self.assertTrue(segs[0].tag=='walls', 'FAILED!')
@@ -65,9 +65,9 @@ class TestCase(unittest.TestCase):
         self.assertTrue(segs[3].tag=='bom', 'FAILED!')
 
         # Assuming the order of the region points is known.
-        # (This isn't true, if you consider create_mesh_from_regions
+        # (This isn't true, if you consider create_pmesh_from_regions
         # a black box)
-        poly_point = m.getRegions()[0]
+        poly_point = m.get_regions()[0]
 
         # poly_point values are relative to the mesh geo-ref
         # make them absolute
@@ -79,9 +79,9 @@ class TestCase(unittest.TestCase):
                         msg)
 
         # Assuming the order of the region points is known.
-        # (This isn't true, if you consider create_mesh_from_regions
+        # (This isn't true, if you consider create_pmesh_from_regions
         # a black box)
-        poly_point = m.getRegions()[1]
+        poly_point = m.get_regions()[1]
 
         # poly_point values are relative to the mesh geo-ref
         # make them absolute
@@ -91,9 +91,9 @@ class TestCase(unittest.TestCase):
                         'FAILED!')
 
         # Assuming the order of the region points is known.
-        # (This isn't true, if you consider create_mesh_from_regions
+        # (This isn't true, if you consider create_pmesh_from_regions
         # a black box)
-        poly_point = m.getRegions()[2]
+        poly_point = m.get_regions()[2]
 
         # poly_point values are relative to the mesh geo-ref
         # make them absolute
@@ -102,7 +102,7 @@ class TestCase(unittest.TestCase):
                                           closed=False),
                         'FAILED!')
 
-    
+
     def test_create_mesh_from_regions_with_caching(self):
         x=-500
         y=-1000
@@ -133,7 +133,7 @@ class TestCase(unittest.TestCase):
         # Clear cache first
         from anuga.caching import cache
 
-        cache(_create_mesh_from_regions,
+        cache(_create_pmesh_from_regions,
               (polygon, boundary_tags),
               {'minimum_triangle_angle': 28.0,
                'maximum_triangle_area': 10000000,
@@ -145,7 +145,7 @@ class TestCase(unittest.TestCase):
               verbose=False,
               clear=1)
 
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      maximum_triangle_area=10000000,
                                      interior_regions=interior_regions,
@@ -157,7 +157,7 @@ class TestCase(unittest.TestCase):
 
         # Test the mesh instance
         self.assertTrue(len(m.regions)==3, 'FAILED!')
-        segs = m.getUserSegments()
+        segs = m.get_user_segments()
         self.assertTrue(len(segs)==12, 'FAILED!')
         self.assertTrue(len(m.userVertices)==12, 'FAILED!')
         self.assertTrue(segs[0].tag=='walls', 'FAILED!')
@@ -166,9 +166,9 @@ class TestCase(unittest.TestCase):
         self.assertTrue(segs[3].tag=='bom', 'FAILED!')
 
         # Assuming the order of the region points is known.
-        # (This isn't true, if you consider create_mesh_from_regions
+        # (This isn't true, if you consider create_pmesh_from_regions
         # a black box)
-        poly_point = m.getRegions()[0]
+        poly_point = m.get_regions()[0]
 
         # poly_point values are relative to the mesh geo-ref
         # make them absolute
@@ -178,9 +178,9 @@ class TestCase(unittest.TestCase):
                         'FAILED!')
 
         # Assuming the order of the region points is known.
-        # (This isn't true, if you consider create_mesh_from_regions
+        # (This isn't true, if you consider create_pmesh_from_regions
         # a black box)
-        poly_point = m.getRegions()[1]
+        poly_point = m.get_regions()[1]
 
         # poly_point values are relative to the mesh geo-ref
         # make them absolute
@@ -190,9 +190,9 @@ class TestCase(unittest.TestCase):
                         'FAILED!')
 
         # Assuming the order of the region points is known.
-        # (This isn't true, if you consider create_mesh_from_regions
+        # (This isn't true, if you consider create_pmesh_from_regions
         # a black box)
-        poly_point = m.getRegions()[2]
+        poly_point = m.get_regions()[2]
 
         # poly_point values are relative to the mesh geo-ref
         # make them absolute
@@ -202,7 +202,7 @@ class TestCase(unittest.TestCase):
                         'FAILED!')
 
         # Now create m using cached values
-        m_cache = create_mesh_from_regions(polygon,
+        m_cache = create_pmesh_from_regions(polygon,
                                            boundary_tags,
                                            10000000,
                                            interior_regions=interior_regions,
@@ -235,7 +235,7 @@ class TestCase(unittest.TestCase):
                             change_points_geo_ref(inner2_polygon_absolute)
 
         interior_regions = [(inner1_polygon, 5), (inner2_polygon, 10)]
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      interior_regions=interior_regions,
@@ -243,7 +243,7 @@ class TestCase(unittest.TestCase):
 
         # Test the mesh instance
         self.assertTrue(len(m.regions)==3, 'FAILED!')
-        segs = m.getUserSegments()
+        segs = m.get_user_segments()
         self.assertTrue(len(segs)==12, 'FAILED!')
         self.assertTrue(len(m.userVertices)==12, 'FAILED!')
         self.assertTrue(segs[0].tag=='walls', 'FAILED!')
@@ -277,14 +277,14 @@ class TestCase(unittest.TestCase):
                             change_points_geo_ref(inner2_polygon_absolute)
 
         interior_regions = [(inner1_polygon, 5), (inner2_polygon, 10)]
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      interior_regions=interior_regions)
 
         # Test the mesh instance
         self.assertTrue(len(m.regions) == 3, 'FAILED!')
-        segs = m.getUserSegments()
+        segs = m.get_user_segments()
         self.assertTrue(len(segs) == 12, 'FAILED!')
         self.assertTrue(len(m.userVertices) == 12, 'FAILED!')
         self.assertTrue(segs[0].tag == 'walls', 'FAILED!')
@@ -316,28 +316,28 @@ class TestCase(unittest.TestCase):
         boundary_tags = {'walls': [0,1], 'bom': [2,3]}
 
         interior_regions = [(inner1_polygon, density_inner1)]
-        create_mesh_from_regions(polygon_outer,
+        create_pmesh_from_regions(polygon_outer,
                                  boundary_tags,
                                  density_outer,
                                  interior_regions=interior_regions,
                                  filename=file_name, verbose=False)
 
-        m = importMeshFromFile(file_name)
+        m = import_mesh_from_file(file_name)
 
-        self.assertTrue(len(m.getTriangulation()) <= 900,
+        self.assertTrue(len(m.get_triangulation()) <= 900,
                         'Test mesh interface failed!')
-        self.assertTrue(len(m.getTriangulation()) >= 200,
+        self.assertTrue(len(m.get_triangulation()) >= 200,
                         'Test mesh interface failed!')
 
-        create_mesh_from_regions(polygon_outer,
+        create_pmesh_from_regions(polygon_outer,
                                  boundary_tags,
                                  interior_regions=interior_regions,
                                  filename=file_name,
                                  verbose=False)
 
-        m = importMeshFromFile(file_name)
+        m = import_mesh_from_file(file_name)
 
-        self.assertTrue(len(m.getTriangulation()) <= 100,
+        self.assertTrue(len(m.get_triangulation()) <= 100,
                         'Test mesh interface failed!')
 
         os.remove(file_name)
@@ -363,17 +363,17 @@ class TestCase(unittest.TestCase):
         boundary_tags = {'walls': [0,1], 'bom': [2,3]}
 
         interior_regions = [(inner1_polygon, density_inner1)]
-        create_mesh_from_regions(polygon_outer,
+        create_pmesh_from_regions(polygon_outer,
                                  boundary_tags,
                                  density_outer,
                                  interior_regions=interior_regions,
                                  filename=file_name,
                                  verbose=False)
 
-        m = importMeshFromFile(file_name)
-        self.assertTrue(len(m.getTriangulation()) <= 2000,
+        m = import_mesh_from_file(file_name)
+        self.assertTrue(len(m.get_triangulation()) <= 2000,
                         'Test mesh interface failed!')
-        self.assertTrue(len(m.getTriangulation()) >= 900,
+        self.assertTrue(len(m.get_triangulation()) >= 900,
                         'Test mesh interface failed!')
 
         os.remove(file_name)
@@ -406,17 +406,17 @@ class TestCase(unittest.TestCase):
 
         interior_regions = [(inner1_polygon, density_inner1),
                             (inner2_polygon, density_inner2)]
-        create_mesh_from_regions(polygon_outer,
+        create_pmesh_from_regions(polygon_outer,
                                  boundary_tags,
                                  density_outer,
                                  interior_regions=interior_regions,
                                  filename=file_name,
                                  verbose=False)
 
-        m = importMeshFromFile(file_name)
-        self.assertTrue(len(m.getTriangulation()) <= 2000,
+        m = import_mesh_from_file(file_name)
+        self.assertTrue(len(m.get_triangulation()) <= 2000,
                         'Test mesh interface failed!')
-        self.assertTrue(len(m.getTriangulation()) >= 900,
+        self.assertTrue(len(m.get_triangulation()) >= 900,
                         'Test mesh interface failed!')
 
         os.remove(file_name)
@@ -452,24 +452,24 @@ class TestCase(unittest.TestCase):
         # if two regions points are in the same bounded area.
         interior_regions = [(inner2_polygon, density_inner2),
                             (inner1_polygon, density_inner1)]
-        create_mesh_from_regions(polygon_outer,
+        create_pmesh_from_regions(polygon_outer,
                                  boundary_tags,
                                  density_outer,
                                  interior_regions=interior_regions,
                                  filename=file_name,
                                  verbose=False)
 
-        m = importMeshFromFile(file_name)
-        self.assertTrue(len(m.getTriangulation()) <= 3000,
+        m = import_mesh_from_file(file_name)
+        self.assertTrue(len(m.get_triangulation()) <= 3000,
                         'Test mesh interface failed!')
-        self.assertTrue(len(m.getTriangulation()) >= 2000,
+        self.assertTrue(len(m.get_triangulation()) >= 2000,
                         'Test mesh interface failed!')
 
         os.remove(file_name)
 
     
     def test_create_mesh_from_regions_interior_regions(self):
-        '''Test that create_mesh_from_regions fails when an interior
+        '''Test that create_pmesh_from_regions fails when an interior
         region is outside bounding polygon.
         '''
 
@@ -484,7 +484,7 @@ class TestCase(unittest.TestCase):
         inner_polygon = [[800,400], [900,500], [800,600]]
 
         interior_regions = [(inner_polygon, 5)]
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      interior_regions=interior_regions)
@@ -495,7 +495,7 @@ class TestCase(unittest.TestCase):
         interior_regions = [[inner_polygon, 50], [inner_polygon1, 50]]
 
         try:
-            m = create_mesh_from_regions(polygon,
+            m = create_pmesh_from_regions(polygon,
                                          boundary_tags,
                                          10000000,
                                          interior_regions=interior_regions,
@@ -509,7 +509,7 @@ class TestCase(unittest.TestCase):
 
     
     def test_create_mesh_from_regions_interior_regions1(self):
-        '''Test that create_mesh_from_regions fails
+        '''Test that create_pmesh_from_regions fails
         when an interior region is outside bounding polygon.
         '''
 
@@ -563,7 +563,7 @@ class TestCase(unittest.TestCase):
         boundary_tags = {'walls': [0,1], 'bom': [2], 'exterior': [3,4,5,6]}
 
         try:
-            m = create_mesh_from_regions(poly_all,
+            m = create_pmesh_from_regions(poly_all,
                                          boundary_tags,
                                          10000000,
                                          interior_regions=interior_regions,
@@ -577,7 +577,7 @@ class TestCase(unittest.TestCase):
 
     
     def FIXMEtest_create_mesh_with_multiply_tagged_segments(self):
-        '''Test that create_mesh_from_regions fails when
+        '''Test that create_pmesh_from_regions fails when
         segments are listed repeatedly in boundary_tags.
         '''
 
@@ -590,7 +590,7 @@ class TestCase(unittest.TestCase):
         # This one is inside bounding polygon - should pass
         inner_polygon = [[800,400], [900,500], [800,600]]
         interior_regions = [(inner_polygon, 5)]
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      interior_regions=interior_regions,
@@ -600,12 +600,12 @@ class TestCase(unittest.TestCase):
         inner_polygon = [[800,400], [900,500], [800,600]]
         interior_regions = [(inner_polygon, 5)]
 
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      interior_regions=interior_regions)
         try:
-            m = create_mesh_from_regions(polygon,
+            m = create_pmesh_from_regions(polygon,
                                          boundary_tags,
                                          10000000,
                                          interior_regions=interior_regions)
@@ -618,7 +618,7 @@ class TestCase(unittest.TestCase):
 
             
     def test_create_mesh_with_segments_out_of_bounds(self):
-        """Test that create_mesh_from_regions fails when a segment is out of bounds.
+        """Test that create_pmesh_from_regions fails when a segment is out of bounds.
         """
         
         # These are the absolute values
@@ -636,7 +636,7 @@ class TestCase(unittest.TestCase):
 
 
         try:
-            m = create_mesh_from_regions(polygon,
+            m = create_pmesh_from_regions(polygon,
                                          boundary_tags,
                                          10000000,
                                          interior_regions=interior_regions)
@@ -654,13 +654,13 @@ class TestCase(unittest.TestCase):
 
         boundary_tags = {'walls': [0,1], 'bom': [2,3]}
 
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      breaklines=[[[50,50],[2000,2000]]])
 
         self.assertTrue(len(m.regions) == 1, 'FAILED!')
-        segs = m.getUserSegments()
+        segs = m.get_user_segments()
         self.assertTrue(len(segs) == 5, 'FAILED!')
         self.assertTrue(len(m.userVertices) == 6, 'FAILED!')
 
@@ -676,24 +676,24 @@ class TestCase(unittest.TestCase):
 
 
         # This should work with one hole
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      interior_holes=[interior_poly1])
 
-        self.assertTrue(len(m.getUserSegments()) == 7, 'FAILED!')
+        self.assertTrue(len(m.get_user_segments()) == 7, 'FAILED!')
         self.assertTrue(len(m.userVertices) == 7, 'FAILED!')
 
 
         # This should work with two holes
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      interior_holes=[interior_poly1, interior_poly2])
-        #print len(m.getUserSegments())
+        #print len(m.get_user_segments())
         #print len(m.userVertices)
         
-        self.assertTrue(len(m.getUserSegments()) == 10, 'FAILED!')
+        self.assertTrue(len(m.get_user_segments()) == 10, 'FAILED!')
         self.assertTrue(len(m.userVertices) == 10, 'FAILED!')
 
         #-------------------------------------
@@ -703,7 +703,7 @@ class TestCase(unittest.TestCase):
         
         # try passing just one polygon, not a list of polygons, should throw exception
         try:
-            m = create_mesh_from_regions(polygon,
+            m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      interior_holes=interior_poly1)
@@ -718,7 +718,7 @@ class TestCase(unittest.TestCase):
         # interior polygon outside bounding polygon, should throw exception
         interior_poly3  = [[50,50],[500,500], [400,200]]
         try:
-            m = create_mesh_from_regions(polygon,
+            m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      interior_holes=[interior_poly3])
@@ -740,18 +740,18 @@ class TestCase(unittest.TestCase):
 
 
         # This should work with one hole
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      interior_holes=[interior_poly1],
                                      hole_tags=[{'edge0' : [0], 'edge1': [1], 'edge2': [2]}])
 
-        self.assertTrue(len(m.getUserSegments()) == 7, 'FAILED!')
+        self.assertTrue(len(m.get_user_segments()) == 7, 'FAILED!')
         self.assertTrue(len(m.userVertices) == 7, 'FAILED!')
 
         m.generate_mesh()
         
-        tags_list = m.getMeshSegmentTags()
+        tags_list = m.get_mesh_segment_tags()
         
         assert len([x for x in tags_list if x == 'edge0']) == 7
         assert len([x for x in tags_list if x == 'edge1']) == 6
@@ -775,7 +775,7 @@ class TestCase(unittest.TestCase):
                          '30': [2],
                          'no where seg': [3],
                          '20': [4]}
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      poly_geo_reference=geo_ref_poly,
@@ -808,7 +808,7 @@ class TestCase(unittest.TestCase):
 
         max_area = 10000000
         interior_regions = [(inner1_polygon, 5), (inner2_polygon, 10)]
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      max_area,
                                      interior_regions=interior_regions,
@@ -866,7 +866,7 @@ END\n')
 
         max_area = 1
         interior_regions = [(inner1_polygon, 5), (inner2_polygon, 10)]
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      max_area,
                                      interior_regions=interior_regions,
@@ -912,7 +912,7 @@ END\n')
     def concept_ungenerateIII(self):
         from anuga import Domain, Reflective_boundary, \
                             Dirichlet_boundary
-        from anuga.pmesh.mesh_interface import create_mesh_from_regions
+        from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 
         # These are the absolute values
         polygon = [[0,0], [100,0], [100,100], [0,100]]
@@ -923,7 +923,7 @@ END\n')
 
         max_area = 1
         interior_regions = [(inner1_polygon, 5), (inner2_polygon, 10)]
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      max_area,
                                      interior_regions=interior_regions)
@@ -963,7 +963,7 @@ END\n')
             domain.write_time()
 
     def test_create_mesh_from_regions_check_segs(self):
-        '''Test that create_mesh_from_regions fails
+        '''Test that create_pmesh_from_regions fails
         when an interior region is outside bounding polygon.
         '''
 
@@ -976,14 +976,14 @@ END\n')
         # This one is inside bounding polygon - should pass
         inner_polygon = [[800,400], [900,500], [800,600]]
         interior_regions = [(inner_polygon, 5)]
-        m = create_mesh_from_regions(polygon,
+        m = create_pmesh_from_regions(polygon,
                                      boundary_tags,
                                      10000000,
                                      interior_regions=interior_regions)
 
         boundary_tags = {'walls': [0,1,3,4], 'bom': [2]}
         try:
-            m = create_mesh_from_regions(polygon,
+            m = create_pmesh_from_regions(polygon,
                                          boundary_tags,
                                          10000000,
                                          interior_regions=interior_regions)

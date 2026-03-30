@@ -13,9 +13,8 @@ def load_ungenerate(ofile):
     
     Returns a dict containing "points", "segments", and "polygons".
     """
-    fd = open(ofile,'r')
-    Dict = readUngenerateFile(fd)
-    fd.close()
+    with open(ofile, 'r') as fd:
+        Dict = readUngenerateFile(fd)
     return Dict
 
 

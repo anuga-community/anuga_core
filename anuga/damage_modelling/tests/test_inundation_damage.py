@@ -427,7 +427,7 @@ class Test_inundation_damage(unittest.TestCase):
         #print "sww_file",sww_file
 
         out_csv = tempfile.mktemp(".csv")
-        print("out_csv",out_csv)
+        #print("out_csv",out_csv)
         add_depth_and_momentum2csv(sww_file, self.csv_file,
                                    out_csv, verbose=False)
 

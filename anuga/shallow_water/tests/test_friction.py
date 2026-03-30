@@ -58,12 +58,12 @@ class Test_Friction(unittest.TestCase):
         domain.compute_forcing_terms()
 
 
-        import pprint
-        pprint.pprint(domain.quantities['xmomentum'].explicit_update)
-        pprint.pprint(domain.quantities['ymomentum'].explicit_update)
+        #import pprint
+        #pprint.pprint(domain.quantities['xmomentum'].explicit_update)
+        #pprint.pprint(domain.quantities['ymomentum'].explicit_update)
 
-        pprint.pprint(domain.quantities['xmomentum'].semi_implicit_update)
-        pprint.pprint(domain.quantities['ymomentum'].semi_implicit_update)
+        #pprint.pprint(domain.quantities['xmomentum'].semi_implicit_update)
+        #pprint.pprint(domain.quantities['ymomentum'].semi_implicit_update)
 
         xmon_semi_implicit_update = np.array([-21.91346618, -21.91346618, -21.91346618, -21.91346618])
         ymon_semi_implicit_update = np.array([-43.82693236, -43.82693236, -43.82693236, -43.82693236])
@@ -117,12 +117,12 @@ class Test_Friction(unittest.TestCase):
         domain.compute_forcing_terms()
 
 
-        import pprint
-        pprint.pprint(domain.quantities['xmomentum'].explicit_update)
-        pprint.pprint(domain.quantities['ymomentum'].explicit_update)
+        #import pprint
+        #pprint.pprint(domain.quantities['xmomentum'].explicit_update)
+        #pprint.pprint(domain.quantities['ymomentum'].explicit_update)
 
-        pprint.pprint(domain.quantities['xmomentum'].semi_implicit_update)
-        pprint.pprint(domain.quantities['ymomentum'].semi_implicit_update)
+        #pprint.pprint(domain.quantities['xmomentum'].semi_implicit_update)
+        #pprint.pprint(domain.quantities['ymomentum'].semi_implicit_update)
 
         #xmon_semi_implicit_update = np.array([-21.91346618, -21.91346618, -21.91346618, -21.91346618])
         #ymon_semi_implicit_update = np.array([-43.82693236, -43.82693236, -43.82693236, -43.82693236])

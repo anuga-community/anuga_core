@@ -172,10 +172,27 @@ class Generic_Domain(object):
         # Determine whether source is a mesh filename or coordinates
         if isinstance(source, str):
             mesh_filename = source
+            mesh_input = None
+            coordinates = None
         elif isinstance(source, Mesh):
             mesh_input = source
+            coordinates = None
         else:
-            coordinates = source
+            # Check if source is a pmesh Pmesh object (returned by
+            # create_mesh_from_regions) and convert it to an anuga Mesh.
+            try:
+                from anuga.pmesh.mesh import Mesh as Pmesh
+                if isinstance(source, Pmesh):
+                    from .pmesh2domain import pmesh_to_mesh
+                    mesh_input = pmesh_to_mesh(source, verbose=verbose)
+                    mesh_filename = None
+                    coordinates = None
+                else:
+                    coordinates = source
+                    mesh_input = None
+            except ImportError:
+                coordinates = source
+                mesh_input = None
 
         # In case a filename has been specified, extract content
         if mesh_filename is not None:
@@ -638,8 +655,13 @@ class Generic_Domain(object):
 
     def get_CFL(self):
         """get CFL
-        """
 
+        .. deprecated::
+            Use :meth:`get_cfl` instead.
+        """
+        import warnings
+        warnings.warn('get_CFL is deprecated, use get_cfl instead',
+                      DeprecationWarning, stacklevel=2)
         return self.CFL
 
     def get_cfl(self):
@@ -650,18 +672,28 @@ class Generic_Domain(object):
 
     def set_CFL(self, cfl=1.0):
         """Set CFL parameter, warn if greater than 2.0
+
+        .. deprecated::
+            Use :meth:`set_cfl` instead.
         """
+        import warnings
+        warnings.warn('set_CFL is deprecated, use set_cfl instead',
+                      DeprecationWarning, stacklevel=2)
         if cfl > 2.0:
-            self.CFL = cfl
             msg = 'Setting CFL > 2.0'
-            import warnings
             warnings.warn(msg)
-            # log.warning(msg)
 
         assert cfl > 0.0
         self.CFL = cfl
 
-    set_cfl = set_CFL
+    def set_cfl(self, cfl=1.0):
+        """Set CFL parameter, warn if greater than 2.0
+        """
+        assert cfl > 0.0
+        self.CFL = cfl
+        if cfl > 2.0:
+            import warnings
+            warnings.warn('Setting CFL > 2.0')
 
 
     def set_relative_time(self, time = 0.0):
@@ -1365,6 +1397,9 @@ class Generic_Domain(object):
             except Exception:
                 pass
             self.last_walltime = walltime()
+
+        from anuga.utilities.system_tools import memory_stats
+        msg += f', {memory_stats()}'
 
         if track_speeds is True:
             msg += '\n'

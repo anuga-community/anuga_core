@@ -8,7 +8,9 @@ dependencies:
   - cartopy
   - cython
   - dill
-  - gdal
+  - rasterio
+  - fiona
+  - shapely
   - matplotlib
   - meshpy
   - meson

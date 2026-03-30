@@ -930,14 +930,13 @@ def make_grid(data, lats, lons, fileName, EPSG_CODE=None, proj4string=None,
     """
 
     try:
-        import osgeo.gdal as gdal
-        import osgeo.osr as osr
+        import rasterio
+        from rasterio.transform import from_origin
+        from pyproj import CRS
     except ImportError as e:
-        msg='Failed to import gdal/ogr modules --'\
-        + 'perhaps gdal python interface is not installed.'
+        msg = ('Failed to import rasterio/pyproj modules -- '
+               'perhaps they are not installed.')
         raise ImportError(msg)
-    
-
 
     xres = lons[1] - lons[0]
     yres = lats[1] - lats[0]
@@ -945,39 +944,37 @@ def make_grid(data, lats, lons, fileName, EPSG_CODE=None, proj4string=None,
     ysize = len(lats)
     xsize = len(lons)
 
-    # Assume data/lats/longs refer to cell centres, and compute upper left coordinate
+    # Assume data/lats/lons refer to cell centres; compute upper-left corner
     ulx = lons[0] - (xres / 2.)
-    uly = lats[lats.shape[0]-1] + (yres / 2.)
+    uly = lats[lats.shape[0] - 1] + (yres / 2.)
 
-    # GDAL magic to make the tif
-    driver = gdal.GetDriverByName('GTiff')
-    ds = driver.Create(fileName, xsize, ysize, 1, gdal.GDT_Float32, 
-                       creation_options)
-
-    srs = osr.SpatialReference()
-    if(proj4string is not None):
-        srs.ImportFromProj4(proj4string)
-    elif(EPSG_CODE is not None):
-        srs.ImportFromEPSG(EPSG_CODE)
+    if proj4string is not None:
+        crs = CRS.from_proj4(proj4string)
+    elif EPSG_CODE is not None:
+        crs = CRS.from_epsg(EPSG_CODE)
     else:
         raise Exception('No spatial reference information given')
 
+    # from_origin(west, north, xsize, ysize) — upper-left corner
+    transform = from_origin(ulx, uly, xres, yres)
 
-    ds.SetProjection(srs.ExportToWkt())
+    # Parse GDAL-style creation options list ["KEY=VALUE", ...] into a dict
+    co = dict(opt.split('=', 1) for opt in creation_options)
 
-    gt = [ulx, xres, 0, uly, 0, -yres ]
-    #gt = [llx, xres, 0, lly, yres,0 ]
-    ds.SetGeoTransform(gt)
-
-    #import pdb
-    #pdb.set_trace()
     import scipy
 
-    outband = ds.GetRasterBand(1)
-    outband.SetNoDataValue(numpy.nan)
-    outband.WriteArray(data)
+    with rasterio.open(
+        fileName, 'w',
+        driver='GTiff',
+        height=ysize, width=xsize,
+        count=1, dtype='float32',
+        crs=crs,
+        transform=transform,
+        nodata=float('nan'),
+        **co
+    ) as ds:
+        ds.write(data.astype('float32'), 1)
 
-    ds = None
     return
 
 ##################################################################################
@@ -1031,11 +1028,10 @@ def Make_Geotif(swwFile=None,
     import os
     
     try:
-        import osgeo.gdal as gdal
-        import osgeo.osr as osr
+        import rasterio
     except ImportError as e:
-        msg = 'Failed to import gdal/ogr modules --'\
-        + 'perhaps gdal python interface is not installed.'
+        msg = ('Failed to import rasterio -- '
+               'perhaps it is not installed.')
         raise ImportError(msg)
 
     # Check whether swwFile is an array, and if so, redefine various inputs to

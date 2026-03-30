@@ -55,11 +55,12 @@ import anuga
 from anuga.geometry.polygon import inside_polygon
 
 try:
-    import osgeo.gdal as gdal
-    import osgeo.ogr as ogr
+    import fiona
+    import rasterio
+    from shapely.geometry import (MultiPoint, LineString, Polygon, Point,
+                                   mapping, shape)
     gdal_available = True
-    #import osr # Not needed here but important in general
-except ImportError as err:
+except ImportError:
     gdal_available = False
 
 
@@ -71,42 +72,33 @@ if gdal_available:
         """
             Read a "single polygon" shapefile into an ANUGA_polygon object
             (a list of lists, each containing a polygon coordinate)
-    
+
             The attribute table is ignored, and there can only be a single geometry in the shapefile
-            
+
             INPUTS: shapefile -- full path to shapefile name
                     dropLast -- Logical. If so, cut the last point (which closes
-                                the polygon). ANUGA uses this by default for e.g. 
+                                the polygon). ANUGA uses this by default for e.g.
                                 bounding polygons
         """
-    
-        # Get the data
-        driver=ogr.GetDriverByName("ESRI Shapefile")
-        dataSrc=driver.Open(shapefile, 0)
-        #dataSrc=ogr.Open(shapefile)
-        layer=dataSrc.GetLayer()
 
-        # Check it is a polygon
-        layerType=ogr.GeometryTypeToName(layer.GetGeomType())
-        if not layerType=='Polygon':
-            msg= shapefile +' is not a polygon shapefile'
-            raise Exception(msg)
+        with fiona.open(shapefile) as src:
+            geom_type = src.schema['geometry']
+            if geom_type != 'Polygon':
+                msg = shapefile + ' is not a polygon shapefile'
+                raise Exception(msg)
 
-        # Need a single polygon
-        try:
-            assert(len(layer)==1)
-        except AssertionError:
-            print(shapefile)
-        
-        boundary_poly=[]
-        for feature in layer:
-            #geom=feature.GetGeometryReg()
-            boundary=feature.GetGeometryRef().Boundary().GetPoints()
-            boundary=[list(pts) for pts in boundary]
-            boundary_poly.extend(boundary)
-    
-        if(dropLast):
-            # Return a list of points, without last point [= first point]
+            try:
+                assert len(src) == 1
+            except AssertionError:
+                print(shapefile)
+
+            boundary_poly = []
+            for feature in src:
+                # exterior ring coordinates (closed: first == last)
+                coords = feature['geometry']['coordinates'][0]
+                boundary_poly.extend([list(pt) for pt in coords])
+
+        if dropLast:
             return boundary_poly[:-1]
         else:
             return boundary_poly
@@ -117,35 +109,28 @@ if gdal_available:
         """
             Read a "single-line" shapefile into a list of lists (each containing a point),
                 resembling an ANUGA polygon object
-    
+
             The attribute table is ignored, and there can only be a single geometry in the shapefile
-            
+
             INPUTS: shapefile -- full path to shapefile name
         """
-    
-        driver=ogr.GetDriverByName("ESRI Shapefile")
-        dataSrc=driver.Open(shapefile, 0)
-        #dataSrc=ogr.Open(shapefile)
-        layer=dataSrc.GetLayer()
-     
-        # Check it is a line
-        layerType=ogr.GeometryTypeToName(layer.GetGeomType())
-        if not layerType=='Line String':
-            msg= shapefile +' is not a line shapefile'
-            raise Exception(msg) 
 
-        # Need a single line
-        try:
-            assert len(layer)==1
-        except AssertionError:
-            print(shapefile)
-        
-        line_all=[]
-        for feature in layer:
-            line=feature.GetGeometryRef().GetPoints()
-            line=[list(pts) for pts in line]
-            line_all.extend(line)
-    
+        with fiona.open(shapefile) as src:
+            geom_type = src.schema['geometry']
+            if geom_type not in ('LineString', 'Line String'):
+                msg = shapefile + ' is not a line shapefile'
+                raise Exception(msg)
+
+            try:
+                assert len(src) == 1
+            except AssertionError:
+                print(shapefile)
+
+            line_all = []
+            for feature in src:
+                coords = feature['geometry']['coordinates']
+                line_all.extend([list(pt) for pt in coords])
+
         return line_all
 
     ###########################################################################
@@ -219,29 +204,26 @@ if gdal_available:
     def readShpPtsAndAttributes(shapefile):
         """
             Read a point shapefile with an attribute table into a list
-    
+
             INPUT: shapefile -- name of shapefile to read
-            
-            OUTPUT: List with 
+
+            OUTPUT: List with
             [ list_of_points, list_of_attributes, names_of_attributes]
         """
-        
-        driver=ogr.GetDriverByName("ESRI Shapefile")
-        dataSrc=driver.Open(shapefile, 0)
-        #dataSrc=ogr.Open(shapefile)
-        layer=dataSrc.GetLayer()
-    
-        pts=[]
-        attribute=[]
-        for i, feature in enumerate(layer):
-            if(i==0):
-                attributeNames=list(feature.keys())
-            pt=feature.GetGeometryRef().GetPoints()
-            pt=[list(p) for p in pt]
-            pts.extend(pt)
-            att=[feature[i] for i in attributeNames]
-            attribute.extend(att)
-    
+
+        pts = []
+        attribute = []
+        attributeNames = None
+
+        with fiona.open(shapefile) as src:
+            for feature in src:
+                if attributeNames is None:
+                    attributeNames = list(feature['properties'].keys())
+                coords = feature['geometry']['coordinates']
+                pts.append(list(coords))
+                att = [feature['properties'][k] for k in attributeNames]
+                attribute.extend(att)
+
         return [pts, attribute, attributeNames]
 
     ########################################
@@ -289,93 +271,62 @@ if gdal_available:
     ########################################
     def ListPts2Wkb( ptsIn, geometry_type='line', appendFirstOnEnd=None):
         """
-            Convert list of points to a GDAl Wkb format
-            Can be either points, lines, or polygon
-    
-            Purpose is that once data in in Wkb format, we can use GDAL's geometric operations
-                (e.g. to test for intersections, etc)
-            
+            Convert list of points to a Shapely geometry object.
+            Can be either points, lines, or polygon.
+
+            Purpose is that once data is in this format, we can use Shapely's
+            geometric operations (e.g. to test for intersections, etc).
+
             INPUT: ptsIn -- list of points in the format [[x0,y0], [x1, y1], ..., [xn, yn]]
                           Actually it is also ok if [x0,y0], .. is a tuple instead
                    geometry_type -- 'point' or 'line' or 'polygon'
-    
+
                    appendFirstOnEnd -- logical. If true, add the first point to the
                         end. Probably wanted for polygons when they are unclosed in ANUGA
-    
+
             OUTPUT:
-                    The points as a Wkb Geometry. 
-                    geometry_type='point' produces a MULTIPOINT Geometry
-                                 ='line' produces a LINESTRING Geometry
-                                 ='polygon' produces a POLYGON Geometry
-    
-            FIXME: This might not sensibly-use the gdal geometry types (although it
-                    passes our tests) -- consider revising
+                    The points as a Shapely geometry.
+                    geometry_type='point' produces a MultiPoint geometry
+                                 ='line' produces a LineString geometry
+                                 ='polygon' produces a Polygon geometry
         """
         # Avoid modifying ptsIn
-        pts=copy.copy(ptsIn)
-    
+        pts = copy.copy(ptsIn)
+
         if appendFirstOnEnd is None:
-            if(geometry_type=='polygon'):
-                appendFirstOnEnd=True
-            else:
-                appendFirstOnEnd=False
-    
+            appendFirstOnEnd = (geometry_type == 'polygon')
+
         if appendFirstOnEnd:
-            pts.append(pts[0])    
-        
-        if(geometry_type=='point'):
-            data=ogr.Geometry(ogr.wkbMultiPoint)
-        elif(geometry_type=='line'):
-            data=ogr.Geometry(ogr.wkbLineString)
-        elif(geometry_type=='polygon'):
-            data=ogr.Geometry(ogr.wkbLinearRing)
+            pts.append(pts[0])
+
+        if geometry_type == 'point':
+            return MultiPoint(pts)
+        elif geometry_type == 'line':
+            return LineString(pts)
+        elif geometry_type == 'polygon':
+            return Polygon(pts)
         else:
             msg = "Type must be either 'point' or 'line' or 'polygon'"
             raise Exception(msg)
-         
-        for i in range(len(pts)):
-            if(len(pts[i])==2):
-                if(geometry_type=='point'):
-                    newPt=ogr.Geometry(ogr.wkbPoint)
-                    newPt.AddPoint(pts[i][0], pts[i][1]) 
-                    data.AddGeometryDirectly(newPt)
-                else:
-                    data.AddPoint(pts[i][0], pts[i][1])
-            elif(len(pts[i])==3):
-                if(geometry_type=='point'):
-                    newPt=ogr.Geometry(ogr.wkbPoint)
-                    newPt.AddPoint(pts[i][0], pts[i][1], pts[i][2]) 
-                    data.AddGeometryDirectly(newPt)
-                else:
-                    data.AddPoint(pts[i][0], pts[i][1], pts[i][2])
-            else:
-                raise Exception('Points must be either 2 or 3 dimensional')
-    
-        if(geometry_type=='polygon'):   
-            poly = ogr.Geometry(ogr.wkbPolygon)
-            poly.AddGeometry(data)
-            data=poly
-        
-        return(data)
     
     ############################################################################
     def Wkb2ListPts(wkb_geo, removeLast=False, drop_third_dimension=False):
         """
-            Reverse of ListPts2Wkb
+            Reverse of ListPts2Wkb — convert a Shapely geometry back to a list of points.
         """
-        if(wkb_geo.GetGeometryName()=='POLYGON'):
-            X=wkb_geo.GetBoundary()
-            new=[ list(X.GetPoints()[i]) for i in range(len(X.GetPoints())) ]
-        elif(wkb_geo.GetGeometryName()=='MULTIPOINT'):
-            new=[ [feature.GetX(), feature.GetY(),feature.GetZ()] for feature in wkb_geo]
-        elif(wkb_geo.GetGeometryName()=='LINESTRING'):
-            new=[ list(wkb_geo.GetPoints()[i]) for i in range(len(wkb_geo.GetPoints())) ]
+        geom_type = wkb_geo.geom_type
+        if geom_type == 'Polygon':
+            new = [list(pt) for pt in wkb_geo.exterior.coords]
+        elif geom_type == 'MultiPoint':
+            new = [[p.x, p.y, p.z if p.has_z else 0.0] for p in wkb_geo.geoms]
+        elif geom_type == 'LineString':
+            new = [list(pt) for pt in wkb_geo.coords]
         else:
-            raise Exception('Geometry type not supported')
-        
-        if(removeLast):
-            new=new[:-1]
-        if(drop_third_dimension):
+            raise Exception('Geometry type not supported: ' + geom_type)
+
+        if removeLast:
+            new = new[:-1]
+        if drop_third_dimension:
             new = [new[i][0:2] for i in range(len(new))]
         return new
     
@@ -549,34 +500,27 @@ if gdal_available:
     #######################################################################################################
     def check_polygon_is_small(intersection, buf, tol2=100.):
         """
-            
             Elsewhere in the code, we check whether lines intersect by buffering them
             to polygons with a small buffer = buf, then getting the intersection.
-             [since intersection with polygons is supported by gdal, but apparently
-            not directly with lines].  
-           
-            The logic of our code only works with point intersections,  
-            and it will fails if 2 lines overlap in a line.
-    
-            We crudely check for this situation here, by ensuring that the intersection polygon is 'small'
-    
-            WARNING: The gdal geometry routines may be a bit rough (?)
-                     Intersections not very precise, etc (?)
-    
-            INPUT: intersection -- intersection of the 2 lines [gdal geometry]
-                   buf -- a length scale giving the size of the intersection extent that we expect for a point
-                   tol2 -- Throw an error if the x or y extent is greater than buf*tol2. Seems this needs to be
-                           large sometimes -- this might reflect the stated weaknesses of GDALs geometry routines?
+
+            The logic of our code only works with point intersections,
+            and it will fail if 2 lines overlap in a line.
+
+            We crudely check for this situation here, by ensuring that the intersection polygon is 'small'.
+
+            INPUT: intersection -- Shapely geometry of the intersection of 2 buffered lines
+                   buf -- a length scale giving the size of the intersection extent expected for a point
+                   tol2 -- Throw an error if the x or y extent is greater than buf*tol2.
             OUTPUT: True/False
-                    False should suggest that the intersection is not describing a point
+                    False suggests that the intersection is not describing a point.
         """
-    
-        extent=intersection.GetEnvelope()
-        assert(len(extent)==4) # Make sure this assumption is valid
-        if( (abs(extent[0]-extent[1])>buf*tol2) or (abs(extent[2]-extent[3]) > buf*tol2)):
+        # shapely bounds: (minx, miny, maxx, maxy)
+        bounds = intersection.bounds
+        x_extent = abs(bounds[2] - bounds[0])
+        y_extent = abs(bounds[3] - bounds[1])
+        if x_extent > buf * tol2 or y_extent > buf * tol2:
             return False
-        else:
-            return True
+        return True
     
     #######################################################################################################
     
@@ -609,31 +553,36 @@ if gdal_available:
             OUTPUTS: L1,L2 with intersection points added in the right places
         """
     
-        if(L1.Intersects(L2)):
-            # Get points on the lines 
-            L1_pts=Wkb2ListPts(L1) 
-            L2_pts=Wkb2ListPts(L2) 
-            
+        if L1.intersects(L2):
+            # Get points on the lines
+            L1_pts = Wkb2ListPts(L1)
+            L2_pts = Wkb2ListPts(L2)
+
             # Buffer lines by a small amount
-            L1_buf=L1.Buffer(buf)
-            L2_buf=L2.Buffer(buf)
-                
-            # Get intersection point[s]    
-            L1_L2_intersect=L1_buf.Intersection(L2_buf)
-            if(L1_L2_intersect.GetGeometryCount()==1):
-                if(not check_polygon_is_small(L1_L2_intersect, buf, tol2)):
-                    msg = 'line intersection is not allowed. ' + \
-                          'Envelope %s '% str(L1_L2_intersect.GetEnvelope())
+            L1_buf = L1.buffer(buf)
+            L2_buf = L2.buffer(buf)
+
+            # Get intersection point[s]
+            L1_L2_intersect = L1_buf.intersection(L2_buf)
+
+            if L1_L2_intersect.geom_type == 'Polygon':
+                # Single intersection point
+                if not check_polygon_is_small(L1_L2_intersect, buf, tol2):
+                    msg = ('line intersection is not allowed. '
+                           'Envelope %s ' % str(L1_L2_intersect.bounds))
                     raise Exception(msg)
-                # Seems to need special treatment with only 1 intersection point
-                intersectionPts=[L1_L2_intersect.Centroid().GetPoint()]
-            else:
-                intersectionPts=[]
-                for feature in L1_L2_intersect:
-                    if(not check_polygon_is_small(feature, buf, tol2)):
-                        print(feature.GetEnvelope())
+                intersectionPts = [L1_L2_intersect.centroid.coords[0]]
+            elif hasattr(L1_L2_intersect, 'geoms'):
+                # Multiple intersections (MultiPolygon or GeometryCollection)
+                intersectionPts = []
+                for feature in L1_L2_intersect.geoms:
+                    if not check_polygon_is_small(feature, buf, tol2):
+                        print(feature.bounds)
                         raise Exception('line intersection is not allowed')
-                    intersectionPts.append(feature.Centroid().GetPoint())
+                    intersectionPts.append(feature.centroid.coords[0])
+            else:
+                # Point or other degenerate intersection
+                intersectionPts = [L1_L2_intersect.centroid.coords[0]]
     
             if(verbose):
                 print(nameFlag)
@@ -669,16 +618,16 @@ if gdal_available:
                 The extent as defined above
 
         """
-        raster = gdal.Open(rasterFile)
-        transform=raster.GetGeoTransform()
-        xOrigin = transform[0]
-        yOrigin = transform[3]
-        xPixels = raster.RasterXSize
-        yPixels = raster.RasterYSize
-
-        # Compute the other extreme corner
-        x2 = xOrigin + xPixels * transform[1] + yPixels * transform[2]
-        y2 = yOrigin + xPixels * transform[4] + yPixels * transform[5]
+        with rasterio.open(rasterFile) as raster:
+            t = raster.transform
+            xOrigin = t.c
+            yOrigin = t.f
+            xPixels = raster.width
+            yPixels = raster.height
+            # affine: x2 = xOrigin + xPixels*a + yPixels*b
+            #         y2 = yOrigin + xPixels*d + yPixels*e
+            x2 = xOrigin + xPixels * t.a + yPixels * t.b
+            y2 = yOrigin + xPixels * t.d + yPixels * t.e
         
         xmin=min(xOrigin,x2) 
         xmax=max(xOrigin,x2)
@@ -722,130 +671,83 @@ if gdal_available:
             1d numpy array with raster values at xy
     
         """
-        # Raster info
-        raster = gdal.Open(rasterFile)
-        rasterBand = raster.GetRasterBand(band)
-        rasterBandType = gdal.GetDataTypeName(rasterBand.DataType)
-        nodataval = rasterBand.GetNoDataValue()
-    
-        # Projection info
-        transform = raster.GetGeoTransform()
-        xOrigin = transform[0]
-        yOrigin = transform[3]
-        pixelWidth = transform[1]
-        pixelHeight = transform[5] # Negative
-        
+        # Raster info — read the full band once (more efficient than per-pixel reads)
+        with rasterio.open(rasterFile) as raster:
+            t = raster.transform
+            xOrigin    = t.c
+            yOrigin    = t.f
+            pixelWidth = t.a   # positive
+            pixelHeight = t.e  # negative for north-up rasters
+            nodataval  = raster.nodata
+            xMax = raster.width
+            yMax = raster.height
+            band_data = raster.read(band).astype(float)
+
         # Get coordinates in pixel values
-        px = (xy[:,0] - xOrigin)/pixelWidth
-        py = (xy[:,1] - yOrigin)/pixelHeight
-      
-        # Hold elevation 
-        elev = px*0. 
-    
-        # Get the right character for struct.unpack
-        if (rasterBandType == 'Int16'):
-            CtypeName='h'
-        elif (rasterBandType == 'Float32'):
-            CtypeName='f'
-        elif (rasterBandType == 'Float64'):
-            CtypeName='d'
-        elif (rasterBandType == 'Byte'):
-            CtypeName='B'
-        elif (rasterBandType == 'Int32'):
-            CtypeName='i'
-        else:
-            print('unrecognized DataType:', rasterBandType)
-            print('You might need to edit this code to read the data type')
-            raise Exception('Stopping')
-  
+        px = (xy[:,0] - xOrigin) / pixelWidth
+        py = (xy[:,1] - yOrigin) / pixelHeight
+
+        # Hold elevation
+        elev = px * 0.
+
         # Upper bounds for pixel values, so we can fail gracefully
-        xMax = raster.RasterXSize
-        yMax = raster.RasterYSize
-        if(px.max() < xMax and px.min() >= 0 and py.max() < yMax and py.min() >= 0):
+        if px.max() < xMax and px.min() >= 0 and py.max() < yMax and py.min() >= 0:
             pass
         else:
             msg = 'Trying to extract point values that exceed the raster extent'
             raise Exception(msg)
 
-        # Get values -- seems we have to loop, but it is efficient enough
+        # Get values
         for i in range(len(px)):
 
-            if(interpolation == 'pixel'):
-                # Pixel coordinates
+            if interpolation == 'pixel':
                 xC = int(numpy.floor(px[i]))
                 yC = int(numpy.floor(py[i]))
+                elev[i] = band_data[yC, xC]
 
-                structval = rasterBand.ReadRaster(xC,yC,1,1,
-                    buf_type=rasterBand.DataType)
-                elev[i] = struct.unpack(CtypeName, structval)[0]
-
-            elif(interpolation=='bilinear'):
-                # Pixel coordinates
+            elif interpolation == 'bilinear':
                 xl = int(numpy.floor(px[i]))
                 yl = int(numpy.floor(py[i]))
 
                 # Find neighbours required for bilinear interpolation
-                # l = lower, u = upper
-                if(px[i] - xl > 0.5):
+                if px[i] - xl > 0.5:
                     xu = min(xl + 1, xMax - 1)
                 else:
-                    # Swap xl for xu
                     xu = xl + 0
                     xl = max(xu - 1, 0)
 
-                if(py[i] - yl > 0.5):
+                if py[i] - yl > 0.5:
                     yu = min(yl + 1, yMax - 1)
                 else:
                     yu = yl + 0
                     yl = max(yu - 1, 0)
 
                 # Map x,y to unit square
-                if(xu > xl):
-                    x = px[i] - (xl + 0.5)
-                else:
-                    x = 0.
+                x = px[i] - (xl + 0.5) if xu > xl else 0.
+                y = py[i] - (yl + 0.5) if yu > yl else 0.
 
-                if(yu > yl):
-                    y = py[i] - (yl + 0.5)
-                else:
-                    y = 0.
-
-                if not ( (x>=0.) & (x<=1.)):
+                if not (0. <= x <= 1.):
                     print('x-values error: ', x, xl, xu, px[i], xMax)
                     raise Exception('x out of bounds')
-
-                if not ( (y>=0.) & (y<=1.)):
+                if not (0. <= y <= 1.):
                     print('y-values error: ', y, yl, yu, py[i])
                     raise Exception('y out of bounds')
 
-                # Lower-left
-                structval = rasterBand.ReadRaster(xl,yl,1,1,
-                    buf_type=rasterBand.DataType)
-                r00 = struct.unpack(CtypeName, structval)[0]
-                # Upper left
-                structval = rasterBand.ReadRaster(xl,yu,1,1,
-                    buf_type=rasterBand.DataType)
-                r01 = struct.unpack(CtypeName, structval)[0]
-                # Lower-right
-                structval = rasterBand.ReadRaster(xu,yl,1,1,
-                    buf_type=rasterBand.DataType)
-                r10 = struct.unpack(CtypeName, structval)[0]
-                # Upper right
-                structval = rasterBand.ReadRaster(xu,yu,1,1,
-                    buf_type=rasterBand.DataType)
-                r11 = struct.unpack(CtypeName, structval)[0]
+                r00 = band_data[yl, xl]
+                r01 = band_data[yu, xl]
+                r10 = band_data[yl, xu]
+                r11 = band_data[yu, xu]
 
                 # Bilinear interpolation
-                elev[i] = r00*(1.-x)*(1.-y) + r01*(1.-x)*y +\
-                          r10*x*(1.-y) + r11*x*y
+                elev[i] = (r00 * (1.-x) * (1.-y) + r01 * (1.-x) * y +
+                           r10 * x * (1.-y)       + r11 * x * y)
 
-                # Deal with nodata. This needs to be in the loop
-                # Just check if any of the pixels are nodata
+                # Deal with nodata
                 if nodataval is not None:
                     if numpy.isfinite(nodataval):
                         rij = numpy.array([r00, r01, r10, r11])
-                        rel_tol = ( abs(rij - nodataval) < nodata_rel_tol*abs(nodataval) )
-                        missing = (rel_tol).nonzero()[0]
+                        rel_tol = (abs(rij - nodataval) < nodata_rel_tol * abs(nodataval))
+                        missing = rel_tol.nonzero()[0]
                         if len(missing) > 0:
                             elev[i] = numpy.nan
             else:

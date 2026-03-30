@@ -11,7 +11,7 @@ verbose = False
 
 import sys
 try:
-    import osgeo
+    import rasterio
 except ImportError:
     pass
 
@@ -31,7 +31,7 @@ class Test_plot_utils(unittest.TestCase):
          that we can use for testing
         """
         boundaryPolygon = [[0., 0.], [0., 100.], [100.0, 100.0], [100.0, 0.0]]
-        anuga.create_mesh_from_regions(boundaryPolygon,
+        anuga.create_pmesh_from_regions(boundaryPolygon,
                                        boundary_tags={'left': [0],
                                                       'top': [1],
                                                       'right': [2],
@@ -402,8 +402,8 @@ class Test_plot_utils(unittest.TestCase):
 
         os.remove('test_plot_utils.sww')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_Make_Geotif(self):
         # VERY BASIC TEST
         #
@@ -424,19 +424,17 @@ class Test_plot_utils(unittest.TestCase):
         util.Make_Geotif(dataToGrid, output_quantities=['TestData'],
                          EPSG_CODE=32756, output_dir='.', CellSize=myCellSize)
 
-        # Use gdal to check that at least the data extent is ok
-        import osgeo.gdal as gdal
-        raster = gdal.Open('PointData_TestData.tif')
-        rasterGeoTrans = raster.GetGeoTransform()
-        assert(np.allclose(x.min()-myCellSize/2.0, rasterGeoTrans[0]))
-        assert(np.allclose(y.max()+myCellSize/2.0, rasterGeoTrans[3]))
-        # release data file
-        raster = None
+        # Use rasterio to check that at least the data extent is ok
+        import rasterio
+        with rasterio.open('PointData_TestData.tif') as raster:
+            t = raster.transform
+            assert(np.allclose(x.min()-myCellSize/2.0, t.c))
+            assert(np.allclose(y.max()+myCellSize/2.0, t.f))
         # Delete tif made with Make_Geotif
         os.remove('PointData_TestData.tif')
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_Make_Geotif_with_knn(self):
         # VERY BASIC TEST using knn+inverse distance interpolation to make the grid
         #
@@ -458,14 +456,12 @@ class Test_plot_utils(unittest.TestCase):
                          EPSG_CODE=32756, output_dir='.', CellSize=myCellSize,
                          k_nearest_neighbours=4)
 
-        # Use gdal to check that at least the data extent is ok
-        import osgeo.gdal as gdal
-        raster = gdal.Open('PointData_TestData.tif')
-        rasterGeoTrans = raster.GetGeoTransform()
-        assert(np.allclose(x.min()-myCellSize/2.0, rasterGeoTrans[0]))
-        assert(np.allclose(y.max()+myCellSize/2.0, rasterGeoTrans[3]))
-        # release data file
-        raster = None
+        # Use rasterio to check that at least the data extent is ok
+        import rasterio
+        with rasterio.open('PointData_TestData.tif') as raster:
+            t = raster.transform
+            assert(np.allclose(x.min()-myCellSize/2.0, t.c))
+            assert(np.allclose(y.max()+myCellSize/2.0, t.f))
         # Delete tif made with Make_Geotif
         os.remove('PointData_TestData.tif')
 

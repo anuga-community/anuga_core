@@ -43,7 +43,7 @@ class Test_internal_boundary_functions(unittest.TestCase):
         if(riverWall_Par is None):
             riverWall_Par = {'centralWall':{'Qfactor':1.0}}
         # Make the domain
-        anuga.create_mesh_from_regions(boundaryPolygon, 
+        anuga.create_pmesh_from_regions(boundaryPolygon, 
                                  boundary_tags={'left': [0],
                                                 'top': [1],
                                                 'right': [2],

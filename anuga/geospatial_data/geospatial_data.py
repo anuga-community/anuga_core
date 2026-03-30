@@ -1399,7 +1399,7 @@ def find_optimal_smoothing_parameter(data_file,
 
     from anuga.shallow_water.shallow_water_domain import Domain
     from anuga.geospatial_data.geospatial_data import Geospatial_data
-    from anuga.pmesh.mesh_interface import create_mesh_from_regions
+    from anuga.pmesh.mesh_interface import create_pmesh_from_regions
     from anuga.utilities.numerical_tools import cov
     from anuga.geometry.polygon import is_inside_polygon
     from anuga.fit_interpolate.benchmark_least_squares import mem_usage
@@ -1426,7 +1426,7 @@ def find_optimal_smoothing_parameter(data_file,
                      [west_boundary, north_boundary],
                      [west_boundary, south_boundary]]
 
-        create_mesh_from_regions(poly_topo,
+        create_pmesh_from_regions(poly_topo,
                                  boundary_tags={'back': [2],
                                                 'side': [1, 3],
                                                 'ocean': [0]},
@@ -1603,7 +1603,7 @@ def old_find_optimal_smoothing_parameter(data_file,
 
     from anuga.shallow_water.shallow_water_domain import Domain
     from anuga.geospatial_data.geospatial_data import Geospatial_data
-    from anuga.pmesh.mesh_interface import create_mesh_from_regions
+    from anuga.pmesh.mesh_interface import create_pmesh_from_regions
     from anuga.utilities.numerical_tools import cov
     from anuga.geometry.polygon import is_inside_polygon
     from anuga.fit_interpolate.benchmark_least_squares import mem_usage
@@ -1628,7 +1628,7 @@ def old_find_optimal_smoothing_parameter(data_file,
                      [west_boundary, north_boundary],
                      [west_boundary, south_boundary]]
 
-        create_mesh_from_regions(poly_topo,
+        create_pmesh_from_regions(poly_topo,
                                  boundary_tags={'back': [2],
                                                 'side': [1, 3],
                                                 'ocean': [0]},

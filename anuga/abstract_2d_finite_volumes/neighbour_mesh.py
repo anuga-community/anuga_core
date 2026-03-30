@@ -74,7 +74,8 @@ class Mesh(General_mesh):
                  tagged_elements=None,
                  geo_reference=None,
                  use_inscribed_circle=False,
-                 triangle_neighbors=None,
+                 triangle_neighbours=None,
+                 triangle_neighbour_edges=None,
                  verbose=False):
         """
         Build Mesh
@@ -82,7 +83,7 @@ class Mesh(General_mesh):
             Input x,y coordinates (sequence of 2-tuples or Mx2 numeric array of floats)
             triangles (sequence of 3-tuples or Nx3 numeric array of non-negative integers).
 
-        triangle_neighbors: optional (N, 3) integer array of neighbouring triangle
+        triangle_neighbours: optional (N, 3) integer array of neighbouring triangle
             indices (-1 for boundary edges), as produced by the triangle library
             (available from Pmesh.tri_mesh.triangle_neighbors). If provided,
             the neighbour structure is not recomputed from the triangles.
@@ -111,11 +112,12 @@ class Mesh(General_mesh):
 
 
         # Build neighbour structure
-        if verbose: log.critical('Mesh: Building neigbour structure')
-        self.build_neighbour_structure(triangle_neighbors=triangle_neighbors)
+        if verbose: log.critical('Mesh: Building neighbour structure')
+        self.build_neighbour_structure(triangle_neighbours=triangle_neighbours,
+                                       triangle_neighbour_edges=triangle_neighbour_edges)
 
         # Build surrogate neighbour structure
-        if verbose: log.critical('Mesh: Building surrogate neigbour structure')
+        if verbose: log.critical('Mesh: Building surrogate neighbour structure')
         self.build_surrogate_neighbour_structure()
 
         # Build boundary dictionary mapping (id, edge) to symbolic tags
@@ -249,30 +251,43 @@ class Mesh(General_mesh):
                 self.neighbour_edges[i, 1] = neighbourdict[a,c][1]
                 self.number_of_boundaries[i] -= 1
 
-    def build_neighbour_structure(self, triangle_neighbors=None):
+    def build_neighbour_structure(self, triangle_neighbours=None,
+                                  triangle_neighbour_edges=None):
         """Update all registered triangles to point to their neighbours.
 
         Also, keep a tally of the number of boundaries for each triangle
 
-        If triangle_neighbors is provided (an (N, 3) integer array of
+        If triangle_neighbours is provided (an (N, 3) integer array of
         neighbouring triangle indices, -1 for boundary edges, as produced
-        by the triangle library), the neighbour structure is assigned
-        directly rather than recomputed from the triangles.
+        by the triangle library or the mesh factory Cython functions), the
+        neighbour structure is assigned directly rather than recomputed from
+        the triangles.
+
+        If triangle_neighbour_edges is also provided (an (N, 3) integer array
+        giving, for each edge of each triangle, the edge index of the
+        corresponding neighbour that connects back — -1 for boundary edges),
+        it is assigned directly, skipping the reverse-lookup loop entirely.
+        This is valid for structured meshes where the pattern is known
+        analytically (e.g. rectangular and rectangular-cross meshes).
 
         Postconditions:
           neighbours and neighbour_edges is populated
           number_of_boundaries integer array is defined.
         """
 
-        if triangle_neighbors is not None:
-            self.neighbours = num.array(triangle_neighbors, int)
+        if triangle_neighbours is not None:
+            self.neighbours[:] = num.array(triangle_neighbours, int)
             self.number_of_boundaries = (self.neighbours < 0).sum(axis=1).astype(int)
-            # For each valid (i, j), find edge m of neighbour k that points back to i
-            valid_i, valid_j = num.where(self.neighbours >= 0)
-            k = self.neighbours[valid_i, valid_j]
-            for m in range(3):
-                matches = (self.neighbours[k, m] == valid_i)
-                self.neighbour_edges[valid_i[matches], valid_j[matches]] = m
+            if triangle_neighbour_edges is not None:
+                # Pre-computed: assign directly without the reverse-lookup loop
+                self.neighbour_edges[:] = num.array(triangle_neighbour_edges, int)
+            else:
+                # For each valid (i, j), find edge m of neighbour k that points back to i
+                valid_i, valid_j = num.where(self.neighbours >= 0)
+                k = self.neighbours[valid_i, valid_j]
+                for m in range(3):
+                    matches = (self.neighbours[k, m] == valid_i)
+                    self.neighbour_edges[valid_i[matches], valid_j[matches]] = m
         else:
             from . import neighbour_table_ext
 
@@ -597,62 +612,7 @@ class Mesh(General_mesh):
         # Get x,y coordinates for all vertices for all triangles
         V = self.get_vertex_coordinates()
 
-#        # Check each triangle
-#        for i in xrange(0):
-#
-#            x0, y0 = V[3*i, :]
-#            x1, y1 = V[3*i+1, :]
-#            x2, y2 = V[3*i+2, :]
-#
-#            # Check that area hasn't been compromised
-#            area = self.areas[i]
-#            ref = -((x1*y0-x0*y1)+(x2*y1-x1*y2)+(x0*y2-x2*y0))/2
-#            msg = 'Triangle %i (%f,%f), (%f,%f), (%f, %f)' % (i, x0,y0,x1,y1,x2,y2)
-#            msg += 'Wrong area: %f  %f'\
-#                  %(area, ref)
-#            assert abs((area - ref)/area) < epsilon, msg
-#
-#            msg = 'Triangle %i (%f,%f), (%f,%f), (%f, %f)' % (i, x0,y0,x1,y1,x2,y2)
-#            msg += ' is degenerate:  area == %f' % self.areas[i]
-#            assert area > 0.0, msg
-#
-#            # Check that points are arranged in counter clock-wise order
-#            v0 = [x1-x0, y1-y0]
-#            v1 = [x2-x1, y2-y1]
-#            v2 = [x0-x2, y0-y2]
-#            a0 = anglediff(v1, v0)
-#            a1 = anglediff(v2, v1)
-#            a2 = anglediff(v0, v2)
-#
-#            msg = '''Vertices (%s,%s), (%s,%s), (%s,%s) are not arranged
-#            in counter clockwise order''' %(x0, y0, x1, y1, x2, y2)
-#            assert a0 < pi and a1 < pi and a2 < pi, msg
-#
-#            # Check that normals are orthogonal to edge vectors
-#            # Note that normal[k] lies opposite vertex k
-#
-#            normal0 = self.normals[i, 0:2]
-#            normal1 = self.normals[i, 2:4]
-#            normal2 = self.normals[i, 4:6]
-#
-#            for u, v in [ (v0, normal2), (v1, normal0), (v2, normal1) ]:
-#
-#                # Normalise
-#                l_u = num.sqrt(u[0]*u[0] + u[1]*u[1])
-#                l_v = num.sqrt(v[0]*v[0] + v[1]*v[1])
-#
-#                msg = 'Normal vector in triangle %d does not have unit length' %i
-#                assert num.allclose(l_v, 1), msg
-#
-#                x = (u[0]*v[0] + u[1]*v[1])/l_u # Inner product
-#
-#                msg = 'Normal vector (%f,%f) is not perpendicular to' %tuple(v)
-#                msg += ' edge (%f,%f) in triangle %d.' %(tuple(u) + (i,))
-#                msg += ' Inner product is %e.' %x
-#                assert x < epsilon, msg
-
-
-        # let's try numpy constructs
+        # numpy constructs
 
         x0 = V[0::3, 0]
         y0 = V[0::3, 1]

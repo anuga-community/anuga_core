@@ -17,6 +17,7 @@ from anuga import Boyd_box_operator
 from anuga import Boyd_pipe_operator
 from anuga import Domain
 from anuga import create_mesh_from_regions
+from anuga import create_domain_from_regions
 from anuga import read_polygon
 from anuga import Polygon_function
 from anuga import file_function
@@ -370,22 +371,21 @@ Creating domain from scratch.
     
         interior_regions = read_polygon_list(CatchmentList)
     
-        # Make the mesh
-        create_mesh_from_regions(bounding_polygon,
+        # Make the domain
+        mesh = create_mesh_from_regions(bounding_polygon,
                                  boundary_tags={'south': [0], 'east': [
                                      1], 'north': [2], 'west': [3]},
                                  maximum_triangle_area=maximum_triangle_area,
                                  interior_regions=interior_regions,
                                  breaklines=riverWalls.values(),
-                                 filename=meshname,
                                  use_cache=False,
                                  verbose=False)
+
+        domain = Domain(mesh)
     
         # ------------------------------------------------------------------------------
         # SETUP COMPUTATIONAL DOMAIN
         # ------------------------------------------------------------------------------
-    
-        domain = Domain(meshname, use_cache=False, verbose=False)
     
         domain.set_flow_algorithm(alg)
     
