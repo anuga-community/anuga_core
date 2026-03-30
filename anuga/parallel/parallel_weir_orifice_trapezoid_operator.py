@@ -46,10 +46,10 @@ class Parallel_Weir_orifice_trapezoid_operator(Parallel_Structure_operator):
                  verbose=False,
                  master_proc = 0,
                  procs = None,
-                 inlet_master_proc = [0,0],
+                 inlet_master_proc = None,
                  inlet_procs = None,
-                 enquiry_proc = [0,0]):
-                     
+                 enquiry_proc = None):
+
         Parallel_Structure_operator.__init__(self,
                                           domain=domain,
                                           end_points=end_points,
@@ -285,7 +285,7 @@ class Parallel_Weir_orifice_trapezoid_operator(Parallel_Structure_operator):
                                  % (str(inflow_enq_specific_energy),
                                     str(self.delta_total_energy)))
 
-                    anuga.log.critical('culvert type = %s' % str(culvert_type))
+                    anuga.log.critical('culvert type = %s' % self.__class__.__name__)
 
                 # Water has risen above inlet
 

@@ -6,8 +6,6 @@ Unit tests for spatialInputUtil
 FIXME: Need to extend coverage to reading shapefiles + some other operations
 
 """
-
-from builtins import range
 import unittest
 import anuga
 import numpy
@@ -25,14 +23,14 @@ verbose = False
 
 import sys
 try:
-    import osgeo
+    import rasterio
 except ImportError:
     pass
 
 import pytest
 
-@pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+@pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
 class Test_spatialInputUtil(unittest.TestCase):
     """
         Test the spatialInput utilities
@@ -45,7 +43,7 @@ class Test_spatialInputUtil(unittest.TestCase):
         for file in ['PointData_TestData.tif']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass
 
     def make_me_a_tif(self):
@@ -372,7 +370,7 @@ class Test_spatialInputUtil(unittest.TestCase):
             InDat, rasterFile='PointData_TestData.tif')
         try:
             assert(numpy.allclose(z_fitted, z_predicted))
-        except:
+        except AssertionError:
             raise Exception(
                 'Error could be in rasterValuesAtPoints or in Make_Geotif')
 
@@ -382,7 +380,7 @@ class Test_spatialInputUtil(unittest.TestCase):
         z_predicted = xA + yA - tifRange[0] - tifRange[2] - 1.0
         try:
             assert(numpy.allclose(z_fitted, z_predicted))
-        except:
+        except AssertionError:
             raise Exception(
                 'Error could be in rasterValuesAtPoints or in Make_Geotif')
 

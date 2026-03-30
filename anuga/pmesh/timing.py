@@ -1,9 +1,6 @@
 """
 Script to measure how long pmesh spends doing various methods
 """
-
-
-from builtins import range
 from .mesh import *
 from anuga.pmesh import *
 import time
@@ -39,29 +36,29 @@ tinitial = time.time()
 mem_initial = mem_usage()
 print("mem_initial", mem_initial)
 #------------------------------------------
-mesh = Mesh()
+mesh = Pmesh()
 id = 0
 for i in range(n):
     for j in range(n):
-       v = mesh.addUserVertex(i,j)
+       v = mesh.add_user_vertex(i, j)
        v.guiID = id
        id += 1
-v1 = mesh.addUserVertex(-1,-1)
+v1 = mesh.add_user_vertex(-1, -1)
 v1.guiID = id
 id += 1
-v2 = mesh.addUserVertex(-1,n)
+v2 = mesh.add_user_vertex(-1, n)
 v2.guiID = id
 id += 1
-v3 = mesh.addUserVertex(n,n)
+v3 = mesh.add_user_vertex(n, n)
 v3.guiID = id
 id += 1
-v4 = mesh.addUserVertex(n,-1)
+v4 = mesh.add_user_vertex(n, -1)
 v4.guiID = id
 id += 1
-mesh.addUserSegment(v1,v2)
-mesh.addUserSegment(v2,v3)
-mesh.addUserSegment(v3,v4)
-mesh.addUserSegment(v4,v1)
+mesh.add_user_segment(v1, v2)
+mesh.add_user_segment(v2, v3)
+mesh.add_user_segment(v3, v4)
+mesh.add_user_segment(v4, v1)
 mem_now =mem_usage()
 #print "mem_now", mem_now
 if mem_now is not None:
@@ -70,7 +67,7 @@ else:
     mem = 0.0
 times.append(("user_outline_created",time.time() - tinitial, mem ))
 #------------------------------------------
-mesh.generateMesh(mode = "Q",maxArea = maxArea)
+mesh.generate_mesh(maximum_triangle_area=maxArea)
 mem_now =mem_usage()
 #print "mem_now", mem_now
 if mem_now is not None:

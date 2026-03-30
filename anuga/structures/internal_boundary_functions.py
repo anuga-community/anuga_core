@@ -336,7 +336,7 @@ class hecras_internal_boundary_function(object):
                     continue
                 try:
                     Q_store[h, t] = self(hw, tw)
-                except:
+                except Exception:
                     Q_store[h, t] = numpy.nan
 
         if interactive_plot:

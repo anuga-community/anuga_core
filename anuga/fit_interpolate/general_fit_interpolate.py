@@ -15,8 +15,6 @@ interpolate
 interpolate_block
 
 """
-
-from builtins import object
 import time
 import os
 from warnings import warn

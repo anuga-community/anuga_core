@@ -82,11 +82,11 @@ def order_boundary(infile, outfile):
     for row in csv.reader(fd):
         try:
             row[0] = float(row[0])
-        except:
+        except (ValueError, TypeError):
             pass
         try:
             row[1] = float(row[1])
-        except:
+        except (ValueError, TypeError):
             pass
         data.append(tuple(row))
     fd.close()

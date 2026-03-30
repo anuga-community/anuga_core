@@ -5,7 +5,7 @@
 # Import necessary modules
 # ------------------------
 from math import exp
-from anuga import create_mesh_from_regions, create_domain_from_file
+from anuga import create_pmesh_from_regions, create_domain_from_file
 from anuga import Reflective_boundary, Transmissive_momentum_set_stage_boundary
 from anuga import myid, distribute, barrier, numprocs, finalize
 
@@ -54,7 +54,7 @@ regionPtAreas = [[99., 99., 10.0*10.0*0.5],
 # Setup computational domain and quantities
 # --------------------------------------------------------------------------
 if myid == 0:
-    create_mesh_from_regions(boundaryPolygon,
+    create_pmesh_from_regions(boundaryPolygon,
                              boundary_tags={'left': [0],
                                             'top': [1],
                                             'right': [2],

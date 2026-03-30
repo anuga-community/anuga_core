@@ -13,7 +13,7 @@ cfl = 1.0
 # use the parameters defined there to override the parameters set here.
 try:
     from local_parameters import *
-except:
+except ImportError:
     pass
 
 

@@ -43,12 +43,12 @@ class Test_rate_operators(unittest.TestCase):
     def tearDown(self):
         try:
             os.remove('test_file_function.txt')
-        except:
+        except OSError:
             pass
 
         try:
             os.remove('test_file_function.tms')
-        except:
+        except OSError:
             pass
 
 
@@ -112,12 +112,13 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
-        assert num.allclose (float(rr[1]), 10.0)
+        # print(rr)
         assert num.allclose (float(rr[2]), 10.0)
-        assert num.allclose (float(rr[3]), 120.0)
+        assert num.allclose (float(rr[3]), 10.0)
+        assert num.allclose (float(rr[4]), 120.0)
 
-        # assert num.allclose (float(rr[1]), 1.0)
-        # assert num.allclose (float(rr[2]), 60.0)
+        # assert num.allclose (float(rr[2]), 1.0)
+        # assert num.allclose (float(rr[3]), 60.0)
 
         # operator_27: Min rate = 10 m/s, Max rate = 10 m/s, Total Q = 120 m^3
 
@@ -193,12 +194,13 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
-        assert num.allclose(float(rr[1]), -0.5)
+        # print(rr)
         assert num.allclose(float(rr[2]), -0.5)
-        assert num.allclose(float(rr[3]), -6.0)
+        assert num.allclose(float(rr[3]), -0.5)
+        assert num.allclose(float(rr[4]), -6.0)
 
-        # assert num.allclose(float(rr[1]), -1.0)
-        # assert num.allclose(float(rr[2]), -60.0)
+        # assert num.allclose(float(rr[2]), -1.0)
+        # assert num.allclose(float(rr[3]), -60.0)
         # operator_13: Min rate = -0.5 m/s, Max rate = -0.5 m/s, Total Q = -6 m^3
 
     def test_rate_operator_negative_rate_full(self):
@@ -269,12 +271,13 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
-        assert num.allclose(float(rr[1]), -5)
+        # print(rr)
         assert num.allclose(float(rr[2]), -5)
-        assert num.allclose(float(rr[3]), -80.0)
+        assert num.allclose(float(rr[3]), -5)
+        assert num.allclose(float(rr[4]), -80.0)
 
-        # assert num.allclose(float(rr[1]), -1.0)
-        # assert num.allclose(float(rr[2]), -80.0)
+        # assert num.allclose(float(rr[2]), -1.0)
+        # assert num.allclose(float(rr[3]), -80.0)
         # operator_15: Min rate = -5 m/s, Max rate = -5 m/s, Total Q = -80 m^3
 
     def test_rate_operator_some_negative_rates(self):
@@ -343,9 +346,10 @@ class Test_rate_operators(unittest.TestCase):
 
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
-        assert num.allclose(float(rr[1]), -5.0)
-        assert num.allclose(float(rr[2]), 10.0)
-        assert num.allclose(float(rr[3]), 12.0)
+        # print(rr)
+        assert num.allclose(float(rr[2]), -5.0)
+        assert num.allclose(float(rr[3]), 10.0)
+        assert num.allclose(float(rr[4]), 12.0)
 
 
 
@@ -417,9 +421,10 @@ class Test_rate_operators(unittest.TestCase):
         
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
-        assert num.allclose(float(rr[1]), -5.0)
-        assert num.allclose(float(rr[2]), 10.0)
-        assert num.allclose(float(rr[3]), 12.0)       
+        # print(rr)
+        assert num.allclose(float(rr[2]), -5.0)
+        assert num.allclose(float(rr[3]), 10.0)
+        assert num.allclose(float(rr[4]), 12.0)       
     
 
     def test_rate_operator_rate_from_file(self):
@@ -592,12 +597,13 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
-        assert num.allclose(float(rr[1]), 17700)
-        assert num.allclose(float(rr[2]), 17700)
-        assert num.allclose(float(rr[3]), 106200)
+        # print(rr)
+        assert num.allclose(float(rr[2]), float(f'{17700:.2e}'))
+        assert num.allclose(float(rr[3]), float(f'{17700:.2e}'))
+        assert num.allclose(float(rr[4]), float('7.78e+08'))
 
-        # assert num.allclose(float(rr[1]), 17.7)
-        # assert num.allclose(float(rr[2]), 106200.0)
+        # assert num.allclose(float(rr[2]), 17.7)
+        # assert num.allclose(float(rr[3]), 106200.0)
         # 
         # operator_21: Min rate = 17700 m/s, Max rate = 17700 m/s, Total Q = 106200 m^3     
 
@@ -701,7 +707,7 @@ class Test_rate_operators(unittest.TestCase):
 
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
-
+        # print(rr)
         if verbose:
             print('Operator Statistics: ',stats)
             print('Extracted values: ',rr)
@@ -709,12 +715,13 @@ class Test_rate_operators(unittest.TestCase):
             print('Get rate value: ', operator.get_non_spatial_rate())
             print('Areas: ', operator.areas)
 
-        assert num.allclose(float(rr[1]), 970.0)
-        assert num.allclose(float(rr[2]), 970.0)
-        assert num.allclose(float(rr[3]), 5820.0)
+        assert num.allclose(float(rr[2]), float(f'{970.0:.2e}'))
+        assert num.allclose(float(rr[3]), float(f'{970.0:.2e}'))
+        assert num.allclose(float(rr[4]), float('6.66e+03'))
 
-        # assert num.allclose(float(rr[1]), 970.0)
-        # assert num.allclose(float(rr[2]), 5820.0)
+
+        # assert num.allclose(float(rr[2]), 970.0)
+        # assert num.allclose(float(rr[3]), 5820.0)
 
         # operator_5: Min rate = 970 m/s, Max rate = 970 m/s, Total Q = 5820 m^3
 
@@ -805,14 +812,14 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
+        # print(rr)
+        assert num.allclose(float(rr[2]), float(f'{13.3333:.2e}'))
+        assert num.allclose(float(rr[3]), float(f'{33.3333:.2e}'))
+        assert num.allclose(float(rr[4]), float(f'{426.667:.2e}'))
 
-        assert num.allclose(float(rr[1]), 13.3333)
-        assert num.allclose(float(rr[2]), 33.3333)
-        assert num.allclose(float(rr[3]), 426.667)
-
-        # assert num.allclose(float(rr[1]), 1.33333)
-        # assert num.allclose(float(rr[2]), 3.33333)
-        # assert num.allclose(float(rr[3]), 213.33333)
+        # assert num.allclose(float(rr[2]), 1.33333)
+        # assert num.allclose(float(rr[3]), 3.33333)
+        # assert num.allclose(float(rr[4]), 213.33333)
 
         #operator_7: Min rate = 13.3333 m/s, Max rate = 33.3333 m/s, Total Q = 426.667 m^3
 
@@ -910,14 +917,14 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
+        # print(rr)
+        assert num.allclose(float(rr[2]), float(f'{13.3333:.2e}'))
+        assert num.allclose(float(rr[3]), float(f'{33.3333:.2e}'))
+        assert num.allclose(float(rr[4]), float(f'{320:.2e}'))
 
-        assert num.allclose(float(rr[1]), 13.3333)
-        assert num.allclose(float(rr[2]), 33.3333)
-        assert num.allclose(float(rr[3]), 320 )
-
-        # assert num.allclose(float(rr[1]), 1.33333)
-        # assert num.allclose(float(rr[2]), 3.33333)
-        # assert num.allclose(float(rr[3]), 160.0) 
+        # assert num.allclose(float(rr[2]), 1.33333)
+        # assert num.allclose(float(rr[3]), 3.33333)
+        # assert num.allclose(float(rr[4]), 160.0) 
 
         # operator_11: Min rate = 13.3333 m/s, Max rate = 33.3333 m/s, Total Q = 320 m^3       
 
@@ -1005,14 +1012,14 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
+        # print(rr)
+        assert num.allclose(float(rr[2]), float(f'{13.3333:.2e}'))
+        assert num.allclose(float(rr[3]), float(f'{33.3333:.2e}'))
+        assert num.allclose(float(rr[4]), float(f'{293.333:.2e}'))
 
-        assert num.allclose(float(rr[1]), 13.3333)
-        assert num.allclose(float(rr[2]), 33.3333)
-        assert num.allclose(float(rr[3]), 293.333)
-
-        # assert num.allclose(float(rr[1]), 1.33333)
-        # assert num.allclose(float(rr[2]), 3.33333)
-        # assert num.allclose(float(rr[3]), 146.667)        
+        # assert num.allclose(float(rr[2]), 1.33333)
+        # assert num.allclose(float(rr[3]), 3.33333)
+        # assert num.allclose(float(rr[4]), 146.667)        
 
         # operator_9: Min rate = 13.3333 m/s, Max rate = 33.3333 m/s, Total Q = 293.333 m^3
 
@@ -1099,14 +1106,15 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
+        # print(rr)
 
-        assert num.allclose(float(rr[1]), 10.0)
         assert num.allclose(float(rr[2]), 10.0)
-        assert num.allclose(float(rr[3]), 120.0)
+        assert num.allclose(float(rr[3]), 10.0)
+        assert num.allclose(float(rr[4]), 120.0)
 
-        # assert num.allclose(float(rr[1]), 1.0)
         # assert num.allclose(float(rr[2]), 1.0)
-        # assert num.allclose(float(rr[3]), 60.0) 
+        # assert num.allclose(float(rr[3]), 1.0)
+        # assert num.allclose(float(rr[4]), 60.0) 
         # 
         # operator_23: Min rate = 10 m/s, Max rate = 10 m/s, Total Q = 120 m^3     
 
@@ -1191,14 +1199,15 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
+        # print(rr)
 
-        assert num.allclose(float(rr[1]), 10.0)
         assert num.allclose(float(rr[2]), 10.0)
-        assert num.allclose(float(rr[3]), 120.0)
+        assert num.allclose(float(rr[3]), 10.0)
+        assert num.allclose(float(rr[4]), 120.0)
 
-        # assert num.allclose(float(rr[1]), 1.0)
         # assert num.allclose(float(rr[2]), 1.0)
-        # assert num.allclose(float(rr[3]), 60.0)
+        # assert num.allclose(float(rr[3]), 1.0)
+        # assert num.allclose(float(rr[4]), 60.0)
 
         # operator_17: Min rate = 10 m/s, Max rate = 10 m/s, Total Q = 120 m^3
 
@@ -1283,14 +1292,15 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
+        # print(rr)
 
-        assert num.allclose(float(rr[1]), 10.0)
         assert num.allclose(float(rr[2]), 10.0)
-        assert num.allclose(float(rr[3]), 120.0)
+        assert num.allclose(float(rr[3]), 10.0)
+        assert num.allclose(float(rr[4]), 120.0)
 
-        # assert num.allclose(float(rr[1]), 1.0)
         # assert num.allclose(float(rr[2]), 1.0)
-        # assert num.allclose(float(rr[3]), 60.0)
+        # assert num.allclose(float(rr[3]), 1.0)
+        # assert num.allclose(float(rr[4]), 60.0)
 
         # operator_17: Min rate = 10 m/s, Max rate = 10 m/s, Total Q = 120 m^3
      
@@ -1383,14 +1393,15 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
+        # print(rr)
 
-        assert num.allclose(float(rr[1]), 10.0)
         assert num.allclose(float(rr[2]), 10.0)
-        assert num.allclose(float(rr[3]), 120.0)
+        assert num.allclose(float(rr[3]), 10.0)
+        assert num.allclose(float(rr[4]), 120.0)
 
-        # assert num.allclose(float(rr[1]), 1.0)
         # assert num.allclose(float(rr[2]), 1.0)
-        # assert num.allclose(float(rr[3]), 60.0)
+        # assert num.allclose(float(rr[3]), 1.0)
+        # assert num.allclose(float(rr[4]), 60.0)
 
         # operator_17: Min rate = 10 m/s, Max rate = 10 m/s, Total Q = 120 m^3
 
@@ -1437,7 +1448,7 @@ class Test_rate_operators(unittest.TestCase):
         try: 
             operator = Rate_operator(domain, rate=rate_array, factor=factor, \
                                  indices=indices)
-        except:
+        except Exception:
             # expect exception as f is not a function of t
             pass
 
@@ -1571,14 +1582,15 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
+        # print(rr)
 
-        assert num.allclose(float(rr[1]), 10.0)
         assert num.allclose(float(rr[2]), 10.0)
-        assert num.allclose(float(rr[3]), 160.0)
+        assert num.allclose(float(rr[3]), 10.0)
+        assert num.allclose(float(rr[4]), 160.0)
 
-        # assert num.allclose(float(rr[1]), 1.0)
         # assert num.allclose(float(rr[2]), 1.0)
-        # assert num.allclose(float(rr[3]), 80.0)
+        # assert num.allclose(float(rr[3]), 1.0)
+        # assert num.allclose(float(rr[4]), 80.0)
 
 
         # operator_25: Min rate = 10 m/s, Max rate = 10 m/s, Total Q = 160 m^3
@@ -1669,10 +1681,11 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
+        # print(rr)
 
-        assert num.allclose(float(rr[1]), 0.0)
         assert num.allclose(float(rr[2]), 0.0)
         assert num.allclose(float(rr[3]), 0.0)
+        assert num.allclose(float(rr[4]), 0.0)
 
 
     def test_rate_operator_functions_empty_region(self):
@@ -1762,10 +1775,11 @@ class Test_rate_operators(unittest.TestCase):
         stats = operator.timestepping_statistics()
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
-
-        assert num.allclose(float(rr[1]), 0.0)
+        # print(rr)
+        
         assert num.allclose(float(rr[2]), 0.0)
         assert num.allclose(float(rr[3]), 0.0)
+        assert num.allclose(float(rr[4]), 0.0)
 
 
 

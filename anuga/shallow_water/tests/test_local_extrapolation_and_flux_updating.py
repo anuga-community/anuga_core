@@ -15,7 +15,7 @@ class Test_local_extrapolation_and_flux_updating(unittest.TestCase):
         for file in ['domain.sww', 'test_boundaryfluxintegral.msh', 'test_boundaryfluxintegral.sww']:
             try:
                 os.remove(file)
-            except:
+            except OSError:
                 pass        
 
 
@@ -23,7 +23,7 @@ class Test_local_extrapolation_and_flux_updating(unittest.TestCase):
         # Riverwall = list of lists, each with a set of x,y,z (and optional QFactor) values
 
         # Make the domain
-        anuga.create_mesh_from_regions(boundaryPolygon, 
+        anuga.create_pmesh_from_regions(boundaryPolygon, 
                                  boundary_tags={'left': [0],
                                                 'top': [1],
                                                 'right': [2],
@@ -100,7 +100,7 @@ class Test_local_extrapolation_and_flux_updating(unittest.TestCase):
         try:
             domain.set_local_extrapolation_and_flux_updating(nlevels=8)
             Failed=False
-        except:
+        except Exception:
             pass
 
         assert(Failed==True)

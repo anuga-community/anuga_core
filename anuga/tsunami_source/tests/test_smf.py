@@ -11,7 +11,7 @@ class Test_smf(unittest.TestCase):
     def tearDown(self):
         try:
             os.remove('test.msh')
-        except:
+        except OSError:
             pass
 
 
@@ -102,9 +102,9 @@ class Test_smf(unittest.TestCase):
         x0 = 100000.
         y0 = x0
         
-        from anuga.pmesh.mesh_interface import create_mesh_from_regions
+        from anuga.pmesh.mesh_interface import create_pmesh_from_regions
         polygon = [[0,0],[200000,0],[200000,200000],[0,200000]]
-        create_mesh_from_regions(polygon,
+        create_pmesh_from_regions(polygon,
                                  {'e0': [0], 'e1': [1], 'e2': [2], 'e3': [3]},
                                  maximum_triangle_area=5000000000,
                                  filename='test.msh',

@@ -1,17 +1,14 @@
 #!/usr/bin/env python
-
-
-from builtins import range
 import unittest
 from math import sqrt
 
 import anuga
 
 from anuga.abstract_2d_finite_volumes.generic_domain import *
-from anuga.pmesh.mesh_interface import create_mesh_from_regions
+from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 from anuga.config import epsilon
 import numpy as num
-from anuga.pmesh.mesh import Segment, Vertex, Mesh
+from anuga.pmesh.mesh import Segment, Vertex, Pmesh
 
 
 def add_to_verts(tag, elements, domain):
@@ -79,8 +76,8 @@ class Test_Domain(unittest.TestCase):
                         conserved_quantities, evolved_quantities, other_quantities)
 
         try:
-            domain.set_CFL(-0.1)
-        except:
+            domain.set_cfl(-0.1)
+        except Exception:
             pass
         else:
             msg = 'Should have caught a negative cfl'
@@ -94,15 +91,15 @@ class Test_Domain(unittest.TestCase):
         warnings.simplefilter("error")
 
         try:
-            domain.set_CFL(3.0)
-        except:
+            domain.set_cfl(3.0)
+        except Exception:
             pass
         else:
             msg = 'Should have warned of cfl>2.0'
             raise Exception(msg)
 
         assert domain.CFL == 3.0
-        
+
         warnings.simplefilter("default")
         
 
@@ -265,7 +262,7 @@ class Test_Domain(unittest.TestCase):
         # Check that invalid requests are dealt with
         try:
             domain.set_quantities_to_be_monitored(['yyyyy'])        
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught illegal quantity'
@@ -281,7 +278,7 @@ class Test_Domain(unittest.TestCase):
 
         try:
             domain.set_quantities_to_be_monitored('stage', 'stage-elevation')
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught too many arguments'
@@ -289,7 +286,7 @@ class Test_Domain(unittest.TestCase):
 
         try:
             domain.set_quantities_to_be_monitored('stage', 'blablabla')
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught polygon as a string'
@@ -456,7 +453,7 @@ class Test_Domain(unittest.TestCase):
         # Check that invalid requests are dealt with
         try:
             domain.set_timestepping_method('eee')        
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught illegal method'
@@ -637,7 +634,7 @@ class Test_Domain(unittest.TestCase):
                             conserved_quantities = ['stage', 'xmomentum', 'ymomentum'],
                             evolved_quantities =\
                                    ['stage', 'xmomentum', 'xvelocity', 'ymomentum', 'yvelocity'])
-        except:
+        except Exception:
             pass
         else:
             msg = 'Should have caught the evolved quantities not being in order'

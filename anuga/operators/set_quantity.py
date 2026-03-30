@@ -95,16 +95,9 @@ class Set_quantity(object):
         otherwise apply for the specific indices
         """
 
-        if self.region.indices is []:
+        if self.region.indices is not None and len(self.region.indices) == 0:
             return
 
-
-
-        #value = self.get_value()
-        
-        from pprint import pprint
-        #print 'value'
-        #pprint(value)
 
 
 
@@ -115,10 +108,14 @@ class Set_quantity(object):
             #--------------------------------------
             try:
                 value = self.get_value(x=self.coord_c[:,0], y=self.coord_c[:,1])
-                #print value
                 self.quantity_c[:] = value
-            except ValueError:
-                pass
+            except ValueError as e:
+                # ValueError can occur when the value function is a time-series
+                # file and the current time is outside the file's time range
+                # (e.g. before the series starts).  Log at debug level so the
+                # issue is visible without flooding the console.
+                log.debug('Set_quantity: ValueError updating quantity "%s": %s',
+                          self.quantity, e)
 
         else:
 
@@ -131,8 +128,9 @@ class Set_quantity(object):
             try:
                 value = self.get_value(x=x,y=y)
                 self.quantity_c[rids] = value
-            except ValueError:
-                pass
+            except ValueError as e:
+                log.debug('Set_quantity: ValueError updating quantity "%s": %s',
+                          self.quantity, e)
 
 
 

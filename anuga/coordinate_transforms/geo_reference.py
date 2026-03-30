@@ -5,9 +5,6 @@
 
 #FIXME: Ensure that all attributes of a georef are treated everywhere
 #and unit test
-
-from builtins import str
-from builtins import object
 import sys
 import copy
 
@@ -36,23 +33,43 @@ DEFAULT_NORTHERN_FALSE_NORTHING = 0
 
 DEFAULT_HEMISPHERE = 'undefined'
 
+# WGS84 UTM EPSG code ranges
+# Northern hemisphere: 32601 (zone 1N) – 32660 (zone 60N)
+# Southern hemisphere: 32701 (zone 1S) – 32760 (zone 60S)
+_WGS84_UTM_NORTH_BASE = 32600
+_WGS84_UTM_SOUTH_BASE = 32700
+
 TITLE = '#geo reference' + "\n" # this title is referred to in the test format
 
 class Geo_reference(object):
-    """
-    Attributes of the Geo_reference class:
-        .zone           The UTM zone (default is -1)
-        .hemisphere     southern, northern or undefined hemisphere
-        .false_easting  ??
-        .false_northing ??
-        .datum          The Datum used (default is wgs84)
-        .projection     The projection used (default is 'UTM')
-        .units          The units of measure used (default metres)
-        .xllcorner      The X coord of origin (default is 0.0 wrt UTM grid)
-        .yllcorner      The y coord of origin (default is 0.0 wrt UTM grid)
-        .is_absolute    ??
-    
+    """Coordinate reference system for an ANUGA domain.
 
+    Attributes
+    ----------
+    zone : int
+        UTM zone (1–60), or -1 (DEFAULT_ZONE) for non-UTM / arbitrary origin
+        (e.g. a wave-tank simulation).
+    hemisphere : str
+        ``'southern'``, ``'northern'``, or ``'undefined'``.
+    xllcorner : float
+        X coordinate (easting) of the local origin relative to the UTM grid.
+    yllcorner : float
+        Y coordinate (northing) of the local origin relative to the UTM grid.
+    datum : str
+        Geodetic datum (default ``'wgs84'``).
+    projection : str
+        Map projection (default ``'UTM'``).
+    units : str
+        Units of measurement (default ``'m'``).
+    false_easting : int
+        False easting offset (500 000 m for WGS84 UTM).
+    false_northing : int
+        False northing offset (10 000 000 m southern, 0 m northern).
+    epsg : int or None
+        EPSG code for the coordinate reference system.  For WGS84 UTM this is
+        auto-computed from *zone* and *hemisphere* (32600 + zone for northern,
+        32700 + zone for southern).  Returns ``None`` when the zone is
+        DEFAULT_ZONE or the CRS cannot be determined.
     """
 
     def __init__(self,
@@ -65,55 +82,70 @@ class Geo_reference(object):
                  false_easting=None,
                  false_northing=None,
                  hemisphere=DEFAULT_HEMISPHERE,
+                 epsg=None,
                  NetCDFObject=None,
                  ASCIIFile=None,
                  read_title=None):
         """
-        zone            the UTM zone.
-        hemisphere      southern or northern hemisphere
-        xllcorner       X coord of origin of georef.
-        yllcorner       Y coord of origin of georef.
-        datum           ??
-        projection      the projection used (default UTM).
-        units           units used in measuring distance (default m).
-        false_easting   ??
-        false_northing  ??
-        NetCDFObject    NetCDF file *handle* to write to.
-        ASCIIFile       ASCII text file *handle* to write to.
-        read_title      title of the georeference text.
-
-        If the function that calls this has already read the title line,
-        it can't unread it, so this info has to be passed.
-        If you know of a way to unread this info, then tell us.
-
-        Note, the text file only saves a sub set of the info the
-        points file does.  Currently the info not written in text
-        must be the default info, since ANUGA assumes it isn't
-        changing.
+        Parameters
+        ----------
+        zone : int, optional
+            UTM zone (1–60) or -1 for no UTM framework.  Inferred from *epsg*
+            when possible if not supplied.
+        xllcorner : float, optional
+            X (easting) of the local origin in metres.
+        yllcorner : float, optional
+            Y (northing) of the local origin in metres.
+        datum : str, optional
+            Geodetic datum.  Default ``'wgs84'``.
+        projection : str, optional
+            Map projection.  Default ``'UTM'``.
+        units : str, optional
+            Distance units.  Default ``'m'``.
+        false_easting : int, optional
+            Override the default false easting for the hemisphere.
+        false_northing : int, optional
+            Override the default false northing for the hemisphere.
+        hemisphere : str, optional
+            ``'southern'``, ``'northern'``, or ``'undefined'``.  Inferred from
+            *epsg* when possible if not supplied.
+        epsg : int, optional
+            EPSG code.  For WGS84 UTM codes (32601–32660 northern,
+            32701–32760 southern), *zone* and *hemisphere* are inferred
+            automatically when they have not been set explicitly.
+        NetCDFObject : file handle, optional
+            Open NetCDF file to read geo-reference attributes from.
+        ASCIIFile : file handle, optional
+            Open text file to read geo-reference attributes from.
+        read_title : str, optional
+            Title line already read from *ASCIIFile* (pass if the caller has
+            already consumed it).
         """
 
         if zone is None:
             zone = DEFAULT_ZONE
 
+        self._epsg = None  # must exist before set_zone / set_hemisphere calls
+
         self.set_zone(zone)
         self.set_hemisphere(hemisphere)
         self.set_false_easting_northing(false_easting=false_easting, false_northing=false_northing)
 
-
-
         self.datum = datum
         self.projection = projection
-    
         self.units = units
         self.xllcorner = float(xllcorner)
         self.yllcorner = float(yllcorner)
-            
+
+        if epsg is not None:
+            self._set_epsg(int(epsg))
+
         if NetCDFObject is not None:
             self.read_NetCDF(NetCDFObject)
 
         if ASCIIFile is not None:
             self.read_ASCII(ASCIIFile, read_title=read_title)
-            
+
         # Set flag for absolute points (used by get_absolute)
         # FIXME (Ole): It would be more robust to always use get_absolute()
         self.absolute = num.allclose([self.xllcorner, self.yllcorner], 0)
@@ -191,10 +223,178 @@ class Geo_reference(object):
         self.false_easting = int(false_easting)
         self.false_northing = int(false_northing)
 
+    def _set_epsg(self, epsg):
+        """Store EPSG code and infer zone/hemisphere for WGS84 UTM codes.
+
+        For WGS84 UTM EPSG codes (32601–32660 northern, 32701–32760 southern),
+        *zone* and *hemisphere* are inferred automatically when not already set.
+
+        For all other EPSG codes (national grids, geographic CRS, etc.) the code
+        is stored as-is.  If ``pyproj`` is available, *datum* and *projection*
+        are populated from the CRS definition so the SWW metadata is accurate.
+
+        Parameters
+        ----------
+        epsg : int
+            EPSG code to store.
+        """
+        self._epsg = epsg
+
+        if _WGS84_UTM_NORTH_BASE < epsg <= _WGS84_UTM_NORTH_BASE + 60:
+            inferred_zone = epsg - _WGS84_UTM_NORTH_BASE
+            inferred_hemisphere = 'northern'
+        elif _WGS84_UTM_SOUTH_BASE < epsg <= _WGS84_UTM_SOUTH_BASE + 60:
+            inferred_zone = epsg - _WGS84_UTM_SOUTH_BASE
+            inferred_hemisphere = 'southern'
+        else:
+            # Non-UTM EPSG (e.g. EPSG:28992 Netherlands RD New,
+            # EPSG:27700 British National Grid).  No zone or hemisphere to infer.
+            # Populate datum and projection from pyproj if available so that
+            # the SWW file metadata accurately describes the CRS.
+            self._populate_from_pyproj(epsg)
+            return
+
+        if self.zone == DEFAULT_ZONE:
+            self.set_zone(inferred_zone)
+        elif self.zone != inferred_zone:
+            log.warning(f'EPSG {epsg} implies zone {inferred_zone} but zone '
+                        f'{self.zone} is already set; zone unchanged.')
+
+        if self.hemisphere == DEFAULT_HEMISPHERE:
+            self.set_hemisphere(inferred_hemisphere)
+            self.set_false_easting_northing()
+        elif self.hemisphere != inferred_hemisphere:
+            log.warning(f'EPSG {epsg} implies {inferred_hemisphere} hemisphere but '
+                        f'{self.hemisphere} is already set; hemisphere unchanged.')
+
+    def _populate_from_pyproj(self, epsg):
+        """Use pyproj to set CRS metadata from an EPSG code.
+
+        Populates *projection*, *datum*, *false_easting*, and *false_northing*
+        from the EPSG definition.  Does nothing if pyproj is not installed or
+        the lookup fails.
+
+        Parameters
+        ----------
+        epsg : int
+            EPSG code to look up.
+        """
+        try:
+            from pyproj import CRS
+            crs = CRS.from_epsg(epsg)
+        except Exception:
+            return  # pyproj not available or invalid EPSG
+
+        self.projection = crs.name
+
+        if crs.datum is not None:
+            self.datum = crs.datum.name
+        elif crs.geodetic_crs is not None and crs.geodetic_crs.datum is not None:
+            self.datum = crs.geodetic_crs.datum.name
+
+        if not crs.is_projected:
+            return
+
+        # False easting/northing: try CF params first, fall back to PROJ dict.
+        # Neither source covers all projections alone:
+        #   to_cf()   works for BNG (27700) but not RD New (28992)
+        #   to_dict() works for RD New (28992) but not some UTM variants
+        fe = fn = None
+        try:
+            cf = crs.to_cf()
+            fe = cf.get('false_easting')
+            fn = cf.get('false_northing')
+        except Exception:
+            pass
+
+        if fe is None or fn is None:
+            try:
+                import warnings
+                with warnings.catch_warnings():
+                    warnings.simplefilter('ignore')
+                    d = crs.to_dict()
+                fe = d.get('x_0', fe)
+                fn = d.get('y_0', fn)
+            except Exception:
+                pass
+
+        if fe is not None:
+            self.false_easting = int(round(float(fe)))
+        if fn is not None:
+            self.false_northing = int(round(float(fn)))
+
+    @property
+    def epsg(self):
+        """EPSG code for this coordinate reference system.
+
+        For WGS84 UTM projections the code is computed automatically from
+        *zone* and *hemisphere* when it has not been set explicitly:
+
+        * Northern hemisphere: ``32600 + zone`` (e.g. zone 55N → EPSG 32655)
+        * Southern hemisphere: ``32700 + zone`` (e.g. zone 55S → EPSG 32755)
+
+        Returns ``None`` when the zone is DEFAULT_ZONE (-1) or the CRS cannot
+        be determined.
+
+        Returns
+        -------
+        int or None
+        """
+        if self._epsg is not None:
+            return self._epsg
+        if self.zone == DEFAULT_ZONE:
+            return None
+        if self.datum.lower() == 'wgs84' and self.projection.upper() == 'UTM':
+            if self.hemisphere == 'southern':
+                return _WGS84_UTM_SOUTH_BASE + self.zone
+            if self.hemisphere == 'northern':
+                return _WGS84_UTM_NORTH_BASE + self.zone
+        return None
+
+    @epsg.setter
+    def epsg(self, value):
+        if value is None:
+            self._epsg = None
+        else:
+            self._set_epsg(int(value))
+
+    def get_epsg(self):
+        """Return the EPSG code for this coordinate reference system.
+
+        Returns
+        -------
+        int or None
+            EPSG code, or ``None`` if unknown.
+        """
+        return self.epsg
+
+    def is_located(self):
+        """Return True if this geo-reference describes a real, located CRS.
+
+        A geo-reference is *located* when either:
+
+        * *zone* is a valid UTM zone (1–60), or
+        * an EPSG code has been set (covers national grids, geographic CRS, and
+          any other projected CRS that does not use UTM zones, e.g.
+          EPSG:28992 Netherlands RD New, EPSG:27700 British National Grid).
+
+        A geo-reference with ``zone == DEFAULT_ZONE`` (-1) and no EPSG code is
+        *unlocated* — this is the case for wavetank or other hypothetical
+        simulations with an arbitrary local origin.
+
+        Returns
+        -------
+        bool
+        """
+        return self.zone != DEFAULT_ZONE or self._epsg is not None
+
     def write_NetCDF(self, outfile):
         """Write georef attributes to an open NetCDF file.
 
-        outfile  handle to open NetCDF file
+        Parameters
+        ----------
+        outfile : file handle
+            Handle to an open NetCDF file.
         """
 
         outfile.xllcorner = self.xllcorner
@@ -209,10 +409,17 @@ class Geo_reference(object):
         outfile.projection = self.projection
         outfile.units = self.units
 
+        epsg = self.epsg
+        if epsg is not None:
+            outfile.epsg = epsg
+
     def read_NetCDF(self, infile):
         """Set georef attributes from open NetCDF file.
 
-        infile Handle to open NetCDF file
+        Parameters
+        ----------
+        infile : file handle
+            Handle to an open NetCDF file.
         """
 
         self.xllcorner = float(infile.xllcorner)
@@ -220,7 +427,7 @@ class Geo_reference(object):
         self.zone = int(infile.zone)
         try:
             self.hemisphere = str(infile.hemisphere)
-        except:
+        except AttributeError:
             self.hemisphere = DEFAULT_HEMISPHERE
 
         self.false_easting = int(infile.false_easting)
@@ -230,55 +437,69 @@ class Geo_reference(object):
         self.projection = infile.projection
         self.units = infile.units
 
+        # Read EPSG if present (old SWW files may not have it)
+        try:
+            self._epsg = int(infile.epsg)
+        except AttributeError:
+            self._epsg = None
+
         # Set flag for absolute points (used by get_absolute)
-        # FIXME (Ole): It would be more robust to always use get_absolute()        
+        # FIXME (Ole): It would be more robust to always use get_absolute()
         self.absolute = num.allclose([self.xllcorner, self.yllcorner], 0)
-        
-        if self.zone == 'southern':
+
+        if self.hemisphere == 'southern':
             if self.false_easting != DEFAULT_SOUTHERN_FALSE_EASTING:
                 log.critical("WARNING: False easting of %f specified."
-                            % self.false_easting)
+                             % self.false_easting)
                 log.critical("Default false easting is %f." % DEFAULT_SOUTHERN_FALSE_EASTING)
                 log.critical("ANUGA does not correct for differences in "
-                            "False Eastings.")
+                             "False Eastings.")
 
             if self.false_northing != DEFAULT_SOUTHERN_FALSE_NORTHING:
                 log.critical("WARNING: False northing of %f specified."
-                            % self.false_northing)
+                             % self.false_northing)
                 log.critical("Default false northing is %f."
-                            % DEFAULT_SOUTHERN_FALSE_NORTHING)
+                             % DEFAULT_SOUTHERN_FALSE_NORTHING)
                 log.critical("ANUGA does not correct for differences in "
-                            "False Northings.")
+                             "False Northings.")
 
-        if self.zone == 'northern':
+        if self.hemisphere == 'northern':
             if self.false_easting != DEFAULT_NORTHERN_FALSE_EASTING:
                 log.critical("WARNING: False easting of %f specified."
-                            % self.false_easting)
+                             % self.false_easting)
                 log.critical("Default false easting is %f." % DEFAULT_NORTHERN_FALSE_EASTING)
                 log.critical("ANUGA does not correct for differences in "
-                            "False Eastings.")
+                             "False Eastings.")
 
             if self.false_northing != DEFAULT_NORTHERN_FALSE_NORTHING:
                 log.critical("WARNING: False northing of %f specified."
-                            % self.false_northing)
+                             % self.false_northing)
                 log.critical("Default false northing is %f."
-                            % DEFAULT_NORTHERN_FALSE_NORTHING)
+                             % DEFAULT_NORTHERN_FALSE_NORTHING)
                 log.critical("ANUGA does not correct for differences in "
-                            "False Northings.")
+                             "False Northings.")
 
 
 
-        if self.datum.upper() != DEFAULT_DATUM.upper():
-            log.critical("WARNING: Datum of %s specified." % self.datum)
-            log.critical("Default Datum is %s." % DEFAULT_DATUM)
-            log.critical("ANUGA does not correct for differences in datums.")
+        # Suppress datum/projection warnings for non-UTM EPSG codes
+        # (e.g. EPSG:28992 RD New has datum 'Amersfoort', not 'wgs84').
+        # The EPSG code is the authoritative CRS identifier in that case.
+        non_utm_epsg = (self._epsg is not None and
+                        not (_WGS84_UTM_NORTH_BASE < self._epsg <= _WGS84_UTM_NORTH_BASE + 60 or
+                             _WGS84_UTM_SOUTH_BASE < self._epsg <= _WGS84_UTM_SOUTH_BASE + 60))
 
-        if self.projection.upper() != DEFAULT_PROJECTION.upper():
-            log.critical("WARNING: Projection of %s specified."
-                         % self.projection)
-            log.critical("Default Projection is %s." % DEFAULT_PROJECTION)
-            log.critical("ANUGA does not correct for differences in "
-                         "Projection.")
+        if not non_utm_epsg:
+            if self.datum.upper() != DEFAULT_DATUM.upper():
+                log.critical("WARNING: Datum of %s specified." % self.datum)
+                log.critical("Default Datum is %s." % DEFAULT_DATUM)
+                log.critical("ANUGA does not correct for differences in datums.")
+
+            if self.projection.upper() != DEFAULT_PROJECTION.upper():
+                log.critical("WARNING: Projection of %s specified."
+                             % self.projection)
+                log.critical("Default Projection is %s." % DEFAULT_PROJECTION)
+                log.critical("ANUGA does not correct for differences in "
+                             "Projection.")
 
         if self.units.upper() != DEFAULT_UNITS.upper():
             log.critical("WARNING: Units of %s specified." % self.units)
@@ -526,6 +747,17 @@ class Geo_reference(object):
         return (self.zone, self.xllcorner, self.yllcorner)
 
     def __repr__(self):
+        epsg = self.epsg
+        is_utm = (epsg is not None and
+                  (_WGS84_UTM_NORTH_BASE < epsg <= _WGS84_UTM_NORTH_BASE + 60 or
+                   _WGS84_UTM_SOUTH_BASE < epsg <= _WGS84_UTM_SOUTH_BASE + 60))
+        if epsg is not None and not is_utm:
+            # Non-UTM CRS: zone/hemisphere are not meaningful; show CRS name instead
+            return ('(crs=%s, easting=%f, northing=%f, epsg=%i)'
+                    % (self.projection, self.xllcorner, self.yllcorner, epsg))
+        if epsg is not None:
+            return ('(zone=%i, easting=%f, northing=%f, hemisphere=%s, epsg=%i)'
+                    % (self.zone, self.xllcorner, self.yllcorner, self.hemisphere, epsg))
         return ('(zone=%i, easting=%f, northing=%f, hemisphere=%s)'
                 % (self.zone, self.xllcorner, self.yllcorner, self.hemisphere))
 

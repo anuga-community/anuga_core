@@ -39,9 +39,9 @@ class Parallel_Internal_boundary_operator(Parallel_Structure_operator):
                  verbose=True,
                  master_proc = 0,
                  procs = None,
-                 inlet_master_proc = [0,0],
+                 inlet_master_proc = None,
                  inlet_procs = None,
-                 enquiry_proc = [0,0]):
+                 enquiry_proc = None):
 
         if verbose:
             print('########################################')

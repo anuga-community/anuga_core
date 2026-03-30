@@ -230,7 +230,7 @@ def get_polygon_dictionary(dir):
     
     try:
         attribute_values = os.listdir(dir)  # Create the Attribute from the Directory Name
-    except:
+    except OSError:
         msg = 'Directory %s was not found' % dir
         raise Exception(msg)
     D = {}   # Create Empty Dictionary
@@ -262,7 +262,7 @@ def get_polygon_value_list(dir):
             numb_bits = key.split('_')
             attribute = float(numb_bits[0]+'.'+numb_bits[1])
             #print 'Polygon Attribute = ' + str(attribute)
-        except:
+        except (ValueError, IndexError):
             print('Non numerical attributes not yet implemented. I got %s' % key)
             return []
         for polygon in D[key]:
@@ -350,7 +350,7 @@ def read_multi_poly_file(multi_P_file):
         fields = line.split(delimiter)
         try:
             polygon.append([float(fields[0]), float(fields[1])])
-        except:
+        except (ValueError, IndexError):
             # Found a line without correct data, assume this signifies the start of a new polygon
             polygons.append(polygon)
             polygon = []
@@ -409,7 +409,7 @@ def read_multi_poly_file_value(multi_P_file,attribute):
         fields = line.split(delimiter)
         try:
             polygon.append([float(fields[0]), float(fields[1])])
-        except:
+        except (ValueError, IndexError):
             # Found a line without correct data, assume this signifies the start of a new polygon
             pair = [polygon, attribute] # create polygon , value pair....
             polygon_value_list.append(pair) # add it to the list....

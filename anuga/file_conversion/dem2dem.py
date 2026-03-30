@@ -3,6 +3,7 @@
 
 import numpy as num
 
+import anuga.utilities.log as log
 from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_float
 
 def dem2dem(name_in, stencil, cellsize_new, name_out=None,
@@ -28,13 +29,13 @@ def dem2dem(name_in, stencil, cellsize_new, name_out=None,
     if name_in[-4:] != '.dem':
         raise IOError('Input file %s should be of type .dem.' % name_in)
 
-    if name_out != None and basename_out[-4:] != '.dem':
+    if name_out != None and name_out[-4:] != '.dem':
         raise IOError('Input file %s should be of type .dem.' % name_out)
 
     #Open existing netcdf file to read
     infile = NetCDFFile(name_in, netcdf_mode_r)
 
-    if verbose: log.critical('Reading DEM from %s' % inname)
+    if verbose: log.critical('Reading DEM from %s' % name_in)
 
     # Read metadata (convert from numpy.int32 to int where appropriate)
     ncols = int(infile.ncols)

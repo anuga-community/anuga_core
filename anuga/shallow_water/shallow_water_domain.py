@@ -104,11 +104,14 @@ except ImportError:
 
 try:
     import dill as pickle
-except:
+except ImportError:
     import pickle
 
 from anuga.abstract_2d_finite_volumes.generic_domain \
                     import Generic_Domain
+
+from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
+from anuga.config import LOW_FROUDE_OFF, LOW_FROUDE_1, LOW_FROUDE_2
 
 from anuga.shallow_water.forcing import Cross_section
 from anuga.utilities.numerical_tools import mean
@@ -132,13 +135,13 @@ def nvtxRangePop(*arg):
 try:
     from cupy.cuda.nvtx import RangePush as nvtxRangePush
     from cupy.cuda.nvtx import RangePop  as nvtxRangePop
-except:
+except ImportError:
     pass
 
 try:
     from nvtx import range_push as nvtxRangePush
     from nvtx import range_pop  as nvtxRangePop
-except:
+except ImportError:
     pass
 
 
@@ -470,7 +473,7 @@ class Domain(Generic_Domain):
     def update_domain_c_struct(self):
         """Update the C domain structure from the Python Domain object.
         """
-        from anuga.shallow_water.sw_domain_openmp_ext import update_Domain_C_struct
+        from .sw_domain_openmp_ext import update_Domain_C_struct
         update_Domain_C_struct(self)
 
 
@@ -659,7 +662,7 @@ class Domain(Generic_Domain):
         parameters['distribute_to_vertices_and_edges_method'] = \
                          self.get_distribute_to_vertices_and_edges_method()
         parameters['flow_algorithm']          = self.get_flow_algorithm()
-        parameters['CFL']                     = self.get_CFL()
+        parameters['CFL']                     = self.get_cfl()
         parameters['timestepping_method']     = self.get_timestepping_method()
 
         parameters['optimised_gradient_limiter']        = self.optimised_gradient_limiter
@@ -692,7 +695,7 @@ class Domain(Generic_Domain):
 
         self._set_config_defaults()
 
-        self.set_CFL(0.9)
+        self.set_cfl(0.9)
         self.set_use_kinematic_viscosity(False)
         #self.timestepping_method='rk2'#'rk3'#'euler'#'rk2'
         self.set_timestepping_method('euler')
@@ -737,15 +740,16 @@ class Domain(Generic_Domain):
         self.maximum_allowed_speed=0.0
 
         if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print('# Using discontinuous elevation solver DE0')
-            print('#')
-            print('# First order timestepping')
-            print('#')
-            print('# Make sure you use centroid values when reporting on important output quantities')
-            print('#')
-            print('##########################################################################')
+            print('Domain: Using discontinuous elevation solver DE0')
+            # print('##########################################################################')
+            # print('#')
+            # print('# Using discontinuous elevation solver DE0')
+            # print('#')
+            # print('# First order timestepping')
+            # print('#')
+            # print('# Make sure you use centroid values when reporting on important output quantities')
+            # print('#')
+            # print('##########################################################################')
 
 
     def _set_DE1_defaults(self):
@@ -755,7 +759,7 @@ class Domain(Generic_Domain):
 
         self._set_config_defaults()
 
-        self.set_CFL(1.0)
+        self.set_cfl(1.0)
         self.set_use_kinematic_viscosity(False)
         #self.timestepping_method='rk2'#'rk3'#'euler'#'rk2'
         self.set_timestepping_method(2)
@@ -818,7 +822,7 @@ class Domain(Generic_Domain):
 
         self._set_config_defaults()
 
-        self.set_CFL(1.0)
+        self.set_cfl(1.0)
         self.set_use_kinematic_viscosity(False)
         #self.timestepping_method='rk2'#'rk3'#'euler'#'rk2'
         self.set_timestepping_method(3)
@@ -881,7 +885,7 @@ class Domain(Generic_Domain):
 
         self._set_config_defaults()
 
-        self.set_CFL(1.0)
+        self.set_cfl(1.0)
         self.set_use_kinematic_viscosity(False)
         #self.timestepping_method='rk2'#'rk3'#'euler'#'rk2'
         self.set_timestepping_method(2)
@@ -944,7 +948,7 @@ class Domain(Generic_Domain):
 
         self._set_config_defaults()
 
-        self.set_CFL(0.9)
+        self.set_cfl(0.9)
         self.set_use_kinematic_viscosity(False)
         #self.timestepping_method='rk2'#'rk3'#'euler'#'rk2'
         self.set_timestepping_method(1)
@@ -989,15 +993,16 @@ class Domain(Generic_Domain):
         self.maximum_allowed_speed=0.0
 
         if self.processor == 0 and self.verbose:
-            print('##########################################################################')
-            print('#')
-            print('# Using discontinuous elevation solver DE0_7')
-            print('#')
-            print('# A slightly less diffusive version than DE0, uses euler timestepping')
-            print('#')
-            print('# Make sure you use centroid values when reporting on important output quantities')
-            print('#')
-            print('##########################################################################')
+            print('Domain: Using discontinuous elevation solver DE0_7')
+            # print('##########################################################################')
+            # print('#')
+            # print('# Using discontinuous elevation solver DE0_7')
+            # print('#')
+            # print('# A slightly less diffusive version than DE0, uses euler timestepping')
+            # print('#')
+            # print('# Make sure you use centroid values when reporting on important output quantities')
+            # print('#')
+            # print('##########################################################################')
 
 
 
@@ -1053,7 +1058,7 @@ class Domain(Generic_Domain):
 
         try:
             from zoneinfo import ZoneInfo
-        except:
+        except ImportError:
             from backports.zoneinfo import ZoneInfo
 
         if tz is None:
@@ -1083,7 +1088,7 @@ class Domain(Generic_Domain):
         
         try:
             from datetime import UTC
-        except:
+        except ImportError:
             from datetime import timezone
             UTC = timezone.utc 
 
@@ -1228,10 +1233,10 @@ class Domain(Generic_Domain):
     def set_checkpointing(self, checkpoint= True, checkpoint_dir = 'CHECKPOINTS', checkpoint_step=10, checkpoint_time = None):
         """Set up checkpointing.
 
-        @param checkpoint: Default = True. Set to False will turn off checkpointing
-        @param checkpoint_dir: Where to store checkpointing files
-        @param checkpoint_step: Save checkpoint files after this many yieldsteps
-        @param checkpoint_time: If set, over-rides checkpoint_step. save checkpoint files
+        param checkpoint: Default = True. Set to False will turn off checkpointing
+        param checkpoint_dir: Where to store checkpointing files
+        param checkpoint_step: Save checkpoint files after this many yieldsteps
+        param checkpoint_time: If set, over-rides checkpoint_step. save checkpoint files
         after this amount of walltime
         """
 
@@ -1457,7 +1462,7 @@ class Domain(Generic_Domain):
         flux calculations which minimize the damping in this case.
         """
 
-        assert low_froude in [0,1,2]
+        assert low_froude in [LOW_FROUDE_OFF, LOW_FROUDE_1, LOW_FROUDE_2]
 
         self.low_froude = low_froude
 
@@ -1957,9 +1962,9 @@ class Domain(Generic_Domain):
 
         nvtxRangePush("compute_fluxes")
         # Choose the correct extension module
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import compute_fluxes_ext_central
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # change over to cuda routines as developed
             # from .sw_domain_simd_ext import compute_fluxes_ext_central
             # FIXME SR: 2023_10_16 currently compute_fluxes and distribute together
@@ -2023,9 +2028,9 @@ class Domain(Generic_Domain):
 
         # Do extrapolation step
         # Choose the correct extension module
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
         else:
             raise Exception('Not implemented')
@@ -2044,10 +2049,10 @@ class Domain(Generic_Domain):
 
         # Do extrapolation step
         # Choose the correct extension module
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import distribute_to_edges as extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw(self)
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # change over to cuda routines as developed
             #from .sw_domain_simd_ext import extrapolate_second_order_edge_sw
             extrapolate_second_order_edge_sw = self.gpu_interface.extrapolate_second_order_edge_sw_kernel
@@ -2066,10 +2071,10 @@ class Domain(Generic_Domain):
 
         nvtxRangePush('distribute_edges_to_vertices')
 
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             # Using OpenMP extension
             from .sw_domain_openmp_ext import distribute_edges_to_vertices as distribute_edges_to_vertices_ext
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # Using cupy extension
             # FIXME SR: Not implemented yet so use OpenMP version
             from .sw_domain_openmp_ext import distribute_edges_to_vertices as distribute_edges_to_vertices_ext
@@ -2240,9 +2245,9 @@ class Domain(Generic_Domain):
 
         # nvtxRangePush('protect_new')
         # Choose the correct extension module
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import protect_new
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # change over to cuda routines as developed
             # # from .sw_domain_simd_ext import  protect_new
             #from .sw_domain_openmp_ext import protect_new
@@ -2347,9 +2352,9 @@ class Domain(Generic_Domain):
         # Update height based on discontinuous elevation 
         assert self.get_using_discontinuous_elevation()
 
-        if self.multiprocessor_mode == 1:  
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:  
             from .sw_domain_openmp_ext import update_conserved_quantities
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             update_conserved_quantities = self.gpu_interface.update_conserved_quantities_kernel
         else:
             raise Exception('Not implemented')
@@ -2459,14 +2464,36 @@ class Domain(Generic_Domain):
 
 
     def update_centroids_of_momentum_from_velocity(self):
-        """Calculate the centroid value of x and y momentum from height and velocities
+        """
+        Calculate the centroid value of x and y momentum from height and velocities.
 
-        Assumes centroids of height and velocities are up to date
+        This method computes the centroid values of x and y momentum (xmomentum and 
+        ymomentum) by multiplying the centroid velocities by the centroid height values.
+        The method assumes that the centroids of height and velocities are already 
+        up to date.
 
-        Useful for kinematic viscosity calculations
+        This is particularly useful for kinematic viscosity calculations where momentum
+        values at cell centroids are required.
+
+        The method updates:
+        - xmomentum.centroid_values: product of xvelocity and height at centroids
+        - ymomentum.centroid_values: product of yvelocity and height at centroids
+
+        After updating centroid values, the method distributes these values to vertices 
+        and edges via distribute_to_vertices_and_edges().
+
+        Notes
+        -----
+        This method modifies the centroid_values arrays in-place for both xmomentum 
+        and ymomentum quantities.
+
+        See Also
+        --------
+        distribute_to_vertices_and_edges : Distribute centroid values to vertices and edges
         """
 
         # For shallow water we need to update height xvelocity and yvelocity
+
         #Shortcuts
         UH = self.quantities['xmomentum']
         VH = self.quantities['ymomentum']
@@ -2507,14 +2534,22 @@ class Domain(Generic_Domain):
                skip_initial_step=False):
         """Evolve method from Domain class.
 
+        Parameters
+        ----------
+        yieldstep : float, optional
+            Yield every yieldstep time period
+        outputstep : float, optional
+            Output to sww file every outputstep time period. outputstep should be 
+            an integer multiple of yieldstep.
+        finaltime : float or datetime, optional
+            Evolve until finaltime (can be a float in seconds or a datetime object)
+        duration : float, optional
+            Evolve for a time of length duration (seconds)
+        skip_initial_step : bool, optional
+            Can be used to restart a simulation (not often used).
 
-        :param float yieldstep: yield every yieldstep time period
-        :param float outputstep: Output to sww file every outputstep time period. outputstep should be an integer multiple of yieldstep.
-        :param float finaltime: evolve until finaltime (can be a float (secs) or a datetime object)
-        :param float duration: evolve for a time of length duration (secs)
-        :param boolean skip_initial_step: Can be used to restart a simulation (not often used).
-
-
+        Notes
+        -----
         If outputstep is None, the output to sww file happens every yieldstep.
         If yieldstep is None then simply evolve to finaltime or for a duration.
         """
@@ -2888,8 +2923,8 @@ class Domain(Generic_Domain):
     def backup_conserved_quantities(self):
 
         # Backup conserved_quantities centroid values
-        if self.multiprocessor_mode == 1:
-            from anuga.shallow_water.sw_domain_openmp_ext import backup_conserved_quantities
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
+            from .sw_domain_openmp_ext import backup_conserved_quantities
             backup_conserved_quantities(self)
         else:
             for name in self.conserved_quantities:
@@ -2899,10 +2934,10 @@ class Domain(Generic_Domain):
     def saxpy_conserved_quantities(self, a, b, c=None):
 
         # saxpy conserved_quantities centroid values with backup values
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             if c is None:
                 c = 1.0
-            from anuga.shallow_water.sw_domain_openmp_ext import saxpy_conserved_quantities
+            from .sw_domain_openmp_ext import saxpy_conserved_quantities
             saxpy_conserved_quantities(self, a, b, c)
         else:
             for name in self.conserved_quantities:
@@ -2919,14 +2954,25 @@ class Domain(Generic_Domain):
                                 datetime=False):
         """Return string with time stepping statistics for printing or logging
 
-        :param time_units: 'sec', 'min', 'hr', 'day'
-        :param bool datetime: flag to use timestamp or datetime
-        :param track_speed: Optional boolean keyword track_speeds decides whether
-                            to report location of smallest timestep as well as a
-                            histogram and percentile report.
-        :param bool relative_time: Flag to report relative time instead of absolute time
-        :param int triangle_id: Can be used to specify a particular
-                            triangle rather than the one with the largest speed.
+        Parameters
+        ----------
+        time_units : str, optional
+            Time units for reporting. Options are 'sec', 'min', 'hr', 'day'.
+        datetime : bool, optional
+            Flag to use timestamp or datetime.
+        track_speeds : bool, optional
+            Optional boolean keyword that decides whether to report location of 
+            smallest timestep as well as a histogram and percentile report.
+        relative_time : bool, optional
+            Flag to report relative time instead of absolute time.
+        triangle_id : int, optional
+            Can be used to specify a particular triangle rather than the one with 
+            the largest speed.
+        
+        Returns
+        -------
+        str
+            Formatted string with time stepping statistics.
         """
 
         from anuga.config import epsilon, g
@@ -3053,35 +3099,49 @@ class Domain(Generic_Domain):
         return msg
 
     def print_timestepping_statistics(self, *args, **kwargs):
-        """Print time stepping statistics
+        """Print time stepping statistics.
 
-        :param time_units: 'sec', 'min', 'hr', 'day'
-        :param bool datetime: flag to use timestamp or datetime
-        :param track_speed: Optional boolean keyword track_speeds decides whether
-                            to report location of smallest timestep as well as a
-                            histogram and percentile report.
-        :param bool relative_time: Flag to report relative time instead of absolute time
-        :param int triangle_id: Can be used to specify a particular
-                            triangle rather than the one with the largest speed.
+        Parameters
+        ----------
+        time_units : str, optional
+            Time units for reporting. Options are 'sec', 'min', 'hr', 'day'.
+        datetime : bool, optional
+            Flag to use timestamp or datetime.
+        track_speed : bool, optional
+            Optional boolean keyword that decides whether to report location of 
+            smallest timestep as well as a histogram and percentile report.
+        relative_time : bool, optional
+            Flag to report relative time instead of absolute time.
+        triangle_id : int, optional
+            Can be used to specify a particular triangle rather than the one with 
+            the largest speed.
         """
 
-        msg = self.timestepping_statistics(*args, **kwargs)
-
-        print(msg)
+        msg = self.timestepping_statistics(*args, **kwargs) 
+            
+        print(msg, flush=True)
 
 
     def compute_boundary_flows(self):
         """Compute boundary flows at current timestep.
 
-        Quantities computed are:
-           Total inflow across boundary
-           Total outflow across boundary
-           Flow across each tagged boundary segment
+        Computes the total inflow and outflow across the domain boundary,
+        as well as the flow across each tagged boundary segment.
 
+        Returns
+        -------
+        boundary_flows : dict
+            Flow rates [m^3/s] for each boundary tag
+        total_boundary_inflow : float
+            Total inflow across boundary [m^3/s]
+        total_boundary_outflow : float
+            Total outflow across boundary [m^3/s]
+
+        Notes
+        -----
         These calculations are only approximate since they don't use the
-        flux calculation used in evolve
-
-        See get_boundary_flux_integral for an exact computation
+        flux calculation used in evolve. For exact computation, see
+        get_boundary_flux_integral.
         """
 
         # Run through boundary array and compute for each segment
@@ -3185,9 +3245,9 @@ class Domain(Generic_Domain):
 
         nvtxRangePush('compute_flux_update_frequency')
         # Choose the correct extension module
-        if self.multiprocessor_mode == 1:
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import compute_flux_update_frequency
-        elif self.multiprocessor_mode == 2:
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # change over to cuda routines as developed
             from .sw_domain_openmp_ext import compute_flux_update_frequency
         else:
@@ -3221,7 +3281,7 @@ class Domain(Generic_Domain):
 
         if(verbose and myid==0):
             print(' ')
-            print('    Volume V is:', Vol)
+            print(f'    Volume V at time {self.get_time()}:', Vol)
             print('    Boundary Flux integral BF: ', fluxIntegral)
             print('    (rate + inlet) Fractional Step volume integral FS: ', fracIntegral)
             print('    V - BF - FS - InitialVolume :',  Vol- fluxIntegral -fracIntegral - self.volume_history[0])
@@ -3263,7 +3323,7 @@ class Domain(Generic_Domain):
                 waveSpeed = abs(v) + gravSpeed
                 localTS = self.radii / num.maximum(waveSpeed, epsilon)
                 controlling_pt_ind = localTS.argmin()
-                print('    * Smallest LocalTS is: ', localTS[controlling_pt_ind])
+                print(f'     * Smallest LocalTS at time {self.get_time()} is approximately: ', localTS[controlling_pt_ind])
                 print('     -- Location: ', round(self.centroid_coordinates[controlling_pt_ind,0]+self.geo_reference.xllcorner,2),\
                                         round(self.centroid_coordinates[controlling_pt_ind,1]+self.geo_reference.yllcorner,2))
                 print('     -+ Speed: ', v[controlling_pt_ind])
@@ -3315,12 +3375,12 @@ class Domain(Generic_Domain):
          2. cupy (in development)
         """
 
-        if multiprocessor_mode not in [1,2]:
+        if multiprocessor_mode not in [MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU]:
             raise ValueError('Invalid multiprocessor mode. Must be one of [1,2] (openmp, cupy)')
 
         self.multiprocessor_mode = multiprocessor_mode
 
-        if self.multiprocessor_mode == 2:
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             self.set_gpu_interface()
 
     def get_multiprocessor_mode(self):
@@ -3367,14 +3427,14 @@ class Domain(Generic_Domain):
 
     def set_gpu_interface(self):
 
-        if self.multiprocessor_mode == 2 and self.gpu_interface is None:
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is None:
 
             # first check that cupy is available
             try:
                 import cupy as cp
                 test_cupy_array = cp.array([1,2,3])
 
-            except:
+            except (ImportError, Exception):
                 print('+==============================================================================+')
                 print('|                                                                              |')
                 print('| WARNING: cupy or gpu not available, so falling back to multiprocessor_mode 1 |')

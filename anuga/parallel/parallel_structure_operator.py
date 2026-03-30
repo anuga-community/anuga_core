@@ -63,10 +63,12 @@ class Parallel_Structure_operator(anuga.Operator):
                  verbose,
                  master_proc = 0,
                  procs = None,
-                 inlet_master_proc = [0,0],
+                 inlet_master_proc = None,
                  inlet_procs = None,
                  enquiry_proc = None):
 
+        if inlet_master_proc is None:
+            inlet_master_proc = [0, 0]
 
         self.myid = pypar.rank()
         self.num_procs = pypar.size()
@@ -756,7 +758,7 @@ class Parallel_Structure_operator(anuga.Operator):
     # Get id of processors associated with first and second inlet enquiry points
     def get_enquiry_proc(self, id=None):
 
-        if id is none:
+        if id is None:
             return self.enquiry_proc
         else:
             return self.enquiry_proc[id]

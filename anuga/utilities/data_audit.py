@@ -132,7 +132,7 @@ def IP_verified(directory,
 
                 try:
                     doc = xml2object(license_filename)
-                except:
+                except Exception:
                     status += 'XML file %s could not be read:'\
                               %license_filename
                     fid = open(license_filename)
@@ -316,7 +316,7 @@ def license_file_is_valid(license_filename, data_filename,
         if verbose: print('Filename: "%s"' %filename)
         try:
             fid = open(filename, 'r')
-        except:
+        except OSError:
             msg = 'Specified filename %s could not be opened'\
                   %filename
             raise FilenameMismatch(msg)

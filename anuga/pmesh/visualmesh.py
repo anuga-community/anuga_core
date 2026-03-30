@@ -2,7 +2,7 @@
 
 try:
     from . import mesh
-except:
+except ImportError:
     import mesh
 
 from tkinter.simpledialog import Dialog,askfloat, askinteger, askstring
@@ -211,7 +211,7 @@ class vSegments(vAbstract):
 
         event isn't used
         """
-        segment = mesh.addUserSegment(v1,v2)
+        segment = mesh.add_user_segment(v1, v2)
         self.visualise(segment, uniqueID, canvas, scale)
         return segment    
   

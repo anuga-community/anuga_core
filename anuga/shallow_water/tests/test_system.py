@@ -9,7 +9,7 @@ from anuga.file.netcdf import NetCDFFile
 import numpy as num
 
 import anuga
-from anuga.pmesh.mesh import Mesh
+from anuga.pmesh.mesh import Pmesh
 from anuga.abstract_2d_finite_volumes.pmesh2domain import \
                 pmesh_to_domain_instance
 from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a
@@ -40,7 +40,7 @@ class Test_system(unittest.TestCase):
         boundary_name = base[:-4]
         
         # Setup computational domain
-        mesh = Mesh()
+        mesh = Pmesh()
         mesh.add_region_from_polygon([[0,0], [100,0], [100,100], [0,100]])
         mesh.generate_mesh(verbose=False)
         
@@ -89,7 +89,7 @@ class Test_system(unittest.TestCase):
         dir, base = os.path.split(filename)
         senario_name = base[:-4]
  
-        mesh = Mesh()
+        mesh = Pmesh()
         ###mesh.add_region_from_polygon([[10,10], [90,10], [90,90], [10,90]])
         mesh.add_region_from_polygon([[0,0], [100,0], [100,100], [0,100]])
         mesh.generate_mesh(verbose=False)
@@ -140,7 +140,7 @@ class Test_system(unittest.TestCase):
         dir, base = os.path.split(filename)
         senario_name = base[:-4]
  
-        mesh = Mesh()
+        mesh = Pmesh()
         mesh.add_region_from_polygon([[10,10], [90,10], [90,90], [10,90]])
         mesh.generate_mesh(verbose=False)
         

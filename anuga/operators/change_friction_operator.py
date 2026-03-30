@@ -3,10 +3,6 @@ Erosion operators
 
 
 """
-
-
-from builtins import str
-from builtins import range
 __author__="steve"
 __date__ ="$09/03/2012 4:46:39 PM$"
 
@@ -65,7 +61,7 @@ class Erosion_operator(Operator):
 
 
 
-        if self.indices is []:
+        if self.indices is not None and len(self.indices) == 0:
             return
 
 

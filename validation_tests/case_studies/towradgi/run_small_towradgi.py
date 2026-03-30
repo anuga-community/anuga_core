@@ -16,6 +16,7 @@ from anuga import Boyd_box_operator
 from anuga import Boyd_pipe_operator
 from anuga import Domain
 from anuga import create_mesh_from_regions
+from anuga import create_domain_from_regions
 from anuga import read_polygon
 from anuga import Polygon_function
 from anuga import file_function
@@ -96,6 +97,25 @@ basename = join('DEM_bridges', 'towradgi')
 domain_name = join('Towradgi_historic_flood')
 meshname = join('DEM_bridges', 'towradgi.tsh')
 func = file_function(join('Forcing', 'Tide', 'Pioneer.tms'), quantities='rainfall')
+
+
+# times = numpy.linspace(0.0, 3600.0*23.25, 100)
+# values = numpy.array([func(t)[0] for t in times])
+
+# for t,v in zip(times, values):
+#     print(t,v)
+
+
+# from matplotlib import pyplot as plt
+
+# plt.plot(times, values)
+# plt.xlabel('Time')
+# plt.ylabel('Rainfall')
+# plt.title('Rainfall over Time')
+# plt.show()
+
+
+
 
 # ------------------------------------------------------------------------------
 # Use a try statement to read in previous checkpoint file and if not possible
@@ -348,22 +368,21 @@ Creating domain from scratch.
     
         interior_regions = read_polygon_list(CatchmentList)
     
-        # Make the mesh
-        create_mesh_from_regions(bounding_polygon,
+        # Make the domain
+        mesh = create_mesh_from_regions(bounding_polygon,
                                  boundary_tags={'south': [0], 'east': [
                                      1], 'north': [2], 'west': [3]},
                                  maximum_triangle_area=maximum_triangle_area,
                                  interior_regions=interior_regions,
                                  breaklines=riverWalls.values(),
-                                 filename=meshname,
                                  use_cache=False,
                                  verbose=False)
+
+        domain = Domain(mesh)
     
         # ------------------------------------------------------------------------------
         # SETUP COMPUTATIONAL DOMAIN
         # ------------------------------------------------------------------------------
-    
-        domain = Domain(meshname, use_cache=False, verbose=False)
     
         domain.set_flow_algorithm(alg)
     
@@ -895,6 +914,7 @@ Creating domain from scratch.
         print('CREATING RAINFALL POLYGONS')
     
     Rainfall_Gauge_directory = join('Forcing', 'Rainfall', 'Gauge')
+    ops = []
     for filename in os.listdir(Rainfall_Gauge_directory):
         Gaugefile = join(Rainfall_Gauge_directory, filename)
         Rainfile = join('Forcing', 'Rainfall', 'Hort', filename[0:-4]+'.tms')
@@ -902,8 +922,8 @@ Creating domain from scratch.
         #print(Rainfile)
         polygon = anuga.read_polygon(Gaugefile)
         rainfall = anuga.file_function(Rainfile, quantities='rate')
-        op1 = Rate_operator(domain, rate=rainfall, factor=1.0e-3,
-                            polygon=polygon, default_rate=0.0)
+        ops.append(Rate_operator(domain, rate=rainfall, factor=1.0e-3,
+                            polygon=polygon, default_rate=0.0))
     
     barrier()
     
@@ -916,8 +936,10 @@ Creating domain from scratch.
     Bd = anuga.Dirichlet_boundary([0, 0, 0])
     Bw = anuga.Time_boundary(domain=domain, function=lambda t: [
                              func(t)[0], 0.0, 0.0])
+    Br = anuga.Reflective_boundary(domain)
     
-    domain.set_boundary({'west': Bd, 'south': Bd, 'north': Bd, 'east': Bw})
+    #domain.set_boundary({'west': Bd, 'south': Bd, 'north': Bd, 'east': Bw})
+    domain.set_boundary({'west': Br, 'south': Br, 'north': Br, 'east': Br})
     
     if myid == 0:
         print('Start Evolve')
@@ -934,8 +956,11 @@ t0 = time.time()
 
 
 for t in domain.evolve(yieldstep=yieldstep, outputstep=outputstep, finaltime=finaltime):
-    if myid == 0:
-        domain.write_time()
+
+    domain.print_timestepping_statistics()
+    #domain.print_operator_timestepping_statistics()
+    domain.report_water_volume_statistics()
+    #domain.report_cells_with_small_local_timestep()
 
 barrier()
 

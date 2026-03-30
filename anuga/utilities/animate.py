@@ -40,7 +40,7 @@ class Domain_plotter(object):
             self.y = domain.nodes[:, 1] + self.yllcorner
 
             self.xc = domain.centroid_coordinates[:, 0] + self.xllcorner
-            self.yc = domain.centroid_coordinates[:, 1] + self.xllcorner
+            self.yc = domain.centroid_coordinates[:, 1] + self.yllcorner
 
 
         import matplotlib.tri as tri
@@ -432,7 +432,7 @@ class Domain_plotter(object):
                 if clobber:
                     try:
                         os.remove("%s/*" % plot_dir)
-                    except:
+                    except OSError:
                         pass
                 else:
                     raise IOError(
@@ -523,6 +523,7 @@ class SWW_plotter(object):
         self.xllcorner = p.xllcorner
         self.yllcorner = p.yllcorner
         self.zone = p.zone
+        self.timezone = p.timezone
         self.starttime = p.starttime
 
         if absolute is True:
@@ -530,7 +531,7 @@ class SWW_plotter(object):
             self.y[:] = self.y + self.yllcorner
 
             self.xc[:] = self.xc + self.xllcorner
-            self.yc[:] = self.yc + self.xllcorner
+            self.yc[:] = self.yc + self.yllcorner
 
 
         self.elev = np.array(p.variables['elevation_c'])
@@ -590,7 +591,7 @@ class SWW_plotter(object):
         
         try:
             elev = self.elev[frame, :]
-        except:
+        except IndexError:
             elev = self.elev
 
         ims = []
@@ -669,7 +670,7 @@ class SWW_plotter(object):
         
         try:
             elev = self.elev[frame, :]
-        except:
+        except IndexError:
             elev = self.elev
 
         ims = []
@@ -746,7 +747,7 @@ class SWW_plotter(object):
         
         try:
             elev = self.elev[frame, :]
-        except:
+        except IndexError:
             elev = self.elev
 
         ims = []
@@ -820,7 +821,7 @@ class SWW_plotter(object):
         
         try:
             elev = self.elev[frame, :]
-        except:
+        except IndexError:
             elev = self.elev
         speed = self.speed[frame, :]
 
@@ -953,7 +954,7 @@ class SWW_plotter(object):
                 if clobber:
                     try:
                         os.remove("%s/*" % plot_dir)
-                    except:
+                    except OSError:
                         pass
                 else:
                     raise IOError(

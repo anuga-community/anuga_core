@@ -358,7 +358,7 @@ def _read_outline(fd):
 
     try:
         geo_reference = Geo_reference(ASCIIFile=fd)
-    except:
+    except Exception:
         # geo_ref not compulsory
         geo_reference = None
 

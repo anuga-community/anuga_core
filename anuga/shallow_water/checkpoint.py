@@ -34,7 +34,6 @@ def load_checkpoint_file(domain_name = 'domain', checkpoint_dir = '.', time = No
 
         times = list(times)
         times.sort()
-        #print times
     else:
         times = [float(time)]
 
@@ -48,11 +47,11 @@ def load_checkpoint_file(domain_name = 'domain', checkpoint_dir = '.', time = No
         try:
             try:
                 import dill as pickle
-            except:
+            except ImportError:
                 import pickle
             domain = pickle.load(open(pickle_name, 'rb'))
             success = True
-        except:
+        except Exception:
             success = False
 
         #print success

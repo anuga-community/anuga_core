@@ -36,12 +36,12 @@ class Test_riverwall_structure(unittest.TestCase):
     def tearDown(self):
         try:
             os.remove('test_riverwall.sww')
-        except:
+        except OSError:
             pass
 
         try:
             os.remove('testRiverwall.msh')
-        except:
+        except OSError:
             pass
     
     def create_domain_DE0(self, wallHeight, InitialOceanStage, InitialLandStage, riverWall=None, riverWall_Par=None):
@@ -55,7 +55,7 @@ class Test_riverwall_structure(unittest.TestCase):
         if(riverWall_Par is None):
             riverWall_Par={'centralWall':{'Qfactor':1.0}}
         # Make the domain
-        anuga.create_mesh_from_regions(boundaryPolygon, 
+        anuga.create_pmesh_from_regions(boundaryPolygon, 
                                  boundary_tags={'left': [0],
                                                 'top': [1],
                                                 'right': [2],
@@ -106,7 +106,7 @@ class Test_riverwall_structure(unittest.TestCase):
                   }
         riverWall_Par={'centralWall':{'Qfactor':1.0}}
         # Make the domain
-        anuga.create_mesh_from_regions(boundaryPolygon, 
+        anuga.create_pmesh_from_regions(boundaryPolygon, 
                                  boundary_tags={'left': [0],
                                                 'top': [1],
                                                 'right': [2],
