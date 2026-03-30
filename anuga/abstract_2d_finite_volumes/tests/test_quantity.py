@@ -21,7 +21,7 @@ import numpy as num
 import pprint
 
 try:
-    import osgeo
+    import rasterio
 except ImportError:
     pass
 
@@ -2290,8 +2290,8 @@ Parameters
         except OSError:
             pass
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_set_values_from_ll_tif_file_north(self):
 
         # Mesh in zone 56 (relative coords) southern hemisphere
@@ -2401,8 +2401,8 @@ Parameters
         import os
         os.remove(tif_file)
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_set_values_from_ll_tif_file_north_indices(self):
 
         from pprint import pprint
@@ -2508,8 +2508,8 @@ Parameters
         import os
         os.remove(tif_file)
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_set_values_from_ll_tif_file_south(self):
 
         # Mesh in zone 56 (relative coords) southern hemisphere
@@ -2607,8 +2607,8 @@ Parameters
         import os
         os.remove(tif_file)
 
-    @pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+    @pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
     def test_set_values_from_utm_tif_file(self):
 
         # Mesh in zone 56 (relative coords) southern hemisphere

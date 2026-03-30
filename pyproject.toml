@@ -38,6 +38,9 @@ parallel = [
 data = [
     'pyproj>=3.6',
     'affine>=2.4',
+    'rasterio',
+    'fiona',
+    'shapely',
     'xarray',
     'pandas',
     'openpyxl',

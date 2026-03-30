@@ -23,14 +23,14 @@ verbose = False
 
 import sys
 try:
-    import osgeo
+    import rasterio
 except ImportError:
     pass
 
 import pytest
 
-@pytest.mark.skipif('osgeo' not in sys.modules,
-                    reason="requires the gdal module")
+@pytest.mark.skipif('rasterio' not in sys.modules,
+                    reason="requires rasterio")
 class Test_spatialInputUtil(unittest.TestCase):
     """
         Test the spatialInput utilities
