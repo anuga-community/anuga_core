@@ -28,6 +28,8 @@ dependencies = [
     'netCDF4>=1.6',
     'scipy>=1.11',
     'meshpy>=2022.1',
+    'utm',
+    'xarray',
 ]
 classifiers = [
     'Intended Audience :: Science/Research',

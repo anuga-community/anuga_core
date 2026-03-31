@@ -112,7 +112,7 @@ Parameters involving communication
         try:
             import xarray
         except ImportError as e:
-            log.debug('xarray not available, xarray rate inputs disabled: %s', e)
+            log.debug('xarray not available, xarray rate inputs disabled: %s' % e)
             xarray = None
         if xarray is not None:
             if type(rate) is xarray.core.dataarray.DataArray:
