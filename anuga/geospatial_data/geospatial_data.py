@@ -355,6 +355,10 @@ class Geospatial_data(object):
             from anuga.coordinate_transforms.redfearn import epsg_to_ll
             pts = self.get_data_points(True)
             epsg = self.geo_reference.get_epsg()
+            if epsg is None:
+                # Hemisphere not stored in geo_reference — fall back to isSouthHemisphere
+                zone = self.geo_reference.get_zone()
+                epsg = 32700 + zone if isSouthHemisphere else 32600 + zone
             lats, lons = epsg_to_ll(pts[:, 0], pts[:, 1], epsg)
             return list(zip(lats.tolist(), lons.tolist()))
 
