@@ -305,6 +305,7 @@ class Domain(Generic_Domain):
         self.fractional_step_operators = []
         self.kv_operator = None
         self.dplotter = None
+        self.gpu_culvert_manager = None  # Initialized when GPU mode + Boyd operators
 
         #-------------------------------
         # Set flow defaults
@@ -317,7 +318,8 @@ class Domain(Generic_Domain):
         # 2. Cuda
         #-------------------------------
         self.gpu_interface = None
-        self.set_multiprocessor_mode(1)  # Default to OpenMP
+        self.use_c_rk2_loop = True  # Use C RK2 loop (faster) vs Python-orchestrated GPU loop
+        self.set_multiprocessor_mode(MULTIPROCESSOR_OPENMP)  # Default to OpenMP (use MULTIPROCESSOR_GPU for GPU)
 
         #-------------------------------
         # C extension domain structure
@@ -1732,22 +1734,88 @@ class Domain(Generic_Domain):
         return self.get_quantity('elevation').\
                    get_maximum_location(indices=wet_elements)
 
+    def get_global_wet_element_count(self, indices=None, minimum_height=None):
+        """Return total number of wet elements across all MPI ranks.
+
+        Optional arguments:
+            indices: set of element ids that the operation applies to
+            minimum_height: threshold for considering an element wet
+
+        Usage:
+            count = get_global_wet_element_count()
+
+        Note: This performs MPI reduction, so all ranks get the same result.
+        """
+        from anuga import numprocs
+
+        wet_indices = self.get_wet_elements(indices, minimum_height)
+        local_count = len(wet_indices)
+
+        if numprocs == 1:
+            return local_count
+
+        from mpi4py import MPI
+        global_count = MPI.COMM_WORLD.allreduce(local_count, op=MPI.SUM)
+        return global_count
+
+    def get_global_max_stage(self, indices=None):
+        """Return maximum stage value across all MPI ranks.
+
+        Optional argument:
+            indices: set of element ids that the operation applies to
+
+        Usage:
+            max_stage = get_global_max_stage()
+
+        Note: This performs MPI reduction, so all ranks get the same result.
+        """
+        from anuga import numprocs
+
+        stage = self.get_quantity('stage')
+        local_max = stage.get_maximum_value(indices)
+
+        if numprocs == 1:
+            return local_max
+
+        from mpi4py import MPI
+        global_max = MPI.COMM_WORLD.allreduce(local_max, op=MPI.MAX)
+        return global_max
+
+    def get_global_max_speed(self):
+        """Return maximum speed across all MPI ranks.
+
+        Usage:
+            max_speed = get_global_max_speed()
+
+        Note: This performs MPI reduction, so all ranks get the same result.
+        """
+        from anuga import numprocs
+        import numpy as num
+
+        local_max = num.max(self.max_speed)
+
+        if numprocs == 1:
+            return local_max
+
+        from mpi4py import MPI
+        global_max = MPI.COMM_WORLD.allreduce(local_max, op=MPI.MAX)
+        return global_max
 
     def get_water_volume(self):
 
         from anuga import numprocs
 
-        #print self.evolved_called
-
-        if not self.evolved_called:
+        # GPU path: compute volume directly on GPU (avoids expensive D2H sync)
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            from anuga.shallow_water.sw_domain_gpu_ext import compute_water_volume_gpu
+            volume = compute_water_volume_gpu(self.gpu_interface.gpu_dom)
+        elif not self.evolved_called:
             Stage = self.quantities['stage']
             Elev =  self.quantities['elevation']
             h_c = Stage.centroid_values - Elev.centroid_values
-            #print h_c
             from anuga import Quantity
             Height = Quantity(self)
             Height.set_values(h_c, location='centroids')
-            #print Height.centroid_values
             volume = Height.get_integral()
         elif self.get_using_discontinuous_elevation():
             Height = self.quantities['height']
@@ -1762,24 +1830,9 @@ class Domain(Generic_Domain):
             self.volume_history.append(volume)
             return volume
 
-        # isolated parallel code
-        from anuga import myid, send, receive, barrier
-
-        if myid == 0:
-            water_volume = volume
-            for i in range(1,numprocs):
-                remote_volume = receive(i)
-                water_volume = water_volume + remote_volume
-        else:
-            send(volume,0)
-
-        #barrier()
-
-        if myid == 0:
-            for i in range(1,numprocs):
-                send(water_volume,i)
-        else:
-            water_volume = receive(0)
+        # Use MPI_Allreduce instead of manual gather-broadcast
+        from mpi4py import MPI
+        water_volume = MPI.COMM_WORLD.allreduce(volume, op=MPI.SUM)
 
         self.volume_history.append(water_volume)
         return water_volume
@@ -1802,23 +1855,9 @@ class Domain(Generic_Domain):
         if numprocs == 1:
             return flux_integral
 
-        # isolate parallel code
-        from anuga import myid, send, receive, barrier
-
-        if myid == 0:
-            for i in range(1,numprocs):
-                remote_flux_integral = receive(i)
-                flux_integral = flux_integral + remote_flux_integral
-        else:
-            send(flux_integral,0)
-
-        #barrier()
-
-        if myid == 0:
-            for i in range(1,numprocs):
-                send(flux_integral,i)
-        else:
-            flux_integral = receive(0)
+        # Use MPI_Allreduce instead of manual gather-broadcast
+        from mpi4py import MPI
+        flux_integral = MPI.COMM_WORLD.allreduce(flux_integral, op=MPI.SUM)
 
         return flux_integral
 
@@ -1837,23 +1876,9 @@ class Domain(Generic_Domain):
         if numprocs == 1:
             return flux_integral
 
-        # isolate parallel code
-        from anuga import myid, send, receive, barrier
-
-        if myid == 0:
-            for i in range(1,numprocs):
-                remote_flux_integral = receive(i)
-                flux_integral = flux_integral + remote_flux_integral
-        else:
-            send(flux_integral,0)
-
-        #barrier()
-
-        if myid == 0:
-            for i in range(1,numprocs):
-                send(flux_integral,i)
-        else:
-            flux_integral = receive(0)
+        # Use MPI_Allreduce instead of manual gather-broadcast
+        from mpi4py import MPI
+        flux_integral = MPI.COMM_WORLD.allreduce(flux_integral, op=MPI.SUM)
 
         return flux_integral
 
@@ -1988,16 +2013,94 @@ class Domain(Generic_Domain):
         """
 
         nvtxRangePush('update_boundary')
-        for tag in self.tag_boundary_cells:
-            B = self.boundary_map[tag]
 
-            if B is None:
-                continue
+        # GPU mode - use GPU boundary functions if all boundaries are GPU-supported
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            from anuga.shallow_water.sw_domain_gpu_ext import (
+                evaluate_reflective_boundary_gpu,
+                evaluate_dirichlet_boundary_gpu,
+                evaluate_transmissive_boundary_gpu,
+                set_transmissive_n_zero_t_stage,
+                evaluate_transmissive_n_zero_t_boundary_gpu,
+                set_time_boundary_values,
+                evaluate_time_boundary_gpu,
+                boundary_edge_sync,
+                sync_boundary_values,
+                init_boundary_edge_sync,
+            )
+            import numpy as np
+            gpu_dom = self.gpu_interface.gpu_dom
 
-            boundary_segment_edges = self.tag_boundary_cells[tag]
+            # Lazily initialize GPU boundary info
+            GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                                  'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                                  'Time_boundary'}
 
-            B.evaluate_segment(self, boundary_segment_edges)
-        
+            if not hasattr(self, '_gpu_boundary_info_initialized'):
+                self._gpu_cpu_tags = []
+                self._gpu_all_on_gpu = True
+                self._gpu_transmissive_n_zero_t_boundaries = []
+                self._gpu_time_boundaries = []
+
+                for tag, B in self.boundary_map.items():
+                    if B is not None:
+                        btype = B.__class__.__name__
+                        if btype not in GPU_BOUNDARY_TYPES:
+                            self._gpu_cpu_tags.append(tag)
+                            self._gpu_all_on_gpu = False
+                        elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                            self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                        elif btype == 'Time_boundary':
+                            self._gpu_time_boundaries.append(B)
+
+                # Set up boundary edge sync if we have ANY CPU-evaluated boundaries
+                if not self._gpu_all_on_gpu:
+                    boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
+                    init_boundary_edge_sync(gpu_dom, boundary_cell_ids)
+
+                self._gpu_boundary_info_initialized = True
+
+            if self._gpu_all_on_gpu:
+                # All boundaries are GPU-supported - evaluate entirely on GPU
+                evaluate_reflective_boundary_gpu(gpu_dom)
+                evaluate_dirichlet_boundary_gpu(gpu_dom)
+                evaluate_transmissive_boundary_gpu(gpu_dom)
+
+                # Handle transmissive_n_zero_t boundaries (need Python function call for stage)
+                for B in self._gpu_transmissive_n_zero_t_boundaries:
+                    stage_val = B.get_boundary_values()
+                    try:
+                        stage_val = float(stage_val)
+                    except:
+                        stage_val = float(stage_val[0])
+                    set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+                evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+
+                # Handle Time_boundary (need Python function call for values)
+                for B in self._gpu_time_boundaries:
+                    q = B.get_boundary_values()
+                    set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+                evaluate_time_boundary_gpu(gpu_dom)
+            else:
+                # Some boundaries need CPU - sync edge values, evaluate on CPU, sync back
+                boundary_edge_sync(gpu_dom)
+                for tag in self.tag_boundary_cells:
+                    B = self.boundary_map[tag]
+                    if B is not None:
+                        B.evaluate_segment(self, self.tag_boundary_cells[tag])
+                sync_boundary_values(gpu_dom)
+        else:
+            # CPU mode - evaluate boundaries on CPU
+            for tag in self.tag_boundary_cells:
+                B = self.boundary_map[tag]
+
+                if B is None:
+                    continue
+
+                boundary_segment_edges = self.tag_boundary_cells[tag]
+
+                B.evaluate_segment(self, boundary_segment_edges)
+
         nvtxRangePop()
 
 
@@ -2006,15 +2109,27 @@ class Domain(Generic_Domain):
         they should be defined in Domain subclass and appended to
         the list self.forcing_terms
         """
-    
+
         # The parameter self.flux_timestep should be updated
         # by the forcing_terms to ensure stability but it isn't
         # currently.
 
         nvtxRangePush('compute_forcing_terms')
 
-        for f in self.forcing_terms:
-            f(self)
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU:
+            # GPU mode: use GPU Manning friction, fall back to CPU for others
+            for f in self.forcing_terms:
+                if f.__name__ == 'manning_friction_semi_implicit':
+                    self.gpu_interface.manning_friction_kernel(self)
+                else:
+                    # Other forcing terms (rain, etc.) run on CPU
+                    # Need to sync from device, run, sync back
+                    self.gpu_interface.sync_from_device()
+                    f(self)
+                    self.gpu_interface.sync_to_device()
+        else:
+            for f in self.forcing_terms:
+                f(self)
 
         nvtxRangePop()
 
@@ -2022,6 +2137,10 @@ class Domain(Generic_Domain):
         """ extrapolate centroid values to vertices and edges"""
 
         nvtxRangePush('distribute_to_vertices_and_edges')
+
+        # Sync from GPU if in GPU mode (needed before CPU reads data at yieldsteps)
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            self.gpu_interface.sync_from_device()
 
         # Do protection step
         self.protect_against_infinitesimal_and_negative_heights()
@@ -2036,7 +2155,7 @@ class Domain(Generic_Domain):
             raise Exception('Not implemented')
 
         extrapolate_second_order_edge_sw(self, distribute_to_vertices=distribute_to_vertices)
-        
+
         nvtxRangePop()
 
     def distribute_to_edges(self):
@@ -2719,6 +2838,13 @@ class Domain(Generic_Domain):
         # Update conserved quantities
         self.update_conserved_quantities()
 
+        # Ghost exchange (MPI) - required for multi-GPU operation
+        # Note: update_ghosts() is a no-op in GPU mode, so we call exchange_ghosts directly
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            if self.ghost_layer_width < 4:
+                from anuga.shallow_water.sw_domain_gpu_ext import exchange_ghosts
+                exchange_ghosts(self.gpu_interface.gpu_dom)
+
 
     def evolve_one_rk2_step(self, yieldstep, finaltime):
         """One 2nd order RK timestep
@@ -2728,18 +2854,26 @@ class Domain(Generic_Domain):
         vertices and edges
         """
 
+        # GPU mode: use C RK2 loop (faster) or Python-orchestrated GPU loop
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            if self.use_c_rk2_loop:
+                self._evolve_one_rk2_step_c(yieldstep, finaltime)
+            else:
+                self._evolve_one_rk2_step_gpu(yieldstep, finaltime)
+            return
+
         # Save initial initial conserved quantities values
-        self.backup_conserved_quantities()
+        self.backup_conserved_quantities() # has C, ported to GPU
 
         #==========================================
         # First euler step
         #==========================================
 
         # From centroid values calculate edge values
-        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False) # has C, ported to GPU
 
         # Apply boundary conditions
-        self.update_boundary()
+        self.update_boundary() # has C, ported to GPU
 
         # Compute fluxes across each element edge
         # In MPI parallel mode this involves an allreduce to find global minimal timestep
@@ -2749,21 +2883,21 @@ class Domain(Generic_Domain):
         self.compute_forcing_terms()
 
         # Update timestep to fit yieldstep and finaltime
-        self.update_timestep(yieldstep, finaltime)
+        self.update_timestep(yieldstep, finaltime) #needs C
 
         # Update centroid values of conserved quantities
-        self.update_conserved_quantities()
+        self.update_conserved_quantities() # has C, ported to GPU
 
         #===========================
         # End of first euler step
         #===========================
 
         # Update time
-        self.set_relative_time(self.get_relative_time() + self.timestep)
+        self.set_relative_time(self.get_relative_time() + self.timestep) # needs C
 
         # Update ghosts
         if self.ghost_layer_width < 4:
-            self.update_ghosts()
+            self.update_ghosts() # needs C
 
         #=========================================
         # Second Euler step using the same timestep
@@ -2794,7 +2928,258 @@ class Domain(Generic_Domain):
         #========================================
 
         # Combine steps
-        self.saxpy_conserved_quantities(0.5, 0.5)
+        self.saxpy_conserved_quantities(0.5, 0.5) # has C, not ported
+
+    def _evolve_one_rk2_step_gpu(self, yieldstep, finaltime):
+        """Python-orchestrated GPU implementation of RK2 step.
+
+        This is a fallback for when the C RK2 loop cannot be used (e.g., unsupported
+        boundary types). Prefer _evolve_one_rk2_step_c() for better performance.
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            backup_conserved_quantities_gpu,
+            extrapolate_second_order_gpu,
+            protect_gpu,
+            compute_fluxes_gpu,
+            update_conserved_quantities_gpu,
+            saxpy_conserved_quantities_gpu,
+            sync_boundary_values,
+            init_boundary_edge_sync,
+            boundary_edge_sync,
+            exchange_ghosts,
+            evaluate_reflective_boundary_gpu,
+            evaluate_dirichlet_boundary_gpu,
+            evaluate_transmissive_boundary_gpu,
+            set_transmissive_n_zero_t_stage,
+            evaluate_transmissive_n_zero_t_boundary_gpu,
+            set_time_boundary_values,
+            evaluate_time_boundary_gpu,
+        )
+        import numpy as np
+
+        gpu_dom = self.gpu_interface.gpu_dom
+
+        # Supported GPU boundary types
+        GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                              'Time_boundary'}
+
+        # Lazy init: identify which boundaries need CPU evaluation vs GPU
+        if not hasattr(self, '_gpu_boundary_info_initialized'):
+            self._gpu_cpu_tags = []
+            self._gpu_all_on_gpu = True
+            cpu_boundary_types = []
+            self._gpu_transmissive_n_zero_t_boundaries = []
+            self._gpu_time_boundaries = []
+
+            for tag, B in self.boundary_map.items():
+                if B is not None:
+                    btype = B.__class__.__name__
+                    if btype not in GPU_BOUNDARY_TYPES:
+                        self._gpu_cpu_tags.append(tag)
+                        self._gpu_all_on_gpu = False
+                        cpu_boundary_types.append((tag, btype))
+                    elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                        self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                    elif btype == 'Time_boundary':
+                        self._gpu_time_boundaries.append(B)
+
+            if not self._gpu_all_on_gpu:
+                boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
+                init_boundary_edge_sync(gpu_dom, boundary_cell_ids)
+                print("WARNING: GPU boundary evaluation disabled - falling back to CPU")
+                print(f"  Unsupported boundary types: {cpu_boundary_types}")
+
+            self._gpu_boundary_info_initialized = True
+
+        # Backup for RK2
+        backup_conserved_quantities_gpu(gpu_dom)
+
+        # ==========================================
+        # First Euler step
+        # ==========================================
+
+        protect_gpu(gpu_dom)
+        extrapolate_second_order_gpu(gpu_dom)
+
+        # Evaluate boundaries
+        if self._gpu_all_on_gpu:
+            evaluate_reflective_boundary_gpu(gpu_dom)
+            evaluate_dirichlet_boundary_gpu(gpu_dom)
+            evaluate_transmissive_boundary_gpu(gpu_dom)
+            for B in self._gpu_transmissive_n_zero_t_boundaries:
+                stage_val = B.get_boundary_values()
+                try:
+                    stage_val = float(stage_val)
+                except:
+                    stage_val = float(stage_val[0])
+                set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+            evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+            for B in self._gpu_time_boundaries:
+                q = B.get_boundary_values()
+                set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+            evaluate_time_boundary_gpu(gpu_dom)
+        else:
+            boundary_edge_sync(gpu_dom)
+            for tag in self.tag_boundary_cells:
+                B = self.boundary_map[tag]
+                if B is not None:
+                    B.evaluate_segment(self, self.tag_boundary_cells[tag])
+            sync_boundary_values(gpu_dom)
+
+        # Compute fluxes
+        self.flux_timestep = compute_fluxes_gpu(gpu_dom)
+
+        # Forcing terms
+        self.compute_forcing_terms()
+
+        # Update timestep
+        self.update_timestep(yieldstep, finaltime)
+
+        # Update conserved quantities
+        update_conserved_quantities_gpu(gpu_dom, self.timestep)
+
+        # End of first Euler step
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+
+        # Ghost exchange (MPI)
+        if self.ghost_layer_width < 4:
+            exchange_ghosts(gpu_dom)
+
+        # =========================================
+        # Second Euler step
+        # =========================================
+
+        protect_gpu(gpu_dom)
+        extrapolate_second_order_gpu(gpu_dom)
+
+        # Evaluate boundaries
+        if self._gpu_all_on_gpu:
+            evaluate_reflective_boundary_gpu(gpu_dom)
+            evaluate_dirichlet_boundary_gpu(gpu_dom)
+            evaluate_transmissive_boundary_gpu(gpu_dom)
+            for B in self._gpu_transmissive_n_zero_t_boundaries:
+                stage_val = B.get_boundary_values()
+                try:
+                    stage_val = float(stage_val)
+                except:
+                    stage_val = float(stage_val[0])
+                set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+            evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+            for B in self._gpu_time_boundaries:
+                q = B.get_boundary_values()
+                set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+            evaluate_time_boundary_gpu(gpu_dom)
+        else:
+            boundary_edge_sync(gpu_dom)
+            for tag in self.tag_boundary_cells:
+                B = self.boundary_map[tag]
+                if B is not None:
+                    B.evaluate_segment(self, self.tag_boundary_cells[tag])
+            sync_boundary_values(gpu_dom)
+
+        # Compute fluxes (ignore timestep from second step)
+        compute_fluxes_gpu(gpu_dom)
+
+        # Forcing terms
+        self.compute_forcing_terms()
+
+        # Update conserved quantities
+        update_conserved_quantities_gpu(gpu_dom, self.timestep)
+
+        # RK2 averaging
+        saxpy_conserved_quantities_gpu(gpu_dom, 0.5, 0.5)
+
+
+    def _evolve_one_rk2_step_c(self, yieldstep, finaltime):
+        """RK2 step executed entirely in C - eliminates Python round-trip overhead.
+
+        This is faster than _evolve_one_rk2_step_gpu() because:
+        - All kernel calls happen in C without Python round-trips
+        - MPI reduction for timestep happens in C
+        - Only one Python->C call per RK2 step
+
+        Limitations:
+        - Only supports GPU-evaluated boundary types
+        - Rate_operators must be applied separately (after this call)
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            evolve_one_rk2_step_gpu,
+            set_transmissive_n_zero_t_stage,
+            set_time_boundary_values,
+        )
+
+        gpu_dom = self.gpu_interface.gpu_dom
+
+        # Supported GPU boundary types
+        GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                              'Time_boundary'}
+
+        # Lazy init: identify which boundaries need special handling
+        if not hasattr(self, '_gpu_boundary_info_initialized'):
+            self._gpu_cpu_tags = []
+            self._gpu_all_on_gpu = True
+            cpu_boundary_types = []
+            self._gpu_transmissive_n_zero_t_boundaries = []
+            self._gpu_time_boundaries = []
+
+            for tag, B in self.boundary_map.items():
+                if B is not None:
+                    btype = B.__class__.__name__
+                    if btype not in GPU_BOUNDARY_TYPES:
+                        self._gpu_cpu_tags.append(tag)
+                        self._gpu_all_on_gpu = False
+                        cpu_boundary_types.append((tag, btype))
+                    elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                        self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                    elif btype == 'Time_boundary':
+                        self._gpu_time_boundaries.append(B)
+
+            if not self._gpu_all_on_gpu:
+                print("WARNING: C RK2 loop requires all GPU-supported boundary types")
+                print("  Falling back to Python-orchestrated GPU loop")
+                print(f"  Unsupported types: {cpu_boundary_types}")
+
+            self._gpu_boundary_info_initialized = True
+
+        # If any boundary requires CPU, fall back to Python-orchestrated loop
+        if not self._gpu_all_on_gpu:
+            return self._evolve_one_rk2_step_gpu(yieldstep, finaltime)
+
+        # Set time-dependent boundary values BEFORE calling C function
+        # Python function calls are cheap (~microseconds)
+        for B in self._gpu_transmissive_n_zero_t_boundaries:
+            stage_val = B.get_boundary_values()
+            try:
+                stage_val = float(stage_val)
+            except:
+                stage_val = float(stage_val[0])
+            set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+
+        for B in self._gpu_time_boundaries:
+            q = B.get_boundary_values()
+            set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+
+        # Compute max allowed timestep (respecting yieldstep and finaltime)
+        # This mirrors the logic in update_timestep()
+        remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
+        if finaltime is not None:
+            remaining_finaltime = finaltime - self.get_time()
+            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep, remaining_finaltime)
+        else:
+            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
+
+        # Execute full RK2 step in C (includes MPI timestep reduction)
+        # apply_forcing=1 enables Manning friction on GPU
+        self.timestep = evolve_one_rk2_step_gpu(gpu_dom, max_timestep, 1)
+
+        # Update internal time tracking
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+
+        # Record timestep stats
+        self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
+        self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
 
 
     def evolve_one_rk3_step(self, yieldstep, finaltime):
@@ -2926,6 +3311,8 @@ class Domain(Generic_Domain):
         if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import backup_conserved_quantities
             backup_conserved_quantities(self)
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
+            self.gpu_interface.backup_conserved_quantities_kernel(self)
         else:
             for name in self.conserved_quantities:
                 Q = self.quantities[name]
@@ -2939,12 +3326,126 @@ class Domain(Generic_Domain):
                 c = 1.0
             from .sw_domain_openmp_ext import saxpy_conserved_quantities
             saxpy_conserved_quantities(self, a, b, c)
+        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
+            # GPU version doesn't support c parameter yet
+            self.gpu_interface.saxpy_conserved_quantities_kernel(self, a, b)
         else:
             for name in self.conserved_quantities:
                 Q = self.quantities[name]
                 Q.saxpy_centroid_values(a, b)
                 if c is not None:
                     Q.centroid_values[:] = Q.centroid_values / c
+
+    def _has_cpu_only_fractional_operators(self):
+        """Check if any fractional step operators require CPU execution.
+
+        Rate_operators with GPU support don't need CPU sync.
+        boundary_flux_integral_operator is GPU-safe (only reads boundary_flux_sum).
+        Boyd_box_operator/Boyd_pipe_operator are GPU-safe via GPUCulvertManager.
+        Inlet_operator with GPU support doesn't need CPU sync.
+
+        Result is cached after first call since operators don't change during simulation.
+        """
+        # Check cache first
+        if hasattr(self, '_cached_has_cpu_only_ops'):
+            return self._cached_has_cpu_only_ops
+
+        from anuga.operators.rate_operators import Rate_operator
+        from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
+        from anuga.structures.inlet_operator import Inlet_operator
+        from anuga.structures.gpu_culvert_manager import GPUCulvertManager
+
+        # Initialize GPU culvert manager for Boyd operators if needed
+        has_boyd_ops = any(GPUCulvertManager.is_boyd_operator(op)
+                          for op in self.fractional_step_operators)
+        if has_boyd_ops and self.gpu_culvert_manager is None:
+            self.gpu_culvert_manager = GPUCulvertManager(self)
+            self.gpu_culvert_manager.register_all()
+
+        result = False
+        cpu_only_ops = []
+        for op in self.fractional_step_operators:
+            op_name = op.__class__.__name__
+            if isinstance(op, Rate_operator):
+                # Force GPU initialization if not already done (lazy init causes race with caching)
+                if hasattr(op, '_init_gpu') and not getattr(op, '_gpu_initialized', False):
+                    op._init_gpu()
+                # Rate_operator with GPU support doesn't need CPU sync
+                if hasattr(op, '_gpu_initialized') and op._gpu_initialized:
+                    continue  # GPU-accelerated, no sync needed
+            elif isinstance(op, boundary_flux_integral_operator):
+                # boundary_flux_integral_operator only reads boundary_flux_sum (small array)
+                # and accumulates a scalar - doesn't need full centroid sync
+                continue
+            elif isinstance(op, Inlet_operator):
+                # Force GPU initialization if not already done
+                if hasattr(op, '_init_gpu') and not getattr(op, '_gpu_initialized', False):
+                    op._init_gpu()
+                if hasattr(op, '_gpu_initialized') and op._gpu_initialized:
+                    continue  # GPU-accelerated, no sync needed
+            elif GPUCulvertManager.is_boyd_operator(op):
+                # Handled by GPUCulvertManager (local + cross-boundary via MPI in C)
+                if (self.gpu_culvert_manager is not None
+                        and op in self.gpu_culvert_manager.operators):
+                    continue
+            # All other operators need CPU sync
+            cpu_only_ops.append(op_name)
+            result = True
+
+        rank = getattr(self, 'processor', 0)
+        if result:
+            # Only print GPU sync warning if GPU offload is actually active
+            if getattr(self, 'gpu_offload_active', True):
+                print(f"[Rank {rank}] WARNING: CPU-only fractional operators detected (GPU<->CPU sync every RK2 step):")
+                for name in cpu_only_ops:
+                    print(f"  - {name}")
+        else:
+            # Only print GPU-safe message if GPU offload is actually active
+            if rank == 0 and getattr(self, 'gpu_offload_active', True):
+                print(f"[Rank {rank}] All fractional operators are GPU-safe, no GPU<->CPU sync needed")
+        import sys; sys.stdout.flush()
+
+        self._cached_has_cpu_only_ops = result
+        return result
+
+    def apply_fractional_steps(self):
+        """Override to sync GPU data before fractional step operators run.
+
+        Boyd culvert operators are handled via GPUCulvertManager (batched,
+        only 2 GPU sync points) instead of the per-operator Python loop.
+        """
+        gpu_mode = (self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None)
+        gpu_culverts_active = (gpu_mode and self.gpu_culvert_manager is not None
+                               and self.gpu_culvert_manager.num_culverts > 0)
+        needs_cpu_sync = False
+
+        if gpu_mode:
+            needs_cpu_sync = self._has_cpu_only_fractional_operators()
+            if needs_cpu_sync:
+                self.gpu_interface.sync_from_device()
+
+            # Execute all Boyd culverts in one batched GPU cycle
+            if gpu_culverts_active:
+                self.gpu_culvert_manager.apply_all()
+
+        # Run remaining operators (skip Boyd operators handled by GPU manager)
+        for operator in self.fractional_step_operators:
+            if gpu_culverts_active and operator in self.gpu_culvert_manager.operators:
+                continue  # Already handled by GPUCulvertManager
+            operator()
+
+        if gpu_mode and needs_cpu_sync:
+            self.gpu_interface.sync_to_device()
+
+    def update_ghosts(self, quantities=None):
+        """Override to use GPU ghost exchange when in GPU mode."""
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            # GPU RK2 loop handles ghost exchange internally via exchange_ghosts(gpu_dom)
+            # Don't do another exchange here - it would cause MPI message conflicts
+            pass
+        else:
+            # Fall back to parent implementation
+            super().update_ghosts(quantities)
 
     def timestepping_statistics(self,
                                 track_speeds=False,
@@ -3370,15 +3871,19 @@ class Domain(Generic_Domain):
 
     def set_multiprocessor_mode(self, multiprocessor_mode=1):
         """
-        Set multiprocessor mode 
-         1. openmp (in development)
-         2. cupy (in development)
+        Set multiprocessor mode
+         1. openmp - Python RK2 loop (use_c_rk2_loop=False)
+         2. gpu/mpi - C RK2 loop (use_c_rk2_loop=True, keeps data on device)
         """
 
         if multiprocessor_mode not in [MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU]:
-            raise ValueError('Invalid multiprocessor mode. Must be one of [1,2] (openmp, cupy)')
+            raise ValueError('Invalid multiprocessor mode. Must be one of [1,2] (openmp, gpu/mpi)')
 
         self.multiprocessor_mode = multiprocessor_mode
+
+        # Mode 1: Python RK2 loop (more flexible, easier debugging)
+        # Mode 2: C RK2 loop (faster, data stays on GPU device)
+        self.use_c_rk2_loop = (multiprocessor_mode == MULTIPROCESSOR_GPU)
 
         if self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             self.set_gpu_interface()
@@ -3388,7 +3893,7 @@ class Domain(Generic_Domain):
         Get multiprocessor mode 
         
         1. openmp (in development)
-        2. cupy (in development)
+        2. gpu/mpi (in development)
         """
         return self.multiprocessor_mode 
 
@@ -3425,28 +3930,87 @@ class Domain(Generic_Domain):
             print(f'Setting omp_num_threads to {omp_num_threads}')
 
 
+    @property
+    def gpu(self):
+        """
+        Shortcut to access the GPU interface.
+
+        Returns the gpu_interface object which provides FLOP counters and kernel wrappers.
+        Raises AttributeError if GPU mode is not enabled.
+        """
+        if self.gpu_interface is None:
+            raise AttributeError(
+                "GPU interface not initialized. Call domain.set_multiprocessor_mode(2) first."
+            )
+        return self.gpu_interface
+
     def set_gpu_interface(self):
 
         if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is None:
 
-            # first check that cupy is available
+            # Check that boundaries are properly set before GPU initialization
+            # After distribute(), boundary_map may be {'exterior': None, 'ghost': None}
+            # which is not None but has no actual boundary objects - this causes silent failures
+            if self.boundary_map is None:
+                raise RuntimeError(
+                    "GPU mode requires boundaries to be set before calling set_multiprocessor_mode(2).\n"
+                    "Please call domain.set_boundary({...}) BEFORE domain.set_multiprocessor_mode(2)."
+                )
+
+            has_real_boundary = any(b is not None for b in self.boundary_map.values())
+            if not has_real_boundary:
+                raise RuntimeError(
+                    "GPU mode requires boundaries to be set before calling set_multiprocessor_mode(2).\n"
+                    "Please call domain.set_boundary({...}) BEFORE domain.set_multiprocessor_mode(2).\n"
+                    f"Current boundary_map has no boundary objects: {list(self.boundary_map.keys())}"
+                )
+
+            # Try OpenMP target offloading interface first
+            try:
+                from .sw_domain_gpu_omp import GPU_OMP_interface
+                self.gpu_interface = GPU_OMP_interface(self)
+                self.gpu_interface.setup()
+                # Only print from rank 0
+                from anuga import myid, numprocs
+                import os
+                omp_target_offload = os.environ.get('OMP_TARGET_OFFLOAD', '').lower()
+                omp_num_threads = os.environ.get('OMP_NUM_THREADS', '1')
+                # Track whether GPU offload is actually active (not disabled by env var)
+                self.gpu_offload_active = (omp_target_offload != 'disabled')
+                if myid == 0:
+                    device_id = self.gpu_interface.gpu_dom.device_id
+                    print('+==============================================================================+')
+                    if not self.gpu_offload_active:
+                        print(f'| WARNING: GPU mode enabled but OMP_TARGET_OFFLOAD=disabled                   |')
+                        print(f'| Running on CPUs with OMP_NUM_THREADS={omp_num_threads}')
+                    elif device_id < 0:
+                        print(f'| WARNING: No GPU devices found, running on CPU via OpenMP target offloading  |')
+                    else:
+                        print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
+                    print('+==============================================================================+')
+                return
+            except Exception as e:
+                print(f'OpenMP GPU interface not available: {e}')
+
+            # Fall back to CUDA/CuPy interface
             try:
                 import cupy as cp
                 test_cupy_array = cp.array([1,2,3])
-
-            except (ImportError, Exception):
-                print('+==============================================================================+')
-                print('|                                                                              |')
-                print('| WARNING: cupy or gpu not available, so falling back to multiprocessor_mode 1 |')
-                print('|                                                                              |')
-                print('+==============================================================================+')
-                self.set_multiprocessor_mode(1)
+                from .sw_domain_cuda import GPU_interface
+                self.gpu_interface = GPU_interface(self)
+                self.gpu_interface.allocate_gpu_arrays()
+                self.gpu_interface.compile_gpu_kernels()
                 return
+            except Exception:
+                pass
 
-            from .sw_domain_cuda import GPU_interface
-            self.gpu_interface = GPU_interface(self)
-            self.gpu_interface.allocate_gpu_arrays()
-            self.gpu_interface.compile_gpu_kernels()
+            # No GPU available
+            from anuga import myid
+            if myid == 0:
+                print('+==============================================================================+')
+                print('| WARNING: GPU not available, falling back to multiprocessor_mode 1 (OpenMP)  |')
+                print('+==============================================================================+')
+            self.set_multiprocessor_mode(1)
            
         
 

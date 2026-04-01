@@ -56,36 +56,80 @@ dependencies = [dep_py, dep_numpy]
 # Deal with OpenMP
 #========================================================
 
-# cc = meson.get_compiler('c')
-# if openmp_dep.found()
-#   if cc.get_id() in ['intel', 'intel-cl', 'icx']
-#     openmp_flag = '-qopenmp'
-#   else
-#     openmp_flag = '-fopenmp'
-#   endif
-# endif
-
+cc = meson.get_compiler('c')
 openmp = dependency('openmp', required: false)
+message('Compiler ID is: ' + cc.get_id())
+
+#========================================================
+# Cray Programming Environment Detection
+#========================================================
+# On Cray systems, cc/CC are wrappers that hide the actual compiler.
+# PE_ENV tells us which backend compiler is being used.
+# This allows proper flag selection when using Cray compiler wrappers.
+
+pe_env = run_command('sh', ['-c', 'echo $PE_ENV'], check: false).stdout().strip()
+
+if pe_env != ''
+  message('Cray Programming Environment detected: ' + pe_env)
+  # Map PE_ENV to meson compiler IDs
+  if pe_env == 'NVIDIA'
+    effective_compiler_id = 'nvidia_hpc'
+  elif pe_env == 'GNU'
+    effective_compiler_id = 'gcc'
+  elif pe_env == 'CRAY'
+    effective_compiler_id = 'cray'
+  elif pe_env == 'INTEL'
+    effective_compiler_id = 'intel'
+  elif pe_env == 'AOCC' or pe_env == 'AMD'
+    effective_compiler_id = 'clang'
+  else
+    effective_compiler_id = cc.get_id()
+    warning('Unknown PE_ENV value: ' + pe_env + ', falling back to compiler detection')
+  endif
+  is_cray_wrapper = true
+else
+  effective_compiler_id = cc.get_id()
+  is_cray_wrapper = false
+endif
+
+message('Effective compiler ID: ' + effective_compiler_id)
+
 if openmp.found()
   # On Windows, the mingw compiler does not support OpenMP ATOMIC operations
   # so using gcc_win-64 gxx_win-64 provided by conda-forge
   # On linux, OpenMP is supported by gcc and g++
-  # On macOS, OpenMP is not supported by the Apple clang compiler so using 
+  # On macOS, OpenMP is not supported by the Apple clang compiler so using
   # clang and llvm-openmp provided by conda-forge
- 
-  #if host_machine.system() == 'windows'
-  
-  openmp_c_args = ['-O3', '-march=native', '-fopenmp', '-g']
-  # openmp_c_args = ['-O3', '-march=native','-funroll-loops', '-fvectorize', '-Rpass=loop-vectorize', '-Rpass=loop-unroll', '-g'],
-  # openmp_c_args = ['-O3', '-march=native', openmp_flag, '-g'],
+  #
+  # Note: These flags are for the original mode 1 code (sw_domain_openmp_ext)
+  # The new mode 2 code (sw_domain_gpu_ext) has its own flags in shallow_water/meson.build
+  #
+  # Uses effective_compiler_id to handle Cray wrappers correctly
 
+  if effective_compiler_id in ['intel', 'intel-cl', 'icx']
+    openmp_c_args = ['-O3', '-qopenmp', '-g']
+    add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
+  elif effective_compiler_id == 'intel-llvm'
+    openmp_c_args = ['-O3', '-fiopenmp', '-g']
+    add_project_link_arguments('-fiopenmp', language: ['c', 'cpp'])
+  elif effective_compiler_id == 'nvidia_hpc'
+    # Mode 1 always uses CPU-only multicore OpenMP (no GPU)
+    openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g']
+    add_project_link_arguments(['-mp=gpu,multicore'], language: ['c', 'cpp'])
+  elif effective_compiler_id == 'clang'
+    # Clang with libomp (e.g., from LLVM, Homebrew on macOS, or AOMP)
+    openmp_c_args = ['-O3', '-fopenmp', '-g']
+    add_project_link_arguments('-fopenmp', language: ['c', 'cpp'])
+  else
+    # GCC and other compilers
+    openmp_c_args = ['-O3', '-fopenmp', '-g']
+    add_project_link_arguments('-fopenmp', language: ['c', 'cpp'])
+  endif
   openmp_deps = dependencies + [openmp]
-
 else
   openmp_c_args = []
   openmp_deps = dependencies
 endif
-
 
 
 #========================================================

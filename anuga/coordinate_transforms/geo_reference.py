@@ -180,9 +180,22 @@ class Geo_reference(object):
         return self.yllcorner
 
     def set_zone(self, zone):
-        """set zone as an integer in [1,60] or -1."""
+        """Set zone as an integer in [1,60] or -1 (DEFAULT_ZONE = unlocated).
 
+        A negative zone in [-60, -2] is interpreted as a southern hemisphere
+        shorthand: the zone number is taken as abs(zone) and hemisphere is set
+        to 'southern' when it is currently 'undefined'.
+
+        Note: zone=-1 is reserved for DEFAULT_ZONE (unlocated simulation) and
+        is NOT interpreted as zone 1 southern hemisphere.  For zone 1 south,
+        pass zone=1 with hemisphere='southern' explicitly.
+        """
         zone = int(zone)
+
+        if -60 <= zone <= -2:
+            if self.hemisphere == 'undefined':
+                self.hemisphere = 'southern'
+            zone = abs(zone)
 
         assert (zone == -1 or (zone >= 1 and zone <= 60)), f'zone {zone} not valid.'
 
@@ -342,13 +355,17 @@ class Geo_reference(object):
         """
         if self._epsg is not None:
             return self._epsg
-        if self.zone == DEFAULT_ZONE:
+        zone = self.zone
+        if zone == DEFAULT_ZONE:
             return None
+        # Negative zone implies southern hemisphere (legacy convention).
+        if zone < 0:
+            return _WGS84_UTM_SOUTH_BASE + abs(zone)
         if self.datum.lower() == 'wgs84' and self.projection.upper() == 'UTM':
             if self.hemisphere == 'southern':
-                return _WGS84_UTM_SOUTH_BASE + self.zone
+                return _WGS84_UTM_SOUTH_BASE + zone
             if self.hemisphere == 'northern':
-                return _WGS84_UTM_NORTH_BASE + self.zone
+                return _WGS84_UTM_NORTH_BASE + zone
         return None
 
     @epsg.setter

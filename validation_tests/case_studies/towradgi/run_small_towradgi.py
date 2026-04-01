@@ -12,6 +12,7 @@ Updated script By Petar Milevski 2022
 from project import *
 from anuga import distribute, myid, numprocs, finalize, barrier
 from anuga import Rate_operator
+from anuga import Inlet_operator
 from anuga import Boyd_box_operator
 from anuga import Boyd_pipe_operator
 from anuga import Domain
@@ -70,20 +71,20 @@ verbose = args.verbose
 # --------------------------------------------------------------------------
 
 verbose = False
-yieldstep=10. # yield evolve loop every 10 seconds
-outputstep=60. # update sww files every 60 seconds
-finaltime=140. #83700.
+yieldstep=1800. # yield evolve loop every 10 seconds
+outputstep=1800. # update sww files every 60 seconds
+finaltime=3600. #83700.
 
 scale = 1 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
 # Choices are 1 (openmp) 2 (cupy)
-multiprocessor_mode = 1
+multiprocessor_mode = 2
 
 checkpoint_time = max(600/scale, 60)
 checkpoint_dir = 'CHECKPOINTS'
 
-useCulverts = False # Use this to turn off culverts
+useCulverts = True # Use this to turn off culverts
 useCheckpointing = False
 
 
@@ -125,6 +126,8 @@ func = file_function(join('Forcing', 'Tide', 'Pioneer.tms'), quantities='rainfal
 # remember to turn on checkpointing via
 # domain.set_checkpointing(checkpoint_time = checkpoint_time)
 # ------------------------------------------------------------------------------
+creek_inlet = None  # Initialize in case loaded from checkpoint
+
 try:
     from anuga import load_checkpoint_file
 
@@ -915,7 +918,7 @@ Creating domain from scratch.
     
     Rainfall_Gauge_directory = join('Forcing', 'Rainfall', 'Gauge')
     ops = []
-    for filename in os.listdir(Rainfall_Gauge_directory):
+    for filename in sorted(os.listdir(Rainfall_Gauge_directory)):  # sorted for MPI determinism
         Gaugefile = join(Rainfall_Gauge_directory, filename)
         Rainfile = join('Forcing', 'Rainfall', 'Hort', filename[0:-4]+'.tms')
         #print(Gaugefile)
@@ -924,7 +927,21 @@ Creating domain from scratch.
         rainfall = anuga.file_function(Rainfile, quantities='rate')
         ops.append(Rate_operator(domain, rate=rainfall, factor=1.0e-3,
                             polygon=polygon, default_rate=0.0))
-    
+
+    # ----------------------------------------------------------------------------------------------------------------------------------------------------
+    # ADD INLET OPERATOR (for GPU testing)
+    # ----------------------------------------------------------------------------------------------------------------------------------------------------
+    if myid == 0:
+        print('CREATING INLET OPERATOR')
+
+    # Inlet line in the western (upstream) part of the domain
+    # Simulates creek inflow at 20 m³/s
+    inlet_line = [[304000.0, 6194200.0], [304000.0, 6194600.0]]
+    inlet_Q = 20.0  # m³/s constant inflow
+    creek_inlet = Inlet_operator(domain, inlet_line, inlet_Q,
+                                  label='Creek_Inlet_West',
+                                  verbose=False)
+
     barrier()
     
     # ------------------------------------------------------------------------------
@@ -946,24 +963,59 @@ Creating domain from scratch.
 
 
 
-domain.set_multiprocessor_mode(multiprocessor_mode)
+domain.set_multiprocessor_mode(multiprocessor_mode )
 
 # ------------------------------------------------------------------------------
 # EVOLVE SYSTEM THROUGH TIME
 # ------------------------------------------------------------------------------
 barrier()
 t0 = time.time()
+import cProfile
+import pstats
+#profiler = cProfile.Profile()
+#profiler.enable()
 
 
 for t in domain.evolve(yieldstep=yieldstep, outputstep=outputstep, finaltime=finaltime):
 
-    domain.print_timestepping_statistics()
+    #domain.print_timestepping_statistics()
+    #domain.report_water_volume_statistics()
+    if myid == 0:
+        domain.write_time()
+
     #domain.print_operator_timestepping_statistics()
-    domain.report_water_volume_statistics()
     #domain.report_cells_with_small_local_timestep()
 
-barrier()
+    # Report inlet statistics
+    #if myid == 0 and creek_inlet is not None:
+    #    print(f"  Inlet applied volume: {creek_inlet.total_applied_volume:.2f} m³")
 
+    # Report statistics for GPU testing (like CDAC script)
+    #stage = domain.quantities['stage']
+    #max_stage = stage.get_maximum_value()
+    #wet_indices = domain.get_wet_elements()
+    #wet_count = len(wet_indices)
+    max_stage = domain.get_global_max_stage()
+    wet_count = domain.get_global_wet_element_count()
+    water_vol = domain.get_water_volume()
+    if myid == 0:
+        print(f"  Max stage: {max_stage:.4f} m, Wet elements: {wet_count}, Volume: {water_vol:.2f} m³")
+
+barrier()
+#profiler.disable()
+
+# Print profiling results
+#if myid == 0:
+#    print("\n" + "="*80)
+#    print("PROFILING RESULTS - Top 40 by cumulative time")
+#    print("="*80)
+#    stats = pstats.Stats(profiler)
+#    stats.sort_stats('cumulative')
+#    stats.print_stats(40)
+#
+#    # Also save to file for detailed analysis
+#    profiler.dump_stats('profile.prof')
+#    print(f"\nProfile saved to profile.prof - view with: python -m pstats profile.prof")
 for p in range(numprocs):
     if myid == p:
         print('Processor %g ' % myid)

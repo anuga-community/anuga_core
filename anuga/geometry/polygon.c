@@ -9,8 +9,8 @@
 //
 // Ole Nielsen, GA 2004
 //
-// NOTE: We use anuga_int* instead of anuga_int* for numeric arrays as this will work both
-//       for 64 as well as 32 bit systems
+// NOTE: We use anuga_int* for numeric arrays as this will work both
+//       for 64 as well as 32 bit systems. See anuga_typedefs.h
 
 #include "math.h"
 #include "stdint.h"

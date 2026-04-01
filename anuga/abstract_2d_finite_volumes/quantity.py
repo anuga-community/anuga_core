@@ -1526,20 +1526,11 @@ class Quantity(object):
                 indices = num.array(indices)
                 points = points[tuple(indices),:]
 
-        #print(points.shape)
-
-        
-
-        #print(points.shape)
 
         from anuga.geospatial_data.geospatial_data import Geospatial_data,  ensure_absolute
 
         points = ensure_absolute(points, geo_reference=self.domain.geo_reference)
 
-
-        from pprint import pprint
-
-        #pprint(points)
 
         if filename_ext in ['.tif']:
                 values = tif2point_values(filename, zone=zone, south=south, points=points)
@@ -1547,7 +1538,6 @@ class Quantity(object):
             msg= 'The file extension is not suportted... Only .tif are supported.'
             Exception(msg)
 
-        #pprint(values)
 
         # Call underlying method using array values
         if verbose:
@@ -1731,39 +1721,13 @@ class Quantity(object):
         if verbose:
             print(self.domain.geo_reference)
 
-        utm_zone = self.domain.geo_reference.get_zone()
-        utm_hemisphere = self.domain.geo_reference.get_hemisphere()
-
-        northern = True
-        if utm_hemisphere == 'southern':
-            northern = False
-
-        #import re
-        #utm_zone_number = re.findall(r'\d+', utm_zone)[0]
-        #utm_zone_letter = re.findall(r'[A-z]+', utm_zone)[0]
-
-        #print(utm_zone)
-        #print(points)
-
-        # we could use anuga's utmtoLL but it has not been vectorised so lets
-        # use this library, but we will have to download via pip
-        import utm
-        lat, long = utm.to_latlon(points[:,0], points[:,1], utm_zone, northern=northern)
-
-        #print(lat)
-        #print(long)
+        from anuga.coordinate_transforms.redfearn import epsg_to_ll
+        epsg = self.domain.geo_reference.get_epsg()
+        lat, long = epsg_to_ll(points[:,0], points[:,1], epsg)
 
         lat = num.reshape(lat, (-1,1))
         long = num.reshape(long, (-1,1))
         points_ll = num.hstack((long,lat))
-
-
-        # need to pull out the the utm zone number and letter
-
-        
-
-        #import utm
-        #points_ll = utm.to_latlon(easting = points[:,0], northing=points[:,1])
 
 
         #print('points_ll', points_ll)
@@ -2306,9 +2270,7 @@ class Quantity(object):
 
         if self.domain.multiprocessor_mode == MULTIPROCESSOR_GPU:
             from .quantity_openmp_ext import update
-        if self.domain.multiprocessor_mode == 3:
-            from .quantity_openmp_ext import update
-        if self.domain.multiprocessor_mode == 4:
+        if self.domain.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # FIXME SR: Change this when gpu version is available
             from .quantity_openmp_ext import update
         else:

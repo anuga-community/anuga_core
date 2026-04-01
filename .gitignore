@@ -22,7 +22,7 @@ anuga/_version.py
 .*.sw[nop]
 .sw[nop]
 *.pstat
-*.c
+#*.c
 *.cpp
 *.tmp
 *.rst

@@ -77,11 +77,6 @@ class Test_rate_operators(unittest.TestCase):
         Br = Reflective_boundary(domain)
         domain.set_boundary({'exterior': Br})
 
-
-#        print domain.quantities['stage'].centroid_values
-#        print domain.quantities['xmomentum'].centroid_values
-#        print domain.quantities['ymomentum'].centroid_values
-
         # Apply operator to these triangles
         indices = [0,1,3]
 
@@ -97,10 +92,6 @@ class Test_rate_operators(unittest.TestCase):
         operator()
 
         stage_ex = [ 21.,  21.,   1.,  21.]
-
-#        print domain.quantities['stage'].centroid_values
-#        print domain.quantities['xmomentum'].centroid_values
-#        print domain.quantities['ymomentum'].centroid_values
 
         assert num.allclose(domain.quantities['stage'].centroid_values, stage_ex)
         assert num.allclose(domain.quantities['xmomentum'].centroid_values, 0.0)
@@ -147,18 +138,9 @@ class Test_rate_operators(unittest.TestCase):
         Br = Reflective_boundary(domain)
         domain.set_boundary({'exterior': Br})
 
-#        print domain.quantities['elevation'].centroid_values
-#        print domain.quantities['stage'].centroid_values
-#        print domain.quantities['xmomentum'].centroid_values
-#        print domain.quantities['ymomentum'].centroid_values
-
         # Apply operator to these triangles
         indices = [0,1,3]
 
-
-
-        #Catchment_Rain_Polygon = read_polygon(join('CatchmentBdy.csv'))
-        #rainfall = file_function(join('1y120m.tms'), quantities=['rainfall'])
         rate = -1.0
         factor = 10.0
         default_rate= 0.0
@@ -166,24 +148,12 @@ class Test_rate_operators(unittest.TestCase):
         operator = Rate_operator(domain, rate=rate, factor=factor, \
                       indices=indices, default_rate = default_rate)
 
-
         # Apply Operator
         domain.timestep = 2.0
         operator()
 
         stage_ex = [ 0.,  0.,   1.,  0.]
         step_integral = -6.0
-
-        #print domain.quantities['elevation'].centroid_values
-        #print domain.quantities['stage'].centroid_values
-        #print domain.quantities['xmomentum'].centroid_values
-        #print domain.quantities['ymomentum'].centroid_values
-        #print domain.fractional_step_volume_integral
-        #print factor*domain.timestep*(rate*domain.areas[indices]).sum()
-
-        #increment = factor*domain.timestep*rate*domain.areas
-
-
 
         assert num.allclose(domain.quantities['stage'].centroid_values, stage_ex)
         assert num.allclose(domain.quantities['xmomentum'].centroid_values, 0.0)
@@ -228,18 +198,11 @@ class Test_rate_operators(unittest.TestCase):
         Br = Reflective_boundary(domain)
         domain.set_boundary({'exterior': Br})
 
-#        print domain.quantities['elevation'].centroid_values
-#        print domain.quantities['stage'].centroid_values
-#        print domain.quantities['xmomentum'].centroid_values
-#        print domain.quantities['ymomentum'].centroid_values
-
         # Apply operator to these triangles
         indices = [0,1,3]
 
 
 
-        #Catchment_Rain_Polygon = read_polygon(join('CatchmentBdy.csv'))
-        #rainfall = file_function(join('1y120m.tms'), quantities=['rainfall'])
         rate = -1.0
         factor = 10.0
         default_rate= 0.0
@@ -254,12 +217,6 @@ class Test_rate_operators(unittest.TestCase):
 
         stage_ex = [ 0.,  0.,   0.,  0.]
         step_integral = -80.0
-
-        #print domain.quantities['elevation'].centroid_values
-        #print domain.quantities['stage'].centroid_values
-        #print domain.quantities['xmomentum'].centroid_values
-        #print domain.quantities['ymomentum'].centroid_values
-        #print domain.fractional_step_volume_integral
 
 
         assert num.allclose(domain.quantities['stage'].centroid_values, stage_ex)
@@ -320,20 +277,11 @@ class Test_rate_operators(unittest.TestCase):
         domain.timestep = 2.0
         operator()
 
-        #print(domain.quantities['stage'].centroid_values)
-
         stage_ex = [ 30.0,  10.0,   0.0,  6.0]
         xmom_ex  = [ 1.0, 1.0, 0.0, 0.6]
         ymom_ex  = [ 2.0, 2.0, 0.0, 1.2]
 
         step_integral = 12.0
-
-        #print domain.quantities['elevation'].centroid_values
-        #print domain.quantities['stage'].centroid_values
-        #print domain.quantities['xmomentum'].centroid_values
-        #print domain.quantities['ymomentum'].centroid_values
-        #print domain.fractional_step_volume_integral
-
 
         assert num.allclose(domain.quantities['stage'].centroid_values, stage_ex)
         assert num.allclose(domain.quantities['xmomentum'].centroid_values, xmom_ex)
@@ -342,7 +290,6 @@ class Test_rate_operators(unittest.TestCase):
 
         # test timestepping_statistics
         stats = operator.timestepping_statistics()
-        #print(stats)
 
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
@@ -395,20 +342,11 @@ class Test_rate_operators(unittest.TestCase):
         domain.timestep = 2.0
         operator()
 
-        #print(domain.quantities['stage'].centroid_values)
-
         stage_ex = [ 30.0,  10.0,   0.0,  6.0]
         xmom_ex  = [ 1.0, 1.0, 0.0, 0.6]
         ymom_ex  = [ 2.0, 2.0, 0.0, 1.2]
 
         step_integral = 12.0
-
-        #print domain.quantities['elevation'].centroid_values
-        #print domain.quantities['stage'].centroid_values
-        #print domain.quantities['xmomentum'].centroid_values
-        #print domain.quantities['ymomentum'].centroid_values
-        #print domain.fractional_step_volume_integral
-
 
         assert num.allclose(domain.quantities['stage'].centroid_values, stage_ex)
         assert num.allclose(domain.quantities['xmomentum'].centroid_values, xmom_ex)
@@ -417,7 +355,6 @@ class Test_rate_operators(unittest.TestCase):
 
         # test timestepping_statistics
         stats = operator.timestepping_statistics()
-        #print(stats)
         
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
@@ -494,10 +431,6 @@ class Test_rate_operators(unittest.TestCase):
         assert num.allclose( 2*120**2/3 + 60**2/3, q[1] )
         assert num.allclose( 2*sin(120*pi/600)/3 + sin(60*pi/600)/3, q[2] )
 
-        #os.remove(filename + '.txt')
-        #os.remove(filename + '.tms')
-
-
         domain = Domain(points, vertices)
 
         #Flat surface with 1m of water
@@ -507,11 +440,6 @@ class Test_rate_operators(unittest.TestCase):
 
         Br = Reflective_boundary(domain)
         domain.set_boundary({'exterior': Br})
-
-#        print domain.quantities['elevation'].centroid_values
-#        print domain.quantities['stage'].centroid_values
-#        print domain.quantities['xmomentum'].centroid_values
-#        print domain.quantities['ymomentum'].centroid_values
 
         # Apply operator to these triangles
         indices = [0,1,3]
@@ -541,13 +469,6 @@ class Test_rate_operators(unittest.TestCase):
         d = domain.get_time()**2 * factor + 1.0
         stage_ex0 = [ d,  d,   1.,  d]
 
-#        print d, domain.get_time(), F(360.0)
-
-#        print domain.quantities['elevation'].centroid_values
-#        print domain.quantities['stage'].centroid_values
-#        print domain.quantities['xmomentum'].centroid_values
-#        print domain.quantities['ymomentum'].centroid_values
-
         assert num.allclose(domain.quantities['stage'].centroid_values, stage_ex0)
         assert num.allclose(domain.quantities['xmomentum'].centroid_values, 0.0)
         assert num.allclose(domain.quantities['ymomentum'].centroid_values, 0.0)
@@ -563,11 +484,6 @@ class Test_rate_operators(unittest.TestCase):
 
         d = default_rate*factor + d
         stage_ex1 = [ d,  d,   1.,  d]
-
-#         print domain.quantities['elevation'].centroid_values
-#         print domain.quantities['stage'].centroid_values
-#         print domain.quantities['xmomentum'].centroid_values
-#         print domain.quantities['ymomentum'].centroid_values
 
         assert num.allclose(domain.quantities['stage'].centroid_values, stage_ex1)
         assert num.allclose(domain.quantities['xmomentum'].centroid_values, 0.0)
@@ -817,6 +733,9 @@ class Test_rate_operators(unittest.TestCase):
         assert num.allclose(float(rr[3]), float(f'{33.3333:.2e}'))
         assert num.allclose(float(rr[4]), float(f'{426.667:.2e}'))
 
+        # assert num.allclose(float(rr[1]), 13.3333)
+        # assert num.allclose(float(rr[2]), 33.3333)
+        # assert num.allclose(float(rr[3]), 426.667)
         # assert num.allclose(float(rr[2]), 1.33333)
         # assert num.allclose(float(rr[3]), 3.33333)
         # assert num.allclose(float(rr[4]), 213.33333)
@@ -894,9 +813,6 @@ class Test_rate_operators(unittest.TestCase):
         Q_ex_full = num.sum(num.where(domain.tri_full_flag==1,domain.areas*rate,0.0))
         d = operator.get_timestep()*rate + 1
 
-        #print "d"
-        #print d
-        #print Q_ex_full, Q_ex_all
         stage_ex = num.array([ 1.0,  1.0,   1.0,  1.0])
         stage_ex[:] = d
 
@@ -921,6 +837,10 @@ class Test_rate_operators(unittest.TestCase):
         assert num.allclose(float(rr[2]), float(f'{13.3333:.2e}'))
         assert num.allclose(float(rr[3]), float(f'{33.3333:.2e}'))
         assert num.allclose(float(rr[4]), float(f'{320:.2e}'))
+
+        # assert num.allclose(float(rr[1]), 13.3333)
+        # assert num.allclose(float(rr[2]), 33.3333)
+        # assert num.allclose(float(rr[3]), 320 )
 
         # assert num.allclose(float(rr[2]), 1.33333)
         # assert num.allclose(float(rr[3]), 3.33333)
@@ -990,8 +910,6 @@ class Test_rate_operators(unittest.TestCase):
         d = operator.get_timestep()*rate + 1
 
 
-        #print "d"
-        #print d
         stage_ex = num.array([ 1.0,  1.0,   1.0,  1.0])
         stage_ex[indices] = d
 
@@ -1016,6 +934,10 @@ class Test_rate_operators(unittest.TestCase):
         assert num.allclose(float(rr[2]), float(f'{13.3333:.2e}'))
         assert num.allclose(float(rr[3]), float(f'{33.3333:.2e}'))
         assert num.allclose(float(rr[4]), float(f'{293.333:.2e}'))
+
+        # assert num.allclose(float(rr[1]), 13.3333)
+        # assert num.allclose(float(rr[2]), 33.3333)
+        # assert num.allclose(float(rr[3]), 293.333)
 
         # assert num.allclose(float(rr[2]), 1.33333)
         # assert num.allclose(float(rr[3]), 3.33333)
@@ -1081,10 +1003,6 @@ class Test_rate_operators(unittest.TestCase):
         d = operator.get_timestep()*rate + 1
 
 
-        #print "d"
-        #print d
-        #print Q_ex
-        #print Q
         stage_ex = num.array([ 1.0,  1.0,   1.0,  1.0])
         stage_ex[indices] = d
 
@@ -1174,10 +1092,6 @@ class Test_rate_operators(unittest.TestCase):
         d = operator.get_timestep()*rate + 1
 
 
-        #print "d"
-        #print d
-        #print Q_ex
-        #print Q
         stage_ex = num.array([ 1.0,  1.0,   1.0,  1.0])
         stage_ex[indices] = d
 
@@ -1267,10 +1181,6 @@ class Test_rate_operators(unittest.TestCase):
         d = operator.get_timestep()*rate + 1
 
 
-        #print "d"
-        #print d
-        #print Q_ex
-        #print Q
         stage_ex = num.array([ 1.0,  1.0,   1.0,  1.0])
         stage_ex[indices] = d
 
@@ -1340,10 +1250,7 @@ class Test_rate_operators(unittest.TestCase):
 
         # Apply operator to these triangles
         indices = [0,1,3]
-        #factor = lambda t: 10.0
         factor = num.array([[-1.0, 0.0, 10.0, 20.0],[5.0, 10.0, 10.0, 10.0]])
-
-        #print(factor.shape)
 
 
         rate_array = numpy.ones((domain.number_of_triangles,))
@@ -1361,17 +1268,12 @@ class Test_rate_operators(unittest.TestCase):
         Q = operator.get_Q()
         factor = operator.get_factor(t)
 
-        #print(operator.get_factor(21.0))
 
         rate = rate*factor
         Q_ex = num.sum(domain.areas[indices]*rate)
         d = operator.get_timestep()*rate + 1
 
 
-        #print "d"
-        #print d
-        #print Q_ex
-        #print Q
         stage_ex = num.array([ 1.0,  1.0,   1.0,  1.0])
         stage_ex[indices] = d
 
@@ -1557,10 +1459,6 @@ class Test_rate_operators(unittest.TestCase):
         d = operator.get_timestep()*rate + 1
 
 
-        #print "d"
-        #print d
-        #print Q_ex
-        #print Q
         stage_ex = num.array([ 1.0,  1.0,   1.0,  1.0])
         stage_ex = d
 
@@ -1657,10 +1555,6 @@ class Test_rate_operators(unittest.TestCase):
         Q_ex = num.sum(domain.areas[indices]*rate)
         d = operator.get_timestep()*rate + 1
 
-        # print Q_ex, Q
-        # print indices
-        # print "d"
-        # print d
         stage_ex = num.array([ 1.0,  1.0,   1.0,  1.0])
         stage_ex[indices] = d
 
@@ -1751,10 +1645,6 @@ class Test_rate_operators(unittest.TestCase):
         Q_ex = num.sum(domain.areas[indices]*rate)
         d = operator.get_timestep()*rate + 1
 
-        # print Q_ex, Q
-        # print indices
-        # print "d"
-        # print d
         stage_ex = num.array([ 1.0,  1.0,   1.0,  1.0])
         stage_ex[indices] = d
 
