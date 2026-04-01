@@ -10,6 +10,52 @@ from anuga.coordinate_transforms.geo_reference import Geo_reference, DEFAULT_ZON
 
 import numpy as num
 
+
+def epsg_to_ll(easting, northing, epsg):
+    """Convert projected coordinates to latitude/longitude using pyproj.
+
+    Parameters
+    ----------
+    easting : array-like
+        Easting coordinates in the CRS defined by epsg.
+    northing : array-like
+        Northing coordinates in the CRS defined by epsg.
+    epsg : int
+        EPSG code of the source CRS (e.g. 32755 for UTM zone 55S).
+
+    Returns
+    -------
+    lat : ndarray
+    lon : ndarray
+    """
+    from pyproj import Transformer
+    t = Transformer.from_crs(epsg, 4326, always_xy=True)
+    lon, lat = t.transform(easting, northing)
+    return num.asarray(lat), num.asarray(lon)
+
+
+def ll_to_epsg(lat, lon, epsg):
+    """Convert latitude/longitude to projected coordinates using pyproj.
+
+    Parameters
+    ----------
+    lat : array-like
+        Latitudes in decimal degrees.
+    lon : array-like
+        Longitudes in decimal degrees.
+    epsg : int
+        EPSG code of the target CRS (e.g. 32755 for UTM zone 55S).
+
+    Returns
+    -------
+    easting : ndarray
+    northing : ndarray
+    """
+    from pyproj import Transformer
+    t = Transformer.from_crs(4326, epsg, always_xy=True)
+    easting, northing = t.transform(lon, lat)
+    return num.asarray(easting), num.asarray(northing)
+
 def degminsec2decimal_degrees(dd,mm,ss):
     assert abs(mm) == mm
     assert abs(ss) == ss    
