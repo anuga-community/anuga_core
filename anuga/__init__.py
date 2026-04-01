@@ -84,6 +84,7 @@ from anuga.geometry.polygon import polygon_area
 from anuga.geometry.polygon_function import Polygon_function
 
 from anuga.coordinate_transforms.lat_long_UTM_conversion import LLtoUTM, UTMtoLL
+from anuga.coordinate_transforms.redfearn import epsg_to_ll, ll_to_epsg
 
 from anuga.abstract_2d_finite_volumes.pmesh2domain import \
                                             pmesh_to_domain_instance, \
@@ -436,6 +437,8 @@ __all__ = [
     # Coordinate transforms
     'LLtoUTM',
     'UTMtoLL',
+    'epsg_to_ll',
+    'll_to_epsg',
     # Parallel API
     'barrier',
     'collect_value',
