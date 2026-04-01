@@ -182,9 +182,13 @@ class Geo_reference(object):
     def set_zone(self, zone):
         """Set zone as an integer in [1,60] or -1 (DEFAULT_ZONE = unlocated).
 
-        A negative zone in [-60, -2] is interpreted as southern hemisphere:
-        the zone number is taken as abs(zone) and hemisphere is set to
-        'southern' when it is currently 'undefined'.
+        A negative zone in [-60, -2] is interpreted as a southern hemisphere
+        shorthand: the zone number is taken as abs(zone) and hemisphere is set
+        to 'southern' when it is currently 'undefined'.
+
+        Note: zone=-1 is reserved for DEFAULT_ZONE (unlocated simulation) and
+        is NOT interpreted as zone 1 southern hemisphere.  For zone 1 south,
+        pass zone=1 with hemisphere='southern' explicitly.
         """
         zone = int(zone)
 
