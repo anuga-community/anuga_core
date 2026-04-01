@@ -301,6 +301,7 @@ struct gpu_domain {
     int gpu_initialized;
     int device_id;
     int gpu_aware_mpi;           // Runtime flag: 1 if GPU-aware MPI available
+    int verbose;                 // 0 = silent (default), 1 = print init/mapping messages
 
     // Halo exchange info
     struct halo_exchange halo;

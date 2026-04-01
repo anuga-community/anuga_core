@@ -135,6 +135,7 @@ cdef extern from "gpu_domain.h" nogil:
         int gpu_initialized
         int device_id
         int gpu_aware_mpi
+        int verbose
         halo_exchange halo
         inlet_operators inlet_ops
         double CFL
@@ -687,7 +688,7 @@ cdef void build_halo_from_dicts(gpu_domain *GD, object domain_object):
 # Public Python API
 # ============================================================================
 
-def init_gpu_domain(object domain_object):
+def init_gpu_domain(object domain_object, bint verbose=True):
     """
     Initialize GPU domain from Python domain object.
 
@@ -701,6 +702,9 @@ def init_gpu_domain(object domain_object):
     ----------
     domain_object : anuga.shallow_water.Domain
         The Python domain object (must be already partitioned for MPI)
+    verbose : bool, optional
+        If True, print GPU initialisation and array-mapping messages.
+        Default is False (silent) so pytest runs are not noisy.
 
     Returns
     -------
@@ -717,6 +721,9 @@ def init_gpu_domain(object domain_object):
     # Initialize C struct with MPI info
     gpu_domain_init(&gpu_dom.GD, comm, rank, nprocs)
 
+    # Propagate verbose flag to C struct so printf calls respect it
+    gpu_dom.GD.verbose = 1 if verbose else 0
+
     # Extract array pointers from Python domain
     get_domain_pointers(&gpu_dom.GD, domain_object)
 
@@ -728,8 +735,9 @@ def init_gpu_domain(object domain_object):
     gpu_dom.python_domain = domain_object
     gpu_dom.initialized = True
 
-    if rank == 0:
-        print(f"GPU domain initialized: {gpu_dom.GD.D.number_of_elements} elements")
+    if verbose and rank == 0:
+        import sys
+        sys.stdout.flush()
         print_gpu_domain_info(&gpu_dom.GD)
 
     return gpu_dom

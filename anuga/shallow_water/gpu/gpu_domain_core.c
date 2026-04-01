@@ -38,15 +38,18 @@ int detect_gpu_aware_mpi(void) {
 }
 
 void print_gpu_domain_info(struct gpu_domain *GD) {
-    printf("GPU Domain Info (rank %d/%d):\n", GD->rank, GD->nprocs);
-    printf("  Elements: %" PRId64 "\n", GD->D.number_of_elements);
-    printf("  GPU initialized: %d\n", GD->gpu_initialized);
-    printf("  GPU-aware MPI: %d\n", GD->gpu_aware_mpi);
-    printf("  Halo neighbors: %d\n", GD->halo.num_neighbors);
+    if (!GD->verbose) return;
+    printf("\n--- GPU Domain (rank %d/%d) ---\n", GD->rank, GD->nprocs);
+    printf("  Elements: %" PRId64 "  |  Device: %d  |  GPU-aware MPI: %s",
+           GD->D.number_of_elements, GD->device_id,
+           GD->gpu_aware_mpi ? "yes" : "no");
     if (GD->halo.num_neighbors > 0) {
-        printf("  Total send: %d, Total recv: %d\n",
+        printf("  |  Halo procs: %d (send %d / recv %d)",
+               GD->halo.num_neighbors,
                GD->halo.total_send_size, GD->halo.total_recv_size);
     }
+    printf("\n");
+    fflush(stdout);
 }
 
 
@@ -71,9 +74,6 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
         omp_set_default_device(GD->device_id);
     } else {
         GD->device_id = -1;
-        if (rank == 0) {
-            fprintf(stderr, "Warning: No GPU devices found, will use CPU fallback\n");
-        }
     }
 
     // Detect GPU-aware MPI
@@ -292,8 +292,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         R->mapped = 1;
 
-        if (GD->rank == 0) {
-            printf("Reflective boundary arrays mapped to GPU: %d edges\n", ne);
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Reflective boundary: %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -308,8 +309,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Dir->mapped = 1;
 
-        if (GD->rank == 0) {
-            printf("Dirichlet boundary arrays mapped to GPU: %d edges\n", ne);
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Dirichlet boundary:  %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -324,8 +326,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         T->mapped = 1;
 
-        if (GD->rank == 0) {
-            printf("Transmissive boundary arrays mapped to GPU: %d edges\n", ne);
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Transmissive boundary: %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -340,8 +343,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Tnzt->mapped = 1;
 
-        if (GD->rank == 0) {
-            printf("Transmissive_n_zero_t boundary arrays mapped to GPU: %d edges\n", ne);
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Transmissive_n_zero_t boundary: %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -356,8 +360,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 1;
 
-        if (GD->rank == 0) {
-            printf("Time_boundary arrays mapped to GPU: %d edges\n", ne);
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Time boundary: %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -394,8 +399,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
             #pragma omp target enter data map(to: riverwall_hydraulic_properties[0:nrow_hp*ncol_hp])
         }
 
-        if (GD->rank == 0) {
-            printf("Riverwall arrays mapped to GPU: %" PRId64 " edges, %" PRId64 " segments\n", n_rw_edges, nrow_hp);
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Riverwall: %" PRId64 " edges, %" PRId64 " segments\n", n_rw_edges, nrow_hp);
+            fflush(stdout);
         }
     }
 
@@ -424,8 +430,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
 
     GD->gpu_initialized = 1;
 
-    if (GD->rank == 0) {
-        printf("GPU arrays mapped to device %d\n", GD->device_id);
+    if (GD->rank == 0 && GD->verbose) {
+        printf("  Arrays mapped to device %d\n", GD->device_id);
+        fflush(stdout);
     }
 }
 
@@ -444,8 +451,9 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         R->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->rank == 0 && GD->verbose) {
             printf("Reflective boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -460,8 +468,9 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Dir->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->rank == 0 && GD->verbose) {
             printf("Dirichlet boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -476,8 +485,9 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         T->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->rank == 0 && GD->verbose) {
             printf("Transmissive boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -492,8 +502,9 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Tnzt->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->rank == 0 && GD->verbose) {
             printf("Transmissive_n_zero_t boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -508,8 +519,9 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->rank == 0 && GD->verbose) {
             printf("Time_boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
         }
     }
 }
@@ -862,8 +874,11 @@ int gpu_boundary_edge_sync_init(struct gpu_domain *GD,
                    bed_buf[0:bs], height_buf[0:bs])
 
     S->initialized = 1;
-    printf("Rank %d: Boundary edge sync initialized for %d cells (%d edge values)\n",
-           GD->rank, num_boundary_cells, S->buf_size);
+    if (GD->verbose) {
+        printf("Rank %d: Boundary edge sync initialized for %d cells (%d edge values)\n",
+               GD->rank, num_boundary_cells, S->buf_size);
+        fflush(stdout);
+    }
 
     return 0;
 }
