@@ -44,7 +44,15 @@ def tif2point_values(filename, zone=None, south=True, points=None, verbose=False
         tif_georeference = CRS.from_epsg(4326)
 
         transformer = Transformer.from_crs(points_utm, tif_georeference)
-        points_lat, points_lon = transformer.transform(points[:, 0], points[:, 1])
+        px, py = points[:, 0], points[:, 1]
+        if px.size == 1:
+            # pyproj's scalar path calls float() on array inputs in NumPy >= 2.0,
+            # which DeprecationWarns for ndim > 0.  Use Python scalars instead.
+            _lat, _lon = transformer.transform(px.item(), py.item())
+            points_lat = np.atleast_1d(_lat)
+            points_lon = np.atleast_1d(_lon)
+        else:
+            points_lat, points_lon = transformer.transform(px, py)
 
         ilocs = np.array(~affine_transform * (points_lon, points_lat))
 
