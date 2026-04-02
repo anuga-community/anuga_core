@@ -1,7 +1,7 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-03-28 (session 5)
-Branch: `develop_excel` (most recent work)
+Last updated: 2026-04-01 (session 6)
+Branch: `develop` (contains feat/sc26 GPU work)
 
 ---
 
@@ -17,7 +17,13 @@ Branch: `develop_excel` (most recent work)
 | Hydrata Phase 2 — Linting | 3 | 0 | 3 |
 | Hydrata Phase 3 — Deduplication | 4 | 0 | 4 |
 | Hydrata Phase 4 — Coverage | 3 | 0 | 3 |
-| **Total** | **118** | **91** | **27** |
+| GPU Phase 1 — Correctness & tests | 6 | 0 | 6 |
+| GPU Phase 2 — Performance validation | 4 | 0 | 4 |
+| GPU Phase 3 — Feature parity | 4 | 0 | 4 |
+| GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
+| Riverwall throughflow | 6 | 0 | 6 |
+| Quantity memory reduction | 7 | 0 | 7 |
+| **Total** | **148** | **91** | **57** |
 
 ---
 
@@ -222,6 +228,75 @@ Current state: ~55% coverage, 1,319 tests (all `unittest.TestCase`), ~38 min wal
 
 ---
 
+## Quantity Memory Reduction
+
+Full plan: `claude/QUANTITY_MEMORY_PLAN.md`
+
+Target: ~62% memory reduction for typical 8-quantity 1M-triangle domain (832 MB → 312 MB).
+Key insight: in v4.0.0 elevation is centroid-primary, so vertex_values are lazy for ALL quantity types.
+
+- [ ] **QM1** Introduce `quantity_type` concept (`evolved`, `static`, `forcing`, `diagnostic`) controlling which arrays are allocated at construction
+- [ ] **QM2** Lazy `vertex_values` property on all quantity types — allocate on first access, transparent to callers
+- [ ] **QM3** Strip `explicit_update`, `semi_implicit_update`, `centroid_backup_values`, `phi` from `elevation` (saves 32 MB / 1M tri)
+- [ ] **QM4** Strip all arrays except `centroid_values` from `friction` — Manning writes to xmom/ymom semi_implicit, not friction's own (saves 80 MB / 1M tri)
+- [ ] **QM5** Reduce `height` to centroid + edge + gradients + phi only (no update arrays); reduce `xvelocity`/`yvelocity` to centroid only (saves 240 MB / 1M tri)
+- [ ] **QM6** Never allocate `x_gradient`/`y_gradient` for `elevation` — edge values are set as `stage_edge − height_edge` during extrapolation, not by independent gradient computation (saves 16 MB / 1M tri)
+- [ ] **QM7** Shared gradient workspace on domain (C extension change) — saves further 72 MB / 1M tri
+
+---
+
+## Riverwall Throughflow
+
+Full plan: `claude/RIVERWALL_THROUGHFLOW_PLAN.md`
+
+Flow through the wall body (below the crest) driven by stage difference and submerged depth.
+Uses submerged orifice formula: `Q = Cd_through * h_eff * sqrt(2g * |Δstage|)`.
+Additive to existing Villemonte overtopping flow. Single new parameter, default 0 (impermeable).
+
+- [ ] **RW1** Add `Cd_through` to `hydraulic_variable_names` and `default_riverwallPar` in `riverwall.py`
+- [ ] **RW2** Add `gpu_adjust_edgeflux_with_throughflow()` to `gpu_device_helpers.h` (inside `#pragma omp declare target`)
+- [ ] **RW3** Call new function in `core_kernels.c` after existing weir call (read column 5 with guard for old files)
+- [ ] **RW4** Mirror same logic in CPU Cython path (`sw_domain.pyx` / `sw_domain_ext.c`)
+- [ ] **RW5** Tests: unit (direction, dry side, additive) + end-to-end basin equalisation + backward compatibility
+- [ ] **RW6** Update docstring and user docs
+
+---
+
+## GPU / OpenMP Offloading (v4.0.0 / SC26)
+
+Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
+
+### Phase 1 — Correctness and test coverage (weeks 1–4)
+
+- [ ] **G1.1 File_boundary GPU support** — standard open-ocean boundary; without it GPU mode can't run real tsunami models. Struct + Python push pattern, same as `time_boundary`.
+- [ ] **G1.2 Device memory check** — add `gpu_check_device_memory()` before first `omp target enter data`; print clear error and fall back rather than silently crashing on large meshes.
+- [ ] **G1.3 Slot limit assertions** — `MAX_RATE_OPERATORS=64`, `MAX_INLET_OPERATORS=32`, `MAX_CULVERTS=64` silently truncate. Add hard errors; medium-term switch to heap-allocated dynamic lists.
+- [ ] **G1.4 End-to-end regression test** — run 10 s of simulation in `multiprocessor_mode=1` and `mode=2`, compare final stage/momentum to tolerance 1e-10.
+- [ ] **G1.4 Multi-rank halo exchange test** — 2- and 4-process GPU tests using `mpirun` subprocess (same pattern as `anuga/parallel/tests/`).
+- [ ] **G1.4 Culvert test in GPU mode** — infrastructure exists, test does not.
+
+### Phase 2 — Performance validation (weeks 5–10)
+
+- [ ] **G2.1 Benchmark suite** — `examples/gpu_benchmark/` with 100 K / 2 M / 20 M triangle cases; print Gordon Bell FLOP/s via existing `gpu_flop.c` infrastructure.
+- [ ] **G2.2 GPU-aware MPI validation** — verify `-DGPU_AWARE_MPI` correctness on NVLink/InfiniBand; add meson option + runtime capability check.
+- [ ] **G2.3 NVTX/OMPT profiling hooks** — add `nvtxRangePush/Pop` around kernels behind compile flag for `nsys`/`ncu` profiling.
+- [ ] **G2.4 Weak scaling experiment** — elements-per-GPU constant as rank count grows 1→64; target >80% parallel efficiency.
+
+### Phase 3 — Feature parity (weeks 11–20)
+
+- [ ] **G3.1 Gate/weir operators on GPU** — `gpu_adjust_edgeflux_with_weir()` already exists in device code (`gpu_device_helpers.h`); add struct registration + kernel dispatch for `Weir_orifice_trapezoid_operator` etc.
+- [ ] **G3.2 Riverwall GPU support** — physics already in device code; flux kernel needs per-edge riverwall flag check.
+- [ ] **G3.3 Dynamic operator slot limits** — replace static arrays with heap allocation for large models.
+- [ ] **G3.4 GPU documentation** — `docs/source/gpu_mode.rst`, benchmark results, hardware requirements, known operator limitations.
+
+### Phase 4 — SC26 paper preparation (months 4–6)
+
+- [ ] **G4.1 Gordon Bell metrics** — per-kernel timing (not just totals), roofline model comparison, peak theoretical FLOP/s.
+- [ ] **G4.2 Physical benchmark validation** — Thacker paraboloid, dam break (Ritter), tide gauge comparison in GPU mode (use existing `validation_tests/` scripts).
+- [ ] **G4.3 Multi-node strong scaling** — 20 M triangles, 1→64 GPUs; demonstrate ~50× runtime reduction.
+
+---
+
 ## Remaining Work (priority order)
 
 ### Quick wins (< 1 day each)
@@ -229,6 +304,8 @@ Current state: ~55% coverage, 1,319 tests (all `unittest.TestCase`), ~38 min wal
 2. **1.5** Grep for large legacy comment blocks in `shallow_water/` and `operators/`
 3. **H1.2** Complete GDAL removal (continue `remove-gdal` branch work)
 4. **H2.1** Add ruff configuration to `pyproject.toml`
+5. **G1.3** Add slot limit assertions to GPU operator managers
+6. **G1.4** End-to-end GPU regression test (mode=1 vs mode=2)
 
 ### Medium effort (1–3 days each)
 6. **H0.1** Fix test isolation — `set_datadir('.')` and `tempfile.mktemp()` sweep
@@ -236,10 +313,16 @@ Current state: ~55% coverage, 1,319 tests (all `unittest.TestCase`), ~38 min wal
 8. **H0.5** GitHub Actions CI matrix
 9. **3.2** `RiverWall` tests — requires mesh with breaklines
 10. **H2.2** Pre-commit hooks
+11. **G1.1** File_boundary GPU support
+12. **G1.2** Device memory check before GPU data mapping
+13. **G2.1** GPU benchmark suite
 
 ### Large effort (1+ weeks each)
-11. **4.1** Reduce parameter counts via dataclasses — `gauge.py`, `generic_domain.py`
-12. **H3.1** Unify quantity kernels (Cython refactor — high risk)
-13. **H3.2** Consolidate parallel operator wrappers
-14. **H4.2** Automate 32 remaining validation scenarios
-15. **3.3** `anuga/scenario/` tests
+14. **4.1** Reduce parameter counts via dataclasses — `gauge.py`, `generic_domain.py`
+15. **H3.1** Unify quantity kernels (Cython refactor — high risk)
+16. **H3.2** Consolidate parallel operator wrappers
+17. **H4.2** Automate 32 remaining validation scenarios
+18. **3.3** `anuga/scenario/` tests
+19. **G2.4** Weak scaling experiment (1→64 GPUs)
+20. **G3.1** Gate/weir operators on GPU
+21. **G4.3** Multi-node strong scaling for SC26
