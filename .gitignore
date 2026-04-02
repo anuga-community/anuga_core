@@ -25,7 +25,6 @@ anuga/_version.py
 *.c
 *.cpp
 *.tmp
-*.rst
 *.txt
 *.vim
 *.sww
