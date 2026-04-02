@@ -24,32 +24,27 @@ Key files to read first:
 
 | Milestone | Branch | Status |
 |-----------|--------|--------|
-| **v3.3.0** | `develop` → `main` | Imminent — merge, tag, publish PyPI + conda-forge |
-| **v4.0.0** | `sp26` → `develop` → `main` | Future — sp26 is the research/SC26 base |
+| **v3.3.1** | `develop` → `main` | **SHIPPED 2026-04-01** — tagged, PyPI + conda-forge published |
+| **v4.0.0** | `feat/sc26` → `develop` → `main` | In progress — feat/sc26 merged into develop |
 
-**v3.3.0:** Merge `develop` into `main` on anuga-community/anuga_core, tag `v3.3.0`,
-publish to PyPI, then create conda-forge 3.3.0 feedstock PR.
+**v3.3.1:** Shipped. Includes EPSG/CRS support, utm→pyproj replacement, sww_merge fixes,
+sww2vtu converter, pyproj DeprecationWarning fixes.
 
-**v4.0.0:** The `sp26` branch is a research project forming the basis of a paper at
-**Supercomputing 2026 (SC26)**. It contains GPU/OpenMP-offloading work (`multiprocessor_mode=2`).
-After 3.3.0 ships, sp26 will be folded into `develop` as the foundation for v4.0.0.
-
-**Implication for refactoring:** Large structural work (Hydrata Phase 3 — quantity kernel
-unification, parallel operator consolidation) should be coordinated with the sp26→develop
-merge to avoid conflicts. Prioritise packaging hygiene and test infrastructure before 3.3.0.
+**v4.0.0:** `feat/sc26` has been merged into `develop` (2026-04-01). `develop` is now
+the active working branch. feat/sc26 contains GPU/OpenMP-offloading work
+(`multiprocessor_mode=2`) forming the basis of a **Supercomputing 2026 (SC26)** paper.
 
 ## Active branches
 
 | Branch | Purpose |
 |--------|---------|
-| `main` | Stable release — target for v3.3.0 tag |
-| `develop` / `develop_excel` / `develop_epsg` | Active development — merges into main for 3.3.0 |
-| `sp26` | SC26 paper branch — GPU/OpenMP offloading, basis of v4.0.0 |
+| `main` | Stable — v3.3.1 release |
+| `develop` | Active development for v4.0.0 — contains feat/sc26 GPU work |
+| `develop_sc26` | Working branch for GPU/SC26 incremental improvements |
 | `develop_gpu` / `develop_cupy` | Earlier GPU experiments (CuPy-based) |
 | `experiment/claude_culvert_refactor` | Culvert structure refactoring experiment |
 
-The `claude/` improvement work was done across sessions on `develop_excel`.
-Target PR branch is `main` (for 3.3.0) or `develop` (for post-3.3.0 work).
+Target PR branch is `develop` for all new work going into v4.0.0.
 
 ---
 
