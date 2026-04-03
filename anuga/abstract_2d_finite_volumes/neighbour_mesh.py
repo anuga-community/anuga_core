@@ -1270,6 +1270,7 @@ def _get_intersecting_segments(V, N, line,
 
     from anuga.geometry.polygon import intersection
     from anuga.geometry.polygon import is_inside_polygon
+    from anuga.geometry.polygon_ext import _line_intersect
 
     msg = 'Line segment must contain exactly two points'
     assert len(line) == 2, msg
@@ -1279,11 +1280,16 @@ def _get_intersecting_segments(V, N, line,
     xi0 = line[0][0]
     eta0 = line[0][1]
 
+    # Use C extension to pre-filter: find only the triangles that the line
+    # segment actually passes through, avoiding an O(N) Python loop.
+    line_arr = num.array(line, dtype=float)
+    all_indices = num.zeros(N, dtype=num.int64)
+    count = _line_intersect(line_arr, V, all_indices)
+    candidate_ids = all_indices[:count]
 
-    # Check intersection with edge segments for all triangles
-    # FIXME (Ole): This should be implemented in C
+    # Check intersection with edge segments for candidates only
     triangle_intersections={} # Keep track of segments already done
-    for i in range(N):
+    for i in candidate_ids:
         # Get nodes and edge segments for each triangle
         x0, y0 = V[3*i, :]
         x1, y1 = V[3*i+1, :]

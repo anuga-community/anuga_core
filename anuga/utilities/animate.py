@@ -1018,36 +1018,31 @@ class SWW_plotter(object):
                 - Q: list of flow values at each timestep
         """
         
-        # FIXME SR: This is a quick implementation and may not be efficient for large meshes.
-        try:
-            mesh = self.mesh
-        except AttributeError:
+        if not hasattr(self, 'mesh'):
             from anuga.file.sww import get_mesh_and_quantities_from_file
             self.mesh, _, __ = get_mesh_and_quantities_from_file(self.filename, verbose=verbose)
-            
+
         segments = self.mesh.get_intersecting_segments(polyline, verbose=verbose)
 
-        Q = []
-        for k, t in enumerate(self.time):
-            total_flow = 0
-            for seg in segments:
-                i = seg.triangle_id
-                depth = self.depth[k,i]
-                uh = self.xmom[k,i]
-                vh = self.ymom[k,i]
-                normal = seg.normal
+        if verbose:
+            print(f'Cross-section intersects {len(segments)} triangles')
+            print('Computing hydrograph')
 
-                # Inner product of momentum vector with segment normal [m^2/s]
-                normal_momentum = uh*normal[0] + vh*normal[1]
+        # Pre-extract per-segment geometry as arrays for vectorised computation
+        tri_ids = np.array([seg.triangle_id for seg in segments])  # (S,)
+        normals = np.array([seg.normal for seg in segments])        # (S, 2)
+        lengths = np.array([seg.length for seg in segments])        # (S,)
 
-                # Flow across this segment [m^3/s]
-                segment_flow = normal_momentum * seg.length
+        # Slice momentum arrays for the intersected triangles: (T, S)
+        uh = self.xmom[:, tri_ids]
+        vh = self.ymom[:, tri_ids]
 
-                # Accumulate
-                total_flow += segment_flow
+        # Normal momentum at each segment and timestep, summed to hydrograph
+        normal_mom = uh * normals[:, 0] + vh * normals[:, 1]  # (T, S)
+        Q = (normal_mom * lengths).sum(axis=1)                 # (T,)
 
-            # Store flow at this timestep
-            Q.append(total_flow)
+        if verbose:
+            print(f'Done: {len(self.time)} timesteps, Q range [{Q.min():.3g}, {Q.max():.3g}] m^3/s')
 
         return self.time, Q
 
