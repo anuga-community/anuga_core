@@ -5,7 +5,7 @@ import numpy as num
 
 from anuga.config import netcdf_float
 
-from anuga.coordinate_transforms.geo_reference import Geo_reference 
+from anuga.coordinate_transforms.geo_reference import Geo_reference
 from anuga.geometry.polygon import is_inside_polygon
 from anuga.abstract_2d_finite_volumes.util import file_function
 from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a
@@ -19,7 +19,7 @@ from anuga.abstract_2d_finite_volumes.generic_boundary_conditions\
             Time_boundary, File_boundary, AWI_boundary
 
 from anuga.file.sww import get_mesh_and_quantities_from_file
-            
+
 from anuga.shallow_water.shallow_water_domain import Domain
 
 from anuga.abstract_2d_finite_volumes.mesh_factory \
@@ -28,10 +28,10 @@ from anuga.shallow_water.sww_interrogate import \
             get_maximum_inundation_elevation, \
             get_maximum_inundation_location, get_maximum_inundation_data, \
             get_flow_through_cross_section, get_energy_through_cross_section
-            
-            
+
+
 from anuga.file_conversion.dem2dem import dem2dem
-                
+
 
 class Test_Dem2Dem(unittest.TestCase):
     def test_decimate_dem(self):
@@ -209,7 +209,7 @@ class Test_Dem2Dem(unittest.TestCase):
         fid.close()
 
         os.remove(root + '.dem')
-        os.remove(root + '_100.dem')      
+        os.remove(root + '_100.dem')
 
 #################################################################################
 
@@ -217,4 +217,4 @@ if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Dem2Dem)
     runner = unittest.TextTestRunner(verbosity=1)
     runner.run(suite)
-        
+

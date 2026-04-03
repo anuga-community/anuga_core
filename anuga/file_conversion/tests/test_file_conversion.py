@@ -87,7 +87,7 @@ class Test_File_Conversion(unittest.TestCase):
         and checking that its headers and some of its contents
         are correct.
     """
-    verbose = False 
+    verbose = False
 
     def set_verbose(self):
         Test_File_Conversion.verbose = True
@@ -230,7 +230,8 @@ class Test_File_Conversion(unittest.TestCase):
         """Test that georeferencing etc works when converting from
         ferret format (lat/lon) to sww format (UTM)
         """
-        import os, sys
+        import os
+        import sys
 
         #The test file has
         # LON = 150.66667, 150.83334, 151, 151.16667
@@ -295,7 +296,8 @@ class Test_File_Conversion(unittest.TestCase):
     def test_ferret2sww_zscale(self):
         """Test that zscale workse
         """
-        import os, sys
+        import os
+        import sys
 
         #The test file has
         # LON = 150.66667, 150.83334, 151, 151.16667
@@ -903,7 +905,8 @@ class Test_File_Conversion(unittest.TestCase):
         """Not a test, rather a look at the sww format
         """
 
-        import time, os
+        import time
+        import os
 
 
         self.domain.set_name('datatest' + str(id(self)))

@@ -1,7 +1,8 @@
 """  Test set operators - w_uh_vh elevation erosion.
 """
 
-import unittest, os
+import unittest
+import os
 import anuga
 from anuga import Domain
 from anuga import Reflective_boundary
@@ -67,7 +68,7 @@ class Test_set_w_uh_vh_operators(unittest.TestCase):
 
 
         operator = Set_w_uh_vh_operator(domain, w_uh_vh=w_uh_vh, indices=indices)
-        
+
         # Apply Operator
         domain.timestep = 2.0
         operator()
@@ -124,7 +125,7 @@ class Test_set_w_uh_vh_operators(unittest.TestCase):
 
 
         operator = Set_w_uh_vh_operator(domain, w_uh_vh=w_uh_vh, indices=indices)
-        
+
         # Apply Operator
         domain.timestep = 2.0
         operator()
@@ -182,7 +183,7 @@ class Test_set_w_uh_vh_operators(unittest.TestCase):
 
 
         operator = Set_w_uh_vh_operator(domain, w_uh_vh=w_uh_vh, indices=indices)
-        
+
         # Apply Operator
         domain.timestep = 2.0
         domain.set_time(1.0)

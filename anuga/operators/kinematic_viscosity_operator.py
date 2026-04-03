@@ -33,7 +33,7 @@ class Kinematic_viscosity_operator(Operator):
                  verbose=False):
 
         if verbose: log.critical('Kinematic Viscosity: Beginning Initialisation')
-        
+
 
         Operator.__init__(self,domain)
 
@@ -56,13 +56,13 @@ class Kinematic_viscosity_operator(Operator):
 
         if isinstance(diffusivity, str):
             self.diffusivity = self.domain.get_quantity(diffusivity)
-            
+
 
         self.add_safety = add_safety
         self.smooth = 0.1
-        
+
         assert isinstance(self.diffusivity, Quantity)
-        
+
 
         self.n = len(self.domain)
 
@@ -84,13 +84,13 @@ class Kinematic_viscosity_operator(Operator):
         kinematic_viscosity_operator_ext.build_geo_structure(self)
 
         # Setup type of scaling
-        self.set_triangle_areas(use_triangle_areas)        
+        self.set_triangle_areas(use_triangle_areas)
 
         # FIXME SR: should this really be a matrix?
         temp  = Sparse(self.n, self.n)
         for i in range(self.n):
             temp[i, i] = 1.0 / self.mesh.areas[i]
-            
+
         self.triangle_areas = Sparse_CSR(temp)
         #self.triangle_areas
 
@@ -194,7 +194,7 @@ class Kinematic_viscosity_operator(Operator):
     def set_triangle_areas(self,flag=True):
 
         self.apply_triangle_areas = flag
-        
+
 
     def set_parabolic_solve(self,flag):
 
@@ -237,11 +237,11 @@ class Kinematic_viscosity_operator(Operator):
             a = Quantity(self.domain)
             a.set_values(1.0)
             a.set_boundary_values(1.0)
-            
+
         kinematic_viscosity_operator_ext.update_elliptic_matrix(self, \
                 a.centroid_values, \
                 a.boundary_values)
-        
+
 
 
 
@@ -308,7 +308,7 @@ class Kinematic_viscosity_operator(Operator):
         else:
 
             raise TypeError('expecting quantity or numpy array')
-        
+
         return output
 
 
@@ -326,7 +326,7 @@ class Kinematic_viscosity_operator(Operator):
         X = self._elliptic_multiply_array(array_in, array_out)
 
         quantity_out.set_values(X, location = 'centroids')
-        
+
         return quantity_out
 
     def _elliptic_multiply_array(self, array_in, array_out):
@@ -431,7 +431,7 @@ class Kinematic_viscosity_operator(Operator):
 
 
     def __mul__(self, vector):
-        
+
         #Vector
         if self.parabolic:
             R = self.parabolic_multiply(vector)
@@ -440,7 +440,7 @@ class Kinematic_viscosity_operator(Operator):
             R = self.elliptic_multiply(vector)
 
         return R
-    
+
     def __rmul__(self, other):
         #Right multiply with scalar
         try:
@@ -475,7 +475,7 @@ class Kinematic_viscosity_operator(Operator):
             u_out = Quantity(self.domain)
 
         if update_matrix :
-            self.update_elliptic_matrix(a) 
+            self.update_elliptic_matrix(a)
 
         self.update_elliptic_boundary_term(u_in)
 
@@ -495,7 +495,7 @@ class Kinematic_viscosity_operator(Operator):
         else:
             return u_out
 
-    
+
 
     def parabolic_solve(self, u_in, b, a = None, u_out = None, update_matrix=True, \
                        output_stats=False, use_dt_tol=True, iprint=None, imax=10000):
@@ -530,7 +530,7 @@ class Kinematic_viscosity_operator(Operator):
 
 
 
-        
+
         if u_out is None:
             u_out = Quantity(self.domain)
 
@@ -560,4 +560,4 @@ class Kinematic_viscosity_operator(Operator):
         else:
             return u_out
 
- 
+

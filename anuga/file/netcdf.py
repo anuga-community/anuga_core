@@ -37,15 +37,15 @@ def NetCDFFile(file_name, netcdf_mode=netcdf_mode_r):
     except (TypeError, AttributeError): # works with Scientific.IO.NetCDF
         number_of_timesteps = fid.dimensions['number_of_timesteps']
         number_of_points = fid.dimensions['number_of_points']
-    
+
     """
-   
+
     using_scientific = using_netcdf4 = False
-    
+
     try:
         from netCDF4 import Dataset
         using_netcdf4 = True
-    except ImportError: 
+    except ImportError:
         from Scientific.IO.NetCDF import NetCDFFile
         using_scientific = True
 
@@ -76,7 +76,7 @@ def NetCDFFile(file_name, netcdf_mode=netcdf_mode_r):
 
 
 
-class Write_nc(object):
+class Write_nc:
     """Write an nc file.
 
     Note, this should be checked to meet cdc netcdf conventions for gridded
@@ -215,7 +215,7 @@ def nc_lon_lat_header(outfile, lon, lat):
 
 def filter_netcdf(filename1, filename2, first=0, last=None, step=1):
     """Filter data file, selecting timesteps first:step:last.
-    
+
     Read netcdf filename1, pick timesteps first:step:last and save to
     nettcdf file filename2
     """

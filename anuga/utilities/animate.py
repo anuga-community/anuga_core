@@ -7,7 +7,7 @@ import os
 import matplotlib.pyplot as plt
 
 
-class Domain_plotter(object):
+class Domain_plotter:
     """
     A class to wrap ANUGA domain centroid values for stage, height, elevation
     xmomentunm and ymomentum, and triangulation information.
@@ -22,7 +22,7 @@ class Domain_plotter(object):
         self.zone = domain.geo_reference.zone
 
         self.min_depth = min_depth
-        
+
         self.nodes = domain.nodes
         self.triangles = domain.triangles
 
@@ -53,7 +53,7 @@ class Domain_plotter(object):
         self.ymom = domain.quantities['ymomentum'].centroid_values
 
         self.friction = domain.quantities['friction'].centroid_values
-        
+
         self.depth = self.stage - self.elev
 
         with np.errstate(invalid='ignore'):
@@ -62,7 +62,7 @@ class Domain_plotter(object):
             self.yvel = np.where(self.depth > self.min_depth,
                              self.ymom / self.depth, 0.0)
 
-        self.speed = np.sqrt(self.xvel**2 + self.yvel**2) 
+        self.speed = np.sqrt(self.xvel**2 + self.yvel**2)
 
         self.speed_depth = self.speed*self.depth
 
@@ -73,7 +73,7 @@ class Domain_plotter(object):
     # General plots
     #------------------------------------------
     def plot_mesh(self, figsize=(10, 6), dpi=80):
-        
+
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
@@ -93,7 +93,7 @@ class Domain_plotter(object):
 
         name = self.domain.get_name()
         time = self.domain.get_time()
-        
+
         self.depth[:] = self.stage - self.elev
 
         md = self.min_depth
@@ -125,7 +125,7 @@ class Domain_plotter(object):
     def save_depth_frame(self, figsize=(10, 6), dpi=80,
                          vmin=0.0, vmax=20):
 
-        
+
 
         plot_dir = self.plot_dir
         name = self.domain.get_name()
@@ -150,7 +150,7 @@ class Domain_plotter(object):
         fig, ax = self._depth_frame(figsize, dpi, vmin, vmax)
 
         #plt.show()
-        
+
         return fig, ax
 
     def make_depth_animation(self):
@@ -199,7 +199,7 @@ class Domain_plotter(object):
 
         name = self.domain.get_name()
         time = self.domain.get_time()
-        
+
         self.depth[:] = self.stage - self.elev
 
         md = self.min_depth
@@ -244,7 +244,7 @@ class Domain_plotter(object):
         else:
             fig.savefig(os.path.join(plot_dir, name
                                      + '_stage_{0:0>10}.png'.format(int(time))))
-        
+
         fig.clf()
         plt.close()
 
@@ -309,7 +309,7 @@ class Domain_plotter(object):
         time = self.domain.get_time()
 
         md = self.min_depth
-        
+
         self.depth[:] = self.stage - self.elev
 
         with np.errstate(invalid='ignore'):
@@ -318,7 +318,7 @@ class Domain_plotter(object):
             self.yvel = np.where(self.depth > self.min_depth,
                              self.ymom / self.depth, 0.0)
 
-        self.speed = np.sqrt(self.xvel**2 + self.yvel**2)  
+        self.speed = np.sqrt(self.xvel**2 + self.yvel**2)
 
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
@@ -435,14 +435,14 @@ class Domain_plotter(object):
                     except OSError:
                         pass
                 else:
-                    raise IOError(
+                    raise OSError(
                         '*** Cannot clobber existing directory %s' % plot_dir)
             else:
                 os.mkdir("%s" % plot_dir)
             print("Figure files for each frame will be stored in " + plot_dir)
 
 
-class SWW_plotter(object):
+class SWW_plotter:
     """
     A class to wrap ANUGA swwfile centroid values for stage, height, elevation
     xmomentum and ymomentum, and triangulation information.
@@ -472,7 +472,7 @@ class SWW_plotter(object):
     >>> # Plot depth at last frame.
     >>> fig, ax = splotter.plot_depth_frame(-1, vmin=vmin, vmax=vmax)
     >>> ax.set_title('Depth at final time')
-    >>> 
+    >>>
     >>> # Plot speed at second frame
     >>> fig, ax = splotter.plot_speed_frame(1)
     >>> ax.set_title('Speed at second frame')
@@ -495,7 +495,7 @@ class SWW_plotter(object):
 
         self.plot_dir = plot_dir
         self.make_plot_dir()
-        
+
         self.min_depth = min_depth
 
         import matplotlib.tri as tri
@@ -563,7 +563,7 @@ class SWW_plotter(object):
     # General plots
     #------------------------------------------
     def plot_mesh(self, figsize=(10, 8), dpi=80, **kwargs):
-        
+
         import matplotlib.pyplot as plt
 
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
@@ -586,9 +586,9 @@ class SWW_plotter(object):
         name = self.name
         time = self.time[frame]
         depth = self.depth[frame, :]
-        
+
         md = self.min_depth
-        
+
         try:
             elev = self.elev[frame, :]
         except IndexError:
@@ -613,7 +613,7 @@ class SWW_plotter(object):
                       cmap='viridis',
                       vmin=vmin, vmax=vmax)
 
-        
+
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
 
@@ -623,7 +623,7 @@ class SWW_plotter(object):
 
         return fig, ax
 
-    def save_depth_frame(self, frame=-1, figsize=(10, 6), dpi=160, 
+    def save_depth_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=0.0, vmax=20.0):
 
         import matplotlib.pyplot as plt
@@ -665,9 +665,9 @@ class SWW_plotter(object):
         time = self.time[frame]
         stage = self.stage[frame, :]
         depth = self.depth[frame, :]
-        
+
         md = self.min_depth
-        
+
         try:
             elev = self.elev[frame, :]
         except IndexError:
@@ -692,12 +692,12 @@ class SWW_plotter(object):
 
         self.triang.set_mask(None)
 
-        
+
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
 
         fig.colorbar(im, ax=ax)
-        
+
         return fig, ax
 
     def save_stage_frame(self, frame=-1, figsize=(10, 6), dpi=160,
@@ -742,9 +742,9 @@ class SWW_plotter(object):
         stage = self.stage[frame, :]
         speed_depth = self.speed_depth[frame, :]
         depth = self.depth[frame, :]
-        
+
         md = self.min_depth
-        
+
         try:
             elev = self.elev[frame, :]
         except IndexError:
@@ -816,9 +816,9 @@ class SWW_plotter(object):
         name = self.name
         time = self.time[frame]
         depth = self.depth[frame, :]
-        
+
         md = self.min_depth
-        
+
         try:
             elev = self.elev[frame, :]
         except IndexError:
@@ -957,7 +957,7 @@ class SWW_plotter(object):
                     except OSError:
                         pass
                 else:
-                    raise IOError(
+                    raise OSError(
                       '*** Cannot clobber existing directory %s' % plot_dir)
             else:
                 os.mkdir("%s" % plot_dir)
@@ -1000,24 +1000,24 @@ class SWW_plotter(object):
 
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
-        
+
         im = ax.tripcolor(self.triang,  *args, **kwargs)
         return fig, ax, im
 
     def get_flow_through_cross_section(self, polyline: list, verbose: bool = False) -> tuple[np.ndarray, list]:
         """
         Calculate flow through a cross-section defined by a polyline.
-        
+
         Args:
             polyline: List of [x, y] coordinates defining the cross-section
             verbose: Whether to print debug information
-            
+
         Returns:
             tuple containing:
                 - time: numpy array of time values
                 - Q: list of flow values at each timestep
         """
-        
+
         if not hasattr(self, 'mesh'):
             from anuga.file.sww import get_mesh_and_quantities_from_file
             self.mesh, _, __ = get_mesh_and_quantities_from_file(self.filename, verbose=verbose)
@@ -1049,23 +1049,23 @@ class SWW_plotter(object):
     def get_triangles_inside_polygon(self, polygon: list | np.ndarray, verbose: bool = False) -> list | np.ndarray:
         """
         Get list of triangle IDs whose centroids lie within a given polygon.
-        
+
         Args:
             polygon: List of [x, y] coordinates defining the polygon
             verbose: Whether to print debug information
-            
+
         Returns:
             List of triangle IDs inside the polygon
         """
-        
+
         try:
             _ = self.mesh
         except AttributeError:
             from anuga.file.sww import get_mesh_and_quantities_from_file
             self.mesh, _, __ = get_mesh_and_quantities_from_file(self.filename, verbose=verbose)
-        
+
         triangle_ids = self.mesh.get_triangles_inside_polygon(polygon, verbose=verbose)
-        
+
         return triangle_ids
 
     def water_volume(self, per_unit_area=False, triangle_ids=None, polygon=None, verbose=False) -> np.ndarray:
@@ -1096,14 +1096,14 @@ class SWW_plotter(object):
             pass
         else:
             triangle_ids = self.get_triangles_inside_polygon(polygon, verbose=verbose)
-            
+
 
         l=len(self.time)
         areas=self.areas[triangle_ids]
-        
+
         total_area=areas.sum()
         volume=self.time*0.
-    
+
         if self.elev.ndim ==1:
             for i in range(l):
                 volume[i]=((self.stage[i,triangle_ids]-self.elev[triangle_ids])*(self.stage[i,triangle_ids]>self.elev[triangle_ids])*areas).sum()
@@ -1113,7 +1113,7 @@ class SWW_plotter(object):
 
         if(per_unit_area):
             volume = volume / total_area
-        
+
         return volume
 
 

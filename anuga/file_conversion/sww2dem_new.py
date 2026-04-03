@@ -9,7 +9,7 @@ import os
 import numpy as num
 
 # ANUGA modules
-from anuga.abstract_2d_finite_volumes.util import remove_lone_verts     
+from anuga.abstract_2d_finite_volumes.util import remove_lone_verts
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 from anuga.utilities.system_tools import get_vars_in_expression
 import anuga.utilities.log as log
@@ -78,9 +78,9 @@ def sww2dem(name_in, name_out,
     an expression involving existing quantities. The default is
     'elevation'. Quantity is not a list of quantities.
 
-    If reduction is given and it's an index, sww2dem will output the quantity at that time-step. 
-    If reduction is given and it's a built in function (eg max, min, mean), then that 
-    function is used to reduce the quantity over all time-steps. If reduction is not given, 
+    If reduction is given and it's an index, sww2dem will output the quantity at that time-step.
+    If reduction is given and it's a built in function (eg max, min, mean), then that
+    function is used to reduce the quantity over all time-steps. If reduction is not given,
     reduction is set to "max" by default.
 
     datum
@@ -102,17 +102,17 @@ def sww2dem(name_in, name_out,
     out_ext = out_ext.lower()
 
     if in_ext != '.sww':
-        raise IOError('Input format for %s must be .sww' % name_in)
+        raise OSError('Input format for %s must be .sww' % name_in)
 
     if out_ext not in ['.asc', '.ers']:
-        raise IOError('Format for %s must be either asc or ers.' % name_out)
+        raise OSError('Format for %s must be either asc or ers.' % name_out)
 
     false_easting = 500000
     false_northing = 10000000
 
     if quantity is None:
         quantity = 'elevation'
-    
+
     if reduction is None:
         reduction = max
 
@@ -187,7 +187,7 @@ def sww2dem(name_in, name_out,
             log.critical('    t [s] in [%f, %f], len(t) == %d'
                          % (min(times), max(times), len(times)))
         log.critical('  Quantities [SI units]:')
-        
+
         # Comment out for reduced memory consumption
         for name in ['stage', 'xmomentum', 'ymomentum']:
             q = fid.variables[name][:].flatten()
@@ -227,7 +227,7 @@ def sww2dem(name_in, name_out,
     for start_slice in range(0, number_of_points, block_size):
         # Limit slice size to array end if at last block
         end_slice = min(start_slice + block_size, number_of_points)
-        
+
         # Get slices of all required variables
         q_dict = {}
         for name in var_list:
@@ -250,7 +250,7 @@ def sww2dem(name_in, name_out,
             res = new_res
 
         result[start_slice:end_slice] = res
-                                    
+
     # Post condition: Now q has dimension: number_of_points
     assert len(result.shape) == 1
     assert result.shape[0] == number_of_points
@@ -342,7 +342,7 @@ def sww2dem(name_in, name_out,
         for i in outside_indices:
             #print 'change grid_value',NODATA_value
             grid_values[i] = NODATA_value
-	
+
         return grid_values
 
     def calc_grid_values(vertex_points, volumes, result):
@@ -355,17 +355,17 @@ def sww2dem(name_in, name_out,
             else:
                 #this will flip the order of the y values for ers
                 yg = (nrows-i) * cellsize
-   
+
             for j in range(ncols):
                 xg = j * cellsize
                 k = i*ncols + j
 
                 grid_points[k, 0] = xg
                 grid_points[k, 1] = yg
-    
+
         grid_values = num.zeros(ncols*nrows, float)
 
-        eval_grid(nrows, ncols, NODATA_value, grid_points, vertex_points.flatten(), volumes, result, grid_values);
+        eval_grid(nrows, ncols, NODATA_value, grid_points, vertex_points.flatten(), volumes, result, grid_values)
         return grid_values.flatten()
 
     grid_values = calc_grid_values(vertex_points, volumes, result)
@@ -375,7 +375,7 @@ def sww2dem(name_in, name_out,
                      % (num.min(grid_values), num.max(grid_values)))
 
     # Assign NODATA_value to all points outside bounding polygon (from interpolation mesh)
-    
+
 #    P = interp.mesh.get_boundary_polygon()
 #    outside_indices = outside_polygon(grid_points, P, closed=True)
 
@@ -409,7 +409,7 @@ def sww2dem(name_in, name_out,
         ermapper_grids.write_ermapper_grid(name_out, grid_values, header)
 
         fid.close()
-   
+
     else:
         #Write to Ascii format
         #Write prj file
@@ -458,12 +458,12 @@ def sww2dem(name_in, name_out,
             slice = grid_values[base_index:base_index+ncols]
 
             num.savetxt(ascid, slice.reshape(1,ncols), format, ' ' )
-            
-        
+
+
         #Close
         ascid.close()
         fid.close()
-     
+
         return basename_out
 
 
@@ -542,7 +542,7 @@ def sww2dem_batch(basename_in, extra_name_out=None,
                                verbose,
                                origin,
                                datum)
-                               
+
             files_out.append(file_out)
     return files_out
 

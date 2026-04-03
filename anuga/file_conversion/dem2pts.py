@@ -8,7 +8,7 @@ from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a, \
                             netcdf_float
 
 from .asc2dem import asc2dem
-                            
+
 
 def dem2pts(name_in, name_out=None,
             easting_min=None, easting_max=None,
@@ -76,13 +76,13 @@ def _dem2pts(name_in, name_out=None, verbose=False,
         asc2dem(name_in)
         name_in = intermediate
     elif name_in[-4:] != '.dem':
-        raise IOError('Input file %s should be of type .asc or .dem.' % name_in)
+        raise OSError('Input file %s should be of type .asc or .dem.' % name_in)
 
     if name_out != None and name_out[-4:] != '.pts':
-        raise IOError('Input file %s should be of type .pts.' % name_out)
+        raise OSError('Input file %s should be of type .pts.' % name_out)
 
     # Get NetCDF
-    infile = NetCDFFile(name_in, netcdf_mode_r) 
+    infile = NetCDFFile(name_in, netcdf_mode_r)
 
     if verbose: log.critical('Reading DEM from %s' % (name_in))
 
@@ -167,11 +167,11 @@ def _dem2pts(name_in, name_out=None, verbose=False,
     xx = xx.flatten()
     yy = yy.flatten()
 
-    
+
     flag = num.logical_and(num.logical_and((xx <= easting_max),(xx >= easting_min)),
                            num.logical_and((yy <= northing_max),(yy >= northing_min)))
 
-    
+
     dem = dem_elevation[:].flatten()
 
 
@@ -184,7 +184,7 @@ def _dem2pts(name_in, name_out=None, verbose=False,
 
     clippednopoints = len(dem)
     #print clippedpoints
-    
+
     #print xx
     #print yy
     #print dem

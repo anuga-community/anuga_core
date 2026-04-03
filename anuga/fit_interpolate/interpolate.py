@@ -656,16 +656,16 @@ def interpolate_sww2csv(sww_file,
     heading.insert(0, 'time')
 
     csv_files.write_headings(heading)
-    for time in callable_sww.get_time():
-        depths = [time]
-        velocity_xs = [time]
-        velocity_ys = [time]
+    for t in callable_sww.get_time():
+        depths = [t]
+        velocity_xs = [t]
+        velocity_ys = [t]
 
-        stages = [time]   # May not be used if stage file is None, but makes code below simpler
-        froudes = [time]  # May not be used if stage file is None, but makes code below simpler
+        stages = [t]   # May not be used if stage file is None, but makes code below simpler
+        froudes = [t]  # May not be used if stage file is None, but makes code below simpler
 
         for point_i, point in enumerate(points):
-            quantities = callable_sww(time,point_i)
+            quantities = callable_sww(t, point_i)
 
             w = quantities[0]
             z = quantities[1]
@@ -707,7 +707,7 @@ def interpolate_sww2csv(sww_file,
     csv_files.close_all()
 
 
-class Interpolation_function(object):
+class Interpolation_function:
     """Interpolation_interface - creates callable object f(t, id) or f(t, x, y)
     which is interpolated from time series defined at vertices of
     triangular mesh (such as those stored in sww files)

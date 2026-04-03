@@ -9,7 +9,7 @@ import numpy as num
 
 from csv import reader,writer
 from math import sqrt, pi
-from sys import platform 
+from sys import platform
 from os import access, F_OK,sep, removedirs,remove,mkdir,getcwd
 
 from anuga.abstract_2d_finite_volumes.util import *
@@ -63,7 +63,8 @@ class Test_Util(unittest.TestCase):
         """
 
         #Write file
-        import os, time
+        import os
+        import time
         from anuga.config import time_format
         from math import sin, pi
 
@@ -90,7 +91,7 @@ class Test_Util(unittest.TestCase):
                           quantities = ['Attribute0',
                                         'Attribute1',
                                         'Attribute2'])
-        
+
         #Now try interpolation
         for i in range(20):
             t = i*10
@@ -116,14 +117,14 @@ class Test_Util(unittest.TestCase):
         assert num.allclose( 2*sin(120*pi/600)/3 + sin(60*pi/600)/3, q[2] )
 
         os.remove(filename + '.txt')
-        os.remove(filename + '.tms')        
+        os.remove(filename + '.tms')
 
 
-        
+
     def test_spatio_temporal_file_function_basic(self):
         """Test that spatio temporal file function performs the correct
         interpolations in both time and space
-        NetCDF version (x,y,t dependency)        
+        NetCDF version (x,y,t dependency)
         """
         import time
 
@@ -166,7 +167,7 @@ class Test_Util(unittest.TestCase):
             #    msg = 'Duplicate timestep found: %f, %f' %(t0, t)
             #   raise Exception(msg)
             t0 = t
-             
+
             #domain1.write_time()
 
 
@@ -331,7 +332,7 @@ class Test_Util(unittest.TestCase):
         """Test that spatio temporal file function performs the correct
         interpolations in both time and space where space is offset by
         xllcorner and yllcorner
-        NetCDF version (x,y,t dependency)        
+        NetCDF version (x,y,t dependency)
         """
         xllcorner = 2048
         yllcorner = 11000
@@ -342,9 +343,9 @@ class Test_Util(unittest.TestCase):
         domain1 = Domain(points, vertices, boundary,
                          geo_reference = Geo_reference(xllcorner = xllcorner,
                                                        yllcorner = yllcorner))
-        
 
-        from anuga.utilities.numerical_tools import mean        
+
+        from anuga.utilities.numerical_tools import mean
         domain1.reduction = mean
         domain1.smooth = True #NOTE: Mimic sww output where each vertex has
                               # only one value.
@@ -393,7 +394,7 @@ class Test_Util(unittest.TestCase):
         #Take stage vertex values at last timestep on diagonal
         #Diagonal is identified by vertices: 0, 5, 10, 15
 
-        last_time_index = len(time)-1 #Last last_time_index     
+        last_time_index = len(time)-1 #Last last_time_index
         d_stage = num.reshape(num.take(stage[last_time_index, :],
                                        [0,5,10,15],
                                        axis=0),
@@ -424,14 +425,14 @@ class Test_Util(unittest.TestCase):
 
         #Adjust for georef - make interpolation points absolute
         d_midpoints[:,0] += xllcorner
-        d_midpoints[:,1] += yllcorner                
+        d_midpoints[:,1] += yllcorner
 
         #Let us see if the file function can find the correct
         #values at the midpoints at the last timestep:
         f = file_function(filename, domain1,
                           interpolation_points = d_midpoints)
 
-        t = time[last_time_index]                         
+        t = time[last_time_index]
 
         q = f(t, point_id=0)
         msg = '\nr0=%s\nq=%s' % (str(r0), str(q))
@@ -580,7 +581,7 @@ class Test_Util(unittest.TestCase):
         import os
         os.remove(filename)
 
-        
+
 
 
     def test_spatio_temporal_file_function_time(self):
@@ -602,7 +603,8 @@ class Test_Util(unittest.TestCase):
 
         #NOTE: Nice test that may render some of the others redundant.
 
-        import os, time
+        import os
+        import time
         from anuga.config import time_format
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
         from anuga.shallow_water.shallow_water_domain import Domain
@@ -653,7 +655,7 @@ class Test_Util(unittest.TestCase):
 
 
         interpolation_points = [[0,-20], [1,0], [0,1], [1.1, 3.14], [10,-12.5]]
-      
+
         #Deliberately set domain starttime to too early
         domain.set_starttime(start - 1)
 
@@ -677,7 +679,7 @@ class Test_Util(unittest.TestCase):
         #Check linear interpolation in time
         F = file_function(filename + '.sww', domain,
                           quantities = domain.conserved_quantities,
-                          interpolation_points = interpolation_points)                
+                          interpolation_points = interpolation_points)
         for id in range(len(interpolation_points)):
             x = interpolation_points[id][0]
             y = interpolation_points[id][1]
@@ -735,7 +737,7 @@ class Test_Util(unittest.TestCase):
 
 
         #Now try interpolation with delta offset
-        for id in range(len(interpolation_points)):            
+        for id in range(len(interpolation_points)):
             x = interpolation_points[id][0]
             y = interpolation_points[id][1]
 
@@ -760,11 +762,12 @@ class Test_Util(unittest.TestCase):
         # Test that File function interpolates correctly
         # When some points are outside the mesh
 
-        import os, time
+        import os
+        import time
         from anuga.config import time_format
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
         from shallow_water import Domain
-        import anuga.shallow_water.data_manager 
+        import anuga.shallow_water.data_manager
         from anuga.pmesh.mesh_interface import create_pmesh_from_regions
         finaltime = 1200
 
@@ -792,7 +795,7 @@ class Test_Util(unittest.TestCase):
         #print points
         start = time.mktime(time.strptime('2000', '%Y'))
         domain.starttime = start
-        
+
 
         #Store structure
         domain.initialise_storage()
@@ -818,10 +821,10 @@ class Test_Util(unittest.TestCase):
 
         interpolation_points = [[1,0]]
         interpolation_points = [[100,1000]]
-        
+
         interpolation_points = [[0,-20], [1,0], [0,1], [1.1, 3.14], [10,-12.5],
                                 [78787,78787],[7878,3432]]
-            
+
         #Deliberately set domain.starttime to too early
         domain.starttime = start - 1
 
@@ -847,7 +850,7 @@ class Test_Util(unittest.TestCase):
         F = file_function(filename + '.sww', domain,
                           quantities = domain.conserved_quantities,
                           interpolation_points = interpolation_points)
-        
+
         for id in range(len(interpolation_points)):
             x = interpolation_points[id][0]
             y = interpolation_points[id][1]
@@ -879,7 +882,7 @@ class Test_Util(unittest.TestCase):
         # now lets check points inside the mesh
         interpolation_points = [[0,-20], [1,0], [0,1], [1.1, 3.14]] #, [10,-12.5]] - this point doesn't work WHY?
         interpolation_points = [[10,-12.5]]
-            
+
         #print("len(interpolation_points)",len(interpolation_points))
         F = file_function(filename + '.sww', domain,
                           quantities = domain.conserved_quantities,
@@ -891,7 +894,7 @@ class Test_Util(unittest.TestCase):
         #Check linear interpolation in time
         F = file_function(filename + '.sww', domain,
                           quantities = domain.conserved_quantities,
-                          interpolation_points = interpolation_points)                
+                          interpolation_points = interpolation_points)
         for id in range(len(interpolation_points)):
             x = interpolation_points[id][0]
             y = interpolation_points[id][1]
@@ -951,7 +954,7 @@ class Test_Util(unittest.TestCase):
 
 
         #Now try interpolation with delta offset
-        for id in range(len(interpolation_points)):            
+        for id in range(len(interpolation_points)):
             x = interpolation_points[id][0]
             y = interpolation_points[id][1]
 
@@ -976,7 +979,9 @@ class Test_Util(unittest.TestCase):
         """
 
         #Write file
-        import os, time, calendar
+        import os
+        import time
+        import calendar
         from anuga.config import time_format
         from math import sin, pi
 
@@ -984,9 +989,9 @@ class Test_Util(unittest.TestCase):
         filename = 'test_file_function'
         fid = open(filename + '.txt', 'w')
         start = time.mktime(time.strptime('2000', '%Y'))
-        
+
         #print 'start ',start
-        
+
         dt = 60  #One minute intervals
         t = 0.0
         while t <= finaltime:
@@ -1010,13 +1015,13 @@ class Test_Util(unittest.TestCase):
         vertices = [[0,1,2]]
         domain = Domain(points, vertices)
         #print domain.starttime, start
-		
+
         # Check that domain.starttime is updated if non-existing
         F = file_function(filename + '.tms',
                           domain,
-                          quantities = ['Attribute0', 'Attribute1', 'Attribute2'])  
-                          
-                          
+                          quantities = ['Attribute0', 'Attribute1', 'Attribute2'])
+
+
         #print domain.starttime, start
         assert num.allclose(domain.starttime, start)
 
@@ -1039,11 +1044,11 @@ class Test_Util(unittest.TestCase):
                           domain,
                           quantities = ['Attribute0', 'Attribute1', 'Attribute2'],
                           use_cache=True)
-        
+
 
         #print F.precomputed_values
         #print 'F(60)', F(60)
-        
+
         #Now try interpolation
         for i in range(20):
             t = i*10
@@ -1069,7 +1074,7 @@ class Test_Util(unittest.TestCase):
         assert num.allclose( 2*sin(120*pi/600)/3 + sin(60*pi/600)/3, q[2] )
 
         os.remove(filename + '.tms')
-        os.remove(filename + '.txt')        
+        os.remove(filename + '.txt')
 
     def test_file_function_time_with_domain_different_start(self):
         """Test that File function interpolates correctly
@@ -1080,7 +1085,9 @@ class Test_Util(unittest.TestCase):
         """
 
         #Write file
-        import os, time, calendar
+        import os
+        import time
+        import calendar
         from anuga.config import time_format
         from math import sin, pi
 
@@ -1098,7 +1105,7 @@ class Test_Util(unittest.TestCase):
         fid.close()
 
         #Convert ASCII file to NetCDF (Which is what we really like!)
-        timefile2netcdf(filename+'.txt')        
+        timefile2netcdf(filename+'.txt')
 
         a = [0.0, 0.0]
         b = [4.0, 0.0]
@@ -1113,7 +1120,7 @@ class Test_Util(unittest.TestCase):
         delta = 23
         domain.starttime = start + delta
         F = file_function(filename + '.tms', domain,
-                          quantities = ['Attribute0', 'Attribute1', 'Attribute2'])        
+                          quantities = ['Attribute0', 'Attribute1', 'Attribute2'])
         assert num.allclose(domain.starttime, start+delta)
 
         assert num.allclose(F.get_time(), [-23., 37., 97., 157., 217.,
@@ -1149,9 +1156,9 @@ class Test_Util(unittest.TestCase):
 
 
         os.remove(filename + '.tms')
-        os.remove(filename + '.txt')                
+        os.remove(filename + '.txt')
 
-        
+
 
     def test_file_function_time_with_domain_different_start_and_time_limit(self):
         """Test that File function interpolates correctly
@@ -1159,12 +1166,14 @@ class Test_Util(unittest.TestCase):
         Use domain with a starttime later than that of file
 
         ASCII version
-        
+
         This test also tests that time can be truncated.
         """
 
         # Write file
-        import os, time, calendar
+        import os
+        import time
+        import calendar
         from anuga.config import time_format
         from math import sin, pi
 
@@ -1182,7 +1191,7 @@ class Test_Util(unittest.TestCase):
         fid.close()
 
         # Convert ASCII file to NetCDF (Which is what we really like!)
-        timefile2netcdf(filename + '.txt')        
+        timefile2netcdf(filename + '.txt')
 
         a = [0.0, 0.0]
         b = [4.0, 0.0]
@@ -1199,12 +1208,12 @@ class Test_Util(unittest.TestCase):
         time_limit = domain.starttime + 600
         F = file_function(filename + '.tms', domain,
                           time_limit=time_limit,
-                          quantities=['Attribute0', 'Attribute1', 'Attribute2'])        
+                          quantities=['Attribute0', 'Attribute1', 'Attribute2'])
         assert num.allclose(domain.starttime, start+delta)
 
         assert num.allclose(F.get_time(), [-23., 37., 97., 157., 217.,
                                             277., 337., 397., 457., 517.,
-                                            577.])        
+                                            577.])
 
 
 
@@ -1233,11 +1242,11 @@ class Test_Util(unittest.TestCase):
 
 
         os.remove(filename + '.tms')
-        os.remove(filename + '.txt')                
+        os.remove(filename + '.txt')
 
-        
-        
-        
+
+
+
 
 
     def test_apply_expression_to_dictionary(self):
@@ -1246,18 +1255,18 @@ class Test_Util(unittest.TestCase):
         #This must be caught.
         foo = num.array([[1,2,3], [4,5,6]], float)
 
-        bar = num.array([[-1,0,5], [6,1,1]], float)                  
+        bar = num.array([[-1,0,5], [6,1,1]], float)
 
         D = {'X': foo, 'Y': bar}
 
-        Z = apply_expression_to_dictionary('X+Y', D)        
+        Z = apply_expression_to_dictionary('X+Y', D)
         assert num.allclose(Z, foo+bar)
 
-        Z = apply_expression_to_dictionary('X*Y', D)        
-        assert num.allclose(Z, foo*bar)        
+        Z = apply_expression_to_dictionary('X*Y', D)
+        assert num.allclose(Z, foo*bar)
 
-        Z = apply_expression_to_dictionary('4*X+Y', D)        
-        assert num.allclose(Z, 4*foo+bar)        
+        Z = apply_expression_to_dictionary('4*X+Y', D)
+        assert num.allclose(Z, 4*foo+bar)
 
         # test zero division is OK
         Z = apply_expression_to_dictionary('X/Y', D)
@@ -1270,7 +1279,7 @@ class Test_Util(unittest.TestCase):
         #Check exceptions
         try:
             #Wrong name
-            Z = apply_expression_to_dictionary('4*X+A', D)        
+            Z = apply_expression_to_dictionary('4*X+A', D)
         except NameError:
             pass
         else:
@@ -1280,28 +1289,28 @@ class Test_Util(unittest.TestCase):
 
         try:
             #Wrong order
-            Z = apply_expression_to_dictionary(D, '4*X+A')        
+            Z = apply_expression_to_dictionary(D, '4*X+A')
         except AssertionError:
             pass
         else:
             msg = 'Should have raised a AssertionError Exception'
             raise Exception(msg)
-        
+
 
     def test_multiple_replace(self):
         """Hard test that checks a true word-by-word simultaneous replace
         """
-        
+
         D = {'x': 'xi', 'y': 'eta', 'xi':'lam'}
         exp = '3*x+y + xi'
-        
+
         new = multiple_replace(exp, D)
-        
+
         assert new == '3*xi+eta + lam'
-                          
-   
+
+
     def test_add_directories(self):
-        
+
         import tempfile
         root_dir = tempfile.mkdtemp('_test_util', 'test_util_')
         directories = ['ja','ne','ke']
@@ -1312,7 +1321,7 @@ class Test_Util(unittest.TestCase):
 
         add_directories(root_dir, directories)
         assert access(root_dir,F_OK)
-        
+
         #clean up!
         os.rmdir(kens_dir)
         os.rmdir(root_dir + sep + 'ja' + sep + 'ne')
@@ -1320,19 +1329,19 @@ class Test_Util(unittest.TestCase):
         os.rmdir(root_dir)
 
     def test_add_directories_bad(self):
-        
+
         import tempfile
         root_dir = tempfile.mkdtemp('_test_util', 'test_util_')
         directories = [r'/\/!@#@#$%^%&*((*:*:','ne','ke']
-        
+
         try:
             kens_dir = add_directories(root_dir, directories)
         except OSError:
             pass
         else:
             msg = 'bad dir name should give OSError'
-            raise Exception(msg)    
-            
+            raise Exception(msg)
+
         #clean up!
         os.rmdir(root_dir)
 
@@ -1340,9 +1349,9 @@ class Test_Util(unittest.TestCase):
 
         check_list(['stage','xmomentum'])
 
-        
+
     def test_add_directories(self):
-        
+
         import tempfile
         root_dir = tempfile.mkdtemp('_test_util', 'test_util_')
         directories = ['ja','ne','ke']
@@ -1353,7 +1362,7 @@ class Test_Util(unittest.TestCase):
 
         add_directories(root_dir, directories)
         assert access(root_dir,F_OK)
-        
+
         #clean up!
         os.rmdir(kens_dir)
         os.rmdir(root_dir + sep + 'ja' + sep + 'ne')
@@ -1361,19 +1370,19 @@ class Test_Util(unittest.TestCase):
         os.rmdir(root_dir)
 
     def test_add_directories_bad(self):
-        
+
         import tempfile
         root_dir = tempfile.mkdtemp('_test_util', 'test_util_')
         directories = [r'/\/!@#@#$%^%&*((*:*:','ne','ke']
-        
+
         try:
             kens_dir = add_directories(root_dir, directories)
         except OSError:
             pass
         else:
             msg = 'bad dir name should give OSError'
-            raise Exception(msg)    
-            
+            raise Exception(msg)
+
         #clean up!
         os.rmdir(root_dir)
 
@@ -1384,7 +1393,7 @@ class Test_Util(unittest.TestCase):
 ######
 # Test the remove_lone_verts() function
 ######
-        
+
     def test_remove_lone_verts_a(self):
         verts = [[0,0],[1,0],[0,1]]
         tris = [[0,1,2]]
@@ -1398,78 +1407,78 @@ class Test_Util(unittest.TestCase):
         new_verts, new_tris = remove_lone_verts(verts, tris)
         self.assertTrue(new_verts.tolist() == verts[0:3])
         self.assertTrue(new_tris.tolist() == tris)
-        
+
     def test_remove_lone_verts_c(self):
         verts = [[99,99],[0,0],[1,0],[99,99],[0,1],[99,99]]
         tris = [[1,2,4]]
         new_verts, new_tris = remove_lone_verts(verts, tris)
         self.assertTrue(new_verts.tolist() == [[0,0],[1,0],[0,1]])
         self.assertTrue(new_tris.tolist() == [[0,1,2]])
-     
+
     def test_remove_lone_verts_d(self):
         verts = [[0,0],[1,0],[99,99],[0,1]]
         tris = [[0,1,3]]
         new_verts, new_tris = remove_lone_verts(verts, tris)
         self.assertTrue(new_verts.tolist() == [[0,0],[1,0],[0,1]])
         self.assertTrue(new_tris.tolist() == [[0,1,2]])
-        
+
     def test_remove_lone_verts_e(self):
         verts = [[0,0],[1,0],[0,1],[99,99],[99,99],[99,99]]
         tris = [[0,1,2]]
         new_verts, new_tris = remove_lone_verts(verts, tris)
         self.assertTrue(new_verts.tolist() == verts[0:3])
         self.assertTrue(new_tris.tolist() == tris)
-     
+
     def test_remove_lone_verts_f(self):
         verts = [[0,0],[1,0],[99,99],[0,1],[99,99],[1,1],[99,99]]
         tris = [[0,1,3],[0,1,5]]
         new_verts, new_tris = remove_lone_verts(verts, tris)
         self.assertTrue(new_verts.tolist() == [[0,0],[1,0],[0,1],[1,1]])
         self.assertTrue(new_tris.tolist() == [[0,1,2],[0,1,3]])
-        
+
 ######
-# 
+#
 ######
-        
+
     def test_get_min_max_values(self):
-        
+
         list=[8,9,6,1,4]
         min1, max1 = get_min_max_values(list)
-        
-        assert min1==1 
+
+        assert min1==1
         assert max1==9
-        
+
     def test_get_min_max_values1(self):
-        
+
         list=[-8,-9,-6,-1,-4]
         min1, max1 = get_min_max_values(list)
-        
+
 #        print 'min1,max1',min1,max1
-        assert min1==-9 
+        assert min1==-9
         assert max1==-1
 
 #    def test_get_min_max_values2(self):
 #        '''
-#        The min and max supplied are greater than the ones in the 
+#        The min and max supplied are greater than the ones in the
 #        list and therefore are the ones returned
 #        '''
 #        list=[-8,-9,-6,-1,-4]
 #        min1, max1 = get_min_max_values(list,-10,10)
-#        
+#
 ##        print 'min1,max1',min1,max1
-#        assert min1==-10 
+#        assert min1==-10
 #        assert max1==10
-        
+
     def test_make_plots_from_csv_files(self):
-        
+
 #         #if sys.platform == 'win32':  #Windows
-#         try: 
+#         try:
 #             import pylab
 #         except ImportError:
-#             #ANUGA don't need pylab to work so the system doesn't 
-#             #rely on pylab being installed 
+#             #ANUGA don't need pylab to work so the system doesn't
+#             #rely on pylab being installed
 #             return
-        
+
         try:
             import matplotlib
             matplotlib.use('Agg')
@@ -1477,8 +1486,8 @@ class Test_Util(unittest.TestCase):
         except ImportError:
             #print "Couldn't import module from matplotlib, probably you need to update matplotlib"
             return
-        
-    
+
+
         current_dir=getcwd()+sep+'abstract_2d_finite_volumes'
         temp_dir = tempfile.mkdtemp('','tmp_figures')
 #        print 'temp_dir',temp_dir
@@ -1505,7 +1514,7 @@ class Test_Util(unittest.TestCase):
 2.0, 4, -0.45, 57, 7 \n\
 3.0, 6, -0.5, 56, 7 \n")
         fid2.close()
-        
+
         dir, name=os.path.split(fileName)
         csv2timeseries_graphs(directories_dic={dir:['gauge', 0, 0]},
                               output_dir=temp_dir,
@@ -1514,7 +1523,7 @@ class Test_Util(unittest.TestCase):
                               quantities=['speed','stage','momentum'],
                               assess_all_csv_files=True,
                               extra_plot_name='test')
-        
+
         #print dir+sep+name[:-4]+'_stage_test.png'
         assert(access(dir+sep+name[:-4]+'_stage_test.png',F_OK)==True)
         assert(access(dir+sep+name[:-4]+'_speed_test.png',F_OK)==True)
@@ -1532,22 +1541,22 @@ class Test_Util(unittest.TestCase):
         assert(access(dir+sep+name2[:-4]+'_momentum_test.png',F_OK)==True)
 
         del_dir(temp_dir)
-        
+
 
 
     def test_greens_law(self):
 
         from math import sqrt
-        
+
         d1 = 80.0
         d2 = 20.0
         h1 = 1.0
         h2 = greens_law(d1,d2,h1)
 
         assert h2==sqrt(2.0)
-        
+
     def test_calc_bearings(self):
- 
+
         from math import atan, degrees
         #Test East
         uh = 1
@@ -1597,8 +1606,8 @@ class Test_Util(unittest.TestCase):
         angle = calc_bearing(uh, vh)
         if 314 < angle < 316: v=1
         assert v==1
-       
-    def test_calc_bearings_zero_vector(self): 
+
+    def test_calc_bearings_zero_vector(self):
         from math import atan, degrees
 
         uh = 0
@@ -1606,7 +1615,7 @@ class Test_Util(unittest.TestCase):
         angle = calc_bearing(uh, vh)
 
         assert angle == NAN
-        
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":

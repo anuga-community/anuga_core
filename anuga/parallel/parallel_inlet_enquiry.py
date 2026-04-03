@@ -12,7 +12,7 @@ class Parallel_Inlet_enquiry(parallel_inlet.Parallel_Inlet):
     """
 
     """
-    master_proc - index of the processor which coordinates all processors 
+    master_proc - index of the processor which coordinates all processors
     associated with this inlet operator.
     procs - list of all processors associated with this inlet operator
     enquiry_proc - processor containing inlet enquiry point
@@ -26,7 +26,7 @@ class Parallel_Inlet_enquiry(parallel_inlet.Parallel_Inlet):
                  enquiry_proc = -1,
                  verbose=False):
 
-   
+
         parallel_inlet.Parallel_Inlet.__init__(self, domain, polyline,
                                                 master_proc = master_proc, procs = procs, verbose=verbose)
 
@@ -56,7 +56,7 @@ class Parallel_Inlet_enquiry(parallel_inlet.Parallel_Inlet):
 
         try:
             k = self.domain.get_triangle_containing_point(point)
-                
+
             if self.domain.tri_full_flag[k] == 1:
                 has_enq_point = True
             else:
@@ -66,7 +66,7 @@ class Parallel_Inlet_enquiry(parallel_inlet.Parallel_Inlet):
 
         if has_enq_point:
             self.enquiry_index = self.domain.get_triangle_containing_point(self.enquiry_pt)
-   
+
             if self.enquiry_index in self.triangle_indices:
                 msg = 'Enquiry point %s' % (self.enquiry_pt)
                 msg += 'is in an inlet triangle'
@@ -74,7 +74,7 @@ class Parallel_Inlet_enquiry(parallel_inlet.Parallel_Inlet):
                 warnings.warn(msg)
 
 
-            if self.enquiry_proc >= 0: 
+            if self.enquiry_proc >= 0:
                 assert self.enquiry_proc == self.myid, "Specified enquiry proc does not match actual enquiry proc"
             self.enquiry_proc = self.myid
             assert self.enquiry_index >= 0, "Enquiry point inside polygon, but no triangle index found"

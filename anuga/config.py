@@ -103,7 +103,7 @@ compute_fluxes_method = 'wb_2'
 distribute_to_vertices_and_edges_method = 'original'
 
 # Option to turn on low damping for low Froude flows
-low_froude = 0 
+low_froude = 0
 
 ################################################################################
 # Friction Method

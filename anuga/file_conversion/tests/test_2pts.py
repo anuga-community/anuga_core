@@ -5,7 +5,7 @@ import shutil
 import numpy as num
 
 # ANUGA modules
-from anuga.shallow_water.shallow_water_domain import Domain 
+from anuga.shallow_water.shallow_water_domain import Domain
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 from anuga.file.sww import Write_sww, SWW_file
 from anuga.abstract_2d_finite_volumes.generic_boundary_conditions \
@@ -22,13 +22,14 @@ from pprint import pprint
 
 class Test_2Pts(unittest.TestCase):
     """ Test files that convert to pts format. """
-    
+
     def test_hecras_cross_sections2pts(self):
         """Test conversion from HECRAS cross sections in ascii format
         to native NetCDF pts format
         """
 
-        import time, os
+        import time
+        import os
         from anuga.file.netcdf import NetCDFFile
 
         #Write test asc file
@@ -156,7 +157,8 @@ END CROSS-SECTIONS:
         - in this case, the centroids.
         """
 
-        import time, os
+        import time
+        import os
         from anuga.file.netcdf import NetCDFFile
         # Used for points that lie outside mesh
         NODATA_value = 1758323
@@ -202,7 +204,7 @@ END CROSS-SECTIONS:
         volumes = fid.variables['volumes'][:]
 
 
-        # Invoke interpolation for vertex points       
+        # Invoke interpolation for vertex points
         points = num.concatenate( (x[:,num.newaxis],y[:,num.newaxis]), axis=1 )
         points = num.ascontiguousarray(points)
         sww2pts(domain.get_name() + '.sww',
@@ -212,8 +214,8 @@ END CROSS-SECTIONS:
         ref_point_values = elevation
         point_values = Geospatial_data(ptsfile).get_attributes()
         #print 'P', point_values
-        #print 'Ref', ref_point_values        
-        assert num.allclose(point_values, ref_point_values)        
+        #print 'Ref', ref_point_values
+        assert num.allclose(point_values, ref_point_values)
 
 
 
@@ -226,12 +228,12 @@ END CROSS-SECTIONS:
                 NODATA_value = NODATA_value)
         #ref_point_values = [-0.5, -0.5, -1, -1, -1, -1, -1.5, -1.5]   #At centroids
 
-        ref_point_values = [-0.77777777, -0.77777777, -0.99999998, -0.99999998, 
+        ref_point_values = [-0.77777777, -0.77777777, -0.99999998, -0.99999998,
                              -0.99999998, -0.99999998, -1.22222221, -1.22222221]
         point_values = Geospatial_data(ptsfile).get_attributes()
         #print 'P', point_values
-        #print 'Ref', ref_point_values        
-        assert num.allclose(point_values, ref_point_values)        
+        #print 'Ref', ref_point_values
+        assert num.allclose(point_values, ref_point_values)
 
         fid.close()
 
@@ -244,4 +246,4 @@ END CROSS-SECTIONS:
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_2Pts)
     runner = unittest.TextTestRunner() #verbosity=2)
-    runner.run(suite)    
+    runner.run(suite)

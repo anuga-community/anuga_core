@@ -4,7 +4,7 @@ import os
 import numpy as num
 from pprint import pprint
 
-# Check if osgeo is available and if 
+# Check if osgeo is available and if
 # not, skip subsequent tests
 import sys
 try:
@@ -25,7 +25,7 @@ def make_a_utm_tif(south=True):
     #
     from anuga.utilities import plot_utils as util
     import numpy
-    
+
     if south==True:
         # Use Make_Geotif to make tif file
         # Pick a domain that makes sense in EPSG:32756
@@ -41,7 +41,7 @@ def make_a_utm_tif(south=True):
         #
         util.Make_Geotif(dataToGrid, output_quantities=['test_utm'],
                         EPSG_CODE=32756, output_dir='.', CellSize=1.0)
-    
+
     if south==False:
         # Use Make_Geotif to make tif file
         # Pick a domain that makes sense in EPSG:32656
@@ -95,7 +95,7 @@ class Test_tif2(unittest.TestCase):
         from anuga.file_conversion.tif2array import  tif2array
 
         # makes a file Point_Data_test_utm.tif
-        # which contains UTM easting, northing data for 
+        # which contains UTM easting, northing data for
         # WGS 84 / UTM zone 56 South
         make_a_utm_tif(south=True)
 
@@ -165,7 +165,7 @@ class Test_tif2(unittest.TestCase):
         from anuga.file_conversion.tif2array import  tif2array
 
         # makes a file Point_Data_test_utm.tif
-        # which contains UTM easting, northing data for 
+        # which contains UTM easting, northing data for
         # WGS 84 / UTM zone 56 South
         make_a_utm_tif(south=False)
 
@@ -235,7 +235,7 @@ class Test_tif2(unittest.TestCase):
         from anuga.file_conversion.tif2array import  tif2array
 
         # makes a file Point_Data_test_utm.tif
-        # which contains UTM easting, northing data for 
+        # which contains UTM easting, northing data for
         # WGS 84 / UTM zone 56 South
         make_a_ll_tif()
 
@@ -452,7 +452,7 @@ class Test_tif2(unittest.TestCase):
         os.remove('PointData_test_ll.tif')
 
     @pytest.mark.skipif('rasterio' not in sys.modules,
-                    reason="requires rasterio") 
+                    reason="requires rasterio")
     def test_tif2point_values_ll(self):
 
         import os
@@ -548,7 +548,7 @@ class Test_tif2(unittest.TestCase):
                                     0.67225885, 0.73      , 0.78225887, 0.83774114, 0.8933333 ,
                                     0.94408625, 0.99774116, 1.05      , 1.1       , 1.1559137 ,
                                     1.21      ])
-                           
+
 
         #pprint(Z)
 

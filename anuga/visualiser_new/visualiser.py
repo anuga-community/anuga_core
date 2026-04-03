@@ -6,12 +6,12 @@ from vtk import vtkCellArray, vtkRenderer, vtkWindowToImageFilter
 from vtk import vtkJPEGWriter, vtkPNGWriter, vtkPNMWriter
 from vtk.tk.vtkTkRenderWidget import vtkTkRenderWidget
 
-class Visualiser(object):
+class Visualiser:
     '''
     Generic Offline Visualiser. Subclasses need to be used that specify
     how to handle a data source.
     '''
-    
+
     ### Public functions ###
 
     def __init__(self,
@@ -57,7 +57,7 @@ class Visualiser(object):
         self.tk_root.grid_rowconfigure(0, weight=1)
         self.tk_root.grid_columnconfigure(0, weight=3)
         self.tk_root.bind('<Destroy>', self.destroyed)
-        if not self.vis_paused: self.tk_root.after(100, self.animate)            
+        if not self.vis_paused: self.tk_root.after(100, self.animate)
 
         self.tk_renderWidget = vtkTkRenderWidget(self.tk_root,
                                                  width=width,
@@ -168,7 +168,7 @@ class Visualiser(object):
         return value of frame().
         '''
         oldFrame = self.vis_frame
-        if hasattr(frame, '__call__'):
+        if callable(frame):
             self.vis_frame = frame()
         else:
             self.vis_frame = frame

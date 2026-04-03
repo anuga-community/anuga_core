@@ -261,7 +261,7 @@ class Parallel_Boyd_box_operator(Parallel_Structure_operator):
                 pypar.send(self.inlets[self.outflow_index].get_enquiry_depth(), self.master_proc)
 
 
-        
+
 
         # Master proc computes return values
         if self.myid == self.master_proc:

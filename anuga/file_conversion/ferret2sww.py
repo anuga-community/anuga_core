@@ -8,13 +8,13 @@ import numpy as num
 
 # ANUGA modules
 from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_float
-from anuga.file.sww import Write_sww  
+from anuga.file.sww import Write_sww
 from anuga.coordinate_transforms.geo_reference import Geo_reference, \
-     write_NetCDF_georeference                          
+     write_NetCDF_georeference
 import anuga.utilities.log as log
 
 #local modules
-from anuga.file_conversion.file_conversion import get_min_max_indices                            
+from anuga.file_conversion.file_conversion import get_min_max_indices
 
 class DataMissingValuesError(Exception):
     pass
@@ -68,22 +68,22 @@ def ferret2sww(basename_in, name_out=None,
     _assert_lat_long(minlat, maxlat, minlon, maxlon)
 
     if name_out != None and name_out[-4:] != '.sww':
-        raise IOError('Output file %s should be of type .sww.' % name_out)
+        raise OSError('Output file %s should be of type .sww.' % name_out)
 
     # Get NetCDF data
     if verbose: log.critical('Reading files %s_*.nc' % basename_in)
 
     # Wave amplitude (cm)
-    file_h = NetCDFFile(basename_in + '_ha.nc', netcdf_mode_r) 
-    
+    file_h = NetCDFFile(basename_in + '_ha.nc', netcdf_mode_r)
+
     # Velocity (x) (cm/s)
     file_u = NetCDFFile(basename_in + '_ua.nc', netcdf_mode_r)
-     
+
     # Velocity (y) (cm/s)
     file_v = NetCDFFile(basename_in + '_va.nc', netcdf_mode_r)
-    
+
     # Elevation (z) (m)
-    file_e = NetCDFFile(basename_in + '_e.nc', netcdf_mode_r)  
+    file_e = NetCDFFile(basename_in + '_e.nc', netcdf_mode_r)
 
     if name_out is None:
         swwname = basename_in + '.sww'
@@ -146,7 +146,7 @@ def ferret2sww(basename_in, name_out=None,
         mint = times[0]
     else:
         jmin = num.searchsorted(times, mint)
-        
+
         # numpy.int32 didn't work in slicing of amplitude below
         jmin = int(jmin)
 
@@ -155,9 +155,9 @@ def ferret2sww(basename_in, name_out=None,
         maxt = times[-1]
     else:
         jmax = num.searchsorted(times, maxt)
-        
+
         # numpy.int32 didn't work in slicing of amplitude below
-        jmax = int(jmax)        
+        jmax = int(jmax)
 
     kmin, kmax, lmin, lmax = get_min_max_indices(latitudes[:],
                                                   longitudes[:],
@@ -359,10 +359,10 @@ def ferret2sww(basename_in, name_out=None,
 
 def _show_stats(latlong, times, amplitudes, speeds, elevations):
     """ Print the statistics nicely to the log file """
-    
+
     latitudes, longitudes = latlong
     uspeed, vspeed = speeds
-    
+
     log.critical('------------------------------------------------')
     log.critical('Statistics:')
     log.critical('  Extent (lat/lon):')
@@ -390,10 +390,10 @@ def _show_stats(latlong, times, amplitudes, speeds, elevations):
     name = 'Elevations (e) [m]'
     log.critical('  %s in [%f, %f]'
                  % (name, num.min(elevations), num.max(elevations)))
-                 
-             
 
-def _show_sww_stats(outfile, swwname, geo_ref, time_info):         
+
+
+def _show_sww_stats(outfile, swwname, geo_ref, time_info):
     """ Log SWW output stats. """
     times, starttime, mint, maxt = time_info
     x = outfile.variables['x'][:]
@@ -418,12 +418,12 @@ def _show_sww_stats(outfile, swwname, geo_ref, time_info):
     for name in ['stage', 'xmomentum', 'ymomentum', 'elevation']:
         q = outfile.variables[name][:]    # .flatten()
         log.critical('    %s in [%f, %f]' % \
-                        (name, num.min(q), num.max(q)))        
-                 
+                        (name, num.min(q), num.max(q)))
+
 
 def _assert_lat_long(minlat, maxlat, minlon, maxlon):
     """Check latitudes and longitudes for validity."""
-    
+
     msg = 'Must use latitudes and longitudes for minlat, maxlon etc'
 
     if minlat != None:

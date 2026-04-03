@@ -17,13 +17,13 @@ from anuga.geospatial_data.geospatial_data import ensure_absolute, \
 
 from anuga.file.mux import WAVEHEIGHT_MUX_LABEL, EAST_VELOCITY_LABEL, \
                             NORTH_VELOCITY_LABEL
-                            
-from anuga.utilities.numerical_tools import ensure_numeric                            
+
+from anuga.utilities.numerical_tools import ensure_numeric
 
 from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a, \
                             netcdf_float
 
-from anuga.file.sww import Write_sww  
+from anuga.file.sww import Write_sww
 
 ###############################################################
 
@@ -185,7 +185,7 @@ def urs_ungridded2sww(basename_in='o', basename_out=None, verbose=False,
     outfile.zscale = zscale
 
     sww.store_triangulation(outfile, points_utm, volumes,
-                            zone,  
+                            zone,
                             new_origin=origin,
                             verbose=verbose)
     sww.store_static_quantities(outfile, elevation=elevation)
@@ -299,7 +299,7 @@ def urs2sww(basename_in='o', basename_out=None, verbose=False,
                NaN_filler=NaN_filler,
                inverted_bathymetry=True,
                verbose=verbose)
-    
+
     if remove_nc_files:
         for file_out in files_out:
             os.remove(file_out)

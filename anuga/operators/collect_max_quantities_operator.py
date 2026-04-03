@@ -24,10 +24,10 @@ class Collect_max_quantities_operator(Operator):
 
     Maxima are updated every update_frequency timesteps [any integer >=1 is
     ok], after t exceeds collection_start_time.
-   
+
     In theory this might save time (??), since computing e.g. velocity/momentum etc in python might be expensive
-    
-    Optionally velocities can be zeroed below velocity_zero_height (defaults to minimum_allowed_height if not required) 
+
+    Optionally velocities can be zeroed below velocity_zero_height (defaults to minimum_allowed_height if not required)
     """
 
     def __init__(self,
@@ -64,7 +64,7 @@ class Collect_max_quantities_operator(Operator):
 
         #------------------------------------------
         # Counter so we don't have to update every timestep
-        #------------------------------------------        
+        #------------------------------------------
         self.counter=0
         assert update_frequency>0, 'Update frequency must be >=1'
         self.update_frequency=update_frequency
@@ -93,13 +93,13 @@ class Collect_max_quantities_operator(Operator):
             self.counter+=1
 
             if(self.counter==self.update_frequency):
-            
+
                 self.max_stage=num.maximum(self.max_stage, self.stage.centroid_values)
 
                 momNorm = (self.xmom.centroid_values**2 + self.ymom.centroid_values**2)**0.5
                 self.max_speedDepth=num.maximum(self.max_speedDepth, momNorm)
-                
-                localDepth=num.maximum(self.stage.centroid_values-self.elev.centroid_values, self.domain.minimum_allowed_height) 
+
+                localDepth=num.maximum(self.stage.centroid_values-self.elev.centroid_values, self.domain.minimum_allowed_height)
                 self.max_depth = num.maximum(self.max_depth,localDepth)
 
                 #velMax=(momNorm/(localDepth+velocity_protection/localDepth))*(localDepth>self.domain.minimum_allowed_height)
@@ -130,13 +130,13 @@ class Collect_max_quantities_operator(Operator):
     def export_max_quantities_to_csv(self, filename_start='Max_Quantities_'):
         """
 
-        Export max-quantities to a csv 
+        Export max-quantities to a csv
 
         """
         fullInds=self.domain.tri_full_flag.nonzero()[0]
-        outArray=num.vstack([self.xy[fullInds,0]+self.domain.geo_reference.xllcorner, 
-                             self.xy[fullInds,1]+self.domain.geo_reference.yllcorner, 
-                             self.max_stage[fullInds], self.max_depth[fullInds], 
+        outArray=num.vstack([self.xy[fullInds,0]+self.domain.geo_reference.xllcorner,
+                             self.xy[fullInds,1]+self.domain.geo_reference.yllcorner,
+                             self.max_stage[fullInds], self.max_depth[fullInds],
                              self.max_speed[fullInds], self.max_speedDepth[fullInds]]).transpose()
 
         outname=filename_start+'P'+str(myid)+'_X_Y_Stage_Depth_Speed_UH_MAX.csv'

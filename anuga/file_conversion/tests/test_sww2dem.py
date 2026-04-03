@@ -1,6 +1,8 @@
 
 
-import unittest, os, sys
+import unittest
+import os
+import sys
 import numpy as num
 import anuga
 
@@ -13,7 +15,7 @@ from anuga.coordinate_transforms.geo_reference import Geo_reference, \
      DEFAULT_ZONE
 
 from anuga.file.sww import SWW_file
-     
+
 # boundary functions
 from anuga.shallow_water.boundaries import Reflective_boundary, \
             Field_boundary, Transmissive_momentum_set_stage_boundary, \
@@ -59,7 +61,7 @@ class Test_Sww2Dem(unittest.TestCase):
     def setUp(self):
         import time
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
-        
+
         # Create basic mesh
         points, vertices, boundary = rectangular(2, 2)
 
@@ -93,7 +95,7 @@ class Test_Sww2Dem(unittest.TestCase):
         domain.set_quantity('stage', stage)
 
 
-        domain.distribute_to_vertices_and_edges()               
+        domain.distribute_to_vertices_and_edges()
         self.domain = domain
 
         C = domain.get_vertex_coordinates()
@@ -110,14 +112,15 @@ class Test_Sww2Dem(unittest.TestCase):
 
     def old_test_sww2dem_asc_elevation_depth(self):
         """test_sww2dem_asc_elevation_depth
-        
+
         Test that sww information can be converted correctly to asc/prj
         format readable by e.g. ArcView
-        
+
         Also check geo_reference is correct
         """
 
-        import time, os
+        import time
+        import os
 
         # Setup
         self.domain.set_name('datatest')
@@ -155,12 +158,12 @@ class Test_Sww2Dem(unittest.TestCase):
         z = fid.variables['elevation'][:]
         time = fid.variables['time'][:]
         stage = fid.variables['stage'][:]
-        
+
         # Check georeferencig: zone, xllcorner and yllcorner
         assert fid.zone == 56
         assert fid.xllcorner == 308500
         assert fid.yllcorner == 6189000
-                
+
 
         fid.close()
 
@@ -248,7 +251,7 @@ class Test_Sww2Dem(unittest.TestCase):
             y = (4 - j) * cellsize
             for i in range(5):
                 assert num.allclose(float(L[i]), -i * cellsize - y)
-                
+
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
@@ -263,7 +266,7 @@ class Test_Sww2Dem(unittest.TestCase):
                 cellsize=cellsize,
                 number_of_decimal_places=9,
                 verbose=self.verbose)
-        
+
         # Check asc file
         ascid = open(ascfile)
         lines = ascid.readlines()
@@ -308,21 +311,22 @@ class Test_Sww2Dem(unittest.TestCase):
 
     def test_sww2dem_asc_elevation_depth_DE0_undefined(self):
         """test_sww2dem_asc_elevation_depth
-        
+
         Test that sww information can be converted correctly to asc/prj
         format readable by e.g. ArcView
-        
+
         Also check geo_reference is correct
         """
 
-        import time, os
+        import time
+        import os
 
         # Setup
 
         domain = anuga.rectangular_cross_domain(16,16)
 
         B = Transmissive_boundary(domain)
-        domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})        
+        domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})
 
 
         domain.set_name('datatest')
@@ -360,12 +364,12 @@ class Test_Sww2Dem(unittest.TestCase):
         z = fid.variables['elevation'][:]
         time = fid.variables['time'][:]
         stage = fid.variables['stage'][:]
-        
+
         # Check georeferencig: zone, xllcorner and yllcorner
         assert fid.zone == 56
         assert fid.xllcorner == 308500
         assert fid.yllcorner == 6189000
-                
+
 
         fid.close()
 
@@ -450,7 +454,7 @@ class Test_Sww2Dem(unittest.TestCase):
             y = (4 - j) * cellsize
             for i in range(5):
                 assert num.allclose(float(L[i]), -i * cellsize - y, rtol=5e-2, atol=5e-2)
-                
+
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
@@ -465,7 +469,7 @@ class Test_Sww2Dem(unittest.TestCase):
                 cellsize=cellsize,
                 number_of_decimal_places=9,
                 verbose=self.verbose)
-        
+
         # Check asc file
         with open(ascfile) as ascid:
             lines = ascid.readlines()
@@ -509,21 +513,22 @@ class Test_Sww2Dem(unittest.TestCase):
 
     def test_sww2dem_asc_elevation_depth_DE0_northern(self):
         """test_sww2dem_asc_elevation_depth
-        
+
         Test that sww information can be converted correctly to asc/prj
         format readable by e.g. ArcView
-        
+
         Also check geo_reference is correct
         """
 
-        import time, os
+        import time
+        import os
 
         # Setup
 
         domain = anuga.rectangular_cross_domain(16,16)
 
         B = Transmissive_boundary(domain)
-        domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})        
+        domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})
 
 
         domain.set_name('datatest')
@@ -561,12 +566,12 @@ class Test_Sww2Dem(unittest.TestCase):
         z = fid.variables['elevation'][:]
         time = fid.variables['time'][:]
         stage = fid.variables['stage'][:]
-        
+
         # Check georeferencig: zone, xllcorner and yllcorner
         assert fid.zone == 56
         assert fid.xllcorner == 308500
         assert fid.yllcorner == 6189000
-                
+
 
         fid.close()
 
@@ -652,7 +657,7 @@ class Test_Sww2Dem(unittest.TestCase):
             y = (4 - j) * cellsize
             for i in range(5):
                 assert num.allclose(float(L[i]), -i * cellsize - y, rtol=5e-2, atol=5e-2)
-                
+
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
@@ -667,7 +672,7 @@ class Test_Sww2Dem(unittest.TestCase):
                 cellsize=cellsize,
                 number_of_decimal_places=9,
                 verbose=self.verbose)
-        
+
         # Check asc file
         with open(ascfile) as ascid:
             lines = ascid.readlines()
@@ -710,21 +715,22 @@ class Test_Sww2Dem(unittest.TestCase):
 
     def test_sww2dem_asc_elevation_depth_DE0_southern(self):
         """test_sww2dem_asc_elevation_depth
-        
+
         Test that sww information can be converted correctly to asc/prj
         format readable by e.g. ArcView
-        
+
         Also check geo_reference is correct
         """
 
-        import time, os
+        import time
+        import os
 
         # Setup
 
         domain = anuga.rectangular_cross_domain(16,16)
 
         B = Transmissive_boundary(domain)
-        domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})        
+        domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})
 
 
         domain.set_name('datatest')
@@ -762,12 +768,12 @@ class Test_Sww2Dem(unittest.TestCase):
         z = fid.variables['elevation'][:]
         time = fid.variables['time'][:]
         stage = fid.variables['stage'][:]
-        
+
         # Check georeferencig: zone, xllcorner and yllcorner
         assert fid.zone == 56
         assert fid.xllcorner == 308500
         assert fid.yllcorner == 6189000
-                
+
 
         fid.close()
 
@@ -855,7 +861,7 @@ class Test_Sww2Dem(unittest.TestCase):
             y = (4 - j) * cellsize
             for i in range(5):
                 assert num.allclose(float(L[i]), -i * cellsize - y, rtol=5e-2, atol=5e-2)
-                
+
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
@@ -870,7 +876,7 @@ class Test_Sww2Dem(unittest.TestCase):
                 cellsize=cellsize,
                 number_of_decimal_places=9,
                 verbose=self.verbose)
-        
+
         # Check asc file
         ascid = open(ascfile)
         lines = ascid.readlines()
@@ -939,7 +945,8 @@ class Test_Sww2Dem(unittest.TestCase):
 
         """
 
-        import time, os
+        import time
+        import os
 
         # Create basic mesh (100m x 100m)
         points, vertices, boundary = rectangular(2, 2, 100, 100)
@@ -961,7 +968,7 @@ class Test_Sww2Dem(unittest.TestCase):
         domain.geo_reference = Geo_reference(56, 308500, 6189000)
 
 
-        # FIXME: de0 algorithm doesn't recreate a linear function! 
+        # FIXME: de0 algorithm doesn't recreate a linear function!
         domain.set_quantity('elevation', lambda x, y:-x - y)
         domain.set_quantity('stage', 0)
 
@@ -972,14 +979,14 @@ class Test_Sww2Dem(unittest.TestCase):
         sww = SWW_file(domain)
         sww.store_connectivity()
         sww.store_timestep()
-        
+
         #domain.tight_slope_limiters = 1
         domain.evolve_to_end(finaltime=0.01)
         sww.store_timestep()
 
         cellsize = 10.0  # 10m grid
 
-        
+
         # Export to ascii/prj files
         sww2dem(domain.get_name() + '.sww',
                 domain.get_name() + '_elevation.asc',
@@ -1062,7 +1069,7 @@ class Test_Sww2Dem(unittest.TestCase):
 
         # Check grid values (FIXME: Use same strategy for other sww2dem tests)
 
-        
+
 #         V = [-1.000e+02, -1.067e+02, -1.133e+02, -1.200e+02, -1.267e+02, -1.333e+02, -1.367e+02, -1.400e+02, -1.433e+02, -1.467e+02, -1.500e+02,
 #              - 9.333e+01, -1.000e+02, -1.067e+02, -1.133e+02, -1.200e+02, -1.267e+02, -1.300e+02, -1.333e+02, -1.367e+02, -1.400e+02, -1.467e+02,
 #              - 8.667e+01, -9.333e+01, -1.000e+02, -1.067e+02, -1.133e+02, -1.200e+02, -1.233e+02, -1.267e+02, -1.300e+02, -1.367e+02, -1.433e+02,
@@ -1073,9 +1080,9 @@ class Test_Sww2Dem(unittest.TestCase):
 #              - 6.000e+01, -6.667e+01, -7.333e+01, -8.000e+01, -8.333e+01, -8.667e+01, -9.333e+01, -1.000e+02, -1.067e+02, -1.133e+02, -1.200e+02,
 #              - 5.667e+01, -6.333e+01, -7.000e+01, -7.333e+01, -7.667e+01, -8.000e+01, -8.667e+01, -9.333e+01, -1.000e+02, -1.067e+02, -1.133e+02,
 #              - 5.333e+01, -6.000e+01, -6.333e+01, -6.667e+01, -7.000e+01, -7.333e+01, -8.000e+01, -8.667e+01, -9.333e+01, -1.000e+02, -1.067e+02,
-#              - 5.000e+01, -5.333e+01, -5.667e+01, -6.000e+01, -6.333e+01, -6.667e+01, -7.333e+01, -8.000e+01, -8.667e+01, -9.333e+01, -1.000e+02 ]    
-        
-        
+#              - 5.000e+01, -5.333e+01, -5.667e+01, -6.000e+01, -6.333e+01, -6.667e+01, -7.333e+01, -8.000e+01, -8.667e+01, -9.333e+01, -1.000e+02 ]
+
+
         V = [-1.000e+02, -1.033e+02, -1.067e+02, -1.100e+02, -1.133e+02, -1.167e+02, -1.233e+02, -1.300e+02, -1.367e+02, -1.433e+02, -1.500e+02,
              -9.667e+01, -1.000e+02, -1.033e+02, -1.067e+02, -1.100e+02, -1.133e+02, -1.200e+02, -1.267e+02, -1.333e+02, -1.400e+02, -1.433e+02,
              -9.333e+01, -9.667e+01, -1.000e+02, -1.033e+02, -1.067e+02, -1.100e+02, -1.167e+02, -1.233e+02, -1.300e+02, -1.333e+02, -1.367e+02,
@@ -1087,7 +1094,7 @@ class Test_Sww2Dem(unittest.TestCase):
              -6.333e+01, -6.667e+01, -7.000e+01, -7.667e+01, -8.333e+01, -9.000e+01, -9.333e+01, -9.667e+01, -1.000e+02, -1.033e+02, -1.067e+02,
              -5.667e+01, -6.000e+01, -6.667e+01, -7.333e+01, -8.000e+01, -8.667e+01, -9.000e+01, -9.333e+01, -9.667e+01, -1.000e+02, -1.033e+02,
              -5.000e+01, -5.667e+01, -6.333e+01, -7.000e+01, -7.667e+01, -8.333e+01, -8.667e+01, -9.000e+01, -9.333e+01, -9.667e+01, -1.000e+02]
-        
+
         for i, line in enumerate(lines[6:]):
             for j, value in enumerate(line.split()):
                 assert num.allclose(float(value), V[i * 11 + j],
@@ -1104,7 +1111,7 @@ class Test_Sww2Dem(unittest.TestCase):
         os.remove(prjfile)
         os.remove(ascfile)
         os.remove(swwfile)
-        
+
 
 
 
@@ -1120,7 +1127,8 @@ class Test_Sww2Dem(unittest.TestCase):
         0.0 ....
         """
 
-        import time, os
+        import time
+        import os
 
         # Setup
 
@@ -1156,7 +1164,7 @@ class Test_Sww2Dem(unittest.TestCase):
         sww = SWW_file(domain)
         sww.store_connectivity()
         sww.store_timestep()
-        
+
         domain.tight_slope_limiters = 1
         domain.evolve_to_end(finaltime=0.01)
         sww.store_timestep()
@@ -1312,7 +1320,8 @@ class Test_Sww2Dem(unittest.TestCase):
 
         """
 
-        import time, os
+        import time
+        import os
 
         # Setup
 
@@ -1476,7 +1485,8 @@ class Test_Sww2Dem(unittest.TestCase):
         This tests the reduction of quantity stage using min
         """
 
-        import time, os
+        import time
+        import os
 
         # Setup
         self.domain.set_name('datatest')
@@ -1583,7 +1593,8 @@ class Test_Sww2Dem(unittest.TestCase):
         This tests the reduction of quantity stage using min
         """
 
-        import time, os
+        import time
+        import os
 
         # Setup
         self.domain.set_name('datatest')
@@ -1667,9 +1678,9 @@ class Test_Sww2Dem(unittest.TestCase):
                 for i in range(5):
                     if i % 2 == 0:
                         index = jj//2 + i//2 * 3
-                        
+
                         val = stage[1, index]
-                   
+
                         assert num.allclose(float(L[i]), val)
 
         fid.close()
@@ -1687,7 +1698,8 @@ class Test_Sww2Dem(unittest.TestCase):
         This tests the use of derived quantities
         """
 
-        import time, os
+        import time
+        import os
 
         # Setup
         self.domain.set_name('datatest')
@@ -1800,7 +1812,8 @@ class Test_Sww2Dem(unittest.TestCase):
         This test includes the writing of missing values
         """
 
-        import time, os
+        import time
+        import os
 
         # Setup mesh not coinciding with rectangle.
         # This will cause missing values to occur in gridded data
@@ -1952,7 +1965,8 @@ class Test_Sww2Dem(unittest.TestCase):
         format
         """
 
-        import time, os
+        import time
+        import os
 
 
         NODATA_value = 1758323
@@ -2031,9 +2045,9 @@ class Test_Sww2Dem(unittest.TestCase):
                     - 0.66666663, -0.75      , -0.91666663, -1.        , -1.08333325,
                     - 0.5       , -0.66666663, -0.83333331, -0.91666663, -1.        ],
 
-        
+
         # pprint(grid)
-        
+
         assert num.allclose(grid, ref_grid)
 
         fid.close()
@@ -2044,13 +2058,14 @@ class Test_Sww2Dem(unittest.TestCase):
         os.remove(sww.filename)
         os.remove(self.domain.get_name() + '_elevation')
         os.remove(self.domain.get_name() + '_elevation.ers')
-       
+
     def old_test_export_grid_parallel(self):
         """Test that sww information can be converted correctly to asc/prj
         format readable by e.g. ArcView
         """
 
-        import time, os
+        import time
+        import os
 
         base_name = 'tegp'
         # Setup
@@ -2104,7 +2119,7 @@ class Test_Sww2Dem(unittest.TestCase):
                     format='asc')
 
         prjfile = base_name + '_P0_8_elevation_yeah.prj'
-        ascfile = base_name + '_P0_8_elevation_yeah.asc'       
+        ascfile = base_name + '_P0_8_elevation_yeah.asc'
         # Check asc file
         ascid = open(ascfile)
         lines = ascid.readlines()
@@ -2116,13 +2131,13 @@ class Test_Sww2Dem(unittest.TestCase):
             for i in range(5):
                 # print " -i*cellsize - y",  -i*cellsize - y
                 # print "float(L[i])", float(L[i])
-                assert num.allclose(float(L[i]), -i * cellsize - y)               
+                assert num.allclose(float(L[i]), -i * cellsize - y)
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
 
         prjfile = base_name + '_P1_8_elevation_yeah.prj'
-        ascfile = base_name + '_P1_8_elevation_yeah.asc'       
+        ascfile = base_name + '_P1_8_elevation_yeah.asc'
         # Check asc file
         ascid = open(ascfile)
         lines = ascid.readlines()
@@ -2134,7 +2149,7 @@ class Test_Sww2Dem(unittest.TestCase):
             for i in range(5):
                 # print " -i*cellsize - y",  -i*cellsize - y
                 # print "float(L[i])", float(L[i])
-                assert num.allclose(float(L[i]), -i * cellsize - y)               
+                assert num.allclose(float(L[i]), -i * cellsize - y)
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
@@ -2178,7 +2193,8 @@ class Test_Sww2Dem(unittest.TestCase):
         format readable by e.g. ArcView
         """
 
-        import time, os
+        import time
+        import os
 
         base_name = 'tegp'
         # Setup
@@ -2239,7 +2255,7 @@ class Test_Sww2Dem(unittest.TestCase):
                     format='asc')
 
         prjfile = base_name + '_P0_8_elevation_yeah.prj'
-        ascfile = base_name + '_P0_8_elevation_yeah.asc'       
+        ascfile = base_name + '_P0_8_elevation_yeah.asc'
         # Check asc file
         ascid = open(ascfile)
         lines = ascid.readlines()
@@ -2251,13 +2267,13 @@ class Test_Sww2Dem(unittest.TestCase):
             for i in range(5):
                 # print " -i*cellsize - y",  -i*cellsize - y
                 # print "float(L[i])", float(L[i])
-                assert num.allclose(float(L[i]), -i * cellsize - y, rtol=5.0e-2, atol=5.0e-2)               
+                assert num.allclose(float(L[i]), -i * cellsize - y, rtol=5.0e-2, atol=5.0e-2)
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
 
         prjfile = base_name + '_P1_8_elevation_yeah.prj'
-        ascfile = base_name + '_P1_8_elevation_yeah.asc'       
+        ascfile = base_name + '_P1_8_elevation_yeah.asc'
         # Check asc file
         ascid = open(ascfile)
         lines = ascid.readlines()
@@ -2269,7 +2285,7 @@ class Test_Sww2Dem(unittest.TestCase):
             for i in range(5):
                 # print " -i*cellsize - y",  -i*cellsize - y
                 # print "float(L[i])", float(L[i])
-                assert num.allclose(float(L[i]), -i * cellsize - y, rtol=5.0e-2, atol=5.0e-2)               
+                assert num.allclose(float(L[i]), -i * cellsize - y, rtol=5.0e-2, atol=5.0e-2)
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
@@ -2316,7 +2332,8 @@ class Test_Sww2Dem(unittest.TestCase):
         format readable by e.g. ArcView
         """
 
-        import time, os
+        import time
+        import os
 
         try:
             os.remove('teg*.sww')
@@ -2390,7 +2407,7 @@ class Test_Sww2Dem(unittest.TestCase):
                 #print(i, float(L[i]), -i * cellsize - y)
                 msg = 'Got %f expected %f' % (float(L[i]), -i * cellsize - y)
                 assert num.allclose(float(L[i]), -i * cellsize - y), msg
-                
+
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
@@ -2403,7 +2420,8 @@ class Test_Sww2Dem(unittest.TestCase):
         format readable by e.g. ArcView
         """
 
-        import time, os
+        import time
+        import os
 
         try:
             os.remove('teg*.sww')
@@ -2481,12 +2499,12 @@ class Test_Sww2Dem(unittest.TestCase):
                 #print(i, float(L[i]), -i * cellsize - y)
                 msg = 'Got %f expected %f' % (float(L[i]), -i * cellsize - y)
                 assert num.allclose(float(L[i]), -i * cellsize - y, rtol=5.0e-2, atol=5.0e-2), msg
-                
+
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
         os.remove(swwfile)
-    
+
 
     def old_test_export_gridII(self):
         """
@@ -2495,7 +2513,8 @@ class Test_Sww2Dem(unittest.TestCase):
         format readable by e.g. ArcView
         """
 
-        import time, os
+        import time
+        import os
 
         try:
             os.remove('teg*.sww')
@@ -2534,11 +2553,11 @@ class Test_Sww2Dem(unittest.TestCase):
         time = fid.variables['time'][:]
         stage = fid.variables['stage'][:]
         xmomentum = fid.variables['xmomentum'][:]
-        ymomentum = fid.variables['ymomentum'][:]        
+        ymomentum = fid.variables['ymomentum'][:]
 
         # print 'stage', stage
         # print 'xmom', xmomentum
-        # print 'ymom', ymomentum        
+        # print 'ymom', ymomentum
 
         fid.close()
 
@@ -2566,7 +2585,7 @@ class Test_Sww2Dem(unittest.TestCase):
 
         prjfile = self.domain.get_name() + '_elevation.prj'
         ascfile = self.domain.get_name() + '_elevation.asc'
-        
+
         # Check asc file
         ascid = open(ascfile)
         lines = ascid.readlines()
@@ -2593,7 +2612,7 @@ class Test_Sww2Dem(unittest.TestCase):
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
-        
+
         # Check asc file
         ascfile = self.domain.get_name() + '_depth.asc'
         prjfile = self.domain.get_name() + '_depth.prj'
@@ -2615,7 +2634,7 @@ class Test_Sww2Dem(unittest.TestCase):
             y = (4 - j) * cellsize
             for i in range(5):
                 # print " -i*cellsize - y",  -i*cellsize - y
-                # print "float(L[i])", float(L[i])                
+                # print "float(L[i])", float(L[i])
                 assert num.allclose(float(L[i]), 1 - (-i * cellsize - y))
 
         # Cleanup
@@ -2630,7 +2649,8 @@ class Test_Sww2Dem(unittest.TestCase):
         format readable by e.g. ArcView
         """
 
-        import time, os
+        import time
+        import os
 
         try:
             os.remove('teg*.sww')
@@ -2675,11 +2695,11 @@ class Test_Sww2Dem(unittest.TestCase):
         time = fid.variables['time'][:]
         stage = fid.variables['stage'][:]
         xmomentum = fid.variables['xmomentum'][:]
-        ymomentum = fid.variables['ymomentum'][:]        
+        ymomentum = fid.variables['ymomentum'][:]
 
         # print 'stage', stage
         # print 'xmom', xmomentum
-        # print 'ymom', ymomentum        
+        # print 'ymom', ymomentum
 
         fid.close()
 
@@ -2707,7 +2727,7 @@ class Test_Sww2Dem(unittest.TestCase):
 
         prjfile = domain.get_name() + '_elevation.prj'
         ascfile = domain.get_name() + '_elevation.asc'
-        
+
         # Check asc file
         ascid = open(ascfile)
         lines = ascid.readlines()
@@ -2734,7 +2754,7 @@ class Test_Sww2Dem(unittest.TestCase):
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
-        
+
         # Check asc file
         ascfile = domain.get_name() + '_depth.asc'
         prjfile = domain.get_name() + '_depth.prj'
@@ -2756,7 +2776,7 @@ class Test_Sww2Dem(unittest.TestCase):
             y = (4 - j) * cellsize
             for i in range(5):
                 # print (" -i*cellsize - y", 1.0 - (-i*cellsize - y))
-                # print ("float(L[i])", float(L[i]) )               
+                # print ("float(L[i])", float(L[i]) )
                 assert num.allclose(float(L[i]), 1 - (-i * cellsize - y), rtol=5.0e-2, atol=5.0e-2)
 
         # Cleanup
@@ -2772,7 +2792,8 @@ class Test_Sww2Dem(unittest.TestCase):
         format readable by e.g. ArcView
         """
 
-        import time, os
+        import time
+        import os
 
         try:
             os.remove('teg*.sww')
@@ -2780,7 +2801,7 @@ class Test_Sww2Dem(unittest.TestCase):
             pass
 
         # Setup
-        
+
         self.domain.set_name('tegIII')
 
         swwfile = self.domain.get_name() + '.sww'
@@ -2793,7 +2814,7 @@ class Test_Sww2Dem(unittest.TestCase):
         self.domain.set_quantity('stage', 1.0)
 
         self.domain.geo_reference = Geo_reference(56, 308500, 6189000)
-        
+
         sww = SWW_file(self.domain)
         sww.store_connectivity()
         sww.store_timestep()  # 'stage')
@@ -2841,7 +2862,7 @@ class Test_Sww2Dem(unittest.TestCase):
 
         prjfile = self.domain.get_name() + '_elevation_yeah.prj'
         ascfile = self.domain.get_name() + '_elevation_yeah.asc'
-        
+
         # Check asc file
         ascid = open(ascfile)
         lines = ascid.readlines()
@@ -2864,11 +2885,11 @@ class Test_Sww2Dem(unittest.TestCase):
                 # print " -i*cellsize - y",  -i*cellsize - y
                 # print "float(L[i])", float(L[i])
                 assert num.allclose(float(L[i]), -i * cellsize - y)
-                
+
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
-        
+
         # Check asc file
         ascfile = self.domain.get_name() + '_depth_yeah.asc'
         prjfile = self.domain.get_name() + '_depth_yeah.prj'
@@ -2903,7 +2924,8 @@ class Test_Sww2Dem(unittest.TestCase):
         format readable by e.g. ArcView
         """
 
-        import time, os
+        import time
+        import os
 
         try:
             os.remove('teg*.sww')
@@ -2926,7 +2948,7 @@ class Test_Sww2Dem(unittest.TestCase):
         domain.set_quantity('stage', 1.0)
 
         domain.geo_reference = Geo_reference(56, 308500, 6189000)
-        
+
         sww = SWW_file(domain)
         sww.store_connectivity()
         sww.store_timestep()  # 'stage')
@@ -2974,7 +2996,7 @@ class Test_Sww2Dem(unittest.TestCase):
 
         prjfile = domain.get_name() + '_elevation_yeah.prj'
         ascfile = domain.get_name() + '_elevation_yeah.asc'
-        
+
         # Check asc file
         ascid = open(ascfile)
         lines = ascid.readlines()
@@ -2997,11 +3019,11 @@ class Test_Sww2Dem(unittest.TestCase):
                 # print " -i*cellsize - y",  -i*cellsize - y
                 # print "float(L[i])", float(L[i])
                 assert num.allclose(float(L[i]), -i * cellsize - y, rtol=5.0e-2, atol=5.0e-2)
-                
+
         # Cleanup
         os.remove(prjfile)
         os.remove(ascfile)
-        
+
         # Check asc file
         ascfile = domain.get_name() + '_depth_yeah.asc'
         prjfile = domain.get_name() + '_depth_yeah.prj'
@@ -3040,11 +3062,11 @@ class Test_Sww2Dem(unittest.TestCase):
                         cellsize=99,
                         verbose=self.verbose,
                         format='asc')
-        except IOError:
+        except OSError:
             pass
         else:
             self.assertTrue(0 == 1, 'Bad input did not throw exception error!')
-        
+
     def test_sww2dem_verbose_True(self):
         """test sww2dem when verbose is True
         Uses the example from function test_sww2dem_asc_elevation_depth
@@ -3092,7 +3114,7 @@ class Test_Sww2Dem(unittest.TestCase):
                    cellsize=cellsize,
                    number_of_decimal_places=9,
                    verbose=True)
-              
+
         log_critical_msg = open(LOG_FILENAME)
         output = log_critical_msg.read()
         #print(' ')
@@ -3103,9 +3125,9 @@ class Test_Sww2Dem(unittest.TestCase):
         log_critical_msg.close()
         output = output.split('\n')
 
-        
+
         #print (output, 'log message output')
-    
+
         output_verbose_True = '''Reading from datatest_verbose.sww
 Output directory is datatest_verbose_elevation.asc
 ------------------------------------------------
@@ -3126,7 +3148,7 @@ Statistics of SWW file:
 '''
 
         output_verbose_True = output_verbose_True.split('\n')
-        
+
         # check the output line by line
         for output_verbose_True_line, line in zip(output_verbose_True,
                                                   output[:len(output_verbose_True)-1]):
@@ -3151,12 +3173,12 @@ Statistics of SWW file:
     #     os.remove(LOG_FILENAME)
         log.logging.disable(log.logging.CRITICAL)
 
-        try:    
+        try:
             os.remove(LOG_FILENAME)
         except OSError:
             pass
-        
-        
+
+
 
 #################################################################################
 

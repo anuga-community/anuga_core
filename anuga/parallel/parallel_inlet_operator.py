@@ -317,8 +317,8 @@ class Parallel_Inlet_operator(Inlet_operator):
             else:
                 depths = self.inlet.get_depths()
                 self.inlet.set_xmoms(depths*u)
-                self.inlet.set_ymoms(depths*v) 
-     
+                self.inlet.set_ymoms(depths*v)
+
             if self.zero_velocity:
                 self.inlet.set_xmoms(0.0)
                 self.inlet.set_ymoms(0.0)
@@ -335,8 +335,8 @@ class Parallel_Inlet_operator(Inlet_operator):
             else:
                 depths = self.inlet.get_depths()
                 self.inlet.set_xmoms(depths*u)
-                self.inlet.set_ymoms(depths*v)            
-            
+                self.inlet.set_ymoms(depths*v)
+
             if self.zero_velocity:
                 self.inlet.set_xmoms(0.0)
                 self.inlet.set_ymoms(0.0)

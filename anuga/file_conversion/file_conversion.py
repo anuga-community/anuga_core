@@ -45,7 +45,7 @@ def sww2obj(filename, size):
     # FIXME SR: shouldn't size be read from the incoming file?
 
     if filename[-4:] != '.sww':
-        raise IOError('Output file %s should be of type .sww.' % filename)
+        raise OSError('Output file %s should be of type .sww.' % filename)
 
     basefilename = filename[:-4]
 
@@ -115,12 +115,13 @@ def timefile2netcdf(file_text, file_out = None, quantity_names=None, \
     filename is assumed to be the rootname with extensions .txt/.tms and .sww
     """
 
-    import time, calendar
+    import time
+    import calendar
     from anuga.config import time_format
     from anuga.utilities.numerical_tools import ensure_numeric
 
     if file_text[-4:] != '.txt':
-        raise IOError('Input file %s should be of type .txt.' % file_text)
+        raise OSError('Input file %s should be of type .txt.' % file_text)
 
     if file_out is None:
         file_out = file_text[:-4] + '.tms'
@@ -161,7 +162,8 @@ def timefile2netcdf(file_text, file_out = None, quantity_names=None, \
 
     # Read times proper
     from anuga.config import time_format
-    import time, calendar
+    import time
+    import calendar
 
     fid = open(file_text)
     lines = fid.readlines()
@@ -228,7 +230,7 @@ def tsh2sww(filename, verbose=False):
     """
 
     if filename[-4:] != '.tsh' and filename[-4:] != '.msh':
-        raise IOError('Input file %s should be .tsh or .msh.' % name_out)
+        raise OSError('Input file %s should be .tsh or .msh.' % name_out)
 
     if verbose == True: log.critical('Creating domain from %s' % filename)
 

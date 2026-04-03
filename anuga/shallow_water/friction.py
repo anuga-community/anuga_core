@@ -22,7 +22,7 @@ from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
 
 
 def manning_friction_semi_implicit(domain):
-    
+
     if domain.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
         if domain.use_sloped_mannings:
             # OpenMP version for sloped mannings
@@ -56,11 +56,11 @@ multiprocessor_mode {domain.multiprocessor_mode} not supported
 # def manning_friction_semi_implicit_cpu(domain):
 #     """Apply (Manning) friction to water momentum
 #     """
-    
+
 #     from .sw_domain_openmp_ext import manning_friction_flat
 #     from .sw_domain_openmp_ext import manning_friction_sloped
 #     from .sw_domain_openmp_ext import manning_friction_sloped_edge_based
-    
+
 #     xmom = domain.quantities['xmomentum']
 #     ymom = domain.quantities['ymomentum']
 
@@ -104,7 +104,7 @@ multiprocessor_mode {domain.multiprocessor_mode} not supported
 
 
 # def manning_friction_explicit(domain):
-    
+
 #     if domain.multiprocessor_mode in [0,1,2,3]:
 #         manning_friction_explicit_cpu(domain)
 #     elif domain.multiprocessor_mode == 4:

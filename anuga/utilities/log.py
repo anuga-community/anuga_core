@@ -235,7 +235,7 @@ def resource_usage(level=logging.INFO):
                 t = open(_proc_status)
                 v = t.read()
                 t.close()
-            except IOError:
+            except OSError:
                 return 0.0
 
             # get VmKey line, eg: 'VmRSS: 999 kB\n ...
@@ -263,7 +263,7 @@ def resource_usage(level=logging.INFO):
             return _VmB('VmStk:') - since
 
         msg = ('Resource usage: memory=%.1fMB resident=%.1fMB stacksize=%.1fMB'
-               % ((memory() / _scale['MB']), 
+               % ((memory() / _scale['MB']),
                   (resident() / _scale['MB']),
                   (stacksize() / _scale['MB'])))
         log(msg, level)
@@ -326,7 +326,7 @@ def resource_usage_timing(level=logging.INFO, prefix =""):
                 t = open(_proc_status)
                 v = t.read()
                 t.close()
-            except IOError:
+            except OSError:
                 return 0.0
 
             # get VmKey line, eg: 'VmRSS: 999 kB\n ...
@@ -354,14 +354,14 @@ def resource_usage_timing(level=logging.INFO, prefix =""):
             return _VmB('VmStk:') - since
 
         msg = ('Resource usage: memory=%.1fMB resident=%.1fMB stacksize=%.1fMB'
-               % ((memory() / _scale['MB']), 
+               % ((memory() / _scale['MB']),
                   (resident() / _scale['MB']),
                   (stacksize() / _scale['MB'])))
         log(msg, level)
         timingInfo('sys_platform, ' + sys.platform)
-        timingInfo(prefix + 'memory, ' + str((memory() / _scale['MB'])))
-        timingInfo(prefix + 'resident, ' + str((resident() / _scale['MB'])))
-        timingInfo(prefix + 'stacksize, ' + str((stacksize() / _scale['MB'])))
+        timingInfo(prefix + 'memory, ' + str(memory() / _scale['MB']))
+        timingInfo(prefix + 'resident, ' + str(resident() / _scale['MB']))
+        timingInfo(prefix + 'stacksize, ' + str(stacksize() / _scale['MB']))
     else:
         # Windows code from: http://code.activestate.com/recipes/511491/
         try:
@@ -395,8 +395,8 @@ def resource_usage_timing(level=logging.INFO, prefix =""):
                   (memoryStatusEx.ullAvailPhys / _scale['MB'])))
         log(msg, level)
         timingInfo('sys_platform, ' + sys.platform)
-        timingInfo(prefix + 'total_memory, ' + str((memoryStatusEx.ullTotalPhys / _scale['MB'])))
-        timingInfo(prefix + 'free_memory, ' + str((memoryStatusEx.ullAvailPhys / _scale['MB'])))
+        timingInfo(prefix + 'total_memory, ' + str(memoryStatusEx.ullTotalPhys / _scale['MB']))
+        timingInfo(prefix + 'free_memory, ' + str(memoryStatusEx.ullAvailPhys / _scale['MB']))
 
 
 ################################################################################

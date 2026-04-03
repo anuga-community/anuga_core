@@ -50,12 +50,12 @@ class Test_region(unittest.TestCase):
 
         #Create shallow water domain
         domain = Domain(points, vertices, boundary)
-        
+
         region = Region(domain, indices=[0,2,3])
 
-        expected_indices = [0,2,3]  
+        expected_indices = [0,2,3]
         assert num.allclose(region.indices, expected_indices)
-        
+
 
     def test_region_polygon(self):
         """create region based on triangle lists."""
@@ -65,12 +65,12 @@ class Test_region(unittest.TestCase):
 
         #Create shallow water domain
         domain = Domain(points, vertices, boundary)
-        
+
         poly = [[0.0,0.0], [0.5,0.0], [0.5,0.5]]
-        
+
         #print poly
         region = Region(domain, polygon=poly)
-        
+
         expected_indices = [1]
         assert num.allclose(region.indices, expected_indices)
 
@@ -83,14 +83,14 @@ class Test_region(unittest.TestCase):
 
         #Create shallow water domain
         domain = Domain(points, vertices, boundary)
-        
+
         region = Region(domain, polygon=[[0.0,0.0], [0.5,0.0], [0.5,0.5]], expand_polygon=True)
-        
+
         expected_indices = [0,1,2,3]
         assert num.allclose(region.indices, expected_indices)
 
-        
-                  
+
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":

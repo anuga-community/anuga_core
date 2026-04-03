@@ -40,7 +40,7 @@ class Test_Domain(unittest.TestCase):
 
         conserved_quantities = ['stage', 'xmomentum', 'ymomentum']
         evolved_quantities = ['stage', 'xmomentum', 'ymomentum', 'xvelocity']
-        
+
         other_quantities = ['elevation', 'friction']
 
         domain = Generic_Domain(points, vertices, None,
@@ -69,7 +69,7 @@ class Test_Domain(unittest.TestCase):
 
         conserved_quantities = ['stage', 'xmomentum', 'ymomentum']
         evolved_quantities = ['stage', 'xmomentum', 'ymomentum', 'xvelocity']
-        
+
         other_quantities = ['elevation', 'friction']
 
         domain = Generic_Domain(points, vertices, None,
@@ -101,7 +101,7 @@ class Test_Domain(unittest.TestCase):
         assert domain.CFL == 3.0
 
         warnings.simplefilter("default")
-        
+
 
     def test_conserved_quantities(self):
 
@@ -261,7 +261,7 @@ class Test_Domain(unittest.TestCase):
 
         # Check that invalid requests are dealt with
         try:
-            domain.set_quantities_to_be_monitored(['yyyyy'])        
+            domain.set_quantities_to_be_monitored(['yyyyy'])
         except Exception:
             pass
         else:
@@ -269,7 +269,7 @@ class Test_Domain(unittest.TestCase):
             raise Exception(msg)
 
         try:
-            domain.set_quantities_to_be_monitored(['stage-xx'])        
+            domain.set_quantities_to_be_monitored(['stage-xx'])
         except NameError:
             pass
         else:
@@ -290,7 +290,7 @@ class Test_Domain(unittest.TestCase):
             pass
         else:
             msg = 'Should have caught polygon as a string'
-            raise Exception(msg)        
+            raise Exception(msg)
 
 
 
@@ -300,8 +300,8 @@ class Test_Domain(unittest.TestCase):
                                               time_interval = [0,3])
         assert domain.monitor_indices[0] == 1
         assert domain.monitor_time_interval[0] == 0
-        assert domain.monitor_time_interval[1] == 3        
-        
+        assert domain.monitor_time_interval[1] == 3
+
 
     def test_set_quantity_from_expression(self):
         """Quantity set using arbitrary expression
@@ -355,7 +355,7 @@ class Test_Domain(unittest.TestCase):
 
 
 
-                                      
+
     def test_add_quantity(self):
         """Test that quantities already set can be added to using
         add_quantity
@@ -382,49 +382,49 @@ class Test_Domain(unittest.TestCase):
 
         A = num.array([[1,2,3], [5,5,-5], [0,0,9], [-6,3,3]], float)
         B = num.array([[2,4,4], [3,2,1], [6,-3,4], [4,5,-1]], float)
-        
+
         # Shorthands
         stage = domain.quantities['stage']
         elevation = domain.quantities['elevation']
         depth = domain.quantities['depth']
-        
+
         # Go testing
         domain.set_quantity('elevation', A)
         domain.add_quantity('elevation', B)
         assert num.allclose(elevation.vertex_values, A+B)
-        
+
         domain.add_quantity('elevation', 4)
-        assert num.allclose(elevation.vertex_values, A+B+4)        
-        
-        
+        assert num.allclose(elevation.vertex_values, A+B+4)
+
+
         # Test using expression
         domain.set_quantity('stage', [[1,2,3], [5,5,5],
-                                      [0,0,9], [-6, 3, 3]])        
-        domain.set_quantity('depth', 1.0)                                     
-        domain.add_quantity('depth', expression = 'stage - elevation')        
+                                      [0,0,9], [-6, 3, 3]])
+        domain.set_quantity('depth', 1.0)
+        domain.add_quantity('depth', expression = 'stage - elevation')
         assert num.allclose(depth.vertex_values, stage.vertex_values-elevation.vertex_values+1)
-                
-        
+
+
         # Check self referential expression
-        reference = 2*stage.vertex_values - depth.vertex_values 
-        domain.add_quantity('stage', expression = 'stage - depth')                
-        assert num.allclose(stage.vertex_values, reference)        
-                                      
+        reference = 2*stage.vertex_values - depth.vertex_values
+        domain.add_quantity('stage', expression = 'stage - depth')
+        assert num.allclose(stage.vertex_values, reference)
+
 
         # Test using a function
         def f(x, y):
             return x+y
-            
-        domain.set_quantity('elevation', f)            
+
+        domain.set_quantity('elevation', f)
         domain.set_quantity('stage', 5.0)
         domain.set_quantity('depth', expression = 'stage - elevation')
-        
+
         domain.add_quantity('depth', f)
-        assert num.allclose(stage.vertex_values, depth.vertex_values)                
-         
-            
-                                      
-                                      
+        assert num.allclose(stage.vertex_values, depth.vertex_values)
+
+
+
+
     def test_setting_timestepping_method(self):
         """test_setting_timestepping_method
         """
@@ -452,7 +452,7 @@ class Test_Domain(unittest.TestCase):
 
         # Check that invalid requests are dealt with
         try:
-            domain.set_timestepping_method('eee')        
+            domain.set_timestepping_method('eee')
         except Exception:
             pass
         else:
@@ -588,22 +588,22 @@ class Test_Domain(unittest.TestCase):
         try:
             domain.set_boundary({'First': anuga.Dirichlet_boundary([5,2,1])})
         except Exception as ex:
-            assert 'Tag "Second" has not been bound to a boundary object' in str(ex)            
+            assert 'Tag "Second" has not been bound to a boundary object' in str(ex)
         else:
             msg = 'Incomplete set_boundary call should have failed becouse not all tags were bound.'
             raise Exception(msg)
-                                 
+
         # Now set the second one
         domain.set_boundary({'Second': anuga.Transmissive_boundary(domain)})
-        
+
         # Test that exception is raised if invalid tag is supplied
         try:
-            domain.set_boundary({'Eggies': anuga.Transmissive_boundary(domain)})        
+            domain.set_boundary({'Eggies': anuga.Transmissive_boundary(domain)})
         except Exception as ex:
             # Check error message is correct
-            assert 'Tag "Eggies" provided does not exist in the domain.' in str(ex) 
+            assert 'Tag "Eggies" provided does not exist in the domain.' in str(ex)
         else:
-            msg = 'Invalid boundary tag should have failed.'        
+            msg = 'Invalid boundary tag should have failed.'
             raise Exception(msg)
 
 
@@ -628,7 +628,7 @@ class Test_Domain(unittest.TestCase):
                      (3, 2): 'Second'}
 
 
- 
+
         try:
             domain = Generic_Domain(points, vertices, boundary,
                             conserved_quantities = ['stage', 'xmomentum', 'ymomentum'],
@@ -638,7 +638,7 @@ class Test_Domain(unittest.TestCase):
             pass
         else:
             msg = 'Should have caught the evolved quantities not being in order'
-            raise Exception(msg)            
+            raise Exception(msg)
 
 
         domain = Generic_Domain(points, vertices, boundary,
@@ -694,7 +694,7 @@ class Test_Domain(unittest.TestCase):
         assert domain.quantities['xmomentum'].boundary_values[3] == q_cons[1]
         assert domain.quantities['ymomentum'].boundary_values[3] == q_cons[2]
         assert domain.quantities['xvelocity'].boundary_values[3] == q_cons[1]/q_cons[0]
-        assert domain.quantities['yvelocity'].boundary_values[3] == q_cons[2]/q_cons[0]        
+        assert domain.quantities['yvelocity'].boundary_values[3] == q_cons[2]/q_cons[0]
 
 
         q_cons = domain.get_conserved_quantities(3, edge=1) #Transmissive
@@ -702,7 +702,7 @@ class Test_Domain(unittest.TestCase):
         assert domain.quantities['xmomentum'].boundary_values[4] == q_cons[1]
         assert domain.quantities['ymomentum'].boundary_values[4] == q_cons[2]
         assert domain.quantities['xvelocity'].boundary_values[4] == q_cons[1]/q_cons[0]
-        assert domain.quantities['yvelocity'].boundary_values[4] == q_cons[2]/q_cons[0]               
+        assert domain.quantities['yvelocity'].boundary_values[4] == q_cons[2]/q_cons[0]
 
 
         q_cons = domain.get_conserved_quantities(3, edge=2) #Transmissive
@@ -711,7 +711,7 @@ class Test_Domain(unittest.TestCase):
         assert domain.quantities['ymomentum'].boundary_values[5] == q_cons[2]
         assert domain.quantities['xvelocity'].boundary_values[5] == q_cons[1]/q_cons[0]
         assert domain.quantities['yvelocity'].boundary_values[5] == q_cons[2]/q_cons[0]
- 
+
 
     def test_distribute_first_order(self):
         """Domain implements a default first order gradient limiter
@@ -849,7 +849,7 @@ class Test_Domain(unittest.TestCase):
         domain = Generic_Domain(points, vertices, boundary,
                         conserved_quantities =\
                         ['stage', 'xmomentum', 'ymomentum'])
-        domain.set_default_order(1)                        
+        domain.set_default_order(1)
         domain.check_integrity()
 
         domain.set_quantity('stage', [[1,2,3], [5,5,5],
@@ -880,11 +880,11 @@ class Test_Domain(unittest.TestCase):
         self.assertTrue(domain.test == "Mound",
                         'set region failed')
 
-                             
+
     def test_rectangular_periodic_and_ghosts(self):
 
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_periodic
-        
+
 
         M=5
         N=2
@@ -907,7 +907,7 @@ class Test_Domain(unittest.TestCase):
         def xylocation(x,y):
             return 15*x + 9*y
 
-        
+
         domain.set_quantity('quant1',xylocation,location='centroids')
         domain.set_quantity('quant2',xylocation,location='centroids')
 
@@ -939,7 +939,7 @@ class Test_Domain(unittest.TestCase):
                                10.,   14.,   14.5,  12.5,  13.,   17.,   17.5,  15.5,  16.,   20.,   20.5,
                                 3.5,   4.,    8.,    8.5])
 
-        
+
         assert num.allclose(domain.tri_full_flag, [0, 0, 0, 0, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1,
                                                    1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0])
 
@@ -948,7 +948,7 @@ class Test_Domain(unittest.TestCase):
 
 
         #assert num.allclose(domain.number_of_full_nodes, 18)
-        
+
         assert num.allclose(domain.number_of_full_triangles, 20)
 
         #Test that points are arranged in a counter clock wise order

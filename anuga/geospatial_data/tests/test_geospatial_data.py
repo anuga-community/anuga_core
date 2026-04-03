@@ -513,7 +513,7 @@ class Test_Geospatial_data(unittest.TestCase):
 
         Test that point sets with attributes can be clipped by a polygon
         """
-        
+
         from anuga.coordinate_transforms.geo_reference import Geo_reference
 
         points = [[-1, 4], [0.2, 0.5], [1.0, 2.1], [0.4, 0.3], [3.0, 5.3],
@@ -1193,7 +1193,7 @@ class Test_Geospatial_data(unittest.TestCase):
         fileName = tempfile.mktemp('.pts')
         try:
             results = Geospatial_data(file_name=fileName)
-        except IOError:
+        except OSError:
             pass
         else:
             msg = 'imaginary file did not raise error!'
@@ -1290,7 +1290,7 @@ class Test_Geospatial_data(unittest.TestCase):
         adds txt and pts files, reads the files and adds them
         checking results are correct
 
-        # FIXME(Ole): I think this test is wrong as is the whole approach to adding geospatia object. 
+        # FIXME(Ole): I think this test is wrong as is the whole approach to adding geospatia object.
         Particularly around the handly of georeferences.
         """
 
@@ -1846,7 +1846,7 @@ class Test_Geospatial_data(unittest.TestCase):
                                              plot_name=None,
                                              seed_num=174,
                                              verbose=False)
-        except IOError:
+        except OSError:
             pass
         else:
             self.fail('Error not thrown error!')

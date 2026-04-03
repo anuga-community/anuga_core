@@ -110,11 +110,11 @@ friction  \n \
         self.assertTrue(len(domain.boundary) == 4,
                       "test_pmesh2Domain Too many boundaries")
         # FIXME change to use get_xllcorner
-        # print "d.geo_reference.xllcorner",domain.geo_reference.xllcorner 
+        # print "d.geo_reference.xllcorner",domain.geo_reference.xllcorner
         self.assertTrue(domain.geo_reference.xllcorner == 140.0,
                       "bad geo_referece")
     #************
-    
+
     def test_pmesh2Domain_instance(self):
         import os
         import tempfile
@@ -189,7 +189,7 @@ friction  \n \
                          answer)
 
         # print domain.quantities['friction'].vertex_values
-        tagged_elements = domain.get_tagged_elements()         
+        tagged_elements = domain.get_tagged_elements()
         assert num.allclose(tagged_elements['dsg'][0], 0)
         assert num.allclose(tagged_elements['ole nielsen'][0], 1)
 
@@ -205,7 +205,7 @@ friction  \n \
         self.assertTrue(len(domain.boundary) == 4,
                       "test_pmesh2Domain Too many boundaries")
         # FIXME change to use get_xllcorner
-        # print "d.geo_reference.xllcorner",domain.geo_reference.xllcorner 
+        # print "d.geo_reference.xllcorner",domain.geo_reference.xllcorner
         self.assertTrue(domain.geo_reference.xllcorner == 140.0,
                       "bad geo_referece")
 

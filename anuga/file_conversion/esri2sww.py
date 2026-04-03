@@ -54,10 +54,10 @@ def esri2sww(bath_dir,
     from anuga.coordinate_transforms.redfearn import redfearn
 
     if sww_file[-4:] != '.sww':
-        raise IOError('Output file %s should be of type .sww.' % sww_file)
+        raise OSError('Output file %s should be of type .sww.' % sww_file)
 
     # So if we want to change the precision it's done here
-    precision = netcdf_float 
+    precision = netcdf_float
 
     # go in to the bath dir and load the only file,
     bath_files = os.listdir(bath_dir)

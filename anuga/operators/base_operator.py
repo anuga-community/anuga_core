@@ -1,11 +1,11 @@
 from anuga.utilities.system_tools import log_to_file
 
 
-class Operator(object):
+class Operator:
     """Operator - generic structure for a fractional operator
-    
+
     This is the base class for all fractional step operators
-    """ 
+    """
 
     counter = 0
 
@@ -15,7 +15,7 @@ class Operator(object):
                  label = None,
                  logging = False,
                  verbose = False):
-        
+
         self.domain = domain
         self.domain.set_fractional_step_operator(self)
 
@@ -55,7 +55,7 @@ class Operator(object):
 
         #timestep = self.domain.get_timestep()
         raise Exception('Need to implement __call__ for your operator')
-                    
+
     def get_timestep(self):
 
         return self.domain.get_timestep()
@@ -74,7 +74,7 @@ class Operator(object):
 
         message = 'You need to implement operator statistics for your operator'
         return message
-    
+
     def timestepping_statistics(self):
 
         message  = 'You need to implement timestepping statistics for your operator'
@@ -107,7 +107,7 @@ class Operator(object):
     def set_logging(self, flag=True):
 
         self.logging = flag
-        
+
 
 
     def activate_logging(self):

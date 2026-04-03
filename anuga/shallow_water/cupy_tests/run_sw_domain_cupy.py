@@ -1,7 +1,8 @@
 """  Test environmental forcing - rain, wind, etc.
 """
 
-import unittest, os
+import unittest
+import os
 
 import anuga
 
@@ -28,7 +29,7 @@ def create_domain(name='domain'):
     domain.set_flow_algorithm('DE0')
     domain.set_low_froude(0)
 
-    domain.set_name(name)  
+    domain.set_name(name)
     domain.set_datadir('.')
 
     #------------------
@@ -171,7 +172,7 @@ gpu_interface2.compile_gpu_kernels()
 nvtxRangePop()
 
 nvtxRangePush('compute fluxes on gpu for domain2')
-timestep2 = domain2.evolve_max_timestep 
+timestep2 = domain2.evolve_max_timestep
 timestep2 = gpu_interface2.compute_fluxes_ext_central_kernel(timestep2)
 nvtxRangePop()
 

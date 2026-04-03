@@ -107,7 +107,7 @@ class Test_tag_region(unittest.TestCase):
                              [ 11.0,  11.0,  11.0],
                              [ 11.0,  11.0,  11.0]])
 
-        
+
         domain.set_quantity('elevation', 10.0)
         domain.set_quantity('stage', give_me_23)
         #this works as well, (is cleaner, but doesn't work for regions)
@@ -123,7 +123,7 @@ class Test_tag_region(unittest.TestCase):
                              [ 10., 10., 10.],
                              [ 33.,  33.0,  33.],
                              [ 33.0,  33.,  33.]])
-        
+
     def test_unique_vertices(self):
         """get values based on triangle lists."""
 
@@ -179,7 +179,7 @@ class Test_tag_region(unittest.TestCase):
                              [ 0.07,  1.07,  0.07],
                              [ 0.07,  0.07,  0.07],
                              [ 0.07,  0.07,  0.07]])
-                         
+
     def test_unique_vertices_average_loc_vert(self):
         """Get values based on triangle lists."""
 
@@ -212,7 +212,7 @@ class Test_tag_region(unittest.TestCase):
         msg = ('frict_points[1]=%s\nexpected=%s'
                % (str(frict_points[1]), str(expected)))
         assert num.allclose(frict_points[1], expected), msg
-  
+
 
     def test_unique_vertices_average_loc_unique_vert_de0(self):
         """
@@ -240,18 +240,18 @@ class Test_tag_region(unittest.TestCase):
 
         #print domain.quantities['friction'].get_values()
         frict_points = domain.quantities['friction'].get_values()
-        
-        
+
+
         expected0 = [ 60.77777778,  60.77777778,  60.77777778]
         expected1 = [ 60.77777778,  60.77777778,  60.77777778]
         expected2 = [ 60.77777778,   1.66666667,  60.77777778]
         expected3 = [  0.66666667,  60.77777778,   1.66666667]
-        
+
         assert num.allclose(frict_points[0],expected0)
         assert num.allclose(frict_points[1],expected1)
         assert num.allclose(frict_points[2],expected2)
-        assert num.allclose(frict_points[3],expected3)                                              
-                         
+        assert num.allclose(frict_points[3],expected3)
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":

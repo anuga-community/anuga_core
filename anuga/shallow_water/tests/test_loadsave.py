@@ -1,7 +1,9 @@
 #!/usr/bin/env python
 
 
-import unittest, os, time
+import unittest
+import os
+import time
 import os.path
 from math import pi, sqrt
 import tempfile
@@ -86,7 +88,7 @@ class Test_LoadSave(unittest.TestCase):
                 os.remove(file)
             except OSError:
                 pass
-        
+
     def test_get_flow_through_cross_section_with_geo(self):
         """test_get_flow_through_cross_section(self):
 
@@ -127,7 +129,7 @@ class Test_LoadSave(unittest.TestCase):
         uh = u*h
 
         Br = Reflective_boundary(domain)     # Side walls
-        Bd = Dirichlet_boundary([w, uh, 0])  # 2 m/s across the 3 m inlet: 
+        Bd = Dirichlet_boundary([w, uh, 0])  # 2 m/s across the 3 m inlet:
 
 
         # Initial conditions
@@ -171,17 +173,17 @@ class Test_LoadSave(unittest.TestCase):
         import pickle
         fid = open('domain_pickle.pickle', 'wb')
         pickle.dump(domain, fid)
-        
+
         fid = open('domain_pickle.pickle', 'rb')
         domain_restored = pickle.load(fid)
 
-        
+
         for t in domain_restored.evolve(yieldstep=0.1, finaltime=1.0):
             # Shortcuts to quantites
             stage = domain_restored.get_quantity('stage')
             xmomentum = domain_restored.get_quantity('xmomentum')
             ymomentum = domain_restored.get_quantity('ymomentum')
-            
+
             # Check that quantities are they should be in the interior
             w_t = stage.get_values(interpolation_points)
             uh_t = xmomentum.get_values(interpolation_points)
@@ -201,7 +203,7 @@ class Test_LoadSave(unittest.TestCase):
                                                           verbose=False)
 
                 assert num.allclose(Q, uh*width)
-                
+
 
 
 #-------------------------------------------------------------
@@ -209,4 +211,4 @@ class Test_LoadSave(unittest.TestCase):
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_LoadSave)
     runner = unittest.TextTestRunner() #verbosity=2)
-    runner.run(suite)    
+    runner.run(suite)

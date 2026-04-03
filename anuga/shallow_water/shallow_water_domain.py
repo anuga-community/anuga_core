@@ -328,7 +328,7 @@ class Domain(Generic_Domain):
         self._Domain_C_struct = None
 
         #-------------------------------
-        # If environment variable OMP_NUM_THREADS is not set, 
+        # If environment variable OMP_NUM_THREADS is not set,
         # then set to default (1 thread). If a value is given to
         # the method, then it will override the default.
         #------------------------------
@@ -418,7 +418,7 @@ class Domain(Generic_Domain):
         ############################################################################
         ## Local-timestepping information
         ############################################################################
-        # FIXME SR: Nice idea but is not generally used, so should hive off to 
+        # FIXME SR: Nice idea but is not generally used, so should hive off to
         # another branch of the code and removed for general use
 
         #
@@ -454,9 +454,9 @@ class Domain(Generic_Domain):
 
 
     #------------------------------------------------
-    # Domain_C_struct is a cdef class with a custom __cinit__, 
-    # so Cython will not auto-generate a default pickling protocol for it; 
-    # when pickle reaches the Domain object and tries to pickle _Domain_C_struct, 
+    # Domain_C_struct is a cdef class with a custom __cinit__,
+    # so Cython will not auto-generate a default pickling protocol for it;
+    # when pickle reaches the Domain object and tries to pickle _Domain_C_struct,
     # you get TypeError: no default __reduce__ due to non-trivial __cinit__.
     # So we implement __getstate__ and __setstate__ to exclude it from pickling,
     # and recreate it lazily when needed.
@@ -485,14 +485,14 @@ class Domain(Generic_Domain):
     def set_plotter(self, *args, **kwargs):
         """Set the plotter for this domain
         """
-        
-        #FIXME SR: Should look into seeing if the triang can use the 
+
+        #FIXME SR: Should look into seeing if the triang can use the
         # triangulation from Domain rather than having two copies
         if self.dplotter is None:
             import anuga
-            self.dplotter = anuga.Domain_plotter(self, *args, **kwargs) 
+            self.dplotter = anuga.Domain_plotter(self, *args, **kwargs)
 
-        
+
         self.triang = self.dplotter.triang
         self.stage = self.dplotter.stage
         self.xmom = self.dplotter.xmom
@@ -514,13 +514,13 @@ class Domain(Generic_Domain):
 
         self.save_stage_frame = self.dplotter.save_stage_frame
         self.plot_stage_frame = self.dplotter.plot_stage_frame
-        self.make_stage_animation = self.dplotter.make_stage_animation        
+        self.make_stage_animation = self.dplotter.make_stage_animation
 
         self.save_speed_frame = self.dplotter.save_speed_frame
         self.plot_speed_frame = self.dplotter.plot_speed_frame
-        self.make_speed_animation = self.dplotter.make_speed_animation        
+        self.make_speed_animation = self.dplotter.make_speed_animation
 
-        
+
     def triplot(self, *args,  **kwargs):
 
         self.set_plotter()
@@ -552,9 +552,9 @@ class Domain(Generic_Domain):
 
     #==============================================================
     # Methods to set and get domain parameters
-    # 
-    # FIXME SR: These (and other paramters) should be refactored 
-    # to save the underlying quantities in np.ndarray(s) for 
+    #
+    # FIXME SR: These (and other paramters) should be refactored
+    # to save the underlying quantities in np.ndarray(s) for
     # efficient access in Cython
     #==============================================================
 
@@ -572,7 +572,7 @@ class Domain(Generic_Domain):
     def timestep(self) -> float:
         """Current timestep [s]"""
         return self._timestep
-    
+
     @timestep.setter
     def timestep(self, value: float):
         """Set current timestep [s]"""
@@ -1087,12 +1087,12 @@ class Domain(Generic_Domain):
         param: timestamp: return datetime corresponding to given timestamp"""
 
         from datetime import datetime
-        
+
         try:
             from datetime import UTC
         except ImportError:
             from datetime import timezone
-            UTC = timezone.utc 
+            UTC = timezone.utc
 
 
         if timestamp is None:
@@ -2071,7 +2071,7 @@ class Domain(Generic_Domain):
                     stage_val = B.get_boundary_values()
                     try:
                         stage_val = float(stage_val)
-                    except:
+                    except (TypeError, ValueError):
                         stage_val = float(stage_val[0])
                     set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
                 evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
@@ -2179,11 +2179,11 @@ class Domain(Generic_Domain):
         else:
             raise Exception('Not implemented')
 
-        nvtxRangePop()        
+        nvtxRangePop()
 
     def distribute_edges_to_vertices(self):
         """Distribute edge values to vertices.
-        
+
         This is a wrapper for the C implementation of the distribution
         from edges to vertices.
         """
@@ -2200,8 +2200,8 @@ class Domain(Generic_Domain):
             # distribute_edges_to_vertices_ext = self.gpu_interface.distribute_edges_to_vertices_kernel
         else:
             raise Exception('Not implemented')
-        
-        
+
+
         distribute_edges_to_vertices_ext(self)
         nvtxRangePop()
 
@@ -2468,10 +2468,10 @@ class Domain(Generic_Domain):
 
         timestep = self.timestep
 
-        # Update height based on discontinuous elevation 
+        # Update height based on discontinuous elevation
         assert self.get_using_discontinuous_elevation()
 
-        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:  
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import update_conserved_quantities
         elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             update_conserved_quantities = self.gpu_interface.update_conserved_quantities_kernel
@@ -2586,9 +2586,9 @@ class Domain(Generic_Domain):
         """
         Calculate the centroid value of x and y momentum from height and velocities.
 
-        This method computes the centroid values of x and y momentum (xmomentum and 
+        This method computes the centroid values of x and y momentum (xmomentum and
         ymomentum) by multiplying the centroid velocities by the centroid height values.
-        The method assumes that the centroids of height and velocities are already 
+        The method assumes that the centroids of height and velocities are already
         up to date.
 
         This is particularly useful for kinematic viscosity calculations where momentum
@@ -2598,12 +2598,12 @@ class Domain(Generic_Domain):
         - xmomentum.centroid_values: product of xvelocity and height at centroids
         - ymomentum.centroid_values: product of yvelocity and height at centroids
 
-        After updating centroid values, the method distributes these values to vertices 
+        After updating centroid values, the method distributes these values to vertices
         and edges via distribute_to_vertices_and_edges().
 
         Notes
         -----
-        This method modifies the centroid_values arrays in-place for both xmomentum 
+        This method modifies the centroid_values arrays in-place for both xmomentum
         and ymomentum quantities.
 
         See Also
@@ -2643,7 +2643,7 @@ class Domain(Generic_Domain):
         self.distribute_to_vertices_and_edges()
 
 
-    
+
 
     def evolve(self,
                yieldstep=None,
@@ -2658,7 +2658,7 @@ class Domain(Generic_Domain):
         yieldstep : float, optional
             Yield every yieldstep time period
         outputstep : float, optional
-            Output to sww file every outputstep time period. outputstep should be 
+            Output to sww file every outputstep time period. outputstep should be
             an integer multiple of yieldstep.
         finaltime : float or datetime, optional
             Evolve until finaltime (can be a float in seconds or a datetime object)
@@ -2715,8 +2715,8 @@ class Domain(Generic_Domain):
         if self.store is True and (self.get_relative_time() == 0.0 or self.evolved_called is False):
             self.initialise_storage()
 
-        
-    
+
+
         #nvtx marker
         nvtxRangePush('_evolve_base')
 
@@ -3011,7 +3011,7 @@ class Domain(Generic_Domain):
                 stage_val = B.get_boundary_values()
                 try:
                     stage_val = float(stage_val)
-                except:
+                except (TypeError, ValueError):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
@@ -3062,7 +3062,7 @@ class Domain(Generic_Domain):
                 stage_val = B.get_boundary_values()
                 try:
                     stage_val = float(stage_val)
-                except:
+                except (TypeError, ValueError):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
@@ -3153,7 +3153,7 @@ class Domain(Generic_Domain):
             stage_val = B.get_boundary_values()
             try:
                 stage_val = float(stage_val)
-            except:
+            except (TypeError, ValueError):
                 stage_val = float(stage_val[0])
             set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
 
@@ -3234,7 +3234,7 @@ class Domain(Generic_Domain):
         # calculated in the first step. Might lead to
         # stability problems but we have not seen any
         # example.
-        #============================================      
+        #============================================
 
         # Update edge values
         self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
@@ -3246,7 +3246,7 @@ class Domain(Generic_Domain):
         # In MPI parallel mode this involves an allreduce to find global minimal timestep
         self.compute_fluxes()
 
-        # Compute forcing terms (friction) 
+        # Compute forcing terms (friction)
         self.compute_forcing_terms()
 
         # Update conserved quantities using timestep from first step
@@ -3294,7 +3294,7 @@ class Domain(Generic_Domain):
         # Combine final and initial values
         # and cleanup
         #=======================================
-        
+
         # self.saxpy_conserved_quantities(2.0/3.0, 1.0/3.0)
         # This caused a roundoff error that created negative water heights
 
@@ -3462,14 +3462,14 @@ class Domain(Generic_Domain):
         datetime : bool, optional
             Flag to use timestamp or datetime.
         track_speeds : bool, optional
-            Optional boolean keyword that decides whether to report location of 
+            Optional boolean keyword that decides whether to report location of
             smallest timestep as well as a histogram and percentile report.
         relative_time : bool, optional
             Flag to report relative time instead of absolute time.
         triangle_id : int, optional
-            Can be used to specify a particular triangle rather than the one with 
+            Can be used to specify a particular triangle rather than the one with
             the largest speed.
-        
+
         Returns
         -------
         str
@@ -3609,17 +3609,17 @@ class Domain(Generic_Domain):
         datetime : bool, optional
             Flag to use timestamp or datetime.
         track_speed : bool, optional
-            Optional boolean keyword that decides whether to report location of 
+            Optional boolean keyword that decides whether to report location of
             smallest timestep as well as a histogram and percentile report.
         relative_time : bool, optional
             Flag to report relative time instead of absolute time.
         triangle_id : int, optional
-            Can be used to specify a particular triangle rather than the one with 
+            Can be used to specify a particular triangle rather than the one with
             the largest speed.
         """
 
-        msg = self.timestepping_statistics(*args, **kwargs) 
-            
+        msg = self.timestepping_statistics(*args, **kwargs)
+
         print(msg, flush=True)
 
 
@@ -3890,17 +3890,17 @@ class Domain(Generic_Domain):
 
     def get_multiprocessor_mode(self):
         """
-        Get multiprocessor mode 
-        
+        Get multiprocessor mode
+
         1. openmp (in development)
         2. gpu/mpi (in development)
         """
-        return self.multiprocessor_mode 
+        return self.multiprocessor_mode
 
     def set_omp_num_threads(self, omp_num_threads=None, verbose=True):
         """
         Set the number of OpenMP threads to use for multithread processing.
-        If OMP_NUM_THREADS is not set, this will set it to the specified 
+        If OMP_NUM_THREADS is not set, this will set it to the specified
         omp_num_threads value.
         By default omp_num_threads is set to 1, other, it will use the default setting.
         """
@@ -3919,7 +3919,7 @@ class Domain(Generic_Domain):
         try:
             omp_num_threads = int(omp_num_threads)
         except ValueError:
-            raise ValueError('OMP_NUM_THREADS must be an integer')            
+            raise ValueError('OMP_NUM_THREADS must be an integer')
 
         # Set the number of OpenMP threads
         self.omp_num_threads = omp_num_threads
@@ -3981,10 +3981,10 @@ class Domain(Generic_Domain):
                     device_id = self.gpu_interface.gpu_dom.device_id
                     print('+==============================================================================+')
                     if not self.gpu_offload_active:
-                        print(f'| WARNING: GPU mode enabled but OMP_TARGET_OFFLOAD=disabled                   |')
+                        print('| WARNING: GPU mode enabled but OMP_TARGET_OFFLOAD=disabled                   |')
                         print(f'| Running on CPUs with OMP_NUM_THREADS={omp_num_threads}')
                     elif device_id < 0:
-                        print(f'| WARNING: No GPU devices found, running on CPU via OpenMP target offloading  |')
+                        print('| WARNING: No GPU devices found, running on CPU via OpenMP target offloading  |')
                     else:
                         print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
                     print('+==============================================================================+')
@@ -4011,8 +4011,8 @@ class Domain(Generic_Domain):
                 print('| WARNING: GPU not available, falling back to multiprocessor_mode 1 (OpenMP)  |')
                 print('+==============================================================================+')
             self.set_multiprocessor_mode(1)
-           
-        
+
+
 
 ################################################################################
 # End of class Shallow Water Domain

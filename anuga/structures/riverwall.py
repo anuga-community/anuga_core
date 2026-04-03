@@ -3,57 +3,57 @@ import os
 from anuga import barrier, numprocs, myid
 import numpy
 
-class RiverWall(object):
-    """Define the elevation of 'riverwalls'. 
+class RiverWall:
+    """Define the elevation of 'riverwalls'.
 
     These are located along each cell edge, and can have an elevation different
     from the bed elevation.
 
     For the DE algorithms, they are used in computing the 'z_half' value [if they
-    are greater than either edge elevation]. 
+    are greater than either edge elevation].
 
     In addition, the DE fluxes at riverwalls are adjusted to agree with a weir relation,
     so long as the riverwall is not too deeply submerged.
 
     As of 22/04/2014, they are only implemented for DE algorithms [the shallow water
     component would be more difficult to implement with other algorithms]
-        
+
     Flux computation over the riverwall:
 
     We have a riverwall, which is treated as a weir.
-    
-    Say the headwater-head is the upstream water depth above the weir elevation (min 0), and 
+
+    Say the headwater-head is the upstream water depth above the weir elevation (min 0), and
       the tailwater head is the downstream water depth above the weir elevation (min 0).
       By definition headwater-head > tailwater-head.
-    
+
     Let s = (headwater head) / (tailwater head), and h = (tailwater head)/(weir height)
      where 'weir height' is the elevation of the weir crest above the minimum
      of the left/right bed elevations
-    
+
     Denote ID as the 'ideal' weir flow, computed from the hydraulic
     formula (including a submergence correction factor from Villemonte,
-    1947), 
+    1947),
          Q1 = 2/3*headwater_head*sqrt(g*2/3*headwater_head)*Qfactor
          Q2 = 2/3*tailwater_head*sqrt(g*2/3*tailwater_head)*Qfactor
          ID = Q1*(1-Q2/Q1)**0.385
-    
+
     Denote SW as the 'shallow-water' weir flux, computed from the approximate
     Riemann solver, where the mid-edge-elevation is the weir crest elevation.
     This makes clear sense for DE0 and DE1. Cell centroid stage/height/bed_elevation
     are used in the flux computation
-    
+
     Then the flux over the weir is computed from:
       w1 = min( max(s-s1, 0.)/(s2-s1), 1.0) # Factor describing relative submergence
       w1' = min( max(h-h1,0.)/(h2-h1), 1.0) # Factor describing absolute submergence
-     flux_over_weir = (w1*SW + (1-w1)*ID)*( 1-w1') + (w1')*SW 
+     flux_over_weir = (w1*SW + (1-w1)*ID)*( 1-w1') + (w1')*SW
     where s1, s2, h1, h2 are user defined parameters
-    
+
     The key idea is that if s<s1, h<h1, then the ideal weir solution is
     used. Otherwise, we linearly blend with the SW solution,
     and the SW solution is used completely if s>s2 or h>h2
 
     """
-    
+
     def __init__(self, domain):
         """Riverwall data structure
 
@@ -65,25 +65,25 @@ class RiverWall(object):
         RiverWall variables are initialised to dummy values, because even
         if no riverwalls are used, some values have to be passed to the flux computation
 
-        Hydraulic parameters are 
+        Hydraulic parameters are
         Qfactor -- Multiplicative factor for ideal weir relation (calibration coef)
         s1 --  Submergence ratio at which we start blending with the shallow water solution (<s2)
         s2 -- Submergence ratio at which we entirely use the shallow water solution  (>s1)
         h1 -- Tailwater head / weir height at which we start blending with the shallow water solution (<h2)
         h2 -- Tailwater head / weir height at which we entirely use the shallow water solution (>h1)
 
-        # Default riverwall hydraulic parameters 
-        default_riverwallPar={'Qfactor':1.0,  
-                              's1': 0.9,      
-                              's2': 0.95,     
-                              'h1': 1.0,      
-                              'h2': 1.5       
+        # Default riverwall hydraulic parameters
+        default_riverwallPar={'Qfactor':1.0,
+                              's1': 0.9,
+                              's2': 0.95,
+                              'h1': 1.0,
+                              'h2': 1.5
                               }
 
         Other variables are:
 
-            riverwall_elevation -- Variable to hold riverwall elevations. 
-                                   len = number of riverwall edges in the domain. 
+            riverwall_elevation -- Variable to hold riverwall elevations.
+                                   len = number of riverwall edges in the domain.
                                    First entry corresponds to first riverwall edge in domain.edge_coordinates,
                                    second entry to second riverwall edge in domain.edge_coordinates, etc
 
@@ -99,14 +99,14 @@ class RiverWall(object):
             hydraulic_variable_names -- Variables to hold the names of variables in columns of the hydraulic
                                         properties table. THE ORDER IS IMPORTANT -- C code ASSUMES IT
 
-            ncol_hydraulic_properties -- Number of columns in the hydraulic properties table 
+            ncol_hydraulic_properties -- Number of columns in the hydraulic properties table
                                         [ = len(hydraulic_variable_names) ]
 
-            hydraulic_properties -- Array with the hydraulic parameters for each riverwall. 
+            hydraulic_properties -- Array with the hydraulic parameters for each riverwall.
                                       number of rows = number of riverwalls which cover edges in the domain
                                       number of cols = number of hydraulic variable names
 
-                                    
+
             input_riverwall_geo, input_riverwall_par -- holds input information
 
         """
@@ -120,12 +120,12 @@ class RiverWall(object):
 
         self.names=[ ]
 
-        # Default riverwall hydraulic parameters 
-        self.default_riverwallPar={'Qfactor':1.0,  
-                                   's1': 0.9,      
-                                   's2': 0.95,     
-                                   'h1': 1.0,      
-                                   'h2': 1.5       
+        # Default riverwall hydraulic parameters
+        self.default_riverwallPar={'Qfactor':1.0,
+                                   's1': 0.9,
+                                   's2': 0.95,
+                                   'h1': 1.0,
+                                   'h2': 1.5
                                    }
 
         # DO NOT CHANGE THE ORDER OF hydraulic_variable_names
@@ -156,9 +156,9 @@ class RiverWall(object):
 
         As of 22/04/2014, these only work with DE algorithms [for which the concept is natural]
 
-        The walls MUST EXACTLY COINCIDE with edges along the mesh 
-        
-        You can force the mesh to do this by passing riverwalls.values() 
+        The walls MUST EXACTLY COINCIDE with edges along the mesh
+
+        You can force the mesh to do this by passing riverwalls.values()
         to the 'breaklines' argument in the function create_mesh_from_regions. You
         may also need to set the maximum_triangle_area for regions, if the breaklines
         split the region.  Do this with the regionPtArea argument in
@@ -172,17 +172,17 @@ class RiverWall(object):
         Inputs:
             riverwalls: Dictionary of '3D polygons', containing xyz locations of named riverwalls.
 
-                exampleRiverWalls = { # Left bank n1 -- 
+                exampleRiverWalls = { # Left bank n1 --
                                       'n1': [[1.0, 1000., 2.],
                                              [1.0, 50., 3.]],
-                                      # Left bank n2 
+                                      # Left bank n2
                                        'n2': [[2.0, 30., 1.0],
-                                              [3.0, 20., 2.], 
+                                              [3.0, 20., 2.],
                                               [2.5, 15., 1.5]]
                                     }
 
             riverwallPar: Dictionary containing a dictionary of named hydraulic parameters for each named riverwall
-                          If parameters are not provided, default values will be used. 
+                          If parameters are not provided, default values will be used.
                           See the help for class 'RiverWall' for an explanation of these
 
                 exampleRiverWallPar = {'n2': {'Qfactor':0.5} }
@@ -192,18 +192,18 @@ class RiverWall(object):
                                    if they are not explicitly set.
                                    If not provided, defaults from __init__ are used. See the help for class 'RiverWall' for more info
 
-                example_default_riverwallPar = {'Qfactor':1.5,  
-                                                's1': 0.9,      
-                                                's2': 0.95,     
-                                                'h1': 1.0,      
-                                                'h2': 1.5       
+                example_default_riverwallPar = {'Qfactor':1.5,
+                                                's1': 0.9,
+                                                's2': 0.95,
+                                                'h1': 1.0,
+                                                'h2': 1.5
                                                }
 
-                example_default_riverwallPar = {'Qfactor':1.5,  
-                                                's1': 10000.,      
-                                                's2': 20000.     
+                example_default_riverwallPar = {'Qfactor':1.5,
+                                                's1': 10000.,
+                                                's2': 20000.
                                                } # Here h1/h2 defaults will come from __init__
-                 
+
 
             tol: Edges will be assigned a riverwall elevation if they are within 'tol' of
                  a segment in riverwalls. Round-off error means this should not be too small.
@@ -220,7 +220,7 @@ class RiverWall(object):
 
         """
 
-        #if(verbose and myid==0):        
+        #if(verbose and myid==0):
         #    print ' '
         #    print 'WARNING: Riverwall is an experimental feature'
         #    print '         At each riverwall edge, we place a thin "wall" between'
@@ -241,7 +241,7 @@ class RiverWall(object):
         # NOTE: domain.riverwallData is initialised in shallow_water_domain.py for DE algorithms
         domain=self.domain
 
-        
+
         # Check flow algorithm
         if(not domain.get_using_discontinuous_elevation()):
             raise Exception('Riverwalls are currently only supported for discontinuous elevation flow algorithms')
@@ -271,7 +271,7 @@ class RiverWall(object):
                 raise Exception(msg)
         # Final default river-wall parameters
         default_riverwallPar=self.default_riverwallPar
-        
+
         # Check that all named inputs in riverwallPar correspond to names in
         # riverwall
         for i in list(riverwallPar.keys()):
@@ -287,7 +287,7 @@ class RiverWall(object):
                     msg = 'Hydraulic parameter named ', j ,\
                           ' not recognised in default_riverwallPar'
                     raise Exception(msg)
-        
+
         if(verbose):
             print('Setting riverwall elevations (P'+str(myid)+')...')
 
@@ -309,7 +309,7 @@ class RiverWall(object):
 
         if(verbose):
             # Use variable to record messages, allows cleaner parallel printing
-            printInfo='' 
+            printInfo=''
 
         for i in nw:
             # Name of riverwall
@@ -319,7 +319,7 @@ class RiverWall(object):
 
             ns=len(riverwalli)-1
 
-            if(verbose): 
+            if(verbose):
                 printInfo=printInfo + '  Wall ' + str(i) +' ....\n'
 
             for j in range(ns):
@@ -338,12 +338,12 @@ class RiverWall(object):
                 if(segLen<tol):
                     if(verbose):
                         printInfo=printInfo+'  Segment with length < tolerance ' + str(tol) +' ignored\n'
-                    continue 
-                
+                    continue
+
                 # Find edge indices which are within 'tol' of the segment
                 # We use a simple, inefficient method [but likely ok in practice
                 # except for very complex riverwalls]
-                
+
                 # Unit vector along segment
                 se_0=-(start[0]-end[0])/segLen
                 se_1=-(start[1]-end[1])/segLen
@@ -356,11 +356,11 @@ class RiverWall(object):
                 pvLen=( pv_0**2 + pv_1**2)**0.5
 
                 # Dot product of pv and se == along-segment distance of projection
-                # of each point onto segment 
+                # of each point onto segment
                 pv_dot_se = pv_0*se_0+pv_1*se_1
                 # Normal distance^2 of each point to segment
                 perp_len_sq = pvLen**2.-pv_dot_se**2.
-               
+
                 # Point is on a levee if the perpendicular distance is < tol,
                 # AND it is between start and end [within a tolerance]
                 onLevee=(perp_len_sq<tol**2)*(pv_dot_se > 0.-tol)*(pv_dot_se<segLen+tol)
@@ -371,11 +371,11 @@ class RiverWall(object):
 
                 if(verbose):
                     printInfo=printInfo+'       Finding ' + str(len(onLevee)) + ' edges on this segment\n'
-            
-                # Levee has Edge_flux_type=1  
+
+                # Levee has Edge_flux_type=1
                 domain.edge_flux_type[onLevee]=1
-     
-                # Get edge elevations as weighted averages of start/end elevations 
+
+                # Get edge elevations as weighted averages of start/end elevations
                 w0=pv_dot_se[onLevee]/segLen
                 w0=w0*(w0>=0.0) # Enforce min of 0
                 w0=w0*(w0<=1.0) + 1.0*(w0>1.0) # Max of 1
@@ -400,7 +400,7 @@ class RiverWall(object):
         # corresponding row in the hydraulic properties table
         self.hydraulic_properties_rowIndex=\
             riverwall_rowIndex[riverwallInds].astype(int)
-        # index of edges which are riverwalls 
+        # index of edges which are riverwalls
         self.riverwall_edges=riverwallInds
 
         # Record the names of the riverwalls
@@ -415,20 +415,20 @@ class RiverWall(object):
                 ki = 3*k+i
                 domain.edge_river_wall_counter[ki] = 0
                 if(domain.edge_flux_type[ki] == 1):
-                    # Update counter of riverwall edges 
+                    # Update counter of riverwall edges
                     RiverWall_counter += 1
                     domain.edge_river_wall_counter[ki] = RiverWall_counter
 
-       
+
         # Now create the hydraulic properties table
 
         # Temporary variable to hold hydraulic properties table
         # This will have as many rows are there are distinct riverwalls,
         # and as many columns as there are hydraulic variables
         hydraulicTmp=numpy.zeros((len(riverwalls), len(default_riverwallPar)))*numpy.nan
-       
+
         if(verbose):
-            print(' ') 
+            print(' ')
         # Loop over every riverwall / hydraulic parameter, and set its value
         for i in nw:
             # Get the riverwall's name and specified parameters
@@ -438,15 +438,15 @@ class RiverWall(object):
             else:
                 riverwalli_Par=None
 
-            # Set the ith riverwall's hydraulic properties 
-            for j, hydraulicVar in enumerate(self.hydraulic_variable_names):    
+            # Set the ith riverwall's hydraulic properties
+            for j, hydraulicVar in enumerate(self.hydraulic_variable_names):
                 if((riverwalli_Par is not None) and (hydraulicVar in riverwalli_Par)):
-                    if(verbose): 
+                    if(verbose):
                         printInfo=printInfo+ '  Using provided '+ str(hydraulicVar)+' '+\
                            str(riverwalli_Par[hydraulicVar])+ ' for riverwall '+ str(name_riverwalli)+'\n'
-                    hydraulicTmp[i,j]=riverwalli_Par[hydraulicVar] 
+                    hydraulicTmp[i,j]=riverwalli_Par[hydraulicVar]
                 else:
-                    if(verbose): 
+                    if(verbose):
                         printInfo=printInfo+ '  Using default '+ str(hydraulicVar)+' '+\
                             str(default_riverwallPar[hydraulicVar])+' for riverwall '+ str(name_riverwalli)+'\n'
                     hydraulicTmp[i,j]=default_riverwallPar[hydraulicVar]
@@ -454,10 +454,10 @@ class RiverWall(object):
         if(verbose):
             print(' ')
 
-        # Check that s1 < s2 
+        # Check that s1 < s2
         for i in nw:
             if(hydraulicTmp[i,1]>= hydraulicTmp[i,2]):
-                msg = 's1 >= s2 on riverwall ' + nw_names[i] +'. This is not allowed' 
+                msg = 's1 >= s2 on riverwall ' + nw_names[i] +'. This is not allowed'
                 raise Exception(msg)
             if( (hydraulicTmp[i,1]<0.) or (hydraulicTmp[i,2] < 0.)):
                 raise Exception('s1 and s2 must be positive, with s1<s2')
@@ -465,14 +465,14 @@ class RiverWall(object):
         # Check that h1 < h2
         for i in nw:
             if(hydraulicTmp[i,3]>= hydraulicTmp[i,4]):
-                msg = 'h1 >= h2 on riverwall ' + nw_names[i] +'. This is not allowed' 
+                msg = 'h1 >= h2 on riverwall ' + nw_names[i] +'. This is not allowed'
                 raise Exception(msg)
             if((hydraulicTmp[i,3]<0.) or (hydraulicTmp[i,4] < 0.)):
                 raise Exception('h1 and h2 must be positive, with h1<h2')
-       
-        # Define the hydraulic properties 
+
+        # Define the hydraulic properties
         self.hydraulic_properties=hydraulicTmp
-      
+
         # Check for riverwall 'connectedness' errors (e.g. theoretically possible
         # to miss an edge due to round-off)
         connectedness=self.check_riverwall_connectedness(verbose=verbose)
@@ -480,9 +480,9 @@ class RiverWall(object):
         self.export_riverwalls_to_text(output_dir=output_dir)
 
 
-        
+
         # Pretty printing of riverwall information in parallel
-        if(verbose): 
+        if(verbose):
             if domain.parallel : barrier()
             for i in range(numprocs):
                 if(myid==i):
@@ -494,12 +494,12 @@ class RiverWall(object):
                     if(not connectedness[1]):
                         raise Exception(msg)
                 if domain.parallel : barrier()
-        return 
-    
+        return
+
     #####################################################################################
 
     def get_centroids_corresponding_to_edgeInds(self, riverwalledgeInds):
-        """ 
+        """
           Get indices of centroids containing edges with indices riverwalledgeInds
         """
         riverwallCentInds=numpy.floor(riverwalledgeInds/3.)
@@ -512,9 +512,9 @@ class RiverWall(object):
     def get_vertices_corresponding_to_edgeInds(self, riverwalledgeInds, checkCoords=True):
         """
          Get indices of vertices corresponding to edges at index riverwalledgeInds
-    
+
          Since each edge has 2 vertices, use V1 and V2
-        
+
          There is indeed a simple relationship between the vertex and edge indices
         """
 
@@ -536,18 +536,18 @@ class RiverWall(object):
             domain=self.domain
             # X coordinates
             assert( numpy.allclose(
-                    domain.edge_coordinates[riverwalledgeInds,0], 
+                    domain.edge_coordinates[riverwalledgeInds,0],
                     0.5*(domain.vertex_coordinates[riverwallV1Inds,0]+domain.vertex_coordinates[riverwallV2Inds,0]))
                     )
             # Y coordinates
             assert( numpy.allclose(
-                    domain.edge_coordinates[riverwalledgeInds,1], 
+                    domain.edge_coordinates[riverwalledgeInds,1],
                     0.5*(domain.vertex_coordinates[riverwallV1Inds,1]+domain.vertex_coordinates[riverwallV2Inds,1]))
                     )
             ####################################################
 
         return riverwallV1Inds, riverwallV2Inds
-    
+
     #####################################################################################
     def is_vertex_on_boundary(self, vertexIndices):
         """
@@ -570,7 +570,7 @@ class RiverWall(object):
         tmp=self.get_vertices_corresponding_to_edgeInds(boundary_edges, checkCoords=False)
         boundary_vertices=numpy.hstack([tmp[0], tmp[1]]).tolist()
 
-        # Get 'unique' vertex coordinates on boundary 
+        # Get 'unique' vertex coordinates on boundary
         node_complex=domain.vertex_coordinates[boundary_vertices,0]+1j*domain.vertex_coordinates[boundary_vertices,1]
 
         # Get riverwall vertex coordinates as complex numbers (for equality testing)
@@ -586,25 +586,25 @@ class RiverWall(object):
     #####################################################################################
     def check_riverwall_connectedness(self, verbose=True):
         """
-            We expect riverwalls to be connected 
+            We expect riverwalls to be connected
              (although they can pass through the bounding polygon several times, especially in parallel)
             Round-off can potentially cause riverwalls to be dis-connected
             Use this routine to check for that
 
             Basically, we search for edges which are connected to vertices which
                 themselves are not connected to other edges. We ignore vertices on the domain's bounding-polygon
-            
+
             For a continuous riverwall, there can be at most 2 endpoints inside the domain
 
-            Otherwise, the riverwall is discontinuous, which is an error 
+            Otherwise, the riverwall is discontinuous, which is an error
 
         """
 
         domain = self.domain
 
         # Preliminary definitions
-        isConnected = True 
-        printInfo = '' 
+        isConnected = True
+        printInfo = ''
 
         if(len(self.names)==0):
             if(verbose):
@@ -639,12 +639,12 @@ class RiverWall(object):
             for j in range(lre-1):
                 # Ignore if already checked
                 if(repeat[j]==1):
-                    continue 
-                # Check for a dupulicate  
+                    continue
+                # Check for a dupulicate
                 dups = (complex_edge_coordinates[(j+1):lre]==complex_edge_coordinates[j]).nonzero()[0]
                 if(len(dups)>0):
                     repeat[dups+j+1] = 1
-            
+
             unique_riverwall_edge_indices = (repeat==0).nonzero()[0]
 
             # Finally, get 'unqiue' edges in the riverwall
@@ -654,7 +654,7 @@ class RiverWall(object):
             uV1_boundary = v1_on_boundary[unique_riverwall_edge_indices]
             uV2_boundary = v2_on_boundary[unique_riverwall_edge_indices]
 
-            # Next, count how many times each vertex value occurs. 
+            # Next, count how many times each vertex value occurs.
             # For a 'connected' riverwall, we only want 2 edges where a vertex occurs only once,
             #   unless the vertex is on the boundary of the domain
             lure = len(uEdges)
@@ -672,8 +672,8 @@ class RiverWall(object):
 
             num_disconnected_edges = ((v1Counter==1)*(1-uV1_boundary)).sum()+\
                                      ((v2Counter==1)*(1-uV2_boundary)).sum()
-          
-            if(verbose):    
+
+            if(verbose):
                 printInfo = printInfo+ '  On riverwall '+ str(name) +' there are '+ str(num_disconnected_edges)+\
                          ' endpoints inside the domain [ignoring points on the boundary polygon] (P'+str(myid)+')\n'
 
@@ -685,7 +685,7 @@ class RiverWall(object):
                 isConnected = False
                 printInfo = printInfo + '  Riverwall ' + name +' appears to be discontinuous. (P'+str(myid)+')\n'+\
                     '  This suggests there is a gap in the wall, which should not occur\n'
-        
+
         return [printInfo, isConnected]
 
     ###################################################################
@@ -704,10 +704,10 @@ class RiverWall(object):
         """
         if(output_dir is None):
             return
-    
+
         if(myid == 0):
             # Make output directory
-            try: 
+            try:
                 os.mkdir(output_dir)
             except OSError:
                 pass
@@ -724,16 +724,16 @@ class RiverWall(object):
                 newFile.close()
         else:
             pass
-        
+
 
 
 
         domain = self.domain
 
         # The other processes might try to write into file
-        # before process 0 has created file, so we need a 
+        # before process 0 has created file, so we need a
         # barrier
-        if domain.parallel: barrier()    
+        if domain.parallel: barrier()
 
         # Now dump the required info to the files
         for i in range(numprocs):
@@ -746,15 +746,15 @@ class RiverWall(object):
                     myXCoords = domain.edge_coordinates[riverWallDomainInds,0] + domain.geo_reference.xllcorner
                     myYCoords = domain.edge_coordinates[riverWallDomainInds,1] + domain.geo_reference.yllcorner
                     myElev = self.riverwall_elevation[riverWallInds]
-               
-                    # Open file for appending data 
+
+                    # Open file for appending data
                     theFile = open(output_dir + '/' + os.path.splitext(os.path.basename(riverWallname))[0] + '.txt','a')
                     for k in range(len(myElev)):
                         theFile.write(str(myXCoords[k]) + ',' + str(myYCoords[k]) + ',' + str(myElev[k]) + '\n')
                     theFile.close()
-                        
+
             else:
                 pass
- 
+
 
         return

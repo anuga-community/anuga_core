@@ -8,7 +8,7 @@ import numpy as num
 
 try:
     from anuga.alpha_shape.alpha_shape import *
-except ImportError:  
+except ImportError:
     from alpha_shape import *
 
 class TestCase(unittest.TestCase):
@@ -16,7 +16,7 @@ class TestCase(unittest.TestCase):
     def setUp(self):
         pass
 
-         
+
     def tearDown(self):
         pass
 
@@ -32,7 +32,7 @@ class TestCase(unittest.TestCase):
         alpha = Alpha_Shape([a,b,c,d,e,f])
         result = alpha.get_delaunay()
         answer = [(0, 1, 5), (5, 1, 4), (4, 2, 3), (2, 4, 1)]
-        assert num.allclose(answer, result) 
+        assert num.allclose(answer, result)
 
     def test_3_points_on_line(self):
         #print "test_delaunay"
@@ -51,7 +51,7 @@ class TestCase(unittest.TestCase):
 
 
     def test_alpha_1(self):
-        #print "test_alpha" 
+        #print "test_alpha"
         a = [0.0, 0.0]
         b = [1.0, 0.0]
         c = [2.0, 0.0]
@@ -63,11 +63,11 @@ class TestCase(unittest.TestCase):
         result = alpha.get_boundary()
         #print "result",result
         answer = [(5, 0), (0, 1), (4, 5), (2, 3), (3, 4), (1, 2)]
-        assert num.allclose(answer, result) 
+        assert num.allclose(answer, result)
 
 
     def test_alpha_2(self):
-        #print "test_alpha" 
+        #print "test_alpha"
         a = [0.0, 0.0]
         b = [2.0, 0.0]
         c = [4.0, 0.0]
@@ -80,11 +80,11 @@ class TestCase(unittest.TestCase):
         result = alpha.get_boundary()
         #print "result",result
         answer = [(0, 3), (3, 6), (0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6)]
-        assert num.allclose(answer, result) 
+        assert num.allclose(answer, result)
 
 
     def test_alpha_3(self):
-        #print "test_alpha" 
+        #print "test_alpha"
         a = [0.0, 0.0]
         b = [1.0, 0.0]
         c = [2.0, 0.0]
@@ -97,7 +97,7 @@ class TestCase(unittest.TestCase):
         result = alpha.get_boundary()
         #print "result",result
         answer = [(5, 0), (0, 1), (4, 5), (2, 3), (3, 4), (1, 2)]
-        assert num.allclose(answer, result) 
+        assert num.allclose(answer, result)
 
 
     def test_boundary_1(self):
@@ -114,8 +114,8 @@ class TestCase(unittest.TestCase):
         result = alpha.get_boundary()
         #print "result",result
         answer = [(0, 3), (3, 6), (0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6)]
-        assert num.allclose(answer, result) 
-   
+        assert num.allclose(answer, result)
+
 
 
     def test_boundary_2(self):
@@ -132,7 +132,7 @@ class TestCase(unittest.TestCase):
         result = alpha.get_boundary()
         #print "result",result
         answer = [(0, 1), (1, 2), (2, 3), (3, 4), (4, 5), (5, 6), (6, 0)]
-        assert num.allclose(answer, result) 
+        assert num.allclose(answer, result)
 
 
     def test_boundary_3(self):
@@ -151,7 +151,7 @@ class TestCase(unittest.TestCase):
         assert num.allclose(answer, result)
 
 
-        
+
     def test_not_enough_points(self):
         #print "test_not_enought_points"
         a = [0.0, 0.0]
@@ -191,17 +191,17 @@ class TestCase(unittest.TestCase):
         #print "command", command
         os.system(command)
         os.remove(fileName)
-        
-        file = open(output_file_name,"r")
+
+        file = open(output_file_name)
         lFile = file.read().split('\n')
         file.close()
         os.remove(output_file_name)
         self.assertTrue(lFile[1] == "5,0" and
-                        lFile[2] == "0,1" and 
-                        lFile[3] == "4,5" and 
-                        lFile[4] == "2,3" and 
-                        lFile[5] == "3,4" and 
-                        lFile[6] == "1,2" and 
+                        lFile[2] == "0,1" and
+                        lFile[3] == "4,5" and
+                        lFile[4] == "2,3" and
+                        lFile[5] == "3,4" and
+                        lFile[6] == "1,2" and
                         lFile[7] == ""
                         ,
                         'boundary file is wrong')
@@ -223,7 +223,7 @@ class TestCase(unittest.TestCase):
         #print "result",result
         answer = [(1, 0), (4, 3), (0, 4), (3, 1)]
         assert num.allclose(answer, result)
-  
+
     def test_sharp_indents(self):
         a = [3.0, 1.0]
         b = [5.0, 3.0]
@@ -241,7 +241,7 @@ class TestCase(unittest.TestCase):
         answer = [(3, 4), (2, 3), (0, 1), (1, 2), (4, 0)]
         assert num.allclose(answer, result)
 
-        
+
     def test_small_islands(self):
         """
         I couldn't find a small data set that could test this feature...
@@ -392,7 +392,7 @@ class TestCase(unittest.TestCase):
                   (69, 114), (57, 56), (56, 55), (58, 57), (64, 63), \
                   (61, 62), (62, 63), (59, 60), (58, 59), (60, 61), \
                   (46, 45)]
-        assert num.allclose(answer, result)    
+        assert num.allclose(answer, result)
 
 #-------------------------------------------------------------
 

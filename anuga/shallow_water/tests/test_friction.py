@@ -2,7 +2,8 @@
 """
 
 
-import unittest, os
+import unittest
+import os
 import anuga
 from anuga import Domain
 from anuga import Reflective_boundary
@@ -24,7 +25,7 @@ class Test_Friction(unittest.TestCase):
                 os.remove(file)
             except OSError:
                 pass
-        
+
 
 
     def test_manning_friction_flat_implicit(self):
@@ -138,7 +139,7 @@ class Test_Friction(unittest.TestCase):
         assert num.allclose(domain.quantities['ymomentum'].semi_implicit_update, ymon_semi_implicit_update)
 
 
-            
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Friction)
     runner = unittest.TextTestRunner(verbosity=1)

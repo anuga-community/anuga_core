@@ -24,11 +24,11 @@ class Inlet_enquiry(inlet.Inlet):
 
         #print region
         #print enquiry_pt
-        
+
         inlet.Inlet.__init__(self, domain, region, verbose)
 
 
-        
+
         self.enquiry_pt = enquiry_pt
         self.invert_elevation = invert_elevation
         self.outward_culvert_vector = outward_culvert_vector
@@ -43,7 +43,7 @@ class Inlet_enquiry(inlet.Inlet):
         #domain_centroids = self.domain.get_centroid_coordinates(absolute=True)
         #vertex_coordinates = self.domain.get_vertex_coordinates(absolute=True)
 
-                
+
         point = self.enquiry_pt
         msg = 'Enquiry Point %s ' %  str(point)
         msg += ' did not fall within the domain boundary.'
@@ -55,13 +55,13 @@ class Inlet_enquiry(inlet.Inlet):
             msg = "Enquiry point %s doesn't intersect mesh, maybe inside a building, try reducing enquiry_gap" % str(self.enquiry_pt)
             raise Exception(msg)
 
-        
+
         if self.enquiry_index in self.triangle_indices:
             msg = 'Enquiry point %s' % (self.enquiry_pt)
             msg += ' is in an inlet triangle'
             import warnings
             warnings.warn(msg)
-            
+
 
     def get_enquiry_position(self):
 

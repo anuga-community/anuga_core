@@ -19,7 +19,7 @@ from anuga.utilities.function_utils import determine_function_type
 from anuga import Region
 from anuga.config import indent
 
-class Set_quantity(object):
+class Set_quantity:
     """
     Helper class to setup calculation of quantity
     associated with a region (defined by indices, polygon or center/radius
@@ -41,7 +41,7 @@ class Set_quantity(object):
 
         #-----------------------------------------------------
         # Make sure region is actually an instance of a region
-        # Otherwise create a new region based on the other 
+        # Otherwise create a new region based on the other
         # input arguments
         #-----------------------------------------------------
         if isinstance(region,Region):
@@ -72,11 +72,11 @@ class Set_quantity(object):
         if test_elevation:
             msg ='Use Set_elevation to maintain mass continuity'
             assert quantity != 'elevation', msg
-            
+
         if test_stage:
             msg ='Use Set_stage to maintain non-negative water depth'
             assert quantity != 'stage', msg
-        
+
         #-------------------------------------------
         # Useful quantity alias
         #------------------------------------------
@@ -140,7 +140,7 @@ class Set_quantity(object):
         self.value_type = determine_function_type(value)
 
 
-        
+
     def get_value(self, x = None, y = None, t = None):
         """Get value of quantity at time t.
         If t not specified, return value at current domain time

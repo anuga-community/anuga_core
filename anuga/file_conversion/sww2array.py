@@ -9,7 +9,7 @@ import os
 import numpy as num
 
 # ANUGA modules
-from anuga.abstract_2d_finite_volumes.util import remove_lone_verts     
+from anuga.abstract_2d_finite_volumes.util import remove_lone_verts
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 from anuga.utilities.system_tools import get_vars_in_expression
 import anuga.utilities.log as log
@@ -52,8 +52,8 @@ def sww2array(name_in,
     'elevation'. Quantity is not a list of quantities.
 
     If reduction is given and it's an index, sww2array will output the quantity at that time-step.
-    If reduction is given and it's a built in function (eg max, min, mean), then that 
-    function is used to reduce the quantity over all time-steps. If reduction is not given, 
+    If reduction is given and it's a built in function (eg max, min, mean), then that
+    function is used to reduce the quantity over all time-steps. If reduction is not given,
     reduction is set to "max" by default.
 
     datum
@@ -73,7 +73,7 @@ def sww2array(name_in,
     basename_in, in_ext = os.path.splitext(name_in)
 
     if in_ext != '.sww':
-        raise IOError('Input format for %s must be .sww' % name_in)
+        raise OSError('Input format for %s must be .sww' % name_in)
 
 
     false_easting = 500000
@@ -81,7 +81,7 @@ def sww2array(name_in,
 
     if quantity is None:
         quantity = 'elevation'
-    
+
     if reduction is None:
         reduction = max
 
@@ -156,7 +156,7 @@ def sww2array(name_in,
             log.critical('    t [s] in [%f, %f], len(t) == %d'
                          % (min(times), max(times), len(times)))
         log.critical('  Quantities [SI units]:')
-        
+
         # Comment out for reduced memory consumption
         for name in ['stage', 'xmomentum', 'ymomentum']:
             q = fid.variables[name][:].flatten()
@@ -196,7 +196,7 @@ def sww2array(name_in,
     for start_slice in range(0, number_of_points, block_size):
         # Limit slice size to array end if at last block
         end_slice = min(start_slice + block_size, number_of_points)
-        
+
         # Get slices of all required variables
         if type(reduction) is not types.BuiltinFunctionType:
             q_dict = {}
@@ -241,7 +241,7 @@ def sww2array(name_in,
                 res = new_res
 
         result[start_slice:end_slice] = res
-                                    
+
     # Post condition: Now q has dimension: number_of_points
     assert len(result.shape) == 1
     assert result.shape[0] == number_of_points
@@ -306,7 +306,7 @@ def sww2array(name_in,
 
 
     fid.close()
-    
+
     #print outside_indices
 
     if verbose:

@@ -108,7 +108,7 @@ def _convert_dem_from_ascii2netcdf(name_in, name_out = None,
     false_northing = float(L[1].strip())
 
     if name_in[-4:] != '.asc':
-        raise IOError('Input file %s should be of type .asc.' % name_in)
+        raise OSError('Input file %s should be of type .asc.' % name_in)
 
     #Read DEM data
     datafile = open(name_in)

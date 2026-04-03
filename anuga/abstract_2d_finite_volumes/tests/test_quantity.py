@@ -1638,7 +1638,7 @@ Parameters
         mesh4.check_integrity()
         quantity = Quantity(mesh4)
 
-        """ Format of asc lat long file 
+        """ Format of asc lat long file
         ncols         5
         nrows         7
         xllcorner     149.9
@@ -1742,11 +1742,11 @@ Parameters
         e = [150.2, -29.8+60]
         # f = [150.4, -30.0]
 
-        eastings = num.array([210590.34672016295, 211173.23637087474, 229892.33388686483, 
+        eastings = num.array([210590.34672016295, 211173.23637087474, 229892.33388686483,
         211759.6453941525, 230436.25127640477] )
         eastings = num.reshape(eastings, (-1, 1))
 
-        northings = num.array([3322575.9043823928, 3344753.070613778, 3322087.0006162403, 
+        northings = num.array([3322575.9043823928, 3344753.070613778, 3322087.0006162403,
         3366930.72821874, 3344262.207060983] )
         northings = num.reshape(northings, (-1, 1))
 
@@ -1774,7 +1774,7 @@ Parameters
         mesh4.check_integrity()
         quantity = Quantity(mesh4)
 
-        """ Format of asc lat long file 
+        """ Format of asc lat long file
         ncols         5
         nrows         7
         xllcorner     149.9
@@ -1909,7 +1909,7 @@ Parameters
         mesh4.check_integrity()
         quantity = Quantity(mesh4)
 
-        """ Format of asc lat long file 
+        """ Format of asc lat long file
         ncols         5
         nrows         7
         xllcorner     149.9
@@ -2052,7 +2052,7 @@ Parameters
         mesh4.check_integrity()
         quantity = Quantity(mesh4)
 
-        """ Format of asc lat long file 
+        """ Format of asc lat long file
         ncols         5
         nrows         7
         xllcorner     149.9
@@ -2197,7 +2197,7 @@ Parameters
         mesh4.check_integrity()
         quantity = Quantity(mesh4)
 
-        """ Format of asc lat long file 
+        """ Format of asc lat long file
         ncols         5
         nrows         7
         xllcorner     149.9
@@ -2381,7 +2381,7 @@ Parameters
         assert num.allclose(quantity1.centroid_values, centroid_values_ex) or \
                 num.allclose(quantity1.centroid_values, centroid_values_mac_ex)
         assert num.allclose(quantity1.vertex_values, vertex_values_ex) or \
-                num.allclose(quantity1.vertex_values, vertex_values_mac_ex)     
+                num.allclose(quantity1.vertex_values, vertex_values_mac_ex)
 
         quantity2 = Quantity(mesh4)
 
@@ -2480,7 +2480,7 @@ Parameters
             [[0.23654294, 0.        , 0.29263264],
             [0.23654294, 0.        , 0.29263264],
             [0.23654294, 0.        , 0.29263264],
-            [0.        , 0.        , 0.        ]])                                     
+            [0.        , 0.        , 0.        ]])
 
         assert num.allclose(quantity1.centroid_values, centroid_values_ex)
         assert num.allclose(quantity1.vertex_values, vertex_values_ex)

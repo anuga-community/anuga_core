@@ -3,7 +3,7 @@ import anuga
 import math
 import numpy
 
-from anuga.structures.weir_orifice_trapezoid_operator import weir_orifice_trapezoid_function 
+from anuga.structures.weir_orifice_trapezoid_operator import weir_orifice_trapezoid_function
 
 from .parallel_inlet_operator import Parallel_Inlet_operator
 from .parallel_structure_operator import Parallel_Structure_operator
@@ -11,10 +11,10 @@ from .parallel_structure_operator import Parallel_Structure_operator
 class Parallel_Weir_orifice_trapezoid_operator(Parallel_Structure_operator):
     """Culvert flow - transfer water from one trapezoid section to another.
     Sets up the geometry of problem
-    
+
     This is the base class for culverts. Inherit from this class (and overwrite
     compute_discharge method for specific subclasses)
-    
+
     Input: Two points, pipe_size (width, height),
     mannings_rougness,
     """
@@ -82,44 +82,44 @@ class Parallel_Weir_orifice_trapezoid_operator(Parallel_Structure_operator):
                                           inlet_master_proc=inlet_master_proc,
                                           inlet_procs=inlet_procs,
                                           enquiry_proc=enquiry_proc)
-        
+
         if isinstance(losses, dict):
             self.sum_loss = sum(losses.values())
         elif isinstance(losses, list):
             self.sum_loss = sum(losses)
         else:
             self.sum_loss = losses
-        
+
         self.use_momentum_jet = use_momentum_jet
         self.zero_outflow_momentum = (not use_momentum_jet)
         self.use_old_momentum_method = True
         self.use_velocity_head = use_velocity_head
-        
+
         self.culvert_length = self.get_culvert_length()
         self.culvert_width = self.get_culvert_width()
         self.culvert_height = self.get_culvert_height()
         self.culvert_blockage = self.get_culvert_blockage()
         self.culvert_barrels = self.get_culvert_barrels()
-        
+
         #self.culvert_slope = self.get_culvert_slope()
-        
+
         self.culvert_z1 = self.get_culvert_z1()
         self.culvert_z2 = self.get_culvert_z2()
-        
+
         self.max_velocity = 10.0
 
         self.inlets = self.get_inlets()
 
 
         # Stats
-        
+
         self.discharge = 0.0
         self.velocity = 0.0
-        
+
         self.case = 'N/A'
 
         self.domain=domain
-        
+
         # May/June 2014 -- allow 'smoothing ' of driving_energy, delta total energy, and outflow_enq_depth
         self.smoothing_timescale=0.
         self.smooth_delta_total_energy=0.
@@ -197,7 +197,7 @@ class Parallel_Weir_orifice_trapezoid_operator(Parallel_Structure_operator):
         self.outflow_index = 1
         # master proc orders reversal if applicable
         if self.myid == self.master_proc:
-            # May/June 2014 -- change the driving forces gradually, with forward euler timestepping 
+            # May/June 2014 -- change the driving forces gradually, with forward euler timestepping
             #
             forward_Euler_smooth=True
             if(forward_Euler_smooth):
@@ -206,7 +206,7 @@ class Parallel_Weir_orifice_trapezoid_operator(Parallel_Structure_operator):
                     ts=self.domain.timestep/max(self.domain.timestep, self.smoothing_timescale,1.0e-06)
                 else:
                     # This case is included in the serial version, which ensures the unit tests pass
-                    # even when domain.timestep=0.0. 
+                    # even when domain.timestep=0.0.
                     # Note though the discontinuous behaviour as domain.timestep-->0. from above
                     ts=1.0
                 self.smooth_delta_total_energy=self.smooth_delta_total_energy+\
@@ -258,7 +258,7 @@ class Parallel_Weir_orifice_trapezoid_operator(Parallel_Structure_operator):
 
         # Get attribute from outflow enquiry point
         if self.myid == self.master_proc:
-            
+
             if self.myid == self.enquiry_proc[self.outflow_index]:
                 outflow_enq_depth = self.inlets[self.outflow_index].get_enquiry_depth()
             else:
@@ -303,7 +303,7 @@ class Parallel_Weir_orifice_trapezoid_operator(Parallel_Structure_operator):
                               weir_orifice_trapezoid_function(depth =self.culvert_height,
                                                 width               =self.culvert_width,
                                                 z1                  =self.culvert_z1,
-                                                z2                  =self.culvert_z2,                                                
+                                                z2                  =self.culvert_z2,
                                                 flow_width          =self.culvert_width,
                                                 length              =self.culvert_length,
                                                 blockage            =self.culvert_blockage,
@@ -317,17 +317,17 @@ class Parallel_Weir_orifice_trapezoid_operator(Parallel_Structure_operator):
 
                 ################################################
                 # Smooth discharge. This can reduce oscillations
-                # 
+                #
                 # NOTE: The sign of smooth_Q assumes that
                 #   self.inflow_index=0 and self.outflow_index=1
                 #   , whereas the sign of Q is always positive
                 Qsign=(self.outflow_index-self.inflow_index) # To adjust sign of Q
                 if(forward_Euler_smooth):
                     self.smooth_Q = self.smooth_Q +ts*(Q*Qsign-self.smooth_Q)
-                else: 
+                else:
                     # Try implicit euler method
                     self.smooth_Q = (self.smooth_Q+ts*(Q*Qsign))/(1.+ts)
-                
+
                 if numpy.sign(self.smooth_Q)!=Qsign:
                     # The flow direction of the 'instantaneous Q' based on the
                     # 'smoothed delta_total_energy' is not the same as the
@@ -356,5 +356,5 @@ class Parallel_Weir_orifice_trapezoid_operator(Parallel_Structure_operator):
             return Q, barrel_velocity, outlet_culvert_depth
         else:
             return None, None, None
-        
-        
+
+

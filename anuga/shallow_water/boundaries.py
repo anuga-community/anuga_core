@@ -8,7 +8,7 @@ Author:
     Gareth Davies, gareth.davies.ga.code@gmail.com
 CreationDate: 2010
 Description::
-    This module contains boundary functions for ANUGA that are specific to the shallow water Domain class.  
+    This module contains boundary functions for ANUGA that are specific to the shallow water Domain class.
 Constraints: See GPL license in the user guide
 Version: 1.0 ($Revision: 7731 $)
 ModifiedBy::
@@ -25,7 +25,7 @@ import anuga.utilities.log as log
 from anuga.fit_interpolate.interpolate import Modeltime_too_late
 from anuga.fit_interpolate.interpolate import Modeltime_too_early
 from anuga.config import g as gravity
-     
+
 from anuga.shallow_water.sw_domain_openmp_ext import rotate, evaluate_reflective_segment
 
 try:
@@ -43,25 +43,25 @@ x = np.arange(100).reshape(10, 10)
 
 class Reflective_boundary(Boundary):
     """Reflective boundary condition object
-    
+
     Reflective boundary returns same conserved quantities as
-    those present in its neighbour volume but with normal momentum negated 
+    those present in its neighbour volume but with normal momentum negated
     so the mass flux is zero.
     """
 
     def __init__(self, domain=None):
         """Create boundary condition object
-        
+
         :param domain: domain on which to apply BC
-        
-        Example: 
-        
+
+        Example:
+
         Set all the tagged boundaries to use the Reflective boundaries
-        
-        >>> domain = anuga.rectangular_cross_domain(10, 10) 
+
+        >>> domain = anuga.rectangular_cross_domain(10, 10)
         >>> BC = anuga.Reflective_boundary(domain)
         >>> domain.set_boundary({'left': BC, 'right': BC, 'top': BC, 'bottom': BC})
-        
+
         """
 
 
@@ -88,8 +88,8 @@ class Reflective_boundary(Boundary):
         """Calculate BC associated to specified edge
 
         :param int vol_id: Triangle ID
-        :param int edge_id: Edge opposite to Vertex ID  
-  
+        :param int edge_id: Edge opposite to Vertex ID
+
         """
 
         q = self.conserved_quantities
@@ -141,7 +141,7 @@ class Reflective_boundary(Boundary):
         #print Normals.shape
         #print Normals[vol_ids, 2*edge_ids]
         #print Normals[vol_ids, 2*edge_ids+1]
-        
+
         n1  = Normals[vol_ids,2*edge_ids]
         n2  = Normals[vol_ids,2*edge_ids+1]
 
@@ -199,7 +199,7 @@ class Reflective_boundary(Boundary):
 
 class Transmissive_momentum_set_stage_boundary(Boundary):
     """ Bounday condition object that returns transmissive momentum and sets stage
-    
+
     Returns same momentum conserved quantities as
     those present in its neighbour volume.
     Sets stage by specifying a function f of time which may either be a
@@ -208,18 +208,18 @@ class Transmissive_momentum_set_stage_boundary(Boundary):
 
     def __init__(self, domain=None, function=None):
         """Create boundary condition object.
-        
+
         :param domain: domain on which to apply BC
         :param function: function to set stage
-        
-        Example: Set all the tagged boundaries to use the 
-        
-        >>> domain = anuga.rectangular_cross_domain(10, 10) 
+
+        Example: Set all the tagged boundaries to use the
+
+        >>> domain = anuga.rectangular_cross_domain(10, 10)
         >>> def waveform(t):
         >>>    return sea_level + normalized_amplitude/cosh(t-25)**2
         >>> BC = anuga.Transmissive_momentum_set_stage_boundary(domain, waveform)
         >>> domain.set_boundary({'left': BC, 'right': BC, 'top': BC, 'bottom': BC})
-        
+
         """
 
         Boundary.__init__(self)
@@ -237,7 +237,7 @@ class Transmissive_momentum_set_stage_boundary(Boundary):
         if isinstance(function, (int, float)):
             tmp = function
             function = lambda t: tmp
-            
+
         self.function = function
 
 
@@ -288,9 +288,9 @@ class Transmissive_momentum_set_stage_boundary(Boundary):
 
 class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
     """Bounday condition object that returns transmissive normal momentum and sets stage
-    
-    Returns the same normal momentum as that 
-    present in neighbour volume edge. Zero out the tangential momentum. 
+
+    Returns the same normal momentum as that
+    present in neighbour volume edge. Zero out the tangential momentum.
     Sets stage by specifying a function f of time which may either be a
     vector function or a scalar function
 
@@ -298,19 +298,19 @@ class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
 
     def __init__(self, domain=None, function=None, default_boundary=0.0):
         """Create boundary condition object.
-        
+
         :param domain: domain on which to apply BC
         :param function: function to set stage
-        :param float default_boundary: 
-        
+        :param float default_boundary:
+
         Example: Set all the tagged boundaries to use the BC
-        
-        >>> domain = anuga.rectangular_cross_domain(10, 10) 
+
+        >>> domain = anuga.rectangular_cross_domain(10, 10)
         >>> def waveform(t):
         >>>    return sea_level + normalized_amplitude/cosh(t-25)**2
         >>> BC = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(domain, waveform)
         >>> domain.set_boundary({'left': BC, 'right': BC, 'top': BC, 'bottom': BC})
-        
+
         """
 
 
@@ -379,16 +379,16 @@ class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
         return q
 
     # TODO JLGV, needs openmp version
-    def evaluate_segment(self, domain, segment_edges): 
+    def evaluate_segment(self, domain, segment_edges):
         """Apply BC on the boundary edges defined by segment_edges
 
         :param domain: Apply BC on this domain
         :param segment_edges: List of boundary cells on which to apply BC
 
         Vectorized form for speed. Gareth Davies 14/07/2016
-        
+
         """
-        
+
         Stage = domain.quantities['stage']
         Elev  = domain.quantities['elevation']
         Height= domain.quantities['height']
@@ -402,8 +402,8 @@ class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
 
         n1  = Normals[vol_ids,2*edge_ids]
         n2  = Normals[vol_ids,2*edge_ids+1]
-       
-        # Call the boundary function which returns stage 
+
+        # Call the boundary function which returns stage
         value = self.get_boundary_values()
         try:
             x = float(value)
@@ -412,7 +412,7 @@ class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
 
         # Set stage
         Stage.boundary_values[ids]  = x
-       
+
         # Compute flux normal to edge
         q1 = Xmom.edge_values[vol_ids,edge_ids]
         q2 = Ymom.edge_values[vol_ids,edge_ids]
@@ -460,15 +460,15 @@ class Time_stage_zero_momentum_boundary(Boundary):
     conserved quantities as a function of time.
     Must specify domain to get access to model time and a function of t
     which must return conserved stage quantities as a function time.
-    
+
     Example:
-      B = Time_stage_zero_momentum_boundary(domain, 
+      B = Time_stage_zero_momentum_boundary(domain,
                         function=lambda t: (60<t<3660)*2)
-      
+
       This will produce a boundary condition with is a 2m high square wave
       starting 60 seconds into the simulation and lasting one hour.
       Momentum applied will be 0 at all times.
-                        
+
     """
 
     def __init__(self, domain=None,
@@ -485,11 +485,11 @@ class Time_stage_zero_momentum_boundary(Boundary):
 
         if domain is None:
             raise Exception('You must specify a domain to Time_stage_zero_momemtum_boundary')
-            
+
         if function is None:
             raise Exception('You must specify a function to Time_stage_zero_momemtum_boundary')
-            
-        
+
+
         try:
             q = function(0.0)
         except Exception as e:
@@ -537,12 +537,12 @@ class Time_stage_zero_momentum_boundary(Boundary):
         #-------------------------------------------------
         domain.quantities['stage'].boundary_values[ids] = q_bdry
         domain.quantities['xmomentum'].boundary_values[ids] = 0.0
-        domain.quantities['ymomentum'].boundary_values[ids] = 0.0        
+        domain.quantities['ymomentum'].boundary_values[ids] = 0.0
 
 
 
 class Characteristic_stage_boundary(Boundary):
-    """Sets the stage via a function and the momentum is determined 
+    """Sets the stage via a function and the momentum is determined
     via assumption of simple incoming wave (uses Riemann invariant)
 
 
@@ -565,7 +565,7 @@ class Characteristic_stage_boundary(Boundary):
         """
 
         #raise Exception('This boundary type is not implemented yet')
-    
+
         Boundary.__init__(self)
 
         if domain is None:
@@ -597,10 +597,10 @@ class Characteristic_stage_boundary(Boundary):
     def evaluate(self, vol_id, edge_id):
         """Calculate reflections (reverse outward momentum).
 
-        vol_id   
-        edge_id  
+        vol_id
+        edge_id
         """
-        
+
         t = self.domain.get_time()
 
 
@@ -652,7 +652,7 @@ class Characteristic_stage_boundary(Boundary):
             q[1] = 0.0
             q[2] = 0.0
         else:
-            q[0] = h_m + elev       
+            q[0] = h_m + elev
             q[1] = uh_m*normal[0] + vh_m*normal[1]
             q[2] = uh_m*normal[1] - vh_m*normal[0]
 
@@ -676,8 +676,8 @@ class Characteristic_stage_boundary(Boundary):
 
         n1  = Normals[vol_ids,2*edge_ids]
         n2  = Normals[vol_ids,2*edge_ids+1]
-   
-        # Get stage value 
+
+        # Get stage value
         t = self.domain.get_time()
         value = self.function(t)
         try:
@@ -694,7 +694,7 @@ class Characteristic_stage_boundary(Boundary):
 
 
         h_inside = np.maximum(Stage.boundary_values[ids]-Elev.boundary_values[ids], 0.0)
-        w_outside = 0.0*Stage.boundary_values[ids] + w_outside 
+        w_outside = 0.0*Stage.boundary_values[ids] + w_outside
 
         # Do vectorized operations here
         #
@@ -738,13 +738,13 @@ class Characteristic_stage_boundary(Boundary):
         Stage.boundary_values[ids] = np.where(
             dry_test,
             w_outside,
-            w_m 
+            w_m
             )
 
         Xmom.boundary_values[ids] = np.where(
-            dry_test, 
+            dry_test,
             0.0,
-            q1 
+            q1
             )
 
         Ymom.boundary_values[ids] = np.where(
@@ -810,7 +810,7 @@ class Inflow_boundary(Boundary):
 
     Underlying domain must be specified when boundary is instantiated
     """
-    
+
     # FIXME (Ole): This is work in progress and definitely not finished.
     # The associated test has been disabled
 
@@ -823,7 +823,7 @@ class Inflow_boundary(Boundary):
             raise Exception(msg)
 
         self.domain = domain
-        
+
         # FIXME(Ole): Allow rate to be time dependent as well
         self.rate = rate
         self.tag = None # Placeholder for tag associated with this object.
@@ -834,41 +834,41 @@ class Inflow_boundary(Boundary):
     def evaluate(self, vol_id, edge_id):
         """Apply inflow rate at each edge of this boundary
         """
-        
+
         # First find all segments having the same tag is vol_id, edge_id
         # This will be done the first time evaluate is called.
         if self.tag is None:
             boundary = self.domain.boundary
-            self.tag = boundary[(vol_id, edge_id)]        
-            
+            self.tag = boundary[(vol_id, edge_id)]
+
             # Find total length of boundary with this tag
             length = 0.0
             for v_id, e_id in boundary:
                 if self.tag == boundary[(v_id, e_id)]:
-                    length += self.domain.mesh.get_edgelength(v_id, e_id)            
+                    length += self.domain.mesh.get_edgelength(v_id, e_id)
 
             self.length = length
             self.average_momentum = self.rate/length
-            
-            
+
+
         # Average momentum has now been established across this boundary
-        # Compute momentum in the inward normal direction 
-        
-        inward_normal = -self.domain.mesh.get_normal(vol_id, edge_id)       
+        # Compute momentum in the inward normal direction
+
+        inward_normal = -self.domain.mesh.get_normal(vol_id, edge_id)
         xmomentum, ymomentum = self.average_momentum * inward_normal
-            
+
         # Compute depth based on Manning's formula v = 1/n h^{2/3} sqrt(S)
         # Where v is velocity, n is manning's coefficient, h is depth
-        # and S is the slope into the domain. 
+        # and S is the slope into the domain.
         # Let mu be the momentum (vh), then this equation becomes:
-        #            mu = 1/n h^{5/3} sqrt(S) 
+        #            mu = 1/n h^{5/3} sqrt(S)
         # from which we can isolate depth to get
-        #             h = (mu n/sqrt(S) )^{3/5} 
-        
+        #             h = (mu n/sqrt(S) )^{3/5}
+
         slope = 0 # get gradient for this triangle dot normal
         epsilon = 1.0e-12
         import math
-        
+
         # get manning coef from this triangle
         friction = self.domain.get_quantity('friction').get_values(\
                     location='edges', indices=[vol_id])[0]
@@ -876,28 +876,28 @@ class Inflow_boundary(Boundary):
 
         if slope > epsilon and mannings_n > epsilon:
             depth = pow(self.average_momentum * mannings_n/math.sqrt(slope), \
-                        3.0/5) 
+                        3.0/5)
         else:
             depth = 1.0
-            
-        # Elevation on this edge    
-        
+
+        # Elevation on this edge
+
         z = self.domain.get_quantity('elevation').get_values(\
                     location='edges', indices=[vol_id])[0]
         elevation = z[edge_id]
-            
+
         # Assign conserved quantities and return
         q = np.array([elevation + depth, xmomentum, ymomentum], float)
         return q
 
 
-        
-    
-            
-        
+
+
+
+
 class Field_boundary(Boundary):
     """Set boundary from given field.
-    
+
     Given field is represented in an sww file containing
     values for stage, xmomentum and ymomentum.
 
@@ -932,13 +932,13 @@ class Field_boundary(Boundary):
 
         :param mean_stage: The mean water level which will be added to stage derived from the boundary condition
 
-        :param time_thinning: Will set how many time steps from the sww file read in will be interpolated to the boundary. 
+        :param time_thinning: Will set how many time steps from the sww file read in will be interpolated to the boundary.
 
         :param default_boundary: This will be used in case model time exceeds that available in the underlying data.
 
-        :param time_limit: 
+        :param time_limit:
 
-        :param boundary_polygon: 
+        :param boundary_polygon:
 
         :param use_cache:        True if caching is to be used.
 
@@ -1002,7 +1002,7 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
     """Boundary condition based on a Flather type approach
 
     Setting the external stage with a function, and a zero external velocity,
-    
+
     The idea is similar (but not identical) to that described on page 239 of
     the following article::
 
@@ -1027,7 +1027,7 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
 
     This has been useful as a 'weakly reflecting' boundary when the stage should
     be approximately specified but allowed to adapt to outgoing waves.
-    
+
     """
 
     def __init__(self, domain=None, function=None):
@@ -1090,8 +1090,8 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
 
         if(depth_inside==0.):
             q[0] = stage_outside
-            q[1] = 0. 
-            q[2] = 0. 
+            q[1] = 0.
+            q[2] = 0.
 
         else:
 
@@ -1107,7 +1107,7 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
                 #
                 # Theory: 2 characteristics coming from inside domain, only
                 # need to impose one characteristic from outside
-                # 
+                #
 
                 # w1 =  u - sqrt(g/depth)*(Stage_outside)  -- uses 'outside' info
                 w1 = 0. - sqrt_g_on_depth_inside*stage_outside
@@ -1117,11 +1117,11 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
 
                 # w3 = u + sqrt(g/depth)*(Stage_inside) -- uses 'inside info'
                 w3 = ndotq_inside/depth_inside + sqrt_g_on_depth_inside*q[0]
-                
+
             else:
                 # Inflow (assumed subcritical)
                 # Need to set 2 characteristics from outside information
-                
+
                 # w1 =  u - sqrt(g/depth)*(Stage_outside)  -- uses 'outside' info
                 w1 = 0. - sqrt_g_on_depth_inside*stage_outside
 
@@ -1143,11 +1143,11 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
 
         return q
 
-    
-    def evaluate_segment(self, domain, segment_edges): 
+
+    def evaluate_segment(self, domain, segment_edges):
         """Applied in vectorized form for speed. Gareth Davies 14/07/2016
         """
- 
+
         Stage = domain.quantities['stage']
         Elev  = domain.quantities['elevation']
         #Height= domain.quantities['height']
@@ -1161,8 +1161,8 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
 
         n1  = Normals[vol_ids,2*edge_ids]
         n2  = Normals[vol_ids,2*edge_ids+1]
-   
-        # Get stage value 
+
+        # Get stage value
         t = self.domain.get_time()
         value = self.function(t)
         try:
@@ -1178,7 +1178,7 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
 
         bed = Elev.centroid_values[vol_ids]
         depth_inside = np.maximum(Stage.boundary_values[ids]-bed, 0.0)
-        stage_outside = 0.0*Stage.boundary_values[ids] + stage_outside 
+        stage_outside = 0.0*Stage.boundary_values[ids] + stage_outside
 
         # Do vectorized operations here
         #
@@ -1206,7 +1206,7 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
                 0.0 * ndotq_inside)
             # w3 = u + sqrt(g/depth)*(Stage_inside) -- uses 'inside info'
             w3 = ndotq_inside/depth_inside + sqrt_g_on_depth_inside*Stage.boundary_values[ids]
-            
+
         q0_wet = (w3 - w1)/(2.0 * sqrt_g_on_depth_inside)
 
         qperp = (w3 + w1)/2.0 * depth_inside
@@ -1219,12 +1219,12 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
 
         Stage.boundary_values[ids] = np.where(
             dry_test,
-            q0_dry, 
+            q0_dry,
             q0_wet)
 
         Xmom.boundary_values[ids] = np.where(
-            dry_test, 
-            q1_dry, 
+            dry_test,
+            q1_dry,
             q1_wet)
 
         Ymom.boundary_values[ids] = np.where(
@@ -1233,4 +1233,4 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
             q2_wet)
 
 
-        
+

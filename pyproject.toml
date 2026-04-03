@@ -77,6 +77,47 @@ download      = "https://github.com/anuga-community/anuga_core/releases"
 tracker       = "https://github.com/anuga-community/anuga_core/issues"
 
 
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "UP"]
+ignore = [
+    # ── High-violation rules deferred for a dedicated cleanup pass ──
+    "E501",   # line too long (3002) — fix separately
+    "E402",   # module import not at top (331) — ANUGA uses conditional imports
+    "E701",   # multiple statements on one line (567)
+    "E702",   # statement ends with semicolon (97)
+    "E711",   # comparison to None (24) — some intentional
+    "E712",   # comparison to True/False (54)
+    "E721",   # type comparison (47)
+    "E731",   # lambda assignment (30)
+    "E741",   # ambiguous variable name (101) — mathematical names l, I, O
+    "W191",   # tab indentation (70) — legacy files
+    "E101",   # mixed tabs/spaces (legacy files)
+    "I001",   # import sort order (915) — too risky to bulk-change
+    "UP030",  # format literals (23)
+    "UP031",  # printf-style formatting (1830)
+    "UP032",  # f-string conversion (31)
+    "B006",   # mutable argument default (22) — main ones already fixed
+    "B007",   # unused loop control variable (368)
+    "B023",   # function uses loop variable (13)
+    "B028",   # no-explicit-stacklevel in warnings.warn (15)
+    "B904",   # raise without from inside except (147)
+    "B905",   # zip() without explicit strict= (103)
+    "F401",   # unused import (1705) — handled per-file
+    "F403",   # star import (57) — ANUGA uses * imports for domain API
+    "F405",   # may be from star import (1405)
+    "F811",   # redefined while unused (190) — some intentional
+    "F821",   # undefined name (176) — false positives from star imports
+    "F841",   # local variable assigned but never used (1034)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"anuga/__init__.py" = ["F401", "E401"]       # public re-exports
+"anuga/*/tests/test_*.py" = ["B017", "B018"] # assertRaises patterns in tests
+
 [tool.pytest.ini_options]
 minversion = '6.0'
 testpaths = [

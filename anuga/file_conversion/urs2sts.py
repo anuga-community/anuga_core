@@ -18,16 +18,16 @@ from anuga.coordinate_transforms.geo_reference import Geo_reference, \
 from anuga.file.mux import read_mux2_py
 from anuga.file.mux import WAVEHEIGHT_MUX2_LABEL, EAST_VELOCITY_MUX2_LABEL, \
                 NORTH_VELOCITY_MUX2_LABEL
-from anuga.file.sts import Write_sts                
+from anuga.file.sts import Write_sts
 from functools import reduce
-                
+
 
 def urs2sts(basename_in, basename_out=None,
             weights=None,
             verbose=False,
             origin=None,
             zone=None,
-            central_meridian=None,            
+            central_meridian=None,
             mean_stage=0.0,
             zscale=1.0,
             ordering_filename=None):
@@ -67,9 +67,9 @@ def urs2sts(basename_in, basename_out=None,
 
     output:
       basename_out: name of sts file in which mux2 data is stored.
-      
-      
-      
+
+
+
     NOTE: South is positive in mux files so sign of y-component of velocity is reverted
     """
 
@@ -89,7 +89,7 @@ def urs2sts(basename_in, basename_out=None,
     # Check that basename is a list of strings
     if not reduce(__and__, [isinstance(z,str) for z in basename_in]):
         msg= 'basename_in must be a string or list of strings'
-        raise IOError(msg)
+        raise OSError(msg)
 
     # Find the number of sources to be used
     numSrc = len(basename_in)
@@ -138,7 +138,7 @@ def urs2sts(basename_in, basename_out=None,
 
         # Read ordering file
         try:
-            fid = open(ordering_filename, 'r')
+            fid = open(ordering_filename)
             file_header = fid.readline().split(',')
             ordering_lines = fid.readlines()
             fid.close()
@@ -171,7 +171,7 @@ def urs2sts(basename_in, basename_out=None,
     longitudes_old = 0.0
     elevation_old = 0.0
     starttime_old = 0.0
-    
+
     for i, quantity in enumerate(quantities):
         # For each quantity read the associated list of source mux2 file with
         # extention associated with that quantity
@@ -315,8 +315,8 @@ def urs2sts(basename_in, basename_out=None,
 
 
     outfile.close()
-    
+
     if verbose:
-        log.critical('Wrote sts file ' + stsname)    
-    
+        log.critical('Wrote sts file ' + stsname)
+
 

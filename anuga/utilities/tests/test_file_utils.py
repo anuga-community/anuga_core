@@ -59,7 +59,7 @@ class Test_FileUtils(unittest.TestCase):
     def test_get_all_swwfiles(self):
         try:
             swwfiles = get_all_swwfiles('', 'test.txt')  # Invalid
-        except IOError:
+        except OSError:
             pass
         else:
             raise Exception('Should have raised exception')

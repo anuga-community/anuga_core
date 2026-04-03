@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 """
 Read a TOML configuration file for an ANUGA scenario.
 

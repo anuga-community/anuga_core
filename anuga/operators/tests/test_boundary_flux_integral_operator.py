@@ -22,7 +22,7 @@ class Test_boundary_flux_integral_operator(unittest.TestCase):
         # Riverwall = list of lists, each with a set of x,y,z (and optional QFactor) values
 
         # Make the domain
-        domain = anuga.create_domain_from_regions(boundaryPolygon, 
+        domain = anuga.create_domain_from_regions(boundaryPolygon,
                                  boundary_tags={'left': [0],
                                                 'top': [1],
                                                 'right': [2],
@@ -38,15 +38,15 @@ class Test_boundary_flux_integral_operator(unittest.TestCase):
         domain.set_name('test_boundaryfluxintegral')
 
         domain.set_store_vertices_uniquely()
-       
+
         def topography(x,y):
-            return -x/150. 
+            return -x/150.
 
         # NOTE: Setting quantities at centroids is important for exactness of tests
-        domain.set_quantity('elevation',topography,location='centroids')     
-        domain.set_quantity('friction',0.03)             
-        domain.set_quantity('stage', topography,location='centroids')            
-       
+        domain.set_quantity('elevation',topography,location='centroids')
+        domain.set_quantity('friction',0.03)
+        domain.set_quantity('stage', topography,location='centroids')
+
         # Boundary conditions
         Br=anuga.Reflective_boundary(domain)
         Bd=anuga.Dirichlet_boundary([0., 0., 0.])
@@ -57,13 +57,13 @@ class Test_boundary_flux_integral_operator(unittest.TestCase):
     def test_boundary_flux_operator_DE0(self):
         """
         A (the) boundary flux operator is instantiated when a domain is created.
-        This tests the calculation for euler timestepping 
+        This tests the calculation for euler timestepping
         """
-  
+
         flowalg = 'DE0'
-          
+
         domain=self.create_domain(flowalg)
-  
+
         #domain.print_statistics()
         for t in domain.evolve(yieldstep=1.0,finaltime=5.0):
             if verbose: domain.print_timestepping_statistics()
@@ -72,19 +72,19 @@ class Test_boundary_flux_integral_operator(unittest.TestCase):
         # The domain was initially dry
         vol=domain.get_water_volume()
         boundaryFluxInt=domain.get_boundary_flux_integral()
-  
-        if verbose: print(flowalg, vol, boundaryFluxInt)        
-        assert(numpy.allclose(vol,boundaryFluxInt))
-         
 
-        
+        if verbose: print(flowalg, vol, boundaryFluxInt)
+        assert(numpy.allclose(vol,boundaryFluxInt))
+
+
+
     def test_boundary_flux_operator_DE1(self):
         """
         A (the) boundary flux operator is instantiated when a domain is created.
-        This tests the calculation for rk2 timestepping 
+        This tests the calculation for rk2 timestepping
         """
         flowalg = 'DE1'
-                 
+
         domain=self.create_domain(flowalg)
         #domain.print_statistics()
         for t in domain.evolve(yieldstep=1.0,finaltime=5.0):
@@ -94,20 +94,20 @@ class Test_boundary_flux_integral_operator(unittest.TestCase):
         # The domain was initially dry
         vol=domain.get_water_volume()
         boundaryFluxInt=domain.get_boundary_flux_integral()
-         
+
         if verbose: print(flowalg, vol, boundaryFluxInt)
         assert(numpy.allclose(vol,boundaryFluxInt))
-        
-        
+
+
 
     def test_boundary_flux_operator_DE2(self):
         """
         A (the) boundary flux operator is instantiated when a domain is created.
-        This tests the calculation for rk3 timestepping 
+        This tests the calculation for rk3 timestepping
         """
- 
+
         flowalg = 'DE2'
- 
+
         domain=self.create_domain(flowalg)
         #domain.print_statistics()
         for t in domain.evolve(yieldstep=1.0,finaltime=5.0):
@@ -117,11 +117,11 @@ class Test_boundary_flux_integral_operator(unittest.TestCase):
         # The domain was initially dry
         vol=domain.get_water_volume()
         boundaryFluxInt=domain.get_boundary_flux_integral()
- 
+
         if verbose: print(flowalg, vol, boundaryFluxInt)
-        assert(numpy.allclose(vol,boundaryFluxInt))        
-         
-        
+        assert(numpy.allclose(vol,boundaryFluxInt))
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_boundary_flux_integral_operator)
     runner = unittest.TextTestRunner(verbosity=1)

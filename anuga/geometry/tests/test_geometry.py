@@ -31,42 +31,42 @@ class Test_Geometry(unittest.TestCase):
         assert not box.contains([5, 70])
         assert not box.contains([6, -70])
         assert not box.contains([-1, 6])
-        assert not box.contains([50, 6])        
-        
+        assert not box.contains([50, 6])
+
     def test_aabb_split_vert(self):
         """ Test that a bounding box can be split correctly along an axis.
         """
         parent = AABB(1, 21, 1, 11)
-        
+
         child1, child2 = parent.split(0.6)
 
         self.assertEqual(child1.xmin, 1)
         self.assertEqual(child1.xmax, 13)
         self.assertEqual(child1.ymin, 1)
         self.assertEqual(child1.ymax, 11)
-        
+
         self.assertEqual(child2.xmin, 9)
         self.assertEqual(child2.xmax, 21)
         self.assertEqual(child2.ymin, 1)
-        self.assertEqual(child2.ymax, 11)    
+        self.assertEqual(child2.ymax, 11)
 
     def test_aabb_split_horiz(self):
         """ Test that a bounding box will be split along the horizontal axis
         correctly. """
         parent = AABB(1, 11, 1, 41)
-        
+
         child1, child2 = parent.split(0.6)
 
         self.assertEqual(child1.xmin, 1)
         self.assertEqual(child1.xmax, 11)
         self.assertEqual(child1.ymin, 1)
         self.assertEqual(child1.ymax, 25)
-        
+
         self.assertEqual(child2.xmin, 1)
         self.assertEqual(child2.xmax, 11)
         self.assertEqual(child2.ymin, 17)
-        self.assertEqual(child2.ymax, 41)          
-        
+        self.assertEqual(child2.ymax, 41)
+
     def test_add_data(self):
         """ Test add and retrieve arbitrary data from tree structure. """
         cell = Cell(AABB(0, 10, 0, 5), None)
@@ -77,7 +77,7 @@ class Test_Geometry(unittest.TestCase):
         assert isinstance(result, (list, tuple)), 'should be a list'
 
         self.assertEqual(len(result), 4)
-        
+
     def test_search(self):
         """ Test search tree for an intersection. """
         test_tag = 222

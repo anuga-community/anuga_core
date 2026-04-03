@@ -19,7 +19,7 @@ import anuga.utilities.log as log
 import numpy as num
 
 
-class Quantity(object):
+class Quantity:
     """Class Quantity - Implements values at each triangular element
     """
 
@@ -28,7 +28,7 @@ class Quantity(object):
 
     def __init__(self, domain, vertex_values=None, name=None, register=False):
         """Create Quantity object
-        
+
         :param domain: Associated domain structure. Required.
         :param vertex_values: N x 3 array of values at each vertex for each element. Default None
         :param str name: Provides a way to refer to a created quantity
@@ -47,8 +47,8 @@ class Quantity(object):
         For Quantities that need to be saved during checkpointing, set register=True. Registered
         Quantities can be found in the dictionary domain.quantities (note, other Quantities can
         exist).
-        
-        
+
+
         """
 
 
@@ -746,7 +746,7 @@ class Quantity(object):
 
 
         filename:
-          Name of a points file (extension .pts, .csv, .txt or .xya) or dem file (ext .dem, .asc, .grd or .tif) 
+          Name of a points file (extension .pts, .csv, .txt or .xya) or dem file (ext .dem, .asc, .grd or .tif)
           containing data points and attributes for use with fit_interpolate.fit.
 
         raster:
@@ -1150,7 +1150,7 @@ class Quantity(object):
             M = self.domain.number_of_triangles
             V = self.domain.get_vertex_coordinates()
 
-            x = V[:,0];
+            x = V[:,0]
             y = V[:,1]
             if use_cache is True:
                 values = cache(f, (x, y), verbose=verbose)
@@ -1504,7 +1504,7 @@ class Quantity(object):
         if zone == -1:
             msg = 'UTM zone needed for this calculation.\nUse domain.set_zone to set the UTM zone of your simulation'
             raise Exception(msg)
-        
+
         hemisphere = self.domain.get_hemisphere()
 
         # Default hemisphere is south. If hemisphere undefined assume south = True
@@ -1592,8 +1592,8 @@ class Quantity(object):
         NODATA_value  -9999
         28.6 28.6 28.6 28.6 28.7 28.7 28.7 28.7 28.7 28.7 ....
 
-        This file would represent raster data from lower left corner 
-        at 140 long and -30 lat over to upper right corner 141 long -29 lat. 
+        This file would represent raster data from lower left corner
+        at 140 long and -30 lat over to upper right corner 141 long -29 lat.
 
         Here cellsize = 0.025 represents 1/40 of a degree
 
@@ -1601,7 +1601,7 @@ class Quantity(object):
         :param str location: vertices or centroids, interpolation onto these locations
         :param indices: None or a list of indices where interploation occurs
         :param bool northern: Flag to specify northern or southern hemisphere
-        :param bool verbose: level of printed feedback 
+        :param bool verbose: level of printed feedback
         """
 
 
@@ -1699,7 +1699,7 @@ class Quantity(object):
                 points = self.domain.vertex_coordinates[tuple(indices),:]
 
         from anuga.geospatial_data.geospatial_data import ensure_absolute
-        points = ensure_absolute(points, geo_reference=self.domain.geo_reference)               
+        points = ensure_absolute(points, geo_reference=self.domain.geo_reference)
 
         if verbose:
             print (numpy.max(points[:,0]))
@@ -2171,7 +2171,7 @@ class Quantity(object):
                 centroid_averaging = self.domain.get_using_centroid_averaging()
             except AttributeError:
                 centroid_averaging = False
-                
+
         if precision is None:
             precision = float
 
@@ -2275,7 +2275,7 @@ class Quantity(object):
             from .quantity_openmp_ext import update
         else:
             from .quantity_openmp_ext import update
-        
+
         return update(self, timestep)
 
     def compute_gradients(self):

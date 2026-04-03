@@ -534,10 +534,10 @@ def fit_to_mesh_file(mesh_file, point_file, mesh_output_file,
 
     try:
         mesh_dict = import_mesh_file(mesh_file)
-    except IOError as e:
+    except OSError as e:
         if display_errors:
             log.critical("Could not load bad file: %s" % str(e))
-        raise IOError  # Could not load bad mesh file.
+        raise OSError  # Could not load bad mesh file.
 
     vertex_coordinates = mesh_dict['vertices']
     triangles = mesh_dict['triangles']
@@ -557,17 +557,17 @@ def fit_to_mesh_file(mesh_file, point_file, mesh_output_file,
     # load in the points file
     try:
         geo = Geospatial_data(point_file, verbose=verbose)
-    except IOError as e:
+    except OSError as e:
         if display_errors:
             log.critical("Could not load bad file: %s" % str(e))
-        raise IOError  # Re-raise exception
+        raise OSError  # Re-raise exception
 
     point_coordinates = geo.get_data_points(absolute=True)
     title_list, point_attributes = concatinate_attributelist(
         geo.get_all_attributes())
 
     if 'geo_reference' in mesh_dict and \
-            not mesh_dict['geo_reference'] is None:
+            mesh_dict['geo_reference'] is not None:
         mesh_origin = mesh_dict['geo_reference'].get_origin()
     else:
         mesh_origin = None
@@ -604,7 +604,7 @@ def fit_to_mesh_file(mesh_file, point_file, mesh_output_file,
 
     try:
         export_mesh_file(mesh_output_file, mesh_dict)
-    except IOError as e:
+    except OSError as e:
         if display_errors:
             log.critical("Could not write file %s", str(e))
-        raise IOError
+        raise OSError

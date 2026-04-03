@@ -38,9 +38,9 @@ def file_function(filename,
     a callable object.
 
     Input variables:
-    
+
     filename - Name of sww, tms or sts file
-       
+
        If the file has extension 'sww' then it is assumed to be spatio-temporal
        or temporal and the callable object will have the form f(t,x,y) or f(t)
        depending on whether the file contains spatial data
@@ -51,12 +51,12 @@ def file_function(filename,
        Either form will return interpolated values based on the input file
        using the underlying interpolation_function.
 
-    domain - Associated domain object   
+    domain - Associated domain object
        If domain is specified, model time (domain.starttime)
        will be checked and possibly modified.
-    
+
        All times are assumed to be in UTC
-       
+
        All spatial information is assumed to be in absolute UTM coordinates.
 
     quantities - the name of the quantity to be interpolated or a
@@ -64,23 +64,23 @@ def file_function(filename,
                  a tuple of values - one for each quantity
                  If quantities are None, the default quantities are
                  ['stage', 'xmomentum', 'ymomentum']
-                 
+
 
     interpolation_points - list of absolute UTM coordinates for points (N x 2)
     or geospatial object or points file name at which values are sought
 
-    use_relative_time - 
+    use_relative_time -
 
-    time_thinning - 
+    time_thinning -
 
-    verbose - 
+    verbose -
 
     use_cache: True means that caching of intermediate result of
                Interpolation_function is attempted
 
-    boundary_polygon - 
+    boundary_polygon -
 
-    
+
     See Interpolation function in anuga.fit_interpolate.interpolation for
     further documentation
     """
@@ -102,7 +102,7 @@ def file_function(filename,
         quantities = ['stage', 'xmomentum', 'ymomentum']
 
     # Use domain's startime if available
-    if domain is not None:    
+    if domain is not None:
         domain_starttime = domain.get_starttime()
     else:
         domain_starttime = None
@@ -118,8 +118,8 @@ def file_function(filename,
               'interpolation_points': interpolation_points,
               'domain_starttime': domain_starttime,
               'use_relative_time': use_relative_time,
-              'time_thinning': time_thinning,      
-              'time_limit': time_limit,                                 
+              'time_thinning': time_thinning,
+              'time_limit': time_limit,
               'verbose': verbose,
               'boundary_polygon': boundary_polygon,
               'output_centroids': output_centroids}
@@ -136,7 +136,7 @@ def file_function(filename,
         f, starttime = cache(_file_function,
                              args, kwargs,
                              dependencies=[filename],
-                             compression=False,                  
+                             compression=False,
                              verbose=verbose)
     else:
         f, starttime = _file_function(*args, **kwargs)
@@ -146,7 +146,7 @@ def file_function(filename,
 
     f.starttime = starttime
     f.filename = filename
-    
+
     if domain is not None:
         #Update domain.startime if it is *earlier* than starttime from file
         if starttime > domain.starttime:
@@ -155,7 +155,7 @@ def file_function(filename,
             msg += ' is earlier than the starttime of file %s (%f).' \
                      % (filename, starttime)
             msg += ' Modifying domain starttime accordingly.'
-            
+
             if verbose: log.critical(msg)
 
             domain.set_starttime(starttime) #Modifying model time
@@ -176,7 +176,7 @@ def _file_function(filename,
                    boundary_polygon=None,
                    output_centroids=False):
     """Internal function
-    
+
     See file_function for documentatiton
     """
 
@@ -188,11 +188,11 @@ def _file_function(filename,
     #except IOError, e:
     #    msg = 'File "%s" could not be opened: Error="%s"' % (filename, e)
     #    raise IOError(msg)
-    
+
     # read first line of file, guess file type
     #line = fid.readline()
     #fid.close()
-        
+
     import os
     ext = os.path.splitext(filename)[1]
     msg = 'Extension should be csv  sww, tms or sts '
@@ -214,7 +214,7 @@ def _file_function(filename,
         # FIXME (Ole): Could add csv file here to address Ted Rigby's
         # suggestion about reading hydrographs.
         # This may also deal with the gist of ticket:289
-        raise Exception('Must be a NetCDF File') 
+        raise Exception('Must be a NetCDF File')
     else:
 
         raise Exception('Must be a NetCDF File')
@@ -224,9 +224,9 @@ def get_netcdf_file_function(filename,
                              quantity_names=None,
                              interpolation_points=None,
                              domain_starttime=None,
-                             use_relative_time=False,                            
-                             time_thinning=1,                 
-                             time_limit=None,            
+                             use_relative_time=False,
+                             time_thinning=1,
+                             time_limit=None,
                              verbose=False,
                              boundary_polygon=None,
                              output_centroids=False):
@@ -236,7 +236,7 @@ def get_netcdf_file_function(filename,
 
     Model time (domain_starttime)
     will be checked, possibly modified and returned
-    
+
     All times are assumed to be in UTC
 
     See Interpolation function for further documentation
@@ -249,7 +249,8 @@ def get_netcdf_file_function(filename,
     # Take this code from e.g. dem2pts in data_manager.py
     # FIXME: Use geo_reference to read and write xllcorner...
 
-    import time, calendar
+    import time
+    import calendar
     from anuga.config import time_format
 
     # Open NetCDF file
@@ -258,12 +259,12 @@ def get_netcdf_file_function(filename,
     fid = NetCDFFile(filename, netcdf_mode_r)
 
     if isinstance(quantity_names, string_types):
-        quantity_names = [quantity_names]        
+        quantity_names = [quantity_names]
 
     if quantity_names is None or len(quantity_names) < 1:
         msg = 'No quantities are specified in file_function'
         raise Exception(msg)
- 
+
     if interpolation_points is not None:
 
         #interpolation_points = num.array(interpolation_points, float)
@@ -272,7 +273,7 @@ def get_netcdf_file_function(filename,
         assert interpolation_points.shape[1] == 2, msg
 
     # Now assert that requested quantitites (and the independent ones)
-    # are present in file 
+    # are present in file
     missing = []
     for quantity in ['time'] + quantity_names:
         if quantity not in fid.variables:
@@ -295,18 +296,18 @@ def get_netcdf_file_function(filename,
         raise Exception(msg)
 
     if filename[-3:] == 'sww' and spatial is False:
-        msg = 'Files of type SWW must contain spatial information'        
+        msg = 'Files of type SWW must contain spatial information'
         raise Exception(msg)
 
     if filename[-3:] == 'sts' and spatial is False:
         #What if mux file only contains one point
-        msg = 'Files of type STS must contain spatial information'        
+        msg = 'Files of type STS must contain spatial information'
         raise Exception(msg)
 
     # JJ REMOVED
     #if filename[-3:] == 'sts' and boundary_polygon is None:
     #    #What if mux file only contains one point
-    #    msg = 'Files of type sts require boundary polygon'        
+    #    msg = 'Files of type sts require boundary polygon'
     #    raise Exception(msg)
 
     # Get first timestep
@@ -327,10 +328,10 @@ def get_netcdf_file_function(filename,
     # FIXME(Ole): Is time monotoneous?
 
     # Apply time limit if requested
-    upper_time_index = len(time)    
+    upper_time_index = len(time)
     msg = 'Time vector obtained from file %s has length 0' % filename
     assert upper_time_index > 0, msg
-    
+
     if time_limit is not None:
         # Adjust given time limit to given start time
         time_limit = time_limit - starttime
@@ -341,7 +342,7 @@ def get_netcdf_file_function(filename,
             if t > time_limit:
                 upper_time_index = i
                 break
-                
+
         msg = 'Time vector is zero. Requested time limit is %f' % time_limit
         assert upper_time_index > 0, msg
 
@@ -352,8 +353,8 @@ def get_netcdf_file_function(filename,
     time = time[:upper_time_index]
 
 
-    
-    
+
+
     # Get time independent stuff
     if spatial:
         # Get origin
@@ -413,7 +414,7 @@ def get_netcdf_file_function(filename,
                 gauge_neighbour_id.append(-1)
             gauge_neighbour_id=ensure_numeric(gauge_neighbour_id)
 
-            
+
             if len(num.compress(gauge_neighbour_id>=0, gauge_neighbour_id)) \
                != len(temp)-1:
                 msg='incorrect number of segments'
@@ -428,10 +429,10 @@ def get_netcdf_file_function(filename,
         if interpolation_points is not None:
             # Adjust for georef
             interpolation_points[:, 0] -= xllcorner
-            interpolation_points[:, 1] -= yllcorner        
+            interpolation_points[:, 1] -= yllcorner
     else:
         gauge_neighbour_id=None
-        
+
     if domain_starttime is not None:
         # If domain_startime is *later* than starttime,
         # move time back - relative to domain's time
@@ -442,8 +443,8 @@ def get_netcdf_file_function(filename,
         # if spatial:
         # assert domain.geo_reference.xllcorner == xllcorner
         # assert domain.geo_reference.yllcorner == yllcorner
-        # assert domain.geo_reference.zone == zone        
-        
+        # assert domain.geo_reference.zone == zone
+
     if verbose:
         log.critical('File_function data obtained from: %s' % filename)
         log.critical('  References:')
@@ -451,8 +452,8 @@ def get_netcdf_file_function(filename,
             log.critical('    Lower left corner: [%f, %f]'
                          % (xllcorner, yllcorner))
         log.critical('    Start time:   %f' % starttime)
-        
-    
+
+
     # Produce values for desired data points at
     # each timestep for each quantity
     quantities = {}
@@ -461,8 +462,8 @@ def get_netcdf_file_function(filename,
         if boundary_polygon is not None:
             #removes sts points that do not lie on boundary
             quantities[name] = num.take(quantities[name], gauge_id, axis=1)
-            
-    # Close sww, tms or sts netcdf file         
+
+    # Close sww, tms or sts netcdf file
     fid.close()
 
     from anuga.fit_interpolate.interpolate import Interpolation_function
@@ -475,7 +476,7 @@ def get_netcdf_file_function(filename,
 
     if verbose:
         log.critical('Calling interpolation function')
-        
+
     # Return Interpolation_function instance as well as
     # starttime for use to possible modify that of domain
     return (Interpolation_function(time,

@@ -6,7 +6,7 @@ import anuga.utilities.log as log
 import numpy as num
 
 from anuga.utilities.file_utils import get_all_swwfiles
-from anuga.coordinate_transforms.geo_reference import Geo_reference 
+from anuga.coordinate_transforms.geo_reference import Geo_reference
 from anuga.abstract_2d_finite_volumes.util import file_function
 from anuga.geometry.polygon import is_inside_polygon
 from anuga.file.sww import get_mesh_and_quantities_from_file
@@ -195,17 +195,17 @@ def get_flow_through_multiple_cross_sections(filename, polylines, verbose=False)
 
                 # Accumulate
                 total_flow += segment_flow
-                
+
                 i=i+1
 
             # Store flow at this timestep
             Q.append(total_flow)
-            
+
         base_id = base_id + len(segments)
         mult_Q.append(Q)
 
     if verbose: print()
-    
+
     return time, mult_Q
 
 def get_interpolated_quantities_at_multiple_polyline_midpoints(filename,
@@ -217,7 +217,7 @@ def get_interpolated_quantities_at_multiple_polyline_midpoints(filename,
     filename        path to file to read
     quantity_names  quantity names to get
     polylines       representation of desired cross-sections
-                    may contain multiple cross sections with multiple 
+                    may contain multiple cross sections with multiple
                     sections allowing complex shapes
                     assume UTM coordinates
     verbose         True if this function is to be verbose
@@ -253,9 +253,9 @@ def get_interpolated_quantities_at_multiple_polyline_midpoints(filename,
         mid_points = segment_midpoints(segments)
         #print mid_points
         interpolation_points = interpolation_points + mid_points
-     
 
-    if verbose: 
+
+    if verbose:
         print('len interpolating points ', len(interpolation_points))
 
     # Interpolate
@@ -273,7 +273,7 @@ def get_interpolated_quantities_at_multiple_polyline_midpoints(filename,
 
     #if verbose:
     #    print mult_segments
-        
+
     return mult_segments, I
 
 
@@ -442,7 +442,7 @@ def get_maximum_inundation_data(filename, polygon=None, time_interval=None,
                          assumed absolute coordinates and in same zone as
                          domain
     time_interval        if specified resrict to within the period specified
-    use_centroid_values 
+    use_centroid_values
     verbose              True if this function is to be verbose
 
     Returns (maximal_runup, maximal_runup_location).
@@ -476,7 +476,7 @@ def get_maximum_inundation_data(filename, polygon=None, time_interval=None,
     iterate_over = [ filename[:-4] ]
     if verbose:
         print(iterate_over)
-        
+
     # Read sww file
     if verbose: log.critical('Reading from %s' % filename)
     # FIXME: Use general swwstats (when done)
@@ -524,7 +524,7 @@ def get_maximum_inundation_data(filename, polygon=None, time_interval=None,
             print('found c values ', found_c_values)
             print('stage.shape ',stage.shape)
             print('elevation.shape ',elevation.shape)
-            
+
         # Here's where one could convert nodal information to centroid
         # information but is probably something we need to write in C.
         # Here's a Python thought which is NOT finished!!!
@@ -532,7 +532,7 @@ def get_maximum_inundation_data(filename, polygon=None, time_interval=None,
             vols0=volumes[:,0]
             vols1=volumes[:,1]
             vols2=volumes[:,2]
-            # Then use these to compute centroid location 
+            # Then use these to compute centroid location
             x=(x[vols0]+x[vols1]+x[vols2])/3.0
             y=(y[vols0]+y[vols1]+y[vols2])/3.0
 
@@ -571,7 +571,7 @@ def get_maximum_inundation_data(filename, polygon=None, time_interval=None,
         if verbose:
             print(time)
         all_timeindices = num.arange(len(time))
-        
+
         if time_interval is not None:
             msg = 'time_interval must be a sequence of length 2.'
             assert len(time_interval) == 2, msg
@@ -598,7 +598,7 @@ def get_maximum_inundation_data(filename, polygon=None, time_interval=None,
         else:
             # Take them all
             timesteps = all_timeindices
-        
+
         #print timesteps
 
         fid.close()
@@ -642,7 +642,7 @@ def get_maximum_inundation_data(filename, polygon=None, time_interval=None,
                 if verbose:
                     pass
                     #print wet_elevation
-                    
+
                 runup_index = num.argmax(wet_elevation)
                 runup = max(wet_elevation)
                 if verbose:
@@ -667,7 +667,7 @@ def get_maximum_inundation_data(filename, polygon=None, time_interval=None,
                                           wet_y[runup_index]]
             else:
                 pass
-            
+
             if verbose:
                 print(i, runup)
 
@@ -675,5 +675,5 @@ def get_maximum_inundation_data(filename, polygon=None, time_interval=None,
         return maximal_runup, maximal_runup_location, maximal_time
     else:
         return maximal_runup, maximal_runup_location
-        
+
 

@@ -22,7 +22,7 @@ class SWWVisualiser(Visualiser):
         nTri = fin.variables['volumes'].shape[0]
         insertNextCell = vtkCellArray.InsertNextCell
         insertCellPoint = vtkCellArray.InsertCellPoint
-        
+
         for v in range(nTri):
             insertNextCell(self.vtk_cells, 3)
             for i in range(3):

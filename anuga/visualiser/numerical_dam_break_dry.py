@@ -42,11 +42,11 @@ W = 5.
 # structured mesh
 points, vertices, boundary = anuga.rectangular_cross(int(L/dx), int(W/dy), L, W, (-L/2.0, -W/2.0))
 
-#domain = anuga.Domain(points, vertices, boundary) 
-domain = Domain(points, vertices, boundary) 
+#domain = anuga.Domain(points, vertices, boundary)
+domain = Domain(points, vertices, boundary)
 
-domain.set_name(output_file)                
-domain.set_datadir(output_dir) 
+domain.set_name(output_file)
+domain.set_datadir(output_dir)
 
 #------------------------------------------------------------------------------
 # Setup Algorithm, either using command line arguments
@@ -81,7 +81,7 @@ domain.set_quantity('stage', height)
 #------------------------------------------------------------------------------
 from math import sin, pi, exp
 Br = anuga.Reflective_boundary(domain)      # Solid reflective wall
-Bt = anuga.Transmissive_boundary(domain)    # Continue all values on boundary 
+Bt = anuga.Transmissive_boundary(domain)    # Continue all values on boundary
 Bd = anuga.Dirichlet_boundary([1,0.,0.]) # Constant boundary values
 
 # Associate boundary tags with boundary objects
@@ -107,7 +107,7 @@ i = 0
 for t in domain.evolve(yieldstep = 0.01, finaltime = 0.25):
     #print domain.timestepping_statistics(track_speeds=True)
     print(domain.timestepping_statistics())
-    if vtk_visualiser: 
+    if vtk_visualiser:
         vis.update()
         fileName = 'stage_%03d' % i + '.vtk'
         i = i+1
@@ -116,6 +116,6 @@ for t in domain.evolve(yieldstep = 0.01, finaltime = 0.25):
 #test against know data
 
 
-    
+
 if vtk_visualiser: vis.evolveFinished()
 

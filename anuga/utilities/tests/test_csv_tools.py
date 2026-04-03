@@ -31,14 +31,14 @@ class Test_CSV_utils(unittest.TestCase):
         # create 4 test CSV files
         self.num_files = self.NUM_FILES
         self.filenames = []
-        
+
         for i in range(self.NUM_FILES):
             self.filenames.append(tempfile.mktemp('.csv'))
-            
+
         for (i, fn) in enumerate(self.filenames):
             fd = open(fn, 'w')
             csv_fd = csv.writer(fd)
-            
+
             # write colums row
             columns = []
             for j in range(self.NUM_COLS):
@@ -285,7 +285,7 @@ class Test_CSV_utils(unittest.TestCase):
         """Test merging two CSV files with different number of rows."""
 
         # get data from file [1]
-        fd = open(self.filenames[1], 'r')
+        fd = open(self.filenames[1])
         data = fd.readlines()
         fd.close()
 
@@ -314,7 +314,7 @@ class Test_CSV_utils(unittest.TestCase):
         """Test merging two CSV files with different key values."""
 
         # Get data from file [1]
-        fd = open(self.filenames[1], 'r')
+        fd = open(self.filenames[1])
         data = fd.readlines()
         fd.close()
 
@@ -327,8 +327,8 @@ class Test_CSV_utils(unittest.TestCase):
 
         file_title_list = [(self.filenames[0], 'test0'),
                            (test_filename, 'test2')]
-        
-        
+
+
         try:
             csv_tools.merge_csv_key_values(file_title_list,
                                            self.OUTPUT_FILE,
@@ -412,7 +412,7 @@ class Test_CSV_utils(unittest.TestCase):
     def get_file_contents(self, filename):
         """Return file contents as a string."""
 
-        fd = open(filename, 'r')
+        fd = open(filename)
         data = fd.readlines()
         fd.close()
         return ''.join(data).replace('\r', '')

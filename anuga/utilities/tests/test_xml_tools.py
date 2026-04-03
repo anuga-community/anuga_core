@@ -2,7 +2,7 @@
 
 
 import unittest
-from tempfile import mkstemp, mktemp 
+from tempfile import mkstemp, mktemp
 
 import os
 

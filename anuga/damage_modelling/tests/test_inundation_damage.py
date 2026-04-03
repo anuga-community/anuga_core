@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 import unittest
 import tempfile
-import os, sys
+import os
+import sys
 import time
 import csv
 

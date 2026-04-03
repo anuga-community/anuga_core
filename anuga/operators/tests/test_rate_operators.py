@@ -1,7 +1,8 @@
 """  Test environmental forcing - rain, wind, etc.
 """
 
-import unittest, os
+import unittest
+import os
 import anuga
 import numpy
 from anuga import Domain
@@ -355,14 +356,14 @@ class Test_rate_operators(unittest.TestCase):
 
         # test timestepping_statistics
         stats = operator.timestepping_statistics()
-        
+
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
         # print(rr)
         assert num.allclose(float(rr[2]), -5.0)
         assert num.allclose(float(rr[3]), 10.0)
-        assert num.allclose(float(rr[4]), 12.0)       
-    
+        assert num.allclose(float(rr[4]), 12.0)
+
 
     def test_rate_operator_rate_from_file(self):
         from anuga.config import rho_a, rho_w, eta_w
@@ -520,8 +521,8 @@ class Test_rate_operators(unittest.TestCase):
 
         # assert num.allclose(float(rr[2]), 17.7)
         # assert num.allclose(float(rr[3]), 106200.0)
-        # 
-        # operator_21: Min rate = 17700 m/s, Max rate = 17700 m/s, Total Q = 106200 m^3     
+        #
+        # operator_21: Min rate = 17700 m/s, Max rate = 17700 m/s, Total Q = 106200 m^3
 
     def test_rate_operator_functions_rate_default_rate(self):
         from anuga.config import rho_a, rho_w, eta_w
@@ -844,9 +845,9 @@ class Test_rate_operators(unittest.TestCase):
 
         # assert num.allclose(float(rr[2]), 1.33333)
         # assert num.allclose(float(rr[3]), 3.33333)
-        # assert num.allclose(float(rr[4]), 160.0) 
+        # assert num.allclose(float(rr[4]), 160.0)
 
-        # operator_11: Min rate = 13.3333 m/s, Max rate = 33.3333 m/s, Total Q = 320 m^3       
+        # operator_11: Min rate = 13.3333 m/s, Max rate = 33.3333 m/s, Total Q = 320 m^3
 
     def test_rate_operator_functions_spatial_indices(self):
         from anuga.config import rho_a, rho_w, eta_w
@@ -941,7 +942,7 @@ class Test_rate_operators(unittest.TestCase):
 
         # assert num.allclose(float(rr[2]), 1.33333)
         # assert num.allclose(float(rr[3]), 3.33333)
-        # assert num.allclose(float(rr[4]), 146.667)        
+        # assert num.allclose(float(rr[4]), 146.667)
 
         # operator_9: Min rate = 13.3333 m/s, Max rate = 33.3333 m/s, Total Q = 293.333 m^3
 
@@ -1032,9 +1033,9 @@ class Test_rate_operators(unittest.TestCase):
 
         # assert num.allclose(float(rr[2]), 1.0)
         # assert num.allclose(float(rr[3]), 1.0)
-        # assert num.allclose(float(rr[4]), 60.0) 
-        # 
-        # operator_23: Min rate = 10 m/s, Max rate = 10 m/s, Total Q = 120 m^3     
+        # assert num.allclose(float(rr[4]), 60.0)
+        #
+        # operator_23: Min rate = 10 m/s, Max rate = 10 m/s, Total Q = 120 m^3
 
     def test_rate_operator_rate_centroid_array(self):
         from anuga.config import rho_a, rho_w, eta_w
@@ -1213,7 +1214,7 @@ class Test_rate_operators(unittest.TestCase):
         # assert num.allclose(float(rr[4]), 60.0)
 
         # operator_17: Min rate = 10 m/s, Max rate = 10 m/s, Total Q = 120 m^3
-     
+
 
     def test_rate_operator_rate_centroid_array_factor_data(self):
         from anuga.config import rho_a, rho_w, eta_w
@@ -1347,7 +1348,7 @@ class Test_rate_operators(unittest.TestCase):
 
         rate_array = numpy.ones((domain.number_of_triangles,))
 
-        try: 
+        try:
             operator = Rate_operator(domain, rate=rate_array, factor=factor, \
                                  indices=indices)
         except Exception:
@@ -1407,7 +1408,8 @@ class Test_rate_operators(unittest.TestCase):
         from anuga.config import rho_a, rho_w, eta_w
         from math import pi, cos, sin
 
-        import xarray, pandas
+        import xarray
+        import pandas
 
         a = [0.0, 0.0]
         b = [0.0, 2.0]
@@ -1666,7 +1668,7 @@ class Test_rate_operators(unittest.TestCase):
         import re
         rr = re.findall(r"[-+]?[.]?[\d]+(?:,\d\d\d)*[\.]?\d*(?:[eE][-+]?\d+)?", stats)
         # print(rr)
-        
+
         assert num.allclose(float(rr[2]), 0.0)
         assert num.allclose(float(rr[3]), 0.0)
         assert num.allclose(float(rr[4]), 0.0)

@@ -21,7 +21,7 @@ def sww2pts(name_in, name_out=None,
 
     if reduction is given use that to reduce quantity over all timesteps.
 
-    data_points (Nx2 array) give locations of points where quantity is to 
+    data_points (Nx2 array) give locations of points where quantity is to
     be computed.
     """
 
@@ -38,7 +38,7 @@ def sww2pts(name_in, name_out=None,
         reduction = max
 
     basename_in, in_ext = os.path.splitext(name_in)
-    
+
     if name_out != None:
         basename_out, out_ext = os.path.splitext(name_out)
     else:
@@ -47,10 +47,10 @@ def sww2pts(name_in, name_out=None,
         name_out = basename_out + out_ext
 
     if in_ext != '.sww':
-        raise IOError('Input format for %s must be .sww' % name_in)
+        raise OSError('Input format for %s must be .sww' % name_in)
 
     if out_ext != '.pts':
-        raise IOError('Output format for %s must be .pts' % name_out)
+        raise OSError('Output format for %s must be .pts' % name_out)
 
 
     # Read sww file
@@ -71,7 +71,7 @@ def sww2pts(name_in, name_out=None,
         number_of_timesteps = fid.dimensions['number_of_timesteps']
         number_of_points = fid.dimensions['number_of_points']
 
-        
+
     if origin is None:
         # Get geo_reference
         # sww files don't have to have a geo_ref

@@ -14,7 +14,7 @@ import scipy.optimize as sco
 
 class Internal_boundary_operator(anuga.Structure_operator):
     """
-       The internal_boundary_function must accept 2 input arguments (hw, tw). It 
+       The internal_boundary_function must accept 2 input arguments (hw, tw). It
        returns Q:
        - hw will always be the stage (or energy) at the enquiry_point[0]
        - tw will always be the stage (or energy) at the enquiry_point[1]
@@ -124,7 +124,7 @@ class Internal_boundary_operator(anuga.Structure_operator):
         cases). The latter will have less communication in parallel, and
         for some simple internal_boundary_functions there is no benefit to
         the implicit approach
-            
+
         """
         if self.compute_discharge_implicitly:
             Q, barrel_velocity, outlet_culvert_depth = self.discharge_routine_implicit()
@@ -158,7 +158,7 @@ class Internal_boundary_operator(anuga.Structure_operator):
         else:
             self.inlet0_energy = self.inlets[0].get_enquiry_stage()
             self.inlet1_energy = self.inlets[1].get_enquiry_stage()
-        
+
         # Store these variables for anuga's structure output
         self.driving_energy = max(self.inlet0_energy, self.inlet1_energy)
         self.delta_total_energy = self.inlet0_energy - self.inlet1_energy
@@ -242,7 +242,7 @@ class Internal_boundary_operator(anuga.Structure_operator):
         else:
             self.inlet0_energy = self.inlets[0].get_enquiry_stage()
             self.inlet1_energy = self.inlets[1].get_enquiry_stage()
-        
+
         # Store these variables for anuga's structure output
         self.driving_energy = max(self.inlet0_energy, self.inlet1_energy)
         self.delta_total_energy = self.inlet0_energy - self.inlet1_energy
@@ -266,7 +266,7 @@ class Internal_boundary_operator(anuga.Structure_operator):
                 discharge = (1.0-theta)*Q0 + theta*Q1
                 # We need to find 'sol' such that 'output' is [0., 0.]
                 output = sol*areas - discharge*dt*numpy.array([-1., 1.])
-                return(output) 
+                return(output)
 
             final_sol = sco.root(F_to_solve, sol, method='lm').x
             Q1 =  self.internal_boundary_function(E0 + final_sol[0], E1 + final_sol[1])
@@ -305,4 +305,4 @@ class Internal_boundary_operator(anuga.Structure_operator):
         barrel_velocity = numpy.nan
         outlet_culvert_depth = numpy.nan
 
-        return Q, barrel_velocity, outlet_culvert_depth 
+        return Q, barrel_velocity, outlet_culvert_depth

@@ -415,7 +415,7 @@ def _sww2timeseries(swwfiles,
                     output_centroids = False):
 
     # FIXME(Ole): Shouldn't print statements here be governed by verbose?
-    assert type(gauge_filename) == type(''), 'Gauge filename must be a string'
+    assert type(gauge_filename) == str, 'Gauge filename must be a string'
 
     try:
         fid = open(gauge_filename)

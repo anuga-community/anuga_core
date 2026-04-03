@@ -226,7 +226,7 @@ def _create_pmesh_from_regions(bounding_polygon,
                 warnings.warn(msg, UserWarning)
                 if verbose:
                     log.critical('WARNING: %s' % msg)
-                
+
 
     # In addition I reckon the polygons could be of class Geospatial_data
     # (DSG) If polygons were classes caching would break in places.

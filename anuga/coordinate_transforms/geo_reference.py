@@ -41,7 +41,7 @@ _WGS84_UTM_SOUTH_BASE = 32700
 
 TITLE = '#geo reference' + "\n" # this title is referred to in the test format
 
-class Geo_reference(object):
+class Geo_reference:
     """Coordinate reference system for an ANUGA domain.
 
     Attributes
@@ -149,13 +149,13 @@ class Geo_reference(object):
         # Set flag for absolute points (used by get_absolute)
         # FIXME (Ole): It would be more robust to always use get_absolute()
         self.absolute = num.allclose([self.xllcorner, self.yllcorner], 0)
-        
+
     def __eq__(self, other):
 
         # FIXME (Ole): Can this be automatically done for all attributes?
         # Anyway, it is arranged like this so one can step through and find out
         # why two objects might not be equal
-        
+
         equal = True
         if self.false_easting != other.false_easting: equal = False
         if self.false_northing != other.false_northing: equal = False
@@ -213,7 +213,7 @@ class Geo_reference(object):
 
     def set_hemisphere(self, hemisphere):
 
-        msg = f"'{hemisphere}' not corresponding to allowed hemisphere values 'southern', 'northern' or 'undefined'" 
+        msg = f"'{hemisphere}' not corresponding to allowed hemisphere values 'southern', 'northern' or 'undefined'"
         assert hemisphere in ['southern', 'northern', 'undefined'], msg
 
         self.hemisphere=str(hemisphere)
@@ -587,13 +587,13 @@ class Geo_reference(object):
         """
 
         import copy
-       
+
         # remember if we got a list
         is_list = isinstance(points, list)
 
         points = ensure_numeric(points, float)
 
-        # sanity checks	
+        # sanity checks
         if len(points.shape) == 1:
             #One point has been passed
             msg = 'Single point must have two elements'
@@ -605,26 +605,26 @@ class Geo_reference(object):
         assert len(points.shape) == 2, msg
 
         msg = 'Input must be an N x 2 array or list of (x,y) values. '
-        msg += 'I got an %d x %d array' %points.shape    
-        assert points.shape[1] == 2, msg                
+        msg += 'I got an %d x %d array' %points.shape
+        assert points.shape[1] == 2, msg
 
-        # FIXME (Ole): Could also check if zone, xllcorner, yllcorner 
-        # are identical in the two geo refs.    
+        # FIXME (Ole): Could also check if zone, xllcorner, yllcorner
+        # are identical in the two geo refs.
         if points_geo_ref is not self:
             # If georeferences are different
-            points = copy.copy(points) # Don't destroy input                    
-            if not points_geo_ref is None:
+            points = copy.copy(points) # Don't destroy input
+            if points_geo_ref is not None:
                 # Convert points to absolute coordinates
-                points[:,0] += points_geo_ref.xllcorner 
-                points[:,1] += points_geo_ref.yllcorner 
-        
+                points[:,0] += points_geo_ref.xllcorner
+                points[:,1] += points_geo_ref.yllcorner
+
             # Make points relative to primary geo reference
-            points[:,0] -= self.xllcorner 
+            points[:,0] -= self.xllcorner
             points[:,1] -= self.yllcorner
 
         if is_list:
             points = points.tolist()
-            
+
         return points
 
     def is_absolute(self):
@@ -633,7 +633,7 @@ class Geo_reference(object):
         Return True if xllcorner==yllcorner==0 indicating that points in
         question are absolute.
         """
-        
+
         # FIXME(Ole): It is unfortunate that decision about whether points
         # are absolute or not lies with the georeference object. Ross pointed this out.
         # Moreover, this little function is responsible for a large fraction of the time
@@ -641,12 +641,12 @@ class Geo_reference(object):
         # This was due to the repeated calls to allclose.
         # With the flag method fitting is much faster (18 Mar 2009).
 
-        # FIXME(Ole): HACK to be able to reuse data already cached (18 Mar 2009). 
+        # FIXME(Ole): HACK to be able to reuse data already cached (18 Mar 2009).
         # Remove at some point
         if not hasattr(self, 'absolute'):
             self.absolute = num.allclose([self.xllcorner, self.yllcorner], 0)
-            
-        # Return absolute flag    
+
+        # Return absolute flag
         return self.absolute
 
     def get_absolute(self, points):
@@ -662,25 +662,25 @@ class Geo_reference(object):
             # One point has been passed
             msg = 'Single point must have two elements'
             if not len(points) == 2:
-                raise ShapeError(msg)    
+                raise ShapeError(msg)
 
 
         msg = 'Input must be an N x 2 array or list of (x,y) values. '
-        msg += 'I got an %d x %d array' %points.shape    
+        msg += 'I got an %d x %d array' %points.shape
         if not points.shape[1] == 2:
-            raise ShapeError(msg)    
-            
-        
+            raise ShapeError(msg)
+
+
         # Add geo ref to points
         if not self.is_absolute():
-            points = copy.copy(points) # Don't destroy input                    
-            points[:,0] += self.xllcorner 
+            points = copy.copy(points) # Don't destroy input
+            points[:,0] += self.xllcorner
             points[:,1] += self.yllcorner
 
-        
+
         if is_list:
             points = points.tolist()
-             
+
         return points
 
     def get_relative(self, points):
@@ -701,22 +701,22 @@ class Geo_reference(object):
             #One point has been passed
             msg = 'Single point must have two elements'
             if not len(points) == 2:
-                raise ShapeError(msg)    
+                raise ShapeError(msg)
 
         if not points.shape[1] == 2:
             msg = ('Input must be an N x 2 array or list of (x,y) values. '
                    'I got an %d x %d array' % points.shape)
-            raise ShapeError(msg)    
+            raise ShapeError(msg)
 
         # Subtract geo ref from points
         if not self.is_absolute():
-            points = copy.copy(points) # Don't destroy input                            
-            points[:,0] -= self.xllcorner 
+            points = copy.copy(points) # Don't destroy input
+            points[:,0] -= self.xllcorner
             points[:,1] -= self.yllcorner
 
         if is_list:
             points = points.tolist()
-             
+
         return points
 
     def reconcile_zones(self, other):
@@ -725,9 +725,9 @@ class Geo_reference(object):
             # FIXME(Ole): Why would we do this?
             other = Geo_reference()
             #raise Exception('Expected georeference object, got None')
-        
+
         if (self.zone == other.zone):
-            pass        
+            pass
         elif self.zone == DEFAULT_ZONE:
             self.zone = other.zone
         elif other.zone == DEFAULT_ZONE:
@@ -740,7 +740,7 @@ class Geo_reference(object):
 
         # Should also reconcile hemisphere
         if (self.hemisphere == other.hemisphere):
-            pass        
+            pass
         elif self.hemisphere == DEFAULT_HEMISPHERE:
             self.hemisphere = other.hemisphere
         elif other.hemisphere == DEFAULT_HEMISPHERE:
@@ -749,9 +749,9 @@ class Geo_reference(object):
             msg = ('Geospatial data must be in the same '
                    'HEMISPHERE to allow reconciliation. I got hemisphere %d and %d'
                    % (self.hemisphere, other.hemisphere))
-            raise ANUGAError(msg)        
+            raise ANUGAError(msg)
 
-    # FIXME (Ole): Do we need this back?    
+    # FIXME (Ole): Do we need this back?
     #def easting_northing2geo_reffed_point(self, x, y):
     #    return [x-self.xllcorner, y - self.xllcorner]
 
@@ -760,7 +760,7 @@ class Geo_reference(object):
 
     def get_origin(self):
         """Get origin of this geo_reference."""
-      
+
         return (self.zone, self.xllcorner, self.yllcorner)
 
     def __repr__(self):
@@ -784,7 +784,7 @@ class Geo_reference(object):
     #    self   this geo_reference instance
     #    other  another geo_reference instance to compare against#
     #
-    #    Returns 0 if instances have the same attributes, else returns 1. 
+    #    Returns 0 if instances have the same attributes, else returns 1.
     #
     #    Note: attributes are: zone, xllcorner, yllcorner.
     #    """

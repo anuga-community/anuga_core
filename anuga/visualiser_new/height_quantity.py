@@ -45,7 +45,7 @@ class HeightQuantity(Feature):
             mapper = vtkPolyDataMapper()
             mapper.SetInput(polyData)
             setValue = vtkFloatArray.SetValue
-            if hasattr(self.colour[0], '__call__'):
+            if callable(self.colour[0]):
                 scalars = self.colour[0](self.visualiser.getQuantityDict())
                 nScalars = len(scalars)
                 vtk_scalars = vtkFloatArray()

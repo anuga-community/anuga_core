@@ -38,7 +38,7 @@ class RealtimeVisualiser(Visualiser):
         self.sync_unpaused.set()
         self.sync_redrawReady = Event()
         self.sync_redrawReady.clear()
-        
+
     def setup_grid(self):
         self.vtk_cells = vtkCellArray()
         triangles = self.source.get_triangles()
@@ -60,7 +60,7 @@ class RealtimeVisualiser(Visualiser):
         triangles = self.source.get_triangles()
         vertex_values, _ = self.source.get_quantity(quantityName).get_vertex_values(xy=False, smooth=False)
 
-        
+
         for n in range(N_vert):
             qty_index[n] = vertex_values[n]
 
@@ -89,7 +89,7 @@ class RealtimeVisualiser(Visualiser):
 
     def get_3d_bounds(self):
         return [self.xmin, self.xmax, self.ymin, self.ymax, self.zmin, self.zmax]
-        
+
     def build_quantity_dict(self):
         triangles = self.source.get_triangles()
         quantities = {}
@@ -127,7 +127,7 @@ class RealtimeVisualiser(Visualiser):
 
     def update(self,pause=False):
         """Sync the visualiser to the domain. Call this in the evolve loop."""
-            
+
         if self.running:
             self.sync_redrawReady.set()
             self.sync_idle.wait()
@@ -138,12 +138,12 @@ class RealtimeVisualiser(Visualiser):
             if self.sync_unpaused.isSet():
                 self.sync_unpaused.clear()
                 self.tk_pauseResume.config(text="Resume")
-                
+
                 self.sync_redrawReady.set()
                 self.sync_idle.wait()
                 self.sync_idle.clear()
                 self.sync_unpaused.wait()
-            
+
         return self.running
 
     def evolveFinished(self):

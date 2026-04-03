@@ -108,7 +108,7 @@ Optional
 """
 
 
-class Okada_func(object):
+class Okada_func:
 
     def __init__(self, ns, NSMAX, length, width, dip, x0, y0, strike,
                  depth, slip, rake, zrec):
@@ -180,7 +180,7 @@ class Okada_func(object):
         dips[:] = dip
         xs[:] = x0
         ys[:] = y0
-        
+
 
         # double Gaussian calculation assumes water displacement is oriented
         # E-W, so, for displacement at some angle alpha clockwise from the E-W

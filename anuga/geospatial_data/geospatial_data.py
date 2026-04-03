@@ -32,7 +32,7 @@ import anuga.utilities.log as log
 DEFAULT_ATTRIBUTE = 'elevation'
 
 
-class Geospatial_data(object):
+class Geospatial_data:
 
     def __init__(self,
                  data_points=None,  # this can also be a points file name
@@ -82,7 +82,7 @@ class Geospatial_data(object):
 
         file_name: Name of input netCDF file or  text file (.xya, .txt). An netCDF file must
         have dimensions "points" etc.
-        
+
         Text file is a comma seperated file with x, y and attribute
         data.
 
@@ -485,25 +485,25 @@ class Geospatial_data(object):
 
         if access(file_name, F_OK) == 0:
             msg = 'File %s does not exist or is not accessible' % file_name
-            raise IOError(msg)
+            raise OSError(msg)
 
         attributes = {}
         if file_name[-4:] == ".pts":
             try:
                 data_points, attributes, geo_reference = \
                     _read_pts_file(file_name, verbose)
-            except IOError as e:
+            except OSError as e:
                 msg = 'Could not open file %s ' % file_name
-                raise IOError(msg)
+                raise OSError(msg)
         elif file_name[-4:] == ".txt" or file_name[-4:] == ".csv" or file_name[-4:] == ".xya":
             try:
                 data_points, attributes, geo_reference = \
                     _read_csv_file(file_name, verbose)
-            except IOError as e:
+            except OSError as e:
                 # This should only be if a file is not found
                 msg = ('Could not open file %s. Check the file location.'
                        % file_name)
-                raise IOError(msg)
+                raise OSError(msg)
             except SyntaxError as e:
                 # This should only be if there is a format error
                 msg = ('Problem with format of file %s.\n%s'
@@ -511,7 +511,7 @@ class Geospatial_data(object):
                 raise SyntaxError(msg)
         else:
             msg = 'Extension %s is unknown' % file_name[-4:]
-            raise IOError(msg)
+            raise OSError(msg)
 
         self.data_points = data_points
         self.attributes = attributes
@@ -566,7 +566,7 @@ class Geospatial_data(object):
                                                  isSouthHemisphere=isSouthHemisphere))
         else:
             msg = 'Unknown file type %s ' % file_name
-            raise IOError(msg)
+            raise OSError(msg)
 
     def get_sample(self, indices):
         """ Returns a object which is a subset of the original
@@ -708,7 +708,7 @@ class Geospatial_data(object):
 
         if self.file_name[-4:] == ".pts":
             # See if the file is there.  Throw a QUIET IO error if it isn't
-            fd = open(self.file_name, 'r')
+            fd = open(self.file_name)
             fd.close()
 
             # Throws prints to screen if file not present
@@ -897,7 +897,7 @@ def _read_pts_file(file_name, verbose=False):
         log.critical('Geospatial_data: Reading %s' % file_name)
 
     # See if the file is there.  Throw a QUIET IO error if it isn't
-    fd = open(file_name, 'r')
+    fd = open(file_name)
     fd.close()
 
     # Throws prints to screen if file not present
@@ -912,10 +912,10 @@ def _read_pts_file(file_name, verbose=False):
 
     try:
         keys.remove('points')
-    except IOError as e:
+    except OSError as e:
         fid.close()
         msg = "Expected keyword 'points' but could not find it"
-        raise IOError(msg)
+        raise OSError(msg)
 
     attributes = {}
     for key in keys:
@@ -1072,10 +1072,10 @@ def _read_pts_file_header(fid, verbose=False):
     keys = list(fid.variables.keys())
     try:
         keys.remove('points')
-    except IOError as e:
+    except OSError as e:
         fid.close()
         msg = "Expected keyword 'points' but could not find it."
-        raise IOError(msg)
+        raise OSError(msg)
 
     if verbose:
         log.critical('Got %d variables: %s' % (len(keys), keys))
@@ -1444,7 +1444,7 @@ def find_optimal_smoothing_parameter(data_file,
             "reading from file: %s" % mesh_file
         if access(mesh_file, F_OK) == 0:
             msg = "file %s doesn't exist!" % mesh_file
-            raise IOError(msg)
+            raise OSError(msg)
 
     # split topo data
     if verbose:
@@ -1644,7 +1644,7 @@ def old_find_optimal_smoothing_parameter(data_file,
         # test mesh file exists?
         if access(mesh_file, F_OK) == 0:
             msg = "file %s doesn't exist!" % mesh_file
-            raise IOError(msg)
+            raise OSError(msg)
 
     # split topo data
     G = Geospatial_data(file_name=data_file)

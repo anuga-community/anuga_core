@@ -66,7 +66,7 @@ class Advection_Domain(Generic_Domain):
         #Only first is implemented for advection
         self.set_default_order(1)
         self.set_beta(1.0)
-        
+
         self.smooth = True
         self.max_flux_update_frequency=1
 
@@ -171,7 +171,7 @@ class Advection_Domain(Generic_Domain):
         log.critical("velocity=%s" % str(self.velocity))
         """
 
-        from . import advection_ext		
+        from . import advection_ext
         self.flux_timestep = advection_ext.compute_fluxes(self, Stage, huge_timestep, max_timestep)
 
 

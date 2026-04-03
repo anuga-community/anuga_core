@@ -1,7 +1,8 @@
 """  Test erosion operators
 """
 
-import unittest, os
+import unittest
+import os
 import anuga
 from anuga import Domain
 from anuga import Reflective_boundary
@@ -87,7 +88,7 @@ class Test_erosion_operators(unittest.TestCase):
         Height = Stage - Elevation
 
         sum2 = num.sum(Height)
-        
+
         #pprint( domain.quantities['elevation'].centroid_values )
         #pprint( domain.quantities['stage'].centroid_values )
         #print domain.quantities['xmomentum'].centroid_values
@@ -96,9 +97,9 @@ class Test_erosion_operators(unittest.TestCase):
         assert sum1 == sum2
         assert num.allclose(domain.quantities['stage'].centroid_values, stage_ex)
         assert num.allclose(domain.quantities['xmomentum'].centroid_values, 2.0)
-        assert num.allclose(domain.quantities['ymomentum'].centroid_values, 3.0)        
+        assert num.allclose(domain.quantities['ymomentum'].centroid_values, 3.0)
 
-            
+
 def make_domain():
     """4-triangle domain, 1m water over 0.5m elevation."""
     a = [0.0, 0.0]; b = [0.0, 2.0]; c = [2.0, 0.0]

@@ -47,7 +47,7 @@ deps_version = 2
 try:
     import multiprocessing
 except ImportError:
-    class MultiprocessingModule(object):
+    class MultiprocessingModule:
         def __getattr__(self, name):
             raise NotImplementedError(
                 "multiprocessing module not available, can't do parallel builds")
@@ -98,7 +98,7 @@ except ImportError:
         import pickle
         # needed to ignore the indent= argument for pickle's dump()
 
-        class PickleJson(object):
+        class PickleJson:
             def load(self, f):
                 return pickle.load(f)
 
@@ -210,7 +210,7 @@ def md5_hasher(filename):
             return md5func(f.read()).hexdigest()
         finally:
             f.close()
-    except IOError:
+    except OSError:
         return None
 
 
@@ -219,7 +219,7 @@ def mtime_hasher(filename):
     try:
         st = os.stat(filename)
         return repr(st.st_mtime)
-    except (IOError, OSError):
+    except OSError:
         return None
 
 
@@ -229,7 +229,7 @@ class RunnerUnsupportedException(Exception):
     pass
 
 
-class Runner(object):
+class Runner:
     def __call__(self, *args, **kwargs):
         """ Run command and return (dependencies, outputs), where
             dependencies is a list of the filenames of files that the
@@ -462,7 +462,7 @@ class AtimesRunner(Runner):
         return deps, outputs
 
 
-class StraceProcess(object):
+class StraceProcess:
     def __init__(self, cwd='.'):
         self.cwd = cwd
         self.deps = set()
@@ -722,8 +722,8 @@ class SmartRunner(Runner):
         return self._runner(*args, **kwargs)
 
 
-class _running(object):
-    """ Represents a task put on the parallel pool 
+class _running:
+    """ Represents a task put on the parallel pool
         and its results when complete """
 
     def __init__(self, async_obj, command):
@@ -734,21 +734,21 @@ class _running(object):
         self.results = None
 
 
-class _after(object):
+class _after:
     """ Represents something waiting on completion of some previous commands """
 
     def __init__(self, afters, do):
         """ "afters" is a group id or a iterable of group ids to wait on
-            "do" is either a tuple representing a command (group, command, 
+            "do" is either a tuple representing a command (group, command,
                 arglist, kwargs) or a threading.Condition to be released """
         self.afters = afters
         self.do = do
 
 
-class _Groups(object):
+class _Groups:
     """ Thread safe mapping object whose values are lists of _running
         or _after objects and a count of how many have *not* completed """
-    class value(object):
+    class value:
         """ the value type in the map """
 
         def __init__(self, val=None):
@@ -821,7 +821,7 @@ _results = None
 _stop_results = threading.Event()
 
 
-class _todo(object):
+class _todo:
     """ holds the parameters for commands waiting on others """
 
     def __init__(self, group, command, arglist, kwargs):
@@ -884,7 +884,7 @@ def _results_handler(builder, delay=0.01):
             os._exit(1)
 
 
-class Builder(object):
+class Builder:
     """ The Builder.
 
         You may supply a "runner" class to change the way commands are run
@@ -904,7 +904,7 @@ class Builder(object):
     def __init__(self, runner=None, dirs=None, dirdepth=100, ignoreprefix='.',
                  ignore=None, hasher=md5_hasher, depsname='.deps',
                  quiet=False, debug=False, inputs_only=False, parallel_ok=False):
-        """ Initialise a Builder with the given options.
+        r""" Initialise a Builder with the given options.
 
         "runner" specifies how programs should be run.  It is either a
             callable compatible with the Runner class, or a string selecting
@@ -1003,8 +1003,8 @@ class Builder(object):
             of (command_line, deps_list, outputs_list) so caller or subclass
             can use them.
 
-            Parallel operation keyword args "after" specifies a group or 
-            iterable of groups to wait for after they finish, "group" specifies 
+            Parallel operation keyword args "after" specifies a group or
+            iterable of groups to wait for after they finish, "group" specifies
             the group to add this command to.
 
             Optional "echo" keyword arg is passed to echo_command() so you can
@@ -1181,7 +1181,7 @@ class Builder(object):
                 self._deps.pop('.deps_version', None)
             finally:
                 f.close()
-        except IOError:
+        except OSError:
             self._deps = {}
 
     def write_deps(self, depsname=None):
@@ -1287,7 +1287,7 @@ def run(*args, **kwargs):
 
 
 def after(*args):
-    """ wait until after the specified command groups complete and return 
+    """ wait until after the specified command groups complete and return
         results, or None if not parallel """
     _set_default_builder()
     if getattr(default_builder, 'parallel_ok', False):
@@ -1394,7 +1394,7 @@ def main(globals_dict=None, build_dir=None, extra_options=None, builder=None,
         "extra_options" is an optional list of options created with
         optparse.make_option(). The pseudo-global variable main.options
         is set to the parsed options list.
-        "builder" is the class of builder to create, default (None) is the 
+        "builder" is the class of builder to create, default (None) is the
         normal builder
         "default" is the default user script function to call, None = 'build'
         "kwargs" is any other keyword arguments to pass to the builder """

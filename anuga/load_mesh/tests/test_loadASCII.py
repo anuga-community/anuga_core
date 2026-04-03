@@ -324,7 +324,7 @@ class loadASCIITestCase(unittest.TestCase):
         # use self.faileUnlessRaises(IOError, import_mesh_file(fileName))
         try:
             dict = import_mesh_file(fileName)
-        except IOError:
+        except OSError:
             pass
         else:
             self.assertTrue(0 == 1, 'imaginary file did not raise error!')
@@ -334,7 +334,7 @@ class loadASCIITestCase(unittest.TestCase):
         fileName = tempfile.mktemp('.xxx')
         try:
             export_mesh_file(fileName, dict)
-        except IOError:
+        except OSError:
             pass
         else:
             self.assertTrue(0 == 1, 'bad tsh file did not raise error!')
@@ -350,7 +350,7 @@ class loadASCIITestCase(unittest.TestCase):
         file.close()
         try:
             dict = import_mesh_file(fileName)
-        except IOError:
+        except OSError:
             pass
         else:
             self.fail('bad tsh file did not raise error!')
@@ -369,7 +369,7 @@ showme1.0 0.0 10.0 \n\
         file.close()
         try:
             dict = import_mesh_file(fileName)
-        except IOError:
+        except OSError:
             pass
         else:
             self.fail('bad tsh file did not raise error!')
@@ -523,7 +523,7 @@ showme1.0 0.0 10.0 \n\
         fileName = tempfile.mktemp('.msh')
         try:
             dict = import_mesh_file(fileName)
-        except IOError:
+        except OSError:
             pass
         else:
             self.fail('imaginary file did not raise error!')
@@ -539,7 +539,7 @@ showme1.0 0.0 10.0 \n\
         file.close()
         try:
             dict = import_mesh_file(fileName)
-        except IOError:
+        except OSError:
             pass
         else:
             self.fail('bad msh file did not raise error!')

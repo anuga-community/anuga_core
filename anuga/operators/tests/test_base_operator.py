@@ -14,7 +14,7 @@ class Test_Operator(unittest.TestCase):
 
     def test_create_operator(self):
         points = num.array([[0.0,0.0],[1.0,0.0],[0.0,1.0]])
-        
+
         elements = num.array([[0,1,2]])
         boundary_map = {}
         boundary_map[(0,0)] = 'edge0'
@@ -34,7 +34,7 @@ class Test_Operator(unittest.TestCase):
         domain.timestep = 3.0
 
         assert operator.get_timestep() == domain.get_timestep()
-        
+
         try:
             operator()
         except Exception:

@@ -39,7 +39,7 @@ class DataTimeError(Exception):
     pass
 
 
-class Data_format(object):
+class Data_format:
     """Generic interface to data formats
     """
 
@@ -272,7 +272,7 @@ class SWW_file(Data_format):
             try:
                 # Open existing file
                 fid = NetCDFFile(self.filename, netcdf_mode_a)
-            except IOError:
+            except OSError:
                 # This could happen if someone was reading the file.
                 # In that case, wait a while and try again
                 msg = 'Warning (store_timestep): File %s could not be opened' \
@@ -433,7 +433,7 @@ class SWW_file(Data_format):
             fid.close()
 
 
-class Read_sww(object):
+class Read_sww:
 
     def __init__(self, source):
         """The source parameter is assumed to be a NetCDF sww file.
@@ -584,7 +584,7 @@ class Write_sww(Write_sts):
         """
 
         from anuga import get_revision_number
-        from anuga import get_revision_date        
+        from anuga import get_revision_date
         from anuga import get_version
 
         outfile.institution = institution
@@ -609,7 +609,7 @@ class Write_sww(Write_sts):
             revision_number = None
         # Allow None to be stored as a string
         outfile.revision_number = str(revision_number)
-        
+
         try:
             revision_date = get_revision_date()
         except Exception:
@@ -617,7 +617,7 @@ class Write_sww(Write_sts):
             # revision date.
             revision_date = None
         # Allow None to be stored as a string
-        outfile.revision_date = str(revision_date)        
+        outfile.revision_date = str(revision_date)
 
         try:
             anuga_version = get_version()
@@ -1128,11 +1128,11 @@ def Xload_sww_as_domain(filename, boundary=None, t=None,
                        verbose=False, very_verbose=False):
     """
     Load an sww file into a domain.
-    
-    
-    DEPRECATE THIS. It is not robust and doesn't for instance provide a proper 
+
+
+    DEPRECATE THIS. It is not robust and doesn't for instance provide a proper
     boundary map (as this information isn't currently stored in sww files)
-    
+
 
     Usage: domain = load_sww_as_domain('file.sww',
                         t=time (default = last time in file))
@@ -1556,7 +1556,7 @@ def weed(coordinates, volumes, boundary=None):
                 volume[i] = point_dict[same_point[index]]
 
     new_boundary = {}
-    if not boundary is None:
+    if boundary is not None:
         for segment in list(boundary.keys()):
             point0 = point_dict[same_point[segment[0]]]
             point1 = point_dict[same_point[segment[1]]]
@@ -1576,20 +1576,20 @@ def weed(coordinates, volumes, boundary=None):
 
     return coordinates, volumes, boundary
 
-    
+
 def sww_files_are_equal(filename1, filename2):
     """Read and compare numerical values of two sww files: filename1 and filename2
-    
+
     If they are identical (up to a tolerance) the return value is True
     If anything substantial is different, the return value is False.
     """
 
     import anuga.utilities.plot_utils as util
-        
+
     if not (filename1.endswith('.sww') and filename2.endswith('.sww')):
         msg = f'Filenames {filename1} and {filename2} must both end with .sww'
         raise Exception(msg)
-    
+
 
     domain1_v = util.get_output(filename1)
     domain1_c = util.get_centroids(domain1_v)
@@ -1599,25 +1599,25 @@ def sww_files_are_equal(filename1, filename2):
 
     if not num.allclose(domain1_c.stage, domain2_c.stage):
         return False
-        
+
     if not num.allclose(domain1_c.xmom, domain2_c.xmom):
         return False
-        
+
     if not num.allclose(domain1_c.ymom, domain2_c.ymom):
         return False
-        
+
     if not num.allclose(domain1_c.xvel, domain2_c.xvel):
         return False
-        
+
     if not num.allclose(domain1_c.yvel, domain2_c.yvel):
         return False
-        
+
     if not num.allclose(domain1_v.x, domain2_v.x):
         return False
-        
+
     if not num.allclose(domain1_v.y, domain2_v.y):
         return False
-        
+
     # Otherwise, they are deemed to be identical
-    return True        
-    
+    return True
+

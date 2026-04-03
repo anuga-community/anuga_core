@@ -27,7 +27,7 @@ class Inlet_operator(anuga.Operator):
                  logging = False,
                  verbose = False):
         """Inlet Operator - add water to a domain via an inlet.
-        
+
         :param domain: Specify domain
         :param region: Apply Inlet flow over a region (which can be a Region, Polygon or line)
         :param Q: function(t) or scalar discharge (m^3/s)
@@ -37,8 +37,8 @@ class Inlet_operator(anuga.Operator):
         :param description: Describe the Inlet_operator
         :param label: Give Inlet_operator a label (name)
         :param verbose: Provide verbose output
-        
-        
+
+
 
         Example:
 
@@ -202,7 +202,7 @@ class Inlet_operator(anuga.Operator):
                 self.inlet.set_ymoms(depths*self.velocity[1])
             else:
                 depths = self.inlet.get_depths()
-            
+
                 self.inlet.set_xmoms(depths*u)
                 self.inlet.set_ymoms(depths*v)
 

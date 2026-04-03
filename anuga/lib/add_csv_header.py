@@ -22,8 +22,8 @@ def add_csv_header(file, header_list, be_green=False):
 
     # open the file to insert header into
     try:
-        fd = open(file, 'r')
-    except IOError as e:
+        fd = open(file)
+    except OSError as e:
         msg = "Can't open file '%s': %s" % (file, str(e))
         raise Exception(msg)
     except Exception:
@@ -96,9 +96,9 @@ if __name__ == '__main__':
     add_csv_header(filename, header)
 
     # read test file
-    fd = open(filename, 'r')
+    fd = open(filename)
     data = fd.readlines()
-    fd.close
+    fd.close()
 
     # check if data as expected
     data = ''.join(data)
@@ -120,9 +120,9 @@ if __name__ == '__main__':
     add_csv_header(filename2, header, be_green=True)
 
     # read test file
-    fd = open(filename2, 'r')
+    fd = open(filename2)
     data = fd.readlines()
-    fd.close
+    fd.close()
 
     # check if data as expected
     data = ''.join(data)

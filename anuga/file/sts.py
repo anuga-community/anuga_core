@@ -12,7 +12,7 @@ from anuga.coordinate_transforms.geo_reference import Geo_reference, \
      ensure_geo_reference
 from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a
 
-class Write_sts(object):
+class Write_sts:
     """ A class to write STS files.
     """
     sts_quantities = ['stage', 'xmomentum', 'ymomentum']
@@ -225,7 +225,7 @@ class Write_sts(object):
 
 
     def write_dynamic_quantities(self, outfile, quantities,
-                    times, precis = netcdf_float, verbose = False):   
+                    times, precis = netcdf_float, verbose = False):
         """
             Write out given quantities to file.
         """
@@ -273,9 +273,9 @@ def create_sts_boundary(sts_filename):
 
     try:
         fid = NetCDFFile(stsname_postfixed, netcdf_mode_r)
-    except IOError:
+    except OSError:
         msg = 'Cannot open %s' % stsname_postfixed
-        raise IOError(msg)
+        raise OSError(msg)
 
     xllcorner = fid.xllcorner
     yllcorner = fid.yllcorner

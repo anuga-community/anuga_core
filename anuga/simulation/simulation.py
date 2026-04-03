@@ -19,7 +19,7 @@ from anuga.parallel.sequential_distribute import sequential_distribute_load_pick
 from os.path import join
 
 
-class Simulation(object):
+class Simulation:
 
     def __init__(self,
                  argument_adder=None,
@@ -122,7 +122,7 @@ class Simulation(object):
         # --------------------------------------------------
         domain.sww_merge()
 
-        
+
         finalize()
 
     def _setup_original_domain(self, np=None):

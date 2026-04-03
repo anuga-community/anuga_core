@@ -10,7 +10,7 @@ numerical vector named conserved_quantities.
 
 
 ######################
-# Module imports 
+# Module imports
 #
 
 from anuga.shallow_water import Domain,\
@@ -71,7 +71,7 @@ Bw = Time_boundary(domain=domain,
 #Set boundary conditions
 domain.set_boundary({'left': Bd, 'right': Br, 'bottom': Br, 'top': Br})
 
-                    
+
 
 ######################
 #Initial condition
@@ -85,5 +85,5 @@ for t in domain.evolve(yieldstep = 0.1, finaltime = 30):
     domain.write_boundary_statistics(['stage'],'left')
 
 log.critical('Done')
-    
+
 

@@ -95,15 +95,15 @@ Only the SURFACE LINE data of the following form will be utilised
     from anuga.file.netcdf import NetCDFFile
 
     if name_in[-4:] != '.sdf':
-        raise IOError('Input file %s should be of type .sdf.' % name_in)
+        raise OSError('Input file %s should be of type .sdf.' % name_in)
 
     if name_out is None:
         name_out = name_in[:-4] + '.pts'
     elif name_out[-4:] != '.pts':
-        raise IOError('Input file %s should be of type .pts.' % name_out)
+        raise OSError('Input file %s should be of type .pts.' % name_out)
 
     # Get ASCII file
-    infile = open(name_in, 'r')
+    infile = open(name_in)
 
     if verbose: log.critical('Reading DEM from %s' % (root + '.sdf'))
 

@@ -1,5 +1,6 @@
 import csv
-import unittest, os
+import unittest
+import os
 import tempfile
 import numpy as num
 import sys
@@ -66,7 +67,7 @@ class Test_Exposure(unittest.TestCase):
         file.close()
         try:
             exposure = Exposure(file_name, title_check_list = ['SOUND'])
-        except IOError:
+        except OSError:
             pass
         else:
             self.assertTrue(0 ==1,  'Assertion not thrown error!')

@@ -1,7 +1,8 @@
 """  Test set_quantity
 """
 
-import unittest, os
+import unittest
+import os
 import anuga
 from anuga import Domain
 from anuga import Reflective_boundary
@@ -67,7 +68,7 @@ class Test_set_quantity(unittest.TestCase):
 
 
         update_stage = Set_quantity(domain, "stage", value=stage, indices=indices, test_stage=False)
-        
+
         # Apply Operator
         update_stage()
 
@@ -82,7 +83,7 @@ class Test_set_quantity(unittest.TestCase):
         assert num.allclose(domain.quantities['xmomentum'].centroid_values, 0.0)
         assert num.allclose(domain.quantities['ymomentum'].centroid_values, 0.0)
 
- 
+
     def test_set_quantity_negative(self):
         from anuga.config import rho_a, rho_w, eta_w
         from math import pi, cos, sin
@@ -148,17 +149,17 @@ class Test_set_quantity(unittest.TestCase):
         assert num.allclose(domain.quantities['stage'].centroid_values, stage_ex)
         assert num.allclose(domain.quantities['xmomentum'].centroid_values, 0.0)
         assert num.allclose(domain.quantities['ymomentum'].centroid_values, 0.0)
-        
+
         update_stage = Set_stage(domain, stage=stage, indices=indices)
         domain.timestep = 2.0
-        update_stage() 
-        
+        update_stage()
+
         stage_ex = [-1.33333333, -2.66666667,  1.,         -1.33333333]
-        
+
 
         assert num.allclose(domain.quantities['stage'].centroid_values, stage_ex)
         assert num.allclose(domain.quantities['xmomentum'].centroid_values, 0.0)
-        assert num.allclose(domain.quantities['ymomentum'].centroid_values, 0.0)      
+        assert num.allclose(domain.quantities['ymomentum'].centroid_values, 0.0)
 
 
     def test_set_quantity_function(self):
@@ -275,11 +276,11 @@ class Test_set_quantity(unittest.TestCase):
         polygon = [(0.5,0.5), (1.5,0.5), (1.5,1.5), (0.5,1.5)]
         #operator = Polygonal_set_stage_operator(domain, stage=stage, polygon=polygon)
         operator = operator = Set_quantity(domain, 'stage', value=stage, polygon=polygon, test_stage=False)
-        
+
 
 
         #operator.plot_region()
-        
+
         # Apply Operator at time t=1.0
         domain.set_time(1.0)
         operator()
@@ -341,7 +342,7 @@ class Test_set_quantity(unittest.TestCase):
 
 
     def test_set_stage_operator_line(self):
-        
+
         from math import pi, cos, sin
 
 
@@ -376,7 +377,7 @@ class Test_set_quantity(unittest.TestCase):
                 return y
 
         line = [(0.5,0.5), (1.5,0.75)]
-        
+
         operator = Set_quantity(domain, 'stage', value=stage, line=line, test_stage=False)
 
 
@@ -384,8 +385,8 @@ class Test_set_quantity(unittest.TestCase):
         #print 'stage at 15', stage(3.0,4.0,15.0) # return y value
         #print operator.indices
         #print operator.value_type
-        
-        
+
+
         # Apply Operator at time t=1.0
         domain.set_time(1.0)
         operator()
@@ -442,28 +443,28 @@ class Test_set_quantity(unittest.TestCase):
 
 
 
-                
-               
+
+
         Plot = False
         if Plot:
             operator.plot_region()
-            
+
             cellsize = 0.01
             domain.quantities['stage'].extrapolate_second_order_and_limit_by_vertex()
-            
+
             from pprint import pprint
-        
+
             pprint(domain.quantities['stage'].centroid_values)
-            
-            x,y,z = domain.quantities['stage'].save_to_array(cellsize=cellsize, smooth=False) 
-            
+
+            x,y,z = domain.quantities['stage'].save_to_array(cellsize=cellsize, smooth=False)
+
             #pprint(z)
-            
+
             import pylab
             import numpy
             #a = numpy.where(a == -9999, numpy.nan, a)
             #a = numpy.where(a > 10.0, numpy.nan, a)
-        
+
             #z = z[::-1,:]
 
             """
@@ -472,27 +473,27 @@ class Test_set_quantity(unittest.TestCase):
             print x
             print y
             """
-            
+
             nrows = z.shape[0]
-            ncols = z.shape[1]            
-            
-            
+            ncols = z.shape[1]
+
+
             ratio = float(nrows)/float(ncols)
             print(ratio)
-            
+
             #y = numpy.arange(nrows)*cellsize
             #x = numpy.arange(ncols)*cellsize
-        
+
             #Setup fig size to correpond to array size
             fig = pylab.figure(figsize=(10, 10*ratio))
-        
+
             levels = numpy.arange(-2.0, 2, 0.01)
             CF = pylab.contourf(x,y,z, levels=levels)
             CB = pylab.colorbar(CF, shrink=0.8, extend='both')
             #CC = pylab.contour(x,y,a, levels=levels)
-            
+
             pylab.show()
-        
+
 
         from pprint import pprint
         #pprint(domain.quantities['stage'].centroid_values)

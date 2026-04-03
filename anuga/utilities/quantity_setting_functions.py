@@ -400,7 +400,7 @@ def composite_quantity_setting_function(poly_fun_pairs,
 
             # We use various tricks to infer whether fi is a function,
             # a constant, a file (raster or csv), or an array
-            if hasattr(fi, '__call__'):
+            if callable(fi):
                 # fi is a function or a callable object
                 quantityVal[fInds] = fi(x[fInds], y[fInds])
 

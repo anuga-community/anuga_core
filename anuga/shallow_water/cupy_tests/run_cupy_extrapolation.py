@@ -25,7 +25,7 @@ def create_domain(name='domain'):
     domain.set_flow_algorithm('DE0')
     domain.set_low_froude(0)
 
-    domain.set_name(name)  
+    domain.set_name(name)
     domain.set_datadir('.')
 
     #------------------

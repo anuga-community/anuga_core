@@ -596,7 +596,7 @@ class General_mesh:
         # could be easily sped up many fold.
         #
         # Have we profiled it? (Ole 31/5/2020)
-        
+
     def get_triangles_and_vertices_per_node(self, node=None):
         """Get triangles associated with given node.
 
@@ -620,9 +620,9 @@ class General_mesh:
 
                 # FIXME(Ole): This must be floor division ('//')
                 # However, tests pass either way. Need to update tests.
-                volume_id = index // 3  
+                volume_id = index // 3
                 #print('volume_id', volume_id, index)
-                
+
                 vertex_id = index % 3
 
                 triangle_list.append( (volume_id, vertex_id) )

@@ -129,7 +129,7 @@ from anuga.parallel.parallel_api import mpi_extra_options
 
 from anuga.parallel.parallel_api import sequential_distribute_dump
 from anuga.parallel.parallel_api import sequential_distribute_load
-        
+
 
 # -----------------------------
 # Checkpointing

@@ -61,7 +61,7 @@ class Visualiser(Thread):
         for q in self.height_quantities:
             self.update_height_quantity(q, self.height_dynamic[q])
             self.draw_height_quantity(q)
-            
+
         self.tk_root.mainloop()
 
     def redraw_quantities(self):
@@ -76,7 +76,7 @@ class Visualiser(Thread):
             self.draw_axes()
 
     # --- Axes --- #
-        
+
     def render_axes(self):
         """Intstruct the visualiser to render cube axes around the render.
         """
@@ -91,7 +91,7 @@ class Visualiser(Thread):
             self.vtk_axes.SetCamera(self.vtk_renderer.GetActiveCamera())
             self.vtk_renderer.AddActor(self.vtk_axes)
             self.vtk_renderer.ResetCamera(self.get_3d_bounds())
-        
+
     def alter_axes(self, func, args):
         """Attempt to apply the function 'func' with args tuple 'args' to the
         vtkCubeAxesActor2D instance set up by render_axes. This is done this way to ensure
@@ -102,7 +102,7 @@ class Visualiser(Thread):
         alter_axes(vtkCubeAxesActor2D.SetNumberOfPoints, (5,))
         """
         self.conf_axesAlterations.append((func, args))
-            
+
     # --- Height Based Rendering --- #
 
     def setup_grid(self):
@@ -227,7 +227,7 @@ class Visualiser(Thread):
 
         This function should not be called from outside the visualiser thread.
         Use overlay_polygon instead.
-    
+
         """
         points = vtkPoints()
         for coord in coords:
@@ -242,7 +242,7 @@ class Visualiser(Thread):
         actor.SetMapper(mesh)
         actor.GetProperty().SetColor(colour)
         self.vtk_renderer.AddActor(actor)
-        
+
     # --- Vector Fields --- #
 
     # --- GUI Setup --- #
@@ -261,7 +261,7 @@ class Visualiser(Thread):
         self.tk_controlFrame.grid(row=1, column=0, sticky=E+W)
         self.tk_controlFrame.grid_rowconfigure(0, weight=1)
         self.tk_controlFrame.grid_columnconfigure(0, weight=1)
-        
+
         self.tk_quit = Button(self.tk_controlFrame, text="Quit", command=self.shutdown)
         self.tk_quit.grid(row=0, column=0, sticky=E+W)
         self.tk_renderWidget.GetRenderWindow().AddRenderer(self.vtk_renderer)

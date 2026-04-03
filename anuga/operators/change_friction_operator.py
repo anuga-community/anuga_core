@@ -232,7 +232,7 @@ class Polygonal_erosion_operator(Erosion_operator):
 
 
 
-        
+
 
 
 

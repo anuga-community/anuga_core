@@ -34,7 +34,7 @@ class Mannings_operator(Operator):
 
         self.exp_gamma_max = 0.0
         self.exp_gamma_min = 1.0
-        
+
         if verbose: log.critical('Mannings Operator: Initialisation Done')
 
 

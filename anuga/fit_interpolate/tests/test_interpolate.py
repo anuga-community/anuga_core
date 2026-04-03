@@ -114,7 +114,7 @@ class Test_Interpolate(unittest.TestCase):
         assert num.allclose(A.todense(), [[1./3, 1./3, 1./3]])
 
     def test_datapoint_in_hole(self):
-        # create 3 right-angled triangles arranged in a bigger triangle       
+        # create 3 right-angled triangles arranged in a bigger triangle
         a = [0.0, 0.0] #0
         b = [0.0, 2.0] #1
         c = [2.0,0.0]  #2
@@ -133,18 +133,18 @@ class Test_Interpolate(unittest.TestCase):
 
         interp = Interpolate(points, vertices)
         interp.interpolate(f, data)
-        
+
         assert not set(interp.inside_poly_indices).intersection(set(interp.outside_poly_indices)), \
-               'Some points are in both lists!'    
+               'Some points are in both lists!'
         assert len(interp.inside_poly_indices) == 2
         assert len(interp.outside_poly_indices) == 3
-        
+
         interp.outside_poly_indices.sort()
         assert interp.outside_poly_indices[1] == 2, \
                'third outside point should be inside the hole!'
 
     def test_simple_interpolation_example1(self):
-        
+
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
 
         # Create basic mesh
@@ -155,7 +155,7 @@ class Test_Interpolate(unittest.TestCase):
 
         #----------------
         #Constant values
-        #----------------        
+        #----------------
         quantity = Quantity(domain,[[0,0,0],[1,1,1],[2,2,2],[3,3,3],
                                     [4,4,4],[5,5,5]])
 
@@ -179,7 +179,7 @@ class Test_Interpolate(unittest.TestCase):
         #----------------
         quantity = Quantity(domain,[[0,1,2],[3,1,7],[2,1,2],[3,3,7],
                                     [1,4,-9],[2,5,0]])
-        
+
         x, y, vertex_values, triangles = quantity.get_vertex_values(xy=True, smooth=False)
         vertex_coordinates = num.concatenate( (x[:, num.newaxis], y[:, num.newaxis]), axis=1 )
         # FIXME: This concat should roll into get_vertex_values
@@ -191,11 +191,11 @@ class Test_Interpolate(unittest.TestCase):
 
         I = Interpolate(vertex_coordinates, triangles)
         result = I.interpolate(vertex_values, interpolation_points)
-        assert num.allclose(result, answer)        
-        
+        assert num.allclose(result, answer)
+
 
     def test_simple_interpolation_example_using_direct_interface(self):
-        
+
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
 
         # Create basic mesh
@@ -206,7 +206,7 @@ class Test_Interpolate(unittest.TestCase):
 
         #----------------
         # Constant values
-        #----------------        
+        #----------------
         quantity = Quantity(domain,[[0,0,0],[1,1,1],[2,2,2],[3,3,3],
                                     [4,4,4],[5,5,5]])
 
@@ -229,7 +229,7 @@ class Test_Interpolate(unittest.TestCase):
         #----------------
         quantity = Quantity(domain,[[0,1,2],[3,1,7],[2,1,2],[3,3,7],
                                     [1,4,-9],[2,5,0]])
-        
+
         x, y, vertex_values, triangles = quantity.get_vertex_values(xy=True, smooth=False)
         vertex_coordinates = num.concatenate( (x[:, num.newaxis], y[:, num.newaxis]), axis=1 )
         # FIXME: This concat should roll into get_vertex_values
@@ -241,11 +241,11 @@ class Test_Interpolate(unittest.TestCase):
 
         result = interpolate(vertex_coordinates, triangles,
                              vertex_values, interpolation_points)
-        assert num.allclose(result, answer)        
-        
-        
+        assert num.allclose(result, answer)
+
+
     def test_simple_interpolation_example_using_direct_interface_and_caching(self):
-        
+
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
 
         # Create basic mesh
@@ -259,7 +259,7 @@ class Test_Interpolate(unittest.TestCase):
         #----------------
         quantity = Quantity(domain,[[0,1,2],[3,1,7],[2,1,2],[3,3,7],
                                     [1,4,-9],[2,5,0]])
-        
+
         x, y, vertex_values, triangles = quantity.get_vertex_values(xy=True, smooth=False)
         vertex_coordinates = num.concatenate( (x[:, num.newaxis], y[:, num.newaxis]), axis=1 )
         # FIXME: This concat should roll into get_vertex_values
@@ -271,16 +271,16 @@ class Test_Interpolate(unittest.TestCase):
                              vertex_values, interpolation_points,
                              use_cache=True,
                              verbose=False)
-        assert num.allclose(result, answer)                
+        assert num.allclose(result, answer)
 
         # Second call using the cache
         result = interpolate(vertex_coordinates, triangles,
                              vertex_values, interpolation_points,
                              use_cache=True,
                              verbose=False)
-        assert num.allclose(result, answer)                        
-        
-        
+        assert num.allclose(result, answer)
+
+
     def test_quad_tree(self):
         p0 = [-10.0, -10.0]
         p1 = [20.0, -10.0]
@@ -312,14 +312,14 @@ class Test_Interpolate(unittest.TestCase):
 
         A,_,_,_ = interp._build_interpolation_matrix_A(data)
         assert num.allclose(A.todense(), answer)
-        
+
         #interp.set_point_coordinates([[-30, -30]]) #point outside of mesh
         #print "PDSG - interp.get_A()", interp.get_A()
         data = [[-30, -30]]
         answer =  [ [ 0.0,  0.0,  0.0,  0.,
                       0., 0. , 0., 0., 0., 0.]]
-        
-        A,_,_,_ = interp._build_interpolation_matrix_A(data)        
+
+        A,_,_,_ = interp._build_interpolation_matrix_A(data)
         assert num.allclose(A.todense(), answer)
 
 
@@ -329,14 +329,14 @@ class Test_Interpolate(unittest.TestCase):
         data = [[-70, -70]]
         answer =  [ [ 0.0,  0.0,  0.0,  0.,
                       0., 0. , 0., 0., 0., 0.]]
-                      
-        A,_,_,_ = interp._build_interpolation_matrix_A(data)        
+
+        A,_,_,_ = interp._build_interpolation_matrix_A(data)
         assert num.allclose(A.todense(), answer)
 
 
     def test_datapoints_at_vertices(self):
         #Test that data points coinciding with vertices yield a diagonal matrix
-        
+
 
         a = [0.0, 0.0]
         b = [0.0, 2.0]
@@ -350,7 +350,7 @@ class Test_Interpolate(unittest.TestCase):
         answer = [[1., 0., 0.],
                    [0., 1., 0.],
                    [0., 0., 1.]]
-                   
+
         A,_,_,_ = interp._build_interpolation_matrix_A(data)
         assert num.allclose(A.todense(), answer)
 
@@ -358,7 +358,7 @@ class Test_Interpolate(unittest.TestCase):
     def test_datapoints_on_edge_midpoints(self):
         #Try datapoints midway on edges -
         #each point should affect two matrix entries equally
-        
+
 
         a = [0.0, 0.0]
         b = [0.0, 2.0]
@@ -378,7 +378,7 @@ class Test_Interpolate(unittest.TestCase):
     def test_datapoints_on_edges(self):
         #Try datapoints on edges -
         #each point should affect two matrix entries in proportion
-        
+
 
         a = [0.0, 0.0]
         b = [0.0, 2.0]
@@ -399,7 +399,7 @@ class Test_Interpolate(unittest.TestCase):
 
     def test_arbitrary_datapoints(self):
         #Try arbitrary datapoints
-        
+
 
         a = [0.0, 0.0]
         b = [0.0, 2.0]
@@ -411,17 +411,17 @@ class Test_Interpolate(unittest.TestCase):
 
         interp = Interpolate(points, vertices)
         #print "interp.get_A()", interp.get_A()
-        
+
         A,_,_,_ = interp._build_interpolation_matrix_A(data)
         results = A.todense()
         assert num.allclose(num.sum(results, axis=1), 1.0)
 
-        
+
     def test_arbitrary_datapoints_return_centroids(self):
         #Try arbitrary datapoints, making sure they return
         #an interpolation matrix for the intersected triangle's
         #centroid.
-        
+
         a = [1.0, 0.0]
         b = [0.0, 3.0]
         c = [4.0,0.0]
@@ -431,19 +431,19 @@ class Test_Interpolate(unittest.TestCase):
         data = [ [1.2, 1.5], [1.123, 1.768], [2.43, 0.44] ]
 
         interp = Interpolate(points, vertices)
-        
+
         third = [1.0/3.0, 1.0/3.0, 1.0/3.0]
         answer = [third, third, third]
-        
+
         A,_,_,_ = interp._build_interpolation_matrix_A(data, output_centroids=True)
         results = A.todense()
-        assert num.allclose(results, answer)        
-        
-        
+        assert num.allclose(results, answer)
+
+
     def test_arbitrary_datapoints_some_outside(self):
         #Try arbitrary datapoints one outside the triangle.
         #That one should be ignored
-        
+
 
         a = [0.0, 0.0]
         b = [0.0, 2.0]
@@ -454,7 +454,7 @@ class Test_Interpolate(unittest.TestCase):
         data = [ [0.2, 1.5], [0.123, 1.768], [1.43, 0.44], [5.0, 7.0]]
 
         interp = Interpolate(points, vertices)
-        
+
         A,_,_,_ = interp._build_interpolation_matrix_A(data)
         results = A.todense()
         assert num.allclose(num.sum(results, axis=1), [1,1,1,0])
@@ -497,7 +497,7 @@ class Test_Interpolate(unittest.TestCase):
         #results = interp._build_interpolation_matrix_A(data).todense()
 
         assert num.allclose(A, answer)
-    
+
     def test_geo_ref(self):
         v0 = [0.0, 0.0]
         v1 = [0.0, 5.0]
@@ -509,8 +509,8 @@ class Test_Interpolate(unittest.TestCase):
         geo = Geo_reference(57,100, 500)
 
         vertices = geo.change_points_geo_ref(vertices_absolute)
-        #print "vertices",vertices 
-        
+        #print "vertices",vertices
+
         d0 = [1.0, 1.0]
         d1 = [1.0, 2.0]
         d2 = [3.0, 1.0]
@@ -521,25 +521,25 @@ class Test_Interpolate(unittest.TestCase):
         z = interp.interpolate(f, point_coords)
         answer = linear_function(point_coords)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         assert num.allclose(z, answer)
 
-        
+
         z = interp.interpolate(f, point_coords, start_blocking_len = 2)
         answer = linear_function(point_coords)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         assert num.allclose(z, answer)
-        
-     
+
+
     def test_sigma_epsilon(self):
         """
         def test_sigma_epsilon(self):
             Testing ticket 168. I could not reduce the bug to this small
             test though.
-        
+
         """
         v0 = [22031.25, 59687.5]
         v1 = [22500., 60000.]
@@ -548,7 +548,7 @@ class Test_Interpolate(unittest.TestCase):
         vertices = [v0, v1, v2]
         triangles = [ [1,0,2] ]   #bac
 
-        
+
         point_coords = [[22050., 59700.]]
 
         interp = Interpolate(vertices, triangles)
@@ -556,19 +556,19 @@ class Test_Interpolate(unittest.TestCase):
         z = interp.interpolate(f, point_coords)
         answer = linear_function(point_coords)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         assert num.allclose(z, answer)
 
-        
+
         z = interp.interpolate(f, point_coords, start_blocking_len = 2)
         answer = linear_function(point_coords)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         assert num.allclose(z, answer)
 
-        
+
     def test_Geospatial_verts(self):
         v0 = [0.0, 0.0]
         v1 = [0.0, 5.0]
@@ -580,8 +580,8 @@ class Test_Interpolate(unittest.TestCase):
         geo = Geo_reference(57,100, 500)
         vertices = geo.change_points_geo_ref(vertices_absolute)
         geopoints = Geospatial_data(vertices,geo_reference = geo)
-        #print "vertices",vertices 
-        
+        #print "vertices",vertices
+
         d0 = [1.0, 1.0]
         d1 = [1.0, 2.0]
         d2 = [3.0, 1.0]
@@ -592,17 +592,17 @@ class Test_Interpolate(unittest.TestCase):
         z = interp.interpolate(f, point_coords)
         answer = linear_function(point_coords)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         assert num.allclose(z, answer)
-        
+
         z = interp.interpolate(f, point_coords, start_blocking_len = 2)
         answer = linear_function(point_coords)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         assert num.allclose(z, answer)
-        
+
     def test_interpolate_attributes_to_points(self):
         v0 = [0.0, 0.0]
         v1 = [0.0, 5.0]
@@ -621,16 +621,16 @@ class Test_Interpolate(unittest.TestCase):
         z = interp.interpolate(f, point_coords)
         answer = linear_function(point_coords)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         assert num.allclose(z, answer)
 
 
         z = interp.interpolate(f, point_coords, start_blocking_len = 2)
         answer = linear_function(point_coords)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         assert num.allclose(z, answer)
 
     def test_interpolate_attributes_to_pointsII(self):
@@ -669,14 +669,14 @@ class Test_Interpolate(unittest.TestCase):
         z = interp.interpolate(f, point_coords, start_blocking_len = 2)
         answer = linear_function(point_coords)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         assert num.allclose(z, answer)
-        
+
     def test_interpolate_attributes_to_pointsIII(self):
         #Test linear interpolation of known values at vertices to
         #new points inside a triangle
-        
+
         a = [0.0, 0.0]
         b = [0.0, 5.0]
         c = [5.0, 0.0]
@@ -699,7 +699,7 @@ class Test_Interpolate(unittest.TestCase):
 
         #Point on common vertex
         d6 = [0., 5.]
-        
+
         point_coords = [d0, d1, d2, d3, d4, d5, d6]
 
         interp = Interpolate(vertices, triangles)
@@ -730,14 +730,14 @@ class Test_Interpolate(unittest.TestCase):
 
         z = interp.interpolate(f, point_coords, start_blocking_len = 2)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         assert num.allclose(z, answer)
-        
+
     def test_interpolate_point_outside_of_mesh(self):
         #Test linear interpolation of known values at vertices to
         #new points inside a triangle
-        
+
         a = [0.0, 0.0]
         b = [0.0, 5.0]
         c = [5.0, 0.0]
@@ -748,7 +748,7 @@ class Test_Interpolate(unittest.TestCase):
 
         #Far away point
         d7 = [-1., -1.]
-        
+
         point_coords = [ d7]
         interp = Interpolate(vertices, triangles)
 
@@ -773,16 +773,16 @@ class Test_Interpolate(unittest.TestCase):
 
         for i in range(4):
             self.assertTrue( z[0,i] == answer[0,i], 'Fail!')
-        
+
         z = interp.interpolate(f, point_coords, start_blocking_len = 2)
 
-        #print "z",z 
+        #print "z",z
         #print "answer",answer
-        
+
         for i in range(4):
             self.assertTrue( z[0,i] == answer[0,i], 'Fail!')
-        
-        
+
+
     def test_interpolate_attributes_to_pointsIV(self):
         a = [-1.0, 0.0]
         b = [3.0, 4.0]
@@ -822,8 +822,8 @@ class Test_Interpolate(unittest.TestCase):
 
         z = interp.interpolate(f, point_coords, start_blocking_len = 2)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         assert num.allclose(z, answer)
 
     def test_interpolate_blocking(self):
@@ -866,7 +866,7 @@ class Test_Interpolate(unittest.TestCase):
             #print "z",z
             #print "answer",answer
             assert num.allclose(z, answer)
-            
+
         f = num.array([linear_function(vertices),2*linear_function(vertices),
                        2*linear_function(vertices) - 100])
         f = num.transpose(f)
@@ -912,7 +912,7 @@ class Test_Interpolate(unittest.TestCase):
         geo = Geo_reference(57,100, 500)
         point_coords = geo.change_points_geo_ref(point_coords_absolute)
         point_coords = Geospatial_data(point_coords,geo_reference = geo)
-        
+
         interp = Interpolate(vertices, triangles)
         f = num.array([linear_function(vertices),2*linear_function(vertices)])
         f = num.transpose(f)
@@ -930,7 +930,7 @@ class Test_Interpolate(unittest.TestCase):
             #print "z",z
             #print "answer",answer
             assert num.allclose(z, answer)
-            
+
         f = num.array([linear_function(vertices),2*linear_function(vertices),
                        2*linear_function(vertices) - 100])
         f = num.transpose(f)
@@ -953,10 +953,10 @@ class Test_Interpolate(unittest.TestCase):
 
         #z = interp.interpolate(f, point_coords, start_blocking_len = 2)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         #assert num.allclose(z, answer)
-        
+
     def test_interpolate_geo_spatial_2(self):
         a = [-1.0, 0.0]
         b = [3.0, 4.0]
@@ -984,7 +984,7 @@ class Test_Interpolate(unittest.TestCase):
         geo = Geo_reference(57, 100, 500)
         point_coords = geo.change_points_geo_ref(point_coords_absolute)
         point_coords = Geospatial_data(point_coords, geo_reference=geo)
-        
+
         interp = Interpolate(vertices, triangles)
         f = num.array([linear_function(vertices), 2*linear_function(vertices)])
         f = num.transpose(f)
@@ -996,14 +996,14 @@ class Test_Interpolate(unittest.TestCase):
         msg = ('Expected z\n%s\nto be close to answer\n%s'
                % (str(z), str(answer)))
         assert num.allclose(z, answer), msg
-            
+
         z = interp.interpolate(f, point_coords, start_blocking_len = 2)
 
         msg = ('Expected z\n%s\nto be close to answer\n%s'
                % (str(z), str(answer)))
         assert num.allclose(z, answer)
 
-        
+
     def test_interpolate_reuse_if_None(self):
         a = [-1.0, 0.0]
         b = [3.0, 4.0]
@@ -1044,8 +1044,8 @@ class Test_Interpolate(unittest.TestCase):
 
         z = interp.interpolate(f)
         assert num.allclose(z, answer)
-        
-        # This causes blocking to occur. 
+
+        # This causes blocking to occur.
         z = interp.interpolate(f, start_blocking_len=10)
         assert num.allclose(z, answer)
         assert num.allclose(interp._A_can_be_reused, False)
@@ -1054,20 +1054,20 @@ class Test_Interpolate(unittest.TestCase):
         z = interp.interpolate(f)
         assert num.allclose(z, answer)
         assert num.allclose(interp._A_can_be_reused, True)
-        
+
         interp = Interpolate(vertices, triangles)
         #Must raise an exception, no points specified
         try:
             z = interp.interpolate(f)
         except Exception:
             pass
-        
+
     def xxtest_interpolate_reuse_if_same(self):
 
         # This on tests that repeated identical interpolation
         # points makes use of precomputed matrix (Ole)
         # This is not really a test and is disabled for now
-        
+
         a = [-1.0, 0.0]
         b = [3.0, 4.0]
         c = [4.0, 1.0]
@@ -1105,10 +1105,10 @@ class Test_Interpolate(unittest.TestCase):
 
 
         z = interp.interpolate(f)    # None
-        assert num.allclose(z, answer)        
-        z = interp.interpolate(f, point_coords) # Repeated (not really a test)        
         assert num.allclose(z, answer)
-        
+        z = interp.interpolate(f, point_coords) # Repeated (not really a test)
+        assert num.allclose(z, answer)
+
 
 
     def test_interpolation_interface_time_only(self):
@@ -1116,12 +1116,12 @@ class Test_Interpolate(unittest.TestCase):
         # Test spatio-temporal interpolation
         # Test that spatio temporal function performs the correct
         # interpolations in both time and space
-        
+
 
 
         #Three timesteps
         time = [1.0, 5.0, 6.0]
-        
+
 
         #One quantity
         Q = num.zeros( (3,6), float )
@@ -1135,11 +1135,11 @@ class Test_Interpolate(unittest.TestCase):
         f = [4.0, 0.0]
 
         points = [a, b, c, d, e, f]
-        
+
         for i, t in enumerate(time):
             Q[i, :] = t*linear_function(points)
 
-            
+
         #Check basic interpolation of one quantity using averaging
         #(no interpolation points or spatial info)
         I = Interpolation_function(time, [mean(Q[0,:]),
@@ -1152,7 +1152,7 @@ class Test_Interpolate(unittest.TestCase):
         for i in [0,1,2]:
             assert num.allclose(I(time[i]), mean(Q[i,:]))
 
-        #Midway    
+        #Midway
         assert num.allclose(I( (time[0] + time[1])/2 ),
                             (I(time[0]) + I(time[1]))/2 )
 
@@ -1160,37 +1160,37 @@ class Test_Interpolate(unittest.TestCase):
                             (I(time[1]) + I(time[2]))/2 )
 
         assert num.allclose(I( (time[0] + time[2])/2 ),
-                            (I(time[0]) + I(time[2]))/2 )                 
+                            (I(time[0]) + I(time[2]))/2 )
 
         #1/3
         assert num.allclose(I( (time[0] + time[2])/3 ),
-                            (I(time[0]) + I(time[2]))/3 )                         
+                            (I(time[0]) + I(time[2]))/3 )
 
 
         #Out of bounds checks
         try:
-            I(time[0]-1) 
+            I(time[0]-1)
         except Exception:
             pass
         else:
             raise Exception('Should raise exception')
 
         try:
-            I(time[-1]+1) 
+            I(time[-1]+1)
         except Exception:
             pass
         else:
             raise Exception('Should raise exception')
 
 
-        
+
 
     def test_interpolation_interface_spatial_only(self):
         # Test spatio-temporal interpolation with constant time
-        
+
         #Three timesteps
         time = [1.0, 5.0, 6.0]
-               
+
         #Setup mesh used to represent fitted function
         a = [0.0, 0.0]
         b = [0.0, 2.0]
@@ -1220,7 +1220,7 @@ class Test_Interpolate(unittest.TestCase):
         #Check interpolation of one quantity using interpolaton points
         I = Interpolation_function(time, Q,
                                    vertex_coordinates = points,
-                                   triangles = triangles, 
+                                   triangles = triangles,
                                    interpolation_points = interpolation_points,
                                    verbose = False)
 
@@ -1231,23 +1231,23 @@ class Test_Interpolate(unittest.TestCase):
         for j in range(50): #t in [1, 6]
             for id in range(len(interpolation_points)):
                 assert num.allclose(I(t, id), answer[id])
-            t += 0.1    
+            t += 0.1
 
-        try:    
+        try:
             I(1)
         except Exception:
             pass
         else:
             raise Exception('Should raise exception')
 
-            
+
     def test_interpolation_interface(self):
         # Test spatio-temporal interpolation
         # Test that spatio temporal function performs the correct
         # interpolations in both time and space
-    
+
         #Three timesteps
-        time = [1.0, 5.0, 6.0]    
+        time = [1.0, 5.0, 6.0]
 
         #Setup mesh used to represent fitted function
         a = [0.0, 0.0]
@@ -1280,19 +1280,19 @@ class Test_Interpolate(unittest.TestCase):
         #Check interpolation of one quantity using interpolaton points)
         I = Interpolation_function(time, Q,
                                    vertex_coordinates = points,
-                                   triangles = triangles, 
+                                   triangles = triangles,
                                    interpolation_points = interpolation_points,
                                    verbose = False)
 
         answer = linear_function(interpolation_points)
-        
+
         t = time[0]
         for j in range(50): #t in [1, 6]
             for id in range(len(interpolation_points)):
                 assert num.allclose(I(t, id), t*answer[id])
-            t += 0.1    
+            t += 0.1
 
-        try:    
+        try:
             I(1)
         except Exception:
             pass
@@ -1305,9 +1305,9 @@ class Test_Interpolate(unittest.TestCase):
         # Test spatio-temporal interpolation
         # Test that spatio temporal function performs the correct
         # interpolations in both time and space
-    
+
         # Eight timesteps
-        time = [1.0, 2.0, 4.0, 5.0, 7.0, 8.0, 9.0, 10.0]    
+        time = [1.0, 2.0, 4.0, 5.0, 7.0, 8.0, 9.0, 10.0]
 
         # Setup mesh used to represent fitted function
         a = [0.0, 0.0]
@@ -1341,31 +1341,31 @@ class Test_Interpolate(unittest.TestCase):
         # time_thinning of 1
         I = Interpolation_function(time, Q,
                                    vertex_coordinates=points,
-                                   triangles=triangles, 
+                                   triangles=triangles,
                                    interpolation_points=interpolation_points,
                                    verbose=False)
 
         answer = linear_function(interpolation_points)
 
-        
+
         t = time[0]
         for j in range(90): #t in [1, 10]
             for id in range(len(interpolation_points)):
                 assert num.allclose(I(t, id), t*answer[id])
-            t += 0.1    
+            t += 0.1
 
 
         # Now check time_thinning
         I = Interpolation_function(time, Q,
                                    vertex_coordinates=points,
-                                   triangles=triangles, 
+                                   triangles=triangles,
                                    interpolation_points=interpolation_points,
                                    time_thinning=2,
                                    verbose=False)
 
 
         assert len(I.time) == 4
-        assert( num.allclose(I.time, [1.0, 4.0, 7.0, 9.0] ))    
+        assert( num.allclose(I.time, [1.0, 4.0, 7.0, 9.0] ))
 
         answer = linear_function(interpolation_points)
 
@@ -1373,16 +1373,16 @@ class Test_Interpolate(unittest.TestCase):
         for j in range(80): #t in [1, 9]
             for id in range(len(interpolation_points)):
                 assert num.allclose(I(t, id), t*answer[id])
-            t += 0.1    
+            t += 0.1
 
 
 
     def test_interpolation_precompute_points(self):
         # looking at a discrete mesh
         #
-    
+
         #Three timesteps
-        time = [0.0, 60.0]    
+        time = [0.0, 60.0]
 
         #Setup mesh used to represent fitted function
         points = [[ 15., -20.],
@@ -1391,7 +1391,7 @@ class Test_Interpolate(unittest.TestCase):
                   [  0.,  10.],
                   [  0., -20.],
                   [ 15.,  10.]]
-        
+
         triangles = [[0, 1, 2],
                      [3, 4, 5]]
 
@@ -1407,7 +1407,7 @@ class Test_Interpolate(unittest.TestCase):
         #print "Q", Q
 
 
-        
+
         interp = Interpolate(points, triangles)
         f = num.array([linear_function(points),2*linear_function(points)])
         f = num.transpose(f)
@@ -1424,24 +1424,24 @@ class Test_Interpolate(unittest.TestCase):
         #Check interpolation of one quantity using interpolaton points)
         I = Interpolation_function(time, Q,
                                    vertex_coordinates = points,
-                                   triangles = triangles, 
+                                   triangles = triangles,
                                    interpolation_points = interpolation_points,
                                    verbose = False)
-        
+
         #print "I.precomputed_values", I.precomputed_values
 
         msg = 'Interpolation failed'
         assert num.allclose(I.precomputed_values['Attribute'][1], [60, 60]), msg
         #self.assertTrue( I.precomputed_values['Attribute'][1] == 60.0,
         #                ' failed')
-        
+
     def test_interpolation_function_outside_point(self):
         # Test spatio-temporal interpolation
         # Test that spatio temporal function performs the correct
         # interpolations in both time and space
-    
+
         # Three timesteps
-        time = [1.0, 5.0, 6.0]    
+        time = [1.0, 5.0, 6.0]
 
         # Setup mesh used to represent fitted function
         a = [0.0, 0.0]
@@ -1475,34 +1475,34 @@ class Test_Interpolate(unittest.TestCase):
 
         I = Interpolation_function(time, Q,
                                    vertex_coordinates = points,
-                                   triangles = triangles, 
+                                   triangles = triangles,
                                    interpolation_points = interpolation_points,
                                    verbose = False)
-        
-        
+
+
         assert num.all(I.precomputed_values['Attribute'][:,4] != NAN)
         assert num.any(I.precomputed_values['Attribute'][:,5] == NAN)
 
         #X = I.precomputed_values['Attribute'][1,:]
         #print X
         #print take(X, X == NAN)
-        #print where(X == NAN, range(len(X)), 0)        
-        
+        #print where(X == NAN, range(len(X)), 0)
+
         answer = linear_function(interpolation_points)
-          
+
         t = time[0]
         for j in range(50): #t in [1, 6]
             for id in range(len(interpolation_points)-1):
                 assert num.allclose(I(t, id), t*answer[id])
             t += 0.1
-            
+
         # Now test the point outside the mesh
         t = time[0]
         for j in range(50): #t in [1, 6]
             self.assertTrue(I(t, 5) == NAN, 'Fail!')
-            t += 0.1  
-            
-        try:    
+            t += 0.1
+
+        try:
             I(1)
         except Exception:
             pass
@@ -1513,7 +1513,7 @@ class Test_Interpolate(unittest.TestCase):
     def test_interpolation_function_time(self):
         #Test a long time series with an error in it (this did cause an
         #error once)
-        
+
 
         time = num.array(\
         [0.00000000e+00, 5.00000000e-02, 1.00000000e-01,   1.50000000e-01,
@@ -1630,7 +1630,7 @@ class Test_Interpolate(unittest.TestCase):
         2.22000000e+01,   2.22500000e+01,   2.23000000e+01,   2.23500000e+01,
         2.24000000e+01,   2.24500000e+01,   2.25000000e+01])
 
-        #print 'Diff', time[1:] - time[:-1] 
+        #print 'Diff', time[1:] - time[:-1]
 
         #Setup mesh used to represent fitted function
         a = [0.0, 0.0]
@@ -1664,14 +1664,14 @@ class Test_Interpolate(unittest.TestCase):
         try:
             I = Interpolation_function(time, Q,
                                        vertex_coordinates = points,
-                                       triangles = triangles, 
+                                       triangles = triangles,
                                        interpolation_points = interpolation_points,
                                        verbose = False)
         except Exception:
             pass
         else:
             raise Exception('Should raise exception due to time being non-monotoneous')
-      
+
 
     def test_points_outside_the_polygon(self):
         a = [-1.0, 0.0]
@@ -1785,26 +1785,26 @@ class Test_Interpolate(unittest.TestCase):
 
         def elevation_function(x, y):
             return -x
-        
+
         # Create mesh
-        mesh_file = tempfile.mktemp(".tsh")    
+        mesh_file = tempfile.mktemp(".tsh")
         points = [[0.0,0.0],[6.0,0.0],[6.0,6.0],[0.0,6.0]]
         m = Pmesh()
         m.add_vertices(points)
         m.auto_segment()
         m.generate_mesh(verbose=False)
         m.export_mesh_file(mesh_file)
-        
+
         # Create shallow water domain
         domain = Domain(mesh_file)
         domain.set_flow_algorithm('DE0')
         os.remove(mesh_file)
-        
+
         domain.default_order = 2
 
         # This test was made before tight_slope_limiters were introduced
         # Since were are testing interpolation values this is OK
-        domain.tight_slope_limiters = 0 
+        domain.tight_slope_limiters = 0
 
         # Set some field values
         domain.set_quantity('elevation', elevation_function)
@@ -1835,15 +1835,15 @@ class Test_Interpolate(unittest.TestCase):
 
         # Test the function
         points = [[5.0,1.],[0.5,2.]]
-        depth_file = tempfile.mktemp('.csv') 
-        velocity_x_file = tempfile.mktemp('.csv') 
-        velocity_y_file = tempfile.mktemp('.csv') 
+        depth_file = tempfile.mktemp('.csv')
+        velocity_x_file = tempfile.mktemp('.csv')
+        velocity_y_file = tempfile.mktemp('.csv')
         interpolate_sww2csv(sww.filename, points, depth_file,
                             velocity_x_file,
                             velocity_y_file,
                             verbose=False)
 
-        depth_answers_array = [[0.0, 4.0, 3.416666667], [2.0, 13., 12.41667]] 
+        depth_answers_array = [[0.0, 4.0, 3.416666667], [2.0, 13., 12.41667]]
         velocity_x_answers_array = [[0.0, 3./4.0, 0.87804878],
                                     [2.0, 0.230769, 0.241611]]
         velocity_y_answers_array = [[0.0, 1.0, 1.170732],
@@ -1863,13 +1863,13 @@ class Test_Interpolate(unittest.TestCase):
                 #print(i)
                 #print('depths', depths[i], 'depth_answers', depth_answers[i])
                 #print('velocitys', velocitys[i], 'velocity_answers_array', velocity_answers[i])
-                
-                msg = 'Interpolation failed. Expected %f got %f' % (depth_answers[i], 
-                                                                    float(depths[i])) 
+
+                msg = 'Interpolation failed. Expected %f got %f' % (depth_answers[i],
+                                                                    float(depths[i]))
                 assert num.allclose(float(depths[i]), depth_answers[i]), msg
-                
-                msg = 'Interpolation failed. Expected %f got %f' % (velocity_answers[i], 
-                                                                    float(velocitys[i])) 
+
+                msg = 'Interpolation failed. Expected %f got %f' % (velocity_answers[i],
+                                                                    float(velocitys[i]))
                 assert num.allclose(float(velocitys[i]), velocity_answers[i]), msg
 
         velocity_y_file_handle = open(velocity_y_file)
@@ -1881,29 +1881,29 @@ class Test_Interpolate(unittest.TestCase):
             for i in range(len(depths)):
                 #print(i)
                 #print('depths', depths[i], 'depth_answers', depth_answers[i])
-                #print('velocitys', velocitys[i], 'velocity_answers_array', velocity_answers[i])            
+                #print('velocitys', velocitys[i], 'velocity_answers_array', velocity_answers[i])
 
-                msg = 'Interpolation failed. Expected %f got %f' % (depth_answers[i], 
-                                                                    float(depths[i])) 
-                
+                msg = 'Interpolation failed. Expected %f got %f' % (depth_answers[i],
+                                                                    float(depths[i]))
+
                 assert num.allclose(float(depths[i]), depth_answers[i]), msg
-                
-                msg = 'Interpolation failed. Expected %f got %f' % (velocity_answers[i], 
-                                                                    float(velocitys[i]))   
+
+                msg = 'Interpolation failed. Expected %f got %f' % (velocity_answers[i],
+                                                                    float(velocitys[i]))
                 assert num.allclose(float(velocitys[i]), velocity_answers[i]), msg
-                
+
         # clean up
         depth_file_handle.close()
         velocity_y_file_handle.close()
         velocity_x_file_handle.close()
-        
-        #print "sww.filename",sww.filename 
+
+        #print "sww.filename",sww.filename
         os.remove(sww.filename)
         os.remove(depth_file)
         os.remove(velocity_x_file)
         os.remove(velocity_y_file)
 
-        
+
     def test_interpolate_one_point_many_triangles(self):
         z0 = [2.0, 5.0]
 
@@ -1921,7 +1921,7 @@ class Test_Interpolate(unittest.TestCase):
         v11= [4.0, 10.0]
         v12= [5.0, 10.0]
         v13= [6.0, 10.0]
-        
+
         vertices = [z0,v0, v1, v2, v3,v4 ,v5, v6, v7, v8, v9, v10, v11,
                     v12, v13]
         triangles = [
@@ -1952,8 +1952,8 @@ class Test_Interpolate(unittest.TestCase):
         z = interp.interpolate(f, point_coords)
         answer = linear_function(point_coords)
 
-        #print "z",z 
-        #print "answer",answer 
+        #print "z",z
+        #print "answer",answer
         assert num.allclose(z, answer)
 
 ################################################################################

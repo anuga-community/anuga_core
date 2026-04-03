@@ -297,7 +297,7 @@ class Mesh(General_mesh):
                                                           self.neighbour_edges,
                                                           self.number_of_boundaries)
 
- 
+
 
     def build_surrogate_neighbour_structure(self):
         """Build structure where each triangle edge points to its neighbours
@@ -400,7 +400,7 @@ class Mesh(General_mesh):
         for id, edge in X:
             self.neighbours[id, edge] = index
 
-            self.boundary_enumeration[id,edge] = -index -1 
+            self.boundary_enumeration[id,edge] = -index -1
 
             index -= 1
 
@@ -761,7 +761,7 @@ class Mesh(General_mesh):
         assert num.sum(self.number_of_triangles_per_node) ==\
                        len(self.vertex_value_indices)
 
-        
+
         # Check number of triangles per node
 #        count = [0]*self.number_of_nodes
 #        for triangle in self.triangles:
@@ -796,7 +796,7 @@ class Mesh(General_mesh):
         #print 'node_index',self.node_index.dtype
         #print 'number_of_triangles_per_node',self.number_of_triangles_per_node.dtype
 
-		
+
         check_integrity_c(self.vertex_value_indices,
                           self.triangles,
                           self.node_index,
@@ -868,8 +868,8 @@ class Mesh(General_mesh):
         available boundary tags.
 
         Keyword arguments:
-        nbins -- number of bins to use for area histogram (default 10)  
-        
+        nbins -- number of bins to use for area histogram (default 10)
+
         """
 
         from anuga.utilities.numerical_tools import histogram, create_bins
@@ -966,19 +966,19 @@ class Mesh(General_mesh):
 
     def get_triangle_near_point(self, point, tolerance=1.0e20):
         """
-        Function to get the index of the triangle nearest to a point (as measured by distance to 
+        Function to get the index of the triangle nearest to a point (as measured by distance to
         centroid of the triangles).
 
         @param point A single point (absolute units)
         @param tolerance Raise an exception if "nearest" point is further that tolerance from the domain
-        
+
         @return The index of the triangle "nearest" to point.
         """
 
         C = self.get_centroid_coordinates(absolute=True)
-        
+
         distance2 = (C[:,0] - point[0])**2 + (C[:,1] - point[1])**2
-        
+
         tid = num.argmin(distance2)
 
         if distance2[tid] > tolerance**2:
@@ -1101,12 +1101,12 @@ class Mesh(General_mesh):
         Reorder the mesh using new_order which is a list or int array of length number of triangles which
         defines a permutation of triangle numbering.
 
-        param new_order: list or int array of length number of triangles which 
+        param new_order: list or int array of length number of triangles which
         defines a permutation of triangle numbering.
-        param in_place: if True, the original mesh will be modified. Be careful with this as 
-        it will modify the original mesh and all references to it. If False, a new mesh will be 
+        param in_place: if True, the original mesh will be modified. Be careful with this as
+        it will modify the original mesh and all references to it. If False, a new mesh will be
         created and returned, and the original mesh will not be modified.
-        param original_method: if True, the original method of reordering will be used, 
+        param original_method: if True, the original method of reordering will be used,
         which is simpler but less efficient. If False, the new method will be used.
         param verbose: if True, print verbose output during reordering.
         """
@@ -1139,8 +1139,8 @@ class Mesh(General_mesh):
             geo_reference=self.geo_reference
             use_inscribed_circle=self.use_inscribed_circle
 
-            return Mesh(new_nodes, new_triangles, 
-                    boundary=new_boundary, 
+            return Mesh(new_nodes, new_triangles,
+                    boundary=new_boundary,
                     tagged_elements=tagged_elements,
                     geo_reference=geo_reference,
                     use_inscribed_circle=use_inscribed_circle,
@@ -1148,7 +1148,7 @@ class Mesh(General_mesh):
 
 
         if in_place is True:
-            # modify original mesh. Be careful with this as it will modify the original mesh 
+            # modify original mesh. Be careful with this as it will modify the original mesh
             # and all references to it.
             new_mesh = self
         else:
@@ -1193,12 +1193,12 @@ class Mesh(General_mesh):
         new_mesh.surrogate_neighbours[:] = inv_order[new_mesh.surrogate_neighbours[new_order]]
 
 
-        # build some auxilary boundary structures that are used for domain.set_boundary 
+        # build some auxilary boundary structures that are used for domain.set_boundary
         # and domain.get_boundary_polygon
         new_mesh.build_boundary_neighbours()
 
 
-        
+
 
 
         #pprint(self.vertex_value_indices)
@@ -1210,12 +1210,12 @@ class Mesh(General_mesh):
         for tag in list(new_mesh.tagged_elements.keys()):
             tagged_elements[tag] = num.array(inv_order[new_mesh.tagged_elements[tag]], int)
         new_mesh.tagged_elements = tagged_elements
-        
+
         return new_mesh
 
 
 
-class Triangle_intersection(object):
+class Triangle_intersection:
     """Store information about line segments intersecting a triangle
 
     Attributes are
@@ -1619,13 +1619,13 @@ def get_boundary_polygon(self, verbose=False):
         polygon.append(list(p1))    # De-numeric each point :-)
         p0 = p1
 
-    return polygon 
+    return polygon
 
 
 
-    
 
-           
+
+
 
 
 

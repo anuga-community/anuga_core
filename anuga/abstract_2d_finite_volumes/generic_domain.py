@@ -56,7 +56,7 @@ except ImportError:
 
 
 
-class Generic_Domain(object):
+class Generic_Domain:
     """Generic computational Domain constructor.
     """
 
@@ -149,7 +149,7 @@ class Generic_Domain(object):
         ghost_layer_width : int, optional
             Width of ghost cell layer in parallel computation.
             Default is 2.
-            
+
         Notes
         -----
         - Conserved quantities must be the first entries of evolved_quantities.
@@ -206,7 +206,7 @@ class Generic_Domain(object):
         if mesh_input is not None:
 
             self.mesh = mesh_input
-            # FIXME: We should update tagged_elements 
+            # FIXME: We should update tagged_elements
 
         else:
             # Initialise underlying mesh structure
@@ -218,7 +218,7 @@ class Generic_Domain(object):
                             # number_of_full_nodes=number_of_full_nodes,
                             # number_of_full_triangles=number_of_full_triangles,
                             verbose=verbose)
-        
+
         if verbose:
             log.critical('Domain: Expose mesh attributes')
 
@@ -323,10 +323,10 @@ class Generic_Domain(object):
             self.ghost_recv_dict = ghost_recv_dict
 
         #-------------------------------
-        # Set multiprocessor mode 
+        # Set multiprocessor mode
         # 1. openmp (in development)
         # 2. cuda (in development)
-        #-------------------------------    
+        #-------------------------------
         self.set_multiprocessor_mode(MULTIPROCESSOR_OPENMP)
 
         self.processor = processor
@@ -848,8 +848,8 @@ class Generic_Domain(object):
 
     def set_multiprocessor_mode(self, multiprocessor_mode= 0):
         """
-        Set multiprocessor mode 
-        
+        Set multiprocessor mode
+
         1. openmp (in development)
         2. cuda (in development)
         """
@@ -861,18 +861,18 @@ class Generic_Domain(object):
 
     def get_multiprocessor_mode(self):
         """
-        Get multiprocessor mode 
-        
+        Get multiprocessor mode
+
         1. openmp (in development)
         2. cuda (in development)
         """
-        return self.multiprocessor_mode 
-            
+        return self.multiprocessor_mode
+
     def set_using_centroid_averaging(self, flag=True):
         """Set flag to use centroid averaging in output
         of smoothed vertex values. This is good to ensure
         that vertex stage >= vertex elevation. But can be
-        less accurate than vertex averaging. 
+        less accurate than vertex averaging.
         """
 
         if flag is True:
@@ -1087,18 +1087,18 @@ class Generic_Domain(object):
         restored!!!
         """
 
-        
+
         # Check that all tags in boundary map actually exists in the domain
         # This check is disabled for parallel domains because a valid tag may belong to another instance.
         # Alternative way of addressing this are
         # - make the check a flag so that parallel domains can disable the check.
         # - make the check only applicable when set_domain() is called from a top level user script.
 
-        #print('ID', self.processor, 'Parallel =', self.parallel) #, 'Strict_tag_check =', strict_tag_check)        
+        #print('ID', self.processor, 'Parallel =', self.parallel) #, 'Strict_tag_check =', strict_tag_check)
 
         # FIXME (Ole): Perhaps make method .is_parallel() returing True if numprocs > 1 and False if numprocs == 0
         if not self.parallel:
-            allowed_tags = list(set(self.boundary.values())) # List of unique tags 
+            allowed_tags = list(set(self.boundary.values())) # List of unique tags
             allowed_tags.append('ghost') # Sometimes we create parallel domains sequentially
             for key in boundary_map:
                 if key not in allowed_tags:
@@ -1106,9 +1106,9 @@ class Generic_Domain(object):
                     msg = f'Tag "{key}" provided does not exist in the domain. '
                     msg += 'Allowed tags are: %s' % allowed_tags
                     raise Exception(msg)
-        
 
-        # Update self.boundary_map with values provided to this method        
+
+        # Update self.boundary_map with values provided to this method
         if self.boundary_map is None:
             # This the first call to set_boundary. Store
             # map for later updates and for use with boundary_stats.
@@ -1119,8 +1119,8 @@ class Generic_Domain(object):
             for key in list(boundary_map.keys()):
                 self.boundary_map[key] = boundary_map[key]
 
-             
-        # FIXME (Ole): Try to remove the sorting. Everyhing works except three tests 
+
+        # FIXME (Ole): Try to remove the sorting. Everyhing works except three tests
         # in test_urs2sts (representing functionality not likely to be used anymore).
         # All other tests and validations work without this sorting step.
         x = list(self.boundary.keys())
@@ -1376,14 +1376,14 @@ class Generic_Domain(object):
             # Report cpu time since evolve was called
             # (which may be different from the time since the last call to
             # this function)
-            
+
             try:
                 cpu_time = walltime() - self.evolve_start_walltime
                 cpu_time_hhmmss = anuga.seconds_to_hhmmss(int(cpu_time))
                 fraction = self.relative_time/self.relative_finaltime
                 bar_len = 10
                 filled = int(bar_len * fraction)
-                
+
                 bar = "#" * filled + "-" * (bar_len - filled)
                 #msg += f' |{bar}|'
 
@@ -1705,7 +1705,7 @@ class Generic_Domain(object):
         Without parameters the name will be derived from the script file,
         ie run_simulation.py -> output_run_simulation.sww
 
-        :param str name: name of simulation, 
+        :param str name: name of simulation,
             and in particular the base name of the sww output file
         :param bool timestamp: add a timestamp to the simulation name
         """
@@ -1844,7 +1844,7 @@ class Generic_Domain(object):
         self.evolve_start_walltime = walltime()
         self.last_walltime = self.evolve_start_walltime
 
-        for t in self._evolve_base(yieldstep=yieldstep,
+        for t in self._evolve_base(yieldstep=yieldstep,  # noqa: UP028
                                    finaltime=finaltime, duration=duration,
                                    skip_initial_step=skip_initial_step):
 
@@ -1941,7 +1941,7 @@ class Generic_Domain(object):
             return
 
         N = len(self)                             # Number of triangles
-        
+
         self.relative_yieldtime = self.relative_time + yieldstep     # set next relative yield time
         self.yieldtime = self.relative_yieldtime + self.starttime    # set next yield time
 
@@ -2041,7 +2041,7 @@ class Generic_Domain(object):
                 yield(self.get_time())
 
                 # Reinitialise
-                
+
                 self.relative_yieldtime += yieldstep
                 self.yieldtime = self.relative_yieldtime + self.starttime
                 self.recorded_min_timestep = self.evolve_max_timestep
@@ -2443,7 +2443,7 @@ class Generic_Domain(object):
             boundary_segment_edges = self.tag_boundary_cells[tag]
 
             B.evaluate_segment(self, boundary_segment_edges)
-        
+
         nvtxRangePop()
 
     def compute_fluxes(self):
@@ -2472,8 +2472,8 @@ class Generic_Domain(object):
 
     def set_fixed_flux_timestep(self, flux_timestep=None):
         """Disable variable timestepping and manually set a fixed flux_timestep
-        
-        :param flux_timestep: [float, None] Either set fixed flux_flux_timestep or 
+
+        :param flux_timestep: [float, None] Either set fixed flux_flux_timestep or
                               disable with value None"""
 
         if flux_timestep is None:
@@ -2561,7 +2561,7 @@ class Generic_Domain(object):
         they should be defined in Domain subclass and appended to
         the list self.forcing_terms
         """
-    
+
         # The parameter self.flux_timestep should be updated
         # by the forcing_terms to ensure stability
 

@@ -1,6 +1,6 @@
 from types import FloatType
 from vtk import vtkActor
-class Feature(object):
+class Feature:
     def __init__(self, colour=(0.5, 0.5, 0.5), opacity=1.0, dynamic=False):
         '''
         Parameters:
@@ -15,7 +15,7 @@ class Feature(object):
         self.opacity = opacity
         self.inRenderer = False
         self.visualiser = None
-        
+
     def button(self, tk_component):
         '''
         Construct and return a Tkinter button that allows editing of

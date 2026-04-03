@@ -3,7 +3,8 @@
 python vtk_viewer swwfile.sww
 """
 
-import sys, os
+import sys
+import os
 from anuga.visualiser import OfflineVisualiser
 
 def get_filename():
@@ -11,17 +12,17 @@ def get_filename():
         filename = sys.argv[1]
 
         root, ext = os.path.splitext(filename)
-            
+
         if ext != '.sww':
-            print('WARNING: I only view sww files.' %filename)
-      
+            print('WARNING: I only view sww files. Got: %s' % filename)
+
         return filename
 
 
 
 if __name__ == '__main__':
 
-    
+
     filename = get_filename()
     if filename is not None:
         # The argument to OfflineVisualiser is the path to a sww file
@@ -68,4 +69,4 @@ if __name__ == '__main__':
         o.start()
         # Wait for the visualiser to terminate before shutdown
         o.join()
-        
+

@@ -1089,7 +1089,7 @@ class Test_Fit(unittest.TestCase):
         try:
             fit_to_mesh_file(mesh_file, point_file,
                              mesh_output_file, display_errors = False)
-        except IOError:
+        except OSError:
             pass
         else:
             raise Exception('Bad file did not raise error!')
@@ -1135,7 +1135,7 @@ class Test_Fit(unittest.TestCase):
         try:
             fit_to_mesh_file(mesh_file, point_file,
                              mesh_output_file, display_errors = False)
-        except IOError:
+        except OSError:
             pass
         else:
             raise Exception('Bad file did not raise error!')

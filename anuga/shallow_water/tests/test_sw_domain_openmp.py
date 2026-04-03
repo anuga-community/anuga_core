@@ -1,7 +1,8 @@
 """  Test environmental forcing - rain, wind, etc.
 """
 
-import unittest, os
+import unittest
+import os
 
 import anuga
 
@@ -26,7 +27,7 @@ class Test_DE_openmp(unittest.TestCase):
             try:
                 os.remove(file)
             except OSError:
-                pass 
+                pass
 
 
     def test_runup_openmp(self):
@@ -40,10 +41,10 @@ class Test_DE_openmp(unittest.TestCase):
             domain.set_flow_algorithm('DE0')
             domain.set_low_froude(0)
             domain.set_multiprocessor_mode(1)
-        
-            domain.set_name(name)  
+
+            domain.set_name(name)
             domain.set_datadir('.')
-        
+
             #------------------
             # Define topography
             #------------------
@@ -198,8 +199,8 @@ class Test_DE_openmp(unittest.TestCase):
              }
 
 
-              
-            domain = anuga.create_domain_from_regions(bounding_polygon, 
+
+            domain = anuga.create_domain_from_regions(bounding_polygon,
                                            boundary_tags,
                                            maximum_triangle_area = 0.4,
                                            breaklines = riverWalls.values())
@@ -209,8 +210,8 @@ class Test_DE_openmp(unittest.TestCase):
 
             #Initial Conditions
             domain.set_quantity('elevation', lambda x,y : -x/10, location='centroids') # Use function for elevation
-            domain.set_quantity('friction', 0.01, location='centroids')                # Constant friction 
-            domain.set_quantity('stage', expression='elevation', location='centroids') # Dry Bed 
+            domain.set_quantity('friction', 0.01, location='centroids')                # Constant friction
+            domain.set_quantity('stage', expression='elevation', location='centroids') # Dry Bed
 
             # Boundary Conditions
             Bi = anuga.Dirichlet_boundary([0.4, 0, 0])         # Inflow
@@ -327,7 +328,7 @@ class Test_DE_openmp(unittest.TestCase):
         #         ki = 3*k+i
         #         ki3 = 3*ki
         #         print(k,i, domain2.neighbours[k,i], edge_timestep_diff[ki], edge_flux_diff[ki3],edge_flux_diff[ki3+1],edge_flux_diff[ki3+2])
-  
+
 
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_DE_openmp)

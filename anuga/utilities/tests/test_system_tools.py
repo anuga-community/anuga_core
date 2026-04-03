@@ -64,7 +64,7 @@ class Test_system_tools(unittest.TestCase):
         tmp_fd, tmp_name = mkstemp(suffix='.tmp', dir='.')
         fid = os.fdopen(tmp_fd, 'w+b')
 
-        binary_object = 'My temp file with binary content. AAAABBBBCCCC1234'.encode()
+        binary_object = b'My temp file with binary content. AAAABBBBCCCC1234'
         fid.write(binary_object)
         fid.close()
 
@@ -116,11 +116,11 @@ class Test_system_tools(unittest.TestCase):
 
         Check that correct pathname can be derived from package
         """
-        
+
         path = get_pathname_from_package('anuga')
         assert path.endswith('anuga')
 
-            
+
     def test_compute_checksum_real(self):
         """test_compute_checksum(self):
 
@@ -209,7 +209,7 @@ class Test_system_tools(unittest.TestCase):
 
         x = string_to_char(str_list)
         new_str_list = char_to_string(x)
-        self.assertEqual(new_str_list, str_list)        
+        self.assertEqual(new_str_list, str_list)
 
 
     # special test - input list is ['']
@@ -228,10 +228,10 @@ class Test_system_tools(unittest.TestCase):
 # string_to_char() and char_to_string().
 ################################################################################
 
-# Note that the command num.array(string_to_char(l), num.character) gives 
+# Note that the command num.array(string_to_char(l), num.character) gives
 # rise to the following warning:
-# DeprecationWarning: Converting `np.character` to a dtype is deprecated. 
-# The current result is `np.dtype(np.str_)` which is not strictly correct. 
+# DeprecationWarning: Converting `np.character` to a dtype is deprecated.
+# The current result is `np.dtype(np.str_)` which is not strictly correct.
 # Note that `np.character` is generally deprecated and 'S1' should be used.
 # I was not able to find out why why searching, but using 'S1' is working.
 
@@ -280,7 +280,7 @@ class Test_system_tools(unittest.TestCase):
         FILENAME = 'test.msh'
 
         # generate some random strings in a list, with guaranteed lengths
-        str_list = [u'x' * MAX_CHARS]        # make first maximum length
+        str_list = ['x' * MAX_CHARS]        # make first maximum length
         for entry in range(MAX_ENTRIES):
             length = random.randint(1, MAX_CHARS)
             s = ''
@@ -369,11 +369,11 @@ class Test_system_tools(unittest.TestCase):
 
         # see if original files and untarred ones are the same
         for file in files:
-            fd = open(file, 'r')
+            fd = open(file)
             orig = fd.readlines()
             fd.close()
 
-            fd = open(os.path.join(tmp_dir, file), 'r')
+            fd = open(os.path.join(tmp_dir, file))
             copy = fd.readlines()
             fd.close()
 
@@ -421,7 +421,7 @@ class Test_system_tools(unittest.TestCase):
         # check that digest is as expected, file
         msg = ("Digest file wrong, got '%s', expected '%s'"
                % (digest, expected_digest))
-        fd = open(digest_file, 'r')
+        fd = open(digest_file)
         digest = fd.readline()
         fd.close()
         self.assertTrue(expected_digest == digest, msg)

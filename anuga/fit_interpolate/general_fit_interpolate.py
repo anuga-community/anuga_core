@@ -34,14 +34,14 @@ import anuga.utilities.log as log
 
 import numpy as num
 
-                           
+
 build_quadtree_time = 0
 
 def get_build_quadtree_time():
     return build_quadtree_time
 
-class FitInterpolate(object):
-    
+class FitInterpolate:
+
     def __init__(self,
                  vertex_coordinates=None,
                  triangles=None,
@@ -55,7 +55,7 @@ class FitInterpolate(object):
 
         Pass in a mesh instance or vertex_coordinates and triangles
         and optionally mesh_origin
-        
+
         Inputs:
 
           vertex_coordinates: List of coordinate pairs [xi, eta] of
@@ -81,7 +81,7 @@ class FitInterpolate(object):
         # NOTE PADARN: The Fit_Interpolate class now uses a the c based
         # quad tree to store triangles, rather than the python based tree.
         # The tree is still stored at self.root. However, the subtrees of
-        # the new quad tree can not be directly accessed by python as 
+        # the new quad tree can not be directly accessed by python as
         # was previously possible.
         # Most of the previous functionality has been preserved.
 
@@ -98,7 +98,7 @@ class FitInterpolate(object):
 
                 if verbose:
                     log.critical('FitInterpolate: Building mesh')
-					
+
 
                 self.mesh = Mesh(vertex_coordinates, triangles)
 

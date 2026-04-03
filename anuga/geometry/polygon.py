@@ -296,21 +296,21 @@ def is_inside_triangle(point, triangle,
     Point P can then be written as
 
     P = A + alpha * (C-A) + beta * (B-A)
-    or if we let 
-    v=P-A, v0=C-A, v1=B-A    
+    or if we let
+    v=P-A, v0=C-A, v1=B-A
 
-    v = alpha*v0 + beta*v1 
+    v = alpha*v0 + beta*v1
 
     Dot this equation by v0 and v1 to get two:
 
     dot(v0, v) = alpha*dot(v0, v0) + beta*dot(v0, v1)
-    dot(v1, v) = alpha*dot(v1, v0) + beta*dot(v1, v1)    
+    dot(v1, v) = alpha*dot(v1, v0) + beta*dot(v1, v1)
 
     or if a_ij = dot(v_i, v_j) and b_i = dot(v_i, v)
     the matrix equation:
 
     a_00 a_01   alpha     b_0
-                       = 
+                       =
     a_10 a_11   beta      b_1
 
     Solving for alpha and beta yields:
@@ -342,7 +342,7 @@ def is_inside_triangle(point, triangle,
 def is_complex(polygon, closed=True, verbose=False):
     """Check if a polygon is complex (self-intersecting).
        Uses a sweep algorithm that is O(n^2) in the worst case, but
-       for most normal looking polygons it'll be O(n log n). 
+       for most normal looking polygons it'll be O(n log n).
 
        polygon is a list of points that define a closed polygon.
        verbose will print a list of the intersection points if true

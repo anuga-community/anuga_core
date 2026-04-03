@@ -69,7 +69,7 @@ def _convert_dem_from_llasc2pts(name_in, name_out = None,
 
     xref = lines[2].split()
     if xref[0].strip() == 'xllcorner':
-        xllcorner = float(xref[1].strip()) 
+        xllcorner = float(xref[1].strip())
     elif xref[0].strip() == 'xllcenter':
         xllcorner = float(xref[1].strip()) # - 0.5*cellsize # Correct offset
     else:
@@ -78,7 +78,7 @@ def _convert_dem_from_llasc2pts(name_in, name_out = None,
 
     yref = lines[3].split()
     if yref[0].strip() == 'yllcorner':
-        yllcorner = float(yref[1].strip()) 
+        yllcorner = float(yref[1].strip())
     elif yref[0].strip() == 'yllcenter':
         yllcorner = float(yref[1].strip()) # - 0.5*cellsize # Correct offset
     else:
@@ -111,7 +111,7 @@ def _convert_dem_from_llasc2pts(name_in, name_out = None,
     xx = xx.flatten()
     yy = yy.flatten()
     dem = dem_elevation[:].flatten()
-    
+
     # ====================
     # remove NODATA points
     # ====================
@@ -167,7 +167,7 @@ def _convert_dem_from_llasc2pts(name_in, name_out = None,
     outfile.zone = zone
     outfile.xllcorner = xllcorner # Easting of lower left corner
     outfile.yllcorner = yllcorner # Northing of lower left corner
-    
+
     # Default settings
     outfile.false_easting = 500000.0
     outfile.false_northing = 10000000.0

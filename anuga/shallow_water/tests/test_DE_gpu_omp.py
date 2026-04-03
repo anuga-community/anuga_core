@@ -53,7 +53,7 @@ class Test_GPU_Kernels(unittest.TestCase):
         for ext in ['.sww']:
             try:
                 os.remove(f'test_gpu{ext}')
-            except:
+            except OSError:
                 pass
 
     def test_flux_kernel(self):

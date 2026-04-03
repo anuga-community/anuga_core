@@ -14,7 +14,7 @@ import unittest
 import os
 
 class Test_kinematic_viscosity(unittest.TestCase):
-    
+
     def setUp(self):
         pass
 
@@ -24,7 +24,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         except OSError:
             pass
 
-        
+
     #First test operator class (1 triangle)
     def operator1(self):
         points = num.array([[0.0,0.0],[1.0,0.0],[0.0,1.0]])
@@ -53,7 +53,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
 
 
         #print domain.quantities['stage'].boundary_values
-        
+
         return Kinematic_viscosity_operator(domain)
 
     #Second test operator class (2 triangles)
@@ -118,7 +118,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         a = Quantity(operator.domain)
         a.set_values(1.0)
         a.set_boundary_values(1.0)
-        
+
         operator.update_elliptic_matrix(a)
 
         A = operator.elliptic_matrix
@@ -127,11 +127,11 @@ class Test_kinematic_viscosity(unittest.TestCase):
 
         a.set_values(10.0)
         a.set_boundary_values(10.0)
-        
+
         operator.update_elliptic_matrix(a)
 
         assert num.allclose(A.todense(), 10*num.array([-6.0-12.0/sqrt(5), 6.0,  6.0/sqrt(5), 6.0/sqrt(5)]))
-    
+
 
     def test_elliptic_matrix_two_triangles(self):
 
@@ -147,7 +147,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
 
         A = operator.elliptic_matrix
 
-    
+
         A0 = num.array([[-3.0,3.0,0.0,0.0,0.0,0.0],
                         [0.0,-6.0/sqrt(5.0),0.0,0.0,6.0/sqrt(5.0),0.0]])
         A1 = num.array([[-6.0/sqrt(5.0),0.0,6.0/sqrt(5.0),0.0,0.0,0.0],\
@@ -163,7 +163,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         operator.update_elliptic_matrix(a)
 
         A = operator.elliptic_matrix
-        
+
 
         assert num.allclose(A.todense()[0,:], 1.5*A0[0,:]+1.5*A1[0,:]+1.5*A2[0,:])
         assert num.allclose(A.todense()[1,:], A0[1,:]+1.5*A1[1,:]+A2[1,:])
@@ -190,14 +190,14 @@ class Test_kinematic_viscosity(unittest.TestCase):
 
         operator.update_elliptic_matrix()
 
-        
+
 
         q_in = Quantity(operator.domain)
         q_in.set_values(1.0)
         q_in.set_boundary_values(1.0)
-        
+
         n = operator.n
-        
+
         A = num.array([-6.0-12.0/sqrt(5), 6.0,  6.0/sqrt(5), 6.0/sqrt(5)])
 
 
@@ -224,7 +224,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         q_1 = operator.elliptic_multiply(q_in)
 
         assert num.allclose( [-6.0-12.0/sqrt(5)], q_1.centroid_values )
-        
+
     def test_elliptic_multiply_exclude_boundary_one_triangle(self):
         operator = self.operator1()
         operator.set_triangle_areas(False)
@@ -255,7 +255,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         q_in = Quantity(operator.domain)
         q_in.set_values(1.0)
         q_in.set_boundary_values(1.0)
-        
+
         operator.update_elliptic_matrix()
 
 
@@ -341,14 +341,14 @@ class Test_kinematic_viscosity(unittest.TestCase):
         U1 = num.array([[2.0],[0.0],[0.0],[0.0]])
 
         q_out = operator * u
-        
+
         assert num.allclose(q_out.centroid_values, 2*num.array(A@U1).reshape(1,))
 
     def test_elliptic_solve_one_triangle(self):
 
         operator = self.operator1()
         n = operator.n
-        
+
         U = num.array([2.0,2.0,1.0,1.0])
 
         u_in = Quantity(operator.domain)
@@ -383,7 +383,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
 
         operator = self.operator2()
         n = operator.n
-        
+
         U = num.array([2.0,3.0,1.0,1.0,4.0,3.0])
 
         u_in = Quantity(operator.domain)
@@ -446,7 +446,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         tot_len = operator.tot_len
 
         u_out = operator.elliptic_solve(u, b, a, iprint=1)
-    
+
         assert num.allclose(u_out.centroid_values, num.ones_like(u_out.centroid_values))
         assert num.allclose(u_out.boundary_values, num.ones_like(u_out.boundary_values))
 
@@ -719,7 +719,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         domain.set_quantity('xmomentum', expression='2*x+3*y')
         domain.set_quantity('ymomentum', expression='5*x+7*y')
 
- 
+
         w = domain.quantities['stage']
 
         #print w.centroid_values
@@ -729,7 +729,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
 
         #print w.centroid_values
         #print w.boundary_values
-        
+
         B = Reflective_boundary(domain)
         domain.set_boundary( {'left': B, 'right': B, 'top': B, 'bottom': B})
 
@@ -750,7 +750,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         #print 'h'
         #print h.centroid_values
         #print h.boundary_values
-        
+
         # Quantity to solve
         u = domain.quantities['xvelocity']
         u.set_boundary_values(1.0)
@@ -781,7 +781,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         kv.parabolic_solve(v, v, h, u_out=v, update_matrix=False, iprint=1, use_dt_tol=False)
 
 
-        
+
         u_expected = \
         num.array([ 0.        ,  0.        ,  0.        ,  0.        ,  0.        ,
         0.        ,  0.        ,  0.        ,  0.        ,  0.        ,
@@ -804,12 +804,12 @@ class Test_kinematic_viscosity(unittest.TestCase):
         0.99081552,  0.97116479,  0.95330259,  0.97272909,  0.99236019,
         0.979296  ,  0.9803074 ,  0.98428114,  0.99692939,  0.9964171 ])
 
-        
-        
+
+
         assert num.allclose(u.centroid_values, u_expected, rtol=1.0e-4)
         assert num.allclose(u.boundary_values, num.ones_like(u.boundary_values))
-        
-        
+
+
         v_expected = \
         num.array([ 0.        ,  0.        ,  0.        ,  0.        ,  0.        ,
         0.        ,  0.        ,  0.        ,  0.        ,  0.        ,
@@ -831,7 +831,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         1.95855951,  1.98473153,  1.94554555,  1.89009256,  1.9424436 ,
         1.98166495,  1.94242902,  1.90678928,  1.94556252,  1.98475631,
         1.95869882,  1.96072166,  1.96865435,  1.99387965,  1.99285742])
-        
+
 
         assert num.allclose(v.centroid_values, v_expected, rtol=1.0e-4)
         assert num.allclose(v.boundary_values, 2.0*num.ones_like(v.boundary_values))
@@ -840,7 +840,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         domain.update_centroids_of_momentum_from_velocity()
 
         domain.distribute_to_vertices_and_edges()
-        
+
         uh = domain.quantities['xmomentum']
         vh = domain.quantities['ymomentum']
 
@@ -977,7 +977,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
 
         assert num.allclose(w.centroid_values, wc, rtol=2.0e-3)
 
-        
+
     def test_kinematic_operator_quantity(self):
 
         from anuga import rectangular_cross_domain

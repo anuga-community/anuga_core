@@ -59,7 +59,7 @@ class Set_w_uh_vh_operator(Operator, Region):
 
         #print self.indices
         self.set_w_uh_vh(w_uh_vh)
-        
+
         #------------------------------------------
         # Local variables
         #------------------------------------------
@@ -108,7 +108,7 @@ class Set_w_uh_vh_operator(Operator, Region):
         elif self.w_uh_vh_type == 'scalar':
             self.w_uh_vh = float(self.w_uh_vh)
 
-        
+
     def get_w_uh_vh(self, x = None, y = None, t = None):
         """Get w_uh_vh value at time t.
         If t not specified, return value at current domain time
@@ -122,7 +122,7 @@ class Set_w_uh_vh_operator(Operator, Region):
             t = self.domain.get_time()
 
         #print  self.w_uh_vh_type
-        
+
         #try:
         if self.w_uh_vh_type == 't':
             w_uh_vh = self.w_uh_vh(t)

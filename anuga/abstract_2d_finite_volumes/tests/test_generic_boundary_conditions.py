@@ -1,10 +1,10 @@
 #!/usr/bin/env python
 """
     Generic boundary conditions for a domain.
-    
+
     A boundary represents the edge of the model, where inflow, outflow, and
     reflection can take place.
-    
+
     The boundaries in this model can be applied universally across all
     domain models, without being tied to a particular implementation.
 """
@@ -59,7 +59,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
 
     def test_time(self):
 
-        
+
 
         a = [0.0, 0.0]
         b = [0.0, 2.0]
@@ -77,7 +77,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
         domain.check_integrity()
 
         domain.conserved_quantities = ['stage', 'ymomentum']
-        domain.evolved_quantities = ['stage', 'ymomentum']        
+        domain.evolved_quantities = ['stage', 'ymomentum']
         domain.quantities['stage'] =\
                                    Quantity(domain, [[1,2,3], [5,5,5],
                                                      [0,0,9], [-6, 3, 3]])
@@ -108,7 +108,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
 
         def function(t):
             return [1.0, 0.0]
-        
+
         T = Time_boundary(domain, function)
 
         from anuga.config import default_boundary_tag
@@ -143,7 +143,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
         domain.check_integrity()
 
         domain.conserved_quantities = ['stage', 'ymomentum']
-        domain.evolved_quantities = ['stage', 'ymomentum']        
+        domain.evolved_quantities = ['stage', 'ymomentum']
         domain.quantities['stage'] =\
                                    Quantity(domain, [[1,2,3], [5,5,5],
                                                      [0,0,9], [-6, 3, 3]])
@@ -174,7 +174,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
 
         def function(t,x,y):
             return [x,y]
-        
+
         T = Time_space_boundary(domain, function)
 
         from anuga.config import default_boundary_tag
@@ -190,7 +190,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
 
 
         q = T.evaluate(1, 1)  #Vol=1, edge=1
-        assert num.allclose(q, domain.get_edge_midpoint_coordinate(1,1))        
+        assert num.allclose(q, domain.get_edge_midpoint_coordinate(1,1))
 
 
 
@@ -215,7 +215,7 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
         domain.check_integrity()
 
         domain.conserved_quantities = ['stage', 'ymomentum']
-        domain.evolved_quantities = ['stage', 'ymomentum']        
+        domain.evolved_quantities = ['stage', 'ymomentum']
         domain.quantities['stage'] =\
                                    Quantity(domain, [[1,2,3], [5,5,5],
                                                      [0,0,9], [-6, 3, 3]])
@@ -259,22 +259,23 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
 
 
 
-        
+
 
     def NOtest_fileboundary_time_only(self):
         """Test that boundary values can be read from file and interpolated
         This is using the .tms file format
-        
-        See also test_util for comprenhensive testing of the underlying 
-        file_function and also tests in test_datamanager which tests 
+
+        See also test_util for comprenhensive testing of the underlying
+        file_function and also tests in test_datamanager which tests
         file_function using the sts format
         """
         #FIXME (Ole): This test was disabled 18 August 2008 as no
         # need for this was found. Rather I implemented an Exception
         # to catch possible errors in the model setup
-        
 
-        import time, os
+
+        import time
+        import os
         from math import sin, pi
         from anuga.config import time_format
 
@@ -317,21 +318,21 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
 
 
         #Convert ASCII file to NetCDF (Which is what we really like!)
-        
+
         from anuga.shallow_water.data_manager import timefile2netcdf
-        
+
         timefile2netcdf(filename, quantity_names = ['stage', 'ymomentum'])
-        
+
 
 
         F = File_boundary(filename + '.tms', domain)
 
-        
+
         os.remove(filename + '.txt')
-        os.remove(filename + '.tms')        
+        os.remove(filename + '.tms')
 
 
-        
+
 
         #Check that midpoint coordinates at boundary are correctly computed
         assert num.allclose( F.midpoint_coordinates,
@@ -367,7 +368,8 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
         """
 
 
-        import time, os
+        import time
+        import os
         from math import sin, pi
         from anuga.config import time_format
 
@@ -414,10 +416,10 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
 
         #Convert ASCII file to NetCDF (Which is what we really like!)
         from anuga.file_conversion.file_conversion import timefile2netcdf
-        
+
         timefile2netcdf(filename+'.txt', quantity_names = ['stage', 'xmomentum'])
 
-        
+
         try:
             F = File_boundary(filename + '.tms',
                               domain)
@@ -425,9 +427,9 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
             pass
         else:
             raise Exception('Should have raised an exception')
-        
+
         os.remove(filename + '.txt')
-        os.remove(filename + '.tms')        
+        os.remove(filename + '.tms')
 
 
 #-------------------------------------------------------------
