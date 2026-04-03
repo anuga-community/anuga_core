@@ -1230,8 +1230,8 @@ if gdal_available:
     ###################
 
 else: # gdal_available == False
-    msg='Failed to import gdal/ogr modules --'\
-        + 'perhaps gdal python interface is not installed.'
+    msg='Failed to import fiona rasterio or shapely --'\
+        + 'perhaps geodata python interface is not installed.'
 
 
 
