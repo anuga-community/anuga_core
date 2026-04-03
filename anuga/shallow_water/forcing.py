@@ -709,16 +709,23 @@ class Cross_section(object):
         self.polyline = polyline
         self.verbose = verbose
         
+        import numpy as np
+
         # Find all intersections and associated triangles.
         self.segments = self.domain.get_intersecting_segments(self.polyline,
                                                               use_cache=True,
                                                               verbose=self.verbose)
-        
-        # Get midpoints
+
+        # Get midpoints (kept for get_energy_through_cross_section which needs interpolation)
         self.midpoints = segment_midpoints(self.segments)
 
         # Make midpoints Geospatial instances
         self.midpoints = ensure_geospatial(self.midpoints, self.domain.geo_reference)
+
+        # Pre-extract per-segment geometry as arrays for vectorised flow computation
+        self._tri_ids = np.array([seg.triangle_id for seg in self.segments])
+        self._normals = np.array([seg.normal for seg in self.segments])   # (S, 2)
+        self._lengths = np.array([seg.length for seg in self.segments])   # (S,)
 
     def set_verbose(self,verbose=True):
         """Set verbose mode true or flase"""
@@ -729,29 +736,13 @@ class Cross_section(object):
         """ Output: Total flow [m^3/s] across cross section.
         """
 
-        # Get interpolated values
-        xmomentum = self.domain.get_quantity('xmomentum')
-        ymomentum = self.domain.get_quantity('ymomentum')
+        # Use centroid values at the known intersected triangle IDs directly —
+        # avoids spatial interpolation since midpoints lie inside these triangles.
+        uh = self.domain.quantities['xmomentum'].centroid_values[self._tri_ids]
+        vh = self.domain.quantities['ymomentum'].centroid_values[self._tri_ids]
 
-        uh = xmomentum.get_values(interpolation_points=self.midpoints,
-                                  use_cache=True)
-        vh = ymomentum.get_values(interpolation_points=self.midpoints,
-                                  use_cache=True)
-
-        # Compute and sum flows across each segment
-        total_flow = 0
-        for i in range(len(uh)):
-            # Inner product of momentum vector with segment normal [m^2/s]
-            normal = self.segments[i].normal
-            normal_momentum = uh[i]*normal[0] + vh[i]*normal[1]
-
-            # Flow across this segment [m^3/s]
-            segment_flow = normal_momentum*self.segments[i].length
-
-            # Accumulate
-            total_flow += segment_flow
-
-        return total_flow
+        normal_mom = uh * self._normals[:, 0] + vh * self._normals[:, 1]
+        return float((normal_mom * self._lengths).sum())
  
 
     def get_energy_through_cross_section(self, kind='total'):
