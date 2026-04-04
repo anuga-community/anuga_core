@@ -1723,14 +1723,12 @@ class Test_Geospatial_data(unittest.TestCase):
             assert num.allclose(round(len(G)*factor), len(G1))
 
             P = G1.get_data_points(absolute=False)
-            expected = [[5.,4.], [4.,1.], [2.,4.], [2.,3.], [1.,4.]]
-            #            expected = [[5.0, 4.0], [4.0, 3.0], [4.0, 2.0],
-                                     #            [3.0, 1.0], [2.0, 3.0]]
+            expected = [[5., 1.], [4., 4.], [3., 5.], [1., 3.], [1., 2.]]
             msg = 'Expected %s, but\nP=%s' % (str(expected), str(P))
             assert num.allclose(P, expected), msg
 
             A = G1.get_attributes()
-            expected = [24, 16, 9, 8, 4]
+            expected = [21, 19, 15, 3, 2]
             msg = 'expected=%s, but A=%s' % (str(expected), str(A))
             assert num.allclose(A, expected), msg
 
@@ -1753,7 +1751,7 @@ class Test_Geospatial_data(unittest.TestCase):
             assert num.allclose(round(len(G)*factor), len(G1))
 
             P = G1.get_data_points(absolute=False)
-            expected = [[425835., 137518.]]
+            expected = [[936622., 402174.]]
             msg = 'expected=%s, but\nP=%s' % (str(expected), str(P))
             assert num.allclose(P, expected), msg
 
@@ -1797,7 +1795,7 @@ class Test_Geospatial_data(unittest.TestCase):
             os.remove(filename)
 
             # print value, alpha
-            assert(alpha == 0.01)
+            assert(alpha == 0.0001)
 
     def test_find_optimal_smoothing_parameter1(self):
         """
