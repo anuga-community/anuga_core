@@ -12,6 +12,7 @@ This is a very simple test of the parallel algorithm using the simplified parall
 # Import necessary modules
 #------------------------------------------------------------------------------
 
+import tempfile
 import unittest
 import os
 import sys
@@ -78,7 +79,7 @@ def run_simulation(parallel=False, G = None, seq_interpolation_points=None, verb
     # Setup domain parameters
     #--------------------------------------------------------------------------
     domain.set_name('runup')                    # Set sww filename
-    domain.set_datadir('.')                     # Set output dir
+    domain.set_datadir(tempfile.mkdtemp())                     # Set output dir
 
     #domain.set_flow_algorithm('DE1')
     domain.set_quantities_to_be_stored(None)

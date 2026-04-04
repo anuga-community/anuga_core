@@ -10,6 +10,7 @@ This is a very simple test of the parallel algorithm using the simplified parall
 #------------------------------------------------------------------------------
 # Import necessary modules
 #------------------------------------------------------------------------------
+import tempfile
 import unittest
 import os
 import sys
@@ -75,7 +76,7 @@ def run_simulation(parallel=False, verbose=False):
     if myid == 0:
         domain = rectangular_cross_domain(M, N)
         domain.set_name('odomain')                    # Set sww filename
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
         domain.set_quantity('elevation', topography) # Use function for elevation
         domain.set_quantity('friction', 0.0)         # Constant friction
         domain.set_quantity('stage', expression='elevation') # Dry initial stage
@@ -143,13 +144,14 @@ def run_simulation(parallel=False, verbose=False):
     if myid == 0:
         if verbose: print('COMPARING SWW FILES')
 
-        odomain_v = util.get_output('odomain.sww')
+        _datadir = domain.get_datadir()
+        odomain_v = util.get_output(os.path.join(_datadir, 'odomain.sww'))
         odomain_c = util.get_centroids(odomain_v)
 
-        pdomain_v = util.get_output('pdomain.sww')
+        pdomain_v = util.get_output(os.path.join(_datadir, 'pdomain.sww'))
         pdomain_c = util.get_centroids(pdomain_v)
 
-        sdomain_v = util.get_output('sdomain.sww')
+        sdomain_v = util.get_output(os.path.join(_datadir, 'sdomain.sww'))
         sdomain_c = util.get_centroids(sdomain_v)
 
         # Test some values against the original ordering
@@ -250,10 +252,9 @@ def run_simulation(parallel=False, verbose=False):
         assert num.allclose(pdomain_v.yvel[-1],sdomain_v.yvel[-1])
 
 
-        import os
-        os.remove('odomain.sww')
-        os.remove('pdomain.sww')
-        os.remove('sdomain.sww')
+        os.remove(os.path.join(_datadir, 'odomain.sww'))
+        os.remove(os.path.join(_datadir, 'pdomain.sww'))
+        os.remove(os.path.join(_datadir, 'sdomain.sww'))
         os.remove('odomain_P3_0.pickle')
         os.remove('odomain_P3_1.pickle')
         os.remove('odomain_P3_2.pickle')

@@ -10,6 +10,7 @@ This is a very simple test of the parallel algorithm using the simplified parall
 #------------------------------------------------------------------------------
 # Import necessary modules
 #------------------------------------------------------------------------------
+import tempfile
 import unittest
 import os
 import sys
@@ -74,7 +75,15 @@ def run_simulation(parallel=False, verbose=False):
     #--------------------------------------------------------------------------
     domain = rectangular_cross_domain(M, N)
     domain.set_name('odomain')                    # Set sww filename
-    domain.set_datadir('.')
+    # All ranks must share the same datadir so distribute() settings assertions pass.
+    # Create the tmpdir on rank 0 and broadcast to all ranks.
+    if myid == 0:
+        _tmpdir = tempfile.mkdtemp()
+    else:
+        _tmpdir = None
+    from mpi4py import MPI
+    _tmpdir = MPI.COMM_WORLD.bcast(_tmpdir, root=0)
+    domain.set_datadir(_tmpdir)
     domain.set_quantity('elevation', topography) # Use function for elevation
     domain.set_quantity('friction', 0.0)         # Constant friction
     domain.set_quantity('stage', expression='elevation') # Dry initial stage
@@ -128,7 +137,6 @@ def run_simulation(parallel=False, verbose=False):
 
         if myid == 0 and verbose : print('REMOVING DATA FILES')
         if myid == 0:
-            import os
             #os.remove('odomain.sww')
             #os.remove('pdomain.sww')
             #os.remove('sdomain.sww')
