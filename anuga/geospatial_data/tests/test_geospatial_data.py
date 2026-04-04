@@ -1739,10 +1739,8 @@ class Test_Geospatial_data(unittest.TestCase):
 
         # below is a workaround until randint works on cyclones compute nodes
         if get_host_name()[8:9] != '0':
-            from numpy.random import randint, seed
-
-            seed((100, 100))
-            a_points = randint(0, 999999, (10,2))
+            rng = num.random.default_rng([100, 100])
+            a_points = rng.integers(0, 999999, (10, 2))
             points = a_points.tolist()
 
             G = Geospatial_data(points)

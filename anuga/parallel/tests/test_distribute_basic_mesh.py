@@ -140,7 +140,7 @@ class TestBasic_meshConstruction(unittest.TestCase):
     def test_reorder_preserves_boundary_count(self):
         bm = rectangular_cross_basic_mesh(M, N)
         n_bnd = len(bm.boundary)
-        order = num.random.permutation(bm.number_of_triangles)
+        order = num.random.default_rng().permutation(bm.number_of_triangles)
         bm2 = bm.reorder(order, in_place=False)
         self.assertEqual(len(bm2.boundary), n_bnd)
 

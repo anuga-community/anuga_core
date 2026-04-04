@@ -304,8 +304,8 @@ class Test_interpolate(unittest.TestCase):
         A = numpy.zeros((len(x), len(y)))
 
         # Define arbitrary values for each x, y pair
-        numpy.random.seed(17)
-        A = numpy.random.random((len(x), len(y))) * 10
+        rng = numpy.random.default_rng(17)
+        A = rng.random((len(x), len(y))) * 10
 
         # Create islands of NaN
         A[5, 13] = numpy.nan

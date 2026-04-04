@@ -3,7 +3,7 @@
 
 import unittest
 import numpy as num
-from numpy.random import uniform, seed
+import numpy as np
 
 from math import sqrt, pi
 from anuga.config import epsilon
@@ -318,13 +318,13 @@ class Test_Numerical_Tools(unittest.TestCase):
     def test_gradient_C_extension3(self):
         from anuga.utilities.util_ext import gradient as gradient_c
 
-        seed((17, 53))
+        rng = np.random.default_rng([17, 53])
 
-        x0, x1, x2, y0, y1, y2 = uniform(0.0, 3.0, 6)
+        x0, x1, x2, y0, y1, y2 = rng.uniform(0.0, 3.0, 6)
 
-        q0 = uniform(0.0, 10.0, 4)
-        q1 = uniform(1.0, 3.0, 4)
-        q2 = uniform(7.0, 20.0, 4)
+        q0 = rng.uniform(0.0, 10.0, 4)
+        q1 = rng.uniform(1.0, 3.0, 4)
+        q2 = rng.uniform(7.0, 20.0, 4)
 
         for i in range(4):
             # Gradient of fitted pwl surface

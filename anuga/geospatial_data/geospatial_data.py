@@ -15,7 +15,6 @@ import copy
 
 from anuga.file.netcdf import NetCDFFile
 import numpy as num
-from numpy.random import randint, seed
 
 from anuga.utilities.numerical_tools import ensure_numeric
 from anuga.coordinate_transforms.geo_reference import Geo_reference, \
@@ -640,12 +639,9 @@ class Geospatial_data:
 
         # Set seed if provided, mainly important for unit test!
         # plus recalcule seed when no seed provided.
-        if seed_num is not None:
-            seed(seed_num)
-        else:
-            seed()
+        rng = num.random.default_rng(seed_num)  # None gives a random seed
 
-        random_num = randint(0, self_size-1, (int(new_size),))
+        random_num = rng.integers(0, self_size - 1, (int(new_size),))
         random_num = random_num.tolist()
 
         # need to sort and reverse so the pop() works correctly
