@@ -174,10 +174,10 @@ END CROSS-SECTIONS:
 
         domain.set_name('datatest_de0')
 
-        ptsfile = domain.get_name() + '_elevation.pts'
-        swwfile = domain.get_name() + '.sww'
+        domain.set_datadir(tempfile.mkdtemp())
+        ptsfile = os.path.join(domain.get_datadir(), domain.get_name() + '_elevation.pts')
 
-        domain.set_datadir('.')
+        swwfile = os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         domain.format = 'sww'
         domain.set_quantity('elevation', lambda x,y: -x-y)
 
@@ -207,7 +207,7 @@ END CROSS-SECTIONS:
         # Invoke interpolation for vertex points
         points = num.concatenate( (x[:,num.newaxis],y[:,num.newaxis]), axis=1 )
         points = num.ascontiguousarray(points)
-        sww2pts(domain.get_name() + '.sww',
+        sww2pts(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'),
                 quantity = 'elevation',
                 data_points = points,
                 NODATA_value = NODATA_value)
@@ -222,7 +222,7 @@ END CROSS-SECTIONS:
         # Invoke interpolation for centroids
         points = domain.get_centroid_coordinates()
         #print points
-        sww2pts(domain.get_name() + '.sww',
+        sww2pts(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'),
                 quantity = 'elevation',
                 data_points = points,
                 NODATA_value = NODATA_value)

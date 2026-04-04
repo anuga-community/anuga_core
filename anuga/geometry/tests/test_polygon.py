@@ -1776,7 +1776,6 @@ class Test_Polygon(unittest.TestCase):
         assert y[4] == 6
 
     def test_plot_polygons(self):
-        import os
 
         # Simplest case: Polygon is the unit square
         polygon1 = [[0, 0], [1, 0], [1, 1], [0, 1]]

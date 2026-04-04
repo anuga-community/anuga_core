@@ -346,24 +346,6 @@ class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
         normal = self.domain.get_normal(vol_id, edge_id)
 
 
-        ## t = self.domain.get_time()
-
-        ## if hasattr(self.function, 'time'):
-        ##     # Roll boundary over if time exceeds
-        ##     while t > self.function.time[-1]:
-        ##         msg = 'WARNING: domain time %.2f has exceeded' % t
-        ##         msg += 'time provided in '
-        ##         msg += 'transmissive_momentum_set_stage_boundary object.\n'
-        ##         msg += 'I will continue, reusing the object from t==0'
-        ##         log.critical(msg)
-        ##         t -= self.function.time[-1]
-
-        ## value = self.function(t)
-        ## try:
-        ##     x = float(value)
-        ## except:
-        ##     x = float(value[0])
-
         value = self.get_boundary_values()
         try:
             x = float(value)

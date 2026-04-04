@@ -427,7 +427,6 @@ class Domain_plotter:
         if plot_dir is None:
             return
         else:
-            import os
             if os.path.isdir(plot_dir):
                 if clobber:
                     try:
@@ -501,7 +500,6 @@ class SWW_plotter:
         import matplotlib.tri as tri
         import numpy as np
 
-        import os
         self.name = os.path.splitext(swwfile)[0]
 
         from anuga.file.netcdf import NetCDFFile
@@ -949,7 +947,6 @@ class SWW_plotter:
         if plot_dir is None:
             return
         else:
-            import os
             if os.path.isdir(plot_dir):
                 if clobber:
                     try:

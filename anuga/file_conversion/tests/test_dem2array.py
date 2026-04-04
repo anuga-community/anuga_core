@@ -26,7 +26,6 @@ class Test_dem2array(unittest.TestCase):
         """
 
         import time
-        import os
 
 
         #Write test asc file

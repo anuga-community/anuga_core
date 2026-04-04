@@ -32,7 +32,6 @@ class Test_LLAsc2Pts(unittest.TestCase):
         """
 
         import time
-        import os
 
         ncols = 5
         nrows = 4

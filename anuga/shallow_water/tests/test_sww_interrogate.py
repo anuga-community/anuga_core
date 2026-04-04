@@ -1,4 +1,5 @@
 
+import tempfile
 import unittest
 import copy
 import os
@@ -53,7 +54,6 @@ class Test_sww_Interrogate(unittest.TestCase):
         """
 
         import time
-        import os
         from anuga.file.netcdf import NetCDFFile
 
         verbose = False
@@ -73,9 +73,9 @@ class Test_sww_Interrogate(unittest.TestCase):
 
         filename = 'runup_test_3'
         domain.set_name(filename)
-        swwfile = domain.get_name() + '.sww'
+        domain.set_datadir(tempfile.mkdtemp())
 
-        domain.set_datadir('.')
+        swwfile = os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         domain.format = 'sww'
         domain.smooth = True
 
@@ -236,7 +236,6 @@ class Test_sww_Interrogate(unittest.TestCase):
         """
 
         import time
-        import os
         from anuga.file.netcdf import NetCDFFile
 
         #Setup
@@ -254,9 +253,9 @@ class Test_sww_Interrogate(unittest.TestCase):
 
         filename = 'runup_test_3'
         domain.set_name(filename)
-        swwfile = domain.get_name() + '.sww'
+        domain.set_datadir(tempfile.mkdtemp())
 
-        domain.set_datadir('.')
+        swwfile = os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         domain.format = 'sww'
         domain.smooth = True
 
@@ -404,7 +403,6 @@ class Test_sww_Interrogate(unittest.TestCase):
         """
 
         import time
-        import os
         from anuga.file.netcdf import NetCDFFile
 
         # Setup
@@ -423,9 +421,9 @@ class Test_sww_Interrogate(unittest.TestCase):
         domain.set_minimum_storable_height(0.01)
 
         domain.set_name('flowtest')
-        swwfile = domain.get_name() + '.sww'
+        domain.set_datadir(tempfile.mkdtemp())
 
-        domain.set_datadir('.')
+        swwfile = os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         domain.format = 'sww'
         domain.smooth = True
 
@@ -528,7 +526,6 @@ class Test_sww_Interrogate(unittest.TestCase):
         """
 
         import time
-        import os
         from anuga.file.netcdf import NetCDFFile
 
         # Setup
@@ -547,11 +544,10 @@ class Test_sww_Interrogate(unittest.TestCase):
         domain.set_minimum_storable_height(0.01)
 
         domain.set_name('flowtest_uniquely')
-        swwfile = domain.get_name() + '.sww'
-
         domain.set_store_vertices_uniquely()
 
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
+        swwfile = os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         domain.format = 'sww'
         domain.smooth = True
 
@@ -657,7 +653,6 @@ class Test_sww_Interrogate(unittest.TestCase):
         """
 
         import time
-        import os
         from anuga.file.netcdf import NetCDFFile
 
         # Setup
@@ -678,9 +673,9 @@ class Test_sww_Interrogate(unittest.TestCase):
         domain.set_minimum_storable_height(0.01)
 
         domain.set_name('flowtest')
-        swwfile = domain.get_name() + '.sww'
+        domain.set_datadir(tempfile.mkdtemp())
 
-        domain.set_datadir('.')
+        swwfile = os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         domain.format = 'sww'
         domain.smooth = True
 
@@ -760,7 +755,6 @@ class Test_sww_Interrogate(unittest.TestCase):
         """
 
         import time
-        import os
         from anuga.file.netcdf import NetCDFFile
 
         # Setup
@@ -781,9 +775,9 @@ class Test_sww_Interrogate(unittest.TestCase):
         domain.set_minimum_storable_height(0.01)
 
         domain.set_name('flowtest')
-        swwfile = domain.get_name() + '.sww'
+        domain.set_datadir(tempfile.mkdtemp())
 
-        domain.set_datadir('.')
+        swwfile = os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         domain.format = 'sww'
         domain.smooth = True
 
@@ -1056,7 +1050,7 @@ class Test_sww_Interrogate(unittest.TestCase):
         # Cleanup
         try:
             pass
-            #os.remove(domain.get_name() + '.sww')
+            #os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
         except OSError:
             pass
             #FIXME(Ole): Windows won't allow removal of this

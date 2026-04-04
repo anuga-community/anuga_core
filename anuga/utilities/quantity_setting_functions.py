@@ -293,7 +293,6 @@ def composite_quantity_setting_function(poly_fun_pairs,
                 domain.set_quantity('elevation', F)
 
     """
-    import os
     import numpy
     from anuga.geometry.polygon import inside_polygon
 

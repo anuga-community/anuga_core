@@ -1,6 +1,7 @@
 """  Test environmental forcing - rain, wind, etc.
 """
 
+import tempfile
 import unittest
 import os
 import sys
@@ -44,7 +45,7 @@ class Test_DE_cuda(unittest.TestCase):
             domain.set_low_froude(0)
 
             domain.set_name(name)
-            domain.set_datadir('.')
+            domain.set_datadir(tempfile.mkdtemp())
 
             #------------------
             # Define topography

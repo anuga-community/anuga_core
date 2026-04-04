@@ -77,7 +77,6 @@ def add_csv_header(file, header_list, be_green=False):
 
 if __name__ == '__main__':
     import sys
-    import os
 
     file_data = '1,2,3\n4,5,6\n7,8,9'
     header = ['alpha', 'bravo', 'charlie']

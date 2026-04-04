@@ -178,7 +178,6 @@ def get_anuga_pathname():
     """
 
     import anuga
-    import os
 
     return os.path.dirname(anuga.__file__)
 
@@ -204,7 +203,6 @@ def get_pathname_from_package(package):
 
     # # Get and return path
     # return x.__path__[0]
-    import os
     return os.path.dirname(x.__file__)
 
 

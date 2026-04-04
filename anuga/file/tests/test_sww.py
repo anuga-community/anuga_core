@@ -114,7 +114,7 @@ class Test_sww(unittest.TestCase):
             #domain.print_timestepping_statistics()
             pass
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
 
     def Xtest_sww2domain1(self):
@@ -168,7 +168,7 @@ class Test_sww(unittest.TestCase):
         #print boundary
 
 
-        filename = domain.datadir + os.sep + domain.get_name() + '.sww'
+        filename = domain.datadir + os.sep + os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         domain2 = load_sww_as_domain(filename,
                                      #boundary=domain.boundary,
                                      boundary=None,
@@ -327,7 +327,7 @@ class Test_sww(unittest.TestCase):
         if verbose:
             print('read in domain')
 
-        filename = domain.datadir + os.sep + domain.get_name() + '.sww'
+        filename = domain.datadir + os.sep + os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         fid = NetCDFFile(filename, netcdf_mode_r)  # Open sww file for read
 
         stored_starttime = float(fid.starttime)
@@ -346,7 +346,6 @@ class Test_sww(unittest.TestCase):
         # Generate a test sww file with non trivial georeference
 
         import time
-        import os
 
         # Setup
         #from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -362,8 +361,8 @@ class Test_sww(unittest.TestCase):
                         geo_reference = Geo_reference(56,308500,6189000))
 
         domain.set_name('test_get_mesh_and_quantities_from_sww_file')
-        swwfile = domain.get_name() + '.sww'
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
+        swwfile = os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         domain.set_flow_algorithm('DE0')
 
         Br = Reflective_boundary(domain)    # Side walls
@@ -421,7 +420,6 @@ class Test_sww(unittest.TestCase):
         # Generate a test sww file with non trivial georeference
 
         import time
-        import os
 
         # Setup
         #from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -437,8 +435,8 @@ class Test_sww(unittest.TestCase):
                         geo_reference = Geo_reference(56,308500,6189000))
 
         domain.set_name('test_get_mesh_and_quantities_from_sww_file')
-        swwfile = domain.get_name() + '.sww'
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
+        swwfile = os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         domain.set_flow_algorithm('DE0')
 
         Br = Reflective_boundary(domain)    # Side walls
@@ -495,7 +493,6 @@ class Test_sww(unittest.TestCase):
         # Generate a test sww file with non trivial georeference
 
         import time
-        import os
 
         # Setup
         #from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -511,8 +508,8 @@ class Test_sww(unittest.TestCase):
                         geo_reference = Geo_reference(56,308500,6189000))
 
         domain.set_name('test_get_mesh_and_quantities_from_unique_vertices_sww_file')
-        swwfile = domain.get_name() + '.sww'
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
+        swwfile = os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         domain.set_flow_algorithm('DE0')
         domain.set_store_vertices_uniquely()
 
@@ -590,7 +587,6 @@ class Test_sww(unittest.TestCase):
         # Generate a test sww file with non trivial georeference
 
         import time
-        import os
 
         # Setup
         #from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -606,8 +602,8 @@ class Test_sww(unittest.TestCase):
                         geo_reference = Geo_reference(56,308500,6189000))
 
         domain.set_name('test_get_mesh_and_quantities_from_unique_vertices_sww_file')
-        swwfile = domain.get_name() + '.sww'
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
+        swwfile = os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         domain.set_flow_algorithm('DE0')
         domain.set_store_vertices_uniquely()
 
@@ -700,7 +696,8 @@ class Test_sww(unittest.TestCase):
         #
         #
 
-        filename = tempfile.mktemp("_data_manager.sww")
+        fd, filename = tempfile.mkstemp("_data_manager.sww")
+        os.close(fd)
         outfile = NetCDFFile(filename, netcdf_mode_w)
         points_utm = num.array([[0.,0.],[1.,1.],[0.,1.]])
         volumes = [[0,1,2]]
@@ -737,7 +734,8 @@ class Test_sww(unittest.TestCase):
         #
         #
 
-        filename = tempfile.mktemp("_data_manager.sww")
+        fd, filename = tempfile.mkstemp("_data_manager.sww")
+        os.close(fd)
         outfile = NetCDFFile(filename, netcdf_mode_w)
         points_utm = num.array([[0.,0.],[1.,1.], [0.,1.]])
         volumes = [[0,1,2]]
@@ -780,7 +778,8 @@ class Test_sww(unittest.TestCase):
         #
         #
 
-        filename = tempfile.mktemp('_data_manager.sww')
+        fd, filename = tempfile.mkstemp('_data_manager.sww')
+        os.close(fd)
         outfile = NetCDFFile(filename, netcdf_mode_w)
         points_utm = num.array([[0.,0.], [1.,1.], [0.,1.]])
         volumes = [[0,1,2]]
@@ -822,7 +821,8 @@ class Test_sww(unittest.TestCase):
         #
         #
 
-        filename = tempfile.mktemp("_data_manager.sww")
+        fd, filename = tempfile.mkstemp("_data_manager.sww")
+        os.close(fd)
         outfile = NetCDFFile(filename, netcdf_mode_w)
         points_utm = num.array([[0.,0.],[1.,1.], [0.,1.]])
         volumes = [[0,1,2]]
@@ -862,7 +862,8 @@ class Test_sww(unittest.TestCase):
         #
         #
 
-        filename = tempfile.mktemp("_data_manager.sww")
+        fd, filename = tempfile.mkstemp("_data_manager.sww")
+        os.close(fd)
         outfile = NetCDFFile(filename, netcdf_mode_w)
         points_utm = num.array([[0.,0.],[1.,1.], [0.,1.]])
         volumes = [[0,1,2]]

@@ -21,14 +21,14 @@ class Test_csv(unittest.TestCase):
             Create a dummy csv file.
             Return its filename.
         """
-        filename = tempfile.mktemp(".txt")
-        file = open(filename,"w")
-        file.write("elevation, stage\n\
+        fd, filename = tempfile.mkstemp(".txt")
+        os.close(fd)
+        with open(filename, "w") as file:
+            file.write("elevation, stage\n\
 1.0, 3  \n\
 0.0, 4 \n\
 4.0, 3 \n\
 1.0, 6 \n")
-        file.close()
         return filename
 
     def test_get_data_from_file1(self):
@@ -71,10 +71,9 @@ class Test_csv(unittest.TestCase):
         store_parameters(verbose=False,**kwargs)
 
         temp='detail_temp.csv'
-        fid = open(temp)
-        file_header = fid.readline()
-        file_line = fid.readline()
-        fid.close()
+        with open(temp) as fid:
+            file_header = fid.readline()
+            file_line = fid.readline()
 
 
         keys = list(kwargs.keys())
@@ -147,11 +146,10 @@ class Test_csv(unittest.TestCase):
         store_parameters(verbose=False,**kwargs)
 
 #        temp='detail_temp.csv'
-        fid = open(file_name)
-        file_header = fid.readline()
-        file_line1 = fid.readline()
-        file_line2 = fid.readline()
-        fid.close()
+        with open(file_name) as fid:
+            file_header = fid.readline()
+            file_line1 = fid.readline()
+            file_line2 = fid.readline()
 
 
         #file exists
@@ -206,11 +204,10 @@ class Test_csv(unittest.TestCase):
         header+='\n'
         line+='\n'
 
-        fid = open(file_name)
-        file_header = fid.readline()
-        file_line1 = fid.readline()
-        file_line2 = fid.readline()
-        fid.close()
+        with open(file_name) as fid:
+            file_header = fid.readline()
+            file_line1 = fid.readline()
+            file_line2 = fid.readline()
 
         assert os.access(file_name, os.F_OK)
         assert header == file_header

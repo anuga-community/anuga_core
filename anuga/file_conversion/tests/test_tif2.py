@@ -90,7 +90,6 @@ class Test_tif2(unittest.TestCase):
                     reason="requires rasterio")
     def test_tif2array_utm_south(self):
 
-        import os
         import numpy
         from anuga.file_conversion.tif2array import  tif2array
 
@@ -160,7 +159,6 @@ class Test_tif2(unittest.TestCase):
                     reason="requires rasterio")
     def test_tif2array_utm_north(self):
 
-        import os
         import numpy
         from anuga.file_conversion.tif2array import  tif2array
 
@@ -230,7 +228,6 @@ class Test_tif2(unittest.TestCase):
                     reason="requires rasterio")
     def test_tif2array_ll(self):
 
-        import os
         import numpy
         from anuga.file_conversion.tif2array import  tif2array
 
@@ -455,7 +452,6 @@ class Test_tif2(unittest.TestCase):
                     reason="requires rasterio")
     def test_tif2point_values_ll(self):
 
-        import os
         import numpy
         from anuga.file_conversion.tif2point_values import tif2point_values
 
@@ -561,7 +557,6 @@ class Test_tif2(unittest.TestCase):
                     reason="requires rasterio")
     def test_tif_lat_lon_too_small(self):
 
-        import os
         import numpy
         from anuga.file_conversion.tif2point_values import tif2point_values
 
@@ -591,7 +586,6 @@ class Test_tif2(unittest.TestCase):
                     reason="requires rasterio")
     def test_tif2point_values_utm(self):
 
-        import os
         import numpy
         from anuga.file_conversion.tif2point_values import tif2point_values
 
@@ -633,7 +627,6 @@ class Test_tif2(unittest.TestCase):
                     reason="requires rasterio")
     def test_tif2point_values_utm_wrong_hemisphere(self):
 
-        import os
         import numpy
         from anuga.file_conversion.tif2point_values import tif2point_values
 

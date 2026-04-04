@@ -43,7 +43,6 @@ class Test_most2nc(unittest.TestCase):
         z = num.asarray(z)
 
         assert num.allclose(z,elevation)
-        import os
         os.remove('test.nc')
 
 if __name__ == "__main__":

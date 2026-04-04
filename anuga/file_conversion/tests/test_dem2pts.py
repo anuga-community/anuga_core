@@ -32,7 +32,6 @@ class Test_Dem2Pts(unittest.TestCase):
         """
 
         import time
-        import os
 
 
         #Write test asc file
@@ -145,7 +144,6 @@ Parameters
         """
 
         import time
-        import os
 
         #Write test asc file
         root = 'demtest2'
@@ -281,7 +279,6 @@ Parameters
         """
 
         import time
-        import os
 
         #Write test asc file
         root = 'demtest3'

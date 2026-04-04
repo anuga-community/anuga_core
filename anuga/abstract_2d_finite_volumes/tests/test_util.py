@@ -63,7 +63,6 @@ class Test_Util(unittest.TestCase):
         """
 
         #Write file
-        import os
         import time
         from anuga.config import time_format
         from math import sin, pi
@@ -142,7 +141,7 @@ class Test_Util(unittest.TestCase):
 
         domain1.default_order = 2
         domain1.store = True
-        domain1.set_datadir('.')
+        domain1.set_datadir(tempfile.mkdtemp())
         sww_file = 'spatio_temporal_boundary_source_%d' %(id(self))
         domain1.set_name(sww_file)
         self.addCleanup(lambda: os.remove(sww_file + '.sww') if os.path.exists(sww_file + '.sww') else None)
@@ -173,7 +172,7 @@ class Test_Util(unittest.TestCase):
 
         #Now read data from sww and check
         from anuga.file.netcdf import NetCDFFile
-        filename = domain1.get_name() + '.sww'
+        filename = os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww')
         fid = NetCDFFile(filename)
 
         x = fid.variables['x'][:]
@@ -323,7 +322,6 @@ class Test_Util(unittest.TestCase):
         q = f((timestep - 1.0/3)/10., point_id=2); assert num.allclose(r2, q)
 
         fid.close()
-        import os
         os.remove(filename)
 
 
@@ -352,7 +350,7 @@ class Test_Util(unittest.TestCase):
 
         domain1.default_order = 2
         domain1.store = True
-        domain1.set_datadir('.')
+        domain1.set_datadir(tempfile.mkdtemp())
         domain1.set_name('spatio_temporal_boundary_source_%d' %(id(self)))
         self.addCleanup(lambda: os.remove('spatio_temporal_boundary_source_%d.sww' % id(self)) if os.path.exists('spatio_temporal_boundary_source_%d.sww' % id(self)) else None)
 
@@ -376,7 +374,7 @@ class Test_Util(unittest.TestCase):
 
         #Now read data from sww and check
         from anuga.file.netcdf import NetCDFFile
-        filename = domain1.get_name() + '.sww'
+        filename = os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww')
         fid = NetCDFFile(filename)
 
         x = fid.variables['x'][:]
@@ -578,7 +576,6 @@ class Test_Util(unittest.TestCase):
         q = f((timestep - 1.0/3)/10., point_id=2); assert num.allclose(r2, q)
 
         fid.close()
-        import os
         os.remove(filename)
 
 
@@ -603,7 +600,6 @@ class Test_Util(unittest.TestCase):
 
         #NOTE: Nice test that may render some of the others redundant.
 
-        import os
         import time
         from anuga.config import time_format
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -622,9 +618,11 @@ class Test_Util(unittest.TestCase):
         domain = Domain(points, vertices, boundary)
         domain.smooth = False
         domain.default_order = 2
-        domain.set_datadir('.')
+        tmpdir = tempfile.mkdtemp()
+        domain.set_datadir(tmpdir)
         domain.set_name(filename)
         domain.store = True
+        sww_path = os.path.join(tmpdir, filename + '.sww')
 
         #print points
         start = time.mktime(time.strptime('2000', '%Y'))
@@ -660,7 +658,7 @@ class Test_Util(unittest.TestCase):
         domain.set_starttime(start - 1)
 
         #Create file function
-        F = file_function(filename + '.sww', domain,
+        F = file_function(sww_path, domain,
                           quantities = domain.conserved_quantities,
                           interpolation_points = interpolation_points)
 
@@ -669,7 +667,7 @@ class Test_Util(unittest.TestCase):
 
         #Check that domain.starttime isn't updated if later
         domain.set_starttime(start + 1)
-        F = file_function(filename + '.sww', domain,
+        F = file_function(sww_path, domain,
                           quantities = domain.conserved_quantities,
                           interpolation_points = interpolation_points)
         assert num.allclose(domain.starttime, start+1)
@@ -677,7 +675,7 @@ class Test_Util(unittest.TestCase):
 
 
         #Check linear interpolation in time
-        F = file_function(filename + '.sww', domain,
+        F = file_function(sww_path, domain,
                           quantities = domain.conserved_quantities,
                           interpolation_points = interpolation_points)
         for id in range(len(interpolation_points)):
@@ -728,7 +726,7 @@ class Test_Util(unittest.TestCase):
         #than file end time
         delta = 23
         domain.set_starttime(start + delta)
-        F = file_function(filename + '.sww', domain,
+        F = file_function(sww_path, domain,
                           quantities = domain.conserved_quantities,
                           interpolation_points = interpolation_points)
         assert num.allclose(domain.starttime, start+delta)
@@ -753,7 +751,7 @@ class Test_Util(unittest.TestCase):
                 assert num.allclose(q, (k*q1 + (6-k)*q0)/6)
 
 
-        os.remove(filename + '.sww')
+        os.remove(sww_path)
 
 
 
@@ -762,7 +760,6 @@ class Test_Util(unittest.TestCase):
         # Test that File function interpolates correctly
         # When some points are outside the mesh
 
-        import os
         import time
         from anuga.config import time_format
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -771,11 +768,13 @@ class Test_Util(unittest.TestCase):
         from anuga.pmesh.mesh_interface import create_pmesh_from_regions
         finaltime = 1200
 
-        filename = tempfile.mktemp()
+        fd, filename = tempfile.mkstemp()
+        os.close(fd)
         #print "filename",filename
         filename = 'test_file_function'
 
-        meshfilename = tempfile.mktemp(".tsh")
+        fd, meshfilename = tempfile.mkstemp(".tsh")
+        os.close(fd)
 
         boundary_tags = {'walls':[0,1],'bom':[2]}
 
@@ -788,9 +787,11 @@ class Test_Util(unittest.TestCase):
         domain = Domain(mesh_filename=meshfilename)
         domain.smooth = False
         domain.default_order = 2
-        domain.set_datadir('.')
+        tmpdir = tempfile.mkdtemp()
+        domain.set_datadir(tmpdir)
         domain.set_name(filename)
         domain.store = True
+        sww_path = os.path.join(tmpdir, filename + '.sww')
 
         #print points
         start = time.mktime(time.strptime('2000', '%Y'))
@@ -829,7 +830,7 @@ class Test_Util(unittest.TestCase):
         domain.starttime = start - 1
 
         #Create file function
-        F = file_function(filename + '.sww', domain,
+        F = file_function(sww_path, domain,
                           quantities = domain.conserved_quantities,
                           interpolation_points = interpolation_points)
 
@@ -838,7 +839,7 @@ class Test_Util(unittest.TestCase):
 
         #Check that domain.starttime isn't updated if later
         domain.starttime = start + 1
-        F = file_function(filename + '.sww', domain,
+        F = file_function(sww_path, domain,
                           quantities = domain.conserved_quantities,
                           interpolation_points = interpolation_points)
         assert num.allclose(domain.starttime, start+1)
@@ -847,7 +848,7 @@ class Test_Util(unittest.TestCase):
 
         #Check linear interpolation in time
         # checking points inside and outside the mesh
-        F = file_function(filename + '.sww', domain,
+        F = file_function(sww_path, domain,
                           quantities = domain.conserved_quantities,
                           interpolation_points = interpolation_points)
 
@@ -884,7 +885,7 @@ class Test_Util(unittest.TestCase):
         interpolation_points = [[10,-12.5]]
 
         #print("len(interpolation_points)",len(interpolation_points))
-        F = file_function(filename + '.sww', domain,
+        F = file_function(sww_path, domain,
                           quantities = domain.conserved_quantities,
                           interpolation_points = interpolation_points)
 
@@ -892,7 +893,7 @@ class Test_Util(unittest.TestCase):
 
 
         #Check linear interpolation in time
-        F = file_function(filename + '.sww', domain,
+        F = file_function(sww_path, domain,
                           quantities = domain.conserved_quantities,
                           interpolation_points = interpolation_points)
         for id in range(len(interpolation_points)):
@@ -945,7 +946,7 @@ class Test_Util(unittest.TestCase):
         #than file end time
         delta = 23
         domain.starttime = start + delta
-        F = file_function(filename + '.sww', domain,
+        F = file_function(sww_path, domain,
                           quantities = domain.conserved_quantities,
                           interpolation_points = interpolation_points)
         assert num.allclose(domain.starttime, start+delta)
@@ -970,7 +971,7 @@ class Test_Util(unittest.TestCase):
                 assert num.allclose(q, (k*q1 + (6-k)*q0)/6)
 
 
-        os.remove(filename + '.sww')
+        os.remove(sww_path)
 
     def test_file_function_time_with_domain(self):
         """Test that File function interpolates correctly
@@ -979,7 +980,6 @@ class Test_Util(unittest.TestCase):
         """
 
         #Write file
-        import os
         import time
         import calendar
         from anuga.config import time_format
@@ -1085,7 +1085,6 @@ class Test_Util(unittest.TestCase):
         """
 
         #Write file
-        import os
         import time
         import calendar
         from anuga.config import time_format
@@ -1171,7 +1170,6 @@ class Test_Util(unittest.TestCase):
         """
 
         # Write file
-        import os
         import time
         import calendar
         from anuga.config import time_format

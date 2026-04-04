@@ -1,6 +1,7 @@
 """  Test environmental forcing - rain, wind, etc.
 """
 
+import tempfile
 import unittest
 import os
 
@@ -30,7 +31,7 @@ def create_domain(name='domain'):
     domain.set_low_froude(0)
 
     domain.set_name(name)
-    domain.set_datadir('.')
+    domain.set_datadir(tempfile.mkdtemp())
 
     #------------------
     # Define topography

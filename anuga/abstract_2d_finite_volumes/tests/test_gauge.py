@@ -26,7 +26,8 @@ class Test_Gauge(unittest.TestCase):
 
         """ Setup for all tests. """
 
-        mesh_file = tempfile.mktemp(".tsh")
+        fd, mesh_file = tempfile.mkstemp(".tsh")
+        os.close(fd)
 
         points = [[0.0,0.0],[6.0,0.0],[6.0,6.0],[0.0,6.0]]
         m = Pmesh()
@@ -97,7 +98,8 @@ class Test_Gauge(unittest.TestCase):
         # test the function
         points = [[5.0,1.],[0.5,2.]]
 
-        points_file = tempfile.mktemp(".csv")
+        fd, points_file = tempfile.mkstemp(".csv")
+        os.close(fd)
 #        points_file = 'test_point.csv'
         file_id = open(points_file,"w")
         file_id.write("name, easting, northing, elevation \n\
@@ -180,7 +182,8 @@ point2, 0.5, 2.0, 9.0\n")
         # test the function
         points = [[5.0,1.],[0.5,2.]]
 
-        points_file = tempfile.mktemp(".csv")
+        fd, points_file = tempfile.mkstemp(".csv")
+        os.close(fd)
 #        points_file = 'test_point.csv'
         file_id = open(points_file,"w")
         file_id.write("name,easting,northing \n\
@@ -254,7 +257,8 @@ point2, 0.5, 2.0\n")
         # test the function
         points = [[5.0,1.],[0.5,2.]]
 
-        points_file = tempfile.mktemp(".csv")
+        fd, points_file = tempfile.mkstemp(".csv")
+        os.close(fd)
 #        points_file = 'test_point.csv'
         file_id = open(points_file,"w")
         file_id.write("name, easting, northing, elevation \n\
@@ -372,7 +376,8 @@ offmesh2, 50.5, 20.25\n")
         sww = self._create_sww()
 
         # create a csv file containing our gauge points
-        points_file = tempfile.mktemp(".csv")
+        fd, points_file = tempfile.mkstemp(".csv")
+        os.close(fd)
         file_id = open(points_file,"w")
 # These values are where the centroids should be
 #        file_id.write("name, easting, northing, elevation \n\
@@ -446,7 +451,8 @@ point2, 4.5, 4.0, 9.0\n")
         self._create_sww()
 
         # create a csv file containing our gauge points
-        points_file = tempfile.mktemp(".csv")
+        fd, points_file = tempfile.mkstemp(".csv")
+        os.close(fd)
         file_id = open(points_file,"w")
 
 # These values are slightly off the centroids - will it find the centroids?
@@ -509,7 +515,8 @@ point1, 2.5, 4.25, 3.0\n")
         points = [[5.0,1.],[0.5,2.]]
 
         # create a csv file containing our gauge points
-        points_file = tempfile.mktemp(".csv")
+        fd, points_file = tempfile.mkstemp(".csv")
+        os.close(fd)
         points_handle = open(points_file,"w")
         points_handle.write("name,easting,northing \n\
 point1, 5.0, 1.0\n\

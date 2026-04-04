@@ -4,6 +4,7 @@ Tests for GPU (OpenMP target offloading) implementation of ANUGA's shallow water
 These tests verify that the GPU implementation produces results matching the CPU implementation.
 """
 
+import tempfile
 import unittest
 import sys
 import numpy as np
@@ -34,7 +35,7 @@ class Test_GPU_Kernels(unittest.TestCase):
         self.domain.set_flow_algorithm('DE0')
         self.domain.set_low_froude(0)
         self.domain.set_name('test_gpu')
-        self.domain.set_datadir('.')
+        self.domain.set_datadir(tempfile.mkdtemp())
         self.domain.store = False
 
         def topography(x, y):
@@ -145,7 +146,7 @@ class Test_GPU_RK2(unittest.TestCase):
         domain.set_flow_algorithm('DE0')
         domain.set_low_froude(0)
         domain.set_name('test_rk2')
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
         domain.store = False
 
         def topography(x, y):
@@ -240,7 +241,7 @@ class Test_GPU_Boundaries(unittest.TestCase):
         domain.set_flow_algorithm('DE0')
         domain.set_low_froude(0)
         domain.set_name('test_reflective')
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
         domain.store = False
 
         domain.set_quantity('elevation', -1.0)
@@ -285,7 +286,7 @@ class Test_GPU_Boundaries(unittest.TestCase):
         domain = rectangular_cross_domain(5, 5, len1=50., len2=50.)
         domain.set_flow_algorithm('DE0')
         domain.set_name('test_dirichlet')
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
         domain.store = False
 
         domain.set_quantity('elevation', -1.0)
@@ -331,7 +332,7 @@ class Test_GPU_Boundaries(unittest.TestCase):
         domain.set_flow_algorithm('DE0')
         domain.set_low_froude(0)
         domain.set_name('test_transmissive')
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
         domain.store = False
 
         domain.set_quantity('elevation', -1.0)
@@ -380,7 +381,7 @@ class Test_GPU_Initialization(unittest.TestCase):
         domain = rectangular_cross_domain(5, 5, len1=50., len2=50.)
         domain.set_flow_algorithm('DE0')
         domain.set_name('test_init')
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
         domain.store = False
 
         domain.set_quantity('elevation', -1.0)
@@ -398,7 +399,7 @@ class Test_GPU_Initialization(unittest.TestCase):
         domain = rectangular_cross_domain(5, 5, len1=50., len2=50.)
         domain.set_flow_algorithm('DE0')
         domain.set_name('test_init_ok')
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
         domain.store = False
 
         domain.set_quantity('elevation', -1.0)
@@ -425,7 +426,7 @@ class Test_GPU_LargeDomain(unittest.TestCase):
         domain.set_flow_algorithm('DE0')
         domain.set_low_froude(0)
         domain.set_name('test_large')
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
         domain.store = False
 
         n_elements = len(domain)
@@ -490,7 +491,7 @@ class Test_GPU_InletOperator(unittest.TestCase):
         domain.set_flow_algorithm('DE0')
         domain.set_low_froude(0)
         domain.set_name(name)
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
         domain.store = False
 
         def topography(x, y):
@@ -700,7 +701,7 @@ class Test_GPU_Riverwall(unittest.TestCase):
         domain.set_flow_algorithm('DE0')
         domain.set_low_froude(0)
         domain.set_name(name)
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
         domain.store = False
 
         def topography(x, y):

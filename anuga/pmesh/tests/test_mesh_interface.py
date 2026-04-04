@@ -297,7 +297,8 @@ class TestCase(unittest.TestCase):
 
 
     def test_create_mesh_from_regions4(self):
-        file_name = tempfile.mktemp('.tsh')
+        fd, file_name = tempfile.mkstemp('.tsh')
+        os.close(fd)
 
         # These are the absolute values
         density_outer = 1000
@@ -344,7 +345,8 @@ class TestCase(unittest.TestCase):
 
 
     def test_create_mesh_from_regions5(self):
-        file_name = tempfile.mktemp('.tsh')
+        fd, file_name = tempfile.mkstemp('.tsh')
+        os.close(fd)
 
         # These are the absolute values
         density_outer = 10000000
@@ -380,7 +382,8 @@ class TestCase(unittest.TestCase):
 
 
     def test_create_mesh_from_regions6(self):
-        file_name = tempfile.mktemp('.tsh')
+        fd, file_name = tempfile.mkstemp('.tsh')
+        os.close(fd)
 
         # These are the absolute values
         density_outer = 1000
@@ -423,7 +426,8 @@ class TestCase(unittest.TestCase):
 
 
     def test_create_mesh_from_regions7(self):
-        file_name = tempfile.mktemp('.tsh')
+        fd, file_name = tempfile.mkstemp('.tsh')
+        os.close(fd)
 
         # These are the absolute values
         density_outer = 1001
@@ -817,7 +821,8 @@ class TestCase(unittest.TestCase):
 
         m.export_mesh_file('a_test_mesh_iknterface.tsh')
 
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write('         1       ??      ??\n\
        90.0       90.0\n\
@@ -875,7 +880,8 @@ END\n')
 
         m.export_mesh_file('a_test_mesh_iknterface.tsh')
 
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write('         1       ??      ??\n\
        90.0       90.0\n\
@@ -928,7 +934,8 @@ END\n')
                                      max_area,
                                      interior_regions=interior_regions)
 
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write('         1       ??      ??\n\
        90.0       90.0\n\

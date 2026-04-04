@@ -120,7 +120,6 @@ class Test_erosion_operator_variants(unittest.TestCase):
         self.domain = make_domain()
 
     def tearDown(self):
-        import os
         try:
             os.remove('domain.sww')
         except OSError:
@@ -178,7 +177,6 @@ class Test_circular_operators(unittest.TestCase):
         self.domain = make_domain()
 
     def tearDown(self):
-        import os
         try:
             os.remove('domain.sww')
         except OSError:

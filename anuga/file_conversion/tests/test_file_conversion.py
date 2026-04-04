@@ -1,5 +1,6 @@
 
 
+import tempfile
 from anuga.shallow_water.shallow_water_domain import Domain
 from anuga.file_conversion.ferret2sww import ferret2sww
 from anuga.utilities.numerical_tools import ensure_numeric, mean
@@ -215,7 +216,6 @@ class Test_File_Conversion(unittest.TestCase):
 
 
     def tearDown(self):
-        import os
         for ext in ['_ha.nc', '_ua.nc', '_va.nc', '_e.nc']:
             #print 'Trying to remove', self.test_MOST_file + ext
             os.remove(self.test_MOST_file + ext)
@@ -230,7 +230,6 @@ class Test_File_Conversion(unittest.TestCase):
         """Test that georeferencing etc works when converting from
         ferret format (lat/lon) to sww format (UTM)
         """
-        import os
         import sys
 
         #The test file has
@@ -288,7 +287,6 @@ class Test_File_Conversion(unittest.TestCase):
         fid.close()
 
         #Cleanup
-        import os
         os.remove(self.test_MOST_file + '.sww')
 
 
@@ -296,7 +294,6 @@ class Test_File_Conversion(unittest.TestCase):
     def test_ferret2sww_zscale(self):
         """Test that zscale workse
         """
-        import os
         import sys
 
         #The test file has
@@ -377,7 +374,6 @@ class Test_File_Conversion(unittest.TestCase):
 
 
         #Cleanup
-        import os
         os.remove(self.test_MOST_file + '.sww')
 
 
@@ -440,7 +436,6 @@ class Test_File_Conversion(unittest.TestCase):
         fid.close()
 
         #Cleanup
-        import os
         os.remove(self.test_MOST_file + '.sww')
 
 
@@ -481,7 +476,6 @@ class Test_File_Conversion(unittest.TestCase):
         fid.close()
 
         #Cleanup
-        import os
         os.remove(self.test_MOST_file + '.sww')
 
 
@@ -522,7 +516,6 @@ class Test_File_Conversion(unittest.TestCase):
         fid.close()
 
         #Cleanup
-        import os
         os.remove(self.test_MOST_file + '.sww')
 
     def test_ferret2sww3(self):
@@ -543,7 +536,6 @@ class Test_File_Conversion(unittest.TestCase):
         # Fourth value (index==3) is -6.50198 cm
 
         from anuga.coordinate_transforms.redfearn import redfearn
-        import os
         fid1 = NetCDFFile('test_ha.nc',netcdf_mode_w)
         fid2 = NetCDFFile('test_ua.nc',netcdf_mode_w)
         fid3 = NetCDFFile('test_va.nc',netcdf_mode_w)
@@ -702,7 +694,6 @@ class Test_File_Conversion(unittest.TestCase):
         # Fourth value (index==3) is -6.50198 cm
 
         from anuga.coordinate_transforms.redfearn import redfearn
-        import os
         fid1 = NetCDFFile('test_ha.nc',netcdf_mode_w)
         fid2 = NetCDFFile('test_ua.nc',netcdf_mode_w)
         fid3 = NetCDFFile('test_va.nc',netcdf_mode_w)
@@ -906,14 +897,13 @@ class Test_File_Conversion(unittest.TestCase):
         """
 
         import time
-        import os
 
 
         self.domain.set_name('datatest' + str(id(self)))
         self.domain.format = 'sww'
         self.domain.smooth = True
         self.domain.reduction = mean
-        self.domain.set_datadir('.')
+        self.domain.set_datadir(tempfile.mkdtemp())
         #self.domain.tight_slope_limiters = 1
 
 
@@ -928,7 +918,7 @@ class Test_File_Conversion(unittest.TestCase):
 
         sww.store_timestep()
 
-        file_and_extension_name = self.domain.get_name() + ".sww"
+        file_and_extension_name = os.path.join(self.domain.get_datadir(), self.domain.get_name() + ".sww")
         #print "file_and_extension_name",file_and_extension_name
         [xmin, xmax, ymin, ymax, stagemin, stagemax] = \
                extent_sww(file_and_extension_name )

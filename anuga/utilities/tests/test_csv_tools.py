@@ -33,23 +33,24 @@ class Test_CSV_utils(unittest.TestCase):
         self.filenames = []
 
         for i in range(self.NUM_FILES):
-            self.filenames.append(tempfile.mktemp('.csv'))
+            fd, fname = tempfile.mkstemp('.csv')
+            os.close(fd)
+            self.filenames.append(fname)
 
         for (i, fn) in enumerate(self.filenames):
-            fd = open(fn, 'w')
-            csv_fd = csv.writer(fd)
+            with open(fn, 'w') as fd:
+                csv_fd = csv.writer(fd)
 
-            # write colums row
-            columns = []
-            for j in range(self.NUM_COLS):
-                columns.append(col_text_string[j % 4] % j)
-            csv_fd.writerow(columns)
+                # write colums row
+                columns = []
+                for j in range(self.NUM_COLS):
+                    columns.append(col_text_string[j % 4] % j)
+                csv_fd.writerow(columns)
 
-            # write data rows
-            for j in range(self.NUM_LINES):
-                data = [j, j, '%d.%d' % (j, i)] + ['qwert']*(self.NUM_COLS-3)
-                csv_fd.writerow(data)
-            fd.close()
+                # write data rows
+                for j in range(self.NUM_LINES):
+                    data = [j, j, '%d.%d' % (j, i)] + ['qwert']*(self.NUM_COLS-3)
+                    csv_fd.writerow(data)
 
     def tearDown(self):
         for fn in self.filenames:

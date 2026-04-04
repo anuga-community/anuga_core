@@ -806,7 +806,6 @@ class Test_Caching(unittest.TestCase):
     def test_statsfile(self):
         """Test presence of statistics file
         """
-        import os
         import string
         statsfile = '.cache_stat'  # Basefilename for cached statistics.
 

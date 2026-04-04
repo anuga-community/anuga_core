@@ -43,7 +43,8 @@ class geo_referenceTestCase(unittest.TestCase):
     def test_read_write_NetCDF(self):
         from anuga.file.netcdf import NetCDFFile
         g = Geo_reference(56,1.9,1.9)
-        file_name = tempfile.mktemp(".geo_referenceTest")
+        fd, file_name = tempfile.mkstemp(".geo_referenceTest")
+        os.close(fd)
 
         out_file = NetCDFFile(file_name, netcdf_mode_w)
         g.write_NetCDF(out_file)
@@ -61,7 +62,8 @@ class geo_referenceTestCase(unittest.TestCase):
         from anuga.file.netcdf import NetCDFFile
 
         g = Geo_reference(56,1.9,1.9)
-        file_name = tempfile.mktemp(".geo_referenceTest")
+        fd, file_name = tempfile.mkstemp(".geo_referenceTest")
+        os.close(fd)
         outfile = NetCDFFile(file_name, netcdf_mode_w)
         g.write_NetCDF(outfile)
         outfile.close()
@@ -76,7 +78,8 @@ class geo_referenceTestCase(unittest.TestCase):
     def test_read_write_ASCII(self):
         from anuga.file.netcdf import NetCDFFile
         g = Geo_reference(56,1.9,1.9)
-        file_name = tempfile.mktemp(".geo_referenceTest")
+        fd, file_name = tempfile.mkstemp(".geo_referenceTest")
+        os.close(fd)
         fd = open(file_name,'w')
         g.write_ASCII(fd)
         fd.close()
@@ -91,7 +94,8 @@ class geo_referenceTestCase(unittest.TestCase):
     def test_read_write_ASCII2(self):
         from anuga.file.netcdf import NetCDFFile
         g = Geo_reference(56,1.9,1.9)
-        file_name = tempfile.mktemp(".geo_referenceTest")
+        fd, file_name = tempfile.mkstemp(".geo_referenceTest")
+        os.close(fd)
         fd = open(file_name,'w')
         g.write_ASCII(fd)
         fd.close()
@@ -106,7 +110,8 @@ class geo_referenceTestCase(unittest.TestCase):
     def test_read_write_ASCII3(self):
         from anuga.file.netcdf import NetCDFFile
         g = Geo_reference(56,1.9,1.9)
-        file_name = tempfile.mktemp(".geo_referenceTest")
+        fd, file_name = tempfile.mkstemp(".geo_referenceTest")
+        os.close(fd)
         fd = open(file_name,'w')
         g.write_ASCII(fd)
         fd.close()
@@ -547,7 +552,8 @@ class geo_referenceTestCase(unittest.TestCase):
 
     def test_bad_ASCII_title(self):
         # create an text file
-        point_file = tempfile.mktemp(".xxx")
+        fd, point_file = tempfile.mkstemp(".xxx")
+        os.close(fd)
         fd = open(point_file,'w')
         fd.write("# hey! \n")
         fd.close()
@@ -572,7 +578,8 @@ class geo_referenceTestCase(unittest.TestCase):
 
         # This is to test a fail
         g = Geo_reference(56,1.9,1.9)
-        file_name = tempfile.mktemp(".geo_referenceTest")
+        fd, file_name = tempfile.mkstemp(".geo_referenceTest")
+        os.close(fd)
         fd = open(file_name,'w')
         g.write_ASCII(fd)
         fd.close()
@@ -592,7 +599,8 @@ class geo_referenceTestCase(unittest.TestCase):
 
         # this tests a pass
         g = Geo_reference(56,1.9,1.9)
-        file_name = tempfile.mktemp(".geo_referenceTest")
+        fd, file_name = tempfile.mkstemp(".geo_referenceTest")
+        os.close(fd)
         fd = open(file_name,'w')
         g.write_ASCII(fd)
         fd.close()
@@ -608,7 +616,8 @@ class geo_referenceTestCase(unittest.TestCase):
 
         # this tests a pass
         g = Geo_reference(56,1.9,1.9)
-        file_name = tempfile.mktemp(".geo_referenceTest")
+        fd, file_name = tempfile.mkstemp(".geo_referenceTest")
+        os.close(fd)
         fd = open(file_name,'w')
         g.write_ASCII(fd)
         fd.close()
@@ -624,7 +633,8 @@ class geo_referenceTestCase(unittest.TestCase):
 
     def test_good_title(self):
  # create an .xxx file
-        point_file = tempfile.mktemp(".xxx")
+        fd, point_file = tempfile.mkstemp(".xxx")
+        os.close(fd)
         fd = open(point_file,'w')
         fd.write("#Geo crap \n 56\n ")
         fd.close()
@@ -722,7 +732,8 @@ class geo_referenceTestCase(unittest.TestCase):
                         "was '%s' type" % type(g.yllcorner))
 
         # now write fikle, read back and check types again
-        file_name = tempfile.mktemp(".geo_referenceTest")
+        fd, file_name = tempfile.mkstemp(".geo_referenceTest")
+        os.close(fd)
 
         out_file = NetCDFFile(file_name, netcdf_mode_w)
         g.write_NetCDF(out_file)

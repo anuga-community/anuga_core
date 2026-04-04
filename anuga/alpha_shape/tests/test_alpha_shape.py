@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 #TEST
+import os
 import sys
 import unittest
 
@@ -170,10 +171,10 @@ class TestCase(unittest.TestCase):
 # was running it. issue - not running the test in this directory
     def FIXtest_alpha_stand_alone(self):
         #print "test_alpha_stand_alone"
-        import os
         import tempfile
 
-        fileName = tempfile.mktemp(".csv")
+        fd, fileName = tempfile.mkstemp(".csv")
+        os.close(fd)
         file = open(fileName,"w")
         file.write("x,y\n\
 0.0, 0.0\n\
@@ -184,7 +185,8 @@ class TestCase(unittest.TestCase):
 0.0, 2.0\n")
         file.close()
 
-        output_file_name = tempfile.mktemp(".bnd")
+        fd, output_file_name = tempfile.mkstemp(".bnd")
+        os.close(fd)
         #(ho, output_file_name) = tempfile.mkstemp(".bnd")
         command = sys.executable  + 'alpha_shape'+ os.sep +'alpha_shape.py ' \
                   + fileName  + ' ' + output_file_name

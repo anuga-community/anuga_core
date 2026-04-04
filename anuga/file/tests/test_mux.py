@@ -93,24 +93,23 @@ class Test_Mux(unittest.TestCase):
             columns = 3 # long, lat , depth
             file = base_name + mux_names[i]
             #print "base_name file",file
-            f = open(file, 'wb')
-            files.append(file)
-            f.write(pack('i',points_num))
-            f.write(pack('i',time_step_count))
-            f.write(pack('f',time_step))
+            with open(file, 'wb') as f:
+                files.append(file)
+                f.write(pack('i',points_num))
+                f.write(pack('i',time_step_count))
+                f.write(pack('f',time_step))
 
-            #write lat/long info
-            for lonlatdep in lonlatdeps:
-                for float in lonlatdep:
-                    f.write(pack('f',float))
+                #write lat/long info
+                for lonlatdep in lonlatdeps:
+                    for float in lonlatdep:
+                        f.write(pack('f',float))
 
-            # Write quantity info
-            for time in  range(time_step_count):
-                for point_i in range(points_num):
-                    f.write(pack('f',q_time[time,point_i]))
-                    #print " mux_names[i]", mux_names[i]
-                    #print "f.write(pack('f',q_time[time,i]))", q_time[time,point_i]
-            f.close()
+                # Write quantity info
+                for time in  range(time_step_count):
+                    for point_i in range(points_num):
+                        f.write(pack('f',q_time[time,point_i]))
+                        #print " mux_names[i]", mux_names[i]
+                        #print "f.write(pack('f',q_time[time,i]))", q_time[time,point_i]
         return base_name, files
 
 
@@ -209,50 +208,49 @@ class Test_Mux(unittest.TestCase):
             file = base_name + mux_names[i]
 
             #print 'base_name file', file
-            f = open(file, 'wb')
-            files.append(file)
+            with open(file, 'wb') as f:
+                files.append(file)
 
-            f.write(pack('i',points_num))
-            #write mux 2 header
-            for latlondep in latlondeps:
-                f.write(pack('f',latlondep[0]))
-                f.write(pack('f',latlondep[1]))
-                f.write(pack('f',mcolat))
-                f.write(pack('f',mcolon))
-                f.write(pack('i',ig))
-                f.write(pack('i',ilon))
-                f.write(pack('i',ilat))
-                f.write(pack('f',latlondep[2]))
-                f.write(pack('f',centerlat))
-                f.write(pack('f',centerlon))
-                f.write(pack('f',offset))
-                f.write(pack('f',az))
-                f.write(pack('f',baz))
-                f.write(pack('f',time_step))
-                f.write(pack('i',time_step_count))
-                for j in range(4): # identifier
-                    f.write(pack('f',id))
+                f.write(pack('i',points_num))
+                #write mux 2 header
+                for latlondep in latlondeps:
+                    f.write(pack('f',latlondep[0]))
+                    f.write(pack('f',latlondep[1]))
+                    f.write(pack('f',mcolat))
+                    f.write(pack('f',mcolon))
+                    f.write(pack('i',ig))
+                    f.write(pack('i',ilon))
+                    f.write(pack('i',ilat))
+                    f.write(pack('f',latlondep[2]))
+                    f.write(pack('f',centerlat))
+                    f.write(pack('f',centerlon))
+                    f.write(pack('f',offset))
+                    f.write(pack('f',az))
+                    f.write(pack('f',baz))
+                    f.write(pack('f',time_step))
+                    f.write(pack('i',time_step_count))
+                    for j in range(4): # identifier
+                        f.write(pack('f',id))
 
-            #first_tstep=1
-            #last_tstep=time_step_count
-            for i,latlondep in enumerate(latlondeps):
-                f.write(pack('i',first_tstep[i]))
-            for i,latlondep in enumerate(latlondeps):
-                f.write(pack('i',last_tstep[i]))
+                #first_tstep=1
+                #last_tstep=time_step_count
+                for i,latlondep in enumerate(latlondeps):
+                    f.write(pack('i',first_tstep[i]))
+                for i,latlondep in enumerate(latlondeps):
+                    f.write(pack('i',last_tstep[i]))
 
-            # Find when first station starts recording
-            min_tstep = min(first_tstep)
-            # Find when all stations have stopped recording
-            max_tstep = max(last_tstep)
+                # Find when first station starts recording
+                min_tstep = min(first_tstep)
+                # Find when all stations have stopped recording
+                max_tstep = max(last_tstep)
 
-            #for time in  range(time_step_count):
-            for time in range(min_tstep-1,max_tstep):
-                f.write(pack('f',time*time_step))
-                for point_i in range(points_num):
-                    if time+1>=first_tstep[point_i] and time+1<=last_tstep[point_i]:
-                        #print 'writing', time, point_i, q_time[time, point_i]
-                        f.write(pack('f', q_time[time, point_i]))
-            f.close()
+                #for time in  range(time_step_count):
+                for time in range(min_tstep-1,max_tstep):
+                    f.write(pack('f',time*time_step))
+                    for point_i in range(points_num):
+                        if time+1>=first_tstep[point_i] and time+1<=last_tstep[point_i]:
+                            #print 'writing', time, point_i, q_time[time, point_i]
+                            f.write(pack('f', q_time[time, point_i]))
 
         return base_name, files
 
@@ -513,13 +511,12 @@ class Test_Mux(unittest.TestCase):
         permutation = ensure_numeric([4,0,2])
 
         _, ordering_filename = tempfile.mkstemp('')
-        order_fid = open(ordering_filename, 'w')
-        order_fid.write('index, longitude, latitude\n')
-        for index in permutation:
-            order_fid.write('%d, %f, %f\n' %(index,
-                                             lat_long_points[index][1],
-                                             lat_long_points[index][0]))
-        order_fid.close()
+        with open(ordering_filename, 'w') as order_fid:
+            order_fid.write('index, longitude, latitude\n')
+            for index in permutation:
+                order_fid.write('%d, %f, %f\n' %(index,
+                                                 lat_long_points[index][1],
+                                                 lat_long_points[index][0]))
 
 
 
@@ -704,55 +701,53 @@ class Test_Mux(unittest.TestCase):
 
 
             filename = base_nameII + mux_names[i]
-            f = open(filename, 'rb')
-            assert abs(points_num-unpack('i',f.read(4))[0])<epsilon
-            #write mux 2 header
-            for latlondep in latlondeps:
-                assert abs(latlondep[0]-unpack('f',f.read(4))[0])<epsilon
-                assert abs(latlondep[1]-unpack('f',f.read(4))[0])<epsilon
-                assert abs(mcolat-unpack('f',f.read(4))[0])<epsilon
-                assert abs(mcolon-unpack('f',f.read(4))[0])<epsilon
-                assert abs(ig-unpack('i',f.read(4))[0])<epsilon
-                assert abs(ilon-unpack('i',f.read(4))[0])<epsilon
-                assert abs(ilat-unpack('i',f.read(4))[0])<epsilon
-                assert abs(latlondep[2]-unpack('f',f.read(4))[0])<epsilon
-                assert abs(centerlat-unpack('f',f.read(4))[0])<epsilon
-                assert abs(centerlon-unpack('f',f.read(4))[0])<epsilon
-                assert abs(offset-unpack('f',f.read(4))[0])<epsilon
-                assert abs(az-unpack('f',f.read(4))[0])<epsilon
-                assert abs(baz-unpack('f',f.read(4))[0])<epsilon
+            with open(filename, 'rb') as f:
+                assert abs(points_num-unpack('i',f.read(4))[0])<epsilon
+                #write mux 2 header
+                for latlondep in latlondeps:
+                    assert abs(latlondep[0]-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(latlondep[1]-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(mcolat-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(mcolon-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(ig-unpack('i',f.read(4))[0])<epsilon
+                    assert abs(ilon-unpack('i',f.read(4))[0])<epsilon
+                    assert abs(ilat-unpack('i',f.read(4))[0])<epsilon
+                    assert abs(latlondep[2]-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(centerlat-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(centerlon-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(offset-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(az-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(baz-unpack('f',f.read(4))[0])<epsilon
 
-                x = unpack('f', f.read(4))[0]
-                #print time_step
-                #print x
-                assert abs(time_step-x)<epsilon
-                assert abs(time_step_count-unpack('i',f.read(4))[0])<epsilon
-                for j in range(4): # identifier
-                    assert abs(id-unpack('i',f.read(4))[0])<epsilon
+                    x = unpack('f', f.read(4))[0]
+                    #print time_step
+                    #print x
+                    assert abs(time_step-x)<epsilon
+                    assert abs(time_step_count-unpack('i',f.read(4))[0])<epsilon
+                    for j in range(4): # identifier
+                        assert abs(id-unpack('i',f.read(4))[0])<epsilon
 
-            #first_tstep=1
-            #last_tstep=time_step_count
-            for i,latlondep in enumerate(latlondeps):
-                assert abs(first_tstep[i]-unpack('i',f.read(4))[0])<epsilon
-            for i,latlondep in enumerate(latlondeps):
-                assert abs(last_tstep[i]-unpack('i',f.read(4))[0])<epsilon
+                #first_tstep=1
+                #last_tstep=time_step_count
+                for i,latlondep in enumerate(latlondeps):
+                    assert abs(first_tstep[i]-unpack('i',f.read(4))[0])<epsilon
+                for i,latlondep in enumerate(latlondeps):
+                    assert abs(last_tstep[i]-unpack('i',f.read(4))[0])<epsilon
 
-            # Find when first station starts recording
-            min_tstep = min(first_tstep)
-            # Find when all stations have stopped recording
-            max_tstep = max(last_tstep)
+                # Find when first station starts recording
+                min_tstep = min(first_tstep)
+                # Find when all stations have stopped recording
+                max_tstep = max(last_tstep)
 
-            #for time in  range(time_step_count):
-            for time in range(min_tstep-1,max_tstep):
-                assert abs(time*time_step-unpack('f',f.read(4))[0])<epsilon
-                for point_i in range(points_num):
-                    if time+1>=first_tstep[point_i] and time+1<=last_tstep[point_i]:
-                        x = unpack('f',f.read(4))[0]
-                        #print time, x, q_time[time, point_i]
-                        if q == 'VA': x = -x # South is positive in MUX
-                        assert abs(q_time[time, point_i]-x)<epsilon
-
-            f.close()
+                #for time in  range(time_step_count):
+                for time in range(min_tstep-1,max_tstep):
+                    assert abs(time*time_step-unpack('f',f.read(4))[0])<epsilon
+                    for point_i in range(points_num):
+                        if time+1>=first_tstep[point_i] and time+1<=last_tstep[point_i]:
+                            x = unpack('f',f.read(4))[0]
+                            #print time, x, q_time[time, point_i]
+                            if q == 'VA': x = -x # South is positive in MUX
+                            assert abs(q_time[time, point_i]-x)<epsilon
 
         # Create ordering file
         permutation = ensure_numeric([4,0,2])
@@ -1000,57 +995,55 @@ ValueError: matrices are not aligned for copy
 
 
             filename = base_nameII + mux_names[i]
-            f = open(filename, 'rb')
-            assert abs(points_num-unpack('i',f.read(4))[0])<epsilon
-            #write mux 2 header
-            for latlondep in latlondeps:
-                assert abs(latlondep[0]-unpack('f',f.read(4))[0])<epsilon
-                assert abs(latlondep[1]-unpack('f',f.read(4))[0])<epsilon
-                assert abs(mcolat-unpack('f',f.read(4))[0])<epsilon
-                assert abs(mcolon-unpack('f',f.read(4))[0])<epsilon
-                assert abs(ig-unpack('i',f.read(4))[0])<epsilon
-                assert abs(ilon-unpack('i',f.read(4))[0])<epsilon
-                assert abs(ilat-unpack('i',f.read(4))[0])<epsilon
-                assert abs(latlondep[2]-unpack('f',f.read(4))[0])<epsilon
-                assert abs(centerlat-unpack('f',f.read(4))[0])<epsilon
-                assert abs(centerlon-unpack('f',f.read(4))[0])<epsilon
-                assert abs(offset-unpack('f',f.read(4))[0])<epsilon
-                assert abs(az-unpack('f',f.read(4))[0])<epsilon
-                assert abs(baz-unpack('f',f.read(4))[0])<epsilon
+            with open(filename, 'rb') as f:
+                assert abs(points_num-unpack('i',f.read(4))[0])<epsilon
+                #write mux 2 header
+                for latlondep in latlondeps:
+                    assert abs(latlondep[0]-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(latlondep[1]-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(mcolat-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(mcolon-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(ig-unpack('i',f.read(4))[0])<epsilon
+                    assert abs(ilon-unpack('i',f.read(4))[0])<epsilon
+                    assert abs(ilat-unpack('i',f.read(4))[0])<epsilon
+                    assert abs(latlondep[2]-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(centerlat-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(centerlon-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(offset-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(az-unpack('f',f.read(4))[0])<epsilon
+                    assert abs(baz-unpack('f',f.read(4))[0])<epsilon
 
-                x = unpack('f', f.read(4))[0]
-                #print time_step
-                #print x
-                assert abs(time_step-x)<epsilon
-                assert abs(time_step_count-unpack('i',f.read(4))[0])<epsilon
-                for j in range(4): # identifier
-                    assert abs(id-unpack('i',f.read(4))[0])<epsilon
+                    x = unpack('f', f.read(4))[0]
+                    #print time_step
+                    #print x
+                    assert abs(time_step-x)<epsilon
+                    assert abs(time_step_count-unpack('i',f.read(4))[0])<epsilon
+                    for j in range(4): # identifier
+                        assert abs(id-unpack('i',f.read(4))[0])<epsilon
 
-            #first_tstep=1
-            #last_tstep=time_step_count
-            for i,latlondep in enumerate(latlondeps):
-                assert abs(first_tstep[i]-unpack('i',f.read(4))[0])<epsilon
-            for i,latlondep in enumerate(latlondeps):
-                assert abs(last_tstep[i]-unpack('i',f.read(4))[0])<epsilon
+                #first_tstep=1
+                #last_tstep=time_step_count
+                for i,latlondep in enumerate(latlondeps):
+                    assert abs(first_tstep[i]-unpack('i',f.read(4))[0])<epsilon
+                for i,latlondep in enumerate(latlondeps):
+                    assert abs(last_tstep[i]-unpack('i',f.read(4))[0])<epsilon
 
-            # Find when first station starts recording
-            min_tstep = min(first_tstep)
-            # Find when all stations have stopped recording
-            max_tstep = max(last_tstep)
+                # Find when first station starts recording
+                min_tstep = min(first_tstep)
+                # Find when all stations have stopped recording
+                max_tstep = max(last_tstep)
 
-            #for time in  range(time_step_count):
-            for time in range(min_tstep-1,max_tstep):
-                assert abs(time*time_step-unpack('f',f.read(4))[0])<epsilon
-                for point_i in range(points_num):
-                    if time+1>=first_tstep[point_i] and time+1<=last_tstep[point_i]:
-                        x = unpack('f',f.read(4))[0]
-                        #print time, x, q_time[time, point_i]
-                        if q == 'VA': x = -x # South is positive in MUX
-                        #print q+" q_time[%d, %d] = %f" %(time, point_i,
-                                                      #q_time[time, point_i])
-                        assert abs(q_time[time, point_i]-x)<epsilon
-
-            f.close()
+                #for time in  range(time_step_count):
+                for time in range(min_tstep-1,max_tstep):
+                    assert abs(time*time_step-unpack('f',f.read(4))[0])<epsilon
+                    for point_i in range(points_num):
+                        if time+1>=first_tstep[point_i] and time+1<=last_tstep[point_i]:
+                            x = unpack('f',f.read(4))[0]
+                            #print time, x, q_time[time, point_i]
+                            if q == 'VA': x = -x # South is positive in MUX
+                            #print q+" q_time[%d, %d] = %f" %(time, point_i,
+                                                          #q_time[time, point_i])
+                            assert abs(q_time[time, point_i]-x)<epsilon
 
         permutation = ensure_numeric([4,0,2])
 
@@ -1501,8 +1494,8 @@ ValueError: matrices are not aligned for copy
         for file in files:
 
             # Check contents first
-            mux_file = open(file, 'rb')
-            data = mux_file.read()
+            with open(file, 'rb') as mux_file:
+                data = mux_file.read()
             #print(data)
 
             urs = Read_urs(file)

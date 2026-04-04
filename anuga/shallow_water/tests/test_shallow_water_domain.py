@@ -580,13 +580,13 @@ class Test_Shallow_Water(unittest.TestCase):
         for t in domain.evolve(yieldstep=0.5, finaltime=0.5):
             pass
 
-        fid = NetCDFFile(domain.get_name() + '.sww')
+        fid = NetCDFFile(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
         sww_institution = fid.institution
         fid.close()
 
         assert institution == sww_institution
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_boundary_conditions(self):
         a = [0.0, 0.0]
@@ -2185,7 +2185,6 @@ class Test_Shallow_Water(unittest.TestCase):
         """
 
         import time
-        import os
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
 
         # Create basic mesh (20m x 3m)
@@ -2276,7 +2275,6 @@ class Test_Shallow_Water(unittest.TestCase):
         """
 
         import time
-        import os
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
 
         # Create basic mesh (20m x 3m)
@@ -2996,7 +2994,7 @@ class Test_Shallow_Water(unittest.TestCase):
             else:
                 assert not num.allclose(stage, initial_stage)
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     #####################################################
 
@@ -4543,7 +4541,7 @@ class Test_Shallow_Water(unittest.TestCase):
         assert num.allclose(tt,252.5)
 
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_evolve_duration(self):
         """Test evolve with duration set
@@ -4577,7 +4575,7 @@ class Test_Shallow_Water(unittest.TestCase):
 
         assert num.allclose(tt,252.5)
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_evolve_and_set_time(self):
         """Test evolve with set_time before evolve
@@ -4615,7 +4613,7 @@ class Test_Shallow_Water(unittest.TestCase):
 
         assert num.allclose(tt,252.5)
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
 
     def test_evolve_outputstep(self):
@@ -4653,12 +4651,12 @@ class Test_Shallow_Water(unittest.TestCase):
         # Open sww file to check that only store every second
 
         # Read results for specific timesteps t=1 and t=2
-        fid = NetCDFFile(domain.get_name() + '.sww')
+        fid = NetCDFFile(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
         time = fid.variables['time'][:]
         stage = fid.variables['stage'][:,:]
         fid.close()
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
         timeslices = 6
         msg = f' time.shape[0] = {time.shape[0]}, expected {timeslices}'
@@ -4702,12 +4700,12 @@ class Test_Shallow_Water(unittest.TestCase):
         # Open sww file to check that only store every second
 
         # Read results for specific timesteps t=1 and t=2
-        fid = NetCDFFile(domain.get_name() + '.sww')
+        fid = NetCDFFile(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
         time = fid.variables['time'][:]
         stage = fid.variables['stage'][:,:]
         fid.close()
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
         timeslices = 101
         msg = f' time.shape[0] = {time.shape[0]}, expected {timeslices}'
@@ -4800,7 +4798,7 @@ class Test_Shallow_Water(unittest.TestCase):
             #print xmom
             #assert allclose (xmom, initial_xmom)
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_conservation_2(self):
         """Test that stage is conserved globally
@@ -4846,7 +4844,7 @@ class Test_Shallow_Water(unittest.TestCase):
             #print xmom
             #assert allclose (xmom, initial_xmom)
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_conservation_3(self):
         """Test that stage is conserved globally
@@ -4912,7 +4910,7 @@ class Test_Shallow_Water(unittest.TestCase):
             volume =  domain.quantities['stage'].get_integral()
             assert num.allclose (volume, initial_volume)
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_conservation_4(self):
         """Test that stage is conserved globally
@@ -4980,7 +4978,7 @@ class Test_Shallow_Water(unittest.TestCase):
             volume =  domain.quantities['stage'].get_integral()
             assert num.allclose (volume, initial_volume)
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_conservation_5(self):
         """Test that momentum is conserved globally in steady state scenario
@@ -5037,7 +5035,7 @@ class Test_Shallow_Water(unittest.TestCase):
                 assert num.allclose(ymom, steady_ymom)
                 assert num.allclose(stage, steady_stage)
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_conservation_real(self):
         """Test that momentum is conserved globally
@@ -5091,7 +5089,7 @@ class Test_Shallow_Water(unittest.TestCase):
         msg = 'Stage not conserved: was %f, now %f' % (ref, now)
         assert num.allclose(ref, now), msg
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_second_order_flat_bed_onestep(self):
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -5166,7 +5164,7 @@ class Test_Shallow_Water(unittest.TestCase):
                               0.00000000e+00,  2.23035875e-19, -1.89000000e-04])
 
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_second_order_flat_bed_moresteps(self):
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -5195,7 +5193,7 @@ class Test_Shallow_Water(unittest.TestCase):
         #assert allclose(domain.recorded_max_timestep, 0.0396825396825)
         #print domain.quantities['stage'].centroid_values
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_flatbed_first_order(self):
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -5234,7 +5232,7 @@ class Test_Shallow_Water(unittest.TestCase):
         assert num.allclose(domain.quantities['xmomentum'].\
                             edge_values[:4, 2],
                             [0.08124162, 0.06685681, 0.07891946, 0.06628975])
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
 
     def test_flatbed_second_order(self):
@@ -5289,7 +5287,7 @@ class Test_Shallow_Water(unittest.TestCase):
         assert num.allclose(domain.quantities['ymomentum'].vertex_values[:4, 0], VH_0)
 
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
 
     def test_flatbed_second_order_vmax_0(self):
@@ -5334,7 +5332,7 @@ class Test_Shallow_Water(unittest.TestCase):
         assert num.allclose(domain.quantities['xmomentum'].vertex_values[:4, 0], UH_EX)
         assert num.allclose(domain.quantities['ymomentum'].vertex_values[:4, 0], VH_EX)
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_flatbed_second_order_distribute(self):
         #Use real data from anuga.abstract_2d_finite_volumes 2
@@ -5472,7 +5470,7 @@ class Test_Shallow_Water(unittest.TestCase):
                     VH_EX)
 
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_bedslope_problem_first_order(self):
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -5508,7 +5506,7 @@ class Test_Shallow_Water(unittest.TestCase):
         #assert allclose(domain.recorded_min_timestep, 0.050010003001)
         #assert allclose(domain.recorded_max_timestep, 0.050010003001)
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_bedslope_problem_first_order_moresteps_low_froude_0(self):
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -5568,7 +5566,7 @@ class Test_Shallow_Water(unittest.TestCase):
         assert num.allclose(domain.quantities['stage'].centroid_values, W_EX)
 
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
 
     def test_bedslope_problem_first_order_moresteps_low_froude_1(self):
@@ -5629,7 +5627,7 @@ class Test_Shallow_Water(unittest.TestCase):
         assert num.allclose(domain.quantities['stage'].centroid_values, W_EX)
 
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_bedslope_problem_second_order_one_step(self):
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -5720,7 +5718,7 @@ class Test_Shallow_Water(unittest.TestCase):
         assert num.allclose(domain.quantities['stage'].centroid_values, W_EX)
 
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_bedslope_problem_second_order_two_steps(self):
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -5818,7 +5816,7 @@ class Test_Shallow_Water(unittest.TestCase):
 
 
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_bedslope_problem_second_order_two_yieldsteps(self):
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -5916,7 +5914,7 @@ class Test_Shallow_Water(unittest.TestCase):
         assert num.allclose(domain.quantities['stage'].centroid_values, W_EX)
 
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_bedslope_problem_second_order_more_steps(self):
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -6069,7 +6067,7 @@ class Test_Shallow_Water(unittest.TestCase):
 
         assert num.allclose(domain.quantities['ymomentum'].centroid_values, VH_EX)
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def NOtest_bedslope_problem_second_order_more_steps_feb_2007(self):
         """test_bedslope_problem_second_order_more_steps_feb_2007
@@ -6190,7 +6188,7 @@ class Test_Shallow_Water(unittest.TestCase):
       -6.24238960e-003, -6.01820113e-003, -6.09602201e-003, -5.04787190e-003,
       -4.59373845e-003, -3.01393146e-003,  5.08550095e-004, -4.35896549e-004])
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_temp_play(self):
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
@@ -6267,7 +6265,7 @@ class Test_Shallow_Water(unittest.TestCase):
 #                            [-1.19201077e-003, -7.23647546e-004,
 #                             -6.39083123e-005, 6.29815168e-005])
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_complex_bed(self):
         # No friction is tested here
@@ -6335,7 +6333,7 @@ class Test_Shallow_Water(unittest.TestCase):
 # -5.48333333e-001, -5.31666667e-001, -5.48333333e-001, -5.31666667e-001,
 # -5.48333333e-001, -5.31666667e-001, -5.48333333e-001, -5.31666667e-001])
 
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_spatio_temporal_boundary_1(self):
         """Test that boundary values can be read from file and interpolated
@@ -6368,7 +6366,7 @@ class Test_Shallow_Water(unittest.TestCase):
 
         domain1.default_order = 2
         domain1.store = True
-        domain1.set_datadir('.')
+        domain1.set_datadir(tempfile.mkdtemp())
         domain1.set_name('spatio_temporal_boundary_source' + str(time.time()))
 
         # FIXME: This is extremely important!
@@ -6426,7 +6424,7 @@ class Test_Shallow_Water(unittest.TestCase):
 
         # Boundary conditions
         Br = Reflective_boundary(domain2)
-        Bf = Field_boundary(domain1.get_name() + '.sww', domain2)
+        Bf = Field_boundary(os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww'), domain2)
         domain2.set_boundary({'right':Br, 'bottom':Br, 'diagonal':Bf})
         domain2.check_integrity()
 
@@ -6446,8 +6444,8 @@ class Test_Shallow_Water(unittest.TestCase):
                             num.take(cv2, (4,6,8), axis=0), rtol=1.0e-4)      # RHS
 
         # Cleanup
-        os.remove(domain1.get_name() + '.sww')
-        os.remove(domain2.get_name() + '.sww')
+        os.remove(os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww'))
+        os.remove(os.path.join(domain2.get_datadir(), domain2.get_name() + '.sww'))
 
     def test_spatio_temporal_boundary_2(self):
         """Test that boundary values can be read from file and interpolated
@@ -6473,7 +6471,7 @@ class Test_Shallow_Water(unittest.TestCase):
 
         domain1.default_order = 2
         domain1.store = True
-        domain1.set_datadir('.')
+        domain1.set_datadir(tempfile.mkdtemp())
         domain1.set_name('spatio_temporal_boundary_source' + str(time.time()))
 
         # FIXME: This is extremely important!
@@ -6531,7 +6529,7 @@ class Test_Shallow_Water(unittest.TestCase):
         domain2.set_quantity('stage', 0)
 
         # Read results for specific timesteps t=1 and t=2
-        fid = NetCDFFile(domain1.get_name() + '.sww')
+        fid = NetCDFFile(os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww'))
 
         x = fid.variables['x'][:]
         y = fid.variables['y'][:]
@@ -6553,7 +6551,7 @@ class Test_Shallow_Water(unittest.TestCase):
 
         # Boundary conditions
         Br = Reflective_boundary(domain2)
-        Bf = Field_boundary(domain1.get_name() + '.sww',
+        Bf = Field_boundary(os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww'),
                             domain2, verbose=False)
         domain2.set_boundary({'right':Br, 'bottom':Br, 'diagonal':Bf})
         domain2.check_integrity()
@@ -6618,7 +6616,7 @@ class Test_Shallow_Water(unittest.TestCase):
                             ((s1[10] + s1[15]) / 2 + 2.0*(s2[10] + s2[15]) / 2) / 3)
 
         # Cleanup
-        os.remove(domain1.get_name() + '.sww')
+        os.remove(os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww'))
 
     def test_spatio_temporal_boundary_3(self):
         """Test that boundary values can be read from file and interpolated
@@ -6648,7 +6646,7 @@ class Test_Shallow_Water(unittest.TestCase):
 
         domain1.default_order = 2
         domain1.store = True
-        domain1.set_datadir('.')
+        domain1.set_datadir(tempfile.mkdtemp())
         domain1.set_name('spatio_temporal_boundary_source' + str(time.time()))
 
         # FIXME: This is extremely important!
@@ -6703,7 +6701,7 @@ class Test_Shallow_Water(unittest.TestCase):
         domain2.set_quantity('stage', 0)
 
         # Read results for specific timesteps t=1 and t=2
-        fid = NetCDFFile(domain1.get_name() + '.sww')
+        fid = NetCDFFile(os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww'))
 
         x = fid.variables['x'][:]
         y = fid.variables['y'][:]
@@ -6725,7 +6723,7 @@ class Test_Shallow_Water(unittest.TestCase):
 
         # Boundary conditions
         Br = Reflective_boundary(domain2)
-        Bf = Field_boundary(domain1.get_name() + '.sww',
+        Bf = Field_boundary(os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww'),
                             domain2, mean_stage=mean_stage, verbose=False)
 
         domain2.set_boundary({'right':Br, 'bottom':Br, 'diagonal':Bf})
@@ -6794,7 +6792,7 @@ class Test_Shallow_Water(unittest.TestCase):
                                 mean_stage)
 
         # Cleanup
-        os.remove(domain1.get_name() + '.sww')
+        os.remove(os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww'))
 
     def test_spatio_temporal_boundary_outside(self):
         """Test that field_boundary catches if a point is outside the sww
@@ -6818,7 +6816,7 @@ class Test_Shallow_Water(unittest.TestCase):
 
         domain1.default_order = 2
         domain1.store = True
-        domain1.set_datadir('.')
+        domain1.set_datadir(tempfile.mkdtemp())
         domain1.set_name('spatio_temporal_boundary_source' + str(time.time()))
 
         # FIXME: This is extremely important!
@@ -6878,7 +6876,7 @@ class Test_Shallow_Water(unittest.TestCase):
         domain2.set_quantity('stage', 0)
 
         # Read results for specific timesteps t=1 and t=2
-        fid = NetCDFFile(domain1.get_name() + '.sww')
+        fid = NetCDFFile(os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww'))
 
         x = fid.variables['x'][:]
         y = fid.variables['y'][:]
@@ -6896,7 +6894,7 @@ class Test_Shallow_Water(unittest.TestCase):
 
         # Boundary conditions
         Br = Reflective_boundary(domain2)
-        Bf = Field_boundary(domain1.get_name() + '.sww',
+        Bf = Field_boundary(os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww'),
                             domain2, mean_stage=1, verbose=False)
 
         domain2.set_boundary({'right':Br, 'bottom':Br, 'diagonal':Bf})
@@ -6912,7 +6910,7 @@ class Test_Shallow_Water(unittest.TestCase):
             raise Exception(msg)
 
         #Cleanup
-        os.remove(domain1.get_name() + '.sww')
+        os.remove(os.path.join(domain1.get_datadir(), domain1.get_name() + '.sww'))
 
     def test_extrema(self):
         """Test that extrema of quantities are computed correctly
@@ -7010,7 +7008,7 @@ class Test_Shallow_Water(unittest.TestCase):
         assert depth['max'] >= 0.0
 
         # Cleanup
-        os.remove(domain.get_name() + '.sww')
+        os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
     def test_tight_slope_limiters(self):
         """Test that new slope limiters (Feb 2007) don't induce extremely
@@ -7065,7 +7063,7 @@ class Test_Shallow_Water(unittest.TestCase):
         domain.set_name('tight_limiters')
         domain.smooth = True
         domain.reduction = mean
-        domain.set_datadir('.')
+        domain.set_datadir(tempfile.mkdtemp())
         domain.smooth = False
         domain.store = True
 
@@ -7083,10 +7081,10 @@ class Test_Shallow_Water(unittest.TestCase):
         os.remove(domain.writer.filename)
 
     def test_pmesh2Domain(self):
-         import os
          import tempfile
 
-         fileName = tempfile.mktemp(".tsh")
+         fd, fileName = tempfile.mkstemp(".tsh")
+         os.close(fd)
          file = open(fileName, "w")
          file.write("4 3 # <vertex #> <x> <y> [attributes]\n \
 0 0.0 0.0 0.0 0.0 0.01 \n \
@@ -7268,7 +7266,8 @@ friction  \n \
         att = 'spam_and_eggs'
 
         # Create .txt file
-        ptsfile = tempfile.mktemp(".txt")
+        fd, ptsfile = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(ptsfile, "w")
         file.write(" x,y," + att + " \n")
         for data_point, attribute in zip(data_points_absolute, attributes):
@@ -7289,7 +7288,6 @@ friction  \n \
         assert num.allclose(quantity.vertex_values.flat, answer)
 
         # Cleanup
-        import os
         os.remove(ptsfile)
 
 
@@ -8078,7 +8076,7 @@ friction  \n \
 
 
         # Check that quantities have been stored correctly
-        sww_file = domain.get_name() + '.sww'
+        sww_file = os.path.join(domain.get_datadir(), domain.get_name() + '.sww')
         fid = NetCDFFile(sww_file)
 
         stage = fid.variables['stage_c'][:]
@@ -8937,7 +8935,8 @@ friction  \n \
         att = 'spam_and_eggs'
 
         # Create .txt file
-        ptsfile = tempfile.mktemp(".txt")
+        fd, ptsfile = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(ptsfile, "w")
         file.write(" x,y," + att + " \n")
         for data_point, attribute in zip(data_points_absolute, attributes):
@@ -9077,7 +9076,6 @@ friction  \n \
         assert num.allclose(mesh4_stage.centroid_values, answer_centroid_values)
 
         # Cleanup
-        import os
         try:
             os.remove(ptsfile)
             os.remove(txt_file)

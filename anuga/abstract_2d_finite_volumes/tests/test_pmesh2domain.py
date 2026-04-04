@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 #
 
+import os
 import unittest
 
 from anuga.abstract_2d_finite_volumes.pmesh2domain import *
@@ -24,10 +25,10 @@ class Test_pmesh2domain(unittest.TestCase):
         pass
 
     def test_pmesh2Domain(self):
-        import os
         import tempfile
 
-        fileName = tempfile.mktemp(".tsh")
+        fd, fileName = tempfile.mkstemp(".tsh")
+        os.close(fd)
         fid = open(fileName, "w")
         fid.write("4 3 # <vertex #> <x> <y> [attributes]\n \
 0 0.0 0.0 0.0 0.0 0.01 \n \
@@ -116,10 +117,10 @@ friction  \n \
     #************
 
     def test_pmesh2Domain_instance(self):
-        import os
         import tempfile
 
-        fileName = tempfile.mktemp(".tsh")
+        fd, fileName = tempfile.mkstemp(".tsh")
+        os.close(fd)
         fid = open(fileName, "w")
         fid.write("4 3 # <vertex #> <x> <y> [attributes]\n \
 0 0.0 0.0 0.0 0.0 0.01 \n \

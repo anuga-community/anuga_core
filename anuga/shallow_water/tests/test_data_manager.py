@@ -197,7 +197,6 @@ class Test_Data_Manager(Test_Mux):
 
 
     def tearDown(self):
-        import os
         for ext in ['_ha.nc', '_ua.nc', '_va.nc', '_e.nc']:
             #print 'Trying to remove', self.test_MOST_file + ext
             try:
@@ -504,7 +503,6 @@ class Test_Data_Manager(Test_Mux):
         """
 
         import time
-        import os
 
         self.domain.set_name('datatest' + str(id(self)))
         self.domain.format = 'sww'
@@ -558,7 +556,6 @@ class Test_Data_Manager(Test_Mux):
         """
 
         import time
-        import os
 
         self.domain.set_name('synctest')
         self.domain.format = 'sww'
@@ -605,7 +602,6 @@ class Test_Data_Manager(Test_Mux):
         """
 
         import time
-        import os
 
         self.domain.set_name('datatest' + str(id(self)))
         self.domain.format = 'sww'
@@ -833,7 +829,8 @@ class Test_Data_Manager(Test_Mux):
         att_dict['elevation'] = num.array([10.1, 0.0, 10.4])
         att_dict['brightness'] = num.array([10.0, 1.0, 10.4])
 
-        fileName = tempfile.mktemp(".csv")
+        fd, fileName = tempfile.mkstemp(".csv")
+        os.close(fd)
 
         G = Geospatial_data(pointlist, att_dict)
 

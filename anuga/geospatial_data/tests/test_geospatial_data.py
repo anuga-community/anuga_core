@@ -688,7 +688,8 @@ class Test_Geospatial_data(unittest.TestCase):
         os.remove(FN)
 
     def test_load_csv(self):
-        fileName = tempfile.mktemp('.csv')
+        fd, fileName = tempfile.mkstemp('.csv')
+        os.close(fd)
         file = open(fileName,'w')
         file.write('x,y,elevation speed \n\
 1.0 0.0 10.0 0.0\n\
@@ -714,7 +715,8 @@ class Test_Geospatial_data(unittest.TestCase):
         Different zones in Geo references
         '''
 
-        fileName = tempfile.mktemp('.csv')
+        fd, fileName = tempfile.mkstemp('.csv')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write('Lati,LONG,z \n\
 -25.0,180.0,452.688000\n\
@@ -736,7 +738,8 @@ class Test_Geospatial_data(unittest.TestCase):
         os.remove(fileName)
 
     def test_load_csv(self):
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write(' x,y, elevation ,  speed \n\
 1.0, 0.0, 10.0, 0.0\n\
@@ -775,7 +778,8 @@ class Test_Geospatial_data(unittest.TestCase):
         (Format error)
         '''
 
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write(' elevation ,  speed \n\
 1.0, 0.0, 10.0, 0.0\n\
@@ -804,7 +808,8 @@ class Test_Geospatial_data(unittest.TestCase):
         (Format error)
         '''
 
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write(' x,y,elevation ,  speed \n\
 1.0, 0.0, 10.0, 0.0\n\
@@ -832,7 +837,8 @@ class Test_Geospatial_data(unittest.TestCase):
         space delimited
         '''
 
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write(' x y elevation   speed \n\
 1. 0.0 10.0 0.0\n\
@@ -856,7 +862,8 @@ class Test_Geospatial_data(unittest.TestCase):
         (Format error)
         '''
 
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write(' x,y,elevation ,  speed \n\
 1.0, 0.0, 10.0, wow\n\
@@ -881,7 +888,8 @@ class Test_Geospatial_data(unittest.TestCase):
 
     def test_load_pts_blocking(self):
         #This is pts!
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write(' x,y, elevation ,  speed \n\
 1.0, 0.0, 10.0, 0.0\n\
@@ -889,7 +897,8 @@ class Test_Geospatial_data(unittest.TestCase):
 1.0, 0.0 ,10.4, 40.0\n')
         file.close()
 
-        pts_file = tempfile.mktemp('.pts')
+        fd, pts_file = tempfile.mkstemp('.pts')
+        os.close(fd)
 
         convert = Geospatial_data(fileName)
         convert.export_points_file(pts_file)
@@ -919,7 +928,8 @@ class Test_Geospatial_data(unittest.TestCase):
         os.remove(pts_file)
 
     def test_load_pts_blocking_2(self):
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write(' x,y, elevation ,  speed \n\
 1.0, 0.0, 10.0, 0.0\n\
@@ -971,7 +981,8 @@ class Test_Geospatial_data(unittest.TestCase):
 1.0, 0.0 ,10.4, 40.0\n')
         file.close()
 
-        pts_file = tempfile.mktemp('.pts')
+        fd, pts_file = tempfile.mkstemp('.pts')
+        os.close(fd)
         convert = Geospatial_data(fileName)
         convert.export_points_file(pts_file)
         results = Geospatial_data(pts_file, max_read_lines=2, verbose=False)
@@ -998,7 +1009,8 @@ class Test_Geospatial_data(unittest.TestCase):
         att_dict['elevation'] = num.array([10.1, 0.0, 10.4])
         att_dict['brightness'] = num.array([10.0, 1.0, 10.4])
 
-        fileName = tempfile.mktemp('.pts')
+        fd, fileName = tempfile.mkstemp('.pts')
+        os.close(fd)
         G = Geospatial_data(pointlist, att_dict)
         G.export_points_file(fileName)
         results = Geospatial_data(file_name = fileName)
@@ -1019,7 +1031,8 @@ class Test_Geospatial_data(unittest.TestCase):
         att_dict['brightness'] = num.array([10.0, 1.0, 10.4])
         geo_ref = Geo_reference(50, 25, 55)
 
-        fileName = tempfile.mktemp('.pts')
+        fd, fileName = tempfile.mkstemp('.pts')
+        os.close(fd)
         G = Geospatial_data(pointlist, att_dict, geo_ref)
         G.export_points_file(fileName, absolute=True)
         results = Geospatial_data(file_name = fileName)
@@ -1044,7 +1057,8 @@ class Test_Geospatial_data(unittest.TestCase):
     def test_loadpts(self):
         from anuga.file.netcdf import NetCDFFile
 
-        fileName = tempfile.mktemp('.pts')
+        fd, fileName = tempfile.mkstemp('.pts')
+        os.close(fd)
         # NetCDF file definition
         outfile = NetCDFFile(fileName, netcdf_mode_w)
 
@@ -1089,7 +1103,8 @@ class Test_Geospatial_data(unittest.TestCase):
         geo_reference=Geo_reference(56, 1.9, 1.9)
 
         # Test pts format
-        fileName = tempfile.mktemp('.pts')
+        fd, fileName = tempfile.mkstemp('.pts')
+        os.close(fd)
         G = Geospatial_data(pointlist, att_dict, geo_reference)
         G.export_points_file(fileName, False)
         results = Geospatial_data(file_name=fileName)
@@ -1114,7 +1129,8 @@ class Test_Geospatial_data(unittest.TestCase):
         geo_reference=Geo_reference(56, 0, 0)
 
         # Test txt format
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         G = Geospatial_data(pointlist, att_dict, geo_reference)
         G.export_points_file(fileName)
         results = Geospatial_data(file_name=fileName)
@@ -1136,7 +1152,8 @@ class Test_Geospatial_data(unittest.TestCase):
         att_dict['brightness'] = num.array([10.0, 0.0, 10.4])
 
         # Test txt format
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         G = Geospatial_data(pointlist, att_dict, points_are_lats_longs=True)
         G.export_points_file(fileName, as_lat_long=True)
         results = Geospatial_data(file_name=fileName)
@@ -1157,7 +1174,8 @@ class Test_Geospatial_data(unittest.TestCase):
         geo_reference=Geo_reference(56, 1.9, 1.9)
 
         # Test pts format
-        fileName = tempfile.mktemp('.pts')
+        fd, fileName = tempfile.mkstemp('.pts')
+        os.close(fd)
         G = Geospatial_data(pointlist, None, geo_reference)
         G.export_points_file(fileName, False)
         results = Geospatial_data(file_name=fileName)
@@ -1176,7 +1194,8 @@ class Test_Geospatial_data(unittest.TestCase):
         geo_reference=Geo_reference(56,0,0)
 
         # Test format
-        fileName = tempfile.mktemp('.txt')
+        fd, fileName = tempfile.mkstemp('.txt')
+        os.close(fd)
         G = Geospatial_data(pointlist, None, geo_reference)
         G.export_points_file(fileName)
         results = Geospatial_data(file_name=fileName)
@@ -1190,7 +1209,8 @@ class Test_Geospatial_data(unittest.TestCase):
 ################################################################################
 
     def test_load_bad_no_file_pts(self):
-        fileName = tempfile.mktemp('.pts')
+        fd, fileName = tempfile.mkstemp('.pts')
+        os.close(fd)
         try:
             results = Geospatial_data(file_name=fileName)
         except OSError:
@@ -1312,8 +1332,10 @@ class Test_Geospatial_data(unittest.TestCase):
         G1 = Geospatial_data(pointlist1, att_dict1, geo_reference1)
         G2 = Geospatial_data(pointlist2, att_dict2, geo_reference2)
 
-        fileName1 = tempfile.mktemp('.txt')
-        fileName2 = tempfile.mktemp('.pts')
+        fd, fileName1 = tempfile.mkstemp('.txt')
+        os.close(fd)
+        fd, fileName2 = tempfile.mkstemp('.pts')
+        os.close(fd)
 
 
         # makes files (saved with absolute=True as default)
@@ -1433,7 +1455,8 @@ class Test_Geospatial_data(unittest.TestCase):
         assert num.allclose(new_points, ab_points)
 
     def test_isinstance(self):
-        fileName = tempfile.mktemp('.csv')
+        fd, fileName = tempfile.mkstemp('.csv')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write('x,y,  elevation ,  speed \n\
 1.0, 0.0, 10.0, 0.0\n\
@@ -1463,7 +1486,8 @@ class Test_Geospatial_data(unittest.TestCase):
     def test_load_csv_lat_long(self):
         '''comma delimited'''
 
-        fileName = tempfile.mktemp('.csv')
+        fd, fileName = tempfile.mkstemp('.csv')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write('long,lat, elevation, yeah \n\
 150.916666667,-34.50,452.688000, 10\n\
@@ -1482,7 +1506,8 @@ class Test_Geospatial_data(unittest.TestCase):
     def test_load_csv_lat_longII(self):
         '''comma delimited'''
 
-        fileName = tempfile.mktemp('.csv')
+        fd, fileName = tempfile.mkstemp('.csv')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write('Lati,LONG,z \n\
 -34.50,150.916666667,452.688000\n\
@@ -1501,7 +1526,8 @@ class Test_Geospatial_data(unittest.TestCase):
     def test_load_csv_lat_long_bad(self):
         '''comma delimited'''
 
-        fileName = tempfile.mktemp('.csv')
+        fd, fileName = tempfile.mkstemp('.csv')
+        os.close(fd)
         file = open(fileName, 'w')
         file.write('Lati,LONG,z \n\
 -25.0,180.0,452.688000\n\
@@ -1611,7 +1637,8 @@ class Test_Geospatial_data(unittest.TestCase):
         gsd = Geospatial_data(data_points=list(points),
                               points_are_lats_longs=True)
 
-        fn = tempfile.mktemp('.urs')
+        fd, fn = tempfile.mkstemp('.urs')
+        os.close(fd)
         gsd.export_points_file(fn)
         handle = open(fn)
         lines = handle.readlines()
@@ -1744,7 +1771,8 @@ class Test_Geospatial_data(unittest.TestCase):
 
         # below is a workaround until randint works on cyclones compute nodes
         if get_host_name()[8:9]!='0':
-            filename = tempfile.mktemp('.csv')
+            fd, filename = tempfile.mkstemp('.csv')
+            os.close(fd)
             file = open(filename, 'w')
             file.write('x,y,elevation \n')
 
@@ -1787,7 +1815,8 @@ class Test_Geospatial_data(unittest.TestCase):
             from cmath import cos
             from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 
-            filename = tempfile.mktemp('.csv')
+            fd, filename = tempfile.mkstemp('.csv')
+            os.close(fd)
             file = open(filename, 'w')
             file.write('x,y,elevation \n')
 
@@ -1801,7 +1830,8 @@ class Test_Geospatial_data(unittest.TestCase):
 
             poly=[[5,5], [5,-5], [-5,-5], [-5,5]]
             internal_poly=[[[[1,1], [1,-1], [-1,-1], [-1,1]], .5]]
-            mesh_filename= tempfile.mktemp('.msh')
+            fd, mesh_filename = tempfile.mkstemp('.msh')
+            os.close(fd)
 
             create_pmesh_from_regions(poly,
                                      boundary_tags={'back': [2],
@@ -1836,7 +1866,8 @@ class Test_Geospatial_data(unittest.TestCase):
         from cmath import cos
         from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 
-        filename = tempfile.mktemp('.csv')
+        fd, filename = tempfile.mkstemp('.csv')
+        os.close(fd)
         mesh_filename= tempfile.mktemp('.msh')
 
         try:

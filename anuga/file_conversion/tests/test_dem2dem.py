@@ -38,7 +38,6 @@ class Test_Dem2Dem(unittest.TestCase):
         """Test decimation of dem file
         """
 
-        import os
         from anuga.file.netcdf import NetCDFFile
 
         #Write test dem file
@@ -120,7 +119,6 @@ class Test_Dem2Dem(unittest.TestCase):
         """Test decimation of dem file that includes NODATA values
         """
 
-        import os
         from anuga.file.netcdf import NetCDFFile
 
         # Write test dem file

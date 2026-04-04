@@ -21,9 +21,10 @@ class ungenerateTestCase(unittest.TestCase):
 
     def test_ungenerateFileLoading(self):
 
-        fileName = tempfile.mktemp(".txt")
-        file = open(fileName,"w")
-        file.write("         1       ??      ??\n\
+        fd, fileName = tempfile.mkstemp(".txt")
+        os.close(fd)
+        with open(fileName, "w") as file:
+            file.write("         1       ??      ??\n\
        0.0       0.0\n\
        1.0       0.0\n\
        1.0       1.0\n\
@@ -37,7 +38,6 @@ END\n\
        10.0       10.0\n\
 END\n\
 END\n")
-        file.close()
 
 
         a = Vertex (0.0, 0.0) #, attributes = [1.1])
@@ -112,9 +112,10 @@ END\n")
 
     def test_import_ungenerate_file(self):
 
-        fileName = tempfile.mktemp(".txt")
-        file = open(fileName,"w")
-        file.write("         1       ??      ??\n\
+        fd, fileName = tempfile.mkstemp(".txt")
+        os.close(fd)
+        with open(fileName, "w") as file:
+            file.write("         1       ??      ??\n\
        10.0       10.0\n\
        11.0       10.0\n\
        11.0       11.0\n\
@@ -127,7 +128,6 @@ END\n\
        30.0       30.0\n\
 END\n\
 END\n")
-        file.close()
 
 
         a = Vertex (0.0, 0.0) #, attributes = [1.1])
@@ -193,9 +193,10 @@ END\n")
 
     def test_import_ungenerate_file_different_region_tags(self):
 
-        fileName = tempfile.mktemp(".txt")
-        file = open(fileName,"w")
-        file.write("         1       ??      ??\n\
+        fd, fileName = tempfile.mkstemp(".txt")
+        os.close(fd)
+        with open(fileName, "w") as file:
+            file.write("         1       ??      ??\n\
        10.0       10.0\n\
        11.0       10.0\n\
        11.0       11.0\n\
@@ -208,7 +209,6 @@ END\n\
        30.0       30.0\n\
 END\n\
 END\n")
-        file.close()
 
 
         a = Vertex (0.0, 0.0) #, attributes = [1.1])

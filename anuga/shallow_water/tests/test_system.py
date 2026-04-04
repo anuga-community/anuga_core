@@ -35,7 +35,8 @@ class Test_system(unittest.TestCase):
         """
 
         tide = 5
-        boundary_filename = tempfile.mktemp(".sww")
+        fd, boundary_filename = tempfile.mkstemp(".sww")
+        os.close(fd)
         dir, base = os.path.split(boundary_filename)
         boundary_name = base[:-4]
 
@@ -85,7 +86,8 @@ class Test_system(unittest.TestCase):
 
         boundary_starttime = 0
         boundary_filename = self.create_sww_boundary(boundary_starttime)
-        filename = tempfile.mktemp(".sww")
+        fd, filename = tempfile.mkstemp(".sww")
+        os.close(fd)
         dir, base = os.path.split(filename)
         senario_name = base[:-4]
 
@@ -135,7 +137,8 @@ class Test_system(unittest.TestCase):
         boundary_filename = self.create_sww_boundary(boundary_starttime)
         #print "boundary_filename",boundary_filename
 
-        filename = tempfile.mktemp(".sww")
+        fd, filename = tempfile.mkstemp(".sww")
+        os.close(fd)
         #print "filename",filename
         dir, base = os.path.split(filename)
         senario_name = base[:-4]

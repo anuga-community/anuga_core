@@ -1,12 +1,21 @@
-
-
 [run]
-omit = */tests/* 
-     *__init__*
-     */setup.py
-     *test_all*
-     */Pmw*
+branch = true
+source = anuga
+omit =
+    anuga/*/tests/*
+    anuga/parallel/tests/*
+    anuga/_version.py
+    *_ext.py
 
+[report]
+fail_under = 55
+show_missing = true
+skip_covered = false
+exclude_lines =
+    pragma: no cover
+    raise NotImplementedError
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
 
-
-
+[html]
+directory = htmlcov

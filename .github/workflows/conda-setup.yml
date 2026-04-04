@@ -85,11 +85,32 @@ jobs:
           conda activate anuga_env
           pip install --no-build-isolation -v .
 
-      - name: Test package
+      - name: Test package (fast — PR feedback)
+        if: github.event_name == 'pull_request'
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          cd sandpit
+          export OMP_NUM_THREADS=1
+          pytest -rs --pyargs anuga --run-fast
+
+      - name: Test package (full suite — push to main/develop)
+        if: github.event_name == 'push'
         shell: bash -el {0}
         run: |
           conda activate anuga_env
           cd sandpit
           export OMP_NUM_THREADS=1
           pytest -rs --pyargs anuga
+
+      - name: Coverage report (Linux / Python 3.12 only)
+        if: runner.os == 'Linux' && matrix.python-version == '3.12'
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          pip install pytest-cov
+          cd sandpit
+          export OMP_NUM_THREADS=1
+          pytest --pyargs anuga --run-fast --cov=anuga --cov-report=xml --cov-report=term-missing
+        continue-on-error: true
 

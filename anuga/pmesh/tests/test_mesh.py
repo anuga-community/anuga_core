@@ -1,4 +1,5 @@
 #!/usr/bin/env python
+import os
 import tempfile
 import unittest
 
@@ -527,7 +528,8 @@ class meshTestCase(unittest.TestCase):
         m._generateMesh_impl(mode="Qa2.1")
         seg = m.get_mesh_segments()
 
-        fileName = tempfile.mktemp(".tsh")
+        fd, fileName = tempfile.mkstemp(".tsh")
+        os.close(fd)
         m.export_mesh_file(fileName)
         file = open(fileName)
         lFile = file.read().split('\n')
@@ -601,7 +603,8 @@ class meshTestCase(unittest.TestCase):
 
         seg = m.get_mesh_segments()
 
-        fileName = tempfile.mktemp(".tsh")
+        fd, fileName = tempfile.mkstemp(".tsh")
+        os.close(fd)
         m.export_mesh_file(fileName)
         file = open(fileName)
         lFile = file.read().split('\n')
@@ -732,7 +735,8 @@ class meshTestCase(unittest.TestCase):
                  geo_reference=geo)
 
         m.generate_mesh(maximum_triangle_area=2.1, verbose=False)
-        fileName = tempfile.mktemp(".tsh")
+        fd, fileName = tempfile.mkstemp(".tsh")
+        os.close(fd)
         #print "dgs!!!"
         #print "****************** fileName", fileName
         m.export_mesh_file(fileName)
@@ -775,7 +779,8 @@ class meshTestCase(unittest.TestCase):
                  geo_reference=geo)
 
         m.generate_mesh(maximum_triangle_area=2.1, verbose=False)
-        fileName = tempfile.mktemp(".msh")
+        fd, fileName = tempfile.mkstemp(".msh")
+        os.close(fd)
         #print "dgs!!!"
         #print "****************** fileName", fileName
         m.export_mesh_file(fileName)
@@ -854,7 +859,8 @@ class meshTestCase(unittest.TestCase):
         m.generate_mesh(maximum_triangle_area=2.1, verbose=False)
         #print "mesh ***************dsg*", m
 
-        fileName = tempfile.mktemp(".tsh")
+        fd, fileName = tempfile.mkstemp(".tsh")
+        os.close(fd)
         m.export_ascii_segment_outline_file(fileName)
 
         m_returned = import_mesh_from_file(fileName)
@@ -916,7 +922,8 @@ class meshTestCase(unittest.TestCase):
                  regions=[r1],
                  holes = [h1])
 
-        fileName = tempfile.mktemp(".tsh")
+        fd, fileName = tempfile.mkstemp(".tsh")
+        os.close(fd)
         m.export_ascii_segment_outline_file(fileName)
 
         m_returned = import_mesh_from_file(fileName)
@@ -957,10 +964,10 @@ class meshTestCase(unittest.TestCase):
         To test the mesh side of loading csv files.
         Not the loading of csv files
         """
-        import os
         import tempfile
 
-        fileName = tempfile.mktemp(".csv")
+        fd, fileName = tempfile.mkstemp(".csv")
+        os.close(fd)
         file = open(fileName,"w")
         file.write("x,y,elevation, speed \n\
 1.0, 0.0, 10.0, 0.0\n\
@@ -1003,7 +1010,8 @@ class meshTestCase(unittest.TestCase):
                  regions=[r1],
                  holes = [h1])
 
-        fileName = tempfile.mktemp(".txt")
+        fd, fileName = tempfile.mkstemp(".txt")
+        os.close(fd)
         #fileName = 't.csv'
         #os.remove(fileName)
         m.export_points_file(fileName)
@@ -1025,7 +1033,8 @@ class meshTestCase(unittest.TestCase):
         # vertex e is outside of the outline, so
         # it is a loner and it is removed.
         m.generate_mesh(maximum_triangle_area=2.1, verbose=False)
-        fileName = tempfile.mktemp(".txt")
+        fd, fileName = tempfile.mkstemp(".txt")
+        os.close(fd)
         #fileName = 't.csv'
         #m.export_mesh_file('m.tsh')
         m.export_points_file(fileName)
@@ -1063,7 +1072,8 @@ class meshTestCase(unittest.TestCase):
                  regions=[r1],
                  holes = [h1])
 
-        fileName = tempfile.mktemp(".csv")
+        fd, fileName = tempfile.mkstemp(".csv")
+        os.close(fd)
         #fileName = 't.csv'
         #os.remove(fileName)
         m.export_points_file(fileName)
@@ -1086,7 +1096,8 @@ class meshTestCase(unittest.TestCase):
         # vertex e is outside of the outline, so
         # it is a loner and it is removed.
         m.generate_mesh(maximum_triangle_area=2.1, verbose=False)
-        fileName = tempfile.mktemp(".csv")
+        fd, fileName = tempfile.mkstemp(".csv")
+        os.close(fd)
         #fileName = 't.csv'
         #m.export_mesh_file('m.tsh')
         m.export_points_file(fileName)
@@ -1107,7 +1118,8 @@ class meshTestCase(unittest.TestCase):
         #geospatial needs at least one point
         m = Pmesh()
 
-        fileName = tempfile.mktemp(".csv")
+        fd, fileName = tempfile.mkstemp(".csv")
+        os.close(fd)
         m.export_points_file(fileName)
         file = open(fileName)
         lFile = file.read().split('\n')
@@ -1345,7 +1357,8 @@ class meshTestCase(unittest.TestCase):
         points = m.get_user_vertices_list()
         holes = m.get_holes()
         regions = m.get_regions()
-        fileName = tempfile.mktemp(".tsh")
+        fd, fileName = tempfile.mkstemp(".tsh")
+        os.close(fd)
         m.export_mesh_file(fileName)
         #print "***************************fileName", fileName
         new_m = import_mesh_from_file(fileName)

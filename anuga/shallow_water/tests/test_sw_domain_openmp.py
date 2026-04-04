@@ -1,6 +1,7 @@
 """  Test environmental forcing - rain, wind, etc.
 """
 
+import tempfile
 import unittest
 import os
 
@@ -43,7 +44,7 @@ class Test_DE_openmp(unittest.TestCase):
             domain.set_multiprocessor_mode(1)
 
             domain.set_name(name)
-            domain.set_datadir('.')
+            domain.set_datadir(tempfile.mkdtemp())
 
             #------------------
             # Define topography
@@ -149,34 +150,6 @@ class Test_DE_openmp(unittest.TestCase):
         assert num.allclose(xmom1.explicit_update,xmom2.explicit_update)
         assert num.allclose(ymom1.explicit_update,ymom2.explicit_update)
         assert num.allclose(max_speed_1,max_speed_2)
-        #assert num.allclose(domain1.edge_timestep,domain2.edge_timestep)
-        #assert num.allclose(domain1.pressuregrad_work,domain2.pressuregrad_work)
-        #assert num.allclose(domain1.edge_flux_work,domain2.edge_flux_work)
-
-        # ki3 = num.argmax(num.abs(domain1.edge_flux_work-domain2.edge_flux_work))
-
-        # ki = ki3//3
-        # q = ki3%3
-        # k = ki//3
-        # e = ki%3
-
-        # print('edge_flux_work ki,q,k,e ', ki, q, k, e)
-
-        # import pprint
-
-        # #pprint.pprint(domain1.edge_flux_work)
-        # edge_flux_diff = domain2.edge_flux_work- domain1.edge_flux_work
-        # edge_timestep_diff =  domain2.edge_timestep- domain1.edge_timestep
-        # #pprint.pprint(domain2.edge_flux_work- domain1.edge_flux_work)
-
-        # for k in range(domain2.number_of_elements):
-        #     for i in range(3):
-        #         ki = 3*k+i
-        #         ki3 = 3*ki
-        #         print(k,i, domain2.neighbours[k,i], edge_timestep_diff[ki], edge_flux_diff[ki3],edge_flux_diff[ki3+1],edge_flux_diff[ki3+2])
-
-
-
     def test_riverwall_openmp(self):
 
         def create_domain(name='domain'):
@@ -303,33 +276,6 @@ class Test_DE_openmp(unittest.TestCase):
         assert num.allclose(xmom1.explicit_update,xmom2.explicit_update)
         assert num.allclose(ymom1.explicit_update,ymom2.explicit_update)
         assert num.allclose(max_speed_1,max_speed_2)
-        #assert num.allclose(domain1.edge_timestep,domain2.edge_timestep)
-        #assert num.allclose(domain1.pressuregrad_work,domain2.pressuregrad_work)
-        #assert num.allclose(domain1.edge_flux_work,domain2.edge_flux_work)
-
-        # ki3 = num.argmax(num.abs(domain1.edge_flux_work-domain2.edge_flux_work))
-
-        # ki = ki3//3
-        # q = ki3%3
-        # k = ki//3
-        # e = ki%3
-
-        # print('edge_flux_work ki,q,k,e ', ki, q, k, e)
-
-        # import pprint
-
-        # #pprint.pprint(domain1.edge_flux_work)
-        # edge_flux_diff = domain2.edge_flux_work- domain1.edge_flux_work
-        # edge_timestep_diff =  domain2.edge_timestep- domain1.edge_timestep
-        # #pprint.pprint(domain2.edge_flux_work- domain1.edge_flux_work)
-
-        # for k in range(domain2.number_of_elements):
-        #     for i in range(3):
-        #         ki = 3*k+i
-        #         ki3 = 3*ki
-        #         print(k,i, domain2.neighbours[k,i], edge_timestep_diff[ki], edge_flux_diff[ki3],edge_flux_diff[ki3+1],edge_flux_diff[ki3+2])
-
-
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_DE_openmp)
     runner = unittest.TextTestRunner(verbosity=1)

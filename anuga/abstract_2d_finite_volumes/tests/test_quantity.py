@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 
+import os
 import unittest
 from math import sqrt, pi
 import tempfile
@@ -884,7 +885,8 @@ class Test_Quantity(unittest.TestCase):
         att = 'spam_and_eggs'
 
         # Create .txt file
-        ptsfile = tempfile.mktemp(".txt")
+        fd, ptsfile = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(ptsfile, "w")
         file.write(" x,y," + att + " \n")
         for data_point, attribute in zip(data_points_absolute, attributes):
@@ -908,7 +910,6 @@ class Test_Quantity(unittest.TestCase):
         assert num.allclose(quantity.vertex_values.flat, answer)
 
         # Cleanup
-        import os
         os.remove(ptsfile)
 
     def Xtest_set_values_from_file_using_polygon(self):
@@ -941,7 +942,8 @@ class Test_Quantity(unittest.TestCase):
         att = 'spam_and_eggs'
 
         # Create .txt file
-        ptsfile = tempfile.mktemp(".txt")
+        fd, ptsfile = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(ptsfile, "w")
         file.write(" x,y," + att + " \n")
         for data_point, attribute in zip(data_points_absolute, attributes):
@@ -989,7 +991,6 @@ class Test_Quantity(unittest.TestCase):
                             0.0)
 
         # Cleanup
-        import os
         os.remove(ptsfile)
 
     def test_cache_test_set_values_from_file(self):
@@ -1021,7 +1022,8 @@ class Test_Quantity(unittest.TestCase):
         att = 'spam_and_eggs'
 
         # Create .txt file
-        ptsfile = tempfile.mktemp(".txt")
+        fd, ptsfile = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(ptsfile, "w")
         file.write(" x,y," + att + " \n")
         for data_point, attribute in zip(data_points_absolute, attributes):
@@ -1052,7 +1054,6 @@ class Test_Quantity(unittest.TestCase):
                             verbose=False)
 
         # Cleanup
-        import os
         os.remove(ptsfile)
 
     def test_set_values_from_lat_long(self):
@@ -1069,7 +1070,8 @@ class Test_Quantity(unittest.TestCase):
         att = 'elevation'
 
         # Create .txt file
-        txt_file = tempfile.mktemp(".txt")
+        fd, txt_file = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(txt_file, "w")
         file.write(" lat,long," + att + " \n")
         for data_point, attribute in zip(data_points, attributes):
@@ -1095,7 +1097,6 @@ class Test_Quantity(unittest.TestCase):
         assert num.allclose(quantity.vertex_values.flat, answer)
 
         # Cleanup
-        import os
         os.remove(txt_file)
 
     def test_set_values_from_lat_long_2(self):
@@ -1112,7 +1113,8 @@ class Test_Quantity(unittest.TestCase):
         att = 'elevation'
 
         # Create .txt file
-        txt_file = tempfile.mktemp(".txt")
+        fd, txt_file = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(txt_file, "w")
         file.write(" lat,long," + att + " \n")
         for data_point, attribute in zip(data_points, attributes):
@@ -1137,7 +1139,6 @@ class Test_Quantity(unittest.TestCase):
         assert num.allclose(quantity.vertex_values.flat, answer)
 
         # Cleanup
-        import os
         os.remove(txt_file)
 
     def test_set_values_from_UTM_pts(self):
@@ -1154,7 +1155,8 @@ class Test_Quantity(unittest.TestCase):
         att = 'elevation'
 
         # Create .txt file
-        txt_file = tempfile.mktemp(".txt")
+        fd, txt_file = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(txt_file, "w")
         file.write(" x,y," + att + " \n")
         for data_point, attribute in zip(points_UTM, attributes):
@@ -1164,7 +1166,8 @@ class Test_Quantity(unittest.TestCase):
             file.write(row + "\n")
         file.close()
 
-        pts_file = tempfile.mktemp(".pts")
+        fd, pts_file = tempfile.mkstemp(".pts")
+        os.close(fd)
         convert = Geospatial_data(txt_file)
         convert.export_points_file(pts_file)
 
@@ -1189,7 +1192,6 @@ class Test_Quantity(unittest.TestCase):
         assert num.allclose(quantity.vertex_values.flat, answer)
 
         # Cleanup
-        import os
         os.remove(txt_file)
         os.remove(pts_file)
 
@@ -1233,7 +1235,8 @@ class Test_Quantity(unittest.TestCase):
         att = 'elevation'
 
         # Create .txt file
-        txt_file = tempfile.mktemp(".txt")
+        fd, txt_file = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(txt_file, "w")
         file.write(" x,y," + att + " \n")
         for data_point, attribute in zip(points_UTM, attributes):
@@ -1243,7 +1246,8 @@ class Test_Quantity(unittest.TestCase):
             file.write(row + "\n")
         file.close()
 
-        pts_file = tempfile.mktemp(".pts")
+        fd, pts_file = tempfile.mkstemp(".pts")
+        os.close(fd)
         convert = Geospatial_data(txt_file)
         convert.export_points_file(pts_file)
 
@@ -1269,7 +1273,6 @@ class Test_Quantity(unittest.TestCase):
         assert num.allclose(quantity.vertex_values.flat, answer)
 
         # Cleanup
-        import os
         os.remove(txt_file)
         os.remove(pts_file)
 
@@ -1320,7 +1323,8 @@ class Test_Quantity(unittest.TestCase):
         att = 'spam_and_eggs'
 
         # Create .txt file
-        ptsfile = tempfile.mktemp(".txt")
+        fd, ptsfile = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(ptsfile, "w")
         file.write(" x,y," + att + " \n")
         for data_point, attribute in zip(data_points_absolute, attributes):
@@ -1345,7 +1349,6 @@ class Test_Quantity(unittest.TestCase):
         assert num.allclose(quantity.vertex_values.flat, answer)
 
         # Cleanup
-        import os
         os.remove(ptsfile)
 
     def test_set_values_from_file_with_georef2(self):
@@ -1396,7 +1399,8 @@ class Test_Quantity(unittest.TestCase):
         att = 'spam_and_eggs'
 
         # Create .txt file
-        ptsfile = tempfile.mktemp(".txt")
+        fd, ptsfile = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(ptsfile, "w")
         file.write(" x,y," + att + " \n")
         for data_point, attribute in zip(data_points_absolute, attributes):
@@ -1418,7 +1422,6 @@ class Test_Quantity(unittest.TestCase):
         assert num.allclose(quantity.vertex_values.flat, answer)
 
         # Cleanup
-        import os
         os.remove(ptsfile)
 
     def test_set_values_from_utm_grid_file(self):
@@ -2398,7 +2401,6 @@ Parameters
                 num.allclose(quantity1.vertex_values, vertex_values_mac_ex)
 
         # Cleanup
-        import os
         os.remove(tif_file)
 
     @pytest.mark.skipif('rasterio' not in sys.modules,
@@ -2505,7 +2507,6 @@ Parameters
         assert num.allclose(quantity2.vertex_values, vertex_values_ex)
 
         # Cleanup
-        import os
         os.remove(tif_file)
 
     @pytest.mark.skipif('rasterio' not in sys.modules,
@@ -2604,7 +2605,6 @@ Parameters
         assert num.allclose(quantity2.vertex_values, vertex_values_ex)
 
         # Cleanup
-        import os
         os.remove(tif_file)
 
     @pytest.mark.skipif('rasterio' not in sys.modules,
@@ -2703,7 +2703,6 @@ Parameters
         assert num.allclose(quantity2.vertex_values, vertex_values_ex)
 
         # Cleanup
-        import os
         os.remove(tif_file)
 
     def test_set_values_from_quantity(self):

@@ -1020,7 +1020,6 @@ def clear_cache(CD, my_F=None, verbose=None):
     otherwise clear only files pertaining to my_F.
   """
 
-  import os
   import re
 
   if CD[-1] != os.sep:
@@ -1083,7 +1082,6 @@ def DeleteOldFiles(CD,verbose=None):
 
   # FIXME: Windows version
 
-  import os
   block = 1000  # How many files to delete per invokation
   Files = os.listdir(CD)
   numfiles = len(Files)
@@ -1108,7 +1106,6 @@ def save_args_to_cache(CD, FN, args, kwargs, compression):
   """
 
   import time
-  import os
   import sys
 
   (argsfile, compressed) = myopen(CD+FN+'_'+file_types[1], 'wb', compression)
@@ -1143,7 +1140,6 @@ def save_results_to_cache(T, CD, FN, my_F, deps, comptime, funcname,
   """
 
   import time
-  import os
   import sys
   verbose = False
 
@@ -1758,7 +1754,6 @@ def filestat(FN):
      as given in section 8.1.1 Large File Support in the Libray Reference
   """
 
-  import os
   import time
 
   try:
@@ -1851,7 +1846,6 @@ def checkdir(CD, verbose=None, warn=False):
     If CD does not exist it will be created if possible
   """
 
-  import os
   import os.path
 
   if CD[-1] != os.sep:
@@ -1899,7 +1893,6 @@ def addstatsline(CD, funcname, FN, Retrieved, reason, comptime, loadtime,
     and other statistics. The data are used by the function cachestat.
   """
 
-  import os
   import time
 
   try:
@@ -1981,7 +1974,6 @@ def __cachestat(sortidx=4, period=-1, showuser=None, cachedir=None):
       OMN 20/8/2000
   """
 
-  import os
   import os.path
   from string import split, rstrip, find
   from time import strptime, localtime, strftime, mktime, ctime
@@ -2336,7 +2328,6 @@ def msg5(CD, FN, deps, compression):
    Print dependency stats. Used by msg3 and msg4
   """
 
-  import os
   import time
   import string
 

@@ -3905,7 +3905,6 @@ class Domain(Generic_Domain):
         By default omp_num_threads is set to 1, other, it will use the default setting.
         """
 
-        import os
         if omp_num_threads is None:
             # Use the environment setting
             omp_num_threads = os.environ.get('OMP_NUM_THREADS', None)
@@ -3972,7 +3971,6 @@ class Domain(Generic_Domain):
                 self.gpu_interface.setup()
                 # Only print from rank 0
                 from anuga import myid, numprocs
-                import os
                 omp_target_offload = os.environ.get('OMP_TARGET_OFFLOAD', '').lower()
                 omp_num_threads = os.environ.get('OMP_NUM_THREADS', '1')
                 # Track whether GPU offload is actually active (not disabled by env var)

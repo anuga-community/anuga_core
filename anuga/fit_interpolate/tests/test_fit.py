@@ -223,7 +223,8 @@ class Test_Fit(unittest.TestCase):
                      alpha=0.0)
 
 
-        fileName = tempfile.mktemp(".ddd")
+        fd, fileName = tempfile.mkstemp(".ddd")
+        os.close(fd)
         file = open(fileName,"w")
         file.write(" x,y, elevation \n\
 -2.0, 2.0, 0.\n\
@@ -259,7 +260,8 @@ class Test_Fit(unittest.TestCase):
         att = 'elevation'
 
         #Create .txt file
-        txt_file = tempfile.mktemp(".txt")
+        fd, txt_file = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(txt_file,"w")
         file.write(" x,y," + att + " \n")
         for data_point, attribute in zip(points_UTM, attributes):
@@ -298,7 +300,8 @@ class Test_Fit(unittest.TestCase):
         triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]] #abd bac aef afc
 
 
-        fileName = tempfile.mktemp(".txt")
+        fd, fileName = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(fileName,"w")
         file.write(" x, y, elevation \n\
 -2.0, 2.0, 0.\n\
@@ -315,7 +318,8 @@ class Test_Fit(unittest.TestCase):
  3.0,  1.0 , 4.\n")
         file.close()
         geo = Geospatial_data(fileName)
-        fileName_pts = tempfile.mktemp(".pts")
+        fd, fileName_pts = tempfile.mkstemp(".pts")
+        os.close(fd)
         geo.export_points_file(fileName_pts)
         f = fit_to_mesh(fileName_pts, vertices, triangles,
                                 alpha=0.0, max_read_lines=2)
@@ -338,7 +342,8 @@ class Test_Fit(unittest.TestCase):
         triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]] #abd bac aef afc
 
 
-        fileName = tempfile.mktemp(".txt")
+        fd, fileName = tempfile.mkstemp(".txt")
+        os.close(fd)
         file = open(fileName,"w")
         file.write(" x, y, elevation \n\
 -2.0, 2.0, 0.\n\
@@ -355,7 +360,8 @@ class Test_Fit(unittest.TestCase):
  3.0,  1.0 , 4.\n")
         file.close()
         geo = Geospatial_data(fileName)
-        fileName_pts = tempfile.mktemp(".pts")
+        fd, fileName_pts = tempfile.mkstemp(".pts")
+        os.close(fd)
         geo.export_points_file(fileName_pts)
         f = fit_to_mesh(fileName_pts, vertices, triangles,
                                 alpha=0.0, max_read_lines=2)
@@ -379,7 +385,8 @@ class Test_Fit(unittest.TestCase):
         triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]] #abd bac aef afc
 
 
-        fileName = tempfile.mktemp(".ddd")
+        fd, fileName = tempfile.mkstemp(".ddd")
+        os.close(fd)
         file = open(fileName,"w")
         file.write(" x,y, elevation \n\
 -2.0, 2.0, 0.\n\
@@ -419,7 +426,8 @@ class Test_Fit(unittest.TestCase):
         triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]] #abd bac aef afc
 
 
-        fileName = tempfile.mktemp(".ddd")
+        fd, fileName = tempfile.mkstemp(".ddd")
+        os.close(fd)
         file = open(fileName,"w")
         file.write(" x,y, elevation \n\
 -2.0, 2.0, 0.\n\
@@ -459,7 +467,8 @@ class Test_Fit(unittest.TestCase):
         triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]] #abd bac aef afc
 
 
-        fileName = tempfile.mktemp(".ddd")
+        fd, fileName = tempfile.mkstemp(".ddd")
+        os.close(fd)
         file = open(fileName,"w")
         file.write(" x,y, elevation \n\
 -2.0, 2.0, 0.\n\
@@ -499,7 +508,8 @@ class Test_Fit(unittest.TestCase):
         triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]] #abd bac aef afc
 
 
-        fileName = tempfile.mktemp(".ddd")
+        fd, fileName = tempfile.mkstemp(".ddd")
+        os.close(fd)
         file = open(fileName,"w")
         # the 2nd att name is wacky so it's the first key off a hash table
         file.write(" x,y, elevation, afriqction \n\
@@ -861,7 +871,6 @@ class Test_Fit(unittest.TestCase):
         from anuga.load_mesh.loadASCII import import_mesh_file, \
              export_mesh_file
         import tempfile
-        import os
 
         # create a .tsh file, no user outline
         mesh_dic = {}
@@ -877,11 +886,13 @@ class Test_Fit(unittest.TestCase):
         mesh_dic['segment_tags'] = ['external',
                                                   'external',
                                                   'external']
-        mesh_file = tempfile.mktemp(".tsh")
+        fd, mesh_file = tempfile.mkstemp(".tsh")
+        os.close(fd)
         export_mesh_file(mesh_file,mesh_dic)
 
         # create a points .csv file
-        point_file = tempfile.mktemp(".csv")
+        fd, point_file = tempfile.mkstemp(".csv")
+        os.close(fd)
         fd = open(point_file,'w')
         fd.write("x,y, elevation, stage \n\
         1.0, 1.0,2.,4 \n\
@@ -889,7 +900,8 @@ class Test_Fit(unittest.TestCase):
         3.0,1.0,4.,8 \n")
         fd.close()
 
-        mesh_output_file = tempfile.mktemp(".tsh")
+        fd, mesh_output_file = tempfile.mkstemp(".tsh")
+        os.close(fd)
         fit_to_mesh_file(mesh_file,
                          point_file,
                          mesh_output_file,
@@ -919,7 +931,6 @@ class Test_Fit(unittest.TestCase):
         from anuga.load_mesh.loadASCII import import_mesh_file, \
              export_mesh_file
         import tempfile
-        import os
 
         # create a .tsh file, no user outline
         mesh_dic = {}
@@ -936,11 +947,13 @@ class Test_Fit(unittest.TestCase):
                                                   'external',
                                                   'external']
         mesh_dic['geo_reference'] = Geo_reference(56,-0.76,-0.76)
-        mesh_file = tempfile.mktemp(".tsh")
+        fd, mesh_file = tempfile.mkstemp(".tsh")
+        os.close(fd)
         export_mesh_file(mesh_file,mesh_dic)
 
         # create a points .csv file
-        point_file = tempfile.mktemp(".csv")
+        fd, point_file = tempfile.mkstemp(".csv")
+        os.close(fd)
         fd = open(point_file,'w')
         fd.write("x,y, elevation, stage \n\
         1.0, 1.0,2.,4 \n\
@@ -948,7 +961,8 @@ class Test_Fit(unittest.TestCase):
         3.0,1.0,4.,8 \n")
         fd.close()
 
-        mesh_output_file = tempfile.mktemp(".tsh")
+        fd, mesh_output_file = tempfile.mkstemp(".tsh")
+        os.close(fd)
         fit_to_mesh_file(mesh_file,
                          point_file,
                          mesh_output_file,
@@ -974,7 +988,6 @@ class Test_Fit(unittest.TestCase):
         from anuga.load_mesh.loadASCII import import_mesh_file, \
              export_mesh_file
         import tempfile
-        import os
 
         # create a .tsh file, no user outline
         mesh_dic = {}
@@ -990,11 +1003,13 @@ class Test_Fit(unittest.TestCase):
         mesh_dic['segment_tags'] = ['external',
                                                   'external',
                                                   'external']
-        mesh_file = tempfile.mktemp(".tsh")
+        fd, mesh_file = tempfile.mkstemp(".tsh")
+        os.close(fd)
         export_mesh_file(mesh_file,mesh_dic)
 
         # create a points .csv file
-        point_file = tempfile.mktemp(".csv")
+        fd, point_file = tempfile.mkstemp(".csv")
+        os.close(fd)
         fd = open(point_file,'w')
         fd.write("x,y,elevation, stage \n\
         1.0, 1.0,2.,4 \n\
@@ -1027,7 +1042,6 @@ class Test_Fit(unittest.TestCase):
     def test_fit_to_mesh_file_errors(self):
         from anuga.load_mesh.loadASCII import import_mesh_file, export_mesh_file
         import tempfile
-        import os
 
         # create a .tsh file, no user outline
         mesh_dic = {}
@@ -1039,11 +1053,13 @@ class Test_Fit(unittest.TestCase):
         mesh_dic['vertex_attribute_titles'] = ['density', 'temp']
         mesh_dic['triangle_neighbors'] = [[-1, -1, -1]]
         mesh_dic['segment_tags'] = ['external', 'external','external']
-        mesh_file = tempfile.mktemp(".tsh")
+        fd, mesh_file = tempfile.mkstemp(".tsh")
+        os.close(fd)
         export_mesh_file(mesh_file,mesh_dic)
 
         # create a bad points .csv file
-        point_file = tempfile.mktemp(".csv")
+        fd, point_file = tempfile.mkstemp(".csv")
+        os.close(fd)
         fd = open(point_file,'w')
         fd.write("x,y,elevation stage \n\
         1.0, 1.0,2.,4 \n\
@@ -1068,16 +1084,17 @@ class Test_Fit(unittest.TestCase):
     def test_fit_to_mesh_file_errorsII(self):
         from anuga.load_mesh.loadASCII import import_mesh_file, export_mesh_file
         import tempfile
-        import os
 
         # create a .tsh file, no user outline
-        mesh_file = tempfile.mktemp(".tsh")
+        fd, mesh_file = tempfile.mkstemp(".tsh")
+        os.close(fd)
         fd = open(mesh_file,'w')
         fd.write("unit testing a bad .tsh file \n")
         fd.close()
 
         # create a points .csv file
-        point_file = tempfile.mktemp(".csv")
+        fd, point_file = tempfile.mkstemp(".csv")
+        os.close(fd)
         fd = open(point_file,'w')
         fd.write("x,y,elevation, stage \n\
         1.0, 1.0,2.,4 \n\
@@ -1104,7 +1121,6 @@ class Test_Fit(unittest.TestCase):
     def test_fit_to_mesh_file_errorsIII(self):
         from anuga.load_mesh.loadASCII import import_mesh_file, export_mesh_file
         import tempfile
-        import os
 
         # create a .tsh file, no user outline
         mesh_dic = {}
@@ -1116,12 +1132,14 @@ class Test_Fit(unittest.TestCase):
         mesh_dic['vertex_attribute_titles'] = ['density', 'temp']
         mesh_dic['triangle_neighbors'] = [[-1, -1, -1]]
         mesh_dic['segment_tags'] = ['external', 'external','external']
-        mesh_file = tempfile.mktemp(".tsh")
+        fd, mesh_file = tempfile.mkstemp(".tsh")
+        os.close(fd)
         export_mesh_file(mesh_file,mesh_dic)
 
 
         # create a points .csv file
-        point_file = tempfile.mktemp(".csv")
+        fd, point_file = tempfile.mkstemp(".csv")
+        os.close(fd)
         fd = open(point_file,'w')
         fd.write("x,y,elevation, stage \n\
         1.0, 1.0,2.,4 \n\

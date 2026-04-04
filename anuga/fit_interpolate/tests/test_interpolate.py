@@ -1787,7 +1787,8 @@ class Test_Interpolate(unittest.TestCase):
             return -x
 
         # Create mesh
-        mesh_file = tempfile.mktemp(".tsh")
+        fd, mesh_file = tempfile.mkstemp(".tsh")
+        os.close(fd)
         points = [[0.0,0.0],[6.0,0.0],[6.0,6.0],[0.0,6.0]]
         m = Pmesh()
         m.add_vertices(points)
@@ -1835,9 +1836,12 @@ class Test_Interpolate(unittest.TestCase):
 
         # Test the function
         points = [[5.0,1.],[0.5,2.]]
-        depth_file = tempfile.mktemp('.csv')
-        velocity_x_file = tempfile.mktemp('.csv')
-        velocity_y_file = tempfile.mktemp('.csv')
+        fd, depth_file = tempfile.mkstemp('.csv')
+        os.close(fd)
+        fd, velocity_x_file = tempfile.mkstemp('.csv')
+        os.close(fd)
+        fd, velocity_y_file = tempfile.mkstemp('.csv')
+        os.close(fd)
         interpolate_sww2csv(sww.filename, points, depth_file,
                             velocity_x_file,
                             velocity_y_file,
