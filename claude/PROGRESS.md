@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-03 (session 8)
+Last updated: 2026-04-04 (session 9)
 Branch: `develop` (contains feat/sc26 GPU work)
 
 ---
@@ -12,8 +12,8 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | Code improvements (original list) | 60 | 49 | 11 |
 | Documentation improvements | 20 | 20 | 0 |
 | Additional enhancements | 19 | 19 | 0 |
-| Hydrata Phase 0 — Test infrastructure | 5 | 3 | 2 |
-| Hydrata Phase 1 — Dependencies | 4 | 2 | 2 |
+| Hydrata Phase 0 — Test infrastructure | 5 | 5 | 0 |
+| Hydrata Phase 1 — Dependencies | 4 | 4 | 0 |
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
 | Hydrata Phase 3 — Deduplication | 4 | 0 | 4 |
 | Hydrata Phase 4 — Coverage | 3 | 0 | 3 |
@@ -23,7 +23,7 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
 | Riverwall throughflow | 6 | 6 | 0 |
 | Quantity memory reduction | 7 | 0 | 7 |
-| **Total** | **148** | **104** | **44** |
+| **Total** | **148** | **108** | **40** |
 
 ---
 
@@ -194,7 +194,7 @@ Cross-reference with what we have already completed is noted below.
 
 - [x] **0.2 Add test markers** — `@pytest.mark.slow`, `--run-fast` flag, auto-mark parallel tests *(Done 2026-03-26, anuga-community)*
 - [x] **0.1 Fix test isolation** — Replaced all `set_datadir('.')` calls and `tempfile.mktemp()` uses with `mkdtemp()`; fixed all tests writing to CWD; all `sww2dem` output paths now use full temp paths; cleaned up orphaned CWD artifacts. *(Done 2026-04-03)*
-- [ ] **0.3 Golden-master snapshots** — Install `pytest-regressions`; create 8–12 numerical snapshots for `evolve`, `distribute`, `extrapolate`, `compute_fluxes`.
+- [x] **0.3 Golden-master snapshots** — 6 `pytest-regressions` snapshot tests: dam break DE0/DE1, friction, Thacker bowl, extrapolation edge values, timestep sequence. Baselines committed; meson.build registered. *(Done 2026-04-04)*
 - [x] **0.4 Coverage baseline** — Configured `.coveragerc` with `branch=true, fail_under=55`; `pytest-cov` in `[dev]` extras. *(Done 2026-04-03)*
 - [x] **0.5 CI test matrix** — `conda-setup.yml` updated: PRs run `--run-fast`, pushes to main/develop run full suite; coverage step on Linux+Python 3.12. *(Done 2026-04-03)*
 
@@ -204,8 +204,8 @@ Current state: `pyproject.toml` declares only `numpy>=2.0.0` despite the codebas
 scipy, netCDF4, matplotlib, meshpy, dill, pymetis, pyproj, affine.
 
 - [x] **1.1 Declare runtime deps** — Added `dill>=0.3.7`, `matplotlib>=3.7`, `netCDF4>=1.6`, `scipy>=1.11`, `meshpy>=2022.1` to core deps. Added `[parallel]`, `[data]`, `[dev]` optional extras. `cartopy` (phantom) excluded. *(Done 2026-03-26)*
-- [ ] **1.2 Remove dead deps** — `cartopy` not in pyproject.toml (was never there); `openpyxl` moved to `[data]` optional. Complete GDAL removal (partially done on `remove-gdal` branch).
-- [ ] **1.3 Delete `setup.py`** — already absent (`NOT FOUND`); no action needed.
+- [x] **1.2 Remove dead deps** — GDAL fully removed: Python imports already gone; `gdal_available` → `spatial_available`; all stale "gdal-compatible" docstring references updated; `gdalwarp`/`gdal_rasterize`/`gdal_calc.py` CLI calls in `scenario/raster_outputs.py` replaced with rasterio+fiona+numpy. NPY002: all 17 legacy `np.random.*` calls modernised to `np.random.default_rng()`. *(Done 2026-04-04)*
+- [x] **1.3 Delete `setup.py`** — already absent; no action needed. *(Confirmed 2026-03-26)*
 - [x] **1.4 Fix classifiers** — removed Python 3.9 classifier (conflicts with `requires-python = ">=3.10"`). *(Done 2026-03-26)*
 
 ### Phase 2 — Linting & Code Quality
@@ -306,40 +306,28 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 
 ## Remaining Work (priority order)
 
-### Immediate — SC26 correctness (no GPU hardware needed)
-1. **G1.4** End-to-end GPU regression test (mode=1 vs mode=2, CPU_ONLY_MODE)
-2. **G1.3** Slot limit assertions in GPU operator managers
-3. **QM1–QM6** Quantity memory reduction Phase 1 (pure Python, ~2 days)
-4. ~~**RW1–RW6** Riverwall throughflow~~ *(done 2026-04-04)*
+### Immediate — best standalone value (no GPU hardware needed)
+1. **QM1–QM6** Quantity memory reduction Phase 1 (pure Python, ~2 days; ~58% saving for 1M-tri domain)
+2. **G1.4** End-to-end GPU regression test (mode=1 vs mode=2, CPU_ONLY_MODE)
+3. **G1.3** Slot limit assertions in GPU operator managers
 
-### Short term — SC26 prerequisites
-5. **G1.1** File_boundary GPU support (enables real tsunami models)
-6. **G1.2** Device memory check before GPU mapping
-7. **G2.1** GPU benchmark suite (100K / 2M / 20M triangles)
-8. **G2.4** Weak scaling experiment (1→64 GPUs)
-
-### Quick wins (< 1 day each)
-9. **1.3** Audit `anuga/file/` for remaining bare `open()` calls
-10. **1.5** Grep for large legacy comment blocks in `shallow_water/` and `operators/`
-11. **H1.2** Complete GDAL removal (continue `remove-gdal` branch work)
-12. **H2.1** Add ruff configuration to `pyproject.toml`
+### Short term — SC26 prerequisites (needs GPU hardware)
+4. **G1.1** File_boundary GPU support (enables real tsunami models)
+5. **G1.2** Device memory check before GPU mapping
+6. **G2.1** GPU benchmark suite (100K / 2M / 20M triangles)
+7. **G2.4** Weak scaling experiment (1→64 GPUs)
 
 ### Medium effort (1–3 days each)
-13. **H0.1** Fix test isolation — `set_datadir('.')` and `tempfile.mktemp()` sweep
-14. **H0.4** Configure coverage baseline (`.coveragerc`, `diff-cover`)
-15. **H0.5** GitHub Actions CI matrix
-16. **3.2** `RiverWall` tests — requires mesh with breaklines
-17. **H2.2** Pre-commit hooks
-18. **G1.4** Multi-rank halo exchange test
-19. **G2.1** Benchmark suite
+8. **H3.1** Unify quantity Cython kernels — `quantity_ext.pyx`, `quantity_ext_openmp.pyx`, `quantity_ext2.pyx` share ~90% code (high risk)
+9. **H3.2** Consolidate 5 parallel operator wrapper files — thin wrappers around `structures/` classes; move MPI awareness into base classes
+10. **H3.3** Merge `Culvert_operator` / `Culvert_operator_Parallel` — extract shared base class
+11. **H3.4** Split `system_tools.py` (750 lines) into focused modules
+12. **QM7** Shared gradient workspace (C extension change, ~72 MB saving)
+13. **G1.4** Multi-rank halo exchange test
 
-### Large effort (1+ weeks each)
-20. **QM7** Shared gradient workspace (C extension changes)
-21. **G3.1** Gate/weir operators on GPU
-22. **G2.4** Weak scaling experiment (1→64 GPUs)
-23. **4.1** Reduce parameter counts via dataclasses — `gauge.py`, `generic_domain.py`
-24. **H3.1** Unify quantity kernels (Cython refactor — high risk)
-25. **H3.2** Consolidate parallel operator wrappers
-26. **H4.2** Automate 32 remaining validation scenarios
-27. **3.3** `anuga/scenario/` tests
+### Lower priority
+14. **H4.1** Modernise test patterns — convert key `unittest.TestCase` classes to plain pytest functions; add domain-creation fixtures
+15. **H4.2** Automate 32 remaining validation scenarios
+16. **H4.3** Lift coverage from ~55% to 65%; enforce `fail_under=65` in CI
+17. **G3.1–G3.4** GPU feature parity (weir/gate operators, dynamic slot limits, GPU docs)
 28. **G4.3** Multi-node strong scaling for SC26
