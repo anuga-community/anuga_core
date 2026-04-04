@@ -105,8 +105,8 @@ def get_boundary_tags_from_ogrinfo(shapefile_name,
 
     Get the boundary tags geometry information out of ogrinfo
 
-    This is a 'fall-back' routine to be used if the user has
-    an incompatible python gdal interface
+    This is a 'fall-back' routine used when fiona is unavailable.
+    Requires the ogrinfo CLI tool (from the GDAL utilities package).
 
     """
 

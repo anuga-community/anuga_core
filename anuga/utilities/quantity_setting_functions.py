@@ -657,7 +657,7 @@ def quantity_from_Pt_Pol_Data_and_Raster(Pt_Pol_Data, quantity_raster, domain):
                                              ]
                     Here Polygon_i is a polygon in ANUGA format,
                     and Pt_XYZ_i is a 3 column array of x,y,Value points
-            @param quantity_raster = A GDAL-compatible quantity raster
+            @param quantity_raster = A rasterio-compatible quantity raster
             @param domain = ANUGA domain
     """
 

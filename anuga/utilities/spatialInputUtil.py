@@ -9,7 +9,7 @@ Key routines:
     readShpPointsAndAttributes -- read a multi-point shapefile with its attributes into ANUGA
 
     ListPts2Wkb -- (Probably for internal use) Convert a list of points to a
-                    Wkb geometry, allowing us to use GDALs geometry tools
+                    Wkb geometry, allowing us to use Shapely geometry tools
     Wbk2ListPts -- reverse of ListPts2Wkb
 
     addIntersectionPtsToLines -- (Probably for internal use, see add_intersections_to_domain_features)
