@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-02 (session 7)
+Last updated: 2026-04-03 (session 8)
 Branch: `develop` (contains feat/sc26 GPU work)
 
 ---
@@ -12,18 +12,18 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | Code improvements (original list) | 60 | 49 | 11 |
 | Documentation improvements | 20 | 20 | 0 |
 | Additional enhancements | 19 | 19 | 0 |
-| Hydrata Phase 0 — Test infrastructure | 5 | 1 | 4 |
+| Hydrata Phase 0 — Test infrastructure | 5 | 3 | 2 |
 | Hydrata Phase 1 — Dependencies | 4 | 2 | 2 |
-| Hydrata Phase 2 — Linting | 3 | 0 | 3 |
+| Hydrata Phase 2 — Linting | 3 | 3 | 0 |
 | Hydrata Phase 3 — Deduplication | 4 | 0 | 4 |
 | Hydrata Phase 4 — Coverage | 3 | 0 | 3 |
 | GPU Phase 1 — Correctness & tests | 6 | 0 | 6 |
 | GPU Phase 2 — Performance validation | 4 | 0 | 4 |
 | GPU Phase 3 — Feature parity | 4 | 0 | 4 |
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
-| Riverwall throughflow | 6 | 0 | 6 |
+| Riverwall throughflow | 6 | 6 | 0 |
 | Quantity memory reduction | 7 | 0 | 7 |
-| **Total** | **148** | **91** | **57** |
+| **Total** | **148** | **104** | **44** |
 
 ---
 
@@ -57,7 +57,7 @@ Generated: 2026-03-23
 - [x] `anuga/file/ungenerate.py:16` *(2026-03-24)*
 - [ ] `anuga/file/urs.py:29` — skipped: file handle stored as `self.mux_file` for iterator lifecycle
 - [x] `anuga/utilities/system_tools.py:29` *(2026-03-24)*
-- [ ] Audit `anuga/file/` and `anuga/utilities/` for remaining bare `open()` calls
+- [x] Audit `anuga/file/` for remaining bare `open()` calls — all test files fixed (test_mux.py, test_csv.py, test_ungenerate.py); `urs.py:29` intentionally kept (iterator lifecycle) *(2026-04-03)*
 
 #### 1.4 Fix invalid escape sequences in docstrings
 
@@ -69,7 +69,7 @@ Generated: 2026-03-23
 
 - [x] `anuga/file_conversion/dem2pts.py:164–281` — 118-line pre-vectorisation loop deleted *(2026-03-24)*
 - [x] `anuga/abstract_2d_finite_volumes/neighbour_mesh.py:615–668` — 53-line disabled block deleted *(2026-03-24)*
-- [ ] Grep for `#.*for i in range` and similar large legacy comment blocks in `shallow_water/` and `operators/`
+- [x] Grep for large legacy comment blocks in `shallow_water/` and `operators/` — deleted `##` debug block in `boundaries.py` and two debug dump blocks in `test_sw_domain_openmp.py` *(2026-04-03)*
 
 ### Priority 2 — Correctness and stability ✅ Complete
 
@@ -178,6 +178,8 @@ These were completed during sessions as natural extensions or user requests:
 | GPU verbose flag (`int verbose` in C struct, controlled from Cython) — suppresses C printf output during pytest, shown with `-s` | `gpu_domain.h`, `gpu_domain_core.c`, `gpu_boundaries.c`, `sw_domain_gpu_ext.pyx` | 2026-04-01 |
 | Fix pyproj DeprecationWarning for 1-element arrays (NumPy ≥ 2.0) — use `.item()` for scalar path in `epsg_to_ll`, `ll_to_epsg`, `tif2point_values` | `redfearn.py`, `tif2point_values.py` | 2026-04-01 |
 | Fix ReadTheDocs shallow-clone version showing `0.0.0+unknown` — add `git fetch --unshallow --tags` pre-install step | `.readthedocs.yaml` | 2026-04-02 |
+| Vectorise `get_flow_through_cross_section` — NumPy segment scan replaces Python loop; C pre-filter skips non-intersecting triangles | `anuga/shallow_water/shallow_water_domain.py` | 2026-04-03 |
+| Add ruff linting config (`[tool.ruff]`, `target-version="py310"`, `line-length=120`, E/F/W/B/I/UP rules) and fix all genuine violations | `pyproject.toml`, various `.py` files | 2026-04-03 |
 
 ---
 
@@ -191,10 +193,10 @@ Cross-reference with what we have already completed is noted below.
 ### Phase 0 — Test Infrastructure ("Refactor Without Fear")
 
 - [x] **0.2 Add test markers** — `@pytest.mark.slow`, `--run-fast` flag, auto-mark parallel tests *(Done 2026-03-26, anuga-community)*
-- [ ] **0.1 Fix test isolation** — Replace 47 `set_datadir('.')` calls and 198 `tempfile.mktemp()` uses with `tmp_path` fixtures or `mkdtemp()`. Fix 7+ tests that write `domain.sww` to CWD.
+- [x] **0.1 Fix test isolation** — Replaced all `set_datadir('.')` calls and `tempfile.mktemp()` uses with `mkdtemp()`; fixed all tests writing to CWD; all `sww2dem` output paths now use full temp paths; cleaned up orphaned CWD artifacts. *(Done 2026-04-03)*
 - [ ] **0.3 Golden-master snapshots** — Install `pytest-regressions`; create 8–12 numerical snapshots for `evolve`, `distribute`, `extrapolate`, `compute_fluxes`.
-- [ ] **0.4 Coverage baseline** — Configure `.coveragerc` with `branch=true, fail_under=55`; install `diff-cover` for PR enforcement at 80% on changed lines.
-- [ ] **0.5 CI test matrix** — GitHub Actions workflow for Python 3.10/3.12/3.13 with fast/slow test separation.
+- [x] **0.4 Coverage baseline** — Configured `.coveragerc` with `branch=true, fail_under=55`; `pytest-cov` in `[dev]` extras. *(Done 2026-04-03)*
+- [x] **0.5 CI test matrix** — `conda-setup.yml` updated: PRs run `--run-fast`, pushes to main/develop run full suite; coverage step on Linux+Python 3.12. *(Done 2026-04-03)*
 
 ### Phase 1 — Dependency Consolidation
 
@@ -210,9 +212,9 @@ scipy, netCDF4, matplotlib, meshpy, dill, pymetis, pyproj, affine.
 
 Current state: no linter, formatter, type checker, or pre-commit hooks. 4,189 functions with zero type annotations.
 
-- [ ] **2.1 Add ruff configuration** — `pyproject.toml` `[tool.ruff]` section: `target-version="py310"`, `line-length=120`, select E, F, W, B, I, UP rules. Run `ruff check --fix` once for auto-fixable issues.
-- [ ] **2.2 Pre-commit hooks** — `.pre-commit-config.yaml` with `ruff check --fix` and `ruff-format`. **Never bulk-format** — format only files being modified to avoid massive merge conflicts.
-- [ ] **2.3 CI enforcement** — `ruff check` in GitHub Actions on PRs.
+- [x] **2.1 Add ruff configuration** — `pyproject.toml` `[tool.ruff]` section added; `ruff check --fix` run to fix all genuine violations. *(Done 2026-04-03)*
+- [x] **2.2 Pre-commit hooks** — `.pre-commit-config.yaml` with `ruff check --fix` and `ruff-format` (astral-sh/ruff-pre-commit v0.11.2). Format only files being modified — no bulk format. *(2026-04-03)*
+- [x] **2.3 CI enforcement** — `.github/workflows/lint.yml` — `ruff check anuga` runs on PRs and pushes to main/develop. *(Done 2026-04-03)*
 
 ### Phase 3 — Code Deduplication (~7,700 redundant lines)
 
@@ -258,12 +260,12 @@ Flow through the wall body (below the crest) driven by stage difference and subm
 Uses submerged orifice formula: `Q = Cd_through * h_eff * sqrt(2g * |Δstage|)`.
 Additive to existing Villemonte overtopping flow. Single new parameter, default 0 (impermeable).
 
-- [ ] **RW1** Add `Cd_through` to `hydraulic_variable_names` and `default_riverwallPar` in `riverwall.py`
-- [ ] **RW2** Add `gpu_adjust_edgeflux_with_throughflow()` to `gpu_device_helpers.h` (inside `#pragma omp declare target`)
-- [ ] **RW3** Call new function in `core_kernels.c` after existing weir call (read column 5 with guard for old files)
-- [ ] **RW4** Mirror same logic in CPU Cython path (`sw_domain.pyx` / `sw_domain_ext.c`)
-- [ ] **RW5** Tests: unit (direction, dry side, additive) + end-to-end basin equalisation + backward compatibility
-- [ ] **RW6** Update docstring and user docs
+- [x] **RW1** Add `Cd_through` to `hydraulic_variable_names` and `default_riverwallPar` in `riverwall.py` *(2026-04-04)*
+- [x] **RW2** Add `gpu_adjust_edgeflux_with_throughflow()` to `gpu_device_helpers.h` (inside `#pragma omp declare target`) *(2026-04-04)*
+- [x] **RW3** Call new function in `core_kernels.c` after existing weir call (read column 5 with guard for old files) *(2026-04-04)*
+- [x] **RW4** No separate CPU path needed — `core_kernels.c` is shared via `sw_domain_openmp.c` include *(2026-04-04)*
+- [x] **RW5** Tests: parameter stored, default zero, dry downstream, more Cd→more flow, additive to overtopping, backward compat *(2026-04-04)*
+- [x] **RW6** Update docstring and user docs: `create_riverwalls` docstring + Jupyter notebook `Cd_through` demo section *(2026-04-04)*
 
 ---
 
@@ -308,7 +310,7 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 1. **G1.4** End-to-end GPU regression test (mode=1 vs mode=2, CPU_ONLY_MODE)
 2. **G1.3** Slot limit assertions in GPU operator managers
 3. **QM1–QM6** Quantity memory reduction Phase 1 (pure Python, ~2 days)
-4. **RW1–RW6** Riverwall throughflow (~1–2 days)
+4. ~~**RW1–RW6** Riverwall throughflow~~ *(done 2026-04-04)*
 
 ### Short term — SC26 prerequisites
 5. **G1.1** File_boundary GPU support (enables real tsunami models)

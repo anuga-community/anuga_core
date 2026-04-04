@@ -60,7 +60,7 @@ pytest anuga/shallow_water/tests/test_shallow_water_domain.py  # single file
 
 ### Build
 ```bash
-conda activate anuga_env_3.12
+conda activate anuga_env_3.14
 pip install --no-build-isolation -e .
 ```
 
@@ -103,6 +103,26 @@ three merge functions (`_sww_merge`, `_sww_merge_parallel_smooth`,
 (no VTK dependency), includes derived `depth` and `speed` quantities,
 `--z-scale` and `--absolute-coords` options.
 
+**Session 6 (2026-04-01):** GPU verbose flag (`int verbose` in C struct) to
+suppress C printf output during pytest; fix pyproj DeprecationWarning for
+1-element NumPy ≥ 2.0 arrays in `redfearn.py` and `tif2point_values.py`.
+v3.3.1 tagged and shipped (PyPI + conda-forge). `feat/sc26` merged into
+`develop`; `develop` is now the active v4.0.0 branch.
+
+**Session 7 (2026-04-02):** Fixed ReadTheDocs shallow-clone showing
+`0.0.0+unknown` — added `git fetch --unshallow --tags` pre-install step in
+`.readthedocs.yaml`.
+
+**Session 8 (2026-04-03):** Vectorised `get_flow_through_cross_section` —
+NumPy segment scan replaces Python loop; C pre-filter skips non-intersecting
+triangles (merged from `develop_3.x.x`). Added ruff linting config to
+`pyproject.toml` and fixed all genuine violations. Pre-commit hooks (ruff),
+CI lint workflow (`.github/workflows/lint.yml`), CI fast/slow test split
+(`conda-setup.yml`), coverage config (`.coveragerc`). Full test isolation
+sweep: `tempfile.mktemp` → `mkstemp`, `set_datadir('.')` → `mkdtemp()`, all
+`sww2dem` output paths use full temp dir paths, orphaned CWD files cleaned up.
+1 pre-existing failure (`test_sww2csv_multiple_files`) confirmed, 1537 pass.
+
 ---
 
 ## File locations for common operations
@@ -132,17 +152,19 @@ three merge functions (`_sww_merge`, `_sww_merge_parallel_smooth`,
 See `claude/PROGRESS.md` — "Remaining Work" section for full list. Summary:
 
 ### Quick wins (< 1 day)
-1. Audit `anuga/file/` for remaining bare `open()` calls — 1.3
-2. Grep for large legacy comment blocks in `shallow_water/` — 1.5
+1. ~~Audit `anuga/file/` for remaining bare `open()` calls — 1.3~~ **Done 2026-04-03**
+2. ~~Grep for large legacy comment blocks in `shallow_water/` — 1.5~~ **Done 2026-04-03**
 3. Complete GDAL removal (continue `remove-gdal` branch work) — H1.2
-4. Add `ruff` configuration to `pyproject.toml` — H2.1
+4. ~~Add `ruff` configuration to `pyproject.toml` — H2.1~~ **Done 2026-04-03**
 5. Export `Geo_reference` / `is_located` / `epsg` from `anuga/__init__.py` if not already there
 
 ### Medium effort (1–3 days)
-6. Fix test isolation — sweep `set_datadir('.')` and `tempfile.mktemp()` — H0.1
-7. Configure coverage baseline (`.coveragerc`, `diff-cover`) — H0.4
-8. GitHub Actions CI matrix — H0.5
-9. Pre-commit hooks with ruff — H2.2
+6. ~~Fix test isolation — H0.1~~ **Done 2026-04-03**
+7. ~~Configure coverage baseline — H0.4~~ **Done 2026-04-03**
+8. ~~GitHub Actions CI matrix — H0.5~~ **Done 2026-04-03**
+9. ~~Pre-commit hooks with ruff — H2.2~~ **Done 2026-04-03**
+10. Investigate/fix pre-existing `test_sww2csv_multiple_files` failure — H0.1 residual
+11. Golden-master snapshots (`pytest-regressions`) — H0.3
 
 ### Large effort (1+ weeks)
 10. Unify quantity kernels (Cython refactor, high risk) — H3.1

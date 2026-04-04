@@ -44,16 +44,26 @@ where:
 
 h_left_sub  = max(min(stage_left,  z_wall) - z_bed_left,  0)   [depth below wall on left]
 h_right_sub = max(min(stage_right, z_wall) - z_bed_right, 0)   [depth below wall on right]
-h_eff       = min(h_left_sub, h_right_sub)                      [effective submerged depth]
+h_eff       = h_left_sub  if stage_left >= stage_right          [upstream submerged depth]
+            = h_right_sub otherwise
 ```
 
-`h_eff` is the depth of water available on the **shallower** side below the
-wall crest — the minimum of the two submerged depths. This naturally:
+`h_eff` is the submerged depth on the **upstream** (driving) side of the wall —
+the depth of water pressing through the wall from the high-stage side. This naturally:
 
-- Gives zero throughflow when either side is dry below the wall
-- Scales with water pressure (deeper water → more force on the wall)
+- Gives positive throughflow when the downstream side is dry (the common case
+  of a wet river against a dry floodplain): h_eff = h_upstream > 0 even when
+  the downstream side has no water
+- Scales with the upstream water depth (deeper upstream → larger effective
+  seepage/orifice cross-section)
 - Works equally whether water is above or below the crest on either side
 - Reduces to zero when Cd_through = 0 (backward compatible default)
+
+Note: using `min(h_left_sub, h_right_sub)` was considered but rejected — it
+gives zero flow when the downstream side is dry, which is physically wrong for
+both culvert and seepage models. Using `max` is equivalent to using the upstream
+depth when bed levels are similar, but `h_upstream_sub` is more physically
+precise for unequal bed elevations on the two sides.
 
 ### Interaction with overtopping flow
 
@@ -160,7 +170,10 @@ static inline void gpu_adjust_edgeflux_with_throughflow(
     // Depth of water on each side below the wall crest
     double h_left_sub  = fmax(fmin(stage_left,  z_wall) - z_bed_left,  0.0);
     double h_right_sub = fmax(fmin(stage_right, z_wall) - z_bed_right, 0.0);
-    double h_eff = fmin(h_left_sub, h_right_sub);
+    // h_eff = upstream submerged depth (driving side).
+    // Using min() was rejected: gives zero flow when downstream is dry, which
+    // is wrong for both culvert and seepage models.
+    double h_eff = (stage_left >= stage_right) ? h_left_sub : h_right_sub;
 
     if (h_eff <= 0.0) return;
 
