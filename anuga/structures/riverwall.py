@@ -71,13 +71,19 @@ class RiverWall:
         s2 -- Submergence ratio at which we entirely use the shallow water solution  (>s1)
         h1 -- Tailwater head / weir height at which we start blending with the shallow water solution (<h2)
         h2 -- Tailwater head / weir height at which we entirely use the shallow water solution (>h1)
+        Cd_through -- Discharge coefficient for flow through the wall body (below the crest).
+                      0.0 = impermeable wall (default, backward compatible).
+                      Typical values: 0.5-0.8 for a culvert opening, small values for seepage.
+                      Uses submerged orifice formula: Q = Cd_through * h_eff * sqrt(2*g*|Δstage|)
+                      where h_eff is the upstream submerged depth (depth below crest on the high-stage side).
 
         # Default riverwall hydraulic parameters
         default_riverwallPar={'Qfactor':1.0,
                               's1': 0.9,
                               's2': 0.95,
                               'h1': 1.0,
-                              'h2': 1.5
+                              'h2': 1.5,
+                              'Cd_through': 0.0,
                               }
 
         Other variables are:
@@ -125,13 +131,14 @@ class RiverWall:
                                    's1': 0.9,
                                    's2': 0.95,
                                    'h1': 1.0,
-                                   'h2': 1.5
+                                   'h2': 1.5,
+                                   'Cd_through': 0.0,
                                    }
 
         # DO NOT CHANGE THE ORDER OF hydraulic_variable_names
         # It needs to match hard-coded assumptions in C [compute_fluxes_central]
         # If you add a variable, append it to the end of hydraulic_variable_names
-        self.hydraulic_variable_names=('Qfactor', 's1', 's2', 'h1', 'h2')
+        self.hydraulic_variable_names=('Qfactor', 's1', 's2', 'h1', 'h2', 'Cd_through')
 
         self.ncol_hydraulic_properties=len(self.hydraulic_variable_names)
         # Variable to hold the riverwall hydraulic properties in a table
@@ -183,10 +190,17 @@ class RiverWall:
 
             riverwallPar: Dictionary containing a dictionary of named hydraulic parameters for each named riverwall
                           If parameters are not provided, default values will be used.
-                          See the help for class 'RiverWall' for an explanation of these
+                          See the help for class 'RiverWall' for an explanation of these.
+                          Hydraulic parameters: Qfactor, s1, s2, h1, h2, Cd_through.
 
                 exampleRiverWallPar = {'n2': {'Qfactor':0.5} }
                     This would use a Qfactor of 0.5 for riverwall 'n2', while the other riverwall would have the default values
+
+                # Enable throughflow (seepage/culvert) through the wall body:
+                exampleRiverWallPar = {'levee': {'Cd_through': 0.5}}
+                    This allows flow through the wall body below the crest using a submerged orifice
+                    formula: Q = 0.5 * h_eff * sqrt(2*g*|Δstage|), where h_eff is the upstream
+                    submerged depth.  Cd_through=0.0 (default) gives the original impermeable behaviour.
 
             default_riverwallPar:  Dictionary containing default values of the riverwall parameters, to be used
                                    if they are not explicitly set.
@@ -196,13 +210,14 @@ class RiverWall:
                                                 's1': 0.9,
                                                 's2': 0.95,
                                                 'h1': 1.0,
-                                                'h2': 1.5
+                                                'h2': 1.5,
+                                                'Cd_through': 0.0,
                                                }
 
                 example_default_riverwallPar = {'Qfactor':1.5,
                                                 's1': 10000.,
                                                 's2': 20000.
-                                               } # Here h1/h2 defaults will come from __init__
+                                               } # Here h1/h2/Cd_through defaults will come from __init__
 
 
             tol: Edges will be assigned a riverwall elevation if they are within 'tol' of

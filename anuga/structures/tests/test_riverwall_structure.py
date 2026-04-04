@@ -612,6 +612,139 @@ class Test_riverwall_structure(unittest.TestCase):
 
         assert numpy.allclose(landVol,theoretical_flux_vol, rtol=1.0e-03)
 
+    # -----------------------------------------------------------------------
+    # Throughflow (Cd_through) tests
+    # -----------------------------------------------------------------------
+
+    def test_throughflow_parameter_stored(self):
+        """Cd_through is stored in hydraulic_properties table at column index 5."""
+        wallHeight = 2.0
+        Cd = 0.5
+        riverWall = {'centralWall': [[wallLoc, 0.0, wallHeight],
+                                     [wallLoc, 100.0, wallHeight]]}
+        riverWall_Par = {'centralWall': {'Cd_through': Cd}}
+        domain = self.create_domain_DE0(wallHeight, 1.0, 0.5,
+                                        riverWall=riverWall,
+                                        riverWall_Par=riverWall_Par)
+        hp = domain.riverwallData.hydraulic_properties
+        names = domain.riverwallData.hydraulic_variable_names
+        assert 'Cd_through' in names, "Cd_through missing from hydraulic_variable_names"
+        col = list(names).index('Cd_through')
+        assert col == 5, f"Cd_through should be column 5, got {col}"
+        assert numpy.allclose(hp[0, col], Cd), \
+            f"Expected Cd_through={Cd}, got {hp[0, col]}"
+
+    def test_throughflow_default_zero(self):
+        """Cd_through defaults to 0 — behaviour matches impermeable wall."""
+        wallHeight = 2.0
+        InitialOceanStage = 1.0
+        InitialLandStage = -999999.
+
+        # With default Cd_through=0 the wall is impermeable below the crest.
+        # Stage below the wall on both sides: no overtopping, no throughflow → land stays dry.
+        domain = self.create_domain_DE0(wallHeight, InitialOceanStage, InitialLandStage)
+
+        for t in domain.evolve(yieldstep=10.0, finaltime=10.0):
+            pass
+
+        landInds = (domain.centroid_coordinates[:, 0] < 50.).nonzero()[0]
+        landVol = (domain.quantities['height'].centroid_values[landInds]
+                   * domain.areas[landInds]).sum()
+        assert landVol < 1.0e-6, \
+            f"With Cd_through=0 land should stay dry, got volume={landVol}"
+
+    def test_throughflow_dry_downstream(self):
+        """With Cd_through>0 and dry downstream side, water flows through the wall."""
+        wallHeight = 2.0
+        InitialOceanStage = 1.0    # below crest, so no overtopping
+        InitialLandStage = -999999.
+
+        riverWall = {'centralWall': [[wallLoc, 0.0, wallHeight],
+                                     [wallLoc, 100.0, wallHeight]]}
+        riverWall_Par = {'centralWall': {'Cd_through': 0.5}}
+
+        domain = self.create_domain_DE0(wallHeight, InitialOceanStage, InitialLandStage,
+                                        riverWall=riverWall, riverWall_Par=riverWall_Par)
+
+        for t in domain.evolve(yieldstep=10.0, finaltime=10.0):
+            pass
+
+        landInds = (domain.centroid_coordinates[:, 0] < 50.).nonzero()[0]
+        landVol = (domain.quantities['height'].centroid_values[landInds]
+                   * domain.areas[landInds]).sum()
+        assert landVol > 1.0e-4, \
+            f"With Cd_through=0.5 and dry downstream, expected water flow, got volume={landVol}"
+
+    def test_throughflow_more_cd_more_flow(self):
+        """Higher Cd_through produces more throughflow volume."""
+        wallHeight = 2.0
+        InitialOceanStage = 1.0
+        InitialLandStage = -999999.
+
+        def run(Cd):
+            riverWall = {'centralWall': [[wallLoc, 0.0, wallHeight],
+                                         [wallLoc, 100.0, wallHeight]]}
+            riverWall_Par = {'centralWall': {'Cd_through': Cd}}
+            domain = self.create_domain_DE0(wallHeight, InitialOceanStage, InitialLandStage,
+                                            riverWall=riverWall, riverWall_Par=riverWall_Par)
+            for t in domain.evolve(yieldstep=0.001, finaltime=0.001):
+                pass
+            landInds = (domain.centroid_coordinates[:, 0] < 50.).nonzero()[0]
+            return (domain.quantities['height'].centroid_values[landInds]
+                    * domain.areas[landInds]).sum()
+
+        vol_lo = run(0.1)
+        vol_hi = run(0.5)
+        assert vol_hi > vol_lo, \
+            f"Higher Cd_through should produce more throughflow: Cd=0.1 → {vol_lo}, Cd=0.5 → {vol_hi}"
+
+    def test_throughflow_additive_to_overtopping(self):
+        """Throughflow adds to overtopping: total flux > overtopping-only flux."""
+        wallHeight = 0.5
+        InitialOceanStage = 1.0   # above crest: overtopping occurs
+        InitialLandStage = -999999.
+
+        yst = 0.001
+        ft  = 0.001
+
+        # No throughflow
+        domain_no = self.create_domain_DE0(wallHeight, InitialOceanStage, InitialLandStage)
+        for t in domain_no.evolve(yieldstep=yst, finaltime=ft):
+            pass
+        landInds = (domain_no.centroid_coordinates[:, 0] < 50.).nonzero()[0]
+        vol_no = (domain_no.quantities['height'].centroid_values[landInds]
+                  * domain_no.areas[landInds]).sum()
+
+        # With throughflow
+        riverWall = {'centralWall': [[wallLoc, 0.0, wallHeight],
+                                     [wallLoc, 100.0, wallHeight]]}
+        riverWall_Par = {'centralWall': {'Cd_through': 0.5}}
+        domain_cd = self.create_domain_DE0(wallHeight, InitialOceanStage, InitialLandStage,
+                                           riverWall=riverWall, riverWall_Par=riverWall_Par)
+        for t in domain_cd.evolve(yieldstep=yst, finaltime=ft):
+            pass
+        vol_cd = (domain_cd.quantities['height'].centroid_values[landInds]
+                  * domain_cd.areas[landInds]).sum()
+
+        assert vol_cd > vol_no, \
+            f"Throughflow+overtopping should exceed overtopping alone: {vol_cd} vs {vol_no}"
+
+    def test_throughflow_backward_compatible(self):
+        """Existing riverwall tests unaffected: Cd_through=0 leaves hydraulic_properties unchanged."""
+        wallHeight = 2.0
+        InitialOceanStage = 2.5
+        InitialLandStage = -999999.
+
+        domain = self.create_domain_DE0(wallHeight, InitialOceanStage, InitialLandStage)
+        hp = domain.riverwallData.hydraulic_properties
+        names = domain.riverwallData.hydraulic_variable_names
+        col = list(names).index('Cd_through')
+        # Default must be exactly 0.0
+        assert hp[0, col] == 0.0, f"Default Cd_through must be 0.0, got {hp[0, col]}"
+        # Should now have 6 columns
+        assert hp.shape[1] == 6, f"Expected 6 hydraulic property columns, got {hp.shape[1]}"
+
+
 # =========================================================================
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_riverwall_structure)
