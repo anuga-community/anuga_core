@@ -2,6 +2,7 @@
 
 python_sources = [
 '__init__.py',
+'test_regression_snapshots.py',
 'test_data_manager.py',
 'test_sw_domain_openmp.py',
 'test_DE_gpu_omp.py',
@@ -22,4 +23,5 @@ py3.install_sources(
 )
 
 subdir('data')
+subdir('test_regression_snapshots')
 subdir('urs_test_data')
