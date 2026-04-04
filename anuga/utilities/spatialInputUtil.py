@@ -22,7 +22,7 @@ Key routines:
                                             with the intersection point if desired
 
     rasterValuesAtPoints -- (Probably for internal use, see quantityRasterFun in quantity_setting_functions)
-                            Quite efficiently get raster cell values at points in any gdal-compatible raster
+                            Quite efficiently get raster cell values at points in any rasterio-compatible raster
                             [gridPointsInPolygon could in future be linked with this to get raster values in a region,
                              if we develop a version of ANUGA with sub-grid topography]
 
@@ -59,13 +59,13 @@ try:
     import rasterio
     from shapely.geometry import (MultiPoint, LineString, Polygon, Point,
                                    mapping, shape)
-    gdal_available = True
+    spatial_available = True
 except ImportError:
-    gdal_available = False
+    spatial_available = False
 
 
 #####################################
-if gdal_available:
+if spatial_available:
 
 
     def readShp_1PolyGeo(shapefile, dropLast=True):
@@ -611,7 +611,7 @@ if gdal_available:
             i.e. the minimum x, maximum x, minimum y, and maximum y values
 
             INPUT:
-                rasterFile -- a gdal compatible rasterfile
+                rasterFile -- a rasterio-compatible raster file
                 asPolygon -- if False, return [xmin,xmax,ymin,ymax].
                              If True, return [ [xmin,ymin],[xmax,ymin],[xmax,ymax],[xmin,ymax]]
             OUTPUT
@@ -655,7 +655,7 @@ if gdal_available:
             INPUT:
             @param xy = numpy array with point locations
 
-            @param rasterFile = Filename of the gdal-compatible raster
+            @param rasterFile = Filename of the rasterio-compatible raster
 
             @param band = band of the raster to get
 
@@ -1229,7 +1229,7 @@ if gdal_available:
         return polyOut
     ###################
 
-else: # gdal_available == False
+else: # spatial_available == False
     msg='Failed to import fiona rasterio or shapely --'\
         + 'perhaps geodata python interface is not installed.'
 

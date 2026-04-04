@@ -924,7 +924,7 @@ def make_grid(data, lats, lons, fileName, EPSG_CODE=None, proj4string=None,
                fileName -- name of file to write to
                EPSG_CODE -- Integer code with projection information in EPSG format
                proj4string -- proj4string with projection information
-               creation_options -- list of tif creation options for gdal (e.g. ["COMPRESS=DEFLATE"])
+               creation_options -- list of tif creation options for rasterio (e.g. ["COMPRESS=DEFLATE"])
 
         NOTE: proj4string is used in preference to EPSG_CODE if available
     """
@@ -1018,7 +1018,7 @@ def Make_Geotif(swwFile=None,
                 bounding_polygon -- polygon (e.g. from read_polygon) If present, only set values of raster cells inside the bounding_polygon
                 internal_holes -- a list of polygons. If present, do not set values of raster cells inside these polygons.
                 k_nearest_neighbours -- how many neighbours to use in interpolation. If k>1, inverse-distance-weighted interpolation is used
-                creation_options -- list of tif creation options for gdal, e.g. ['COMPRESS=DEFLATE']
+                creation_options -- list of tif creation options for rasterio, e.g. ['COMPRESS=DEFLATE']
     """
 
     import scipy.io

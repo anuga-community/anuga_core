@@ -182,7 +182,7 @@ def composite_quantity_setting_function(poly_fun_pairs,
              or a constant,
              or a '.txt' or '.csv' file with comma separated xyz data
                 and an optional header row which contains letters,
-             or the name of a gdal-compatible rasterFile
+             or the name of a rasterio-compatible rasterFile
                 (not ending in .txt or .csv),
              or a numpy array with 3 columns
 
@@ -358,7 +358,7 @@ def composite_quantity_setting_function(poly_fun_pairs,
 
             else:
                 if pi == 'Extent':
-                    # Here fi MUST be a gdal-compatible raster
+                    # Here fi MUST be a rasterio-compatible raster
                     if not isinstance(fi, str):
                         msg = ' pi = "Extent" can only be used when fi is a' +\
                               ' raster file name'
@@ -409,7 +409,7 @@ def composite_quantity_setting_function(poly_fun_pairs,
 
             elif type(fi) is str and os.path.exists(fi):
                 # fi is a file which is assumed to be
-                # a gdal-compatible raster OR an x,y,z elevation file
+                # a rasterio-compatible raster OR an x,y,z elevation file
                 if os.path.splitext(fi)[1] in ['.txt', '.csv']:
                     fi_array = su.read_csv_optional_header(fi)
                     # Check the results

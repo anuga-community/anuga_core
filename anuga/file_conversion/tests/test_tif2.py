@@ -4,8 +4,6 @@ import os
 import numpy as num
 from pprint import pprint
 
-# Check if osgeo is available and if
-# not, skip subsequent tests
 import sys
 try:
     import rasterio
