@@ -39,18 +39,19 @@ def build_mesh(project):
         su.combine_breakLines_and_riverWalls_for_mesh(project.breaklines,
                                                       project.riverwalls)
 
-    # Make the mesh — verbose output goes to file only via log.verbose()
-    anuga.create_pmesh_from_regions(
-        project.bounding_polygon,
-        boundary_tags=project.boundary_tags,
-        maximum_triangle_area=project.default_res,
-        filename=project.meshname,
-        interior_regions=project.interior_regions,
-        use_cache=False,
-        verbose=False,
-        breaklines=mesh_breaklines,
-        regionPtArea=project.region_point_areas,
-    )
+    # Make the mesh — verbose output captured to file only
+    with log.file_only():
+        anuga.create_pmesh_from_regions(
+            project.bounding_polygon,
+            boundary_tags=project.boundary_tags,
+            maximum_triangle_area=project.default_res,
+            filename=project.meshname,
+            interior_regions=project.interior_regions,
+            use_cache=False,
+            verbose=True,
+            breaklines=mesh_breaklines,
+            regionPtArea=project.region_point_areas,
+        )
 
     # Make the domain using the mesh
 
@@ -125,9 +126,10 @@ def setup_mesh(project, setup_initial_conditions=None):
                         domain, project)
 
                 log.verbose('Saving domain')
-                sequential_distribute_dump(domain, 1,
-                                           partition_dir=project.partition_dir,
-                                           verbose=False)
+                with log.file_only():
+                    sequential_distribute_dump(domain, 1,
+                                               partition_dir=project.partition_dir,
+                                               verbose=True)
 
             par_pickle_name = 'domain' + '_P%g_%g.pickle' % (numprocs, 0)
             par_pickle_name = join(project.partition_dir, par_pickle_name)
@@ -136,13 +138,15 @@ def setup_mesh(project, setup_initial_conditions=None):
                 log.verbose('Saved partitioned domain seems to already exist')
             else:
                 log.verbose('Load in saved sequential pickled domain')
-                domain = sequential_distribute_load_pickle_file(
-                    pickle_name, np=1, verbose=False)
+                with log.file_only():
+                    domain = sequential_distribute_load_pickle_file(
+                        pickle_name, np=1, verbose=True)
 
                 log.verbose('Dump partitioned domains')
-                sequential_distribute_dump(
-                    domain, numprocs,
-                    partition_dir=project.partition_dir, verbose=False)
+                with log.file_only():
+                    sequential_distribute_dump(
+                        domain, numprocs,
+                        partition_dir=project.partition_dir, verbose=True)
 
             domain = None
             gc.collect()
@@ -155,9 +159,10 @@ def setup_mesh(project, setup_initial_conditions=None):
 
         log.info('Loading partitioned domain')
 
-        domain = sequential_distribute_load(
-            filename=join(project.partition_dir, 'domain'),
-            verbose=False)
+        with log.file_only():
+            domain = sequential_distribute_load(
+                filename=join(project.partition_dir, 'domain'),
+                verbose=True)
 
     # #########################################################################
     # Set output directories

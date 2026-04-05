@@ -324,7 +324,7 @@ from anuga.extras import rectangular_cross_domain
 from anuga.extras import create_basic_mesh_from_regions
 
 from anuga.utilities import log as log
-from anuga.utilities.log import set_logfile, TeeStream
+from anuga.utilities.log import set_logfile, TeeStream, file_only
 from anuga.utilities.log import verbose as log_verbose
 
 from anuga.config import g
