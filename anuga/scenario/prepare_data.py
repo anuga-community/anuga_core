@@ -1,4 +1,5 @@
 #!/usr/bin/python
+# -*- coding: utf-8 -*-
 """
 
 Setup base data for ANUGA run
@@ -16,29 +17,13 @@ import json
 import numpy
 import anuga
 from anuga.utilities import spatialInputUtil as su
+from anuga.utilities.log import TeeStream
 from anuga.parallel import myid, barrier, send, receive, numprocs
 
 # Local modules
 from .read_boundary_tags_line_shapefile import \
     read_boundary_tags_line_shapefile
 from .parse_input_data import ProjectData
-
-
-class Logger:
-
-    """Makes it simple to get stdout to flush, and seems to work in
-        parallel
-    """
-
-    def __init__(self, logfile):
-        self.log = open(logfile, "a")
-
-    def write(self, message):
-        self.log.write(message)
-        self.log.flush()
-
-    def flush(self):
-        self.log.flush()
 
 
 class PrepareData(ProjectData):
@@ -52,7 +37,7 @@ class PrepareData(ProjectData):
         """Parse the input data then process it for ANUGA
 
             @param filename = configuration file (xls)
-            @param make_directories Create output directories for simulation
+            @param make_directories Create output directories for simulation           
             @param output_log filename to redirect stdout (inside output
                 directories)
 
@@ -78,7 +63,7 @@ class PrepareData(ProjectData):
         barrier()
 
     def define_output_directory_and_redirect_stdout(self,
-                                                    make_directories=True,
+                                                    make_directories=True, 
                                                     output_log=None):
         """Make the main output directory, and redirect stdout to a file there
 
@@ -103,7 +88,7 @@ class PrepareData(ProjectData):
 
             print('OUTPUT_DIRECTORY: ' + str(self.output_dir))
 
-        # Send stdout to a file inside the output directory
+        # Tee stdout to a file inside the output directory
         if output_log is not None:
             if make_directories:
                 stdout_file = self.output_dir + '/' + output_log
@@ -112,11 +97,7 @@ class PrepareData(ProjectData):
 
             if myid == 0:
                 print('Redirecting output now to ' + stdout_file)
-                sys.stdout = Logger(stdout_file)
-            barrier()
-
-            if myid != 0:
-                sys.stdout = Logger(stdout_file)
+            sys.stdout = TeeStream(stdout_file)
 
         return
 
