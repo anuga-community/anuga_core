@@ -293,18 +293,23 @@ def verbose(msg=''):
     log(msg, logging.DEBUG)
 
 def debug(msg=''):
+    """Log a DEBUG-level message (file only by default)."""
     log(msg, logging.DEBUG)
 
 def info(msg=''):
+    """Log an INFO-level message (terminal and file)."""
     log(msg, logging.INFO)
 
 def warning(msg=''):
+    """Log a WARNING-level message (terminal and file)."""
     log(msg, logging.WARNING)
 
 def error(msg=''):
+    """Log an ERROR-level message (terminal and file)."""
     log(msg, logging.ERROR)
 
 def critical(msg=''):
+    """Log a CRITICAL-level message (terminal and file)."""
     log(msg, logging.CRITICAL)
 
 def timingInfo(msg=''):
