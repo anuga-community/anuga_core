@@ -29,6 +29,7 @@ import os
 import sys
 import traceback
 import logging
+from contextlib import contextmanager
 
 
 DefaultConsoleLogLevel = logging.INFO
@@ -69,6 +70,50 @@ class TeeStream:
     # sys.stdout (e.g. checks for .encoding) still works.
     def __getattr__(self, name):
         return getattr(self._terminal, name)
+
+
+class _FileOnlyStream:
+    """Write to the log file only — used by the file_only() context manager."""
+
+    def __init__(self, log_fh):
+        self._log = log_fh
+
+    def write(self, message):
+        self._log.write(message)
+        self._log.flush()
+
+    def flush(self):
+        self._log.flush()
+
+    def __getattr__(self, name):
+        return getattr(self._log, name)
+
+
+@contextmanager
+def file_only():
+    """Context manager: send all print() output to the log file only.
+
+    Terminal output is suppressed for the duration of the block.
+    Requires set_logfile() to have been called first; if no logfile
+    is active, output is suppressed entirely.
+
+    Typical use — capture verbose internal output without cluttering
+    the terminal::
+
+        with log.file_only():
+            anuga.create_pmesh_from_regions(..., verbose=True, ...)
+    """
+    original = sys.stdout
+    if isinstance(sys.stdout, TeeStream):
+        sys.stdout = _FileOnlyStream(sys.stdout._log)
+    else:
+        # No logfile active — discard output
+        import io
+        sys.stdout = io.StringIO()
+    try:
+        yield
+    finally:
+        sys.stdout = original
 
 
 ################################################################################
