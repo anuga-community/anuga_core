@@ -70,6 +70,12 @@ jobs:
         run: |
            conda install -c conda-forge -n anuga_env compilers libgomp
 
+      - name: Install libxcrypt on Linux for Python 3.8 (crypt.h removed in glibc 2.38+)
+        if: runner.os == 'Linux' && matrix.python-version == '3.8'
+        shell: bash -el {0}
+        run: |
+           conda install -c conda-forge -n anuga_env libxcrypt
+
       - name: Problem on windows and Python 3.9 with mpi4py
         # As of 2025/06/19, strange combination of mpi4py, the new compilers and pytest
         # caused a segmentation fault on Windows.
