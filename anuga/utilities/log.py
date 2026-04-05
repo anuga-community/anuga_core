@@ -100,16 +100,21 @@ NOTSET   = logging.NOTSET
 # set_logfile — the main entry point for enabling file+tee logging
 ################################################################################
 
+VERBOSE = logging.DEBUG  # level used by log.verbose() — file only by default
+
+
 def set_logfile(path,
                 console_level=DefaultConsoleLogLevel,
-                file_level=DefaultFileLogLevel):
+                file_level=DefaultFileLogLevel,
+                verbose_to_screen=False):
     """Enable logging to *path*, tee-ing all print() output as well.
 
     After this call:
     - sys.stdout is replaced with a TeeStream so every print() goes to
       both the terminal and *path*.
-    - log.info() / log.debug() etc. also write to *path* via the Python
-      logging module.
+    - log.info() writes to both terminal and file.
+    - log.verbose() / log.debug() write to the file only (unless
+      verbose_to_screen=True).
     - The previous log file (if any) is closed.
 
     Parameters
@@ -118,9 +123,17 @@ def set_logfile(path,
         File path for the log file.
     console_level : int
         Logging level for console output (default INFO).
+        log.verbose() and log.debug() are below this threshold and go
+        to the file only.
     file_level : int
-        Logging level for file output (default DEBUG).
+        Logging level for file output (default DEBUG — everything).
+    verbose_to_screen : bool
+        If True, lower the console threshold to DEBUG so that
+        log.verbose() output also appears on the terminal.  Useful
+        when debugging without needing a clean screen.
     """
+    if verbose_to_screen:
+        console_level = logging.DEBUG
     global log_filename, console_logging_level, log_logging_level, _setup
 
     # Close any existing TeeStream
@@ -225,6 +238,14 @@ def log_exception_hook(type, value, tb):
 ################################################################################
 # Shortcut routines
 ################################################################################
+
+def verbose(msg=''):
+    """Log a verbose/internal message — goes to file only (not screen).
+
+    Use this instead of print() inside ANUGA code that has a verbose flag.
+    Output appears on screen only when set_logfile(..., verbose_to_screen=True).
+    """
+    log(msg, logging.DEBUG)
 
 def debug(msg=''):
     log(msg, logging.DEBUG)
