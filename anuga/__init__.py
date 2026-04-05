@@ -323,6 +323,7 @@ from anuga.extras import rectangular_cross_domain
 from anuga.extras import create_basic_mesh_from_regions
 
 from anuga.utilities import log as log
+from anuga.utilities.log import set_logfile, TeeStream
 
 from anuga.config import g
 from anuga.config import velocity_protection
@@ -491,6 +492,8 @@ __all__ = [
     'memory_stats',
     'print_memory_stats',
     'log',
+    'set_logfile',
+    'TeeStream',
     'parse_standard_args',
     'parse_time',
     'plot_utils',
