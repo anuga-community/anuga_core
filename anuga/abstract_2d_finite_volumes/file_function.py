@@ -98,7 +98,7 @@ def file_function(filename,
         if verbose:
             msg = 'Quantities specified in file_function are None,'
             msg += ' so using stage, xmomentum, and ymomentum in that order'
-            log.critical(msg)
+            log.info(msg)
         quantities = ['stage', 'xmomentum', 'ymomentum']
 
     # Use domain's startime if available
@@ -156,11 +156,11 @@ def file_function(filename,
                      % (filename, starttime)
             msg += ' Modifying domain starttime accordingly.'
 
-            if verbose: log.critical(msg)
+            if verbose: log.info(msg)
 
             domain.set_starttime(starttime) #Modifying model time
 
-            if verbose: log.critical('Domain starttime is now set to %f'
+            if verbose: log.info('Domain starttime is now set to %f'
                                      % domain.starttime)
     return f
 
@@ -254,7 +254,7 @@ def get_netcdf_file_function(filename,
     from anuga.config import time_format
 
     # Open NetCDF file
-    if verbose: log.critical('Reading %s' % filename)
+    if verbose: log.info('Reading %s' % filename)
 
     fid = NetCDFFile(filename, netcdf_mode_r)
 
@@ -319,7 +319,7 @@ def get_netcdf_file_function(filename,
 
 
     # Get variables
-    # if verbose: log.critical('Get variables'    )
+    # if verbose: log.info('Get variables'    )
     time = fid.variables['time'][:]
 
     if not use_relative_time:
@@ -347,7 +347,7 @@ def get_netcdf_file_function(filename,
         assert upper_time_index > 0, msg
 
         if time_limit < time[-1] and verbose is True:
-            log.critical('Limited time vector from %.2fs to %.2fs'
+            log.info('Limited time vector from %.2fs to %.2fs'
                          % (time[-1], time_limit))
 
     time = time[:upper_time_index]
@@ -446,12 +446,12 @@ def get_netcdf_file_function(filename,
         # assert domain.geo_reference.zone == zone
 
     if verbose:
-        log.critical('File_function data obtained from: %s' % filename)
-        log.critical('  References:')
+        log.info('File_function data obtained from: %s' % filename)
+        log.info('  References:')
         if spatial:
-            log.critical('    Lower left corner: [%f, %f]'
+            log.info('    Lower left corner: [%f, %f]'
                          % (xllcorner, yllcorner))
-        log.critical('    Start time:   %f' % starttime)
+        log.info('    Start time:   %f' % starttime)
 
 
     # Produce values for desired data points at
@@ -475,7 +475,7 @@ def get_netcdf_file_function(filename,
         #vertex coordinates is position of urs gauges
 
     if verbose:
-        log.critical('Calling interpolation function')
+        log.info('Calling interpolation function')
 
     # Return Interpolation_function instance as well as
     # starttime for use to possible modify that of domain

@@ -35,7 +35,7 @@ def dem2dem(name_in, stencil, cellsize_new, name_out=None,
     #Open existing netcdf file to read
     infile = NetCDFFile(name_in, netcdf_mode_r)
 
-    if verbose: log.critical('Reading DEM from %s' % name_in)
+    if verbose: log.info('Reading DEM from %s' % name_in)
 
     # Read metadata (convert from numpy.int32 to int where appropriate)
     ncols = int(infile.ncols)
@@ -59,7 +59,7 @@ def dem2dem(name_in, stencil, cellsize_new, name_out=None,
     else:
         outname = name_out
 
-    if verbose: log.critical('Write decimated NetCDF file to %s' % outname)
+    if verbose: log.info('Write decimated NetCDF file to %s' % outname)
 
     #Determine some dimensions for decimated grid
     (nrows_stencil, ncols_stencil) = stencil.shape
@@ -111,7 +111,7 @@ def dem2dem(name_in, stencil, cellsize_new, name_out=None,
     #Store data
     global_index = 0
     for i in range(nrows_new):
-        if verbose: log.critical('Processing row %d of %d' % (i, nrows_new))
+        if verbose: log.info('Processing row %d of %d' % (i, nrows_new))
 
         lower_index = global_index
         telev = num.zeros(ncols_new, float)

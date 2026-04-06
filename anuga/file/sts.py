@@ -152,17 +152,17 @@ class Write_sts:
         z = outfile.variables['elevation'][:]
 
         if verbose:
-            log.critical('------------------------------------------------')
-            log.critical('More Statistics:')
-            log.critical('  Extent (/lon):')
-            log.critical('    x in [%f, %f], len(lat) == %d'
+            log.info('------------------------------------------------')
+            log.info('More Statistics:')
+            log.info('  Extent (/lon):')
+            log.info('    x in [%f, %f], len(lat) == %d'
                          % (min(x), max(x), len(x)))
-            log.critical('    y in [%f, %f], len(lon) == %d'
+            log.info('    y in [%f, %f], len(lon) == %d'
                          % (min(y), max(y), len(y)))
-            log.critical('    z in [%f, %f], len(z) == %d'
+            log.info('    z in [%f, %f], len(z) == %d'
                          % (min(elevation), max(elevation), len(elevation)))
-            log.critical('geo_ref: %s' % str(geo_ref))
-            log.critical('------------------------------------------------')
+            log.info('geo_ref: %s' % str(geo_ref))
+            log.info('------------------------------------------------')
 
         #z = resize(bath_grid,outfile.variables['elevation'][:].shape)
         outfile.variables['x'][:] = points[:,0] #- geo_ref.get_xllcorner()
@@ -247,9 +247,9 @@ class Write_sts:
             outfile.variables['time'][:] = times    # Store time relative
 
         if verbose:
-            log.critical('------------------------------------------------')
-            log.critical('Statistics:')
-            log.critical('    t in [%f, %f], len(t) == %d'
+            log.info('------------------------------------------------')
+            log.info('Statistics:')
+            log.info('    t in [%f, %f], len(t) == %d'
                          % (num.min(times), num.max(times), len(times.flat)))
 
 

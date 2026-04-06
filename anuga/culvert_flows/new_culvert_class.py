@@ -288,7 +288,7 @@ class Culvert_flow_general:
                        length)
                 msg += ' does not match distance between specified'
                 msg += ' end points (%.2f m)' %self.length
-                log.critical(msg)
+                log.info(msg)
 
         self.verbose = verbose
 
@@ -467,7 +467,7 @@ class Culvert_flow_general:
 
 
 
-        # FIXME (Ole): If you want these, use log.critical() and
+        # FIXME (Ole): If you want these, use log.info() and
         # make the statements depend on verbose
         #print I.depth
         #print I.velocity
@@ -492,10 +492,10 @@ class Culvert_flow_general:
 
 
         if self.verbose is True:
-            log.critical('Max_Q = %f' % max_Q)
+            log.info('Max_Q = %f' % max_Q)
             msg = 'Width = %.2fm, Depth at inlet = %.2f m, Velocity = %.2f m/s.      ' % (self.width, I.depth, I.velocity)
             msg += 'Max Q = %.2f m^3/s' %(max_Q)
-            log.critical(msg)
+            log.info(msg)
 
         if self.log_filename is not None:
             log_to_file(self.log_filename, msg)
@@ -523,7 +523,7 @@ class Culvert_flow_general:
         Q_reduced = sign(Q)*min(abs(Q), abs(max_Q))
         if self.verbose is True:
             msg = 'Initial Q Reduced = %.2f m3/s.      ' % (Q_reduced)
-            log.critical(msg)
+            log.info(msg)
 
         if self.log_filename is not None:
             log_to_file(self.log_filename, msg)
@@ -537,7 +537,7 @@ class Culvert_flow_general:
 
         if self.verbose is True:
             msg = 'Final Q Reduced = %.2f m3/s.      ' % (Q_reduced)
-            log.critical(msg)
+            log.info(msg)
 
         if self.log_filename is not None:
             log_to_file(self.log_filename, msg)
@@ -556,7 +556,7 @@ class Culvert_flow_general:
             msg += 'Q will be reduced from %.2f m^3/s to %.2f m^3/s.' % (Q, Q_reduced)
             msg += 'Note calculate max_Q from V %.2f m^3/s ' % (max_Q)
             if self.verbose is True:
-                log.critical(msg)
+                log.info(msg)
 
             if self.log_filename is not None:
                 log_to_file(self.log_filename, msg)
@@ -650,7 +650,7 @@ class Culvert_flow_general:
             # Adverse gradient - flow is running uphill
             # Flow will be purely controlled by uphill outlet face
             if self.verbose is True:
-                log.critical('%.2fs - WARNING: Flow is running uphill.' % time)
+                log.warning('%.2fs - WARNING: Flow is running uphill.' % time)
 
         if self.log_filename is not None:
             s = 'Time=%.2f, inlet stage = %.2f, outlet stage = %.2f'\
@@ -980,7 +980,7 @@ class Culvert_flow_rating:
             msg = 'WARNING: barrel length specified in "%s" (%.2f m)' %(culvert_description_filename, length)
             msg += ' does not match distance between specified'
             msg += ' end points (%.2f m)' %self.length
-            log.critical(msg)
+            log.info(msg)
 
         self.verbose = verbose
         self.last_update = 0.0 # For use with update_interval
@@ -1107,7 +1107,7 @@ class Culvert_flow_rating:
                 msg += ' Q will be reduced from %.2f m^3/s to %.2f m^3/s.' % (Q, Q_reduced)
 
                 if self.verbose is True:
-                    log.critical(msg)
+                    log.info(msg)
                 if hasattr(self, 'log_filename'):
                     log_to_file(self.log_filename, msg)
 
@@ -1542,7 +1542,7 @@ class Culvert_flow_energy:
                 # Adverse gradient - flow is running uphill
                 # Flow will be purely controlled by uphill outlet face
                 if self.verbose is True:
-                    log.critical('WARNING: Flow is running uphill. Watch Out! '
+                    log.warning('WARNING: Flow is running uphill. Watch Out! '
                                  'inlet.elevation=%s, outlet.elevation%s'
                                  % (str(inlet.elevation), str(outlet.elevation)))
 

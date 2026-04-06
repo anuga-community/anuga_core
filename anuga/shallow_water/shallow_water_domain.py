@@ -2233,11 +2233,11 @@ class Domain(Generic_Domain):
                 % timestep
             msg += 'even after %d steps of 1 order scheme' \
                 % self.max_smallsteps
-            log.critical(msg)
+            log.info(msg)
             timestep = self.evolve_min_timestep  # Try enforce min_step
 
             stats = self.timestepping_statistics(track_speeds=True)
-            log.critical(stats)
+            log.info(stats)
 
             raise Exception(msg)
 

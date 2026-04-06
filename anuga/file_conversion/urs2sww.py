@@ -172,7 +172,7 @@ def urs_ungridded2sww(basename_in='o', basename_out=None, verbose=False,
     else:
         swwname = basename_out + '.sww'
 
-    if verbose: log.critical('Output to %s' % swwname)
+    if verbose: log.info('Output to %s' % swwname)
 
     outfile = NetCDFFile(swwname, netcdf_mode_w)
 
@@ -190,7 +190,7 @@ def urs_ungridded2sww(basename_in='o', basename_out=None, verbose=False,
                             verbose=verbose)
     sww.store_static_quantities(outfile, elevation=elevation)
 
-    if verbose: log.critical('Converting quantities')
+    if verbose: log.info('Converting quantities')
 
     # Read in a time slice from each mux file and write it to the SWW file
     j = 0

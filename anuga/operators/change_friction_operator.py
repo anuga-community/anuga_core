@@ -69,7 +69,7 @@ class Erosion_operator(Operator):
         #elevation = self.get_elevation()
 
 #        if self.verbose is True:
-#            log.critical('Bed of %s at time = %.2f = %f'
+#            log.info('Bed of %s at time = %.2f = %f'
 #                         % (self.quantity_name, domain.get_time(), elevation))
 
         #if self.indices is None:

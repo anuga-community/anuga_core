@@ -40,7 +40,7 @@ def urs2nc(basename_in='o', basename_out='urs'):
                 raise OSError(msg)
             else:
                files_in[i] += '.mux'
-               log.critical("file_name %s" % file_name)
+               log.info("file_name %s" % file_name)
 
     hashed_elevation = None
     for file_in, file_out, quantity in zip(files_in,

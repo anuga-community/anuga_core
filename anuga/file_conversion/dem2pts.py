@@ -71,7 +71,7 @@ def _dem2pts(name_in, name_out=None, verbose=False,
     if name_in[-4:] == '.asc':
         intermediate = root + '.dem'
         if verbose:
-            log.critical('Preconvert %s from asc to %s' % \
+            log.info('Preconvert %s from asc to %s' % \
                                     (name_in, intermediate))
         asc2dem(name_in)
         name_in = intermediate
@@ -84,7 +84,7 @@ def _dem2pts(name_in, name_out=None, verbose=False,
     # Get NetCDF
     infile = NetCDFFile(name_in, netcdf_mode_r)
 
-    if verbose: log.critical('Reading DEM from %s' % (name_in))
+    if verbose: log.info('Reading DEM from %s' % (name_in))
 
     ncols = int(infile.ncols)
     nrows = int(infile.nrows)
@@ -115,7 +115,7 @@ def _dem2pts(name_in, name_out=None, verbose=False,
     else:
         ptsname = name_out
 
-    if verbose: log.critical('Store to NetCDF file %s' % ptsname)
+    if verbose: log.info('Store to NetCDF file %s' % ptsname)
 
     # NetCDF file definition
     outfile = NetCDFFile(ptsname, netcdf_mode_w)
@@ -203,10 +203,10 @@ def _dem2pts(name_in, name_out=None, verbose=False,
 
 
     if verbose:
-        log.critical('There are %d values in the elevation' % totalnopoints)
-        log.critical('There are %d values in the clipped elevation'
+        log.info('There are %d values in the elevation' % totalnopoints)
+        log.info('There are %d values in the clipped elevation'
                      % clippednopoints)
-        log.critical('There are %d NODATA_values in the clipped elevation' % nn)
+        log.info('There are %d NODATA_values in the clipped elevation' % nn)
 
     outfile.createDimension('number_of_points', nopoints)
     outfile.createDimension('number_of_dimensions', 2) #This is 2d data

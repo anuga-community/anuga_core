@@ -52,7 +52,7 @@ def get_interpolated_quantities_at_polyline_midpoints(filename,
 
     # Interpolate
     if verbose:
-        log.critical('Interpolating - total number of interpolation points = %d'
+        log.info('Interpolating - total number of interpolation points = %d'
                      % len(interpolation_points))
 
     I = Interpolation_function(time,
@@ -98,7 +98,7 @@ def get_flow_through_cross_section(filename, polyline, verbose=False):
     # Find all intersections and associated triangles.
     segments = mesh.get_intersecting_segments(polyline, verbose=verbose)
 
-    if verbose: log.critical('Computing hydrograph')
+    if verbose: log.info('Computing hydrograph')
 
     # Pre-extract per-segment geometry as arrays for vectorised computation
     tri_ids = num.array([seg.triangle_id for seg in segments])  # (S,)
@@ -171,7 +171,7 @@ def get_flow_through_multiple_cross_sections(filename, polylines, verbose=False)
     time = interpolation_function.time
     interpolation_points = interpolation_function.interpolation_points
 
-    if verbose: log.critical('Computing hydrographs')
+    if verbose: log.info('Computing hydrographs')
 
     # Compute hydrograph
     mult_Q = []
@@ -260,7 +260,7 @@ def get_interpolated_quantities_at_multiple_polyline_midpoints(filename,
 
     # Interpolate
     if verbose:
-        log.critical('Interpolating - total number of interpolation points = %d'
+        log.info('Interpolating - total number of interpolation points = %d'
                      % len(interpolation_points))
 
     I = Interpolation_function(time,
@@ -325,7 +325,7 @@ def get_energy_through_cross_section(filename,
     time = interpolation_function.time
     interpolation_points = interpolation_function.interpolation_points
 
-    if verbose: log.critical('Computing %s energy' % kind)
+    if verbose: log.info('Computing %s energy' % kind)
 
     # Compute total length of polyline for use with weighted averages
     total_line_length = 0.0
@@ -478,7 +478,7 @@ def get_maximum_inundation_data(filename, polygon=None, time_interval=None,
         print(iterate_over)
 
     # Read sww file
-    if verbose: log.critical('Reading from %s' % filename)
+    if verbose: log.info('Reading from %s' % filename)
     # FIXME: Use general swwstats (when done)
 
     maximal_runup = None
@@ -490,7 +490,7 @@ def get_maximum_inundation_data(filename, polygon=None, time_interval=None,
         # Read sww file
         filename = os.path.join(dir, swwfile+'.sww')
 
-        if verbose: log.critical('Reading from %s' % filename)
+        if verbose: log.info('Reading from %s' % filename)
         # FIXME: Use general swwstats (when done)
 
         fid = NetCDFFile(filename)

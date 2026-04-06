@@ -76,14 +76,14 @@ def csv2sts(infile, outfile, latitude = None, longitude = None,
         raise OSError('csv2sts: file %s is empty or unreadable.' % infile)
 
     if verbose:
-        log.critical('csv2sts input data:')
+        log.info('csv2sts input data:')
         for col in col_names:
-            log.critical('column ' + col + ':')
-            log.critical(timeseries_data[col])
+            log.info('column ' + col + ':')
+            log.info(timeseries_data[col])
 
     data_len = len(list(timeseries_data.values())[0])
     if verbose:
-        log.critical('   data length = %d.' % data_len)
+        log.info('   data length = %d.' % data_len)
 
     fid = NetCDFFile(outfile, netcdf_mode_w)
 

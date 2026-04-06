@@ -159,7 +159,7 @@ class Generic_Domain:
         """
 
         if verbose:
-            log.critical('Domain: Initialising')
+            log.info('Domain: Initialising')
 
         # FIXME SR: This is a bug
         # FIXME(Ole): Do you mean a hack?
@@ -220,7 +220,7 @@ class Generic_Domain:
                             verbose=verbose)
 
         if verbose:
-            log.critical('Domain: Expose mesh attributes')
+            log.info('Domain: Expose mesh attributes')
 
         # Expose Mesh attributes (FIXME: Maybe turn into methods)
         self.triangles = self.mesh.triangles
@@ -258,7 +258,7 @@ class Generic_Domain:
         self.verbose = verbose
 
         if verbose:
-            log.critical('Domain: Expose quantity names and types')
+            log.info('Domain: Expose quantity names and types')
 
         # List of quantity names entering the conservation equations
         if conserved_quantities is None:
@@ -285,7 +285,7 @@ class Generic_Domain:
             assert quantity == self.evolved_quantities[i], msg
 
         if verbose:
-            log.critical('Domain: Build Quantities')
+            log.info('Domain: Build Quantities')
 
         # Build dictionary of Quantity instances keyed by quantity names
         self.quantities = {}
@@ -338,7 +338,7 @@ class Generic_Domain:
 
         # Setup Communication Buffers
         if verbose:
-            log.critical('Domain: Set up communication buffers ')
+            log.info('Domain: Set up communication buffers ')
 
         self.nsys = len(self.conserved_quantities)
         for key in self.full_send_dict:
@@ -355,7 +355,7 @@ class Generic_Domain:
 
         # Setup triangle full flag
         if verbose:
-            log.critical('Domain: Set up triangle/node full flags ')
+            log.info('Domain: Set up triangle/node full flags ')
 
         N = len(self)  # Number_of_elements
         self.number_of_elements = N
@@ -398,12 +398,12 @@ class Generic_Domain:
         # Test the assumption that all full triangles are stored before
         # the ghost triangles.
         # if not num.allclose(self.tri_full_flag[:self.number_of_full_nodes], 1):
-        #     log.critical('WARNING: Not all full triangles are stored before '
+        #     log.info('WARNING: Not all full triangles are stored before '
         #                      'ghost triangles')
 
         # Defaults
         if verbose:
-            log.critical('Domain: Set defaults')
+            log.info('Domain: Set defaults')
 
         self.g = g
         self.beta_w = beta_w
@@ -461,7 +461,7 @@ class Generic_Domain:
         self.set_using_centroid_averaging(False)
 
         if verbose:
-            log.critical('Domain: Set work arrays')
+            log.info('Domain: Set work arrays')
 
         # To avoid calculating the flux across each edge twice, keep an integer
         # (boolean) array, to be used during the flux calculation.
@@ -479,12 +479,12 @@ class Generic_Domain:
             # If the mesh file passed any quantity values,
             # initialise with these values.
             if verbose:
-                log.critical('Domain: Initialising quantity values')
+                log.info('Domain: Initialising quantity values')
 
             self.set_quantity_vertices_dict(vertex_quantity_dict)
 
         if verbose:
-            log.critical('Domain: Done')
+            log.info('Domain: Done')
 
     ######
     # Expose underlying Mesh functionality
@@ -1301,7 +1301,7 @@ class Generic_Domain:
             assert quantity == self.evolved_quantities[i], msg
 
     def write_time(self, track_speeds=False):
-        log.critical(self.timestepping_statistics(track_speeds))
+        log.info(self.timestepping_statistics(track_speeds))
 
     def timestepping_statistics(self,
                                 track_speeds=False,
@@ -1500,7 +1500,7 @@ class Generic_Domain:
         print(self.boundary_statistics(quantities, tags))
 
     def write_boundary_statistics(self, quantities=None, tags=None):
-        log.critical(self.boundary_statistics(quantities, tags))
+        log.info(self.boundary_statistics(quantities, tags))
 
     def boundary_statistics(self, quantities=None,
                                   tags=None):
@@ -2363,7 +2363,7 @@ class Generic_Domain:
         # FIXME: Boundary objects should not include ghost nodes.
         for i, ((vol_id, edge_id), B) in enumerate(self.boundary_objects):
             if B is None:
-                log.critical('WARNING: Ignored boundary segment (None)')
+                log.warning('WARNING: Ignored boundary segment (None)')
             else:
                 q_bdry = B.evaluate(vol_id, edge_id)
 
@@ -2401,7 +2401,7 @@ class Generic_Domain:
             blah, B = self.boundary_objects[i]
 
             if B is None:
-                log.critical('WARNING: Ignored boundary segment (None)')
+                log.warning('WARNING: Ignored boundary segment (None)')
             else:
                 q_bdry = B.evaluate(vol_id, edge_id)
 
@@ -2521,11 +2521,11 @@ class Generic_Domain:
                         % timestep
                     msg += 'even after %d steps of 1 order scheme' \
                         % self.max_smallsteps
-                    log.critical(msg)
+                    log.info(msg)
                     timestep = self.evolve_min_timestep  # Try enforce min_step
 
                     stats = self.timestepping_statistics(track_speeds=True)
-                    log.critical(stats)
+                    log.info(stats)
 
                     raise Exception(msg)
                 else:

@@ -225,7 +225,7 @@ def _create_pmesh_from_regions(bounding_polygon,
                 msg += 'Default tag "exterior" will be assigned to missing segment'
                 warnings.warn(msg, UserWarning)
                 if verbose:
-                    log.critical('WARNING: %s' % msg)
+                    log.warning('WARNING: %s' % msg)
 
 
     # In addition I reckon the polygons could be of class Geospatial_data
@@ -259,7 +259,7 @@ def _create_pmesh_from_regions(bounding_polygon,
                     raise PolygonError(msg)
                 else:
                     msg += ' I will ignore it.'
-                    log.critical(msg)
+                    log.info(msg)
 
             else:
                 polygons_inside_boundary.append([interior_polygon, res])
@@ -372,7 +372,7 @@ def _create_pmesh_from_regions(bounding_polygon,
         return m
     else:
         if verbose:
-            log.critical("Generating mesh to file '%s'" % filename)
+            log.info("Generating mesh to file '%s'" % filename)
 
         m.generate_mesh(minimum_triangle_angle=minimum_triangle_angle,
                         verbose=verbose)

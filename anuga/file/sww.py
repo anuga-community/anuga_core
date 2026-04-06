@@ -278,7 +278,7 @@ class SWW_file(Data_format):
                 msg = 'Warning (store_timestep): File %s could not be opened' \
                       % self.filename
                 msg += ' - trying step %s again' % self.domain.relative_time
-                log.critical(msg)
+                log.info(msg)
                 retries += 1
                 sleep(1)
             else:
@@ -320,8 +320,8 @@ class SWW_file(Data_format):
                                            max_size=self.max_size,
                                            recursion=self.recursion+1)
             if not self.recursion:
-                log.critical('    file_size = %s' % file_size)
-                log.critical('    saving file to %s'
+                log.info('    file_size = %s' % file_size)
+                log.info('    saving file to %s'
                              % next_data_structure.filename)
 
             # Set up the new data_structure
@@ -775,17 +775,17 @@ class Write_sww(Write_sts):
         #y = y.astype(netcdf_float32)
 
         if verbose:
-            log.critical('------------------------------------------------')
-            log.critical('More Statistics:')
-            log.critical('  Extent (/lon):')
-            log.critical('    x in [%f, %f], len(lat) == %d'
+            log.info('------------------------------------------------')
+            log.info('More Statistics:')
+            log.info('  Extent (/lon):')
+            log.info('    x in [%f, %f], len(lat) == %d'
                          % (min(x), max(x), len(x)))
-            log.critical('    y in [%f, %f], len(lon) == %d'
+            log.info('    y in [%f, %f], len(lon) == %d'
                          % (min(y), max(y), len(y)))
-            # log.critical('    z in [%f, %f], len(z) == %d'
+            # log.info('    z in [%f, %f], len(z) == %d'
             #             % (min(elevation), max(elevation), len(elevation)))
-            log.critical('geo_ref: %s' % str(geo_ref))
-            log.critical('------------------------------------------------')
+            log.info('geo_ref: %s' % str(geo_ref))
+            log.info('------------------------------------------------')
 
         outfile.variables['x'][:] = x  # - geo_ref.get_xllcorner()
         outfile.variables['y'][:] = y  # - geo_ref.get_yllcorner()
@@ -823,9 +823,9 @@ class Write_sww(Write_sts):
             outfile.variables['time'][:] = times    # Store time relative
 
         if verbose:
-            log.critical('------------------------------------------------')
-            log.critical('Statistics:')
-            log.critical('    t in [%f, %f], len(t) == %d'
+            log.info('------------------------------------------------')
+            log.info('Statistics:')
+            log.info('    t in [%f, %f], len(t) == %d'
                          % (num.min(times), num.max(times), len(times.flat)))
 
     def store_parallel_data(self,
@@ -1091,13 +1091,13 @@ class Write_sww(Write_sts):
                 outfile.variables[q][slice_index] = q_retyped
 
     def verbose_quantities(self, outfile):
-        log.critical('------------------------------------------------')
-        log.critical('More Statistics:')
+        log.info('------------------------------------------------')
+        log.info('More Statistics:')
         for q in self.dynamic_quantities:
-            log.critical('  %s in [%f, %f]'
+            log.info('  %s in [%f, %f]'
                          % (q, outfile.variables[q+Write_sww.RANGE][0],
                             outfile.variables[q+Write_sww.RANGE][1]))
-        log.critical('------------------------------------------------')
+        log.info('------------------------------------------------')
 
 
 def extent_sww(file_name):
@@ -1149,7 +1149,7 @@ def Xload_sww_as_domain(filename, boundary=None, t=None,
     NaN = 9.969209968386869e+036
 
     if verbose:
-        log.critical('Reading from %s' % filename)
+        log.info('Reading from %s' % filename)
 
     fid = NetCDFFile(filename, netcdf_mode_r)    # Open existing file for read
     time = fid.variables['time'][:]       # Timesteps
@@ -1184,7 +1184,7 @@ def Xload_sww_as_domain(filename, boundary=None, t=None,
         geo_reference = None
 
     if verbose:
-        log.critical('    getting quantities')
+        log.info('    getting quantities')
 
     for quantity in list(fid.variables.keys()):
         dimensions = fid.variables[quantity].dimensions
@@ -1229,7 +1229,7 @@ def Xload_sww_as_domain(filename, boundary=None, t=None,
     dynamic_quantities.remove('time')
 
     if verbose:
-        log.critical('    building domain')
+        log.info('    building domain')
 
     #    From domain.Domain:
     #    domain = Domain(coordinates, volumes,\
@@ -1270,13 +1270,13 @@ def Xload_sww_as_domain(filename, boundary=None, t=None,
             pass                       # quantity has no missing_value number
         X = fid.variables[quantity][:]
         if very_verbose:
-            log.critical('       %s' % str(quantity))
-            log.critical('        NaN = %s' % str(NaN))
-            log.critical('        max(X)')
-            log.critical('       %s' % str(max(X)))
-            log.critical('        max(X)==NaN')
-            log.critical('       %s' % str(max(X) == NaN))
-            log.critical('')
+            log.info('       %s' % str(quantity))
+            log.info('        NaN = %s' % str(NaN))
+            log.info('        max(X)')
+            log.info('       %s' % str(max(X)))
+            log.info('        max(X)==NaN')
+            log.info('       %s' % str(max(X) == NaN))
+            log.info('')
         if max(X) == NaN or min(X) == NaN:
             if fail_if_NaN:
                 msg = 'quantity "%s" contains no_data entry' % quantity
@@ -1295,13 +1295,13 @@ def Xload_sww_as_domain(filename, boundary=None, t=None,
             pass                       # quantity has no missing_value number
         X = interpolated_quantities[quantity]
         if very_verbose:
-            log.critical('       %s' % str(quantity))
-            log.critical('        NaN = %s' % str(NaN))
-            log.critical('        max(X)')
-            log.critical('       %s' % str(max(X)))
-            log.critical('        max(X)==NaN')
-            log.critical('       %s' % str(max(X) == NaN))
-            log.critical('')
+            log.info('       %s' % str(quantity))
+            log.info('        NaN = %s' % str(NaN))
+            log.info('        max(X)')
+            log.info('       %s' % str(max(X)))
+            log.info('        max(X)==NaN')
+            log.info('       %s' % str(max(X) == NaN))
+            log.info('')
         if max(X) == NaN or min(X) == NaN:
             if fail_if_NaN:
                 msg = 'quantity "%s" contains no_data entry' % quantity
@@ -1344,7 +1344,7 @@ def get_mesh_and_quantities_from_file(filename,
     from anuga.abstract_2d_finite_volumes.neighbour_mesh import Mesh
 
     if verbose:
-        log.critical('Reading from %s' % filename)
+        log.info('Reading from %s' % filename)
 
     fid = NetCDFFile(filename, netcdf_mode_r)    # Open existing file for read
     time = fid.variables['time'][:]    # Time vector
@@ -1372,7 +1372,7 @@ def get_mesh_and_quantities_from_file(filename,
         geo_reference = None
 
     if verbose:
-        log.critical('    building mesh from sww file %s' % filename)
+        log.info('    building mesh from sww file %s' % filename)
 
     boundary = None
 

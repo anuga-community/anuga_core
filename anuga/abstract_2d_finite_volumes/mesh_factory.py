@@ -720,7 +720,7 @@ def from_polyfile(name):
         else:
             offending +=1
 
-    log.critical('Removed %d offending triangles out of %d'
+    log.info('Removed %d offending triangles out of %d'
                  % (offending, len(lines)))
     return points, triangles, values
 

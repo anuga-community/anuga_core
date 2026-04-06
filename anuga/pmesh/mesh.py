@@ -2570,7 +2570,7 @@ def import_mesh_from_file(ofile):
         newmesh.IOOutline2Mesh(dict)
         counter = newmesh.remove_duplicated_user_vertices()
         if (counter > 0):
-            log.critical(
+            log.info(
                 "%i duplicate vertices removed from dataset" % counter)
     elif (ofile[-4:] == ".tsh" or ofile[-4:] == ".msh"):
         dict = import_mesh_file(ofile)
@@ -2667,7 +2667,7 @@ def region_strings2ints(region_list):
         elif len(region_list[i]) == 3:  # no area value
             region_list[i] = (region_list[i][0], region_list[i][1], i)
         else:
-            log.critical("The region list has a bad size")
+            log.info("The region list has a bad size")
             # raise an error ..
             raise Exception
 

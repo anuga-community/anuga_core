@@ -105,12 +105,12 @@ Only the SURFACE LINE data of the following form will be utilised
     # Get ASCII file
     infile = open(name_in)
 
-    if verbose: log.critical('Reading DEM from %s' % (root + '.sdf'))
+    if verbose: log.info('Reading DEM from %s' % (root + '.sdf'))
 
     lines = infile.readlines()
     infile.close()
 
-    if verbose: log.critical('Converting to pts format')
+    if verbose: log.info('Converting to pts format')
 
     # Scan through the header, picking up stuff we need.
     i = 0

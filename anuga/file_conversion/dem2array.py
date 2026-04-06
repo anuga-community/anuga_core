@@ -56,7 +56,7 @@ def dem2array(filename, variable_name='elevation',
     # Get NetCDF
     infile = NetCDFFile(filename, netcdf_mode_r)
 
-    if verbose: log.critical('Reading DEM from %s' % (filename))
+    if verbose: log.info('Reading DEM from %s' % (filename))
 
     ncols = int(infile.ncols)
     nrows = int(infile.nrows)

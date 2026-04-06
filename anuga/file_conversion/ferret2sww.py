@@ -71,7 +71,7 @@ def ferret2sww(basename_in, name_out=None,
         raise OSError('Output file %s should be of type .sww.' % name_out)
 
     # Get NetCDF data
-    if verbose: log.critical('Reading files %s_*.nc' % basename_in)
+    if verbose: log.info('Reading files %s_*.nc' % basename_in)
 
     # Wave amplitude (cm)
     file_h = NetCDFFile(basename_in + '_ha.nc', netcdf_mode_r)
@@ -169,7 +169,7 @@ def ferret2sww(basename_in, name_out=None,
     latitudes = latitudes[kmin:kmax]
     longitudes = longitudes[lmin:lmax]
 
-    if verbose: log.critical('cropping')
+    if verbose: log.info('cropping')
 
     zname = 'ELEVATION'
 
@@ -268,7 +268,7 @@ def ferret2sww(basename_in, name_out=None,
     y = num.zeros(number_of_points, float)  #Northing
 
     if verbose:
-        log.critical('Making triangular grid')
+        log.info('Making triangular grid')
 
     # Check zone boundaries
     refzone, _, _ = redfearn(latitudes[0], longitudes[0])
@@ -329,12 +329,12 @@ def ferret2sww(basename_in, name_out=None,
     ymomentum = outfile.variables['ymomentum']
 
     if verbose:
-        log.critical('Converting quantities')
+        log.info('Converting quantities')
 
     n = len(times)
     for j in range(n):
         if verbose and j % ((n+10)//10) == 0:
-            log.critical('  Doing %d of %d' % (j, n))
+            log.info('  Doing %d of %d' % (j, n))
 
         i = 0
         for k in range(number_of_latitudes):      # Y direction
@@ -363,32 +363,32 @@ def _show_stats(latlong, times, amplitudes, speeds, elevations):
     latitudes, longitudes = latlong
     uspeed, vspeed = speeds
 
-    log.critical('------------------------------------------------')
-    log.critical('Statistics:')
-    log.critical('  Extent (lat/lon):')
-    log.critical('    lat in [%f, %f], len(lat) == %d'
+    log.info('------------------------------------------------')
+    log.info('Statistics:')
+    log.info('  Extent (lat/lon):')
+    log.info('    lat in [%f, %f], len(lat) == %d'
                  % (num.min(latitudes), num.max(latitudes),
                     len(latitudes.flat)))
-    log.critical('    lon in [%f, %f], len(lon) == %d'
+    log.info('    lon in [%f, %f], len(lon) == %d'
                  % (num.min(longitudes), num.max(longitudes),
                     len(longitudes.flat)))
-    log.critical('    t in [%f, %f], len(t) == %d'
+    log.info('    t in [%f, %f], len(t) == %d'
                  % (num.min(times), num.max(times), len(times.flat)))
 
     name = 'Amplitudes (ha) [cm]'
-    log.critical('  %s in [%f, %f]'
+    log.info('  %s in [%f, %f]'
                  % (name, num.min(amplitudes), num.max(amplitudes)))
 
     name = 'Speeds (ua) [cm/s]'
-    log.critical('  %s in [%f, %f]'
+    log.info('  %s in [%f, %f]'
                  % (name, num.min(uspeed), num.max(uspeed)))
 
     name = 'Speeds (va) [cm/s]'
-    log.critical('  %s in [%f, %f]'
+    log.info('  %s in [%f, %f]'
                  % (name, num.min(vspeed), num.max(vspeed)))
 
     name = 'Elevations (e) [m]'
-    log.critical('  %s in [%f, %f]'
+    log.info('  %s in [%f, %f]'
                  % (name, num.min(elevations), num.max(elevations)))
 
 
@@ -398,26 +398,26 @@ def _show_sww_stats(outfile, swwname, geo_ref, time_info):
     times, starttime, mint, maxt = time_info
     x = outfile.variables['x'][:]
     y = outfile.variables['y'][:]
-    log.critical('------------------------------------------------')
-    log.critical('Statistics of output file:')
-    log.critical('  Name: %s' %swwname)
-    log.critical('  Reference:')
-    log.critical('    Lower left corner: [%f, %f]'
+    log.info('------------------------------------------------')
+    log.info('Statistics of output file:')
+    log.info('  Name: %s' %swwname)
+    log.info('  Reference:')
+    log.info('    Lower left corner: [%f, %f]'
                  % (geo_ref.get_xllcorner(), geo_ref.get_yllcorner()))
-    log.critical(' Start time: %f' %starttime)
-    log.critical('    Min time: %f' %mint)
-    log.critical('    Max time: %f' %maxt)
-    log.critical('  Extent:')
-    log.critical('    x [m] in [%f, %f], len(x) == %d'
+    log.info(' Start time: %f' %starttime)
+    log.info('    Min time: %f' %mint)
+    log.info('    Max time: %f' %maxt)
+    log.info('  Extent:')
+    log.info('    x [m] in [%f, %f], len(x) == %d'
                  % (num.min(x), num.max(x), len(x.flat)))
-    log.critical('    y [m] in [%f, %f], len(y) == %d'
+    log.info('    y [m] in [%f, %f], len(y) == %d'
                  % (num.min(y), num.max(y), len(y.flat)))
-    log.critical('    t [s] in [%f, %f], len(t) == %d'
+    log.info('    t [s] in [%f, %f], len(t) == %d'
                  % (min(times), max(times), len(times)))
-    log.critical('  Quantities [SI units]:')
+    log.info('  Quantities [SI units]:')
     for name in ['stage', 'xmomentum', 'ymomentum', 'elevation']:
         q = outfile.variables[name][:]    # .flatten()
-        log.critical('    %s in [%f, %f]' % \
+        log.info('    %s in [%f, %f]' % \
                         (name, num.min(q), num.max(q)))
 
 

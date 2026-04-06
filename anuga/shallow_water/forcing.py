@@ -444,7 +444,7 @@ class General_forcing:
 
         # Now rate is a number
         if self.verbose is True:
-            log.critical('Rate of %s at time = %.2f = %f'
+            log.info('Rate of %s at time = %.2f = %f'
                          % (self.quantity_name, domain.get_time(), rate))
 
         if self.exchange_indices is None:

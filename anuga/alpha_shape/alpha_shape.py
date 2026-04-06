@@ -253,7 +253,7 @@ class Alpha_Shape:
         # we perturb the associated vertices and recalculate
         while zeroind!=[]:
             random.seed()
-            log.critical("Warning: degenerate triangles found in alpha_shape.py, results may be inaccurate.")
+            log.warning("Warning: degenerate triangles found in alpha_shape.py, results may be inaccurate.")
             for d in zeroind:
                 x1[d] = x1[d]+delta*(random.random()-0.5)
                 x2[d] = x2[d]+delta*(random.random()-0.5)

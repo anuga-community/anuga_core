@@ -78,7 +78,7 @@ def urs2sts(basename_in, basename_out=None,
     from operator import __and__
 
     if not isinstance(basename_in, list):
-        if verbose: log.critical('Reading single source')
+        if verbose: log.info('Reading single source')
         basename_in = [basename_in]
 
     # This is the value used in the mux file format to indicate NAN data
@@ -104,7 +104,7 @@ def urs2sts(basename_in, basename_out=None,
               'mux2 source file'
         assert len(weights) == numSrc, msg
 
-    if verbose: log.critical('Weights used in urs2sts: %s' % str(weights))
+    if verbose: log.info('Weights used in urs2sts: %s' % str(weights))
 
     # Check output filename
     if basename_out is None:
@@ -133,7 +133,7 @@ def urs2sts(basename_in, basename_out=None,
 
     # Establish permutation array
     if ordering_filename is not None:
-        if verbose is True: log.critical('Reading ordering file %s'
+        if verbose is True: log.info('Reading ordering file %s'
                                          % ordering_filename)
 
         # Read ordering file
@@ -163,7 +163,7 @@ def urs2sts(basename_in, basename_out=None,
         permutation = None
 
     # Read MUX2 files
-    if (verbose): log.critical('reading mux2 file')
+    if (verbose): log.info('reading mux2 file')
 
     mux={}
     times_old = 0.0
@@ -290,7 +290,7 @@ def urs2sts(basename_in, basename_out=None,
     xmomentum = outfile.variables['xmomentum']
     ymomentum = outfile.variables['ymomentum']
 
-    if verbose: log.critical('Converting quantities')
+    if verbose: log.info('Converting quantities')
 
     for j in range(len(times)):
         for i in range(number_of_points):
@@ -301,7 +301,7 @@ def urs2sts(basename_in, basename_out=None,
                 if verbose:
                     msg = 'Setting nodata value %d to 0 at time = %f, ' \
                           'point = %d' % (ha, times[j], i)
-                    log.critical(msg)
+                    log.info(msg)
                 ha = 0.0
                 ua = 0.0
                 va = 0.0
@@ -317,6 +317,6 @@ def urs2sts(basename_in, basename_out=None,
     outfile.close()
 
     if verbose:
-        log.critical('Wrote sts file ' + stsname)
+        log.info('Wrote sts file ' + stsname)
 
 

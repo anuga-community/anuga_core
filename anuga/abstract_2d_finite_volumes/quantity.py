@@ -502,7 +502,7 @@ class Quantity:
         assert ymax >= ymin, msg
 
 
-        if verbose: log.critical('Creating grid')
+        if verbose: log.info('Creating grid')
 
         xrange = xmax-xmin
         yrange = ymax-ymin
@@ -541,7 +541,7 @@ class Quantity:
         #print outside_indices
 
         if verbose:
-            log.critical('Interpolated values are in [%f, %f]'
+            log.info('Interpolated values are in [%f, %f]'
                          % (num.min(grid_values), num.max(grid_values)))
 
 
@@ -567,9 +567,9 @@ class Quantity:
         """Set default beta value for limiting """
 
         if beta < 0.0:
-            log.critical('WARNING: setting beta < 0.0')
+            log.warning('WARNING: setting beta < 0.0')
         if beta > 2.0:
-            log.critical('WARNING: setting beta > 2.0')
+            log.warning('WARNING: setting beta > 2.0')
 
         self.beta = beta
 
@@ -1156,7 +1156,7 @@ class Quantity:
                 values = cache(f, (x, y), verbose=verbose)
             else:
                 if verbose is True:
-                    log.critical('Evaluating function in set_values')
+                    log.info('Evaluating function in set_values')
                 values = f(x, y)
 
             # FIXME (Ole): This code should replace all the
@@ -1304,7 +1304,7 @@ class Quantity:
 
         # Call underlying method using array values
         if verbose:
-            log.critical('Applying fitted data to domain')
+            log.info('Applying fitted data to domain')
         self.set_values_from_array(vertex_attributes, location,
                                    indices, use_cache=use_cache,
                                    verbose=verbose)
@@ -1390,7 +1390,7 @@ class Quantity:
 
         # Call underlying method using array values
         if verbose:
-            log.critical('Applying fitted data to quantity')
+            log.info('Applying fitted data to quantity')
 
 
         if location == 'centroids':
@@ -1458,7 +1458,7 @@ class Quantity:
 
         # Call underlying method using array values
         if verbose:
-            log.critical('Applying fitted data to quantity')
+            log.info('Applying fitted data to quantity')
 
 
         if location == 'centroids':
@@ -1541,7 +1541,7 @@ class Quantity:
 
         # Call underlying method using array values
         if verbose:
-            log.critical('Applying fitted data to quantity')
+            log.info('Applying fitted data to quantity')
 
 
         if location == 'centroids':
@@ -1622,13 +1622,13 @@ class Quantity:
         #Read DEM data
         datafile = open(filename)
 
-        if verbose: log.critical('Reading data from %s' % (filename))
+        if verbose: log.info('Reading data from %s' % (filename))
 
         lines = datafile.readlines()
         datafile.close()
 
 
-        if verbose: log.critical('Got %d lines' % len(lines))
+        if verbose: log.info('Got %d lines' % len(lines))
 
         # Parse the line data
         ncols = int(lines[0].split()[1].strip())
@@ -1740,7 +1740,7 @@ class Quantity:
 
         # Call underlying method using array values
         if verbose:
-            log.critical('Applying fitted data to quantity')
+            log.info('Applying fitted data to quantity')
 
 
         if location == 'centroids':
@@ -1990,7 +1990,7 @@ class Quantity:
         #              resulting values should be ordered.
 
         if verbose is True:
-            log.critical('Getting values from %s' % location)
+            log.info('Getting values from %s' % location)
 
         if interpolation_points is not None:
             return self.get_interpolated_values(interpolation_points,

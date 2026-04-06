@@ -121,7 +121,7 @@ class Boundary:
                         msg += 'Instead I will use the default boundary value: %s\n'\
                             %str(self.default_boundary)
                         msg += 'Note: Further warnings will be suppressed'
-                        log.critical(msg)
+                        log.info(msg)
 
                     # FIXME (Ole): Replace this crude flag with
                     # Python's ability to print warnings only once.
@@ -502,7 +502,7 @@ class Time_space_boundary(Boundary):
                         msg += 'Instead I will use the default boundary: %s\n'\
                             %str(self.default_boundary)
                         msg += 'Note: Further warnings will be supressed'
-                        log.critical(msg)
+                        log.info(msg)
 
                     # FIXME (Ole): Replace this crude flag with
                     # Python's ability to print warnings only once.
@@ -564,7 +564,7 @@ class File_boundary(Boundary):
         # be attached to
         # any tagged boundary later on.
 
-        if verbose: log.critical('Find midpoint coordinates of entire boundary')
+        if verbose: log.info('Find midpoint coordinates of entire boundary')
         self.midpoint_coordinates = num.zeros((len(domain.boundary), 2), float)
         boundary_keys = list(domain.boundary.keys())
 
@@ -587,7 +587,7 @@ class File_boundary(Boundary):
 
 
 
-        if verbose: log.critical('Initialise file_function')
+        if verbose: log.info('Initialise file_function')
         self.F = file_function(filename,
                                domain,
                                quantities=domain.conserved_quantities,
@@ -627,7 +627,7 @@ class File_boundary(Boundary):
             msg += 'This is perfectly OK as long as the points that are '
             msg += 'outside aren\'t used on the actual boundary segment.'
             if verbose is True:
-                log.critical(msg)
+                log.info(msg)
             #raise Exception(msg)
 
         # Test that file function can be called
@@ -676,7 +676,7 @@ class File_boundary(Boundary):
                             msg += 'Instead I will use the default boundary: %s\n'\
                                 %str(self.default_boundary)
                             msg += 'Note: Further warnings will be supressed'
-                            log.critical(msg)
+                            log.info(msg)
 
                         # FIXME (Ole): Replace this crude flag with
                         # Python's ability to print warnings only once.
@@ -752,7 +752,7 @@ class AWI_boundary(Boundary):
         # be attached to
         # any tagged boundary later on.
 
-        if verbose: log.critical('Find midpoint coordinates of entire boundary')
+        if verbose: log.info('Find midpoint coordinates of entire boundary')
         self.midpoint_coordinates = num.zeros((len(domain.boundary), 2), float)
         boundary_keys = list(domain.boundary.keys())
 
@@ -786,7 +786,7 @@ class AWI_boundary(Boundary):
             self.boundary_indices[(vol_id, edge_id)] = i
 
 
-        if verbose: log.critical('Initialise file_function')
+        if verbose: log.info('Initialise file_function')
         self.F = file_function(filename, domain,
 	                           interpolation_points=self.midpoint_coordinates,
                                time_thinning=time_thinning,
@@ -812,7 +812,7 @@ class AWI_boundary(Boundary):
             msg += 'This is perfectly OK as long as the points that are '
             msg += 'outside aren\'t used on the actual boundary segment.'
             if verbose is True:
-                log.critical(msg)
+                log.info(msg)
             #raise Exception(msg)
 
         q = self.F(0, point_id=0)

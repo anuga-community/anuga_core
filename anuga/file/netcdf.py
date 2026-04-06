@@ -254,7 +254,7 @@ def filter_netcdf(filename1, filename2, first=0, last=None, step=1):
 
     selection = list(range(first, last, step))
     for i, j in enumerate(selection):
-        log.critical('Copying timestep %d of %d (%f)'
+        log.info('Copying timestep %d of %d (%f)'
                      % (j, last-first, time[j]))
         newtime[i] = time[j]
         newstage[i,:] = stage[j,:]

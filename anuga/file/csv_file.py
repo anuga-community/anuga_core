@@ -194,11 +194,11 @@ def store_parameters(verbose=False, **kwargs):
     try:
         with open(file_name) as fid:
             file_header = fid.readline()
-        if verbose: log.critical('read file header %s' % file_header)
+        if verbose: log.info('read file header %s' % file_header)
     except Exception:
         msg = 'try to create new file: %s' % file_name
         if verbose:
-            log.critical(msg)
+            log.info(msg)
         #tries to open file, maybe directory is bad
         try:
             with open(file_name, 'w') as fid:
@@ -222,14 +222,14 @@ def store_parameters(verbose=False, **kwargs):
             fid.write(line)
 
         if verbose:
-            log.critical('file %s', file_header.strip('\n'))
-            log.critical('head %s', header.strip('\n'))
+            log.info('file %s', file_header.strip('\n'))
+            log.info('head %s', header.strip('\n'))
         if file_header.strip('\n') == str(header):
-            log.critical('they equal')
+            log.info('they equal')
 
         msg = 'WARNING: File header does not match input info, ' \
               'the input variables have changed, suggest you change file name'
-        log.critical(msg)
+        log.info(msg)
 
 
 

@@ -84,7 +84,7 @@ class General_mesh:
 
         self.verbose = verbose
 
-        if verbose: log.critical('General_mesh: Building basic mesh structure')
+        if verbose: log.info('General_mesh: Building basic mesh structure')
 
         self.use_inscribed_circle = use_inscribed_circle
 
@@ -146,7 +146,7 @@ class General_mesh:
 
         # Initialise each triangle
         if verbose:
-            log.critical('General_mesh: Computing areas, normals, '
+            log.info('General_mesh: Computing areas, normals, '
                          'edgelengths, centroids and radii')
 
 
@@ -275,7 +275,7 @@ class General_mesh:
 
 
         # Build structure listing which triangles belong to which node.
-        if verbose: log.critical('General_mesh: Building inverted triangle structure')
+        if verbose: log.info('General_mesh: Building inverted triangle structure')
         self.build_inverted_triangle_structure()
 
         if verbose: log.timingInfo("aoi, '%s'" % self.get_area())

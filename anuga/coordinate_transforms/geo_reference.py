@@ -466,34 +466,34 @@ class Geo_reference:
 
         if self.hemisphere == 'southern':
             if self.false_easting != DEFAULT_SOUTHERN_FALSE_EASTING:
-                log.critical("WARNING: False easting of %f specified."
+                log.warning("WARNING: False easting of %f specified."
                              % self.false_easting)
-                log.critical("Default false easting is %f." % DEFAULT_SOUTHERN_FALSE_EASTING)
-                log.critical("ANUGA does not correct for differences in "
+                log.info("Default false easting is %f." % DEFAULT_SOUTHERN_FALSE_EASTING)
+                log.info("ANUGA does not correct for differences in "
                              "False Eastings.")
 
             if self.false_northing != DEFAULT_SOUTHERN_FALSE_NORTHING:
-                log.critical("WARNING: False northing of %f specified."
+                log.warning("WARNING: False northing of %f specified."
                              % self.false_northing)
-                log.critical("Default false northing is %f."
+                log.info("Default false northing is %f."
                              % DEFAULT_SOUTHERN_FALSE_NORTHING)
-                log.critical("ANUGA does not correct for differences in "
+                log.info("ANUGA does not correct for differences in "
                              "False Northings.")
 
         if self.hemisphere == 'northern':
             if self.false_easting != DEFAULT_NORTHERN_FALSE_EASTING:
-                log.critical("WARNING: False easting of %f specified."
+                log.warning("WARNING: False easting of %f specified."
                              % self.false_easting)
-                log.critical("Default false easting is %f." % DEFAULT_NORTHERN_FALSE_EASTING)
-                log.critical("ANUGA does not correct for differences in "
+                log.info("Default false easting is %f." % DEFAULT_NORTHERN_FALSE_EASTING)
+                log.info("ANUGA does not correct for differences in "
                              "False Eastings.")
 
             if self.false_northing != DEFAULT_NORTHERN_FALSE_NORTHING:
-                log.critical("WARNING: False northing of %f specified."
+                log.warning("WARNING: False northing of %f specified."
                              % self.false_northing)
-                log.critical("Default false northing is %f."
+                log.info("Default false northing is %f."
                              % DEFAULT_NORTHERN_FALSE_NORTHING)
-                log.critical("ANUGA does not correct for differences in "
+                log.info("ANUGA does not correct for differences in "
                              "False Northings.")
 
 
@@ -507,21 +507,21 @@ class Geo_reference:
 
         if not non_utm_epsg:
             if self.datum.upper() != DEFAULT_DATUM.upper():
-                log.critical("WARNING: Datum of %s specified." % self.datum)
-                log.critical("Default Datum is %s." % DEFAULT_DATUM)
-                log.critical("ANUGA does not correct for differences in datums.")
+                log.warning("WARNING: Datum of %s specified." % self.datum)
+                log.info("Default Datum is %s." % DEFAULT_DATUM)
+                log.info("ANUGA does not correct for differences in datums.")
 
             if self.projection.upper() != DEFAULT_PROJECTION.upper():
-                log.critical("WARNING: Projection of %s specified."
+                log.warning("WARNING: Projection of %s specified."
                              % self.projection)
-                log.critical("Default Projection is %s." % DEFAULT_PROJECTION)
-                log.critical("ANUGA does not correct for differences in "
+                log.info("Default Projection is %s." % DEFAULT_PROJECTION)
+                log.info("ANUGA does not correct for differences in "
                              "Projection.")
 
         if self.units.upper() != DEFAULT_UNITS.upper():
-            log.critical("WARNING: Units of %s specified." % self.units)
-            log.critical("Default units is %s." % DEFAULT_UNITS)
-            log.critical("ANUGA does not correct for differences in units.")
+            log.warning("WARNING: Units of %s specified." % self.units)
+            log.info("Default units is %s." % DEFAULT_UNITS)
+            log.info("ANUGA does not correct for differences in units.")
 
 
 

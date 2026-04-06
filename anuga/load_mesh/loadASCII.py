@@ -977,7 +977,7 @@ def reduce_pts(infile, outfile, max_points, verbose=False):
 
     while point_atts['pointlist'].shape[0] > max_points:
         if verbose:
-            log.critical("point_atts['pointlist'].shape[0]")
+            log.info("point_atts['pointlist'].shape[0]")
         point_atts = half_pts(point_atts)
 
     export_points_file(outfile, point_atts)
@@ -989,13 +989,13 @@ def produce_half_point_files(infile, max_points, delimiter, verbose=False):
     outfiles = []
 
     if verbose:
-        log.critical("# of points", point_atts['pointlist'].shape[0])
+        log.info("# of points", point_atts['pointlist'].shape[0])
 
     while point_atts['pointlist'].shape[0] > max_points:
         point_atts = half_pts(point_atts)
 
         if verbose:
-            log.critical("# of points = %s"
+            log.info("# of points = %s"
                          % str(point_atts['pointlist'].shape[0]))
 
         outfile = root + delimiter + \

@@ -26,9 +26,9 @@ def tsh2sww(infilename, sww_file_name = None, verbose = False):
 
     Note: This currently just writes the output file in the input file dir.
     """
-    if verbose == True: log.critical('Creating domain from %s' % infilename)
+    if verbose == True: log.info('Creating domain from %s' % infilename)
     domain = pmesh_to_domain_instance(infilename, Domain)
-    if verbose == True: log.critical("Number of triangles = %d" % len(domain))
+    if verbose == True: log.info("Number of triangles = %d" % len(domain))
 
     domain.smooth = True
     domain.format = 'sww'   #Native netcdf visualisation format
@@ -42,12 +42,12 @@ def tsh2sww(infilename, sww_file_name = None, verbose = False):
     domain.set_name(filename)
 
     domain.reduction = mean
-    if verbose == True: log.critical("file_path %s" % file_path)
+    if verbose == True: log.info("file_path %s" % file_path)
     if file_path == "":file_path = "."
     domain.set_datadir(file_path)
 
     if verbose == True:
-        log.critical("Output written to %s%s%s.%s" % (domain.get_datadir(), sep, domain.get_name(), domain.format))
+        log.info("Output written to %s%s%s.%s" % (domain.get_datadir(), sep, domain.get_name(), domain.format))
 
     sww = SWW_file(domain)
     sww.store_connectivity()

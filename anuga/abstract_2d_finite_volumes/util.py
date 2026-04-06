@@ -193,8 +193,8 @@ def store_parameters(verbose=False,**kwargs):
 
     from anuga.shallow_water.data_manager \
                     import store_parameters as dm_store_parameters
-    log.critical('store_parameters has moved from util.py.')
-    log.critical('Please use "from anuga.shallow_water.data_manager '
+    log.info('store_parameters has moved from util.py.')
+    log.info('Please use "from anuga.shallow_water.data_manager '
                  'import store_parameters"')
 
     return dm_store_parameters(verbose=False,**kwargs)
@@ -492,7 +492,7 @@ def csv2timeseries_graphs(directories_dic=None,
     #so to help find a uniform max and min for the plots...
     list_filenames=[]
     all_csv_filenames=[]
-    if verbose: log.critical('Determining files to access for axes ranges.')
+    if verbose: log.info('Determining files to access for axes ranges.')
 
     for i,directory in enumerate(directories_dic.keys()):
         all_csv_filenames.append(get_all_files_with_extension(directory,
@@ -511,7 +511,7 @@ def csv2timeseries_graphs(directories_dic=None,
     max_start_time= -1000.
     min_start_time = 100000
 
-    if verbose: log.critical('Determining uniform axes')
+    if verbose: log.info('Determining uniform axes')
 
     #this entire loop is to determine the min and max range for the
     #axes of the plots
@@ -540,7 +540,7 @@ def csv2timeseries_graphs(directories_dic=None,
             directory_start_time = directories_dic[directory][1]
             directory_add_tide = directories_dic[directory][2]
 
-            if verbose: log.critical('reading: %s.csv' % dir_filename)
+            if verbose: log.info('reading: %s.csv' % dir_filename)
 
             #add time to get values
             for k, quantity in enumerate(quantities):
@@ -617,7 +617,7 @@ def csv2timeseries_graphs(directories_dic=None,
                                      max_quantity_value[quantity])
 
         if verbose and (quantity != 'time' and quantity != 'elevation'):
-            log.critical('axis for quantity %s are x:(%s to %s)%s '
+            log.info('axis for quantity %s are x:(%s to %s)%s '
                          'and y:(%s to %s)%s'
                          % (quantity, quantities_axis[quantity][0],
                             quantities_axis[quantity][1],
@@ -628,13 +628,13 @@ def csv2timeseries_graphs(directories_dic=None,
 
     cstr = ['b', 'r', 'g', 'c', 'm', 'y', 'k']
 
-    if verbose: log.critical('Now start to plot')
+    if verbose: log.info('Now start to plot')
 
     i_max = len(list(directories_dic.keys()))
     legend_list_dic = {}
     legend_list = []
     for i, directory in enumerate(directories_dic.keys()):
-        if verbose: log.critical('Plotting in %s %s'
+        if verbose: log.info('Plotting in %s %s'
                                  % (directory, new_plot_numbers))
 
         # FIXME THIS SORT IS VERY IMPORTANT
@@ -642,7 +642,7 @@ def csv2timeseries_graphs(directories_dic=None,
         # there must be a better way
         list_filenames[i].sort()
         for j, filename in enumerate(list_filenames[i]):
-            if verbose: log.critical('Starting %s' % filename)
+            if verbose: log.info('Starting %s' % filename)
 
             directory_name = directories_dic[directory][0]
             directory_start_time = directories_dic[directory][1]
@@ -665,7 +665,7 @@ def csv2timeseries_graphs(directories_dic=None,
             min_ele, max_ele = get_min_max_values(elevation)
 
             if min_ele != max_ele:
-                log.critical("Note! Elevation changes in %s" % dir_filename)
+                log.info("Note! Elevation changes in %s" % dir_filename)
 
             # creates a dictionary with keys that is the filename and attributes
             # are a list of lists containing 'directory_name' and 'elevation'.
@@ -716,23 +716,23 @@ def csv2timeseries_graphs(directories_dic=None,
                                   % (output_dir, sep, filename, quantity,
                                      extra_plot_name)
 
-                    if verbose: log.critical('saving figure here %s' % figname)
+                    if verbose: log.info('saving figure here %s' % figname)
 
                     pylab.savefig(figname)
 
-    if verbose: log.critical('Closing all plots')
+    if verbose: log.info('Closing all plots')
 
     pylab.close('all')
     del pylab
 
-    if verbose: log.critical('Finished closing plots')
+    if verbose: log.info('Finished closing plots')
 
 def get_min_max_values(list=None):
     """
     Returns the min and max of the list it was provided.
     """
 
-    if list is None: log.critical('List must be provided')
+    if list is None: log.info('List must be provided')
 
     return min(list), max(list)
 
@@ -760,7 +760,7 @@ def get_runup_data_for_locations_from_file(gauge_filename,
     northing = [float(x) for x in attribute_dic["y"]]
     easting = [float(x) for x in attribute_dic["x"]]
 
-    log.critical('Reading %s' % sww_filename)
+    log.info('Reading %s' % sww_filename)
 
     with open(runup_filename, "a") as runup_file:
         for i, x in enumerate(northing):
@@ -778,7 +778,7 @@ def get_runup_data_for_locations_from_file(gauge_filename,
             if x_y is None: x_y = [0, 0]
 
             if verbose:
-                log.critical('maximum inundation runup near %s is %s meters'
+                log.info('maximum inundation runup near %s is %s meters'
                              % (x_y, run_up))
 
             runup_file.write('%s,%s,%s \n' % (x_y[0], x_y[1], run_up))

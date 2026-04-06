@@ -32,7 +32,7 @@ class Kinematic_viscosity_operator(Operator):
                  add_safety = False,
                  verbose=False):
 
-        if verbose: log.critical('Kinematic Viscosity: Beginning Initialisation')
+        if verbose: log.info('Kinematic Viscosity: Beginning Initialisation')
 
 
         Operator.__init__(self,domain)
@@ -75,7 +75,7 @@ class Kinematic_viscosity_operator(Operator):
         self.verbose = verbose
 
         #Geometric Information
-        if verbose: log.critical('Kinematic Viscosity: Building geometric structure')
+        if verbose: log.info('Kinematic Viscosity: Building geometric structure')
 
         self.geo_structure_indices = num.zeros((self.n, 3), int)
         self.geo_structure_values = num.zeros((self.n, 3), float)
@@ -114,7 +114,7 @@ class Kinematic_viscosity_operator(Operator):
         self.u_stats = None
         self.v_stats = None
 
-        if verbose: log.critical('Kinematic Viscosity: Initialisation Done')
+        if verbose: log.info('Kinematic Viscosity: Initialisation Done')
 
 
     def __call__(self):

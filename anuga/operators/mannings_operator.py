@@ -21,7 +21,7 @@ class Mannings_operator(Operator):
     """
 
     def __init__(self, domain, verbose=False):
-        if verbose: log.critical('Mannings Operator: Beginning Initialisation')
+        if verbose: log.info('Mannings Operator: Beginning Initialisation')
 
 
         Operator.__init__(self,domain)
@@ -35,7 +35,7 @@ class Mannings_operator(Operator):
         self.exp_gamma_max = 0.0
         self.exp_gamma_min = 1.0
 
-        if verbose: log.critical('Mannings Operator: Initialisation Done')
+        if verbose: log.info('Mannings Operator: Initialisation Done')
 
 
     def __call__(self):

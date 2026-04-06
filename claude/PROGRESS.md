@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-04 (session 9)
+Last updated: 2026-04-06 (session 10)
 Branch: `develop` (contains feat/sc26 GPU work)
 
 ---
@@ -11,7 +11,7 @@ Branch: `develop` (contains feat/sc26 GPU work)
 |------|--------------|------|-----------|
 | Code improvements (original list) | 60 | 49 | 11 |
 | Documentation improvements | 20 | 20 | 0 |
-| Additional enhancements | 19 | 19 | 0 |
+| Additional enhancements | 25 | 25 | 0 |
 | Hydrata Phase 0 — Test infrastructure | 5 | 5 | 0 |
 | Hydrata Phase 1 — Dependencies | 4 | 4 | 0 |
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
@@ -23,7 +23,7 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
 | Riverwall throughflow | 6 | 6 | 0 |
 | Quantity memory reduction | 7 | 0 | 7 |
-| **Total** | **148** | **108** | **40** |
+| **Total** | **154** | **114** | **40** |
 
 ---
 
@@ -180,6 +180,17 @@ These were completed during sessions as natural extensions or user requests:
 | Fix ReadTheDocs shallow-clone version showing `0.0.0+unknown` — add `git fetch --unshallow --tags` pre-install step | `.readthedocs.yaml` | 2026-04-02 |
 | Vectorise `get_flow_through_cross_section` — NumPy segment scan replaces Python loop; C pre-filter skips non-intersecting triangles | `anuga/shallow_water/shallow_water_domain.py` | 2026-04-03 |
 | Add ruff linting config (`[tool.ruff]`, `target-version="py310"`, `line-length=120`, E/F/W/B/I/UP rules) and fix all genuine violations | `pyproject.toml`, various `.py` files | 2026-04-03 |
+| L1-L4 logging refactor: `TeeStream` (tees print/sys.stdout to both terminal and file), lazy log file (no file created until `set_logfile()` called), `set_logfile()` public API, `anuga.set_logfile()` export; `prepare_data.py` updated to use `TeeStream`; `anuga_run_toml.py` and `run_model.py` updated | `anuga/utilities/log.py`, `anuga/scenario/prepare_data.py`, `scripts/anuga_run_toml.py`, `examples/cairns_toml_excel/run_model.py`, `anuga/__init__.py` | 2026-04-05 |
+| `log.verbose()` shortcut + `verbose_to_screen` flag; `setup_mesh.py` quieted — mesh construction messages go to file only via `file_only()` context manager | `anuga/utilities/log.py`, `anuga/scenario/setup_mesh.py` | 2026-04-05 |
+| `log.file_only()` context manager — temporarily routes stdout to file only, suppressing terminal output for verbose third-party calls | `anuga/utilities/log.py` | 2026-04-05 |
+| Add logging documentation page with examples for `set_logfile`, `file_only`, log levels | `docs/source/setup_anuga_script/logging.rst`, `docs/source/setup_anuga_script/index.rst` | 2026-04-05 |
+| Fix pyproj DeprecationWarning in `tif2point_values.py` for single-point queries — use `.item()` to dispatch scalar path | `anuga/file_conversion/tif2point_values.py` | 2026-04-05 |
+| Archive CuPy/CUDA files out of `anuga/shallow_water/` into `archive/cupy_cuda/` | `archive/cupy_cuda/` | 2026-04-05 |
+| Fix `test_sww2csv_multiple_files` stale-file pollution — chdir into `tempfile.mkdtemp()` so glob cannot see SWW files from previous interrupted runs; `self.sww = None` before restoring CWD | `anuga/abstract_2d_finite_volumes/tests/test_gauge.py` | 2026-04-05 |
+| CI: add `pytest-regressions` to all 13 conda environment YMLs | `environments/environment_*.yml` | 2026-04-05 |
+| CI: drop Python 3.8 (numpy>=2.0.0 requires ≥3.9); fix `list \| np.ndarray` PEP-604 annotation for Python 3.9 compat | `.github/workflows/conda-setup.yml`, `pyproject.toml`, `anuga/utilities/animate.py` | 2026-04-05 |
+| Fix NPY002 test recalibration — three hardcoded expected values in `test_geospatial_data.py` recomputed for `default_rng()` sequences | `anuga/geospatial_data/tests/test_geospatial_data.py` | 2026-04-05 |
+| Propagate v3.3.0, v3.3.1, v3.3.2 tags/releases to GeoscienceAustralia remote | `ga` remote | 2026-04-05 |
 
 ---
 

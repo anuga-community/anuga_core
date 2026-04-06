@@ -24,11 +24,12 @@ Key files to read first:
 
 | Milestone | Branch | Status |
 |-----------|--------|--------|
-| **v3.3.1** | `develop` → `main` | **SHIPPED 2026-04-01** — tagged, PyPI + conda-forge published |
+| **v3.3.2** | `develop` → `main` | **SHIPPED 2026-04-05** — tagged, PyPI + conda-forge published; propagated to GA remote |
 | **v4.0.0** | `feat/sc26` → `develop` → `main` | In progress — feat/sc26 merged into develop |
 
-**v3.3.1:** Shipped. Includes EPSG/CRS support, utm→pyproj replacement, sww_merge fixes,
-sww2vtu converter, pyproj DeprecationWarning fixes.
+**v3.3.2:** Shipped. Includes EPSG/CRS support, utm→pyproj replacement, sww_merge fixes,
+sww2vtu converter, pyproj DeprecationWarning fixes, ruff linting, riverwall throughflow,
+NPY002 fixes, GDAL removal, regression snapshot tests.
 
 **v4.0.0:** `feat/sc26` has been merged into `develop` (2026-04-01). `develop` is now
 the active working branch. feat/sc26 contains GPU/OpenMP-offloading work
@@ -122,6 +123,8 @@ CI lint workflow (`.github/workflows/lint.yml`), CI fast/slow test split
 sweep: `tempfile.mktemp` → `mkstemp`, `set_datadir('.')` → `mkdtemp()`, all
 `sww2dem` output paths use full temp dir paths, orphaned CWD files cleaned up.
 1 pre-existing failure (`test_sww2csv_multiple_files`) confirmed, 1537 pass.
+
+**Session 10 (2026-04-06):** L1-L4 logging refactor: `TeeStream` (tees print/stdout to terminal+file), lazy log file (no file until `set_logfile()` called), `log.verbose()`, `log.file_only()` context manager, `setup_mesh.py` quieted. Logging docs page added. Fix pyproj DeprecationWarning in `tif2point_values.py`. Archive CuPy/CUDA files to `archive/cupy_cuda/`. Fix `test_sww2csv_multiple_files` stale-file pollution (chdir to tmpdir). CI: add `pytest-regressions` to all 13 env YMLs; drop Python 3.8; fix PEP-604 annotation for Python 3.9. Recalibrate 3 NPY002 expected values in `test_geospatial_data.py`. Propagate v3.3.0/3.3.1/3.3.2 to GA remote. All work cherry-picked from `main` → `develop` (had been committed to wrong branch). 114/154 tracked items done.
 
 **Session 9 (2026-04-04):** Riverwall throughflow (`Cd_through`) — submerged
 orifice formula in `core_kernels.c`/`gpu_device_helpers.h`; column 5 of

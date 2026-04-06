@@ -128,6 +128,6 @@ class Polygon_function:
             msg = ('Warning: points provided to Polygon function did not fall '
                    'within its regions in [%.2f, %.2f], y in [%.2f, %.2f]'
                    % (min(pts_x), max(pts_x), min(pts_y), max(pts_y)))
-            log.critical(msg)
+            log.info(msg)
 
         return result

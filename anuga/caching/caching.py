@@ -361,9 +361,9 @@ def cache(my_F,
             # FIXME: os.remove doesn't work under windows
             os.system('del '+fn)
           if verbose is True:
-            log.critical('MESSAGE (caching): File %s deleted' % fn)
+            log.info('MESSAGE (caching): File %s deleted' % fn)
         ##else:
-        ##  log.critical('%s was not accessed' % fn)
+        ##  log.info('%s was not accessed' % fn)
     return None
 
 
@@ -497,14 +497,14 @@ def test(cachedir=None, verbose=False, compression=None):
   try:
     import zlib
   except ImportError:
-    log.critical()
-    log.critical('*** Could not find zlib, default to no-compression      ***')
-    log.critical('*** Installing zlib will improve performance of caching ***')
-    log.critical()
+    log.info()
+    log.warning('*** Could not find zlib, default to no-compression      ***')
+    log.info('*** Installing zlib will improve performance of caching ***')
+    log.info()
     compression = 0
     set_option('compression', compression)
 
-  log.critical('\nTesting caching module - please stand by\n')
+  log.info('\nTesting caching module - please stand by\n')
 
   # Define a test function to be cached
   #
@@ -767,7 +767,7 @@ def test(cachedir=None, verbose=False, compression=None):
       t = time.strptime('2030','%Y')
       cachestat()
     except Exception:
-      log.critical('cachestat() does not work here, because it relies on '
+      log.info('cachestat() does not work here, because it relies on '
                    'time.strptime() which is unavailable in Windows')
 
   logtestOK('Caching self test completed')
@@ -868,14 +868,14 @@ def CacheLookup(CD, FN, my_F, args, kwargs, deps, verbose, compression,
   # Assess whether cached result exists - compressed or not.
   #
   if verbose:
-    log.critical('Caching: looking for cached files %s_{%s,%s,%s}.z'
+    log.info('Caching: looking for cached files %s_{%s,%s,%s}.z'
                  % (CD+FN, file_types[0], file_types[1], file_types[2]))
   (datafile,compressed0) = myopen(CD+FN+'_'+file_types[0],"rb",compression)
   (argsfile,compressed1) = myopen(CD+FN+'_'+file_types[1],"rb",compression)
   (admfile,compressed2) =  myopen(CD+FN+'_'+file_types[2],"rb",compression)
 
   if verbose is True and deps is not None:
-    log.critical('Caching: Dependencies are %s' % list(deps.keys()))
+    log.info('Caching: Dependencies are %s' % list(deps.keys()))
 
   if not (argsfile and datafile and admfile) or \
      not (compressed0 == compressed1 and compressed0 == compressed2):
@@ -917,7 +917,7 @@ def CacheLookup(CD, FN, my_F, args, kwargs, deps, verbose, compression,
   #
   if dependencies and not compare(depsref, deps):
     if verbose:
-      log.critical('Dependencies %s have changed - recomputing' % dependencies)
+      log.info('Dependencies %s have changed - recomputing' % dependencies)
 
     # Don't use cached file - recompute
     reason = 2
@@ -944,8 +944,8 @@ def CacheLookup(CD, FN, my_F, args, kwargs, deps, verbose, compression,
       msg4(funcname,args,kwargs,deps,comptime,loadtime,CD,FN,compressed)
 
       if loadtime >= comptime:
-        log.critical('Caching did not yield any gain.')
-        log.critical('Consider executing function %s without caching.'
+        log.info('Caching did not yield any gain.')
+        log.info('Consider executing function %s without caching.'
                      % funcname)
   else:
 
@@ -1033,7 +1033,7 @@ def clear_cache(CD, my_F=None, verbose=None):
   if my_F:
     funcname = get_funcname(my_F)
     if verbose:
-      log.critical('Clearing %s' % CD+funcname+'*')
+      log.info('Clearing %s' % CD+funcname+'*')
 
     file_names = os.listdir(CD)
     for file_name in file_names:
@@ -1049,9 +1049,9 @@ def clear_cache(CD, my_F=None, verbose=None):
     file_names = os.listdir(CD)
     if len(file_names) > 0:
       if verbose:
-        log.critical('Remove the following files:')
+        log.info('Remove the following files:')
         for file_name in file_names:
-            log.critical('     ' + file_name)
+            log.info('     ' + file_name)
 
         A = input('Delete (Y/N)[N] ?')
       else:
@@ -1090,7 +1090,7 @@ def DeleteOldFiles(CD,verbose=None):
   if numfiles > maxfiles:
     delfiles = numfiles-maxfiles+block
     if verbose:
-      log.critical('Deleting %d expired files:' % delfiles)
+      log.info('Deleting %d expired files:' % delfiles)
       os.system('ls -lur '+CD+'* | head -' + repr(delfiles))            # List them
     os.system('ls -ur '+CD+'* | head -' + repr(delfiles) + ' | xargs /bin/rm')
                                                                   # Delete them
@@ -1168,12 +1168,12 @@ def save_results_to_cache(T, CD, FN, my_F, deps, comptime, funcname,
 
   if not datafile:
     if verbose:
-        log.critical('ERROR: Could not open %s' % datafile.name)
+        log.info('ERROR: Could not open %s' % datafile.name)
     raise OSError
 
   if not admfile:
     if verbose:
-        log.critical('ERROR: Could not open %s' % admfile.name)
+        log.info('ERROR: Could not open %s' % admfile.name)
     raise OSError
 
   t0 = time.time()
@@ -1335,7 +1335,7 @@ def myload(file, compressed):
 
   except MemoryError:
     if options['verbose']:
-      log.critical('ERROR: Out of memory while loading %s, aborting'
+      log.info('ERROR: Out of memory while loading %s, aborting'
                    % file.name)
 
     # Raise the error again for now
@@ -1360,10 +1360,10 @@ def mysave(T, file, compression):
     try:
       import zlib
     except ImportError:
-      log.critical()
-      log.critical('*** Could not find zlib ***')
-      log.critical('*** Try to run caching with compression off ***')
-      log.critical("*** caching.set_option('compression', 0) ***")
+      log.info()
+      log.warning('*** Could not find zlib ***')
+      log.info('*** Try to run caching with compression off ***')
+      log.info("*** caching.set_option('compression', 0) ***")
       raise Exception
 
 
@@ -1766,7 +1766,7 @@ def filestat(FN):
 
     # Hack to get the results anyway (works only on Unix at the moment)
     #
-    log.critical('Hack to get os.stat when files are too large')
+    log.info('Hack to get os.stat when files are too large')
 
     if unix:
       tmp = '/tmp/cach.tmp.'+repr(time.time())+repr(os.getpid())
@@ -1862,16 +1862,16 @@ def checkdir(CD, verbose=None, warn=False):
         exitcode=os.system('chmod 777 '+CD)
       else:
         pass  # FIXME: What about acces rights under Windows?
-      if verbose: log.critical('MESSAGE: Directory %s created.' % CD)
+      if verbose: log.info('MESSAGE: Directory %s created.' % CD)
     except OSError:
       if warn is True:
-        log.critical('WARNING: Directory %s could not be created.' % CD)
+        log.info('WARNING: Directory %s could not be created.' % CD)
       if unix:
         CD = '/tmp/'
       else:
         CD = 'C:'
       if warn is True:
-        log.critical('Using directory %s instead' % CD)
+        log.info('Using directory %s instead' % CD)
 
   return(CD)
 
@@ -1910,7 +1910,7 @@ def addstatsline(CD, funcname, FN, Retrieved, reason, comptime, loadtime,
     #  except:
     #    pass
   except OSError:
-    log.critical('Warning: Stat file could not be opened')
+    log.info('Warning: Stat file could not be opened')
 
   try:
     if 'USER' in os.environ:
@@ -1953,7 +1953,7 @@ def addstatsline(CD, funcname, FN, Retrieved, reason, comptime, loadtime,
     statfile.write(entry)
     statfile.close()
   except OSError:
-    log.critical('Warning: Writing of stat file failed')
+    log.info('Warning: Writing of stat file failed')
 
 # -----------------------------------------------------------------------------
 
@@ -2019,7 +2019,7 @@ def __cachestat(sortidx=4, period=-1, showuser=None, cachedir=None):
   UserDict = {}
   for FN in SF:
     input = open(SD+FN)
-    log.critical('Reading file %s' % SD+FN)
+    log.info('Reading file %s' % SD+FN)
 
     while True:
       A = input.readlines(blocksize)
@@ -2058,8 +2058,8 @@ def __cachestat(sortidx=4, period=-1, showuser=None, cachedir=None):
           elif record[4] in ['False', '0']:
             compression = 0
           else:
-            log.critical('Unknown value of compression %s' % str(record[4]))
-            log.critical(str(record))
+            log.info('Unknown value of compression %s' % str(record[4]))
+            log.info(str(record))
             total_discarded = total_discarded + 1
             continue
 
@@ -2096,22 +2096,22 @@ def __cachestat(sortidx=4, period=-1, showuser=None, cachedir=None):
 
   if total_read == 0:
     printline(Widths,'=')
-    log.critical('CACHING STATISTICS: No valid records read')
+    log.info('CACHING STATISTICS: No valid records read')
     printline(Widths,'=')
     return
 
-  log.critical()
+  log.info()
   printline(Widths,'=')
-  log.critical('CACHING STATISTICS: '+ctime(firstday)+' to '+ctime(lastday))
+  log.info('CACHING STATISTICS: '+ctime(firstday)+' to '+ctime(lastday))
   printline(Widths,'=')
-  log.critical('  Total number of valid records %d' % total_read)
-  log.critical('  Total number of discarded records %d' % total_discarded)
-  log.critical('  Total number of hits %d' % total_hits)
-  log.critical()
+  log.info('  Total number of valid records %d' % total_read)
+  log.info('  Total number of discarded records %d' % total_discarded)
+  log.info('  Total number of hits %d' % total_hits)
+  log.info()
 
-  log.critical('  Fields %s are averaged over number of hits' % Fields[2:])
-  log.critical('  Time is measured in seconds and size in bytes')
-  log.critical('  Tables are sorted by %s' % Fields[1:][sortidx])
+  log.info('  Fields %s are averaged over number of hits' % Fields[2:])
+  log.info('  Time is measured in seconds and size in bytes')
+  log.info('  Tables are sorted by %s' % Fields[1:][sortidx])
 
   if showuser:
     Dictionaries = [FuncDict, UserDict]
@@ -2133,20 +2133,20 @@ def __cachestat(sortidx=4, period=-1, showuser=None, cachedir=None):
 
     # Write Header
     #
-    log.critical()
+    log.info()
     printline(Widths,'-')
     n = 0
     for s in Fields:
       if s == Fields[0]:  # Left justify
         s = Dictnames[i] + ' ' + s; i=i+1
         #exec "print '%-" + str(Widths[n]) + "s'%s,"; n=n+1
-        log.critical('%-*s' % (Widths[n], s))
+        log.info('%-*s' % (Widths[n], s))
         n += 1
       else:
         #exec "print '%" + str(Widths[n]) + "s'%s,"; n=n+1
-        log.critical('%*s' % (Widths[n], s))
+        log.info('%*s' % (Widths[n], s))
         n += 1
-    log.critical()
+    log.info()
     printline(Widths,'-')
 
     # Output Values
@@ -2156,14 +2156,14 @@ def __cachestat(sortidx=4, period=-1, showuser=None, cachedir=None):
       n = 0
       if len(key) > Widths[n]: key = key[:Widths[n]-3] + '...'
       #exec "print '%-" + str(Widths[n]) + Types[n]+"'%key,";n=n+1
-      log.critical('%-*s' % (Widths[n], str(key)))
+      log.info('%-*s' % (Widths[n], str(key)))
       n += 1
       for val in rec:
         #exec "print '%" + str(Widths[n]) + Types[n]+"'%val,"; n=n+1
-        log.critical('%*s' % (Widths[n], str(key)))
+        log.info('%*s' % (Widths[n], str(key)))
         n += 1
-      log.critical()
-    log.critical()
+      log.info()
+    log.info()
 
 #==============================================================================
 # Auxiliary stats functions
@@ -2233,7 +2233,7 @@ def printline(Widths,char):
     if n > 0:
       s = s+char
 
-  log.critical(s)
+  log.info(s)
 
 #==============================================================================
 # Messages
@@ -2277,7 +2277,7 @@ def msg2(funcname, args, kwargs, comptime, reason):
   msg6(funcname,args,kwargs)
   msg8(reason)
 
-  log.critical(str.ljust('| CPU time:', textwidth1) +
+  log.info(str.ljust('| CPU time:', textwidth1) +
                str(round(comptime,2)) + ' seconds')
 
 # -----------------------------------------------------------------------------
@@ -2290,7 +2290,7 @@ def msg3(savetime, CD, FN, deps, compression):
   """
 
   import string
-  log.critical(str.ljust('| Loading time:', textwidth1) +
+  log.info(str.ljust('| Loading time:', textwidth1) +
                str(round(savetime,2)) + ' seconds (estimated)')
   msg5(CD,FN,deps,compression)
 
@@ -2308,11 +2308,11 @@ def msg4(funcname, args, kwargs, deps, comptime, loadtime, CD, FN, compression):
   print_header_box('Caching statistics (retrieving)')
 
   msg6(funcname,args,kwargs)
-  log.critical(str.ljust('| CPU time:', textwidth1) +
+  log.info(str.ljust('| CPU time:', textwidth1) +
                str(round(comptime,2)) + ' seconds')
-  log.critical(str.ljust('| Loading time:', textwidth1) +
+  log.info(str.ljust('| Loading time:', textwidth1) +
                str(round(loadtime,2)) + ' seconds')
-  log.critical(str.ljust('| Time saved:', textwidth1) +
+  log.info(str.ljust('| Time saved:', textwidth1) +
                str(round(comptime-loadtime,2)) + ' seconds')
   msg5(CD,FN,deps,compression)
 
@@ -2331,8 +2331,8 @@ def msg5(CD, FN, deps, compression):
   import time
   import string
 
-  log.critical('|')
-  log.critical(str.ljust('| Caching dir: ', textwidth1) + CD)
+  log.info('|')
+  log.info(str.ljust('| Caching dir: ', textwidth1) + CD)
 
   if compression:
     suffix = '.z'
@@ -2344,12 +2344,12 @@ def msg5(CD, FN, deps, compression):
   for file_type in file_types:
     file_name = FN + '_' + file_type + suffix
     stats = os.stat(CD+file_name)
-    log.critical(str.ljust('| ' + file_type + ' file: ', textwidth1) +
+    log.info(str.ljust('| ' + file_type + ' file: ', textwidth1) +
                  file_name + '('+ str(stats[6]) + ' ' + bytetext + ')')
 
-  log.critical('|')
+  log.info('|')
   if len(deps) > 0:
-    log.critical('| Dependencies:  ')
+    log.info('| Dependencies:  ')
     dependencies  = list(deps.keys())
     dlist = []; maxd = 0
     tlist = []; maxt = 0
@@ -2374,9 +2374,9 @@ def msg5(CD, FN, deps, compression):
       t = str.ljust(tlist[n], maxt)
       s = str.rjust(slist[n], maxs)
 
-      log.critical('| %s %s %s bytes' % (d, t, s))
+      log.info('| %s %s %s bytes' % (d, t, s))
   else:
-    log.critical('| No dependencies')
+    log.info('| No dependencies')
   print_footer()
 
 # -----------------------------------------------------------------------------
@@ -2389,7 +2389,7 @@ def msg6(funcname, args, kwargs):
   """
 
   import string
-  log.critical(str.ljust('| Function:', textwidth1) + funcname)
+  log.info(str.ljust('| Function:', textwidth1) + funcname)
 
   msg7(args, kwargs)
 
@@ -2407,24 +2407,24 @@ def msg7(args, kwargs):
   args_present = 0
   if args:
     if len(args) == 1:
-      log.critical(str.ljust('| Argument:', textwidth1) +
+      log.info(str.ljust('| Argument:', textwidth1) +
                    mkargstr(args[0], textwidth2))
     else:
-      log.critical(str.ljust('| Arguments:', textwidth1) +
+      log.info(str.ljust('| Arguments:', textwidth1) +
                    mkargstr(args, textwidth2))
     args_present = 1
 
   if kwargs:
     if len(kwargs) == 1:
-      log.critical(str.ljust('| Keyword Arg:', textwidth1) +
+      log.info(str.ljust('| Keyword Arg:', textwidth1) +
                    mkargstr(kwargs, textwidth2))
     else:
-      log.critical(str.ljust('| Keyword Args:', textwidth1) +
+      log.info(str.ljust('| Keyword Args:', textwidth1) +
                    mkargstr(kwargs, textwidth2))
     args_present = 1
 
   if not args_present:
-    log.critical('| No arguments')    # Default if no args or kwargs present
+    log.info('| No arguments')    # Default if no args or kwargs present
 
 # -----------------------------------------------------------------------------
 
@@ -2442,7 +2442,7 @@ def msg8(reason):
   except KeyError:
     R = 'Unknown'
 
-  log.critical(str.ljust('| Reason:', textwidth1) + R)
+  log.info(str.ljust('| Reason:', textwidth1) + R)
 
 # -----------------------------------------------------------------------------
 
@@ -2463,7 +2463,7 @@ def print_header_box(line):
   N = len(line) + 1
   s = '+' + '-'*N + CR
 
-  log.critical(s + '| ' + line + CR + s)
+  log.info(s + '| ' + line + CR + s)
 
   textwidth3 = N
 
@@ -2476,7 +2476,7 @@ def print_footer():
   N = textwidth3
   s = '+' + '-'*N + CR
 
-  log.critical(s)
+  log.info(s)
 
 # -----------------------------------------------------------------------------
 
@@ -2563,7 +2563,7 @@ def logtestOK(msg):
 
   import string
 
-  log.critical(str.ljust(msg, textwidth4) + ' - OK' )
+  log.info(str.ljust(msg, textwidth4) + ' - OK' )
 
   #raise StandardError
 
@@ -2576,11 +2576,11 @@ def logtesterror(msg):
     logtesterror(message)
   """
 
-  log.critical('ERROR (caching.test): %s' % msg)
-  log.critical('Please send this code example and output to ')
-  log.critical('Ole.Nielsen@anu.edu.au')
-  log.critical()
-  log.critical()
+  log.info('ERROR (caching.test): %s' % msg)
+  log.info('Please send this code example and output to ')
+  log.info('Ole.Nielsen@anu.edu.au')
+  log.info()
+  log.info()
 
   raise Exception
 

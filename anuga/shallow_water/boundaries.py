@@ -264,7 +264,7 @@ class Transmissive_momentum_set_stage_boundary(Boundary):
                 msg += 'time provided in '
                 msg += 'transmissive_momentum_set_stage_boundary object.\n'
                 msg += 'I will continue, reusing the object from t==0'
-                log.critical(msg)
+                log.info(msg)
                 t -= self.function.time[-1]
 
         value = self.function(t)

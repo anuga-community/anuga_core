@@ -86,10 +86,10 @@ def boyd_generalised_culvert_model(inlet_depth,
     local_debug ='false'
     if inlet_depth > 0.1: #this value was 0.01:
         if local_debug =='true':
-            log.critical('Specific E & Deltat Tot E = %s, %s'
+            log.info('Specific E & Deltat Tot E = %s, %s'
                          % (str(inlet_specific_energy),
                             str(delta_total_energy)))
-            log.critical('culvert type = %s' % str(culvert_type))
+            log.info('culvert type = %s' % str(culvert_type))
         # Water has risen above inlet
 
         if log_filename is not None:
@@ -141,7 +141,7 @@ def boyd_generalised_culvert_model(inlet_depth,
                 flow_width= diameter
                 case = 'Inlet CTRL Outlet submerged Circular PIPE FULL'
                 if local_debug == 'true':
-                    log.critical('Inlet CTRL Outlet submerged Circular '
+                    log.info('Inlet CTRL Outlet submerged Circular '
                                  'PIPE FULL')
             else:
                 #alpha = acos(1 - outlet_culvert_depth/diameter)    # Where did this Come From ????/
@@ -152,9 +152,9 @@ def boyd_generalised_culvert_model(inlet_depth,
                 perimeter = alpha*diameter/2.0
                 case = 'INLET CTRL Culvert is open channel flow we will for now assume critical depth'
                 if local_debug =='true':
-                    log.critical('INLET CTRL Culvert is open channel flow '
+                    log.info('INLET CTRL Culvert is open channel flow '
                                  'we will for now assume critical depth')
-                    log.critical('Q Outlet Depth and ALPHA = %s, %s, %s'
+                    log.info('Q Outlet Depth and ALPHA = %s, %s, %s'
                                  % (str(Q), str(outlet_culvert_depth),
                                     str(alpha)))
             if delta_total_energy < inlet_specific_energy:  #  OUTLET CONTROL !!!!
@@ -168,7 +168,7 @@ def boyd_generalised_culvert_model(inlet_depth,
                     flow_width= diameter
                     case = 'Outlet submerged'
                     if local_debug =='true':
-                        log.critical('Outlet submerged')
+                        log.info('Outlet submerged')
                 else:   # Culvert running PART FULL for PART OF ITS LENGTH   Here really should use the Culvert Slope to calculate Actual Culvert Depth & Velocity
                     # IF  outlet_depth < diameter
                     dcrit1 = diameter/1.26*(Q/g**0.5*diameter**2.5)**(1/3.75)
@@ -184,7 +184,7 @@ def boyd_generalised_culvert_model(inlet_depth,
                         flow_width= diameter
                         case = 'Outlet unsubmerged PIPE FULL'
                         if local_debug =='true':
-                            log.critical('Outlet unsubmerged PIPE FULL')
+                            log.info('Outlet unsubmerged PIPE FULL')
                     else:
                         alpha = acos(1-2*outlet_culvert_depth/diameter)*2
                         flow_area = diameter**2/8*(alpha - sin(alpha))   # Equation from  GIECK 5th Ed. Pg. B3
@@ -192,15 +192,15 @@ def boyd_generalised_culvert_model(inlet_depth,
                         perimeter = alpha*diameter/2.0
                         case = 'Outlet is open channel flow we will for now assume critical depth'
                         if local_debug == 'true':
-                            log.critical('Q Outlet Depth and ALPHA = %s, %s, %s'
+                            log.info('Q Outlet Depth and ALPHA = %s, %s, %s'
                                          % (str(Q), str(outlet_culvert_depth),
                                             str(alpha)))
-                            log.critical('Outlet is open channel flow we '
+                            log.info('Outlet is open channel flow we '
                                          'will for now assume critical depth')
             if local_debug == 'true':
-                log.critical('FLOW AREA = %s' % str(flow_area))
-                log.critical('PERIMETER = %s' % str(perimeter))
-                log.critical('Q Interim = %s' % str(Q))
+                log.info('FLOW AREA = %s' % str(flow_area))
+                log.info('PERIMETER = %s' % str(perimeter))
+                log.info('Q Interim = %s' % str(Q))
             hyd_rad = flow_area/perimeter
 
             if log_filename is not None:
@@ -209,21 +209,21 @@ def boyd_generalised_culvert_model(inlet_depth,
 
             # Outlet control velocity using tail water
             if local_debug =='true':
-                log.critical('GOT IT ALL CALCULATING Velocity')
-                log.critical('HydRad = %s' % str(hyd_rad))
+                log.info('GOT IT ALL CALCULATING Velocity')
+                log.info('HydRad = %s' % str(hyd_rad))
             culvert_velocity = sqrt(delta_total_energy/((sum_loss/2/g)+(manning**2*culvert_length)/hyd_rad**1.33333))
             Q_outlet_tailwater = flow_area * culvert_velocity
             if local_debug =='true':
-                log.critical('VELOCITY = %s' % str(culvert_velocity))
-                log.critical('Outlet Ctrl Q = %s' % str(Q_outlet_tailwater))
+                log.info('VELOCITY = %s' % str(culvert_velocity))
+                log.info('Outlet Ctrl Q = %s' % str(Q_outlet_tailwater))
             if log_filename is not None:
                 s = 'Q_outlet_tailwater = %.6f' %Q_outlet_tailwater
                 log_to_file(log_filename, s)
             Q = min(Q, Q_outlet_tailwater)
             if local_debug =='true':
-                log.critical('%s,%.3f,%.3f'
+                log.info('%s,%.3f,%.3f'
                              % ('dcrit 1 , dcit2 =',dcrit1,dcrit2))
-                log.critical('%s,%.3f,%.3f,%.3f'
+                log.info('%s,%.3f,%.3f,%.3f'
                              % ('Q and Velocity and Depth=', Q,
                                 culvert_velocity, outlet_culvert_depth))
 
@@ -235,7 +235,7 @@ def boyd_generalised_culvert_model(inlet_depth,
         #else....
         if culvert_type == 'box':
             if local_debug == 'true':
-                log.critical('BOX CULVERT')
+                log.info('BOX CULVERT')
             # Box culvert (rectangle or square)   ==========================================================
 
             # Calculate flows for inlet control
@@ -330,10 +330,10 @@ def boyd_generalised_culvert_model(inlet_depth,
 
         culv_froude=sqrt(Q**2*flow_width/(g*flow_area**3))
         if local_debug =='true':
-            log.critical('FLOW AREA = %s' % str(flow_area))
-            log.critical('PERIMETER = %s' % str(perimeter))
-            log.critical('Q final = %s' % str(Q))
-            log.critical('FROUDE = %s' % str(culv_froude))
+            log.info('FLOW AREA = %s' % str(flow_area))
+            log.info('PERIMETER = %s' % str(perimeter))
+            log.info('Q final = %s' % str(Q))
+            log.info('FROUDE = %s' % str(culv_froude))
         if log_filename is not None:
             s = 'Froude in Culvert = %f' % culv_froude
             log_to_file(log_filename, s)

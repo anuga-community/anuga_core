@@ -186,7 +186,7 @@ def pmesh_to_domain(file_name=None, mesh_instance=None, use_cache=False,
     use_cache: True means that caching is attempted for the computed domain.
     """
 
-    if verbose: log.critical('Pmesh_to_Domain: Initialising')
+    if verbose: log.info('Pmesh_to_Domain: Initialising')
 
     if use_cache is True:
         from anuga.caching import cache
@@ -196,7 +196,7 @@ def pmesh_to_domain(file_name=None, mesh_instance=None, use_cache=False,
     else:
         result = _pmesh_to_domain(*(file_name, mesh_instance))
 
-    if verbose: log.critical('Pmesh_to_Domain: Done')
+    if verbose: log.info('Pmesh_to_Domain: Done')
 
     return result
 

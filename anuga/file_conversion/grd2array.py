@@ -54,12 +54,12 @@ def grd2array(filename, verbose=False):
         #Read DEM data
         datafile = open(filename)
 
-        if verbose: log.critical('Reading data from %s' % (filename))
+        if verbose: log.info('Reading data from %s' % (filename))
 
         lines = datafile.readlines()
         datafile.close()
 
-        if verbose: log.critical('Got %d lines' % len(lines))
+        if verbose: log.info('Got %d lines' % len(lines))
 
 
         ncols = int(lines[0].split()[1].strip())

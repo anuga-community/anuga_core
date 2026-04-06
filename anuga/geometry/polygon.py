@@ -206,7 +206,7 @@ def polygon_overlap(triangles, polygon, verbose=False):
     count = _polygon_overlap(polygon, triangles, indices)
 
     if verbose:
-        log.critical('Found %d triangles (out of %d) that polygon' %
+        log.info('Found %d triangles (out of %d) that polygon' %
                      (count, M))
 
     return indices[:count]
@@ -226,7 +226,7 @@ def not_polygon_overlap(triangles, polygon, verbose=False):
     count = _polygon_overlap(polygon, triangles, indices)
 
     if verbose:
-        log.critical('Found %d triangles (out of %d) that polygon' %
+        log.info('Found %d triangles (out of %d) that polygon' %
                      (count, M))
 
     return indices[count:]
@@ -248,7 +248,7 @@ def line_intersect(triangles, line, verbose=False):
     count = _line_intersect(line, triangles, indices)
 
     if verbose:
-        log.critical(
+        log.info(
             'Found %d triangles (out of %d) that intersect line' % (count, M))
 
     return indices[:count]
@@ -277,7 +277,7 @@ def not_line_intersect(triangles, line, verbose=False):
     count = _line_intersect(line, triangles, indices)
 
     if verbose:
-        log.critical(
+        log.info(
             'Found %d triangles (out of %d) that intersect the line' % (count, M))
 
     return indices[count:]
@@ -665,7 +665,7 @@ def separate_points_by_polygon(points, polygon,
                                         int(closed), int(verbose))
 
     if verbose:
-        log.critical('Found %d points (out of %d) inside polygon' % (count, M))
+        log.info('Found %d points (out of %d) inside polygon' % (count, M))
 
     return indices, count
 

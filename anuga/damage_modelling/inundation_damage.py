@@ -106,7 +106,7 @@ def inundation_damage(sww_base_name, exposure_files_in,
             exposure_file_out =  '.'.join(split_name[:-1]) + exposure_file_out_marker + \
                                 '.' + split_name[-1]
         csv.save(exposure_file_out)
-        if verbose: log.critical('Augmented building file written to %s'
+        if verbose: log.info('Augmented building file written to %s'
                                  % exposure_file_out)
 
 def add_depth_and_momentum2csv(sww_base_name, exposure_file_in,

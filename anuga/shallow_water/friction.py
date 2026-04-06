@@ -262,7 +262,7 @@ def depth_dependent_friction(domain, default_friction,
 
         # Check sanity of result
         if ddf < 0.010 or ddf > 9999.0:
-            log.critical('>>>> WARNING: computed depth_dependent friction '
+            log.warning('>>>> WARNING: computed depth_dependent friction '
                          'out of range, ddf%f, n1=%f, n2=%f'
                          % (ddf, n1, n2))
 
@@ -278,7 +278,7 @@ def depth_dependent_friction(domain, default_friction,
         n_min = min(nvals)
         n_max = max(nvals)
 
-        log.critical('         ++++ calculate_depth_dependent_friction - '
+        log.info('         ++++ calculate_depth_dependent_friction - '
                      'Updated friction - range  %7.3f to %7.3f'
                      % (n_min, n_max))
 

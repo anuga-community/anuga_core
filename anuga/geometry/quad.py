@@ -134,11 +134,11 @@ class Cell:
         """Traverse tree below self, dumping all information.
         """
         if depth == 0:
-            log.critical()
+            log.info()
         print('%s%s'  % ('  '*depth, self.name), self.extents, ' [', \
             self.leaves, ']')
         if self.children:
-            log.critical()
+            log.info()
             for child in self.children:
                 child.show(depth+1)
 

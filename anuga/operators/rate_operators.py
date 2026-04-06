@@ -454,7 +454,7 @@ Parameters involving communication
         self.domain.fractional_step_volume_integral+=self.local_influx
 
         if self.monitor:
-            log.critical('Local Flux at time %.2f = %f'
+            log.info('Local Flux at time %.2f = %f'
                          % (self.domain.get_time(), self.local_influx))
 
 

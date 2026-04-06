@@ -94,13 +94,13 @@ class Mesh(General_mesh):
                               use_inscribed_circle=use_inscribed_circle,
                               verbose=verbose)
 
-        if verbose: log.critical('Mesh: Initialising')
+        if verbose: log.info('Mesh: Initialising')
 
         N = len(self) #Number_of_triangles
 
         # Allocate arrays for neighbour data
 
-        if verbose: log.critical('Mesh: Allocating neighbour arrays')
+        if verbose: log.info('Mesh: Allocating neighbour arrays')
 
         self.neighbours = -1*num.ones((N, 3), int)
         self.neighbour_edges = -1*num.ones((N, 3), int)
@@ -112,23 +112,23 @@ class Mesh(General_mesh):
 
 
         # Build neighbour structure
-        if verbose: log.critical('Mesh: Building neighbour structure')
+        if verbose: log.info('Mesh: Building neighbour structure')
         self.build_neighbour_structure(triangle_neighbours=triangle_neighbours,
                                        triangle_neighbour_edges=triangle_neighbour_edges)
 
         # Build surrogate neighbour structure
-        if verbose: log.critical('Mesh: Building surrogate neighbour structure')
+        if verbose: log.info('Mesh: Building surrogate neighbour structure')
         self.build_surrogate_neighbour_structure()
 
         # Build boundary dictionary mapping (id, edge) to symbolic tags
-        if verbose: log.critical('Mesh: Building boundary dictionary')
+        if verbose: log.info('Mesh: Building boundary dictionary')
         self.build_boundary_dictionary(boundary)
 
         # Update boundary_enumeration
         self.build_boundary_neighbours()
 
         # Build tagged element dictionary mapping (tag) to array of elements
-        if verbose: log.critical('Mesh: Building tagged elements dictionary')
+        if verbose: log.info('Mesh: Building tagged elements dictionary')
         self.build_tagged_elements_dictionary(tagged_elements)
 
         # Build a list of vertices that are not connected to any triangles
@@ -146,7 +146,7 @@ class Mesh(General_mesh):
 
 
         #FIXME check integrity?
-        if verbose: log.critical('Mesh: Done')
+        if verbose: log.info('Mesh: Done')
         if verbose: log.timingInfo("finishMesh, '%s'" % log.CurrentDateTime())
         if verbose: log.resource_usage_timing(log.logging.INFO, "finishMesh_")
 
@@ -527,7 +527,7 @@ class Mesh(General_mesh):
                 # that have no neighbours.
 
                 if verbose:
-                    log.critical('Point %s has multiple candidates: %s'
+                    log.info('Point %s has multiple candidates: %s'
                                  % (str(p0), candidate_list))
 
                 # Check that previous are not in candidate list
@@ -566,7 +566,7 @@ class Mesh(General_mesh):
                         p1 = pc             # Best candidate
 
                 if verbose is True:
-                    log.critical('  Best candidate %s, angle %f'
+                    log.info('  Best candidate %s, angle %f'
                                  % (p1, minimum_angle*180/pi))
             else:
                 p1 = candidate_list[0]
@@ -576,9 +576,9 @@ class Mesh(General_mesh):
                 if num.allclose(p1, polygon[0]):
                     # If it is the initial point, the polygon is complete.
                     if verbose is True:
-                        log.critical('  Stop criterion fulfilled at point %s'
+                        log.info('  Stop criterion fulfilled at point %s'
                                      % str(p1))
-                        log.critical(str(polygon))
+                        log.info(str(polygon))
 
                     # We have completed the boundary polygon - yeehaa
                     break
@@ -1306,7 +1306,7 @@ def _get_intersecting_segments(V, N, line,
         for edge in edge_segments:
 
             status, value = intersection(line, edge)
-            #if value is not None: log.critical('Triangle %d, status=%s, '
+            #if value is not None: log.info('Triangle %d, status=%s, '
             #                                   'value=%s'
             #                                   % (i, str(status), str(value)))
 
@@ -1430,8 +1430,8 @@ def get_intersecting_segments(V, N, polyline,
 
         point1 = polyline[i+1]
         if verbose:
-            log.critical('Extracting mesh intersections from line:')
-            log.critical('(%.2f, %.2f) - (%.2f, %.2f)'
+            log.info('Extracting mesh intersections from line:')
+            log.info('(%.2f, %.2f) - (%.2f, %.2f)'
                          % (point0[0], point0[1], point1[0], point1[1]))
 
         line = [point0, point1]
@@ -1551,7 +1551,7 @@ def get_boundary_polygon(self, verbose=False):
             # that have no neighbours.
 
             if verbose:
-                log.critical('Point %s has multiple candidates: %s'
+                log.info('Point %s has multiple candidates: %s'
                                 % (str(p0), candidate_list))
 
             # Check that previous are not in candidate list
@@ -1590,7 +1590,7 @@ def get_boundary_polygon(self, verbose=False):
                     p1 = pc             # Best candidate
 
             if verbose is True:
-                log.critical('  Best candidate %s, angle %f'
+                log.info('  Best candidate %s, angle %f'
                                 % (p1, minimum_angle*180/pi))
         else:
             p1 = candidate_list[0]
@@ -1600,9 +1600,9 @@ def get_boundary_polygon(self, verbose=False):
             if num.allclose(p1, polygon[0]):
                 # If it is the initial point, the polygon is complete.
                 if verbose is True:
-                    log.critical('  Stop criterion fulfilled at point %s'
+                    log.info('  Stop criterion fulfilled at point %s'
                                     % str(p1))
-                    log.critical(str(polygon))
+                    log.info(str(polygon))
 
                 # We have completed the boundary polygon - yeehaa
                 break

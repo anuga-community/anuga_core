@@ -51,7 +51,7 @@ def sww2obj(filename, size):
 
     # Get NetCDF
     nc_fname = create_filename('.', basefilename, 'sww', size)
-    log.critical('Reading from %s' % nc_fname)
+    log.info('Reading from %s' % nc_fname)
     fid = NetCDFFile(nc_fname, netcdf_mode_r)  #Open existing file for read
 
     # Get the variables
@@ -80,7 +80,7 @@ def sww2obj(filename, size):
     # x,y info and store as obj
     for k in range(len(time)):
         t = time[k]
-        log.critical('Processing timestep %f' % t)
+        log.info('Processing timestep %f' % t)
 
         for i in range(M):
             for j in range(3):
@@ -232,11 +232,11 @@ def tsh2sww(filename, verbose=False):
     if filename[-4:] != '.tsh' and filename[-4:] != '.msh':
         raise OSError('Input file %s should be .tsh or .msh.' % name_out)
 
-    if verbose == True: log.critical('Creating domain from %s' % filename)
+    if verbose == True: log.info('Creating domain from %s' % filename)
 
     domain = pmesh_to_domain_instance(filename, Domain)
 
-    if verbose == True: log.critical("Number of triangles = %s" % len(domain))
+    if verbose == True: log.info("Number of triangles = %s" % len(domain))
 
     domain.smooth = True
     domain.format = 'sww'   #Native netcdf visualisation format
@@ -245,14 +245,14 @@ def tsh2sww(filename, verbose=False):
     domain.set_name(filename)
     domain.reduction = mean
 
-    if verbose == True: log.critical("file_path = %s" % file_path)
+    if verbose == True: log.info("file_path = %s" % file_path)
 
     if file_path == "":
         file_path = "."
     domain.set_datadir(file_path)
 
     if verbose == True:
-        log.critical("Output written to %s%s%s.%s"
+        log.info("Output written to %s%s%s.%s"
                      % (domain.get_datadir(), sep, domain.get_name(),
                         domain.format))
 

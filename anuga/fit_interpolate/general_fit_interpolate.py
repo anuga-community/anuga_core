@@ -97,7 +97,7 @@ class FitInterpolate:
                                                  geo_reference=mesh_origin)
 
                 if verbose:
-                    log.critical('FitInterpolate: Building mesh')
+                    log.info('FitInterpolate: Building mesh')
 
 
                 self.mesh = Mesh(vertex_coordinates, triangles)
@@ -110,7 +110,7 @@ class FitInterpolate:
 
         if self.mesh is not None:
             if verbose:
-                log.critical('FitInterpolate: Building quad tree')
+                log.info('FitInterpolate: Building quad tree')
             #This stores indices of vertices
             t0 = time.time()
 

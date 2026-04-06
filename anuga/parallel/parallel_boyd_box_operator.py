@@ -271,11 +271,11 @@ class Parallel_Boyd_box_operator(Parallel_Structure_operator):
 
             if inflow_enq_depth > 0.01: #this value was 0.01:
                 if local_debug:
-                    anuga.log.critical('Specific E & Deltat Tot E = %s, %s'
+                    anuga.log.info('Specific E & Deltat Tot E = %s, %s'
                                  % (str(inflow_enq_specific_energy),
                                     str(self.delta_total_energy)))
 
-                    anuga.log.critical('culvert type = %s' % self.__class__.__name__)
+                    anuga.log.info('culvert type = %s' % self.__class__.__name__)
 
                 # Water has risen above inlet
 
