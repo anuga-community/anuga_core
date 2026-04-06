@@ -5,7 +5,6 @@ associated with an ANUGA domain and SWW file.
 import numpy as np
 import os
 import matplotlib.pyplot as plt
-from typing import Union
 
 
 class Domain_plotter:

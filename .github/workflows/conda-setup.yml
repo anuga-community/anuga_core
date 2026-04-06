@@ -26,10 +26,9 @@ jobs:
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
 
-        # 2025/09/18: 3.8 macos and windows has problems with the new compilers.
-        # 2026/01/07: 3.9 problems with argument typing
         # 2026/04/05: dropped 3.8 -- numpy>=2.0.0 (required by anuga) requires Python>=3.9
-        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
+        # 2026/04/06: dropped 3.9 -- X | Y union type syntax requires Python>=3.10
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v6
@@ -70,16 +69,6 @@ jobs:
         run: |
            conda install -c conda-forge -n anuga_env compilers libgomp
 
-      - name: Problem on windows and Python 3.9 with mpi4py
-        # As of 2025/06/19, strange combination of mpi4py, the new compilers and pytest
-        # caused a segmentation fault on Windows.
-        # This has been resolved by using mpi4py 4.0.3 with Python 3.9
-        if: runner.os == 'Windows' && matrix.python-version == '3.9'
-        shell: bash -el {0}
-        run: |
-          # conda uninstall -n anuga_env mpi4py
-          echo "No longer need to uninstall mpi4py with Python 3.9 if we use mpi4py 4.0.3"
-           
       - name: Install anuga package
         shell: bash -el {0}
         run: |
