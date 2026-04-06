@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-06 (session 10)
+Last updated: 2026-04-06 (session 10, end of day)
 Branch: `develop` (contains feat/sc26 GPU work)
 
 ---
@@ -11,7 +11,7 @@ Branch: `develop` (contains feat/sc26 GPU work)
 |------|--------------|------|-----------|
 | Code improvements (original list) | 60 | 49 | 11 |
 | Documentation improvements | 20 | 20 | 0 |
-| Additional enhancements | 25 | 25 | 0 |
+| Additional enhancements | 27 | 27 | 0 |
 | Hydrata Phase 0 — Test infrastructure | 5 | 5 | 0 |
 | Hydrata Phase 1 — Dependencies | 4 | 4 | 0 |
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
@@ -23,7 +23,7 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
 | Riverwall throughflow | 6 | 6 | 0 |
 | Quantity memory reduction | 7 | 0 | 7 |
-| **Total** | **154** | **114** | **40** |
+| **Total** | **156** | **116** | **40** |
 
 ---
 
@@ -191,6 +191,8 @@ These were completed during sessions as natural extensions or user requests:
 | CI: drop Python 3.8 (numpy>=2.0.0 requires ≥3.9); fix `list \| np.ndarray` PEP-604 annotation for Python 3.9 compat | `.github/workflows/conda-setup.yml`, `pyproject.toml`, `anuga/utilities/animate.py` | 2026-04-05 |
 | Fix NPY002 test recalibration — three hardcoded expected values in `test_geospatial_data.py` recomputed for `default_rng()` sequences | `anuga/geospatial_data/tests/test_geospatial_data.py` | 2026-04-05 |
 | Propagate v3.3.0, v3.3.1, v3.3.2 tags/releases to GeoscienceAustralia remote | `ga` remote | 2026-04-05 |
+| L5: 715 `log.critical()` → `log.info()` across 70+ production files; ~35 genuine warning conditions → `log.warning()`; `log.py` itself unchanged; fix `test_sww2dem_verbose_True` to use `mock.patch` instead of fragile FileHandler approach | 70+ `anuga/**/*.py`, `anuga/file_conversion/tests/test_sww2dem.py` | 2026-04-06 |
+| Drop Python 3.9: `X \| Y` union type syntax requires Python>=3.10; update `requires-python`, CI matrix, remove `Union` import from `animate.py` | `pyproject.toml`, `.github/workflows/conda-setup.yml`, `anuga/utilities/animate.py` | 2026-04-06 |
 
 ---
 

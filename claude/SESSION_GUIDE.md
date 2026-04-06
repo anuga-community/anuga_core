@@ -124,7 +124,7 @@ sweep: `tempfile.mktemp` → `mkstemp`, `set_datadir('.')` → `mkdtemp()`, all
 `sww2dem` output paths use full temp dir paths, orphaned CWD files cleaned up.
 1 pre-existing failure (`test_sww2csv_multiple_files`) confirmed, 1537 pass.
 
-**Session 10 (2026-04-06):** L1-L4 logging refactor: `TeeStream` (tees print/stdout to terminal+file), lazy log file (no file until `set_logfile()` called), `log.verbose()`, `log.file_only()` context manager, `setup_mesh.py` quieted. Logging docs page added. Fix pyproj DeprecationWarning in `tif2point_values.py`. Archive CuPy/CUDA files to `archive/cupy_cuda/`. Fix `test_sww2csv_multiple_files` stale-file pollution (chdir to tmpdir). CI: add `pytest-regressions` to all 13 env YMLs; drop Python 3.8; fix PEP-604 annotation for Python 3.9. Recalibrate 3 NPY002 expected values in `test_geospatial_data.py`. Propagate v3.3.0/3.3.1/3.3.2 to GA remote. All work cherry-picked from `main` → `develop` (had been committed to wrong branch). 114/154 tracked items done.
+**Session 10 (2026-04-06):** L1-L4 logging refactor: `TeeStream` (tees print/stdout to terminal+file), lazy log file (no file until `set_logfile()` called), `log.verbose()`, `log.file_only()` context manager, `setup_mesh.py` quieted. Logging docs page added. Fix pyproj DeprecationWarning in `tif2point_values.py`. Archive CuPy/CUDA files to `archive/cupy_cuda/`. Fix `test_sww2csv_multiple_files` stale-file pollution (chdir to tmpdir). CI: add `pytest-regressions` to all 13 env YMLs; drop Python 3.8. Recalibrate 3 NPY002 expected values in `test_geospatial_data.py`. Propagate v3.3.0/3.3.1/3.3.2 to GA remote. All cherry-picked from `main` → `develop` (had been on wrong branch). L5: 715 `log.critical()` → `log.info()`/`log.warning()` across 70+ production files; fix `test_sww2dem_verbose_True` with `mock.patch`. Drop Python 3.9 (`X | Y` syntax requires ≥3.10). 116/156 tracked items done.
 
 **Session 9 (2026-04-04):** Riverwall throughflow (`Cd_through`) — submerged
 orifice formula in `core_kernels.c`/`gpu_device_helpers.h`; column 5 of
@@ -173,13 +173,14 @@ See `claude/PROGRESS.md` — "Remaining Work" section for full list. Summary:
 1. **QM1–QM6** Quantity memory reduction — pure Python, ~2 days, ~58% saving
    for 1M-triangle domain (832 → 352 MB). Directly benefits SC26 (larger
    problems fit in GPU memory). Plan in `claude/QUANTITY_MEMORY_PLAN.md`.
+   *(Waiting on Jorge's feedback before starting)*
 
 ### Medium effort (1–3 days each)
-2. **H3.1** Unify Cython quantity kernels (high risk)
-3. **H3.2** Consolidate parallel operator wrappers
-4. **H3.3** Merge `Culvert_operator` / `Culvert_operator_Parallel`
-5. **G1.4** End-to-end GPU regression test (CPU_ONLY_MODE, no hardware needed)
-6. **G1.3** Slot limit hard errors in GPU operator managers
+2. **G1.4** End-to-end GPU regression test (CPU_ONLY_MODE, no hardware needed)
+3. **G1.3** Slot limit hard errors in GPU operator managers
+4. **H3.2** Consolidate parallel operator wrappers
+5. **H3.3** Merge `Culvert_operator` / `Culvert_operator_Parallel`
+6. **H3.1** Unify Cython quantity kernels (high risk)
 
 ### SC26 (needs Jorge's GPU hardware)
 7. G1.1 File_boundary GPU support, G1.2 device memory check
