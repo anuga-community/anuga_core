@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 """
 
 Setup base data for ANUGA run
@@ -37,7 +36,7 @@ class PrepareData(ProjectData):
         """Parse the input data then process it for ANUGA
 
             @param filename = configuration file (xls)
-            @param make_directories Create output directories for simulation           
+            @param make_directories Create output directories for simulation
             @param output_log filename to redirect stdout (inside output
                 directories)
 
@@ -63,7 +62,7 @@ class PrepareData(ProjectData):
         barrier()
 
     def define_output_directory_and_redirect_stdout(self,
-                                                    make_directories=True, 
+                                                    make_directories=True,
                                                     output_log=None):
         """Make the main output directory, and redirect stdout to a file there
 

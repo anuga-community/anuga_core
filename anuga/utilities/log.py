@@ -330,7 +330,7 @@ def resource_usage(level=logging.INFO):
                 t = open(_proc_status)
                 v = t.read()
                 t.close()
-            except IOError:
+            except OSError:
                 return 0.0
             i = v.index(VmKey)
             v = v[i:].split(None, 3)
@@ -412,7 +412,7 @@ def resource_usage_timing(level=logging.INFO, prefix=''):
                 t = open(_proc_status)
                 v = t.read()
                 t.close()
-            except IOError:
+            except OSError:
                 return 0.0
             i = v.index(VmKey)
             v = v[i:].split(None, 3)

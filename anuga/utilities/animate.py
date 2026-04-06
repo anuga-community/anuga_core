@@ -1044,7 +1044,7 @@ class SWW_plotter:
 
         return self.time, Q
 
-    def get_triangles_inside_polygon(self, polygon: Union[list, np.ndarray], verbose: bool = False) -> Union[list, np.ndarray]:
+    def get_triangles_inside_polygon(self, polygon: list | np.ndarray, verbose: bool = False) -> list | np.ndarray:
         """
         Get list of triangle IDs whose centroids lie within a given polygon.
 
