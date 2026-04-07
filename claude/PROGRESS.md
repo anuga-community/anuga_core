@@ -290,7 +290,7 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 
 - [ ] **G1.1 File_boundary GPU support** — standard open-ocean boundary; without it GPU mode can't run real tsunami models. Struct + Python push pattern, same as `time_boundary`.
 - [ ] **G1.2 Device memory check** — add `gpu_check_device_memory()` before first `omp target enter data`; print clear error and fall back rather than silently crashing on large meshes.
-- [ ] **G1.3 Slot limit assertions** — `MAX_RATE_OPERATORS=64`, `MAX_INLET_OPERATORS=32`, `MAX_CULVERTS=64` silently truncate. Add hard errors; medium-term switch to heap-allocated dynamic lists.
+- [x] **G1.3 Slot limit assertions** — `MAX_RATE_OPERATORS=64`, `MAX_INLET_OPERATORS=32`, `MAX_CULVERTS=64` now raise `RuntimeError` on overflow (Rate_operator, Inlet_operator, Parallel_inlet_operator). 2 tests. *(2026-04-07)*
 - [x] **G1.4 End-to-end regression test** — 10 s tidal + 10 s dam break; mode=1 vs mode=2; `atol=1e-12`; in CPU_ONLY_MODE differences are machine-epsilon (measured 0 for tidal, 3e-16 for culvert). *(2026-04-07)*
 - [ ] **G1.4 Multi-rank halo exchange test** — 2- and 4-process GPU tests using `mpirun` subprocess (same pattern as `anuga/parallel/tests/`).
 - [x] **G1.4 Culvert test in GPU mode** — `Test_GPU_Culvert`: mode=1 vs mode=2 comparison, volume conservation, flow direction. *(2026-04-07)*
@@ -321,8 +321,7 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 
 ### Immediate — best standalone value (no GPU hardware needed)
 1. **QM1–QM6** Quantity memory reduction Phase 1 (pure Python, ~2 days; ~58% saving for 1M-tri domain)
-2. **G1.4** End-to-end GPU regression test (mode=1 vs mode=2, CPU_ONLY_MODE)
-3. **G1.3** Slot limit assertions in GPU operator managers
+2. **G1.4** Multi-rank halo exchange test (2- and 4-process MPI+GPU)
 
 ### Short term — SC26 prerequisites (needs GPU hardware)
 4. **G1.1** File_boundary GPU support (enables real tsunami models)
