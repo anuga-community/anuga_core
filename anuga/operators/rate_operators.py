@@ -200,20 +200,20 @@ Parameters involving communication
         else:
             full_indices = None
 
-        try:
-            from anuga.shallow_water.sw_domain_gpu_ext import init_rate_operator
-            self._gpu_op_id = init_rate_operator(
-                gpu_interface.gpu_dom,
-                indices,
-                areas.astype(num.float64),
-                full_indices
+        from anuga.shallow_water.sw_domain_gpu_ext import init_rate_operator
+        self._gpu_op_id = init_rate_operator(
+            gpu_interface.gpu_dom,
+            indices,
+            areas.astype(num.float64),
+            full_indices
+        )
+        if self._gpu_op_id < 0:
+            raise RuntimeError(
+                f"Failed to register GPU rate operator '{getattr(self, 'label', repr(self))}': "
+                f"slot limit exceeded (MAX_RATE_OPERATORS=64). "
+                f"Reduce the number of Rate_operator instances or increase MAX_RATE_OPERATORS in gpu_domain.h."
             )
-            if self._gpu_op_id >= 0:
-                self._gpu_initialized = True
-        except Exception as e:
-            import warnings
-            warnings.warn(f"Failed to initialize GPU rate operator: {e}")
-            self._gpu_op_id = None
+        self._gpu_initialized = True
 
     def __call__(self):
         """Apply rate operator to the domain for one timestep.

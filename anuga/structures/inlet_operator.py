@@ -86,13 +86,18 @@ class Inlet_operator(anuga.Operator):
                 self.inlet.get_areas(), dtype=numpy.float64)
 
             op_id = gpu_ext.init_inlet_operator(gpu_dom, tri_indices, areas)
-            if op_id >= 0:
-                self._gpu_op_id = op_id
-                self._gpu_initialized = True
+            if op_id < 0:
+                raise RuntimeError(
+                    f"Failed to register GPU inlet operator '{getattr(self, 'label', repr(self))}': "
+                    f"slot limit exceeded (MAX_INLET_OPERATORS=32). "
+                    f"Reduce the number of Inlet_operator instances or increase MAX_INLET_OPERATORS in gpu_domain.h."
+                )
+            self._gpu_op_id = op_id
+            self._gpu_initialized = True
+        except RuntimeError:
+            raise
         except Exception as e:
-            import sys
-            print(f"WARNING: GPU inlet operator init failed: {e}", file=sys.stderr)
-            self._gpu_initialized = False
+            raise RuntimeError(f"GPU inlet operator init failed: {e}") from e
 
     def _call_gpu(self):
         """GPU path for __call__ - transfers only inlet data (~6KB)."""

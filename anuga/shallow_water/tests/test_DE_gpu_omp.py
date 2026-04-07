@@ -1125,5 +1125,68 @@ class Test_GPU_Culvert(unittest.TestCase):
             'Right side should have gained water through the culvert')
 
 
+@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+class Test_GPU_SlotLimits(unittest.TestCase):
+    """Tests that hard RuntimeError is raised when GPU operator slot limits are exceeded."""
+
+    def _base_domain(self, name):
+        domain = rectangular_cross_domain(4, 4, len1=40., len2=40.)
+        domain.set_flow_algorithm('DE0')
+        domain.set_low_froude(0)
+        domain.set_name(name)
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_quantity('elevation', 0.0)
+        domain.set_quantity('stage', 0.5)
+        domain.set_quantity('xmomentum', 0.0)
+        domain.set_quantity('ymomentum', 0.0)
+        domain.set_boundary({tag: anuga.Reflective_boundary(domain)
+                             for tag in domain.get_boundary_tags()})
+        return domain
+
+    def test_rate_operator_slot_overflow_raises(self):
+        """RuntimeError when more than MAX_RATE_OPERATORS=64 Rate_operators are registered."""
+        from anuga import Rate_operator
+        domain = self._base_domain('slot_rate')
+        domain.set_multiprocessor_mode(2)
+
+        # Register 64 operators — each covers a tiny disjoint region
+        # We use the same region for simplicity; overflow happens at id==64
+        operators = []
+        for i in range(64):
+            op = Rate_operator(domain, rate=0.0)
+            # Manually trigger GPU init so the slot counter increments
+            op._init_gpu()
+            operators.append(op)
+
+        # The 65th operator should fail
+        op65 = Rate_operator(domain, rate=0.0)
+        with self.assertRaises(RuntimeError) as ctx:
+            op65._init_gpu()
+        self.assertIn('MAX_RATE_OPERATORS', str(ctx.exception))
+
+    def test_inlet_operator_slot_overflow_raises(self):
+        """RuntimeError when more than MAX_INLET_OPERATORS=32 Inlet_operators are registered."""
+        domain = self._base_domain('slot_inlet')
+        domain.set_multiprocessor_mode(2)
+
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device
+        sync_to_device(domain.gpu_interface.gpu_dom)
+
+        # Register 32 inlet operators covering arbitrary single triangles
+        operators = []
+        for i in range(32):
+            line = [[0.0, 20.0], [40.0, 20.0]]
+            op = anuga.Inlet_operator(domain, line, Q=0.0)
+            op._init_gpu()
+            operators.append(op)
+
+        # The 33rd should fail
+        op33 = anuga.Inlet_operator(domain, [[0.0, 20.0], [40.0, 20.0]], Q=0.0)
+        with self.assertRaises(RuntimeError) as ctx:
+            op33._init_gpu()
+        self.assertIn('MAX_INLET_OPERATORS', str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
