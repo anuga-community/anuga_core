@@ -17,13 +17,13 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
 | Hydrata Phase 3 — Deduplication | 4 | 0 | 4 |
 | Hydrata Phase 4 — Coverage | 3 | 0 | 3 |
-| GPU Phase 1 — Correctness & tests | 6 | 0 | 6 |
+| GPU Phase 1 — Correctness & tests | 6 | 2 | 4 |
 | GPU Phase 2 — Performance validation | 4 | 0 | 4 |
 | GPU Phase 3 — Feature parity | 4 | 0 | 4 |
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
 | Riverwall throughflow | 6 | 6 | 0 |
 | Quantity memory reduction | 7 | 0 | 7 |
-| **Total** | **156** | **116** | **40** |
+| **Total** | **156** | **118** | **38** |
 
 ---
 
@@ -291,9 +291,9 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 - [ ] **G1.1 File_boundary GPU support** — standard open-ocean boundary; without it GPU mode can't run real tsunami models. Struct + Python push pattern, same as `time_boundary`.
 - [ ] **G1.2 Device memory check** — add `gpu_check_device_memory()` before first `omp target enter data`; print clear error and fall back rather than silently crashing on large meshes.
 - [ ] **G1.3 Slot limit assertions** — `MAX_RATE_OPERATORS=64`, `MAX_INLET_OPERATORS=32`, `MAX_CULVERTS=64` silently truncate. Add hard errors; medium-term switch to heap-allocated dynamic lists.
-- [ ] **G1.4 End-to-end regression test** — run 10 s of simulation in `multiprocessor_mode=1` and `mode=2`, compare final stage/momentum to tolerance 1e-10.
+- [x] **G1.4 End-to-end regression test** — 10 s tidal + 10 s dam break; mode=1 vs mode=2; `atol=1e-12`; in CPU_ONLY_MODE differences are machine-epsilon (measured 0 for tidal, 3e-16 for culvert). *(2026-04-07)*
 - [ ] **G1.4 Multi-rank halo exchange test** — 2- and 4-process GPU tests using `mpirun` subprocess (same pattern as `anuga/parallel/tests/`).
-- [ ] **G1.4 Culvert test in GPU mode** — infrastructure exists, test does not.
+- [x] **G1.4 Culvert test in GPU mode** — `Test_GPU_Culvert`: mode=1 vs mode=2 comparison, volume conservation, flow direction. *(2026-04-07)*
 
 ### Phase 2 — Performance validation (weeks 5–10)
 
