@@ -896,5 +896,234 @@ class Test_GPU_Riverwall(unittest.TestCase):
                         "Water should have flowed over the wall, reducing the level difference")
 
 
+@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+class Test_GPU_EndToEnd(unittest.TestCase):
+    """End-to-end regression tests comparing mode=1 (Python RK2) vs mode=2 (C RK2).
+
+    In the default build (CPU_ONLY_MODE) both modes run on CPU, so results
+    should be identical to machine-epsilon precision.  These tests serve as
+    a regression baseline: if a change breaks numerical equivalence it will
+    show up here before it can affect real GPU runs.
+    """
+
+    def _create_tidal_domain(self, name):
+        """20×10 domain with a sloping bed and a tidal left boundary."""
+        domain = rectangular_cross_domain(20, 10, len1=200., len2=100.)
+        domain.set_flow_algorithm('DE0')
+        domain.set_low_froude(0)
+        domain.set_name(name)
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+
+        domain.set_quantity('elevation', lambda x, y: -x / 100.)
+        domain.set_quantity('friction', 0.01)
+        domain.set_quantity('stage', 0.0)
+
+        def tide(t):
+            return -0.5 + 0.3 * np.sin(2 * np.pi * t / 100.)
+
+        Br = Reflective_boundary(domain)
+        Bt = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(
+            domain, function=tide)
+        domain.set_boundary({'left': Bt, 'right': Br, 'top': Br, 'bottom': Br})
+        return domain
+
+    def _create_dam_break_domain(self, name):
+        """20×10 domain with a dam-break initial condition."""
+        domain = rectangular_cross_domain(20, 10, len1=200., len2=100.)
+        domain.set_flow_algorithm('DE0')
+        domain.set_low_froude(0)
+        domain.set_name(name)
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+
+        domain.set_quantity('elevation', -1.0)
+        domain.set_quantity('friction', 0.01)
+        domain.set_quantity('stage', lambda x, y: np.where(x < 100., 0.5, -1.0))
+
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        return domain
+
+    def _run_and_compare(self, cpu_domain, gpu_domain, finaltime, yieldstep=2.0):
+        """Run both domains and return (cpu_q, gpu_q) dicts of final centroid values."""
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+
+        cpu_domain.set_multiprocessor_mode(1)
+        for _ in cpu_domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
+            pass
+
+        gpu_domain.set_multiprocessor_mode(2)
+        sync_to_device(gpu_domain.gpu_interface.gpu_dom)
+        for _ in gpu_domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
+            pass
+        sync_from_device(gpu_domain.gpu_interface.gpu_dom)
+
+        cpu_q = {q: cpu_domain.quantities[q].centroid_values.copy()
+                 for q in ['stage', 'xmomentum', 'ymomentum']}
+        gpu_q = {q: gpu_domain.quantities[q].centroid_values.copy()
+                 for q in ['stage', 'xmomentum', 'ymomentum']}
+        return cpu_q, gpu_q
+
+    @pytest.mark.slow
+    def test_10s_tidal_mode1_vs_mode2(self):
+        """10-second tidal run: mode=1 and mode=2 must agree to machine precision.
+
+        In CPU_ONLY_MODE the Python and C RK2 loops call identical kernels,
+        so results should be bit-for-bit identical.  Tolerance of 1e-12
+        provides a comfortable guard against any future drift.
+        """
+        cpu_q, gpu_q = self._run_and_compare(
+            self._create_tidal_domain('e2e_tidal_cpu'),
+            self._create_tidal_domain('e2e_tidal_gpu'),
+            finaltime=10.0)
+
+        for qname in ['stage', 'xmomentum', 'ymomentum']:
+            np.testing.assert_allclose(
+                gpu_q[qname], cpu_q[qname],
+                rtol=0, atol=1e-12,
+                err_msg=f'10s tidal: {qname} mismatch between mode=1 and mode=2')
+
+    @pytest.mark.slow
+    def test_10s_dam_break_mode1_vs_mode2(self):
+        """10-second dam-break: mode=1 and mode=2 must agree to machine precision."""
+        cpu_q, gpu_q = self._run_and_compare(
+            self._create_dam_break_domain('e2e_dambreak_cpu'),
+            self._create_dam_break_domain('e2e_dambreak_gpu'),
+            finaltime=10.0)
+
+        for qname in ['stage', 'xmomentum', 'ymomentum']:
+            np.testing.assert_allclose(
+                gpu_q[qname], cpu_q[qname],
+                rtol=0, atol=1e-12,
+                err_msg=f'10s dam break: {qname} mismatch between mode=1 and mode=2')
+
+    def test_volume_conservation_mode2(self):
+        """Water volume is conserved over 10 s in GPU mode (closed boundaries)."""
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+
+        domain = self._create_dam_break_domain('e2e_vol_gpu')
+        initial_volume = domain.get_water_volume()
+
+        domain.set_multiprocessor_mode(2)
+        sync_to_device(domain.gpu_interface.gpu_dom)
+        for _ in domain.evolve(yieldstep=2.0, finaltime=10.0):
+            pass
+        sync_from_device(domain.gpu_interface.gpu_dom)
+
+        final_volume = domain.get_water_volume()
+        self.assertAlmostEqual(
+            initial_volume, final_volume, places=6,
+            msg=f'Volume not conserved: initial={initial_volume:.6f}, '
+                f'final={final_volume:.6f}')
+
+
+@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+class Test_GPU_Culvert(unittest.TestCase):
+    """Tests for Boyd box/pipe culvert operators in GPU mode."""
+
+    def _create_culvert_domain(self, name):
+        """Two-compartment domain connected by a Boyd box culvert.
+
+        Water starts on the left (x < 100 m), separated by a land barrier.
+        The culvert (0.5 m wide × 0.5 m high) provides the only flow path.
+        """
+        domain = rectangular_cross_domain(20, 10, len1=200., len2=100.)
+        domain.set_flow_algorithm('DE0')
+        domain.set_low_froude(0)
+        domain.set_name(name)
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+
+        domain.set_quantity('elevation', -1.0)
+        domain.set_quantity('friction', 0.013)
+        domain.set_quantity('stage', lambda x, y: np.where(x < 100., 0.5, -1.0))
+
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+        from anuga.structures.boyd_box_operator import Boyd_box_operator
+        Boyd_box_operator(domain,
+                          end_points=[[90., 50.], [110., 50.]],
+                          height=0.5, width=0.5,
+                          apron=5., manning=0.013,
+                          enquiry_gap=5., verbose=False)
+        return domain
+
+    def test_culvert_cpu_gpu_match(self):
+        """Boyd box culvert: mode=1 vs mode=2 stage comparison at 5 s."""
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+
+        cpu_domain = self._create_culvert_domain('culv_cpu')
+        gpu_domain = self._create_culvert_domain('culv_gpu')
+
+        # CPU run
+        cpu_domain.set_multiprocessor_mode(1)
+        for _ in cpu_domain.evolve(yieldstep=1.0, finaltime=5.0):
+            pass
+        cpu_stage = cpu_domain.quantities['stage'].centroid_values.copy()
+        cpu_xmom = cpu_domain.quantities['xmomentum'].centroid_values.copy()
+
+        # GPU run
+        gpu_domain.set_multiprocessor_mode(2)
+        sync_to_device(gpu_domain.gpu_interface.gpu_dom)
+        for _ in gpu_domain.evolve(yieldstep=1.0, finaltime=5.0):
+            pass
+        sync_from_device(gpu_domain.gpu_interface.gpu_dom)
+        gpu_stage = gpu_domain.quantities['stage'].centroid_values.copy()
+        gpu_xmom = gpu_domain.quantities['xmomentum'].centroid_values.copy()
+
+        np.testing.assert_allclose(
+            gpu_stage, cpu_stage, rtol=0, atol=1e-12,
+            err_msg='Culvert 5s: stage mismatch between mode=1 and mode=2')
+        np.testing.assert_allclose(
+            gpu_xmom, cpu_xmom, rtol=0, atol=1e-12,
+            err_msg='Culvert 5s: xmomentum mismatch between mode=1 and mode=2')
+
+    def test_culvert_volume_conservation(self):
+        """Boyd box culvert: total water volume is conserved in GPU mode."""
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+
+        domain = self._create_culvert_domain('culv_vol')
+        initial_volume = domain.get_water_volume()
+
+        domain.set_multiprocessor_mode(2)
+        sync_to_device(domain.gpu_interface.gpu_dom)
+        for _ in domain.evolve(yieldstep=1.0, finaltime=5.0):
+            pass
+        sync_from_device(domain.gpu_interface.gpu_dom)
+
+        final_volume = domain.get_water_volume()
+        self.assertAlmostEqual(
+            initial_volume, final_volume, places=5,
+            msg=f'Culvert volume not conserved: '
+                f'initial={initial_volume:.5f}, final={final_volume:.5f}')
+
+    def test_culvert_flow_direction(self):
+        """Boyd box culvert: flow moves from high to low water level in GPU mode."""
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+
+        domain = self._create_culvert_domain('culv_flow')
+        x = domain.centroid_coordinates[:, 0]
+        left_mask = x < 90.
+        right_mask = x > 110.
+
+        domain.set_multiprocessor_mode(2)
+        sync_to_device(domain.gpu_interface.gpu_dom)
+        for _ in domain.evolve(yieldstep=1.0, finaltime=5.0):
+            pass
+        sync_from_device(domain.gpu_interface.gpu_dom)
+
+        stage = domain.quantities['stage'].centroid_values
+
+        # Left side should be lower, right side higher, than initial values
+        self.assertLess(
+            stage[left_mask].mean(), 0.5,
+            'Left side should have lost water through the culvert')
+        self.assertGreater(
+            stage[right_mask].mean(), -1.0,
+            'Right side should have gained water through the culvert')
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
