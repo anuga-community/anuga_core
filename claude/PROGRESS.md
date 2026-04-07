@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-06 (session 10, end of day)
+Last updated: 2026-04-07 (session 11, end of day)
 Branch: `develop` (contains feat/sc26 GPU work)
 
 ---
@@ -17,13 +17,15 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
 | Hydrata Phase 3 — Deduplication | 4 | 0 | 4 |
 | Hydrata Phase 4 — Coverage | 3 | 0 | 3 |
-| GPU Phase 1 — Correctness & tests | 6 | 2 | 4 |
+| GPU Phase 1 — Correctness & tests | 6 | 3 | 3 |
 | GPU Phase 2 — Performance validation | 4 | 0 | 4 |
 | GPU Phase 3 — Feature parity | 4 | 0 | 4 |
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
 | Riverwall throughflow | 6 | 6 | 0 |
 | Quantity memory reduction | 7 | 0 | 7 |
-| **Total** | **156** | **118** | **38** |
+| Benchmark suite | 2 | 2 | 0 |
+| Bug fixes | 1 | 1 | 0 |
+| **Total** | **159** | **122** | **37** |
 
 ---
 
@@ -265,6 +267,19 @@ height is actively extrapolated (needs gradients + phi); friction/velocity are c
 
 ---
 
+## Benchmark Suite
+
+- [x] **B1 Single-process benchmark** — `benchmarks/run_benchmarks.py`: dam-break scenarios (small/medium/large), modes 0/1/2, peak RSS + cells/s, JSON output. `benchmarks/compare_benchmarks.py` shows ±% deltas across commits. *(2026-04-07)*
+- [x] **B2 MPI distribution benchmark** — `benchmarks/distribute_benchmarks.py`: all four distribution methods (`distribute()`, `collaborative()`, `distribute_basic_mesh()`, `dump+load`) with PSS/RSS memory, ghost-triangle stats, evolve check. `benchmarks/run_benchmark_grid.py` sweeps np × scheme grid. Merged from `scripts/benchmark_distribute.py` + `scripts/benchmark_distribute_mesh.py`. *(2026-04-07)*
+
+---
+
+## Bug Fixes
+
+- [x] **BF1 Basic_mesh.reorder() stale neighbours** — `distribute_basic_mesh()` produced ~59% more ghost triangles than `distribute()` for the same mesh/scheme (measured: 9,002 vs 5,655 on 1M-tri metis/4-rank). Root cause: lazy `_neighbours` not computed before reorder; `_build_neighbours()` then reconstructed from the pre-reorder `_triangle_neighbours` cache. Fix: call `self.neighbours` at start of `reorder()`. Regression test added to `test_neighbour_mesh_reorder.py`. *(2026-04-07)*
+
+---
+
 ## Riverwall Throughflow
 
 Full plan: `claude/RIVERWALL_THROUGHFLOW_PLAN.md`
@@ -322,6 +337,7 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 ### Immediate — best standalone value (no GPU hardware needed)
 1. **QM1–QM6** Quantity memory reduction Phase 1 (pure Python, ~2 days; ~58% saving for 1M-tri domain)
 2. **G1.4** Multi-rank halo exchange test (2- and 4-process MPI+GPU)
+3. **H3.2/H3.3** Parallel operator wrapper consolidation / Culvert class merge
 
 ### Short term — SC26 prerequisites (needs GPU hardware)
 4. **G1.1** File_boundary GPU support (enables real tsunami models)
