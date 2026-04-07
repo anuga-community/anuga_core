@@ -72,3 +72,41 @@ python benchmarks/compare_benchmarks.py /tmp/before.json /tmp/after.json --thres
 Results are saved to `benchmarks/results/<branch>_<commit>_<timestamp>.json`.
 The `results/` directory is git-ignored so committed baselines don't pollute
 the repo. Copy important baselines elsewhere if you want to keep them.
+
+---
+
+## Parallel distribution benchmarks (MPI)
+
+`distribute_benchmarks.py` compares four approaches for distributing a mesh
+across MPI ranks. Requires `mpi4py`.
+
+```bash
+# Run all four methods on a 500×500 mesh (~1M tris) with 8 ranks
+mpirun -np 8 python benchmarks/distribute_benchmarks.py --size 500
+
+# Morton scheme, 3 repetitions for stable medians
+mpirun -np 8 python benchmarks/distribute_benchmarks.py --size 500 --scheme morton --reps 3
+```
+
+| Method | Description |
+|--------|-------------|
+| `distribute()` | Traditional: full Domain on rank 0, then distribute |
+| `distribute_collaborative()` | Shared-memory cooperative version |
+| `distribute_basic_mesh()` | Mesh-first: only Basic_mesh on rank 0, quantities set locally after |
+| `dump()+load()` | Rank 0 partitions and writes files; all ranks read |
+
+### Grid sweep (multiple np × scheme combinations)
+
+```bash
+# Run the full np=[10,20,30] × scheme=[metis,morton,hilbert] grid
+python benchmarks/run_benchmark_grid.py --size 1000
+
+# Custom grid
+python benchmarks/run_benchmark_grid.py --size 500 --np 4,8,16 --schemes metis,morton
+
+# Dry run (print commands without executing)
+python benchmarks/run_benchmark_grid.py --dry-run
+```
+
+Results are saved to `benchmarks/results/dist/bench_np<N>_<scheme>.txt` and
+a consolidated `summary.txt`.
