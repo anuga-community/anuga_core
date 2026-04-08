@@ -16,7 +16,7 @@ from anuga import Inlet_operator
 from anuga import Boyd_box_operator
 from anuga import Boyd_pipe_operator
 from anuga import Domain
-from anuga import create_mesh_from_regions
+from anuga import create_pmesh_from_regions
 from anuga import create_domain_from_regions
 from anuga import read_polygon
 from anuga import Polygon_function
@@ -79,7 +79,7 @@ scale = 1 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (25
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
 # Choices are 1 (openmp) 2 (cupy)
-multiprocessor_mode = 2
+multiprocessor_mode = 1
 
 checkpoint_time = max(600/scale, 60)
 checkpoint_dir = 'CHECKPOINTS'
@@ -372,7 +372,7 @@ Creating domain from scratch.
         interior_regions = read_polygon_list(CatchmentList)
     
         # Make the domain
-        mesh = create_mesh_from_regions(bounding_polygon,
+        mesh = create_pmesh_from_regions(bounding_polygon,
                                  boundary_tags={'south': [0], 'east': [
                                      1], 'north': [2], 'west': [3]},
                                  maximum_triangle_area=maximum_triangle_area,

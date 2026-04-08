@@ -24,15 +24,8 @@ py3.extension_module('sw_domain_openmp_ext',
 # Can target GPU (gpu_offload=true) or CPU multicore (gpu_offload=false)
 gpu_offload = get_option('gpu_offload')
 
-# MPI is optional - if not found, sw_domain_gpu_ext won't be built
-mpi_dep = dependency('mpi', language: 'c', required: false)
-
-# Check if mpi4py is available
-mpi4py_check = run_command(py3, ['-c', 'import mpi4py; print(mpi4py.get_include())'], check: false)
-have_mpi4py = mpi4py_check.returncode() == 0
-
+# MPI detection is done in the root meson.build (mpi_dep, have_mpi4py, mpi4py_incdir)
 if mpi_dep.found() and have_mpi4py
-  mpi4py_incdir = mpi4py_check.stdout().strip()
   gpu_inc_dir = include_directories('../utilities', incdir_numpy, mpi4py_incdir, 'gpu')
 else
   gpu_inc_dir = include_directories('../utilities', incdir_numpy, 'gpu')

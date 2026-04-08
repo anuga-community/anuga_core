@@ -131,6 +131,52 @@ else
   openmp_deps = dependencies
 endif
 
+# Python prefix — used to locate conda-installed libraries (MPI, ParMETIS, etc.)
+py_prefix = run_command(py3, ['-c', 'import sys; print(sys.prefix)'], check: true).stdout().strip()
+
+#========================================================
+# MPI detection (used by parallel/ and shallow_water/)
+#========================================================
+# First check mpi4py — it knows which MPI library it was built against.
+# We derive the correct MPI include/lib from mpi4py's own MPI installation
+# to avoid ABI mismatches when multiple MPI implementations are present.
+mpi4py_check = run_command(py3, ['-c', 'import mpi4py; print(mpi4py.get_include())'], check: false)
+have_mpi4py = mpi4py_check.returncode() == 0
+if have_mpi4py
+  mpi4py_incdir = mpi4py_check.stdout().strip()
+else
+  mpi4py_incdir = ''
+endif
+
+# Try to find MPI that matches mpi4py's linked library.
+# If mpi4py provides mpi.cfg with mpicc, use that; otherwise fall back to
+# system dependency('mpi') which uses whatever mpicc is on PATH.
+mpi4py_mpicc_check = run_command(py3, ['-c',
+  'import mpi4py; c = getattr(mpi4py, "get_config", lambda: {})(); print(c.get("mpicc", ""))'],
+  check: false)
+_mpi4py_mpicc = mpi4py_mpicc_check.returncode() == 0 ? mpi4py_mpicc_check.stdout().strip() : ''
+
+# Use the Python prefix to locate the conda MPI (same one mpi4py links to).
+_py_prefix_lib = py_prefix / 'lib'
+_py_prefix_inc = py_prefix / 'include'
+_mpi_lib_found = cc.find_library('mpi', required: false, dirs: [_py_prefix_lib])
+
+if _mpi_lib_found.found()
+  # Conda/prefix MPI — guaranteed to match mpi4py
+  mpi_dep = declare_dependency(
+    dependencies: [_mpi_lib_found],
+    include_directories: include_directories(_py_prefix_inc),
+  )
+  message('MPI: using prefix library from ' + _py_prefix_lib)
+else
+  # Fall back to system mpicc
+  mpi_dep = dependency('mpi', language: 'c', required: false)
+  if mpi_dep.found()
+    message('MPI: using system dependency (mpicc)')
+  else
+    message('MPI: NOT FOUND')
+  endif
+endif
 
 #========================================================
 # Install the Python scripts

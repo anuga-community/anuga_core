@@ -125,7 +125,103 @@ def metis_partition(domain, n_procs):
 
 
 #==============================================================================================================
-# Code for computing Morton (Z-order) codes for 2D points, 
+# ParMETIS parallel graph partitioning.
+# Distributes the partitioning work across all MPI ranks using ParMETIS_V3_PartKway.
+#==============================================================================================================
+
+try:
+    from .parmetis_ext import parmetis_part_kway, neighbours_to_csr
+    _PARMETIS_AVAILABLE = True
+except ImportError:
+    _PARMETIS_AVAILABLE = False
+
+
+def parmetis_available():
+    """Return True if ParMETIS extension is available."""
+    return _PARMETIS_AVAILABLE
+
+
+def parmetis_partition(neighbours, n_tri, n_procs, comm):
+    """Partition a mesh collectively using ParMETIS.
+
+    All MPI ranks must call this function collectively. The graph is
+    block-distributed across ranks for ParMETIS, then the partition
+    result is gathered to rank 0.
+
+    Parameters
+    ----------
+    neighbours : ndarray, shape (n_tri, 3), dtype int64
+        Full mesh neighbour array (shared-memory or broadcast to all ranks).
+        neighbours[i, e] is the triangle adjacent to triangle i across
+        edge e, or negative for a boundary edge.
+    n_tri : int
+        Total number of triangles in the mesh.
+    n_procs : int
+        Number of partitions (typically equal to MPI size).
+    comm : mpi4py.MPI.Comm
+        MPI communicator.
+
+    Returns
+    -------
+    epart_order : ndarray or None
+        On rank 0: integer array of indices that sort elements by partition.
+        On other ranks: None.
+    triangles_per_proc : ndarray or None
+        On rank 0: integer array of length n_procs with triangle counts.
+        On other ranks: None.
+    """
+    if not _PARMETIS_AVAILABLE:
+        raise RuntimeError("ParMETIS extension not available")
+
+    rank = comm.Get_rank()
+    size = comm.Get_size()
+
+    if n_procs == 1:
+        if rank == 0:
+            return np.arange(n_tri, dtype=int), np.array([n_tri])
+        return None, None
+
+    # Block distribution: vtxdist[k] = k * n_tri // size
+    vtxdist = np.empty(size + 1, dtype=np.int32)
+    for k in range(size + 1):
+        vtxdist[k] = k * n_tri // size
+
+    start = int(vtxdist[rank])
+    end = int(vtxdist[rank + 1])
+
+    # Build local CSR from this rank's block of triangles
+    xadj, adjncy = neighbours_to_csr(
+        np.ascontiguousarray(neighbours, dtype=np.int64), start, end)
+
+    # Collective ParMETIS call
+    edgecut, local_part = parmetis_part_kway(vtxdist, xadj, adjncy, n_procs, comm)
+
+    # Gather partition vector to rank 0
+    local_count = end - start
+    recvcounts = np.array(comm.allgather(local_count), dtype=int)
+
+    if rank == 0:
+        epart = np.empty(n_tri, dtype=np.int32)
+    else:
+        epart = None
+
+    comm.Gatherv(local_part, [epart, recvcounts], root=0)
+
+    if rank == 0:
+        triangles_per_proc = np.bincount(epart, minlength=n_procs)
+
+        msg = "ParMETIS partition created where at least one submesh has no triangles. "
+        msg += "Try using a smaller number of mpi processes."
+        assert np.all(triangles_per_proc > 0), msg
+
+        epart_order = np.argsort(epart, kind='mergesort')
+        return epart_order, triangles_per_proc
+
+    return None, None
+
+
+#==============================================================================================================
+# Code for computing Morton (Z-order) codes for 2D points,
 # used for spatial locality-preserving ordering of mesh elements.
 # This is based on the "Bit Twiddling Hacks" by Sean Eron Anderson:
 # https://graphics.stanford.edu/~seander/bithacks.html#InterleaveTables
