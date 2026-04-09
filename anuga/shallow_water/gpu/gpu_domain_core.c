@@ -267,8 +267,12 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         x_centroid_work[0:n], y_centroid_work[0:n], \
         normals[0:6*n], edgelengths[0:3*n], \
         areas[0:n], radii[0:n], max_speed[0:n], \
-        centroid_coords[0:2*n], edge_coords[0:6*n], \
-        tri_full_flag[0:n])
+        centroid_coords[0:2*n], edge_coords[0:6*n])
+
+    // Map tri_full_flag only when present (parallel domains only)
+    if (tri_full_flag != NULL) {
+        #pragma omp target enter data map(to: tri_full_flag[0:n])
+    }
 
     // Map boundary values if present (including bed and height for reflective boundary)
     if (nb > 0) {
@@ -585,8 +589,12 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         x_centroid_work[0:n], y_centroid_work[0:n], \
         normals[0:6*n], edgelengths[0:3*n], \
         areas[0:n], radii[0:n], max_speed[0:n], \
-        centroid_coords[0:2*n], edge_coords[0:6*n], \
-        tri_full_flag[0:n])
+        centroid_coords[0:2*n], edge_coords[0:6*n])
+
+    // Unmap tri_full_flag only when it was mapped (parallel domains only)
+    if (tri_full_flag != NULL) {
+        #pragma omp target exit data map(delete: tri_full_flag[0:n])
+    }
 
     if (nb > 0) {
         double *stage_bv = GD->D.stage_boundary_values;

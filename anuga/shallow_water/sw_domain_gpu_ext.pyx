@@ -88,6 +88,8 @@ cdef extern from "gpu_domain.h" nogil:
         double* y_centroid_work
         # Friction
         double* friction_centroid_values
+        # Ghost cell flag (1=full/owned, 0=ghost); NULL for single-process domains
+        int64_t* tri_full_flag
         # Riverwall arrays
         int64_t number_of_riverwall_edges
         int64_t ncol_riverwall_hydraulic_properties
@@ -415,6 +417,7 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     cdef double[::1] areas, radii, max_speed
     cdef double[:,::1] centroid_coords, edge_coords
     cdef double[::1] x_centroid_work, y_centroid_work
+    cdef int64_t[::1] tri_full_flag
 
     # Get basic parameters
     D.number_of_elements = domain_object.number_of_elements
@@ -531,6 +534,14 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
 
     max_speed = domain_object.max_speed
     D.max_speed = &max_speed[0]
+
+    # tri_full_flag: 1 for owned (full) triangles, 0 for ghost triangles.
+    # Required so compute_fluxes excludes ghosts from the local timestep minimum.
+    if hasattr(domain_object, 'tri_full_flag'):
+        tri_full_flag = domain_object.tri_full_flag
+        D.tri_full_flag = &tri_full_flag[0]
+    else:
+        D.tri_full_flag = NULL
 
     centroid_coords = domain_object.centroid_coordinates
     D.centroid_coordinates = &centroid_coords[0, 0]
