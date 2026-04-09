@@ -3982,6 +3982,22 @@ class Test_Quantity_Memory(unittest.TestCase):
         self.assertIsNotNone(vv)
         self.assertEqual(vv.shape, (len(d), 3))
 
+    def test_explicit_qty_type_parameter(self):
+        """qty_type kwarg overrides domain._quantity_type_map lookup."""
+        from anuga.abstract_2d_finite_volumes.quantity import Quantity
+        # Force centroid_only via explicit parameter (domain map has no 'myq')
+        q = Quantity(self.domain, name='myq', qty_type='centroid_only')
+        self.assertIsNone(q.edge_values)
+        self.assertIsNone(q.x_gradient)
+        self.assertIsNone(q.explicit_update)
+        self.assertEqual(q._qty_type, 'centroid_only')
+
+        # Explicit parameter wins over domain map entry
+        self.domain._quantity_type_map['overridden'] = 'evolved'
+        q2 = Quantity(self.domain, name='overridden', qty_type='centroid_only')
+        self.assertEqual(q2._qty_type, 'centroid_only')
+        self.assertIsNone(q2.edge_values)
+
     def test_friction_set_quantity_correct_value(self):
         self.domain.set_quantity('friction', 0.07)
         q = self.domain.quantities['friction']

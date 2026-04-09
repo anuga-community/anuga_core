@@ -73,6 +73,11 @@ not usually instantiated directly.  They are accessed via
    print(elev.vertex_values)       # values at triangle vertices
    print(elev.get_integral())      # integral over the domain
 
+Each quantity allocates only the arrays it needs via the ``qty_type``
+parameter (``'evolved'``, ``'centroid_only'``, ``'edge_diagnostic'``,
+``'static_with_gradients'``, or ``'coordinate'``).  See
+:ref:`quantity-memory-layout` for details.
+
 .. toctree::
    :hidden:
 

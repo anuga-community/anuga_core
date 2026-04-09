@@ -26,19 +26,41 @@ class Quantity:
 
     counter = 0
 
-    def __init__(self, domain, vertex_values=None, name=None, register=False):
+    def __init__(self, domain, vertex_values=None, name=None, register=False,
+                 qty_type=None):
         """Create Quantity object
 
         :param domain: Associated domain structure. Required.
         :param vertex_values: N x 3 array of values at each vertex for each element. Default None
         :param str name: Provides a way to refer to a created quantity
         :param register: Register a quantity
+        :param str qty_type: Memory allocation strategy. One of:
 
+            * ``'evolved'`` *(default)* — full layout: centroid, edge,
+              x/y-gradient, phi, explicit/semi-implicit update, centroid
+              backup. Use for time-stepped conserved quantities
+              (stage, xmomentum, ymomentum). **80 bytes per triangle.**
+            * ``'static_with_gradients'`` — centroid, edge, x/y-gradient.
+              Use for static fields that need gradient reconstruction
+              (e.g. elevation). **48 bytes per triangle.**
+            * ``'edge_diagnostic'`` — centroid and edge values only.
+              Use for derived diagnostic fields (height, velocity).
+              **32 bytes per triangle.**
+            * ``'centroid_only'`` — centroid values only.
+              Use for scalar parameters that are never edge-interpolated
+              (e.g. friction). **8 bytes per triangle.**
+            * ``'coordinate'`` — centroid, edge, and eager vertex values.
+              Use for mesh coordinate quantities (x, y).
+              **56 bytes per triangle.**
+
+            If ``None`` (default), the type is looked up in
+            ``domain._quantity_type_map[name]``, falling back to
+            ``'evolved'`` for unknown names.
 
         Usage:
 
         >>> Quantity(domain, name="newQ", register=True)
-
+        >>> Quantity(domain, name="tracer", register=True, qty_type='centroid_only')
 
         If vertex_values are None Create array of zeros compatible with domain.
         Otherwise check that it is compatible with dimensions of domain.
@@ -47,7 +69,6 @@ class Quantity:
         For Quantities that need to be saved during checkpointing, set register=True. Registered
         Quantities can be found in the dictionary domain.quantities (note, other Quantities can
         exist).
-
 
         """
 
@@ -62,10 +83,11 @@ class Quantity:
         assert isinstance(domain, Generic_Domain), msg
 
         # Determine quantity type for selective array allocation.
-        # Domains may define _quantity_type_map = {name: type_str, ...}.
-        # Unknown names fall back to 'evolved' (all arrays allocated) for
+        # Explicit qty_type parameter wins; otherwise consult the domain's
+        # _quantity_type_map; unknown names fall back to 'evolved' for
         # backward compatibility with third-party domains and operators.
-        qty_type = getattr(domain, '_quantity_type_map', {}).get(name, 'evolved')
+        if qty_type is None:
+            qty_type = getattr(domain, '_quantity_type_map', {}).get(name, 'evolved')
         self._qty_type = qty_type
 
         if vertex_values is None:
