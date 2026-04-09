@@ -173,6 +173,9 @@ bytes/triangle** versus **800 bytes/triangle** if every quantity were
                      qty_type='centroid_only')
    tracer.set_values(0.0)
 
-   # Option 2: register via the domain's type map before add_quantity
+   # Option 2: register via the domain's type map, then create with Quantity()
+   # Note: set_quantity() and add_quantity() operate on *existing* quantities
+   # only — they do not create a new one.  Use Quantity(..., register=True).
    domain._quantity_type_map['salinity'] = 'edge_diagnostic'
-   domain.add_quantity('salinity', 0.0)
+   salinity = Quantity(domain, name='salinity', register=True)
+   salinity.set_values(0.0)
