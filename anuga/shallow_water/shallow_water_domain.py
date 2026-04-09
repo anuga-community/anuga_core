@@ -2024,6 +2024,8 @@ class Domain(Generic_Domain):
                 evaluate_transmissive_n_zero_t_boundary_gpu,
                 set_time_boundary_values,
                 evaluate_time_boundary_gpu,
+                set_file_boundary_values_from_domain,
+                evaluate_file_boundary_gpu,
                 boundary_edge_sync,
                 sync_boundary_values,
                 init_boundary_edge_sync,
@@ -2034,7 +2036,7 @@ class Domain(Generic_Domain):
             # Lazily initialize GPU boundary info
             GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                                   'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                                  'Time_boundary'}
+                                  'Time_boundary', 'File_boundary', 'Field_boundary'}
 
             if not hasattr(self, '_gpu_boundary_info_initialized'):
                 self._gpu_cpu_tags = []
@@ -2081,6 +2083,10 @@ class Domain(Generic_Domain):
                     q = B.get_boundary_values()
                     set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
                 evaluate_time_boundary_gpu(gpu_dom)
+
+                # Handle File_boundary / Field_boundary (per-edge values from SWW interpolation)
+                set_file_boundary_values_from_domain(gpu_dom, self)
+                evaluate_file_boundary_gpu(gpu_dom)
             else:
                 # Some boundaries need CPU - sync edge values, evaluate on CPU, sync back
                 boundary_edge_sync(gpu_dom)
@@ -2954,6 +2960,8 @@ class Domain(Generic_Domain):
             evaluate_transmissive_n_zero_t_boundary_gpu,
             set_time_boundary_values,
             evaluate_time_boundary_gpu,
+            set_file_boundary_values_from_domain,
+            evaluate_file_boundary_gpu,
         )
         import numpy as np
 
@@ -2962,7 +2970,7 @@ class Domain(Generic_Domain):
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary'}
 
         # Lazy init: identify which boundaries need CPU evaluation vs GPU
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3019,6 +3027,8 @@ class Domain(Generic_Domain):
                 q = B.get_boundary_values()
                 set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
             evaluate_time_boundary_gpu(gpu_dom)
+            set_file_boundary_values_from_domain(gpu_dom, self)
+            evaluate_file_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -3070,6 +3080,8 @@ class Domain(Generic_Domain):
                 q = B.get_boundary_values()
                 set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
             evaluate_time_boundary_gpu(gpu_dom)
+            set_file_boundary_values_from_domain(gpu_dom, self)
+            evaluate_file_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -3107,6 +3119,7 @@ class Domain(Generic_Domain):
             evolve_one_rk2_step_gpu,
             set_transmissive_n_zero_t_stage,
             set_time_boundary_values,
+            set_file_boundary_values_from_domain,
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
@@ -3114,7 +3127,7 @@ class Domain(Generic_Domain):
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary'}
 
         # Lazy init: identify which boundaries need special handling
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3160,6 +3173,8 @@ class Domain(Generic_Domain):
         for B in self._gpu_time_boundaries:
             q = B.get_boundary_values()
             set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+
+        set_file_boundary_values_from_domain(gpu_dom, self)
 
         # Compute max allowed timestep (respecting yieldstep and finaltime)
         # This mirrors the logic in update_timestep()

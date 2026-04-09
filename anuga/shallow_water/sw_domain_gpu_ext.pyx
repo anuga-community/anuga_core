@@ -197,6 +197,14 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_transmissive_n_zero_t_set_stage(gpu_domain *GD, double stage_value)
     void gpu_evaluate_transmissive_n_zero_t_boundary(gpu_domain *GD)
 
+    # File_boundary / Field_boundary - spatially varying time-dependent values
+    int  gpu_file_boundary_init(gpu_domain *GD, int num_edges,
+                                int *boundary_indices, int *vol_ids, int *edge_ids)
+    void gpu_file_boundary_finalize(gpu_domain *GD)
+    void gpu_file_boundary_set_values(gpu_domain *GD,
+                                      double *stage, double *xmom, double *ymom)
+    void gpu_evaluate_file_boundary(gpu_domain *GD)
+
     # Time_boundary - time-dependent Dirichlet values
     int gpu_time_boundary_init(gpu_domain *GD, int num_edges,
                                int *boundary_indices, int *vol_ids, int *edge_ids)
@@ -321,11 +329,13 @@ cdef class GPUDomain:
     """
     cdef gpu_domain GD
     cdef bint initialized
-    cdef object python_domain  # Keep reference to prevent GC
+    cdef object python_domain      # Keep reference to prevent GC
+    cdef public object _file_boundary_meta  # List of (B, vol_id, edge_id) per file-boundary edge
 
     def __cinit__(self):
         self.initialized = False
         self.python_domain = None
+        self._file_boundary_meta = None
 
     def __dealloc__(self):
         if self.initialized:
@@ -1155,6 +1165,96 @@ def evaluate_transmissive_n_zero_t_boundary_gpu(GPUDomain gpu_dom):
     Call set_transmissive_n_zero_t_stage first to set the stage value.
     """
     gpu_evaluate_transmissive_n_zero_t_boundary(&gpu_dom.GD)
+
+
+def init_file_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize File_boundary / Field_boundary for GPU.
+
+    Scans domain.boundary_map for File_boundary and Field_boundary objects,
+    collects their edges, and initialises the GPU file_boundary struct.
+
+    Also stores per-edge evaluation metadata on gpu_dom so that
+    set_file_boundary_values_from_domain() can update values each timestep.
+
+    Call this once after domain setup, BEFORE map_to_gpu.
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+
+    FILE_BOUNDARY_TYPES = {'File_boundary', 'Field_boundary'}
+
+    if domain_object.boundary_map is None:
+        return
+
+    # Collect (boundary_index, vol_id, edge_id, boundary_object) for all edges
+    # belonging to File_boundary or Field_boundary tags.
+    all_ids = []
+    edge_meta = []  # list of (B, vol_id, edge_id, boundary_index)
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and boundary.__class__.__name__ in FILE_BOUNDARY_TYPES:
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                for bid in segment_edges:
+                    vol_id  = int(domain_object.boundary_cells[bid])
+                    edge_id = int(domain_object.boundary_edges[bid])
+                    all_ids.append(bid)
+                    edge_meta.append((boundary, vol_id, edge_id, int(bid)))
+
+    if len(all_ids) == 0:
+        return
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr  = np.ascontiguousarray(domain_object.boundary_cells[ids],  dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_file_boundary_init(&gpu_dom.GD, num_edges,
+                           &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0])
+
+    # Store edge metadata for per-timestep Python evaluation
+    # List of (B, vol_id, edge_id) in the same order as boundary_indices
+    gpu_dom._file_boundary_meta = [(B, vid, eid) for (B, vid, eid, bid) in edge_meta]
+
+
+def set_file_boundary_values_from_domain(GPUDomain gpu_dom, object domain_object):
+    """
+    Evaluate File_boundary / Field_boundary for the current simulation time
+    and push per-edge values to the GPU.
+
+    Call this each timestep before evaluate_file_boundary_gpu().
+    """
+    meta = getattr(gpu_dom, '_file_boundary_meta', None)
+    if meta is None or len(meta) == 0:
+        return
+
+    cdef int ne = len(meta)
+    cdef np.ndarray[double, ndim=1, mode="c"] stage_arr = np.empty(ne, dtype=np.float64)
+    cdef np.ndarray[double, ndim=1, mode="c"] xmom_arr  = np.empty(ne, dtype=np.float64)
+    cdef np.ndarray[double, ndim=1, mode="c"] ymom_arr  = np.empty(ne, dtype=np.float64)
+
+    for k, (B, vol_id, edge_id) in enumerate(meta):
+        q = B.evaluate(vol_id, edge_id)
+        stage_arr[k] = q[0]
+        xmom_arr[k]  = q[1]
+        ymom_arr[k]  = q[2]
+
+    gpu_file_boundary_set_values(&gpu_dom.GD,
+                                 &stage_arr[0], &xmom_arr[0], &ymom_arr[0])
+
+
+def evaluate_file_boundary_gpu(GPUDomain gpu_dom):
+    """
+    Evaluate File_boundary / Field_boundary on GPU.
+
+    Writes previously-pushed per-edge values into the global boundary_values
+    arrays and fills bed/height from adjacent interior edges.
+    Call set_file_boundary_values_from_domain() first.
+    """
+    gpu_evaluate_file_boundary(&gpu_dom.GD)
 
 
 def init_time_boundary(GPUDomain gpu_dom, object domain_object):

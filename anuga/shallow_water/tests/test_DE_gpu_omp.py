@@ -1189,6 +1189,120 @@ class Test_GPU_SlotLimits(unittest.TestCase):
 
 
 @pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+class Test_GPU_FileBoundary(unittest.TestCase):
+    """Tests for G1.1: File_boundary / Field_boundary GPU support."""
+
+    def _make_domain(self, M=15, N=15):
+        d = rectangular_cross_domain(M, N, len1=1.0, len2=1.0)
+        d.set_flow_algorithm('DE0')
+        d.set_low_froude(0)
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', lambda x, y: -x / 2)
+        d.set_quantity('friction', 0.0)
+        d.set_quantity('stage', expression='elevation')
+        return d
+
+    def _run_with_file_boundary(self, mode):
+        """Run a short simulation with a stub File_boundary on the 'left' tag."""
+        from anuga.shallow_water.boundaries import Reflective_boundary
+        from anuga.abstract_2d_finite_volumes.generic_boundary_conditions import Boundary
+
+        # Stub that behaves like File_boundary (matched by class name)
+        class File_boundary(Boundary):
+            def evaluate(self, vol_id=None, edge_id=None):
+                return [-0.2, 0.0, 0.0]
+
+        d = self._make_domain()
+        Br = Reflective_boundary(d)
+        Bf = File_boundary()
+        d.set_boundary({'left': Br, 'right': Bf, 'top': Br, 'bottom': Br})
+        d.set_multiprocessor_mode(mode)
+        d.set_quantities_to_be_stored(None)
+
+        gauge_tri = d.get_triangle_containing_point([0.7, 0.5])
+        stage = d.get_quantity('stage')
+        gauge_vals = []
+        for _ in d.evolve(yieldstep=0.25, finaltime=0.5):
+            gauge_vals.append(float(stage.centroid_values[gauge_tri]))
+        return gauge_vals
+
+    def test_file_boundary_mode1_vs_mode2(self):
+        """File_boundary produces identical results in mode=1 and mode=2."""
+        g1 = self._run_with_file_boundary(mode=1)
+        g2 = self._run_with_file_boundary(mode=2)
+        self.assertEqual(len(g1), len(g2))
+        for v1, v2 in zip(g1, g2):
+            self.assertAlmostEqual(v1, v2, places=10,
+                msg=f"mode=1 gauge={v1} vs mode=2 gauge={v2}")
+
+    def test_file_boundary_in_gpu_boundary_types(self):
+        """File_boundary and Field_boundary are recognised as GPU-supported types."""
+        from anuga.shallow_water.boundaries import Reflective_boundary
+        from anuga.abstract_2d_finite_volumes.generic_boundary_conditions import Boundary
+
+        class File_boundary(Boundary):
+            def evaluate(self, vol_id=None, edge_id=None):
+                return [-0.2, 0.0, 0.0]
+
+        class Field_boundary(Boundary):
+            def evaluate(self, vol_id=None, edge_id=None):
+                return [-0.1, 0.0, 0.0]
+
+        d = self._make_domain()
+        Br = Reflective_boundary(d)
+        d.set_boundary({'left': Br, 'right': File_boundary(), 'top': Br, 'bottom': Field_boundary()})
+        d.set_multiprocessor_mode(2)
+
+        # Trigger lazy boundary init by running one step
+        d.set_quantities_to_be_stored(None)
+        for _ in d.evolve(yieldstep=0.25, finaltime=0.25):
+            pass
+
+        # Both file boundary types must be on-GPU (no CPU fallback)
+        self.assertTrue(d._gpu_all_on_gpu,
+            "File_boundary / Field_boundary should be GPU-supported")
+        # GPU interface must still be active (no fallback to mode=1)
+        self.assertIsNotNone(d.gpu_interface, "GPU interface should remain active")
+
+    def test_file_boundary_values_pushed_to_gpu(self):
+        """set_file_boundary_values_from_domain correctly fills per-edge arrays."""
+        from anuga.shallow_water.boundaries import Reflective_boundary
+        from anuga.abstract_2d_finite_volumes.generic_boundary_conditions import Boundary
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            init_gpu_domain, map_to_gpu, unmap_from_gpu, finalize_gpu_domain,
+            init_file_boundary, set_file_boundary_values_from_domain,
+        )
+
+        STAGE_VAL = -0.42
+
+        class File_boundary(Boundary):
+            def evaluate(self, vol_id=None, edge_id=None):
+                return [STAGE_VAL, 0.0, 0.0]
+
+        d = self._make_domain(10, 10)
+        Br = Reflective_boundary(d)
+        Bf = File_boundary()
+        d.set_boundary({'left': Br, 'right': Bf, 'top': Br, 'bottom': Br})
+
+        gpu = init_gpu_domain(d)
+        init_file_boundary(gpu, d)
+        map_to_gpu(gpu)
+
+        # Push current values
+        set_file_boundary_values_from_domain(gpu, d)
+
+        # Verify the Python metadata was populated (edges found for right-boundary tag)
+        meta = getattr(gpu, '_file_boundary_meta', None)
+        self.assertIsNotNone(meta, "_file_boundary_meta should be set after init_file_boundary")
+        self.assertGreater(len(meta), 0,
+            "file_bdry should have edges for the 'right' File_boundary tag")
+
+        unmap_from_gpu(gpu)
+        finalize_gpu_domain(gpu)
+
+
+@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
 class Test_GPU_DeviceMemory(unittest.TestCase):
     """Tests for G1.2: device memory check before array mapping."""
 

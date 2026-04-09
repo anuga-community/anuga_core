@@ -16,6 +16,7 @@
 extern void gpu_flop_counters_init(struct gpu_domain *GD);
 extern void gpu_halo_finalize(struct gpu_domain *GD);
 extern void gpu_reflective_finalize(struct gpu_domain *GD);
+extern void gpu_file_boundary_finalize(struct gpu_domain *GD);
 extern void gpu_dirichlet_finalize(struct gpu_domain *GD);
 extern void gpu_transmissive_finalize(struct gpu_domain *GD);
 extern void gpu_transmissive_n_zero_t_finalize(struct gpu_domain *GD);
@@ -248,6 +249,16 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->time_bdry.ymom_value = 0.0;
     GD->time_bdry.mapped = 0;
 
+    // Initialize file_boundary to empty
+    GD->file_bdry.num_edges        = 0;
+    GD->file_bdry.boundary_indices = NULL;
+    GD->file_bdry.vol_ids          = NULL;
+    GD->file_bdry.edge_ids         = NULL;
+    GD->file_bdry.stage_values     = NULL;
+    GD->file_bdry.xmom_values      = NULL;
+    GD->file_bdry.ymom_values      = NULL;
+    GD->file_bdry.mapped           = 0;
+
     // Initialize boundary edge sync to empty
     GD->edge_sync.num_boundary_cells = 0;
     GD->edge_sync.cell_ids = NULL;
@@ -300,6 +311,7 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
     gpu_dirichlet_finalize(GD);
     gpu_transmissive_finalize(GD);
     gpu_transmissive_n_zero_t_finalize(GD);
+    gpu_file_boundary_finalize(GD);
 
     // Free boundary edge sync structures
     gpu_boundary_edge_sync_finalize(GD);
@@ -483,6 +495,27 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
 
         if (GD->rank == 0 && GD->verbose) {
             printf("  Time boundary: %d edges\n", ne);
+            fflush(stdout);
+        }
+    }
+
+    // Map file_boundary arrays if initialized
+    struct file_boundary *FB = &GD->file_bdry;
+    if (FB->num_edges > 0 && FB->boundary_indices != NULL) {
+        int ne = FB->num_edges;
+        int    *b_idx   = FB->boundary_indices;
+        int    *v_ids   = FB->vol_ids;
+        int    *e_ids   = FB->edge_ids;
+        double *stage_v = FB->stage_values;
+        double *xmom_v  = FB->xmom_values;
+        double *ymom_v  = FB->ymom_values;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+                                              stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
+        FB->mapped = 1;
+
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  File boundary: %d edges\n", ne);
             fflush(stdout);
         }
     }
@@ -778,6 +811,21 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *e_ids = TB->edge_ids;
         #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 0;
+    }
+
+    // Unmap file_boundary arrays if mapped
+    struct file_boundary *FB = &GD->file_bdry;
+    if (FB->mapped && FB->num_edges > 0) {
+        int ne = FB->num_edges;
+        int    *b_idx   = FB->boundary_indices;
+        int    *v_ids   = FB->vol_ids;
+        int    *e_ids   = FB->edge_ids;
+        double *stage_v = FB->stage_values;
+        double *xmom_v  = FB->xmom_values;
+        double *ymom_v  = FB->ymom_values;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+                                                 stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
+        FB->mapped = 0;
     }
 
     // Unmap riverwall arrays
