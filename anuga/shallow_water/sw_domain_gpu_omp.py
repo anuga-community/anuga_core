@@ -189,6 +189,11 @@ class GPU_OMP_interface:
         from anuga.shallow_water.sw_domain_gpu_ext import saxpy_conserved_quantities_gpu
         saxpy_conserved_quantities_gpu(self.gpu_dom, a, b)
 
+    def saxpy3_conserved_quantities_kernel(self, domain, a, b, c):
+        """RK3 final combination: Q = (a*Q_current + b*Q_backup) / c."""
+        from anuga.shallow_water.sw_domain_gpu_ext import saxpy3_conserved_quantities_gpu
+        saxpy3_conserved_quantities_gpu(self.gpu_dom, a, b, c)
+
     def manning_friction_kernel(self, domain):
         """Apply Manning friction (semi-implicit)."""
         from anuga.shallow_water.sw_domain_gpu_ext import manning_friction_gpu

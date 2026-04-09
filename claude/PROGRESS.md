@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-07 (session 11, end of day)
+Last updated: 2026-04-09 (session 12, end of day)
 Branch: `develop` (contains feat/sc26 GPU work)
 
 ---
@@ -17,7 +17,7 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
 | Hydrata Phase 3 — Deduplication | 4 | 0 | 4 |
 | Hydrata Phase 4 — Coverage | 3 | 0 | 3 |
-| GPU Phase 1 — Correctness & tests | 6 | 3 | 3 |
+| GPU Phase 1 — Correctness & tests | 7 | 7 | 0 |
 | GPU Phase 2 — Performance validation | 4 | 0 | 4 |
 | GPU Phase 3 — Feature parity | 4 | 0 | 4 |
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
@@ -25,7 +25,7 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | Quantity memory reduction | 7 | 0 | 7 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 1 | 1 | 0 |
-| **Total** | **159** | **122** | **37** |
+| **Total** | **163** | **130** | **33** |
 
 ---
 
@@ -303,12 +303,13 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 
 ### Phase 1 — Correctness and test coverage (weeks 1–4)
 
-- [ ] **G1.1 File_boundary GPU support** — standard open-ocean boundary; without it GPU mode can't run real tsunami models. Struct + Python push pattern, same as `time_boundary`.
-- [ ] **G1.2 Device memory check** — add `gpu_check_device_memory()` before first `omp target enter data`; print clear error and fall back rather than silently crashing on large meshes.
+- [x] **G1.1 File_boundary GPU support** — `File_boundary` / `Field_boundary` (spatially varying, time-dependent, per-edge values from SWW interpolation). Struct + Python push pattern; `gpu_file_boundary_init/set_values/evaluate`; `init_file_boundary` in setup; `set_file_boundary_values_from_domain` + `evaluate_file_boundary_gpu` called each sub-step in both Python and C RK loops. 3 tests (mode=1 vs mode=2, type recognised, per-edge push). *(2026-04-09)*
+- [x] **G1.2 Device memory check** — `gpu_check_device_memory()` before first `omp target enter data`; prints estimated memory, queries CUDA/HIP when available, `map_to_gpu` raises `RuntimeError` on OOM. 5 tests. *(2026-04-09)*
 - [x] **G1.3 Slot limit assertions** — `MAX_RATE_OPERATORS=64`, `MAX_INLET_OPERATORS=32`, `MAX_CULVERTS=64` now raise `RuntimeError` on overflow (Rate_operator, Inlet_operator, Parallel_inlet_operator). 2 tests. *(2026-04-07)*
-- [x] **G1.4 End-to-end regression test** — 10 s tidal + 10 s dam break; mode=1 vs mode=2; `atol=1e-12`; in CPU_ONLY_MODE differences are machine-epsilon (measured 0 for tidal, 3e-16 for culvert). *(2026-04-07)*
-- [ ] **G1.4 Multi-rank halo exchange test** — 2- and 4-process GPU tests using `mpirun` subprocess (same pattern as `anuga/parallel/tests/`).
-- [x] **G1.4 Culvert test in GPU mode** — `Test_GPU_Culvert`: mode=1 vs mode=2 comparison, volume conservation, flow direction. *(2026-04-07)*
+- [x] **G1.4 End-to-end regression test** — 10 s tidal + 10 s dam break; mode=1 vs mode=2; `atol=1e-12`; in CPU_ONLY_MODE differences are machine-epsilon. *(2026-04-07)*
+- [x] **G1.4 Multi-rank halo exchange test** — `test_parallel_sw_flow_gpu.py`: 2-rank MPI GPU test; `tri_full_flag` fix (ghost cells excluded from timestep min). *(2026-04-09)*
+- [x] **G1.4 Culvert test in GPU mode** — `Test_GPU_Culvert`: mode=1 vs mode=2, volume conservation, flow direction. *(2026-04-07)*
+- [x] **G1.5 SSP-RK3 GPU support** — `gpu_evolve_one_rk3_step` (3-stage Shu-Osher C loop); `gpu_saxpy3_conserved_quantities`; Python-orchestrated `_evolve_one_rk3_step_gpu` + C loop `_evolve_one_rk3_step_c`; `evolve_one_rk3_step` dispatches to GPU; `use_c_rk2_loop` → `use_c_rk_loop` (deprecated property kept). 3 tests. *(2026-04-09)*
 
 ### Phase 2 — Performance validation (weeks 5–10)
 
@@ -335,15 +336,13 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 ## Remaining Work (priority order)
 
 ### Immediate — best standalone value (no GPU hardware needed)
-1. **QM1–QM6** Quantity memory reduction Phase 1 (pure Python, ~2 days; ~58% saving for 1M-tri domain)
-2. **G1.4** Multi-rank halo exchange test (2- and 4-process MPI+GPU)
-3. **H3.2/H3.3** Parallel operator wrapper consolidation / Culvert class merge
+1. **QM1–QM6** Quantity memory reduction Phase 1 (pure Python, ~2 days; ~58% saving for 1M-tri domain) *(waiting on Jorge's feedback)*
+2. **H3.2/H3.3** Parallel operator wrapper consolidation / Culvert class merge
+3. **G2.1** GPU benchmark suite (100K / 2M / 20M triangles, Gordon Bell FLOP/s) — can run in CPU_ONLY_MODE for structure
 
 ### Short term — SC26 prerequisites (needs GPU hardware)
-4. **G1.1** File_boundary GPU support (enables real tsunami models)
-5. **G1.2** Device memory check before GPU mapping
-6. **G2.1** GPU benchmark suite (100K / 2M / 20M triangles)
-7. **G2.4** Weak scaling experiment (1→64 GPUs)
+4. **G2.1** GPU benchmark suite (actual GPU runs)
+5. **G2.4** Weak scaling experiment (1→64 GPUs)
 
 ### Medium effort (1–3 days each)
 8. **H3.1** Unify quantity Cython kernels — `quantity_ext.pyx`, `quantity_ext_openmp.pyx`, `quantity_ext2.pyx` share ~90% code (high risk)

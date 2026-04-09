@@ -475,6 +475,7 @@ double gpu_compute_fluxes(struct gpu_domain *GD);
 void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep);
 void gpu_backup_conserved_quantities(struct gpu_domain *GD);
 void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b);
+void gpu_saxpy3_conserved_quantities(struct gpu_domain *GD, double a, double b, double c);
 double gpu_protect(struct gpu_domain *GD);
 double gpu_compute_water_volume(struct gpu_domain *GD);
 void gpu_manning_friction(struct gpu_domain *GD);
@@ -482,6 +483,9 @@ void gpu_manning_friction(struct gpu_domain *GD);
 // Full RK2 step on GPU (calls all the above in sequence)
 // max_timestep: Maximum allowed timestep (respecting yieldstep/finaltime constraints)
 double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
+
+// Full SSP-RK3 step on GPU (Shu-Osher 3-stage)
+double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
 
 // Utility functions
 int detect_gpu_aware_mpi(void);

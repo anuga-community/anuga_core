@@ -218,12 +218,17 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_update_conserved_quantities(gpu_domain *GD, double timestep)
     void gpu_backup_conserved_quantities(gpu_domain *GD)
     void gpu_saxpy_conserved_quantities(gpu_domain *GD, double a, double b)
+    void gpu_saxpy3_conserved_quantities(gpu_domain *GD, double a, double b, double c)
     double gpu_protect(gpu_domain *GD)
     double gpu_compute_water_volume(gpu_domain *GD)
     void gpu_manning_friction(gpu_domain *GD)
 
     # Full RK2 step
     double gpu_evolve_one_rk2_step(gpu_domain *GD, double max_timestep, int apply_forcing)
+
+    # Full SSP-RK3 step
+    double gpu_evolve_one_rk3_step(gpu_domain *GD, double max_timestep, int apply_forcing)
+
     void print_gpu_domain_info(gpu_domain *GD)
 
     # Rate operators (rain, extraction, etc.)
@@ -1336,6 +1341,27 @@ def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_fo
     return gpu_evolve_one_rk2_step(&gpu_dom.GD, max_timestep, apply_forcing)
 
 
+def evolve_one_rk3_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
+    """
+    Execute one SSP-RK3 timestep on GPU (Shu-Osher 3-stage).
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    max_timestep : float
+        Maximum allowed timestep (respecting yieldstep/finaltime constraints)
+    apply_forcing : int
+        Whether to apply GPU-compatible forcing terms
+
+    Returns
+    -------
+    float
+        The timestep used
+    """
+    return gpu_evolve_one_rk3_step(&gpu_dom.GD, max_timestep, apply_forcing)
+
+
 def finalize_gpu_domain(GPUDomain gpu_dom):
     """
     Clean up GPU domain resources.
@@ -1399,6 +1425,16 @@ def saxpy_conserved_quantities_gpu(GPUDomain gpu_dom, double a, double b):
     Typically called with a=0.5, b=0.5 for standard RK2.
     """
     gpu_saxpy_conserved_quantities(&gpu_dom.GD, a, b)
+
+
+def saxpy3_conserved_quantities_gpu(GPUDomain gpu_dom, double a, double b, double c):
+    """
+    RK3 final combination: Q = (a*Q_current + b*Q_backup) / c
+
+    Used for SSP-RK3 final step: saxpy3(2.0, 1.0, 3.0)
+    computes Q = (2*Q_current + Q_backup) / 3.
+    """
+    gpu_saxpy3_conserved_quantities(&gpu_dom.GD, a, b, c)
 
 
 def protect_gpu(GPUDomain gpu_dom):
