@@ -273,8 +273,22 @@ class Domain(Generic_Domain):
             other_quantities = ['elevation', 'friction', 'height',
                                 'xvelocity', 'yvelocity', 'x', 'y']
 
-
-
+        # Selective array allocation per quantity type.
+        # Quantities not listed default to 'evolved' (all arrays) for
+        # backward compatibility with user-defined quantities.
+        self._quantity_type_map = {
+            'stage':       'evolved',
+            'xmomentum':   'evolved',
+            'ymomentum':   'evolved',
+            # elevation: keep gradient arrays — erosion operators use them
+            'elevation':   'static_with_gradients',
+            'friction':    'centroid_only',
+            'height':      'edge_diagnostic',
+            'xvelocity':   'edge_diagnostic',
+            'yvelocity':   'edge_diagnostic',
+            'x':           'coordinate',
+            'y':           'coordinate',
+        }
 
 
         Generic_Domain.__init__(self,

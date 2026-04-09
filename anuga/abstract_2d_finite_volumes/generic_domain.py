@@ -1476,18 +1476,19 @@ class Generic_Domain:
             for name in self.quantities:
                 q = self.quantities[name]
 
-                V = q.get_values(location='vertices', indices=[k])[0]
-                E = q.get_values(location='edges', indices=[k])[0]
                 C = q.get_values(location='centroids', indices=[k])
-
-                s = '    %s: vertex_values =  %.4f,\t %.4f,\t %.4f\n' \
-                    % (name.ljust(qwidth), V[0], V[1], V[2])
-
-                s += '    %s: edge_values =    %.4f,\t %.4f,\t %.4f\n' \
-                    % (name.ljust(qwidth), E[0], E[1], E[2])
-
-                s += '    %s: centroid_value = %.4f\n' \
+                s = '    %s: centroid_value = %.4f\n' \
                     % (name.ljust(qwidth), C[0])
+
+                if q.edge_values is not None:
+                    E = q.get_values(location='edges', indices=[k])[0]
+                    s += '    %s: edge_values =    %.4f,\t %.4f,\t %.4f\n' \
+                        % (name.ljust(qwidth), E[0], E[1], E[2])
+
+                if q._vertex_values is not None:
+                    V = q.get_values(location='vertices', indices=[k])[0]
+                    s += '    %s: vertex_values =  %.4f,\t %.4f,\t %.4f\n' \
+                        % (name.ljust(qwidth), V[0], V[1], V[2])
 
                 msg += s
 

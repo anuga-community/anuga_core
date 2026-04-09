@@ -3916,6 +3916,101 @@ Parameters
         assert num.allclose(quantity.edge_values, exact_edge_values)
 
 
+class Test_Quantity_Memory(unittest.TestCase):
+    """Verify selective array allocation for quantity types (QM1-QM6)."""
+
+    def setUp(self):
+        from anuga import rectangular_cross_domain
+        self.domain = rectangular_cross_domain(10, 10)
+        self.domain.set_quantity('elevation', -1.0)
+        self.domain.set_quantity('stage', 0.5)
+        self.domain.set_quantity('friction', 0.03)
+
+    def test_evolved_has_all_arrays(self):
+        for name in ['stage', 'xmomentum', 'ymomentum']:
+            q = self.domain.quantities[name]
+            self.assertIsNotNone(q.explicit_update, name)
+            self.assertIsNotNone(q.semi_implicit_update, name)
+            self.assertIsNotNone(q.centroid_backup_values, name)
+            self.assertIsNotNone(q.x_gradient, name)
+            self.assertIsNotNone(q.y_gradient, name)
+            self.assertIsNotNone(q.phi, name)
+            self.assertIsNotNone(q.edge_values, name)
+
+    def test_elevation_strips_update_arrays(self):
+        q = self.domain.quantities['elevation']
+        self.assertIsNone(q.explicit_update)
+        self.assertIsNone(q.semi_implicit_update)
+        self.assertIsNone(q.centroid_backup_values)
+        self.assertIsNone(q.phi)
+        # gradient arrays retained — erosion operators use them
+        self.assertIsNotNone(q.x_gradient)
+        self.assertIsNotNone(q.y_gradient)
+        self.assertIsNotNone(q.edge_values)
+
+    def test_friction_centroid_only(self):
+        q = self.domain.quantities['friction']
+        self.assertIsNone(q.explicit_update)
+        self.assertIsNone(q.semi_implicit_update)
+        self.assertIsNone(q.centroid_backup_values)
+        self.assertIsNone(q.x_gradient)
+        self.assertIsNone(q.y_gradient)
+        self.assertIsNone(q.phi)
+        self.assertIsNone(q.edge_values)
+        self.assertTrue(num.allclose(q.centroid_values, 0.03))
+
+    def test_height_edge_diagnostic(self):
+        q = self.domain.quantities['height']
+        self.assertIsNone(q.explicit_update)
+        self.assertIsNone(q.x_gradient)
+        self.assertIsNone(q.phi)
+        self.assertIsNotNone(q.edge_values)
+
+    def test_velocity_edge_diagnostic(self):
+        for name in ['xvelocity', 'yvelocity']:
+            q = self.domain.quantities[name]
+            self.assertIsNone(q.explicit_update, name)
+            self.assertIsNone(q.x_gradient, name)
+            self.assertIsNone(q.phi, name)
+            self.assertIsNotNone(q.edge_values, name)
+
+    def test_vertex_values_lazy(self):
+        from anuga import rectangular_cross_domain
+        d = rectangular_cross_domain(4, 4)
+        q = d.quantities['xmomentum']
+        vv = q.vertex_values  # lazy allocation on first access
+        self.assertIsNotNone(vv)
+        self.assertEqual(vv.shape, (len(d), 3))
+
+    def test_friction_set_quantity_correct_value(self):
+        self.domain.set_quantity('friction', 0.07)
+        q = self.domain.quantities['friction']
+        self.assertTrue(num.allclose(q.centroid_values, 0.07))
+
+    def test_memory_saving(self):
+        N = len(self.domain)
+
+        def array_bytes(q):
+            total = 0
+            for attr in ['centroid_values', 'edge_values', 'x_gradient',
+                         'y_gradient', 'phi', 'explicit_update',
+                         'semi_implicit_update', 'centroid_backup_values']:
+                arr = getattr(q, attr)
+                if arr is not None:
+                    total += arr.nbytes
+            return total
+
+        evolved_bytes = array_bytes(self.domain.quantities['stage'])
+        friction_bytes = array_bytes(self.domain.quantities['friction'])
+        elevation_bytes = array_bytes(self.domain.quantities['elevation'])
+        height_bytes = array_bytes(self.domain.quantities['height'])
+
+        self.assertEqual(evolved_bytes, 80 * N)    # centroid+edge+xg+yg+phi+exp+semi+backup
+        self.assertEqual(friction_bytes, 8 * N)    # centroid only
+        self.assertEqual(elevation_bytes, 48 * N)  # centroid+edge+x_grad+y_grad
+        self.assertEqual(height_bytes, 32 * N)     # centroid+edge
+
+
 # -------------------------------------------------------------
 if __name__ == '__main__':
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Quantity)

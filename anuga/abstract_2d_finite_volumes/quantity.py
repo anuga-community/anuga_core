@@ -61,13 +61,25 @@ class Quantity:
                % (str(Generic_Domain.__name__),str(domain.__class__)))
         assert isinstance(domain, Generic_Domain), msg
 
+        # Determine quantity type for selective array allocation.
+        # Domains may define _quantity_type_map = {name: type_str, ...}.
+        # Unknown names fall back to 'evolved' (all arrays allocated) for
+        # backward compatibility with third-party domains and operators.
+        qty_type = getattr(domain, '_quantity_type_map', {}).get(name, 'evolved')
+        self._qty_type = qty_type
+
         if vertex_values is None:
             N = len(domain)             # number_of_elements
-            self.vertex_values = num.zeros((N, 3), float)
+            # Lazy: vertex_values allocated on first access (see property below).
+            # 'coordinate' quantities (x, y) need them immediately since
+            # generic_domain assigns vertex coordinates right after construction.
+            if qty_type == 'coordinate':
+                self._vertex_values = num.zeros((N, 3), float)
+            else:
+                self._vertex_values = None
         else:
-            self.vertex_values = num.array(vertex_values, float)
-
-            N, V = self.vertex_values.shape
+            self._vertex_values = num.array(vertex_values, float)
+            N, V = self._vertex_values.shape
             assert V == 3, 'Three vertex values per element must be specified'
 
             msg = 'Number of vertex values (%d) must be consistent with' % N
@@ -76,32 +88,47 @@ class Quantity:
 
         self.domain = domain
 
-        # Allocate space for other quantities
+        # centroid_values is always allocated (primary state for all types)
         self.centroid_values = num.zeros(N, float)
-        self.edge_values = num.zeros((N, 3), float)
 
-        # Allocate space for Gradient
-        self.x_gradient = num.zeros(N, float)
-        self.y_gradient = num.zeros(N, float)
+        # edge_values: needed by evolved, static, and edge_diagnostic types.
+        # Not needed by centroid_only (friction).
+        if qty_type == 'centroid_only':
+            self.edge_values = None
+        else:
+            self.edge_values = num.zeros((N, 3), float)
 
-        # Allocate space for Limiter Phi
-        self.phi = num.zeros(N, float)
+        # Gradient arrays: only needed for evolved and static_with_gradients.
+        if qty_type in ('evolved', 'static_with_gradients'):
+            self.x_gradient = num.zeros(N, float)
+            self.y_gradient = num.zeros(N, float)
+        else:
+            self.x_gradient = None
+            self.y_gradient = None
 
-        # Intialise centroid and edge_values
-        self.interpolate()
+        # Limiter phi: only needed for evolved quantities.
+        if qty_type == 'evolved':
+            self.phi = num.zeros(N, float)
+        else:
+            self.phi = None
 
-        # Allocate space for boundary values
-        #self.boundary_length = domain.boundary_length
+        # Initialise centroid and edge_values from vertex_values (if available)
+        if self._vertex_values is not None:
+            self.interpolate()
+
+        # Boundary values (size = number of boundary edges, not N — always small)
         self.boundary_length = L = self.domain.boundary_length
         self.boundary_values = num.zeros(L, float)
 
-        # Allocate space for updates of conserved quantities by
-        # flux calculations and forcing functions
-
-        # Allocate space for update fields
-        self.explicit_update = num.zeros(N, float )
-        self.semi_implicit_update = num.zeros(N, float )
-        self.centroid_backup_values = num.zeros(N, float)
+        # Update arrays: only needed for evolved (conserved) quantities.
+        if qty_type == 'evolved':
+            self.explicit_update = num.zeros(N, float)
+            self.semi_implicit_update = num.zeros(N, float)
+            self.centroid_backup_values = num.zeros(N, float)
+        else:
+            self.explicit_update = None
+            self.semi_implicit_update = None
+            self.centroid_backup_values = None
 
         self.set_beta(1.0)
 
@@ -113,6 +140,25 @@ class Quantity:
         # Lets register the quantity with the quantity (useful for checkpointing)
         if register:
             self.domain.quantities[self.name] = self
+
+    # ------------------------------------------------------------------
+    # vertex_values — lazy property
+    # Allocated on first access; assignment via setter updates backing store.
+    # ------------------------------------------------------------------
+
+    @property
+    def vertex_values(self):
+        if self._vertex_values is None:
+            N = self.centroid_values.shape[0]
+            self._vertex_values = num.zeros((N, 3), float)
+        return self._vertex_values
+
+    @vertex_values.setter
+    def vertex_values(self, value):
+        if value is None:
+            self._vertex_values = None
+        else:
+            self._vertex_values = num.array(value, float)
 
     ############################################################################
     # Methods for operator overloading
@@ -687,19 +733,27 @@ class Quantity:
         """Compute interpolated values at edges and centroid
         Pre-condition: vertex_values have been set
         """
+        if self.edge_values is None:
+            # centroid_only type: no edge array, but still compute centroid = mean(vertices)
+            if self._vertex_values is not None:
+                v = self._vertex_values
+                self.centroid_values[:] = (v[:, 0] + v[:, 1] + v[:, 2]) / 3.0
+            return
         from .quantity_openmp_ext import interpolate
         interpolate(self)
 
 
     def interpolate_from_vertices_to_edges(self):
         # Call correct module function (either from this module or C-extension)
-
+        if self.edge_values is None:
+            return
         from .quantity_openmp_ext import interpolate_from_vertices_to_edges
         interpolate_from_vertices_to_edges(self)
 
     def interpolate_from_edges_to_vertices(self):
         # Call correct module function (either from this module or C-extension)
-
+        if self.edge_values is None:
+            return
         from .quantity_openmp_ext import interpolate_from_edges_to_vertices
         interpolate_from_edges_to_vertices(self)
 
@@ -2214,18 +2268,20 @@ class Quantity:
         for each volume using first order scheme.
         """
 
+        if self.edge_values is None:
+            # centroid_only type (e.g. friction): no edge or vertex arrays to fill
+            return
+
         qc = self.centroid_values
         qv = self.vertex_values
         qe = self.edge_values
 
-        #for i in range(3):
-        #    qe[:,i] = qc
-
         qe[:] = qc[:,num.newaxis]
         qv[:] = qe
 
-        self.x_gradient[:] = 0.0
-        self.y_gradient[:] = 0.0
+        if self.x_gradient is not None:
+            self.x_gradient[:] = 0.0
+            self.y_gradient[:] = 0.0
 
     def get_integral(self, full_only=True, region=None, indices=None):
 
