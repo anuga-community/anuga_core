@@ -357,7 +357,10 @@ int gpu_halo_init(struct gpu_domain *GD,
 void gpu_halo_finalize(struct gpu_domain *GD);
 
 // GPU memory management
-void gpu_domain_map_arrays(struct gpu_domain *GD);
+size_t gpu_estimate_required_memory(anuga_int n, anuga_int nb);
+int    gpu_query_device_memory(size_t *free_bytes, size_t *total_bytes);
+int    gpu_check_device_memory(struct gpu_domain *GD);
+int    gpu_domain_map_arrays(struct gpu_domain *GD);
 void gpu_remap_boundary_arrays(struct gpu_domain *GD);
 void gpu_domain_unmap_arrays(struct gpu_domain *GD);
 void gpu_domain_sync_to_device(struct gpu_domain *GD);

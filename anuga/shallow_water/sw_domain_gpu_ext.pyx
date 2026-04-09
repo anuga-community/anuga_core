@@ -153,7 +153,9 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_halo_finalize(gpu_domain *GD)
 
     # GPU memory management
-    void gpu_domain_map_arrays(gpu_domain *GD)
+    size_t gpu_estimate_required_memory(int64_t n, int64_t nb)
+    int    gpu_check_device_memory(gpu_domain *GD)
+    int    gpu_domain_map_arrays(gpu_domain *GD)
     void gpu_remap_boundary_arrays(gpu_domain *GD)
     void gpu_domain_unmap_arrays(gpu_domain *GD)
     void gpu_domain_sync_to_device(gpu_domain *GD)
@@ -754,13 +756,79 @@ def init_gpu_domain(object domain_object, bint verbose=True):
     return gpu_dom
 
 
+def estimate_required_memory(int64_t n, int64_t nb):
+    """
+    Estimate device memory (bytes) needed for a domain with n triangles and nb boundary edges.
+
+    Parameters
+    ----------
+    n : int
+        Number of triangles (number_of_elements).
+    nb : int
+        Number of boundary edges (boundary_length).
+
+    Returns
+    -------
+    int
+        Estimated bytes that gpu_domain_map_arrays will transfer to the device.
+    """
+    return gpu_estimate_required_memory(n, nb)
+
+
+def check_gpu_device_memory(GPUDomain gpu_dom):
+    """
+    Run the C-level device memory check for this domain.
+
+    Returns 1 if the device has enough memory (or if the device cannot be
+    queried, e.g., CPU_ONLY_MODE), 0 if memory is insufficient.
+    Also prints a diagnostic line when memory is insufficient.
+    """
+    return gpu_check_device_memory(&gpu_dom.GD)
+
+
+def check_device_memory(GPUDomain gpu_dom):
+    """
+    Check that the target device has enough free memory for this domain.
+
+    Returns (ok, required_mb, free_mb, total_mb).  free_mb and total_mb are 0
+    when the device cannot be queried (CPU_ONLY_MODE or unknown vendor).
+
+    Raises RuntimeError with an actionable message if memory is insufficient.
+    """
+    cdef int64_t n  = gpu_dom.GD.D.number_of_elements
+    cdef int64_t nb = gpu_dom.GD.D.boundary_length
+    cdef size_t required = gpu_estimate_required_memory(n, nb)
+    cdef size_t free_b = 0, total_b = 0
+
+    # Re-use the C query; ignore return value (check_device_memory prints errors)
+    ok = gpu_check_device_memory(&gpu_dom.GD)
+    if not ok:
+        req_mb = required / (1024.0 * 1024.0)
+        raise RuntimeError(
+            f"Insufficient GPU memory for domain with {n} triangles "
+            f"(estimated {req_mb:.0f} MB required). "
+            "Use fewer triangles, more MPI ranks, or set_multiprocessor_mode(1)."
+        )
+
+
 def map_to_gpu(GPUDomain gpu_dom):
     """
     Map domain arrays to GPU memory.
 
     Call this once after init_gpu_domain, before starting the evolve loop.
+    Raises RuntimeError if the device does not have enough free memory.
     """
-    gpu_domain_map_arrays(&gpu_dom.GD)
+    cdef int ok
+    cdef int64_t n = gpu_dom.GD.D.number_of_elements
+    cdef int64_t nb = gpu_dom.GD.D.boundary_length
+    ok = gpu_domain_map_arrays(&gpu_dom.GD)
+    if not ok:
+        req_mb = gpu_estimate_required_memory(n, nb) / (1024.0 * 1024.0)
+        raise RuntimeError(
+            f"GPU memory check failed for domain with {n} triangles "
+            f"(estimated {req_mb:.0f} MB required). "
+            "Use fewer triangles, more MPI ranks, or set_multiprocessor_mode(1)."
+        )
 
 
 def remap_boundary_arrays(GPUDomain gpu_dom):

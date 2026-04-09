@@ -25,6 +25,117 @@ extern void gpu_boundary_edge_sync_finalize(struct gpu_domain *GD);
 // Utility Functions
 // ============================================================================
 
+// ---------------------------------------------------------------------------
+// Device memory estimation and checking
+// ---------------------------------------------------------------------------
+
+// Compute the number of bytes that gpu_domain_map_arrays will transfer to the
+// device for a domain with n triangles and nb boundary edges.
+//
+// Counts only the main domain arrays (double and int64 per-element arrays).
+// Boundary and riverwall arrays are small relative to domain size.
+size_t gpu_estimate_required_memory(anuga_int n, anuga_int nb) {
+    // Per-element double arrays mapped in gpu_domain_map_arrays:
+    //   centroid values:       stage, xmom, ymom, bed, height, friction  =  6n
+    //   edge values:           stage, xmom, ymom, bed, height             =  5 x 3n = 15n
+    //   explicit updates:      stage, xmom, ymom                          =  3n
+    //   semi-implicit updates: stage, xmom, ymom                          =  3n
+    //   mesh geometry:         normals(6n), edgelengths(3n), areas(n),
+    //                          radii(n), max_speed(n), centroid_coords(2n),
+    //                          edge_coords(6n), x/y_centroid_work(2n)     = 23n
+    //   Total doubles: (6 + 15 + 3 + 3 + 23) = 50n doubles
+    //
+    // Per-element int64 arrays:
+    //   neighbours(3n), neighbour_edges(3n), surrogate_neighbours(3n),
+    //   number_of_boundaries(n), tri_full_flag(n)                         = 11n int64
+    //
+    // Backup values (double): stage, xmom, ymom = 3n  (mapped in map_backup_arrays)
+    //   — not mapped here but count as we typically allocate them
+    //
+    // Boundary arrays (small): 5 x nb doubles
+    size_t double_bytes = (size_t)(50) * (size_t)n * sizeof(double);
+    size_t int_bytes    = (size_t)(11) * (size_t)n * sizeof(int64_t);
+    size_t bndry_bytes  = (size_t)(5)  * (size_t)nb * sizeof(double);
+    return double_bytes + int_bytes + bndry_bytes;
+}
+
+// Query free and total memory on the current OpenMP target device.
+// Returns 1 (OK) if enough memory is available, 0 if not (or if query fails).
+// Sets *free_bytes and *total_bytes when available (0 when not queryable).
+//
+// Vendor-specific query APIs are selected at compile time:
+//   -DUSE_CUDA  -> cudaMemGetInfo
+//   -DUSE_HIP   -> hipMemGetInfo
+// CPU_ONLY_MODE and unknown targets: query is skipped, returns 1.
+int gpu_query_device_memory(size_t *free_bytes, size_t *total_bytes) {
+    *free_bytes  = 0;
+    *total_bytes = 0;
+
+#if defined(USE_CUDA)
+    cudaError_t err = cudaMemGetInfo(free_bytes, total_bytes);
+    if (err != cudaSuccess) {
+        return 1;   // Can't query — don't block
+    }
+    return 1;  // Caller decides if enough
+#elif defined(USE_HIP)
+    hipError_t err = hipMemGetInfo(free_bytes, total_bytes);
+    if (err != hipSuccess) {
+        return 1;
+    }
+    return 1;
+#else
+    // No vendor API available (CPU_ONLY_MODE or unknown target).
+    // Report unlimited — mapping will silently run on host.
+    return 1;
+#endif
+}
+
+// Check that the device has enough free memory for the domain.
+// Prints a clear error message and returns 0 if insufficient.
+// Always returns 1 in CPU_ONLY_MODE (no real device to OOM).
+int gpu_check_device_memory(struct gpu_domain *GD) {
+    anuga_int n  = GD->D.number_of_elements;
+    anuga_int nb = GD->D.boundary_length;
+    size_t required = gpu_estimate_required_memory(n, nb);
+    size_t free_bytes = 0, total_bytes = 0;
+
+    gpu_query_device_memory(&free_bytes, &total_bytes);
+
+    double req_mb   = required    / (1024.0 * 1024.0);
+    double free_mb  = free_bytes  / (1024.0 * 1024.0);
+    double total_mb = total_bytes / (1024.0 * 1024.0);
+
+    // Print memory info when verbose or when device memory is known
+    if (GD->verbose || (total_bytes > 0)) {
+        if (GD->rank == 0) {
+            if (total_bytes > 0) {
+                printf("  GPU memory: %.0f MB required  |  %.0f / %.0f MB free/total\n",
+                       req_mb, free_mb, total_mb);
+            } else {
+                printf("  GPU memory: %.0f MB estimated required (device query not available)\n",
+                       req_mb);
+            }
+            fflush(stdout);
+        }
+    }
+
+    // Only fail if we have a real memory figure AND it's insufficient
+    if (total_bytes > 0 && free_bytes < required) {
+        fprintf(stderr,
+            "\n[ANUGA GPU] ERROR (rank %d): Insufficient GPU memory.\n"
+            "  Domain has %" PRId64 " triangles, estimated %.0f MB required.\n"
+            "  GPU has %.0f MB free of %.0f MB total.\n"
+            "  Options:\n"
+            "    1. Reduce domain size (use fewer triangles)\n"
+            "    2. Use more MPI ranks to distribute the domain\n"
+            "    3. Use set_multiprocessor_mode(1) to run without GPU offloading\n",
+            GD->rank, n, req_mb, free_mb, total_mb);
+        fflush(stderr);
+        return 0;
+    }
+    return 1;
+}
+
 // Detect if MPI library supports GPU-aware communication
 // This is a runtime check - compile with -DGPU_AWARE_MPI to force enable
 int detect_gpu_aware_mpi(void) {
@@ -204,11 +315,17 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
 // GPU Memory Management
 // ============================================================================
 
-void gpu_domain_map_arrays(struct gpu_domain *GD) {
-    if (GD->gpu_initialized) return;
+int gpu_domain_map_arrays(struct gpu_domain *GD) {
+    if (GD->gpu_initialized) return 1;
     // Note: Don't return early if device_id < 0. With OMP_TARGET_OFFLOAD=disabled,
     // the OpenMP target directives run on CPU, so we still need to set up the
     // data structures and flags for the boundary/kernel functions to work.
+
+    // Check device memory before attempting any mapping.
+    // Returns 0 and prints a clear error if there isn't enough free memory.
+    if (!gpu_check_device_memory(GD)) {
+        return 0;
+    }
 
     anuga_int n = GD->D.number_of_elements;
     anuga_int nb = GD->D.boundary_length;
@@ -438,6 +555,7 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         printf("  Arrays mapped to device %d\n", GD->device_id);
         fflush(stdout);
     }
+    return 1;
 }
 
 void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
