@@ -4010,6 +4010,72 @@ class Test_Quantity_Memory(unittest.TestCase):
         self.assertEqual(elevation_bytes, 48 * N)  # centroid+edge+x_grad+y_grad
         self.assertEqual(height_bytes, 32 * N)     # centroid+edge
 
+    @pytest.mark.slow
+    def test_total_domain_memory_reduction(self):
+        """Total allocated bytes across all quantities must be < 60% of the
+        all-evolved baseline, for a domain large enough to be realistic.
+
+        Baseline (all-evolved, no optimisation): 10 quantities × 80N bytes = 800N
+        Optimised layout:
+          stage / xmomentum / ymomentum   3 × 80N = 240N
+          elevation (static_with_gradients)         48N
+          friction  (centroid_only)                  8N
+          height / xvelocity / yvelocity  3 × 32N =  96N
+          x / y    (coordinate)           2 × 32N =  64N
+          ─────────────────────────────────────────────
+          Total optimised                          456N
+          Saving  (800-456)/800 ≈ 43 %
+
+        The test uses a 100×100 rectangular_cross_domain (80 000 triangles) so
+        the absolute numbers are large enough to catch rounding / off-by-one
+        errors, while still completing in < 5 s.
+        """
+        import pytest
+        from anuga import rectangular_cross_domain
+
+        domain = rectangular_cross_domain(100, 100)
+        domain.set_quantity('elevation', -1.0)
+        domain.set_quantity('stage', 0.5)
+        domain.set_quantity('friction', 0.03)
+
+        N = len(domain)
+
+        # Sum every fixed (non-vertex) array for every quantity.
+        _fixed_attrs = [
+            'centroid_values', 'edge_values',
+            'x_gradient', 'y_gradient', 'phi',
+            'explicit_update', 'semi_implicit_update', 'centroid_backup_values',
+        ]
+
+        def qty_fixed_bytes(q):
+            return sum(
+                getattr(q, a).nbytes
+                for a in _fixed_attrs
+                if getattr(q, a) is not None
+            )
+
+        actual_bytes = sum(qty_fixed_bytes(q) for q in domain.quantities.values())
+
+        # Unoptimised baseline: every quantity uses the full 'evolved' layout
+        n_quantities = len(domain.quantities)
+        baseline_bytes = n_quantities * 80 * N  # 10 arrays × 8 bytes, each length N
+
+        saving_pct = 100.0 * (baseline_bytes - actual_bytes) / baseline_bytes
+
+        # At least 40 % saving must be achieved (actual is ~43 %)
+        self.assertGreaterEqual(
+            saving_pct, 40.0,
+            msg=f"Expected >= 40% saving, got {saving_pct:.1f}% "
+                f"(actual={actual_bytes/1e6:.1f} MB, baseline={baseline_bytes/1e6:.1f} MB, "
+                f"N={N})"
+        )
+
+        # Spot-check absolute numbers match the per-quantity analysis
+        self.assertEqual(qty_fixed_bytes(domain.quantities['stage']),    80 * N)
+        self.assertEqual(qty_fixed_bytes(domain.quantities['elevation']), 48 * N)
+        self.assertEqual(qty_fixed_bytes(domain.quantities['friction']),   8 * N)
+        self.assertEqual(qty_fixed_bytes(domain.quantities['height']),    32 * N)
+
 
 # -------------------------------------------------------------
 if __name__ == '__main__':
