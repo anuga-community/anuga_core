@@ -50,9 +50,9 @@ class Test_results(unittest.TestCase):
             err = 0.0
 
         print()
-        print(indent + 'Stage L1 relative error: %.4f' % err)
+        print(indent + 'Stage L1 relative error: %.2e' % err)
 
-        assert err < 0.05, 'Stage L1 relative error %.4f exceeds 0.05' % err
+        assert err < 0.05, 'Stage L1 relative error %.2e exceeds 0.05' % err
 
 
 if __name__ == '__main__':

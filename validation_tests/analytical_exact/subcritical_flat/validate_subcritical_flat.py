@@ -40,12 +40,14 @@ class Test_results(unittest.TestCase):
         # Compare stage at final timestep
         stage_num = p2_st.stage[-1, v2]
         stage_ana = h + z
-        err = numpy.sum(numpy.abs(stage_num - stage_ana)) / numpy.sum(numpy.abs(stage_ana))
+        denom = numpy.sum(numpy.abs(stage_ana))
+        assert denom > 0.0, 'Analytical stage sum is zero — check domain/solution mismatch'
+        err = numpy.sum(numpy.abs(stage_num - stage_ana)) / denom
 
         print()
-        print(indent + 'Stage L1 relative error: %.4f' % err)
+        print(indent + 'Stage L1 relative error: %.2e' % err)
 
-        assert err < 0.05, 'Stage L1 relative error %.4f exceeds 0.05' % err
+        assert err < 0.05, 'Stage L1 relative error %.2e exceeds 0.05' % err
 
 
 if __name__ == '__main__':
