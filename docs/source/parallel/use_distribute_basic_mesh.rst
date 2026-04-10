@@ -2,8 +2,8 @@
 
 .. currentmodule:: anuga
 
-Mesh-first parallel workflow (``distribute_basic_mesh``)
-=========================================================
+MPI Distribute Mesh-first parallel workflow (``distribute_basic_mesh``)
+========================================================================
 
 Overview
 --------
