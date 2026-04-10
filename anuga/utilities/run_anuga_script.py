@@ -39,7 +39,7 @@ def run_script(script, args=None, np=1, alg=None, verbose=False, allow_parallel=
 
 
             #os.system(cmd)
-            subprocess.call([cmd], shell=True)
+            res = subprocess.call([cmd], shell=True)
 
         else:
             if verbose:
@@ -53,9 +53,9 @@ def run_script(script, args=None, np=1, alg=None, verbose=False, allow_parallel=
                 print(50*'=')
 
             #os.system(cmd)
-            subprocess.call([cmd], shell=True)
+            res = subprocess.call([cmd], shell=True)
 
-        return 0
+        return res
 
     except Exception:
         return 1

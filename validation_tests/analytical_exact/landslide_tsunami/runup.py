@@ -7,6 +7,7 @@ import anuga
 from anuga import myid, finalize, distribute
 
 import numpy
+import numpy as np
 import scipy.interpolate
 
 from math import sin, pi, exp
@@ -55,7 +56,7 @@ if myid == 0:
 	
 	
 	# Define initial condition using file
-	initial_prof=scipy.genfromtxt('./DATA/initial_condition.txt', skip_header=13)
+	initial_prof=np.genfromtxt('./DATA/initial_condition.txt', skip_header=13)
 	initial_prof_fun=scipy.interpolate.interp1d(initial_prof[:,0], initial_prof[:,1], fill_value=0., bounds_error=False)
 	
 	def stagefun(x,y):
