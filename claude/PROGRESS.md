@@ -16,7 +16,7 @@ Branch: `develop` (all feature branches merged)
 | Hydrata Phase 1 — Dependencies | 4 | 4 | 0 |
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
 | Hydrata Phase 3 — Deduplication | 4 | 2 | 2 |
-| Hydrata Phase 4 — Coverage | 3 | 0 | 3 |
+| Hydrata Phase 4 — Coverage | 3 | 0 | 2 (+1 long-term) |
 | GPU Phase 1 — Correctness & tests | 7 | 7 | 0 |
 | GPU Phase 2 — Performance validation | 4 | 4 | 0 |
 | GPU Phase 3 — Feature parity | 4 | 4 | 0 |
@@ -347,6 +347,8 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 8. **QM7** Shared gradient workspace (C extension change, ~72 MB saving for erosion-operator models)
 
 ### Lower priority
-9. **H4.1** Modernise test patterns — convert key `unittest.TestCase` classes to plain pytest functions; add domain-creation fixtures
-10. **H4.2** Automate 32 remaining validation scenarios
-11. **H4.3** Lift coverage from ~55% to 65%; enforce `fail_under=65` in CI
+9. **H4.2** Automate 32 remaining validation scenarios
+10. **H4.3** Lift coverage from ~55% to 65%; enforce `fail_under=65` in CI
+
+### Long-term / opportunistic
+- **H4.1** Modernise test patterns — convert `unittest.TestCase` to plain pytest functions and shared fixtures incrementally, when files are touched for other reasons. Not worth a dedicated pass.
