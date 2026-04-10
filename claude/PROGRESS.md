@@ -15,7 +15,7 @@ Branch: `develop` (all feature branches merged)
 | Hydrata Phase 0 — Test infrastructure | 5 | 5 | 0 |
 | Hydrata Phase 1 — Dependencies | 4 | 4 | 0 |
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
-| Hydrata Phase 3 — Deduplication | 4 | 0 | 4 |
+| Hydrata Phase 3 — Deduplication | 4 | 2 | 2 |
 | Hydrata Phase 4 — Coverage | 3 | 0 | 3 |
 | GPU Phase 1 — Correctness & tests | 7 | 7 | 0 |
 | GPU Phase 2 — Performance validation | 4 | 4 | 0 |
@@ -25,7 +25,7 @@ Branch: `develop` (all feature branches merged)
 | Quantity memory reduction | 7 | 6 | 1 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 1 | 1 | 0 |
-| **Total** | **163** | **145** | **18** |
+| **Total** | **163** | **147** | **16** |
 
 ---
 
@@ -233,9 +233,9 @@ Current state: no linter, formatter, type checker, or pre-commit hooks. 4,189 fu
 
 ### Phase 3 — Code Deduplication (~7,700 redundant lines)
 
-- [ ] **3.1 Unify quantity kernels** — `quantity_ext.pyx`, `quantity_ext_openmp.pyx`, `quantity_ext2.pyx` share ~90% code. Create single source with compile-time OpenMP toggle.
+- [x] **3.1 Unify quantity kernels** — consolidated to single `quantity_openmp_ext.pyx`; `quantity_ext2.pyx` and separate non-OpenMP variant removed. *(done, commit 5c191dc7)*
 - [ ] **3.2 Consolidate parallel operator wrappers** — 5 wrapper files thin-wrap `structures/` counterparts. Move MPI awareness into base classes with `self.parallel` flag.
-- [ ] **3.3 Merge duplicate culvert classes** — `Culvert_operator` vs `Culvert_operator_Parallel` have near-identical logic. Extract shared base class.
+- [x] **3.3 Merge duplicate culvert classes** — `Culvert_operator_Parallel` removed; GPU path via `gpu_culvert_manager.py`; merged via PR #118. *(done)*
 - [ ] **3.4 Split `system_tools.py`** — 750-line file; split into `file_utils.py`, `env_utils.py`, `version_utils.py`. Deduplicate `numerical_tools.py` vs scipy wrappers.
 
 ### Phase 4 — Expanded Test Coverage
@@ -342,13 +342,11 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 5. **G4.3** Multi-node strong scaling — 20 M triangles, 1→64 GPUs
 
 ### Medium effort (1–3 days each)
-6. **H3.1** Unify quantity Cython kernels — `quantity_ext.pyx`, `quantity_ext_openmp.pyx`, `quantity_ext2.pyx` share ~90% code (high risk)
-7. **H3.2** Consolidate 5 parallel operator wrapper files — thin wrappers around `structures/` classes; move MPI awareness into base classes
-8. **H3.3** Merge `Culvert_operator` / `Culvert_operator_Parallel` — extract shared base class
-9. **H3.4** Split `system_tools.py` (750 lines) into focused modules
-10. **QM7** Shared gradient workspace (C extension change, ~72 MB saving for erosion-operator models)
+6. **H3.2** Consolidate 5 parallel operator wrapper files — thin wrappers around `structures/` classes; move MPI awareness into base classes
+7. **H3.4** Split `system_tools.py` (750 lines) into focused modules
+8. **QM7** Shared gradient workspace (C extension change, ~72 MB saving for erosion-operator models)
 
 ### Lower priority
-11. **H4.1** Modernise test patterns — convert key `unittest.TestCase` classes to plain pytest functions; add domain-creation fixtures
-12. **H4.2** Automate 32 remaining validation scenarios
-13. **H4.3** Lift coverage from ~55% to 65%; enforce `fail_under=65` in CI
+9. **H4.1** Modernise test patterns — convert key `unittest.TestCase` classes to plain pytest functions; add domain-creation fixtures
+10. **H4.2** Automate 32 remaining validation scenarios
+11. **H4.3** Lift coverage from ~55% to 65%; enforce `fail_under=65` in CI
