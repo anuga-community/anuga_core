@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-10 (session 14)
+Last updated: 2026-04-10 (session 15)
 Branch: `develop` (all feature branches merged)
 
 ---
@@ -16,7 +16,7 @@ Branch: `develop` (all feature branches merged)
 | Hydrata Phase 1 — Dependencies | 4 | 4 | 0 |
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
 | Hydrata Phase 3 — Deduplication | 4 | 2 | 2 |
-| Hydrata Phase 4 — Coverage | 3 | 0 | 2 (+1 long-term) |
+| Hydrata Phase 4 — Coverage | 3 | 1 | 1 (+1 long-term) |
 | GPU Phase 1 — Correctness & tests | 7 | 7 | 0 |
 | GPU Phase 2 — Performance validation | 4 | 4 | 0 |
 | GPU Phase 3 — Feature parity | 4 | 4 | 0 |
@@ -25,7 +25,7 @@ Branch: `develop` (all feature branches merged)
 | Quantity memory reduction | 7 | 6 | 1 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 1 | 1 | 0 |
-| **Total** | **163** | **147** | **16** |
+| **Total** | **163** | **148** | **15** |
 
 ---
 
@@ -243,7 +243,7 @@ Current state: no linter, formatter, type checker, or pre-commit hooks. 4,189 fu
 Current state: ~55% coverage, 1,319 tests (all `unittest.TestCase`), ~38 min wall time. Only 5 of ~37 validation scenarios have automated scripts.
 
 - [ ] **4.1 Modernise test patterns** — Convert key test classes from `unittest.TestCase` to plain pytest functions selectively. Add pytest fixtures for domain creation.
-- [ ] **4.2 Integrate validation tests** — Automate the remaining 32 validation scenarios (currently only 5 of 37 have scripts in `validation_tests/`).
+- [x] **4.2 Integrate validation tests** — Added 33 `validate_*.py` scripts covering all remaining scenarios: analytical comparison (transcritical, MacDonald, depth expansion, parabolic/paraboloid basin), run-only short/slow (lake-at-rest, river-at-rest, runup, rundown, trapezoidal channel, deep wave, landslide tsunami), behaviour-only (bridge/weir HEC-RAS, lid-driven cavity), and case studies (merewether, towradgi, patong). Patong skips unless data downloaded; added to `dirs_to_skip` in runner. *(2026-04-10)*
 - [ ] **4.3 Coverage targets** — Lift from ~55% to 65%; enforce `fail_under=65` in CI.
 
 ---
@@ -347,8 +347,7 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 8. **QM7** Shared gradient workspace (C extension change, ~72 MB saving for erosion-operator models)
 
 ### Lower priority
-9. **H4.2** Automate 32 remaining validation scenarios
-10. **H4.3** Lift coverage from ~55% to 65%; enforce `fail_under=65` in CI
+9. **H4.3** Lift coverage from ~55% to 65%; enforce `fail_under=65` in CI
 
 ### Long-term / opportunistic
 - **H4.1** Modernise test patterns — convert `unittest.TestCase` to plain pytest functions and shared fixtures incrementally, when files are touched for other reasons. Not worth a dedicated pass.
