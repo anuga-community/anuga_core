@@ -5,6 +5,8 @@ python_sources = [
 'test_collect_operators.py',
 'test_elliptic_operator.py',
 'test_erosion_operators.py',
+'test_friction_operators.py',
+'test_mannings_operator.py',
 'test_kinematic_viscosity_operator.py',
 'test_rate_operators.py',
 'test_set_elevation_operator.py',
