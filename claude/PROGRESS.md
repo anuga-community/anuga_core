@@ -22,10 +22,10 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | GPU Phase 3 — Feature parity | 4 | 0 | 4 |
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
 | Riverwall throughflow | 6 | 6 | 0 |
-| Quantity memory reduction | 7 | 0 | 7 |
+| Quantity memory reduction | 7 | 6 | 1 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 1 | 1 | 0 |
-| **Total** | **163** | **130** | **33** |
+| **Total** | **163** | **136** | **27** |
 
 ---
 
@@ -252,18 +252,17 @@ Current state: ~55% coverage, 1,319 tests (all `unittest.TestCase`), ~38 min wal
 
 Full plan: `claude/QUANTITY_MEMORY_PLAN.md`
 
-Target: ~58% memory reduction for typical 8-quantity 1M-triangle domain (832 MB → 352 MB).
-Key insights: v4.0.0 elevation is centroid-primary (vertex_values lazy for ALL types);
-elevation edge values set as stage_edge − height_edge (no gradient arrays needed for elevation);
-height is actively extrapolated (needs gradients + phi); friction/velocity are centroid-only.
+Target achieved: ~54% memory reduction for typical 10-quantity 1M-triangle domain (800 MB → ~368 MB).
+Key insight: DE solver computes gradients on C stack — Python-level gradient arrays are NEVER read by the solver.
+This enabled lazy gradients for ALL types, not just elevation.
 
-- [ ] **QM1** Introduce `quantity_type` concept (`evolved`, `extrapolated`, `static`, `diagnostic`) controlling which arrays are allocated at construction
-- [ ] **QM2** Lazy `vertex_values` property on all quantity types — allocate on first access, transparent to callers
-- [ ] **QM3** Strip `explicit_update`, `semi_implicit_update`, `centroid_backup_values`, `phi` from `elevation` (saves 32 MB / 1M tri)
-- [ ] **QM4** Strip all arrays except `centroid_values` from `friction` — Manning writes to xmom/ymom semi_implicit, not friction's own (saves 80 MB / 1M tri)
-- [ ] **QM5** Reduce `height` to centroid + edge + gradients + phi only (no update arrays); reduce `xvelocity`/`yvelocity` to centroid only (saves 240 MB / 1M tri)
-- [ ] **QM6** Never allocate `x_gradient`/`y_gradient` for `elevation` — edge values set as `stage_edge − height_edge`, not by independent gradient computation (saves 16 MB / 1M tri)
-- [ ] **QM7** Shared gradient workspace on domain (C extension change) — saves further 72 MB / 1M tri
+- [x] **QM1** Introduce `qty_type` concept (`evolved`, `edge_diagnostic`, `centroid_only`, `coordinate`) controlling which arrays are allocated at construction *(2026-04-09)*
+- [x] **QM2** Lazy `vertex_values` property on all quantity types — allocate on first access, transparent to callers *(2026-04-09)*
+- [x] **QM3** Strip `explicit_update`, `semi_implicit_update`, `centroid_backup_values`, `phi` from `elevation` *(2026-04-09)*
+- [x] **QM4** Strip all arrays except `centroid_values` from `friction` *(2026-04-09)*
+- [x] **QM5** Reduce `height`, `xvelocity`, `yvelocity` to centroid + edge only (no update arrays) *(2026-04-09)*
+- [x] **QM6** Make `x_gradient`, `y_gradient`, `phi` lazy for ALL types including `evolved` — saves 24N per evolved quantity + 16N for elevation. Removed `static_with_gradients` type. Elevation now uses `edge_diagnostic`. Erosion operators trigger lazy allocation transparently. *(2026-04-10)*
+- [ ] **QM7** Shared gradient workspace on domain (C extension change) — only relevant when erosion operators are active; deferred (niche use case, requires C changes)
 
 ---
 
