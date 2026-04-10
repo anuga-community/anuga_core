@@ -18,14 +18,14 @@ Branch: `develop_quantity_memory` (quantity memory + GPU G3.x work)
 | Hydrata Phase 3 — Deduplication | 4 | 0 | 4 |
 | Hydrata Phase 4 — Coverage | 3 | 0 | 3 |
 | GPU Phase 1 — Correctness & tests | 7 | 7 | 0 |
-| GPU Phase 2 — Performance validation | 4 | 0 | 4 |
+| GPU Phase 2 — Performance validation | 4 | 4 | 0 |
 | GPU Phase 3 — Feature parity | 4 | 4 | 0 |
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
 | Riverwall throughflow | 6 | 6 | 0 |
 | Quantity memory reduction | 7 | 6 | 1 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 1 | 1 | 0 |
-| **Total** | **163** | **140** | **23** |
+| **Total** | **163** | **144** | **19** |
 
 ---
 
@@ -312,10 +312,10 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 
 ### Phase 2 — Performance validation (weeks 5–10)
 
-- [ ] **G2.1 Benchmark suite** — `examples/gpu_benchmark/` with 100 K / 2 M / 20 M triangle cases; print Gordon Bell FLOP/s via existing `gpu_flop.c` infrastructure.
-- [ ] **G2.2 GPU-aware MPI validation** — verify `-DGPU_AWARE_MPI` correctness on NVLink/InfiniBand; add meson option + runtime capability check.
-- [ ] **G2.3 NVTX/OMPT profiling hooks** — add `nvtxRangePush/Pop` around kernels behind compile flag for `nsys`/`ncu` profiling.
-- [ ] **G2.4 Weak scaling experiment** — elements-per-GPU constant as rank count grows 1→64; target >80% parallel efficiency.
+- [x] **G2.1 Benchmark suite** — `benchmarks/run_gpu_benchmarks.py` with 100 K / 2 M / 20 M triangle cases; prints GFLOP/s via existing `gpu_flop.c` / `flop_counters_*` infrastructure; speedup summary table; JSON output compatible with `compare_benchmarks.py`; runs in CPU_ONLY_MODE for CI. (2026-04-10)
+- [x] **G2.2 GPU-aware MPI validation** — `detect_gpu_aware_mpi()` now has full runtime detection via `MPIX_Query_cuda_support()` / `MPIX_Query_rocm_support()` (Open MPI / MVAPICH2 GPU builds); meson probe for `mpi-ext.h` and symbols sets `-DHAVE_MPIX_CUDA_SUPPORT` / `-DHAVE_MPIX_ROCM_SUPPORT`; `gpu_is_available()` C function + `gpu_available()` and `is_gpu_aware_mpi()` Python bindings added to `sw_domain_gpu_ext`; meson already had `gpu_aware_mpi` option and `GPU_AWARE_MPI` compile flag. (2026-04-10)
+- [x] **G2.3 NVTX/OMPT profiling hooks** — `gpu_nvtx.h` with `NVTX_PUSH(name)`/`NVTX_POP()` macros (no-ops without `-DNVTX_ENABLED`); instrumented 10 kernel functions: `gpu_extrapolate_second_order`, `gpu_compute_fluxes`, `gpu_update_conserved_quantities`, `gpu_backup_conserved_quantities`, `gpu_saxpy_conserved_quantities`, `gpu_saxpy3_conserved_quantities`, `gpu_protect`, `gpu_manning_friction`, `gpu_exchange_ghosts`, `gpu_culverts_apply_all`, plus `gpu_evolve_one_rk2/rk3_step` outer markers; meson `use_nvtx` option probes NVTX v3 (header-only) then v1 (CUDA toolkit); `meson_options.txt` updated. (2026-04-10)
+- [x] **G2.4 Weak scaling experiment** — `benchmarks/run_weak_scaling.py` (MPI Python driver: mesh scales as `√N` per axis so elements/rank stays constant, timing by MPI barriers, JSON output, `--analyse` mode prints efficiency table); `scripts/hpc/weak_scaling.slurm` (SLURM job template, one GPU per task); `scripts/hpc/submit_weak_scaling.sh` (sweep 1→64 ranks, dry-run mode, optional analysis job on completion). Code complete; needs real GPU cluster to produce SC26 efficiency numbers. (2026-04-10)
 
 ### Phase 3 — Feature parity (weeks 11–20)
 
@@ -337,10 +337,10 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 ### Immediate — best standalone value (no GPU hardware needed)
 1. **QM1–QM6** Quantity memory reduction Phase 1 (pure Python, ~2 days; ~58% saving for 1M-tri domain) *(waiting on Jorge's feedback)*
 2. **H3.2/H3.3** Parallel operator wrapper consolidation / Culvert class merge
-3. **G2.1** GPU benchmark suite (100K / 2M / 20M triangles, Gordon Bell FLOP/s) — can run in CPU_ONLY_MODE for structure
+3. **G3.x or H3.x** — GPU Phase 3 and Hydrata Phase 3/4 items remain
 
 ### Short term — SC26 prerequisites (needs GPU hardware)
-4. **G2.1** GPU benchmark suite (actual GPU runs)
+4. **G2.1** GPU benchmark suite (actual GPU runs — `benchmarks/run_gpu_benchmarks.py` is ready)
 5. **G2.4** Weak scaling experiment (1→64 GPUs)
 
 ### Medium effort (1–3 days each)

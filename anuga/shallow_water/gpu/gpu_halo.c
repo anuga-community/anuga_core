@@ -9,6 +9,7 @@
 #include <mpi.h>
 #include "gpu_domain.h"
 #include "gpu_omp_macros.h"
+#include "gpu_nvtx.h"
 
 // Halo exchange setup and MPI ghost exchange
 
@@ -133,9 +134,13 @@ void gpu_halo_finalize(struct gpu_domain *GD) {
 // Exchange ghost cell data between MPI ranks
 // Adapted from miniapp_mpi.c exchange_halo()
 void gpu_exchange_ghosts(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_exchange_ghosts");
     struct halo_exchange *H = &GD->halo;
 
-    if (H->num_neighbors == 0) return;
+    if (H->num_neighbors == 0) {
+        NVTX_POP();
+        return;
+    }
 
     int send_size = H->total_send_size;
     int recv_size = H->total_recv_size;
@@ -239,5 +244,6 @@ void gpu_exchange_ghosts(struct gpu_domain *GD) {
         xmom[k] = recv_buf[3*idx + 1];
         ymom[k] = recv_buf[3*idx + 2];
     }
+    NVTX_POP();
 }
 

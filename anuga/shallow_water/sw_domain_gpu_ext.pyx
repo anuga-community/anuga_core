@@ -230,6 +230,8 @@ cdef extern from "gpu_domain.h" nogil:
     double gpu_evolve_one_rk3_step(gpu_domain *GD, double max_timestep, int apply_forcing)
 
     void print_gpu_domain_info(gpu_domain *GD)
+    int detect_gpu_aware_mpi()
+    int gpu_is_available()
 
     # Rate operators (rain, extraction, etc.)
     int gpu_rate_operator_init(gpu_domain *GD, int num_indices, int *indices,
@@ -790,6 +792,56 @@ def estimate_required_memory(int64_t n, int64_t nb):
         Estimated bytes that gpu_domain_map_arrays will transfer to the device.
     """
     return gpu_estimate_required_memory(n, nb)
+
+
+def gpu_available():
+    """
+    Return True if a real GPU offload target is active for this build.
+
+    Returns False in CPU_ONLY_MODE (standard conda/pip install, CI) and on
+    machines where ``omp_get_num_devices()`` reports no devices even though a
+    GPU build was compiled.
+
+    Example::
+
+        from anuga.shallow_water.sw_domain_gpu_ext import gpu_available
+        if gpu_available():
+            domain.set_multiprocessor_mode(2)  # real GPU
+        else:
+            domain.set_multiprocessor_mode(1)  # CPU OpenMP
+    """
+    return bool(gpu_is_available())
+
+
+def is_gpu_aware_mpi():
+    """
+    Return True if the current MPI library supports GPU-aware communication.
+
+    GPU-aware MPI allows ``MPI_Isend``/``MPI_Irecv`` to operate directly on
+    device (GPU) buffers, eliminating the host-side copy in halo exchange.
+
+    Detection priority
+    ------------------
+    1. Compile-time ``-DGPU_AWARE_MPI`` flag (user explicitly enabled).
+    2. Runtime ``MPIX_Query_cuda_support()`` — Open MPI / MVAPICH2 CUDA builds
+       (requires ``mpi-ext.h`` at build time).
+    3. Runtime ``MPIX_Query_rocm_support()`` — Open MPI / MVAPICH2 ROCm builds.
+    4. Returns False if none of the above is available.
+
+    Notes
+    -----
+    - A True result means the MPI library *claims* GPU-aware support.  The
+      buffers must still be allocated with ``omp_target_alloc`` (done
+      automatically when the build was compiled with ``-DGPU_AWARE_MPI``).
+    - On a standard conda install (CPU_ONLY_MODE) this will return False.
+    - To force-enable, rebuild with ``-Dgpu_aware_mpi=true -Dgpu_offload=true``.
+
+    Example::
+
+        from anuga.shallow_water.sw_domain_gpu_ext import is_gpu_aware_mpi
+        print("GPU-aware MPI:", is_gpu_aware_mpi())
+    """
+    return bool(detect_gpu_aware_mpi())
 
 
 def check_gpu_device_memory(GPUDomain gpu_dom):

@@ -8,6 +8,10 @@ option('gpu_offload', type: 'boolean', value: false,
 option('gpu_aware_mpi', type: 'boolean', value: false,
        description: 'Enable GPU-aware MPI for direct device communication (requires GPU-aware MPI library)')
 
+# NVTX profiling hooks for Nsight Systems / Nsight Compute
+option('use_nvtx', type: 'boolean', value: false,
+       description: 'Add NVTX range markers around GPU kernels for nsys/ncu profiling (requires nvToolsExt)')
+
 # GPU architecture/compute capability
 # NVIDIA: cc70 (V100), cc80 (A100), cc90 (H100)
 # AMD: gfx908 (MI100), gfx90a (MI210/MI250), gfx942 (MI300X)

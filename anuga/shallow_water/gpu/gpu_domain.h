@@ -492,6 +492,7 @@ double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int a
 
 // Utility functions
 int detect_gpu_aware_mpi(void);
+int gpu_is_available(void);
 void print_gpu_domain_info(struct gpu_domain *GD);
 
 // FLOP counter functions (Gordon Bell performance profiling)

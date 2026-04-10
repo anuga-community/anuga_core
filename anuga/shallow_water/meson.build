@@ -100,9 +100,73 @@ if get_option('gpu_aware_mpi') and gpu_offload
   message('GPU-aware MPI enabled')
 endif
 
+# Runtime GPU-aware MPI detection via MPIX_Query_cuda_support / MPIX_Query_rocm_support.
+# These are non-standard extensions present in Open MPI and MVAPICH2 GPU builds.
+# We probe the MPI compiler for <mpi-ext.h> and the relevant symbol; if found,
+# compile-time flags enable the runtime detection path in detect_gpu_aware_mpi().
+if mpi_dep.found()
+  if cc.has_header('mpi-ext.h', dependencies: [mpi_dep])
+    if cc.has_function('MPIX_Query_cuda_support',
+                       prefix: '#include <mpi.h>\n#include <mpi-ext.h>',
+                       dependencies: [mpi_dep])
+      gpu_c_args += ['-DHAVE_MPI_EXT_H', '-DHAVE_MPIX_CUDA_SUPPORT']
+      message('MPIX_Query_cuda_support found - GPU-aware MPI runtime detection enabled (CUDA)')
+    elif cc.has_function('MPIX_Query_rocm_support',
+                         prefix: '#include <mpi.h>\n#include <mpi-ext.h>',
+                         dependencies: [mpi_dep])
+      gpu_c_args += ['-DHAVE_MPI_EXT_H', '-DHAVE_MPIX_ROCM_SUPPORT']
+      message('MPIX_Query_rocm_support found - GPU-aware MPI runtime detection enabled (ROCm)')
+    else
+      message('mpi-ext.h found but no MPIX_Query_*_support - runtime detection disabled')
+    endif
+  else
+    message('mpi-ext.h not found - GPU-aware MPI runtime detection disabled')
+  endif
+endif
+
+# NVTX profiling hooks (-Duse_nvtx=true)
+# Probes for nvToolsExt in standard CUDA toolkit locations.
+# Tries NVTX v3 (standalone header-only install) first, then v1 (CUDA toolkit).
+# When found: adds -DNVTX_ENABLED and links nvToolsExt.
+nvtx_dep = []
+if get_option('use_nvtx')
+  # Check for NVTX v3 header (preferred - header-only, no link needed)
+  if cc.has_header('nvtx3/nvToolsExt.h')
+    gpu_c_args += ['-DNVTX_ENABLED', '-DHAVE_NVTX3']
+    message('NVTX v3 headers found - NVTX profiling enabled (header-only)')
+  else
+    # Fall back to NVTX v1 from CUDA toolkit (requires linking nvToolsExt)
+    nvtx_dep_probe = dependency('nvToolsExt', required: false)
+    if not nvtx_dep_probe.found()
+      # Try manual search in common CUDA toolkit locations
+      cuda_home = run_command('sh', ['-c', 'echo ${CUDA_HOME:-${CUDA_PATH:-/usr/local/cuda}}'],
+                              check: false).stdout().strip()
+      nvtx_lib = cc.find_library('nvToolsExt',
+                                  dirs: [cuda_home / 'lib64', cuda_home / 'lib',
+                                         '/usr/local/cuda/lib64', '/usr/local/cuda/lib'],
+                                  required: false)
+      if nvtx_lib.found() and cc.has_header('nvToolsExt.h',
+                                             args: ['-I' + cuda_home / 'include',
+                                                    '-I/usr/local/cuda/include'])
+        nvtx_dep = [nvtx_lib]
+        gpu_c_args += ['-DNVTX_ENABLED',
+                       '-I' + cuda_home / 'include',
+                       '-I/usr/local/cuda/include']
+        message('NVTX v1 found in CUDA toolkit - NVTX profiling enabled')
+      else
+        warning('use_nvtx=true but nvToolsExt not found - NVTX profiling disabled')
+      endif
+    else
+      nvtx_dep = [nvtx_dep_probe]
+      gpu_c_args += ['-DNVTX_ENABLED']
+      message('NVTX found via pkg-config - NVTX profiling enabled')
+    endif
+  endif
+endif
+
 # Only build sw_domain_gpu_ext if MPI and mpi4py are available
 if mpi_dep.found() and have_mpi4py
-  gpu_deps = openmp_deps + [mpi_dep]
+  gpu_deps = openmp_deps + [mpi_dep] + nvtx_dep
 
   py3.extension_module('sw_domain_gpu_ext',
     sources: [

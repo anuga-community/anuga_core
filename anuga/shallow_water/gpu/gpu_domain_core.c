@@ -7,6 +7,9 @@
 #include <math.h>
 #include <omp.h>
 #include <mpi.h>
+#ifdef HAVE_MPI_EXT_H
+#include <mpi-ext.h>
+#endif
 #include "gpu_domain.h"
 #include "gpu_omp_macros.h"
 
@@ -137,15 +140,32 @@ int gpu_check_device_memory(struct gpu_domain *GD) {
     return 1;
 }
 
-// Detect if MPI library supports GPU-aware communication
-// This is a runtime check - compile with -DGPU_AWARE_MPI to force enable
+// Detect if MPI library supports GPU-aware communication.
+// Priority:
+//   1. Compile-time -DGPU_AWARE_MPI flag (user asserts support is present).
+//   2. Runtime MPIX_Query_cuda_support()  (Open MPI / MVAPICH2 CUDA builds).
+//   3. Runtime MPIX_Query_rocm_support()  (Open MPI / MVAPICH2 ROCm builds).
+//   4. Default: 0 (unknown, assume no GPU-aware MPI).
 int detect_gpu_aware_mpi(void) {
 #ifdef GPU_AWARE_MPI
     return 1;
+#elif defined(HAVE_MPIX_CUDA_SUPPORT)
+    return MPIX_Query_cuda_support();
+#elif defined(HAVE_MPIX_ROCM_SUPPORT)
+    return MPIX_Query_rocm_support();
 #else
-    // Could add runtime detection here (e.g., check MPIX_Query_cuda_support)
-    // For now, default to disabled - user must compile with -DGPU_AWARE_MPI
     return 0;
+#endif
+}
+
+// Return 1 if a real GPU offload target is available (not CPU_ONLY_MODE).
+// In CPU_ONLY_MODE (standard install, CI), omp_get_num_devices() may still
+// report 0; in GPU builds the pragma is active only when devices > 0.
+int gpu_is_available(void) {
+#ifdef CPU_ONLY_MODE
+    return 0;
+#else
+    return omp_get_num_devices() > 0 ? 1 : 0;
 #endif
 }
 

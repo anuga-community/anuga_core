@@ -17,9 +17,13 @@
 // Core kernels (shared with sw_domain_openmp_ext)
 #include "core_kernels.h"
 
+// NVTX profiling hooks (no-ops unless -DNVTX_ENABLED)
+#include "gpu_nvtx.h"
+
 // GPU compute kernels: extrapolate, flux, protect, update, etc.
 
 void gpu_extrapolate_second_order(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_extrapolate_second_order");
     // Delegate to core kernel (shared with CPU implementation)
     core_extrapolate_second_order_edge(&GD->D);
 
@@ -28,9 +32,11 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
         GD->flops.extrapolate_flops += (uint64_t)GD->D.number_of_elements * FLOPS_EXTRAPOLATE;
         GD->flops.extrapolate_calls++;
     }
+    NVTX_POP();
 }
 
 double gpu_compute_fluxes(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_compute_fluxes");
     // Unified: calls core_compute_fluxes_central from core_kernels.c
     // GPU mode always uses substep_count=0 (RK2 handled at higher level)
     // timestep_fluxcalls=1 since boundary_flux_sum not used in GPU MPI mode
@@ -43,10 +49,12 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
         GD->flops.compute_fluxes_calls++;
     }
 
+    NVTX_POP();
     return local_timestep;
 }
 
 void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
+    NVTX_PUSH("gpu_update_conserved_quantities");
     // Delegate to core kernel
     core_update_conserved_quantities(&GD->D, timestep);
 
@@ -55,9 +63,11 @@ void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
         GD->flops.update_flops += (uint64_t)GD->D.number_of_elements * FLOPS_UPDATE;
         GD->flops.update_calls++;
     }
+    NVTX_POP();
 }
 
 void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_backup_conserved_quantities");
     // Delegate to core kernel
     core_backup_conserved_quantities(&GD->D);
 
@@ -66,9 +76,11 @@ void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
         GD->flops.backup_flops += (uint64_t)GD->D.number_of_elements * FLOPS_BACKUP;
         GD->flops.backup_calls++;
     }
+    NVTX_POP();
 }
 
 void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
+    NVTX_PUSH("gpu_saxpy_conserved_quantities");
     // Delegate to core kernel (c=0.0 means "skip division", used for RK2)
     core_saxpy_conserved_quantities(&GD->D, a, b, 0.0);
 
@@ -88,9 +100,11 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
         GD->flops.saxpy_flops += (uint64_t)n * FLOPS_SAXPY;
         GD->flops.saxpy_calls++;
     }
+    NVTX_POP();
 }
 
 void gpu_saxpy3_conserved_quantities(struct gpu_domain *GD, double a, double b, double c) {
+    NVTX_PUSH("gpu_saxpy3_conserved_quantities");
     // Divide-by-c variant used for the final RK3 combination:
     //   Q = (a*Q_current + b*Q_backup) / c
     // Calling core with c != 0 and c != 1 triggers the division pass.
@@ -111,9 +125,11 @@ void gpu_saxpy3_conserved_quantities(struct gpu_domain *GD, double a, double b, 
         GD->flops.saxpy_flops += (uint64_t)n * FLOPS_SAXPY;
         GD->flops.saxpy_calls++;
     }
+    NVTX_POP();
 }
 
 double gpu_protect(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_protect");
     // Delegate to core kernel
     double mass_error = core_protect(&GD->D);
 
@@ -134,6 +150,7 @@ double gpu_protect(struct gpu_domain *GD) {
         GD->flops.protect_calls++;
     }
 
+    NVTX_POP();
     return mass_error;
 }
 
@@ -162,6 +179,7 @@ double gpu_compute_water_volume(struct gpu_domain *GD) {
 }
 
 void gpu_manning_friction(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_manning_friction");
     // Delegate to core kernel
     core_manning_friction_flat_semi_implicit(&GD->D);
 
@@ -170,6 +188,7 @@ void gpu_manning_friction(struct gpu_domain *GD) {
         GD->flops.manning_flops += (uint64_t)GD->D.number_of_elements * FLOPS_MANNING;
         GD->flops.manning_calls++;
     }
+    NVTX_POP();
 }
 
 // ============================================================================
@@ -177,6 +196,7 @@ void gpu_manning_friction(struct gpu_domain *GD) {
 // ============================================================================
 
 double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing) {
+    NVTX_PUSH("gpu_evolve_one_rk2_step");
     // Full RK2 step orchestrated entirely in C - eliminates Python round-trip overhead
     //
     // This function performs:
@@ -286,6 +306,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // RK2 averaging: Q_final = 0.5 * Q_backup + 0.5 * Q_current
     gpu_saxpy_conserved_quantities(GD, 0.5, 0.5);
 
+    NVTX_POP();  // gpu_evolve_one_rk2_step
     return timestep;
 }
 
@@ -294,6 +315,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
 // ============================================================================
 
 double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int apply_forcing) {
+    NVTX_PUSH("gpu_evolve_one_rk3_step");
     // Full SSP-RK3 step orchestrated entirely in C.
     //
     // Algorithm (Shu-Osher, 3rd-order strong-stability-preserving):
@@ -394,6 +416,7 @@ double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int a
     // Final: Q^{n+1} = (2*Q^(3) + Q^n) / 3
     gpu_saxpy3_conserved_quantities(GD, 2.0, 1.0, 3.0);
 
+    NVTX_POP();  // gpu_evolve_one_rk3_step
     return timestep;
 }
 

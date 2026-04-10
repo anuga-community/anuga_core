@@ -14,6 +14,7 @@
 #include "gpu_domain.h"
 #include "gpu_culvert_operator.h"
 #include "gpu_omp_macros.h"
+#include "gpu_nvtx.h"
 
 #define VELOCITY_PROTECTION 1.0e-6
 
@@ -1206,10 +1207,14 @@ static void scatter_single_inlet(struct gpu_domain *GD,
 // ============================================================================
 
 void gpu_culverts_apply_all(struct gpu_domain *GD, double timestep) {
+    NVTX_PUSH("gpu_culverts_apply_all");
     struct culvert_operators *CO = &GD->culvert_ops;
     int nc = CO->num_culverts;
 
-    if (nc == 0 || !CO->initialized) return;
+    if (nc == 0 || !CO->initialized) {
+        NVTX_POP();
+        return;
+    }
 
     omp_set_default_device(GD->device_id);
     int myrank = GD->rank;
@@ -1489,4 +1494,5 @@ void gpu_culverts_apply_all(struct gpu_domain *GD, double timestep) {
     // local inlets for parallel culverts)
     // ----------------------------------------------------------------
     gpu_culvert_scatter(GD, transfers);
+    NVTX_POP();
 }
