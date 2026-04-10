@@ -473,6 +473,142 @@ void gpu_evaluate_transmissive_n_zero_t_boundary(struct gpu_domain *GD) {
 // Time_boundary - time-dependent Dirichlet values
 // ============================================================================
 
+// ============================================================================
+// File_boundary / Field_boundary
+// ============================================================================
+
+int gpu_file_boundary_init(struct gpu_domain *GD, int num_edges,
+                            int *boundary_indices, int *vol_ids, int *edge_ids) {
+    struct file_boundary *B = &GD->file_bdry;
+
+    B->num_edges = num_edges;
+    B->mapped = 0;
+
+    if (num_edges == 0) {
+        B->boundary_indices = NULL;
+        B->vol_ids = NULL;
+        B->edge_ids = NULL;
+        B->stage_values = NULL;
+        B->xmom_values = NULL;
+        B->ymom_values = NULL;
+        return 0;
+    }
+
+    B->boundary_indices = (int*)malloc(num_edges * sizeof(int));
+    B->vol_ids          = (int*)malloc(num_edges * sizeof(int));
+    B->edge_ids         = (int*)malloc(num_edges * sizeof(int));
+    B->stage_values     = (double*)calloc(num_edges, sizeof(double));
+    B->xmom_values      = (double*)calloc(num_edges, sizeof(double));
+    B->ymom_values      = (double*)calloc(num_edges, sizeof(double));
+
+    if (!B->boundary_indices || !B->vol_ids || !B->edge_ids ||
+        !B->stage_values || !B->xmom_values || !B->ymom_values) {
+        fprintf(stderr, "Failed to allocate file_boundary arrays\n");
+        return -1;
+    }
+
+    memcpy(B->boundary_indices, boundary_indices, num_edges * sizeof(int));
+    memcpy(B->vol_ids,          vol_ids,          num_edges * sizeof(int));
+    memcpy(B->edge_ids,         edge_ids,         num_edges * sizeof(int));
+
+    return 0;
+}
+
+void gpu_file_boundary_finalize(struct gpu_domain *GD) {
+    struct file_boundary *B = &GD->file_bdry;
+
+    if (B->mapped && B->num_edges > 0) {
+        int ne = B->num_edges;
+        int    *b_idx   = B->boundary_indices;
+        int    *v_ids   = B->vol_ids;
+        int    *e_ids   = B->edge_ids;
+        double *stage_v = B->stage_values;
+        double *xmom_v  = B->xmom_values;
+        double *ymom_v  = B->ymom_values;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+                                                 stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
+    }
+
+    if (B->boundary_indices) free(B->boundary_indices);
+    if (B->vol_ids)          free(B->vol_ids);
+    if (B->edge_ids)         free(B->edge_ids);
+    if (B->stage_values)     free(B->stage_values);
+    if (B->xmom_values)      free(B->xmom_values);
+    if (B->ymom_values)      free(B->ymom_values);
+
+    B->num_edges        = 0;
+    B->boundary_indices = NULL;
+    B->vol_ids          = NULL;
+    B->edge_ids         = NULL;
+    B->stage_values     = NULL;
+    B->xmom_values      = NULL;
+    B->ymom_values      = NULL;
+    B->mapped = 0;
+}
+
+void gpu_file_boundary_set_values(struct gpu_domain *GD,
+                                   double *stage, double *xmom, double *ymom) {
+    // Copy Python-evaluated per-edge values into the struct and push to device.
+    // Called from Python each timestep before gpu_evaluate_file_boundary.
+    struct file_boundary *B = &GD->file_bdry;
+    if (B->num_edges == 0) return;
+
+    int ne = B->num_edges;
+    memcpy(B->stage_values, stage, ne * sizeof(double));
+    memcpy(B->xmom_values,  xmom,  ne * sizeof(double));
+    memcpy(B->ymom_values,  ymom,  ne * sizeof(double));
+
+    if (B->mapped) {
+        double *stage_v = B->stage_values;
+        double *xmom_v  = B->xmom_values;
+        double *ymom_v  = B->ymom_values;
+        #pragma omp target update to(stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
+    }
+}
+
+void gpu_evaluate_file_boundary(struct gpu_domain *GD) {
+    // Spatially varying file/field boundary — copies per-edge values into
+    // the global boundary_values arrays and fills bed/height from interior edges.
+    struct file_boundary *B = &GD->file_bdry;
+    if (B->num_edges == 0) return;
+    if (!B->mapped) return;
+
+    int num_edges = B->num_edges;
+    int    *boundary_indices = B->boundary_indices;
+    int    *vol_ids          = B->vol_ids;
+    int    *edge_ids         = B->edge_ids;
+    double *stage_v          = B->stage_values;
+    double *xmom_v           = B->xmom_values;
+    double *ymom_v           = B->ymom_values;
+
+    double *bed_ev    = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+    double *stage_bv  = GD->D.stage_boundary_values;
+    double *bed_bv    = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
+    double *xmom_bv   = GD->D.xmom_boundary_values;
+    double *ymom_bv   = GD->D.ymom_boundary_values;
+
+    OMP_PARALLEL_LOOP
+    for (int k = 0; k < num_edges; k++) {
+        int bid = boundary_indices[k];
+        int vid = vol_ids[k];
+        int eid = edge_ids[k];
+
+        stage_bv[bid] = stage_v[k];
+        xmom_bv[bid]  = xmom_v[k];
+        ymom_bv[bid]  = ymom_v[k];
+
+        // Copy bed/height from adjacent interior edge (same as Dirichlet/Time)
+        bed_bv[bid]    = bed_ev[3 * vid + eid];
+        height_bv[bid] = height_ev[3 * vid + eid];
+    }
+}
+
+// ============================================================================
+// Time_boundary
+// ============================================================================
+
 int gpu_time_boundary_init(struct gpu_domain *GD, int num_edges,
                            int *boundary_indices, int *vol_ids, int *edge_ids) {
     struct time_boundary *B = &GD->time_bdry;

@@ -101,6 +101,20 @@ struct time_boundary {
     int mapped;                  // Whether arrays are mapped to GPU
 };
 
+// File_boundary / Field_boundary - spatially varying time-dependent values
+// The Python side evaluates F(t, point_id=i) for each edge each timestep and
+// pushes the resulting per-edge arrays to the device via set_values.
+struct file_boundary {
+    int num_edges;               // Number of file boundary edges
+    int *boundary_indices;       // Where to write in boundary_values arrays [num_edges]
+    int *vol_ids;                // Interior cell IDs [num_edges]
+    int *edge_ids;               // Which edge (0, 1, or 2) [num_edges]
+    double *stage_values;        // Per-edge stage  (updated each timestep from Python) [num_edges]
+    double *xmom_values;         // Per-edge xmom   [num_edges]
+    double *ymom_values;         // Per-edge ymom   [num_edges]
+    int mapped;                  // Whether arrays are mapped to GPU
+};
+
 // Boundary edge sync buffers - pre-allocated for efficient sparse sync
 // Allocated once during setup, reused every timestep
 struct boundary_edge_sync {
@@ -312,6 +326,7 @@ struct gpu_domain {
     struct transmissive_boundary transmissive;
     struct transmissive_n_zero_t_boundary transmissive_n_zero_t;
     struct time_boundary time_bdry;
+    struct file_boundary file_bdry;
 
     // Boundary edge sync (for sparse edge value sync)
     struct boundary_edge_sync edge_sync;
@@ -357,7 +372,10 @@ int gpu_halo_init(struct gpu_domain *GD,
 void gpu_halo_finalize(struct gpu_domain *GD);
 
 // GPU memory management
-void gpu_domain_map_arrays(struct gpu_domain *GD);
+size_t gpu_estimate_required_memory(anuga_int n, anuga_int nb);
+int    gpu_query_device_memory(size_t *free_bytes, size_t *total_bytes);
+int    gpu_check_device_memory(struct gpu_domain *GD);
+int    gpu_domain_map_arrays(struct gpu_domain *GD);
 void gpu_remap_boundary_arrays(struct gpu_domain *GD);
 void gpu_domain_unmap_arrays(struct gpu_domain *GD);
 void gpu_domain_sync_to_device(struct gpu_domain *GD);
@@ -405,6 +423,14 @@ void gpu_transmissive_n_zero_t_finalize(struct gpu_domain *GD);
 void gpu_transmissive_n_zero_t_set_stage(struct gpu_domain *GD, double stage_value);
 void gpu_evaluate_transmissive_n_zero_t_boundary(struct gpu_domain *GD);
 
+// File_boundary / Field_boundary - spatially varying time-dependent values
+int  gpu_file_boundary_init(struct gpu_domain *GD, int num_edges,
+                             int *boundary_indices, int *vol_ids, int *edge_ids);
+void gpu_file_boundary_finalize(struct gpu_domain *GD);
+void gpu_file_boundary_set_values(struct gpu_domain *GD,
+                                   double *stage, double *xmom, double *ymom);
+void gpu_evaluate_file_boundary(struct gpu_domain *GD);
+
 // Time_boundary - time-dependent Dirichlet values
 int gpu_time_boundary_init(struct gpu_domain *GD, int num_edges,
                            int *boundary_indices, int *vol_ids, int *edge_ids);
@@ -449,6 +475,7 @@ double gpu_compute_fluxes(struct gpu_domain *GD);
 void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep);
 void gpu_backup_conserved_quantities(struct gpu_domain *GD);
 void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b);
+void gpu_saxpy3_conserved_quantities(struct gpu_domain *GD, double a, double b, double c);
 double gpu_protect(struct gpu_domain *GD);
 double gpu_compute_water_volume(struct gpu_domain *GD);
 void gpu_manning_friction(struct gpu_domain *GD);
@@ -456,6 +483,9 @@ void gpu_manning_friction(struct gpu_domain *GD);
 // Full RK2 step on GPU (calls all the above in sequence)
 // max_timestep: Maximum allowed timestep (respecting yieldstep/finaltime constraints)
 double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
+
+// Full SSP-RK3 step on GPU (Shu-Osher 3-stage)
+double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
 
 // Utility functions
 int detect_gpu_aware_mpi(void);

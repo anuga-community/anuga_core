@@ -91,7 +91,7 @@ class GPU_OMP_interface:
 
         from anuga.shallow_water.sw_domain_gpu_ext import (
             init_reflective_boundary, init_dirichlet_boundary, init_transmissive_boundary,
-            init_transmissive_n_zero_t_boundary, init_time_boundary
+            init_transmissive_n_zero_t_boundary, init_time_boundary, init_file_boundary
         )
 
         init_reflective_boundary(self.gpu_dom, self.domain)
@@ -99,6 +99,7 @@ class GPU_OMP_interface:
         init_transmissive_boundary(self.gpu_dom, self.domain)
         init_transmissive_n_zero_t_boundary(self.gpu_dom, self.domain)
         init_time_boundary(self.gpu_dom, self.domain)
+        init_file_boundary(self.gpu_dom, self.domain)
 
         self.boundaries_initialized = True
 
@@ -187,6 +188,11 @@ class GPU_OMP_interface:
         """RK2 combination: Q = a*Q_current + b*Q_backup."""
         from anuga.shallow_water.sw_domain_gpu_ext import saxpy_conserved_quantities_gpu
         saxpy_conserved_quantities_gpu(self.gpu_dom, a, b)
+
+    def saxpy3_conserved_quantities_kernel(self, domain, a, b, c):
+        """RK3 final combination: Q = (a*Q_current + b*Q_backup) / c."""
+        from anuga.shallow_water.sw_domain_gpu_ext import saxpy3_conserved_quantities_gpu
+        saxpy3_conserved_quantities_gpu(self.gpu_dom, a, b, c)
 
     def manning_friction_kernel(self, domain):
         """Apply Manning friction (semi-implicit)."""

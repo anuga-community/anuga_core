@@ -1180,5 +1180,276 @@ class TestProjectDataWrapper(unittest.TestCase):
         self.assertFalse(p.report_operator_statistics)
 
 
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestCulverts(unittest.TestCase):
+    """Tests for ProjectDataTOML._parse_culverts."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def _path(self, name):
+        return os.path.join(self.tmp, name)
+
+    def _touch(self, name):
+        p = self._path(name)
+        _touch(p)
+        return p
+
+    def _parse(self, toml_body):
+        path = self._path('cfg.toml')
+        _write_toml(path, _MINIMAL_PROJECT + toml_body)
+        with patch('os.path.exists', return_value=True):
+            return ProjectDataTOML(path)
+
+    def test_no_culverts(self):
+        p = self._parse('')
+        self.assertEqual(p.culvert_data, [])
+
+    def test_disabled_culvert_skipped(self):
+        body = """
+            [[culverts]]
+            enabled = false
+            type    = "boyd_box"
+            label   = "c1"
+            width   = 0.9
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        self.assertEqual(p.culvert_data, [])
+
+    def test_boyd_box_defaults(self):
+        body = """
+            [[culverts]]
+            type    = "boyd_box"
+            label   = "box1"
+            width   = 0.9
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        self.assertEqual(len(p.culvert_data), 1)
+        cd = p.culvert_data[0]
+        self.assertEqual(cd['type'], 'boyd_box')
+        self.assertEqual(cd['label'], 'box1')
+        self.assertAlmostEqual(cd['width'], 0.9)
+        self.assertIsNone(cd['height'])        # defaults to None → operator uses width
+        self.assertAlmostEqual(cd['losses'], 0.0)
+        self.assertAlmostEqual(cd['barrels'], 1.0)
+        self.assertAlmostEqual(cd['manning'], 0.013)
+        self.assertAlmostEqual(cd['enquiry_gap'], 0.2)
+        self.assertIsNone(cd['invert_elevations'])
+        self.assertIsNone(cd['diameter'])
+
+    def test_boyd_box_explicit_height(self):
+        body = """
+            [[culverts]]
+            type    = "boyd_box"
+            label   = "box2"
+            width   = 1.2
+            height  = 0.6
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        self.assertAlmostEqual(p.culvert_data[0]['height'], 0.6)
+
+    def test_boyd_pipe_defaults(self):
+        body = """
+            [[culverts]]
+            type     = "boyd_pipe"
+            label    = "pipe1"
+            diameter = 0.6
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        cd = p.culvert_data[0]
+        self.assertEqual(cd['type'], 'boyd_pipe')
+        self.assertAlmostEqual(cd['diameter'], 0.6)
+        self.assertIsNone(cd['width'])
+        self.assertIsNone(cd['height'])
+
+    def test_invalid_type_raises(self):
+        body = """
+            [[culverts]]
+            type    = "unknown_type"
+            label   = "bad"
+            width   = 1.0
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        with patch('os.path.exists', return_value=True):
+            path = self._path('bad.toml')
+            _write_toml(path, _MINIMAL_PROJECT + body)
+            with self.assertRaises(ValueError):
+                ProjectDataTOML(path)
+
+    def test_invert_elevations_parsed(self):
+        body = """
+            [[culverts]]
+            type               = "boyd_box"
+            label              = "box3"
+            width              = 0.9
+            exchange_line_0    = "up.csv"
+            exchange_line_1    = "down.csv"
+            invert_elevations  = [1.5, 1.2]
+        """
+        p = self._parse(body)
+        self.assertEqual(p.culvert_data[0]['invert_elevations'], [1.5, 1.2])
+
+    def test_end_points_instead_of_exchange_lines(self):
+        body = """
+            [[culverts]]
+            type        = "boyd_box"
+            label       = "box4"
+            width       = 0.9
+            end_point_0 = [100.0, 200.0]
+            end_point_1 = [110.0, 200.0]
+        """
+        p = self._parse(body)
+        cd = p.culvert_data[0]
+        self.assertIsNone(cd['exchange_line_0'])
+        self.assertEqual(cd['end_point_0'], [100.0, 200.0])
+        self.assertEqual(cd['end_point_1'], [110.0, 200.0])
+
+    def test_missing_exchange_file_raises(self):
+        body = """
+            [[culverts]]
+            type    = "boyd_box"
+            label   = "box5"
+            width   = 0.9
+            exchange_line_0 = "missing_up.csv"
+            exchange_line_1 = "missing_down.csv"
+        """
+        path = self._path('miss.toml')
+        _write_toml(path, _MINIMAL_PROJECT + body)
+        with self.assertRaises(FileNotFoundError):
+            ProjectDataTOML(path)
+
+    def test_two_culverts_both_parsed(self):
+        body = """
+            [[culverts]]
+            type    = "boyd_box"
+            label   = "c1"
+            width   = 0.9
+            exchange_line_0 = "up1.csv"
+            exchange_line_1 = "dn1.csv"
+
+            [[culverts]]
+            type     = "boyd_pipe"
+            label    = "c2"
+            diameter = 0.6
+            exchange_line_0 = "up2.csv"
+            exchange_line_1 = "dn2.csv"
+        """
+        p = self._parse(body)
+        self.assertEqual(len(p.culvert_data), 2)
+        self.assertEqual(p.culvert_data[0]['type'], 'boyd_box')
+        self.assertEqual(p.culvert_data[1]['type'], 'boyd_pipe')
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestWeirs(unittest.TestCase):
+    """Tests for ProjectDataTOML._parse_weirs."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def _path(self, name):
+        return os.path.join(self.tmp, name)
+
+    def _parse(self, toml_body):
+        path = self._path('cfg.toml')
+        _write_toml(path, _MINIMAL_PROJECT + toml_body)
+        with patch('os.path.exists', return_value=True):
+            return ProjectDataTOML(path)
+
+    def test_no_weirs(self):
+        p = self._parse('')
+        self.assertEqual(p.weir_data, [])
+
+    def test_disabled_weir_skipped(self):
+        body = """
+            [[weirs]]
+            enabled = false
+            label   = "w1"
+            width   = 3.0
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        self.assertEqual(p.weir_data, [])
+
+    def test_weir_defaults(self):
+        body = """
+            [[weirs]]
+            label = "w1"
+            width = 3.0
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        self.assertEqual(len(p.weir_data), 1)
+        wd = p.weir_data[0]
+        self.assertEqual(wd['label'], 'w1')
+        self.assertAlmostEqual(wd['width'], 3.0)
+        self.assertIsNone(wd['height'])
+        self.assertAlmostEqual(wd['losses'], 0.0)
+        self.assertAlmostEqual(wd['enquiry_gap'], 0.0)
+        self.assertAlmostEqual(wd['manning'], 0.013)
+        self.assertIsNone(wd['invert_elevations'])
+
+    def test_weir_explicit_height(self):
+        body = """
+            [[weirs]]
+            label  = "w2"
+            width  = 3.0
+            height = 1.5
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        self.assertAlmostEqual(p.weir_data[0]['height'], 1.5)
+
+    def test_weir_invert_elevations(self):
+        body = """
+            [[weirs]]
+            label              = "w3"
+            width              = 2.0
+            exchange_line_0    = "up.csv"
+            exchange_line_1    = "down.csv"
+            invert_elevations  = [0.5, 0.3]
+        """
+        p = self._parse(body)
+        self.assertEqual(p.weir_data[0]['invert_elevations'], [0.5, 0.3])
+
+    def test_weir_end_points(self):
+        body = """
+            [[weirs]]
+            label       = "w4"
+            width       = 2.0
+            end_point_0 = [50.0, 60.0]
+            end_point_1 = [55.0, 60.0]
+        """
+        p = self._parse(body)
+        wd = p.weir_data[0]
+        self.assertIsNone(wd['exchange_line_0'])
+        self.assertEqual(wd['end_point_0'], [50.0, 60.0])
+
+    def test_missing_exchange_file_raises(self):
+        body = """
+            [[weirs]]
+            label           = "w5"
+            width           = 2.0
+            exchange_line_0 = "missing.csv"
+            exchange_line_1 = "also_missing.csv"
+        """
+        path = self._path('miss.toml')
+        _write_toml(path, _MINIMAL_PROJECT + body)
+        with self.assertRaises(FileNotFoundError):
+            ProjectDataTOML(path)
+
+
 if __name__ == '__main__':
     unittest.main()

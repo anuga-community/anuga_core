@@ -88,6 +88,8 @@ cdef extern from "gpu_domain.h" nogil:
         double* y_centroid_work
         # Friction
         double* friction_centroid_values
+        # Ghost cell flag (1=full/owned, 0=ghost); NULL for single-process domains
+        int64_t* tri_full_flag
         # Riverwall arrays
         int64_t number_of_riverwall_edges
         int64_t ncol_riverwall_hydraulic_properties
@@ -151,7 +153,9 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_halo_finalize(gpu_domain *GD)
 
     # GPU memory management
-    void gpu_domain_map_arrays(gpu_domain *GD)
+    size_t gpu_estimate_required_memory(int64_t n, int64_t nb)
+    int    gpu_check_device_memory(gpu_domain *GD)
+    int    gpu_domain_map_arrays(gpu_domain *GD)
     void gpu_remap_boundary_arrays(gpu_domain *GD)
     void gpu_domain_unmap_arrays(gpu_domain *GD)
     void gpu_domain_sync_to_device(gpu_domain *GD)
@@ -193,6 +197,14 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_transmissive_n_zero_t_set_stage(gpu_domain *GD, double stage_value)
     void gpu_evaluate_transmissive_n_zero_t_boundary(gpu_domain *GD)
 
+    # File_boundary / Field_boundary - spatially varying time-dependent values
+    int  gpu_file_boundary_init(gpu_domain *GD, int num_edges,
+                                int *boundary_indices, int *vol_ids, int *edge_ids)
+    void gpu_file_boundary_finalize(gpu_domain *GD)
+    void gpu_file_boundary_set_values(gpu_domain *GD,
+                                      double *stage, double *xmom, double *ymom)
+    void gpu_evaluate_file_boundary(gpu_domain *GD)
+
     # Time_boundary - time-dependent Dirichlet values
     int gpu_time_boundary_init(gpu_domain *GD, int num_edges,
                                int *boundary_indices, int *vol_ids, int *edge_ids)
@@ -206,12 +218,17 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_update_conserved_quantities(gpu_domain *GD, double timestep)
     void gpu_backup_conserved_quantities(gpu_domain *GD)
     void gpu_saxpy_conserved_quantities(gpu_domain *GD, double a, double b)
+    void gpu_saxpy3_conserved_quantities(gpu_domain *GD, double a, double b, double c)
     double gpu_protect(gpu_domain *GD)
     double gpu_compute_water_volume(gpu_domain *GD)
     void gpu_manning_friction(gpu_domain *GD)
 
     # Full RK2 step
     double gpu_evolve_one_rk2_step(gpu_domain *GD, double max_timestep, int apply_forcing)
+
+    # Full SSP-RK3 step
+    double gpu_evolve_one_rk3_step(gpu_domain *GD, double max_timestep, int apply_forcing)
+
     void print_gpu_domain_info(gpu_domain *GD)
 
     # Rate operators (rain, extraction, etc.)
@@ -317,11 +334,13 @@ cdef class GPUDomain:
     """
     cdef gpu_domain GD
     cdef bint initialized
-    cdef object python_domain  # Keep reference to prevent GC
+    cdef object python_domain      # Keep reference to prevent GC
+    cdef public object _file_boundary_meta  # List of (B, vol_id, edge_id) per file-boundary edge
 
     def __cinit__(self):
         self.initialized = False
         self.python_domain = None
+        self._file_boundary_meta = None
 
     def __dealloc__(self):
         if self.initialized:
@@ -415,6 +434,7 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     cdef double[::1] areas, radii, max_speed
     cdef double[:,::1] centroid_coords, edge_coords
     cdef double[::1] x_centroid_work, y_centroid_work
+    cdef int64_t[::1] tri_full_flag
 
     # Get basic parameters
     D.number_of_elements = domain_object.number_of_elements
@@ -531,6 +551,14 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
 
     max_speed = domain_object.max_speed
     D.max_speed = &max_speed[0]
+
+    # tri_full_flag: 1 for owned (full) triangles, 0 for ghost triangles.
+    # Required so compute_fluxes excludes ghosts from the local timestep minimum.
+    if hasattr(domain_object, 'tri_full_flag'):
+        tri_full_flag = domain_object.tri_full_flag
+        D.tri_full_flag = &tri_full_flag[0]
+    else:
+        D.tri_full_flag = NULL
 
     centroid_coords = domain_object.centroid_coordinates
     D.centroid_coordinates = &centroid_coords[0, 0]
@@ -743,13 +771,79 @@ def init_gpu_domain(object domain_object, bint verbose=True):
     return gpu_dom
 
 
+def estimate_required_memory(int64_t n, int64_t nb):
+    """
+    Estimate device memory (bytes) needed for a domain with n triangles and nb boundary edges.
+
+    Parameters
+    ----------
+    n : int
+        Number of triangles (number_of_elements).
+    nb : int
+        Number of boundary edges (boundary_length).
+
+    Returns
+    -------
+    int
+        Estimated bytes that gpu_domain_map_arrays will transfer to the device.
+    """
+    return gpu_estimate_required_memory(n, nb)
+
+
+def check_gpu_device_memory(GPUDomain gpu_dom):
+    """
+    Run the C-level device memory check for this domain.
+
+    Returns 1 if the device has enough memory (or if the device cannot be
+    queried, e.g., CPU_ONLY_MODE), 0 if memory is insufficient.
+    Also prints a diagnostic line when memory is insufficient.
+    """
+    return gpu_check_device_memory(&gpu_dom.GD)
+
+
+def check_device_memory(GPUDomain gpu_dom):
+    """
+    Check that the target device has enough free memory for this domain.
+
+    Returns (ok, required_mb, free_mb, total_mb).  free_mb and total_mb are 0
+    when the device cannot be queried (CPU_ONLY_MODE or unknown vendor).
+
+    Raises RuntimeError with an actionable message if memory is insufficient.
+    """
+    cdef int64_t n  = gpu_dom.GD.D.number_of_elements
+    cdef int64_t nb = gpu_dom.GD.D.boundary_length
+    cdef size_t required = gpu_estimate_required_memory(n, nb)
+    cdef size_t free_b = 0, total_b = 0
+
+    # Re-use the C query; ignore return value (check_device_memory prints errors)
+    ok = gpu_check_device_memory(&gpu_dom.GD)
+    if not ok:
+        req_mb = required / (1024.0 * 1024.0)
+        raise RuntimeError(
+            f"Insufficient GPU memory for domain with {n} triangles "
+            f"(estimated {req_mb:.0f} MB required). "
+            "Use fewer triangles, more MPI ranks, or set_multiprocessor_mode(1)."
+        )
+
+
 def map_to_gpu(GPUDomain gpu_dom):
     """
     Map domain arrays to GPU memory.
 
     Call this once after init_gpu_domain, before starting the evolve loop.
+    Raises RuntimeError if the device does not have enough free memory.
     """
-    gpu_domain_map_arrays(&gpu_dom.GD)
+    cdef int ok
+    cdef int64_t n = gpu_dom.GD.D.number_of_elements
+    cdef int64_t nb = gpu_dom.GD.D.boundary_length
+    ok = gpu_domain_map_arrays(&gpu_dom.GD)
+    if not ok:
+        req_mb = gpu_estimate_required_memory(n, nb) / (1024.0 * 1024.0)
+        raise RuntimeError(
+            f"GPU memory check failed for domain with {n} triangles "
+            f"(estimated {req_mb:.0f} MB required). "
+            "Use fewer triangles, more MPI ranks, or set_multiprocessor_mode(1)."
+        )
 
 
 def remap_boundary_arrays(GPUDomain gpu_dom):
@@ -1078,6 +1172,96 @@ def evaluate_transmissive_n_zero_t_boundary_gpu(GPUDomain gpu_dom):
     gpu_evaluate_transmissive_n_zero_t_boundary(&gpu_dom.GD)
 
 
+def init_file_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize File_boundary / Field_boundary for GPU.
+
+    Scans domain.boundary_map for File_boundary and Field_boundary objects,
+    collects their edges, and initialises the GPU file_boundary struct.
+
+    Also stores per-edge evaluation metadata on gpu_dom so that
+    set_file_boundary_values_from_domain() can update values each timestep.
+
+    Call this once after domain setup, BEFORE map_to_gpu.
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+
+    FILE_BOUNDARY_TYPES = {'File_boundary', 'Field_boundary'}
+
+    if domain_object.boundary_map is None:
+        return
+
+    # Collect (boundary_index, vol_id, edge_id, boundary_object) for all edges
+    # belonging to File_boundary or Field_boundary tags.
+    all_ids = []
+    edge_meta = []  # list of (B, vol_id, edge_id, boundary_index)
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and boundary.__class__.__name__ in FILE_BOUNDARY_TYPES:
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                for bid in segment_edges:
+                    vol_id  = int(domain_object.boundary_cells[bid])
+                    edge_id = int(domain_object.boundary_edges[bid])
+                    all_ids.append(bid)
+                    edge_meta.append((boundary, vol_id, edge_id, int(bid)))
+
+    if len(all_ids) == 0:
+        return
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr  = np.ascontiguousarray(domain_object.boundary_cells[ids],  dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_file_boundary_init(&gpu_dom.GD, num_edges,
+                           &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0])
+
+    # Store edge metadata for per-timestep Python evaluation
+    # List of (B, vol_id, edge_id) in the same order as boundary_indices
+    gpu_dom._file_boundary_meta = [(B, vid, eid) for (B, vid, eid, bid) in edge_meta]
+
+
+def set_file_boundary_values_from_domain(GPUDomain gpu_dom, object domain_object):
+    """
+    Evaluate File_boundary / Field_boundary for the current simulation time
+    and push per-edge values to the GPU.
+
+    Call this each timestep before evaluate_file_boundary_gpu().
+    """
+    meta = getattr(gpu_dom, '_file_boundary_meta', None)
+    if meta is None or len(meta) == 0:
+        return
+
+    cdef int ne = len(meta)
+    cdef np.ndarray[double, ndim=1, mode="c"] stage_arr = np.empty(ne, dtype=np.float64)
+    cdef np.ndarray[double, ndim=1, mode="c"] xmom_arr  = np.empty(ne, dtype=np.float64)
+    cdef np.ndarray[double, ndim=1, mode="c"] ymom_arr  = np.empty(ne, dtype=np.float64)
+
+    for k, (B, vol_id, edge_id) in enumerate(meta):
+        q = B.evaluate(vol_id, edge_id)
+        stage_arr[k] = q[0]
+        xmom_arr[k]  = q[1]
+        ymom_arr[k]  = q[2]
+
+    gpu_file_boundary_set_values(&gpu_dom.GD,
+                                 &stage_arr[0], &xmom_arr[0], &ymom_arr[0])
+
+
+def evaluate_file_boundary_gpu(GPUDomain gpu_dom):
+    """
+    Evaluate File_boundary / Field_boundary on GPU.
+
+    Writes previously-pushed per-edge values into the global boundary_values
+    arrays and fills bed/height from adjacent interior edges.
+    Call set_file_boundary_values_from_domain() first.
+    """
+    gpu_evaluate_file_boundary(&gpu_dom.GD)
+
+
 def init_time_boundary(GPUDomain gpu_dom, object domain_object):
     """
     Initialize Time_boundary for GPU.
@@ -1157,6 +1341,27 @@ def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_fo
     return gpu_evolve_one_rk2_step(&gpu_dom.GD, max_timestep, apply_forcing)
 
 
+def evolve_one_rk3_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
+    """
+    Execute one SSP-RK3 timestep on GPU (Shu-Osher 3-stage).
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    max_timestep : float
+        Maximum allowed timestep (respecting yieldstep/finaltime constraints)
+    apply_forcing : int
+        Whether to apply GPU-compatible forcing terms
+
+    Returns
+    -------
+    float
+        The timestep used
+    """
+    return gpu_evolve_one_rk3_step(&gpu_dom.GD, max_timestep, apply_forcing)
+
+
 def finalize_gpu_domain(GPUDomain gpu_dom):
     """
     Clean up GPU domain resources.
@@ -1220,6 +1425,16 @@ def saxpy_conserved_quantities_gpu(GPUDomain gpu_dom, double a, double b):
     Typically called with a=0.5, b=0.5 for standard RK2.
     """
     gpu_saxpy_conserved_quantities(&gpu_dom.GD, a, b)
+
+
+def saxpy3_conserved_quantities_gpu(GPUDomain gpu_dom, double a, double b, double c):
+    """
+    RK3 final combination: Q = (a*Q_current + b*Q_backup) / c
+
+    Used for SSP-RK3 final step: saxpy3(2.0, 1.0, 3.0)
+    computes Q = (2*Q_current + Q_backup) / 3.
+    """
+    gpu_saxpy3_conserved_quantities(&gpu_dom.GD, a, b, c)
 
 
 def protect_gpu(GPUDomain gpu_dom):
