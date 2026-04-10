@@ -3929,23 +3929,30 @@ class Test_Quantity_Memory(unittest.TestCase):
     def test_evolved_has_all_arrays(self):
         for name in ['stage', 'xmomentum', 'ymomentum']:
             q = self.domain.quantities[name]
+            # Update arrays are eagerly allocated for evolved quantities
             self.assertIsNotNone(q.explicit_update, name)
             self.assertIsNotNone(q.semi_implicit_update, name)
             self.assertIsNotNone(q.centroid_backup_values, name)
+            self.assertIsNotNone(q.edge_values, name)
+            # Gradient arrays are lazy — not allocated until first access
+            self.assertIsNone(q._x_gradient, name)
+            self.assertIsNone(q._y_gradient, name)
+            self.assertIsNone(q._phi, name)
+            # Accessing the property triggers allocation
             self.assertIsNotNone(q.x_gradient, name)
             self.assertIsNotNone(q.y_gradient, name)
             self.assertIsNotNone(q.phi, name)
-            self.assertIsNotNone(q.edge_values, name)
 
     def test_elevation_strips_update_arrays(self):
         q = self.domain.quantities['elevation']
         self.assertIsNone(q.explicit_update)
         self.assertIsNone(q.semi_implicit_update)
         self.assertIsNone(q.centroid_backup_values)
-        self.assertIsNone(q.phi)
-        # gradient arrays retained — erosion operators use them
-        self.assertIsNotNone(q.x_gradient)
-        self.assertIsNotNone(q.y_gradient)
+        # Gradient arrays and phi are lazy (not eagerly allocated)
+        self.assertIsNone(q._phi)
+        self.assertIsNone(q._x_gradient)
+        self.assertIsNone(q._y_gradient)
+        # Edge values are allocated (needed by DE solver)
         self.assertIsNotNone(q.edge_values)
 
     def test_friction_centroid_only(self):
@@ -3953,25 +3960,25 @@ class Test_Quantity_Memory(unittest.TestCase):
         self.assertIsNone(q.explicit_update)
         self.assertIsNone(q.semi_implicit_update)
         self.assertIsNone(q.centroid_backup_values)
-        self.assertIsNone(q.x_gradient)
-        self.assertIsNone(q.y_gradient)
-        self.assertIsNone(q.phi)
+        self.assertIsNone(q._x_gradient)
+        self.assertIsNone(q._y_gradient)
+        self.assertIsNone(q._phi)
         self.assertIsNone(q.edge_values)
         self.assertTrue(num.allclose(q.centroid_values, 0.03))
 
     def test_height_edge_diagnostic(self):
         q = self.domain.quantities['height']
         self.assertIsNone(q.explicit_update)
-        self.assertIsNone(q.x_gradient)
-        self.assertIsNone(q.phi)
+        self.assertIsNone(q._x_gradient)
+        self.assertIsNone(q._phi)
         self.assertIsNotNone(q.edge_values)
 
     def test_velocity_edge_diagnostic(self):
         for name in ['xvelocity', 'yvelocity']:
             q = self.domain.quantities[name]
             self.assertIsNone(q.explicit_update, name)
-            self.assertIsNone(q.x_gradient, name)
-            self.assertIsNone(q.phi, name)
+            self.assertIsNone(q._x_gradient, name)
+            self.assertIsNone(q._phi, name)
             self.assertIsNotNone(q.edge_values, name)
 
     def test_vertex_values_lazy(self):
@@ -3988,7 +3995,7 @@ class Test_Quantity_Memory(unittest.TestCase):
         # Force centroid_only via explicit parameter (domain map has no 'myq')
         q = Quantity(self.domain, name='myq', qty_type='centroid_only')
         self.assertIsNone(q.edge_values)
-        self.assertIsNone(q.x_gradient)
+        self.assertIsNone(q._x_gradient)
         self.assertIsNone(q.explicit_update)
         self.assertEqual(q._qty_type, 'centroid_only')
 
@@ -4007,11 +4014,21 @@ class Test_Quantity_Memory(unittest.TestCase):
         N = len(self.domain)
 
         def array_bytes(q):
+            """Count bytes of eagerly-allocated arrays only.
+
+            Gradient/phi backing stores (_x_gradient etc.) are checked directly
+            to avoid triggering lazy allocation via the property.
+            """
             total = 0
-            for attr in ['centroid_values', 'edge_values', 'x_gradient',
-                         'y_gradient', 'phi', 'explicit_update',
-                         'semi_implicit_update', 'centroid_backup_values']:
-                arr = getattr(q, attr)
+            for attr in ['centroid_values', 'edge_values',
+                         'explicit_update', 'semi_implicit_update',
+                         'centroid_backup_values']:
+                arr = getattr(q, attr, None)
+                if arr is not None:
+                    total += arr.nbytes
+            # Lazy arrays — check backing store, not property
+            for attr in ['_x_gradient', '_y_gradient', '_phi']:
+                arr = getattr(q, attr, None)
                 if arr is not None:
                     total += arr.nbytes
             return total
@@ -4021,9 +4038,11 @@ class Test_Quantity_Memory(unittest.TestCase):
         elevation_bytes = array_bytes(self.domain.quantities['elevation'])
         height_bytes = array_bytes(self.domain.quantities['height'])
 
-        self.assertEqual(evolved_bytes, 80 * N)    # centroid+edge+xg+yg+phi+exp+semi+backup
+        # evolved: centroid+edge+explicit_update+semi_implicit+centroid_backup (56N)
+        # gradients/phi are lazy — not counted unless accessed
+        self.assertEqual(evolved_bytes, 56 * N)
         self.assertEqual(friction_bytes, 8 * N)    # centroid only
-        self.assertEqual(elevation_bytes, 48 * N)  # centroid+edge+x_grad+y_grad
+        self.assertEqual(elevation_bytes, 32 * N)  # centroid+edge
         self.assertEqual(height_bytes, 32 * N)     # centroid+edge
 
     @pytest.mark.slow
@@ -4032,15 +4051,15 @@ class Test_Quantity_Memory(unittest.TestCase):
         all-evolved baseline, for a domain large enough to be realistic.
 
         Baseline (all-evolved, no optimisation): 10 quantities × 80N bytes = 800N
-        Optimised layout:
-          stage / xmomentum / ymomentum   3 × 80N = 240N
-          elevation (static_with_gradients)         48N
-          friction  (centroid_only)                  8N
+        Optimised layout (gradients/phi are lazy — not counted here):
+          stage / xmomentum / ymomentum   3 × 56N = 168N
+          elevation (edge_diagnostic)              32N
+          friction  (centroid_only)                 8N
           height / xvelocity / yvelocity  3 × 32N =  96N
           x / y    (coordinate)           2 × 32N =  64N
           ─────────────────────────────────────────────
-          Total optimised                          456N
-          Saving  (800-456)/800 ≈ 43 %
+          Total optimised                          368N
+          Saving  (800-368)/800 ≈ 54 %
 
         The test uses a 100×100 rectangular_cross_domain (80 000 triangles) so
         the absolute numbers are large enough to catch rounding / off-by-one
@@ -4057,18 +4076,26 @@ class Test_Quantity_Memory(unittest.TestCase):
         N = len(domain)
 
         # Sum every fixed (non-vertex) array for every quantity.
-        _fixed_attrs = [
+        # Non-lazy attrs (safe to read via property)
+        _eager_attrs = [
             'centroid_values', 'edge_values',
-            'x_gradient', 'y_gradient', 'phi',
             'explicit_update', 'semi_implicit_update', 'centroid_backup_values',
         ]
+        # Lazy attrs — check backing store to avoid triggering allocation
+        _lazy_backing = ['_x_gradient', '_y_gradient', '_phi']
 
         def qty_fixed_bytes(q):
-            return sum(
+            total = sum(
                 getattr(q, a).nbytes
-                for a in _fixed_attrs
+                for a in _eager_attrs
                 if getattr(q, a) is not None
             )
+            total += sum(
+                getattr(q, a).nbytes
+                for a in _lazy_backing
+                if getattr(q, a) is not None
+            )
+            return total
 
         actual_bytes = sum(qty_fixed_bytes(q) for q in domain.quantities.values())
 
@@ -4078,17 +4105,18 @@ class Test_Quantity_Memory(unittest.TestCase):
 
         saving_pct = 100.0 * (baseline_bytes - actual_bytes) / baseline_bytes
 
-        # At least 40 % saving must be achieved (actual is ~43 %)
+        # At least 50 % saving must be achieved (actual is ~54 %)
         self.assertGreaterEqual(
-            saving_pct, 40.0,
-            msg=f"Expected >= 40% saving, got {saving_pct:.1f}% "
+            saving_pct, 50.0,
+            msg=f"Expected >= 50% saving, got {saving_pct:.1f}% "
                 f"(actual={actual_bytes/1e6:.1f} MB, baseline={baseline_bytes/1e6:.1f} MB, "
                 f"N={N})"
         )
 
         # Spot-check absolute numbers match the per-quantity analysis
-        self.assertEqual(qty_fixed_bytes(domain.quantities['stage']),    80 * N)
-        self.assertEqual(qty_fixed_bytes(domain.quantities['elevation']), 48 * N)
+        # evolved: centroid+edge+explicit+semi_implicit+backup = 56N (gradients lazy)
+        self.assertEqual(qty_fixed_bytes(domain.quantities['stage']),    56 * N)
+        self.assertEqual(qty_fixed_bytes(domain.quantities['elevation']), 32 * N)
         self.assertEqual(qty_fixed_bytes(domain.quantities['friction']),   8 * N)
         self.assertEqual(qty_fixed_bytes(domain.quantities['height']),    32 * N)
 

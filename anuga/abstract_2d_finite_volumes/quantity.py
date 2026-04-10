@@ -36,16 +36,14 @@ class Quantity:
         :param register: Register a quantity
         :param str qty_type: Memory allocation strategy. One of:
 
-            * ``'evolved'`` *(default)* — full layout: centroid, edge,
-              x/y-gradient, phi, explicit/semi-implicit update, centroid
-              backup. Use for time-stepped conserved quantities
-              (stage, xmomentum, ymomentum). **80 bytes per triangle.**
-            * ``'static_with_gradients'`` — centroid, edge, x/y-gradient.
-              Use for static fields that need gradient reconstruction
-              (e.g. elevation). **48 bytes per triangle.**
+            * ``'evolved'`` *(default)* — centroid, edge, explicit/semi-implicit
+              update, centroid backup. x/y-gradient and phi are **lazy** (allocated
+              on first access). Use for time-stepped conserved quantities
+              (stage, xmomentum, ymomentum). **56 bytes per triangle eager**;
+              gradients/phi only allocated if accessed (e.g. by erosion operators).
             * ``'edge_diagnostic'`` — centroid and edge values only.
-              Use for derived diagnostic fields (height, velocity).
-              **32 bytes per triangle.**
+              Use for static or derived diagnostic fields (elevation, height, velocity).
+              **32 bytes per triangle.** Gradients lazy.
             * ``'centroid_only'`` — centroid values only.
               Use for scalar parameters that are never edge-interpolated
               (e.g. friction). **8 bytes per triangle.**
@@ -120,19 +118,15 @@ class Quantity:
         else:
             self.edge_values = num.zeros((N, 3), float)
 
-        # Gradient arrays: only needed for evolved and static_with_gradients.
-        if qty_type in ('evolved', 'static_with_gradients'):
-            self.x_gradient = num.zeros(N, float)
-            self.y_gradient = num.zeros(N, float)
-        else:
-            self.x_gradient = None
-            self.y_gradient = None
-
-        # Limiter phi: only needed for evolved quantities.
-        if qty_type == 'evolved':
-            self.phi = num.zeros(N, float)
-        else:
-            self.phi = None
+        # Gradient and phi arrays are lazy for all types — allocated on first
+        # access via properties below.  The DE solver never reads them from
+        # Python Quantity objects (it uses C-stack locals), so for typical
+        # simulations these are never allocated.  Code that does need them
+        # (e.g. erosion operators, old extrapolation routines) triggers
+        # allocation transparently on first access.
+        self._x_gradient = None
+        self._y_gradient = None
+        self._phi = None
 
         # Initialise centroid and edge_values from vertex_values (if available)
         if self._vertex_values is not None:
@@ -181,6 +175,45 @@ class Quantity:
             self._vertex_values = None
         else:
             self._vertex_values = num.array(value, float)
+
+    # ------------------------------------------------------------------
+    # x_gradient, y_gradient, phi — lazy properties
+    # Allocated on first access; the DE solver never touches these from
+    # Python so they stay None for most runs (saving 24 bytes/triangle).
+    # ------------------------------------------------------------------
+
+    @property
+    def x_gradient(self):
+        if self._x_gradient is None:
+            N = self.centroid_values.shape[0]
+            self._x_gradient = num.zeros(N, float)
+        return self._x_gradient
+
+    @x_gradient.setter
+    def x_gradient(self, value):
+        self._x_gradient = value
+
+    @property
+    def y_gradient(self):
+        if self._y_gradient is None:
+            N = self.centroid_values.shape[0]
+            self._y_gradient = num.zeros(N, float)
+        return self._y_gradient
+
+    @y_gradient.setter
+    def y_gradient(self, value):
+        self._y_gradient = value
+
+    @property
+    def phi(self):
+        if self._phi is None:
+            N = self.centroid_values.shape[0]
+            self._phi = num.zeros(N, float)
+        return self._phi
+
+    @phi.setter
+    def phi(self, value):
+        self._phi = value
 
     ############################################################################
     # Methods for operator overloading
@@ -2301,9 +2334,9 @@ class Quantity:
         qe[:] = qc[:,num.newaxis]
         qv[:] = qe
 
-        if self.x_gradient is not None:
-            self.x_gradient[:] = 0.0
-            self.y_gradient[:] = 0.0
+        if self._x_gradient is not None:
+            self._x_gradient[:] = 0.0
+            self._y_gradient[:] = 0.0
 
     def get_integral(self, full_only=True, region=None, indices=None):
 

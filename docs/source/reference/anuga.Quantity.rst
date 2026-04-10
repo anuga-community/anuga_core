@@ -99,25 +99,22 @@ Each ``Quantity`` allocates a subset of its internal arrays based on its
 3. ``'evolved'`` — the default, which allocates every array for full backward
    compatibility.
 
-The five built-in types and their memory footprint (assuming ``float64``,
+The four built-in types and their memory footprint (assuming ``float64``,
 8 bytes per element, *N* triangles) are:
 
 .. list-table::
    :header-rows: 1
-   :widths: 25 55 20
+   :widths: 25 60 15
 
    * - ``qty_type``
      - Arrays allocated
      - Bytes / triangle
    * - ``'evolved'``
-     - centroid, edge, x/y-gradient, phi, explicit update,
-       semi-implicit update, centroid backup
-     - 80 N
-   * - ``'static_with_gradients'``
-     - centroid, edge, x/y-gradient
-     - 48 N
+     - centroid, edge, explicit update, semi-implicit update, centroid backup.
+       x/y-gradient and phi are **lazy** (allocated on first access).
+     - 56 N eager
    * - ``'edge_diagnostic'``
-     - centroid, edge
+     - centroid, edge.  x/y-gradient and phi are lazy.
      - 32 N
    * - ``'centroid_only'``
      - centroid only
@@ -128,7 +125,10 @@ The five built-in types and their memory footprint (assuming ``float64``,
 
 ``vertex_values`` is **lazily allocated** for all types except
 ``'coordinate'``: the backing array is created on first access and is
-transparent to existing code.
+transparent to existing code.  Gradient arrays (``x_gradient``,
+``y_gradient``) and ``phi`` are also lazy for all types — they are
+allocated on first access, which occurs only when explicitly called (e.g.
+by the erosion operators), not during a normal DE timestep.
 
 **Default types used by the shallow-water Domain**:
 
@@ -141,10 +141,11 @@ transparent to existing code.
      - Reason
    * - stage, xmomentum, ymomentum
      - ``'evolved'``
-     - Time-stepped conserved quantities — need all update arrays
+     - Time-stepped conserved quantities — need update arrays
    * - elevation
-     - ``'static_with_gradients'``
-     - Static field; gradients needed by erosion operators
+     - ``'edge_diagnostic'``
+     - Static field; gradients lazy (allocated only if erosion operators
+       call ``compute_local_gradients``)
    * - height, xvelocity, yvelocity
      - ``'edge_diagnostic'``
      - Derived fields; edge values needed for output, no update machinery
@@ -155,9 +156,9 @@ transparent to existing code.
      - ``'coordinate'``
      - Mesh coordinates; vertex values required immediately at construction
 
-For a 10-quantity shallow-water domain the optimised layout uses **~456
+For a 10-quantity shallow-water domain the optimised layout uses **~368
 bytes/triangle** versus **800 bytes/triangle** if every quantity were
-``'evolved'`` — a saving of ~43 %.
+``'evolved'`` — a saving of ~54 %.
 
 **Example — adding a custom tracer with minimal memory:**
 

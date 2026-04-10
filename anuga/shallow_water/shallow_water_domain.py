@@ -280,8 +280,9 @@ class Domain(Generic_Domain):
             'stage':       'evolved',
             'xmomentum':   'evolved',
             'ymomentum':   'evolved',
-            # elevation: keep gradient arrays — erosion operators use them
-            'elevation':   'static_with_gradients',
+            # elevation: centroid + edge only; gradients lazy (erosion operators
+            # trigger allocation via compute_local_gradients when needed)
+            'elevation':   'edge_diagnostic',
             'friction':    'centroid_only',
             'height':      'edge_diagnostic',
             'xvelocity':   'edge_diagnostic',

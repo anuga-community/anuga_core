@@ -75,8 +75,8 @@ not usually instantiated directly.  They are accessed via
 
 Each quantity allocates only the arrays it needs via the ``qty_type``
 parameter (``'evolved'``, ``'centroid_only'``, ``'edge_diagnostic'``,
-``'static_with_gradients'``, or ``'coordinate'``).  See
-:ref:`quantity-memory-layout` for details.
+or ``'coordinate'``).  Gradient and phi arrays are lazy for all types.
+See :ref:`quantity-memory-layout` for details.
 
 .. toctree::
    :hidden:
