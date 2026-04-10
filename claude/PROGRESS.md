@@ -1,7 +1,7 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-09 (session 12, end of day)
-Branch: `develop` (contains feat/sc26 GPU work)
+Last updated: 2026-04-10 (session 13)
+Branch: `develop_quantity_memory` (quantity memory + GPU G3.x work)
 
 ---
 
@@ -19,13 +19,13 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | Hydrata Phase 4 — Coverage | 3 | 0 | 3 |
 | GPU Phase 1 — Correctness & tests | 7 | 7 | 0 |
 | GPU Phase 2 — Performance validation | 4 | 0 | 4 |
-| GPU Phase 3 — Feature parity | 4 | 0 | 4 |
+| GPU Phase 3 — Feature parity | 4 | 4 | 0 |
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
 | Riverwall throughflow | 6 | 6 | 0 |
 | Quantity memory reduction | 7 | 6 | 1 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 1 | 1 | 0 |
-| **Total** | **163** | **136** | **27** |
+| **Total** | **163** | **140** | **23** |
 
 ---
 
@@ -319,8 +319,8 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 
 ### Phase 3 — Feature parity (weeks 11–20)
 
-- [ ] **G3.1 Gate/weir operators on GPU** — `gpu_adjust_edgeflux_with_weir()` already exists in device code (`gpu_device_helpers.h`); add struct registration + kernel dispatch for `Weir_orifice_trapezoid_operator` etc.
-- [ ] **G3.2 Riverwall GPU support** — physics already in device code; flux kernel needs per-edge riverwall flag check.
+- [x] **G3.1 Gate/weir operators on GPU** — `Weir_orifice_trapezoid_operator` added to GPUCulvertManager; `CULVERT_TYPE_WEIR_TRAPEZOID=2`; `weir_orifice_trapezoid_discharge()` C function; z1/z2 side slopes in `culvert_params`; 3 tests (cpu/gpu match, volume conservation, non-rect section). *(2026-04-10)*
+- [x] **G3.2 Riverwall GPU support** — physics in `core_kernels.c`, arrays mapped in `gpu_domain_core.c`, Cython pointers wired. All 4 `Test_GPU_Riverwall` tests pass (init, cpu/gpu match, flux kernel, weir discharge). Completed as part of G1/RW work. *(2026-04-10)*
 - [ ] **G3.3 Dynamic operator slot limits** — replace static arrays with heap allocation for large models.
 - [ ] **G3.4 GPU documentation** — `docs/source/gpu_mode.rst`, benchmark results, hardware requirements, known operator limitations.
 
