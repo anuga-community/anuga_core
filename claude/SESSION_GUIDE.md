@@ -126,6 +126,8 @@ sweep: `tempfile.mktemp` → `mkstemp`, `set_datadir('.')` → `mkdtemp()`, all
 
 **Session 10 (2026-04-06):** L1-L4 logging refactor: `TeeStream` (tees print/stdout to terminal+file), lazy log file (no file until `set_logfile()` called), `log.verbose()`, `log.file_only()` context manager, `setup_mesh.py` quieted. Logging docs page added. Fix pyproj DeprecationWarning in `tif2point_values.py`. Archive CuPy/CUDA files to `archive/cupy_cuda/`. Fix `test_sww2csv_multiple_files` stale-file pollution (chdir to tmpdir). CI: add `pytest-regressions` to all 13 env YMLs; drop Python 3.8. Recalibrate 3 NPY002 expected values in `test_geospatial_data.py`. Propagate v3.3.0/3.3.1/3.3.2 to GA remote. All cherry-picked from `main` → `develop` (had been on wrong branch). L5: 715 `log.critical()` → `log.info()`/`log.warning()` across 70+ production files; fix `test_sww2dem_verbose_True` with `mock.patch`. Drop Python 3.9 (`X | Y` syntax requires ≥3.10). 116/156 tracked items done.
 
+**Session 16 (2026-04-10):** H4.2 validation test scripts — 33 `validate_*.py` scripts covering all remaining scenarios (analytical comparison, behaviour-only, case studies, experimental). Fixed `run_anuga_script.py` silently returning 0 on subprocess failure. Fixed `scipy.genfromtxt` → `numpy.genfromtxt` in `landslide_tsunami/runup.py`. H4.3 coverage enforcement — extended `.coveragerc` omit rules (~3000 lines excluded), deleted dead `change_friction_operator.py`, added `test_mannings_operator.py` (8 tests) and `test_sww2vtu.py`, registered `sww2vtu.py` in meson.build, switched CI coverage to full suite, removed `continue-on-error: true`, enforced `fail_under=52`. Commit `dcf57756`.
+
 **Session 11 (2026-04-07):** G1.3 slot limit hard errors — `Rate_operator`, `Inlet_operator`, `Parallel_inlet_operator` now raise `RuntimeError` on GPU slot overflow (2 tests). Benchmark suite: `benchmarks/run_benchmarks.py` (single-process, all modes, JSON output) + `benchmarks/compare_benchmarks.py` (±% delta table). MPI distribution benchmark: `benchmarks/distribute_benchmarks.py` merges old `scripts/benchmark_distribute.py` + `scripts/benchmark_distribute_mesh.py` into unified 4-method comparison (`distribute()`, `collaborative()`, `distribute_basic_mesh()`, `dump+load`); `benchmarks/run_benchmark_grid.py` updated. Bug fix: `Basic_mesh.reorder()` produced stale neighbours when `_neighbours` hadn't been accessed before reorder — caused `distribute_basic_mesh()` to generate ~59% more ghost triangles than `distribute()` for same mesh/scheme. Fix: trigger `_build_neighbours()` at start of `reorder()`. Regression test added. 122/159 tracked items done.
 
 **Session 9 (2026-04-04):** Riverwall throughflow (`Cd_through`) — submerged
@@ -174,18 +176,12 @@ tracked items done.
 See `claude/PROGRESS.md` — "Remaining Work" section for full list. Summary:
 
 ### Best standalone value (no GPU hardware needed)
-1. **QM1–QM6** Quantity memory reduction — pure Python, ~2 days, ~58% saving
-   for 1M-triangle domain (832 → 352 MB). Directly benefits SC26 (larger
-   problems fit in GPU memory). Plan in `claude/QUANTITY_MEMORY_PLAN.md`.
-   *(Waiting on Jorge's feedback before starting)*
-2. **G1.4** Multi-rank halo exchange test (2- and 4-process MPI+GPU)
-
-### Medium effort (1–3 days each)
-3. **H3.2** Consolidate parallel operator wrappers
-4. **H3.3** Merge `Culvert_operator` / `Culvert_operator_Parallel`
-5. **H3.1** Unify Cython quantity kernels (high risk)
+1. **H3.2** Consolidate 5 parallel operator wrapper files — move MPI awareness into base classes
+2. **H3.4** Split `system_tools.py` (750 lines) into focused modules
+3. **QM7** Shared gradient workspace (C extension, ~72 MB saving for erosion models)
 
 ### SC26 (needs Jorge's GPU hardware)
-6. G1.1 File_boundary GPU support, G1.2 device memory check
-7. G2.1 GPU benchmark suite (100K/2M/20M triangles), G2.4 weak scaling
-8. G4 Gordon Bell metrics + paper benchmarks
+4. G4.1 Gordon Bell metrics — per-kernel timing, roofline model
+5. G4.2 Physical benchmark validation — Thacker, dam break in GPU mode
+6. G4.3 Multi-node strong scaling — 20 M triangles, 1→64 GPUs
+   (`benchmarks/run_gpu_benchmarks.py` and `benchmarks/run_weak_scaling.py` are ready)
