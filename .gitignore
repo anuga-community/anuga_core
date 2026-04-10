@@ -222,6 +222,12 @@ Thumbs.db
 #################################
 doc/frontpage/build
 doc/source/generated
+docs/source/examples/_plot/
+docs/source/parallel/anuga.*.rst
+docs/source/reference/anuga.*.rst
+docs/source/setup_anuga_script/generated/
+scripts/bench_results/
+scripts/test.tsh
 
 # Things specific to this project #
 ###################################
