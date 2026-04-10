@@ -604,11 +604,8 @@ class Domain(Generic_Domain):
         from anuga.config import extrapolate_velocity_second_order
         from anuga.config import alpha_balance
         from anuga.config import optimise_dry_cells
-        from anuga.config import optimised_gradient_limiter
-        from anuga.config import use_edge_limiter
         from anuga.config import use_centroid_velocities
         from anuga.config import compute_fluxes_method
-        from anuga.config import distribute_to_vertices_and_edges_method
         from anuga.config import sloped_mannings_function
         from anuga.config import low_froude
 
@@ -631,14 +628,10 @@ class Domain(Generic_Domain):
         self.set_use_optimise_dry_cells(optimise_dry_cells)
         self.set_extrapolate_velocity(extrapolate_velocity_second_order)
 
-        self.set_use_edge_limiter(use_edge_limiter)
-        self.optimised_gradient_limiter = optimised_gradient_limiter
         self.use_centroid_velocities = use_centroid_velocities
 
         self.set_sloped_mannings_function(sloped_mannings_function)
         self.set_compute_fluxes_method(compute_fluxes_method)
-
-        self.set_distribute_to_vertices_and_edges_method(distribute_to_vertices_and_edges_method)
 
         self.set_store_centroids(False)
 
@@ -656,18 +649,14 @@ class Domain(Generic_Domain):
         parameters['alpha_balance']           = self.alpha_balance
         parameters['tight_slope_limiters']    = self.tight_slope_limiters
         parameters['optimise_dry_cells']      = self.optimise_dry_cells
-        parameters['use_edge_limiter']        = self.use_edge_limiter
         parameters['low_froude']              = self.low_froude
         parameters['use_centroid_velocities'] = self.use_centroid_velocities
         parameters['use_sloped_mannings']     = self.use_sloped_mannings
         parameters['compute_fluxes_method']   = self.get_compute_fluxes_method()
-        parameters['distribute_to_vertices_and_edges_method'] = \
-                         self.get_distribute_to_vertices_and_edges_method()
         parameters['flow_algorithm']          = self.get_flow_algorithm()
         parameters['CFL']                     = self.get_cfl()
         parameters['timestepping_method']     = self.get_timestepping_method()
 
-        parameters['optimised_gradient_limiter']        = self.optimised_gradient_limiter
         parameters['extrapolate_velocity_second_order'] = self.extrapolate_velocity_second_order
 
 
@@ -705,13 +694,11 @@ class Domain(Generic_Domain):
         self.set_using_discontinuous_elevation(True)
         self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
-        self.set_distribute_to_vertices_and_edges_method('DE')
 
         # Don't place any restriction on the minimum storable height
         #self.minimum_storable_height=-99999999999.0
         self.minimum_allowed_height=1.0e-12
 
-        self.use_edge_limiter=True
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
@@ -769,13 +756,11 @@ class Domain(Generic_Domain):
         self.set_using_discontinuous_elevation(True)
         self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
-        self.set_distribute_to_vertices_and_edges_method('DE')
 
         # Don't place any restriction on the minimum storable height
         #self.minimum_storable_height=-99999999999.0
         self.minimum_allowed_height=1.0e-5
 
-        self.use_edge_limiter=True
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
@@ -832,13 +817,11 @@ class Domain(Generic_Domain):
         self.set_using_discontinuous_elevation(True)
         self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
-        self.set_distribute_to_vertices_and_edges_method('DE')
 
         # Don't place any restriction on the minimum storable height
         #self.minimum_storable_height=-99999999999.0
         self.minimum_allowed_height=1.0e-5
 
-        self.use_edge_limiter=True
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
@@ -895,13 +878,11 @@ class Domain(Generic_Domain):
         self.set_using_discontinuous_elevation(True)
         self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
-        self.set_distribute_to_vertices_and_edges_method('DE')
 
         # Don't place any restriction on the minimum storable height
         #self.minimum_storable_height=-99999999999.0
         self.minimum_allowed_height=1.0e-12
 
-        self.use_edge_limiter=True
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
@@ -958,13 +939,11 @@ class Domain(Generic_Domain):
         self.set_using_discontinuous_elevation(True)
         self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
-        self.set_distribute_to_vertices_and_edges_method('DE')
 
         # Don't place any restriction on the minimum storable height
         #self.minimum_storable_height=-99999999999.0
         self.minimum_allowed_height=1.0e-12
 
-        self.use_edge_limiter=True
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
@@ -1335,38 +1314,6 @@ class Domain(Generic_Domain):
 
 
 
-    def set_distribute_to_vertices_and_edges_method(self, flag='original'):
-        """Set method for computing fluxes.
-
-        Currently
-           original
-           tsunami
-        """
-        distribute_to_vertices_and_edges_methods = ['original',  'tsunami', 'DE']
-
-        if flag in distribute_to_vertices_and_edges_methods:
-            self.distribute_to_vertices_and_edges_method = flag
-        else:
-            msg = 'Unknown distribute_to_vertices_and_edges_method. \nPossible choices are:\n'+ \
-            ', '.join(distribute_to_vertices_and_edges_methods)+'.'
-            raise Exception(msg)
-
-
-
-
-
-    def get_distribute_to_vertices_and_edges_method(self):
-        """Get method for distribute_to_vertices_and_edges.
-
-        See set_distribute_to_vertices_and_edges_method for possible choices.
-        """
-
-        return self.distribute_to_vertices_and_edges_method
-
-
-
-
-
     def set_flow_algorithm(self, algorithm='DE0'):
         """Set combination of slope limiting and time stepping
 
@@ -1446,17 +1393,6 @@ class Domain(Generic_Domain):
             self.extrapolate_velocity_second_order = True
         elif flag is False:
             self.extrapolate_velocity_second_order = False
-
-    def set_use_edge_limiter(self, flag=True):
-        """ Extrapolation routine uses vertex values by default,
-        for limiting, can change to edge limiting which
-        seems to work better in some cases.
-        """
-
-        if flag is True:
-            self.use_edge_limiter = True
-        elif flag is False:
-            self.use_edge_limiter = False
 
     def set_low_froude(self, low_froude=0):
         """ For low Froude problems the standard flux calculations
@@ -1952,14 +1888,6 @@ class Domain(Generic_Domain):
 
 
     #@profile
-    def extrapolate_second_order_sw(self):
-        """Fast version of extrapolation from centroids to edges"""
-
-        # FIXME (Ole): This might be an obsolute function (it was migrated from from the old c extension)
-        from .sw_domain_orig_ext import extrapolate_second_order_sw
-        extrapolate_second_order_sw(self)
-
-    #@profile
     def compute_fluxes(self):
         """Compute fluxes and timestep suitable for all volumes in domain.
 
@@ -2268,102 +2196,6 @@ class Domain(Generic_Domain):
         self.timestep = timestep
 
 
-    def distribute_using_edge_limiter(self):
-        """Distribution from centroids to edges specific to the SWW eqn.
-
-        It will ensure that h (w-z) is always non-negative even in the
-        presence of steep bed-slopes by taking a weighted average between shallow
-        and deep cases.
-
-        In addition, all conserved quantities get distributed as per either a
-        constant (order==1) or a piecewise linear function (order==2).
-
-
-        Precondition:
-          All quantities defined at centroids and bed elevation defined at
-          vertices.
-
-        Postcondition
-          Conserved quantities defined at vertices
-        """
-
-        # Remove very thin layers of water
-        self.protect_against_infinitesimal_and_negative_heights()
-
-        for name in self.conserved_quantities:
-            Q = self.quantities[name]
-            if self._order_ == 1:
-                Q.extrapolate_first_order()
-            elif self._order_ == 2:
-                Q.extrapolate_second_order_and_limit_by_edge()
-            else:
-                raise Exception('Unknown order')
-
-        self.balance_deep_and_shallow()
-
-        # Compute edge values by interpolation
-        for name in self.conserved_quantities:
-            Q = self.quantities[name]
-            Q.interpolate_from_vertices_to_edges()
-
-    def distribute_using_vertex_limiter(self):
-        """Distribution from centroids to vertices specific to the SWW equation.
-
-        It will ensure that h (w-z) is always non-negative even in the
-        presence of steep bed-slopes by taking a weighted average between shallow
-        and deep cases.
-
-        In addition, all conserved quantities get distributed as per either a
-        constant (order==1) or a piecewise linear function (order==2).
-
-        FIXME: more explanation about removal of artificial variability etc
-
-        Precondition:
-          All quantities defined at centroids and bed elevation defined at
-          vertices.
-
-        Postcondition
-          Conserved quantities defined at vertices
-        """
-
-        # Remove very thin layers of water
-        self.protect_against_infinitesimal_and_negative_heights()
-
-        # Extrapolate all conserved quantities
-        if self.optimised_gradient_limiter:
-            # MH090605 if second order,
-            # perform the extrapolation and limiting on
-            # all of the conserved quantities
-
-            if (self._order_ == 1):
-                for name in self.conserved_quantities:
-                    Q = self.quantities[name]
-                    Q.extrapolate_first_order()
-            elif self._order_ == 2:
-                self.extrapolate_second_order_sw()
-            else:
-                raise Exception('Unknown order')
-        else:
-            # Old code:
-            for name in self.conserved_quantities:
-                Q = self.quantities[name]
-
-                if self._order_ == 1:
-                    Q.extrapolate_first_order()
-                elif self._order_ == 2:
-                    Q.extrapolate_second_order_and_limit_by_vertex()
-                else:
-                    raise Exception('Unknown order')
-
-        # Take bed elevation into account when water heights are small
-        self.balance_deep_and_shallow()
-
-        # Compute edge values by interpolation
-        for name in self.conserved_quantities:
-            Q = self.quantities[name]
-            Q.interpolate_from_vertices_to_edges()
-
-
     def protect_against_infinitesimal_and_negative_heights(self):
         """ Clean up the stage and momentum values to ensure non-negative heights
         """
@@ -2388,45 +2220,6 @@ class Domain(Generic_Domain):
             #print('Cumulative mass protection: ' + str(mass_error) + ' m^3 ')
             # From https://stackoverflow.com/questions/22397261/cant-convert-float-object-to-str-implicitly
             print('Cumulative mass protection: {0} m^3'.format(mass_error))
-
-
-    def balance_deep_and_shallow(self):
-        """Compute linear combination between stage as computed by
-        gradient-limiters limiting using w, and stage computed by
-        gradient-limiters limiting using h (h-limiter).
-
-        The former takes precedence when heights are large compared to the
-        bed slope while the latter takes precedence when heights are
-        relatively small.  Anything in between is computed as a balanced
-        linear combination in order to avoid numerical disturbances which
-        would otherwise appear as a result of hard switching between
-        modes.
-
-        Wrapper for C implementation
-        """
-
-        from .sw_domain_orig_ext import balance_deep_and_shallow \
-            as balance_deep_and_shallow_ext
-
-        # Shortcuts
-        wc = self.quantities['stage'].centroid_values
-        zc = self.quantities['elevation'].centroid_values
-        wv = self.quantities['stage'].vertex_values
-        zv = self.quantities['elevation'].vertex_values
-
-        # Momentums at centroids
-        xmomc = self.quantities['xmomentum'].centroid_values
-        ymomc = self.quantities['ymomentum'].centroid_values
-
-        # Momentums at vertices
-        xmomv = self.quantities['xmomentum'].vertex_values
-        ymomv = self.quantities['ymomentum'].vertex_values
-
-        balance_deep_and_shallow_ext(self,
-                                   wc, zc, wv, zv, wc,
-                                   xmomc, ymomc, xmomv, ymomv)
-
-        nvtxRangePop()
 
 
     def apply_protection_against_isolated_degenerate_timesteps(self):
@@ -4309,70 +4102,6 @@ class Domain(Generic_Domain):
 ################################################################################
 # End of class Shallow Water Domain
 ################################################################################
-
-
-
-################################################################################
-# Module functions for gradient limiting
-################################################################################
-
-
-def distribute_using_vertex_limiter(domain):
-    """Distribution from centroids to vertices specific to the SWW equation.
-
-    It will ensure that h (w-z) is always non-negative even in the
-    presence of steep bed-slopes by taking a weighted average between shallow
-    and deep cases.
-
-    In addition, all conserved quantities get distributed as per either a
-    constant (order==1) or a piecewise linear function (order==2).
-
-    FIXME: more explanation about removal of artificial variability etc
-
-    Precondition:
-      All quantities defined at centroids and bed elevation defined at
-      vertices.
-
-    Postcondition
-      Conserved quantities defined at vertices
-    """
-
-    # Remove very thin layers of water
-    domain.protect_against_infinitesimal_and_negative_heights()
-
-    # Extrapolate all conserved quantities
-    if domain.optimised_gradient_limiter:
-        # MH090605 if second order,
-        # perform the extrapolation and limiting on
-        # all of the conserved quantities
-
-        if domain._order_ == 1:
-            for name in domain.conserved_quantities:
-                Q = domain.quantities[name]
-                Q.extrapolate_first_order()
-        elif domain._order_ == 2:
-            domain.extrapolate_second_order_sw()
-        else:
-            raise Exception('Unknown order')
-    else:
-        # Old code:
-        for name in domain.conserved_quantities:
-            Q = domain.quantities[name]
-
-            if domain._order_ == 1:
-                Q.extrapolate_first_order()
-            elif domain._order_ == 2:
-                Q.extrapolate_second_order_and_limit_by_vertex()
-            else:
-                raise Exception('Unknown order')
-
-    # Take bed elevation into account when water heights are small
-    domain.balance_deep_and_shallow()
-
-    # Compute edge values by interpolation
-    for name in domain.conserved_quantities:
-        Q = domain.quantities[name]
-        Q.interpolate_from_vertices_to_edges()
 
 
 

@@ -533,13 +533,11 @@ class Test_Shallow_Water(unittest.TestCase):
         assert parameters['alpha_balance']           == domain.alpha_balance
         assert parameters['tight_slope_limiters']    == domain.tight_slope_limiters
         assert parameters['optimise_dry_cells']      == domain.optimise_dry_cells
-        assert parameters['use_edge_limiter']        == domain.use_edge_limiter
         assert parameters['use_centroid_velocities'] == domain.use_centroid_velocities
         assert parameters['use_sloped_mannings']     == domain.use_sloped_mannings
         assert parameters['compute_fluxes_method']   == domain.get_compute_fluxes_method()
         assert parameters['flow_algorithm']          == domain.get_flow_algorithm()
 
-        assert parameters['optimised_gradient_limiter']        == domain.optimised_gradient_limiter
         assert parameters['extrapolate_velocity_second_order'] == domain.extrapolate_velocity_second_order
 
     def test_institution(self):
@@ -4166,7 +4164,6 @@ class Test_Shallow_Water(unittest.TestCase):
         # FIXME (Ole): Need tests where this is commented out
         domain.tight_slope_limiters = 0       # Backwards compatibility (14/4/7)
         domain.use_centroid_velocities = 0    # Backwards compatibility (7/5/8)
-        domain.optimised_gradient_limiter = True
 
 
         # Import underlying routine locally.
@@ -6211,7 +6208,6 @@ class Test_Shallow_Water(unittest.TestCase):
         domain.H0 = 0                         # Backwards compatibility (6/2/7)
         domain.tight_slope_limiters = False   # Backwards compatibility (14/4/7)
         domain.use_centroid_velocities = False # Backwards compatibility (7/5/8)
-        domain.use_edge_limiter = False       # Backwards compatibility (9/5/8)
         domain.low_froude = 0                 # Backwards compatibility (25/6/19)
 
         # Bed-slope and friction at vertices (and interpolated elsewhere)
