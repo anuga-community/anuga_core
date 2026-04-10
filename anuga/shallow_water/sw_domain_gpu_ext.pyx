@@ -126,8 +126,9 @@ cdef extern from "gpu_domain.h" nogil:
         int mapped
 
     struct inlet_operators:
-        inlet_operator_info ops[32]
+        inlet_operator_info *ops
         int num_operators
+        int capacity
 
     struct gpu_domain:
         domain D

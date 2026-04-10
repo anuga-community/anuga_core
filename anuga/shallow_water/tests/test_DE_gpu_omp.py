@@ -1340,7 +1340,7 @@ class Test_GPU_WeirTrapezoid(unittest.TestCase):
 
 @pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
 class Test_GPU_SlotLimits(unittest.TestCase):
-    """Tests that hard RuntimeError is raised when GPU operator slot limits are exceeded."""
+    """Tests that GPU operator arrays grow dynamically beyond the initial capacity."""
 
     def _base_domain(self, name):
         domain = rectangular_cross_domain(4, 4, len1=40., len2=40.)
@@ -1357,48 +1357,38 @@ class Test_GPU_SlotLimits(unittest.TestCase):
                              for tag in domain.get_boundary_tags()})
         return domain
 
-    def test_rate_operator_slot_overflow_raises(self):
-        """RuntimeError when more than MAX_RATE_OPERATORS=64 Rate_operators are registered."""
+    def test_rate_operator_dynamic_growth(self):
+        """Rate operator array grows beyond initial MAX_RATE_OPERATORS=64 capacity."""
         from anuga import Rate_operator
         domain = self._base_domain('slot_rate')
         domain.set_multiprocessor_mode(2)
 
-        # Register 64 operators — each covers a tiny disjoint region
-        # We use the same region for simplicity; overflow happens at id==64
+        # Register 66 operators (two beyond the initial capacity of 64)
         operators = []
-        for i in range(64):
+        for i in range(66):
             op = Rate_operator(domain, rate=0.0)
-            # Manually trigger GPU init so the slot counter increments
             op._init_gpu()
             operators.append(op)
 
-        # The 65th operator should fail
-        op65 = Rate_operator(domain, rate=0.0)
-        with self.assertRaises(RuntimeError) as ctx:
-            op65._init_gpu()
-        self.assertIn('MAX_RATE_OPERATORS', str(ctx.exception))
+        # All 66 should have been allocated successfully (no exception)
+        self.assertEqual(len(operators), 66)
 
-    def test_inlet_operator_slot_overflow_raises(self):
-        """RuntimeError when more than MAX_INLET_OPERATORS=32 Inlet_operators are registered."""
+    def test_inlet_operator_dynamic_growth(self):
+        """Inlet operator array grows beyond initial MAX_INLET_OPERATORS=32 capacity."""
         domain = self._base_domain('slot_inlet')
         domain.set_multiprocessor_mode(2)
 
         from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device
         sync_to_device(domain.gpu_interface.gpu_dom)
 
-        # Register 32 inlet operators covering arbitrary single triangles
+        # Register 34 inlet operators (two beyond the initial capacity of 32)
         operators = []
-        for i in range(32):
-            line = [[0.0, 20.0], [40.0, 20.0]]
-            op = anuga.Inlet_operator(domain, line, Q=0.0)
+        for i in range(34):
+            op = anuga.Inlet_operator(domain, [[0.0, 20.0], [40.0, 20.0]], Q=0.0)
             op._init_gpu()
             operators.append(op)
 
-        # The 33rd should fail
-        op33 = anuga.Inlet_operator(domain, [[0.0, 20.0], [40.0, 20.0]], Q=0.0)
-        with self.assertRaises(RuntimeError) as ctx:
-            op33._init_gpu()
-        self.assertIn('MAX_INLET_OPERATORS', str(ctx.exception))
+        self.assertEqual(len(operators), 34)
 
 
 @pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")

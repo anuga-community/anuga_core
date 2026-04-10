@@ -135,7 +135,12 @@ struct boundary_edge_sync {
 
 // Rate operator info - for GPU-accelerated rate application (rain, etc.)
 // Supports both positive rates (inflow) and negative rates (extraction)
-#define MAX_RATE_OPERATORS 64
+//
+// MAX_RATE_OPERATORS / MAX_INLET_OPERATORS / MAX_CULVERTS are the *initial*
+// heap allocation sizes.  The arrays grow automatically (doubling) so there
+// is no hard limit on the number of operators.
+#define MAX_RATE_OPERATORS  64
+#define MAX_INLET_OPERATORS 32
 
 struct rate_operator_info {
     int num_indices;             // Number of triangles this operator applies to
@@ -152,15 +157,15 @@ struct rate_operator_info {
 };
 
 struct rate_operators {
-    struct rate_operator_info ops[MAX_RATE_OPERATORS];
-    int num_operators;           // Number of active operators
+    struct rate_operator_info *ops; // heap-allocated, capacity entries
+    int num_operators;              // Number of active operators
+    int capacity;                   // Allocated size of ops array (0 = uninitialised)
     int initialized;
 };
 
 // Inlet operator info - for GPU-accelerated inlet operations
 // The inlet only touches 10-100 triangles, so we do small D2H/H2D
 // of just those values (~6KB) instead of full domain sync (~235MB)
-#define MAX_INLET_OPERATORS 32
 
 struct inlet_operator_info {
     int num_indices;             // Number of inlet triangles
@@ -177,8 +182,9 @@ struct inlet_operator_info {
 };
 
 struct inlet_operators {
-    struct inlet_operator_info ops[MAX_INLET_OPERATORS];
+    struct inlet_operator_info *ops; // heap-allocated, capacity entries
     int num_operators;
+    int capacity;                    // Allocated size of ops array
 };
 
 // Culvert operator types
@@ -246,9 +252,10 @@ struct culvert_state {
 // Culvert manager (lives inside gpu_domain)
 struct culvert_operators {
     int num_culverts;
-    struct culvert_params params[MAX_CULVERTS];
-    struct culvert_indices indices[MAX_CULVERTS];
-    struct culvert_state state[MAX_CULVERTS];
+    int capacity;                    // Allocated size of params/indices/state arrays
+    struct culvert_params *params;   // heap-allocated, capacity entries
+    struct culvert_indices *indices; // heap-allocated, capacity entries
+    struct culvert_state *state;     // heap-allocated, capacity entries
     int initialized;
 
     // Scratch buffers for batched gather/scatter
@@ -442,7 +449,7 @@ void gpu_time_boundary_set_values(struct gpu_domain *GD, double stage, double xm
 void gpu_evaluate_time_boundary(struct gpu_domain *GD);
 
 // Rate operators - rain, extraction, etc.
-// Returns operator ID (0 to MAX_RATE_OPERATORS-1) or -1 on error
+// Returns operator ID (>= 0) or -1 on error
 int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
                            double *areas, int *full_indices, int num_full);
 void gpu_rate_operator_finalize(struct gpu_domain *GD, int op_id);
@@ -523,7 +530,7 @@ double gpu_flop_counters_get_global_flops(struct gpu_domain *GD);
 void gpu_flop_counters_print_global(struct gpu_domain *GD);
 
 // Inlet operators - GPU-accelerated inlet flow
-// Returns operator ID (0 to MAX_INLET_OPERATORS-1) or -1 on error
+// Returns operator ID (>= 0) or -1 on error
 int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices, int *indices, double *areas);
 void gpu_inlet_operator_finalize(struct gpu_domain *GD, int op_id);
 void gpu_inlet_operators_finalize_all(struct gpu_domain *GD);

@@ -513,14 +513,40 @@ int gpu_culvert_init(struct gpu_domain *GD,
 
     struct culvert_operators *CO = &GD->culvert_ops;
 
-    if (CO->num_culverts >= MAX_CULVERTS) {
-        fprintf(stderr, "ERROR: Max culverts (%d) exceeded\n", MAX_CULVERTS);
-        return -1;
-    }
     if (inlet0_num > MAX_INLET_TRIANGLES || inlet1_num > MAX_INLET_TRIANGLES) {
         fprintf(stderr, "ERROR: Inlet has %d/%d triangles (max %d)\n",
                 inlet0_num, inlet1_num, MAX_INLET_TRIANGLES);
         return -1;
+    }
+
+    // Grow params/indices/state arrays if full
+    if (CO->num_culverts >= CO->capacity) {
+        int new_cap = CO->capacity == 0 ? MAX_CULVERTS : CO->capacity * 2;
+        struct culvert_params *np = (struct culvert_params*)
+            realloc(CO->params, new_cap * sizeof(struct culvert_params));
+        struct culvert_indices *ni = (struct culvert_indices*)
+            realloc(CO->indices, new_cap * sizeof(struct culvert_indices));
+        struct culvert_state *ns = (struct culvert_state*)
+            realloc(CO->state, new_cap * sizeof(struct culvert_state));
+        if (!np || !ni || !ns) {
+            fprintf(stderr, "ERROR: Failed to grow culvert_operators to %d slots\n", new_cap);
+            if (np) free(np); else if (CO->params) free(CO->params);
+            if (ni) free(ni); else if (CO->indices) free(CO->indices);
+            if (ns) free(ns); else if (CO->state) free(CO->state);
+            CO->params = NULL; CO->indices = NULL; CO->state = NULL;
+            return -1;
+        }
+        // Zero-init new entries so state is clean
+        memset(np + CO->capacity, 0,
+               (new_cap - CO->capacity) * sizeof(struct culvert_params));
+        memset(ni + CO->capacity, 0,
+               (new_cap - CO->capacity) * sizeof(struct culvert_indices));
+        memset(ns + CO->capacity, 0,
+               (new_cap - CO->capacity) * sizeof(struct culvert_state));
+        CO->params = np;
+        CO->indices = ni;
+        CO->state = ns;
+        CO->capacity = new_cap;
     }
 
     int id = CO->num_culverts;
@@ -612,7 +638,11 @@ void gpu_culverts_finalize_all(struct gpu_domain *GD) {
     if (CO->scratch_inlet_ymom) { free(CO->scratch_inlet_ymom); CO->scratch_inlet_ymom = NULL; }
     if (CO->scratch_inlet_elev) { free(CO->scratch_inlet_elev); CO->scratch_inlet_elev = NULL; }
 
+    if (CO->params)  { free(CO->params);  CO->params  = NULL; }
+    if (CO->indices) { free(CO->indices); CO->indices = NULL; }
+    if (CO->state)   { free(CO->state);   CO->state   = NULL; }
     CO->num_culverts = 0;
+    CO->capacity = 0;
     CO->initialized = 0;
 }
 
@@ -724,7 +754,11 @@ static void gpu_culvert_gather_enquiry(struct gpu_domain *GD,
 
     // Host-side: read enquiry indices, build gather list
     // Use index 0 as placeholder for remote enquiry points (-1)
-    int enquiry_ids[2 * MAX_CULVERTS];
+    int *enquiry_ids = (int*)malloc(ne * sizeof(int));
+    if (!enquiry_ids) {
+        fprintf(stderr, "ERROR: Failed to allocate enquiry_ids (%d ints)\n", ne);
+        return;
+    }
     for (int c = 0; c < nc; c++) {
         int ei0 = CO->indices[c].enquiry_index_0;
         int ei1 = CO->indices[c].enquiry_index_1;
@@ -747,6 +781,7 @@ static void gpu_culvert_gather_enquiry(struct gpu_domain *GD,
 
     // Single D2H transfer (~1KB for 20 culverts)
     #pragma omp target update from(ss[0:ne], sx[0:ne], sy[0:ne], se[0:ne])
+    free(enquiry_ids);
 
     // Unpack into per-culvert inlet_data structs
     for (int c = 0; c < nc; c++) {

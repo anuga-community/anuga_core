@@ -295,8 +295,23 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->evolve_max_timestep = 1.0e10;
     GD->fixed_flux_timestep = -1.0;  // Disabled by default
 
-    // Initialize culvert operators to empty
+    // Initialize rate operators to empty (heap-allocated on first use)
+    GD->rate_ops.ops = NULL;
+    GD->rate_ops.num_operators = 0;
+    GD->rate_ops.capacity = 0;
+    GD->rate_ops.initialized = 0;
+
+    // Initialize inlet operators to empty (heap-allocated on first use)
+    GD->inlet_ops.ops = NULL;
+    GD->inlet_ops.num_operators = 0;
+    GD->inlet_ops.capacity = 0;
+
+    // Initialize culvert operators to empty (heap-allocated on first use)
     GD->culvert_ops.num_culverts = 0;
+    GD->culvert_ops.capacity = 0;
+    GD->culvert_ops.params = NULL;
+    GD->culvert_ops.indices = NULL;
+    GD->culvert_ops.state = NULL;
     GD->culvert_ops.initialized = 0;
     GD->culvert_ops.mapped = 0;
     GD->culvert_ops.total_inlet_triangles = 0;
@@ -335,6 +350,10 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
 
     // Free boundary edge sync structures
     gpu_boundary_edge_sync_finalize(GD);
+
+    // Free rate and inlet operator structures (heap-allocated ops arrays)
+    gpu_rate_operators_finalize_all(GD);
+    gpu_inlet_operators_finalize_all(GD);
 
     // Free culvert operator structures
     gpu_culverts_finalize_all(GD);

@@ -321,7 +321,7 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 
 - [x] **G3.1 Gate/weir operators on GPU** — `Weir_orifice_trapezoid_operator` added to GPUCulvertManager; `CULVERT_TYPE_WEIR_TRAPEZOID=2`; `weir_orifice_trapezoid_discharge()` C function; z1/z2 side slopes in `culvert_params`; 3 tests (cpu/gpu match, volume conservation, non-rect section). *(2026-04-10)*
 - [x] **G3.2 Riverwall GPU support** — physics in `core_kernels.c`, arrays mapped in `gpu_domain_core.c`, Cython pointers wired. All 4 `Test_GPU_Riverwall` tests pass (init, cpu/gpu match, flux kernel, weir discharge). Completed as part of G1/RW work. *(2026-04-10)*
-- [ ] **G3.3 Dynamic operator slot limits** — replace static arrays with heap allocation for large models.
+- [x] **G3.3 Dynamic operator slot limits** — `rate_operators.ops`, `inlet_operators.ops`, and `culvert_operators.{params,indices,state}` changed from static arrays to heap-allocated pointers with `capacity` field; `grow_rate_ops()`/`grow_inlet_ops()` helpers double capacity on overflow; `enquiry_ids[MAX_CULVERTS]` stack array in `gpu_culvert_gather_enquiry` replaced with `malloc`; `gpu_domain_init` zero-inits all new pointer fields; `gpu_domain_finalize` calls rate/inlet finalize_all; slot-overflow tests updated to test dynamic growth. *(2026-04-10)*
 - [ ] **G3.4 GPU documentation** — `docs/source/gpu_mode.rst`, benchmark results, hardware requirements, known operator limitations.
 
 ### Phase 4 — SC26 paper preparation (months 4–6)
