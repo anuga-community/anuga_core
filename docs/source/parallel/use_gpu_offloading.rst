@@ -14,8 +14,8 @@ No CUDA or Python GPU libraries are required.
 .. note::
 
    The GPU backend is experimental and under active development.  The API
-   (``set_multiprocessor_mode``, slot limits, operator support) may change in
-   future releases.  For production runs where result reproducibility matters,
+   (``set_multiprocessor_mode``, operator support) may change in future
+   releases.  For production runs where result reproducibility matters,
    validate GPU output against ``mode=1`` before switching.
 
 
@@ -181,27 +181,18 @@ one round-trip per operator call per timestep, so minimise the number of CPU
 operators when GPU performance is important.
 
 
-Slot limits
------------
+Operator limits
+---------------
 
-The GPU domain uses fixed-size static arrays for operator registration.
-Exceeding these limits raises a ``RuntimeError`` at registration time, before
-the simulation begins.
+The GPU domain uses dynamically-allocated arrays for operator registration,
+so there is no hard limit on the number of ``Rate_operator``, ``Inlet_operator``,
+or culvert operators.  The arrays start at their default capacity and double
+automatically as more operators are added.
 
-+---------------------------+-------+
-| Operator type             | Limit |
-+===========================+=======+
-| ``Rate_operator``         | 64    |
-+---------------------------+-------+
-| ``Inlet_operator``        | 32    |
-+---------------------------+-------+
-| Culverts (all types)      | 64    |
-+---------------------------+-------+
-| Triangles per inlet face  | 64    |
-+---------------------------+-------+
-
-If you exceed a limit, split operators or contact the development team for a
-build with larger limits (G3.3 — dynamic allocation — is planned).
+The one remaining fixed limit is **64 triangles per inlet face** — if a
+culvert inlet region covers more than 64 mesh triangles, registration will
+fail with a ``RuntimeError``.  Coarsen the mesh near the structure or split
+the inlet region to stay within this limit.
 
 
 Supported boundary conditions
@@ -298,8 +289,9 @@ Troubleshooting
     that supports ``-fopenmp-targets`` (GCC 12+ with offload targets or
     LLVM with ``libomptarget``).
 
-``RuntimeError: GPU operator slot limit exceeded``
-    Too many operators of one type.  See *Slot limits* above.
+``RuntimeError: GPU inlet face too large``
+    A culvert inlet region covers more than 64 mesh triangles.  Coarsen
+    the mesh near the structure or split the inlet region.
 
 ``RuntimeError: GPU device memory insufficient``
     The domain is too large for the available device memory.  Use a smaller
