@@ -1,7 +1,7 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-10 (session 13)
-Branch: `develop_quantity_memory` (quantity memory + GPU G3.x work)
+Last updated: 2026-04-10 (session 14)
+Branch: `develop` (all feature branches merged)
 
 ---
 
@@ -25,7 +25,7 @@ Branch: `develop_quantity_memory` (quantity memory + GPU G3.x work)
 | Quantity memory reduction | 7 | 6 | 1 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 1 | 1 | 0 |
-| **Total** | **163** | **144** | **19** |
+| **Total** | **163** | **145** | **18** |
 
 ---
 
@@ -304,7 +304,7 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 
 - [x] **G1.1 File_boundary GPU support** — `File_boundary` / `Field_boundary` (spatially varying, time-dependent, per-edge values from SWW interpolation). Struct + Python push pattern; `gpu_file_boundary_init/set_values/evaluate`; `init_file_boundary` in setup; `set_file_boundary_values_from_domain` + `evaluate_file_boundary_gpu` called each sub-step in both Python and C RK loops. 3 tests (mode=1 vs mode=2, type recognised, per-edge push). *(2026-04-09)*
 - [x] **G1.2 Device memory check** — `gpu_check_device_memory()` before first `omp target enter data`; prints estimated memory, queries CUDA/HIP when available, `map_to_gpu` raises `RuntimeError` on OOM. 5 tests. *(2026-04-09)*
-- [x] **G1.3 Slot limit assertions** — `MAX_RATE_OPERATORS=64`, `MAX_INLET_OPERATORS=32`, `MAX_CULVERTS=64` now raise `RuntimeError` on overflow (Rate_operator, Inlet_operator, Parallel_inlet_operator). 2 tests. *(2026-04-07)*
+- [x] **G1.3 Slot limit assertions** — Original hard limits (`MAX_RATE_OPERATORS=64`, `MAX_INLET_OPERATORS=32`, `MAX_CULVERTS=64`) replaced by dynamic heap growth in G3.3; tests updated to verify arrays grow beyond initial capacity instead of raising `RuntimeError`. *(2026-04-07; superseded by G3.3 2026-04-10)*
 - [x] **G1.4 End-to-end regression test** — 10 s tidal + 10 s dam break; mode=1 vs mode=2; `atol=1e-12`; in CPU_ONLY_MODE differences are machine-epsilon. *(2026-04-07)*
 - [x] **G1.4 Multi-rank halo exchange test** — `test_parallel_sw_flow_gpu.py`: 2-rank MPI GPU test; `tri_full_flag` fix (ghost cells excluded from timestep min). *(2026-04-09)*
 - [x] **G1.4 Culvert test in GPU mode** — `Test_GPU_Culvert`: mode=1 vs mode=2, volume conservation, flow direction. *(2026-04-07)*
@@ -322,7 +322,7 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 - [x] **G3.1 Gate/weir operators on GPU** — `Weir_orifice_trapezoid_operator` added to GPUCulvertManager; `CULVERT_TYPE_WEIR_TRAPEZOID=2`; `weir_orifice_trapezoid_discharge()` C function; z1/z2 side slopes in `culvert_params`; 3 tests (cpu/gpu match, volume conservation, non-rect section). *(2026-04-10)*
 - [x] **G3.2 Riverwall GPU support** — physics in `core_kernels.c`, arrays mapped in `gpu_domain_core.c`, Cython pointers wired. All 4 `Test_GPU_Riverwall` tests pass (init, cpu/gpu match, flux kernel, weir discharge). Completed as part of G1/RW work. *(2026-04-10)*
 - [x] **G3.3 Dynamic operator slot limits** — `rate_operators.ops`, `inlet_operators.ops`, and `culvert_operators.{params,indices,state}` changed from static arrays to heap-allocated pointers with `capacity` field; `grow_rate_ops()`/`grow_inlet_ops()` helpers double capacity on overflow; `enquiry_ids[MAX_CULVERTS]` stack array in `gpu_culvert_gather_enquiry` replaced with `malloc`; `gpu_domain_init` zero-inits all new pointer fields; `gpu_domain_finalize` calls rate/inlet finalize_all; slot-overflow tests updated to test dynamic growth. *(2026-04-10)*
-- [ ] **G3.4 GPU documentation** — `docs/source/gpu_mode.rst`, benchmark results, hardware requirements, known operator limitations.
+- [x] **G3.4 GPU documentation** — `docs/source/parallel/use_gpu_offloading.rst`: architecture overview, slot limits, operator support table, HPC SLURM example, NVTX profiling guide, FAQ. *(2026-04-10)*
 
 ### Phase 4 — SC26 paper preparation (months 4–6)
 
@@ -334,26 +334,21 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 
 ## Remaining Work (priority order)
 
-### Immediate — best standalone value (no GPU hardware needed)
-1. **QM1–QM6** Quantity memory reduction Phase 1 (pure Python, ~2 days; ~58% saving for 1M-tri domain) *(waiting on Jorge's feedback)*
-2. **H3.2/H3.3** Parallel operator wrapper consolidation / Culvert class merge
-3. **G3.x or H3.x** — GPU Phase 3 and Hydrata Phase 3/4 items remain
-
 ### Short term — SC26 prerequisites (needs GPU hardware)
-4. **G2.1** GPU benchmark suite (actual GPU runs — `benchmarks/run_gpu_benchmarks.py` is ready)
-5. **G2.4** Weak scaling experiment (1→64 GPUs)
+1. **G2.1** GPU benchmark suite (actual GPU runs — `benchmarks/run_gpu_benchmarks.py` is ready)
+2. **G2.4** Weak scaling experiment (1→64 GPUs on HPC cluster)
+3. **G4.1** Gordon Bell metrics — per-kernel timing, roofline model comparison
+4. **G4.2** Physical benchmark validation — Thacker paraboloid, dam break (Ritter) in GPU mode
+5. **G4.3** Multi-node strong scaling — 20 M triangles, 1→64 GPUs
 
 ### Medium effort (1–3 days each)
-8. **H3.1** Unify quantity Cython kernels — `quantity_ext.pyx`, `quantity_ext_openmp.pyx`, `quantity_ext2.pyx` share ~90% code (high risk)
-9. **H3.2** Consolidate 5 parallel operator wrapper files — thin wrappers around `structures/` classes; move MPI awareness into base classes
-10. **H3.3** Merge `Culvert_operator` / `Culvert_operator_Parallel` — extract shared base class
-11. **H3.4** Split `system_tools.py` (750 lines) into focused modules
-12. **QM7** Shared gradient workspace (C extension change, ~72 MB saving)
-13. **G1.4** Multi-rank halo exchange test
+6. **H3.1** Unify quantity Cython kernels — `quantity_ext.pyx`, `quantity_ext_openmp.pyx`, `quantity_ext2.pyx` share ~90% code (high risk)
+7. **H3.2** Consolidate 5 parallel operator wrapper files — thin wrappers around `structures/` classes; move MPI awareness into base classes
+8. **H3.3** Merge `Culvert_operator` / `Culvert_operator_Parallel` — extract shared base class
+9. **H3.4** Split `system_tools.py` (750 lines) into focused modules
+10. **QM7** Shared gradient workspace (C extension change, ~72 MB saving for erosion-operator models)
 
 ### Lower priority
-14. **H4.1** Modernise test patterns — convert key `unittest.TestCase` classes to plain pytest functions; add domain-creation fixtures
-15. **H4.2** Automate 32 remaining validation scenarios
-16. **H4.3** Lift coverage from ~55% to 65%; enforce `fail_under=65` in CI
-17. **G3.1–G3.4** GPU feature parity (weir/gate operators, dynamic slot limits, GPU docs)
-28. **G4.3** Multi-node strong scaling for SC26
+11. **H4.1** Modernise test patterns — convert key `unittest.TestCase` classes to plain pytest functions; add domain-creation fixtures
+12. **H4.2** Automate 32 remaining validation scenarios
+13. **H4.3** Lift coverage from ~55% to 65%; enforce `fail_under=65` in CI
