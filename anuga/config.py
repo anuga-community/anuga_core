@@ -72,35 +72,20 @@ alpha_balance = 2.0
 # tight_slope_limiters = 1 means use new limiters that hug the bathymetry closer
 tight_slope_limiters = True
 
-use_edge_limiter = False    # The edge limiter is better, but most runs have been
-                            # using vertex limiting. Validations passed with this
-                            # one True 9th May 2008, but many unit tests need
-                            # backward compatibility flag set FIXME(Ole).
-
 # Use centroid velocities to reconstruct momentum at vertices in
 # very shallow water
-# This option has a first order flavour to it, but we still have second order
-# reconstruction of stage and this option only applies in
-# balance_deep_and_shallow when
-# alpha < 1 so in deeper water the full second order scheme is used.
-#
-# This option is good with tight_slope_limiters, especially for large domains.
 use_centroid_velocities = True
 
 # FIXME (Ole) Maybe get rid of order altogether and use beta_w
 default_order = 2
 
 # Option to use velocity extrapolation instead of momentum extrapolation in the
-# routine domain.extrapolate_second_order_sw
+# DE reconstruction routines
 extrapolate_velocity_second_order=True
 
 # Option to setup compute_fluxes_method
 # Currently "original' and 'wb_1' to 'wb_3' and 'tsunami'
 compute_fluxes_method = 'wb_2'
-
-# Option to setup distribute_to_vertices_and_edges_method
-# Currently "original' and 'tsunami'
-distribute_to_vertices_and_edges_method = 'original'
 
 # Option to turn on low damping for low Froude flows
 low_froude = 0
@@ -217,7 +202,6 @@ maximum_froude_number = 100.0 # To be used in limiters.
 ################################################################################
 
 optimise_dry_cells = True # Exclude dry and still cells from flux computation
-optimised_gradient_limiter = True # Use hardwired gradient limiter
 
 points_file_block_line_size = 1e6 # Number of lines read in from a points file
                                   # when blocking
