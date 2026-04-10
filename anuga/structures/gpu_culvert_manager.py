@@ -20,6 +20,7 @@ import numpy as np
 
 CULVERT_TYPE_BOX = 0
 CULVERT_TYPE_PIPE = 1
+CULVERT_TYPE_WEIR_TRAPEZOID = 2
 
 
 class GPUCulvertManager:
@@ -57,9 +58,17 @@ class GPUCulvertManager:
             return False
 
     @staticmethod
+    def _is_weir_trapezoid(op):
+        """Check if op is a Weir_orifice_trapezoid_operator (serial or parallel)."""
+        from anuga.structures.weir_orifice_trapezoid_operator import Weir_orifice_trapezoid_operator
+        return isinstance(op, Weir_orifice_trapezoid_operator)
+
+    @staticmethod
     def is_boyd_operator(op):
-        """Check if op is any Boyd operator (box or pipe, serial or parallel)."""
-        return GPUCulvertManager._is_boyd_box(op) or GPUCulvertManager._is_boyd_pipe(op)
+        """Check if op is any supported GPU culvert operator (box, pipe, or weir trapezoid)."""
+        return (GPUCulvertManager._is_boyd_box(op)
+                or GPUCulvertManager._is_boyd_pipe(op)
+                or GPUCulvertManager._is_weir_trapezoid(op))
 
     @staticmethod
     def _is_fully_local(op):
@@ -104,11 +113,22 @@ class GPUCulvertManager:
             width = op.culvert_width
             height = op.culvert_height
             diameter = 0.0
+            z1 = 0.0
+            z2 = 0.0
         elif self._is_boyd_pipe(op):
             culvert_type = CULVERT_TYPE_PIPE
             width = 0.0
             height = 0.0
             diameter = op.culvert_diameter
+            z1 = 0.0
+            z2 = 0.0
+        elif self._is_weir_trapezoid(op):
+            culvert_type = CULVERT_TYPE_WEIR_TRAPEZOID
+            width = op.culvert_width
+            height = op.culvert_height
+            diameter = 0.0
+            z1 = op.culvert_z1
+            z2 = op.culvert_z2
         else:
             raise TypeError(f"Unsupported operator type: {type(op)}")
 
@@ -200,6 +220,8 @@ class GPUCulvertManager:
             width=width,
             height=height,
             diameter=diameter,
+            z1=z1,
+            z2=z2,
             length=op.culvert_length,
             manning=op.manning,
             sum_loss=op.sum_loss,

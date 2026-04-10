@@ -1240,6 +1240,105 @@ class Test_GPU_Culvert(unittest.TestCase):
 
 
 @pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+class Test_GPU_WeirTrapezoid(unittest.TestCase):
+    """Tests for Weir_orifice_trapezoid_operator in GPU mode."""
+
+    def _create_weir_domain(self, name, z1=0.0, z2=0.0):
+        """Two-compartment domain connected by a trapezoidal weir/orifice culvert.
+
+        Water starts on the left (x < 100 m). The culvert (1.0 m wide × 0.8 m high,
+        side slopes z1/z2) provides the only flow path.
+        """
+        from anuga.structures.weir_orifice_trapezoid_operator import Weir_orifice_trapezoid_operator
+        domain = rectangular_cross_domain(20, 10, len1=200., len2=100.)
+        domain.set_flow_algorithm('DE0')
+        domain.set_low_froude(0)
+        domain.set_name(name)
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+
+        domain.set_quantity('elevation', -1.0)
+        domain.set_quantity('friction', 0.013)
+        domain.set_quantity('stage', lambda x, y: np.where(x < 100., 0.5, -1.0))
+
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+        Weir_orifice_trapezoid_operator(domain,
+                                        end_points=[[90., 50.], [110., 50.]],
+                                        height=0.8, width=1.0,
+                                        z1=z1, z2=z2,
+                                        apron=5., manning=0.013,
+                                        enquiry_gap=5., verbose=False)
+        return domain
+
+    def test_weir_trapezoid_cpu_gpu_match(self):
+        """Weir trapezoid: mode=1 vs mode=2 stage comparison at 5 s (rectangular section)."""
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+
+        cpu_domain = self._create_weir_domain('wt_cpu')
+        gpu_domain = self._create_weir_domain('wt_gpu')
+
+        cpu_domain.set_multiprocessor_mode(1)
+        for _ in cpu_domain.evolve(yieldstep=1.0, finaltime=5.0):
+            pass
+        cpu_stage = cpu_domain.quantities['stage'].centroid_values.copy()
+
+        gpu_domain.set_multiprocessor_mode(2)
+        sync_to_device(gpu_domain.gpu_interface.gpu_dom)
+        for _ in gpu_domain.evolve(yieldstep=1.0, finaltime=5.0):
+            pass
+        sync_from_device(gpu_domain.gpu_interface.gpu_dom)
+        gpu_stage = gpu_domain.quantities['stage'].centroid_values.copy()
+
+        np.testing.assert_allclose(
+            gpu_stage, cpu_stage, rtol=0, atol=1e-12,
+            err_msg='Weir trapezoid 5s: stage mismatch between mode=1 and mode=2')
+
+    def test_weir_trapezoid_volume_conservation(self):
+        """Weir trapezoid: total water volume is conserved in GPU mode."""
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+
+        domain = self._create_weir_domain('wt_vol')
+        initial_volume = domain.get_water_volume()
+
+        domain.set_multiprocessor_mode(2)
+        sync_to_device(domain.gpu_interface.gpu_dom)
+        for _ in domain.evolve(yieldstep=1.0, finaltime=5.0):
+            pass
+        sync_from_device(domain.gpu_interface.gpu_dom)
+
+        final_volume = domain.get_water_volume()
+        self.assertAlmostEqual(
+            initial_volume, final_volume, places=5,
+            msg=f'Weir trapezoid volume not conserved: '
+                f'initial={initial_volume:.5f}, final={final_volume:.5f}')
+
+    def test_weir_trapezoid_nonrect_section(self):
+        """Weir trapezoid with z1=z2=0.5: flow direction correct in GPU mode."""
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+
+        cpu_domain = self._create_weir_domain('wt_nr_cpu', z1=0.5, z2=0.5)
+        gpu_domain = self._create_weir_domain('wt_nr_gpu', z1=0.5, z2=0.5)
+
+        cpu_domain.set_multiprocessor_mode(1)
+        for _ in cpu_domain.evolve(yieldstep=1.0, finaltime=5.0):
+            pass
+        cpu_stage = cpu_domain.quantities['stage'].centroid_values.copy()
+
+        gpu_domain.set_multiprocessor_mode(2)
+        sync_to_device(gpu_domain.gpu_interface.gpu_dom)
+        for _ in gpu_domain.evolve(yieldstep=1.0, finaltime=5.0):
+            pass
+        sync_from_device(gpu_domain.gpu_interface.gpu_dom)
+        gpu_stage = gpu_domain.quantities['stage'].centroid_values.copy()
+
+        np.testing.assert_allclose(
+            gpu_stage, cpu_stage, rtol=0, atol=1e-12,
+            err_msg='Weir trapezoid (z1=z2=0.5) 5s: stage mismatch between mode=1 and mode=2')
+
+
+@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
 class Test_GPU_SlotLimits(unittest.TestCase):
     """Tests that hard RuntimeError is raised when GPU operator slot limits are exceeded."""
 

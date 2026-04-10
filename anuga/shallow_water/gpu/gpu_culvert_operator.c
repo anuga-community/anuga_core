@@ -247,6 +247,165 @@ void boyd_pipe_discharge(const struct culvert_params *p,
 }
 
 // ============================================================================
+// Pure computation: Weir-orifice TRAPEZOID discharge
+// Direct translation from weir_orifice_trapezoid_operator.py:
+//   weir_orifice_trapezoid_function()
+// Cross-section: bottom width `width`, side slopes z1 (left) and z2 (right).
+// ============================================================================
+
+// Newton iteration to find critical depth for a trapezoidal section given Q.
+// Returns dcrit (clamped to [1e-5, depth] on convergence failure).
+static double trapezoid_critical_depth(double Q, double bf_barrels_w,
+                                       double z12, double sqrt_z1, double sqrt_z2,
+                                       double depth, double g) {
+    double dcrit = 1.0e-5;
+    for (int ic = 0; ic < 100; ic++) {
+        double Tc = bf_barrels_w + z12 * dcrit;
+        double Ac = 0.5 * dcrit * (bf_barrels_w + Tc);
+        if (Tc < 1.0e-12 || Ac < 1.0e-12) break;
+        double fc  = pow(Ac, 1.5) / sqrt(Tc) - Q / sqrt(g);
+        double ffc = -0.5 * pow(Ac, 1.5) * z12 / pow(Tc, 1.5)
+                     + 1.5 * sqrt(Ac) * sqrt(Tc);
+        if (fabs(ffc) < 1.0e-30) break;
+        double dyc = -fc / ffc;
+        dcrit += dyc;
+        if (dcrit < 1.0e-5) dcrit = 1.0e-5;
+        if (fabs(dyc) < 1.0e-5) break;
+    }
+    if (dcrit > depth) dcrit = depth;
+    return dcrit;
+}
+
+
+void weir_orifice_trapezoid_discharge(const struct culvert_params *p,
+                                      double driving_energy,
+                                      double delta_total_energy,
+                                      double outlet_enquiry_depth,
+                                      double *Q_out, double *barrel_velocity_out,
+                                      double *outlet_culvert_depth_out,
+                                      double *flow_area_out) {
+    double width   = p->width;
+    double depth   = p->height;
+    double blockage = p->blockage;
+    double barrels  = p->barrels;
+    double z1 = p->z1;
+    double z2 = p->z2;
+    double z12 = z1 + z2;
+    double length  = p->length;
+    double sum_loss = p->sum_loss;
+    double manning  = p->manning;
+    double g = p->g;
+
+    if (blockage >= 1.0) {
+        *Q_out = 0.0;
+        *barrel_velocity_out = 0.0;
+        *outlet_culvert_depth_out = 0.0;
+        *flow_area_out = 1.0e-5;
+        return;
+    }
+
+    double bf = 1.0 - blockage;
+    // bf * barrels * width — used throughout
+    double bfw = bf * barrels * width;
+
+    // Pre-compute slant lengths for perimeter
+    double sqrt_z1 = sqrt(z1 * z1 + 1.0);
+    double sqrt_z2 = sqrt(z2 * z2 + 1.0);
+
+    // Inlet control estimates
+    // Weir flow (unsubmerged): Q = 1.7 * bfw_eff * driving_energy^1.5
+    //   where bfw_eff = average of bottom and top widths = (2*width + depth*(z1+z2))/2
+    double top_w  = 2.0 * width + depth * z12;
+    double Q_inlet_unsubmerged = 1.7 * bf * barrels * (top_w / 2.0)
+                                 * pow(driving_energy, 1.5);
+    // Orifice flow (submerged): Q = 0.8 * bfw_eff_area * sqrt(g) * sqrt(driving_energy)
+    double full_area = 0.5 * depth * (bfw + bfw + z12 * depth);
+    double Q_inlet_submerged = 0.8 * bf * barrels * sqrt(g) * full_area
+                               * sqrt(driving_energy);
+
+    double Q;
+    if (Q_inlet_unsubmerged < Q_inlet_submerged) {
+        Q = Q_inlet_unsubmerged;
+    } else {
+        Q = Q_inlet_submerged;
+    }
+
+    // Critical depth for inlet-control Q
+    double dcrit = trapezoid_critical_depth(Q, bfw, z12, sqrt_z1, sqrt_z2, depth, g);
+
+    double flow_area, perimeter;
+    if (dcrit >= depth) {
+        dcrit = depth;
+        flow_area = bfw * depth + 0.5 * z12 * depth * depth;
+        perimeter = 2.0 * bfw + z12 * depth + sqrt_z1 * depth + sqrt_z2 * depth;
+    } else {
+        flow_area = bfw * dcrit + 0.5 * z12 * dcrit * dcrit;
+        perimeter = bfw + sqrt_z1 * dcrit + sqrt_z2 * dcrit;
+    }
+
+    double outlet_culvert_depth = dcrit;
+
+    // Re-solve critical depth (same as Python — redundant for rect but kept for fidelity)
+    dcrit = trapezoid_critical_depth(Q, bfw, z12, sqrt_z1, sqrt_z2, depth, g);
+    outlet_culvert_depth = dcrit;
+    if (outlet_culvert_depth >= depth) {
+        outlet_culvert_depth = depth;
+        flow_area = bfw * depth + 0.5 * z12 * depth * depth;
+        perimeter = 2.0 * bfw + z12 * depth + sqrt_z1 * depth + sqrt_z2 * depth;
+    } else {
+        flow_area = bfw * outlet_culvert_depth + 0.5 * z12 * outlet_culvert_depth * outlet_culvert_depth;
+        perimeter = bfw + sqrt_z1 * outlet_culvert_depth + sqrt_z2 * outlet_culvert_depth;
+    }
+
+    // Outlet-control velocity and Q
+    double hyd_rad = flow_area / fmax(perimeter, 1.0e-12);
+    double culvert_velocity = sqrt(delta_total_energy
+                                   / ((sum_loss / (2.0 * g))
+                                      + (manning * manning * length)
+                                        / pow(hyd_rad, 1.33333)));
+    double Q_outlet_tailwater = flow_area * culvert_velocity;
+
+    if (delta_total_energy < driving_energy) {
+        // Outlet control
+        if (outlet_enquiry_depth > depth) {
+            // Outlet submerged — use full section
+            outlet_culvert_depth = depth;
+            flow_area = bfw * depth + 0.5 * z12 * depth * depth;
+            perimeter = bfw + sqrt_z1 * depth + sqrt_z2 * depth;
+        } else {
+            Q = fmin(Q, Q_outlet_tailwater);
+            dcrit = trapezoid_critical_depth(Q, bfw, z12, sqrt_z1, sqrt_z2, depth, g);
+            outlet_culvert_depth = dcrit;
+            if (outlet_culvert_depth >= depth) {
+                outlet_culvert_depth = depth;
+                flow_area = bfw * depth + 0.5 * z12 * depth * depth;
+                perimeter = bfw + sqrt_z1 * depth + sqrt_z2 * depth;
+            } else {
+                flow_area = bfw * outlet_culvert_depth
+                            + 0.5 * z12 * outlet_culvert_depth * outlet_culvert_depth;
+                perimeter = bfw + sqrt_z1 * outlet_culvert_depth
+                            + sqrt_z2 * outlet_culvert_depth;
+            }
+        }
+
+        hyd_rad = flow_area / fmax(perimeter, 1.0e-12);
+        culvert_velocity = sqrt(delta_total_energy
+                                / ((sum_loss / (2.0 * g))
+                                   + (manning * manning * length)
+                                     / pow(hyd_rad, 1.33333)));
+        Q_outlet_tailwater = flow_area * culvert_velocity;
+        Q = fmin(Q, Q_outlet_tailwater);
+    }
+
+    double barrel_velocity = Q / (flow_area + VELOCITY_PROTECTION / fmax(flow_area, 1.0e-12));
+
+    *Q_out = Q;
+    *barrel_velocity_out = barrel_velocity;
+    *outlet_culvert_depth_out = outlet_culvert_depth;
+    *flow_area_out = flow_area;
+}
+
+// ============================================================================
 // Energy smoothing (from boyd_box_operator.py:total_energy())
 // ============================================================================
 
@@ -1107,7 +1266,8 @@ void gpu_culverts_apply_all(struct gpu_domain *GD, double timestep) {
         }
 
         // Check culvert is open
-        double dim = (p->type == CULVERT_TYPE_BOX) ? p->height : p->diameter;
+        double dim = (p->type == CULVERT_TYPE_BOX || p->type == CULVERT_TYPE_WEIR_TRAPEZOID)
+                     ? p->height : p->diameter;
         if (dim <= 0.0) {
             r->Q = 0.0;
             r->barrel_velocity = 0.0;
@@ -1170,6 +1330,11 @@ void gpu_culverts_apply_all(struct gpu_domain *GD, double timestep) {
             if (p->type == CULVERT_TYPE_BOX) {
                 boyd_box_discharge(p, driving_energy, delta_total_energy,
                                    outflow_depth, &Q, &bv, &ocd, &fa);
+            } else if (p->type == CULVERT_TYPE_WEIR_TRAPEZOID) {
+                weir_orifice_trapezoid_discharge(p, driving_energy,
+                                                 delta_total_energy,
+                                                 outflow_depth,
+                                                 &Q, &bv, &ocd, &fa);
             } else {
                 boyd_pipe_discharge(p, inflow_depth, driving_energy,
                                     delta_total_energy, outflow_depth,

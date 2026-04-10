@@ -184,16 +184,19 @@ struct inlet_operators {
 // Culvert operator types
 #define MAX_CULVERTS 64
 #define MAX_INLET_TRIANGLES 64
-#define CULVERT_TYPE_BOX  0
-#define CULVERT_TYPE_PIPE 1
+#define CULVERT_TYPE_BOX              0
+#define CULVERT_TYPE_PIPE             1
+#define CULVERT_TYPE_WEIR_TRAPEZOID   2
 
 // Static geometry parameters for one culvert
 struct culvert_params {
-    int type;                    // CULVERT_TYPE_BOX or CULVERT_TYPE_PIPE
+    int type;                    // CULVERT_TYPE_BOX / PIPE / WEIR_TRAPEZOID
     double g;                    // Gravity [m/s^2] (from domain)
-    double width;                // Box width [m]
-    double height;               // Box height [m]
+    double width;                // Box/trapezoid bottom width [m]
+    double height;               // Box/trapezoid height [m]
     double diameter;             // Pipe diameter [m]
+    double z1;                   // Trapezoid left side slope (horiz/vert); 0 for box/pipe
+    double z2;                   // Trapezoid right side slope (horiz/vert); 0 for box/pipe
     double length;               // Culvert length [m]
     double manning;              // Manning's n for culvert
     double sum_loss;             // Sum of loss coefficients

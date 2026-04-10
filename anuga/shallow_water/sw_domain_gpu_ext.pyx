@@ -262,13 +262,15 @@ cdef extern from "gpu_domain.h" nogil:
                            int has_velocity, double ext_vel_u, double ext_vel_v,
                            int zero_velocity)
 
-    # Culvert operators (Boyd box/pipe - batched GPU gather/scatter)
+    # Culvert operators (Boyd box/pipe/weir_trapezoid - batched GPU gather/scatter)
     struct culvert_params:
         int type
         double g
         double width
         double height
         double diameter
+        double z1
+        double z2
         double length
         double manning
         double sum_loss
@@ -1743,9 +1745,11 @@ def init_culvert_operator(GPUDomain gpu_dom,
                           int inlet_master_proc_0=-1,
                           int inlet_master_proc_1=-1,
                           int is_local=1,
-                          int mpi_tag_base=0):
+                          int mpi_tag_base=0,
+                          double z1=0.0,
+                          double z2=0.0):
     """
-    Register a culvert (Boyd box or pipe) with the GPU culvert manager.
+    Register a culvert (Boyd box, pipe, or weir/orifice trapezoid) with the GPU culvert manager.
 
     For cross-boundary (parallel) culverts, pass MPI topology:
       master_proc: rank that computes discharge
@@ -1764,6 +1768,8 @@ def init_culvert_operator(GPUDomain gpu_dom,
     p.width = width
     p.height = height
     p.diameter = diameter
+    p.z1 = z1
+    p.z2 = z2
     p.length = length
     p.manning = manning
     p.sum_loss = sum_loss
