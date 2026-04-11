@@ -106,10 +106,10 @@ if openmp.found()
   #
   # Uses effective_compiler_id to handle Cray wrappers correctly
 
-  if effective_compiler_id in ['intel', 'intel-cl', 'icx']
+  if effective_compiler_id in ['intel', 'intel-cl']
     openmp_c_args = ['-O3', '-qopenmp', '-g']
     add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
-  elif effective_compiler_id == 'intel-llvm'
+  elif effective_compiler_id in ['intel-llvm', 'icx']
     openmp_c_args = ['-O3', '-fiopenmp', '-g']
     add_project_link_arguments('-fiopenmp', language: ['c', 'cpp'])
   elif effective_compiler_id == 'nvidia_hpc'
