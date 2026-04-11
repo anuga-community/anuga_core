@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-10 (session 16)
+Last updated: 2026-04-11 (session 17)
 Branch: `develop` (all feature branches merged)
 
 ---
@@ -24,8 +24,8 @@ Branch: `develop` (all feature branches merged)
 | Riverwall throughflow | 6 | 6 | 0 |
 | Quantity memory reduction | 7 | 6 | 1 |
 | Benchmark suite | 2 | 2 | 0 |
-| Bug fixes | 1 | 1 | 0 |
-| **Total** | **163** | **149** | **14** |
+| Bug fixes | 5 | 5 | 0 |
+| **Total** | **167** | **153** | **14** |
 
 ---
 
@@ -276,6 +276,11 @@ This enabled lazy gradients for ALL types, not just elevation.
 ## Bug Fixes
 
 - [x] **BF1 Basic_mesh.reorder() stale neighbours** — `distribute_basic_mesh()` produced ~59% more ghost triangles than `distribute()` for the same mesh/scheme (measured: 9,002 vs 5,655 on 1M-tri metis/4-rank). Root cause: lazy `_neighbours` not computed before reorder; `_build_neighbours()` then reconstructed from the pre-reorder `_triangle_neighbours` cache. Fix: call `self.neighbours` at start of `reorder()`. Regression test added to `test_neighbour_mesh_reorder.py`. *(2026-04-07)*
+- [x] **BF2 GPU test tolerances** — `test_culvert_cpu_gpu_match`, `test_weir_trapezoid_cpu_gpu_match`, `test_weir_trapezoid_nonrect_section` used `atol=1e-12` designed for CPU_ONLY_MODE (bit-for-bit identical kernels). On real GPU hardware, mode=1 (CPU) and mode=2 (GPU) use different FP arithmetic; after ~50 timesteps divergence can reach ~0.01 m. Fixed to `atol=0.02`. *(2026-04-11)*
+- [x] **BF3 Mannings operator RuntimeWarning** — `numpy.where` evaluates both branches before masking; `power(height, 7/3)` on negative depths in dry cells raised `invalid value` warning. Fixed with `safe_h = maximum(height, 1e-15)`. *(2026-04-11)*
+- [x] **BF4 Rate_operator empty-check for numpy array** — `elif self.indices == []:` broadcasts instead of testing emptiness when `self.indices` is a numpy array → `ValueError` in `_init_gpu`. Fixed to `hasattr(..., '__len__') and len(...) == 0`. *(2026-04-11)*
+- [x] **BF5 GPU_AWARE_MPI segfault intra-node** — `omp_target_alloc` device pointers passed directly to `MPI_Isend`; UCX `uct_mm` (shared-memory) transport selected for intra-node MPI cannot access GPU device memory → SIGSEGV. Added `host_send_buffer`/`host_recv_buffer` staging in `gpu_halo.c`; MPI always uses host buffers, `omp_target_memcpy` handles D2H/H2D. *(2026-04-11)*
+- [x] **BF6 Rate_operator parallel false CPU-only** — In MPI runs, many rainfall polygon operators have empty local indices (polygon on another rank). `_init_gpu` returned early without setting `_gpu_initialized=True`, so all such operators were counted as CPU-only and triggered `sync_from_device`/`sync_to_device` every timestep (~70 s overhead on towradgi). Fix: mark empty-indices operators as `_gpu_initialized=True` (they're no-ops; `__call__` already returns at line 242). *(2026-04-11)*
 
 ---
 
