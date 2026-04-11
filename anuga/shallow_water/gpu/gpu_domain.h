@@ -38,10 +38,16 @@ struct halo_exchange {
     int *send_offsets;           // Start offset in flat_send_indices for each neighbor [num_neighbors+1]
     int *recv_offsets;           // Start offset in flat_recv_indices for each neighbor [num_neighbors+1]
 
-    // Communication buffers (allocated on both host and device)
-    // Each element sends/receives 3 quantities: stage, xmom, ymom (centroid values)
+    // Communication buffers: device buffers for pack/unpack (GPU_AWARE_MPI: omp_target_alloc,
+    // else: host malloc used directly for MPI too)
     double *send_buffer;         // [3 * total_send_size]
     double *recv_buffer;         // [3 * total_recv_size]
+
+    // Host staging buffers used by GPU_AWARE_MPI path to work around UCX transports
+    // (e.g. uct_mm shared-memory) that cannot handle omp_target_alloc device pointers.
+    // NULL in the non-GPU_AWARE_MPI path (send_buffer/recv_buffer are already host).
+    double *host_send_buffer;    // [3 * total_send_size]  (GPU_AWARE_MPI only)
+    double *host_recv_buffer;    // [3 * total_recv_size]  (GPU_AWARE_MPI only)
 
     // MPI request arrays for non-blocking communication
     MPI_Request *requests;       // [2 * num_neighbors] for Isend/Irecv pairs
