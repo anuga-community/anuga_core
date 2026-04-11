@@ -938,29 +938,46 @@ class Mesh(General_mesh):
         return str
 
 
+    # Number of calls before building the spatial index.  A handful of inlet
+    # lookups happen at startup (compute_enquiry_index); once we exceed this
+    # threshold the quad-tree pays for itself many times over.
+    _SPATIAL_INDEX_THRESHOLD = 5
+
     def get_triangle_containing_point(self, point):
         """Return triangle id for triangle containing specified point (x,y)
 
-        If point isn't within mesh, raise exception
+        If point isn't within mesh, raise exception.
 
+        Uses a brute-force O(N) scan for the first few calls.  After
+        _SPATIAL_INDEX_THRESHOLD calls a MeshQuadtree spatial index is built
+        and used for all subsequent queries.
         """
 
-        # FIXME(Ole): This function is currently brute force
-        # because I needed it for diagnostics.
-        # We should make it fast - probably based on the
-        # quad tree structure.
+        # Increment call counter and build index on threshold crossing.
+        self._point_lookup_count = getattr(self, '_point_lookup_count', 0) + 1
+        if not hasattr(self, '_triangle_spatial_index'):
+            self._triangle_spatial_index = None
+        if self._triangle_spatial_index is None and \
+                self._point_lookup_count > self._SPATIAL_INDEX_THRESHOLD:
+            from anuga.pmesh.mesh_quadtree import MeshQuadtree
+            self._triangle_spatial_index = MeshQuadtree(self)
+
+        if self._triangle_spatial_index is not None:
+            found, _s0, _s1, _s2, k = self._triangle_spatial_index.search_fast(point)
+            if found:
+                return k
+            msg = 'Point %s not found within a triangle' % str(point)
+            raise Exception(msg)
+
+        # Brute-force fallback used only for the first few calls.
         from anuga.geometry.polygon import is_inside_polygon
-
         V = self.get_vertex_coordinates(absolute=True)
-
-        # FIXME: Horrible brute force
         for i, triangle in enumerate(self.triangles):
             poly = V[3*i:3*i+3]
-
             if is_inside_polygon(point, poly, closed=True):
                 return i
 
-        msg = 'Point %s not found within a triangle' %str(point)
+        msg = 'Point %s not found within a triangle' % str(point)
         raise Exception(msg)
 
 
