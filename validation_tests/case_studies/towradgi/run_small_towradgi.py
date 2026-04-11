@@ -372,7 +372,7 @@ Creating domain from scratch.
         interior_regions = read_polygon_list(CatchmentList)
     
         # Make the domain
-        mesh = create_mesh_from_regions(bounding_polygon,
+        pmesh = create_pmesh_from_regions(bounding_polygon,
                                  boundary_tags={'south': [0], 'east': [
                                      1], 'north': [2], 'west': [3]},
                                  maximum_triangle_area=maximum_triangle_area,
@@ -381,7 +381,7 @@ Creating domain from scratch.
                                  use_cache=False,
                                  verbose=False)
 
-        domain = Domain(mesh)
+        domain = Domain(pmesh)
     
         # ------------------------------------------------------------------------------
         # SETUP COMPUTATIONAL DOMAIN
