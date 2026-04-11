@@ -16,7 +16,7 @@ from anuga import Inlet_operator
 from anuga import Boyd_box_operator
 from anuga import Boyd_pipe_operator
 from anuga import Domain
-from anuga import create_mesh_from_regions
+from anuga import create_pmesh_from_regions
 from anuga import create_domain_from_regions
 from anuga import read_polygon
 from anuga import Polygon_function
@@ -372,7 +372,7 @@ Creating domain from scratch.
         interior_regions = read_polygon_list(CatchmentList)
     
         # Make the domain
-        pmesh = create_pmesh_from_regions(bounding_polygon,
+        mesh = create_pmesh_from_regions(bounding_polygon,
                                  boundary_tags={'south': [0], 'east': [
                                      1], 'north': [2], 'west': [3]},
                                  maximum_triangle_area=maximum_triangle_area,
@@ -381,7 +381,7 @@ Creating domain from scratch.
                                  use_cache=False,
                                  verbose=False)
 
-        domain = Domain(pmesh)
+        domain = Domain(mesh)
     
         # ------------------------------------------------------------------------------
         # SETUP COMPUTATIONAL DOMAIN
@@ -481,7 +481,7 @@ Creating domain from scratch.
     barrier()
 
     if myid == 0:
-        print('CREATING INLETS')
+        print('CREATING CULVERTS')
        
     #------------------------------------------------------------------------------
     # ENTER CULVERT DATA
@@ -913,7 +913,7 @@ Creating domain from scratch.
     # ----------------------------------------------------------------------------------------------------------------------------------------------------
     # APPLY RAINFALL
     # ----------------------------------------------------------------------------------------------------------------------------------------------------
-    if myid == 0 and verbose:
+    if myid == 0:
         print('CREATING RAINFALL POLYGONS')
     
     Rainfall_Gauge_directory = join('Forcing', 'Rainfall', 'Gauge')
