@@ -16,15 +16,22 @@
 // ============================================================================
 // CPU MULTICORE MODE - Regular OpenMP, no device offloading
 // ============================================================================
+//
+// simdlen(8): request 512-bit SIMD vectorisation for double-precision on
+//   Intel Cascade Lake (and later) where a ZMM register holds 8 doubles.
+//   The hint is advisory — the compiler uses the widest SIMD it can support.
+//
+// schedule(static): default for perfectly regular loops; avoids overhead of
+//   dynamic scheduling on Intel with many cores.
 
 // Parallel loops with SIMD vectorization
-#define OMP_PARALLEL_LOOP _Pragma("omp parallel for simd")
-#define OMP_PARALLEL_LOOP_SIMD _Pragma("omp parallel for simd")
+#define OMP_PARALLEL_LOOP _Pragma("omp parallel for simd simdlen(8) schedule(static)")
+#define OMP_PARALLEL_LOOP_SIMD _Pragma("omp parallel for simd simdlen(8) schedule(static)")
 
 // Reductions - use DO_PRAGMA to allow variable name expansion
-#define OMP_PARALLEL_LOOP_REDUCTION_PLUS(var) DO_PRAGMA(omp parallel for simd reduction(+:var))
-#define OMP_PARALLEL_LOOP_REDUCTION_MIN(var) DO_PRAGMA(omp parallel for simd reduction(min:var))
-#define OMP_PARALLEL_LOOP_REDUCTION_MAX(var) DO_PRAGMA(omp parallel for simd reduction(max:var))
+#define OMP_PARALLEL_LOOP_REDUCTION_PLUS(var) DO_PRAGMA(omp parallel for simd simdlen(8) schedule(static) reduction(+:var))
+#define OMP_PARALLEL_LOOP_REDUCTION_MIN(var) DO_PRAGMA(omp parallel for simd simdlen(8) schedule(static) reduction(min:var))
+#define OMP_PARALLEL_LOOP_REDUCTION_MAX(var) DO_PRAGMA(omp parallel for simd simdlen(8) schedule(static) reduction(max:var))
 
 // Data mapping - no-op on CPU (data already in host memory)
 #define OMP_TARGET_ENTER_DATA_MAP_TO(...)

@@ -125,6 +125,13 @@ struct domain {
     double* xmom_backup_values;
     double* ymom_backup_values;
 
+    // Precomputed bed gradient arrays for the gravity and sloped-friction kernels.
+    // bed_slope_x[k] = dz/dx for element k  (computed once from static bed geometry).
+    // bed_slope_y[k] = dz/dy for element k
+    // NULL means the gradients are computed inline (fallback / first call).
+    double* bed_slope_x;
+    double* bed_slope_y;
+
 };
 
 

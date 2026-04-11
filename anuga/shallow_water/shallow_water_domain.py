@@ -415,6 +415,14 @@ class Domain(Generic_Domain):
         self.x_centroid_work=num.zeros(len(self.edge_coordinates[:,0])//3)
         self.y_centroid_work=num.zeros(len(self.edge_coordinates[:,0])//3)
 
+        # Precomputed bed slope arrays: dz/dx and dz/dy for each element.
+        # Filled once by _openmp_precompute_bed_slope (called from Domain_C_struct.__cinit__).
+        # Used by core_gravity and core_manning_friction_sloped_semi_implicit to avoid
+        # re-deriving static bed geometry on every timestep.
+        n = self.number_of_elements
+        self.bed_slope_x = num.zeros(n, dtype=float)
+        self.bed_slope_y = num.zeros(n, dtype=float)
+
         ############################################################################
         ## Local-timestepping information
         ############################################################################

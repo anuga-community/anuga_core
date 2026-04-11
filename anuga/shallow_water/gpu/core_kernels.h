@@ -50,4 +50,12 @@ int core_gravity_wb(struct domain *D);
 // timestep_fluxcalls: total number of flux calls per timestep (for boundary flux array indexing)
 double core_compute_fluxes_central(struct domain *D, int substep_count, int timestep_fluxcalls);
 
+// Precompute static bed slope (dz/dx, dz/dy) for every element.
+// Call once after the bed (elevation quantity) has been set and before the
+// evolve loop.  Writes into D->bed_slope_x and D->bed_slope_y which must
+// already point to allocated arrays of length D->number_of_elements.
+// Subsequent calls to core_gravity and core_manning_friction_sloped_semi_implicit
+// will use the cached values instead of recomputing the gradient each timestep.
+void core_precompute_bed_slope(struct domain *D);
+
 #endif // CORE_KERNELS_H

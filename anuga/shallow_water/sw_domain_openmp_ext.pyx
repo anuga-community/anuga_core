@@ -112,12 +112,16 @@ cdef extern from "sw_domain_openmp.c" nogil:
 		double* xmom_backup_values
 		double* ymom_backup_values
 
+		double* bed_slope_x
+		double* bed_slope_y
+
 
 	struct edge:
 		pass
 
 	anuga_int __rotate(double *q, double n1, double n2)
 	void _openmp_set_omp_num_threads(anuga_int num_threads)
+	void _openmp_precompute_bed_slope(domain *D)
 	double _openmp_compute_fluxes_central(domain* D, double timestep)
 	double _openmp_protect(domain* D)
 	void _openmp_extrapolate_second_order_edge_sw(domain* D)
@@ -223,6 +227,8 @@ cdef inline get_python_domain_pointers(domain *D, object domain_py_object):
 	cdef double[::1]   boundary_values
 	cdef double[::1]   explicit_update
 	cdef double[::1]   semi_implicit_update
+	cdef double[::1]   bed_slope_x_arr
+	cdef double[::1]   bed_slope_y_arr
 	
 	cdef object quantities
 	cdef object riverwallData
@@ -372,6 +378,15 @@ cdef inline get_python_domain_pointers(domain *D, object domain_py_object):
 	centroid_values = ymomentum.centroid_backup_values
 	D.ymom_backup_values = &centroid_values[0]	
 
+	# Precomputed bed slope arrays — see shallow_water_domain.py __init__ for allocation.
+	# These are set once here; core_gravity and core_manning_friction_sloped_semi_implicit
+	# will use the cached values instead of recomputing the gradient every timestep.
+	bed_slope_x_arr = domain_py_object.bed_slope_x
+	D.bed_slope_x = &bed_slope_x_arr[0]
+
+	bed_slope_y_arr = domain_py_object.bed_slope_y
+	D.bed_slope_y = &bed_slope_y_arr[0]
+
 	#------------------------------------------------------
 	# Vertex values
 	#------------------------------------------------------
@@ -502,6 +517,11 @@ cdef class Domain_C_struct:
 		# Initial fill from Python Domain
 		get_python_domain_parameters(self.domain_c_struct_ptr, self.domain_py_object)
 		get_python_domain_pointers(self.domain_c_struct_ptr, self.domain_py_object)
+
+		# Precompute static bed gradients once — bed is set before the evolve loop.
+		# Subsequent calls to core_gravity / core_manning_friction_sloped_semi_implicit
+		# will use the cached dz/dx, dz/dy values instead of recomputing every timestep.
+		_openmp_precompute_bed_slope(self.domain_c_struct_ptr)
 
 		# Initial snapshot
 		self.domain_snapshot = self.domain_c_struct_ptr[0]
