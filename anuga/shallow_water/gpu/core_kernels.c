@@ -582,6 +582,8 @@ void core_manning_friction_flat_semi_implicit(struct domain *D) {
         // Branchless computation to enable SIMD vectorization.
         // h^(7/3) = h^2 * cbrt(h) replaces the non-vectorizable pow() call.
         // The active mask prevents division by zero for dry/frictionless cells.
+        // Bitwise & (not short-circuit &&) is intentional: both comparisons must
+        // be evaluated to allow the compiler to emit branchless SIMD code.
         int active = (eta > 1.0e-15) & (h >= minimum_allowed_height);
         double h_safe = active ? h : 1.0;
         double S = active ? (-g * eta * eta * abs_mom / (h_safe * h_safe * cbrt(h_safe))) : 0.0;
@@ -795,6 +797,13 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
 
     double *scatter_buf  = (double *)malloc((anuga_int)(n * 7 * 3) * sizeof(double));
     int8_t *scatter_ibuf = (int8_t *)malloc((anuga_int)(n * 1 * 3) * sizeof(int8_t));
+    if (!scatter_buf || !scatter_ibuf) {
+        fprintf(stderr, "core_compute_fluxes_central: pre-scatter malloc failed "
+                        "(n=%lld)\n", (long long)n);
+        free(scatter_buf);
+        free(scatter_ibuf);
+        return local_timestep;
+    }
 
     for (int _i = 0; _i < 3; _i++) {
         nr_stage[_i]  = scatter_buf  + (anuga_int)n * (7 * _i + 0);
