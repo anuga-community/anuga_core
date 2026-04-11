@@ -45,7 +45,8 @@ class Mannings_operator(Operator):
         self.height_c[:] = self.stage_c - self.elev_c
 
         self.gamma_c[:] = -self.g * self.friction_c**2 * num.sqrt( self.xmom_c**2 + self.ymom_c**2 )
-        self.gamma_c[:] = num.where(self.height_c > 0.0, self.gamma_c/num.power(self.height_c,7.0/3.0),-100.0)
+        safe_h = num.maximum(self.height_c, 1.0e-15)
+        self.gamma_c[:] = num.where(self.height_c > 0.0, self.gamma_c / num.power(safe_h, 7.0/3.0), -100.0)
 
         exp_gamma = num.exp(self.gamma_c*timestep)
 
