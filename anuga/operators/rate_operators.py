@@ -189,7 +189,13 @@ Parameters involving communication
             indices = num.arange(self.domain.number_of_elements, dtype=num.intc)
             areas = self.domain.areas.copy()
         elif hasattr(self.indices, '__len__') and len(self.indices) == 0:
-            return  # No indices, nothing to do
+            # No local elements on this rank (e.g. rainfall polygon doesn't
+            # overlap this rank's partition).  This operator is a no-op here.
+            # Mark as GPU-initialized so _has_cpu_only_fractional_operators
+            # doesn't trigger an unnecessary GPU<->CPU sync every timestep.
+            # __call__ still returns immediately at the empty-indices guard.
+            self._gpu_initialized = True
+            return
         else:
             indices = num.asarray(self.indices, dtype=num.intc)
             areas = self.domain.areas[indices].copy()
