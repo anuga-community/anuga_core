@@ -33,7 +33,8 @@ def _make_sww(tmpdir, name='test.sww', n_steps=3):
 class Test_b64_encode(unittest.TestCase):
 
     def test_round_trip(self):
-        import base64, struct
+        import base64
+        import struct
         arr = np.array([1.0, 2.0, 3.0], dtype=np.float32)
         encoded = _b64_encode(arr)
         raw = base64.b64decode(encoded)
