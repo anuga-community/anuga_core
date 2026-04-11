@@ -188,7 +188,7 @@ Parameters involving communication
         if self.indices is None:
             indices = num.arange(self.domain.number_of_elements, dtype=num.intc)
             areas = self.domain.areas.copy()
-        elif self.indices == []:
+        elif hasattr(self.indices, '__len__') and len(self.indices) == 0:
             return  # No indices, nothing to do
         else:
             indices = num.asarray(self.indices, dtype=num.intc)
