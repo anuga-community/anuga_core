@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-01 (session 6)
+Last updated: 2026-04-11 (session 7)
 Branch: `develop` (contains feat/sc26 GPU work)
 
 ---
@@ -12,6 +12,7 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | Code improvements (original list) | 60 | 49 | 11 |
 | Documentation improvements | 20 | 20 | 0 |
 | Additional enhancements | 19 | 19 | 0 |
+| Build / packaging | 3 | 1 | 2 |
 | Hydrata Phase 0 — Test infrastructure | 5 | 1 | 4 |
 | Hydrata Phase 1 — Dependencies | 4 | 2 | 2 |
 | Hydrata Phase 2 — Linting | 3 | 0 | 3 |
@@ -23,7 +24,23 @@ Branch: `develop` (contains feat/sc26 GPU work)
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
 | Riverwall throughflow | 6 | 0 | 6 |
 | Quantity memory reduction | 7 | 0 | 7 |
-| **Total** | **148** | **91** | **57** |
+| **Total** | **151** | **92** | **59** |
+
+---
+
+## Build / Packaging
+
+### B1 Spack recipe (`spack/package.py`)
+
+- [x] **B1** Create `spack/package.py` — `PyAnuga` class with `+mpi` / `+data` variants,
+  all `pyproject.toml` deps mapped to Spack package names, OpenMP/macOS workaround,
+  post-install smoke test *(2026-04-11)*
+
+- [ ] **B2** Submit `spack/package.py` upstream to `spack/spack` as
+  `var/spack/repos/builtin/packages/py-anuga/package.py` (open PR against spack/develop)
+
+- [ ] **B3** Add `spack install py-anuga` instructions to Sphinx installation docs
+  (`docs/source/installation/install_anuga.rst`)
 
 ---
 

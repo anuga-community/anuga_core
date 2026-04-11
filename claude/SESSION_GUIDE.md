@@ -25,10 +25,11 @@ Key files to read first:
 | Milestone | Branch | Status |
 |-----------|--------|--------|
 | **v3.3.1** | `develop` → `main` | **SHIPPED 2026-04-01** — tagged, PyPI + conda-forge published |
+| **v3.3.2** | `main` | **SHIPPED 2026-04-02** — updated required packages, latest stable |
 | **v4.0.0** | `feat/sc26` → `develop` → `main` | In progress — feat/sc26 merged into develop |
 
-**v3.3.1:** Shipped. Includes EPSG/CRS support, utm→pyproj replacement, sww_merge fixes,
-sww2vtu converter, pyproj DeprecationWarning fixes.
+**v3.3.2:** Shipped (2026-04-02). Updated required packages; current stable release on PyPI
+and conda-forge. `pip install anuga` installs this version.
 
 **v4.0.0:** `feat/sc26` has been merged into `develop` (2026-04-01). `develop` is now
 the active working branch. feat/sc26 contains GPU/OpenMP-offloading work
@@ -38,7 +39,7 @@ the active working branch. feat/sc26 contains GPU/OpenMP-offloading work
 
 | Branch | Purpose |
 |--------|---------|
-| `main` | Stable — v3.3.1 release |
+| `main` | Stable — v3.3.2 release |
 | `develop` | Active development for v4.0.0 — contains feat/sc26 GPU work |
 | `develop_sc26` | Working branch for GPU/SC26 incremental improvements |
 | `develop_gpu` / `develop_cupy` | Earlier GPU experiments (CuPy-based) |
@@ -63,6 +64,23 @@ pytest anuga/shallow_water/tests/test_shallow_water_domain.py  # single file
 conda activate anuga_env_3.12
 pip install --no-build-isolation -e .
 ```
+
+### Install via Spack (HPC environments)
+```bash
+# Register the bundled recipe (once per Spack instance)
+spack repo add <path-to-anuga_core>/spack  # rename repo dir to py-anuga first
+
+# Install with optional variants
+spack install py-anuga              # core only
+spack install py-anuga+mpi          # + MPI domain decomposition
+spack install py-anuga+mpi+data     # + GIS/raster data I/O
+
+# Load into environment
+spack load py-anuga
+```
+
+The Spack recipe lives in `spack/package.py`. See the file header for submission
+instructions for the upstream `spack/spack` repository.
 
 ### Check code quality
 ```bash
@@ -102,6 +120,12 @@ three merge functions (`_sww_merge`, `_sww_merge_parallel_smooth`,
 (`anuga/file_conversion/sww2vtu.py`) for ParaView — writes VTU + PVD directly
 (no VTK dependency), includes derived `depth` and `speed` quantities,
 `--z-scale` and `--absolute-coords` options.
+
+**Session 6 (2026-04-11):** Added Spack recipe (`spack/package.py`) for installing
+ANUGA via the Spack HPC package manager. Supports `+mpi` and `+data` variants,
+covers all dependencies from `pyproject.toml`, includes OpenMP/macOS workaround,
+and has a post-install smoke test. Updated `SESSION_GUIDE.md` to reflect the
+v3.3.2 release (2026-04-02) and document the Spack workflow.
 
 ---
 
