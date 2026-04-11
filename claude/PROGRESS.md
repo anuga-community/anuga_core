@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-11 (session 17)
+Last updated: 2026-04-12 (session 18)
 Branch: `develop` (all feature branches merged)
 
 ---
@@ -24,8 +24,8 @@ Branch: `develop` (all feature branches merged)
 | Riverwall throughflow | 6 | 6 | 0 |
 | Quantity memory reduction | 7 | 6 | 1 |
 | Benchmark suite | 2 | 2 | 0 |
-| Bug fixes | 5 | 5 | 0 |
-| **Total** | **167** | **153** | **14** |
+| Bug fixes | 7 | 7 | 0 |
+| **Total** | **169** | **155** | **14** |
 
 ---
 
@@ -281,6 +281,8 @@ This enabled lazy gradients for ALL types, not just elevation.
 - [x] **BF4 Rate_operator empty-check for numpy array** — `elif self.indices == []:` broadcasts instead of testing emptiness when `self.indices` is a numpy array → `ValueError` in `_init_gpu`. Fixed to `hasattr(..., '__len__') and len(...) == 0`. *(2026-04-11)*
 - [x] **BF5 GPU_AWARE_MPI segfault intra-node** — `omp_target_alloc` device pointers passed directly to `MPI_Isend`; UCX `uct_mm` (shared-memory) transport selected for intra-node MPI cannot access GPU device memory → SIGSEGV. Added `host_send_buffer`/`host_recv_buffer` staging in `gpu_halo.c`; MPI always uses host buffers, `omp_target_memcpy` handles D2H/H2D. *(2026-04-11)*
 - [x] **BF6 Rate_operator parallel false CPU-only** — In MPI runs, many rainfall polygon operators have empty local indices (polygon on another rank). `_init_gpu` returned early without setting `_gpu_initialized=True`, so all such operators were counted as CPU-only and triggered `sync_from_device`/`sync_to_device` every timestep (~70 s overhead on towradgi). Fix: mark empty-indices operators as `_gpu_initialized=True` (they're no-ops; `__call__` already returns at line 242). *(2026-04-11)*
+- [x] **BF7 Double `get_triangle_containing_point` call in parallel inlet enquiry** — `Parallel_Inlet_enquiry.compute_enquiry_index` discarded the result `k` from the first `get_triangle_containing_point` call, then called it again (O(N) search repeated for every inlet at startup). Fixed to reuse `k` from the first call. *(2026-04-12)*
+- [x] **BF8 Threshold-triggered spatial index for `get_triangle_containing_point`** — O(N) brute-force loop replaced with `MeshQuadtree` after 5 calls. Counter and index cached on the `Mesh` object; first 5 calls use brute force (fast to start), 6th call builds the C quad-tree and all subsequent queries use `search_fast()`. Measurable speedup on culvert setup (many inlets × O(N) per inlet → near-constant time). *(2026-04-12)*
 
 ---
 
@@ -340,11 +342,12 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 ## Remaining Work (priority order)
 
 ### Short term — SC26 prerequisites (needs GPU hardware)
-1. **G2.1** GPU benchmark suite (actual GPU runs — `benchmarks/run_gpu_benchmarks.py` is ready)
-2. **G2.4** Weak scaling experiment (1→64 GPUs on HPC cluster)
-3. **G4.1** Gordon Bell metrics — per-kernel timing, roofline model comparison
-4. **G4.2** Physical benchmark validation — Thacker paraboloid, dam break (Ritter) in GPU mode
-5. **G4.3** Multi-node strong scaling — 20 M triangles, 1→64 GPUs
+1. **Culvert segfault** — intra-node MPI segfault when culverts span rank boundaries (culverts currently disabled in GPU runs); needs stack trace to diagnose — likely invalid local triangle index in GPU kernel, not the same UCX `uct_mm` issue (culvert MPI buffers are host-allocated)
+2. **G2.1** GPU benchmark suite (actual GPU runs — `benchmarks/run_gpu_benchmarks.py` is ready)
+3. **G2.4** Weak scaling experiment (1→64 GPUs on HPC cluster)
+4. **G4.1** Gordon Bell metrics — per-kernel timing, roofline model comparison
+5. **G4.2** Physical benchmark validation — Thacker paraboloid, dam break (Ritter) in GPU mode
+6. **G4.3** Multi-node strong scaling — 20 M triangles, 1→64 GPUs
 
 ### Medium effort (1–3 days each)
 6. **H3.2** Consolidate 5 parallel operator wrapper files — thin wrappers around `structures/` classes; move MPI awareness into base classes
