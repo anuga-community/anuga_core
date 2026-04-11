@@ -94,6 +94,44 @@ endif
 
 message('Effective compiler ID: ' + effective_compiler_id)
 
+#========================================================
+# Intel MKL Detection
+#========================================================
+# When using Intel compilers, MKL provides optimised BLAS/LAPACK for numpy/scipy.
+# The use_mkl option can be set explicitly; it also auto-enables for Intel compilers.
+
+is_intel_compiler = effective_compiler_id in ['intel', 'intel-cl', 'intel-llvm', 'icx']
+use_mkl_opt = get_option('use_mkl')
+use_mkl = use_mkl_opt or is_intel_compiler
+
+if use_mkl
+  mkl_dep = dependency('mkl-dynamic-lp64-seq', required: false)
+  if not mkl_dep.found()
+    mkl_dep = dependency('mkl', required: false)
+  endif
+  if mkl_dep.found()
+    dependencies += [mkl_dep]
+    message('Intel MKL found and enabled')
+  else
+    if is_intel_compiler
+      warning('Intel compiler detected but MKL not found. ' +
+              'Install MKL via: conda install mkl mkl-devel libblas=*=*mkl. ' +
+              'Using environment_<version>_intel.yml is recommended.')
+    else
+      warning('use_mkl=true but MKL not found — install mkl and mkl-devel.')
+    endif
+  endif
+  if is_intel_compiler
+    # -qmkl is supported by both classic Intel (icc/icpc) and Intel LLVM (icx/icpx).
+    # This flag selects the MKL BLAS/LAPACK implementation at the C-extension level
+    # and works alongside the OpenMP flags (-qopenmp / -fiopenmp) set below.
+    add_project_arguments('-qmkl=sequential', language: ['c', 'cpp'])
+    add_project_link_arguments('-qmkl=sequential', language: ['c', 'cpp'])
+    message('MKL compiler flag -qmkl=sequential added for Intel compiler')
+  endif
+endif
+
+
 if openmp.found()
   # On Windows, the mingw compiler does not support OpenMP ATOMIC operations
   # so using gcc_win-64 gxx_win-64 provided by conda-forge
