@@ -761,7 +761,7 @@ int core_gravity_wb(struct domain *D) {
 // For a typical flood/tsunami simulation the bed is static, so recomputing
 // the gradient from vertex coordinates every timestep inside core_gravity and
 // core_manning_friction_sloped_semi_implicit wastes ~14 FP ops + 9 loads per
-// element per call.  This routine computes the gradients once and caches them
+// element per call. This routine computes the gradients once and caches them
 // in D->bed_slope_x[] / D->bed_slope_y[].
 //
 // Must be called after D->vertex_coordinates and D->bed_vertex_values have

@@ -18,7 +18,7 @@
 // Performance note (Intel Cascade Lake / AVX-512):
 // When USE_LIB_BLAS is defined (auto-enabled when building with Intel MKL or
 // another CBLAS-compatible library), the hand-rolled OpenMP vector loops are
-// replaced by optimised CBLAS calls.  MKL's cblas_ddot / cblas_dscal /
+// replaced by optimized CBLAS calls.  MKL's cblas_ddot / cblas_dscal /
 // cblas_daxpy are vectorised with AVX-512 and cache-tiled, and are typically
 // 2-4x faster than the generic loops below for the problem sizes encountered
 // in the fit/interpolate CG solve.
