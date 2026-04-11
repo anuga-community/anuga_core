@@ -127,9 +127,22 @@ pip install -e . --no-build-isolation \
 ### GPU build with GPU-aware MPI
 
 ```bash
+# V100 (default - cc70)
+pip install -e . --no-build-isolation \
+    -Csetup-args=-Dgpu_offload=true \
+    -Csetup-args=-Dgpu_arch=cc70 \
+    -Csetup-args=-Dgpu_aware_mpi=true
+
+# A100 (cc80)
 pip install -e . --no-build-isolation \
     -Csetup-args=-Dgpu_offload=true \
     -Csetup-args=-Dgpu_arch=cc80 \
+    -Csetup-args=-Dgpu_aware_mpi=true
+
+# H100 (cc90)
+pip install -e . --no-build-isolation \
+    -Csetup-args=-Dgpu_offload=true \
+    -Csetup-args=-Dgpu_arch=cc90 \
     -Csetup-args=-Dgpu_aware_mpi=true
 ```
 
