@@ -54,18 +54,15 @@ class Parallel_Inlet_enquiry(parallel_inlet.Parallel_Inlet):
         point = self.enquiry_pt
         has_enq_point = False
 
+        k = -1
         try:
             k = self.domain.get_triangle_containing_point(point)
-
-            if self.domain.tri_full_flag[k] == 1:
-                has_enq_point = True
-            else:
-                has_enq_point = False
+            has_enq_point = (self.domain.tri_full_flag[k] == 1)
         except Exception:
             has_enq_point = False
 
         if has_enq_point:
-            self.enquiry_index = self.domain.get_triangle_containing_point(self.enquiry_pt)
+            self.enquiry_index = k
 
             if self.enquiry_index in self.triangle_indices:
                 msg = 'Enquiry point %s' % (self.enquiry_pt)
