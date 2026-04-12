@@ -470,6 +470,13 @@ class Generic_Domain:
 
         self.work_centroid_values = num.zeros(N, float)
 
+        # Shared gradient workspace — reused by every call to
+        # extrapolate_second_order_and_limit_by_edge/vertex so that individual
+        # Quantity objects never need to allocate their own gradient arrays.
+        self._grad_workspace_x = num.zeros(N, float)
+        self._grad_workspace_y = num.zeros(N, float)
+        self._phi_workspace = num.zeros(N, float)
+
         # Storage for maximal speeds computed for each triangle by
         # compute_fluxes.
         # This is used for diagnostics only (reset at every yieldstep)

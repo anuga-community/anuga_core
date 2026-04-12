@@ -2430,14 +2430,24 @@ class Quantity:
         extrapolate_from_gradient(self)
 
     def extrapolate_second_order_and_limit_by_edge(self):
-        # Call correct module function
-        # (either from this module or C-extension)
-        extrapolate_second_order_and_limit_by_edge(self)
+        # Use domain-level gradient workspace so this quantity never needs to
+        # allocate its own x_gradient/y_gradient/phi arrays.
+        domain = self.domain
+        extrapolate_second_order_and_limit_by_edge(
+            self,
+            domain._grad_workspace_x,
+            domain._grad_workspace_y,
+            domain._phi_workspace)
 
     def extrapolate_second_order_and_limit_by_vertex(self):
-        # Call correct module function
-        # (either from this module or C-extension)
-        extrapolate_second_order_and_limit_by_vertex(self)
+        # Use domain-level gradient workspace so this quantity never needs to
+        # allocate its own x_gradient/y_gradient/phi arrays.
+        domain = self.domain
+        extrapolate_second_order_and_limit_by_vertex(
+            self,
+            domain._grad_workspace_x,
+            domain._grad_workspace_y,
+            domain._phi_workspace)
 
     def bound_vertices_below_by_constant(self, bound):
         # Call correct module function

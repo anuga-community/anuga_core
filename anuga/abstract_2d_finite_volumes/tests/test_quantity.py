@@ -4121,6 +4121,82 @@ class Test_Quantity_Memory(unittest.TestCase):
         self.assertEqual(qty_fixed_bytes(domain.quantities['height']),    32 * N)
 
 
+    def test_gradient_workspace_exists_on_domain(self):
+        """Domain carries three shared gradient workspace arrays (QM7)."""
+        from anuga import rectangular_cross_domain
+        d = rectangular_cross_domain(5, 5)
+        N = len(d)
+        for attr in ['_grad_workspace_x', '_grad_workspace_y', '_phi_workspace']:
+            arr = getattr(d, attr, None)
+            self.assertIsNotNone(arr, f'domain.{attr} should exist')
+            self.assertEqual(arr.shape, (N,))
+
+    def test_extrapolate_by_edge_uses_workspace_not_quantity_storage(self):
+        """After extrapolate_second_order_and_limit_by_edge the quantity's own
+        _x_gradient/_y_gradient/_phi remain None — the shared workspace was used."""
+        from anuga import rectangular_cross_domain
+        d = rectangular_cross_domain(10, 10)
+        d.set_quantity('stage', lambda x, y: x + 0.5 * y)
+        q = d.quantities['stage']
+
+        # Confirm lazy arrays start as None
+        self.assertIsNone(q._x_gradient)
+        self.assertIsNone(q._y_gradient)
+        self.assertIsNone(q._phi)
+
+        q.extrapolate_second_order_and_limit_by_edge()
+
+        # Workspace was used — quantity's own backing stores still None
+        self.assertIsNone(q._x_gradient, 'x_gradient should stay None (workspace used)')
+        self.assertIsNone(q._y_gradient, 'y_gradient should stay None (workspace used)')
+        self.assertIsNone(q._phi, 'phi should stay None (workspace used)')
+
+        # Edge values must be non-trivial
+        self.assertFalse(num.allclose(q.edge_values, 0))
+
+    def test_extrapolate_by_vertex_uses_workspace_not_quantity_storage(self):
+        """After extrapolate_second_order_and_limit_by_vertex the quantity's own
+        gradient backing stores remain None."""
+        from anuga import rectangular_cross_domain
+        d = rectangular_cross_domain(10, 10)
+        d.set_quantity('stage', lambda x, y: x)
+        q = d.quantities['stage']
+
+        q.extrapolate_second_order_and_limit_by_vertex()
+
+        self.assertIsNone(q._x_gradient, 'x_gradient should stay None (workspace used)')
+        self.assertIsNone(q._y_gradient)
+        self.assertIsNone(q._phi)
+        self.assertFalse(num.allclose(q.vertex_values, 0))
+
+    def test_extrapolate_by_edge_correct_values(self):
+        """Workspace-based extrapolation produces the same edge values as direct
+        gradient access would."""
+        import numpy as np
+        from anuga import rectangular_cross_domain
+        from anuga.abstract_2d_finite_volumes.quantity_openmp_ext import (
+            extrapolate_second_order_and_limit_by_edge as ext_fn,
+        )
+
+        d = rectangular_cross_domain(10, 10)
+        d.set_quantity('stage', lambda x, y: x + 0.5 * y)
+
+        # Run via workspace path
+        q_ws = d.quantities['stage']
+        q_ws.extrapolate_second_order_and_limit_by_edge()
+        edge_ws = q_ws.edge_values.copy()
+
+        # Run via per-quantity gradient path (pass no workspace)
+        d2 = rectangular_cross_domain(10, 10)
+        d2.set_quantity('stage', lambda x, y: x + 0.5 * y)
+        q_direct = d2.quantities['stage']
+        ext_fn(q_direct)  # uses quantity's own lazy arrays
+        edge_direct = q_direct.edge_values.copy()
+
+        np.testing.assert_allclose(edge_ws, edge_direct, rtol=1e-12,
+                                   err_msg='Workspace path must match per-quantity path')
+
+
 # -------------------------------------------------------------
 if __name__ == '__main__':
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Quantity)
