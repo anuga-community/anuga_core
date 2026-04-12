@@ -132,6 +132,8 @@ sweep: `tempfile.mktemp` → `mkstemp`, `set_datadir('.')` → `mkdtemp()`, all
 
 **Session 18 (2026-04-12):** BF7: Fixed double `get_triangle_containing_point` call in `Parallel_Inlet_enquiry.compute_enquiry_index` — result `k` was discarded then the O(N) search repeated for every inlet. BF8: Threshold-triggered spatial index for `get_triangle_containing_point` — `MeshQuadtree` built on 6th call, reused for all subsequent queries; measurable speedup in culvert setup on real runs. Culvert segfault resolved (no recurrence in latest GPU runs with culverts re-enabled — likely a timing/install issue). H3.2: Extracted 3 MPI helper methods into `Parallel_Structure_operator`; rewrote `discharge_routine` in all 3 culvert wrappers (−125 lines net). Full test suite: 0 failures.
 
+**Session 19 (2026-04-13):** H3.4: Cleaned up `system_tools.py` — removed `six` dependency (`string_types` → `str` in `gauge.py` and `file_function.py`), deleted dead code (`store_svn_revision_info`, `get_web_file`, `tar_file`, `untar_file`, `get_file_hexdigest`, `make_digest_file`, `MemoryUpdate`), trimmed imports. 335 lines removed. Structural split into focused modules rejected (62 import sites + wildcard import). 158/169 tracked items done.
+
 **Session 11 (2026-04-07):** G1.3 slot limit hard errors — `Rate_operator`, `Inlet_operator`, `Parallel_inlet_operator` now raise `RuntimeError` on GPU slot overflow (2 tests). Benchmark suite: `benchmarks/run_benchmarks.py` (single-process, all modes, JSON output) + `benchmarks/compare_benchmarks.py` (±% delta table). MPI distribution benchmark: `benchmarks/distribute_benchmarks.py` merges old `scripts/benchmark_distribute.py` + `scripts/benchmark_distribute_mesh.py` into unified 4-method comparison (`distribute()`, `collaborative()`, `distribute_basic_mesh()`, `dump+load`); `benchmarks/run_benchmark_grid.py` updated. Bug fix: `Basic_mesh.reorder()` produced stale neighbours when `_neighbours` hadn't been accessed before reorder — caused `distribute_basic_mesh()` to generate ~59% more ghost triangles than `distribute()` for same mesh/scheme. Fix: trigger `_build_neighbours()` at start of `reorder()`. Regression test added. 122/159 tracked items done.
 
 **Session 9 (2026-04-04):** Riverwall throughflow (`Cd_through`) — submerged
@@ -186,6 +188,5 @@ See `claude/PROGRESS.md` — "Remaining Work" section for full list. Summary:
 4. **G4.3** Multi-node strong scaling — 20 M triangles, 1→64 GPUs (scripts ready)
 
 ### Best standalone value (no GPU hardware needed)
-5. **H3.2** Consolidate 5 parallel operator wrapper files — move MPI awareness into base classes
-6. **H3.4** Split `system_tools.py` (750 lines) into focused modules
-7. **QM7** Shared gradient workspace (C extension, ~72 MB saving for erosion models)
+5. **QM7** Shared gradient workspace (C extension, ~72 MB saving for erosion models)
+6. **H4.4** Coverage gap — currently ~55%; identify highest-value untested paths

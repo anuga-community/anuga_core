@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-12 (session 18)
+Last updated: 2026-04-13 (session 19)
 Branch: `develop` (all feature branches merged)
 
 ---
@@ -15,7 +15,7 @@ Branch: `develop` (all feature branches merged)
 | Hydrata Phase 0 — Test infrastructure | 5 | 5 | 0 |
 | Hydrata Phase 1 — Dependencies | 4 | 4 | 0 |
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
-| Hydrata Phase 3 — Deduplication | 4 | 3 | 1 |
+| Hydrata Phase 3 — Deduplication | 4 | 4 | 0 |
 | Hydrata Phase 4 — Coverage | 3 | 2 | 1 |
 | GPU Phase 1 — Correctness & tests | 7 | 7 | 0 |
 | GPU Phase 2 — Performance validation | 4 | 4 | 0 |
@@ -25,7 +25,7 @@ Branch: `develop` (all feature branches merged)
 | Quantity memory reduction | 7 | 6 | 1 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 7 | 7 | 0 |
-| **Total** | **169** | **157** | **12** |
+| **Total** | **169** | **158** | **11** |
 
 ---
 
@@ -236,7 +236,7 @@ Current state: no linter, formatter, type checker, or pre-commit hooks. 4,189 fu
 - [x] **3.1 Unify quantity kernels** — consolidated to single `quantity_openmp_ext.pyx`; `quantity_ext2.pyx` and separate non-OpenMP variant removed. *(done, commit 5c191dc7)*
 - [x] **3.2 Consolidate parallel operator wrappers** — Extracted `_gather_enquiry_stage_and_energy()`, `_broadcast_flow_direction()`, `_gather_inflow_outflow_depths()` helpers into `Parallel_Structure_operator`; rewrote `discharge_routine` in `Parallel_Boyd_box_operator`, `Parallel_Boyd_pipe_operator`, `Parallel_Weir_orifice_trapezoid_operator` (each ~150→50 lines, −125 lines net). `Parallel_Internal_boundary_operator` and `Parallel_Inlet_operator` left unchanged (genuinely different logic). *(2026-04-12)*
 - [x] **3.3 Merge duplicate culvert classes** — `Culvert_operator_Parallel` removed; GPU path via `gpu_culvert_manager.py`; merged via PR #118. *(done)*
-- [ ] **3.4 Split `system_tools.py`** — 750-line file; split into `file_utils.py`, `env_utils.py`, `version_utils.py`. Deduplicate `numerical_tools.py` vs scipy wrappers.
+- [x] **3.4 Clean up `system_tools.py`** — removed `six` dependency (`string_types` → `str` in gauge.py and file_function.py); deleted dead code: `store_svn_revision_info` (SVN legacy), `get_web_file` (six.moves.urllib), `tar_file`, `untar_file`, `get_file_hexdigest`, `make_digest_file`, `MemoryUpdate`; fixed `string_to_char`; trimmed imports. 335 lines removed. Structural split rejected: 62 import sites + wildcard import make it risky. *(Done 2026-04-13, commit f083ad29)*
 
 ### Phase 4 — Expanded Test Coverage
 
@@ -349,8 +349,7 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 6. **G4.3** Multi-node strong scaling — 20 M triangles, 1→64 GPUs
 
 ### Medium effort (1–3 days each)
-6. **H3.4** Split `system_tools.py` (750 lines) into focused modules
-7. **QM7** Shared gradient workspace (C extension change, ~72 MB saving for erosion-operator models)
+6. **QM7** Shared gradient workspace (C extension change, ~72 MB saving for erosion-operator models)
 
 ### Long-term / opportunistic
 - **H4.1** Modernise test patterns — convert `unittest.TestCase` to plain pytest functions and shared fixtures incrementally, when files are touched for other reasons. Not worth a dedicated pass.
