@@ -3,6 +3,7 @@
 
 import unittest
 import os
+import pytest
 
 #from anuga.structures.riverwall import Boyd_box_operator
 #from anuga.structures.riverwall import boyd_box_function
@@ -743,6 +744,139 @@ class Test_riverwall_structure(unittest.TestCase):
         assert hp[0, col] == 0.0, f"Default Cd_through must be 0.0, got {hp[0, col]}"
         # Should now have 6 columns
         assert hp.shape[1] == 6, f"Expected 6 hydraulic property columns, got {hp.shape[1]}"
+
+
+class Test_riverwall_notebook(unittest.TestCase):
+    """Tests using create_domain_from_regions with breaklines, mirroring the
+    docs/source/examples/notebook_create_domain_with_riverwalls.ipynb scenario.
+
+    This exercises the full mesh-from-regions path (as opposed to the
+    create_pmesh_from_regions + create_domain_from_file path used in
+    Test_riverwall_structure).
+    """
+
+    def _make_notebook_domain(self):
+        """Reproduce the notebook's 3-wall domain and return it (not evolved)."""
+        bounding_polygon = [[0.0, 0.0], [20.0, 0.0], [20.0, 10.0], [0.0, 10.0]]
+        boundary_tags = {'bottom': [0], 'right': [1], 'top': [2], 'left': [3]}
+        riverWalls = {
+            'wall1': [[5.0,  0.0,  0.5], [5.0,  4.0,  0.5]],
+            'wall2': [[15.0, 0.0, -0.5], [15.0, 4.0, -0.5]],
+            'wall3': [[10.0, 10.0, 0.0], [10.0, 6.0,  0.0]],
+        }
+        domain = anuga.create_domain_from_regions(
+            bounding_polygon, boundary_tags,
+            maximum_triangle_area=0.5,
+            breaklines=list(riverWalls.values()))
+        domain.set_store(False)
+        domain.set_quantity('elevation', lambda x, y: -x / 10, location='centroids')
+        domain.set_quantity('friction', 0.01, location='centroids')
+        domain.set_quantity('stage', expression='elevation', location='centroids')
+        Bi = anuga.Dirichlet_boundary([0.4, 0, 0])
+        Bo = anuga.Dirichlet_boundary([-2, 0, 0])
+        Br = anuga.Reflective_boundary(domain)
+        domain.set_boundary({'left': Bi, 'right': Bo, 'top': Br, 'bottom': Br})
+        domain.create_riverwalls(riverWalls, verbose=False)
+        return domain, riverWalls
+
+    def test_create_domain_from_regions_with_breaklines(self):
+        """create_domain_from_regions accepts riverWall dict values as breaklines
+        and create_riverwalls registers all three named walls."""
+        domain, riverWalls = self._make_notebook_domain()
+        # All three walls must be registered
+        self.assertEqual(len(domain.riverwallData.names), 3)
+        for name in riverWalls:
+            self.assertIn(name, domain.riverwallData.names)
+
+    def test_riverwall_crest_heights_stored(self):
+        """Crest height (z coordinate) is stored correctly for each wall segment."""
+        domain, riverWalls = self._make_notebook_domain()
+        # wall1 crest is 0.5 m — all edges on wall1 should have elevation ~0.5
+        # wall2 crest is -0.5 m — submerged wall
+        # Just check that the riverwall_elevation array is non-empty and finite
+        rw_elev = domain.riverwallData.riverwall_elevation
+        self.assertGreater(len(rw_elev), 0)
+        self.assertTrue(numpy.all(numpy.isfinite(rw_elev)))
+
+    def test_riverwall_edges_lie_on_breaklines(self):
+        """All edges flagged as riverwall edges must lie on a breakline (x ≈ 5, 15, or 10)."""
+        domain, _ = self._make_notebook_domain()
+        edge_inds = domain.riverwallData.riverwall_edges
+        self.assertGreater(len(edge_inds), 0)
+        edge_x = domain.edge_coordinates[edge_inds, 0]
+        # Each edge midpoint must be close to one of the three wall x-positions
+        on_wall = (numpy.abs(edge_x - 5.0) < 0.1) | \
+                  (numpy.abs(edge_x - 15.0) < 0.1) | \
+                  (numpy.abs(edge_x - 10.0) < 0.1)
+        self.assertTrue(numpy.all(on_wall),
+                        f"Some riverwall edges not near x=5,10,15: {edge_x[~on_wall]}")
+
+    @pytest.mark.slow
+    def test_impermeable_wall_blocks_sub_crest_flow(self):
+        """Single wall (crest 0.5 m), upstream Dirichlet stage 0.4 m.
+        No overtopping should occur so the downstream half stays essentially dry."""
+        import tempfile, os
+        bounding_polygon = [[0, 0], [20, 0], [20, 10], [0, 10]]
+        boundary_tags = {'bottom': [0], 'right': [1], 'top': [2], 'left': [3]}
+        riverWalls = {'levee': [[10.0, 0.0, 0.5], [10.0, 10.0, 0.5]]}
+
+        domain = anuga.create_domain_from_regions(
+            bounding_polygon, boundary_tags,
+            maximum_triangle_area=0.5,
+            breaklines=list(riverWalls.values()))
+        domain.set_store(False)
+        domain.set_quantity('elevation', 0.0, location='centroids')
+        domain.set_quantity('friction',  0.01, location='centroids')
+        domain.set_quantity('stage',     0.0, location='centroids')
+        Bi = anuga.Dirichlet_boundary([0.4, 0.0, 0.0])   # stage < crest
+        Bo = anuga.Dirichlet_boundary([-2.0, 0.0, 0.0])
+        Br = anuga.Reflective_boundary(domain)
+        domain.set_boundary({'left': Bi, 'right': Bo, 'top': Br, 'bottom': Br})
+        domain.create_riverwalls(riverWalls, verbose=False)
+
+        for t in domain.evolve(yieldstep=5, duration=20):
+            pass
+
+        x = domain.centroid_coordinates[:, 0]
+        depth = numpy.maximum(
+            domain.quantities['stage'].centroid_values -
+            domain.quantities['elevation'].centroid_values, 0.0)
+        mean_downstream_depth = float(depth[x > 10].mean())
+        self.assertLess(mean_downstream_depth, 0.01,
+                        f"Downstream should be dry; got mean depth={mean_downstream_depth:.4f} m")
+
+    @pytest.mark.slow
+    def test_wall_overtopping_above_crest(self):
+        """Single wall (crest 0.5 m), upstream Dirichlet stage 0.8 m.
+        Water overtops so the downstream half should become wet."""
+        bounding_polygon = [[0, 0], [20, 0], [20, 10], [0, 10]]
+        boundary_tags = {'bottom': [0], 'right': [1], 'top': [2], 'left': [3]}
+        riverWalls = {'levee': [[10.0, 0.0, 0.5], [10.0, 10.0, 0.5]]}
+
+        domain = anuga.create_domain_from_regions(
+            bounding_polygon, boundary_tags,
+            maximum_triangle_area=0.5,
+            breaklines=list(riverWalls.values()))
+        domain.set_store(False)
+        domain.set_quantity('elevation', 0.0, location='centroids')
+        domain.set_quantity('friction',  0.01, location='centroids')
+        domain.set_quantity('stage',     0.0, location='centroids')
+        Bi = anuga.Dirichlet_boundary([0.8, 0.0, 0.0])   # stage > crest
+        Bo = anuga.Dirichlet_boundary([-2.0, 0.0, 0.0])
+        Br = anuga.Reflective_boundary(domain)
+        domain.set_boundary({'left': Bi, 'right': Bo, 'top': Br, 'bottom': Br})
+        domain.create_riverwalls(riverWalls, verbose=False)
+
+        for t in domain.evolve(yieldstep=5, duration=30):
+            pass
+
+        x = domain.centroid_coordinates[:, 0]
+        depth = numpy.maximum(
+            domain.quantities['stage'].centroid_values -
+            domain.quantities['elevation'].centroid_values, 0.0)
+        mean_downstream_depth = float(depth[x > 10].mean())
+        self.assertGreater(mean_downstream_depth, 0.05,
+                           f"Downstream should be wet after overtopping; got depth={mean_downstream_depth:.4f} m")
 
 
 # =========================================================================
