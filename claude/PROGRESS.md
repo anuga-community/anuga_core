@@ -9,7 +9,7 @@ Branch: `develop` (all feature branches merged)
 
 | Area | Total actions | Done | Remaining |
 |------|--------------|------|-----------|
-| Code improvements (original list) | 60 | 49 | 11 |
+| Code improvements (original list) | 60 | 50 | 10 |
 | Documentation improvements | 20 | 20 | 0 |
 | Additional enhancements | 27 | 27 | 0 |
 | Hydrata Phase 0 — Test infrastructure | 5 | 5 | 0 |
@@ -25,7 +25,7 @@ Branch: `develop` (all feature branches merged)
 | Quantity memory reduction | 7 | 7 | 0 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 7 | 7 | 0 |
-| **Total** | **169** | **159** | **10** |
+| **Total** | **169** | **160** | **9** |
 
 ---
 
@@ -92,7 +92,7 @@ Generated: 2026-03-23
 
 - [x] `Structure_operator` base class — `test_structure_operator.py` *(2026-03-24)*
 - [x] `Internal_boundary_operator` — `test_internal_boundary_operator.py` *(2026-03-24)*
-- [ ] `RiverWall` — deferred; requires full mesh with breaklines
+- [x] `RiverWall` — `Test_riverwall_notebook` class (5 tests): `create_domain_from_regions` with breaklines, wall name registration, crest heights, edge alignment, impermeable sub-crest, overtopping. *(Done 2026-04-13, commit a62e9c96)*
 
 #### 3.3 Add tests for untested scenario module
 
