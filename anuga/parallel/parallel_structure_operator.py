@@ -566,6 +566,99 @@ class Parallel_Structure_operator(anuga.Operator):
             self.enquiry_points.append(centre_point1 + gap)
 
 
+    # ------------------------------------------------------------------
+    # MPI helper methods for discharge_routine implementations
+    # ------------------------------------------------------------------
+
+    def _gather_enquiry_stage_and_energy(self):
+        """Gather total_energy and stage from both enquiry points to master proc.
+
+        All procs in self.procs must call this.  Returns
+        (enq_total_energy0, enq_stage0, enq_total_energy1, enq_stage1)
+        on the master proc, and None on all other procs.
+        """
+        if self.myid == self.master_proc:
+            if self.myid == self.enquiry_proc[0]:
+                enq_total_energy0 = self.inlets[0].get_enquiry_total_energy()
+                enq_stage0 = self.inlets[0].get_enquiry_stage()
+            else:
+                enq_total_energy0 = pypar.receive(self.enquiry_proc[0])
+                enq_stage0 = pypar.receive(self.enquiry_proc[0])
+
+            if self.myid == self.enquiry_proc[1]:
+                enq_total_energy1 = self.inlets[1].get_enquiry_total_energy()
+                enq_stage1 = self.inlets[1].get_enquiry_stage()
+            else:
+                enq_total_energy1 = pypar.receive(self.enquiry_proc[1])
+                enq_stage1 = pypar.receive(self.enquiry_proc[1])
+
+            return enq_total_energy0, enq_stage0, enq_total_energy1, enq_stage1
+
+        else:
+            if self.myid == self.enquiry_proc[0]:
+                pypar.send(self.inlets[0].get_enquiry_total_energy(), self.master_proc)
+                pypar.send(self.inlets[0].get_enquiry_stage(), self.master_proc)
+            if self.myid == self.enquiry_proc[1]:
+                pypar.send(self.inlets[1].get_enquiry_total_energy(), self.master_proc)
+                pypar.send(self.inlets[1].get_enquiry_stage(), self.master_proc)
+            return None
+
+    def _broadcast_flow_direction(self, reverse):
+        """Broadcast flow direction from master proc to all other procs.
+
+        Call on all procs.  Master passes the computed reverse flag (True/False);
+        non-masters pass None (value is received).  Updates self.inflow_index
+        and self.outflow_index on non-master procs.
+
+        The master proc must have already updated its own self.inflow_index /
+        self.outflow_index before calling this.
+        """
+        if self.myid == self.master_proc:
+            for i in self.procs:
+                if i == self.master_proc:
+                    continue
+                pypar.send(reverse, i)
+        else:
+            reverse = pypar.receive(self.master_proc)
+            if reverse:
+                self.inflow_index = 1
+                self.outflow_index = 0
+
+    def _gather_inflow_outflow_depths(self):
+        """Gather inflow depth + specific energy and outflow depth to master proc.
+
+        self.inflow_index and self.outflow_index must already be set on all procs
+        (call _broadcast_flow_direction first).
+
+        All procs in self.procs must call this.  Returns
+        (inflow_enq_depth, inflow_enq_specific_energy, outflow_enq_depth)
+        on the master proc, and None on all other procs.
+        """
+        if self.myid == self.master_proc:
+            if self.myid == self.enquiry_proc[self.inflow_index]:
+                inflow_enq_depth = self.inlets[self.inflow_index].get_enquiry_depth()
+                inflow_enq_specific_energy = self.inlets[self.inflow_index].get_enquiry_specific_energy()
+            else:
+                inflow_enq_depth = pypar.receive(self.enquiry_proc[self.inflow_index])
+                inflow_enq_specific_energy = pypar.receive(self.enquiry_proc[self.inflow_index])
+
+            if self.myid == self.enquiry_proc[self.outflow_index]:
+                outflow_enq_depth = self.inlets[self.outflow_index].get_enquiry_depth()
+            else:
+                outflow_enq_depth = pypar.receive(self.enquiry_proc[self.outflow_index])
+
+            return inflow_enq_depth, inflow_enq_specific_energy, outflow_enq_depth
+
+        else:
+            if self.myid == self.enquiry_proc[self.inflow_index]:
+                pypar.send(self.inlets[self.inflow_index].get_enquiry_depth(), self.master_proc)
+                pypar.send(self.inlets[self.inflow_index].get_enquiry_specific_energy(), self.master_proc)
+            if self.myid == self.enquiry_proc[self.outflow_index]:
+                pypar.send(self.inlets[self.outflow_index].get_enquiry_depth(), self.master_proc)
+            return None
+
+    # ------------------------------------------------------------------
+
     def discharge_routine(self):
 
         msg = 'Need to impelement '
