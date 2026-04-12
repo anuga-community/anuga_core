@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-13 (session 19)
+Last updated: 2026-04-13 (session 19 cont)
 Branch: `develop` (all feature branches merged)
 
 ---
@@ -22,10 +22,10 @@ Branch: `develop` (all feature branches merged)
 | GPU Phase 3 — Feature parity | 4 | 4 | 0 |
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
 | Riverwall throughflow | 6 | 6 | 0 |
-| Quantity memory reduction | 7 | 6 | 1 |
+| Quantity memory reduction | 7 | 7 | 0 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 7 | 7 | 0 |
-| **Total** | **169** | **158** | **11** |
+| **Total** | **169** | **159** | **10** |
 
 ---
 
@@ -262,7 +262,7 @@ This enabled lazy gradients for ALL types, not just elevation.
 - [x] **QM4** Strip all arrays except `centroid_values` from `friction` *(2026-04-09)*
 - [x] **QM5** Reduce `height`, `xvelocity`, `yvelocity` to centroid + edge only (no update arrays) *(2026-04-09)*
 - [x] **QM6** Make `x_gradient`, `y_gradient`, `phi` lazy for ALL types including `evolved` — saves 24N per evolved quantity + 16N for elevation. Removed `static_with_gradients` type. Elevation now uses `edge_diagnostic`. Erosion operators trigger lazy allocation transparently. *(2026-04-10)*
-- [ ] **QM7** Shared gradient workspace on domain (C extension change) — only relevant when erosion operators are active; deferred (niche use case, requires C changes)
+- [x] **QM7** Shared gradient workspace on domain — added `_grad_workspace_x/y` + `_phi_workspace` to `Generic_Domain`; modified `extrapolate_second_order_and_limit_by_edge/vertex` in `quantity_openmp_ext.pyx` to accept optional workspace arrays; `Quantity` methods always pass domain workspace so per-quantity `_x_gradient/_y_gradient/_phi` stay `None`. Also fixed pre-existing `quantity.object` AttributeError bug in both functions. 4 new tests. For the SW domain the benefit is preventative (SW C kernel never used Python-level gradients); for advection/generic domains it prevents gradient allocation on evolved quantities. *(2026-04-13, commit 22559a5b)*
 
 ---
 
@@ -349,7 +349,7 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 6. **G4.3** Multi-node strong scaling — 20 M triangles, 1→64 GPUs
 
 ### Medium effort (1–3 days each)
-6. **QM7** Shared gradient workspace (C extension change, ~72 MB saving for erosion-operator models)
+*(None remaining)*
 
 ### Long-term / opportunistic
 - **H4.1** Modernise test patterns — convert `unittest.TestCase` to plain pytest functions and shared fixtures incrementally, when files are touched for other reasons. Not worth a dedicated pass.
