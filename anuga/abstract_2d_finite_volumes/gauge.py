@@ -7,7 +7,6 @@
    Ole Nielsen, Stephen Roberts, Duncan Gray, Christopher Zoppou, James Hudson
    Geoscience Australia
 """
-from six import string_types
 import numpy as num
 
 from anuga.geospatial_data.geospatial_data import ensure_absolute
@@ -136,8 +135,8 @@ def sww2csv_gauges(sww_file,
     from anuga.utilities.file_utils import get_all_swwfiles
     from anuga.abstract_2d_finite_volumes.util import file_function
 
-    assert isinstance(gauge_file,string_types) or isinstance(gauge_file, str), 'Gauge filename must be a string or unicode'
-    assert isinstance(out_name,string_types) or isinstance(out_name, str), 'Output filename prefix must be a string'
+    assert isinstance(gauge_file, str), 'Gauge filename must be a string or unicode'
+    assert isinstance(out_name, str), 'Output filename prefix must be a string'
 
     try:
         gid = open(gauge_file)
@@ -556,7 +555,7 @@ def gauge_get_from_file(filename):
     line1 = lines[0]
     line11 = line1.split(',')
 
-    if isinstance(line11[0], string_types) is True:
+    if isinstance(line11[0], str):
         # We have found text in the first line
         east_index = None
         north_index = None
