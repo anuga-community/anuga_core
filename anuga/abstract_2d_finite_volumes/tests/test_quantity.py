@@ -4197,6 +4197,169 @@ class Test_Quantity_Memory(unittest.TestCase):
                                    err_msg='Workspace path must match per-quantity path')
 
 
+class Test_Quantity_extra(unittest.TestCase):
+    """Tests for uncovered Quantity methods."""
+
+    def _make_domain_and_quantity(self):
+        import anuga
+        d = anuga.rectangular_cross_domain(3, 3)
+        d.set_quantity('elevation', 0.0)
+        d.set_quantity('stage', 1.0)
+        d.distribute_to_vertices_and_edges()
+        q = d.quantities['stage']
+        return d, q
+
+    def test_vertex_values_setter_none(self):
+        """Setting vertex_values to None clears the cached array."""
+        d, q = self._make_domain_and_quantity()
+        _ = q.vertex_values  # trigger allocation
+        q.vertex_values = None
+        self.assertIsNone(q._vertex_values)
+
+    def test_x_gradient_setter(self):
+        import numpy as np
+        d, q = self._make_domain_and_quantity()
+        arr = np.ones(len(d))
+        q.x_gradient = arr
+        self.assertIs(q.x_gradient, arr)
+
+    def test_y_gradient_setter(self):
+        import numpy as np
+        d, q = self._make_domain_and_quantity()
+        arr = np.ones(len(d)) * 2.0
+        q.y_gradient = arr
+        self.assertIs(q.y_gradient, arr)
+
+    def test_phi_setter(self):
+        import numpy as np
+        d, q = self._make_domain_and_quantity()
+        arr = np.ones(len(d)) * 3.0
+        q.phi = arr
+        self.assertIs(q.phi, arr)
+
+    def test_rdiv(self):
+        d, q = self._make_domain_and_quantity()
+        result = q.__rdiv__(3.0)
+        self.assertIsNotNone(result)
+
+    def test_pow_with_scalar(self):
+        import numpy as np
+        d, q = self._make_domain_and_quantity()
+        result = q ** 2
+        np.testing.assert_allclose(result.centroid_values,
+                                   q.centroid_values ** 2)
+
+    def test_maximum_with_quantity(self):
+        import anuga, numpy as np
+        d = anuga.rectangular_cross_domain(3, 3)
+        d.set_quantity('elevation', 0.0)
+        d.set_quantity('stage', 1.0)
+        d.set_quantity('xmomentum', 2.0)
+        d.distribute_to_vertices_and_edges()
+        q1 = d.quantities['stage']
+        q2 = d.quantities['xmomentum']
+        q1.maximum(q2)
+        self.assertTrue(np.all(q1.centroid_values >= 1.0))
+
+    def test_maximum_with_scalar(self):
+        import numpy as np
+        d, q = self._make_domain_and_quantity()
+        q.maximum(2.0)
+        self.assertTrue(np.all(q.centroid_values >= 2.0))
+
+    def test_minimum_with_scalar(self):
+        import numpy as np
+        d, q = self._make_domain_and_quantity()
+        q.minimum(0.5)
+        self.assertTrue(np.all(q.centroid_values <= 1.0))
+
+    def test_save_centroid_data_to_csv(self):
+        import tempfile, os
+        d, q = self._make_domain_and_quantity()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fname = os.path.join(tmpdir, 'stage')
+            q.save_centroid_data_to_csv(filename=fname)
+            out = fname + '_centroid_data.csv'
+            self.assertTrue(os.path.exists(out))
+            lines = open(out).readlines()
+            self.assertGreater(len(lines), 0)
+
+    def test_save_centroid_data_to_csv_default_filename(self):
+        """save_centroid_data_to_csv with no filename uses self.name (line 429)."""
+        import tempfile, os
+        d, q = self._make_domain_and_quantity()
+        # Run from a temp directory so the output file lands there
+        orig_dir = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.chdir(tmpdir)
+            try:
+                q.save_centroid_data_to_csv()
+                out = q.name + '_centroid_data.csv'
+                self.assertTrue(os.path.exists(out))
+            finally:
+                os.chdir(orig_dir)
+
+    def test_interpolate_old(self):
+        """interpolate_old computes centroid values from vertices (lines 775-781)."""
+        d, q = self._make_domain_and_quantity()
+        q.set_values(2.0)
+        q.interpolate_old()
+        import numpy as np
+        self.assertTrue(np.allclose(q.centroid_values, 2.0))
+
+    def test_interpolate_from_vertices_to_edges_centroid_only(self):
+        """centroid_only quantity returns early (line 804)."""
+        from anuga.abstract_2d_finite_volumes.quantity import Quantity
+        d, _ = self._make_domain_and_quantity()
+        qc = Quantity(d, qty_type='centroid_only')
+        qc.interpolate_from_vertices_to_edges()  # should not raise
+
+    def test_interpolate_from_edges_to_vertices_centroid_only(self):
+        """centroid_only quantity returns early (line 811)."""
+        from anuga.abstract_2d_finite_volumes.quantity import Quantity
+        d, _ = self._make_domain_and_quantity()
+        qc = Quantity(d, qty_type='centroid_only')
+        qc.interpolate_from_edges_to_vertices()  # should not raise
+
+    def test_save_to_array_with_bounds(self):
+        """save_to_array with explicit easting/northing covers else branches (576, 581, 586, 591, 612)."""
+        d, q = self._make_domain_and_quantity()
+        import anuga
+        d.set_quantity('elevation', 0.0)
+        d.set_quantity('stage', 1.0)
+        d.distribute_to_vertices_and_edges()
+        q = d.quantities['stage']
+        # Use bounding box that encloses the domain
+        xg, yg, grid = q.save_to_array(
+            easting_min=0.0, easting_max=2.0,
+            northing_min=0.0, northing_max=2.0)
+        self.assertIsNotNone(grid)
+
+    def test_get_name(self):
+        """get_name returns the quantity name (line 664)."""
+        d, q = self._make_domain_and_quantity()
+        name = q.get_name()
+        self.assertIsNotNone(name)
+
+    def test_set_beta_out_of_range(self):
+        """set_beta logs warnings for values outside [0, 2] (lines 671, 673)."""
+        d, q = self._make_domain_and_quantity()
+        q.set_beta(-0.1)   # triggers line 671
+        q.set_beta(2.5)    # triggers line 673
+
+    def test_get_beta(self):
+        """get_beta returns current beta (line 683)."""
+        d, q = self._make_domain_and_quantity()
+        q.set_beta(0.5)
+        self.assertAlmostEqual(q.get_beta(), 0.5)
+
+    def test_set_boundary_values_invalid_raises(self):
+        """set_boundary_values with non-numeric string raises (lines 700-703)."""
+        d, q = self._make_domain_and_quantity()
+        with self.assertRaises(Exception):
+            q.set_boundary_values('not_a_number')
+
+
 # -------------------------------------------------------------
 if __name__ == '__main__':
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Quantity)

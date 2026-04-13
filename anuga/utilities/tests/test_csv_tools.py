@@ -418,6 +418,53 @@ class Test_CSV_utils(unittest.TestCase):
         fd.close()
         return ''.join(data).replace('\r', '')
 
+class Test_CSV_extra(unittest.TestCase):
+    """Additional targeted tests for csv_tools.py."""
+
+    def setUp(self):
+        self.tmp_dir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmp_dir, ignore_errors=True)
+
+    def _write_csv(self, name, rows):
+        path = os.path.join(self.tmp_dir, name)
+        with open(path, 'w', newline='') as f:
+            w = csv.writer(f)
+            for row in rows:
+                w.writerow(row)
+        return path
+
+    def test_read_csv_file_short_row(self):
+        """Rows with too few columns are silently skipped (lines 45-46)."""
+        path = self._write_csv('short.csv', [
+            ['key', 'val'],
+            ['a', 'b'],
+            ['c'],        # short row — triggers IndexError
+        ])
+        result = csv_tools.read_csv_file(path, 'key', 'val')
+        self.assertEqual(result, [('a', 'b')])
+
+    def test_merge_different_row_count_raises(self):
+        """Files with different row counts raise (lines 96-99)."""
+        f1 = self._write_csv('f1.csv', [['k', 'v'], ['1', 'a'], ['2', 'b']])
+        f2 = self._write_csv('f2.csv', [['k', 'v'], ['1', 'x']])
+        out = os.path.join(self.tmp_dir, 'out.csv')
+        with self.assertRaises(Exception):
+            csv_tools.merge_csv_key_values(
+                [(f1, 'c1'), (f2, 'c2')], out, key_col='k', data_col='v')
+
+    def test_merge_different_key_values_raises(self):
+        """Files with different key values raise (lines 106-108)."""
+        f1 = self._write_csv('g1.csv', [['k', 'v'], ['1', 'a'], ['2', 'b']])
+        f2 = self._write_csv('g2.csv', [['k', 'v'], ['1', 'x'], ['9', 'y']])
+        out = os.path.join(self.tmp_dir, 'out2.csv')
+        with self.assertRaises(Exception):
+            csv_tools.merge_csv_key_values(
+                [(f1, 'c1'), (f2, 'c2')], out, key_col='k', data_col='v')
+
+
 ################################################################################
 
 

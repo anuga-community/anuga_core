@@ -2,6 +2,8 @@
 
 python_sources = [
 '__init__.py',
+'test_boundaries.py',
+'test_flow_algorithms.py',
 'test_regression_snapshots.py',
 'test_data_manager.py',
 'test_sw_domain_openmp.py',

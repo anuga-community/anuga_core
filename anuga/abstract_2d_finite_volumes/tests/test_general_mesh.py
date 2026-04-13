@@ -507,6 +507,45 @@ class Test_General_Mesh(unittest.TestCase):
 
 ################################################################################
 
+class Test_General_Mesh_extra(unittest.TestCase):
+    """Tests for uncovered General_mesh methods."""
+
+    def _make_mesh_with_geo(self):
+        geo = Geo_reference(56, 100.0, 200.0)
+        nodes = num.array([[0.0, 0.0], [0.0, 2.0], [2.0, 0.0],
+                           [0.0, 4.0], [2.0, 2.0], [4.0, 0.0]])
+        triangles = num.array([[1, 0, 2], [1, 2, 4], [4, 2, 5], [3, 1, 4]])
+        return General_mesh(nodes, triangles, geo_reference=geo)
+
+    def test_get_nodes_absolute(self):
+        """get_nodes(absolute=True) with non-absolute geo_reference (lines 340-341)."""
+        mesh = self._make_mesh_with_geo()
+        nodes_abs = mesh.get_nodes(absolute=True)
+        nodes_rel = mesh.get_nodes(absolute=False)
+        self.assertFalse(num.allclose(nodes_abs, nodes_rel))
+
+    def test_get_edge_midpoint_coordinates_absolute(self):
+        """get_edge_midpoint_coordinates(absolute=True) path (lines 469-470)."""
+        mesh = self._make_mesh_with_geo()
+        E_abs = mesh.get_edge_midpoint_coordinates(absolute=True)
+        E_rel = mesh.get_edge_midpoint_coordinates(absolute=False)
+        self.assertFalse(num.allclose(E_abs, E_rel))
+
+    def test_orphan_node_verbose_warning(self):
+        """Orphan node verbose warning (lines 716-717): verbose=True with unreferenced node."""
+        import io, sys
+        nodes = num.array([[0.0, 0.0], [0.0, 2.0], [2.0, 0.0],
+                           [0.0, 4.0], [2.0, 2.0], [4.0, 0.0],
+                           [10.0, 10.0]])  # orphan node not in any triangle
+        triangles = num.array([[1, 0, 2], [1, 2, 4], [4, 2, 5], [3, 1, 4]])
+        captured = io.StringIO()
+        sys.stdout = captured
+        try:
+            mesh = General_mesh(nodes, triangles, verbose=True)
+        finally:
+            sys.stdout = sys.__stdout__
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_General_Mesh)
     runner = unittest.TextTestRunner()

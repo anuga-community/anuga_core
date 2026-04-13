@@ -565,6 +565,16 @@ showme1.0 0.0 10.0 \n\
             self.fail('bad msh file did not raise error!')
         os.remove(fileName)
 
+class TestLoadASCII_extra(unittest.TestCase):
+    """Tests for uncovered loadASCII branches."""
+
+    def test_import_mesh_file_unknown_extension(self):
+        """Unknown file extension should raise OSError."""
+        from anuga.load_mesh.loadASCII import import_mesh_file
+        with self.assertRaises(OSError):
+            import_mesh_file('something.xyz')
+
+
 ################################################################################
 
 if __name__ == '__main__':

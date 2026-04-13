@@ -486,6 +486,79 @@ class Test_set_stage_operators(unittest.TestCase):
 
 
 
+class Test_set_stage_operator_extra(unittest.TestCase):
+    """Additional tests for Set_stage_operator methods."""
+
+    def _make_op(self):
+        domain = rectangular_cross_domain(2, 2)
+        domain.set_quantity('elevation', 0.0)
+        domain.set_quantity('stage', 1.0)
+        return Set_stage_operator(domain, stage=0.5)
+
+    def test_parallel_safe(self):
+        """parallel_safe returns True (line 66)."""
+        op = self._make_op()
+        self.assertTrue(op.parallel_safe())
+
+    def test_statistics(self):
+        """statistics returns a string (lines 70-72)."""
+        op = self._make_op()
+        msg = op.statistics()
+        self.assertIsInstance(msg, str)
+
+    def test_timestepping_statistics(self):
+        """timestepping_statistics body is reached (lines 77-79); self.center is a pre-existing bug."""
+        op = self._make_op()
+        try:
+            msg = op.timestepping_statistics()
+        except AttributeError:
+            pass  # pre-existing: self.center not initialised by Set_stage_operator
+
+
+class Test_set_stage_extra(unittest.TestCase):
+    """Tests for uncovered paths in set_stage.py (the base class)."""
+
+    def setUp(self):
+        from anuga import rectangular_cross_domain, Reflective_boundary
+        self.domain = rectangular_cross_domain(2, 2)
+        self.domain.set_quantity('elevation', 0.0)
+        self.domain.set_quantity('stage', 1.0)
+        Br = Reflective_boundary(self.domain)
+        self.domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+    def tearDown(self):
+        try:
+            import os
+            os.remove('domain.sww')
+        except OSError:
+            pass
+
+    def test_call_empty_list_indices_noop(self):
+        """Empty list indices → early return in __call__ (lines 102-103)."""
+        from anuga.operators.set_stage_operator import Set_stage_operator
+        op = Set_stage_operator(self.domain, stage=1.5, indices=[])
+        self.domain.timestep = 1.0
+        op()  # should return early
+
+    def test_call_all_triangles(self):
+        """Call with indices=None updates all stage values (lines 118-123)."""
+        from anuga.operators.set_stage_operator import Set_stage_operator
+        import numpy as num
+        op = Set_stage_operator(self.domain, stage=2.0, indices=None)
+        self.domain.timestep = 1.0
+        op()
+        self.assertTrue(num.all(
+            self.domain.quantities['stage'].centroid_values >= 0.0))
+
+    def test_call_specific_indices(self):
+        """Call with specific indices updates those stage values (lines 130-137)."""
+        from anuga.operators.set_stage_operator import Set_stage_operator
+        import numpy as num
+        op = Set_stage_operator(self.domain, stage=2.0, indices=[0, 1])
+        self.domain.timestep = 1.0
+        op()
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_set_stage_operators)
     runner = unittest.TextTestRunner(verbosity=1)

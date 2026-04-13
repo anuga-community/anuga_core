@@ -728,6 +728,34 @@ class Test_set_elevation_operator(unittest.TestCase):
         assert num.allclose(domain.quantities['ymomentum'].centroid_values, 0.0)
 
 
+class Test_set_elevation_operator_extra(unittest.TestCase):
+    """Additional tests for Set_elevation_operator methods."""
+
+    def _make_op(self):
+        from anuga.operators.set_elevation_operator import Set_elevation_operator
+        domain = rectangular_cross_domain(2, 2)
+        domain.set_quantity('elevation', 0.0)
+        domain.set_quantity('stage', 1.0)
+        return Set_elevation_operator(domain, elevation=0.1)
+
+    def test_parallel_safe(self):
+        """parallel_safe returns True (line 64)."""
+        op = self._make_op()
+        self.assertTrue(op.parallel_safe())
+
+    def test_statistics(self):
+        """statistics returns a string (lines 68-70)."""
+        op = self._make_op()
+        msg = op.statistics()
+        self.assertIsInstance(msg, str)
+
+    def test_timestepping_statistics(self):
+        """timestepping_statistics returns a string (line 78)."""
+        op = self._make_op()
+        msg = op.timestepping_statistics()
+        self.assertIsInstance(msg, str)
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_set_elevation_operator)
     runner = unittest.TextTestRunner(verbosity=1)

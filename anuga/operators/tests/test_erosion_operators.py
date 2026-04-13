@@ -220,6 +220,66 @@ class Test_circular_operators(unittest.TestCase):
                         "At least one stage centroid value should be >= 1.0")
 
 
+class Test_set_quantity_operator_extra(unittest.TestCase):
+    """Additional tests for Set_quantity_operator methods."""
+
+    def setUp(self):
+        self.domain = rectangular_cross_domain(2, 2)
+        self.domain.set_quantity('elevation', 0.0)
+        self.domain.set_quantity('stage', 1.0)
+
+    def _make_op(self):
+        from anuga.operators.set_quantity_operator import Set_quantity_operator
+        return Set_quantity_operator(self.domain, 'friction', value=0.03)
+
+    def test_parallel_safe(self):
+        """parallel_safe returns True (line 77)."""
+        self.assertTrue(self._make_op().parallel_safe())
+
+    def test_statistics(self):
+        """statistics returns string (lines 81-83)."""
+        msg = self._make_op().statistics()
+        self.assertIsInstance(msg, str)
+
+    def test_timestepping_statistics(self):
+        """timestepping_statistics returns string (line 91)."""
+        msg = self._make_op().timestepping_statistics()
+        self.assertIsInstance(msg, str)
+
+    def test_call_all_triangles(self):
+        """Call with indices=None updates friction (set_quantity.py lines 109-117)."""
+        from anuga.operators.set_quantity_operator import Set_quantity_operator
+        import numpy as num
+        op = Set_quantity_operator(self.domain, 'friction', value=0.05, indices=None)
+        self.domain.timestep = 1.0
+        op()
+        self.assertTrue(num.allclose(
+            self.domain.quantities['friction'].centroid_values, 0.05))
+
+    def test_call_specific_indices(self):
+        """Call with specific indices updates those friction values (set_quantity.py lines 125-133)."""
+        from anuga.operators.set_quantity_operator import Set_quantity_operator
+        import numpy as num
+        op = Set_quantity_operator(self.domain, 'friction', value=0.07, indices=[0, 1])
+        self.domain.timestep = 1.0
+        op()
+
+    def test_call_empty_indices(self):
+        """Empty indices → early return (set_quantity.py line 99)."""
+        from anuga.operators.set_quantity_operator import Set_quantity_operator
+        op = Set_quantity_operator(self.domain, 'friction', value=0.05, indices=[])
+        self.domain.timestep = 1.0
+        op()  # should return early
+
+    def test_pass_region_object(self):
+        """Passing a Region object uses lines 48-49 in set_quantity.py."""
+        from anuga.operators.set_quantity_operator import Set_quantity_operator
+        from anuga import Region
+        region = Region(self.domain, indices=[0, 1, 2])
+        op = Set_quantity_operator(self.domain, 'friction', value=0.04, region=region)
+        self.assertIsNotNone(op)
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_erosion_operators)
     runner = unittest.TextTestRunner(verbosity=1)

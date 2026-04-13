@@ -563,6 +563,117 @@ point2, 0.5, 2.0\n")
         point2_handle.close()
 
 
+class Test_quantities2csv(unittest.TestCase):
+    """Unit tests for _quantities2csv — the pure-function helper in gauge.py."""
+
+    def _call(self, quantities, point_quantities, centroids=None, point_i=0):
+        from anuga.abstract_2d_finite_volumes.gauge import _quantities2csv
+        if centroids is None:
+            centroids = [[(1.0, 2.0)]]
+        return _quantities2csv(quantities, point_quantities, centroids, point_i)
+
+    def _pq(self, stage=2.0, elev=0.5, xmom=3.0, ymom=4.0):
+        """Return a typical point_quantities array [stage, elev, xmom, ymom]."""
+        return [stage, elev, xmom, ymom]
+
+    # ------------------------------------------------------------------
+    # Existing quantities (already mostly covered) — sanity checks
+    # ------------------------------------------------------------------
+
+    def test_stage(self):
+        result = self._call(['stage'], self._pq(stage=5.0))
+        self.assertAlmostEqual(result[0], 5.0)
+
+    def test_elevation(self):
+        result = self._call(['elevation'], self._pq(elev=1.5))
+        self.assertAlmostEqual(result[0], 1.5)
+
+    def test_depth(self):
+        # depth = stage - elevation
+        result = self._call(['depth'], self._pq(stage=3.0, elev=1.0))
+        self.assertAlmostEqual(result[0], 2.0)
+
+    # ------------------------------------------------------------------
+    # momentum (lines 47-49) — previously uncovered
+    # ------------------------------------------------------------------
+
+    def test_momentum(self):
+        # momentum = sqrt(xmom^2 + ymom^2) = sqrt(3^2 + 4^2) = 5
+        result = self._call(['momentum'], self._pq(xmom=3.0, ymom=4.0))
+        self.assertAlmostEqual(result[0], 5.0)
+
+    def test_momentum_zero(self):
+        result = self._call(['momentum'], self._pq(xmom=0.0, ymom=0.0))
+        self.assertAlmostEqual(result[0], 0.0)
+
+    # ------------------------------------------------------------------
+    # speed (lines 53-64) — previously uncovered
+    # ------------------------------------------------------------------
+
+    def test_speed_dry_depth_is_zero(self):
+        """When depth < 0.001, speed == 0."""
+        pq = self._pq(stage=0.5, elev=0.5)   # depth = 0.0
+        result = self._call(['speed'], pq)
+        self.assertAlmostEqual(result[0], 0.0)
+
+    def test_speed_shallow_depth_below_threshold(self):
+        """When depth < 0.001, speed == 0 regardless of momentum."""
+        pq = self._pq(stage=0.5009, elev=0.5, xmom=10.0, ymom=10.0)  # depth=0.0009
+        result = self._call(['speed'], pq)
+        self.assertAlmostEqual(result[0], 0.0)
+
+    def test_speed_normal(self):
+        """speed = momentum / depth for depth >= 0.001 and xmom < 1e6."""
+        # depth = 2.0 - 0.0 = 2.0, momentum = sqrt(3^2 + 4^2) = 5, speed = 5/2 = 2.5
+        pq = self._pq(stage=2.0, elev=0.0, xmom=3.0, ymom=4.0)
+        result = self._call(['speed'], pq)
+        self.assertAlmostEqual(result[0], 2.5)
+
+    def test_speed_huge_momentum(self):
+        """When xmom >= 1e6, speed is forced to 0."""
+        pq = self._pq(stage=2.0, elev=0.0, xmom=2.0e6, ymom=0.0)
+        result = self._call(['speed'], pq)
+        self.assertAlmostEqual(result[0], 0.0)
+
+    # ------------------------------------------------------------------
+    # bearing (line 67) — previously uncovered
+    # ------------------------------------------------------------------
+
+    def test_bearing(self):
+        from anuga.abstract_2d_finite_volumes.util import calc_bearing
+        pq = self._pq(xmom=1.0, ymom=0.0)
+        result = self._call(['bearing'], pq)
+        expected = calc_bearing(1.0, 0.0)
+        self.assertAlmostEqual(result[0], expected)
+
+    # ------------------------------------------------------------------
+    # centroid coordinates (lines 69-73)
+    # ------------------------------------------------------------------
+
+    def test_xcentroid(self):
+        centroids = [[5.5, 7.3]]
+        result = self._call(['xcentroid'], self._pq(), centroids=centroids, point_i=0)
+        self.assertAlmostEqual(result[0], 5.5)
+
+    def test_ycentroid(self):
+        centroids = [[5.5, 7.3]]
+        result = self._call(['ycentroid'], self._pq(), centroids=centroids, point_i=0)
+        self.assertAlmostEqual(result[0], 7.3)
+
+    # ------------------------------------------------------------------
+    # Multiple quantities in one call
+    # ------------------------------------------------------------------
+
+    def test_multiple_quantities(self):
+        pq = self._pq(stage=3.0, elev=1.0, xmom=3.0, ymom=4.0)
+        result = self._call(['stage', 'depth', 'momentum', 'speed'], pq)
+        self.assertEqual(len(result), 4)
+        self.assertAlmostEqual(result[0], 3.0)       # stage
+        self.assertAlmostEqual(result[1], 2.0)       # depth = 3 - 1
+        self.assertAlmostEqual(result[2], 5.0)       # momentum = sqrt(9+16)
+        self.assertAlmostEqual(result[3], 5.0/2.0)   # speed = 5/2
+
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":

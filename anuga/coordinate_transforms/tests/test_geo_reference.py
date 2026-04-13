@@ -1047,6 +1047,33 @@ class geo_referenceTestCase(unittest.TestCase):
         self.assertTrue(g.is_located())
 
 
+class Test_Geo_reference_extra(unittest.TestCase):
+    """Tests for uncovered geo_reference methods."""
+
+    def test_set_zone_negative(self):
+        """Negative zone values -60..-2 map to southern hemisphere."""
+        g = Geo_reference()
+        g.set_zone(-30)
+        self.assertEqual(g.zone, 30)
+        self.assertEqual(g.hemisphere, 'southern')
+
+    def test_epsg_zone_conflict(self):
+        """EPSG-inferred zone differs from already-set zone — coverage of warning path."""
+        g = Geo_reference(zone=1, hemisphere='southern')
+        import warnings
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter('always')
+            g._set_epsg(32754)  # zone 54 south — zone differs from 1
+
+    def test_epsg_hemisphere_conflict(self):
+        """EPSG-inferred hemisphere differs from already-set — coverage of warning path."""
+        g = Geo_reference(zone=54, hemisphere='northern')
+        import warnings
+        with warnings.catch_warnings(record=True):
+            warnings.simplefilter('always')
+            g._set_epsg(32754)  # zone 54 southern — hemisphere differs
+
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":

@@ -120,6 +120,74 @@ class Test_collect_max_quantities_operator(unittest.TestCase):
         self.assertTrue(operator.parallel_safe())
 
 
+class Test_collect_max_quantities_operator_extra(unittest.TestCase):
+    """Tests for uncovered Collect_max_quantities_operator methods."""
+
+    def setUp(self):
+        import anuga
+        self.domain = anuga.rectangular_cross_domain(2, 2)
+        self.domain.set_quantity('elevation', 0.0)
+        self.domain.set_quantity('stage', 1.0)
+
+    def test_velocity_zero_height_not_none(self):
+        """velocity_zero_height kwarg stored when not None (line 80)."""
+        from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
+        op = Collect_max_quantities_operator(self.domain, velocity_zero_height=0.01)
+        self.assertAlmostEqual(op.velocity_zero_height, 0.01)
+
+    def test_statistics_quantities(self):
+        """statistics returns a string (lines 119-120)."""
+        from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
+        op = Collect_max_quantities_operator(self.domain)
+        msg = op.statistics()
+        self.assertIsInstance(msg, str)
+
+    def test_timestepping_statistics_quantities(self):
+        """timestepping_statistics returns a string (lines 124, 126-127)."""
+        from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
+        op = Collect_max_quantities_operator(self.domain)
+        msg = op.timestepping_statistics()
+        self.assertIsInstance(msg, str)
+
+
+class Test_collect_max_stage_operator_extra(unittest.TestCase):
+    """Tests for uncovered Collect_max_stage_operator methods."""
+
+    def setUp(self):
+        import anuga
+        self.domain = anuga.rectangular_cross_domain(2, 2)
+        self.domain.set_quantity('elevation', 0.0)
+        self.domain.set_quantity('stage', 1.0)
+
+    def test_statistics(self):
+        """statistics returns a string (lines 63-64)."""
+        from anuga.operators.collect_max_stage_operator import Collect_max_stage_operator
+        op = Collect_max_stage_operator(self.domain)
+        msg = op.statistics()
+        self.assertIsInstance(msg, str)
+
+    def test_timestepping_statistics(self):
+        """timestepping_statistics returns a string (lines 68, 70-71)."""
+        from anuga.operators.collect_max_stage_operator import Collect_max_stage_operator
+        op = Collect_max_stage_operator(self.domain)
+        msg = op.timestepping_statistics()
+        self.assertIsInstance(msg, str)
+
+    def test_save_centroid_data_to_csv(self):
+        """save_centroid_data_to_csv delegates to max_stage (line 76)."""
+        import tempfile, os
+        from anuga.operators.collect_max_stage_operator import Collect_max_stage_operator
+        op = Collect_max_stage_operator(self.domain)
+        op()  # run once to populate max_stage
+        orig = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            os.chdir(tmpdir)
+            try:
+                op.save_centroid_data_to_csv()
+            finally:
+                os.chdir(orig)
+
+
 if __name__ == '__main__':
     suite = unittest.TestLoader().loadTestsFromModule(__import__('__main__'))
     runner = unittest.TextTestRunner(verbosity=1)

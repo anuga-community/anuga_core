@@ -403,6 +403,41 @@ class Test_system_tools(unittest.TestCase):
 
 ################################################################################
 
+class Test_argparsing(unittest.TestCase):
+    """Tests for anuga.utilities.argparsing.create_standard_parser (lines 16-54)."""
+
+    def test_create_standard_parser(self):
+        """create_standard_parser returns an ArgumentParser."""
+        from anuga.utilities.argparsing import create_standard_parser
+        parser = create_standard_parser()
+        self.assertIsNotNone(parser)
+
+    def test_parser_defaults(self):
+        """Parser should have 'alg' default from parameters (line 30)."""
+        from anuga.utilities.argparsing import create_standard_parser
+        parser = create_standard_parser()
+        args = parser.parse_args([])
+        self.assertIsNotNone(args.alg)
+
+
+class Test_data_audit_wrapper(unittest.TestCase):
+    """Tests for anuga.utilities.data_audit_wrapper (lines 14-52)."""
+
+    def test_module_import(self):
+        """Importing the module covers module-level assignments (lines 14-41)."""
+        import anuga.utilities.data_audit_wrapper as daw
+        self.assertIsInstance(daw.extensions_to_ignore, list)
+
+    def test_ip_verified_callable(self):
+        """IP_verified function can be called on a directory (lines 45-52)."""
+        import tempfile
+        from anuga.utilities.data_audit_wrapper import IP_verified
+        with tempfile.TemporaryDirectory() as d:
+            result = IP_verified(d)
+            # Just verify it returns without error; result may be True or False
+            self.assertIsNotNone(result)
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_system_tools)
     runner = unittest.TextTestRunner()

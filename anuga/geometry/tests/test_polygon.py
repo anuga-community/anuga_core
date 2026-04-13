@@ -1977,6 +1977,37 @@ class Test_Polygon(unittest.TestCase):
         assert not is_complex(concave_poly)
         assert is_complex(complex_poly)
 
+class Test_polygon_function_extra(unittest.TestCase):
+    """Additional tests for uncovered Polygon_function branches."""
+
+    def test_non_iterable_regions_raises(self):
+        """Passing a non-iterable raises (lines 55-56, 58)."""
+        with self.assertRaises(Exception):
+            Polygon_function(5)
+
+    def test_string_first_region_raises(self):
+        """Passing a list of strings raises (lines 63, 66)."""
+        with self.assertRaises(Exception):
+            Polygon_function(['just_a_string'])
+
+    def test_non_iterable_first_region_raises(self):
+        """First region that is not a pair (non-iterable) raises (lines 70-73)."""
+        with self.assertRaises(Exception):
+            Polygon_function([5])
+
+    def test_all_points_outside_polygon_logs(self):
+        """When all points are outside all polygons, logs warning (lines 128, 131)."""
+        import numpy as np
+        polygon = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+        f = Polygon_function([(polygon, 1.0)])
+        # Points far outside the polygon
+        x = np.array([10.0, 11.0])
+        y = np.array([10.0, 11.0])
+        result = f(x, y)
+        # Default should be 0.0 everywhere
+        self.assertTrue(np.allclose(result, 0.0))
+
+
 ################################################################################
 
 

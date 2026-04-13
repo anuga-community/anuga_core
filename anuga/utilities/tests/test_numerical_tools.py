@@ -632,6 +632,49 @@ class Test_Numerical_Tools(unittest.TestCase):
 
 ################################################################################
 
+class Test_norms(unittest.TestCase):
+    """Tests for anuga.utilities.norms (l1_norm, l2_norm, linf_norm)."""
+
+    def test_l1_norm(self):
+        from anuga.utilities.norms import l1_norm
+        self.assertAlmostEqual(l1_norm([1.0, -2.0, 3.0]), 6.0)
+
+    def test_l2_norm(self):
+        from anuga.utilities.norms import l2_norm
+        self.assertAlmostEqual(l2_norm([3.0, 4.0]), 5.0)
+
+    def test_linf_norm(self):
+        from anuga.utilities.norms import linf_norm
+        self.assertAlmostEqual(linf_norm([1.0, -5.0, 3.0]), 5.0)
+
+
+class Test_file_length(unittest.TestCase):
+    """Tests for anuga.lib.file_length."""
+
+    def test_file_length(self):
+        import tempfile, os
+        from anuga.lib.file_length import file_length
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
+            f.write("line1\nline2\nline3\n")
+            fname = f.name
+        try:
+            n = file_length(fname)
+            self.assertEqual(n, 3)
+        finally:
+            os.unlink(fname)
+
+
+class Test_metadata_imports(unittest.TestCase):
+    """Cover module-level statements in __metadata__, rain/__init__."""
+
+    def test_metadata_importable(self):
+        import anuga.__metadata__ as meta
+        self.assertIsNotNone(meta.__version__)
+
+    def test_rain_importable(self):
+        import anuga.rain
+        self.assertIsNotNone(anuga.rain)
+
 
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Numerical_Tools)

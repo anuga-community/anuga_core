@@ -122,6 +122,52 @@ class Test_boundary_flux_integral_operator(unittest.TestCase):
         assert(numpy.allclose(vol,boundaryFluxInt))
 
 
+class Test_boundary_flux_integral_operator_extra(unittest.TestCase):
+    """Tests for uncovered methods in boundary_flux_integral_operator."""
+
+    def setUp(self):
+        from anuga import rectangular_cross_domain, Reflective_boundary
+        self.domain = rectangular_cross_domain(2, 2)
+        self.domain.set_quantity('elevation', 0.0)
+        self.domain.set_quantity('stage', 1.0)
+        Br = anuga.Reflective_boundary(self.domain)
+        self.domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+    def tearDown(self):
+        try:
+            import os
+            os.remove('domain.sww')
+        except OSError:
+            pass
+
+    def _make_op(self):
+        from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
+        return boundary_flux_integral_operator(self.domain)
+
+    def test_parallel_safe(self):
+        op = self._make_op()
+        self.assertTrue(op.parallel_safe())
+
+    def test_statistics(self):
+        op = self._make_op()
+        msg = op.statistics()
+        self.assertIsInstance(msg, str)
+
+    def test_timestepping_statistics(self):
+        op = self._make_op()
+        msg = op.timestepping_statistics()
+        self.assertIsInstance(msg, str)
+
+    def test_call_unsupported_method_raises(self):
+        """Unsupported timestepping method raises Exception (line 59)."""
+        from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
+        op = boundary_flux_integral_operator(self.domain)
+        self.domain.timestep = 1.0
+        self.domain.timestepping_method = 'unsupported_method'
+        with self.assertRaises(Exception):
+            op()
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_boundary_flux_integral_operator)
     runner = unittest.TextTestRunner(verbosity=1)

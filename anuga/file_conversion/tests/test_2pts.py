@@ -243,6 +243,33 @@ END CROSS-SECTIONS:
 
 #-------------------------------------------------------------
 
+class Test_xya2pts(unittest.TestCase):
+    """Tests for anuga.file_conversion.xya2pts."""
+
+    def test_xya2pts_basic(self):
+        """xya2pts converts a .xya CSV file to a .pts NetCDF file."""
+        import os, tempfile
+        from anuga.file_conversion.xya2pts import xya2pts
+
+        # Write a small .xya file (header + 3 data rows)
+        fd, xya_path = tempfile.mkstemp(suffix='.xya')
+        pts_path = xya_path[:-4] + '.pts'
+        try:
+            with os.fdopen(fd, 'w') as f:
+                f.write('x,y,z\n')
+                f.write('0.0,0.0,1.0\n')
+                f.write('1.0,0.0,2.0\n')
+                f.write('0.5,1.0,3.0\n')
+            xya2pts(xya_path)
+            self.assertTrue(os.path.exists(pts_path))
+        finally:
+            for p in [xya_path, pts_path]:
+                try:
+                    os.unlink(p)
+                except OSError:
+                    pass
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_2Pts)
     runner = unittest.TextTestRunner() #verbosity=2)

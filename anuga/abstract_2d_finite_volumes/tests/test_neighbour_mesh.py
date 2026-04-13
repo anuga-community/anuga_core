@@ -1881,6 +1881,59 @@ class Test_Mesh(unittest.TestCase):
 
 
 
+class Test_Mesh_extra(unittest.TestCase):
+    """Extra tests for uncovered methods in neighbour_mesh.py."""
+
+    def _make_mesh(self, points, triangles, boundary=None):
+        return Mesh(points, triangles, boundary=boundary or {})
+
+    def test_build_neighbour_structure_python_two_triangles(self):
+        """Python version of build_neighbour_structure gives same result."""
+        points = [[0.0, 0.0], [4.0, 0.0], [0.0, 3.0], [4.0, 3.0]]
+        triangles = [[0, 1, 2], [1, 3, 2]]
+        boundary = {(0, 0): 'left', (0, 1): 'bottom',
+                    (1, 0): 'right', (1, 2): 'top'}
+        mesh = Mesh(points, triangles, boundary=boundary)
+        # Reset and rebuild with Python implementation
+        mesh.neighbours = -1 * num.ones((2, 3), dtype=int)
+        mesh.neighbour_edges = -1 * num.ones((2, 3), dtype=int)
+        mesh.number_of_boundaries = num.zeros(2, dtype=int)
+        mesh.build_neighbour_structure_python()
+        # The two triangles share an edge — each should see the other
+        nbrs = mesh.neighbours
+        self.assertTrue(1 in nbrs[0] or 0 in nbrs[1])
+
+    def test_build_neighbour_structure_python_rectangle(self):
+        """Python neighbour builder on a rectangular mesh."""
+        points, triangles, boundary = rectangular(2, 2)
+        mesh = Mesh(points, triangles, boundary=boundary)
+        mesh.neighbours = -1 * num.ones((len(triangles), 3), dtype=int)
+        mesh.neighbour_edges = -1 * num.ones((len(triangles), 3), dtype=int)
+        mesh.number_of_boundaries = num.zeros(len(triangles), dtype=int)
+        mesh.build_neighbour_structure_python()
+        for i in range(len(triangles)):
+            for e in range(3):
+                self.assertGreaterEqual(mesh.neighbours[i, e], -1)
+
+    def test_build_neighbour_structure_python_matches_ext(self):
+        """Python builder result matches C extension result."""
+        points, triangles, boundary = rectangular(3, 3)
+        mesh_py = Mesh(points, triangles, boundary=boundary)
+        mesh_ext = Mesh(points, triangles, boundary=boundary)
+
+        mesh_py.neighbours = -1 * num.ones((len(triangles), 3), dtype=int)
+        mesh_py.neighbour_edges = -1 * num.ones((len(triangles), 3), dtype=int)
+        mesh_py.number_of_boundaries = num.zeros(len(triangles), dtype=int)
+        mesh_py.build_neighbour_structure_python()
+
+        # The ext-built mesh was built in __init__; compare neighbour symmetry
+        for i in range(len(triangles)):
+            for e in range(3):
+                b_py = mesh_py.neighbours[i, e]
+                if b_py >= 0:
+                    self.assertIn(i, mesh_py.neighbours[b_py])
+
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":

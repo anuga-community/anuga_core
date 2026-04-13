@@ -252,6 +252,44 @@ class Test_tag_region(unittest.TestCase):
         assert num.allclose(frict_points[2],expected2)
         assert num.allclose(frict_points[3],expected3)
 
+class Test_tag_region_extra(unittest.TestCase):
+    """Additional tests covering uncovered tag_region.py branches."""
+
+    def test_tag_region_base_call_raises(self):
+        """Tag_region.__call__ raises Exception (lines 20-21)."""
+        tr = Tag_region()
+        with self.assertRaises(Exception):
+            tr('bottom', [], None)
+
+    def test_set_tag_region_repr(self):
+        """Set_tag_region.__repr__ body is called (line 50)."""
+        r = Set_tag_region('bottom', 'friction', 0.5)
+        result = r.__repr__()  # call directly to avoid TypeError from repr()
+        self.assertIsNone(result)
+
+    def test_add_value_to_region_callable_raises(self):
+        """Add_value_to_region with callable X raises (line 87)."""
+        with self.assertRaises(Exception):
+            Add_value_to_region('bottom', 'friction', lambda x, y: 1.0)
+
+    def test_add_value_to_region_repr(self):
+        """Add_value_to_region.__repr__ body is called (line 90)."""
+        r = Add_value_to_region('bottom', 'friction', 0.5)
+        result = r.__repr__()
+        self.assertIsNone(result)
+
+    def test_add_quantities_repr(self):
+        """Add_quantities.__repr__ body is called (line 129)."""
+        r = Add_quantities('top', 'elevation', 'stage')
+        result = r.__repr__()
+        self.assertIsNone(result)
+
+    def test_stage_no_less_than_elevation_init(self):
+        """Stage_no_less_than_elevation() can be instantiated (line 166)."""
+        r = Stage_no_less_than_elevation()
+        self.assertIsNotNone(r)
+
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":

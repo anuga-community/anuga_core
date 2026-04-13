@@ -432,6 +432,215 @@ class Test_Generic_Boundary_Conditions(unittest.TestCase):
         os.remove(filename + '.tms')
 
 
+class Test_Boundary_evaluate_segment(unittest.TestCase):
+    """Test evaluate_segment and __repr__ methods for all boundary types.
+
+    Uses a minimal Generic_Domain so boundary_cells / boundary_edges /
+    evolved_quantities are properly initialised.
+    """
+
+    def _make_domain(self):
+        """Return a Generic_Domain with 4 triangles and two conserved quantities."""
+        points = [
+            [0.0, 0.0], [0.0, 2.0], [2.0, 0.0],
+            [0.0, 4.0], [2.0, 2.0], [4.0, 0.0],
+        ]
+        elements = [[1, 0, 2], [1, 2, 4], [4, 2, 5], [3, 1, 4]]
+        domain = Generic_Domain(points, elements)
+        domain.conserved_quantities = ['stage', 'ymomentum']
+        domain.evolved_quantities   = ['stage', 'ymomentum']
+        domain.quantities['stage']     = Quantity(domain, [[1, 2, 3],  [5, 5, 5],
+                                                            [0, 0, 9], [-6, 3, 3]])
+        domain.quantities['ymomentum'] = Quantity(domain, [[2, 3, 4],  [5, 5, 5],
+                                                            [0, 0, 9], [-6, 3, 3]])
+        domain.check_integrity()
+        # Set a boundary on all external edges
+        from anuga.config import default_boundary_tag
+        domain.set_boundary({default_boundary_tag: Dirichlet_boundary([0.0, 0.0])})
+        return domain
+
+    def _all_segment_edges(self, domain):
+        """Return an array indexing every boundary edge."""
+        return num.arange(len(domain.boundary_cells))
+
+    # ------------------------------------------------------------------
+    # Boundary base class: evaluate_segment and get_time guards
+    # ------------------------------------------------------------------
+
+    def test_boundary_evaluate_segment_no_edges(self):
+        """evaluate_segment with None segment_edges returns silently."""
+        domain = self._make_domain()
+        b = Boundary()
+        b.evaluate_segment(domain, None)  # should not raise
+
+    def test_boundary_evaluate_segment_no_domain(self):
+        b = Boundary()
+        b.evaluate_segment(None, num.array([0]))  # should not raise
+
+    # ------------------------------------------------------------------
+    # Transmissive_boundary
+    # ------------------------------------------------------------------
+
+    def test_transmissive_repr(self):
+        domain = self._make_domain()
+        T = Transmissive_boundary(domain)
+        self.assertIn('Transmissive', repr(T))
+
+    def test_transmissive_evaluate_segment_edge_mode(self):
+        domain = self._make_domain()
+        T = Transmissive_boundary(domain)
+        from anuga.config import default_boundary_tag
+        domain.set_boundary({default_boundary_tag: T})
+
+        domain.set_centroid_transmissive_bc(False)
+        ids = self._all_segment_edges(domain)
+        T.evaluate_segment(domain, ids)
+        # boundary_values should now be set; spot-check no NaN
+        for name in domain.evolved_quantities:
+            Q = domain.quantities[name]
+            self.assertFalse(num.any(num.isnan(Q.boundary_values[ids])))
+
+    def test_transmissive_evaluate_segment_centroid_mode(self):
+        domain = self._make_domain()
+        T = Transmissive_boundary(domain)
+        from anuga.config import default_boundary_tag
+        domain.set_boundary({default_boundary_tag: T})
+
+        domain.set_centroid_transmissive_bc(True)
+        ids = self._all_segment_edges(domain)
+        T.evaluate_segment(domain, ids)
+        # Centroid values should have been copied to boundary_values
+        for name in domain.evolved_quantities:
+            Q = domain.quantities[name]
+            vol_ids = domain.boundary_cells[ids]
+            num.testing.assert_array_equal(
+                Q.boundary_values[ids], Q.centroid_values[vol_ids])
+
+    def test_transmissive_evaluate_segment_none_guards(self):
+        domain = self._make_domain()
+        T = Transmissive_boundary(domain)
+        T.evaluate_segment(domain, None)  # no exception
+        T.evaluate_segment(None, num.array([0]))  # no exception
+
+    # ------------------------------------------------------------------
+    # Dirichlet_boundary
+    # ------------------------------------------------------------------
+
+    def test_dirichlet_repr(self):
+        bd = Dirichlet_boundary([1.0, 2.0])
+        self.assertIn('Dirichlet', repr(bd))
+
+    def test_dirichlet_evaluate_segment_evolved_quantities(self):
+        """When len(q_bdry) == len(evolved_quantities) no edge fallback needed."""
+        domain = self._make_domain()
+        # evolved and conserved both have length 2, so q_bdry length 2 matches evolved
+        bd = Dirichlet_boundary([7.0, 8.0])
+        from anuga.config import default_boundary_tag
+        domain.set_boundary({default_boundary_tag: bd})
+
+        ids = self._all_segment_edges(domain)
+        bd.evaluate_segment(domain, ids)
+
+        for j, name in enumerate(['stage', 'ymomentum']):
+            Q = domain.quantities[name]
+            expected_val = [7.0, 8.0][j]
+            num.testing.assert_allclose(
+                Q.boundary_values[ids], expected_val,
+                err_msg=f"{name} boundary_values not set to {expected_val}")
+
+    def test_dirichlet_evaluate_segment_none_guards(self):
+        bd = Dirichlet_boundary([1.0, 0.0])
+        domain = self._make_domain()
+        bd.evaluate_segment(domain, None)   # no exception
+        bd.evaluate_segment(None, num.array([0]))   # no exception
+
+    # ------------------------------------------------------------------
+    # Compute_fluxes_boundary
+    # ------------------------------------------------------------------
+
+    def test_compute_fluxes_boundary_instantiation(self):
+        cfb = Compute_fluxes_boundary()
+        self.assertIsNotNone(cfb)
+
+    def test_compute_fluxes_boundary_evaluate_returns_none(self):
+        cfb = Compute_fluxes_boundary()
+        result = cfb.evaluate(0, 0)
+        self.assertIsNone(result)
+
+    def test_compute_fluxes_boundary_evaluate_segment_returns(self):
+        cfb = Compute_fluxes_boundary()
+        domain = self._make_domain()
+        result = cfb.evaluate_segment(domain, num.array([0]))
+        self.assertIsNone(result)
+
+    # ------------------------------------------------------------------
+    # Time_boundary
+    # ------------------------------------------------------------------
+
+    def test_time_boundary_repr(self):
+        domain = self._make_domain()
+        T = Time_boundary(domain, function=lambda t: [1.0, 0.0])
+        self.assertEqual(repr(T), 'Time boundary')
+
+    def test_time_boundary_get_time(self):
+        domain = self._make_domain()
+        T = Time_boundary(domain, function=lambda t: [0.0, 0.0])
+        # domain time should be accessible via T.get_time()
+        self.assertAlmostEqual(T.get_time(), domain.get_time())
+
+    def test_time_boundary_evaluate_segment(self):
+        domain = self._make_domain()
+        T = Time_boundary(domain, function=lambda t: [3.0, 4.0])
+        from anuga.config import default_boundary_tag
+        domain.set_boundary({default_boundary_tag: T})
+
+        ids = self._all_segment_edges(domain)
+        T.evaluate_segment(domain, ids)
+
+        for j, name in enumerate(['stage', 'ymomentum']):
+            Q = domain.quantities[name]
+            expected = [3.0, 4.0][j]
+            num.testing.assert_allclose(
+                Q.boundary_values[ids], expected,
+                err_msg=f"{name} boundary_values not set by Time_boundary")
+
+    def test_time_boundary_evaluate_segment_none_guards(self):
+        domain = self._make_domain()
+        T = Time_boundary(domain, function=lambda t: [0.0, 0.0])
+        T.evaluate_segment(domain, None)        # no exception
+        T.evaluate_segment(None, num.array([0]))  # no exception
+
+    def test_time_boundary_bad_function_type(self):
+        """Function that returns a non-numeric value raises an Exception."""
+        domain = self._make_domain()
+        with self.assertRaises(Exception):
+            Time_boundary(domain, function=lambda t: 'bad')
+
+    # ------------------------------------------------------------------
+    # Time_space_boundary
+    # ------------------------------------------------------------------
+
+    def test_time_space_boundary_repr(self):
+        domain = self._make_domain()
+        T = Time_space_boundary(domain, function=lambda t, x, y: [0.0, 0.0])
+        self.assertEqual(repr(T), 'Time space boundary')
+
+    def test_time_space_boundary_evaluate(self):
+        domain = self._make_domain()
+        T = Time_space_boundary(domain, function=lambda t, x, y: [x, y])
+        from anuga.config import default_boundary_tag
+        domain.set_boundary({default_boundary_tag: T})
+
+        q = T.evaluate(0, 2)
+        expected = domain.get_edge_midpoint_coordinate(0, 2)
+        num.testing.assert_allclose(q, expected, atol=1e-12)
+
+    def test_time_space_boundary_bad_function(self):
+        domain = self._make_domain()
+        with self.assertRaises(Exception):
+            Time_space_boundary(domain, function=lambda t, x, y: 'bad')
+
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":

@@ -118,6 +118,16 @@ class TestCase(unittest.TestCase):
 
 #-------------------------------------------------------------
 
+class Test_Point_repr(unittest.TestCase):
+    """Test __repr__ of Point (lines 84-87)."""
+
+    def test_repr(self):
+        p = Point(-35.27456, 149.12065)
+        result = repr(p)
+        self.assertIsInstance(result, str)
+        self.assertIn('-35.27', result)
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestCase)
     runner = unittest.TextTestRunner()
