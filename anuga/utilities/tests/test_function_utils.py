@@ -143,14 +143,17 @@ class Test_Function_Utils_extra(unittest.TestCase):
 
     def test_evaluate_temporal_modeltime_early_default_callable(self):
         """evaluate_temporal_function uses callable default_left_value (line 102)."""
+        import warnings
         from anuga.utilities.function_utils import evaluate_temporal_function
         from anuga.fit_interpolate.interpolate import Modeltime_too_early
 
         def f(t):
             raise Modeltime_too_early('too early')
 
-        result = evaluate_temporal_function(f, t=0.0,
-                                            default_left_value=lambda t: 99.0)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            result = evaluate_temporal_function(f, t=0.0,
+                                                default_left_value=lambda t: 99.0)
         self.assertAlmostEqual(result, 99.0)
 
     def test_evaluate_temporal_modeltime_late_default_none_raises(self):
@@ -166,13 +169,16 @@ class Test_Function_Utils_extra(unittest.TestCase):
 
     def test_evaluate_temporal_modeltime_late_default_scalar(self):
         """evaluate_temporal_function uses scalar default_right_value (line 115)."""
+        import warnings
         from anuga.utilities.function_utils import evaluate_temporal_function
         from anuga.fit_interpolate.interpolate import Modeltime_too_late
 
         def f(t):
             raise Modeltime_too_late('too late')
 
-        result = evaluate_temporal_function(f, t=100.0, default_right_value=42.0)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            result = evaluate_temporal_function(f, t=100.0, default_right_value=42.0)
         self.assertAlmostEqual(result, 42.0)
 
 

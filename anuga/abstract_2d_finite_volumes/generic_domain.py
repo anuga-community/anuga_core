@@ -759,7 +759,7 @@ class Generic_Domain:
 
         absolute_time = self.get_time()
 
-        return datetime.datetime.utcfromtimestamp(absolute_time).strftime('%c')
+        return datetime.datetime.fromtimestamp(absolute_time, datetime.timezone.utc).strftime('%c')
 
     def get_timestep(self):
         """get current timestep (seconds)."""
