@@ -134,6 +134,8 @@ sweep: `tempfile.mktemp` → `mkstemp`, `set_datadir('.')` → `mkdtemp()`, all
 
 **Session 19 (2026-04-13):** H3.4: Cleaned up `system_tools.py` — removed `six` dependency (`string_types` → `str` in `gauge.py` and `file_function.py`), deleted dead code (`store_svn_revision_info`, `get_web_file`, `tar_file`, `untar_file`, `get_file_hexdigest`, `make_digest_file`, `MemoryUpdate`), trimmed imports. 335 lines removed. Structural split into focused modules rejected (62 import sites + wildcard import). 158/169 tracked items done.
 
+**Session 20 (2026-04-13):** H4.4 coverage push — systematic `Test_*_extra` classes across 10 test files targeting previously-unreached branches: `test_polygon.py` (26 tests, geometry 76%→95%), `test_lat_long_UTM_conversion.py` (6), `test_numerical_tools.py` (13), `test_xml_tools.py` (9), `test_alpha_shape.py` (7), `test_sparse.py` (10), `test_geo_reference.py` (12), `test_function_utils.py` (8), `test_cg_solve.py` (3), `test_set_quantity.py` (4). Fixed `log.debug` call-signature bug in `operators/set_quantity.py`. Raised `fail_under` to 55. Full suite at **54.67%** — just below threshold. Next: a few more easy wins in `set_elevation.py`, `region.py`, `util.py` should clear 55. Commit `133b26b1`.
+
 **Session 11 (2026-04-07):** G1.3 slot limit hard errors — `Rate_operator`, `Inlet_operator`, `Parallel_inlet_operator` now raise `RuntimeError` on GPU slot overflow (2 tests). Benchmark suite: `benchmarks/run_benchmarks.py` (single-process, all modes, JSON output) + `benchmarks/compare_benchmarks.py` (±% delta table). MPI distribution benchmark: `benchmarks/distribute_benchmarks.py` merges old `scripts/benchmark_distribute.py` + `scripts/benchmark_distribute_mesh.py` into unified 4-method comparison (`distribute()`, `collaborative()`, `distribute_basic_mesh()`, `dump+load`); `benchmarks/run_benchmark_grid.py` updated. Bug fix: `Basic_mesh.reorder()` produced stale neighbours when `_neighbours` hadn't been accessed before reorder — caused `distribute_basic_mesh()` to generate ~59% more ghost triangles than `distribute()` for same mesh/scheme. Fix: trigger `_build_neighbours()` at start of `reorder()`. Regression test added. 122/159 tracked items done.
 
 **Session 9 (2026-04-04):** Riverwall throughflow (`Cd_through`) — submerged
@@ -189,4 +191,4 @@ See `claude/PROGRESS.md` — "Remaining Work" section for full list. Summary:
 
 ### Best standalone value (no GPU hardware needed)
 5. **QM7** Shared gradient workspace (C extension, ~72 MB saving for erosion models)
-6. **H4.4** Coverage gap — currently ~55%; identify highest-value untested paths
+6. **H4.4** Coverage gap — currently 54.67% (fail_under=55, not yet passing); easy wins remain in `operators/set_elevation.py`, `abstract_2d_finite_volumes/region.py`, `abstract_2d_finite_volumes/util.py`
