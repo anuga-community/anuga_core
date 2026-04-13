@@ -4,11 +4,18 @@ Unit tests for anuga.scenario.read_boundary_tags_line_shapefile
 Tests cover:
   - parse_ogr_info_text  (pure Python text parser — no GIS deps)
   - read_boundary_tags_line_shapefile  (CSV path only — no fiona required)
+  - read_boundary_tags_line_shapefile  (shapefile / fiona path)
 """
 import os
 import tempfile
 import shutil
 import unittest
+
+try:
+    import fiona
+    HAS_FIONA = True
+except ImportError:
+    HAS_FIONA = False
 
 try:
     from anuga.scenario.read_boundary_tags_line_shapefile import (
@@ -199,6 +206,183 @@ class TestReadBoundaryTagsCSV(unittest.TestCase):
         self.assertAlmostEqual(max(xs), 30.0)
         self.assertAlmostEqual(min(ys), 20.0)
         self.assertAlmostEqual(max(ys), 40.0)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for shapefile creation
+# ---------------------------------------------------------------------------
+
+def _write_shapefile(path, features, tag_attr='bndryTag'):
+    """Write a line shapefile using fiona.
+
+    *features* is a list of (tag_value, coords) where coords is a list of
+    (x, y) tuples forming one LINESTRING.  Returns *path*.
+    """
+    schema = {
+        'geometry': 'LineString',
+        'properties': {tag_attr: 'str'},
+    }
+    with fiona.open(path, 'w', driver='ESRI Shapefile', schema=schema) as dst:
+        for tag_val, coords in features:
+            dst.write({
+                'geometry': {'type': 'LineString', 'coordinates': coords},
+                'properties': {tag_attr: tag_val},
+            })
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Tests for read_boundary_tags_line_shapefile (shapefile / fiona path)
+# ---------------------------------------------------------------------------
+
+@unittest.skipUnless(HAS_MODULE and HAS_FIONA, SKIP_REASON or 'fiona not available')
+class TestReadBoundaryTagsShapefile(unittest.TestCase):
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _shp(self, name='boundary.shp'):
+        return os.path.join(self.tmpdir, name)
+
+    # --- Two-segment polygon ---
+
+    def test_two_segments_polygon_has_correct_point_count(self):
+        # Square split into two L-shaped segments that chain together.
+        # seg0: (0,0)→(1,0)→(1,1)  and  seg1: (1,1)→(0,1)→(0,0)
+        # Assembly produces a 4-point polygon (closure point dropped).
+        shp = _write_shapefile(self._shp(), [
+            ('east', [(0, 0), (1, 0), (1, 1)]),
+            ('west', [(1, 1), (0, 1), (0, 0)]),
+        ])
+        poly, _ = read_boundary_tags_line_shapefile(shp)
+        self.assertEqual(len(poly), 4)
+
+    def test_two_segments_both_tags_present(self):
+        shp = _write_shapefile(self._shp(), [
+            ('east', [(0, 0), (1, 0), (1, 1)]),
+            ('west', [(1, 1), (0, 1), (0, 0)]),
+        ])
+        _, tags = read_boundary_tags_line_shapefile(shp)
+        self.assertIn('east', tags)
+        self.assertIn('west', tags)
+
+    def test_two_segments_edge_counts(self):
+        # 'east' segment has 2 edges (3 points), 'west' has 2 edges
+        shp = _write_shapefile(self._shp(), [
+            ('east', [(0, 0), (1, 0), (1, 1)]),
+            ('west', [(1, 1), (0, 1), (0, 0)]),
+        ])
+        _, tags = read_boundary_tags_line_shapefile(shp)
+        self.assertEqual(len(list(tags['east'])), 2)
+        self.assertEqual(len(list(tags['west'])), 2)
+
+    def test_two_segments_coordinates_match(self):
+        shp = _write_shapefile(self._shp(), [
+            ('east', [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0)]),
+            ('west', [(1.0, 1.0), (0.0, 1.0), (0.0, 0.0)]),
+        ])
+        poly, _ = read_boundary_tags_line_shapefile(shp)
+        xs = [p[0] for p in poly]
+        ys = [p[1] for p in poly]
+        self.assertAlmostEqual(min(xs), 0.0)
+        self.assertAlmostEqual(max(xs), 1.0)
+        self.assertAlmostEqual(min(ys), 0.0)
+        self.assertAlmostEqual(max(ys), 1.0)
+
+    # --- Four-segment square ---
+
+    def test_four_segments_polygon_has_four_points(self):
+        # A unit square split into four single-edge segments.
+        shp = _write_shapefile(self._shp(), [
+            ('bottom', [(0, 0), (1, 0)]),
+            ('right',  [(1, 0), (1, 1)]),
+            ('top',    [(1, 1), (0, 1)]),
+            ('left',   [(0, 1), (0, 0)]),
+        ])
+        poly, _ = read_boundary_tags_line_shapefile(shp)
+        self.assertEqual(len(poly), 4)
+
+    def test_four_segments_all_tags_present(self):
+        shp = _write_shapefile(self._shp(), [
+            ('bottom', [(0, 0), (1, 0)]),
+            ('right',  [(1, 0), (1, 1)]),
+            ('top',    [(1, 1), (0, 1)]),
+            ('left',   [(0, 1), (0, 0)]),
+        ])
+        _, tags = read_boundary_tags_line_shapefile(shp)
+        for name in ('bottom', 'right', 'top', 'left'):
+            self.assertIn(name, tags)
+
+    def test_four_segments_each_tag_has_one_edge(self):
+        shp = _write_shapefile(self._shp(), [
+            ('bottom', [(0, 0), (1, 0)]),
+            ('right',  [(1, 0), (1, 1)]),
+            ('top',    [(1, 1), (0, 1)]),
+            ('left',   [(0, 1), (0, 0)]),
+        ])
+        _, tags = read_boundary_tags_line_shapefile(shp)
+        for name in ('bottom', 'right', 'top', 'left'):
+            self.assertEqual(len(list(tags[name])), 1,
+                             msg='Expected 1 edge for tag ' + name)
+
+    def test_four_segments_edge_indices_cover_all_edges(self):
+        shp = _write_shapefile(self._shp(), [
+            ('bottom', [(0, 0), (1, 0)]),
+            ('right',  [(1, 0), (1, 1)]),
+            ('top',    [(1, 1), (0, 1)]),
+            ('left',   [(0, 1), (0, 0)]),
+        ])
+        _, tags = read_boundary_tags_line_shapefile(shp)
+        all_edges = sorted(e for edges in tags.values() for e in edges)
+        self.assertEqual(all_edges, [0, 1, 2, 3])
+
+    # --- Single closed LineString ---
+
+    def test_single_closed_segment(self):
+        # A single LineString where first == last point is treated as a
+        # closed polygon and the duplicate closure point is stripped.
+        shp = _write_shapefile(self._shp(), [
+            ('ocean', [(0, 0), (1, 0), (1, 1), (0, 1), (0, 0)]),
+        ])
+        poly, tags = read_boundary_tags_line_shapefile(shp)
+        self.assertEqual(len(poly), 4)
+        self.assertIn('ocean', tags)
+        self.assertEqual(len(list(tags['ocean'])), 4)
+
+    # --- Custom tag attribute ---
+
+    def test_custom_tag_attribute_name(self):
+        shp = _write_shapefile(self._shp(), [
+            ('open',   [(0, 0), (1, 0), (1, 1)]),
+            ('closed', [(1, 1), (0, 1), (0, 0)]),
+        ], tag_attr='myTag')
+        poly, tags = read_boundary_tags_line_shapefile(shp, tag_attribute='myTag')
+        self.assertEqual(len(poly), 4)
+        self.assertIn('open', tags)
+        self.assertIn('closed', tags)
+
+    # --- Error cases ---
+
+    def test_wrong_tag_attribute_raises(self):
+        shp = _write_shapefile(self._shp(), [
+            ('ocean', [(0, 0), (1, 0), (1, 1)]),
+            ('land',  [(1, 1), (0, 1), (0, 0)]),
+        ], tag_attr='bndryTag')
+        # Using the wrong attribute name should raise ValueError
+        with self.assertRaises(ValueError):
+            read_boundary_tags_line_shapefile(shp, tag_attribute='nonexistent')
+
+    def test_unchained_segments_raises(self):
+        # Two segments whose endpoints do not connect — assembly should fail
+        shp = _write_shapefile(self._shp(), [
+            ('a', [(0, 0), (1, 0)]),
+            ('b', [(5, 5), (6, 6)]),  # starts nowhere near (1,0)
+        ])
+        with self.assertRaises(Exception):
+            read_boundary_tags_line_shapefile(shp)
 
 
 if __name__ == '__main__':
