@@ -533,7 +533,8 @@ class Test_General_Mesh_extra(unittest.TestCase):
 
     def test_orphan_node_verbose_warning(self):
         """Orphan node verbose warning (lines 716-717): verbose=True with unreferenced node."""
-        import io, sys
+        import io
+        import sys
         nodes = num.array([[0.0, 0.0], [0.0, 2.0], [2.0, 0.0],
                            [0.0, 4.0], [2.0, 2.0], [4.0, 0.0],
                            [10.0, 10.0]])  # orphan node not in any triangle

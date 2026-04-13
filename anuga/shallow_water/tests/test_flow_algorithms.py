@@ -256,7 +256,8 @@ class Test_domain_misc_methods(unittest.TestCase):
             self.domain.set_timezone(12345)
 
     def test_set_checkpointing(self):
-        import tempfile, os
+        import tempfile
+        import os
         with tempfile.TemporaryDirectory() as tmpdir:
             ckdir = os.path.join(tmpdir, 'checkpoints')
             self.domain.set_checkpointing(checkpoint=True,
@@ -268,7 +269,8 @@ class Test_domain_misc_methods(unittest.TestCase):
         self.domain.set_checkpointing(checkpoint=False)  # should not raise
 
     def test_set_checkpointing_with_time(self):
-        import tempfile, os
+        import tempfile
+        import os
         with tempfile.TemporaryDirectory() as tmpdir:
             ckdir = os.path.join(tmpdir, 'ck_t')
             self.domain.set_checkpointing(checkpoint=True,

@@ -175,7 +175,8 @@ class Test_collect_max_stage_operator_extra(unittest.TestCase):
 
     def test_save_centroid_data_to_csv(self):
         """save_centroid_data_to_csv delegates to max_stage (line 76)."""
-        import tempfile, os
+        import tempfile
+        import os
         from anuga.operators.collect_max_stage_operator import Collect_max_stage_operator
         op = Collect_max_stage_operator(self.domain)
         op()  # run once to populate max_stage

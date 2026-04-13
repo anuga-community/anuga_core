@@ -652,7 +652,8 @@ class Test_file_length(unittest.TestCase):
     """Tests for anuga.lib.file_length."""
 
     def test_file_length(self):
-        import tempfile, os
+        import tempfile
+        import os
         from anuga.lib.file_length import file_length
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False) as f:
             f.write("line1\nline2\nline3\n")

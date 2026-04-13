@@ -753,7 +753,8 @@ class Test_from_polyfile(unittest.TestCase):
 
     def test_reads_points_and_triangles(self):
         from anuga.abstract_2d_finite_volumes.mesh_factory import from_polyfile
-        import tempfile, os
+        import tempfile
+        import os
         pts = [(0.0, 0.0, 0.0), (4.0, 0.0, 1.0), (0.0, 3.0, 2.0),
                (4.0, 3.0, 3.0)]
         tris = [(1, 2, 3), (2, 4, 3)]
@@ -770,7 +771,8 @@ class Test_from_polyfile(unittest.TestCase):
     def test_degenerate_triangles_excluded(self):
         """Triangles with zero area should be removed."""
         from anuga.abstract_2d_finite_volumes.mesh_factory import from_polyfile
-        import tempfile, os
+        import tempfile
+        import os
         # First three points collinear => zero area for first triangle
         pts = [(0.0, 0.0, 0.0), (1.0, 0.0, 0.0), (2.0, 0.0, 0.0),
                (0.0, 3.0, 0.0)]
@@ -882,7 +884,8 @@ class Test_from_polyfile_clockwise(unittest.TestCase):
     def test_clockwise_vertices_are_swapped(self):
         """A CW-oriented triangle should hit the vertex-swap else branch."""
         from anuga.abstract_2d_finite_volumes.mesh_factory import from_polyfile
-        import tempfile, os
+        import tempfile
+        import os
         # Right triangle: (0,0), (3,0), (0,4). CW listing: node1=0,0  node2=0,4  node3=3,0
         pts = [(0.0, 0.0, 0.0), (0.0, 4.0, 1.0), (3.0, 0.0, 2.0)]
         tris = [(1, 2, 3)]  # listed CW

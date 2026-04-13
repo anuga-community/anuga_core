@@ -4250,7 +4250,8 @@ class Test_Quantity_extra(unittest.TestCase):
                                    q.centroid_values ** 2)
 
     def test_maximum_with_quantity(self):
-        import anuga, numpy as np
+        import anuga
+        import numpy as np
         d = anuga.rectangular_cross_domain(3, 3)
         d.set_quantity('elevation', 0.0)
         d.set_quantity('stage', 1.0)
@@ -4274,7 +4275,8 @@ class Test_Quantity_extra(unittest.TestCase):
         self.assertTrue(np.all(q.centroid_values <= 1.0))
 
     def test_save_centroid_data_to_csv(self):
-        import tempfile, os
+        import tempfile
+        import os
         d, q = self._make_domain_and_quantity()
         with tempfile.TemporaryDirectory() as tmpdir:
             fname = os.path.join(tmpdir, 'stage')
@@ -4286,7 +4288,8 @@ class Test_Quantity_extra(unittest.TestCase):
 
     def test_save_centroid_data_to_csv_default_filename(self):
         """save_centroid_data_to_csv with no filename uses self.name (line 429)."""
-        import tempfile, os
+        import tempfile
+        import os
         d, q = self._make_domain_and_quantity()
         # Run from a temp directory so the output file lands there
         orig_dir = os.getcwd()
@@ -4361,7 +4364,8 @@ class Test_Quantity_extra(unittest.TestCase):
 
     def test_save_data_to_dem(self):
         """save_data_to_dem writes a CSV file (lines 463-481)."""
-        import os, tempfile
+        import os
+        import tempfile
         d, q = self._make_domain_and_quantity()
         orig = os.getcwd()
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -4498,7 +4502,8 @@ class Test_Quantity_extra2(unittest.TestCase):
 
     def test_set_values_from_file_bad_location_raises(self):
         """set_values_from_file with location='centroids' raises (lines 1380-1382)."""
-        import tempfile, os
+        import tempfile
+        import os
         d, q = self._make_domain_and_quantity()
         with tempfile.NamedTemporaryFile(suffix='.pts', delete=False) as f:
             fname = f.name
@@ -4550,7 +4555,8 @@ class Test_Quantity_extra2(unittest.TestCase):
 
     def test_set_values_unknown_file_ext_raises(self):
         """Unknown file extension raises (line 1045)."""
-        import tempfile, os
+        import tempfile
+        import os
         d, q = self._make_domain_and_quantity()
         with tempfile.NamedTemporaryFile(suffix='.xyz', delete=False) as f:
             fname = f.name

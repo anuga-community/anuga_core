@@ -1677,7 +1677,8 @@ class Test_Util_extra(unittest.TestCase):
 
     def test_get_gauges_from_file_wrapper(self):
         """get_gauges_from_file delegates to gauge_get_from_file (line 134)."""
-        import tempfile, os
+        import tempfile
+        import os
         from anuga.abstract_2d_finite_volumes.util import get_gauges_from_file
         # Write a minimal gauge file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt',
@@ -1696,7 +1697,8 @@ class Test_Util_extra(unittest.TestCase):
     def test_store_parameters_deprecated(self):
         """store_parameters logs deprecation and delegates (lines 194-200)."""
         from anuga.abstract_2d_finite_volumes.util import store_parameters
-        import tempfile, os
+        import tempfile
+        import os
         with tempfile.TemporaryDirectory() as tmpdir:
             fname = os.path.join(tmpdir, 'params.csv')
             try:

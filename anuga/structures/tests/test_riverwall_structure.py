@@ -815,7 +815,8 @@ class Test_riverwall_notebook(unittest.TestCase):
     def test_impermeable_wall_blocks_sub_crest_flow(self):
         """Single wall (crest 0.5 m), upstream Dirichlet stage 0.4 m.
         No overtopping should occur so the downstream half stays essentially dry."""
-        import tempfile, os
+        import tempfile
+        import os
         bounding_polygon = [[0, 0], [20, 0], [20, 10], [0, 10]]
         boundary_tags = {'bottom': [0], 'right': [1], 'top': [2], 'left': [3]}
         riverWalls = {'levee': [[10.0, 0.0, 0.5], [10.0, 10.0, 0.5]]}

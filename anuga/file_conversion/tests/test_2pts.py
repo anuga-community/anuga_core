@@ -248,7 +248,8 @@ class Test_xya2pts(unittest.TestCase):
 
     def test_xya2pts_basic(self):
         """xya2pts converts a .xya CSV file to a .pts NetCDF file."""
-        import os, tempfile
+        import os
+        import tempfile
         from anuga.file_conversion.xya2pts import xya2pts
 
         # Write a small .xya file (header + 3 data rows)

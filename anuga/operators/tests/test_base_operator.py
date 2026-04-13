@@ -79,7 +79,8 @@ class Test_Operator_extra(unittest.TestCase):
 
     def test_log_timestepping_statistics_when_logging(self):
         """log_timestepping_statistics logs when self.logging=True (line 97)."""
-        import tempfile, os
+        import tempfile
+        import os
         domain = self._make_domain()
         op = Operator(domain, logging=True)
         orig = os.getcwd()
