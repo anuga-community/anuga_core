@@ -34,21 +34,19 @@ omit =
     */anuga/error_api.py
     # dead file — duplicate of erosion_operators.py, never imported
     */anuga/operators/change_friction_operator.py
-    # scenario integration wrappers — require full project objects
+    # scenario integration wrappers — require full project objects (no tests yet)
     */anuga/scenario/setup_weirs.py
     */anuga/scenario/setup_culverts.py
     */anuga/scenario/setup_inlets.py
     */anuga/scenario/setup_bridges.py
     */anuga/scenario/setup_pumping_stations.py
     */anuga/scenario/setup_riverwalls.py
-    */anuga/scenario/setup_boundary_conditions.py
     */anuga/scenario/setup_initial_conditions.py
-    */anuga/scenario/setup_rainfall.py
     */anuga/scenario/setup_mesh.py
     */anuga/scenario/prepare_data.py
 
 [report]
-fail_under = 54
+fail_under = 58
 show_missing = true
 skip_covered = false
 exclude_lines =
