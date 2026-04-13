@@ -40,8 +40,8 @@ minor_version = version_split[1]
 f = open('saved_parameters.tex', 'w')
 #f.write('\\newcommand{\\cfl}{\\UScore{%s}}\n' % str(cfl))
 f.write('\\newcommand{\\alg}{\\UScore{%s}}\n' % str(alg))
-f.write('\\newcommand{\\majorR}{\\UScore{%s}}\n' % str(major_revision))
-f.write('\\newcommand{\\minorR}{\\UScore{%s}}\n' % str(minor_revision))
+f.write('\\newcommand{\\majorR}{\\UScore{%s}}\n' % str(major_version))
+f.write('\\newcommand{\\minorR}{\\UScore{%s}}\n' % str(minor_version))
 f.write('\\newcommand{\\timeR}{{%s}}\n' % str(timestamp))
 
 f.close()
