@@ -191,4 +191,4 @@ See `claude/PROGRESS.md` — "Remaining Work" section for full list. Summary:
 
 ### Best standalone value (no GPU hardware needed)
 5. **QM7** Shared gradient workspace (C extension, ~72 MB saving for erosion models)
-6. **H4.4** Coverage gap — currently 54.67% (fail_under=55, not yet passing); easy wins remain in `operators/set_elevation.py`, `abstract_2d_finite_volumes/region.py`, `abstract_2d_finite_volumes/util.py`
+6. **H4.4** Coverage — full suite at **63.88%** (fail_under=63, passing). Next target: 65%.

@@ -16,7 +16,7 @@ Branch: `develop` (all feature branches merged)
 | Hydrata Phase 1 — Dependencies | 4 | 4 | 0 |
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
 | Hydrata Phase 3 — Deduplication | 4 | 4 | 0 |
-| Hydrata Phase 4 — Coverage | 3 | 2 | 1 |
+| Hydrata Phase 4 — Coverage | 3 | 3 | 0 |
 | GPU Phase 1 — Correctness & tests | 7 | 7 | 0 |
 | GPU Phase 2 — Performance validation | 4 | 4 | 0 |
 | GPU Phase 3 — Feature parity | 4 | 4 | 0 |
@@ -25,7 +25,7 @@ Branch: `develop` (all feature branches merged)
 | Quantity memory reduction | 7 | 7 | 0 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 7 | 7 | 0 |
-| **Total** | **169** | **160** | **9** |
+| **Total** | **169** | **161** | **8** |
 
 ---
 
@@ -240,12 +240,12 @@ Current state: no linter, formatter, type checker, or pre-commit hooks. 4,189 fu
 
 ### Phase 4 — Expanded Test Coverage
 
-Current state: **54.67% coverage** (fail_under=55, not yet passing), 2,231 tests (fast run), ~67 s fast / ~3 min full. All 37 validation scenarios have automated scripts.
+Current state: **63.88% coverage** (fail_under=63, full suite passing), 2,231+ tests (fast run), ~67 s fast / ~3 min full. All 37 validation scenarios have automated scripts.
 
 - [ ] **4.1 Modernise test patterns** — Convert key test classes from `unittest.TestCase` to plain pytest functions selectively. Add pytest fixtures for domain creation.
 - [x] **4.2 Integrate validation tests** — Added 33 `validate_*.py` scripts covering all remaining scenarios: analytical comparison (transcritical, MacDonald, depth expansion, parabolic/paraboloid basin), run-only short/slow (lake-at-rest, river-at-rest, runup, rundown, trapezoidal channel, deep wave, landslide tsunami), behaviour-only (bridge/weir HEC-RAS, lid-driven cavity), and case studies (merewether, towradgi, patong). Patong skips unless data downloaded; added to `dirs_to_skip` in runner. *(2026-04-10)*
 - [x] **4.3 Coverage targets** — Extended `.coveragerc` omit rules to exclude ~3000 lines of dead/untestable code (visualiser, pmesh UI, validation typesetting, benchmark scripts, scenario scaffolding, duplicate `change_friction_operator.py`); deleted `change_friction_operator.py`; added `test_mannings_operator.py` (8 tests) and `test_sww2vtu.py`; registered `sww2vtu.py` in meson.build (was causing `ModuleNotFoundError`); switched CI coverage from `--run-fast` to full suite; removed `continue-on-error: true`; enforced `fail_under=52`. Full-suite baseline ~53%. Lifting to 65% deferred as long-term (needs systematic test writing across untested modules). *(2026-04-10)*
-- [ ] **4.4 Push coverage to 55%** — Systematic new-test-class pass across previously-untested branches. Added `Test_*_extra` / `TestCase_extra` classes in: `test_polygon.py` (26 tests, geometry 76%→95%), `test_lat_long_UTM_conversion.py` (6 tests), `test_numerical_tools.py` (13 tests), `test_xml_tools.py` (9 tests), `test_alpha_shape.py` (7 tests), `test_sparse.py` (10 tests), `test_geo_reference.py` (12 tests), `test_function_utils.py` (8 tests), `test_cg_solve.py` (3 tests), `test_set_quantity.py` (4 tests). Fixed `log.debug` call-signature bug in `operators/set_quantity.py`. Raised `fail_under` to 55. Current: **54.67%** — just below threshold. *(2026-04-13, commit 133b26b1)*
+- [x] **4.4 Push coverage to 63%** — Systematic new-test-class pass across previously-untested branches. Added `Test_*_extra` / `TestCase_extra` classes in: `test_polygon.py` (26 tests, geometry 76%→95%), `test_lat_long_UTM_conversion.py` (6 tests), `test_numerical_tools.py` (13 tests), `test_xml_tools.py` (9 tests), `test_alpha_shape.py` (7 tests), `test_sparse.py` (10 tests), `test_geo_reference.py` (12 tests), `test_function_utils.py` (8 tests), `test_cg_solve.py` (3 tests), `test_set_quantity.py` (4 tests). Fixed `log.debug` call-signature bug in `operators/set_quantity.py`. Full suite (with slow tests): **63.88%**. Raised `fail_under` to 63. *(2026-04-13, commits 133b26b1, eab9cea6)*
 
 ---
 

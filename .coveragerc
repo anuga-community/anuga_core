@@ -16,8 +16,6 @@ omit =
     anuga/pmesh/timing.py
     anuga/pmesh/toolbarbutton.py
     anuga/pmesh/visualmesh.py
-    # bundled build tool — not ANUGA library code
-    anuga/validation_utilities/fabricate.py
     # validation report generation (LaTeX/shell scripts)
     anuga/validation_utilities/produce_report.py
     anuga/validation_utilities/typeset_report.py
@@ -50,7 +48,7 @@ omit =
     anuga/scenario/prepare_data.py
 
 [report]
-fail_under = 55
+fail_under = 63
 show_missing = true
 skip_covered = false
 exclude_lines =
