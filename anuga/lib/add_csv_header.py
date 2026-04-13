@@ -72,7 +72,7 @@ def add_csv_header(file, header_list, be_green=False):
     # close and rename all files
     tmp_fd.close()
     fd.close()
-    os.rename(tmp_filename, file)
+    os.replace(tmp_filename, file)
 
 
 if __name__ == '__main__':
