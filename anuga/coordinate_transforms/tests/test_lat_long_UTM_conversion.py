@@ -118,6 +118,76 @@ class TestCase(unittest.TestCase):
         assert num.allclose(lat,  lat_calced)
         assert num.allclose(lon, long_calced)
 
+class TestCase_extra(unittest.TestCase):
+    """Cover Norway/Svalbard special zones and _UTMLetterDesignator."""
+
+    def test_norway_special_zone(self):
+        """LLtoUTM Norway special case sets ZoneNumber=32 (line 82)."""
+        # Oslo approx: lat ~60°N, lon ~10°E → falls in Norway band
+        lat = 60.0
+        lon = 10.0
+        zone, e, n = LLtoUTM(lat, lon)
+        self.assertEqual(zone, 32)
+
+    def test_svalbard_zone_31(self):
+        """LLtoUTM Svalbard zone 31 (line 84)."""
+        lat = 75.0
+        lon = 5.0  # < 9° → zone 31
+        zone, e, n = LLtoUTM(lat, lon)
+        self.assertEqual(zone, 31)
+
+    def test_svalbard_zone_33(self):
+        """LLtoUTM Svalbard zone 33 (line 85)."""
+        lat = 75.0
+        lon = 15.0  # 9°-21° → zone 33
+        zone, e, n = LLtoUTM(lat, lon)
+        self.assertEqual(zone, 33)
+
+    def test_svalbard_zone_35(self):
+        """LLtoUTM Svalbard zone 35 (line 86)."""
+        lat = 75.0
+        lon = 25.0  # 21°-33° → zone 35
+        zone, e, n = LLtoUTM(lat, lon)
+        self.assertEqual(zone, 35)
+
+    def test_svalbard_zone_37(self):
+        """LLtoUTM Svalbard zone 37 (line 87)."""
+        lat = 75.0
+        lon = 35.0  # 33°-42° → zone 37
+        zone, e, n = LLtoUTM(lat, lon)
+        self.assertEqual(zone, 37)
+
+    def test_letter_designator_all_bands(self):
+        """_UTMLetterDesignator covers all latitude bands (lines 100-120)."""
+        from anuga.coordinate_transforms.lat_long_UTM_conversion import \
+            _UTMLetterDesignator
+        # Bands: X(72-84), W(64-72), V(56-64), U(48-56), T(40-48),
+        #        S(32-40), R(24-32), Q(16-24), P(8-16), N(0-8),
+        #        M(-8-0), L(-16--8), K(-24--16), J(-32--24), H(-40--32),
+        #        G(-48--40), F(-56--48), E(-64--56), D(-72--64), C(-80--72)
+        self.assertEqual(_UTMLetterDesignator(80), 'X')
+        self.assertEqual(_UTMLetterDesignator(68), 'W')
+        self.assertEqual(_UTMLetterDesignator(60), 'V')
+        self.assertEqual(_UTMLetterDesignator(52), 'U')
+        self.assertEqual(_UTMLetterDesignator(44), 'T')
+        self.assertEqual(_UTMLetterDesignator(36), 'S')
+        self.assertEqual(_UTMLetterDesignator(28), 'R')
+        self.assertEqual(_UTMLetterDesignator(20), 'Q')
+        self.assertEqual(_UTMLetterDesignator(12), 'P')
+        self.assertEqual(_UTMLetterDesignator(4), 'N')
+        self.assertEqual(_UTMLetterDesignator(-4), 'M')
+        self.assertEqual(_UTMLetterDesignator(-12), 'L')
+        self.assertEqual(_UTMLetterDesignator(-20), 'K')
+        self.assertEqual(_UTMLetterDesignator(-28), 'J')
+        self.assertEqual(_UTMLetterDesignator(-36), 'H')
+        self.assertEqual(_UTMLetterDesignator(-44), 'G')
+        self.assertEqual(_UTMLetterDesignator(-52), 'F')
+        self.assertEqual(_UTMLetterDesignator(-60), 'E')
+        self.assertEqual(_UTMLetterDesignator(-68), 'D')
+        self.assertEqual(_UTMLetterDesignator(-76), 'C')
+        self.assertEqual(_UTMLetterDesignator(-85), 'Z')  # outside UTM limits
+
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":

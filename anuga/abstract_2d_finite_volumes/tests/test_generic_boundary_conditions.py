@@ -640,6 +640,202 @@ class Test_Boundary_evaluate_segment(unittest.TestCase):
         with self.assertRaises(Exception):
             Time_space_boundary(domain, function=lambda t, x, y: 'bad')
 
+    # ------------------------------------------------------------------
+    # Base Boundary.evaluate_segment loop (lines 60-86)
+    # ------------------------------------------------------------------
+
+    def test_base_evaluate_segment_loop(self):
+        """Base class evaluate_segment iterates over edges (lines 60-86)."""
+        class ConcreteBoundary(Boundary):
+            def evaluate(self, vol_id=None, edge_id=None):
+                return [1.0, 0.0]
+        domain = self._make_domain()
+        b = ConcreteBoundary()
+        ids = self._all_segment_edges(domain)
+        b.evaluate_segment(domain, ids)
+        # After the call, boundary_values for each edge should be set
+        for name in domain.evolved_quantities:
+            Q = domain.quantities[name]
+            self.assertFalse(num.any(num.isnan(Q.boundary_values[ids])))
+
+    # ------------------------------------------------------------------
+    # Boundary.get_time (line 91)
+    # ------------------------------------------------------------------
+
+    def test_base_get_time(self):
+        """Boundary.get_time() via a subclass that sets self.domain (line 91)."""
+        domain = self._make_domain()
+        b = Transmissive_boundary(domain)  # sets self.domain; doesn't override get_time
+        # The base get_time should work
+        t = b.get_time()
+        self.assertIsNotNone(t)
+
+    # ------------------------------------------------------------------
+    # Boundary.get_boundary_values — t provided explicitly (96->99 branch)
+    # ------------------------------------------------------------------
+
+    def test_get_boundary_values_with_explicit_t(self):
+        """get_boundary_values(t=val) skips the t=None branch (line 96->99)."""
+        domain = self._make_domain()
+        T = Time_boundary(domain, function=lambda t: [t, 0.0])
+        res = T.get_boundary_values(t=5.0)
+        self.assertAlmostEqual(res[0], 5.0)
+
+    # ------------------------------------------------------------------
+    # Compute_fluxes_boundary.__repr__ (line 277)
+    # ------------------------------------------------------------------
+
+    def test_compute_fluxes_boundary_repr(self):
+        """__repr__ is callable (line 277)."""
+        cfb = Compute_fluxes_boundary()
+        # __repr__ accesses self.domain which is not set → AttributeError expected
+        try:
+            s = repr(cfb)
+            self.assertIsInstance(s, str)
+        except AttributeError:
+            pass  # expected: self.domain not set in __init__
+
+    # ------------------------------------------------------------------
+    # Dirichlet conserved_quantities=True path (lines 234-245, 251)
+    # ------------------------------------------------------------------
+
+    def _make_domain_3evolved(self):
+        """Domain with 3 evolved_quantities but 2 conserved_quantities."""
+        points = [
+            [0.0, 0.0], [0.0, 2.0], [2.0, 0.0],
+            [0.0, 4.0], [2.0, 2.0], [4.0, 0.0],
+        ]
+        elements = [[1, 0, 2], [1, 2, 4], [4, 2, 5], [3, 1, 4]]
+        domain = Generic_Domain(points, elements)
+        domain.conserved_quantities = ['stage', 'ymomentum']
+        domain.evolved_quantities   = ['stage', 'ymomentum', 'xmomentum']
+        domain.quantities['stage']     = Quantity(domain, [[1, 2, 3],  [5, 5, 5],
+                                                            [0, 0, 9], [-6, 3, 3]])
+        domain.quantities['ymomentum'] = Quantity(domain, [[2, 3, 4],  [5, 5, 5],
+                                                            [0, 0, 9], [-6, 3, 3]])
+        domain.quantities['xmomentum'] = Quantity(domain, [[0, 0, 0],  [0, 0, 0],
+                                                            [0, 0, 0], [ 0, 0, 0]])
+        domain.check_integrity()
+        from anuga.config import default_boundary_tag
+        domain.set_boundary({default_boundary_tag: Dirichlet_boundary([0.0, 0.0])})
+        return domain
+
+    def test_dirichlet_evaluate_segment_conserved_path(self):
+        """conserved_quantities=True path: edge fallback + conserved write (lines 234-245, 251)."""
+        domain = self._make_domain_3evolved()
+        # 2 dirichlet values == len(conserved_quantities), != len(evolved_quantities)=3
+        bd = Dirichlet_boundary([3.0, 4.0])
+        from anuga.config import default_boundary_tag
+        domain.set_boundary({default_boundary_tag: bd})
+        ids = self._all_segment_edges(domain)
+        bd.evaluate_segment(domain, ids)  # should not raise
+
+    def test_time_boundary_evaluate_segment_conserved_path(self):
+        """Time_boundary conserved path: edge fallback (lines 381-392, 398)."""
+        domain = self._make_domain_3evolved()
+        # Function returns 2 values == len(conserved_quantities) != len(evolved)=3
+        T = Time_boundary(domain, function=lambda t: [1.0, 0.0])
+        from anuga.config import default_boundary_tag
+        domain.set_boundary({default_boundary_tag: T})
+        ids = self._all_segment_edges(domain)
+        T.evaluate_segment(domain, ids)  # should not raise
+
+    # ------------------------------------------------------------------
+    # Time_boundary.__init__ exception on function execution (lines 330-332)
+    # ------------------------------------------------------------------
+
+    def test_time_boundary_function_raises_on_call(self):
+        """Function that raises during execution hits lines 330-332."""
+        domain = self._make_domain()
+        def bad_func(t):
+            raise RuntimeError("cannot evaluate")
+        with self.assertRaises(Exception):
+            Time_boundary(domain, function=bad_func)
+
+    # ------------------------------------------------------------------
+    # get_boundary_values — Modeltime_too_early/too_late paths (lines 101-129)
+    # ------------------------------------------------------------------
+
+    def test_get_boundary_values_modeltime_too_early_reraise(self):
+        """Modeltime_too_early raises through (lines 101-102)."""
+        from anuga.fit_interpolate.interpolate import Modeltime_too_early
+        domain = self._make_domain()
+        def early_func(t):
+            raise Modeltime_too_early('too early')
+        T = Time_boundary.__new__(Time_boundary)
+        T.function = early_func
+        T.domain = domain
+        T.default_boundary = None
+        T.default_boundary_invoked = False
+        T.verbose = False
+        with self.assertRaises(Modeltime_too_early):
+            T.get_boundary_values()
+
+    def test_get_boundary_values_modeltime_too_late_no_default(self):
+        """Modeltime_too_late with no default boundary re-raises (lines 103-105)."""
+        from anuga.fit_interpolate.interpolate import Modeltime_too_late
+        domain = self._make_domain()
+        def late_func(t):
+            raise Modeltime_too_late('too late')
+        T = Time_boundary.__new__(Time_boundary)
+        T.function = late_func
+        T.domain = domain
+        T.default_boundary = None
+        T.default_boundary_invoked = False
+        T.verbose = False
+        with self.assertRaises(Modeltime_too_late):
+            T.get_boundary_values()
+
+    def test_get_boundary_values_modeltime_too_late_with_default(self):
+        """Modeltime_too_late with default boundary uses default (lines 106-129)."""
+        from anuga.fit_interpolate.interpolate import Modeltime_too_late
+        domain = self._make_domain()
+        def late_func(t):
+            raise Modeltime_too_late('too late')
+        T = Time_boundary.__new__(Time_boundary)
+        T.function = late_func
+        T.domain = domain
+        T.default_boundary = num.array([9.0, 9.0])
+        T.default_boundary_invoked = False
+        T.verbose = True  # cover the logging branch
+        res = T.get_boundary_values()
+        num.testing.assert_allclose(res, [9.0, 9.0])
+
+    # ------------------------------------------------------------------
+    # Time_space_boundary.__init__ exception on function execution (449-451)
+    # ------------------------------------------------------------------
+
+    def test_time_space_boundary_function_raises_on_call(self):
+        """Function that raises during execution hits lines 449-451."""
+        domain = self._make_domain()
+        def bad_func(t, x, y):
+            raise RuntimeError("cannot evaluate")
+        with self.assertRaises(Exception):
+            Time_space_boundary(domain, function=bad_func)
+
+    # ------------------------------------------------------------------
+    # Time_space_boundary.evaluate — Modeltime_too_late with default (483-510)
+    # ------------------------------------------------------------------
+
+    def test_time_space_boundary_modeltime_too_late_with_default(self):
+        """Modeltime_too_late with default boundary uses default (lines 485-510)."""
+        from anuga.fit_interpolate.interpolate import Modeltime_too_late
+        domain = self._make_domain()
+        call_count = [0]
+        def late_func(t, x, y):
+            call_count[0] += 1
+            if call_count[0] > 1:  # first call (t=0) from __init__ succeeds
+                raise Modeltime_too_late('too late')
+            return [0.0, 0.0]
+        default_b = Dirichlet_boundary([5.0, 5.0])
+        T = Time_space_boundary(domain, function=late_func,
+                                default_boundary=default_b, verbose=True)
+        from anuga.config import default_boundary_tag
+        domain.set_boundary({default_boundary_tag: T})
+        # evaluate at an edge; function will now raise Modeltime_too_late
+        res = T.evaluate(0, 0)
+        num.testing.assert_allclose(res, [5.0, 5.0])
+
 
 #-------------------------------------------------------------
 

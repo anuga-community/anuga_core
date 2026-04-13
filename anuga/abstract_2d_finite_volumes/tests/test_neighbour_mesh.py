@@ -1936,6 +1936,94 @@ class Test_Mesh_extra(unittest.TestCase):
 
 #-------------------------------------------------------------
 
+class Test_Mesh_extra(unittest.TestCase):
+    """Tests for uncovered Mesh methods."""
+
+    def _make_mesh(self):
+        points, triangles, boundary = rectangular(1, 2)
+        return Mesh(points, triangles, boundary)
+
+    def test_set_to_inscribed_circle(self):
+        """set_to_inscribed_circle modifies radii (lines 160-188)."""
+        mesh = self._make_mesh()
+        max_r, min_r = mesh.set_to_inscribed_circle(safety_factor=1)
+        self.assertGreater(max_r, 0)
+        self.assertGreater(min_r, 0)
+
+    def test_reorder_original_method(self):
+        """reorder with original_method=True (lines 1147-1162)."""
+        mesh = self._make_mesh()
+        N = mesh.number_of_triangles
+        new_order = list(range(N-1, -1, -1))  # reverse order
+        new_mesh = mesh.reorder(new_order, original_method=True)
+        self.assertEqual(new_mesh.number_of_triangles, N)
+
+
+class Test_Mesh_extra2(unittest.TestCase):
+    """More coverage for uncovered Mesh methods and module-level functions."""
+
+    def _make_mesh(self):
+        points, triangles, boundary = rectangular(1, 2)
+        return Mesh(points, triangles, boundary)
+
+    def test_build_neighbour_structure_python(self):
+        """build_neighbour_structure_python covers lines 206-252."""
+        mesh = self._make_mesh()
+        # Reset and call the Python version directly
+        N = mesh.number_of_triangles
+        mesh.neighbours[:] = -1
+        mesh.neighbour_edges[:] = -1
+        mesh.number_of_boundaries[:] = 0
+        mesh.build_neighbour_structure_python()
+        # After rebuild, some non-boundary edges should have valid neighbours
+        self.assertTrue(num.any(mesh.neighbours >= 0))
+
+    def test_build_boundary_neighbours_no_boundary_raises(self):
+        """build_boundary_neighbours with boundary=None raises (lines 389-391)."""
+        mesh = self._make_mesh()
+        mesh.boundary = None
+        with self.assertRaises(Exception) as cm:
+            mesh.build_boundary_neighbours()
+        self.assertIn('Boundary dictionary must be defined', str(cm.exception))
+
+    def test_get_boundary_polygon_verbose(self):
+        """get_boundary_polygon(verbose=True) covers verbose log paths (530, 569, 579-581)."""
+        mesh = self._make_mesh()
+        # The verbose path is taken when multiple candidates exist for a point
+        # At minimum, calling with verbose=True exercises the verbose branches
+        poly = mesh.get_boundary_polygon(verbose=True)
+        self.assertGreater(len(poly), 0)
+
+    def test_triangle_intersection_repr(self):
+        """Triangle_intersection.__repr__ covers lines 1260-1267."""
+        from anuga.abstract_2d_finite_volumes.neighbour_mesh import Triangle_intersection
+        import numpy as num
+        seg = ((0.0, 0.0), (1.0, 0.0))
+        ti = Triangle_intersection(segment=seg,
+                                   normal=num.array([0.0, 1.0]),
+                                   length=1.0,
+                                   triangle_id=0)
+        s = repr(ti)
+        self.assertIn('Triangle_intersection', s)
+
+    def test_segment_midpoints(self):
+        """segment_midpoints covers lines 1479-1487."""
+        from anuga.abstract_2d_finite_volumes.neighbour_mesh import (
+            Triangle_intersection, segment_midpoints)
+        import numpy as num
+        seg1 = Triangle_intersection(segment=((0.0, 0.0), (2.0, 0.0)),
+                                     normal=num.array([0.0, 1.0]),
+                                     length=2.0,
+                                     triangle_id=0)
+        seg2 = Triangle_intersection(segment=((1.0, 1.0), (1.0, 3.0)),
+                                     normal=num.array([1.0, 0.0]),
+                                     length=2.0,
+                                     triangle_id=1)
+        midpoints = segment_midpoints([seg1, seg2])
+        self.assertEqual(len(midpoints), 2)
+        num.testing.assert_allclose(midpoints[0], [1.0, 0.0])
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Mesh)
     runner = unittest.TextTestRunner()#verbosity=2)

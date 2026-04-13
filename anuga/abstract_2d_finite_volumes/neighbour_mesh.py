@@ -158,14 +158,14 @@ class Mesh(General_mesh):
     def set_to_inscribed_circle(self,safety_factor = 1):
         #FIXME phase out eventually
         N = self.number_of_triangles
-        V = self.vertex_coordinates
+        V = self.vertex_coordinates  # shape (3*N, 2): rows 3*i, 3*i+1, 3*i+2 for triangle i
 
         #initialising min and max ratio
         i=0
         old_rad = self.radii[i]
-        x0 = V[i, 0]; y0 = V[i, 1]
-        x1 = V[i, 2]; y1 = V[i, 3]
-        x2 = V[i, 4]; y2 = V[i, 5]
+        x0 = V[3*i, 0]; y0 = V[3*i, 1]
+        x1 = V[3*i+1, 0]; y1 = V[3*i+1, 1]
+        x2 = V[3*i+2, 0]; y2 = V[3*i+2, 1]
         a = num.sqrt((x0-x1)**2+(y0-y1)**2)
         b = num.sqrt((x1-x2)**2+(y1-y2)**2)
         c = num.sqrt((x2-x0)**2+(y2-y0)**2)
@@ -175,9 +175,9 @@ class Mesh(General_mesh):
 
         for i in range(N):
             old_rad = self.radii[i]
-            x0 = V[i, 0]; y0 = V[i, 1]
-            x1 = V[i, 2]; y1 = V[i, 3]
-            x2 = V[i, 4]; y2 = V[i, 5]
+            x0 = V[3*i, 0]; y0 = V[3*i, 1]
+            x1 = V[3*i+1, 0]; y1 = V[3*i+1, 1]
+            x2 = V[3*i+2, 0]; y2 = V[3*i+2, 1]
             a = num.sqrt((x0-x1)**2+(y0-y1)**2)
             b = num.sqrt((x1-x2)**2+(y1-y2)**2)
             c = num.sqrt((x2-x0)**2+(y2-y0)**2)

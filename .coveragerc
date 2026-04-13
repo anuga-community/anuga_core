@@ -50,7 +50,7 @@ omit =
     anuga/scenario/prepare_data.py
 
 [report]
-fail_under = 53
+fail_under = 55
 show_missing = true
 skip_covered = false
 exclude_lines =

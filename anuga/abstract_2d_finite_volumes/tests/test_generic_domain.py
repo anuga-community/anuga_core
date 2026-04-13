@@ -1298,6 +1298,162 @@ class Test_Domain_extra(unittest.TestCase):
             pass
 
 
+class Test_Domain_delegation(unittest.TestCase):
+    """Cover mesh-delegation methods and simple accessors on Generic_Domain."""
+
+    def _domain(self):
+        import anuga
+        return anuga.rectangular_cross_domain(2, 2)
+
+    def test_get_radii(self):
+        """get_radii delegates to mesh (line 507)."""
+        domain = self._domain()
+        r = domain.get_radii()
+        self.assertEqual(len(r), domain.number_of_triangles)
+
+    def test_get_normal(self):
+        """get_normal delegates to mesh (line 540)."""
+        domain = self._domain()
+        n = domain.get_normal(0, 0)
+        self.assertEqual(len(n), 2)
+
+    def test_get_triangle_containing_point(self):
+        """get_triangle_containing_point delegates to mesh (line 543)."""
+        domain = self._domain()
+        result = domain.get_triangle_containing_point([0.5, 0.5])
+        self.assertGreaterEqual(result, 0)
+
+    def test_get_intersecting_segments(self):
+        """get_intersecting_segments delegates to mesh (line 549)."""
+        domain = self._domain()
+        poly = [[0.0, 0.0], [1.0, 1.0]]
+        result = domain.get_intersecting_segments(poly)
+        self.assertIsNotNone(result)
+
+    def test_get_boundary_polygon(self):
+        """get_boundary_polygon delegates to mesh (line 558)."""
+        domain = self._domain()
+        poly = domain.get_boundary_polygon()
+        self.assertGreater(len(poly), 0)
+
+    def test_get_lone_vertices(self):
+        """get_lone_vertices delegates to mesh (line 574)."""
+        domain = self._domain()
+        result = domain.get_lone_vertices()
+        self.assertIsNotNone(result)
+
+    def test_get_georeference(self):
+        """get_georeference delegates to mesh (line 580)."""
+        from anuga.coordinate_transforms.geo_reference import Geo_reference
+        domain = self._domain()
+        gr = domain.get_georeference()
+        self.assertIsInstance(gr, Geo_reference)
+
+    def test_get_extent(self):
+        """get_extent delegates to mesh (line 599)."""
+        domain = self._domain()
+        ext = domain.get_extent()
+        self.assertIsNotNone(ext)
+
+    def test_get_cfl(self):
+        """get_cfl returns CFL value (line 678)."""
+        domain = self._domain()
+        cfl = domain.get_cfl()
+        self.assertGreater(cfl, 0)
+
+    def test_set_institution(self):
+        """set_institution stores institution string (line 743)."""
+        domain = self._domain()
+        domain.set_institution('ANUGA')
+        self.assertEqual(domain.institution, 'ANUGA')
+
+    def test_get_timestep(self):
+        """get_timestep returns current timestep (line 767)."""
+        domain = self._domain()
+        ts = domain.get_timestep()
+        self.assertIsNotNone(ts)
+
+    def test_get_evolve_max_timestep(self):
+        """get_evolve_max_timestep returns stored value (line 813)."""
+        domain = self._domain()
+        domain.set_evolve_max_timestep(0.1)
+        val = domain.get_evolve_max_timestep()
+        self.assertAlmostEqual(val, 0.1)
+
+    def test_set_boundary_nonexistent_tag_raises(self):
+        """set_boundary raises when boundary_map has tag not in domain (lines 1112-1115)."""
+        import anuga
+        domain = self._domain()
+        B = anuga.Reflective_boundary(domain)
+        with self.assertRaises(Exception) as cm:
+            domain.set_boundary({'nonexistent_tag': B})
+        self.assertIn('nonexistent_tag', str(cm.exception))
+
+    def test_set_boundary_none_value(self):
+        """set_boundary with B=None covers the None branch (line 1150)."""
+        import anuga
+        domain = self._domain()
+        B = anuga.Reflective_boundary(domain)
+        # First call to establish all tags, then update 'left' to None
+        domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})
+        # Second call updating one to None
+        domain.set_boundary({'left': None})
+        # Boundary should still be set
+        self.assertIsNotNone(domain.boundary_objects)
+
+    def test_set_boundary_compute_fluxes_boundary(self):
+        """set_boundary with Compute_fluxes_boundary sets flux type (line 1172)."""
+        import anuga
+        from anuga.abstract_2d_finite_volumes.generic_boundary_conditions import (
+            Compute_fluxes_boundary)
+        domain = self._domain()
+        B = anuga.Reflective_boundary(domain)
+        cfb = Compute_fluxes_boundary()
+        domain.set_boundary({'left': cfb, 'right': B, 'top': B, 'bottom': B})
+        # At least one boundary_flux_type should be 1
+        import numpy as num
+        self.assertGreater(num.sum(domain.boundary_flux_type), 0)
+
+    def test_set_quantities_to_be_monitored_polygon_as_quantity_raises(self):
+        """set_quantities_to_be_monitored polygon=quantity_name raises (line 1273)."""
+        import anuga
+        domain = self._domain()
+        with self.assertRaises(Exception) as cm:
+            # 'elevation' is a quantity name — should raise 'Multiple quantities'
+            domain.set_quantities_to_be_monitored('stage', polygon='elevation')
+        self.assertIn('Multiple quantities', str(cm.exception))
+
+    def _generic_domain(self):
+        """Build a minimal Generic_Domain directly (not shallow water)."""
+        points = [[0.0, 0.0], [0.0, 2.0], [2.0, 0.0], [0.0, 4.0],
+                  [2.0, 2.0], [4.0, 0.0]]
+        vertices = [[1, 0, 2], [1, 2, 4], [4, 2, 5], [3, 1, 4]]
+        conserved_quantities = ['stage', 'xmomentum', 'ymomentum']
+        evolved_quantities = ['stage', 'xmomentum', 'ymomentum']
+        other_quantities = ['elevation']
+        return Generic_Domain(points, vertices, None,
+                              conserved_quantities, evolved_quantities,
+                              other_quantities)
+
+    def test_generic_domain_get_datetime(self):
+        """Generic_Domain.get_datetime returns a string (lines 758-762)."""
+        domain = self._generic_domain()
+        dt = domain.get_datetime()
+        self.assertIsInstance(dt, str)
+
+    def test_generic_domain_set_multiprocessor_mode_invalid(self):
+        """set_multiprocessor_mode invalid value raises (line 867)."""
+        domain = self._generic_domain()
+        with self.assertRaises(Exception):
+            domain.set_multiprocessor_mode(99)
+
+    def test_generic_domain_get_multiprocessor_mode(self):
+        """get_multiprocessor_mode returns mode (line 876)."""
+        domain = self._generic_domain()
+        domain.set_multiprocessor_mode(1)
+        self.assertEqual(domain.get_multiprocessor_mode(), 1)
+
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":

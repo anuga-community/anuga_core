@@ -241,5 +241,52 @@ class Test_rectangular_cross_basic_mesh(unittest.TestCase):
         self.assertEqual(bm.number_of_nodes, (m+1)*(n+1) + m*n)
 
 
+class Test_Basic_mesh_reorder(unittest.TestCase):
+    """Tests for reorder() with cached _neighbours and _centroid_coordinates."""
+
+    def _mesh(self):
+        nodes, triangles, boundary = _simple_mesh()
+        return Basic_mesh(nodes, triangles, boundary=boundary)
+
+    def test_reorder_with_neighbours_cached(self):
+        """Lines 182-187: _neighbours remapped after reorder."""
+        bm = self._mesh()
+        _ = bm.neighbours          # force cache
+        bm.reorder([1, 0])         # swap triangles
+        self.assertEqual(bm.number_of_triangles, 2)
+
+    def test_reorder_with_centroids_cached(self):
+        """Lines 189-191: _centroid_coordinates reordered."""
+        bm = self._mesh()
+        _ = bm.centroid_coordinates  # force cache
+        bm.reorder([1, 0])
+        self.assertEqual(bm._centroid_coordinates.shape[0], 2)
+
+    def test_reorder_not_in_place(self):
+        """in_place=False returns new mesh, original unchanged."""
+        bm = self._mesh()
+        _ = bm.neighbours          # force cache so it is remapped
+        _ = bm.centroid_coordinates
+        new_bm = bm.reorder([1, 0], in_place=False)
+        self.assertIsNot(new_bm, bm)
+
+
+class Test_basic_mesh_from_file(unittest.TestCase):
+    """Tests for basic_mesh_from_mesh_file (lines 282-327)."""
+
+    def test_load_small_tsh(self):
+        """Load a small .tsh mesh file (lines 282-327)."""
+        import os
+        from anuga.abstract_2d_finite_volumes.basic_mesh import basic_mesh_from_mesh_file
+        tsh = os.path.join(os.path.dirname(__file__),
+                           '..', '..', 'parallel', 'data', 'small.tsh')
+        tsh = os.path.abspath(tsh)
+        if not os.path.exists(tsh):
+            self.skipTest('small.tsh not found')
+        bm = basic_mesh_from_mesh_file(tsh, verbose=True)
+        self.assertIsInstance(bm, Basic_mesh)
+        self.assertGreater(bm.number_of_triangles, 0)
+
+
 if __name__ == '__main__':
     unittest.main()

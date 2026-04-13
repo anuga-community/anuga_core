@@ -784,5 +784,115 @@ class Test_from_polyfile(unittest.TestCase):
         self.assertEqual(len(triangles), 1)
 
 
+class Test_contracting_channel(unittest.TestCase):
+
+    def test_returns_three_values(self):
+        from anuga.abstract_2d_finite_volumes.mesh_factory import contracting_channel
+        result = contracting_channel(4, 4)
+        self.assertEqual(len(result), 3)
+
+    def test_point_and_element_counts(self):
+        from anuga.abstract_2d_finite_volumes.mesh_factory import contracting_channel
+        points, elements, boundary = contracting_channel(4, 4)
+        self.assertGreater(len(points), 0)
+        self.assertGreater(len(elements), 0)
+
+    def test_boundary_has_standard_tags(self):
+        from anuga.abstract_2d_finite_volumes.mesh_factory import contracting_channel
+        _, _, boundary = contracting_channel(4, 4)
+        tags = set(boundary.values())
+        self.assertTrue(tags.issuperset({'left', 'right', 'bottom', 'top'}))
+
+    def test_custom_dimensions(self):
+        from anuga.abstract_2d_finite_volumes.mesh_factory import contracting_channel
+        points, elements, boundary = contracting_channel(
+            6, 4, W_upstream=2.0, W_downstream=1.0, L_1=3.0, L_2=1.0, L_3=5.0)
+        self.assertGreater(len(elements), 0)
+
+    def test_no_degenerate_elements(self):
+        import numpy as num
+        from anuga.abstract_2d_finite_volumes.mesh_factory import contracting_channel
+        points, elements, _ = contracting_channel(4, 4)
+        pts = num.array(points)
+        for tri in elements:
+            x0, y0 = pts[tri[0]]
+            x1, y1 = pts[tri[1]]
+            x2, y2 = pts[tri[2]]
+            area = abs((x1-x0)*(y2-y0) - (x2-x0)*(y1-y0)) / 2
+            self.assertGreater(area, 0)
+
+
+class Test_contracting_channel_cross(unittest.TestCase):
+
+    def test_returns_three_values(self):
+        from anuga.abstract_2d_finite_volumes.mesh_factory import contracting_channel_cross
+        result = contracting_channel_cross(4, 4)
+        self.assertEqual(len(result), 3)
+
+    def test_point_and_element_counts(self):
+        from anuga.abstract_2d_finite_volumes.mesh_factory import contracting_channel_cross
+        points, elements, boundary = contracting_channel_cross(4, 4)
+        self.assertGreater(len(points), 0)
+        self.assertGreater(len(elements), 0)
+
+    def test_boundary_has_standard_tags(self):
+        from anuga.abstract_2d_finite_volumes.mesh_factory import contracting_channel_cross
+        _, _, boundary = contracting_channel_cross(4, 4)
+        tags = set(boundary.values())
+        self.assertTrue(tags.issuperset({'left', 'right', 'bottom', 'top'}))
+
+
+class Test_oblique_cross(unittest.TestCase):
+
+    def test_returns_three_values(self):
+        from anuga.abstract_2d_finite_volumes.mesh_factory import oblique_cross
+        result = oblique_cross(3, 3)
+        self.assertEqual(len(result), 3)
+
+    def test_point_and_element_counts(self):
+        from anuga.abstract_2d_finite_volumes.mesh_factory import oblique_cross
+        points, elements, boundary = oblique_cross(3, 3)
+        self.assertGreater(len(points), 0)
+        self.assertGreater(len(elements), 0)
+
+    def test_boundary_tags_present(self):
+        from anuga.abstract_2d_finite_volumes.mesh_factory import oblique_cross
+        _, _, boundary = oblique_cross(3, 3)
+        self.assertGreater(len(boundary), 0)
+
+    def test_custom_theta_and_origin(self):
+        from anuga.abstract_2d_finite_volumes.mesh_factory import oblique_cross
+        points, elements, _ = oblique_cross(2, 2, theta=15.0, origin=(1.0, 2.0))
+        self.assertGreater(len(elements), 0)
+
+
+class Test_from_polyfile_clockwise(unittest.TestCase):
+    """Cover the clockwise-swap branch (lines 714-716) in from_polyfile."""
+
+    def _write_poly(self, path, points, triangles):
+        with open(path, 'w') as f:
+            f.write('POINTS\n')
+            for idx, (x, y, z) in enumerate(points, start=1):
+                f.write(f'{idx}: {x} {y} {z}\n')
+            f.write('POLYS\n')
+            for idx, (i0, i1, i2) in enumerate(triangles, start=1):
+                f.write(f'{idx}: {i0} {i1} {i2}\n')
+            f.write('END\n')
+
+    def test_clockwise_vertices_are_swapped(self):
+        """A CW-oriented triangle should hit the vertex-swap else branch."""
+        from anuga.abstract_2d_finite_volumes.mesh_factory import from_polyfile
+        import tempfile, os
+        # Right triangle: (0,0), (3,0), (0,4). CW listing: node1=0,0  node2=0,4  node3=3,0
+        pts = [(0.0, 0.0, 0.0), (0.0, 4.0, 1.0), (3.0, 0.0, 2.0)]
+        tris = [(1, 2, 3)]  # listed CW
+        with tempfile.TemporaryDirectory() as tmpdir:
+            fname = os.path.join(tmpdir, 'cw.poly')
+            self._write_poly(fname, pts, tris)
+            base = os.path.join(tmpdir, 'cw')
+            points, triangles, values = from_polyfile(base)
+        self.assertEqual(len(triangles), 1)
+
+
 if __name__ == '__main__':
     unittest.main()

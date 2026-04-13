@@ -114,8 +114,8 @@ class Set_quantity:
                 # file and the current time is outside the file's time range
                 # (e.g. before the series starts).  Log at debug level so the
                 # issue is visible without flooding the console.
-                log.debug('Set_quantity: ValueError updating quantity "%s": %s',
-                          self.quantity, e)
+                log.debug('Set_quantity: ValueError updating quantity "%s": %s'
+                          % (self.quantity, e))
 
         else:
 
@@ -129,8 +129,8 @@ class Set_quantity:
                 value = self.get_value(x=x,y=y)
                 self.quantity_c[rids] = value
             except ValueError as e:
-                log.debug('Set_quantity: ValueError updating quantity "%s": %s',
-                          self.quantity, e)
+                log.debug('Set_quantity: ValueError updating quantity "%s": %s'
+                          % (self.quantity, e))
 
 
 

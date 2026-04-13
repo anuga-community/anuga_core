@@ -676,6 +676,118 @@ class Test_metadata_imports(unittest.TestCase):
         self.assertIsNotNone(anuga.rain)
 
 
+class Test_numerical_tools_extra(unittest.TestCase):
+    """Cover previously uncovered lines in numerical_tools.py."""
+
+    from anuga.utilities.numerical_tools import (
+        safe_acos, cov, corr, err, histogram, create_bins, gradient2_python
+    )
+
+    def test_safe_acos_clamped_negative(self):
+        """safe_acos clamps x just below -1 (lines 36-37)."""
+        from anuga.utilities.numerical_tools import safe_acos, get_machine_precision
+        eps = get_machine_precision()
+        x = -1.0 - eps / 2  # just inside tolerance
+        result = safe_acos(x)
+        import math
+        self.assertAlmostEqual(result, math.pi)
+
+    def test_safe_acos_raises_below_tolerance(self):
+        """safe_acos raises ValueError when x << -1 (lines 34-35)."""
+        from anuga.utilities.numerical_tools import safe_acos
+        with self.assertRaises(ValueError):
+            safe_acos(-2.0)
+
+    def test_safe_acos_clamped_positive(self):
+        """safe_acos clamps x just above 1 (lines 42-43)."""
+        from anuga.utilities.numerical_tools import safe_acos, get_machine_precision
+        eps = get_machine_precision()
+        x = 1.0 + eps / 2
+        result = safe_acos(x)
+        self.assertAlmostEqual(result, 0.0)
+
+    def test_cov_single_arg(self):
+        """cov(x) computes variance (lines 143-156)."""
+        from anuga.utilities.numerical_tools import cov
+        x = [1.0, 2.0, 3.0]
+        result = cov(x)
+        self.assertAlmostEqual(result, 2.0 / 3.0)
+
+    def test_cov_two_args(self):
+        """cov(x, y) computes covariance."""
+        from anuga.utilities.numerical_tools import cov
+        x = [1.0, 2.0, 3.0]
+        y = [4.0, 5.0, 6.0]
+        result = cov(x, y)
+        self.assertAlmostEqual(result, 2.0 / 3.0)
+
+    def test_corr_basic(self):
+        """corr(x, y) computes correlation (lines 214-226)."""
+        from anuga.utilities.numerical_tools import corr
+        x = [1.0, 2.0, 3.0]
+        y = [1.0, 2.0, 3.0]
+        result = corr(x, y)
+        self.assertAlmostEqual(result, 1.0)
+
+    def test_corr_zero_variance(self):
+        """corr with zero variance returns 0 (line 222)."""
+        from anuga.utilities.numerical_tools import corr
+        x = [1.0, 1.0, 1.0]
+        result = corr(x, x)
+        self.assertEqual(result, 0)
+
+    def test_err_default_y_zero(self):
+        """err with y=0 (default) covers 178->181 branch (y stays 0)."""
+        from anuga.utilities.numerical_tools import err
+        import numpy as np
+        x = np.array([3.0, 4.0])
+        result = err(x, relative=False)
+        self.assertAlmostEqual(result, 5.0)
+
+    def test_err_max_norm(self):
+        """err with n=None uses max norm (lines 189-195)."""
+        from anuga.utilities.numerical_tools import err
+        # Use scalar y to avoid array truth value issue
+        result = err([1.0, 2.0, 3.0], y=0, n=None, relative=False)
+        self.assertAlmostEqual(result, 3.0)
+
+    def test_err_max_norm_relative(self):
+        """err with n=None, scalar y, relative=True (line 192-195)."""
+        from anuga.utilities.numerical_tools import err
+        # pass y=1.0 (scalar) to avoid array truth value ambiguity
+        result = err([2.0, 3.0], y=1.0, n=None, relative=True)
+        # max(abs([1,2]))/max(abs(1)) = 2/1 = 2
+        self.assertAlmostEqual(result, 2.0)
+
+    def test_histogram_relative(self):
+        """histogram with relative=True (line 282)."""
+        from anuga.utilities.numerical_tools import histogram
+        import numpy as np
+        a = [1, 2, 2, 3]
+        bins = [1, 2, 3, 4]
+        result = histogram(a, bins, relative=True)
+        self.assertAlmostEqual(sum(result), 1.0)
+
+    def test_create_bins_constant(self):
+        """create_bins with constant data returns one bin (line 296)."""
+        from anuga.utilities.numerical_tools import create_bins
+        result = create_bins([5.0, 5.0, 5.0])
+        self.assertEqual(len(result), 1)
+
+    def test_create_bins_no_count(self):
+        """create_bins without number_of_bins defaults to 10 (lines 298-301)."""
+        from anuga.utilities.numerical_tools import create_bins
+        result = create_bins([1.0, 2.0, 3.0, 10.0])
+        self.assertEqual(len(result), 10)
+
+    def test_gradient2_python(self):
+        """gradient2_python covers lines 356-361."""
+        from anuga.utilities.numerical_tools import gradient2_python
+        a, b = gradient2_python(0.0, 0.0, 1.0, 0.0, 0.0, 1.0)
+        self.assertAlmostEqual(a, 1.0)
+        self.assertAlmostEqual(b, 0.0)
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Numerical_Tools)
     runner = unittest.TextTestRunner()

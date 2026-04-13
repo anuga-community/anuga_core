@@ -506,6 +506,59 @@ class Test_set_quantity(unittest.TestCase):
 
 
 
+class Test_set_quantity_extra(unittest.TestCase):
+    """Cover previously uncovered paths in set_quantity.py."""
+
+    def _make_domain(self):
+        points = [[0.0, 0.0], [0.0, 2.0], [2.0, 0.0], [0.0, 4.0], [2.0, 2.0], [4.0, 0.0]]
+        vertices = [[1, 0, 2], [1, 2, 4], [4, 2, 5], [3, 1, 4]]
+        domain = Domain(points, vertices)
+        domain.set_quantity('elevation', 0)
+        domain.set_quantity('stage', 1.0)
+        domain.set_quantity('friction', 0)
+        domain.set_boundary({'exterior': Reflective_boundary(domain)})
+        return domain
+
+    def test_update_valueerror_no_indices(self):
+        """Lines 112-117: ValueError during update with indices=None is caught."""
+        domain = self._make_domain()
+
+        def bad_value(x, y):
+            raise ValueError('out of range')
+
+        sq = Set_quantity(domain, 'stage', value=bad_value, test_stage=False)
+        # Should not raise — ValueError is caught and logged
+        sq()
+
+    def test_update_valueerror_with_indices(self):
+        """Lines 131-132: ValueError during update with indices set is caught."""
+        domain = self._make_domain()
+
+        def bad_value(x, y):
+            raise ValueError('out of range')
+
+        sq = Set_quantity(domain, 'stage', value=bad_value, indices=[0, 1], test_stage=False)
+        # Should not raise — ValueError is caught and logged
+        sq()
+
+    def test_get_value_explicit_t(self):
+        """Lines 156->160: get_value with explicit t skips domain.get_time()."""
+        domain = self._make_domain()
+        sq = Set_quantity(domain, 'stage', value=lambda t: t * 2.0, test_stage=False)
+        result = sq.get_value(t=5.0)
+        self.assertAlmostEqual(result, 10.0)
+
+    def test_get_value_xy_type(self):
+        """Line 163: get_value with value_type == 'x,y'."""
+        domain = self._make_domain()
+        import numpy as np
+        sq = Set_quantity(domain, 'stage', value=lambda x, y: x + y, test_stage=False)
+        x = np.array([1.0, 2.0])
+        y = np.array([3.0, 4.0])
+        result = sq.get_value(x=x, y=y, t=0.0)
+        self.assertTrue(num.allclose(result, [4.0, 6.0]))
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_set_quantity)
     runner = unittest.TextTestRunner(verbosity=1)

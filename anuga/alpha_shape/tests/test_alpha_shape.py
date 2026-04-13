@@ -396,6 +396,77 @@ class TestCase(unittest.TestCase):
                   (46, 45)]
         assert num.allclose(answer, result)
 
+class TestCase_extra(unittest.TestCase):
+    """Cover previously uncovered methods in alpha_shape.py."""
+
+    _POINTS = [(0, 0), (10, 0), (10, 10), (0, 10),
+               (5, 0), (10, 5), (5, 10), (0, 5), (5, 5)]
+
+    def _make_shape(self, alpha=None):
+        return Alpha_Shape(self._POINTS, alpha=alpha)
+
+    def test_get_optimum_alpha(self):
+        """get_optimum_alpha covers line 147."""
+        a = self._make_shape()
+        result = a.get_optimum_alpha()
+        self.assertIsNotNone(result)
+
+    def test_get_alpha(self):
+        """get_alpha covers line 153."""
+        a = self._make_shape(alpha=5.0)
+        self.assertEqual(a.get_alpha(), 5.0)
+
+    def test_set_alpha(self):
+        """set_alpha covers lines 159-162."""
+        a = self._make_shape()
+        a.set_alpha(6.0)
+        self.assertEqual(a.get_alpha(), 6.0)
+
+    def test_get_alpha_triangles(self):
+        """get_alpha_triangles covers lines 363-366."""
+        a = self._make_shape()
+        result = a.get_alpha_triangles(a.alpha)
+        self.assertIsInstance(result, list)
+
+    def test_get_exposed_vertices(self):
+        """get_exposed_vertices covers lines 384-388."""
+        a = self._make_shape()
+        result = a.get_exposed_vertices(a.alpha)
+        self.assertIsInstance(result, list)
+
+    def test_write_boundary(self):
+        """write_boundary covers line 95."""
+        import tempfile
+        a = self._make_shape()
+        fd, path = tempfile.mkstemp(suffix='.bnd')
+        os.close(fd)
+        try:
+            a.write_boundary(path)
+            self.assertTrue(os.path.exists(path))
+        finally:
+            if os.path.exists(path):
+                os.unlink(path)
+
+    def test_alpha_shape_via_files(self):
+        """alpha_shape_via_files covers lines 46-50."""
+        import tempfile
+        # write a csv file (x,y,z) — Geospatial_data accepts this
+        csv_content = '\n'.join('%f,%f,0' % (x, y) for x, y in self._POINTS)
+        fd_in, csv_path = tempfile.mkstemp(suffix='.csv')
+        fd_out, bnd_path = tempfile.mkstemp(suffix='.bnd')
+        os.close(fd_in)
+        os.close(fd_out)
+        try:
+            with open(csv_path, 'w') as f:
+                f.write(csv_content)
+            alpha_shape_via_files(csv_path, bnd_path)
+            self.assertTrue(os.path.exists(bnd_path))
+        finally:
+            for p in (csv_path, bnd_path):
+                if os.path.exists(p):
+                    os.unlink(p)
+
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
