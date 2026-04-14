@@ -15,6 +15,7 @@
 #include "math.h"
 #include "stdint.h"
 #include "stdio.h"
+#include "stdlib.h"
 #include "anuga_typedefs.h"
 #define YES 1
 #define NO 0
@@ -851,3 +852,136 @@ anuga_int __separate_points_by_polygon(const anuga_int M, // Number of points
 
 //   return inside_index;
 // }
+
+// Parallel version of __separate_points_by_polygon using prefix-sum partitioning.
+// Uses a two-pass approach:
+// Pass 1: Classify each point as inside/outside (embarrassingly parallel)
+// Pass 2: Compact indices using prefix sum (inside points first, outside points last)
+// This gives the same result ordering as the sequential version.
+anuga_int __separate_points_by_polygon_parallel(
+    const anuga_int M, const anuga_int N,
+    double *points, double *polygon,
+    anuga_int *indices,
+    const anuga_int closed, const anuga_int verbose)
+{
+
+  double minpx, maxpx, minpy, maxpy, rtol = 0.0, atol = 0.0;
+
+  // Find min and max of poly used for optimisation when points
+  // are far away from polygon
+
+  minpx = polygon[0];
+  maxpx = minpx;
+  minpy = polygon[1];
+  maxpy = minpy;
+#pragma omp parallel for reduction(min : minpx, minpy) reduction(max : maxpx, maxpy)
+  for (int i = 0; i < N; i++)
+  {
+    double px_i = polygon[2 * i];
+    double py_i = polygon[2 * i + 1];
+
+    if (px_i < minpx)
+      minpx = px_i;
+    if (px_i > maxpx)
+      maxpx = px_i;
+    if (py_i < minpy)
+      minpy = py_i;
+    if (py_i > maxpy)
+      maxpy = py_i;
+  }
+
+  // Allocate temporary classification array
+  int *flags = (int *)malloc(M * sizeof(int));
+
+  // Pass 1 (parallel): Classify each point as inside (1) or outside (0)
+#pragma omp parallel for schedule(static)
+  for (int k = 0; k < M; k++)
+  {
+    double x = points[2 * k];
+    double y = points[2 * k + 1];
+
+    int inside = 0;
+
+    // Bounding box optimisation
+    if ((x > maxpx) || (x < minpx) || (y > maxpy) || (y < minpy))
+    {
+      // Outside bounding box — definitely outside polygon
+    }
+    else
+    {
+      // Ray-casting check against polygon edges
+      for (int i = 0; i < N; i++)
+      {
+        int j = (i + 1) % N;
+
+        double px_i = polygon[2 * i];
+        double py_i = polygon[2 * i + 1];
+        double px_j = polygon[2 * j];
+        double py_j = polygon[2 * j + 1];
+
+        // Check for case where point is contained in line segment
+        if (__point_on_line(x, y, px_i, py_i, px_j, py_j, rtol, atol))
+        {
+          if (closed == 1)
+          {
+            inside = 1;
+          }
+          else
+          {
+            inside = 0;
+          }
+          break;
+        }
+        else
+        {
+          // Check if truly inside polygon
+          if (((py_i < y) && (py_j >= y)) ||
+              ((py_j < y) && (py_i >= y)))
+          {
+            if (px_i + (y - py_i) / (py_j - py_i) * (px_j - px_i) < x)
+              inside = 1 - inside;
+          }
+        }
+      }
+    }
+    flags[k] = inside;
+  }
+
+  // Prefix sum (sequential): Compute destination index for each point
+  int *inside_offsets = (int *)malloc(M * sizeof(int));
+  int *outside_offsets = (int *)malloc(M * sizeof(int));
+  anuga_int inside_count = 0;
+  anuga_int outside_count = 0;
+  for (int k = 0; k < M; k++)
+  {
+    if (flags[k])
+    {
+      inside_offsets[k] = inside_count++;
+    }
+    else
+    {
+      outside_offsets[k] = M - 1 - outside_count;
+      outside_count++;
+    }
+  }
+
+  // Pass 2 (parallel): Scatter indices to their computed positions
+#pragma omp parallel for schedule(static)
+  for (int k = 0; k < M; k++)
+  {
+    if (flags[k])
+    {
+      indices[inside_offsets[k]] = k;
+    }
+    else
+    {
+      indices[outside_offsets[k]] = k;
+    }
+  }
+
+  free(flags);
+  free(inside_offsets);
+  free(outside_offsets);
+
+  return inside_count;
+}
