@@ -177,14 +177,13 @@ void _openmp_manning_friction_sloped_semi_implicit_edge_based(const struct domai
 {
   anuga_int k;
   const double one_third = 1.0 / 3.0;
-  const double seven_thirds = 7.0 / 3.0;
 
   anuga_int N = D->number_of_elements;
   const double  g = D->g;
   const double  eps = D->minimum_allowed_height;
   
 #pragma omp parallel for simd default(none) shared(D) schedule(static) \
-        firstprivate(N, eps, g, seven_thirds, one_third)
+        firstprivate(N, eps, g, one_third)
 for (k = 0; k < N; k++)
   {
     double S, h, z, z0, z1, z2, zs, zx, zy;
@@ -227,7 +226,9 @@ for (k = 0; k < N; k++)
       if (h >= eps)
       {
         S = -g*eta*eta*zs * sqrt((uh*uh + vh*vh));
-        S /= pow(h, seven_thirds); 
+        // Fast h^(7/3) = h^2 * h^(1/3) using cbrt instead of pow()
+        double h2 = h * h;
+        S /= h2 * cbrt(h);
       }
     }
     D->xmom_semi_implicit_update[k] += S * uh;
@@ -245,9 +246,8 @@ void _openmp_manning_friction_flat(const double g, const double eps, const anuga
 {
 
   anuga_int k;
-  const double seven_thirds = 7.0 / 3.0;
 
-#pragma omp parallel for schedule(static) firstprivate(eps, g, seven_thirds)
+#pragma omp parallel for schedule(static) firstprivate(eps, g)
   for (k = 0; k < N; k++)
   {
     double S, h, z, abs_mom;
@@ -261,7 +261,9 @@ void _openmp_manning_friction_flat(const double g, const double eps, const anuga
       if (h >= eps)
       {
         S = -g * eta[k] * eta[k] * abs_mom;
-        S /= pow(h, seven_thirds); 
+        // Fast h^(7/3) = h^2 * h^(1/3) using cbrt instead of pow()
+        double h2 = h * h;
+        S /= h2 * cbrt(h);
       }
     }
     xmom_update[k] += S * uh[k];
@@ -279,9 +281,8 @@ void _openmp_manning_friction_sloped(const double g, const double eps, const anu
 {
 
   const double one_third = 1.0 / 3.0;
-  const double seven_thirds = 7.0 / 3.0;
 
-#pragma omp parallel for schedule(static) firstprivate(eps, g, one_third, seven_thirds)
+#pragma omp parallel for schedule(static) firstprivate(eps, g, one_third)
   for (anuga_int k = 0; k < N; k++)
   {
     double S = 0.0;
@@ -312,7 +313,9 @@ void _openmp_manning_friction_sloped(const double g, const double eps, const anu
       if (h >= eps)
       {
         S = -g * eta[k] * eta[k] * zs * sqrt((uh[k] * uh[k] + vh[k] * vh[k]));
-        S /= pow(h, seven_thirds); 
+        // Fast h^(7/3) = h^2 * h^(1/3) using cbrt instead of pow()
+        double h2 = h * h;
+        S /= h2 * cbrt(h);
       }
     }
     xmom_update[k] += S * uh[k];
@@ -329,9 +332,8 @@ void _openmp_manning_friction_sloped_edge_based(const double g, const double eps
 {
 
   const double one_third = 1.0 / 3.0;
-  const double seven_thirds = 7.0 / 3.0;
 
-#pragma omp parallel for schedule(static) firstprivate(eps, g, one_third, seven_thirds)
+#pragma omp parallel for schedule(static) firstprivate(eps, g, one_third)
   for (anuga_int k = 0; k < N; k++)
   {
     double S = 0.0;
@@ -362,7 +364,9 @@ void _openmp_manning_friction_sloped_edge_based(const double g, const double eps
       if (h >= eps)
       {
         S = -g * eta[k] * eta[k] * zs * sqrt((uh[k] * uh[k] + vh[k] * vh[k]));
-        S /= pow(h, seven_thirds); 
+        // Fast h^(7/3) = h^2 * h^(1/3) using cbrt instead of pow()
+        double h2 = h * h;
+        S /= h2 * cbrt(h);
       }
     }
     xmom_update[k] += S * uh[k];

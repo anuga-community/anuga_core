@@ -388,7 +388,6 @@ void _ssor_apply_c(double* data, anuga_int* colind, anuga_int* row_ptr,
                    double* r, double* z, double omega, anuga_int M)
 {
   anuga_int i, ckey, j;
-  double diag_i;
 
   double * temp = malloc(sizeof(double)*M);
   double * diag = malloc(sizeof(double)*M);
@@ -552,7 +551,8 @@ anuga_int _cg_solve_c_persistent(double* data,
                 anuga_int M)
 {
   anuga_int i_count = 1;
-  double alpha, rTr, rTrOld, bt, rTr0;
+  double alpha = 0.0, rTr = 0.0, rTrOld = 0.0, bt = 0.0, rTr0 = 0.0;
+  double dTq_shared = 0.0, rTr_new_shared = 0.0, rTr_init_shared = 0.0;
   anuga_int i;
   anuga_int ckey, j;
 
@@ -579,14 +579,13 @@ anuga_int _cg_solve_c_persistent(double* data,
     }
 
     // rTr = r . r
-    double local_rTr = 0.0;
-    #pragma omp for reduction(+:local_rTr)
+    #pragma omp for reduction(+:rTr_init_shared)
     for (i = 0; i < M; i++) {
-      local_rTr += r[i] * r[i];
+      rTr_init_shared += r[i] * r[i];
     }
     #pragma omp single
     {
-      rTr = local_rTr;
+      rTr = rTr_init_shared;
       rTr0 = rTr;
     }
 
@@ -603,14 +602,15 @@ anuga_int _cg_solve_c_persistent(double* data,
       }
 
       // dTq = d . q
-      double local_dTq = 0.0;
-      #pragma omp for reduction(+:local_dTq)
+      #pragma omp single
+      { dTq_shared = 0.0; }
+      #pragma omp for reduction(+:dTq_shared)
       for (i = 0; i < M; i++) {
-        local_dTq += d[i] * q[i];
+        dTq_shared += d[i] * q[i];
       }
       #pragma omp single
       {
-        alpha = rTr / local_dTq;
+        alpha = rTr / dTq_shared;
       }
 
       // x += alpha*d, r -= alpha*q
@@ -621,15 +621,16 @@ anuga_int _cg_solve_c_persistent(double* data,
       }
 
       // rTr_new = r . r
-      double local_rTr_new = 0.0;
-      #pragma omp for reduction(+:local_rTr_new)
+      #pragma omp single
+      { rTr_new_shared = 0.0; }
+      #pragma omp for reduction(+:rTr_new_shared)
       for (i = 0; i < M; i++) {
-        local_rTr_new += r[i] * r[i];
+        rTr_new_shared += r[i] * r[i];
       }
       #pragma omp single
       {
         rTrOld = rTr;
-        rTr = local_rTr_new;
+        rTr = rTr_new_shared;
         bt = rTr / rTrOld;
         i_count++;
       }
