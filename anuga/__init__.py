@@ -313,6 +313,8 @@ from anuga.utilities.system_tools import get_revision_number
 from anuga.utilities.system_tools import get_revision_date
 from anuga.utilities.system_tools import memory_stats
 from anuga.utilities.system_tools import print_memory_stats
+from anuga.utilities.system_tools import quantity_memory_stats
+from anuga.utilities.system_tools import print_quantity_memory_stats
 from anuga.utilities.mem_time_equation import estimate_time_mem
 
 # -------------------------
@@ -495,6 +497,8 @@ __all__ = [
     'get_version',
     'memory_stats',
     'print_memory_stats',
+    'quantity_memory_stats',
+    'print_quantity_memory_stats',
     'log',
     'set_logfile',
     'TeeStream',

@@ -327,3 +327,118 @@ def print_memory_stats():
     print(memory_stats())
 
 
+def quantity_memory_stats(domain):
+    """Return a detailed breakdown of memory used by all quantities on *domain*.
+
+    For each registered quantity the function reports which backing arrays are
+    allocated and their individual sizes, then prints a per-quantity subtotal
+    and a grand total.  Arrays that have been kept lazy (``None``) are shown
+    as ``--`` with zero cost.
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The simulation domain whose quantities are to be inspected.
+
+    Returns
+    -------
+    str
+        A multi-line table suitable for printing or logging.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> print(anuga.quantity_memory_stats(domain))
+    Quantity memory breakdown  (N=400 triangles, L=80 boundary edges)
+    ...
+    """
+    import numpy as np
+
+    _ARRAYS = [
+        ('centroid_values',       'centroid_values'),
+        ('edge_values',           'edge_values'),
+        ('vertex_values',         '_vertex_values'),
+        ('boundary_values',       'boundary_values'),
+        ('explicit_update',       'explicit_update'),
+        ('semi_implicit_update',  'semi_implicit_update'),
+        ('centroid_backup',       'centroid_backup_values'),
+        ('x_gradient',            '_x_gradient'),
+        ('y_gradient',            '_y_gradient'),
+        ('phi',                   '_phi'),
+    ]
+
+    N = domain.number_of_elements
+    try:
+        L = domain.boundary_length
+    except AttributeError:
+        L = 0
+
+    col_w = max(len(label) for label, _ in _ARRAYS) + 2  # fit longest column name
+    names = [label for label, _ in _ARRAYS]
+    header_row = f"{'Quantity':<16} {'type':<16} " + \
+                 ''.join(f"{n:>{col_w}}" for n in names) + f"{'TOTAL':>{col_w}}"
+    sep = '-' * len(header_row)
+
+    lines = [
+        f"Quantity memory breakdown  (N={N:,} triangles, L={L:,} boundary edges)",
+        f"All sizes in kB (float64 = 8 bytes).  '--' = lazy / not allocated.",
+        sep,
+        header_row,
+        sep,
+    ]
+
+    grand_total_bytes = 0
+
+    for qty_name, qty in sorted(domain.quantities.items()):
+        qty_type = getattr(qty, '_qty_type', '?')
+        row_bytes = 0
+        cells = []
+
+        for label, attr in _ARRAYS:
+            arr = getattr(qty, attr, None)
+            if arr is None:
+                cells.append('--')
+            else:
+                b = arr.nbytes
+                row_bytes += b
+                cells.append(f'{b / 1024:.1f}')
+
+        grand_total_bytes += row_bytes
+        total_str = f'{row_bytes / 1024:.1f}'
+        line = f"{qty_name:<16} {qty_type:<16} " + \
+               ''.join(f"{c:>{col_w}}" for c in cells) + f"{total_str:>{col_w}}"
+        lines.append(line)
+
+    lines.append(sep)
+    grand_kb = grand_total_bytes / 1024
+    grand_mb = grand_total_bytes / 1024**2
+    indent = col_w * len(_ARRAYS)
+    lines.append(f"{'GRAND TOTAL':<34}{grand_kb:>{indent},.1f} kB  "
+                 f"= {grand_mb:.1f} MB")
+    lines.append(sep)
+
+    return '\n'.join(lines)
+
+
+def print_quantity_memory_stats(domain):
+    """Print a detailed breakdown of memory used by all quantities on *domain*.
+
+    Convenience wrapper around :func:`quantity_memory_stats`.
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The simulation domain whose quantities are to be inspected.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> anuga.print_quantity_memory_stats(domain)
+    Quantity memory breakdown  (N=400 triangles, L=80 boundary edges)
+    ...
+    """
+    print(quantity_memory_stats(domain))
+
+
