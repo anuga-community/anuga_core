@@ -80,7 +80,8 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
-        height_cv[k] = fmax(stage_cv[k] - bed_cv[k], 0.0);
+        double diff = stage_cv[k] - bed_cv[k];
+        height_cv[k] = diff > 0.0 ? diff : 0.0;
     }
 
     // Count FLOPs: 9 FLOPs per element (3 quantities × (2 mul + 1 add) + height calc)
@@ -102,7 +103,8 @@ double gpu_protect(struct gpu_domain *GD) {
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
-        height_cv[k] = fmax(stage_cv[k] - bed_cv[k], 0.0);
+        double diff = stage_cv[k] - bed_cv[k];
+        height_cv[k] = diff > 0.0 ? diff : 0.0;
     }
 
     // Count FLOPs: 5 FLOPs per element (depth check, mass error)

@@ -62,24 +62,16 @@ static inline void gpu_compute_qmin_qmax_from_dq1(double dq1, double * restrict 
 static inline void gpu_limit_gradient(double * restrict dqv, double qmin, double qmax, double beta_w) {
     double r = 1000.0;
 
-    double dq_x = dqv[0];
-    double dq_y = dqv[1];
-    double dq_z = dqv[2];
-
-    if (dq_x < -GPU_TINY) {
-        r = fmin(r, qmin / dq_x);
-    } else if (dq_x > GPU_TINY) {
-        r = fmin(r, qmax / dq_x);
-    }
-    if (dq_y < -GPU_TINY) {
-        r = fmin(r, qmin / dq_y);
-    } else if (dq_y > GPU_TINY) {
-        r = fmin(r, qmax / dq_y);
-    }
-    if (dq_z < -GPU_TINY) {
-        r = fmin(r, qmin / dq_z);
-    } else if (dq_z > GPU_TINY) {
-        r = fmin(r, qmax / dq_z);
+    // Loop over 3 components with explicit unroll for better ILP and SLP recognition
+    // Branchless selection: choose qmin/dq for negative dq, qmax/dq for positive dq
+    #pragma GCC unroll 3
+    for (int i = 0; i < 3; i++) {
+        double dq = dqv[i];
+        if (dq < -GPU_TINY) {
+            r = fmin(r, qmin / dq);
+        } else if (dq > GPU_TINY) {
+            r = fmin(r, qmax / dq);
+        }
     }
 
     double phi = fmin(r * beta_w, 1.0);
@@ -151,23 +143,17 @@ static inline void gpu_rotate(double * restrict q, double n1, double n2) {
     q[2] = -n2 * q1 + n1 * q2;
 }
 
-// Compute velocity terms with zero-depth handling
+// Compute velocity terms with zero-depth handling (branchless form)
 static inline void gpu_compute_velocity_terms(
     double h, double h_edge,
     double uh_raw, double vh_raw,
     double * restrict u, double * restrict uh, double * restrict v, double * restrict vh) {
-    if (h_edge > 0.0) {
-        double inv_h_edge = 1.0 / h_edge;
-        *u = uh_raw * inv_h_edge;
-        *uh = h * (*u);
-        *v = vh_raw * inv_h_edge;
-        *vh = h * inv_h_edge * vh_raw;
-    } else {
-        *u = 0.0;
-        *uh = 0.0;
-        *v = 0.0;
-        *vh = 0.0;
-    }
+    // Use conditional inverse to avoid branch; when h_edge <= 0, all outputs are zero
+    double inv_h_edge = (h_edge > 0.0) ? 1.0 / h_edge : 0.0;
+    *u = uh_raw * inv_h_edge;
+    *uh = h * (*u);
+    *v = vh_raw * inv_h_edge;
+    *vh = h * inv_h_edge * vh_raw;
 }
 
 // Compute local Froude number for low-Froude corrections
@@ -222,10 +208,13 @@ static inline void gpu_flux_function_central(
     double flux_left[3], flux_right[3];
 
     // Copy and rotate to edge-aligned coordinates
-    for (int i = 0; i < 3; i++) {
-        q_left_rotated[i] = q_left[i];
-        q_right_rotated[i] = q_right[i];
-    }
+    // Unrolled 3-element copy: exposes SLP load pattern
+    q_left_rotated[0] = q_left[0];
+    q_left_rotated[1] = q_left[1];
+    q_left_rotated[2] = q_left[2];
+    q_right_rotated[0] = q_right[0];
+    q_right_rotated[1] = q_right[1];
+    q_right_rotated[2] = q_right[2];
     gpu_rotate(q_left_rotated, n1, n2);
     gpu_rotate(q_right_rotated, n1, n2);
 
