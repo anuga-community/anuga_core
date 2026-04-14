@@ -212,11 +212,12 @@ def benchmark_dam_break_accuracy(nx, finaltime):
     h_hllc = stages['hllc'][idx_c]
     h_exact = ritter_stage(x_num, x_dam, h0, finaltime)
 
-    # Error metrics (L1 relative to h0)
-    dx = np.diff(x_num, prepend=x_num[0])
+    # Error metrics (L1 relative to domain length)
+    # Compute cell widths: use spacing between consecutive centroids
+    dx = np.abs(np.diff(x_num, append=x_num[-1] + (x_num[-1] - x_num[-2])))
     Lx_total = x_num[-1] - x_num[0]
-    l1_c = np.sum(np.abs(h_central - h_exact) * np.abs(dx)) / Lx_total
-    l1_h = np.sum(np.abs(h_hllc - h_exact) * np.abs(dx)) / Lx_total
+    l1_c = np.sum(np.abs(h_central - h_exact) * dx) / Lx_total
+    l1_h = np.sum(np.abs(h_hllc - h_exact) * dx) / Lx_total
 
     print()
     print(f'  L1 error vs Ritter solution (mean |h_num - h_exact| / L):')
