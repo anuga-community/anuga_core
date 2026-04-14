@@ -72,7 +72,8 @@ static inline void gpu_limit_gradient(double * restrict dqv, double qmin, double
     double r1 = (dq_y < -GPU_TINY) ? (qmin / dq_y) : ((dq_y > GPU_TINY) ? (qmax / dq_y) : 1000.0);
     double r2 = (dq_z < -GPU_TINY) ? (qmin / dq_z) : ((dq_z > GPU_TINY) ? (qmax / dq_z) : 1000.0);
 
-    double phi = fmin(fmin(fmin(r0, r1), r2) * beta_w, 1.0);
+    double r_min = fmin(r0, fmin(r1, r2));
+    double phi = fmin(r_min * beta_w, 1.0);
 
     // Write back with scalar temporaries for consecutive-store SLP vectorization
     dqv[0] = dq_x * phi;
@@ -110,7 +111,8 @@ static inline void gpu_calc_edge_values_with_gradient(
     double r1 = (gy < -GPU_TINY) ? (qmin / gy) : ((gy > GPU_TINY) ? (qmax / gy) : 1000.0);
     double r2 = (gz < -GPU_TINY) ? (qmin / gz) : ((gz > GPU_TINY) ? (qmax / gz) : 1000.0);
 
-    double phi = fmin(fmin(fmin(r0, r1), r2) * beta_tmp, 1.0);
+    double r_min = fmin(r0, fmin(r1, r2));
+    double phi = fmin(r_min * beta_tmp, 1.0);
 
     // Write edge values directly from scalar temporaries (consecutive stores for SLP)
     edge_values[0] = cv_k + gx * phi;

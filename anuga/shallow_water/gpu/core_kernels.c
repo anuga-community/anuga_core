@@ -785,17 +785,15 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
         double stage_k = stage_cv[k]; // loaded once; used in riverwall section
 
         // Per-edge result storage: separate computation from accumulation to expose
-        // independent computation to the SLP vectorizer (Intel Advisor recommendation).
+        // independent per-edge computations to the SLP vectorizer (Intel Advisor recommendation).
         double stage_ef[3], xmom_ef[3], ymom_ef[3];
         double max_speed_edge[3];
         double bflux_contrib[3];
 
-        // Zero the per-edge accumulators
-        stage_ef[0] = 0.0;  stage_ef[1] = 0.0;  stage_ef[2] = 0.0;
-        xmom_ef[0]  = 0.0;  xmom_ef[1]  = 0.0;  xmom_ef[2]  = 0.0;
-        ymom_ef[0]  = 0.0;  ymom_ef[1]  = 0.0;  ymom_ef[2]  = 0.0;
-        max_speed_edge[0] = 0.0;  max_speed_edge[1] = 0.0;  max_speed_edge[2] = 0.0;
-        bflux_contrib[0]  = 0.0;  bflux_contrib[1]  = 0.0;  bflux_contrib[2]  = 0.0;
+        // bflux_contrib is conditionally assigned inside the loop, so initialise to zero.
+        // stage_ef, xmom_ef, ymom_ef and max_speed_edge are unconditionally assigned
+        // inside the loop, so no initialisation is needed for them.
+        bflux_contrib[0] = 0.0;  bflux_contrib[1] = 0.0;  bflux_contrib[2] = 0.0;
 
         // Loop 1: Compute per-edge fluxes independently.
         // Using k3+i instead of 3*k+i avoids recomputing the k*3 product each iteration.
@@ -934,8 +932,9 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
 
         } // End per-edge computation loop
 
-        // Loop 2: Accumulate independent per-edge results.
-        // Three consecutive additions are SLP-vectorizable by the compiler.
+        // Accumulate the three independent per-edge results.
+        // The SLP vectorization benefit is primarily from the independent per-edge
+        // computations in Loop 1 above; these sums are the final reduction step.
         double sum_stage = stage_ef[0] + stage_ef[1] + stage_ef[2];
         double sum_xmom  = xmom_ef[0]  + xmom_ef[1]  + xmom_ef[2];
         double sum_ymom  = ymom_ef[0]  + ymom_ef[1]  + ymom_ef[2];
