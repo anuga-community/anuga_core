@@ -89,6 +89,7 @@ def plot_timeseries(timevector,
     if True:
         # Generate plots
         #pylab.ion() # No plotting on screen
+        pylab.clf()
         pylab.plot(timevector, timeseries, 'r-')
 
         pylab.title('Gauge %s' % name)
