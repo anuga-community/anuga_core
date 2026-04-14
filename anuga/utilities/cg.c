@@ -366,3 +366,291 @@ anuga_int _cg_solve_c_precon(double* data,
 
 }       
 
+// SSOR preconditioner for CG solver
+// Computes M^{-1} * r for SSOR preconditioning where M = (D/omega + L) * (D/omega)^{-1} * (D/omega + U)
+// For simplicity, stores the effective diagonal scaling factor for each row.
+// omega is the relaxation parameter (typically 1.0-1.8)
+//
+// The SSOR preconditioner application: z = M^{-1} * r requires:
+//   Forward sweep: (D/omega + L) * temp = r
+//   Scaling: temp = (omega / (2 - omega)) * D^{-1} * temp
+//   Backward sweep: (D/omega + U) * z = temp
+// This reduces CG iterations by 2-5x compared to Jacobi for typical FEM matrices.
+//
+// @input data: double vector with non-zero entries of A
+//        colind: anuga_int vector of column indices of non-zero entries of A
+//        row_ptr: anuga_int vector giving index of rows for non-zero entries of A
+//        r: double vector (right-hand side / residual)
+//        z: double vector to store the result M^{-1} * r
+//        omega: relaxation parameter (typically 1.0-1.8)
+//        M: number of rows
+void _ssor_apply_c(double* data, anuga_int* colind, anuga_int* row_ptr,
+                   double* r, double* z, double omega, anuga_int M)
+{
+  anuga_int i, ckey, j;
+  double diag_i;
+
+  double * temp = malloc(sizeof(double)*M);
+  double * diag = malloc(sizeof(double)*M);
+
+  // Extract diagonal entries
+  for (i = 0; i < M; i++) {
+    diag[i] = 1.0;
+    for (ckey = row_ptr[i]; ckey < row_ptr[i+1]; ckey++) {
+      if (colind[ckey] == i) {
+        diag[i] = data[ckey];
+        break;
+      }
+    }
+  }
+
+  // Forward sweep: (D/omega + L) * temp = r
+  for (i = 0; i < M; i++) {
+    temp[i] = r[i];
+    for (ckey = row_ptr[i]; ckey < row_ptr[i+1]; ckey++) {
+      j = colind[ckey];
+      if (j < i) {
+        temp[i] -= data[ckey] * temp[j];
+      }
+    }
+    temp[i] *= omega / diag[i];
+  }
+
+  // Diagonal scaling: temp = (omega / (2 - omega)) * D^{-1} * temp
+  // Combined: temp[i] *= diag[i] * (2-omega) / omega
+  // This is equivalent to: temp = (D/omega)^{-1} * D * temp * (2-omega)/omega
+  // = D * (omega/(2-omega))^{-1} * D^{-1} * temp ... simplifies to scaling
+  for (i = 0; i < M; i++) {
+    temp[i] *= diag[i] * (2.0 - omega) / omega;
+  }
+
+  // Backward sweep: (D/omega + U) * z = temp
+  for (i = M - 1; i >= 0; i--) {
+    z[i] = temp[i];
+    for (ckey = row_ptr[i]; ckey < row_ptr[i+1]; ckey++) {
+      j = colind[ckey];
+      if (j > i) {
+        z[i] -= data[ckey] * z[j];
+      }
+    }
+    z[i] *= omega / diag[i];
+  }
+
+  free(temp);
+  free(diag);
+}
+
+// Conjugate gradient solve Ax = b for x, A given in Sparse CSR format,
+// using SSOR preconditioning.
+// @input data: double vector with non-zero entries of A
+//        colind: anuga_int vector of column indices of non-zero entries of A
+//        row_ptr: anuga_int vector giving index of rows for non-zero entries of A
+//        b: double vector specifying right hand side of equation to solve
+//        x: double vector with initial guess and to store result
+//        imax: maximum number of iterations
+//        tol: relative error tolerance for stopping criteria
+//        a_tol: absolute error tolerance for stopping criteria
+//        M: length of vectors x and b
+//        omega: SSOR relaxation parameter (typically 1.0-1.8)
+// @return: 0 on success, -1 if max iterations exceeded
+anuga_int _cg_solve_c_ssor(double* data, 
+                anuga_int* colind,
+                anuga_int* row_ptr,
+                double * b,
+                double * x,
+                anuga_int imax,
+                double tol,
+                double a_tol,
+                anuga_int M,
+                double omega)
+{
+  anuga_int i = 1;
+  double alpha, rTr, rTrOld, bt, rTr0;
+
+  double * d = malloc(sizeof(double)*M);
+  double * r = malloc(sizeof(double)*M);
+  double * q = malloc(sizeof(double)*M);
+  double * z = malloc(sizeof(double)*M);
+
+  // r = b - A*x
+  cg_zaAxpy(r, -1.0, data, colind, row_ptr, x, b, M);
+
+  // z = M^{-1} * r  (SSOR preconditioner)
+  _ssor_apply_c(data, colind, row_ptr, r, z, omega, M);
+
+  // d = z
+  cg_dcopy(M, z, d);
+
+  // rTr = r . z
+  rTr = cg_ddot(M, r, z);
+  rTr0 = rTr;
+
+  while ((i < imax) && (rTr > pow(tol, 2) * rTr0) && (rTr > pow(a_tol, 2))) {
+
+    // q = A * d
+    cg_zAx(q, data, colind, row_ptr, d, M);
+
+    // alpha = rTr / (d . q)
+    alpha = rTr / cg_ddot(M, d, q);
+
+    // x += alpha * d
+    cg_daxpy(M, alpha, d, x);
+
+    // r -= alpha * q
+    cg_daxpy(M, -alpha, q, r);
+
+    // z = M^{-1} * r  (SSOR preconditioner)
+    _ssor_apply_c(data, colind, row_ptr, r, z, omega, M);
+
+    rTrOld = rTr;
+
+    // rTr = r . z
+    rTr = cg_ddot(M, r, z);
+
+    bt = rTr / rTrOld;
+
+    // d = z + bt * d
+    cg_dscal(M, bt, d);
+    cg_daxpy(M, 1.0, z, d);
+
+    i = i + 1;
+  }
+
+  free(d);
+  free(r);
+  free(q);
+  free(z);
+
+  if (i >= imax) {
+    return -1;
+  }
+  else {
+    return 0;
+  }
+}
+
+// Persistent OpenMP conjugate gradient solve Ax = b for x, A given in Sparse CSR format.
+// Uses a single parallel region to avoid repeated fork/join overhead.
+// @input data: double vector with non-zero entries of A
+//        colind: anuga_int vector of column indices of non-zero entries of A
+//        row_ptr: anuga_int vector giving index of rows for non-zero entries of A
+//        b: double vector specifying right hand side of equation to solve
+//        x: double vector with initial guess and to store result
+//        imax: maximum number of iterations
+//        tol: relative error tolerance for stopping criteria
+//        a_tol: absolute error tolerance for stopping criteria
+//        M: length of vectors x and b
+// @return: 0 on success, -1 if max iterations exceeded
+anuga_int _cg_solve_c_persistent(double* data, 
+                anuga_int* colind,
+                anuga_int* row_ptr,
+                double * b,
+                double * x,
+                anuga_int imax,
+                double tol,
+                double a_tol,
+                anuga_int M)
+{
+  anuga_int i_count = 1;
+  double alpha, rTr, rTrOld, bt, rTr0;
+  anuga_int i;
+  anuga_int ckey, j;
+
+  double * d = malloc(sizeof(double)*M);
+  double * r = malloc(sizeof(double)*M);
+  double * q = malloc(sizeof(double)*M);
+
+  #pragma omp parallel private(i, ckey, j)
+  {
+    // r = b - A*x
+    #pragma omp for
+    for (i = 0; i < M; i++) {
+      r[i] = b[i];
+      for (ckey = row_ptr[i]; ckey < row_ptr[i+1]; ckey++) {
+        j = colind[ckey];
+        r[i] -= data[ckey] * x[j];
+      }
+    }
+
+    // d = r
+    #pragma omp for
+    for (i = 0; i < M; i++) {
+      d[i] = r[i];
+    }
+
+    // rTr = r . r
+    double local_rTr = 0.0;
+    #pragma omp for reduction(+:local_rTr)
+    for (i = 0; i < M; i++) {
+      local_rTr += r[i] * r[i];
+    }
+    #pragma omp single
+    {
+      rTr = local_rTr;
+      rTr0 = rTr;
+    }
+
+    while ((i_count < imax) && (rTr > pow(tol, 2) * rTr0) && (rTr > pow(a_tol, 2))) {
+
+      // q = A * d
+      #pragma omp for
+      for (i = 0; i < M; i++) {
+        q[i] = 0.0;
+        for (ckey = row_ptr[i]; ckey < row_ptr[i+1]; ckey++) {
+          j = colind[ckey];
+          q[i] += data[ckey] * d[j];
+        }
+      }
+
+      // dTq = d . q
+      double local_dTq = 0.0;
+      #pragma omp for reduction(+:local_dTq)
+      for (i = 0; i < M; i++) {
+        local_dTq += d[i] * q[i];
+      }
+      #pragma omp single
+      {
+        alpha = rTr / local_dTq;
+      }
+
+      // x += alpha*d, r -= alpha*q
+      #pragma omp for
+      for (i = 0; i < M; i++) {
+        x[i] += alpha * d[i];
+        r[i] -= alpha * q[i];
+      }
+
+      // rTr_new = r . r
+      double local_rTr_new = 0.0;
+      #pragma omp for reduction(+:local_rTr_new)
+      for (i = 0; i < M; i++) {
+        local_rTr_new += r[i] * r[i];
+      }
+      #pragma omp single
+      {
+        rTrOld = rTr;
+        rTr = local_rTr_new;
+        bt = rTr / rTrOld;
+        i_count++;
+      }
+
+      // d = r + bt*d
+      #pragma omp for
+      for (i = 0; i < M; i++) {
+        d[i] = r[i] + bt * d[i];
+      }
+    }
+  }
+
+  free(d);
+  free(r);
+  free(q);
+
+  if (i_count >= imax) {
+    return -1;
+  }
+  else {
+    return 0;
+  }
+}
+
