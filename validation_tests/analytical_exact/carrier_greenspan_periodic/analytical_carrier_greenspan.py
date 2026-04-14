@@ -1,4 +1,4 @@
-from numpy import sin, cos, sqrt, linspace, pi, dot, zeros, array
+from numpy import sin, cos, sqrt, linspace, pi, dot, zeros, array, amax, maximum
 from scipy.special import jn
 from scipy.optimize import fsolve
 from gaussPivot import *
@@ -57,7 +57,7 @@ def analytic_cg(points, t=0.0, h0=5e2, L=5e4, a=1.0, Tp=900.0):
             if sqrt(dot(f0,f0)/len(q)) < tol: return q
             dq = gaussPivot(jac,-f0)
             q = q + dq
-            if sqrt(dot(dq,dq)) < tol*max(max(abs(q)),1.0): return q
+            if sqrt(dot(dq,dq)) < tol*maximum(amax(abs(q)),1.0): return q
         print('Too many iterations')    
     ##################################################################################
     N = len(points)
