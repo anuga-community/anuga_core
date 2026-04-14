@@ -42,26 +42,38 @@ x = np.arange(100).reshape(10, 10)
 
 
 class Reflective_boundary(Boundary):
-    """Reflective boundary condition object
+    """Reflective boundary condition.
 
-    Reflective boundary returns same conserved quantities as
-    those present in its neighbour volume but with normal momentum negated
-    so the mass flux is zero.
+    Returns the same conserved quantities as the neighbour volume edge but
+    with the normal momentum component negated, so the net mass flux through
+    the boundary is zero (wall / no-slip analogue for the shallow-water
+    equations).
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> Br = anuga.Reflective_boundary(domain)
+    >>> domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
     """
 
     def __init__(self, domain=None):
-        """Create boundary condition object
+        """Initialise a reflective boundary.
 
-        :param domain: domain on which to apply BC
+        Parameters
+        ----------
+        domain : anuga.Domain
+            The domain to which this boundary is attached.
 
-        Example:
-
-        Set all the tagged boundaries to use the Reflective boundaries
-
-        >>> domain = anuga.rectangular_cross_domain(10, 10)
-        >>> BC = anuga.Reflective_boundary(domain)
-        >>> domain.set_boundary({'left': BC, 'right': BC, 'top': BC, 'bottom': BC})
-
+        Raises
+        ------
+        Exception
+            If *domain* is ``None``.
         """
 
 
@@ -198,28 +210,43 @@ class Reflective_boundary(Boundary):
 
 
 class Transmissive_momentum_set_stage_boundary(Boundary):
-    """ Bounday condition object that returns transmissive momentum and sets stage
+    """Transmissive momentum boundary with prescribed stage.
 
-    Returns same momentum conserved quantities as
-    those present in its neighbour volume.
-    Sets stage by specifying a function f of time which may either be a
-    vector function or a scalar function
+    Returns the same momentum conserved quantities as the neighbour volume
+    edge (transmissive / open condition) while overriding stage with a
+    caller-supplied scalar function of time.
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+    function : callable
+        A function ``f(t)`` returning the stage value at time *t*.  May
+        also be a scalar ``int`` or ``float``, in which case the stage is
+        held constant.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> BC = anuga.Transmissive_momentum_set_stage_boundary(domain, lambda t: 0.5)
+    >>> domain.set_boundary({'left': BC, 'right': BC, 'top': BC, 'bottom': BC})
     """
 
     def __init__(self, domain=None, function=None):
-        """Create boundary condition object.
+        """Initialise a transmissive-momentum / set-stage boundary.
 
-        :param domain: domain on which to apply BC
-        :param function: function to set stage
+        Parameters
+        ----------
+        domain : anuga.Domain
+            The domain to which this boundary is attached.
+        function : callable or float
+            Stage function ``f(t)`` or a constant value.
 
-        Example: Set all the tagged boundaries to use the
-
-        >>> domain = anuga.rectangular_cross_domain(10, 10)
-        >>> def waveform(t):
-        >>>    return sea_level + normalized_amplitude/cosh(t-25)**2
-        >>> BC = anuga.Transmissive_momentum_set_stage_boundary(domain, waveform)
-        >>> domain.set_boundary({'left': BC, 'right': BC, 'top': BC, 'bottom': BC})
-
+        Raises
+        ------
+        Exception
+            If *domain* or *function* is ``None``.
         """
 
         Boundary.__init__(self)
@@ -287,30 +314,47 @@ class Transmissive_momentum_set_stage_boundary(Boundary):
 
 
 class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
-    """Bounday condition object that returns transmissive normal momentum and sets stage
+    """Transmissive normal momentum, zero tangential momentum, prescribed stage.
 
-    Returns the same normal momentum as that
-    present in neighbour volume edge. Zero out the tangential momentum.
-    Sets stage by specifying a function f of time which may either be a
-    vector function or a scalar function
+    Returns the same momentum component normal to the boundary as the
+    neighbour volume edge.  The tangential momentum component is zeroed.
+    Stage is set by a caller-supplied function of time.
 
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+    function : callable
+        A function ``f(t)`` returning the stage at time *t*.
+    default_boundary : float, optional
+        Stage value returned when model time exceeds the range of
+        *function*.  Default is ``0.0``.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> BC = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(
+    ...     domain, lambda t: 0.5)
+    >>> domain.set_boundary({'left': BC, 'right': BC, 'top': BC, 'bottom': BC})
     """
 
     def __init__(self, domain=None, function=None, default_boundary=0.0):
-        """Create boundary condition object.
+        """Initialise the boundary.
 
-        :param domain: domain on which to apply BC
-        :param function: function to set stage
-        :param float default_boundary:
+        Parameters
+        ----------
+        domain : anuga.Domain
+            The domain to which this boundary is attached.
+        function : callable
+            Stage function ``f(t)``.
+        default_boundary : float, optional
+            Fallback stage when model time is out of range.  Default ``0.0``.
 
-        Example: Set all the tagged boundaries to use the BC
-
-        >>> domain = anuga.rectangular_cross_domain(10, 10)
-        >>> def waveform(t):
-        >>>    return sea_level + normalized_amplitude/cosh(t-25)**2
-        >>> BC = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(domain, waveform)
-        >>> domain.set_boundary({'left': BC, 'right': BC, 'top': BC, 'bottom': BC})
-
+        Raises
+        ------
+        Exception
+            If *domain* or *function* is ``None``.
         """
 
 
@@ -405,13 +449,38 @@ class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
 
 
 class Transmissive_stage_zero_momentum_boundary(Boundary):
-    """BC where stage is same as neighbour volume and momentum to zero.
+    """Transmissive stage with zero momentum boundary.
 
-    Underlying domain must be specified when boundary is instantiated
+    Copies the stage from the neighbour volume edge while forcing both
+    momentum components to zero.  Useful as a simple open boundary where
+    water level is inherited from the interior but no momentum is imposed.
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> Bt = anuga.Transmissive_stage_zero_momentum_boundary(domain)
+    >>> domain.set_boundary({'left': Bt, 'right': Bt, 'top': Bt, 'bottom': Bt})
     """
 
     def __init__(self, domain=None):
-        """ Instantiate a Transmissive (zero momentum) boundary. """
+        """Initialise a transmissive-stage / zero-momentum boundary.
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+            The domain to which this boundary is attached.
+
+        Raises
+        ------
+        Exception
+            If *domain* is ``None``.
+        """
 
         Boundary.__init__(self)
 
@@ -438,19 +507,32 @@ class Transmissive_stage_zero_momentum_boundary(Boundary):
 
 
 class Time_stage_zero_momentum_boundary(Boundary):
-    """Time dependent boundary returns values for stage
-    conserved quantities as a function of time.
-    Must specify domain to get access to model time and a function of t
-    which must return conserved stage quantities as a function time.
+    """Time-varying stage boundary with zero momentum.
 
-    Example:
-      B = Time_stage_zero_momentum_boundary(domain,
-                        function=lambda t: (60<t<3660)*2)
+    Sets stage as a scalar function of time while holding both momentum
+    components at zero.
 
-      This will produce a boundary condition with is a 2m high square wave
-      starting 60 seconds into the simulation and lasting one hour.
-      Momentum applied will be 0 at all times.
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+    function : callable
+        A function ``f(t)`` returning the stage value at model time *t*.
+        Must be convertible to a scalar float.
+    default_boundary : float or None, optional
+        Stage value returned when model time is out of the function's
+        range.  ``None`` means raise an exception on out-of-range.
+    verbose : bool, optional
+        If ``True``, emit informational messages.  Default ``False``.
 
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> # 2 m square wave from t=60 s to t=3660 s, zero elsewhere
+    >>> Bt = anuga.Time_stage_zero_momentum_boundary(
+    ...     domain, function=lambda t: (60 < t < 3660) * 2.0)
+    >>> domain.set_boundary({'left': Bt, 'right': Bt, 'top': Bt, 'bottom': Bt})
     """
 
     def __init__(self, domain=None,
@@ -458,6 +540,25 @@ class Time_stage_zero_momentum_boundary(Boundary):
                  function=None,
                  default_boundary=None,
                  verbose=False):
+        """Initialise a time-stage / zero-momentum boundary.
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+            The domain to which this boundary is attached.
+        function : callable
+            Stage function ``f(t)``.
+        default_boundary : float or None, optional
+            Fallback stage when model time is out of range.
+        verbose : bool, optional
+            Verbosity flag.  Default ``False``.
+
+        Raises
+        ------
+        Exception
+            If *domain* or *function* is ``None``, or if *function* cannot
+            be evaluated at ``t=0`` or does not return a scalar float.
+        """
         Boundary.__init__(self)
 
         self.default_boundary = default_boundary
@@ -524,26 +625,46 @@ class Time_stage_zero_momentum_boundary(Boundary):
 
 
 class Characteristic_stage_boundary(Boundary):
-    """Sets the stage via a function and the momentum is determined
-    via assumption of simple incoming wave (uses Riemann invariant)
+    """Stage boundary using characteristic (Riemann-invariant) extrapolation.
 
+    Sets the exterior stage via a function of time.  Momentum at the boundary
+    is determined from a characteristic decomposition, giving a weakly
+    reflecting open boundary: outgoing waves leave cleanly while incoming
+    waves are set by the prescribed stage.
 
-    Example:
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+    function : callable
+        A function ``f(t)`` returning the exterior stage at model time *t*.
+    default_stage : float, optional
+        Ambient stage assumed before the wave arrives.  Default ``0.0``.
 
-    def waveform(t):
-        return sea_level + normalized_amplitude/cosh(t-25)**2
-
-    Bcs = Characteristic_stage_boundary(domain, waveform)
-
-    Underlying domain must be specified when boundary is instantiated
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> Bcs = anuga.Characteristic_stage_boundary(domain, lambda t: 0.1)
+    >>> domain.set_boundary({'left': Bcs, 'right': Bcs, 'top': Bcs, 'bottom': Bcs})
     """
 
-    def __init__(self, domain=None, function=None, default_stage = 0.0):
-        """ Instantiate a
-            Characteristic_stage_boundary.
-            domain is the domain containing the boundary
-            function is the function to apply the wave
-            default_stage is the assumed stage pre the application of wave
+    def __init__(self, domain=None, function=None, default_stage=0.0):
+        """Initialise a characteristic-stage boundary.
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+            The domain to which this boundary is attached.
+        function : callable
+            Exterior stage function ``f(t)``.
+        default_stage : float, optional
+            Ambient stage assumed before the wave.  Default ``0.0``.
+
+        Raises
+        ------
+        Exception
+            If *domain* or *function* is ``None``.
         """
 
         #raise Exception('This boundary type is not implemented yet')
@@ -735,21 +856,47 @@ class Characteristic_stage_boundary(Boundary):
             q2)
 
 class Dirichlet_discharge_boundary(Boundary):
-    """ Class for a Dirichlet discharge boundary.
+    """Dirichlet boundary with prescribed stage and inward-normal discharge.
 
-    Sets stage (stage0)
-    Sets momentum (wh0) in the inward normal direction.
+    Sets stage to a constant *stage0* and momentum in the inward-normal
+    direction to *wh0*.  The tangential momentum is always zero.
 
-    Underlying domain must be specified when boundary is instantiated
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+    stage0 : float
+        Prescribed water stage (m).
+    wh0 : float, optional
+        Momentum magnitude in the inward-normal direction (m^2/s).
+        Default is ``0.0`` (stage only, no imposed flow).
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> Bd = anuga.Dirichlet_discharge_boundary(domain, stage0=1.0, wh0=0.5)
+    >>> domain.set_boundary({'left': Bd, 'right': Bd, 'top': Bd, 'bottom': Bd})
     """
 
     def __init__(self, domain=None, stage0=None, wh0=None):
+        """Initialise a Dirichlet discharge boundary.
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+            The domain to which this boundary is attached.
+        stage0 : float
+            Prescribed stage.
+        wh0 : float, optional
+            Inward-normal momentum.  Default ``0.0``.
+
+        Raises
+        ------
+        Exception
+            If *domain* or *stage0* is ``None``.
+        """
         Boundary.__init__(self)
-        """ Instantiate a Dirichlet discharge boundary.
-            domain underlying domain
-            stage0 stag
-            wh0 momentum in the inward normal direction.
-            """
 
         if domain is None:
             msg = 'Domain must be specified for this type of boundary'
@@ -787,16 +934,48 @@ class Dirichlet_discharge_boundary(Boundary):
 
 
 class Inflow_boundary(Boundary):
-    """Apply given flow in m^3/s to boundary segment.
-    Depth and momentum is derived using Manning's formula.
+    """Inflow boundary that imposes a volumetric flow rate.
 
-    Underlying domain must be specified when boundary is instantiated
+    Distributes the prescribed flow (m^3/s) uniformly along the
+    boundary segment.  Depth and momentum are derived from Manning's
+    formula using the local bed gradient and friction coefficient.
+
+    .. note::
+        This class is work in progress and the associated test is disabled.
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+    rate : float, optional
+        Total volumetric inflow rate in m^3/s.  Default ``0.0``.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> Bi = anuga.Inflow_boundary(domain, rate=1.0)
+    >>> domain.set_boundary({'left': Bi, 'right': Bi, 'top': Bi, 'bottom': Bi})
     """
 
     # FIXME (Ole): This is work in progress and definitely not finished.
     # The associated test has been disabled
 
     def __init__(self, domain=None, rate=0.0):
+        """Initialise an inflow boundary.
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+            The domain to which this boundary is attached.
+        rate : float, optional
+            Volumetric inflow rate (m^3/s).  Default ``0.0``.
+
+        Raises
+        ------
+        Exception
+            If *domain* is ``None``.
+        """
         Boundary.__init__(self)
 
         if domain is None:
@@ -878,22 +1057,49 @@ class Inflow_boundary(Boundary):
 
 
 class Field_boundary(Boundary):
-    """Set boundary from given field.
+    """Boundary condition driven by an SWW field file with optional stage offset.
 
-    Given field is represented in an sww file containing
-    values for stage, xmomentum and ymomentum.
+    Reads stage, x-momentum and y-momentum time series from an SWW file and
+    applies them as a boundary condition, linearly interpolating in time.
+    An optional *mean_stage* offset can be added to the stage values, which
+    avoids regenerating the SWW file when running at different tide levels.
 
-    Optionally, the user can specify mean_stage to offset the stage provided
-    in the sww file.
+    This is a thin wrapper around :class:`File_boundary`; the only difference
+    is the *mean_stage* offset capability.
 
-    This function is a thin wrapper around the generic File_boundary. The
-    difference between the File_boundary and Field_boundary is only that the
-    Field_boundary will allow you to change the level of the stage height when
-    you read in the boundary condition. This is very useful when running
-    different tide heights in the same area as you need only to convert one
-    boundary condition to a SWW file, ideally for tide height of 0 m
-    (saving disk space). Then you can use Field_boundary to read this SWW file
-    and change the stage height (tide) on the fly depending on the scenario.
+    Parameters
+    ----------
+    filename : str
+        Path to the SWW file containing stage and momentum time series.
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+    mean_stage : float, optional
+        Constant offset added to the stage read from the file.  Useful for
+        running at different tidal datums without recreating the SWW file.
+        Default ``0.0``.
+    time_thinning : int, optional
+        Read every *time_thinning*-th time step from the file.  Larger values
+        speed up model setup at the cost of temporal resolution.  Default
+        ``1`` (all steps).
+    time_limit : float or None, optional
+        Stop reading the file after this time (seconds).  ``None`` means
+        read to the end.
+    boundary_polygon : list or None, optional
+        Clip the SWW points to this polygon.  ``None`` means use all points.
+    default_boundary : float or None, optional
+        Stage returned when model time exceeds the file's time range.
+        ``None`` raises an exception on out-of-range.
+    use_cache : bool, optional
+        Cache the interpolated field function.  Default ``False``.
+    verbose : bool, optional
+        Emit progress messages.  Default ``False``.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> Bf = anuga.Field_boundary('boundary.sww', domain, mean_stage=0.5)
+    >>> domain.set_boundary({'left': Bf, 'right': Bf, 'top': Bf, 'bottom': Bf})
     """
 
     def __init__(self,
@@ -906,35 +1112,28 @@ class Field_boundary(Boundary):
                  default_boundary=None,
                  use_cache=False,
                  verbose=False):
-        """Constructor
+        """Initialise a field boundary.
 
-        :param filename: Name of sww file containing stage and x/ymomentum
-
-        :param domain: pointer to shallow water domain for which the boundary applies
-
-        :param mean_stage: The mean water level which will be added to stage derived from the boundary condition
-
-        :param time_thinning: Will set how many time steps from the sww file read in will be interpolated to the boundary.
-
-        :param default_boundary: This will be used in case model time exceeds that available in the underlying data.
-
-        :param time_limit:
-
-        :param boundary_polygon:
-
-        :param use_cache:        True if caching is to be used.
-
-        :param verbose:          True if this method is to be verbose.
-
-        For example if
-        the sww file has 1 second time steps and is 24 hours
-        in length it has 86400 time steps. If you set
-        time_thinning to 1 it will read all these steps.
-        If you set it to 100 it will read every 100th step eg
-        only 864 step. This parameter is very useful to increase
-        the speed of a model run that you are setting up
-        and testing.
-
+        Parameters
+        ----------
+        filename : str
+            Path to the SWW file.
+        domain : anuga.Domain
+            The domain to which this boundary is attached.
+        mean_stage : float, optional
+            Stage offset (m).  Default ``0.0``.
+        time_thinning : int, optional
+            Step stride when reading time steps.  Default ``1``.
+        time_limit : float or None, optional
+            Maximum time to read from file.
+        boundary_polygon : list or None, optional
+            Polygon used to clip SWW points.
+        default_boundary : float or None, optional
+            Fallback stage when model time is out of range.
+        use_cache : bool, optional
+            Enable caching.  Default ``False``.
+        verbose : bool, optional
+            Verbosity flag.  Default ``False``.
         """
 
         # Create generic file_boundary object
@@ -981,55 +1180,75 @@ class Field_boundary(Boundary):
 
 
 class Flather_external_stage_zero_velocity_boundary(Boundary):
-    """Boundary condition based on a Flather type approach
+    """Weakly-reflecting open boundary using a Flather-type characteristic approach.
 
-    Setting the external stage with a function, and a zero external velocity,
+    Sets the exterior stage via a function of time and assumes zero exterior
+    velocity.  Interior values are taken from the domain.  The boundary
+    conserved quantities are then computed from characteristic-like variables,
+    making this boundary weakly reflecting — outgoing waves leave with minimal
+    spurious reflection while incoming wave forcing is prescribed.
 
-    The idea is similar (but not identical) to that described on page 239 of
-    the following article::
+    The approach is similar (but not identical) to that described on page 239
+    of:
 
-        Article{blayo05,
-        Title       = {Revisiting open boundary conditions from the point of view of characteristic variables},
-        Author      = {Blayo, E. and Debreu, L.},
-        Journal     = {Ocean Modelling},
-        Year        = {2005},
-        Pages       = {231-252},
-        Volume      = {9},
+    .. code-block:: bibtex
+
+        @Article{blayo05,
+          title   = {Revisiting open boundary conditions from the point of
+                     view of characteristic variables},
+          author  = {Blayo, E. and Debreu, L.},
+          journal = {Ocean Modelling},
+          year    = {2005},
+          volume  = {9},
+          pages   = {231--252},
         }
 
-    Approach
+    Algorithm
+    ---------
+    1. The exterior stage is set from *function(t)*; exterior velocity is zero;
+       interior stage and velocity are taken from the domain edge values.
+    2. Characteristic-like variables are computed depending on whether flow is
+       incoming or outgoing (see Blayo & Debreu 2005).
+    3. The boundary conserved quantities (stage, x-momentum, y-momentum) are
+       recovered from these characteristic variables.
 
-     #. The external (outside boundary) stage is set with a function, the
-        external velocity is zero, the internal stage and velocity are taken from the
-        domain values.
-     #. Some 'characteristic like' variables are computed, depending on whether
-        the flow is incoming or outgoing. See Blayo and Debreu (2005)
-     #. The boundary conserved quantities are computed from these characteristic
-        like variables
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+    function : callable
+        A function ``f(t)`` returning the exterior stage at model time *t*.
+        Typically a :func:`~anuga.file_function` time series.
+    default_boundary : float, optional
+        Stage value returned when model time exceeds the range of *function*
+        (e.g. when a file-function time series ends).  ``0.0`` corresponds to
+        ambient sea level / no wave forcing.  Default ``0.0``.
 
-    This has been useful as a 'weakly reflecting' boundary when the stage should
-    be approximately specified but allowed to adapt to outgoing waves.
-
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> Bf = anuga.Flather_external_stage_zero_velocity_boundary(
+    ...     domain, lambda t: 0.1, default_boundary=0.0)
+    >>> domain.set_boundary({'left': Bf, 'right': Bf, 'top': Bf, 'bottom': Bf})
     """
 
     def __init__(self, domain=None, function=None, default_boundary=0.0):
-        """Create boundary condition object.
+        """Initialise a Flather-type open boundary.
 
-        :param domain: The domain on which to apply boundary condition
-        :param function: Function to apply on the boundary
-        :param float default_boundary: Stage value returned when model time
-            exceeds the function domain (e.g. file_function timeseries ends).
-            Default 0.0 corresponds to ambient sea level / no wave forcing.
+        Parameters
+        ----------
+        domain : anuga.Domain
+            The domain to which this boundary is attached.
+        function : callable
+            Exterior stage function ``f(t)``.
+        default_boundary : float, optional
+            Fallback stage when model time is out of range.  Default ``0.0``.
 
-        Example:
-
-        .. code:: python
-
-            def waveform(t):
-                return sea_level + normalized_amplitude/cosh(t-25)**2
-
-            Bf = Flather_external_stage_zero_velocity_boundary(domain, waveform)
-
+        Raises
+        ------
+        Exception
+            If *domain* or *function* is ``None``.
         """
 
         Boundary.__init__(self)

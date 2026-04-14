@@ -3,7 +3,7 @@ Transient water flows using ANUGA,
 where water driven up a linear sloping beach and time varying boundary.
 Ref: Carrier and Greenspan, Journal of Fluid Mechanics, 1958
 """
-from scipy import linspace, zeros, array, dot
+from numpy import linspace, zeros, array, dot
 from math import log, ceil, sqrt
 from scipy.optimize import fsolve
 

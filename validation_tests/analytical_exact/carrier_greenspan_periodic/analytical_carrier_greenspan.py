@@ -1,5 +1,4 @@
-from scipy import sin, cos, sqrt, linspace, pi, dot
-from numpy import zeros, array
+from numpy import sin, cos, sqrt, linspace, pi, dot, zeros, array
 from scipy.special import jn
 from scipy.optimize import fsolve
 from gaussPivot import *
