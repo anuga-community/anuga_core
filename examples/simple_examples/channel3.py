@@ -65,15 +65,12 @@ outflow = False
 # Evolve system through time
 #------------------------------------------------------------------------------
 anuga.print_domain_memory_stats(domain)
-#anuga.print_domain_struct_stats(domain)
 
 for t in domain.evolve(yieldstep=0.1, finaltime=25.0):
     domain.print_timestepping_statistics()
 
     if t >= 2.0 and t < 2.1:
         anuga.print_domain_memory_stats(domain)
-        anuga.print_domain_struct_stats(domain)
-
 
     stage_pt = domain.get_quantity('stage').get_values(interpolation_points=[[37.0, 2.5]])
 
