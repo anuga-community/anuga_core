@@ -1045,7 +1045,14 @@ class Interpolation_function:
         msg = 'Model time %.16f' % t
         msg += ' is not contained in function domain [%.16f:%.16f].\n' % (self.time[0], self.time[-1])
         if t < self.time[0]: raise Modeltime_too_early(msg)
-        if t > self.time[-1]: raise Modeltime_too_late(msg)
+        if t > self.time[-1]:
+            # Allow tiny overshoot from floating-point accumulation in the
+            # timestepper (typically < 1e-12 s).  Clamp silently; raise only
+            # when the overshoot is physically meaningful.
+            if t - self.time[-1] < 1e-6:
+                t = self.time[-1]
+            else:
+                raise Modeltime_too_late(msg)
 
         oldindex = self.index #Time index
 
