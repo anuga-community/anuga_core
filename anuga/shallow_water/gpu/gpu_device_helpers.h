@@ -59,37 +59,31 @@ static inline void gpu_compute_qmin_qmax_from_dq1(double dq1, double * restrict 
 }
 
 // Limit gradient to enforce monotonicity
+// Restructured to compute all 3 component ratios independently before reduction,
+// enabling SLP (Superword Level Parallelism) vectorization of the ratio computations.
 static inline void gpu_limit_gradient(double * restrict dqv, double qmin, double qmax, double beta_w) {
-    double r = 1000.0;
-
     double dq_x = dqv[0];
     double dq_y = dqv[1];
     double dq_z = dqv[2];
 
-    if (dq_x < -GPU_TINY) {
-        r = fmin(r, qmin / dq_x);
-    } else if (dq_x > GPU_TINY) {
-        r = fmin(r, qmax / dq_x);
-    }
-    if (dq_y < -GPU_TINY) {
-        r = fmin(r, qmin / dq_y);
-    } else if (dq_y > GPU_TINY) {
-        r = fmin(r, qmax / dq_y);
-    }
-    if (dq_z < -GPU_TINY) {
-        r = fmin(r, qmin / dq_z);
-    } else if (dq_z > GPU_TINY) {
-        r = fmin(r, qmax / dq_z);
-    }
+    // Compute limiting ratio for each component independently (enables SLP vectorization).
+    // If |dq| <= GPU_TINY the component imposes no constraint, so use 1000.0 (the initial r).
+    double r0 = (dq_x < -GPU_TINY) ? (qmin / dq_x) : ((dq_x > GPU_TINY) ? (qmax / dq_x) : 1000.0);
+    double r1 = (dq_y < -GPU_TINY) ? (qmin / dq_y) : ((dq_y > GPU_TINY) ? (qmax / dq_y) : 1000.0);
+    double r2 = (dq_z < -GPU_TINY) ? (qmin / dq_z) : ((dq_z > GPU_TINY) ? (qmax / dq_z) : 1000.0);
 
-    double phi = fmin(r * beta_w, 1.0);
+    double r_min = fmin(r0, fmin(r1, r2));
+    double phi = fmin(r_min * beta_w, 1.0);
 
-    dqv[0] *= phi;
-    dqv[1] *= phi;
-    dqv[2] *= phi;
+    // Write back with scalar temporaries for consecutive-store SLP vectorization
+    dqv[0] = dq_x * phi;
+    dqv[1] = dq_y * phi;
+    dqv[2] = dq_z * phi;
 }
 
 // Compute edge values with gradient limiting (for typical case with 3 neighbors)
+// Inlines gradient computation and limiting into a single function using scalar temporaries,
+// eliminating the intermediate dqv[3] array for better register allocation and SLP.
 static inline void gpu_calc_edge_values_with_gradient(
     double cv_k, double cv_k0, double cv_k1, double cv_k2,
     double dxv0, double dxv1, double dxv2,
@@ -97,7 +91,6 @@ static inline void gpu_calc_edge_values_with_gradient(
     double dx1, double dx2, double dy1, double dy2,
     double inv_area2, double beta_tmp, double * restrict edge_values) {
 
-    double dqv[3];
     double dq0 = cv_k0 - cv_k;
     double dq1 = cv_k1 - cv_k0;
     double dq2 = cv_k2 - cv_k0;
@@ -105,17 +98,26 @@ static inline void gpu_calc_edge_values_with_gradient(
     double a = (dy2 * dq1 - dy1 * dq2) * inv_area2;
     double b = (dx1 * dq2 - dx2 * dq1) * inv_area2;
 
-    dqv[0] = a * dxv0 + b * dyv0;
-    dqv[1] = a * dxv1 + b * dyv1;
-    dqv[2] = a * dxv2 + b * dyv2;
+    // Compute gradient components as scalar temporaries (avoids dqv[3] array)
+    double gx = a * dxv0 + b * dyv0;
+    double gy = a * dxv1 + b * dyv1;
+    double gz = a * dxv2 + b * dyv2;
 
     double qmin, qmax;
     gpu_find_qmin_and_qmax_dq1_dq2(dq0, dq1, dq2, &qmin, &qmax);
-    gpu_limit_gradient(dqv, qmin, qmax, beta_tmp);
 
-    edge_values[0] = cv_k + dqv[0];
-    edge_values[1] = cv_k + dqv[1];
-    edge_values[2] = cv_k + dqv[2];
+    // Inline gradient limiting: compute limiting ratios independently for SLP vectorization
+    double r0 = (gx < -GPU_TINY) ? (qmin / gx) : ((gx > GPU_TINY) ? (qmax / gx) : 1000.0);
+    double r1 = (gy < -GPU_TINY) ? (qmin / gy) : ((gy > GPU_TINY) ? (qmax / gy) : 1000.0);
+    double r2 = (gz < -GPU_TINY) ? (qmin / gz) : ((gz > GPU_TINY) ? (qmax / gz) : 1000.0);
+
+    double r_min = fmin(r0, fmin(r1, r2));
+    double phi = fmin(r_min * beta_tmp, 1.0);
+
+    // Write edge values directly from scalar temporaries (consecutive stores for SLP)
+    edge_values[0] = cv_k + gx * phi;
+    edge_values[1] = cv_k + gy * phi;
+    edge_values[2] = cv_k + gz * phi;
 }
 
 // Set constant edge values (for zero beta or boundary cases)

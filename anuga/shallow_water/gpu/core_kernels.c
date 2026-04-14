@@ -297,19 +297,25 @@ void core_extrapolate_second_order_edge(struct domain *D) {
             ymom_ev[k3 + 2] = ymom_cv[k] + dqv[2];
         }
 
-        // Convert velocity edge values back to momentum if needed
+        // Convert velocity edge values back to momentum if needed.
+        // Explicitly unrolled (trip count == 3) to expose SLP vectorization opportunities.
         if (extrapolate_velocity_second_order == 1) {
-            for (int i = 0; i < 3; i++) {
-                double dk = height_ev[k3 + i];
-                xmom_ev[k3 + i] *= dk;
-                ymom_ev[k3 + i] *= dk;
-            }
+            double dk0 = height_ev[k3 + 0];
+            double dk1 = height_ev[k3 + 1];
+            double dk2 = height_ev[k3 + 2];
+            xmom_ev[k3 + 0] *= dk0;
+            xmom_ev[k3 + 1] *= dk1;
+            xmom_ev[k3 + 2] *= dk2;
+            ymom_ev[k3 + 0] *= dk0;
+            ymom_ev[k3 + 1] *= dk1;
+            ymom_ev[k3 + 2] *= dk2;
         }
 
-        // Compute bed edge values from stage - height
-        for (int i = 0; i < 3; i++) {
-            bed_ev[k3 + i] = stage_ev[k3 + i] - height_ev[k3 + i];
-        }
+        // Compute bed edge values from stage - height.
+        // Explicitly unrolled (trip count == 3) for SLP vectorization.
+        bed_ev[k3 + 0] = stage_ev[k3 + 0] - height_ev[k3 + 0];
+        bed_ev[k3 + 1] = stage_ev[k3 + 1] - height_ev[k3 + 1];
+        bed_ev[k3 + 2] = stage_ev[k3 + 2] - height_ev[k3 + 2];
     }
 
     // Step 3: Restore centroid momentum values if we converted to velocity
@@ -772,25 +778,34 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
         double ql[3], qr[3];
         double speed_max_last = 0.0;
 
-        // Zero the explicit updates for this element
-        stage_eu[k] = 0.0;
-        xmom_eu[k] = 0.0;
-        ymom_eu[k] = 0.0;
-
-        // Get centroid values for this element
+        // Pre-compute loop-invariant quantities for this element
+        anuga_int k3 = 3 * k;       // base index for edge arrays (avoids 3*k inside inner loop)
         double hc = height_cv[k];
         double zc = bed_cv[k];
+        double stage_k = stage_cv[k]; // loaded once; used in riverwall section
 
-        // Loop over the 3 edges
+        // Per-edge result storage: separate computation from accumulation to expose
+        // independent per-edge computations to the SLP vectorizer (Intel Advisor recommendation).
+        double stage_ef[3], xmom_ef[3], ymom_ef[3];
+        double max_speed_edge[3];
+        double bflux_contrib[3];
+
+        // bflux_contrib is conditionally assigned inside the loop, so initialise to zero.
+        // stage_ef, xmom_ef, ymom_ef and max_speed_edge are unconditionally assigned
+        // inside the loop, so no initialisation is needed for them.
+        bflux_contrib[0] = 0.0;  bflux_contrib[1] = 0.0;  bflux_contrib[2] = 0.0;
+
+        // Loop 1: Compute per-edge fluxes independently.
+        // Using k3+i instead of 3*k+i avoids recomputing the k*3 product each iteration.
         for (int i = 0; i < 3; i++) {
-            int ki = 3 * k + i;
+            int ki  = k3 + i;
             int ki2 = 2 * ki;
 
             // Left state (this element's edge values)
             ql[0] = stage_ev[ki];
             ql[1] = xmom_ev[ki];
             ql[2] = ymom_ev[ki];
-            double zl = bed_ev[ki];
+            double zl  = bed_ev[ki];
             double hle = height_ev[ki];
 
             // Edge geometry
@@ -810,21 +825,21 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
                 qr[0] = stage_bv[m];
                 qr[1] = xmom_bv[m];
                 qr[2] = ymom_bv[m];
-                zr = zl;
-                hre = fmax(qr[0] - zr, 0.0);
-                hc_n = hc;
-                zc_n = zc;
+                zr    = zl;
+                hre   = fmax(qr[0] - zr, 0.0);
+                hc_n  = hc;
+                zc_n  = zc;
             } else {
                 // Internal edge - get values from neighbour element
-                int m = neighbour_edges[ki];
+                int m  = neighbour_edges[ki];
                 int nm = neighbour * 3 + m;
                 qr[0] = stage_ev[nm];
                 qr[1] = xmom_ev[nm];
                 qr[2] = ymom_ev[nm];
-                zr = bed_ev[nm];
-                hre = height_ev[nm];
-                hc_n = height_cv[neighbour];
-                zc_n = bed_cv[neighbour];
+                zr    = bed_ev[nm];
+                hre   = height_ev[nm];
+                hc_n  = height_cv[neighbour];
+                zc_n  = bed_cv[neighbour];
             }
 
             // Compute z_half (max bed elevation at edge)
@@ -845,11 +860,11 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
             }
 
             // Compute effective heights at the edge
-            double h_left = fmax(hle + zl - z_half, 0.0);
+            double h_left  = fmax(hle + zl - z_half, 0.0);
             double h_right = fmax(hre + zr - z_half, 0.0);
 
             double max_speed_local = 0.0;
-            double pressure_flux = 0.0;
+            double pressure_flux   = 0.0;
 
             if (h_left == 0.0 && h_right == 0.0) {
                 // Both heights zero - no flux
@@ -872,20 +887,20 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
                 riverwall_rowIndex != NULL && riverwall_hydraulic_properties != NULL) {
                 // Get hydraulic properties for this riverwall
                 anuga_int rw_count = edge_river_wall_counter[ki];
-                anuga_int hp_row = riverwall_rowIndex[rw_count - 1];
-                anuga_int ii = hp_row * ncol_riverwall_hp;
+                anuga_int hp_row   = riverwall_rowIndex[rw_count - 1];
+                anuga_int ii       = hp_row * ncol_riverwall_hp;
 
                 double Qfactor = riverwall_hydraulic_properties[ii];
-                double s1 = riverwall_hydraulic_properties[ii + 1];
-                double s2 = riverwall_hydraulic_properties[ii + 2];
-                double h1 = riverwall_hydraulic_properties[ii + 3];
-                double h2 = riverwall_hydraulic_properties[ii + 4];
+                double s1      = riverwall_hydraulic_properties[ii + 1];
+                double s2      = riverwall_hydraulic_properties[ii + 2];
+                double h1      = riverwall_hydraulic_properties[ii + 3];
+                double h2      = riverwall_hydraulic_properties[ii + 4];
 
                 // Weir height above minimum bed elevation
                 double weir_height = fmax(zwall - fmin(zl, zr), 0.0);
 
-                // Compute depths above weir using centroid values
-                double h_left_weir = fmax(stage_cv[k] - z_half, 0.0);
+                // Compute depths above weir using centroid values (use pre-loaded stage_k)
+                double h_left_weir  = fmax(stage_k - z_half, 0.0);
                 double h_right_weir = is_boundary
                     ? fmax(hc_n + zr - z_half, 0.0)
                     : fmax(stage_cv[neighbour] - z_half, 0.0);
@@ -896,36 +911,36 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
                                               s1, s2, h1, h2, &max_speed_local);
             }
 
-            // Multiply flux by edge length (and negate for conservation)
-            edgeflux[0] *= -length;
-            edgeflux[1] *= -length;
-            edgeflux[2] *= -length;
+            // Pressure gradient (gravity) term for this edge
+            double pressuregrad_work = length * (-g * 0.5 * (h_left * h_left - hle * hle
+                                       - (hle + hc) * (zl - zc)) + pressure_flux);
 
-            // Track max speed for this element
-            speed_max_last = fmax(speed_max_last, max_speed_local);
+            // Store per-edge flux (negated and scaled by length) and pressure gradient
+            stage_ef[i]      = -length * edgeflux[0];
+            xmom_ef[i]       = -length * edgeflux[1] - normals[ki2]     * pressuregrad_work;
+            ymom_ef[i]       = -length * edgeflux[2] - normals[ki2 + 1] * pressuregrad_work;
+            max_speed_edge[i] = max_speed_local;
 
-            // Accumulate flux contributions
-            stage_eu[k] += edgeflux[0];
-            xmom_eu[k] += edgeflux[1];
-            ymom_eu[k] += edgeflux[2];
-
-            // Boundary flux tracking: if this cell is not a ghost, and the neighbour
-            // is a boundary condition OR a ghost cell, add the flux to boundary integral
+            // Boundary flux contribution (store for accumulation after loop)
             if (tri_full_flag != NULL) {
-                int is_full = (tri_full_flag[k] == 1);
+                int is_full           = (tri_full_flag[k] == 1);
                 int neighbour_is_ghost = (!is_boundary && tri_full_flag[neighbour] == 0);
                 if ((is_boundary && is_full) || (is_full && neighbour_is_ghost)) {
-                    boundary_flux_sum_substep += edgeflux[0];
+                    bflux_contrib[i] = stage_ef[i];
                 }
             }
 
-            // Pressure gradient (gravity) terms
-            double pressuregrad_work = length * (-g * 0.5 * (h_left * h_left - hle * hle
-                                       - (hle + hc) * (zl - zc)) + pressure_flux);
-            xmom_eu[k] -= normals[ki2] * pressuregrad_work;
-            ymom_eu[k] -= normals[ki2 + 1] * pressuregrad_work;
+        } // End per-edge computation loop
 
-        } // End edge loop
+        // Accumulate the three independent per-edge results.
+        // The SLP vectorization benefit is primarily from the independent per-edge
+        // computations in Loop 1 above; these sums are the final reduction step.
+        double sum_stage = stage_ef[0] + stage_ef[1] + stage_ef[2];
+        double sum_xmom  = xmom_ef[0]  + xmom_ef[1]  + xmom_ef[2];
+        double sum_ymom  = ymom_ef[0]  + ymom_ef[1]  + ymom_ef[2];
+
+        speed_max_last = fmax(fmax(max_speed_edge[0], max_speed_edge[1]), max_speed_edge[2]);
+        boundary_flux_sum_substep += bflux_contrib[0] + bflux_contrib[1] + bflux_contrib[2];
 
         // Update timestep only on first substep and for non-ghost cells
         if (substep_count == 0) {
@@ -938,11 +953,11 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
             max_speed_array[k] = speed_max_last;
         }
 
-        // Normalize by area
+        // Normalize by area and write back explicit updates
         double inv_area = 1.0 / areas[k];
-        stage_eu[k] *= inv_area;
-        xmom_eu[k] *= inv_area;
-        ymom_eu[k] *= inv_area;
+        stage_eu[k] = sum_stage * inv_area;
+        xmom_eu[k]  = sum_xmom  * inv_area;
+        ymom_eu[k]  = sum_ymom  * inv_area;
 
     } // End element loop
 
