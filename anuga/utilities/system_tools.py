@@ -353,20 +353,27 @@ def quantity_memory_stats(domain):
     Quantity memory breakdown  (N=400 triangles, L=80 boundary edges)
     ...
     """
-    # Short column headers paired with the attribute name on the Quantity object.
-    # Header width is chosen to fit the widest header (si_upd = 6) plus padding.
+    # Abbreviated column headers (attr name on the Quantity object).
     _ARRAYS = [
-        ('cntrd',   'centroid_values'),
-        ('edge',    'edge_values'),
-        ('vert',    '_vertex_values'),
-        ('bndry',   'boundary_values'),
-        ('ex_upd',  'explicit_update'),
-        ('si_upd',  'semi_implicit_update'),
-        ('ct_bkp',  'centroid_backup_values'),
-        ('x_grd',   '_x_gradient'),
-        ('y_grd',   '_y_gradient'),
-        ('phi',     '_phi'),
+        ('cntrd',  'centroid_values'),
+        ('edge',   'edge_values'),
+        ('vert',   '_vertex_values'),
+        ('bndry',  'boundary_values'),
+        ('ex_up',  'explicit_update'),
+        ('si_up',  'semi_implicit_update'),
+        ('ct_bk',  'centroid_backup_values'),
+        ('x_grd',  '_x_gradient'),
+        ('y_grd',  '_y_gradient'),
+        ('phi',    '_phi'),
     ]
+
+    # Abbreviated quantity type names.
+    _TYPE_ABBREV = {
+        'evolved':          'evol',
+        'edge_diagnostic':  'e_diag',
+        'centroid_only':    'c_only',
+        'coordinate':       'coord',
+    }
 
     N = domain.number_of_elements
     try:
@@ -374,20 +381,22 @@ def quantity_memory_stats(domain):
     except AttributeError:
         L = 0
 
-    col_w = max(len(label) for label, _ in _ARRAYS) + 2  # 8
-    headers = [label for label, _ in _ARRAYS]
+    col_w  = max(len(label) for label, _ in _ARRAYS) + 2   # 7
     name_w = max(len(n) for n in domain.quantities) + 1
-    type_w = max(len(getattr(q, '_qty_type', '?')) for q in domain.quantities.values()) + 1
+    type_w = max(len(_TYPE_ABBREV.get(getattr(q, '_qty_type', '?'), '?'))
+                 for q in domain.quantities.values()) + 1
+
+    headers = [label for label, _ in _ARRAYS]
     header_row = (f"{'Quantity':<{name_w}} {'type':<{type_w}} " +
                   ''.join(f"{h:>{col_w}}" for h in headers) +
                   f"{'TOTAL':>{col_w}}")
     sep = '-' * len(header_row)
 
     lines = [
-        f"Quantity memory (N={N:,} tri, L={L:,} bndry edges) — sizes in kB, '--'=lazy",
-        f"  cntrd=centroid  edge=edge  vert=vertex  bndry=boundary",
-        f"  ex_upd=explicit_update  si_upd=semi_implicit_update  ct_bkp=centroid_backup",
-        f"  x_grd/y_grd=gradients  phi=phi",
+        f"Quantity memory (N={N:,} tri, L={L:,} bndry) — kB, '--'=lazy",
+        f"  type: evol=evolved  e_diag=edge_diagnostic  c_only=centroid_only  coord=coordinate",
+        f"  cols: cntrd=centroid  edge=edge  vert=vertex  bndry=boundary  ex_up=explicit_update",
+        f"        si_up=semi_implicit_update  ct_bk=centroid_backup  x/y_grd=gradients",
         sep,
         header_row,
         sep,
@@ -396,7 +405,8 @@ def quantity_memory_stats(domain):
     grand_total_bytes = 0
 
     for qty_name, qty in sorted(domain.quantities.items()):
-        qty_type = getattr(qty, '_qty_type', '?')
+        raw_type = getattr(qty, '_qty_type', '?')
+        qty_type = _TYPE_ABBREV.get(raw_type, raw_type)
         row_bytes = 0
         cells = []
 
