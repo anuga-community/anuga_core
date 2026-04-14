@@ -107,7 +107,7 @@ def conjugate_gradient(A, b, x0=None, imax=10000, tol=1.0e-8, atol=1.0e-14,
         assert isinstance(A, Sparse_CSR), msg
 
     if use_c_cg and precon == 'SSOR':
-        msg = "SSOR preconditioner requires use_c_cg=True"
+        msg = "SSOR preconditioner requires A to be Sparse_CSR"
         assert isinstance(A, Sparse_CSR), msg
 
     if use_c_cg and solver == 'persistent' and precon not in ('None', 'none'):

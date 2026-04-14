@@ -209,5 +209,3 @@ def cg_solve_c_persistent(object csr_sparse,\
                                  M)
 
     return err
-
-    return err

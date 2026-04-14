@@ -69,8 +69,9 @@ def _header(title):
 def _row(label, t_old, t_new, unit="ms"):
     scale = 1e3 if unit == "ms" else 1.0
     speedup = t_old / t_new if t_new > 0 else float("inf")
-    print(f"  {label:<38s}  {t_old*scale:8.2f} {unit}  ->  {t_new*scale:8.2f} {unit}"
-          f"   ({speedup:.2f}x speedup)")
+    timing = (f"  {label:<38s}  {t_old*scale:8.2f} {unit}"
+              f"  ->  {t_new*scale:8.2f} {unit}   ({speedup:.2f}x speedup)")
+    print(timing)
 
 
 # ---------------------------------------------------------------------------
