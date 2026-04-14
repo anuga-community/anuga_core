@@ -126,6 +126,79 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
   return timestep;
 }
 
+// Unified: calls core_compute_fluxes_hllc from core_kernels.c
+// Handles substep tracking via static variables (per-module state)
+double _openmp_compute_fluxes_hllc(const struct domain *__restrict D,
+                                   double timestep)
+{
+  static anuga_int call_hllc = 0;
+  static anuga_int timestep_fluxcalls_hllc = 1;
+  static anuga_int base_call_hllc = 1;
+
+  call_hllc++;
+
+  if (D->timestep_fluxcalls != timestep_fluxcalls_hllc) {
+    timestep_fluxcalls_hllc = D->timestep_fluxcalls;
+    base_call_hllc = call_hllc;
+  }
+
+  int substep_count = (call_hllc - base_call_hllc) % D->timestep_fluxcalls;
+
+  double local_timestep = core_compute_fluxes_hllc((struct domain *)D, substep_count, D->timestep_fluxcalls);
+
+  if (substep_count == 0) {
+    timestep = local_timestep;
+  }
+
+  return timestep;
+}
+
+// Scalar wrapper for HLLC flux function (used for unit tests / Cython access)
+anuga_int __openmp__flux_function_hllc(double q_left0, double q_left1, double q_left2,
+                                       double q_right0, double q_right1, double q_right2,
+                                       double h_left, double h_right,
+                                       double hle, double hre,
+                                       double n1, double n2,
+                                       double epsilon,
+                                       double ze,
+                                       double g,
+                                       double *edgeflux0, double *edgeflux1, double *edgeflux2,
+                                       double *max_speed,
+                                       double *pressure_flux,
+                                       anuga_int low_froude)
+{
+  double edgeflux[3];
+  double q_left[3];
+  double q_right[3];
+
+  edgeflux[0] = *edgeflux0;
+  edgeflux[1] = *edgeflux1;
+  edgeflux[2] = *edgeflux2;
+
+  q_left[0] = q_left0;
+  q_left[1] = q_left1;
+  q_left[2] = q_left2;
+
+  q_right[0] = q_right0;
+  q_right[1] = q_right1;
+  q_right[2] = q_right2;
+
+  gpu_flux_function_hllc(q_left, q_right,
+                         h_left, h_right,
+                         hle, hre,
+                         n1, n2,
+                         epsilon, ze, g,
+                         edgeflux, max_speed,
+                         pressure_flux,
+                         low_froude);
+
+  *edgeflux0 = edgeflux[0];
+  *edgeflux1 = edgeflux[1];
+  *edgeflux2 = edgeflux[2];
+
+  return 0;
+}
+
 // Protect against the water elevation falling below the triangle bed
 // Unified: calls core_protect from core_kernels.c
 double _openmp_protect(const struct domain *__restrict D)
@@ -177,14 +250,13 @@ void _openmp_manning_friction_sloped_semi_implicit_edge_based(const struct domai
 {
   anuga_int k;
   const double one_third = 1.0 / 3.0;
-  const double seven_thirds = 7.0 / 3.0;
 
   anuga_int N = D->number_of_elements;
   const double  g = D->g;
   const double  eps = D->minimum_allowed_height;
   
 #pragma omp parallel for simd default(none) shared(D) schedule(static) \
-        firstprivate(N, eps, g, seven_thirds, one_third)
+        firstprivate(N, eps, g, one_third)
 for (k = 0; k < N; k++)
   {
     double S, h, z, z0, z1, z2, zs, zx, zy;
@@ -227,7 +299,9 @@ for (k = 0; k < N; k++)
       if (h >= eps)
       {
         S = -g*eta*eta*zs * sqrt((uh*uh + vh*vh));
-        S /= pow(h, seven_thirds); 
+        // Fast h^(7/3) = h^2 * h^(1/3) using cbrt instead of pow()
+        double h2 = h * h;
+        S /= h2 * cbrt(h);
       }
     }
     D->xmom_semi_implicit_update[k] += S * uh;
@@ -245,9 +319,8 @@ void _openmp_manning_friction_flat(const double g, const double eps, const anuga
 {
 
   anuga_int k;
-  const double seven_thirds = 7.0 / 3.0;
 
-#pragma omp parallel for schedule(static) firstprivate(eps, g, seven_thirds)
+#pragma omp parallel for schedule(static) firstprivate(eps, g)
   for (k = 0; k < N; k++)
   {
     double S, h, z, abs_mom;
@@ -261,7 +334,9 @@ void _openmp_manning_friction_flat(const double g, const double eps, const anuga
       if (h >= eps)
       {
         S = -g * eta[k] * eta[k] * abs_mom;
-        S /= pow(h, seven_thirds); 
+        // Fast h^(7/3) = h^2 * h^(1/3) using cbrt instead of pow()
+        double h2 = h * h;
+        S /= h2 * cbrt(h);
       }
     }
     xmom_update[k] += S * uh[k];
@@ -279,9 +354,8 @@ void _openmp_manning_friction_sloped(const double g, const double eps, const anu
 {
 
   const double one_third = 1.0 / 3.0;
-  const double seven_thirds = 7.0 / 3.0;
 
-#pragma omp parallel for schedule(static) firstprivate(eps, g, one_third, seven_thirds)
+#pragma omp parallel for schedule(static) firstprivate(eps, g, one_third)
   for (anuga_int k = 0; k < N; k++)
   {
     double S = 0.0;
@@ -312,7 +386,9 @@ void _openmp_manning_friction_sloped(const double g, const double eps, const anu
       if (h >= eps)
       {
         S = -g * eta[k] * eta[k] * zs * sqrt((uh[k] * uh[k] + vh[k] * vh[k]));
-        S /= pow(h, seven_thirds); 
+        // Fast h^(7/3) = h^2 * h^(1/3) using cbrt instead of pow()
+        double h2 = h * h;
+        S /= h2 * cbrt(h);
       }
     }
     xmom_update[k] += S * uh[k];
@@ -329,9 +405,8 @@ void _openmp_manning_friction_sloped_edge_based(const double g, const double eps
 {
 
   const double one_third = 1.0 / 3.0;
-  const double seven_thirds = 7.0 / 3.0;
 
-#pragma omp parallel for schedule(static) firstprivate(eps, g, one_third, seven_thirds)
+#pragma omp parallel for schedule(static) firstprivate(eps, g, one_third)
   for (anuga_int k = 0; k < N; k++)
   {
     double S = 0.0;
@@ -362,7 +437,9 @@ void _openmp_manning_friction_sloped_edge_based(const double g, const double eps
       if (h >= eps)
       {
         S = -g * eta[k] * eta[k] * zs * sqrt((uh[k] * uh[k] + vh[k] * vh[k]));
-        S /= pow(h, seven_thirds); 
+        // Fast h^(7/3) = h^2 * h^(1/3) using cbrt instead of pow()
+        double h2 = h * h;
+        S /= h2 * cbrt(h);
       }
     }
     xmom_update[k] += S * uh[k];

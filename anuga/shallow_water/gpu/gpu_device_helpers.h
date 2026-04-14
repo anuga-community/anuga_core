@@ -25,6 +25,7 @@
 #define FLOPS_SAXPY              9
 #define FLOPS_RATE_OPERATOR      8
 #define FLOPS_GHOST_EXCHANGE     0
+#define FLOPS_COMPUTE_FLUXES_HLLC  420
 
 // ============================================================================
 // Device Helper Functions
@@ -83,6 +84,48 @@ static inline void gpu_limit_gradient(double * restrict dqv, double qmin, double
     }
 
     double phi = fmin(r * beta_w, 1.0);
+
+    dqv[0] *= phi;
+    dqv[1] *= phi;
+    dqv[2] *= phi;
+}
+
+// Venkatakrishnan (1995) smooth limiter — differentiable alternative to Barth-Jespersen
+// Parameter eps2 controls smoothness: eps2 = (K * h_char)^3 where K ~ 0.1-1.0
+// When eps2 → 0, this reduces to Barth-Jespersen
+// When eps2 → ∞, this becomes unlimited (no limiting)
+static inline void gpu_limit_gradient_venkatakrishnan(
+    double * restrict dqv, double qmin, double qmax, double beta_w, double eps2) {
+
+    double phi_min = 1000.0;
+
+    double dq[3];
+    dq[0] = dqv[0];
+    dq[1] = dqv[1];
+    dq[2] = dqv[2];
+
+    for (int i = 0; i < 3; i++) {
+        double phi_i;
+        if (dq[i] > GPU_TINY) {
+            double Delta = qmax;
+            double Delta2 = Delta * Delta;
+            double dq2 = dq[i] * dq[i];
+            phi_i = (Delta2 + eps2 + 2.0 * dq[i] * Delta) /
+                    (Delta2 + 2.0 * dq2 + Delta * dq[i] + eps2);
+        } else if (dq[i] < -GPU_TINY) {
+            double Delta = qmin;
+            double Delta2 = Delta * Delta;
+            double dq2 = dq[i] * dq[i];
+            phi_i = (Delta2 + eps2 + 2.0 * dq[i] * Delta) /
+                    (Delta2 + 2.0 * dq2 + Delta * dq[i] + eps2);
+        } else {
+            phi_i = 1.0;
+        }
+        phi_min = fmin(phi_min, phi_i);
+    }
+
+    double phi = fmin(phi_min * beta_w, 1.0);
+    phi = fmax(phi, 0.0);
 
     dqv[0] *= phi;
     dqv[1] *= phi;
@@ -292,6 +335,153 @@ static inline void gpu_flux_function_central(
         // Rotate back
         gpu_rotate(edgeflux, n1, -n2);
     }
+}
+
+// HLLC flux function - Toro (2001) three-wave approximate Riemann solver
+static inline void gpu_flux_function_hllc(
+    double * restrict q_left, double * restrict q_right,
+    double h_left, double h_right,
+    double hle, double hre,
+    double n1, double n2,
+    double epsilon, double ze, double g,
+    double * restrict edgeflux, double * restrict max_speed, double * restrict pressure_flux,
+    anuga_int low_froude) {
+
+    double uh_left, vh_left, u_left, v_left;
+    double uh_right, vh_right, u_right, v_right;
+    double soundspeed_left, soundspeed_right;
+    double q_left_rotated[3], q_right_rotated[3];
+    double flux_left[3], flux_right[3];
+
+    // Early exit: both sides dry
+    if (h_left < epsilon && h_right < epsilon) {
+        edgeflux[0] = 0.0;
+        edgeflux[1] = 0.0;
+        edgeflux[2] = 0.0;
+        *max_speed = 0.0;
+        *pressure_flux = 0.0;
+        return;
+    }
+
+    // Copy and rotate to edge-aligned coordinates
+    for (int i = 0; i < 3; i++) {
+        q_left_rotated[i] = q_left[i];
+        q_right_rotated[i] = q_right[i];
+    }
+    gpu_rotate(q_left_rotated, n1, n2);
+    gpu_rotate(q_right_rotated, n1, n2);
+
+    // Compute velocities
+    uh_left = q_left_rotated[1];
+    vh_left = q_left_rotated[2];
+    gpu_compute_velocity_terms(h_left, hle, q_left_rotated[1], q_left_rotated[2],
+                               &u_left, &uh_left, &v_left, &vh_left);
+
+    uh_right = q_right_rotated[1];
+    vh_right = q_right_rotated[2];
+    gpu_compute_velocity_terms(h_right, hre, q_right_rotated[1], q_right_rotated[2],
+                               &u_right, &uh_right, &v_right, &vh_right);
+
+    // Wave speeds
+    soundspeed_left = sqrt(g * h_left);
+    soundspeed_right = sqrt(g * h_right);
+
+    // Roe-averaged quantities
+    double sqrt_hl = sqrt(h_left);
+    double sqrt_hr = sqrt(h_right);
+    double h_bar = 0.5 * (h_left + h_right);
+    double u_bar = (u_left * sqrt_hl + u_right * sqrt_hr) / (sqrt_hl + sqrt_hr + 1.0e-100);
+    double c_bar = sqrt(g * h_bar);
+
+    // Signal speeds
+    double s_L = fmin(u_left - soundspeed_left, u_bar - c_bar);
+    double s_R = fmax(u_right + soundspeed_right, u_bar + c_bar);
+
+    // Contact wave speed
+    double denom_star = h_right * (u_right - s_R) - h_left * (u_left - s_L);
+    double s_star = (s_L * h_right * (u_right - s_R) - s_R * h_left * (u_left - s_L)) /
+                    (fabs(denom_star) > 1.0e-100 ? denom_star : 1.0e-100);
+
+    // Physical fluxes (advective part only, matching gpu_flux_function_central convention)
+    // The hydrostatic pressure term 0.5*g*h^2 is NOT included here; it is returned
+    // separately via pressure_flux and applied via pressuregrad_work in the kernel.
+    flux_left[0] = u_left * h_left;
+    flux_left[1] = u_left * uh_left;
+    flux_left[2] = u_left * vh_left;
+
+    flux_right[0] = u_right * h_right;
+    flux_right[1] = u_right * uh_right;
+    flux_right[2] = u_right * vh_right;
+
+    // Low-Froude correction factor
+    double local_fr = gpu_compute_local_froude(low_froude, u_left, u_right,
+                                               v_left, v_right,
+                                               soundspeed_left, soundspeed_right);
+
+    double denom = s_R - s_L;
+    if (denom < epsilon) {
+        // Degenerate case: fall back to simple averaging
+        edgeflux[0] = 0.5 * (flux_left[0] + flux_right[0]);
+        edgeflux[1] = 0.5 * (flux_left[1] + flux_right[1]);
+        edgeflux[2] = 0.5 * (flux_left[2] + flux_right[2]);
+        *max_speed = 0.0;
+        *pressure_flux = 0.5 * g * 0.5 * (h_left * h_left + h_right * h_right);
+    } else if (s_L >= 0.0) {
+        // Supersonic from left
+        edgeflux[0] = flux_left[0];
+        edgeflux[1] = flux_left[1];
+        edgeflux[2] = flux_left[2];
+        *max_speed = fmax(fabs(s_L), fabs(s_R));
+        *pressure_flux = 0.5 * g * (s_R * h_left * h_left - s_L * h_right * h_right) /
+                         (fabs(denom) > 1.0e-100 ? denom : 1.0e-100);
+    } else if (s_R <= 0.0) {
+        // Supersonic from right
+        edgeflux[0] = flux_right[0];
+        edgeflux[1] = flux_right[1];
+        edgeflux[2] = flux_right[2];
+        *max_speed = fmax(fabs(s_L), fabs(s_R));
+        *pressure_flux = 0.5 * g * (s_R * h_left * h_left - s_L * h_right * h_right) /
+                         (fabs(denom) > 1.0e-100 ? denom : 1.0e-100);
+    } else if (s_star >= 0.0) {
+        // Left star region: s_L < 0 <= s_star
+        double factor_L = (s_L - u_left) / (fabs(s_L - s_star) > 1.0e-100 ? (s_L - s_star) : 1.0e-100);
+        double q_star_L[3];
+        q_star_L[0] = h_left * factor_L;
+        q_star_L[1] = h_left * factor_L * s_star;
+        q_star_L[2] = h_left * factor_L * v_left;
+
+        edgeflux[0] = flux_left[0] + s_L * (q_star_L[0] - h_left);
+        edgeflux[1] = flux_left[1] + s_L * (q_star_L[1] - uh_left);
+        edgeflux[2] = flux_left[2] + s_L * (q_star_L[2] - vh_left);
+
+        *max_speed = fmax(fabs(s_L), fabs(s_R));
+        *pressure_flux = 0.5 * g * (s_R * h_left * h_left - s_L * h_right * h_right) /
+                         (fabs(denom) > 1.0e-100 ? denom : 1.0e-100);
+    } else {
+        // Right star region: s_star < 0 < s_R
+        double factor_R = (s_R - u_right) / (fabs(s_R - s_star) > 1.0e-100 ? (s_R - s_star) : 1.0e-100);
+        double q_star_R[3];
+        q_star_R[0] = h_right * factor_R;
+        q_star_R[1] = h_right * factor_R * s_star;
+        q_star_R[2] = h_right * factor_R * v_right;
+
+        edgeflux[0] = flux_right[0] + s_R * (q_star_R[0] - h_right);
+        edgeflux[1] = flux_right[1] + s_R * (q_star_R[1] - uh_right);
+        edgeflux[2] = flux_right[2] + s_R * (q_star_R[2] - vh_right);
+
+        *max_speed = fmax(fabs(s_L), fabs(s_R));
+        *pressure_flux = 0.5 * g * (s_R * h_left * h_left - s_L * h_right * h_right) /
+                         (fabs(denom) > 1.0e-100 ? denom : 1.0e-100);
+    }
+
+    // Apply low-Froude correction to momentum terms
+    edgeflux[1] *= local_fr + (1.0 - local_fr) * (edgeflux[0] / (fabs(edgeflux[0]) + 1.0e-100)) *
+                   (fabs(edgeflux[1]) / (fabs(edgeflux[1]) + 1.0e-100));
+    edgeflux[2] *= local_fr + (1.0 - local_fr) * (edgeflux[0] / (fabs(edgeflux[0]) + 1.0e-100)) *
+                   (fabs(edgeflux[2]) / (fabs(edgeflux[2]) + 1.0e-100));
+
+    // Rotate back to global coordinates
+    gpu_rotate(edgeflux, n1, -n2);
 }
 
 // ============================================================================

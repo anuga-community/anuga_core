@@ -142,6 +142,13 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	double n1, double n2, double epsilon, double ze, double g,
 	double* edgeflux0, double* edgeflux1, double* edgeflux2,
 	double* max_speed, double* pressure_flux, anuga_int low_froude)
+	double _openmp_compute_fluxes_hllc(domain* D, double timestep)
+	anuga_int __openmp__flux_function_hllc(double q_left0, double q_left1, double q_left2,
+	double q_right0, double q_right1, double q_right2,
+	double h_left, double h_right, double hle, double hre,
+	double n1, double n2, double epsilon, double ze, double g,
+	double* edgeflux0, double* edgeflux1, double* edgeflux2,
+	double* max_speed, double* pressure_flux, anuga_int low_froude)
 
 
 cdef anuga_int pointer_flag = 0
@@ -970,6 +977,21 @@ def compute_fluxes_ext_central(object domain_py_object,
 
 	return timestep
 
+def compute_fluxes_ext_hllc(object domain_py_object,
+                             double timestep,
+                             update_domain_c_struct=False):
+	"""Compute fluxes using the HLLC Riemann solver (Toro 2001).
+
+	Drop-in replacement for compute_fluxes_ext_central that uses the
+	three-wave HLLC solver instead of the central-upwind scheme.
+	"""
+	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
+
+	with nogil:
+		timestep = _openmp_compute_fluxes_hllc(D, timestep)
+
+	return timestep
+
 def extrapolate_second_order_sw(object domain_py_object, update_domain_c_struct=False):
 
 	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
@@ -1208,6 +1230,45 @@ def flux_function_central(
 	assert err >= 0, "Discontinuous Elevation"
 
 	return max_speed, pressure_flux
+
+def flux_function_hllc(
+	np.ndarray[double, ndim=1, mode="c"] normal not None,
+	np.ndarray[double, ndim=1, mode="c"] ql not None,
+	np.ndarray[double, ndim=1, mode="c"] qr not None,
+	double h_left,
+	double h_right,
+	double hle,
+	double hre,
+	np.ndarray[double, ndim=1, mode="c"] edgeflux not None,
+	double epsilon,
+	double ze,
+	double g,
+	double H0,
+	double hc,
+	double hc_n,
+	anuga_int low_froude
+):
+	"""Compute a single edge flux using the HLLC Riemann solver.
+
+	Same interface as flux_function_central; returns (max_speed, pressure_flux).
+	"""
+	cdef double max_speed, pressure_flux
+	cdef anuga_int err
+
+	err = __openmp__flux_function_hllc(
+		ql[0], ql[1], ql[2],
+		qr[0], qr[1], qr[2],
+		h_left, h_right, hle, hre,
+		normal[0], normal[1], epsilon, ze, g,
+		&edgeflux[0], &edgeflux[1], &edgeflux[2],
+		&max_speed, &pressure_flux, low_froude
+	)
+
+	assert err >= 0, "HLLC flux function error"
+
+	return max_speed, pressure_flux
+
+
 
 def gravity(object domain_py_object, update_domain_c_struct=False):
 
