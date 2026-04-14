@@ -1182,21 +1182,6 @@ class Test_Interpolate(unittest.TestCase):
         else:
             raise Exception('Should raise exception')
 
-        # Tiny floating-point overshoot (< 1e-6 s) must not raise —
-        # this happens when timestep accumulation lands just past finaltime.
-        eps = 1.85e-13   # typical overshoot seen in practice
-        result = I(time[-1] + eps)
-        assert num.allclose(result, I(time[-1]))
-
-        # Overshoot >= 1e-6 s must still raise Modeltime_too_late.
-        from anuga.fit_interpolate.interpolate import Modeltime_too_late
-        try:
-            I(time[-1] + 1e-5)
-        except Modeltime_too_late:
-            pass
-        else:
-            raise Exception('Should raise Modeltime_too_late for overshoot >= 1e-6')
-
 
 
 

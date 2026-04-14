@@ -1012,11 +1012,14 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
 
     """
 
-    def __init__(self, domain=None, function=None):
+    def __init__(self, domain=None, function=None, default_boundary=0.0):
         """Create boundary condition object.
 
         :param domain: The domain on which to apply boundary condition
         :param function: Function to apply on the boundary
+        :param float default_boundary: Stage value returned when model time
+            exceeds the function domain (e.g. file_function timeseries ends).
+            Default 0.0 corresponds to ambient sea level / no wave forcing.
 
         Example:
 
@@ -1041,6 +1044,7 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
 
         self.domain = domain
         self.function = function
+        self.default_boundary = default_boundary
 
 
     def __repr__(self):
@@ -1064,7 +1068,7 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
 
         t = self.domain.get_time()
 
-        value = self.function(t)
+        value = self.get_boundary_values(t)
         try:
             stage_outside = float(value)
         except (ValueError, TypeError):
@@ -1146,7 +1150,7 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
 
         # Get stage value
         t = self.domain.get_time()
-        value = self.function(t)
+        value = self.get_boundary_values(t)
         try:
             stage_outside = float(value)
         except (ValueError, TypeError):
