@@ -935,6 +935,11 @@ def setup_Domain_C_struct(object domain_py_object, update_domain_c_struct=False)
 	"""
 	Setup the Domain_C_struct on the Python Domain object.
 	"""
+	# Ensure work arrays are allocated before the C struct reads their pointers.
+	# They are kept None at domain creation to avoid cold virtual pages during
+	# distribute(); _ensure_work_arrays() allocates them on the first evolve call.
+	if hasattr(domain_py_object, '_ensure_work_arrays'):
+		domain_py_object._ensure_work_arrays()
 	domain_py_object._Domain_C_struct = Domain_C_struct(domain_py_object)
 
 def update_Domain_C_struct(object domain_py_object):

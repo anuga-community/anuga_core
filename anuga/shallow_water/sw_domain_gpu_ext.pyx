@@ -757,6 +757,11 @@ def init_gpu_domain(object domain_object, bint verbose=True):
     # Propagate verbose flag to C struct so printf calls respect it
     gpu_dom.GD.verbose = 1 if verbose else 0
 
+    # Ensure lazy work arrays (including edge_flux_type) are allocated before
+    # building the C struct — they may be None if no evolve has occurred yet.
+    if hasattr(domain_object, '_ensure_work_arrays'):
+        domain_object._ensure_work_arrays()
+
     # Extract array pointers from Python domain
     get_domain_pointers(&gpu_dom.GD, domain_object)
 

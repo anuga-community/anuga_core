@@ -463,24 +463,21 @@ class Generic_Domain:
         if verbose:
             log.info('Domain: Set work arrays')
 
-        # To avoid calculating the flux across each edge twice, keep an integer
-        # (boolean) array, to be used during the flux calculation.
         N = len(self)  # Number_of_triangles
-        self.already_computed_flux = num.zeros((N, 3), int)
 
-        self.work_centroid_values = num.zeros(N, float)
+        # Lazy-allocated work arrays (allocated by _ensure_work_arrays() on
+        # first evolve step, saving ~600+ MB of cold virtual pages for large
+        # domains during expensive distribute() phases).
+        self.already_computed_flux = None   # (N,3) int — C extension
+        self.work_centroid_values  = None   # (N,)   float — C extension
+        self.max_speed             = None   # (N,)   float — diagnostics
 
-        # Shared gradient workspace — reused by every call to
-        # extrapolate_second_order_and_limit_by_edge/vertex so that individual
-        # Quantity objects never need to allocate their own gradient arrays.
+        # Shared gradient workspace for the Python extrapolation path (old
+        # solver / operators). Allocated eagerly because operators may use
+        # them before the first evolve() call, before _ensure_work_arrays().
         self._grad_workspace_x = num.zeros(N, float)
         self._grad_workspace_y = num.zeros(N, float)
-        self._phi_workspace = num.zeros(N, float)
-
-        # Storage for maximal speeds computed for each triangle by
-        # compute_fluxes.
-        # This is used for diagnostics only (reset at every yieldstep)
-        self.max_speed = num.zeros(N, float)
+        self._phi_workspace    = num.zeros(N, float)
 
         if mesh_filename is not None:
             # If the mesh file passed any quantity values,
@@ -1408,7 +1405,7 @@ class Generic_Domain:
         from anuga.utilities.system_tools import memory_stats
         msg += f', {memory_stats()}'
 
-        if track_speeds is True:
+        if track_speeds is True and self.max_speed is not None:
             msg += '\n'
 
             # Setup 10 bins for speed histogram
@@ -2056,7 +2053,8 @@ class Generic_Domain:
                 self.recorded_max_timestep = self.evolve_min_timestep
                 self.number_of_steps = 0
                 self.number_of_first_order_steps = 0
-                self.max_speed[:] = 0.0
+                if self.max_speed is not None:
+                    self.max_speed[:] = 0.0
 
     def evolve_one_euler_step(self, yieldstep, finaltime):
         """One Euler Time Step

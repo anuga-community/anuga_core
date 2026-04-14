@@ -415,8 +415,10 @@ class Domain(Generic_Domain):
         #                   1 == riverwall
         #                   2 == ?
         #                   etc
-        self.edge_flux_type=num.zeros(len(self.edge_coordinates[:,0])).astype(int)
-        self.edge_river_wall_counter=num.zeros(len(self.edge_coordinates[:,0])).astype(int)
+        # Lazy: allocated by _ensure_work_arrays() (no river walls) or by
+        # create_riverwalls() (before evolve).  Saves ~108 MB at N=2.25M.
+        self.edge_flux_type = None          # (3N,) int — 0=normal, 1=riverwall
+        self.edge_river_wall_counter = None # (3N,) int — per-edge riverwall index
         self.number_of_riverwall_edges = 0
 
         # Riverwalls -- initialise with dummy values
@@ -438,40 +440,27 @@ class Domain(Generic_Domain):
         # List to store the volumes we computed before
         self.volume_history=[]
 
-        # Work arrays [avoid allocate statements in compute_fluxes or extrapolate_second_order]
-        # FIXME SR: Should rationalise these arrays -- some may be redundant
-        self.edge_flux_work=num.zeros(len(self.edge_coordinates[:,0])*3) # Advective fluxes
-        self.neigh_work=num.zeros(len(self.edge_coordinates[:,0])*3) # Advective fluxes
-        self.pressuregrad_work=num.zeros(len(self.edge_coordinates[:,0])) # Gravity related terms
-        self.x_centroid_work=num.zeros(len(self.edge_coordinates[:,0])//3)
-        self.y_centroid_work=num.zeros(len(self.edge_coordinates[:,0])//3)
+        # Work arrays — allocated lazily by _ensure_work_arrays() on the first
+        # evolve step (via setup_Domain_C_struct).  Keeping them None at domain
+        # creation saves ~600+ MB of cold virtual pages for large domains during
+        # the distribute() phase.
+        self.edge_flux_work      = None  # (9N,)   advective fluxes
+        self.neigh_work          = None  # (9N,)   neighbour work
+        self.pressuregrad_work   = None  # (3N,)   gravity terms
+        self.x_centroid_work     = None  # (N,)
+        self.y_centroid_work     = None  # (N,)
 
         ############################################################################
         ## Local-timestepping information
         ############################################################################
-        # FIXME SR: Nice idea but is not generally used, so should hive off to
-        # another branch of the code and removed for general use
+        self.max_flux_update_frequency = 2**0  # Must be a power of 2.
 
-        #
-        # Fluxes can be updated every 1, 2, 4, 8, .. max_flux_update_frequency timesteps
-        # The global timestep is not allowed to increase except when
-        # number_of_timesteps%max_flux_update_frequency==0
-        self.max_flux_update_frequency=2**0 # Must be a power of 2.
-
-        # flux_update_frequency. The edge flux terms are re-computed only when
-        #    number_of_timesteps%flux_update_frequency[myEdge]==0
-        self.flux_update_frequency=num.zeros(len(self.edge_coordinates[:,0])).astype(int)+1
-
-        # Flag: should we update the flux on the next compute fluxes call?
-        self.update_next_flux=num.zeros(len(self.edge_coordinates[:,0])).astype(int)+1
-
-        # Flag: should we update the extrapolation on the next extrapolation call?
-        # (Only do this if one or more of the fluxes on that triangle will be computed on
-        # the next timestep, assuming only the flux computation uses edge/vertex values)
-        self.update_extrapolation=num.zeros(len(self.edge_coordinates[:,0])//3).astype(int)+1
-
-        # edge_timestep [wavespeed/radius] -- not updated every timestep
-        self.edge_timestep=num.zeros(len(self.edge_coordinates[:,0]))+1.0e+100
+        # Lazy: these are (3N,) or (N,) int/float arrays only needed by the
+        # C extension; allocated in _ensure_work_arrays().
+        self.flux_update_frequency = None  # (3N,) int, init 1
+        self.update_next_flux      = None  # (3N,) int, init 1
+        self.update_extrapolation  = None  # (N,)  int, init 1
+        self.edge_timestep         = None  # (3N,) float, init 1e+100
 
         # Do we allow the timestep to increase (not every time if local
         # extrapolation/flux updating is used)
@@ -509,6 +498,42 @@ class Domain(Generic_Domain):
         from .sw_domain_openmp_ext import update_Domain_C_struct
         update_Domain_C_struct(self)
 
+    def _ensure_work_arrays(self):
+        """Allocate all lazy work arrays if they have not been allocated yet.
+
+        Called by ``setup_Domain_C_struct`` in the Cython extension before the
+        C domain struct is populated.  Keeping these arrays as ``None`` at
+        domain creation avoids committing ~600+ MB of cold virtual pages during
+        the distribute() phase for large domains.
+        """
+        if self.edge_flux_work is not None:
+            return  # already allocated
+
+        N  = self.number_of_elements
+        NE = len(self.edge_coordinates[:, 0])   # = 3 * N
+
+        # ---- C-extension work arrays (shallow-water) ----
+        self.edge_flux_work    = num.zeros(NE * 3)          # (9N,)
+        self.neigh_work        = num.zeros(NE * 3)          # (9N,)
+        self.pressuregrad_work = num.zeros(NE)              # (3N,)
+        self.x_centroid_work   = num.zeros(N)               # (N,)
+        self.y_centroid_work   = num.zeros(N)               # (N,)
+
+        # ---- local-timestepping arrays ----
+        self.flux_update_frequency = num.ones(NE, dtype=int)      # (3N,)
+        self.update_next_flux      = num.ones(NE, dtype=int)      # (3N,)
+        self.update_extrapolation  = num.ones(N,  dtype=int)      # (N,)
+        self.edge_timestep         = num.full(NE, 1.0e+100)       # (3N,)
+
+        # ---- C-extension work arrays (generic) ----
+        self.already_computed_flux = num.zeros((N, 3), int)       # (N,3)
+        self.work_centroid_values  = num.zeros(N, float)          # (N,)
+        self.max_speed             = num.zeros(N, float)          # (N,)
+
+        # ---- river-wall edge flags (all zeros = no river walls) ----
+        if self.edge_flux_type is None:
+            self.edge_flux_type          = num.zeros(NE, dtype=int)  # (3N,)
+            self.edge_river_wall_counter = num.zeros(NE, dtype=int)  # (3N,)
 
     #---------------------------------------------------------------
     # Plotting methods
@@ -1758,6 +1783,9 @@ class Domain(Generic_Domain):
         """
         from anuga import numprocs
         import numpy as num
+
+        if self.max_speed is None:
+            return 0.0
 
         local_max = num.max(self.max_speed)
 
@@ -3587,7 +3615,7 @@ class Domain(Generic_Domain):
                                                      time_unit=time_unit,
                                                      datetime=datetime)
 
-        if track_speeds is True:
+        if track_speeds is True and self.max_speed is not None:
             # qwidth determines the text field used for quantities
             qwidth = self.qwidth
 

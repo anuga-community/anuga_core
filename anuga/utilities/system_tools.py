@@ -457,3 +457,315 @@ def print_quantity_memory_stats(domain):
     print(quantity_memory_stats(domain))
 
 
+def domain_memory_stats(domain):
+    """Return a breakdown of memory used by the domain and all its quantities.
+
+    Reports numpy array memory grouped by category (geometry, connectivity,
+    work arrays, quantities, river-wall, flags/parallel), the process RSS, and
+    the unaccounted gap (C structs, Python interpreter, imported libraries).
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The simulation domain to inspect.
+
+    Returns
+    -------
+    str
+        A multi-line table suitable for printing or logging.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> print(anuga.domain_memory_stats(domain))
+    Domain memory (N=400 tri) — MB
+    ...
+    """
+    import numpy as np
+
+    # ------------------------------------------------------------------ #
+    # 1.  Categorise domain-level numpy arrays by name                    #
+    # ------------------------------------------------------------------ #
+    _CATEGORIES = {
+        'geometry': [
+            'vertex_coordinates', 'edge_coordinates', 'centroid_coordinates',
+            'nodes', 'normals', 'areas', 'radii', 'edgelengths',
+        ],
+        'connectivity': [
+            'triangles', 'neighbours', 'surrogate_neighbours',
+            'neighbour_edges', 'vertex_value_indices', 'number_of_boundaries',
+            'node_index', 'number_of_triangles_per_node',
+        ],
+        'work arrays': [
+            'edge_flux_work', 'neigh_work', 'pressuregrad_work',
+            'flux_update_frequency', 'update_next_flux', 'edge_timestep',
+            'already_computed_flux', 'work_centroid_values',
+            'x_centroid_work', 'y_centroid_work',
+            '_grad_workspace_x', '_grad_workspace_y', '_phi_workspace',
+            'max_speed', 'update_extrapolation',
+        ],
+        'river wall': [
+            'edge_flux_type', 'edge_river_wall_counter',
+        ],
+        'flags/parallel': [
+            'tri_full_flag', 'node_full_flag',
+            'allow_timestep_increase', 'boundary_flux_sum',
+            'boundary_cells', 'boundary_edges',
+        ],
+    }
+
+    # Collect actual arrays from domain
+    cat_bytes = {}
+    cat_detail = {}
+    accounted_attrs = set()
+
+    for cat, attrs in _CATEGORIES.items():
+        total = 0
+        details = []
+        for attr in attrs:
+            arr = getattr(domain, attr, None)
+            if isinstance(arr, np.ndarray):
+                b = arr.nbytes
+                total += b
+                details.append((attr, arr.shape, arr.dtype, b))
+                accounted_attrs.add(attr)
+        cat_bytes[cat] = total
+        cat_detail[cat] = details
+
+    # Catch any numpy arrays not yet in our category list
+    other = []
+    other_bytes = 0
+    for attr in sorted(dir(domain)):
+        if attr.startswith('__') or attr in accounted_attrs:
+            continue
+        try:
+            val = getattr(domain, attr)
+        except Exception:
+            continue
+        if isinstance(val, np.ndarray) and val.nbytes > 0:
+            other_bytes += val.nbytes
+            other.append((attr, val.shape, val.dtype, val.nbytes))
+
+    # ------------------------------------------------------------------ #
+    # 2.  Quantity totals (re-use quantity_memory_stats logic)            #
+    # ------------------------------------------------------------------ #
+    _QTY_ARRAYS = [
+        'centroid_values', 'edge_values', '_vertex_values',
+        'boundary_values', 'explicit_update', 'semi_implicit_update',
+        'centroid_backup_values', '_x_gradient', '_y_gradient', '_phi',
+    ]
+    qty_bytes = 0
+    for qty in domain.quantities.values():
+        for attr in _QTY_ARRAYS:
+            arr = getattr(qty, attr, None)
+            if isinstance(arr, np.ndarray):
+                qty_bytes += arr.nbytes
+
+    # ------------------------------------------------------------------ #
+    # 3.  Totals and RSS                                                  #
+    # ------------------------------------------------------------------ #
+    domain_numpy_bytes = sum(cat_bytes.values()) + other_bytes
+    total_python_bytes = domain_numpy_bytes + qty_bytes
+    rss_mb = _get_rss_mb()
+    rss_bytes = rss_mb * 1024**2
+
+    # ------------------------------------------------------------------ #
+    # 4.  Format output                                                   #
+    # ------------------------------------------------------------------ #
+    N = domain.number_of_elements
+    w = 10   # column width for MB values
+
+    def _fmt(b):
+        return f'{b / 1024**2:.2f}'
+
+    sep = '-' * 55
+    lines = [
+        f'Domain memory (N={N:,} tri) — MB',
+        sep,
+        f'  {"Category":<22} {"MB":>{w}}',
+        sep,
+    ]
+
+    for cat in _CATEGORIES:
+        lines.append(f'  {cat:<22} {_fmt(cat_bytes[cat]):>{w}}')
+
+    if other:
+        lines.append(f'  {"other domain arrays":<22} {_fmt(other_bytes):>{w}}')
+
+    gap_bytes = rss_bytes - total_python_bytes
+    if gap_bytes >= 0:
+        gap_label = 'unaccounted (C/libs)'
+        gap_str   = _fmt(gap_bytes)
+    else:
+        # Allocated numpy bytes exceed RSS: the difference is virtual (cold)
+        # memory — zero-initialised arrays whose pages have not yet been
+        # paged into RAM (OS lazy commit; common before the first evolve call
+        # for work arrays such as edge_flux_work, neigh_work, update arrays).
+        gap_label = 'cold/virtual (untouch)'
+        gap_str   = f'-{_fmt(-gap_bytes)}'
+
+    lines += [
+        f'  {"quantities":<22} {_fmt(qty_bytes):>{w}}',
+        sep,
+        f'  {"total Python numpy":<22} {_fmt(total_python_bytes):>{w}}',
+        f'  {"process RSS":<22} {_fmt(rss_bytes):>{w}}',
+        f'  {gap_label:<22} {gap_str:>{w}}',
+        sep,
+    ]
+
+    if other:
+        lines.append('  Uncategorised domain arrays:')
+        for attr, shape, dtype, b in sorted(other, key=lambda x: -x[3]):
+            lines.append(f'    {_fmt(b):>6} MB  shape={str(shape):<20} dtype={dtype}  {attr}')
+        lines.append(sep)
+
+    return '\n'.join(lines)
+
+
+def print_domain_memory_stats(domain):
+    """Print a breakdown of memory used by the domain and all its quantities.
+
+    Convenience wrapper around :func:`domain_memory_stats`.
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The simulation domain to inspect.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> anuga.print_domain_memory_stats(domain)
+    Domain memory (N=400 tri) — MB
+    ...
+    """
+    print(domain_memory_stats(domain))
+
+
+def domain_struct_stats(domain):
+    """Return a breakdown of the C domain struct and GPU domain struct memory.
+
+    The C domain struct (``_Domain_C_struct``) is a fixed-size block of
+    scalars and raw C pointers that mirror the Python domain.  It adds only
+    ~1 kB of overhead and holds **no additional array data** — all pointers
+    point back into the numpy arrays already counted by
+    :func:`domain_memory_stats`.
+
+    The GPU domain struct (``gpu_dom``) extends the C struct with MPI/GPU
+    state and boundary sub-structs.  For OpenMP GPU offloading the mapped
+    numpy arrays live on the GPU device; ``estimate_required_memory`` gives
+    the estimated device-side footprint.
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The simulation domain to inspect.
+
+    Returns
+    -------
+    str
+        A multi-line diagnostic string.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> print(anuga.domain_struct_stats(domain))
+    C / GPU struct diagnostics (N=400 tri)
+    ...
+    """
+    N = domain.number_of_elements
+    try:
+        nb = domain.boundary_length
+    except AttributeError:
+        nb = 0
+
+    sep = '-' * 55
+    lines = [f'C / GPU struct diagnostics (N={N:,} tri)', sep]
+
+    # ------------------------------------------------------------------ #
+    # 1.  C domain struct                                                  #
+    # ------------------------------------------------------------------ #
+    # sizeof(struct domain):
+    #   10 int64 scalars + 13 double scalars + ~64 void* pointers
+    #   10×8 + 13×8 + 64×8 = 696 bytes (+ alignment padding ≈ 720 B)
+    _C_STRUCT_SCALARS_BYTES = (10 + 13) * 8
+    _C_STRUCT_PTRS = 64     # pointer fields in struct domain
+    _C_STRUCT_SIZE = _C_STRUCT_SCALARS_BYTES + _C_STRUCT_PTRS * 8  # ~696 B
+
+    c_struct = getattr(domain, '_Domain_C_struct', None)
+    c_status = 'allocated' if c_struct is not None else 'not allocated'
+    lines += [
+        '  C domain struct (struct domain)',
+        f'    status          : {c_status}',
+        f'    sizeof estimate : {_C_STRUCT_SIZE} B  '
+        f'({10} int64 scalars, {13} double scalars, {_C_STRUCT_PTRS} pointers)',
+        f'    note            : pointers reference Python numpy arrays — no extra data',
+    ]
+
+    # ------------------------------------------------------------------ #
+    # 2.  GPU domain struct                                                #
+    # ------------------------------------------------------------------ #
+    # sizeof(struct gpu_domain):
+    #   struct domain (embedded) + MPI state + ~10 sub-structs + flop counters
+    #   Rough estimate: 696 + ~800 ≈ 1.5 kB (struct overhead, not device data)
+    _GPU_STRUCT_SIZE_EST = _C_STRUCT_SIZE + 800
+
+    gpu_iface = getattr(domain, 'gpu_interface', None)
+    lines.append('')
+    lines.append('  GPU domain struct (struct gpu_domain)')
+
+    if gpu_iface is None:
+        lines.append('    status          : not initialised (GPU mode not active)')
+    else:
+        initialized = getattr(gpu_iface, 'initialized', False)
+        gpu_dom = getattr(gpu_iface, 'gpu_dom', None)
+        lines += [
+            f'    status          : {"mapped to device" if initialized else "struct created, not yet mapped"}',
+            f'    sizeof estimate : {_GPU_STRUCT_SIZE_EST} B  '
+            f'(struct domain + MPI state + boundary sub-structs + flop counters)',
+        ]
+
+        # Estimated device memory (arrays mapped to GPU)
+        try:
+            from anuga.shallow_water.sw_domain_gpu_ext import (
+                estimate_required_memory, gpu_available,
+            )
+            est_bytes = estimate_required_memory(N, nb)
+            est_mb = est_bytes / 1024**2
+            gpu_avail = gpu_available()
+            lines += [
+                f'    gpu available   : {gpu_avail}',
+                f'    device memory   : {est_mb:.1f} MB  (estimate for N={N:,}, nb={nb:,})',
+                f'    note            : device arrays are OpenMP-mapped copies of numpy arrays',
+            ]
+        except ImportError:
+            lines.append('    device memory   : (sw_domain_gpu_ext not importable)')
+
+    lines.append(sep)
+    return '\n'.join(lines)
+
+
+def print_domain_struct_stats(domain):
+    """Print a breakdown of the C domain struct and GPU domain struct memory.
+
+    Convenience wrapper around :func:`domain_struct_stats`.
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The simulation domain to inspect.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> anuga.print_domain_struct_stats(domain)
+    C / GPU struct diagnostics (N=400 tri)
+    ...
+    """
+    print(domain_struct_stats(domain))
+
+

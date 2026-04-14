@@ -306,6 +306,14 @@ class RiverWall:
         if(verbose):
             print('Setting riverwall elevations (P'+str(myid)+')...')
 
+        # Ensure river-wall edge arrays are allocated before we write into them.
+        # We allocate only these two arrays here (NOT _ensure_work_arrays()) to
+        # avoid prematurely committing the full suite of work arrays before evolve.
+        if domain.edge_flux_type is None:
+            NE = len(domain.edge_coordinates[:, 0])
+            domain.edge_flux_type          = numpy.zeros(NE, dtype=int)
+            domain.edge_river_wall_counter = numpy.zeros(NE, dtype=int)
+
         # Set up geometry
         exy=domain.edge_coordinates
         llx=domain.mesh.geo_reference.get_xllcorner()

@@ -315,6 +315,10 @@ from anuga.utilities.system_tools import memory_stats
 from anuga.utilities.system_tools import print_memory_stats
 from anuga.utilities.system_tools import quantity_memory_stats
 from anuga.utilities.system_tools import print_quantity_memory_stats
+from anuga.utilities.system_tools import domain_memory_stats
+from anuga.utilities.system_tools import print_domain_memory_stats
+from anuga.utilities.system_tools import domain_struct_stats
+from anuga.utilities.system_tools import print_domain_struct_stats
 from anuga.utilities.mem_time_equation import estimate_time_mem
 
 # -------------------------
@@ -499,6 +503,10 @@ __all__ = [
     'print_memory_stats',
     'quantity_memory_stats',
     'print_quantity_memory_stats',
+    'domain_memory_stats',
+    'print_domain_memory_stats',
+    'domain_struct_stats',
+    'print_domain_struct_stats',
     'log',
     'set_logfile',
     'TeeStream',
