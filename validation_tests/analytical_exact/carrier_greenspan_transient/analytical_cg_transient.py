@@ -57,8 +57,7 @@ X = linspace(-0.5, 0.3, 201)
 for i in range(len(T)):
     t=T[i]
     w, z, u = analytical_sol(X,t)
-    from pylab import clf,plot,title,xlabel,ylabel,legend,savefig,show,hold,subplot
-    hold(False)
+    from pylab import clf,plot,title,xlabel,ylabel,legend,savefig,show,subplot
     clf()
     plot1 = subplot(211)
     plot(X,w, X,z)

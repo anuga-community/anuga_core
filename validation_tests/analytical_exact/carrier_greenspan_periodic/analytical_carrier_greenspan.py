@@ -106,8 +106,7 @@ if __name__ == "__main__":
     points = linspace(0.0, 55000.0, 1000)
     W, P, Z, H, U = analytic_cg(points,t=300.0, h0=5e2, L=5e4, a=1.0, Tp=900.0)
 
-    from pylab import clf,plot,title,xlabel,ylabel,legend,savefig,show,hold,subplot,ion
-    hold(False)
+    from pylab import clf,plot,title,xlabel,ylabel,legend,savefig,show,subplot,ion
     clf()
     plot1 = subplot(311)
     plot(points/1e+4,W,  points/1e+4,Z)

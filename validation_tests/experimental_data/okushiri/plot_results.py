@@ -36,9 +36,8 @@ verbose = args.verbose
 
 try:
     import matplotlib
-    from matplotlib.pyplot import ion, hold, plot, title, legend
+    from matplotlib.pyplot import ion, plot, title, legend
     from matplotlib.pyplot import xlabel, ylabel, savefig
-    hold(False)  # Check if this command can be issued
 except:
     print('Could not import pylab')
     plotting = False
@@ -237,8 +236,6 @@ for k, name in enumerate(gauge_names):
 
     if plotting is True:
         #ion() # No plotting on screen
-        hold(False)
-    
         plot(reference_time, validation_data[name], 'r-',
              reference_time, model, 'k-')
         title('Gauge %s' %name)
