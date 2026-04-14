@@ -2,6 +2,8 @@ import numpy as num
 from .cg_ext import jacobi_precon_c
 from .cg_ext import cg_solve_c_precon
 from .cg_ext import cg_solve_c
+from .cg_ext import cg_solve_c_ssor
+from .cg_ext import cg_solve_c_persistent
 from anuga.utilities.sparse import Sparse, Sparse_CSR
 import anuga.utilities.log as log
 
@@ -49,13 +51,53 @@ class Stats(object):
 
 
 def conjugate_gradient(A, b, x0=None, imax=10000, tol=1.0e-8, atol=1.0e-14,
-                       iprint=None, output_stats=False, use_c_cg=False, precon='None'):
+                       iprint=None, output_stats=False, use_c_cg=False,
+                       precon='None', solver='default', omega=1.0):
     """
     Try to solve linear equation Ax = b using
     conjugate gradient method
 
     If b is an array, solve it as if it was a set of vectors, solving each
     vector.
+
+    Parameters
+    ----------
+    A : Sparse_CSR or matrix
+        System matrix (must be Sparse_CSR when use_c_cg=True).
+    b : array_like
+        Right-hand side vector or matrix.
+    x0 : array_like, optional
+        Initial guess; zeros by default.
+    imax : int
+        Maximum number of iterations (default 10000).
+    tol : float
+        Relative residual tolerance (default 1e-8).
+    atol : float
+        Absolute residual tolerance (default 1e-14).
+    iprint : int, optional
+        Print residual every `iprint` iterations.
+    output_stats : bool
+        If True, return (x, stats) tuple.
+    use_c_cg : bool
+        Use the C implementation of the CG solver.
+    precon : str
+        Preconditioner type.  One of:
+
+        - ``'None'``    – no preconditioning (default)
+        - ``'Jacobi'``  – diagonal (Jacobi) preconditioner
+        - ``'SSOR'``    – SSOR preconditioner; requires ``use_c_cg=True``
+
+    solver : str
+        Variant of the C CG solver.  One of:
+
+        - ``'default'``    – standard CG (default)
+        - ``'persistent'`` – single persistent OpenMP thread team; reduces
+          fork/join overhead for small-to-medium problems (< 100K unknowns);
+          requires ``use_c_cg=True``
+
+    omega : float
+        SSOR relaxation parameter (default 1.0; effective range 1.0–1.8).
+        Only used when ``precon='SSOR'``.
     """
 
     if use_c_cg:
@@ -63,6 +105,14 @@ def conjugate_gradient(A, b, x0=None, imax=10000, tol=1.0e-8, atol=1.0e-14,
         msg = ('c implementation of conjugate gradient requires that matrix A\
                 be of type %s') % (str(Sparse_CSR))
         assert isinstance(A, Sparse_CSR), msg
+
+    if use_c_cg and precon == 'SSOR':
+        msg = "SSOR preconditioner requires use_c_cg=True"
+        assert isinstance(A, Sparse_CSR), msg
+
+    if use_c_cg and solver == 'persistent' and precon not in ('None', 'none'):
+        raise ValueError("solver='persistent' does not support preconditioning; "
+                         "use precon='None' or switch to a different solver")
 
     if x0 is None:
         x0 = num.zeros(b.shape, dtype=float)
@@ -72,11 +122,44 @@ def conjugate_gradient(A, b, x0=None, imax=10000, tol=1.0e-8, atol=1.0e-14,
     b = num.array(b, dtype=float)
 
     err = 0
+    stats = None
 
-    # preconditioner
-    # Padarn Note: currently a fairly lazy implementation, needs fixing
-    M = None
-    if precon == 'Jacobi':
+    # -----------------------------------------------------------------------
+    # SSOR-preconditioned CG  (new, C-only path)
+    # -----------------------------------------------------------------------
+    if precon == 'SSOR':
+        if not use_c_cg:
+            raise ValueError("precon='SSOR' requires use_c_cg=True")
+
+        if len(b.shape) != 1:
+            for i in range(b.shape[1]):
+                xnew = x0[:, i].copy()
+                err = cg_solve_c_ssor(A, xnew, b[:, i].copy(),
+                                      imax, tol, atol, b.shape[1], omega)
+                x0[:, i] = xnew
+        else:
+            x0 = b.copy()
+            err = cg_solve_c_ssor(A, x0, b, imax, tol, atol, 1, omega)
+
+    # -----------------------------------------------------------------------
+    # Persistent-thread CG  (new, C-only path)
+    # -----------------------------------------------------------------------
+    elif use_c_cg and solver == 'persistent':
+
+        if len(b.shape) != 1:
+            for i in range(b.shape[1]):
+                xnew = x0[:, i].copy()
+                err = cg_solve_c_persistent(A, xnew, b[:, i].copy(),
+                                            imax, tol, atol, b.shape[1])
+                x0[:, i] = xnew
+        else:
+            x0 = b.copy()
+            err = cg_solve_c_persistent(A, x0, b, imax, tol, atol, 1)
+
+    # -----------------------------------------------------------------------
+    # Existing paths (Jacobi / plain)
+    # -----------------------------------------------------------------------
+    elif precon == 'Jacobi':
 
         M = num.zeros(b.shape[0])
         jacobi_precon_c(A, M)

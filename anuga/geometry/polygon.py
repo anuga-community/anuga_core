@@ -8,6 +8,7 @@ from .polygon_ext import _interpolate_polyline
 from .polygon_ext import _line_intersect
 from .polygon_ext import _polygon_overlap
 from .polygon_ext import _separate_points_by_polygon
+from .polygon_ext import _separate_points_by_polygon_parallel
 from .polygon_ext import _point_on_line
 
 import numpy as num
@@ -567,7 +568,8 @@ def in_and_outside_polygon(points, polygon, closed=True, verbose=False):
 def separate_points_by_polygon(points, polygon,
                                closed=True,
                                check_input=True,
-                               verbose=False):
+                               verbose=False,
+                               use_parallel=False):
     """Determine whether points are inside or outside a polygon
 
     Input:
@@ -577,6 +579,9 @@ def separate_points_by_polygon(points, polygon,
        regarded as belonging to the polygon (closed = True)
        or not (closed = False)
        check_input: Allows faster execution if set to False
+       use_parallel: If True, use parallel prefix-sum implementation for
+       improved performance on large point sets (>10K points). Requires
+       OpenMP support in the compiled extension. Default is False.
 
     Outputs:
        indices: array of same length as points with indices of points falling
@@ -661,8 +666,12 @@ def separate_points_by_polygon(points, polygon,
 
     indices = num.zeros(M, int)
 
-    count = _separate_points_by_polygon(points, polygon, indices,
-                                        int(closed), int(verbose))
+    if use_parallel:
+        count = _separate_points_by_polygon_parallel(points, polygon, indices,
+                                                     int(closed), int(verbose))
+    else:
+        count = _separate_points_by_polygon(points, polygon, indices,
+                                            int(closed), int(verbose))
 
     if verbose:
         log.critical('Found %d points (out of %d) inside polygon' % (count, M))

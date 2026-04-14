@@ -2404,6 +2404,8 @@ from .quantity_openmp_ext import \
          extrapolate_from_gradient,\
          extrapolate_second_order_and_limit_by_edge,\
          extrapolate_second_order_and_limit_by_vertex,\
+         extrapolate_second_order_and_limit_by_edge_fused,\
+         extrapolate_second_order_and_limit_by_vertex_fused,\
          bound_vertices_below_by_constant,\
          bound_vertices_below_by_quantity,\
          interpolate_from_vertices_to_edges,\

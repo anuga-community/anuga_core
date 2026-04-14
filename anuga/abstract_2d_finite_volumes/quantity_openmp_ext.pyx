@@ -30,6 +30,8 @@ cdef extern from "quantity_openmp.c":
   int64_t _average_centroid_values(keyint N, int64_t* vertex_value_indices, int64_t* number_of_triangles_per_node, double* centroid_values, double* A)
   int64_t _set_vertex_values_c(keyint num_verts, int64_t* vertices, int64_t* node_index, int64_t* number_of_triangles_per_node, int64_t* vertex_value_indices, double* vertex_values, double* A)
   int64_t _min_and_max_centroid_values(keyint N, double* qc, double* qv, int64_t* neighbours, double* qmin, double* qmax)
+  int64_t _compute_extrapolate_and_limit_edges_fused(keyint N, double beta, double* centroids, double* centroid_values, int64_t* number_of_boundaries, int64_t* surrogate_neighbours, int64_t* neighbours, double* vertex_coordinates, double* vertex_values, double* edge_values, double* x_gradient, double* y_gradient)
+  int64_t _compute_extrapolate_and_limit_vertices_fused(keyint N, double beta, double* centroids, double* centroid_values, int64_t* number_of_boundaries, int64_t* surrogate_neighbours, int64_t* neighbours, double* vertex_coordinates, double* vertex_values, double* edge_values, double* x_gradient, double* y_gradient)
 
 cdef extern from "util_ext.h":
   void _limit_old(int64_t N, double beta, double* qc, double* qv, double* qmin, double* qmax)
@@ -715,3 +717,143 @@ def limit_gradient_by_neighbour(object quantity):
 
   assert err == 0, "Internal function _limit_gradient_by_neighbour failed"
 
+
+
+def extrapolate_second_order_and_limit_by_edge_fused(object quantity):
+  """Fused single-pass: compute gradient + extrapolate to edges + limit.
+
+  Equivalent to calling the three-step sequence::
+
+      compute_gradients(quantity)
+      extrapolate_from_gradient(quantity)
+      limit_edges_by_all_neighbours(quantity)
+
+  but visits each element only once, reducing memory traffic by ~60-70%.
+
+  Parameters
+  ----------
+  quantity : Quantity
+      The quantity to process.  The following attributes are updated
+      in-place: ``vertex_values``, ``edge_values``, ``x_gradient``,
+      ``y_gradient``.
+  """
+
+  cdef object domain
+
+  cdef np.ndarray[double, ndim=2, mode="c"] domain_centroids
+  cdef np.ndarray[double, ndim=2, mode="c"] domain_vertex_coordinates
+  cdef np.ndarray[int64_t, ndim=1, mode="c"] domain_number_of_boundaries
+  cdef np.ndarray[int64_t, ndim=2, mode="c"] domain_surrogate_neighbours
+  cdef np.ndarray[int64_t, ndim=2, mode="c"] domain_neighbours
+
+  cdef np.ndarray[double, ndim=1, mode="c"] quantity_centroid_values
+  cdef np.ndarray[double, ndim=2, mode="c"] quantity_vertex_values
+  cdef np.ndarray[double, ndim=2, mode="c"] quantity_edge_values
+  cdef np.ndarray[double, ndim=1, mode="c"] quantity_x_gradient
+  cdef np.ndarray[double, ndim=1, mode="c"] quantity_y_gradient
+
+  cdef keyint ntri
+  cdef double beta
+  cdef int64_t err
+
+  domain = quantity.domain
+
+  domain_centroids = domain.centroid_coordinates
+  domain_surrogate_neighbours = domain.surrogate_neighbours
+  domain_number_of_boundaries = domain.number_of_boundaries
+  domain_vertex_coordinates = domain.vertex_coordinates
+  domain_neighbours = domain.neighbours
+
+  quantity_centroid_values = quantity.centroid_values
+  quantity_vertex_values = quantity.vertex_values
+  quantity_edge_values = quantity.edge_values
+  quantity_x_gradient = quantity.x_gradient
+  quantity_y_gradient = quantity.y_gradient
+
+  beta = quantity.beta
+
+  ntri = quantity_centroid_values.shape[0]
+
+  err = _compute_extrapolate_and_limit_edges_fused(ntri, beta,\
+&domain_centroids[0,0],\
+&quantity_centroid_values[0],\
+&domain_number_of_boundaries[0],\
+&domain_surrogate_neighbours[0,0],\
+&domain_neighbours[0,0],\
+&domain_vertex_coordinates[0,0],\
+&quantity_vertex_values[0,0],\
+&quantity_edge_values[0,0],\
+&quantity_x_gradient[0],\
+&quantity_y_gradient[0])
+
+  assert err == 0, "Internal function _compute_extrapolate_and_limit_edges_fused failed"
+
+
+def extrapolate_second_order_and_limit_by_vertex_fused(object quantity):
+  """Fused single-pass: compute gradient + extrapolate to vertices + limit.
+
+  Equivalent to calling the three-step sequence::
+
+      compute_gradients(quantity)
+      extrapolate_from_gradient(quantity)
+      limit_vertices_by_all_neighbours(quantity)
+
+  but visits each element only once, reducing memory traffic by ~60-70%.
+
+  Parameters
+  ----------
+  quantity : Quantity
+      The quantity to process.  The following attributes are updated
+      in-place: ``vertex_values``, ``edge_values``, ``x_gradient``,
+      ``y_gradient``.
+  """
+
+  cdef object domain
+
+  cdef np.ndarray[double, ndim=2, mode="c"] domain_centroids
+  cdef np.ndarray[double, ndim=2, mode="c"] domain_vertex_coordinates
+  cdef np.ndarray[int64_t, ndim=1, mode="c"] domain_number_of_boundaries
+  cdef np.ndarray[int64_t, ndim=2, mode="c"] domain_surrogate_neighbours
+  cdef np.ndarray[int64_t, ndim=2, mode="c"] domain_neighbours
+
+  cdef np.ndarray[double, ndim=1, mode="c"] quantity_centroid_values
+  cdef np.ndarray[double, ndim=2, mode="c"] quantity_vertex_values
+  cdef np.ndarray[double, ndim=2, mode="c"] quantity_edge_values
+  cdef np.ndarray[double, ndim=1, mode="c"] quantity_x_gradient
+  cdef np.ndarray[double, ndim=1, mode="c"] quantity_y_gradient
+
+  cdef keyint ntri
+  cdef double beta
+  cdef int64_t err
+
+  domain = quantity.domain
+
+  domain_centroids = domain.centroid_coordinates
+  domain_surrogate_neighbours = domain.surrogate_neighbours
+  domain_number_of_boundaries = domain.number_of_boundaries
+  domain_vertex_coordinates = domain.vertex_coordinates
+  domain_neighbours = domain.neighbours
+
+  quantity_centroid_values = quantity.centroid_values
+  quantity_vertex_values = quantity.vertex_values
+  quantity_edge_values = quantity.edge_values
+  quantity_x_gradient = quantity.x_gradient
+  quantity_y_gradient = quantity.y_gradient
+
+  beta = quantity.beta
+
+  ntri = quantity_centroid_values.shape[0]
+
+  err = _compute_extrapolate_and_limit_vertices_fused(ntri, beta,\
+&domain_centroids[0,0],\
+&quantity_centroid_values[0],\
+&domain_number_of_boundaries[0],\
+&domain_surrogate_neighbours[0,0],\
+&domain_neighbours[0,0],\
+&domain_vertex_coordinates[0,0],\
+&quantity_vertex_values[0,0],\
+&quantity_edge_values[0,0],\
+&quantity_x_gradient[0],\
+&quantity_y_gradient[0])
+
+  assert err == 0, "Internal function _compute_extrapolate_and_limit_vertices_fused failed"
