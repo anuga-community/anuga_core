@@ -386,13 +386,29 @@ class Domain(Generic_Domain):
 
         #-------------------------------
         # Useful auxiliary quantity
+        # Set centroid and edge values directly from mesh coordinate arrays
+        # without allocating vertex_values (kept lazy to save memory).
+        # Edge formula matches _interpolate in quantity_openmp.c:
+        #   edge[0] = 0.5*(v[1]+v[2]),  edge[1] = 0.5*(v[2]+v[0]),
+        #   edge[2] = 0.5*(v[0]+v[1])
         #-------------------------------
         n = self.number_of_elements
-        self.quantities['x'].set_values(self.vertex_coordinates[:,0].reshape(n,3))
-        self.quantities['x'].set_boundary_values_from_edges()
+        vx = self.vertex_coordinates[:, 0].reshape(n, 3)
+        vy = self.vertex_coordinates[:, 1].reshape(n, 3)
 
-        self.quantities['y'].set_values(self.vertex_coordinates[:,1].reshape(n,3))
-        self.quantities['y'].set_boundary_values_from_edges()
+        qx = self.quantities['x']
+        qx.centroid_values[:]  = (vx[:, 0] + vx[:, 1] + vx[:, 2]) / 3.0
+        qx.edge_values[:, 0]   = 0.5 * (vx[:, 1] + vx[:, 2])
+        qx.edge_values[:, 1]   = 0.5 * (vx[:, 2] + vx[:, 0])
+        qx.edge_values[:, 2]   = 0.5 * (vx[:, 0] + vx[:, 1])
+        qx.set_boundary_values_from_edges()
+
+        qy = self.quantities['y']
+        qy.centroid_values[:]  = (vy[:, 0] + vy[:, 1] + vy[:, 2]) / 3.0
+        qy.edge_values[:, 0]   = 0.5 * (vy[:, 1] + vy[:, 2])
+        qy.edge_values[:, 1]   = 0.5 * (vy[:, 2] + vy[:, 0])
+        qy.edge_values[:, 2]   = 0.5 * (vy[:, 0] + vy[:, 1])
+        qy.set_boundary_values_from_edges()
 
         # For riverwalls, we need to know the 'edge_flux_type' for each edge
         # Edge-flux-type of 0 == Normal edge, with shallow water flux
