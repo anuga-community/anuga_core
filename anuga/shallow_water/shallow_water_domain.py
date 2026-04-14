@@ -637,6 +637,7 @@ class Domain(Generic_Domain):
 
         self.set_sloped_mannings_function(sloped_mannings_function)
         self.set_compute_fluxes_method(compute_fluxes_method)
+        self.flux_solver = 'central'
 
         self.set_distribute_to_vertices_and_edges_method(distribute_to_vertices_and_edges_method)
 
@@ -1333,6 +1334,31 @@ class Domain(Generic_Domain):
 
         return self.compute_fluxes_method
 
+    def set_flux_solver(self, solver='central'):
+        """Set the Riemann solver used in flux computation.
+
+        Choices:
+           central  -- central-upwind scheme (default, existing behaviour)
+           hllc     -- HLLC three-wave solver (Toro 2001); often more accurate
+                       on problems with shocks and transcritical flow.
+
+        Notes
+        -----
+        Only effective when ``compute_fluxes_method`` is ``'DE'`` and the
+        domain is running in OpenMP (multiprocessor_mode == 1) mode.
+        """
+        flux_solvers = ['central', 'hllc']
+        if solver in flux_solvers:
+            self.flux_solver = solver
+        else:
+            msg = ('Unknown flux_solver. Possible choices are: ' +
+                   ', '.join(flux_solvers) + '.')
+            raise Exception(msg)
+
+    def get_flux_solver(self):
+        """Return the currently selected Riemann solver name."""
+        return self.flux_solver
+
 
 
     def set_distribute_to_vertices_and_edges_method(self, flag='original'):
@@ -1988,18 +2014,21 @@ class Domain(Generic_Domain):
         nvtxRangePush("compute_fluxes")
         # Choose the correct extension module
         if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
-            from .sw_domain_openmp_ext import compute_fluxes_ext_central
+            if getattr(self, 'flux_solver', 'central') == 'hllc':
+                from .sw_domain_openmp_ext import compute_fluxes_ext_hllc as _compute_fluxes_ext
+            else:
+                from .sw_domain_openmp_ext import compute_fluxes_ext_central as _compute_fluxes_ext
         elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             # change over to cuda routines as developed
             # from .sw_domain_simd_ext import compute_fluxes_ext_central
             # FIXME SR: 2023_10_16 currently compute_fluxes and distribute together
             # is producing incorrect results, but work separately!
-            compute_fluxes_ext_central = self.gpu_interface.compute_fluxes_ext_central_kernel
+            _compute_fluxes_ext = self.gpu_interface.compute_fluxes_ext_central_kernel
         else:
             raise Exception('Not implemented')
 
         timestep = self.evolve_max_timestep
-        self.flux_timestep = compute_fluxes_ext_central(self, timestep)
+        self.flux_timestep = _compute_fluxes_ext(self, timestep)
 
         nvtxRangePop()
 

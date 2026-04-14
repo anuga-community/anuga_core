@@ -402,13 +402,15 @@ static inline void gpu_flux_function_hllc(
     double s_star = (s_L * h_right * (u_right - s_R) - s_R * h_left * (u_left - s_L)) /
                     (fabs(denom_star) > 1.0e-100 ? denom_star : 1.0e-100);
 
-    // Physical fluxes
+    // Physical fluxes (advective part only, matching gpu_flux_function_central convention)
+    // The hydrostatic pressure term 0.5*g*h^2 is NOT included here; it is returned
+    // separately via pressure_flux and applied via pressuregrad_work in the kernel.
     flux_left[0] = u_left * h_left;
-    flux_left[1] = u_left * uh_left + 0.5 * g * h_left * h_left;
+    flux_left[1] = u_left * uh_left;
     flux_left[2] = u_left * vh_left;
 
     flux_right[0] = u_right * h_right;
-    flux_right[1] = u_right * uh_right + 0.5 * g * h_right * h_right;
+    flux_right[1] = u_right * uh_right;
     flux_right[2] = u_right * vh_right;
 
     // Low-Froude correction factor

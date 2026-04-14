@@ -126,6 +126,79 @@ double _openmp_compute_fluxes_central(const struct domain *__restrict D,
   return timestep;
 }
 
+// Unified: calls core_compute_fluxes_hllc from core_kernels.c
+// Handles substep tracking via static variables (per-module state)
+double _openmp_compute_fluxes_hllc(const struct domain *__restrict D,
+                                   double timestep)
+{
+  static anuga_int call_hllc = 0;
+  static anuga_int timestep_fluxcalls_hllc = 1;
+  static anuga_int base_call_hllc = 1;
+
+  call_hllc++;
+
+  if (D->timestep_fluxcalls != timestep_fluxcalls_hllc) {
+    timestep_fluxcalls_hllc = D->timestep_fluxcalls;
+    base_call_hllc = call_hllc;
+  }
+
+  int substep_count = (call_hllc - base_call_hllc) % D->timestep_fluxcalls;
+
+  double local_timestep = core_compute_fluxes_hllc((struct domain *)D, substep_count, D->timestep_fluxcalls);
+
+  if (substep_count == 0) {
+    timestep = local_timestep;
+  }
+
+  return timestep;
+}
+
+// Scalar wrapper for HLLC flux function (used for unit tests / Cython access)
+anuga_int __openmp__flux_function_hllc(double q_left0, double q_left1, double q_left2,
+                                       double q_right0, double q_right1, double q_right2,
+                                       double h_left, double h_right,
+                                       double hle, double hre,
+                                       double n1, double n2,
+                                       double epsilon,
+                                       double ze,
+                                       double g,
+                                       double *edgeflux0, double *edgeflux1, double *edgeflux2,
+                                       double *max_speed,
+                                       double *pressure_flux,
+                                       anuga_int low_froude)
+{
+  double edgeflux[3];
+  double q_left[3];
+  double q_right[3];
+
+  edgeflux[0] = *edgeflux0;
+  edgeflux[1] = *edgeflux1;
+  edgeflux[2] = *edgeflux2;
+
+  q_left[0] = q_left0;
+  q_left[1] = q_left1;
+  q_left[2] = q_left2;
+
+  q_right[0] = q_right0;
+  q_right[1] = q_right1;
+  q_right[2] = q_right2;
+
+  gpu_flux_function_hllc(q_left, q_right,
+                         h_left, h_right,
+                         hle, hre,
+                         n1, n2,
+                         epsilon, ze, g,
+                         edgeflux, max_speed,
+                         pressure_flux,
+                         low_froude);
+
+  *edgeflux0 = edgeflux[0];
+  *edgeflux1 = edgeflux[1];
+  *edgeflux2 = edgeflux[2];
+
+  return 0;
+}
+
 // Protect against the water elevation falling below the triangle bed
 // Unified: calls core_protect from core_kernels.c
 double _openmp_protect(const struct domain *__restrict D)
