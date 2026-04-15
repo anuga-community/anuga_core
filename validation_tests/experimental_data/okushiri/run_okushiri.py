@@ -111,7 +111,7 @@ wave_function = anuga.file_function(boundary_filename,
 Bts = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(domain, wave_function)
 Bf = anuga.Flather_external_stage_zero_velocity_boundary(domain, wave_function)
 Br = anuga.Reflective_boundary(domain)
-domain.set_boundary({'wave': Bts, 'wall': Br})
+domain.set_boundary({'wave': Bf, 'wall': Br})
 
 #-------------------------------------------------------------------------
 # Produce a documentation of parameters
