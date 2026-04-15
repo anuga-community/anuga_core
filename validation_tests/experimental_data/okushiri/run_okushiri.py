@@ -105,7 +105,7 @@ domain = distribute(domain)
 
 # Create boundary function from timeseries provided in file
 wave_function = anuga.file_function(boundary_filename,
-                         domain, default_verbose=verbose)
+                         domain, verbose=verbose)
 
 # Create and assign boundary objects
 Bts = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(domain, wave_function)
