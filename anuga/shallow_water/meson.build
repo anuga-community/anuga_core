@@ -80,9 +80,10 @@ else
   if effective_compiler_id == 'nvidia_hpc'
     gpu_c_args = ['-O3', '-mp=multicore', '-Minfo=accel', '-g']
   elif effective_compiler_id == 'intel' or effective_compiler_id == 'intel-cl'
-    gpu_c_args = ['-O3', '-qopenmp', '-g']
+    gpu_c_args = ['-O3', '-qopenmp', '-xCORE-AVX512', '-qopt-zmm-usage=high', '-ipo', '-g']
   elif effective_compiler_id == 'intel-llvm' or effective_compiler_id == 'icx'
-    gpu_c_args = ['-O3', '-fiopenmp', '-g']
+    gpu_c_args = ['-O3', '-fiopenmp', '-xCORE-AVX512', '-qopt-zmm-usage=high', '-ipo',
+                  '-fimf-use-svml=true', '-g']
   elif effective_compiler_id == 'clang'
     # Clang with libomp (LLVM, Homebrew macOS, or AOMP)
     gpu_c_args = ['-O3', '-fopenmp', '-g']
@@ -93,6 +94,15 @@ else
   # Define macro so code knows it's CPU-only mode
   gpu_c_args += ['-DCPU_ONLY_MODE']
   message('CPU multicore mode enabled (no GPU offloading)')
+
+  # Optional host-CPU tuning (mirrors the same option in the root meson.build)
+  if get_option('march_native')
+    if effective_compiler_id in ['intel', 'intel-cl', 'intel-llvm', 'icx']
+      gpu_c_args += ['-xHost']
+    elif effective_compiler_id in ['gcc', 'clang']
+      gpu_c_args += ['-march=native']
+    endif
+  endif
 endif
 
 if get_option('gpu_aware_mpi') and gpu_offload

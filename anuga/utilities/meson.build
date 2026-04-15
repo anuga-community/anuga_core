@@ -1,12 +1,16 @@
 
 inc_dir = include_directories('../utilities', incdir_numpy)
 
+# Extra C args for the CG solver extension.
+# When USE_LIB_BLAS is defined (auto-enabled with MKL), the hand-rolled
+# OpenMP loops for ddot/daxpy/dscal are replaced by optimised CBLAS calls.
+cg_c_args = openmp_c_args
 
 # Compile the Cython-generated C code and additional C code
 py3.extension_module('cg_ext',
   sources: ['cg_ext.pyx'],
   include_directories: inc_dir,
-  c_args : openmp_c_args,
+  c_args : cg_c_args,
   dependencies: openmp_deps,
   subdir: 'anuga/utilities',
   install: true,

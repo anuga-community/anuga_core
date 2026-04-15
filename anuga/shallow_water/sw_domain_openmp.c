@@ -549,6 +549,16 @@ void _openmp_set_omp_num_threads(anuga_int num_threads)
   omp_set_num_threads(num_threads);
 }
 
+// Precompute bed gradient (dz/dx, dz/dy) for all elements and store in
+// D->bed_slope_x / D->bed_slope_y.  Call once after the bed has been set up
+// and before the evolve loop.  Subsequent calls to core_gravity and
+// core_manning_friction_sloped_semi_implicit will use the cached values,
+// saving ~14 FP ops + 9 memory loads per element per timestep.
+void _openmp_precompute_bed_slope(struct domain *D)
+{
+    core_precompute_bed_slope(D);
+}
+
 // PORTED TO GPU: See gpu_evaluate_reflective_boundary() in gpu_boundaries.c
 // TODO: NOT UNIFIED - GPU and CPU use different architectural approaches:
 //   - GPU: Pre-collects ALL boundary info during init, evaluates all edges in one kernel call

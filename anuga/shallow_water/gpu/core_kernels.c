@@ -561,7 +561,6 @@ void core_manning_friction_flat_semi_implicit(struct domain *D) {
     anuga_int n = D->number_of_elements;
     double g = D->g;
     double minimum_allowed_height = D->minimum_allowed_height;
-    double seven_thirds = 7.0 / 3.0;
 
     double * restrict stage_cv = D->stage_centroid_values;
     double * restrict bed_cv = D->bed_centroid_values;
@@ -584,7 +583,9 @@ void core_manning_friction_flat_semi_implicit(struct domain *D) {
             double h = stage_cv[k] - bed_cv[k];
             if (h >= minimum_allowed_height) {
                 S = -g * eta * eta * abs_mom;
-                S /= pow(h, seven_thirds);
+                // h^(7/3) = h^2 * h^(1/3): cbrt is ~2-3x faster than pow()
+                // and is vectorisable via SVML on Intel Cascade Lake.
+                S /= (h * h * cbrt(h));
             }
         }
         xmom_siu[k] += S * uh;
@@ -611,15 +612,116 @@ void core_manning_friction_sloped_semi_implicit(struct domain *D) {
     double * restrict xmom_siu = D->xmom_semi_implicit_update;
     double * restrict ymom_siu = D->ymom_semi_implicit_update;
 
-    OMP_PARALLEL_LOOP
-    for (anuga_int k = 0; k < n; k++) {
-        double h = height_cv[k];
+    if (D->bed_slope_x != NULL && D->bed_slope_y != NULL) {
+        // Use precomputed bed gradients.
+        double * restrict bed_slope_x = D->bed_slope_x;
+        double * restrict bed_slope_y = D->bed_slope_y;
 
-        if (h > minimum_allowed_height) {
+        OMP_PARALLEL_LOOP
+        for (anuga_int k = 0; k < n; k++) {
+            double h = height_cv[k];
+
+            if (h > minimum_allowed_height) {
+                double dzx = bed_slope_x[k];
+                double dzy = bed_slope_y[k];
+
+                double slope = sqrt(1.0 + dzx * dzx + dzy * dzy);
+
+                double eta = friction_cv[k];
+                double xmom = xmom_cv[k];
+                double ymom = ymom_cv[k];
+
+                double S = -g * eta * eta * sqrt(xmom * xmom + ymom * ymom) * slope;
+                // h^(7/3) = h^2 * h^(1/3): cbrt is ~2-3x faster than pow()
+                // and is vectorisable via SVML on Intel Cascade Lake.
+                S /= (h * h * cbrt(h));
+
+                xmom_siu[k] += S;
+                ymom_siu[k] += S;
+            }
+        }
+    } else {
+        // Fallback: compute bed slope inline.
+        OMP_PARALLEL_LOOP
+        for (anuga_int k = 0; k < n; k++) {
+            double h = height_cv[k];
+
+            if (h > minimum_allowed_height) {
+                anuga_int k3 = k * 3;
+                anuga_int k6 = k * 6;
+
+                // Compute bed slope
+                double x0 = vertex_coords[k6 + 0];
+                double y0 = vertex_coords[k6 + 1];
+                double x1 = vertex_coords[k6 + 2];
+                double y1 = vertex_coords[k6 + 3];
+                double x2 = vertex_coords[k6 + 4];
+                double y2 = vertex_coords[k6 + 5];
+
+                double z0 = bed_vv[k3 + 0];
+                double z1 = bed_vv[k3 + 1];
+                double z2 = bed_vv[k3 + 2];
+
+                double det = (y2 - y0) * (x1 - x0) - (y1 - y0) * (x2 - x0);
+                double dzx = ((y2 - y0) * (z1 - z0) - (y1 - y0) * (z2 - z0)) / det;
+                double dzy = ((x1 - x0) * (z2 - z0) - (x2 - x0) * (z1 - z0)) / det;
+
+                double slope = sqrt(1.0 + dzx * dzx + dzy * dzy);
+
+                double eta = friction_cv[k];
+                double xmom = xmom_cv[k];
+                double ymom = ymom_cv[k];
+
+                double S = -g * eta * eta * sqrt(xmom * xmom + ymom * ymom) * slope;
+                S /= (h * h * cbrt(h));
+
+                xmom_siu[k] += S;
+                ymom_siu[k] += S;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Gravity term
+// ============================================================================
+
+int core_gravity(struct domain *D) {
+    anuga_int n = D->number_of_elements;
+    double g = D->g;
+
+    double * restrict height_cv = D->height_centroid_values;
+    double * restrict bed_vv = D->bed_vertex_values;
+
+    double * restrict xmom_eu = D->xmom_explicit_update;
+    double * restrict ymom_eu = D->ymom_explicit_update;
+
+    double * restrict vertex_coords = D->vertex_coordinates;
+
+    if (D->bed_slope_x != NULL && D->bed_slope_y != NULL) {
+        // Use precomputed bed gradients — avoids recomputing static geometry
+        // every timestep (saves ~14 FP ops + 9 loads per element per call).
+        double * restrict bed_slope_x = D->bed_slope_x;
+        double * restrict bed_slope_y = D->bed_slope_y;
+
+        OMP_PARALLEL_LOOP
+        for (anuga_int k = 0; k < n; k++) {
+            double h = height_cv[k];
+            if (h <= 0.0) continue;
+
+            xmom_eu[k] += -g * h * bed_slope_x[k];
+            ymom_eu[k] += -g * h * bed_slope_y[k];
+        }
+    } else {
+        // Fallback: compute bed gradient inline from vertex data.
+        OMP_PARALLEL_LOOP
+        for (anuga_int k = 0; k < n; k++) {
+            double h = height_cv[k];
+            if (h <= 0.0) continue;
+
             anuga_int k3 = k * 3;
             anuga_int k6 = k * 6;
 
-            // Compute bed slope
             double x0 = vertex_coords[k6 + 0];
             double y0 = vertex_coords[k6 + 1];
             double x1 = vertex_coords[k6 + 2];
@@ -635,44 +737,48 @@ void core_manning_friction_sloped_semi_implicit(struct domain *D) {
             double dzx = ((y2 - y0) * (z1 - z0) - (y1 - y0) * (z2 - z0)) / det;
             double dzy = ((x1 - x0) * (z2 - z0) - (x2 - x0) * (z1 - z0)) / det;
 
-            double slope = sqrt(1.0 + dzx * dzx + dzy * dzy);
-
-            double eta = friction_cv[k];
-            double xmom = xmom_cv[k];
-            double ymom = ymom_cv[k];
-
-            double S = -g * eta * eta * sqrt(xmom * xmom + ymom * ymom) * slope;
-            S /= pow(h, 7.0 / 3.0);
-
-            xmom_siu[k] += S;
-            ymom_siu[k] += S;
+            xmom_eu[k] += -g * h * dzx;
+            ymom_eu[k] += -g * h * dzy;
         }
     }
+
+    return 0;
 }
 
 // ============================================================================
-// Gravity term
+// Gravity term (well-balanced)
 // ============================================================================
 
-int core_gravity(struct domain *D) {
+int core_gravity_wb(struct domain *D) {
+    // For now, same as regular gravity
+    // Well-balanced formulation can be added later
+    return core_gravity(D);
+}
+
+// ============================================================================
+// Precompute bed gradient (dz/dx, dz/dy) for every element.
+//
+// For a typical flood/tsunami simulation the bed is static, so recomputing
+// the gradient from vertex coordinates every timestep inside core_gravity and
+// core_manning_friction_sloped_semi_implicit wastes ~14 FP ops + 9 loads per
+// element per call. This routine computes the gradients once and caches them
+// in D->bed_slope_x[] / D->bed_slope_y[].
+//
+// Must be called after D->vertex_coordinates and D->bed_vertex_values have
+// been set, and D->bed_slope_x / D->bed_slope_y must point to allocated
+// arrays of length D->number_of_elements.
+// ============================================================================
+
+void core_precompute_bed_slope(struct domain *D) {
     anuga_int n = D->number_of_elements;
-    double g = D->g;
 
-    double * restrict height_cv = D->height_centroid_values;
-    double * restrict stage_vv = D->stage_vertex_values;
-    double * restrict bed_vv = D->bed_vertex_values;
-
-    double * restrict xmom_eu = D->xmom_explicit_update;
-    double * restrict ymom_eu = D->ymom_explicit_update;
-
-    double * restrict vertex_coords = D->vertex_coordinates;
-    double * restrict areas = D->areas;
+    double * restrict bed_slope_x    = D->bed_slope_x;
+    double * restrict bed_slope_y    = D->bed_slope_y;
+    double * restrict bed_vv         = D->bed_vertex_values;
+    double * restrict vertex_coords  = D->vertex_coordinates;
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
-        double h = height_cv[k];
-        if (h <= 0.0) continue;
-
         anuga_int k3 = k * 3;
         anuga_int k6 = k * 6;
 
@@ -688,24 +794,9 @@ int core_gravity(struct domain *D) {
         double z2 = bed_vv[k3 + 2];
 
         double det = (y2 - y0) * (x1 - x0) - (y1 - y0) * (x2 - x0);
-        double dzx = ((y2 - y0) * (z1 - z0) - (y1 - y0) * (z2 - z0)) / det;
-        double dzy = ((x1 - x0) * (z2 - z0) - (x2 - x0) * (z1 - z0)) / det;
-
-        xmom_eu[k] += -g * h * dzx;
-        ymom_eu[k] += -g * h * dzy;
+        bed_slope_x[k] = ((y2 - y0) * (z1 - z0) - (y1 - y0) * (z2 - z0)) / det;
+        bed_slope_y[k] = ((x1 - x0) * (z2 - z0) - (x2 - x0) * (z1 - z0)) / det;
     }
-
-    return 0;
-}
-
-// ============================================================================
-// Gravity term (well-balanced)
-// ============================================================================
-
-int core_gravity_wb(struct domain *D) {
-    // For now, same as regular gravity
-    // Well-balanced formulation can be added later
-    return core_gravity(D);
 }
 
 // ============================================================================
