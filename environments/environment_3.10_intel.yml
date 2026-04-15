@@ -1,4 +1,4 @@
-name: anuga_env_3.10
+name: anuga_env_3.10_intel
 channels:
   - conda-forge
 dependencies:
@@ -18,16 +18,19 @@ dependencies:
   - mpi4py
   - netcdf4
   - ninja
+  - mkl
+  - mkl-devel
+  - libblas=*=*mkl
+  - libcblas=*=*mkl
+  - liblapack=*=*mkl
   - numpy
   - openpyxl
   - pandas
   - pkg-config
   - pybind11
   - pymetis
-  - parmetis
   - pyproj
   - pytest
-  - pytest-regressions
   - scipy
   - utm
   - wheel

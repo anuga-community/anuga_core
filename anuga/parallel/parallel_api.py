@@ -819,10 +819,40 @@ def distribute_collaborative(domain, verbose=False, debug=False, parameters=None
     # Used by _shared_bcast_ndarray to avoid P copies of the mesh topology.
     node_comm = comm.Split_type(MPI.COMM_TYPE_SHARED)
 
-    # ── Step 1: rank 0 partitions ────────────────────────────────────────
+    # ── Step 0 (optional): ParMETIS collective partition ────────────────
+    from anuga.parallel.partitioning import parmetis_available
+    partition_scheme = (parameters or {}).get('partition_scheme', 'metis')
+    use_parmetis = (partition_scheme == 'parmetis' and parmetis_available())
+
+    precomputed_epart_order = None
+    precomputed_tpp = None
+
+    if use_parmetis:
+        # Broadcast raw (un-partitioned) neighbours to all ranks
+        if myid == 0:
+            raw_neighbours = domain.neighbours.astype(num.int64, copy=False)
+            n_tri = domain.number_of_triangles
+        else:
+            raw_neighbours = None
+            n_tri = None
+        n_tri = comm.bcast(n_tri, root=0)
+        raw_neighbours, _win_raw = _shared_bcast_ndarray(
+            raw_neighbours, comm, node_comm)
+
+        from anuga.parallel.partitioning import parmetis_partition
+        precomputed_epart_order, precomputed_tpp = parmetis_partition(
+            raw_neighbours, n_tri, numprocs, comm)
+
+        # Free temporary shared-memory window
+        if _win_raw is not None:
+            _win_raw.Free()
+
+    # ── Step 1: rank 0 partitions (or uses pre-computed ParMETIS result)
     if myid == 0:
         new_mesh, tpp, quantities, _s2p, _p2s = partition_mesh(
-            domain, numprocs, parameters=parameters, verbose=verbose)
+            domain, numprocs, parameters=parameters, verbose=verbose,
+            precomputed_epart_order=precomputed_epart_order,
+            precomputed_triangles_per_proc=precomputed_tpp)
 
         # Build dummy boundary_map from boundary tags (same as Sequential_distribute).
         # domain.boundary_map may be None if set_boundary() hasn't been called yet.

@@ -94,6 +94,44 @@ endif
 
 message('Effective compiler ID: ' + effective_compiler_id)
 
+#========================================================
+# Intel MKL Detection
+#========================================================
+# When using Intel compilers, MKL provides optimised BLAS/LAPACK for numpy/scipy.
+# The use_mkl option can be set explicitly; it also auto-enables for Intel compilers.
+
+is_intel_compiler = effective_compiler_id in ['intel', 'intel-cl', 'intel-llvm', 'icx']
+use_mkl_opt = get_option('use_mkl')
+use_mkl = use_mkl_opt or is_intel_compiler
+
+if use_mkl
+  mkl_dep = dependency('mkl-dynamic-lp64-seq', required: false)
+  if not mkl_dep.found()
+    mkl_dep = dependency('mkl', required: false)
+  endif
+  if mkl_dep.found()
+    dependencies += [mkl_dep]
+    message('Intel MKL found and enabled')
+  else
+    if is_intel_compiler
+      warning('Intel compiler detected but MKL not found. ' +
+              'Install MKL via: conda install mkl mkl-devel libblas=*=*mkl. ' +
+              'Using environment_<version>_intel.yml is recommended.')
+    else
+      warning('use_mkl=true but MKL not found — install mkl and mkl-devel.')
+    endif
+  endif
+  if is_intel_compiler
+    # -qmkl is supported by both classic Intel (icc/icpc) and Intel LLVM (icx/icpx).
+    # This flag selects the MKL BLAS/LAPACK implementation at the C-extension level
+    # and works alongside the OpenMP flags (-qopenmp / -fiopenmp) set below.
+    add_project_arguments('-qmkl=sequential', language: ['c', 'cpp'])
+    add_project_link_arguments('-qmkl=sequential', language: ['c', 'cpp'])
+    message('MKL compiler flag -qmkl=sequential added for Intel compiler')
+  endif
+endif
+
+
 if openmp.found()
   # On Windows, the mingw compiler does not support OpenMP ATOMIC operations
   # so using gcc_win-64 gxx_win-64 provided by conda-forge
@@ -106,10 +144,10 @@ if openmp.found()
   #
   # Uses effective_compiler_id to handle Cray wrappers correctly
 
-  if effective_compiler_id in ['intel', 'intel-cl', 'icx']
+  if effective_compiler_id in ['intel', 'intel-cl']
     openmp_c_args = ['-O3', '-qopenmp', '-g']
     add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
-  elif effective_compiler_id == 'intel-llvm'
+  elif effective_compiler_id in ['intel-llvm', 'icx']
     openmp_c_args = ['-O3', '-fiopenmp', '-g']
     add_project_link_arguments('-fiopenmp', language: ['c', 'cpp'])
   elif effective_compiler_id == 'nvidia_hpc'
@@ -131,6 +169,52 @@ else
   openmp_deps = dependencies
 endif
 
+# Python prefix — used to locate conda-installed libraries (MPI, ParMETIS, etc.)
+py_prefix = run_command(py3, ['-c', 'import sys; print(sys.prefix)'], check: true).stdout().strip()
+
+#========================================================
+# MPI detection (used by parallel/ and shallow_water/)
+#========================================================
+# First check mpi4py — it knows which MPI library it was built against.
+# We derive the correct MPI include/lib from mpi4py's own MPI installation
+# to avoid ABI mismatches when multiple MPI implementations are present.
+mpi4py_check = run_command(py3, ['-c', 'import mpi4py; print(mpi4py.get_include())'], check: false)
+have_mpi4py = mpi4py_check.returncode() == 0
+if have_mpi4py
+  mpi4py_incdir = mpi4py_check.stdout().strip()
+else
+  mpi4py_incdir = ''
+endif
+
+# Try to find MPI that matches mpi4py's linked library.
+# If mpi4py provides mpi.cfg with mpicc, use that; otherwise fall back to
+# system dependency('mpi') which uses whatever mpicc is on PATH.
+mpi4py_mpicc_check = run_command(py3, ['-c',
+  'import mpi4py; c = getattr(mpi4py, "get_config", lambda: {})(); print(c.get("mpicc", ""))'],
+  check: false)
+_mpi4py_mpicc = mpi4py_mpicc_check.returncode() == 0 ? mpi4py_mpicc_check.stdout().strip() : ''
+
+# Use the Python prefix to locate the conda MPI (same one mpi4py links to).
+_py_prefix_lib = py_prefix / 'lib'
+_py_prefix_inc = py_prefix / 'include'
+_mpi_lib_found = cc.find_library('mpi', required: false, dirs: [_py_prefix_lib])
+
+if _mpi_lib_found.found()
+  # Conda/prefix MPI — guaranteed to match mpi4py
+  mpi_dep = declare_dependency(
+    dependencies: [_mpi_lib_found],
+    include_directories: include_directories(_py_prefix_inc),
+  )
+  message('MPI: using prefix library from ' + _py_prefix_lib)
+else
+  # Fall back to system mpicc
+  mpi_dep = dependency('mpi', language: 'c', required: false)
+  if mpi_dep.found()
+    message('MPI: using system dependency (mpicc)')
+  else
+    message('MPI: NOT FOUND')
+  endif
+endif
 
 #========================================================
 # Install the Python scripts
