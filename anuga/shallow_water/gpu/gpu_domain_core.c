@@ -7,6 +7,9 @@
 #include <math.h>
 #include <omp.h>
 #include <mpi.h>
+#ifdef HAVE_MPI_EXT_H
+#include <mpi-ext.h>
+#endif
 #include "gpu_domain.h"
 #include "gpu_omp_macros.h"
 
@@ -16,6 +19,7 @@
 extern void gpu_flop_counters_init(struct gpu_domain *GD);
 extern void gpu_halo_finalize(struct gpu_domain *GD);
 extern void gpu_reflective_finalize(struct gpu_domain *GD);
+extern void gpu_file_boundary_finalize(struct gpu_domain *GD);
 extern void gpu_dirichlet_finalize(struct gpu_domain *GD);
 extern void gpu_transmissive_finalize(struct gpu_domain *GD);
 extern void gpu_transmissive_n_zero_t_finalize(struct gpu_domain *GD);
@@ -25,28 +29,159 @@ extern void gpu_boundary_edge_sync_finalize(struct gpu_domain *GD);
 // Utility Functions
 // ============================================================================
 
-// Detect if MPI library supports GPU-aware communication
-// This is a runtime check - compile with -DGPU_AWARE_MPI to force enable
+// ---------------------------------------------------------------------------
+// Device memory estimation and checking
+// ---------------------------------------------------------------------------
+
+// Compute the number of bytes that gpu_domain_map_arrays will transfer to the
+// device for a domain with n triangles and nb boundary edges.
+//
+// Counts only the main domain arrays (double and int64 per-element arrays).
+// Boundary and riverwall arrays are small relative to domain size.
+size_t gpu_estimate_required_memory(anuga_int n, anuga_int nb) {
+    // Per-element double arrays mapped in gpu_domain_map_arrays:
+    //   centroid values:       stage, xmom, ymom, bed, height, friction  =  6n
+    //   edge values:           stage, xmom, ymom, bed, height             =  5 x 3n = 15n
+    //   explicit updates:      stage, xmom, ymom                          =  3n
+    //   semi-implicit updates: stage, xmom, ymom                          =  3n
+    //   mesh geometry:         normals(6n), edgelengths(3n), areas(n),
+    //                          radii(n), max_speed(n), centroid_coords(2n),
+    //                          edge_coords(6n), x/y_centroid_work(2n)     = 23n
+    //   Total doubles: (6 + 15 + 3 + 3 + 23) = 50n doubles
+    //
+    // Per-element int64 arrays:
+    //   neighbours(3n), neighbour_edges(3n), surrogate_neighbours(3n),
+    //   number_of_boundaries(n), tri_full_flag(n)                         = 11n int64
+    //
+    // Backup values (double): stage, xmom, ymom = 3n  (mapped in map_backup_arrays)
+    //   — not mapped here but count as we typically allocate them
+    //
+    // Boundary arrays (small): 5 x nb doubles
+    size_t double_bytes = (size_t)(50) * (size_t)n * sizeof(double);
+    size_t int_bytes    = (size_t)(11) * (size_t)n * sizeof(int64_t);
+    size_t bndry_bytes  = (size_t)(5)  * (size_t)nb * sizeof(double);
+    return double_bytes + int_bytes + bndry_bytes;
+}
+
+// Query free and total memory on the current OpenMP target device.
+// Returns 1 (OK) if enough memory is available, 0 if not (or if query fails).
+// Sets *free_bytes and *total_bytes when available (0 when not queryable).
+//
+// Vendor-specific query APIs are selected at compile time:
+//   -DUSE_CUDA  -> cudaMemGetInfo
+//   -DUSE_HIP   -> hipMemGetInfo
+// CPU_ONLY_MODE and unknown targets: query is skipped, returns 1.
+int gpu_query_device_memory(size_t *free_bytes, size_t *total_bytes) {
+    *free_bytes  = 0;
+    *total_bytes = 0;
+
+#if defined(USE_CUDA)
+    cudaError_t err = cudaMemGetInfo(free_bytes, total_bytes);
+    if (err != cudaSuccess) {
+        return 1;   // Can't query — don't block
+    }
+    return 1;  // Caller decides if enough
+#elif defined(USE_HIP)
+    hipError_t err = hipMemGetInfo(free_bytes, total_bytes);
+    if (err != hipSuccess) {
+        return 1;
+    }
+    return 1;
+#else
+    // No vendor API available (CPU_ONLY_MODE or unknown target).
+    // Report unlimited — mapping will silently run on host.
+    return 1;
+#endif
+}
+
+// Check that the device has enough free memory for the domain.
+// Prints a clear error message and returns 0 if insufficient.
+// Always returns 1 in CPU_ONLY_MODE (no real device to OOM).
+int gpu_check_device_memory(struct gpu_domain *GD) {
+    anuga_int n  = GD->D.number_of_elements;
+    anuga_int nb = GD->D.boundary_length;
+    size_t required = gpu_estimate_required_memory(n, nb);
+    size_t free_bytes = 0, total_bytes = 0;
+
+    gpu_query_device_memory(&free_bytes, &total_bytes);
+
+    double req_mb   = required    / (1024.0 * 1024.0);
+    double free_mb  = free_bytes  / (1024.0 * 1024.0);
+    double total_mb = total_bytes / (1024.0 * 1024.0);
+
+    // Print memory info when verbose or when device memory is known
+    if (GD->verbose || (total_bytes > 0)) {
+        if (GD->rank == 0) {
+            if (total_bytes > 0) {
+                printf("  GPU memory: %.0f MB required  |  %.0f / %.0f MB free/total\n",
+                       req_mb, free_mb, total_mb);
+            } else {
+                printf("  GPU memory: %.0f MB estimated required (device query not available)\n",
+                       req_mb);
+            }
+            fflush(stdout);
+        }
+    }
+
+    // Only fail if we have a real memory figure AND it's insufficient
+    if (total_bytes > 0 && free_bytes < required) {
+        fprintf(stderr,
+            "\n[ANUGA GPU] ERROR (rank %d): Insufficient GPU memory.\n"
+            "  Domain has %" PRId64 " triangles, estimated %.0f MB required.\n"
+            "  GPU has %.0f MB free of %.0f MB total.\n"
+            "  Options:\n"
+            "    1. Reduce domain size (use fewer triangles)\n"
+            "    2. Use more MPI ranks to distribute the domain\n"
+            "    3. Use set_multiprocessor_mode(1) to run without GPU offloading\n",
+            GD->rank, n, req_mb, free_mb, total_mb);
+        fflush(stderr);
+        return 0;
+    }
+    return 1;
+}
+
+// Detect if MPI library supports GPU-aware communication.
+// Priority:
+//   1. Compile-time -DGPU_AWARE_MPI flag (user asserts support is present).
+//   2. Runtime MPIX_Query_cuda_support()  (Open MPI / MVAPICH2 CUDA builds).
+//   3. Runtime MPIX_Query_rocm_support()  (Open MPI / MVAPICH2 ROCm builds).
+//   4. Default: 0 (unknown, assume no GPU-aware MPI).
 int detect_gpu_aware_mpi(void) {
 #ifdef GPU_AWARE_MPI
     return 1;
+#elif defined(HAVE_MPIX_CUDA_SUPPORT)
+    return MPIX_Query_cuda_support();
+#elif defined(HAVE_MPIX_ROCM_SUPPORT)
+    return MPIX_Query_rocm_support();
 #else
-    // Could add runtime detection here (e.g., check MPIX_Query_cuda_support)
-    // For now, default to disabled - user must compile with -DGPU_AWARE_MPI
     return 0;
 #endif
 }
 
+// Return 1 if a real GPU offload target is available (not CPU_ONLY_MODE).
+// In CPU_ONLY_MODE (standard install, CI), omp_get_num_devices() may still
+// report 0; in GPU builds the pragma is active only when devices > 0.
+int gpu_is_available(void) {
+#ifdef CPU_ONLY_MODE
+    return 0;
+#else
+    return omp_get_num_devices() > 0 ? 1 : 0;
+#endif
+}
+
 void print_gpu_domain_info(struct gpu_domain *GD) {
-    printf("GPU Domain Info (rank %d/%d):\n", GD->rank, GD->nprocs);
-    printf("  Elements: %" PRId64 "\n", GD->D.number_of_elements);
-    printf("  GPU initialized: %d\n", GD->gpu_initialized);
-    printf("  GPU-aware MPI: %d\n", GD->gpu_aware_mpi);
-    printf("  Halo neighbors: %d\n", GD->halo.num_neighbors);
+    if (!GD->verbose) return;
+    printf("\n--- GPU Domain (rank %d/%d) ---\n", GD->rank, GD->nprocs);
+    printf("  Elements: %" PRId64 "  |  Device: %d  |  GPU-aware MPI: %s",
+           GD->D.number_of_elements, GD->device_id,
+           GD->gpu_aware_mpi ? "yes" : "no");
     if (GD->halo.num_neighbors > 0) {
-        printf("  Total send: %d, Total recv: %d\n",
+        printf("  |  Halo procs: %d (send %d / recv %d)",
+               GD->halo.num_neighbors,
                GD->halo.total_send_size, GD->halo.total_recv_size);
     }
+    printf("\n");
+    fflush(stdout);
 }
 
 
@@ -71,9 +206,6 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
         omp_set_default_device(GD->device_id);
     } else {
         GD->device_id = -1;
-        if (rank == 0) {
-            fprintf(stderr, "Warning: No GPU devices found, will use CPU fallback\n");
-        }
     }
 
     // Detect GPU-aware MPI
@@ -137,6 +269,16 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->time_bdry.ymom_value = 0.0;
     GD->time_bdry.mapped = 0;
 
+    // Initialize file_boundary to empty
+    GD->file_bdry.num_edges        = 0;
+    GD->file_bdry.boundary_indices = NULL;
+    GD->file_bdry.vol_ids          = NULL;
+    GD->file_bdry.edge_ids         = NULL;
+    GD->file_bdry.stage_values     = NULL;
+    GD->file_bdry.xmom_values      = NULL;
+    GD->file_bdry.ymom_values      = NULL;
+    GD->file_bdry.mapped           = 0;
+
     // Initialize boundary edge sync to empty
     GD->edge_sync.num_boundary_cells = 0;
     GD->edge_sync.cell_ids = NULL;
@@ -153,8 +295,23 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->evolve_max_timestep = 1.0e10;
     GD->fixed_flux_timestep = -1.0;  // Disabled by default
 
-    // Initialize culvert operators to empty
+    // Initialize rate operators to empty (heap-allocated on first use)
+    GD->rate_ops.ops = NULL;
+    GD->rate_ops.num_operators = 0;
+    GD->rate_ops.capacity = 0;
+    GD->rate_ops.initialized = 0;
+
+    // Initialize inlet operators to empty (heap-allocated on first use)
+    GD->inlet_ops.ops = NULL;
+    GD->inlet_ops.num_operators = 0;
+    GD->inlet_ops.capacity = 0;
+
+    // Initialize culvert operators to empty (heap-allocated on first use)
     GD->culvert_ops.num_culverts = 0;
+    GD->culvert_ops.capacity = 0;
+    GD->culvert_ops.params = NULL;
+    GD->culvert_ops.indices = NULL;
+    GD->culvert_ops.state = NULL;
     GD->culvert_ops.initialized = 0;
     GD->culvert_ops.mapped = 0;
     GD->culvert_ops.total_inlet_triangles = 0;
@@ -189,9 +346,14 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
     gpu_dirichlet_finalize(GD);
     gpu_transmissive_finalize(GD);
     gpu_transmissive_n_zero_t_finalize(GD);
+    gpu_file_boundary_finalize(GD);
 
     // Free boundary edge sync structures
     gpu_boundary_edge_sync_finalize(GD);
+
+    // Free rate and inlet operator structures (heap-allocated ops arrays)
+    gpu_rate_operators_finalize_all(GD);
+    gpu_inlet_operators_finalize_all(GD);
 
     // Free culvert operator structures
     gpu_culverts_finalize_all(GD);
@@ -204,11 +366,17 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
 // GPU Memory Management
 // ============================================================================
 
-void gpu_domain_map_arrays(struct gpu_domain *GD) {
-    if (GD->gpu_initialized) return;
+int gpu_domain_map_arrays(struct gpu_domain *GD) {
+    if (GD->gpu_initialized) return 1;
     // Note: Don't return early if device_id < 0. With OMP_TARGET_OFFLOAD=disabled,
     // the OpenMP target directives run on CPU, so we still need to set up the
     // data structures and flags for the boundary/kernel functions to work.
+
+    // Check device memory before attempting any mapping.
+    // Returns 0 and prints a clear error if there isn't enough free memory.
+    if (!gpu_check_device_memory(GD)) {
+        return 0;
+    }
 
     anuga_int n = GD->D.number_of_elements;
     anuga_int nb = GD->D.boundary_length;
@@ -267,8 +435,12 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         x_centroid_work[0:n], y_centroid_work[0:n], \
         normals[0:6*n], edgelengths[0:3*n], \
         areas[0:n], radii[0:n], max_speed[0:n], \
-        centroid_coords[0:2*n], edge_coords[0:6*n], \
-        tri_full_flag[0:n])
+        centroid_coords[0:2*n], edge_coords[0:6*n])
+
+    // Map tri_full_flag only when present (parallel domains only)
+    if (tri_full_flag != NULL) {
+        #pragma omp target enter data map(to: tri_full_flag[0:n])
+    }
 
     // Map boundary values if present (including bed and height for reflective boundary)
     if (nb > 0) {
@@ -292,8 +464,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         R->mapped = 1;
 
-        if (GD->rank == 0) {
-            printf("Reflective boundary arrays mapped to GPU: %d edges\n", ne);
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Reflective boundary: %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -308,8 +481,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Dir->mapped = 1;
 
-        if (GD->rank == 0) {
-            printf("Dirichlet boundary arrays mapped to GPU: %d edges\n", ne);
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Dirichlet boundary:  %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -324,8 +498,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         T->mapped = 1;
 
-        if (GD->rank == 0) {
-            printf("Transmissive boundary arrays mapped to GPU: %d edges\n", ne);
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Transmissive boundary: %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -340,8 +515,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Tnzt->mapped = 1;
 
-        if (GD->rank == 0) {
-            printf("Transmissive_n_zero_t boundary arrays mapped to GPU: %d edges\n", ne);
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Transmissive_n_zero_t boundary: %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -356,8 +532,30 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 1;
 
-        if (GD->rank == 0) {
-            printf("Time_boundary arrays mapped to GPU: %d edges\n", ne);
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Time boundary: %d edges\n", ne);
+            fflush(stdout);
+        }
+    }
+
+    // Map file_boundary arrays if initialized
+    struct file_boundary *FB = &GD->file_bdry;
+    if (FB->num_edges > 0 && FB->boundary_indices != NULL) {
+        int ne = FB->num_edges;
+        int    *b_idx   = FB->boundary_indices;
+        int    *v_ids   = FB->vol_ids;
+        int    *e_ids   = FB->edge_ids;
+        double *stage_v = FB->stage_values;
+        double *xmom_v  = FB->xmom_values;
+        double *ymom_v  = FB->ymom_values;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+                                              stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
+        FB->mapped = 1;
+
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  File boundary: %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -394,8 +592,9 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
             #pragma omp target enter data map(to: riverwall_hydraulic_properties[0:nrow_hp*ncol_hp])
         }
 
-        if (GD->rank == 0) {
-            printf("Riverwall arrays mapped to GPU: %" PRId64 " edges, %" PRId64 " segments\n", n_rw_edges, nrow_hp);
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Riverwall: %" PRId64 " edges, %" PRId64 " segments\n", n_rw_edges, nrow_hp);
+            fflush(stdout);
         }
     }
 
@@ -424,9 +623,11 @@ void gpu_domain_map_arrays(struct gpu_domain *GD) {
 
     GD->gpu_initialized = 1;
 
-    if (GD->rank == 0) {
-        printf("GPU arrays mapped to device %d\n", GD->device_id);
+    if (GD->rank == 0 && GD->verbose) {
+        printf("  Arrays mapped to device %d\n", GD->device_id);
+        fflush(stdout);
     }
+    return 1;
 }
 
 void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
@@ -444,8 +645,9 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         R->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->rank == 0 && GD->verbose) {
             printf("Reflective boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -460,8 +662,9 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Dir->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->rank == 0 && GD->verbose) {
             printf("Dirichlet boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -476,8 +679,9 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         T->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->rank == 0 && GD->verbose) {
             printf("Transmissive boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -492,8 +696,9 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Tnzt->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->rank == 0 && GD->verbose) {
             printf("Transmissive_n_zero_t boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
         }
     }
 
@@ -508,8 +713,9 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 1;
 
-        if (GD->rank == 0) {
+        if (GD->rank == 0 && GD->verbose) {
             printf("Time_boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
         }
     }
 }
@@ -573,8 +779,12 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         x_centroid_work[0:n], y_centroid_work[0:n], \
         normals[0:6*n], edgelengths[0:3*n], \
         areas[0:n], radii[0:n], max_speed[0:n], \
-        centroid_coords[0:2*n], edge_coords[0:6*n], \
-        tri_full_flag[0:n])
+        centroid_coords[0:2*n], edge_coords[0:6*n])
+
+    // Unmap tri_full_flag only when it was mapped (parallel domains only)
+    if (tri_full_flag != NULL) {
+        #pragma omp target exit data map(delete: tri_full_flag[0:n])
+    }
 
     if (nb > 0) {
         double *stage_bv = GD->D.stage_boundary_values;
@@ -640,6 +850,21 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *e_ids = TB->edge_ids;
         #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 0;
+    }
+
+    // Unmap file_boundary arrays if mapped
+    struct file_boundary *FB = &GD->file_bdry;
+    if (FB->mapped && FB->num_edges > 0) {
+        int ne = FB->num_edges;
+        int    *b_idx   = FB->boundary_indices;
+        int    *v_ids   = FB->vol_ids;
+        int    *e_ids   = FB->edge_ids;
+        double *stage_v = FB->stage_values;
+        double *xmom_v  = FB->xmom_values;
+        double *ymom_v  = FB->ymom_values;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+                                                 stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
+        FB->mapped = 0;
     }
 
     // Unmap riverwall arrays
@@ -862,8 +1087,11 @@ int gpu_boundary_edge_sync_init(struct gpu_domain *GD,
                    bed_buf[0:bs], height_buf[0:bs])
 
     S->initialized = 1;
-    printf("Rank %d: Boundary edge sync initialized for %d cells (%d edge values)\n",
-           GD->rank, num_boundary_cells, S->buf_size);
+    if (GD->verbose) {
+        printf("Rank %d: Boundary edge sync initialized for %d cells (%d edge values)\n",
+               GD->rank, num_boundary_cells, S->buf_size);
+        fflush(stdout);
+    }
 
     return 0;
 }

@@ -21,7 +21,6 @@ py3.extension_module('kinematic_viscosity_operator_ext',
 python_sources = [
   'base_operator.py',
   'boundary_flux_integral_operator.py',
-  'change_friction_operator.py',
   'collect_max_quantities_operator.py',
   'collect_max_stage_operator.py',
   'elliptic_operator.py',

@@ -21,17 +21,11 @@ verbose = args.verbose
 # Get the current svn revision
 #---------------------------------
 timestamp = time.asctime()
-major_revision = anuga.get_version()
-try:
-    # This fails if using git for version control
-    minor_revision = anuga.get_revision_number()
-except:
-    try:
-        # This works when using git on unix
-        minor_revision = os.popen("git show-ref --head -s | head -n1").read().strip()
-    except:
-        # This is a fallback position
-        minor_revision = 'unknown'
+version = anuga.get_version()
+version_split = version.split('.',3)
+
+major_version = version_split[0]
+minor_version = version_split[1]
 
 
 #----------------------------------
@@ -46,8 +40,8 @@ except:
 f = open('saved_parameters.tex', 'w')
 #f.write('\\newcommand{\\cfl}{\\UScore{%s}}\n' % str(cfl))
 f.write('\\newcommand{\\alg}{\\UScore{%s}}\n' % str(alg))
-f.write('\\newcommand{\\majorR}{\\UScore{%s}}\n' % str(major_revision))
-f.write('\\newcommand{\\minorR}{\\UScore{%s}}\n' % str(minor_revision))
+f.write('\\newcommand{\\majorR}{\\UScore{%s}}\n' % str(major_version))
+f.write('\\newcommand{\\minorR}{\\UScore{%s}}\n' % str(minor_version))
 f.write('\\newcommand{\\timeR}{{%s}}\n' % str(timestamp))
 
 f.close()

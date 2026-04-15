@@ -9,6 +9,7 @@
 #include <mpi.h>
 #include "gpu_domain.h"
 #include "gpu_omp_macros.h"
+#include "gpu_nvtx.h"
 
 // Halo exchange setup and MPI ghost exchange
 
@@ -66,7 +67,7 @@ int gpu_halo_init(struct gpu_domain *GD,
     // Allocate communication buffers
     // 3 quantities per element: stage, xmom, ymom centroid values
 #ifdef GPU_AWARE_MPI
-    // Use omp_target_alloc for device buffers that CUDA-aware MPI can recognize
+    // Device buffers for GPU pack/unpack kernels
     int dev = omp_get_default_device();
     H->send_buffer = (double *)omp_target_alloc(3 * H->total_send_size * sizeof(double), dev);
     H->recv_buffer = (double *)omp_target_alloc(3 * H->total_recv_size * sizeof(double), dev);
@@ -74,9 +75,22 @@ int gpu_halo_init(struct gpu_domain *GD,
         fprintf(stderr, "ERROR: omp_target_alloc failed for halo buffers\n");
         return -1;
     }
+    // Host staging buffers for MPI calls.
+    // Some UCX transports (e.g. uct_mm shared-memory used intra-node) cannot
+    // access omp_target_alloc device pointers, causing a SIGSEGV in MPI_Isend.
+    // We always stage through host memory; the overhead is small because halos
+    // are tiny compared to the full domain.
+    H->host_send_buffer = (double *)malloc(3 * H->total_send_size * sizeof(double));
+    H->host_recv_buffer = (double *)malloc(3 * H->total_recv_size * sizeof(double));
+    if (!H->host_send_buffer || !H->host_recv_buffer) {
+        fprintf(stderr, "ERROR: malloc failed for halo host staging buffers\n");
+        return -1;
+    }
 #else
     H->send_buffer = (double *)malloc(3 * H->total_send_size * sizeof(double));
     H->recv_buffer = (double *)malloc(3 * H->total_recv_size * sizeof(double));
+    H->host_send_buffer = NULL;
+    H->host_recv_buffer = NULL;
 #endif
 
     // Allocate MPI request array
@@ -106,6 +120,8 @@ void gpu_halo_finalize(struct gpu_domain *GD) {
     int dev = omp_get_default_device();
     if (H->send_buffer) omp_target_free(H->send_buffer, dev);
     if (H->recv_buffer) omp_target_free(H->recv_buffer, dev);
+    if (H->host_send_buffer) free(H->host_send_buffer);
+    if (H->host_recv_buffer) free(H->host_recv_buffer);
 #else
     if (H->send_buffer) free(H->send_buffer);
     if (H->recv_buffer) free(H->recv_buffer);
@@ -122,6 +138,8 @@ void gpu_halo_finalize(struct gpu_domain *GD) {
     H->flat_recv_indices = NULL;
     H->send_buffer = NULL;
     H->recv_buffer = NULL;
+    H->host_send_buffer = NULL;
+    H->host_recv_buffer = NULL;
     H->requests = NULL;
 }
 
@@ -133,9 +151,13 @@ void gpu_halo_finalize(struct gpu_domain *GD) {
 // Exchange ghost cell data between MPI ranks
 // Adapted from miniapp_mpi.c exchange_halo()
 void gpu_exchange_ghosts(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_exchange_ghosts");
     struct halo_exchange *H = &GD->halo;
 
-    if (H->num_neighbors == 0) return;
+    if (H->num_neighbors == 0) {
+        NVTX_POP();
+        return;
+    }
 
     int send_size = H->total_send_size;
     int recv_size = H->total_recv_size;
@@ -163,32 +185,51 @@ void gpu_exchange_ghosts(struct gpu_domain *GD) {
     }
 
 #ifdef GPU_AWARE_MPI
-    // GPU-aware MPI path: send_buf/recv_buf are already device pointers
-    // from omp_target_alloc — pass directly to MPI
+    // GPU_AWARE_MPI path: device buffers are used for GPU pack/unpack, but MPI
+    // communication uses host staging buffers.  Some UCX transports (e.g.
+    // uct_mm, the intra-node shared-memory transport) cannot access
+    // omp_target_alloc device pointers and segfault inside MPI_Isend if we
+    // pass device pointers directly.  Staging through host is safe for ALL
+    // transports, and halos are small enough that the D2H/H2D cost is minimal.
     {
+        double *host_send = H->host_send_buffer;
+        double *host_recv = H->host_recv_buffer;
+
+        // Copy packed send buffer from device to host staging buffer
+        int host = omp_get_initial_device();
+        int dev  = omp_get_default_device();
+        omp_target_memcpy(host_send, send_buf,
+                          3 * send_size * sizeof(double),
+                          0, 0, host, dev);
+
         int req_count = 0;
         int send_offset = 0, recv_offset = 0;
 
-        // Post all receives first
+        // Post all receives first (into host staging buffer)
         for (int ni = 0; ni < H->num_neighbors; ni++) {
             int partner = H->neighbor_ranks[ni];
             int count = H->recv_counts[ni];
-            MPI_Irecv(&recv_buf[3*recv_offset], 3*count, MPI_DOUBLE,
+            MPI_Irecv(&host_recv[3*recv_offset], 3*count, MPI_DOUBLE,
                       partner, 0, GD->comm, &H->requests[req_count++]);
             recv_offset += count;
         }
 
-        // Post all sends
+        // Post all sends (from host staging buffer)
         for (int ni = 0; ni < H->num_neighbors; ni++) {
             int partner = H->neighbor_ranks[ni];
             int count = H->send_counts[ni];
-            MPI_Isend(&send_buf[3*send_offset], 3*count, MPI_DOUBLE,
+            MPI_Isend(&host_send[3*send_offset], 3*count, MPI_DOUBLE,
                       partner, 0, GD->comm, &H->requests[req_count++]);
             send_offset += count;
         }
 
         // Wait for all communication to complete
         MPI_Waitall(req_count, H->requests, MPI_STATUSES_IGNORE);
+
+        // Copy received halo data from host staging buffer to device
+        omp_target_memcpy(recv_buf, host_recv,
+                          3 * recv_size * sizeof(double),
+                          0, 0, dev, host);
     }
 
 #else
@@ -239,5 +280,6 @@ void gpu_exchange_ghosts(struct gpu_domain *GD) {
         xmom[k] = recv_buf[3*idx + 1];
         ymom[k] = recv_buf[3*idx + 2];
     }
+    NVTX_POP();
 }
 

@@ -285,7 +285,16 @@ def compute_local_gradients(object quantity):
 
   assert err == 0, "Internal function _compute_local_gradient failed"
 
-def extrapolate_second_order_and_limit_by_edge(object quantity):
+def extrapolate_second_order_and_limit_by_edge(object quantity,
+                                               object workspace_x=None,
+                                               object workspace_y=None,
+                                               object workspace_phi=None):
+  """Extrapolate centroid values to edges using second-order gradients, then limit.
+
+  If workspace_x/y/phi arrays are supplied (domain-level scratch buffers), they
+  are used instead of per-quantity gradient arrays so that the quantity does not
+  need to allocate its own gradient storage.
+  """
 
   cdef object domain
 
@@ -306,7 +315,7 @@ def extrapolate_second_order_and_limit_by_edge(object quantity):
   cdef double beta
   cdef int64_t err
 
-  domain = quantity.object
+  domain = quantity.domain
 
   domain_centroids = domain.centroid_coordinates
   domain_surrogate_neighbours = domain.surrogate_neighbours
@@ -317,9 +326,14 @@ def extrapolate_second_order_and_limit_by_edge(object quantity):
   quantity_centroid_values = quantity.centroid_values
   quantity_vertex_values = quantity.vertex_values
   quantity_edge_values = quantity.edge_values
-  quantity_phi = quantity.phi
-  quantity_x_gradient = quantity.x_gradient
-  quantity_y_gradient = quantity.y_gradient
+  if workspace_phi is not None:
+    quantity_phi = workspace_phi
+    quantity_x_gradient = workspace_x
+    quantity_y_gradient = workspace_y
+  else:
+    quantity_phi = quantity.phi
+    quantity_x_gradient = quantity.x_gradient
+    quantity_y_gradient = quantity.y_gradient
 
   beta = quantity.beta
 
@@ -356,7 +370,16 @@ def extrapolate_second_order_and_limit_by_edge(object quantity):
 
   assert err == 0, "Internal function _limit_edges_by_all_neighbours failed"
 
-def extrapolate_second_order_and_limit_by_vertex(object quantity):
+def extrapolate_second_order_and_limit_by_vertex(object quantity,
+                                                 object workspace_x=None,
+                                                 object workspace_y=None,
+                                                 object workspace_phi=None):
+  """Extrapolate centroid values to vertices using second-order gradients, then limit.
+
+  If workspace_x/y/phi arrays are supplied (domain-level scratch buffers), they
+  are used instead of per-quantity gradient arrays so that the quantity does not
+  need to allocate its own gradient storage.
+  """
 
   cdef object domain
 
@@ -377,7 +400,7 @@ def extrapolate_second_order_and_limit_by_vertex(object quantity):
   cdef double beta
   cdef int64_t err
 
-  domain = quantity.object
+  domain = quantity.domain
 
   domain_centroids = domain.centroid_coordinates
   domain_surrogate_neighbours = domain.surrogate_neighbours
@@ -388,9 +411,14 @@ def extrapolate_second_order_and_limit_by_vertex(object quantity):
   quantity_centroid_values = quantity.centroid_values
   quantity_vertex_values = quantity.vertex_values
   quantity_edge_values = quantity.edge_values
-  quantity_phi = quantity.phi
-  quantity_x_gradient = quantity.x_gradient
-  quantity_y_gradient = quantity.y_gradient
+  if workspace_phi is not None:
+    quantity_phi = workspace_phi
+    quantity_x_gradient = workspace_x
+    quantity_y_gradient = workspace_y
+  else:
+    quantity_phi = quantity.phi
+    quantity_x_gradient = quantity.x_gradient
+    quantity_y_gradient = quantity.y_gradient
 
   beta = quantity.beta
 

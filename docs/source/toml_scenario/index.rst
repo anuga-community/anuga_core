@@ -44,7 +44,7 @@ A complete, ready-to-run example is provided in
 ``examples/cairns_toml_excel/`` of the repository.  It models a synthetic
 tsunami entering Cairns Harbour (Queensland, Australia) and exercises most
 TOML features: a shapefile boundary, a DEM elevation raster, Flather open-
-ocean boundaries, and the bridge/pumping-station stubs.
+ocean boundaries, and stubs for bridges, pumping stations, culverts, and weirs.
 
 .. code-block:: bash
 
@@ -511,6 +511,125 @@ point.  Set ``enabled = false`` to disable without removing the definition.
    exchange_line_0       = "mesh/pump1_wet_well_line.csv"
    exchange_line_1       = "mesh/pump1_discharge_line.csv"
    smoothing_timescale   = 30.0    # [s]
+
+
+.. _toml-culverts:
+
+[[culverts]]
+~~~~~~~~~~~~
+
+Box or pipe culverts using the Boyd (1987) head-discharge algorithm.
+Set ``enabled = false`` to disable without removing the definition.
+
+``type`` selects the cross-section shape:
+
+* ``"boyd_box"``  — rectangular barrel (``width`` × ``height``).
+* ``"boyd_pipe"`` — circular barrel (``diameter``).
+
+**Geometry** — choose exactly one of:
+
+* ``exchange_line_0`` / ``exchange_line_1``: paths to CSV polyline files
+  that define the upstream and downstream exchange zones.  The exchange
+  zone widths govern how much of the mesh perimeter couples to the culvert.
+  This is the preferred approach for field models.
+
+* ``end_point_0`` / ``end_point_1``: ``[x, y]`` coordinate pairs for the
+  two barrel ends.  ANUGA derives short perpendicular exchange lines
+  automatically.
+
+**Boyd box example:**
+
+.. code-block:: toml
+
+   [[culverts]]
+   enabled              = true
+   type                 = "boyd_box"
+   label                = "road_culvert_1"
+   width                = 0.9              # [m] internal barrel width
+   height               = 0.6             # [m] internal barrel height (omit = square)
+   exchange_line_0      = "mesh/culvert1_exchange_up.csv"
+   exchange_line_1      = "mesh/culvert1_exchange_down.csv"
+   enquiry_gap          = 0.2             # [m] from exchange line to enquiry point
+   losses               = 0.5             # head-loss coefficient (0.5 = sharp-edge inlet)
+   barrels              = 1.0             # number of parallel identical barrels
+   blockage             = 0.0             # fractional blockage [0,1]; 0 = fully open
+   z1                   = 0.0             # batter slope at end 0 (rise/run)
+   z2                   = 0.0             # batter slope at end 1
+   apron                = 0.1             # [m] flat apron at each end
+   manning              = 0.013           # barrel Manning's n
+   smoothing_timescale  = 0.0             # [s] exponential smoothing constant
+   use_momentum_jet     = true
+   use_velocity_head    = true
+   # invert_elevations  = [1.0, 0.8]      # [m] upstream, downstream; sampled from DEM if omitted
+
+**Boyd pipe example:**
+
+.. code-block:: toml
+
+   [[culverts]]
+   enabled              = true
+   type                 = "boyd_pipe"
+   label                = "drain_pipe_1"
+   diameter             = 0.6              # [m] internal barrel diameter
+   exchange_line_0      = "mesh/pipe1_exchange_up.csv"
+   exchange_line_1      = "mesh/pipe1_exchange_down.csv"
+   enquiry_gap          = 0.2
+   losses               = 0.5
+   barrels              = 2.0              # two parallel pipes
+   manning              = 0.013
+   smoothing_timescale  = 0.0
+
+**Using end points instead of exchange lines:**
+
+.. code-block:: toml
+
+   [[culverts]]
+   type        = "boyd_box"
+   label       = "simple_culvert"
+   width       = 0.9
+   end_point_0 = [355420.0, 8132050.0]    # [x, y] upstream barrel end [m]
+   end_point_1 = [355435.0, 8132050.0]    # [x, y] downstream barrel end [m]
+   losses      = 0.5
+
+Multiple ``[[culverts]]`` entries are supported.
+
+
+.. _toml-weirs:
+
+[[weirs]]
+~~~~~~~~~
+
+Weir / orifice structures with a trapezoidal cross-section, using combined
+weir and orifice flow formulae (``Weir_orifice_trapezoid_operator``).
+Set ``enabled = false`` to disable without removing the definition.
+
+Geometry is specified with the same ``exchange_line_0`` / ``exchange_line_1``
+(file paths) or ``end_point_0`` / ``end_point_1`` (coordinates) choice as for
+``[[culverts]]``.
+
+.. code-block:: toml
+
+   [[weirs]]
+   enabled              = true
+   label                = "outlet_weir"
+   width                = 3.0             # [m] bottom width of trapezoidal section
+   height               = 1.2             # [m] section height (omit = width)
+   exchange_line_0      = "mesh/weir1_exchange_up.csv"
+   exchange_line_1      = "mesh/weir1_exchange_down.csv"
+   enquiry_gap          = 0.0             # [m]; 0 is typical for weirs
+   losses               = 0.5             # head-loss coefficient
+   barrels              = 1.0
+   blockage             = 0.0
+   z1                   = 0.0
+   z2                   = 0.0
+   apron                = 0.1
+   manning              = 0.013
+   smoothing_timescale  = 0.0
+   use_momentum_jet     = true
+   use_velocity_head    = true
+   # invert_elevations  = [1.0, 0.8]      # [m]; sampled from DEM if omitted
+
+Multiple ``[[weirs]]`` entries are supported.
 
 
 Custom Callbacks: user_functions.py

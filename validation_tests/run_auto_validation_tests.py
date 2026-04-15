@@ -22,7 +22,8 @@ args = anuga.get_args()
 # Current working directory ('.') should always be excluded to avoid 
 #infinite recursion
 dirs_to_skip = ['.'] # Always skip current dir
-#dirs_to_skip += ['patong_beach_validation'] # This takes about 40h
+dirs_to_skip += ['patong'] # Requires downloaded data and takes many hours
+#dirs_to_skip += ['patong_beach_validation'] # Old name, kept for reference
 
 validation_dirs_and_files = []
 for dirpath, dirnames, filenames in os.walk('.'):

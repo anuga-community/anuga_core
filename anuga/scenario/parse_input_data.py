@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 
 """
 
@@ -15,7 +14,7 @@ import glob
 from anuga.utilities import spatialInputUtil as su
 
 
-class ProjectData(object):
+class ProjectData:
 
     """Class to hold input data that previously occurred in project.py
 
@@ -389,7 +388,7 @@ class ProjectData(object):
         #
         # ####################################################################
         pumping_station_data = data_source.get_subtable(
-            pumping_station_ws, 'pumping stations', [1, 1], 
+            pumping_station_ws, 'pumping stations', [1, 1],
             post_process=string_or_float)
 
         # Remove data with 1 in the 'switch off' column
@@ -398,7 +397,7 @@ class ProjectData(object):
             ps = pumping_station_data[i]
             if (ps[0] != 1):
                 self.pumping_station_data.append(ps[1:len(ps)])
-        
+
 
         # Put pumping station basins in the mesh/elevation data
         # and perform checks on files
@@ -412,7 +411,7 @@ class ProjectData(object):
             for j in [6, 8, 9]:
                 msg = 'Cannot find file ' + ps[j]
                 assert os.path.exists(ps[j]), msg
-               
+
 ##############################################################################
 #
 # END OF CLASS
@@ -420,7 +419,7 @@ class ProjectData(object):
 ##############################################################################
 
 
-class AnugaXls(object):
+class AnugaXls:
 
     """Read an xls or xlsx file with the ANUGA input data
 

@@ -259,9 +259,9 @@ def generate_mesh(points=None,
             print(70*'=')
             in_tri.dump()
 
-    
-        # Triangle is a C library driven via string options; 
-        # numeric parameters (e.g. a0.01) are parsed using C’s locale‑aware routines, 
+
+        # Triangle is a C library driven via string options;
+        # numeric parameters (e.g. a0.01) are parsed using C’s locale‑aware routines,
         # which expect a . decimal separator under the "C" locale.
         try:
             import locale
@@ -327,7 +327,7 @@ def generate_mesh(points=None,
         try:
             neighborlist = num.ascontiguousarray(out_tri.neighbors).reshape(-1,3)
         except (AttributeError, RuntimeError):
-            neighborlist = num.zeros((trianglelist.shape[0],3),dtype=num.int32)        
+            neighborlist = num.zeros((trianglelist.shape[0],3),dtype=num.int32)
 
     if verbose:
         print('  Output sizes')

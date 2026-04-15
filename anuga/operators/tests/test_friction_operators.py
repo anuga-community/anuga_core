@@ -1,7 +1,8 @@
 """  Test set operators - stage elevation erosion.
 """
 
-import unittest, os
+import unittest
+import os
 import anuga
 from anuga import Domain
 from anuga import Reflective_boundary
@@ -64,7 +65,7 @@ class Test_set_friction_operators(unittest.TestCase):
         friction_float = 3.0
 
         operator = Set_depth_friction_operator(domain, friction=friction_float, region=region)
-        
+
         # Apply Operator
         domain.timestep = 2.0
         operator()
@@ -73,7 +74,7 @@ class Test_set_friction_operators(unittest.TestCase):
         assert np.allclose(domain.quantities['xmomentum'].centroid_values, 0.0)
         assert np.allclose(domain.quantities['ymomentum'].centroid_values, 0.0)
 
- 
+
 
 
     def test_set_friction_operator_function(self):

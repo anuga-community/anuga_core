@@ -217,7 +217,7 @@ dict3 = dict(itertools.chain(list(dict2.items()), list(dict1.items())))
 domain.set_boundary(dict3)
 
 domain.set_multiprocessor_mode(2)
-domain.use_c_rk2_loop = True
+domain.use_c_rk_loop = True
 
 barrier()
 

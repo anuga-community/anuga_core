@@ -12,13 +12,13 @@ from anuga.utilities.numerical_tools import ensure_numeric
 class Structure_operator(anuga.Operator):
     """Structure Operator - transfer water from one rectangular box to another.
     Sets up the geometry of problem
-    
+
     This is the base class for structures (culverts, pipes, bridges etc). Inherit from this class (and overwrite
     discharge_routine method for specific subclasses)
-    
+
     Input: Two points, pipe_size (either diameter or width, depth),
     mannings_rougness,
-    """ 
+    """
 
     counter = 0
 
@@ -49,7 +49,7 @@ class Structure_operator(anuga.Operator):
                  structure_type=None,
                  logging=None,
                  verbose=None):
-                     
+
         """
         exchange_lines define the input lines for each inlet.
 
@@ -70,7 +70,7 @@ class Structure_operator(anuga.Operator):
 
         assert self.end_points is None or self.exchange_lines is None
 
-        
+
         if height is None:
             height = width
 
@@ -87,9 +87,9 @@ class Structure_operator(anuga.Operator):
         self.width  = width
         self.height = height
         self.diameter = diameter
-        self.z1 = z1 
-        self.z2 = z2 
-        self.blockage = blockage 
+        self.z1 = z1
+        self.z2 = z2
+        self.blockage = blockage
         self.barrels = barrels
         self.apron  = apron
         self.manning = manning
@@ -107,7 +107,7 @@ class Structure_operator(anuga.Operator):
             self.description = ' '
         else:
             self.description = description
-        
+
         if label is None:
             self.label = "structure_%g" % Structure_operator.counter
         else:
@@ -117,9 +117,9 @@ class Structure_operator(anuga.Operator):
             self.structure_type = 'generic structure'
         else:
             self.structure_type = structure_type
-            
-        self.verbose = verbose        
-        
+
+        self.verbose = verbose
+
         # Keep count of structures
         Structure_operator.counter += 1
 
@@ -131,21 +131,21 @@ class Structure_operator(anuga.Operator):
         self.outlet_depth = 0.0
         self.delta_total_energy = 0.0
         self.driving_energy = 0.0
-        
+
         if exchange_lines is not None:
             self.__process_skew_culvert()
         elif end_points is not None:
             self.__process_non_skew_culvert()
         else:
             raise Exception('Define either exchange_lines or end_points')
-        
+
 
         self.inlets = []
         line0 = self.exchange_lines[0] #self.inlet_lines[0]
         if self.apron is None:
             poly0 = line0
         else:
-            offset = -self.apron*self.outward_vector_0 
+            offset = -self.apron*self.outward_vector_0
             #print line0
             #print offset
             poly0 = num.array([ line0[0], line0[1], line0[1]+offset, line0[0]+offset])
@@ -167,8 +167,8 @@ class Structure_operator(anuga.Operator):
                            verbose = self.verbose))
 
         if force_constant_inlet_elevations:
-            # Try to enforce a constant inlet elevation 
-            inlet_global_elevation = self.inlets[-1].get_average_elevation() 
+            # Try to enforce a constant inlet elevation
+            inlet_global_elevation = self.inlets[-1].get_average_elevation()
             self.inlets[-1].set_elevations(inlet_global_elevation)
 
         tris_0 = self.inlets[0].triangle_indices
@@ -184,7 +184,7 @@ class Structure_operator(anuga.Operator):
             #print offset
             poly1 = num.array([ line1[0], line1[1], line1[1]+offset, line1[0]+offset])
             #print poly1
-            
+
         if self.invert_elevations is None:
             invert_elevation1 = None
         else:
@@ -200,15 +200,15 @@ class Structure_operator(anuga.Operator):
                            verbose = self.verbose))
 
         if force_constant_inlet_elevations:
-            # Try to enforce a constant inlet elevation 
-            inlet_global_elevation = self.inlets[-1].get_average_elevation() 
+            # Try to enforce a constant inlet elevation
+            inlet_global_elevation = self.inlets[-1].get_average_elevation()
             self.inlets[-1].set_elevations(inlet_global_elevation)
 
         tris_1 = self.inlets[1].triangle_indices
-        
+
         self.set_logging(logging)
 
-        
+
 
 
 
@@ -216,7 +216,7 @@ class Structure_operator(anuga.Operator):
 
         timestep = self.domain.get_timestep()
 
-        # implement different types of structures by redefining 
+        # implement different types of structures by redefining
         # the discharge_routine
         Q, barrel_speed, outlet_depth = self.discharge_routine()
 
@@ -237,9 +237,9 @@ class Structure_operator(anuga.Operator):
         use_Q_wetdry_adjustment = ((always_use_Q_wetdry_adjustment) |\
             (old_inflow_depth*self.inflow.get_area() <= Q*timestep))
         # If we use the 'Q_adjustment', then the discharge is rescaled so that
-        # the depth update is: 
-        #    new_inflow_depth*inflow_area = 
-        #    old_inflow_depth*inflow_area - 
+        # the depth update is:
+        #    new_inflow_depth*inflow_area =
+        #    old_inflow_depth*inflow_area -
         #    timestep*Q*(new_inflow_depth/old_inflow_depth)
         # The last term in () is a wet-dry improvement trick (which rescales Q)
         #
@@ -276,12 +276,12 @@ class Structure_operator(anuga.Operator):
             # momentum has an average value of new_inflow_mom (or
             # old_inflow_mom).  We use old_inflow_depth for depth
             #
-            #     new_inflow_xmom*inflow_area = 
-            #     old_inflow_xmom*inflow_area - 
+            #     new_inflow_xmom*inflow_area =
+            #     old_inflow_xmom*inflow_area -
             #     [timestep*Q]*new_inflow_xmom/old_inflow_depth
             # and:
-            #     new_inflow_ymom*inflow_area = 
-            #     old_inflow_ymom*inflow_area - 
+            #     new_inflow_ymom*inflow_area =
+            #     old_inflow_ymom*inflow_area -
             #     [timestep*Q]*new_inflow_ymom/old_inflow_depth
             #
             # The units balance: m^2/s*m^2 = m^2/s*m^2 - s*m^3/s*m^2/s *m^(-1)
@@ -297,7 +297,7 @@ class Structure_operator(anuga.Operator):
 
             new_inflow_xmom = old_inflow_xmom*factor2
             new_inflow_ymom = old_inflow_ymom*factor2
-        
+
         self.inflow.set_depths(new_inflow_depth)
 
         #inflow.set_xmoms(Q/inflow.get_area())
@@ -314,22 +314,22 @@ class Structure_operator(anuga.Operator):
         outflow_extra_depth = Q*timestep_star/self.outflow.get_area()
         outflow_direction = - self.outflow.outward_culvert_vector
         #outflow_extra_momentum = outflow_extra_depth*barrel_speed*outflow_direction
-            
+
         gain = outflow_extra_depth*self.outflow.get_area()
-        
+
         #print gain, loss
         assert num.allclose(gain-loss, 0.0)
-            
+
         # Stats
 
         #print('gain', gain)
 
         self.accumulated_flow += gain
-        self.discharge  = Q*timestep_star/timestep 
+        self.discharge  = Q*timestep_star/timestep
         self.discharge_abs_timemean += gain/self.domain.yieldstep
         self.velocity =   barrel_speed
         self.outlet_depth = outlet_depth
-        
+
 
         new_outflow_depth = self.outflow.get_average_depth() + outflow_extra_depth
 
@@ -344,7 +344,7 @@ class Structure_operator(anuga.Operator):
             #new_outflow_ymom = self.outflow.get_average_ymom() + outflow_extra_momentum[1]
             new_outflow_xmom = barrel_speed*new_outflow_depth*outflow_direction[0]
             new_outflow_ymom = barrel_speed*new_outflow_depth*outflow_direction[1]
-            
+
         elif self.zero_outflow_momentum:
             new_outflow_xmom = 0.0
             new_outflow_ymom = 0.0
@@ -370,40 +370,40 @@ class Structure_operator(anuga.Operator):
     def set_culvert_width(self, width):
 
         self.culvert_width = width
-        
-    def set_culvert_z1(self, z1): 
 
-        self.culvert_z1 = z1 
+    def set_culvert_z1(self, z1):
+
+        self.culvert_z1 = z1
 
     def set_culvert_z2(self, z2):
 
         self.culvert_z2 = z2
-        
-    def set_culvert_blockage(self, blockage): 
 
-        self.culvert_blockage = blockage 
+    def set_culvert_blockage(self, blockage):
 
-    def set_culvert_barrels(self, barrels): 
+        self.culvert_blockage = blockage
 
-        self.culvert_barrels = barrels 
-        
-        
+    def set_culvert_barrels(self, barrels):
+
+        self.culvert_barrels = barrels
+
+
     def __process_non_skew_culvert(self):
 
         """Create lines at the end of a culvert inlet and outlet.
         At either end two lines will be created; one for the actual flow to pass through and one a little further away
         for enquiring the total energy at both ends of the culvert and transferring flow.
         """
-        
+
         self.culvert_vector = self.end_points[1] - self.end_points[0]
-        self.culvert_length = math.sqrt(num.sum(self.culvert_vector**2))   
+        self.culvert_length = math.sqrt(num.sum(self.culvert_vector**2))
         assert self.culvert_length > 0.0, 'The length of culvert is less than 0'
-        
+
         self.culvert_vector /= self.culvert_length
         self.outward_vector_0 =   self.culvert_vector
         self.outward_vector_1 = - self.culvert_vector
 
-        
+
         culvert_normal = num.array([-self.culvert_vector[1], self.culvert_vector[0]])  # Normal vector
         w = 0.5*self.width*culvert_normal # Perpendicular vector of 1/2 width
 
@@ -411,31 +411,31 @@ class Structure_operator(anuga.Operator):
 
         # Build exchange polyline and enquiry point
         if self.enquiry_points is None:
-            
+
             gap = (self.apron + self.enquiry_gap)*self.culvert_vector
             self.enquiry_points = []
-            
+
             for i in [0, 1]:
                 p0 = self.end_points[i] + w
                 p1 = self.end_points[i] - w
                 self.exchange_lines.append(num.array([p0, p1]))
                 ep = self.end_points[i] + (2*i - 1)*gap #(2*i - 1) determines the sign of the points
                 self.enquiry_points.append(ep)
-            
-        else:            
+
+        else:
             for i in [0, 1]:
                 p0 = self.end_points[i] + w
                 p1 = self.end_points[i] - w
                 self.exchange_lines.append(num.array([p0, p1]))
-            
-  
-    def __process_skew_culvert(self):    
-        
+
+
+    def __process_skew_culvert(self):
+
         """Compute skew culvert.
-        If exchange lines are given, the enquiry points are determined. This is for enquiring 
+        If exchange lines are given, the enquiry points are determined. This is for enquiring
         the total energy at both ends of the culvert and transferring flow.
         """
-            
+
         centre_point0 = 0.5*(self.exchange_lines[0][0] + self.exchange_lines[0][1])
         centre_point1 = 0.5*(self.exchange_lines[1][0] + self.exchange_lines[1][1])
 
@@ -445,7 +445,7 @@ class Structure_operator(anuga.Operator):
         assert n_exchange_0 == n_exchange_1, 'There should be the same number of points in both exchange_lines'
 
         if n_exchange_0 == 2:
-        
+
             if self.end_points is None:
                 self.culvert_vector = centre_point1 - centre_point0
             else:
@@ -480,20 +480,20 @@ class Structure_operator(anuga.Operator):
 
 
         if self.enquiry_points is None:
-        
+
             gap = (self.apron + self.enquiry_gap)*self.culvert_vector
-        
+
             self.enquiry_points = []
 
             self.enquiry_points.append(centre_point0 - gap)
             self.enquiry_points.append(centre_point1 + gap)
-            
+
 
     def discharge_routine(self):
 
         msg = 'Need to implement '
         raise
-            
+
 
     def statistics(self):
 
@@ -506,7 +506,7 @@ class Structure_operator(anuga.Operator):
 
         message += 'Description\n'
         message += '%s' % self.description
-        
+
         #add the culvert dimensions, blockage factor here
         if self.structure_type == 'boyd_pipe':
             message += 'Culvert Diameter: %s\n'% self.diameter
@@ -524,9 +524,9 @@ class Structure_operator(anuga.Operator):
             message += 'Batter Slope 2: %s\n'% self.z2
             message += 'Culvert Blockage: %s\n'% self.blockage
             message += 'No.  of  barrels: %s\n'% self.barrels
-            
+
         message += '\n'
-        
+
         for i, inlet in enumerate(self.inlets):
             message += '-------------------------------------\n'
             message +=  'Inlet %i\n' % i
@@ -535,15 +535,15 @@ class Structure_operator(anuga.Operator):
             message += 'inlet triangle indices and centres and elevations\n'
             message += '%s' % inlet.triangle_indices
             message += '\n'
-            
+
             message += '%s' % self.domain.get_centroid_coordinates()[inlet.triangle_indices]
             message += '\n'
 
             elev = self.domain.quantities['elevation'].centroid_values[inlet.triangle_indices]
             message += '%s' % elev
             message += '\n'
-           
-            elevation_range = elev.max() - elev.min() 
+
+            elevation_range = elev.max() - elev.min()
             if not num.allclose(elevation_range, 0.):
                 message += 'Warning: non-constant inlet elevation can cause well-balancing problems'
 
@@ -567,7 +567,7 @@ class Structure_operator(anuga.Operator):
         message += 'Structure report for %s:\n' % self.label
         message += '--------------------------\n'
         message += 'Type: %s\n' % self.structure_type
-        
+
         message += 'inlets[0]_enquiry_depth [m]:  %.2f\n' %self.inlets[0].get_enquiry_depth()
         message += 'inlets[0]_enquiry_speed [m/s]:  %.2f\n' %self.inlets[0].get_enquiry_speed()
         message += 'inlets[0]_enquiry_stage [m]:  %.2f\n' %self.inlets[0].get_enquiry_stage()
@@ -578,7 +578,7 @@ class Structure_operator(anuga.Operator):
         message += 'inlets[0]_average_elevation [m]:  %.2f\n' %self.inlets[0].get_average_elevation()
 
         message += '\n'
-       
+
         message += 'inlets[1]_enquiry_depth [m]:  %.2f\n' %self.inlets[1].get_enquiry_depth()
         message += 'inlets[1]_enquiry_speed [m/s]:  %.2f\n' %self.inlets[1].get_enquiry_speed()
         message += 'inlets[1]_enquiry_stage [m]:  %.2f\n' %self.inlets[1].get_enquiry_stage()
@@ -589,7 +589,7 @@ class Structure_operator(anuga.Operator):
         message += 'inlets[1]_average_stage [m]:  %.2f\n' %self.inlets[1].get_average_stage()
         message += 'inlets[1]_average_elevation [m]:  %.2f\n' %self.inlets[1].get_average_elevation()
 
-        
+
         message += 'Discharge [m^3/s]: %.2f\n' % self.discharge
         message += 'Discharge_function_value [m^3/s]: %.2f\n' % self.discharge_abs_timemean
         message += 'Velocity  [m/s]: %.2f\n' % self.velocity
@@ -598,7 +598,7 @@ class Structure_operator(anuga.Operator):
         message += 'Inlet Driving Energy %.2f\n' % self.driving_energy
         message += 'Delta Total Energy %.2f\n' % self.delta_total_energy
         message += 'Control at this instant: %s\n' % self.case
-        
+
 
 
 
@@ -627,7 +627,7 @@ class Structure_operator(anuga.Operator):
         message += '%.5f, ' % self.accumulated_flow
         message += '%.5f, ' % self.driving_energy
         message += '%.5f' % self.delta_total_energy
-       
+
         # Reset discharge_abs_timemean since last time this function was called
         # (FIXME: This assumes that the function is called only just after a
         # yield step)
@@ -637,58 +637,58 @@ class Structure_operator(anuga.Operator):
 
 
     def get_inlets(self):
-        
+
         return self.inlets
-        
-        
+
+
     def get_culvert_length(self):
-        
+
         return self.culvert_length
-    
-    
-    
+
+
+
     def get_culvert_slope(self):
-        
+
         inlet0 = self.inlets[0]
         inlet1 = self.inlets[1]
-        
+
         elev0 = inlet0.get_enquiry_invert_elevation()
         elev1 = inlet1.get_enquiry_invert_elevation()
-        
+
         return (elev1-elev0)/self.get_culvert_length()
-                          
-                          
-        
+
+
+
     def get_culvert_width(self):
-        
+
         return self.width
-        
-        
+
+
     def get_culvert_diameter(self):
-    
+
             return self.diameter
-        
-        
+
+
     def get_culvert_height(self):
-    
+
         return self.height
 
     def get_culvert_z1(self):
-    
-        return self.z1 
+
+        return self.z1
 
     def get_culvert_z2(self):
-    
+
         return self.z2
 
     def get_culvert_blockage(self):
-		
-        return self.blockage 
+
+        return self.blockage
 
     def get_culvert_barrels(self):
-		
+
         return self.barrels
-                       
+
     def get_culvert_apron(self):
 
         return self.apron

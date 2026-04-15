@@ -14,6 +14,7 @@
 #include "gpu_domain.h"
 #include "gpu_culvert_operator.h"
 #include "gpu_omp_macros.h"
+#include "gpu_nvtx.h"
 
 #define VELOCITY_PROTECTION 1.0e-6
 
@@ -247,6 +248,165 @@ void boyd_pipe_discharge(const struct culvert_params *p,
 }
 
 // ============================================================================
+// Pure computation: Weir-orifice TRAPEZOID discharge
+// Direct translation from weir_orifice_trapezoid_operator.py:
+//   weir_orifice_trapezoid_function()
+// Cross-section: bottom width `width`, side slopes z1 (left) and z2 (right).
+// ============================================================================
+
+// Newton iteration to find critical depth for a trapezoidal section given Q.
+// Returns dcrit (clamped to [1e-5, depth] on convergence failure).
+static double trapezoid_critical_depth(double Q, double bf_barrels_w,
+                                       double z12, double sqrt_z1, double sqrt_z2,
+                                       double depth, double g) {
+    double dcrit = 1.0e-5;
+    for (int ic = 0; ic < 100; ic++) {
+        double Tc = bf_barrels_w + z12 * dcrit;
+        double Ac = 0.5 * dcrit * (bf_barrels_w + Tc);
+        if (Tc < 1.0e-12 || Ac < 1.0e-12) break;
+        double fc  = pow(Ac, 1.5) / sqrt(Tc) - Q / sqrt(g);
+        double ffc = -0.5 * pow(Ac, 1.5) * z12 / pow(Tc, 1.5)
+                     + 1.5 * sqrt(Ac) * sqrt(Tc);
+        if (fabs(ffc) < 1.0e-30) break;
+        double dyc = -fc / ffc;
+        dcrit += dyc;
+        if (dcrit < 1.0e-5) dcrit = 1.0e-5;
+        if (fabs(dyc) < 1.0e-5) break;
+    }
+    if (dcrit > depth) dcrit = depth;
+    return dcrit;
+}
+
+
+void weir_orifice_trapezoid_discharge(const struct culvert_params *p,
+                                      double driving_energy,
+                                      double delta_total_energy,
+                                      double outlet_enquiry_depth,
+                                      double *Q_out, double *barrel_velocity_out,
+                                      double *outlet_culvert_depth_out,
+                                      double *flow_area_out) {
+    double width   = p->width;
+    double depth   = p->height;
+    double blockage = p->blockage;
+    double barrels  = p->barrels;
+    double z1 = p->z1;
+    double z2 = p->z2;
+    double z12 = z1 + z2;
+    double length  = p->length;
+    double sum_loss = p->sum_loss;
+    double manning  = p->manning;
+    double g = p->g;
+
+    if (blockage >= 1.0) {
+        *Q_out = 0.0;
+        *barrel_velocity_out = 0.0;
+        *outlet_culvert_depth_out = 0.0;
+        *flow_area_out = 1.0e-5;
+        return;
+    }
+
+    double bf = 1.0 - blockage;
+    // bf * barrels * width — used throughout
+    double bfw = bf * barrels * width;
+
+    // Pre-compute slant lengths for perimeter
+    double sqrt_z1 = sqrt(z1 * z1 + 1.0);
+    double sqrt_z2 = sqrt(z2 * z2 + 1.0);
+
+    // Inlet control estimates
+    // Weir flow (unsubmerged): Q = 1.7 * bfw_eff * driving_energy^1.5
+    //   where bfw_eff = average of bottom and top widths = (2*width + depth*(z1+z2))/2
+    double top_w  = 2.0 * width + depth * z12;
+    double Q_inlet_unsubmerged = 1.7 * bf * barrels * (top_w / 2.0)
+                                 * pow(driving_energy, 1.5);
+    // Orifice flow (submerged): Q = 0.8 * bfw_eff_area * sqrt(g) * sqrt(driving_energy)
+    double full_area = 0.5 * depth * (bfw + bfw + z12 * depth);
+    double Q_inlet_submerged = 0.8 * bf * barrels * sqrt(g) * full_area
+                               * sqrt(driving_energy);
+
+    double Q;
+    if (Q_inlet_unsubmerged < Q_inlet_submerged) {
+        Q = Q_inlet_unsubmerged;
+    } else {
+        Q = Q_inlet_submerged;
+    }
+
+    // Critical depth for inlet-control Q
+    double dcrit = trapezoid_critical_depth(Q, bfw, z12, sqrt_z1, sqrt_z2, depth, g);
+
+    double flow_area, perimeter;
+    if (dcrit >= depth) {
+        dcrit = depth;
+        flow_area = bfw * depth + 0.5 * z12 * depth * depth;
+        perimeter = 2.0 * bfw + z12 * depth + sqrt_z1 * depth + sqrt_z2 * depth;
+    } else {
+        flow_area = bfw * dcrit + 0.5 * z12 * dcrit * dcrit;
+        perimeter = bfw + sqrt_z1 * dcrit + sqrt_z2 * dcrit;
+    }
+
+    double outlet_culvert_depth = dcrit;
+
+    // Re-solve critical depth (same as Python — redundant for rect but kept for fidelity)
+    dcrit = trapezoid_critical_depth(Q, bfw, z12, sqrt_z1, sqrt_z2, depth, g);
+    outlet_culvert_depth = dcrit;
+    if (outlet_culvert_depth >= depth) {
+        outlet_culvert_depth = depth;
+        flow_area = bfw * depth + 0.5 * z12 * depth * depth;
+        perimeter = 2.0 * bfw + z12 * depth + sqrt_z1 * depth + sqrt_z2 * depth;
+    } else {
+        flow_area = bfw * outlet_culvert_depth + 0.5 * z12 * outlet_culvert_depth * outlet_culvert_depth;
+        perimeter = bfw + sqrt_z1 * outlet_culvert_depth + sqrt_z2 * outlet_culvert_depth;
+    }
+
+    // Outlet-control velocity and Q
+    double hyd_rad = flow_area / fmax(perimeter, 1.0e-12);
+    double culvert_velocity = sqrt(delta_total_energy
+                                   / ((sum_loss / (2.0 * g))
+                                      + (manning * manning * length)
+                                        / pow(hyd_rad, 1.33333)));
+    double Q_outlet_tailwater = flow_area * culvert_velocity;
+
+    if (delta_total_energy < driving_energy) {
+        // Outlet control
+        if (outlet_enquiry_depth > depth) {
+            // Outlet submerged — use full section
+            outlet_culvert_depth = depth;
+            flow_area = bfw * depth + 0.5 * z12 * depth * depth;
+            perimeter = bfw + sqrt_z1 * depth + sqrt_z2 * depth;
+        } else {
+            Q = fmin(Q, Q_outlet_tailwater);
+            dcrit = trapezoid_critical_depth(Q, bfw, z12, sqrt_z1, sqrt_z2, depth, g);
+            outlet_culvert_depth = dcrit;
+            if (outlet_culvert_depth >= depth) {
+                outlet_culvert_depth = depth;
+                flow_area = bfw * depth + 0.5 * z12 * depth * depth;
+                perimeter = bfw + sqrt_z1 * depth + sqrt_z2 * depth;
+            } else {
+                flow_area = bfw * outlet_culvert_depth
+                            + 0.5 * z12 * outlet_culvert_depth * outlet_culvert_depth;
+                perimeter = bfw + sqrt_z1 * outlet_culvert_depth
+                            + sqrt_z2 * outlet_culvert_depth;
+            }
+        }
+
+        hyd_rad = flow_area / fmax(perimeter, 1.0e-12);
+        culvert_velocity = sqrt(delta_total_energy
+                                / ((sum_loss / (2.0 * g))
+                                   + (manning * manning * length)
+                                     / pow(hyd_rad, 1.33333)));
+        Q_outlet_tailwater = flow_area * culvert_velocity;
+        Q = fmin(Q, Q_outlet_tailwater);
+    }
+
+    double barrel_velocity = Q / (flow_area + VELOCITY_PROTECTION / fmax(flow_area, 1.0e-12));
+
+    *Q_out = Q;
+    *barrel_velocity_out = barrel_velocity;
+    *outlet_culvert_depth_out = outlet_culvert_depth;
+    *flow_area_out = flow_area;
+}
+
+// ============================================================================
 // Energy smoothing (from boyd_box_operator.py:total_energy())
 // ============================================================================
 
@@ -353,14 +513,40 @@ int gpu_culvert_init(struct gpu_domain *GD,
 
     struct culvert_operators *CO = &GD->culvert_ops;
 
-    if (CO->num_culverts >= MAX_CULVERTS) {
-        fprintf(stderr, "ERROR: Max culverts (%d) exceeded\n", MAX_CULVERTS);
-        return -1;
-    }
     if (inlet0_num > MAX_INLET_TRIANGLES || inlet1_num > MAX_INLET_TRIANGLES) {
         fprintf(stderr, "ERROR: Inlet has %d/%d triangles (max %d)\n",
                 inlet0_num, inlet1_num, MAX_INLET_TRIANGLES);
         return -1;
+    }
+
+    // Grow params/indices/state arrays if full
+    if (CO->num_culverts >= CO->capacity) {
+        int new_cap = CO->capacity == 0 ? MAX_CULVERTS : CO->capacity * 2;
+        struct culvert_params *np = (struct culvert_params*)
+            realloc(CO->params, new_cap * sizeof(struct culvert_params));
+        struct culvert_indices *ni = (struct culvert_indices*)
+            realloc(CO->indices, new_cap * sizeof(struct culvert_indices));
+        struct culvert_state *ns = (struct culvert_state*)
+            realloc(CO->state, new_cap * sizeof(struct culvert_state));
+        if (!np || !ni || !ns) {
+            fprintf(stderr, "ERROR: Failed to grow culvert_operators to %d slots\n", new_cap);
+            if (np) free(np); else if (CO->params) free(CO->params);
+            if (ni) free(ni); else if (CO->indices) free(CO->indices);
+            if (ns) free(ns); else if (CO->state) free(CO->state);
+            CO->params = NULL; CO->indices = NULL; CO->state = NULL;
+            return -1;
+        }
+        // Zero-init new entries so state is clean
+        memset(np + CO->capacity, 0,
+               (new_cap - CO->capacity) * sizeof(struct culvert_params));
+        memset(ni + CO->capacity, 0,
+               (new_cap - CO->capacity) * sizeof(struct culvert_indices));
+        memset(ns + CO->capacity, 0,
+               (new_cap - CO->capacity) * sizeof(struct culvert_state));
+        CO->params = np;
+        CO->indices = ni;
+        CO->state = ns;
+        CO->capacity = new_cap;
     }
 
     int id = CO->num_culverts;
@@ -452,7 +638,11 @@ void gpu_culverts_finalize_all(struct gpu_domain *GD) {
     if (CO->scratch_inlet_ymom) { free(CO->scratch_inlet_ymom); CO->scratch_inlet_ymom = NULL; }
     if (CO->scratch_inlet_elev) { free(CO->scratch_inlet_elev); CO->scratch_inlet_elev = NULL; }
 
+    if (CO->params)  { free(CO->params);  CO->params  = NULL; }
+    if (CO->indices) { free(CO->indices); CO->indices = NULL; }
+    if (CO->state)   { free(CO->state);   CO->state   = NULL; }
     CO->num_culverts = 0;
+    CO->capacity = 0;
     CO->initialized = 0;
 }
 
@@ -564,7 +754,11 @@ static void gpu_culvert_gather_enquiry(struct gpu_domain *GD,
 
     // Host-side: read enquiry indices, build gather list
     // Use index 0 as placeholder for remote enquiry points (-1)
-    int enquiry_ids[2 * MAX_CULVERTS];
+    int *enquiry_ids = (int*)malloc(ne * sizeof(int));
+    if (!enquiry_ids) {
+        fprintf(stderr, "ERROR: Failed to allocate enquiry_ids (%d ints)\n", ne);
+        return;
+    }
     for (int c = 0; c < nc; c++) {
         int ei0 = CO->indices[c].enquiry_index_0;
         int ei1 = CO->indices[c].enquiry_index_1;
@@ -587,6 +781,7 @@ static void gpu_culvert_gather_enquiry(struct gpu_domain *GD,
 
     // Single D2H transfer (~1KB for 20 culverts)
     #pragma omp target update from(ss[0:ne], sx[0:ne], sy[0:ne], se[0:ne])
+    free(enquiry_ids);
 
     // Unpack into per-culvert inlet_data structs
     for (int c = 0; c < nc; c++) {
@@ -1047,10 +1242,14 @@ static void scatter_single_inlet(struct gpu_domain *GD,
 // ============================================================================
 
 void gpu_culverts_apply_all(struct gpu_domain *GD, double timestep) {
+    NVTX_PUSH("gpu_culverts_apply_all");
     struct culvert_operators *CO = &GD->culvert_ops;
     int nc = CO->num_culverts;
 
-    if (nc == 0 || !CO->initialized) return;
+    if (nc == 0 || !CO->initialized) {
+        NVTX_POP();
+        return;
+    }
 
     omp_set_default_device(GD->device_id);
     int myrank = GD->rank;
@@ -1107,7 +1306,8 @@ void gpu_culverts_apply_all(struct gpu_domain *GD, double timestep) {
         }
 
         // Check culvert is open
-        double dim = (p->type == CULVERT_TYPE_BOX) ? p->height : p->diameter;
+        double dim = (p->type == CULVERT_TYPE_BOX || p->type == CULVERT_TYPE_WEIR_TRAPEZOID)
+                     ? p->height : p->diameter;
         if (dim <= 0.0) {
             r->Q = 0.0;
             r->barrel_velocity = 0.0;
@@ -1170,6 +1370,11 @@ void gpu_culverts_apply_all(struct gpu_domain *GD, double timestep) {
             if (p->type == CULVERT_TYPE_BOX) {
                 boyd_box_discharge(p, driving_energy, delta_total_energy,
                                    outflow_depth, &Q, &bv, &ocd, &fa);
+            } else if (p->type == CULVERT_TYPE_WEIR_TRAPEZOID) {
+                weir_orifice_trapezoid_discharge(p, driving_energy,
+                                                 delta_total_energy,
+                                                 outflow_depth,
+                                                 &Q, &bv, &ocd, &fa);
             } else {
                 boyd_pipe_discharge(p, inflow_depth, driving_energy,
                                     delta_total_energy, outflow_depth,
@@ -1324,4 +1529,5 @@ void gpu_culverts_apply_all(struct gpu_domain *GD, double timestep) {
     // local inlets for parallel culverts)
     // ----------------------------------------------------------------
     gpu_culvert_scatter(GD, transfers);
+    NVTX_POP();
 }

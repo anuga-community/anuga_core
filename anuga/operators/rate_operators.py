@@ -44,7 +44,7 @@ rate (ms^{-1} = vol/Area/sec)
 
 Parameters specifying locaton of operator
 
-:param region: Region object where water applied 
+:param region: Region object where water applied
 :param indices: List of triangles where water applied
 :param polygon: List of [x,y] points specifying a polygon where water applied
 :param center: [x.y] point of circle where water applied
@@ -52,10 +52,10 @@ Parameters specifying locaton of operator
 
 Parameters specifying rate
 
-:param rate: scalar, function of (t), (x,y), or (x,y,t), or a Quantity, 
-                a numpy array of size (number_of_triangles), 
+:param rate: scalar, function of (t), (x,y), or (x,y,t), or a Quantity,
+                a numpy array of size (number_of_triangles),
                 or an xarray with rate at points and time
-:param factor: scalar, function of t, or 2 by n numpy array time sequence, 
+:param factor: scalar, function of t, or 2 by n numpy array time sequence,
                 used to specify conversion from rate argument to m/s
 :param default_rate: use this rate if outside time interval of rate function or xarray
 
@@ -74,7 +74,7 @@ Parameters involving communication
 
         #-----------------------------------------------------
         # Make sure region is actually an instance of a region
-        # Otherwise create a new region based on the other 
+        # Otherwise create a new region based on the other
         # input arguments
         #-----------------------------------------------------
         if isinstance(region,Region):
@@ -95,7 +95,7 @@ Parameters involving communication
         #------------------------------------------
         self.indices = self.region.indices
         self.set_areas()
-        self.set_full_indices()        
+        self.set_full_indices()
 
         #--------------------------------
         # Setting up rate
@@ -106,13 +106,13 @@ Parameters involving communication
 
 
         #-------------------------------
-        # Check if rate is actually an xarray. 
+        # Check if rate is actually an xarray.
         # Need xarray package installed
         #-------------------------------
         try:
             import xarray
         except ImportError as e:
-            log.debug('xarray not available, xarray rate inputs disabled: %s', e)
+            log.debug('xarray not available, xarray rate inputs disabled: %s' % e)
             xarray = None
         if xarray is not None:
             if type(rate) is xarray.core.dataarray.DataArray:
@@ -188,8 +188,14 @@ Parameters involving communication
         if self.indices is None:
             indices = num.arange(self.domain.number_of_elements, dtype=num.intc)
             areas = self.domain.areas.copy()
-        elif self.indices is []:
-            return  # No indices, nothing to do
+        elif hasattr(self.indices, '__len__') and len(self.indices) == 0:
+            # No local elements on this rank (e.g. rainfall polygon doesn't
+            # overlap this rank's partition).  This operator is a no-op here.
+            # Mark as GPU-initialized so _has_cpu_only_fractional_operators
+            # doesn't trigger an unnecessary GPU<->CPU sync every timestep.
+            # __call__ still returns immediately at the empty-indices guard.
+            self._gpu_initialized = True
+            return
         else:
             indices = num.asarray(self.indices, dtype=num.intc)
             areas = self.domain.areas[indices].copy()
@@ -200,20 +206,20 @@ Parameters involving communication
         else:
             full_indices = None
 
-        try:
-            from anuga.shallow_water.sw_domain_gpu_ext import init_rate_operator
-            self._gpu_op_id = init_rate_operator(
-                gpu_interface.gpu_dom,
-                indices,
-                areas.astype(num.float64),
-                full_indices
+        from anuga.shallow_water.sw_domain_gpu_ext import init_rate_operator
+        self._gpu_op_id = init_rate_operator(
+            gpu_interface.gpu_dom,
+            indices,
+            areas.astype(num.float64),
+            full_indices
+        )
+        if self._gpu_op_id < 0:
+            raise RuntimeError(
+                f"Failed to register GPU rate operator '{getattr(self, 'label', repr(self))}': "
+                f"slot limit exceeded (MAX_RATE_OPERATORS=64). "
+                f"Reduce the number of Rate_operator instances or increase MAX_RATE_OPERATORS in gpu_domain.h."
             )
-            if self._gpu_op_id >= 0:
-                self._gpu_initialized = True
-        except Exception as e:
-            import warnings
-            warnings.warn(f"Failed to initialize GPU rate operator: {e}")
-            self._gpu_op_id = None
+        self._gpu_initialized = True
 
     def __call__(self):
         """Apply rate operator to the domain for one timestep.
@@ -383,9 +389,9 @@ Parameters involving communication
 
         factor = self.get_factor(t)
 
-        # We need to adjust the momentums if rate < 0 since otherwise 
+        # We need to adjust the momentums if rate < 0 since otherwise
         # the xmom and ymom stay the same but height -> 0 which leads to xvel, yvel -> infty
-        
+
 
         fid = self.full_indices
         if num.all(rate >= 0.0):
@@ -447,17 +453,17 @@ Parameters involving communication
             self.local_min = 0.0
 
         # print(self.local_min, self.local_max)
-        
+
         self.cumulative_influx += self.local_influx
 
         # Update mass inflows from fractional steps
         self.domain.fractional_step_volume_integral+=self.local_influx
-        
+
         if self.monitor:
-            log.critical('Local Flux at time %.2f = %f'
+            log.info('Local Flux at time %.2f = %f'
                          % (self.domain.get_time(), self.local_influx))
 
-            
+
 
         return
 
@@ -535,7 +541,7 @@ Parameters involving communication
             assert rate_shape == (self.domain.number_of_triangles,) \
                 or rate_shape == (self.domain.number_of_triangles, 1), msg
             self.rate_type = 'centroid_array'
-            rate = rate.reshape((-1,)) 
+            rate = rate.reshape((-1,))
         else:
             # Possible types are 'scalar', 't', 'x,y' and 'x,y,t'
             from anuga.utilities.function_utils import determine_function_type
@@ -579,7 +585,7 @@ Parameters involving communication
         if isinstance(factor, num.ndarray):
             factor_shape = factor.shape
             msg =  f"The shape {factor_shape} of the input factor "
-            msg += f"should be (2,n) so that a time function can be constructed"
+            msg += "should be (2,n) so that a time function can be constructed"
             assert factor_shape[0] == 2, msg
             self.factor_type = 'time_sequence'
             from scipy.interpolate import interp1d
@@ -648,7 +654,7 @@ Parameters involving communication
         # FIXME SR: this does not take into account the zeroing of large negative rates
 
         factor = self.get_factor()
-        
+
         if full_only:
             if self.rate_spatial:
                 rate = self.get_spatial_rate() # rate is an array
@@ -756,7 +762,7 @@ Parameters involving communication
             print(f"{self.domain.get_time()} {self.domain.get_datetime()}")
             print(f"UTC time {current_utc_datetime64} type {type(current_utc_datetime64)} ")
             print(self.xa.sel(time=current_utc_datetime64, method='nearest'))
-      
+
         try:
             Q_ref = self.xa.sel(time=current_utc_datetime64, method="ffill", tolerance='5m')
 
@@ -775,13 +781,13 @@ Parameters involving communication
                     self.previous_Q_ref_time = Q_ref_time
             else:
                 Q_numpy = Q_ref[self.ii].to_numpy()
-                  
+
         except Exception:
             Q_numpy = self.default_rate
             if self.verbose:
                 print(f"UTC time {current_utc_datetime64} Using default rate Q = {Q_numpy(self.get_time())}")
-            
-        self.set_rate(rate=Q_numpy)             
+
+        self.set_rate(rate=Q_numpy)
 
     def parallel_safe(self):
         """Operator is applied independently on each cell and

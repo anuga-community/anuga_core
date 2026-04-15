@@ -121,7 +121,7 @@ class Fit(FitInterpolate):
         # Skipping construction when alpha=0 would require changes to the C
         # interface and is deferred.
         if verbose:
-            log.critical('Building smoothing matrix')
+            log.info('Building smoothing matrix')
         self.D = self._build_smoothing_matrix_D()
 
         bd_poly = self.mesh.get_boundary_polygon()
@@ -330,7 +330,7 @@ class Fit(FitInterpolate):
         # recieved a None as input
         if point_coordinates is None:
             if verbose:
-                log.critical('Fit.fit: Warning: no data points in fit')
+                log.warning('Fit.fit: Warning: no data points in fit')
             msg = 'No interpolation matrix.'
             assert self.AtA is not None, msg
             assert self.Atz is not None
@@ -366,7 +366,7 @@ class Fit(FitInterpolate):
             msg += 'In the future this will be inforced.\n'
             msg += 'The following vertices are not part of a triangle;\n'
             msg += str(loners)
-            log.critical(msg)
+            log.info(msg)
 
             #raise VertsWithNoTrianglesError(msg)
         return conjugate_gradient(self.B, self.Atz, self.Atz,
@@ -484,7 +484,7 @@ def _fit_to_mesh(point_coordinates,
                                              geo_reference=mesh_origin)
 
         if verbose:
-            log.critical('_fit_to_mesh: Building mesh')
+            log.info('_fit_to_mesh: Building mesh')
         mesh = Mesh(vertex_coordinates, triangles)
 
         # Don't need this as we have just created the mesh
@@ -534,10 +534,10 @@ def fit_to_mesh_file(mesh_file, point_file, mesh_output_file,
 
     try:
         mesh_dict = import_mesh_file(mesh_file)
-    except IOError as e:
+    except OSError as e:
         if display_errors:
-            log.critical("Could not load bad file: %s" % str(e))
-        raise IOError  # Could not load bad mesh file.
+            log.warning("Could not load bad file: %s" % str(e))
+        raise OSError  # Could not load bad mesh file.
 
     vertex_coordinates = mesh_dict['vertices']
     triangles = mesh_dict['triangles']
@@ -552,30 +552,30 @@ def fit_to_mesh_file(mesh_file, point_file, mesh_output_file,
         old_title_list = mesh_dict['vertex_attribute_titles']
 
     if verbose:
-        log.critical('tsh file %s loaded' % mesh_file)
+        log.info('tsh file %s loaded' % mesh_file)
 
     # load in the points file
     try:
         geo = Geospatial_data(point_file, verbose=verbose)
-    except IOError as e:
+    except OSError as e:
         if display_errors:
-            log.critical("Could not load bad file: %s" % str(e))
-        raise IOError  # Re-raise exception
+            log.warning("Could not load bad file: %s" % str(e))
+        raise OSError  # Re-raise exception
 
     point_coordinates = geo.get_data_points(absolute=True)
     title_list, point_attributes = concatinate_attributelist(
         geo.get_all_attributes())
 
     if 'geo_reference' in mesh_dict and \
-            not mesh_dict['geo_reference'] is None:
+            mesh_dict['geo_reference'] is not None:
         mesh_origin = mesh_dict['geo_reference'].get_origin()
     else:
         mesh_origin = None
 
     if verbose:
-        log.critical("points file loaded")
+        log.info("points file loaded")
     if verbose:
-        log.critical("fitting to mesh")
+        log.info("fitting to mesh")
     f = fit_to_mesh(point_coordinates,
                     vertex_coordinates,
                     triangles,
@@ -586,7 +586,7 @@ def fit_to_mesh_file(mesh_file, point_file, mesh_output_file,
                     data_origin=None,
                     mesh_origin=mesh_origin)
     if verbose:
-        log.critical("finished fitting to mesh")
+        log.info("finished fitting to mesh")
 
     # FIXME have this overwrite attributes with the same title - DSG
     # Put the newer attributes last
@@ -600,11 +600,11 @@ def fit_to_mesh_file(mesh_file, point_file, mesh_output_file,
         mesh_dict['vertex_attribute_titles'] = title_list
 
     if verbose:
-        log.critical("exporting to file %s" % mesh_output_file)
+        log.info("exporting to file %s" % mesh_output_file)
 
     try:
         export_mesh_file(mesh_output_file, mesh_dict)
-    except IOError as e:
+    except OSError as e:
         if display_errors:
-            log.critical("Could not write file %s", str(e))
-        raise IOError
+            log.warning("Could not write file %s", str(e))
+        raise OSError

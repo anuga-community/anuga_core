@@ -880,6 +880,10 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
                 double s2 = riverwall_hydraulic_properties[ii + 2];
                 double h1 = riverwall_hydraulic_properties[ii + 3];
                 double h2 = riverwall_hydraulic_properties[ii + 4];
+                // Column 5 is Cd_through; guard for old files with only 5 columns
+                double Cd_through = (ncol_riverwall_hp > 5)
+                    ? riverwall_hydraulic_properties[ii + 5]
+                    : 0.0;
 
                 // Weir height above minimum bed elevation
                 double weir_height = fmax(zwall - fmin(zl, zr), 0.0);
@@ -890,10 +894,21 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
                     ? fmax(hc_n + zr - z_half, 0.0)
                     : fmax(stage_cv[neighbour] - z_half, 0.0);
 
-                // Apply weir discharge correction
+                // Apply weir discharge correction (Villemonte overtopping)
                 gpu_adjust_edgeflux_with_weir(edgeflux, h_left_weir, h_right_weir,
                                               g, weir_height, Qfactor,
                                               s1, s2, h1, h2, &max_speed_local);
+
+                // Apply throughflow (orifice/seepage through wall body), additive
+                double stage_left  = stage_cv[k];
+                double stage_right = is_boundary
+                    ? (hc_n + zr)
+                    : stage_cv[neighbour];
+                gpu_adjust_edgeflux_with_throughflow(
+                    edgeflux,
+                    stage_left, stage_right,
+                    zl, zr,
+                    zwall, g, Cd_through, &max_speed_local);
             }
 
             // Multiply flux by edge length (and negate for conservation)

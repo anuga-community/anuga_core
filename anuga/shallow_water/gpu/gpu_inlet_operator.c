@@ -18,22 +18,39 @@
 // Initialization and Cleanup
 // ============================================================================
 
+// Grow the ops array to at least one more slot.  Returns 0 on success, -1 on OOM.
+static int grow_inlet_ops(struct inlet_operators *IO) {
+    int new_cap = IO->capacity == 0 ? MAX_INLET_OPERATORS : IO->capacity * 2;
+    struct inlet_operator_info *p = (struct inlet_operator_info*)
+        realloc(IO->ops, new_cap * sizeof(struct inlet_operator_info));
+    if (!p) {
+        fprintf(stderr, "ERROR: Failed to grow inlet_operators to %d slots\n", new_cap);
+        return -1;
+    }
+    memset(p + IO->capacity, 0,
+           (new_cap - IO->capacity) * sizeof(struct inlet_operator_info));
+    IO->ops = p;
+    IO->capacity = new_cap;
+    return 0;
+}
+
 int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices,
                              int *indices, double *areas) {
     struct inlet_operators *IO = &GD->inlet_ops;
 
-    // Find a free slot
+    // Find a free slot, growing heap array if needed
     int op_id = -1;
-    for (int i = 0; i < MAX_INLET_OPERATORS; i++) {
-        if (!IO->ops[i].active) {
-            op_id = i;
-            break;
+    for (int i = 0; i < IO->capacity; i++) {
+        if (!IO->ops[i].active) { op_id = i; break; }
+    }
+    if (op_id < 0) {
+        if (grow_inlet_ops(IO) != 0) return -1;
+        for (int i = 0; i < IO->capacity; i++) {
+            if (!IO->ops[i].active) { op_id = i; break; }
         }
     }
-
     if (op_id < 0) {
-        fprintf(stderr, "ERROR: No free inlet operator slots (max %d)\n",
-                MAX_INLET_OPERATORS);
+        fprintf(stderr, "ERROR: No free inlet operator slots after grow\n");
         return -1;
     }
 
@@ -143,7 +160,7 @@ int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices,
 }
 
 void gpu_inlet_operator_finalize(struct gpu_domain *GD, int op_id) {
-    if (op_id < 0 || op_id >= MAX_INLET_OPERATORS) return;
+    if (op_id < 0 || op_id >= GD->inlet_ops.capacity) return;
 
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active) return;
@@ -174,11 +191,14 @@ void gpu_inlet_operator_finalize(struct gpu_domain *GD, int op_id) {
 }
 
 void gpu_inlet_operators_finalize_all(struct gpu_domain *GD) {
-    for (int i = 0; i < MAX_INLET_OPERATORS; i++) {
-        if (GD->inlet_ops.ops[i].active) {
+    struct inlet_operators *IO = &GD->inlet_ops;
+    for (int i = 0; i < IO->capacity; i++) {
+        if (IO->ops[i].active) {
             gpu_inlet_operator_finalize(GD, i);
         }
     }
+    if (IO->ops) { free(IO->ops); IO->ops = NULL; }
+    IO->capacity = 0;
 }
 
 // ============================================================================
@@ -186,7 +206,7 @@ void gpu_inlet_operators_finalize_all(struct gpu_domain *GD) {
 // ============================================================================
 
 double gpu_inlet_get_volume(struct gpu_domain *GD, int op_id) {
-    if (op_id < 0 || op_id >= MAX_INLET_OPERATORS) return 0.0;
+    if (op_id < 0 || op_id >= GD->inlet_ops.capacity) return 0.0;
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return 0.0;
 
@@ -229,7 +249,7 @@ void gpu_inlet_get_velocities(struct gpu_domain *GD, int op_id,
                                double *u_out, double *v_out) {
     *u_out = 0.0;
     *v_out = 0.0;
-    if (op_id < 0 || op_id >= MAX_INLET_OPERATORS) return;
+    if (op_id < 0 || op_id >= GD->inlet_ops.capacity) return;
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return;
 
@@ -298,7 +318,7 @@ void gpu_inlet_get_velocities(struct gpu_domain *GD, int op_id,
 // ============================================================================
 
 void gpu_inlet_set_depths(struct gpu_domain *GD, int op_id, double depth) {
-    if (op_id < 0 || op_id >= MAX_INLET_OPERATORS) return;
+    if (op_id < 0 || op_id >= GD->inlet_ops.capacity) return;
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return;
 
@@ -315,7 +335,7 @@ void gpu_inlet_set_depths(struct gpu_domain *GD, int op_id, double depth) {
 }
 
 void gpu_inlet_set_xmoms(struct gpu_domain *GD, int op_id, double value) {
-    if (op_id < 0 || op_id >= MAX_INLET_OPERATORS) return;
+    if (op_id < 0 || op_id >= GD->inlet_ops.capacity) return;
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return;
 
@@ -330,7 +350,7 @@ void gpu_inlet_set_xmoms(struct gpu_domain *GD, int op_id, double value) {
 }
 
 void gpu_inlet_set_ymoms(struct gpu_domain *GD, int op_id, double value) {
-    if (op_id < 0 || op_id >= MAX_INLET_OPERATORS) return;
+    if (op_id < 0 || op_id >= GD->inlet_ops.capacity) return;
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return;
 
@@ -346,7 +366,7 @@ void gpu_inlet_set_ymoms(struct gpu_domain *GD, int op_id, double value) {
 
 void gpu_inlet_set_xmoms_array(struct gpu_domain *GD, int op_id,
                                 double *values, int n_vals) {
-    if (op_id < 0 || op_id >= MAX_INLET_OPERATORS) return;
+    if (op_id < 0 || op_id >= GD->inlet_ops.capacity) return;
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return;
 
@@ -367,7 +387,7 @@ void gpu_inlet_set_xmoms_array(struct gpu_domain *GD, int op_id,
 
 void gpu_inlet_set_ymoms_array(struct gpu_domain *GD, int op_id,
                                 double *values, int n_vals) {
-    if (op_id < 0 || op_id >= MAX_INLET_OPERATORS) return;
+    if (op_id < 0 || op_id >= GD->inlet_ops.capacity) return;
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return;
 
@@ -400,7 +420,7 @@ static int compare_stage_indices(const void *a, const void *b) {
 }
 
 void gpu_inlet_set_stages_evenly(struct gpu_domain *GD, int op_id, double volume) {
-    if (op_id < 0 || op_id >= MAX_INLET_OPERATORS) return;
+    if (op_id < 0 || op_id >= GD->inlet_ops.capacity) return;
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return;
 
@@ -499,7 +519,7 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
                        double *vel_u, double *vel_v, int num_vel,
                        int has_velocity, double ext_vel_u, double ext_vel_v,
                        int zero_velocity) {
-    if (op_id < 0 || op_id >= MAX_INLET_OPERATORS) return 0.0;
+    if (op_id < 0 || op_id >= GD->inlet_ops.capacity) return 0.0;
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return 0.0;
 

@@ -2,7 +2,7 @@
 import anuga
 import numpy as num
 import math
-from . import parallel_inlet_enquiry 
+from . import parallel_inlet_enquiry
 from anuga.utilities import parallel_abstraction as pypar
 
 from anuga.utilities.system_tools import log_to_file
@@ -13,14 +13,14 @@ from anuga.structures.inlet_enquiry import Inlet_enquiry
 class Parallel_Structure_operator(anuga.Operator):
     """Parallel Structure Operator - transfer water from one rectangular box to another.
     Sets up the geometry of problem
-    
+
     This is the base class for structures (culverts, pipes, bridges etc) that exist across multiple
-    parallel shallow water domains. Inherit from this class (and overwrite discharge_routine method 
+    parallel shallow water domains. Inherit from this class (and overwrite discharge_routine method
     for specific subclasses)
-    
+
     Input: Two points, pipe_size (either diameter or width, depth),
     mannings_rougness,
-    """ 
+    """
 
     counter = 0
 
@@ -72,16 +72,16 @@ class Parallel_Structure_operator(anuga.Operator):
 
         self.myid = pypar.rank()
         self.num_procs = pypar.size()
-        
+
         anuga.Operator.__init__(self,domain)
 
         # Allocate default processor associations if not specified in arguments
-        # although we assume that such associations are provided correctly by the 
+        # although we assume that such associations are provided correctly by the
         # parallel_operator_factory.
 
         self.master_proc = master_proc
         self.inlet_master_proc = inlet_master_proc
-        
+
         if procs is None:
             self.procs = [master_proc]
         else:
@@ -138,7 +138,7 @@ class Parallel_Structure_operator(anuga.Operator):
             self.description = ' '
         else:
             self.description = description
-        
+
         if label is None:
             self.label = "structure_%g" % Parallel_Structure_operator.counter + "_P" + str(self.myid)
         else:
@@ -148,9 +148,9 @@ class Parallel_Structure_operator(anuga.Operator):
             self.structure_type = 'generic structure'
         else:
             self.structure_type = structure_type
-            
-        self.verbose = verbose        
-        
+
+        self.verbose = verbose
+
         # Keep count of structures
         if self.myid == master_proc:
             Parallel_Structure_operator.counter += 1
@@ -163,14 +163,14 @@ class Parallel_Structure_operator(anuga.Operator):
         self.outlet_depth = 0.0
         self.delta_total_energy = 0.0
         self.driving_energy = 0.0
-        
+
         if exchange_lines is not None:
             self.__process_skew_culvert()
         elif end_points is not None:
             self.__process_non_skew_culvert()
         else:
             raise Exception('Define either exchange_lines or end_points')
-        
+
         self.inlets = []
 
         # Allocate parallel inlet enquiry, assign None if processor is not associated with particular
@@ -181,7 +181,7 @@ class Parallel_Structure_operator(anuga.Operator):
             if self.apron is None:
                 poly0 = line0
             else:
-                offset = -self.apron*self.outward_vector_0 
+                offset = -self.apron*self.outward_vector_0
                 poly0 = num.array([ line0[0], line0[1], line0[1]+offset, line0[0]+offset])
 
             if self.invert_elevations is None:
@@ -197,17 +197,17 @@ class Parallel_Structure_operator(anuga.Operator):
                                line0,
                                enquiry_point0,
                                invert_elevation = invert_elevation0,
-                               outward_culvert_vector = outward_vector0, 
+                               outward_culvert_vector = outward_vector0,
                                master_proc = self.inlet_master_proc[0],
                                procs = self.inlet_procs[0],
                                enquiry_proc = self.enquiry_proc[0],
                                verbose = self.verbose))
 
-            if force_constant_inlet_elevations: 
-                # Try to enforce a constant inlet elevation 
-                inlet_global_elevation = self.inlets[-1].get_global_average_elevation() 
+            if force_constant_inlet_elevations:
+                # Try to enforce a constant inlet elevation
+                inlet_global_elevation = self.inlets[-1].get_global_average_elevation()
                 self.inlets[-1].set_elevations(inlet_global_elevation)
-       
+
         else:
             self.inlets.append(None)
 
@@ -240,11 +240,11 @@ class Parallel_Structure_operator(anuga.Operator):
                                enquiry_proc = self.enquiry_proc[1],
                                verbose = self.verbose))
 
-            if force_constant_inlet_elevations: 
-                # Try to enforce a constant inlet elevation 
-                inlet_global_elevation = self.inlets[-1].get_global_average_elevation() 
+            if force_constant_inlet_elevations:
+                # Try to enforce a constant inlet elevation
+                inlet_global_elevation = self.inlets[-1].get_global_average_elevation()
                 self.inlets[-1].set_elevations(inlet_global_elevation)
-            
+
 
         else:
             self.inlets.append(None)
@@ -286,7 +286,7 @@ class Parallel_Structure_operator(anuga.Operator):
         # Implement the update of flow over a timestep by
         # using a semi-implict update. This ensures that
         # the update does not create a negative depth
-        
+
         # Master proc of structure only
         if self.myid == self.master_proc:
             if old_inflow_depth > 0.0 :
@@ -302,7 +302,7 @@ class Parallel_Structure_operator(anuga.Operator):
                 (old_inflow_depth*inflow_area <= Q*timestep))
 
             factor = 1.0/(1.0 + dt_Q_on_d/inflow_area)
-        
+
             if use_Q_wetdry_adjustment:
                 new_inflow_depth = old_inflow_depth*factor
                 if old_inflow_depth > 0.:
@@ -323,14 +323,14 @@ class Parallel_Structure_operator(anuga.Operator):
 
             else:
                 # For the momentum balance, note that Q also transports the velocity,
-                # which has an average value of new_inflow_mom/depth (or old_inflow_mom/depth). 
+                # which has an average value of new_inflow_mom/depth (or old_inflow_mom/depth).
                 #
-                #     new_inflow_xmom*inflow_area = 
-                #     old_inflow_xmom*inflow_area - 
+                #     new_inflow_xmom*inflow_area =
+                #     old_inflow_xmom*inflow_area -
                 #     timestep*Q*(new_inflow_xmom/old_inflow_depth)
                 # and:
-                #     new_inflow_ymom*inflow_area = 
-                #     old_inflow_ymom*inflow_area - 
+                #     new_inflow_ymom*inflow_area =
+                #     old_inflow_ymom*inflow_area -
                 #     timestep*Q*(new_inflow_ymom/old_inflow_depth)
                 #
                 # The choice of new_inflow_mom in the final term might be
@@ -401,7 +401,7 @@ class Parallel_Structure_operator(anuga.Operator):
             outflow_extra_depth = Q*timestep_star/outflow_area
             outflow_direction = - outflow_outward_culvert_vector
             #outflow_extra_momentum = outflow_extra_depth*barrel_speed*outflow_direction
-            
+
             gain = outflow_extra_depth*outflow_area
 
             # Update Stats
@@ -436,7 +436,7 @@ class Parallel_Structure_operator(anuga.Operator):
                 #new_outflow_ymom = self.outflow.get_average_ymom() + outflow_extra_momentum[1]
                 new_outflow_xmom = barrel_speed*new_outflow_depth*outflow_direction[0]
                 new_outflow_ymom = barrel_speed*new_outflow_depth*outflow_direction[1]
-                
+
             elif self.zero_outflow_momentum:
                 new_outflow_xmom = 0.0
                 new_outflow_ymom = 0.0
@@ -473,15 +473,15 @@ class Parallel_Structure_operator(anuga.Operator):
         At either end two lines will be created; one for the actual flow to pass through and one a little further away
         for enquiring the total energy at both ends of the culvert and transferring flow.
         """
-        
+
         self.culvert_vector = self.end_points[1] - self.end_points[0]
-        self.culvert_length = math.sqrt(num.sum(self.culvert_vector**2))   
+        self.culvert_length = math.sqrt(num.sum(self.culvert_vector**2))
         assert self.culvert_length > 0.0, 'The length of culvert is less than 0'
-        
+
         self.culvert_vector /= self.culvert_length
         self.outward_vector_0 =   self.culvert_vector
-        self.outward_vector_1 = - self.culvert_vector        
-        
+        self.outward_vector_1 = - self.culvert_vector
+
         culvert_normal = num.array([-self.culvert_vector[1], self.culvert_vector[0]])  # Normal vector
         w = 0.5*self.width*culvert_normal # Perpendicular vector of 1/2 width
 
@@ -489,31 +489,31 @@ class Parallel_Structure_operator(anuga.Operator):
 
         # Build exchange polyline and enquiry point
         if self.enquiry_points is None:
-            
+
             gap = (self.apron + self.enquiry_gap)*self.culvert_vector
             self.enquiry_points = []
-            
+
             for i in [0, 1]:
                 p0 = self.end_points[i] + w
                 p1 = self.end_points[i] - w
                 self.exchange_lines.append(num.array([p0, p1]))
                 ep = self.end_points[i] + (2*i - 1)*gap #(2*i - 1) determines the sign of the points
                 self.enquiry_points.append(ep)
-            
-        else:            
+
+        else:
             for i in [0, 1]:
                 p0 = self.end_points[i] + w
                 p1 = self.end_points[i] - w
                 self.exchange_lines.append(num.array([p0, p1]))
-            
-  
-    def __process_skew_culvert(self):    
-        
+
+
+    def __process_skew_culvert(self):
+
         """Compute skew culvert.
-        If exchange lines are given, the enquiry points are determined. This is for enquiring 
+        If exchange lines are given, the enquiry points are determined. This is for enquiring
         the total energy at both ends of the culvert and transferring flow.
         """
-            
+
         centre_point0 = 0.5*(self.exchange_lines[0][0] + self.exchange_lines[0][1])
         centre_point1 = 0.5*(self.exchange_lines[1][0] + self.exchange_lines[1][1])
 
@@ -523,7 +523,7 @@ class Parallel_Structure_operator(anuga.Operator):
         assert n_exchange_0 == n_exchange_1, 'There should be the same number of points in both exchange_lines'
 
         if n_exchange_0 == 2:
-            
+
             if self.end_points is None:
                 self.culvert_vector = centre_point1 - centre_point0
             else:
@@ -554,23 +554,116 @@ class Parallel_Structure_operator(anuga.Operator):
         assert outward_vector_1_length > 0.0, 'The length of outlet_vector_1 is less than 0'
         self.outward_vector_1 /= outward_vector_1_length
 
-        
+
         if self.enquiry_points is None:
-        
+
 
             gap = (self.apron + self.enquiry_gap)*self.culvert_vector
-        
+
             self.enquiry_points = []
 
             self.enquiry_points.append(centre_point0 - gap)
             self.enquiry_points.append(centre_point1 + gap)
-            
+
+
+    # ------------------------------------------------------------------
+    # MPI helper methods for discharge_routine implementations
+    # ------------------------------------------------------------------
+
+    def _gather_enquiry_stage_and_energy(self):
+        """Gather total_energy and stage from both enquiry points to master proc.
+
+        All procs in self.procs must call this.  Returns
+        (enq_total_energy0, enq_stage0, enq_total_energy1, enq_stage1)
+        on the master proc, and None on all other procs.
+        """
+        if self.myid == self.master_proc:
+            if self.myid == self.enquiry_proc[0]:
+                enq_total_energy0 = self.inlets[0].get_enquiry_total_energy()
+                enq_stage0 = self.inlets[0].get_enquiry_stage()
+            else:
+                enq_total_energy0 = pypar.receive(self.enquiry_proc[0])
+                enq_stage0 = pypar.receive(self.enquiry_proc[0])
+
+            if self.myid == self.enquiry_proc[1]:
+                enq_total_energy1 = self.inlets[1].get_enquiry_total_energy()
+                enq_stage1 = self.inlets[1].get_enquiry_stage()
+            else:
+                enq_total_energy1 = pypar.receive(self.enquiry_proc[1])
+                enq_stage1 = pypar.receive(self.enquiry_proc[1])
+
+            return enq_total_energy0, enq_stage0, enq_total_energy1, enq_stage1
+
+        else:
+            if self.myid == self.enquiry_proc[0]:
+                pypar.send(self.inlets[0].get_enquiry_total_energy(), self.master_proc)
+                pypar.send(self.inlets[0].get_enquiry_stage(), self.master_proc)
+            if self.myid == self.enquiry_proc[1]:
+                pypar.send(self.inlets[1].get_enquiry_total_energy(), self.master_proc)
+                pypar.send(self.inlets[1].get_enquiry_stage(), self.master_proc)
+            return None
+
+    def _broadcast_flow_direction(self, reverse):
+        """Broadcast flow direction from master proc to all other procs.
+
+        Call on all procs.  Master passes the computed reverse flag (True/False);
+        non-masters pass None (value is received).  Updates self.inflow_index
+        and self.outflow_index on non-master procs.
+
+        The master proc must have already updated its own self.inflow_index /
+        self.outflow_index before calling this.
+        """
+        if self.myid == self.master_proc:
+            for i in self.procs:
+                if i == self.master_proc:
+                    continue
+                pypar.send(reverse, i)
+        else:
+            reverse = pypar.receive(self.master_proc)
+            if reverse:
+                self.inflow_index = 1
+                self.outflow_index = 0
+
+    def _gather_inflow_outflow_depths(self):
+        """Gather inflow depth + specific energy and outflow depth to master proc.
+
+        self.inflow_index and self.outflow_index must already be set on all procs
+        (call _broadcast_flow_direction first).
+
+        All procs in self.procs must call this.  Returns
+        (inflow_enq_depth, inflow_enq_specific_energy, outflow_enq_depth)
+        on the master proc, and None on all other procs.
+        """
+        if self.myid == self.master_proc:
+            if self.myid == self.enquiry_proc[self.inflow_index]:
+                inflow_enq_depth = self.inlets[self.inflow_index].get_enquiry_depth()
+                inflow_enq_specific_energy = self.inlets[self.inflow_index].get_enquiry_specific_energy()
+            else:
+                inflow_enq_depth = pypar.receive(self.enquiry_proc[self.inflow_index])
+                inflow_enq_specific_energy = pypar.receive(self.enquiry_proc[self.inflow_index])
+
+            if self.myid == self.enquiry_proc[self.outflow_index]:
+                outflow_enq_depth = self.inlets[self.outflow_index].get_enquiry_depth()
+            else:
+                outflow_enq_depth = pypar.receive(self.enquiry_proc[self.outflow_index])
+
+            return inflow_enq_depth, inflow_enq_specific_energy, outflow_enq_depth
+
+        else:
+            if self.myid == self.enquiry_proc[self.inflow_index]:
+                pypar.send(self.inlets[self.inflow_index].get_enquiry_depth(), self.master_proc)
+                pypar.send(self.inlets[self.inflow_index].get_enquiry_specific_energy(), self.master_proc)
+            if self.myid == self.enquiry_proc[self.outflow_index]:
+                pypar.send(self.inlets[self.outflow_index].get_enquiry_depth(), self.master_proc)
+            return None
+
+    # ------------------------------------------------------------------
 
     def discharge_routine(self):
 
         msg = 'Need to impelement '
         raise
-            
+
 
     def statistics(self):
         # Warning: requires synchronization, must be called by all procs associated
@@ -607,9 +700,9 @@ class Parallel_Structure_operator(anuga.Operator):
                 message += 'Batter Slope 2  : %s\n'% self.z2
                 message += 'Culvert Blockage: %s\n'% self.blockage
                 message += 'No.  of  barrels: %s\n'% self.barrels
-                
+
         #print "Structure Myids ",self.myid, self.label
-        
+
         for i, inlet in enumerate(self.inlets):
             if self.myid == self.master_proc:
                 message += '-------------------------------------\n'
@@ -618,18 +711,18 @@ class Parallel_Structure_operator(anuga.Operator):
 
             #print "*****",inlet, i,self.myid
             if inlet is not None:
-                
-                
+
+
                 stats = inlet.statistics()
 
             if self.myid == self.master_proc:
                 if self.myid != self.inlet_master_proc[i]:
-                    stats = pypar.receive(self.inlet_master_proc[i])                    
+                    stats = pypar.receive(self.inlet_master_proc[i])
             elif self.myid == self.inlet_master_proc[i]:
                 pypar.send(stats, self.master_proc)
 
             if self.myid == self.master_proc: message += stats
- 
+
 
         if self.myid == self.master_proc: message += '=====================================\n'
 
@@ -644,7 +737,7 @@ class Parallel_Structure_operator(anuga.Operator):
 
 
     def print_timestepping_statistics(self):
-        # Warning: must be called by the master proc of this structure to obtain 
+        # Warning: must be called by the master proc of this structure to obtain
         # meaningful output
 
         message = ' '
@@ -713,35 +806,35 @@ class Parallel_Structure_operator(anuga.Operator):
 
     def get_inlets(self):
         return self.inlets
-        
-        
+
+
     def get_culvert_length(self):
         return self.culvert_length
 
 
-    def get_culvert_width(self):        
+    def get_culvert_width(self):
         return self.width
-        
-        
+
+
     def get_culvert_diameter(self):
         return self.diameter
-        
-        
+
+
     def get_culvert_height(self):
         return self.height
 
     def get_culvert_z1(self):
         return self.z1
 
-    def get_culvert_z2(self):   
+    def get_culvert_z2(self):
         return self.z2
 
-    def get_culvert_blockage(self):	
+    def get_culvert_blockage(self):
         return self.blockage
 
-    def get_culvert_barrels(self):	
+    def get_culvert_barrels(self):
         return self.barrels
-                        
+
     def get_culvert_apron(self):
         return self.apron
 
@@ -772,21 +865,21 @@ class Parallel_Structure_operator(anuga.Operator):
 
     def set_culvert_z1(self, z1):
 
-        self.culvet_z1 = z1        
+        self.culvet_z1 = z1
 
     def set_culvert_z2(self, z2):
 
-        self.culvert_z2 = z2  
+        self.culvert_z2 = z2
 
-    def set_culvert_blockage(self, blockage): 
+    def set_culvert_blockage(self, blockage):
 
-        self.culvert_blockage = blockage 
+        self.culvert_blockage = blockage
 
-    def set_culvert_blockage(self, barrels): 
+    def set_culvert_blockage(self, barrels):
 
-        self.culvert_barrels = barrels 
-        
-                        
+        self.culvert_barrels = barrels
+
+
     def parallel_safe(self):
         return True
 
@@ -1181,7 +1274,7 @@ class Parallel_Structure_operator(anuga.Operator):
         get0 = 'self.inlets[0].get_enquiry_speed()'
         get1 = 'self.inlets[1].get_enquiry_speed()'
 
-        
+
         if self.myid == self.master_proc:
 
             if self.myid == self.enquiry_proc[0]:

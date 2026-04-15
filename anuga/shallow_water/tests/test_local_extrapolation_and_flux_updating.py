@@ -16,14 +16,14 @@ class Test_local_extrapolation_and_flux_updating(unittest.TestCase):
             try:
                 os.remove(file)
             except OSError:
-                pass        
+                pass
 
 
     def create_domain(self, flowalg):
         # Riverwall = list of lists, each with a set of x,y,z (and optional QFactor) values
 
         # Make the domain
-        anuga.create_pmesh_from_regions(boundaryPolygon, 
+        anuga.create_pmesh_from_regions(boundaryPolygon,
                                  boundary_tags={'left': [0],
                                                 'top': [1],
                                                 'right': [2],
@@ -41,15 +41,15 @@ class Test_local_extrapolation_and_flux_updating(unittest.TestCase):
         domain.set_name('test_boundaryfluxintegral')
 
         domain.set_store_vertices_uniquely()
-       
+
         def topography(x,y):
-            return -x/150. 
+            return -x/150.
 
         # NOTE: Setting quantities at centroids is important for exactness of tests
-        domain.set_quantity('elevation',topography,location='centroids')     
-        domain.set_quantity('friction',0.03)             
-        domain.set_quantity('stage', topography,location='centroids')            
-       
+        domain.set_quantity('elevation',topography,location='centroids')
+        domain.set_quantity('friction',0.03)
+        domain.set_quantity('stage', topography,location='centroids')
+
         # Boundary conditions
         Br=anuga.Reflective_boundary(domain)
         Bd=anuga.Dirichlet_boundary([0., 0., 0.])
@@ -64,7 +64,7 @@ class Test_local_extrapolation_and_flux_updating(unittest.TestCase):
 
         We also check that the total volume and boundary flux integral are equal for both methods
         """
-        
+
         domain=self.create_domain('DE0')
         for t in domain.evolve(yieldstep=0.1,finaltime=20.0):
             pass
@@ -80,21 +80,21 @@ class Test_local_extrapolation_and_flux_updating(unittest.TestCase):
         # The domain was initially dry
         vol2=domain2.get_water_volume()
         boundaryFluxInt2=domain2.get_boundary_flux_integral()
-        
+
         assert(numpy.allclose(vol,vol2, rtol=0.05))
         assert(numpy.allclose(vol,boundaryFluxInt))
         assert(numpy.allclose(vol2,boundaryFluxInt2))
         assert( numpy.all(abs(domain.quantities['stage'].centroid_values-domain2.quantities['stage'].centroid_values) <0.02))
-        
+
         return
-    
+
     def test_local_extrapolation_and_flux_updating_DE1(self):
         """
 
         LEAFU should fail for DE1 since we don't have support for rk2 timestepping yet
 
         """
-        
+
         domain=self.create_domain('DE1')
         Failed=True
         try:

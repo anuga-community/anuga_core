@@ -17,9 +17,13 @@
 // Core kernels (shared with sw_domain_openmp_ext)
 #include "core_kernels.h"
 
+// NVTX profiling hooks (no-ops unless -DNVTX_ENABLED)
+#include "gpu_nvtx.h"
+
 // GPU compute kernels: extrapolate, flux, protect, update, etc.
 
 void gpu_extrapolate_second_order(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_extrapolate_second_order");
     // Delegate to core kernel (shared with CPU implementation)
     core_extrapolate_second_order_edge(&GD->D);
 
@@ -28,9 +32,11 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
         GD->flops.extrapolate_flops += (uint64_t)GD->D.number_of_elements * FLOPS_EXTRAPOLATE;
         GD->flops.extrapolate_calls++;
     }
+    NVTX_POP();
 }
 
 double gpu_compute_fluxes(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_compute_fluxes");
     // Unified: calls core_compute_fluxes_central from core_kernels.c
     // GPU mode always uses substep_count=0 (RK2 handled at higher level)
     // timestep_fluxcalls=1 since boundary_flux_sum not used in GPU MPI mode
@@ -43,10 +49,12 @@ double gpu_compute_fluxes(struct gpu_domain *GD) {
         GD->flops.compute_fluxes_calls++;
     }
 
+    NVTX_POP();
     return local_timestep;
 }
 
 void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
+    NVTX_PUSH("gpu_update_conserved_quantities");
     // Delegate to core kernel
     core_update_conserved_quantities(&GD->D, timestep);
 
@@ -55,9 +63,11 @@ void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
         GD->flops.update_flops += (uint64_t)GD->D.number_of_elements * FLOPS_UPDATE;
         GD->flops.update_calls++;
     }
+    NVTX_POP();
 }
 
 void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_backup_conserved_quantities");
     // Delegate to core kernel
     core_backup_conserved_quantities(&GD->D);
 
@@ -66,10 +76,12 @@ void gpu_backup_conserved_quantities(struct gpu_domain *GD) {
         GD->flops.backup_flops += (uint64_t)GD->D.number_of_elements * FLOPS_BACKUP;
         GD->flops.backup_calls++;
     }
+    NVTX_POP();
 }
 
 void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
-    // Delegate to core kernel (c=0.0 for RK2)
+    NVTX_PUSH("gpu_saxpy_conserved_quantities");
+    // Delegate to core kernel (c=0.0 means "skip division", used for RK2)
     core_saxpy_conserved_quantities(&GD->D, a, b, 0.0);
 
     // Also update height to match the new stage (needed for volume calculation)
@@ -88,9 +100,36 @@ void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b) {
         GD->flops.saxpy_flops += (uint64_t)n * FLOPS_SAXPY;
         GD->flops.saxpy_calls++;
     }
+    NVTX_POP();
+}
+
+void gpu_saxpy3_conserved_quantities(struct gpu_domain *GD, double a, double b, double c) {
+    NVTX_PUSH("gpu_saxpy3_conserved_quantities");
+    // Divide-by-c variant used for the final RK3 combination:
+    //   Q = (a*Q_current + b*Q_backup) / c
+    // Calling core with c != 0 and c != 1 triggers the division pass.
+    core_saxpy_conserved_quantities(&GD->D, a, b, c);
+
+    // Update height to match the new stage values
+    anuga_int n = GD->D.number_of_elements;
+    double * restrict stage_cv = GD->D.stage_centroid_values;
+    double * restrict height_cv = GD->D.height_centroid_values;
+    double * restrict bed_cv = GD->D.bed_centroid_values;
+
+    OMP_PARALLEL_LOOP
+    for (anuga_int k = 0; k < n; k++) {
+        height_cv[k] = fmax(stage_cv[k] - bed_cv[k], 0.0);
+    }
+
+    if (GD->flops.enabled) {
+        GD->flops.saxpy_flops += (uint64_t)n * FLOPS_SAXPY;
+        GD->flops.saxpy_calls++;
+    }
+    NVTX_POP();
 }
 
 double gpu_protect(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_protect");
     // Delegate to core kernel
     double mass_error = core_protect(&GD->D);
 
@@ -111,6 +150,7 @@ double gpu_protect(struct gpu_domain *GD) {
         GD->flops.protect_calls++;
     }
 
+    NVTX_POP();
     return mass_error;
 }
 
@@ -139,6 +179,7 @@ double gpu_compute_water_volume(struct gpu_domain *GD) {
 }
 
 void gpu_manning_friction(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_manning_friction");
     // Delegate to core kernel
     core_manning_friction_flat_semi_implicit(&GD->D);
 
@@ -147,6 +188,7 @@ void gpu_manning_friction(struct gpu_domain *GD) {
         GD->flops.manning_flops += (uint64_t)GD->D.number_of_elements * FLOPS_MANNING;
         GD->flops.manning_calls++;
     }
+    NVTX_POP();
 }
 
 // ============================================================================
@@ -154,6 +196,7 @@ void gpu_manning_friction(struct gpu_domain *GD) {
 // ============================================================================
 
 double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing) {
+    NVTX_PUSH("gpu_evolve_one_rk2_step");
     // Full RK2 step orchestrated entirely in C - eliminates Python round-trip overhead
     //
     // This function performs:
@@ -188,6 +231,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_transmissive_boundary(GD);
     gpu_evaluate_transmissive_n_zero_t_boundary(GD);
     gpu_evaluate_time_boundary(GD);
+    gpu_evaluate_file_boundary(GD);
 
     // Compute fluxes - returns local minimum timestep
     local_timestep = gpu_compute_fluxes(GD);
@@ -246,6 +290,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_transmissive_boundary(GD);
     gpu_evaluate_transmissive_n_zero_t_boundary(GD);
     gpu_evaluate_time_boundary(GD);
+    gpu_evaluate_file_boundary(GD);
 
     // Compute fluxes (ignore timestep from second step)
     gpu_compute_fluxes(GD);
@@ -261,6 +306,117 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // RK2 averaging: Q_final = 0.5 * Q_backup + 0.5 * Q_current
     gpu_saxpy_conserved_quantities(GD, 0.5, 0.5);
 
+    NVTX_POP();  // gpu_evolve_one_rk2_step
+    return timestep;
+}
+
+// ============================================================================
+// Full SSP-RK3 Step (Shu-Osher)
+// ============================================================================
+
+double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int apply_forcing) {
+    NVTX_PUSH("gpu_evolve_one_rk3_step");
+    // Full SSP-RK3 step orchestrated entirely in C.
+    //
+    // Algorithm (Shu-Osher, 3rd-order strong-stability-preserving):
+    //   Stage 1:      Q^(1)   = Q^n + h * L(Q^n)
+    //   Intermediate: Q^(1)   = 0.25 * Q^(1) + 0.75 * Q^n     [saxpy a=0.25, b=0.75]
+    //   Stage 2:      Q^(2)   = Q^(1)_mid + h * L(Q^(1)_mid)
+    //   Final:        Q^{n+1} = (2 * Q^(2) + Q^n) / 3          [saxpy3 a=2, b=1, c=3]
+    //
+    // Ghost exchanges after Stage 1 and after the intermediate combination.
+    // Time-dependent boundary values must be set by Python BEFORE calling this.
+
+    double local_timestep, global_timestep, timestep;
+
+    // Backup Q^n
+    gpu_backup_conserved_quantities(GD);
+
+    // ========================================
+    // Stage 1: Q^(1) = Q^n + h*L(Q^n)
+    // ========================================
+
+    gpu_protect(GD);
+    gpu_extrapolate_second_order(GD);
+
+    gpu_evaluate_reflective_boundary(GD);
+    gpu_evaluate_dirichlet_boundary(GD);
+    gpu_evaluate_transmissive_boundary(GD);
+    gpu_evaluate_transmissive_n_zero_t_boundary(GD);
+    gpu_evaluate_time_boundary(GD);
+    gpu_evaluate_file_boundary(GD);
+
+    local_timestep = gpu_compute_fluxes(GD);
+
+    // Determine global timestep (same logic as RK2)
+    static int fixed_ts_printed_rk3 = 0;
+    if (GD->fixed_flux_timestep > 0.0) {
+        if (GD->rank == 0 && !fixed_ts_printed_rk3) {
+            printf("RK3: Using a fixed timestep! (dt = %e)\n", GD->fixed_flux_timestep);
+            fflush(stdout);
+            fixed_ts_printed_rk3 = 1;
+        }
+        timestep = GD->fixed_flux_timestep;
+        if (timestep > max_timestep) timestep = max_timestep;
+    } else {
+        if (GD->nprocs > 1) {
+            MPI_Allreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE, MPI_MIN, GD->comm);
+        } else {
+            global_timestep = local_timestep;
+        }
+        timestep = GD->CFL * global_timestep;
+        if (timestep > max_timestep) timestep = max_timestep;
+    }
+
+    if (apply_forcing) gpu_manning_friction(GD);
+    gpu_update_conserved_quantities(GD, timestep);
+
+    if (GD->nprocs > 1) gpu_exchange_ghosts(GD);
+
+    // ========================================
+    // Stage 2: Q^(2) = Q^(1) + h*L(Q^(1))
+    // ========================================
+
+    gpu_protect(GD);
+    gpu_extrapolate_second_order(GD);
+
+    gpu_evaluate_reflective_boundary(GD);
+    gpu_evaluate_dirichlet_boundary(GD);
+    gpu_evaluate_transmissive_boundary(GD);
+    gpu_evaluate_transmissive_n_zero_t_boundary(GD);
+    gpu_evaluate_time_boundary(GD);
+    gpu_evaluate_file_boundary(GD);
+
+    gpu_compute_fluxes(GD);
+    if (apply_forcing) gpu_manning_friction(GD);
+    gpu_update_conserved_quantities(GD, timestep);
+
+    // Intermediate: Q = 0.25*Q^(2) + 0.75*Q^n, then sync ghost cells
+    gpu_saxpy_conserved_quantities(GD, 0.25, 0.75);
+    if (GD->nprocs > 1) gpu_exchange_ghosts(GD);
+
+    // ========================================
+    // Stage 3: Q^(3) = Q^(1)_mid + h*L(Q^(1)_mid)
+    // ========================================
+
+    gpu_protect(GD);
+    gpu_extrapolate_second_order(GD);
+
+    gpu_evaluate_reflective_boundary(GD);
+    gpu_evaluate_dirichlet_boundary(GD);
+    gpu_evaluate_transmissive_boundary(GD);
+    gpu_evaluate_transmissive_n_zero_t_boundary(GD);
+    gpu_evaluate_time_boundary(GD);
+    gpu_evaluate_file_boundary(GD);
+
+    gpu_compute_fluxes(GD);
+    if (apply_forcing) gpu_manning_friction(GD);
+    gpu_update_conserved_quantities(GD, timestep);
+
+    // Final: Q^{n+1} = (2*Q^(3) + Q^n) / 3
+    gpu_saxpy3_conserved_quantities(GD, 2.0, 1.0, 3.0);
+
+    NVTX_POP();  // gpu_evolve_one_rk3_step
     return timestep;
 }
 

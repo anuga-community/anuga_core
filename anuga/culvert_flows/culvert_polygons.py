@@ -10,7 +10,7 @@ import numpy as num
 
 
 def create_culvert_polygons(end_point0,
-                            end_point1, 
+                            end_point1,
                             width, height=None,
                             enquiry_gap_factor=0.2,
                             number_of_barrels=1):
@@ -20,25 +20,25 @@ def create_culvert_polygons(end_point0,
 
     Input (mandatory):
         end_point0 - one end of the culvert (x,y)
-        end_point1 - other end of the culvert (x,y)        
+        end_point1 - other end of the culvert (x,y)
         width - culvert width
 
-    Input (optional):        
+    Input (optional):
         height - culvert height, defaults to width making a square culvert
         enquiry_gap_factor - sets the distance to the enquiry point as fraction of the height
         number_of_barrels - number of identical pipes.
-        
+
     Output:
 
         Dictionary of four polygons. The dictionary keys are:
             'exchange_polygon0' - polygon defining the flow area at end_point0
             'exchange_polygon1' - polygon defining the flow area at end_point1
             'enquiry_point0' - point beyond exchange_polygon0
-            'enquiry_point1' - point beyond exchange_polygon1            
+            'enquiry_point1' - point beyond exchange_polygon1
             'vector'
             'length'
             'normal'
-    """    
+    """
 
 
     # Input check
@@ -47,7 +47,7 @@ def create_culvert_polygons(end_point0,
 
     # Dictionary for calculated polygons
     culvert_polygons = {}
-    
+
 
     # Calculate geometry
     x0, y0 = end_point0
@@ -61,22 +61,22 @@ def create_culvert_polygons(end_point0,
 
     # Adjust polygon width to number of barrels in this culvert
     width *= number_of_barrels
-    
-    
-    # Unit direction vector and normal 
+
+
+    # Unit direction vector and normal
     vector /= length                 # Unit vector in culvert direction
     normal = num.array([-dy, dx])/length # Normal vector
-    
+
     culvert_polygons['vector'] = vector
     culvert_polygons['length'] = length
-    culvert_polygons['normal'] = normal    
+    culvert_polygons['normal'] = normal
 
     # Short hands
-    w = 0.5*width*normal # Perpendicular vector of 1/2 width 
+    w = 0.5*width*normal # Perpendicular vector of 1/2 width
     h = height*vector    # Vector of length=height in the
                          # direction of the culvert
-    gap = (1 + enquiry_gap_factor)*h 
-                         
+    gap = (1 + enquiry_gap_factor)*h
+
 
     # Build exchange polygon and enquiry point for opening 0
     p0 = end_point0 + w
@@ -85,7 +85,7 @@ def create_culvert_polygons(end_point0,
     p3 = p0 - h
     culvert_polygons['exchange_polygon0'] = num.array([p0,p1,p2,p3])
     culvert_polygons['enquiry_point0'] = end_point0 - gap
-    
+
 
     # Build exchange polygon and enquiry point for opening 1
     p0 = end_point1 + w
@@ -93,14 +93,14 @@ def create_culvert_polygons(end_point0,
     p2 = p1 + h
     p3 = p0 + h
     culvert_polygons['exchange_polygon1'] = num.array([p0,p1,p2,p3])
-    culvert_polygons['enquiry_point1'] = end_point1 + gap  
+    culvert_polygons['enquiry_point1'] = end_point1 + gap
 
     # Check that enquiry polygons are outside exchange polygons
     for key1 in ['exchange_polygon0',
                  'exchange_polygon1']:
         polygon = culvert_polygons[key1]
         area = polygon_area(polygon)
-        
+
         msg = 'Polygon %s ' %(polygon)
         msg += ' has area = %f' % area
         assert area > 0.0, msg

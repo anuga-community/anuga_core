@@ -273,8 +273,23 @@ class Domain(Generic_Domain):
             other_quantities = ['elevation', 'friction', 'height',
                                 'xvelocity', 'yvelocity', 'x', 'y']
 
-
-
+        # Selective array allocation per quantity type.
+        # Quantities not listed default to 'evolved' (all arrays) for
+        # backward compatibility with user-defined quantities.
+        self._quantity_type_map = {
+            'stage':       'evolved',
+            'xmomentum':   'evolved',
+            'ymomentum':   'evolved',
+            # elevation: centroid + edge only; gradients lazy (erosion operators
+            # trigger allocation via compute_local_gradients when needed)
+            'elevation':   'edge_diagnostic',
+            'friction':    'centroid_only',
+            'height':      'edge_diagnostic',
+            'xvelocity':   'edge_diagnostic',
+            'yvelocity':   'edge_diagnostic',
+            'x':           'coordinate',
+            'y':           'coordinate',
+        }
 
 
         Generic_Domain.__init__(self,
@@ -318,7 +333,7 @@ class Domain(Generic_Domain):
         # 2. Cuda
         #-------------------------------
         self.gpu_interface = None
-        self.use_c_rk2_loop = True  # Use C RK2 loop (faster) vs Python-orchestrated GPU loop
+        self.use_c_rk_loop = True  # Use C RK loop (faster) vs Python-orchestrated GPU loop
         self.set_multiprocessor_mode(MULTIPROCESSOR_OPENMP)  # Default to OpenMP (use MULTIPROCESSOR_GPU for GPU)
 
         #-------------------------------
@@ -328,7 +343,7 @@ class Domain(Generic_Domain):
         self._Domain_C_struct = None
 
         #-------------------------------
-        # If environment variable OMP_NUM_THREADS is not set, 
+        # If environment variable OMP_NUM_THREADS is not set,
         # then set to default (1 thread). If a value is given to
         # the method, then it will override the default.
         #------------------------------
@@ -418,7 +433,7 @@ class Domain(Generic_Domain):
         ############################################################################
         ## Local-timestepping information
         ############################################################################
-        # FIXME SR: Nice idea but is not generally used, so should hive off to 
+        # FIXME SR: Nice idea but is not generally used, so should hive off to
         # another branch of the code and removed for general use
 
         #
@@ -454,9 +469,9 @@ class Domain(Generic_Domain):
 
 
     #------------------------------------------------
-    # Domain_C_struct is a cdef class with a custom __cinit__, 
-    # so Cython will not auto-generate a default pickling protocol for it; 
-    # when pickle reaches the Domain object and tries to pickle _Domain_C_struct, 
+    # Domain_C_struct is a cdef class with a custom __cinit__,
+    # so Cython will not auto-generate a default pickling protocol for it;
+    # when pickle reaches the Domain object and tries to pickle _Domain_C_struct,
     # you get TypeError: no default __reduce__ due to non-trivial __cinit__.
     # So we implement __getstate__ and __setstate__ to exclude it from pickling,
     # and recreate it lazily when needed.
@@ -485,14 +500,14 @@ class Domain(Generic_Domain):
     def set_plotter(self, *args, **kwargs):
         """Set the plotter for this domain
         """
-        
-        #FIXME SR: Should look into seeing if the triang can use the 
+
+        #FIXME SR: Should look into seeing if the triang can use the
         # triangulation from Domain rather than having two copies
         if self.dplotter is None:
             import anuga
-            self.dplotter = anuga.Domain_plotter(self, *args, **kwargs) 
+            self.dplotter = anuga.Domain_plotter(self, *args, **kwargs)
 
-        
+
         self.triang = self.dplotter.triang
         self.stage = self.dplotter.stage
         self.xmom = self.dplotter.xmom
@@ -514,13 +529,13 @@ class Domain(Generic_Domain):
 
         self.save_stage_frame = self.dplotter.save_stage_frame
         self.plot_stage_frame = self.dplotter.plot_stage_frame
-        self.make_stage_animation = self.dplotter.make_stage_animation        
+        self.make_stage_animation = self.dplotter.make_stage_animation
 
         self.save_speed_frame = self.dplotter.save_speed_frame
         self.plot_speed_frame = self.dplotter.plot_speed_frame
-        self.make_speed_animation = self.dplotter.make_speed_animation        
+        self.make_speed_animation = self.dplotter.make_speed_animation
 
-        
+
     def triplot(self, *args,  **kwargs):
 
         self.set_plotter()
@@ -552,9 +567,9 @@ class Domain(Generic_Domain):
 
     #==============================================================
     # Methods to set and get domain parameters
-    # 
-    # FIXME SR: These (and other paramters) should be refactored 
-    # to save the underlying quantities in np.ndarray(s) for 
+    #
+    # FIXME SR: These (and other paramters) should be refactored
+    # to save the underlying quantities in np.ndarray(s) for
     # efficient access in Cython
     #==============================================================
 
@@ -572,7 +587,7 @@ class Domain(Generic_Domain):
     def timestep(self) -> float:
         """Current timestep [s]"""
         return self._timestep
-    
+
     @timestep.setter
     def timestep(self, value: float):
         """Set current timestep [s]"""
@@ -604,11 +619,8 @@ class Domain(Generic_Domain):
         from anuga.config import extrapolate_velocity_second_order
         from anuga.config import alpha_balance
         from anuga.config import optimise_dry_cells
-        from anuga.config import optimised_gradient_limiter
-        from anuga.config import use_edge_limiter
         from anuga.config import use_centroid_velocities
         from anuga.config import compute_fluxes_method
-        from anuga.config import distribute_to_vertices_and_edges_method
         from anuga.config import sloped_mannings_function
         from anuga.config import low_froude
 
@@ -631,14 +643,10 @@ class Domain(Generic_Domain):
         self.set_use_optimise_dry_cells(optimise_dry_cells)
         self.set_extrapolate_velocity(extrapolate_velocity_second_order)
 
-        self.set_use_edge_limiter(use_edge_limiter)
-        self.optimised_gradient_limiter = optimised_gradient_limiter
         self.use_centroid_velocities = use_centroid_velocities
 
         self.set_sloped_mannings_function(sloped_mannings_function)
         self.set_compute_fluxes_method(compute_fluxes_method)
-
-        self.set_distribute_to_vertices_and_edges_method(distribute_to_vertices_and_edges_method)
 
         self.set_store_centroids(False)
 
@@ -656,18 +664,14 @@ class Domain(Generic_Domain):
         parameters['alpha_balance']           = self.alpha_balance
         parameters['tight_slope_limiters']    = self.tight_slope_limiters
         parameters['optimise_dry_cells']      = self.optimise_dry_cells
-        parameters['use_edge_limiter']        = self.use_edge_limiter
         parameters['low_froude']              = self.low_froude
         parameters['use_centroid_velocities'] = self.use_centroid_velocities
         parameters['use_sloped_mannings']     = self.use_sloped_mannings
         parameters['compute_fluxes_method']   = self.get_compute_fluxes_method()
-        parameters['distribute_to_vertices_and_edges_method'] = \
-                         self.get_distribute_to_vertices_and_edges_method()
         parameters['flow_algorithm']          = self.get_flow_algorithm()
         parameters['CFL']                     = self.get_cfl()
         parameters['timestepping_method']     = self.get_timestepping_method()
 
-        parameters['optimised_gradient_limiter']        = self.optimised_gradient_limiter
         parameters['extrapolate_velocity_second_order'] = self.extrapolate_velocity_second_order
 
 
@@ -705,13 +709,11 @@ class Domain(Generic_Domain):
         self.set_using_discontinuous_elevation(True)
         self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
-        self.set_distribute_to_vertices_and_edges_method('DE')
 
         # Don't place any restriction on the minimum storable height
         #self.minimum_storable_height=-99999999999.0
         self.minimum_allowed_height=1.0e-12
 
-        self.use_edge_limiter=True
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
@@ -769,13 +771,11 @@ class Domain(Generic_Domain):
         self.set_using_discontinuous_elevation(True)
         self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
-        self.set_distribute_to_vertices_and_edges_method('DE')
 
         # Don't place any restriction on the minimum storable height
         #self.minimum_storable_height=-99999999999.0
         self.minimum_allowed_height=1.0e-5
 
-        self.use_edge_limiter=True
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
@@ -832,13 +832,11 @@ class Domain(Generic_Domain):
         self.set_using_discontinuous_elevation(True)
         self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
-        self.set_distribute_to_vertices_and_edges_method('DE')
 
         # Don't place any restriction on the minimum storable height
         #self.minimum_storable_height=-99999999999.0
         self.minimum_allowed_height=1.0e-5
 
-        self.use_edge_limiter=True
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
@@ -895,13 +893,11 @@ class Domain(Generic_Domain):
         self.set_using_discontinuous_elevation(True)
         self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
-        self.set_distribute_to_vertices_and_edges_method('DE')
 
         # Don't place any restriction on the minimum storable height
         #self.minimum_storable_height=-99999999999.0
         self.minimum_allowed_height=1.0e-12
 
-        self.use_edge_limiter=True
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
@@ -958,13 +954,11 @@ class Domain(Generic_Domain):
         self.set_using_discontinuous_elevation(True)
         self.set_using_centroid_averaging(True)
         self.set_compute_fluxes_method('DE')
-        self.set_distribute_to_vertices_and_edges_method('DE')
 
         # Don't place any restriction on the minimum storable height
         #self.minimum_storable_height=-99999999999.0
         self.minimum_allowed_height=1.0e-12
 
-        self.use_edge_limiter=True
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
@@ -1087,12 +1081,12 @@ class Domain(Generic_Domain):
         param: timestamp: return datetime corresponding to given timestamp"""
 
         from datetime import datetime
-        
+
         try:
             from datetime import UTC
         except ImportError:
             from datetime import timezone
-            UTC = timezone.utc 
+            UTC = timezone.utc
 
 
         if timestamp is None:
@@ -1335,38 +1329,6 @@ class Domain(Generic_Domain):
 
 
 
-    def set_distribute_to_vertices_and_edges_method(self, flag='original'):
-        """Set method for computing fluxes.
-
-        Currently
-           original
-           tsunami
-        """
-        distribute_to_vertices_and_edges_methods = ['original',  'tsunami', 'DE']
-
-        if flag in distribute_to_vertices_and_edges_methods:
-            self.distribute_to_vertices_and_edges_method = flag
-        else:
-            msg = 'Unknown distribute_to_vertices_and_edges_method. \nPossible choices are:\n'+ \
-            ', '.join(distribute_to_vertices_and_edges_methods)+'.'
-            raise Exception(msg)
-
-
-
-
-
-    def get_distribute_to_vertices_and_edges_method(self):
-        """Get method for distribute_to_vertices_and_edges.
-
-        See set_distribute_to_vertices_and_edges_method for possible choices.
-        """
-
-        return self.distribute_to_vertices_and_edges_method
-
-
-
-
-
     def set_flow_algorithm(self, algorithm='DE0'):
         """Set combination of slope limiting and time stepping
 
@@ -1446,17 +1408,6 @@ class Domain(Generic_Domain):
             self.extrapolate_velocity_second_order = True
         elif flag is False:
             self.extrapolate_velocity_second_order = False
-
-    def set_use_edge_limiter(self, flag=True):
-        """ Extrapolation routine uses vertex values by default,
-        for limiting, can change to edge limiting which
-        seems to work better in some cases.
-        """
-
-        if flag is True:
-            self.use_edge_limiter = True
-        elif flag is False:
-            self.use_edge_limiter = False
 
     def set_low_froude(self, low_froude=0):
         """ For low Froude problems the standard flux calculations
@@ -1952,14 +1903,6 @@ class Domain(Generic_Domain):
 
 
     #@profile
-    def extrapolate_second_order_sw(self):
-        """Fast version of extrapolation from centroids to edges"""
-
-        # FIXME (Ole): This might be an obsolute function (it was migrated from from the old c extension)
-        from .sw_domain_orig_ext import extrapolate_second_order_sw
-        extrapolate_second_order_sw(self)
-
-    #@profile
     def compute_fluxes(self):
         """Compute fluxes and timestep suitable for all volumes in domain.
 
@@ -2024,6 +1967,8 @@ class Domain(Generic_Domain):
                 evaluate_transmissive_n_zero_t_boundary_gpu,
                 set_time_boundary_values,
                 evaluate_time_boundary_gpu,
+                set_file_boundary_values_from_domain,
+                evaluate_file_boundary_gpu,
                 boundary_edge_sync,
                 sync_boundary_values,
                 init_boundary_edge_sync,
@@ -2034,7 +1979,7 @@ class Domain(Generic_Domain):
             # Lazily initialize GPU boundary info
             GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                                   'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                                  'Time_boundary'}
+                                  'Time_boundary', 'File_boundary', 'Field_boundary'}
 
             if not hasattr(self, '_gpu_boundary_info_initialized'):
                 self._gpu_cpu_tags = []
@@ -2071,7 +2016,7 @@ class Domain(Generic_Domain):
                     stage_val = B.get_boundary_values()
                     try:
                         stage_val = float(stage_val)
-                    except:
+                    except (TypeError, ValueError):
                         stage_val = float(stage_val[0])
                     set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
                 evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
@@ -2081,6 +2026,10 @@ class Domain(Generic_Domain):
                     q = B.get_boundary_values()
                     set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
                 evaluate_time_boundary_gpu(gpu_dom)
+
+                # Handle File_boundary / Field_boundary (per-edge values from SWW interpolation)
+                set_file_boundary_values_from_domain(gpu_dom, self)
+                evaluate_file_boundary_gpu(gpu_dom)
             else:
                 # Some boundaries need CPU - sync edge values, evaluate on CPU, sync back
                 boundary_edge_sync(gpu_dom)
@@ -2179,11 +2128,11 @@ class Domain(Generic_Domain):
         else:
             raise Exception('Not implemented')
 
-        nvtxRangePop()        
+        nvtxRangePop()
 
     def distribute_edges_to_vertices(self):
         """Distribute edge values to vertices.
-        
+
         This is a wrapper for the C implementation of the distribution
         from edges to vertices.
         """
@@ -2200,8 +2149,8 @@ class Domain(Generic_Domain):
             # distribute_edges_to_vertices_ext = self.gpu_interface.distribute_edges_to_vertices_kernel
         else:
             raise Exception('Not implemented')
-        
-        
+
+
         distribute_edges_to_vertices_ext(self)
         nvtxRangePop()
 
@@ -2233,11 +2182,11 @@ class Domain(Generic_Domain):
                 % timestep
             msg += 'even after %d steps of 1 order scheme' \
                 % self.max_smallsteps
-            log.critical(msg)
+            log.info(msg)
             timestep = self.evolve_min_timestep  # Try enforce min_step
 
             stats = self.timestepping_statistics(track_speeds=True)
-            log.critical(stats)
+            log.info(stats)
 
             raise Exception(msg)
 
@@ -2260,102 +2209,6 @@ class Domain(Generic_Domain):
             timestep = self.relative_yieldtime - self.relative_time
 
         self.timestep = timestep
-
-
-    def distribute_using_edge_limiter(self):
-        """Distribution from centroids to edges specific to the SWW eqn.
-
-        It will ensure that h (w-z) is always non-negative even in the
-        presence of steep bed-slopes by taking a weighted average between shallow
-        and deep cases.
-
-        In addition, all conserved quantities get distributed as per either a
-        constant (order==1) or a piecewise linear function (order==2).
-
-
-        Precondition:
-          All quantities defined at centroids and bed elevation defined at
-          vertices.
-
-        Postcondition
-          Conserved quantities defined at vertices
-        """
-
-        # Remove very thin layers of water
-        self.protect_against_infinitesimal_and_negative_heights()
-
-        for name in self.conserved_quantities:
-            Q = self.quantities[name]
-            if self._order_ == 1:
-                Q.extrapolate_first_order()
-            elif self._order_ == 2:
-                Q.extrapolate_second_order_and_limit_by_edge()
-            else:
-                raise Exception('Unknown order')
-
-        self.balance_deep_and_shallow()
-
-        # Compute edge values by interpolation
-        for name in self.conserved_quantities:
-            Q = self.quantities[name]
-            Q.interpolate_from_vertices_to_edges()
-
-    def distribute_using_vertex_limiter(self):
-        """Distribution from centroids to vertices specific to the SWW equation.
-
-        It will ensure that h (w-z) is always non-negative even in the
-        presence of steep bed-slopes by taking a weighted average between shallow
-        and deep cases.
-
-        In addition, all conserved quantities get distributed as per either a
-        constant (order==1) or a piecewise linear function (order==2).
-
-        FIXME: more explanation about removal of artificial variability etc
-
-        Precondition:
-          All quantities defined at centroids and bed elevation defined at
-          vertices.
-
-        Postcondition
-          Conserved quantities defined at vertices
-        """
-
-        # Remove very thin layers of water
-        self.protect_against_infinitesimal_and_negative_heights()
-
-        # Extrapolate all conserved quantities
-        if self.optimised_gradient_limiter:
-            # MH090605 if second order,
-            # perform the extrapolation and limiting on
-            # all of the conserved quantities
-
-            if (self._order_ == 1):
-                for name in self.conserved_quantities:
-                    Q = self.quantities[name]
-                    Q.extrapolate_first_order()
-            elif self._order_ == 2:
-                self.extrapolate_second_order_sw()
-            else:
-                raise Exception('Unknown order')
-        else:
-            # Old code:
-            for name in self.conserved_quantities:
-                Q = self.quantities[name]
-
-                if self._order_ == 1:
-                    Q.extrapolate_first_order()
-                elif self._order_ == 2:
-                    Q.extrapolate_second_order_and_limit_by_vertex()
-                else:
-                    raise Exception('Unknown order')
-
-        # Take bed elevation into account when water heights are small
-        self.balance_deep_and_shallow()
-
-        # Compute edge values by interpolation
-        for name in self.conserved_quantities:
-            Q = self.quantities[name]
-            Q.interpolate_from_vertices_to_edges()
 
 
     def protect_against_infinitesimal_and_negative_heights(self):
@@ -2382,45 +2235,6 @@ class Domain(Generic_Domain):
             #print('Cumulative mass protection: ' + str(mass_error) + ' m^3 ')
             # From https://stackoverflow.com/questions/22397261/cant-convert-float-object-to-str-implicitly
             print('Cumulative mass protection: {0} m^3'.format(mass_error))
-
-
-    def balance_deep_and_shallow(self):
-        """Compute linear combination between stage as computed by
-        gradient-limiters limiting using w, and stage computed by
-        gradient-limiters limiting using h (h-limiter).
-
-        The former takes precedence when heights are large compared to the
-        bed slope while the latter takes precedence when heights are
-        relatively small.  Anything in between is computed as a balanced
-        linear combination in order to avoid numerical disturbances which
-        would otherwise appear as a result of hard switching between
-        modes.
-
-        Wrapper for C implementation
-        """
-
-        from .sw_domain_orig_ext import balance_deep_and_shallow \
-            as balance_deep_and_shallow_ext
-
-        # Shortcuts
-        wc = self.quantities['stage'].centroid_values
-        zc = self.quantities['elevation'].centroid_values
-        wv = self.quantities['stage'].vertex_values
-        zv = self.quantities['elevation'].vertex_values
-
-        # Momentums at centroids
-        xmomc = self.quantities['xmomentum'].centroid_values
-        ymomc = self.quantities['ymomentum'].centroid_values
-
-        # Momentums at vertices
-        xmomv = self.quantities['xmomentum'].vertex_values
-        ymomv = self.quantities['ymomentum'].vertex_values
-
-        balance_deep_and_shallow_ext(self,
-                                   wc, zc, wv, zv, wc,
-                                   xmomc, ymomc, xmomv, ymomv)
-
-        nvtxRangePop()
 
 
     def apply_protection_against_isolated_degenerate_timesteps(self):
@@ -2468,10 +2282,10 @@ class Domain(Generic_Domain):
 
         timestep = self.timestep
 
-        # Update height based on discontinuous elevation 
+        # Update height based on discontinuous elevation
         assert self.get_using_discontinuous_elevation()
 
-        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:  
+        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import update_conserved_quantities
         elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             update_conserved_quantities = self.gpu_interface.update_conserved_quantities_kernel
@@ -2586,9 +2400,9 @@ class Domain(Generic_Domain):
         """
         Calculate the centroid value of x and y momentum from height and velocities.
 
-        This method computes the centroid values of x and y momentum (xmomentum and 
+        This method computes the centroid values of x and y momentum (xmomentum and
         ymomentum) by multiplying the centroid velocities by the centroid height values.
-        The method assumes that the centroids of height and velocities are already 
+        The method assumes that the centroids of height and velocities are already
         up to date.
 
         This is particularly useful for kinematic viscosity calculations where momentum
@@ -2598,12 +2412,12 @@ class Domain(Generic_Domain):
         - xmomentum.centroid_values: product of xvelocity and height at centroids
         - ymomentum.centroid_values: product of yvelocity and height at centroids
 
-        After updating centroid values, the method distributes these values to vertices 
+        After updating centroid values, the method distributes these values to vertices
         and edges via distribute_to_vertices_and_edges().
 
         Notes
         -----
-        This method modifies the centroid_values arrays in-place for both xmomentum 
+        This method modifies the centroid_values arrays in-place for both xmomentum
         and ymomentum quantities.
 
         See Also
@@ -2643,7 +2457,7 @@ class Domain(Generic_Domain):
         self.distribute_to_vertices_and_edges()
 
 
-    
+
 
     def evolve(self,
                yieldstep=None,
@@ -2658,7 +2472,7 @@ class Domain(Generic_Domain):
         yieldstep : float, optional
             Yield every yieldstep time period
         outputstep : float, optional
-            Output to sww file every outputstep time period. outputstep should be 
+            Output to sww file every outputstep time period. outputstep should be
             an integer multiple of yieldstep.
         finaltime : float or datetime, optional
             Evolve until finaltime (can be a float in seconds or a datetime object)
@@ -2715,8 +2529,8 @@ class Domain(Generic_Domain):
         if self.store is True and (self.get_relative_time() == 0.0 or self.evolved_called is False):
             self.initialise_storage()
 
-        
-    
+
+
         #nvtx marker
         nvtxRangePush('_evolve_base')
 
@@ -2854,9 +2668,9 @@ class Domain(Generic_Domain):
         vertices and edges
         """
 
-        # GPU mode: use C RK2 loop (faster) or Python-orchestrated GPU loop
+        # GPU mode: use C RK loop (faster) or Python-orchestrated GPU loop
         if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
-            if self.use_c_rk2_loop:
+            if self.use_c_rk_loop:
                 self._evolve_one_rk2_step_c(yieldstep, finaltime)
             else:
                 self._evolve_one_rk2_step_gpu(yieldstep, finaltime)
@@ -2954,6 +2768,8 @@ class Domain(Generic_Domain):
             evaluate_transmissive_n_zero_t_boundary_gpu,
             set_time_boundary_values,
             evaluate_time_boundary_gpu,
+            set_file_boundary_values_from_domain,
+            evaluate_file_boundary_gpu,
         )
         import numpy as np
 
@@ -2962,7 +2778,7 @@ class Domain(Generic_Domain):
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary'}
 
         # Lazy init: identify which boundaries need CPU evaluation vs GPU
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3011,7 +2827,7 @@ class Domain(Generic_Domain):
                 stage_val = B.get_boundary_values()
                 try:
                     stage_val = float(stage_val)
-                except:
+                except (TypeError, ValueError):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
@@ -3019,6 +2835,8 @@ class Domain(Generic_Domain):
                 q = B.get_boundary_values()
                 set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
             evaluate_time_boundary_gpu(gpu_dom)
+            set_file_boundary_values_from_domain(gpu_dom, self)
+            evaluate_file_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -3062,7 +2880,7 @@ class Domain(Generic_Domain):
                 stage_val = B.get_boundary_values()
                 try:
                     stage_val = float(stage_val)
-                except:
+                except (TypeError, ValueError):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
@@ -3070,6 +2888,8 @@ class Domain(Generic_Domain):
                 q = B.get_boundary_values()
                 set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
             evaluate_time_boundary_gpu(gpu_dom)
+            set_file_boundary_values_from_domain(gpu_dom, self)
+            evaluate_file_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -3107,6 +2927,7 @@ class Domain(Generic_Domain):
             evolve_one_rk2_step_gpu,
             set_transmissive_n_zero_t_stage,
             set_time_boundary_values,
+            set_file_boundary_values_from_domain,
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
@@ -3114,7 +2935,7 @@ class Domain(Generic_Domain):
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary'}
 
         # Lazy init: identify which boundaries need special handling
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3153,13 +2974,15 @@ class Domain(Generic_Domain):
             stage_val = B.get_boundary_values()
             try:
                 stage_val = float(stage_val)
-            except:
+            except (TypeError, ValueError):
                 stage_val = float(stage_val[0])
             set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
 
         for B in self._gpu_time_boundaries:
             q = B.get_boundary_values()
             set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+
+        set_file_boundary_values_from_domain(gpu_dom, self)
 
         # Compute max allowed timestep (respecting yieldstep and finaltime)
         # This mirrors the logic in update_timestep()
@@ -3182,6 +3005,257 @@ class Domain(Generic_Domain):
         self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
 
 
+    def _evolve_one_rk3_step_gpu(self, yieldstep, finaltime):
+        """Python-orchestrated GPU implementation of SSP-RK3 step.
+
+        This is a fallback for when the C RK3 loop cannot be used (e.g., unsupported
+        boundary types). Prefer _evolve_one_rk3_step_c() for better performance.
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            backup_conserved_quantities_gpu,
+            extrapolate_second_order_gpu,
+            protect_gpu,
+            compute_fluxes_gpu,
+            update_conserved_quantities_gpu,
+            saxpy_conserved_quantities_gpu,
+            saxpy3_conserved_quantities_gpu,
+            sync_boundary_values,
+            init_boundary_edge_sync,
+            boundary_edge_sync,
+            exchange_ghosts,
+            evaluate_reflective_boundary_gpu,
+            evaluate_dirichlet_boundary_gpu,
+            evaluate_transmissive_boundary_gpu,
+            set_transmissive_n_zero_t_stage,
+            evaluate_transmissive_n_zero_t_boundary_gpu,
+            set_time_boundary_values,
+            evaluate_time_boundary_gpu,
+            set_file_boundary_values_from_domain,
+            evaluate_file_boundary_gpu,
+        )
+        import numpy as np
+
+        gpu_dom = self.gpu_interface.gpu_dom
+
+        # Supported GPU boundary types
+        GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+
+        # Lazy init: identify which boundaries need CPU evaluation vs GPU
+        if not hasattr(self, '_gpu_boundary_info_initialized'):
+            self._gpu_cpu_tags = []
+            self._gpu_all_on_gpu = True
+            cpu_boundary_types = []
+            self._gpu_transmissive_n_zero_t_boundaries = []
+            self._gpu_time_boundaries = []
+
+            for tag, B in self.boundary_map.items():
+                if B is not None:
+                    btype = B.__class__.__name__
+                    if btype not in GPU_BOUNDARY_TYPES:
+                        self._gpu_cpu_tags.append(tag)
+                        self._gpu_all_on_gpu = False
+                        cpu_boundary_types.append((tag, btype))
+                    elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                        self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                    elif btype == 'Time_boundary':
+                        self._gpu_time_boundaries.append(B)
+
+            if not self._gpu_all_on_gpu:
+                boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
+                init_boundary_edge_sync(gpu_dom, boundary_cell_ids)
+                print("WARNING: GPU boundary evaluation disabled - falling back to CPU")
+                print(f"  Unsupported boundary types: {cpu_boundary_types}")
+
+            self._gpu_boundary_info_initialized = True
+
+        def _eval_boundaries():
+            """Evaluate all boundary conditions on GPU (or CPU fallback)."""
+            if self._gpu_all_on_gpu:
+                evaluate_reflective_boundary_gpu(gpu_dom)
+                evaluate_dirichlet_boundary_gpu(gpu_dom)
+                evaluate_transmissive_boundary_gpu(gpu_dom)
+                for B in self._gpu_transmissive_n_zero_t_boundaries:
+                    stage_val = B.get_boundary_values()
+                    try:
+                        stage_val = float(stage_val)
+                    except (TypeError, ValueError):
+                        stage_val = float(stage_val[0])
+                    set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+                evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+                for B in self._gpu_time_boundaries:
+                    q = B.get_boundary_values()
+                    set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+                evaluate_time_boundary_gpu(gpu_dom)
+                set_file_boundary_values_from_domain(gpu_dom, self)
+                evaluate_file_boundary_gpu(gpu_dom)
+            else:
+                boundary_edge_sync(gpu_dom)
+                for tag in self.tag_boundary_cells:
+                    B = self.boundary_map[tag]
+                    if B is not None:
+                        B.evaluate_segment(self, self.tag_boundary_cells[tag])
+                sync_boundary_values(gpu_dom)
+
+        initial_relative_time = self.get_relative_time()
+
+        # Backup Q^n
+        backup_conserved_quantities_gpu(gpu_dom)
+
+        # ==========================================
+        # Stage 1: Q^(1) = Q^n + h*L(Q^n)
+        # ==========================================
+
+        protect_gpu(gpu_dom)
+        extrapolate_second_order_gpu(gpu_dom)
+        _eval_boundaries()
+
+        self.flux_timestep = compute_fluxes_gpu(gpu_dom)
+
+        # Forcing terms
+        self.compute_forcing_terms()
+
+        # Update timestep
+        self.update_timestep(yieldstep, finaltime)
+
+        update_conserved_quantities_gpu(gpu_dom, self.timestep)
+
+        self.set_relative_time(initial_relative_time + self.timestep)
+
+        if self.ghost_layer_width < 4:
+            exchange_ghosts(gpu_dom)
+
+        # ==========================================
+        # Stage 2: Q^(2) = Q^(1) + h*L(Q^(1))
+        # ==========================================
+
+        protect_gpu(gpu_dom)
+        extrapolate_second_order_gpu(gpu_dom)
+        _eval_boundaries()
+
+        compute_fluxes_gpu(gpu_dom)
+        self.compute_forcing_terms()
+        update_conserved_quantities_gpu(gpu_dom, self.timestep)
+
+        # Intermediate: Q = 0.25*Q^(2) + 0.75*Q^n
+        saxpy_conserved_quantities_gpu(gpu_dom, 0.25, 0.75)
+
+        self.set_relative_time(initial_relative_time + self.timestep * 0.5)
+
+        if self.ghost_layer_width < 4:
+            exchange_ghosts(gpu_dom)
+
+        # ==========================================
+        # Stage 3: Q^(3) = Q^(1)_mid + h*L(Q^(1)_mid)
+        # ==========================================
+
+        protect_gpu(gpu_dom)
+        extrapolate_second_order_gpu(gpu_dom)
+        _eval_boundaries()
+
+        compute_fluxes_gpu(gpu_dom)
+        self.compute_forcing_terms()
+        update_conserved_quantities_gpu(gpu_dom, self.timestep)
+
+        # Final: Q^{n+1} = (2*Q^(3) + Q^n) / 3
+        saxpy3_conserved_quantities_gpu(gpu_dom, 2.0, 1.0, 3.0)
+
+        self.set_relative_time(initial_relative_time + self.timestep)
+
+
+    def _evolve_one_rk3_step_c(self, yieldstep, finaltime):
+        """RK3 step executed entirely in C - eliminates Python round-trip overhead.
+
+        This is faster than _evolve_one_rk3_step_gpu() because:
+        - All kernel calls happen in C without Python round-trips
+        - MPI reduction for timestep happens in C
+        - Only one Python->C call per RK3 step
+
+        Limitations:
+        - Only supports GPU-evaluated boundary types
+        - Rate_operators must be applied separately (after this call)
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            evolve_one_rk3_step_gpu,
+            set_transmissive_n_zero_t_stage,
+            set_time_boundary_values,
+            set_file_boundary_values_from_domain,
+        )
+
+        gpu_dom = self.gpu_interface.gpu_dom
+
+        # Supported GPU boundary types
+        GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+
+        # Lazy init: identify which boundaries need special handling
+        if not hasattr(self, '_gpu_boundary_info_initialized'):
+            self._gpu_cpu_tags = []
+            self._gpu_all_on_gpu = True
+            cpu_boundary_types = []
+            self._gpu_transmissive_n_zero_t_boundaries = []
+            self._gpu_time_boundaries = []
+
+            for tag, B in self.boundary_map.items():
+                if B is not None:
+                    btype = B.__class__.__name__
+                    if btype not in GPU_BOUNDARY_TYPES:
+                        self._gpu_cpu_tags.append(tag)
+                        self._gpu_all_on_gpu = False
+                        cpu_boundary_types.append((tag, btype))
+                    elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                        self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                    elif btype == 'Time_boundary':
+                        self._gpu_time_boundaries.append(B)
+
+            if not self._gpu_all_on_gpu:
+                print("WARNING: C RK3 loop requires all GPU-supported boundary types")
+                print("  Falling back to Python-orchestrated GPU loop")
+                print(f"  Unsupported types: {cpu_boundary_types}")
+
+            self._gpu_boundary_info_initialized = True
+
+        # If any boundary requires CPU, fall back to Python-orchestrated loop
+        if not self._gpu_all_on_gpu:
+            return self._evolve_one_rk3_step_gpu(yieldstep, finaltime)
+
+        # Set time-dependent boundary values BEFORE calling C function
+        for B in self._gpu_transmissive_n_zero_t_boundaries:
+            stage_val = B.get_boundary_values()
+            try:
+                stage_val = float(stage_val)
+            except (TypeError, ValueError):
+                stage_val = float(stage_val[0])
+            set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+
+        for B in self._gpu_time_boundaries:
+            q = B.get_boundary_values()
+            set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+
+        set_file_boundary_values_from_domain(gpu_dom, self)
+
+        # Compute max allowed timestep (respecting yieldstep and finaltime)
+        remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
+        if finaltime is not None:
+            remaining_finaltime = finaltime - self.get_time()
+            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep, remaining_finaltime)
+        else:
+            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
+
+        # Execute full RK3 step in C (includes MPI timestep reduction)
+        # apply_forcing=1 enables Manning friction on GPU
+        self.timestep = evolve_one_rk3_step_gpu(gpu_dom, max_timestep, 1)
+
+        # Update internal time tracking
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+
+        # Record timestep stats
+        self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
+        self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
+
+
     def evolve_one_rk3_step(self, yieldstep, finaltime):
         """One 3rd order RK timestep
         Q^(1) = 3/4 Q^n + 1/4 E(h)^2 Q^n  (at time t^n + h/2)
@@ -3190,6 +3264,14 @@ class Domain(Generic_Domain):
         Does not assume that centroid values have been extrapolated to
         vertices and edges
         """
+
+        # GPU mode: use C RK loop (faster) or Python-orchestrated GPU loop
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            if self.use_c_rk_loop:
+                self._evolve_one_rk3_step_c(yieldstep, finaltime)
+            else:
+                self._evolve_one_rk3_step_gpu(yieldstep, finaltime)
+            return
 
         # Save initial initial conserved quantities values
         self.backup_conserved_quantities()
@@ -3234,7 +3316,7 @@ class Domain(Generic_Domain):
         # calculated in the first step. Might lead to
         # stability problems but we have not seen any
         # example.
-        #============================================      
+        #============================================
 
         # Update edge values
         self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
@@ -3246,7 +3328,7 @@ class Domain(Generic_Domain):
         # In MPI parallel mode this involves an allreduce to find global minimal timestep
         self.compute_fluxes()
 
-        # Compute forcing terms (friction) 
+        # Compute forcing terms (friction)
         self.compute_forcing_terms()
 
         # Update conserved quantities using timestep from first step
@@ -3294,7 +3376,7 @@ class Domain(Generic_Domain):
         # Combine final and initial values
         # and cleanup
         #=======================================
-        
+
         # self.saxpy_conserved_quantities(2.0/3.0, 1.0/3.0)
         # This caused a roundoff error that created negative water heights
 
@@ -3327,8 +3409,11 @@ class Domain(Generic_Domain):
             from .sw_domain_openmp_ext import saxpy_conserved_quantities
             saxpy_conserved_quantities(self, a, b, c)
         elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
-            # GPU version doesn't support c parameter yet
-            self.gpu_interface.saxpy_conserved_quantities_kernel(self, a, b)
+            if c is not None:
+                from anuga.shallow_water.sw_domain_gpu_ext import saxpy3_conserved_quantities_gpu
+                saxpy3_conserved_quantities_gpu(self.gpu_interface.gpu_dom, a, b, c)
+            else:
+                self.gpu_interface.saxpy_conserved_quantities_kernel(self, a, b)
         else:
             for name in self.conserved_quantities:
                 Q = self.quantities[name]
@@ -3462,14 +3547,14 @@ class Domain(Generic_Domain):
         datetime : bool, optional
             Flag to use timestamp or datetime.
         track_speeds : bool, optional
-            Optional boolean keyword that decides whether to report location of 
+            Optional boolean keyword that decides whether to report location of
             smallest timestep as well as a histogram and percentile report.
         relative_time : bool, optional
             Flag to report relative time instead of absolute time.
         triangle_id : int, optional
-            Can be used to specify a particular triangle rather than the one with 
+            Can be used to specify a particular triangle rather than the one with
             the largest speed.
-        
+
         Returns
         -------
         str
@@ -3609,17 +3694,17 @@ class Domain(Generic_Domain):
         datetime : bool, optional
             Flag to use timestamp or datetime.
         track_speed : bool, optional
-            Optional boolean keyword that decides whether to report location of 
+            Optional boolean keyword that decides whether to report location of
             smallest timestep as well as a histogram and percentile report.
         relative_time : bool, optional
             Flag to report relative time instead of absolute time.
         triangle_id : int, optional
-            Can be used to specify a particular triangle rather than the one with 
+            Can be used to specify a particular triangle rather than the one with
             the largest speed.
         """
 
-        msg = self.timestepping_statistics(*args, **kwargs) 
-            
+        msg = self.timestepping_statistics(*args, **kwargs)
+
         print(msg, flush=True)
 
 
@@ -3872,8 +3957,8 @@ class Domain(Generic_Domain):
     def set_multiprocessor_mode(self, multiprocessor_mode=1):
         """
         Set multiprocessor mode
-         1. openmp - Python RK2 loop (use_c_rk2_loop=False)
-         2. gpu/mpi - C RK2 loop (use_c_rk2_loop=True, keeps data on device)
+         1. openmp - Python RK loop (use_c_rk_loop=False)
+         2. gpu/mpi - C RK loop (use_c_rk_loop=True, keeps data on device)
         """
 
         if multiprocessor_mode not in [MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU]:
@@ -3881,31 +3966,47 @@ class Domain(Generic_Domain):
 
         self.multiprocessor_mode = multiprocessor_mode
 
-        # Mode 1: Python RK2 loop (more flexible, easier debugging)
-        # Mode 2: C RK2 loop (faster, data stays on GPU device)
-        self.use_c_rk2_loop = (multiprocessor_mode == MULTIPROCESSOR_GPU)
+        # Mode 1: Python RK loop (more flexible, easier debugging)
+        # Mode 2: C RK loop (faster, data stays on GPU device)
+        self.use_c_rk_loop = (multiprocessor_mode == MULTIPROCESSOR_GPU)
 
         if self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             self.set_gpu_interface()
 
+    @property
+    def use_c_rk2_loop(self):
+        """Deprecated: use use_c_rk_loop instead."""
+        import warnings
+        warnings.warn(
+            "use_c_rk2_loop is deprecated; use use_c_rk_loop instead.",
+            DeprecationWarning, stacklevel=2)
+        return self.use_c_rk_loop
+
+    @use_c_rk2_loop.setter
+    def use_c_rk2_loop(self, value):
+        import warnings
+        warnings.warn(
+            "use_c_rk2_loop is deprecated; use use_c_rk_loop instead.",
+            DeprecationWarning, stacklevel=2)
+        self.use_c_rk_loop = value
+
     def get_multiprocessor_mode(self):
         """
-        Get multiprocessor mode 
-        
+        Get multiprocessor mode
+
         1. openmp (in development)
         2. gpu/mpi (in development)
         """
-        return self.multiprocessor_mode 
+        return self.multiprocessor_mode
 
     def set_omp_num_threads(self, omp_num_threads=None, verbose=True):
         """
         Set the number of OpenMP threads to use for multithread processing.
-        If OMP_NUM_THREADS is not set, this will set it to the specified 
+        If OMP_NUM_THREADS is not set, this will set it to the specified
         omp_num_threads value.
         By default omp_num_threads is set to 1, other, it will use the default setting.
         """
 
-        import os
         if omp_num_threads is None:
             # Use the environment setting
             omp_num_threads = os.environ.get('OMP_NUM_THREADS', None)
@@ -3919,7 +4020,7 @@ class Domain(Generic_Domain):
         try:
             omp_num_threads = int(omp_num_threads)
         except ValueError:
-            raise ValueError('OMP_NUM_THREADS must be an integer')            
+            raise ValueError('OMP_NUM_THREADS must be an integer')
 
         # Set the number of OpenMP threads
         self.omp_num_threads = omp_num_threads
@@ -3972,7 +4073,6 @@ class Domain(Generic_Domain):
                 self.gpu_interface.setup()
                 # Only print from rank 0
                 from anuga import myid, numprocs
-                import os
                 omp_target_offload = os.environ.get('OMP_TARGET_OFFLOAD', '').lower()
                 omp_num_threads = os.environ.get('OMP_NUM_THREADS', '1')
                 # Track whether GPU offload is actually active (not disabled by env var)
@@ -3981,10 +4081,10 @@ class Domain(Generic_Domain):
                     device_id = self.gpu_interface.gpu_dom.device_id
                     print('+==============================================================================+')
                     if not self.gpu_offload_active:
-                        print(f'| WARNING: GPU mode enabled but OMP_TARGET_OFFLOAD=disabled                   |')
+                        print('| WARNING: GPU mode enabled but OMP_TARGET_OFFLOAD=disabled                   |')
                         print(f'| Running on CPUs with OMP_NUM_THREADS={omp_num_threads}')
                     elif device_id < 0:
-                        print(f'| WARNING: No GPU devices found, running on CPU via OpenMP target offloading  |')
+                        print('| WARNING: No GPU devices found, running on CPU via OpenMP target offloading  |')
                     else:
                         print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
                     print('+==============================================================================+')
@@ -4011,76 +4111,12 @@ class Domain(Generic_Domain):
                 print('| WARNING: GPU not available, falling back to multiprocessor_mode 1 (OpenMP)  |')
                 print('+==============================================================================+')
             self.set_multiprocessor_mode(1)
-           
-        
+
+
 
 ################################################################################
 # End of class Shallow Water Domain
 ################################################################################
-
-
-
-################################################################################
-# Module functions for gradient limiting
-################################################################################
-
-
-def distribute_using_vertex_limiter(domain):
-    """Distribution from centroids to vertices specific to the SWW equation.
-
-    It will ensure that h (w-z) is always non-negative even in the
-    presence of steep bed-slopes by taking a weighted average between shallow
-    and deep cases.
-
-    In addition, all conserved quantities get distributed as per either a
-    constant (order==1) or a piecewise linear function (order==2).
-
-    FIXME: more explanation about removal of artificial variability etc
-
-    Precondition:
-      All quantities defined at centroids and bed elevation defined at
-      vertices.
-
-    Postcondition
-      Conserved quantities defined at vertices
-    """
-
-    # Remove very thin layers of water
-    domain.protect_against_infinitesimal_and_negative_heights()
-
-    # Extrapolate all conserved quantities
-    if domain.optimised_gradient_limiter:
-        # MH090605 if second order,
-        # perform the extrapolation and limiting on
-        # all of the conserved quantities
-
-        if domain._order_ == 1:
-            for name in domain.conserved_quantities:
-                Q = domain.quantities[name]
-                Q.extrapolate_first_order()
-        elif domain._order_ == 2:
-            domain.extrapolate_second_order_sw()
-        else:
-            raise Exception('Unknown order')
-    else:
-        # Old code:
-        for name in domain.conserved_quantities:
-            Q = domain.quantities[name]
-
-            if domain._order_ == 1:
-                Q.extrapolate_first_order()
-            elif domain._order_ == 2:
-                Q.extrapolate_second_order_and_limit_by_vertex()
-            else:
-                raise Exception('Unknown order')
-
-    # Take bed elevation into account when water heights are small
-    domain.balance_deep_and_shallow()
-
-    # Compute edge values by interpolation
-    for name in domain.conserved_quantities:
-        Q = domain.quantities[name]
-        Q.interpolate_from_vertices_to_edges()
 
 
 
