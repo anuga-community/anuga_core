@@ -149,13 +149,22 @@ void core_extrapolate_second_order_edge(struct domain *D) {
             double height_c = height_cv[k];
             double bed_c = bed_cv[k];
 
-            for (int i = 0; i < 3; i++) {
-                stage_ev[k3 + i] = stage_c;
-                xmom_ev[k3 + i] = xmom_c;
-                ymom_ev[k3 + i] = ymom_c;
-                height_ev[k3 + i] = height_c;
-                bed_ev[k3 + i] = bed_c;
-            }
+            // Unrolled 3-iteration loop: exposes SLP opportunity for consecutive writes
+            stage_ev[k3 + 0] = stage_c;
+            stage_ev[k3 + 1] = stage_c;
+            stage_ev[k3 + 2] = stage_c;
+            xmom_ev[k3 + 0] = xmom_c;
+            xmom_ev[k3 + 1] = xmom_c;
+            xmom_ev[k3 + 2] = xmom_c;
+            ymom_ev[k3 + 0] = ymom_c;
+            ymom_ev[k3 + 1] = ymom_c;
+            ymom_ev[k3 + 2] = ymom_c;
+            height_ev[k3 + 0] = height_c;
+            height_ev[k3 + 1] = height_c;
+            height_ev[k3 + 2] = height_c;
+            bed_ev[k3 + 0] = bed_c;
+            bed_ev[k3 + 1] = bed_c;
+            bed_ev[k3 + 2] = bed_c;
 
         } else if (num_boundaries <= 1) {
             double hc = height_cv[k];
@@ -298,18 +307,21 @@ void core_extrapolate_second_order_edge(struct domain *D) {
         }
 
         // Convert velocity edge values back to momentum if needed
+        // Unrolled 3-iteration loop: exposes SLP multiply pattern
         if (extrapolate_velocity_second_order == 1) {
-            for (int i = 0; i < 3; i++) {
-                double dk = height_ev[k3 + i];
-                xmom_ev[k3 + i] *= dk;
-                ymom_ev[k3 + i] *= dk;
-            }
+            xmom_ev[k3 + 0] *= height_ev[k3 + 0];
+            xmom_ev[k3 + 1] *= height_ev[k3 + 1];
+            xmom_ev[k3 + 2] *= height_ev[k3 + 2];
+            ymom_ev[k3 + 0] *= height_ev[k3 + 0];
+            ymom_ev[k3 + 1] *= height_ev[k3 + 1];
+            ymom_ev[k3 + 2] *= height_ev[k3 + 2];
         }
 
         // Compute bed edge values from stage - height
-        for (int i = 0; i < 3; i++) {
-            bed_ev[k3 + i] = stage_ev[k3 + i] - height_ev[k3 + i];
-        }
+        // Unrolled 3-iteration loop: exposes SLP subtract pattern
+        bed_ev[k3 + 0] = stage_ev[k3 + 0] - height_ev[k3 + 0];
+        bed_ev[k3 + 1] = stage_ev[k3 + 1] - height_ev[k3 + 1];
+        bed_ev[k3 + 2] = stage_ev[k3 + 2] - height_ev[k3 + 2];
     }
 
     // Step 3: Restore centroid momentum values if we converted to velocity
@@ -782,6 +794,8 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
         double zc = bed_cv[k];
 
         // Loop over the 3 edges
+        // Unroll hint: fixed trip count 3 - allows compiler to expose ILP and reduce loop overhead
+        #pragma GCC unroll 3
         for (int i = 0; i < 3; i++) {
             int ki = 3 * k + i;
             int ki2 = 2 * ki;
