@@ -251,14 +251,20 @@ cdef inline get_python_domain_pointers(domain *D, object domain_py_object):
 	areas = domain_py_object.areas
 	D.areas = &areas[0]
 
-	edge_flux_type = domain_py_object.edge_flux_type
-	D.edge_flux_type = &edge_flux_type[0]
+	if domain_py_object.edge_flux_type is not None:
+		edge_flux_type = domain_py_object.edge_flux_type
+		D.edge_flux_type = &edge_flux_type[0]
+	else:
+		D.edge_flux_type = NULL
 
 	tri_full_flag = domain_py_object.tri_full_flag
 	D.tri_full_flag = &tri_full_flag[0]
 
-	already_computed_flux = domain_py_object.already_computed_flux
-	D.already_computed_flux = &already_computed_flux[0,0]
+	if domain_py_object.already_computed_flux is not None:
+		already_computed_flux = domain_py_object.already_computed_flux
+		D.already_computed_flux = &already_computed_flux[0,0]
+	else:
+		D.already_computed_flux = NULL
 
 	vertex_coordinates = domain_py_object.vertex_coordinates
 	D.vertex_coordinates = &vertex_coordinates[0,0]
@@ -275,29 +281,50 @@ cdef inline get_python_domain_pointers(domain *D, object domain_py_object):
 	number_of_boundaries = domain_py_object.number_of_boundaries
 	D.number_of_boundaries = &number_of_boundaries[0]
 
-	flux_update_frequency = domain_py_object.flux_update_frequency
-	D.flux_update_frequency = &flux_update_frequency[0]
+	if domain_py_object.flux_update_frequency is not None:
+		flux_update_frequency = domain_py_object.flux_update_frequency
+		D.flux_update_frequency = &flux_update_frequency[0]
+	else:
+		D.flux_update_frequency = NULL
 
-	update_next_flux = domain_py_object.update_next_flux
-	D.update_next_flux = &update_next_flux[0]
+	if domain_py_object.update_next_flux is not None:
+		update_next_flux = domain_py_object.update_next_flux
+		D.update_next_flux = &update_next_flux[0]
+	else:
+		D.update_next_flux = NULL
 
-	update_extrapolation = domain_py_object.update_extrapolation
-	D.update_extrapolation = &update_extrapolation[0]
+	if domain_py_object.update_extrapolation is not None:
+		update_extrapolation = domain_py_object.update_extrapolation
+		D.update_extrapolation = &update_extrapolation[0]
+	else:
+		D.update_extrapolation = NULL
 
 	allow_timestep_increase = domain_py_object.allow_timestep_increase
 	D.allow_timestep_increase = &allow_timestep_increase[0]
 
-	edge_timestep = domain_py_object.edge_timestep
-	D.edge_timestep = &edge_timestep[0]
+	if domain_py_object.edge_timestep is not None:
+		edge_timestep = domain_py_object.edge_timestep
+		D.edge_timestep = &edge_timestep[0]
+	else:
+		D.edge_timestep = NULL
 
-	edge_flux_work = domain_py_object.edge_flux_work
-	D.edge_flux_work = &edge_flux_work[0]
+	if domain_py_object.edge_flux_work is not None:
+		edge_flux_work = domain_py_object.edge_flux_work
+		D.edge_flux_work = &edge_flux_work[0]
+	else:
+		D.edge_flux_work = NULL
 
-	neigh_work = domain_py_object.neigh_work
-	D.neigh_work = &neigh_work[0]
+	if domain_py_object.neigh_work is not None:
+		neigh_work = domain_py_object.neigh_work
+		D.neigh_work = &neigh_work[0]
+	else:
+		D.neigh_work = NULL
 
-	pressuregrad_work = domain_py_object.pressuregrad_work
-	D.pressuregrad_work = &pressuregrad_work[0]
+	if domain_py_object.pressuregrad_work is not None:
+		pressuregrad_work = domain_py_object.pressuregrad_work
+		D.pressuregrad_work = &pressuregrad_work[0]
+	else:
+		D.pressuregrad_work = NULL
 
 	x_centroid_work = domain_py_object.x_centroid_work
 	D.x_centroid_work = &x_centroid_work[0]
@@ -308,8 +335,11 @@ cdef inline get_python_domain_pointers(domain *D, object domain_py_object):
 	boundary_flux_sum = domain_py_object.boundary_flux_sum
 	D.boundary_flux_sum = &boundary_flux_sum[0]
 
-	edge_river_wall_counter = domain_py_object.edge_river_wall_counter
-	D.edge_river_wall_counter  = &edge_river_wall_counter[0]
+	if domain_py_object.edge_river_wall_counter is not None:
+		edge_river_wall_counter = domain_py_object.edge_river_wall_counter
+		D.edge_river_wall_counter = &edge_river_wall_counter[0]
+	else:
+		D.edge_river_wall_counter = NULL
 
 	#------------------------------------------------------
 	# Quantity structures

@@ -465,12 +465,13 @@ class Generic_Domain:
 
         N = len(self)  # Number_of_triangles
 
-        # Lazy-allocated work arrays (allocated by _ensure_work_arrays() on
-        # first evolve step, saving ~600+ MB of cold virtual pages for large
-        # domains during expensive distribute() phases).
-        self.already_computed_flux = None   # (N,3) int — C extension
-        self.work_centroid_values  = None   # (N,)   float — C extension
-        self.max_speed             = None   # (N,)   float — diagnostics
+        # Confirmed-dead arrays: allocated historically but never read by the C
+        # computation code.  Kept as None (→ NULL in C struct) permanently.
+        self.already_computed_flux = None   # (N,3) int — dead, NULL in C struct
+        self.work_centroid_values  = None   # (N,)  float — dead, no C reference
+
+        # Allocated lazily by _ensure_work_arrays() on first evolve step.
+        self.max_speed             = None   # (N,)  float — CFL timestep calc
 
         # Shared gradient workspace for the Python extrapolation path (old
         # solver / operators). Allocated eagerly because operators may use

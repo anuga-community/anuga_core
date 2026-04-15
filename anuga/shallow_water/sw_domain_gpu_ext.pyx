@@ -603,9 +603,12 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     # Get riverwallData object
     riverwallData = domain_object.riverwallData
 
-    # Always extract edge_flux_type (needed to detect riverwall edges)
-    edge_flux_type = domain_object.edge_flux_type
-    D.edge_flux_type = &edge_flux_type[0]
+    # Extract edge_flux_type (NULL when no river walls exist)
+    if domain_object.edge_flux_type is not None:
+        edge_flux_type = domain_object.edge_flux_type
+        D.edge_flux_type = &edge_flux_type[0]
+    else:
+        D.edge_flux_type = NULL
 
     # Extract riverwall arrays (may be empty if no riverwalls)
     D.number_of_riverwall_edges = getattr(domain_object, 'number_of_riverwall_edges', 0)
@@ -636,9 +639,12 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     except:
         D.riverwall_hydraulic_properties = NULL
 
-    # edge_river_wall_counter is on domain_object, not riverwallData
-    edge_river_wall_counter = domain_object.edge_river_wall_counter
-    D.edge_river_wall_counter = &edge_river_wall_counter[0]
+    # edge_river_wall_counter is on domain_object, not riverwallData (NULL when no river walls)
+    if domain_object.edge_river_wall_counter is not None:
+        edge_river_wall_counter = domain_object.edge_river_wall_counter
+        D.edge_river_wall_counter = &edge_river_wall_counter[0]
+    else:
+        D.edge_river_wall_counter = NULL
 
 
 # ============================================================================
@@ -757,8 +763,9 @@ def init_gpu_domain(object domain_object, bint verbose=True):
     # Propagate verbose flag to C struct so printf calls respect it
     gpu_dom.GD.verbose = 1 if verbose else 0
 
-    # Ensure lazy work arrays (including edge_flux_type) are allocated before
-    # building the C struct — they may be None if no evolve has occurred yet.
+    # Ensure lazy work arrays are allocated before the C struct is built.
+    # Needed in CPU_ONLY_MODE where GPU kernels call the openmp C extension.
+    # edge_flux_type/edge_river_wall_counter are handled separately (may be NULL).
     if hasattr(domain_object, '_ensure_work_arrays'):
         domain_object._ensure_work_arrays()
 

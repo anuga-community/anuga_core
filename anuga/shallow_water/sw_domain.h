@@ -324,8 +324,10 @@ static inline void get_edge_data_central_flux(const struct domain * __restrict D
 
     E->z_half = fmax(E->zl, E->zr);
 
-    // Check for riverwall elevation override
-    E->is_riverwall = (D->edge_flux_type[E->ki] == 1);
+    // Check for riverwall elevation override (skip entirely when no riverwalls)
+    E->is_riverwall = (D->number_of_riverwall_edges > 0 &&
+                       D->edge_flux_type != NULL &&
+                       D->edge_flux_type[E->ki] == 1);
     if (E->is_riverwall) {
         E->riverwall_index = D->edge_river_wall_counter[E->ki] - 1;
         double zwall = D->riverwall_elevation[E->riverwall_index];

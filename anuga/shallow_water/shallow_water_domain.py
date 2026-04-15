@@ -440,27 +440,31 @@ class Domain(Generic_Domain):
         # List to store the volumes we computed before
         self.volume_history=[]
 
-        # Work arrays — allocated lazily by _ensure_work_arrays() on the first
-        # evolve step (via setup_Domain_C_struct).  Keeping them None at domain
-        # creation saves ~600+ MB of cold virtual pages for large domains during
-        # the distribute() phase.
-        self.edge_flux_work      = None  # (9N,)   advective fluxes
-        self.neigh_work          = None  # (9N,)   neighbour work
-        self.pressuregrad_work   = None  # (3N,)   gravity terms
-        self.x_centroid_work     = None  # (N,)
-        self.y_centroid_work     = None  # (N,)
+        # Work arrays actually read by the C extension — allocated lazily on the
+        # first evolve step (via setup_Domain_C_struct → _ensure_work_arrays).
+        self.x_centroid_work     = None  # (N,)   scratch for velocity extrapolation
+        self.y_centroid_work     = None  # (N,)   scratch for velocity extrapolation
+
+        # The following arrays were historically allocated but are confirmed dead
+        # (C computation never reads them).  They remain None (→ NULL in C struct)
+        # for the entire simulation lifetime, saving ~600+ MB at N=2.25M.
+        self.edge_flux_work      = None  # (9N,)  — unused, NULL in C struct
+        self.neigh_work          = None  # (9N,)  — unused, NULL in C struct
+        self.pressuregrad_work   = None  # (3N,)  — unused, NULL in C struct
 
         ############################################################################
         ## Local-timestepping information
         ############################################################################
         self.max_flux_update_frequency = 2**0  # Must be a power of 2.
 
-        # Lazy: these are (3N,) or (N,) int/float arrays only needed by the
-        # C extension; allocated in _ensure_work_arrays().
-        self.flux_update_frequency = None  # (3N,) int, init 1
-        self.update_next_flux      = None  # (3N,) int, init 1
-        self.update_extrapolation  = None  # (N,)  int, init 1
-        self.edge_timestep         = None  # (3N,) float, init 1e+100
+        # Local-timestepping arrays — allocated only when local-timestepping is
+        # enabled (max_flux_update_frequency > 1).  The C computation code never
+        # reads these when compute_flux_update_frequency is unimplemented (pass),
+        # so they remain None (→ NULL) for standard single-rate evolve.
+        self.flux_update_frequency = None  # (3N,) int — local-timestepping
+        self.update_next_flux      = None  # (3N,) int — local-timestepping
+        self.update_extrapolation  = None  # (N,)  int — local-timestepping
+        self.edge_timestep         = None  # (3N,) float — local-timestepping
 
         # Do we allow the timestep to increase (not every time if local
         # extrapolation/flux updating is used)
@@ -499,41 +503,27 @@ class Domain(Generic_Domain):
         update_Domain_C_struct(self)
 
     def _ensure_work_arrays(self):
-        """Allocate all lazy work arrays if they have not been allocated yet.
+        """Allocate the work arrays actually needed by the C extension.
 
         Called by ``setup_Domain_C_struct`` in the Cython extension before the
-        C domain struct is populated.  Keeping these arrays as ``None`` at
-        domain creation avoids committing ~600+ MB of cold virtual pages during
-        the distribute() phase for large domains.
+        C domain struct is populated.  Only arrays that the C computation code
+        actually reads are allocated here — confirmed-dead arrays remain None
+        (passed as NULL to the C struct) for the full simulation lifetime.
         """
-        if self.edge_flux_work is not None:
+        if self.x_centroid_work is not None:
             return  # already allocated
 
         N  = self.number_of_elements
-        NE = len(self.edge_coordinates[:, 0])   # = 3 * N
 
-        # ---- C-extension work arrays (shallow-water) ----
-        self.edge_flux_work    = num.zeros(NE * 3)          # (9N,)
-        self.neigh_work        = num.zeros(NE * 3)          # (9N,)
-        self.pressuregrad_work = num.zeros(NE)              # (3N,)
+        # ---- scratch arrays used by the C extrapolation kernel ----
         self.x_centroid_work   = num.zeros(N)               # (N,)
         self.y_centroid_work   = num.zeros(N)               # (N,)
 
-        # ---- local-timestepping arrays ----
-        self.flux_update_frequency = num.ones(NE, dtype=int)      # (3N,)
-        self.update_next_flux      = num.ones(NE, dtype=int)      # (3N,)
-        self.update_extrapolation  = num.ones(N,  dtype=int)      # (N,)
-        self.edge_timestep         = num.full(NE, 1.0e+100)       # (3N,)
+        # ---- per-element max wave speed (CFL timestep calculation) ----
+        self.max_speed         = num.zeros(N, float)        # (N,)
 
-        # ---- C-extension work arrays (generic) ----
-        self.already_computed_flux = num.zeros((N, 3), int)       # (N,3)
-        self.work_centroid_values  = num.zeros(N, float)          # (N,)
-        self.max_speed             = num.zeros(N, float)          # (N,)
-
-        # ---- river-wall edge flags (all zeros = no river walls) ----
-        if self.edge_flux_type is None:
-            self.edge_flux_type          = num.zeros(NE, dtype=int)  # (3N,)
-            self.edge_river_wall_counter = num.zeros(NE, dtype=int)  # (3N,)
+        # Note: edge_flux_type / edge_river_wall_counter stay None unless
+        # create_riverwalls() is called; all other struct fields remain NULL.
 
     #---------------------------------------------------------------
     # Plotting methods

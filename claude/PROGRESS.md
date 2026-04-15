@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-13 (session 19 cont)
+Last updated: 2026-04-15 (session 21)
 Branch: `develop` (all feature branches merged)
 
 ---
@@ -16,16 +16,17 @@ Branch: `develop` (all feature branches merged)
 | Hydrata Phase 1 — Dependencies | 4 | 4 | 0 |
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
 | Hydrata Phase 3 — Deduplication | 4 | 4 | 0 |
-| Hydrata Phase 4 — Coverage | 3 | 3 | 0 |
+| Hydrata Phase 4 — Coverage | 5 | 5 | 0 |
 | GPU Phase 1 — Correctness & tests | 7 | 7 | 0 |
 | GPU Phase 2 — Performance validation | 4 | 4 | 0 |
 | GPU Phase 3 — Feature parity | 4 | 4 | 0 |
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
 | Riverwall throughflow | 6 | 6 | 0 |
 | Quantity memory reduction | 7 | 7 | 0 |
+| Domain memory reduction | 3 | 3 | 0 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 7 | 7 | 0 |
-| **Total** | **169** | **161** | **8** |
+| **Total** | **174** | **166** | **8** |
 
 ---
 
@@ -240,7 +241,7 @@ Current state: no linter, formatter, type checker, or pre-commit hooks. 4,189 fu
 
 ### Phase 4 — Expanded Test Coverage
 
-Current state: **58.39% coverage** (fail_under=58, full suite passing), 2,264+ tests (fast run), ~40 s fast / ~3 min full. All 37 validation scenarios have automated scripts. Note: commit `ea7e0f7b` accidentally reverted fail_under from 63→54 while fixing coveragerc path prefixes; restored to 58 after scenario tests added.
+Current state: **63.88% coverage** (fail_under=63, full suite passing), 2,264+ tests (fast run), ~40 s fast / ~3 min full. All 37 validation scenarios have automated scripts. Note: commit `ea7e0f7b` accidentally reverted fail_under from 63→54 while fixing coveragerc path prefixes; restored to 58 after scenario tests added.
 
 - [ ] **4.1 Modernise test patterns** — Convert key test classes from `unittest.TestCase` to plain pytest functions selectively. Add pytest fixtures for domain creation.
 - [x] **4.2 Integrate validation tests** — Added 33 `validate_*.py` scripts covering all remaining scenarios: analytical comparison (transcritical, MacDonald, depth expansion, parabolic/paraboloid basin), run-only short/slow (lake-at-rest, river-at-rest, runup, rundown, trapezoidal channel, deep wave, landslide tsunami), behaviour-only (bridge/weir HEC-RAS, lid-driven cavity), and case studies (merewether, towradgi, patong). Patong skips unless data downloaded; added to `dirs_to_skip` in runner. *(2026-04-10)*
@@ -265,6 +266,36 @@ This enabled lazy gradients for ALL types, not just elevation.
 - [x] **QM5** Reduce `height`, `xvelocity`, `yvelocity` to centroid + edge only (no update arrays) *(2026-04-09)*
 - [x] **QM6** Make `x_gradient`, `y_gradient`, `phi` lazy for ALL types including `evolved` — saves 24N per evolved quantity + 16N for elevation. Removed `static_with_gradients` type. Elevation now uses `edge_diagnostic`. Erosion operators trigger lazy allocation transparently. *(2026-04-10)*
 - [x] **QM7** Shared gradient workspace on domain — added `_grad_workspace_x/y` + `_phi_workspace` to `Generic_Domain`; modified `extrapolate_second_order_and_limit_by_edge/vertex` in `quantity_openmp_ext.pyx` to accept optional workspace arrays; `Quantity` methods always pass domain workspace so per-quantity `_x_gradient/_y_gradient/_phi` stay `None`. Also fixed pre-existing `quantity.object` AttributeError bug in both functions. 4 new tests. For the SW domain the benefit is preventative (SW C kernel never used Python-level gradients); for advection/generic domains it prevents gradient allocation on evolved quantities. *(2026-04-13, commit 22559a5b)*
+
+---
+
+## Domain Work Array Memory Reduction
+
+Investigation and elimination of wasteful work array allocation in the evolve loop.
+Three independent improvements, totalling ~740 MB saved at N=2.25M triangles.
+
+### DM1 — Lazy work array allocation (~630 MB at N=2.25M)
+
+- [x] **DM1** Defer all C-extension work arrays from `__init__` to first evolve step — arrays allocated by `_ensure_work_arrays()`, called from `setup_Domain_C_struct` in the Cython extension. Before this change, ~648 MB of `numpy.zeros()` virtual pages were committed during `distribute()` for large domains even though they would not be touched until evolve. After: only 3 live arrays total (`x_centroid_work`, `y_centroid_work`, `max_speed`). All dead arrays confirmed via grep across all `.c` and `.pyx` files. Cython NULL-guard pattern added for each dead array. *(2026-04-15)*
+
+  Dead arrays removed (never read by C computation):
+  - `edge_flux_work` (9N,) f64 — 162 MB: historical, no C reads
+  - `neigh_work` (9N,) f64 — 162 MB: historical, no C reads
+  - `pressuregrad_work` (3N,) f64 — 54 MB: C code uses a local `double` of same name, not the array
+  - `already_computed_flux` (N,3) i64 — 54 MB: no C reads
+  - `work_centroid_values` (N,) f64 — 18 MB: no C reference at all
+  - `flux_update_frequency` (3N,) i64 — 54 MB: `compute_flux_update_frequency` is a `pass` stub
+  - `update_next_flux` (3N,) i64 — 54 MB: same
+  - `update_extrapolation` (N,) i64 — 18 MB: same
+  - `edge_timestep` (3N,) f64 — 54 MB: same
+
+### DM2 — Lazy river wall arrays (~108 MB at N=2.25M)
+
+- [x] **DM2** `edge_flux_type` (3N,) and `edge_river_wall_counter` (3N,) set to `None` at `__init__`. For simulations without river walls they remain `None` (→ NULL in C struct) permanently, saving ~108 MB. `create_riverwalls()` allocates only these two arrays when river walls are created. `sw_domain.h` guard updated: `is_riverwall` check gated by `D->number_of_riverwall_edges > 0 && D->edge_flux_type != NULL`. GPU ext (`sw_domain_gpu_ext.pyx`) and openmp ext both updated with NULL-pass pattern. *(2026-04-15)*
+
+### DM3 — Domain memory diagnostic
+
+- [x] **DM3** Added `domain_memory_stats(domain)`, `print_domain_memory_stats(domain)`, `domain_struct_stats(domain)`, `print_domain_struct_stats(domain)` to `anuga/utilities/system_tools.py`; exported from `anuga/__init__.py`. Categorises arrays into geometry, connectivity, quantities, work arrays, riverwall, flags/parallel. Shows RSS, numpy total, and cold/virtual gap (negative when numpy count > RSS, which occurs before evolve when OS zero-pages have not been touched). *(2026-04-15)*
 
 ---
 
@@ -345,14 +376,15 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 
 ### Short term — SC26 prerequisites (needs GPU hardware)
 1. **G2.1** GPU benchmark suite (actual GPU runs — `benchmarks/run_gpu_benchmarks.py` is ready)
-3. **G2.4** Weak scaling experiment (1→64 GPUs on HPC cluster)
-4. **G4.1** Gordon Bell metrics — per-kernel timing, roofline model comparison
-5. **G4.2** Physical benchmark validation — Thacker paraboloid, dam break (Ritter) in GPU mode
-6. **G4.3** Multi-node strong scaling — 20 M triangles, 1→64 GPUs
+2. **G2.4** Weak scaling experiment (1→64 GPUs on HPC cluster)
+3. **G4.1** Gordon Bell metrics — per-kernel timing, roofline model comparison
+4. **G4.2** Physical benchmark validation — Thacker paraboloid, dam break (Ritter) in GPU mode
+5. **G4.3** Multi-node strong scaling — 20 M triangles, 1→64 GPUs
 
 ### Medium effort (1–3 days each)
 *(None remaining)*
 
 ### Long-term / opportunistic
 - **H4.1** Modernise test patterns — convert `unittest.TestCase` to plain pytest functions and shared fixtures incrementally, when files are touched for other reasons. Not worth a dedicated pass.
-- **Coverage to 65%** — Currently enforced at 52% (`fail_under=52`, full suite). Reaching 65% needs ~3000 additional covered lines; requires systematic new tests for `file_conversion/`, `structures/`, `shallow_water/boundaries.py`, and scenario module. Not worth a dedicated pass; add tests opportunistically.
+- **Coverage to 65%** — Currently enforced at 63% (`fail_under=63`, full suite at 63.88%). Reaching 65% needs ~200 additional covered lines; add tests opportunistically when touching files.
+- **Local-timestepping** — `flux_update_frequency`, `update_next_flux`, `update_extrapolation`, `edge_timestep` are allocated in a planned but unimplemented feature (`compute_flux_update_frequency` is a `pass` stub). When implementing, allocate these arrays on demand in `set_local_time_stepping()` rather than at domain creation.
