@@ -88,6 +88,8 @@ cdef extern from "gpu_domain.h" nogil:
         double* y_centroid_work
         # Friction
         double* friction_centroid_values
+        # Ghost cell flag (1=full/owned, 0=ghost); NULL for single-process domains
+        int64_t* tri_full_flag
         # Riverwall arrays
         int64_t number_of_riverwall_edges
         int64_t ncol_riverwall_hydraulic_properties
@@ -124,8 +126,9 @@ cdef extern from "gpu_domain.h" nogil:
         int mapped
 
     struct inlet_operators:
-        inlet_operator_info ops[32]
+        inlet_operator_info *ops
         int num_operators
+        int capacity
 
     struct gpu_domain:
         domain D
@@ -135,6 +138,7 @@ cdef extern from "gpu_domain.h" nogil:
         int gpu_initialized
         int device_id
         int gpu_aware_mpi
+        int verbose
         halo_exchange halo
         inlet_operators inlet_ops
         double CFL
@@ -150,7 +154,9 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_halo_finalize(gpu_domain *GD)
 
     # GPU memory management
-    void gpu_domain_map_arrays(gpu_domain *GD)
+    size_t gpu_estimate_required_memory(int64_t n, int64_t nb)
+    int    gpu_check_device_memory(gpu_domain *GD)
+    int    gpu_domain_map_arrays(gpu_domain *GD)
     void gpu_remap_boundary_arrays(gpu_domain *GD)
     void gpu_domain_unmap_arrays(gpu_domain *GD)
     void gpu_domain_sync_to_device(gpu_domain *GD)
@@ -192,6 +198,14 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_transmissive_n_zero_t_set_stage(gpu_domain *GD, double stage_value)
     void gpu_evaluate_transmissive_n_zero_t_boundary(gpu_domain *GD)
 
+    # File_boundary / Field_boundary - spatially varying time-dependent values
+    int  gpu_file_boundary_init(gpu_domain *GD, int num_edges,
+                                int *boundary_indices, int *vol_ids, int *edge_ids)
+    void gpu_file_boundary_finalize(gpu_domain *GD)
+    void gpu_file_boundary_set_values(gpu_domain *GD,
+                                      double *stage, double *xmom, double *ymom)
+    void gpu_evaluate_file_boundary(gpu_domain *GD)
+
     # Time_boundary - time-dependent Dirichlet values
     int gpu_time_boundary_init(gpu_domain *GD, int num_edges,
                                int *boundary_indices, int *vol_ids, int *edge_ids)
@@ -205,13 +219,20 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_update_conserved_quantities(gpu_domain *GD, double timestep)
     void gpu_backup_conserved_quantities(gpu_domain *GD)
     void gpu_saxpy_conserved_quantities(gpu_domain *GD, double a, double b)
+    void gpu_saxpy3_conserved_quantities(gpu_domain *GD, double a, double b, double c)
     double gpu_protect(gpu_domain *GD)
     double gpu_compute_water_volume(gpu_domain *GD)
     void gpu_manning_friction(gpu_domain *GD)
 
     # Full RK2 step
     double gpu_evolve_one_rk2_step(gpu_domain *GD, double max_timestep, int apply_forcing)
+
+    # Full SSP-RK3 step
+    double gpu_evolve_one_rk3_step(gpu_domain *GD, double max_timestep, int apply_forcing)
+
     void print_gpu_domain_info(gpu_domain *GD)
+    int detect_gpu_aware_mpi()
+    int gpu_is_available()
 
     # Rate operators (rain, extraction, etc.)
     int gpu_rate_operator_init(gpu_domain *GD, int num_indices, int *indices,
@@ -244,13 +265,15 @@ cdef extern from "gpu_domain.h" nogil:
                            int has_velocity, double ext_vel_u, double ext_vel_v,
                            int zero_velocity)
 
-    # Culvert operators (Boyd box/pipe - batched GPU gather/scatter)
+    # Culvert operators (Boyd box/pipe/weir_trapezoid - batched GPU gather/scatter)
     struct culvert_params:
         int type
         double g
         double width
         double height
         double diameter
+        double z1
+        double z2
         double length
         double manning
         double sum_loss
@@ -275,7 +298,8 @@ cdef extern from "gpu_domain.h" nogil:
                          int inlet1_num, int *inlet1_indices, double *inlet1_areas,
                          int master_proc, int enquiry_proc_0, int enquiry_proc_1,
                          int inlet_master_proc_0, int inlet_master_proc_1,
-                         int is_local, int mpi_tag_base)
+                         int is_local, int mpi_tag_base,
+                         double init_smooth_Q, double init_smooth_delta_total_energy)
     void gpu_culvert_finalize(gpu_domain *GD, int culvert_id)
     void gpu_culverts_finalize_all(gpu_domain *GD)
     void gpu_culverts_map(gpu_domain *GD)
@@ -316,11 +340,13 @@ cdef class GPUDomain:
     """
     cdef gpu_domain GD
     cdef bint initialized
-    cdef object python_domain  # Keep reference to prevent GC
+    cdef object python_domain      # Keep reference to prevent GC
+    cdef public object _file_boundary_meta  # List of (B, vol_id, edge_id) per file-boundary edge
 
     def __cinit__(self):
         self.initialized = False
         self.python_domain = None
+        self._file_boundary_meta = None
 
     def __dealloc__(self):
         if self.initialized:
@@ -414,6 +440,7 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     cdef double[::1] areas, radii, max_speed
     cdef double[:,::1] centroid_coords, edge_coords
     cdef double[::1] x_centroid_work, y_centroid_work
+    cdef int64_t[::1] tri_full_flag
 
     # Get basic parameters
     D.number_of_elements = domain_object.number_of_elements
@@ -530,6 +557,14 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
 
     max_speed = domain_object.max_speed
     D.max_speed = &max_speed[0]
+
+    # tri_full_flag: 1 for owned (full) triangles, 0 for ghost triangles.
+    # Required so compute_fluxes excludes ghosts from the local timestep minimum.
+    if hasattr(domain_object, 'tri_full_flag'):
+        tri_full_flag = domain_object.tri_full_flag
+        D.tri_full_flag = &tri_full_flag[0]
+    else:
+        D.tri_full_flag = NULL
 
     centroid_coords = domain_object.centroid_coordinates
     D.centroid_coordinates = &centroid_coords[0, 0]
@@ -687,7 +722,7 @@ cdef void build_halo_from_dicts(gpu_domain *GD, object domain_object):
 # Public Python API
 # ============================================================================
 
-def init_gpu_domain(object domain_object):
+def init_gpu_domain(object domain_object, bint verbose=True):
     """
     Initialize GPU domain from Python domain object.
 
@@ -701,6 +736,9 @@ def init_gpu_domain(object domain_object):
     ----------
     domain_object : anuga.shallow_water.Domain
         The Python domain object (must be already partitioned for MPI)
+    verbose : bool, optional
+        If True, print GPU initialisation and array-mapping messages.
+        Default is False (silent) so pytest runs are not noisy.
 
     Returns
     -------
@@ -717,6 +755,9 @@ def init_gpu_domain(object domain_object):
     # Initialize C struct with MPI info
     gpu_domain_init(&gpu_dom.GD, comm, rank, nprocs)
 
+    # Propagate verbose flag to C struct so printf calls respect it
+    gpu_dom.GD.verbose = 1 if verbose else 0
+
     # Extract array pointers from Python domain
     get_domain_pointers(&gpu_dom.GD, domain_object)
 
@@ -728,11 +769,117 @@ def init_gpu_domain(object domain_object):
     gpu_dom.python_domain = domain_object
     gpu_dom.initialized = True
 
-    if rank == 0:
-        print(f"GPU domain initialized: {gpu_dom.GD.D.number_of_elements} elements")
+    if verbose and rank == 0:
+        import sys
+        sys.stdout.flush()
         print_gpu_domain_info(&gpu_dom.GD)
 
     return gpu_dom
+
+
+def estimate_required_memory(int64_t n, int64_t nb):
+    """
+    Estimate device memory (bytes) needed for a domain with n triangles and nb boundary edges.
+
+    Parameters
+    ----------
+    n : int
+        Number of triangles (number_of_elements).
+    nb : int
+        Number of boundary edges (boundary_length).
+
+    Returns
+    -------
+    int
+        Estimated bytes that gpu_domain_map_arrays will transfer to the device.
+    """
+    return gpu_estimate_required_memory(n, nb)
+
+
+def gpu_available():
+    """
+    Return True if a real GPU offload target is active for this build.
+
+    Returns False in CPU_ONLY_MODE (standard conda/pip install, CI) and on
+    machines where ``omp_get_num_devices()`` reports no devices even though a
+    GPU build was compiled.
+
+    Example::
+
+        from anuga.shallow_water.sw_domain_gpu_ext import gpu_available
+        if gpu_available():
+            domain.set_multiprocessor_mode(2)  # real GPU
+        else:
+            domain.set_multiprocessor_mode(1)  # CPU OpenMP
+    """
+    return bool(gpu_is_available())
+
+
+def is_gpu_aware_mpi():
+    """
+    Return True if the current MPI library supports GPU-aware communication.
+
+    GPU-aware MPI allows ``MPI_Isend``/``MPI_Irecv`` to operate directly on
+    device (GPU) buffers, eliminating the host-side copy in halo exchange.
+
+    Detection priority
+    ------------------
+    1. Compile-time ``-DGPU_AWARE_MPI`` flag (user explicitly enabled).
+    2. Runtime ``MPIX_Query_cuda_support()`` — Open MPI / MVAPICH2 CUDA builds
+       (requires ``mpi-ext.h`` at build time).
+    3. Runtime ``MPIX_Query_rocm_support()`` — Open MPI / MVAPICH2 ROCm builds.
+    4. Returns False if none of the above is available.
+
+    Notes
+    -----
+    - A True result means the MPI library *claims* GPU-aware support.  The
+      buffers must still be allocated with ``omp_target_alloc`` (done
+      automatically when the build was compiled with ``-DGPU_AWARE_MPI``).
+    - On a standard conda install (CPU_ONLY_MODE) this will return False.
+    - To force-enable, rebuild with ``-Dgpu_aware_mpi=true -Dgpu_offload=true``.
+
+    Example::
+
+        from anuga.shallow_water.sw_domain_gpu_ext import is_gpu_aware_mpi
+        print("GPU-aware MPI:", is_gpu_aware_mpi())
+    """
+    return bool(detect_gpu_aware_mpi())
+
+
+def check_gpu_device_memory(GPUDomain gpu_dom):
+    """
+    Run the C-level device memory check for this domain.
+
+    Returns 1 if the device has enough memory (or if the device cannot be
+    queried, e.g., CPU_ONLY_MODE), 0 if memory is insufficient.
+    Also prints a diagnostic line when memory is insufficient.
+    """
+    return gpu_check_device_memory(&gpu_dom.GD)
+
+
+def check_device_memory(GPUDomain gpu_dom):
+    """
+    Check that the target device has enough free memory for this domain.
+
+    Returns (ok, required_mb, free_mb, total_mb).  free_mb and total_mb are 0
+    when the device cannot be queried (CPU_ONLY_MODE or unknown vendor).
+
+    Raises RuntimeError with an actionable message if memory is insufficient.
+    """
+    cdef int64_t n  = gpu_dom.GD.D.number_of_elements
+    cdef int64_t nb = gpu_dom.GD.D.boundary_length
+    cdef size_t required = gpu_estimate_required_memory(n, nb)
+    cdef size_t free_b = 0, total_b = 0
+
+    # Re-use the C query; ignore return value (check_device_memory prints errors)
+    ok = gpu_check_device_memory(&gpu_dom.GD)
+    if not ok:
+        req_mb = required / (1024.0 * 1024.0)
+        raise RuntimeError(
+            f"Insufficient GPU memory for domain with {n} triangles "
+            f"(estimated {req_mb:.0f} MB required). "
+            "Use fewer triangles, more MPI ranks, or set_multiprocessor_mode(1)."
+        )
 
 
 def map_to_gpu(GPUDomain gpu_dom):
@@ -740,8 +887,19 @@ def map_to_gpu(GPUDomain gpu_dom):
     Map domain arrays to GPU memory.
 
     Call this once after init_gpu_domain, before starting the evolve loop.
+    Raises RuntimeError if the device does not have enough free memory.
     """
-    gpu_domain_map_arrays(&gpu_dom.GD)
+    cdef int ok
+    cdef int64_t n = gpu_dom.GD.D.number_of_elements
+    cdef int64_t nb = gpu_dom.GD.D.boundary_length
+    ok = gpu_domain_map_arrays(&gpu_dom.GD)
+    if not ok:
+        req_mb = gpu_estimate_required_memory(n, nb) / (1024.0 * 1024.0)
+        raise RuntimeError(
+            f"GPU memory check failed for domain with {n} triangles "
+            f"(estimated {req_mb:.0f} MB required). "
+            "Use fewer triangles, more MPI ranks, or set_multiprocessor_mode(1)."
+        )
 
 
 def remap_boundary_arrays(GPUDomain gpu_dom):
@@ -1070,6 +1228,96 @@ def evaluate_transmissive_n_zero_t_boundary_gpu(GPUDomain gpu_dom):
     gpu_evaluate_transmissive_n_zero_t_boundary(&gpu_dom.GD)
 
 
+def init_file_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize File_boundary / Field_boundary for GPU.
+
+    Scans domain.boundary_map for File_boundary and Field_boundary objects,
+    collects their edges, and initialises the GPU file_boundary struct.
+
+    Also stores per-edge evaluation metadata on gpu_dom so that
+    set_file_boundary_values_from_domain() can update values each timestep.
+
+    Call this once after domain setup, BEFORE map_to_gpu.
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+
+    FILE_BOUNDARY_TYPES = {'File_boundary', 'Field_boundary'}
+
+    if domain_object.boundary_map is None:
+        return
+
+    # Collect (boundary_index, vol_id, edge_id, boundary_object) for all edges
+    # belonging to File_boundary or Field_boundary tags.
+    all_ids = []
+    edge_meta = []  # list of (B, vol_id, edge_id, boundary_index)
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and boundary.__class__.__name__ in FILE_BOUNDARY_TYPES:
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                for bid in segment_edges:
+                    vol_id  = int(domain_object.boundary_cells[bid])
+                    edge_id = int(domain_object.boundary_edges[bid])
+                    all_ids.append(bid)
+                    edge_meta.append((boundary, vol_id, edge_id, int(bid)))
+
+    if len(all_ids) == 0:
+        return
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr  = np.ascontiguousarray(domain_object.boundary_cells[ids],  dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_file_boundary_init(&gpu_dom.GD, num_edges,
+                           &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0])
+
+    # Store edge metadata for per-timestep Python evaluation
+    # List of (B, vol_id, edge_id) in the same order as boundary_indices
+    gpu_dom._file_boundary_meta = [(B, vid, eid) for (B, vid, eid, bid) in edge_meta]
+
+
+def set_file_boundary_values_from_domain(GPUDomain gpu_dom, object domain_object):
+    """
+    Evaluate File_boundary / Field_boundary for the current simulation time
+    and push per-edge values to the GPU.
+
+    Call this each timestep before evaluate_file_boundary_gpu().
+    """
+    meta = getattr(gpu_dom, '_file_boundary_meta', None)
+    if meta is None or len(meta) == 0:
+        return
+
+    cdef int ne = len(meta)
+    cdef np.ndarray[double, ndim=1, mode="c"] stage_arr = np.empty(ne, dtype=np.float64)
+    cdef np.ndarray[double, ndim=1, mode="c"] xmom_arr  = np.empty(ne, dtype=np.float64)
+    cdef np.ndarray[double, ndim=1, mode="c"] ymom_arr  = np.empty(ne, dtype=np.float64)
+
+    for k, (B, vol_id, edge_id) in enumerate(meta):
+        q = B.evaluate(vol_id, edge_id)
+        stage_arr[k] = q[0]
+        xmom_arr[k]  = q[1]
+        ymom_arr[k]  = q[2]
+
+    gpu_file_boundary_set_values(&gpu_dom.GD,
+                                 &stage_arr[0], &xmom_arr[0], &ymom_arr[0])
+
+
+def evaluate_file_boundary_gpu(GPUDomain gpu_dom):
+    """
+    Evaluate File_boundary / Field_boundary on GPU.
+
+    Writes previously-pushed per-edge values into the global boundary_values
+    arrays and fills bed/height from adjacent interior edges.
+    Call set_file_boundary_values_from_domain() first.
+    """
+    gpu_evaluate_file_boundary(&gpu_dom.GD)
+
+
 def init_time_boundary(GPUDomain gpu_dom, object domain_object):
     """
     Initialize Time_boundary for GPU.
@@ -1149,6 +1397,27 @@ def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_fo
     return gpu_evolve_one_rk2_step(&gpu_dom.GD, max_timestep, apply_forcing)
 
 
+def evolve_one_rk3_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
+    """
+    Execute one SSP-RK3 timestep on GPU (Shu-Osher 3-stage).
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    max_timestep : float
+        Maximum allowed timestep (respecting yieldstep/finaltime constraints)
+    apply_forcing : int
+        Whether to apply GPU-compatible forcing terms
+
+    Returns
+    -------
+    float
+        The timestep used
+    """
+    return gpu_evolve_one_rk3_step(&gpu_dom.GD, max_timestep, apply_forcing)
+
+
 def finalize_gpu_domain(GPUDomain gpu_dom):
     """
     Clean up GPU domain resources.
@@ -1212,6 +1481,16 @@ def saxpy_conserved_quantities_gpu(GPUDomain gpu_dom, double a, double b):
     Typically called with a=0.5, b=0.5 for standard RK2.
     """
     gpu_saxpy_conserved_quantities(&gpu_dom.GD, a, b)
+
+
+def saxpy3_conserved_quantities_gpu(GPUDomain gpu_dom, double a, double b, double c):
+    """
+    RK3 final combination: Q = (a*Q_current + b*Q_backup) / c
+
+    Used for SSP-RK3 final step: saxpy3(2.0, 1.0, 3.0)
+    computes Q = (2*Q_current + Q_backup) / 3.
+    """
+    gpu_saxpy3_conserved_quantities(&gpu_dom.GD, a, b, c)
 
 
 def protect_gpu(GPUDomain gpu_dom):
@@ -1520,9 +1799,13 @@ def init_culvert_operator(GPUDomain gpu_dom,
                           int inlet_master_proc_0=-1,
                           int inlet_master_proc_1=-1,
                           int is_local=1,
-                          int mpi_tag_base=0):
+                          int mpi_tag_base=0,
+                          double z1=0.0,
+                          double z2=0.0,
+                          double init_smooth_Q=0.0,
+                          double init_smooth_delta_total_energy=0.0):
     """
-    Register a culvert (Boyd box or pipe) with the GPU culvert manager.
+    Register a culvert (Boyd box, pipe, or weir/orifice trapezoid) with the GPU culvert manager.
 
     For cross-boundary (parallel) culverts, pass MPI topology:
       master_proc: rank that computes discharge
@@ -1541,6 +1824,8 @@ def init_culvert_operator(GPUDomain gpu_dom,
     p.width = width
     p.height = height
     p.diameter = diameter
+    p.z1 = z1
+    p.z2 = z2
     p.length = length
     p.manning = manning
     p.sum_loss = sum_loss
@@ -1587,7 +1872,8 @@ def init_culvert_operator(GPUDomain gpu_dom,
                             n1, p_inlet1, p_area1,
                             master_proc, enquiry_proc_0, enquiry_proc_1,
                             inlet_master_proc_0, inlet_master_proc_1,
-                            is_local, mpi_tag_base)
+                            is_local, mpi_tag_base,
+                            init_smooth_Q, init_smooth_delta_total_energy)
 
 
 def finalize_culvert_operator(GPUDomain gpu_dom, int culvert_id):

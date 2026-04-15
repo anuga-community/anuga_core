@@ -27,6 +27,7 @@ dependencies:
   - parmetis
   - pyproj=3.6.1
   - pytest=8.4.1
+  - pytest-regressions
   - scipy=1.13.1
   - utm=0.7.0
   - wheel=0.45.1

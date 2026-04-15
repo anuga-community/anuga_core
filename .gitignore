@@ -10,6 +10,8 @@ anuga/_version.py
 *~
 *$
 *.csv
+# pytest-regressions baseline snapshots must be tracked
+!/anuga/**/test_regression_snapshots/*.csv
 *.pstat
 *.bak
 .idea/*
@@ -22,10 +24,9 @@ anuga/_version.py
 .*.sw[nop]
 .sw[nop]
 *.pstat
-#*.c
+*_ext.c
 *.cpp
 *.tmp
-*.rst
 *.txt
 *.vim
 *.sww
@@ -221,8 +222,15 @@ Thumbs.db
 #################################
 doc/frontpage/build
 doc/source/generated
+docs/source/examples/_plot/
+docs/source/parallel/anuga.*.rst
+docs/source/reference/anuga.*.rst
+docs/source/setup_anuga_script/generated/
+scripts/bench_results/
+scripts/test.tsh
 
 # Things specific to this project #
 ###################################
 anuga/__config__.py
 anuga/version.py
+benchmarks/results/

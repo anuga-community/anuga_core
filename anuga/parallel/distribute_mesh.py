@@ -112,7 +112,7 @@ def reorder_quantities(quantities, epart_order):
         q_reord[k] = num.zeros((N, 1), float)
         q_reord[k][:,0] = quantities[k].centroid_values[epart_order]
 
-    return q_reord   
+    return q_reord
 
 
 
@@ -142,7 +142,7 @@ def partition_mesh(domain, n_procs,
         Number of processors to partition the mesh across.
     parameters : dict, optional
         Additional parameters for the partitioning algorithm. Supported keys:
-        
+
         - 'partition_scheme' : str, default 'metis'
             Partitioning scheme ('metis', 'morton', or 'hilbert')
         - 'distribute_quantity_names' : list, default DEFAULT_DISTRIBUTE_QUANTITY_NAMES
@@ -151,7 +151,7 @@ def partition_mesh(domain, n_procs,
             If True, reorder mesh in place to save memory
         - 'verbose' : bool, default False
             If True, print verbose output during partitioning
-            
+
     verbose : bool, optional
         If True, print verbose output during partitioning, by default False.
 
@@ -160,7 +160,7 @@ def partition_mesh(domain, n_procs,
     new_mesh : Mesh
         The reordered mesh distributed across processors.
     triangles_per_proc : ndarray
-        Array of shape (n_procs,) containing the number of triangles assigned 
+        Array of shape (n_procs,) containing the number of triangles assigned
         to each processor.
     new_quantities : dict
         Dictionary of reordered quantities corresponding to the new mesh ordering.
@@ -168,15 +168,15 @@ def partition_mesh(domain, n_procs,
         Array of shape (n_triangles, 2) mapping serial triangle indices to
         (processor_id, local_index) pairs.
     epart_order : ndarray
-        Array of reordering indices used to partition the mesh from serial to 
+        Array of reordering indices used to partition the mesh from serial to
         parallel ordering.
 
     Notes
     -----
     The function uses METIS, Morton, or Hilbert partitioning to distribute triangles
-    across processors. Set `in_place=True` in parameters if the original sequential 
+    across processors. Set `in_place=True` in parameters if the original sequential
     domain will not be used again to save memory.
-    
+
     Examples
     --------
     >>> new_mesh, tpp, quantities, tri_idx, epart = partition_mesh(
@@ -191,7 +191,7 @@ def partition_mesh(domain, n_procs,
     # Override defaults with user-provided parameters
     if parameters is None:
         parameters = {}
-    
+
     if 'partition_scheme' in parameters:
         partition_scheme = parameters['partition_scheme']
     if 'distribute_quantity_names' in parameters:
@@ -200,7 +200,7 @@ def partition_mesh(domain, n_procs,
         in_place = bool(parameters['in_place'])
     if 'verbose' in parameters:
         verbose = bool(parameters['verbose'])
-        
+
     # Output partitioning parameters if verbose
     if verbose:
         print("partition_mesh: Number of processors: {}".format(n_procs))
@@ -767,7 +767,9 @@ def build_submesh(mesh, quantities,
 
     verbose : bool, optional
     """
-    import pathlib, pickle, hashlib
+    import pathlib
+    import pickle
+    import hashlib
 
     cache_dir = None
     if parameters is not None:

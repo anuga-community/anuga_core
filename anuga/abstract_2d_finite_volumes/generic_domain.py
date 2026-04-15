@@ -56,7 +56,7 @@ except ImportError:
 
 
 
-class Generic_Domain(object):
+class Generic_Domain:
     """Generic computational Domain constructor.
     """
 
@@ -149,7 +149,7 @@ class Generic_Domain(object):
         ghost_layer_width : int, optional
             Width of ghost cell layer in parallel computation.
             Default is 2.
-            
+
         Notes
         -----
         - Conserved quantities must be the first entries of evolved_quantities.
@@ -159,7 +159,7 @@ class Generic_Domain(object):
         """
 
         if verbose:
-            log.critical('Domain: Initialising')
+            log.info('Domain: Initialising')
 
         # FIXME SR: This is a bug
         # FIXME(Ole): Do you mean a hack?
@@ -206,7 +206,7 @@ class Generic_Domain(object):
         if mesh_input is not None:
 
             self.mesh = mesh_input
-            # FIXME: We should update tagged_elements 
+            # FIXME: We should update tagged_elements
 
         else:
             # Initialise underlying mesh structure
@@ -218,9 +218,9 @@ class Generic_Domain(object):
                             # number_of_full_nodes=number_of_full_nodes,
                             # number_of_full_triangles=number_of_full_triangles,
                             verbose=verbose)
-        
+
         if verbose:
-            log.critical('Domain: Expose mesh attributes')
+            log.info('Domain: Expose mesh attributes')
 
         # Expose Mesh attributes (FIXME: Maybe turn into methods)
         self.triangles = self.mesh.triangles
@@ -258,7 +258,7 @@ class Generic_Domain(object):
         self.verbose = verbose
 
         if verbose:
-            log.critical('Domain: Expose quantity names and types')
+            log.info('Domain: Expose quantity names and types')
 
         # List of quantity names entering the conservation equations
         if conserved_quantities is None:
@@ -285,7 +285,7 @@ class Generic_Domain(object):
             assert quantity == self.evolved_quantities[i], msg
 
         if verbose:
-            log.critical('Domain: Build Quantities')
+            log.info('Domain: Build Quantities')
 
         # Build dictionary of Quantity instances keyed by quantity names
         self.quantities = {}
@@ -323,10 +323,10 @@ class Generic_Domain(object):
             self.ghost_recv_dict = ghost_recv_dict
 
         #-------------------------------
-        # Set multiprocessor mode 
+        # Set multiprocessor mode
         # 1. openmp (in development)
         # 2. cuda (in development)
-        #-------------------------------    
+        #-------------------------------
         self.set_multiprocessor_mode(MULTIPROCESSOR_OPENMP)
 
         self.processor = processor
@@ -338,7 +338,7 @@ class Generic_Domain(object):
 
         # Setup Communication Buffers
         if verbose:
-            log.critical('Domain: Set up communication buffers ')
+            log.info('Domain: Set up communication buffers ')
 
         self.nsys = len(self.conserved_quantities)
         for key in self.full_send_dict:
@@ -355,7 +355,7 @@ class Generic_Domain(object):
 
         # Setup triangle full flag
         if verbose:
-            log.critical('Domain: Set up triangle/node full flags ')
+            log.info('Domain: Set up triangle/node full flags ')
 
         N = len(self)  # Number_of_elements
         self.number_of_elements = N
@@ -398,12 +398,12 @@ class Generic_Domain(object):
         # Test the assumption that all full triangles are stored before
         # the ghost triangles.
         # if not num.allclose(self.tri_full_flag[:self.number_of_full_nodes], 1):
-        #     log.critical('WARNING: Not all full triangles are stored before '
+        #     log.info('WARNING: Not all full triangles are stored before '
         #                      'ghost triangles')
 
         # Defaults
         if verbose:
-            log.critical('Domain: Set defaults')
+            log.info('Domain: Set defaults')
 
         self.g = g
         self.beta_w = beta_w
@@ -461,7 +461,7 @@ class Generic_Domain(object):
         self.set_using_centroid_averaging(False)
 
         if verbose:
-            log.critical('Domain: Set work arrays')
+            log.info('Domain: Set work arrays')
 
         # To avoid calculating the flux across each edge twice, keep an integer
         # (boolean) array, to be used during the flux calculation.
@@ -469,6 +469,13 @@ class Generic_Domain(object):
         self.already_computed_flux = num.zeros((N, 3), int)
 
         self.work_centroid_values = num.zeros(N, float)
+
+        # Shared gradient workspace — reused by every call to
+        # extrapolate_second_order_and_limit_by_edge/vertex so that individual
+        # Quantity objects never need to allocate their own gradient arrays.
+        self._grad_workspace_x = num.zeros(N, float)
+        self._grad_workspace_y = num.zeros(N, float)
+        self._phi_workspace = num.zeros(N, float)
 
         # Storage for maximal speeds computed for each triangle by
         # compute_fluxes.
@@ -479,12 +486,12 @@ class Generic_Domain(object):
             # If the mesh file passed any quantity values,
             # initialise with these values.
             if verbose:
-                log.critical('Domain: Initialising quantity values')
+                log.info('Domain: Initialising quantity values')
 
             self.set_quantity_vertices_dict(vertex_quantity_dict)
 
         if verbose:
-            log.critical('Domain: Done')
+            log.info('Domain: Done')
 
     ######
     # Expose underlying Mesh functionality
@@ -752,7 +759,7 @@ class Generic_Domain(object):
 
         absolute_time = self.get_time()
 
-        return datetime.datetime.utcfromtimestamp(absolute_time).strftime('%c')
+        return datetime.datetime.fromtimestamp(absolute_time, datetime.timezone.utc).strftime('%c')
 
     def get_timestep(self):
         """get current timestep (seconds)."""
@@ -848,8 +855,8 @@ class Generic_Domain(object):
 
     def set_multiprocessor_mode(self, multiprocessor_mode= 0):
         """
-        Set multiprocessor mode 
-        
+        Set multiprocessor mode
+
         1. openmp (in development)
         2. cuda (in development)
         """
@@ -861,18 +868,18 @@ class Generic_Domain(object):
 
     def get_multiprocessor_mode(self):
         """
-        Get multiprocessor mode 
-        
+        Get multiprocessor mode
+
         1. openmp (in development)
         2. cuda (in development)
         """
-        return self.multiprocessor_mode 
-            
+        return self.multiprocessor_mode
+
     def set_using_centroid_averaging(self, flag=True):
         """Set flag to use centroid averaging in output
         of smoothed vertex values. This is good to ensure
         that vertex stage >= vertex elevation. But can be
-        less accurate than vertex averaging. 
+        less accurate than vertex averaging.
         """
 
         if flag is True:
@@ -1087,18 +1094,18 @@ class Generic_Domain(object):
         restored!!!
         """
 
-        
+
         # Check that all tags in boundary map actually exists in the domain
         # This check is disabled for parallel domains because a valid tag may belong to another instance.
         # Alternative way of addressing this are
         # - make the check a flag so that parallel domains can disable the check.
         # - make the check only applicable when set_domain() is called from a top level user script.
 
-        #print('ID', self.processor, 'Parallel =', self.parallel) #, 'Strict_tag_check =', strict_tag_check)        
+        #print('ID', self.processor, 'Parallel =', self.parallel) #, 'Strict_tag_check =', strict_tag_check)
 
         # FIXME (Ole): Perhaps make method .is_parallel() returing True if numprocs > 1 and False if numprocs == 0
         if not self.parallel:
-            allowed_tags = list(set(self.boundary.values())) # List of unique tags 
+            allowed_tags = list(set(self.boundary.values())) # List of unique tags
             allowed_tags.append('ghost') # Sometimes we create parallel domains sequentially
             for key in boundary_map:
                 if key not in allowed_tags:
@@ -1106,9 +1113,9 @@ class Generic_Domain(object):
                     msg = f'Tag "{key}" provided does not exist in the domain. '
                     msg += 'Allowed tags are: %s' % allowed_tags
                     raise Exception(msg)
-        
 
-        # Update self.boundary_map with values provided to this method        
+
+        # Update self.boundary_map with values provided to this method
         if self.boundary_map is None:
             # This the first call to set_boundary. Store
             # map for later updates and for use with boundary_stats.
@@ -1119,8 +1126,8 @@ class Generic_Domain(object):
             for key in list(boundary_map.keys()):
                 self.boundary_map[key] = boundary_map[key]
 
-             
-        # FIXME (Ole): Try to remove the sorting. Everyhing works except three tests 
+
+        # FIXME (Ole): Try to remove the sorting. Everyhing works except three tests
         # in test_urs2sts (representing functionality not likely to be used anymore).
         # All other tests and validations work without this sorting step.
         x = list(self.boundary.keys())
@@ -1301,7 +1308,7 @@ class Generic_Domain(object):
             assert quantity == self.evolved_quantities[i], msg
 
     def write_time(self, track_speeds=False):
-        log.critical(self.timestepping_statistics(track_speeds))
+        log.info(self.timestepping_statistics(track_speeds))
 
     def timestepping_statistics(self,
                                 track_speeds=False,
@@ -1376,14 +1383,14 @@ class Generic_Domain(object):
             # Report cpu time since evolve was called
             # (which may be different from the time since the last call to
             # this function)
-            
+
             try:
                 cpu_time = walltime() - self.evolve_start_walltime
                 cpu_time_hhmmss = anuga.seconds_to_hhmmss(int(cpu_time))
                 fraction = self.relative_time/self.relative_finaltime
                 bar_len = 10
                 filled = int(bar_len * fraction)
-                
+
                 bar = "#" * filled + "-" * (bar_len - filled)
                 #msg += f' |{bar}|'
 
@@ -1476,18 +1483,19 @@ class Generic_Domain(object):
             for name in self.quantities:
                 q = self.quantities[name]
 
-                V = q.get_values(location='vertices', indices=[k])[0]
-                E = q.get_values(location='edges', indices=[k])[0]
                 C = q.get_values(location='centroids', indices=[k])
-
-                s = '    %s: vertex_values =  %.4f,\t %.4f,\t %.4f\n' \
-                    % (name.ljust(qwidth), V[0], V[1], V[2])
-
-                s += '    %s: edge_values =    %.4f,\t %.4f,\t %.4f\n' \
-                    % (name.ljust(qwidth), E[0], E[1], E[2])
-
-                s += '    %s: centroid_value = %.4f\n' \
+                s = '    %s: centroid_value = %.4f\n' \
                     % (name.ljust(qwidth), C[0])
+
+                if q.edge_values is not None:
+                    E = q.get_values(location='edges', indices=[k])[0]
+                    s += '    %s: edge_values =    %.4f,\t %.4f,\t %.4f\n' \
+                        % (name.ljust(qwidth), E[0], E[1], E[2])
+
+                if q._vertex_values is not None:
+                    V = q.get_values(location='vertices', indices=[k])[0]
+                    s += '    %s: vertex_values =  %.4f,\t %.4f,\t %.4f\n' \
+                        % (name.ljust(qwidth), V[0], V[1], V[2])
 
                 msg += s
 
@@ -1500,7 +1508,7 @@ class Generic_Domain(object):
         print(self.boundary_statistics(quantities, tags))
 
     def write_boundary_statistics(self, quantities=None, tags=None):
-        log.critical(self.boundary_statistics(quantities, tags))
+        log.info(self.boundary_statistics(quantities, tags))
 
     def boundary_statistics(self, quantities=None,
                                   tags=None):
@@ -1705,7 +1713,7 @@ class Generic_Domain(object):
         Without parameters the name will be derived from the script file,
         ie run_simulation.py -> output_run_simulation.sww
 
-        :param str name: name of simulation, 
+        :param str name: name of simulation,
             and in particular the base name of the sww output file
         :param bool timestamp: add a timestamp to the simulation name
         """
@@ -1844,7 +1852,7 @@ class Generic_Domain(object):
         self.evolve_start_walltime = walltime()
         self.last_walltime = self.evolve_start_walltime
 
-        for t in self._evolve_base(yieldstep=yieldstep,
+        for t in self._evolve_base(yieldstep=yieldstep,  # noqa: UP028
                                    finaltime=finaltime, duration=duration,
                                    skip_initial_step=skip_initial_step):
 
@@ -1941,7 +1949,7 @@ class Generic_Domain(object):
             return
 
         N = len(self)                             # Number of triangles
-        
+
         self.relative_yieldtime = self.relative_time + yieldstep     # set next relative yield time
         self.yieldtime = self.relative_yieldtime + self.starttime    # set next yield time
 
@@ -2041,7 +2049,7 @@ class Generic_Domain(object):
                 yield(self.get_time())
 
                 # Reinitialise
-                
+
                 self.relative_yieldtime += yieldstep
                 self.yieldtime = self.relative_yieldtime + self.starttime
                 self.recorded_min_timestep = self.evolve_max_timestep
@@ -2363,7 +2371,7 @@ class Generic_Domain(object):
         # FIXME: Boundary objects should not include ghost nodes.
         for i, ((vol_id, edge_id), B) in enumerate(self.boundary_objects):
             if B is None:
-                log.critical('WARNING: Ignored boundary segment (None)')
+                log.warning('WARNING: Ignored boundary segment (None)')
             else:
                 q_bdry = B.evaluate(vol_id, edge_id)
 
@@ -2401,7 +2409,7 @@ class Generic_Domain(object):
             blah, B = self.boundary_objects[i]
 
             if B is None:
-                log.critical('WARNING: Ignored boundary segment (None)')
+                log.warning('WARNING: Ignored boundary segment (None)')
             else:
                 q_bdry = B.evaluate(vol_id, edge_id)
 
@@ -2443,7 +2451,7 @@ class Generic_Domain(object):
             boundary_segment_edges = self.tag_boundary_cells[tag]
 
             B.evaluate_segment(self, boundary_segment_edges)
-        
+
         nvtxRangePop()
 
     def compute_fluxes(self):
@@ -2472,8 +2480,8 @@ class Generic_Domain(object):
 
     def set_fixed_flux_timestep(self, flux_timestep=None):
         """Disable variable timestepping and manually set a fixed flux_timestep
-        
-        :param flux_timestep: [float, None] Either set fixed flux_flux_timestep or 
+
+        :param flux_timestep: [float, None] Either set fixed flux_flux_timestep or
                               disable with value None"""
 
         if flux_timestep is None:
@@ -2521,11 +2529,11 @@ class Generic_Domain(object):
                         % timestep
                     msg += 'even after %d steps of 1 order scheme' \
                         % self.max_smallsteps
-                    log.critical(msg)
+                    log.info(msg)
                     timestep = self.evolve_min_timestep  # Try enforce min_step
 
                     stats = self.timestepping_statistics(track_speeds=True)
-                    log.critical(stats)
+                    log.info(stats)
 
                     raise Exception(msg)
                 else:
@@ -2561,7 +2569,7 @@ class Generic_Domain(object):
         they should be defined in Domain subclass and appended to
         the list self.forcing_terms
         """
-    
+
         # The parameter self.flux_timestep should be updated
         # by the forcing_terms to ensure stability
 

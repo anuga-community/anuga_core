@@ -27,7 +27,7 @@ from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a
 
 def check_forcefield(f):
     """Check that force object is as expected.
-    
+
     Check that f is either:
     1: a callable object f(t,x,y), where x and y are vectors
        and that it returns an array or a list of same length
@@ -78,7 +78,7 @@ def check_forcefield(f):
 
 
 
-class Wind_stress(object):
+class Wind_stress:
     """Apply wind stress to water momentum in terms of
     wind speed [m/s] and wind direction [degrees]
     """
@@ -229,7 +229,7 @@ def assign_windfield_values(xmom_update, ymom_update,
         ymom_update[k] += S*v
 
 
-class General_forcing(object):
+class General_forcing:
     """General explicit forcing term for update of quantity
 
     This is used by Inflow and Rainfall for instance
@@ -363,7 +363,7 @@ class General_forcing(object):
 
         if self.exchange_indices is None:
             self.exchange_area = polygon_area(bounding_polygon)
-        else:    
+        else:
             if len(self.exchange_indices) == 0:
                 msg = 'No triangles have been identified in '
                 msg += 'specified region: %s' % inlet_region
@@ -374,15 +374,15 @@ class General_forcing(object):
             self.exchange_area = 0.0
             for i in self.exchange_indices:
                 self.exchange_area += domain.areas[i]
-            
+
 
         msg = 'Exchange area in forcing term'
         msg += ' has area = %f' %self.exchange_area
-        assert self.exchange_area > 0.0            
-            
-                
+        assert self.exchange_area > 0.0
 
-            
+
+
+
         # Check and store default_rate
         msg = ('Keyword argument default_rate must be either None '
                'or a function of time.\nI got %s.' % str(default_rate))
@@ -444,7 +444,7 @@ class General_forcing(object):
 
         # Now rate is a number
         if self.verbose is True:
-            log.critical('Rate of %s at time = %.2f = %f'
+            log.info('Rate of %s at time = %.2f = %f'
                          % (self.quantity_name, domain.get_time(), rate))
 
         if self.exchange_indices is None:
@@ -571,8 +571,8 @@ class Rainfall(General_forcing):
         else:
             default_rain = None
 
-            
-            
+
+
         General_forcing.__init__(self,
                                  domain,
                                  'stage',
@@ -680,7 +680,7 @@ class Inflow(General_forcing):
         return _rate
 
 
-class Cross_section(object):
+class Cross_section:
     """Class Cross_section - a class to setup a cross section from
     which you can then calculate flow and energy through cross section
 
@@ -691,7 +691,7 @@ class Cross_section(object):
               multiple sections allowing for complex shapes. Assume
               absolute UTM coordinates.
               Format [[x0, y0], [x1, y1], ...]
-    verbose: 
+    verbose:
     """
 
     def __init__(self,
@@ -704,21 +704,28 @@ class Cross_section(object):
         polyline  polyline defining cross section
         verbose   True if this instance is to be verbose
         """
-        
+
         self.domain = domain
         self.polyline = polyline
         self.verbose = verbose
-        
+
+        import numpy as np
+
         # Find all intersections and associated triangles.
         self.segments = self.domain.get_intersecting_segments(self.polyline,
                                                               use_cache=True,
                                                               verbose=self.verbose)
-        
-        # Get midpoints
+
+        # Get midpoints (kept for get_energy_through_cross_section which needs interpolation)
         self.midpoints = segment_midpoints(self.segments)
 
         # Make midpoints Geospatial instances
         self.midpoints = ensure_geospatial(self.midpoints, self.domain.geo_reference)
+
+        # Pre-extract per-segment geometry as arrays for vectorised flow computation
+        self._tri_ids = np.array([seg.triangle_id for seg in self.segments])
+        self._normals = np.array([seg.normal for seg in self.segments])   # (S, 2)
+        self._lengths = np.array([seg.length for seg in self.segments])   # (S,)
 
     def set_verbose(self,verbose=True):
         """Set verbose mode true or flase"""
@@ -729,30 +736,14 @@ class Cross_section(object):
         """ Output: Total flow [m^3/s] across cross section.
         """
 
-        # Get interpolated values
-        xmomentum = self.domain.get_quantity('xmomentum')
-        ymomentum = self.domain.get_quantity('ymomentum')
+        # Use centroid values at the known intersected triangle IDs directly —
+        # avoids spatial interpolation since midpoints lie inside these triangles.
+        uh = self.domain.quantities['xmomentum'].centroid_values[self._tri_ids]
+        vh = self.domain.quantities['ymomentum'].centroid_values[self._tri_ids]
 
-        uh = xmomentum.get_values(interpolation_points=self.midpoints,
-                                  use_cache=True)
-        vh = ymomentum.get_values(interpolation_points=self.midpoints,
-                                  use_cache=True)
+        normal_mom = uh * self._normals[:, 0] + vh * self._normals[:, 1]
+        return float((normal_mom * self._lengths).sum())
 
-        # Compute and sum flows across each segment
-        total_flow = 0
-        for i in range(len(uh)):
-            # Inner product of momentum vector with segment normal [m^2/s]
-            normal = self.segments[i].normal
-            normal_momentum = uh[i]*normal[0] + vh[i]*normal[1]
-
-            # Flow across this segment [m^3/s]
-            segment_flow = normal_momentum*self.segments[i].length
-
-            # Accumulate
-            total_flow += segment_flow
-
-        return total_flow
- 
 
     def get_energy_through_cross_section(self, kind='total'):
         """Obtain average energy head [m] across specified cross section.
@@ -772,7 +763,7 @@ class Cross_section(object):
         """
 
         from anuga.config import g, epsilon, velocity_protection as h0
-        
+
         # Get interpolated values
         stage = self.domain.get_quantity('stage')
         elevation = self.domain.get_quantity('elevation')
@@ -820,14 +811,14 @@ class Cross_section(object):
 
         return average_energy
 
-class Barometric_pressure(object):
+class Barometric_pressure:
     """ Apply barometric pressure stress to water momentum in terms of
         barometric pressure p [hPa]. If the pressure data is stored in a file
-        file_function is used to create a callable function. The data file 
+        file_function is used to create a callable function. The data file
         contains pressure values at a set of possibly arbitrarily located nodes
-        at a set o possibly irregular but increasing times. file_function 
+        at a set o possibly irregular but increasing times. file_function
         interpolates from the file data onto the vertices of the domain.mesh
-        for each time. The file_function is called at every timestep during 
+        for each time. The file_function is called at every timestep during
         the evolve function call.
     """
     def __init__(self, *args, **kwargs):
@@ -850,7 +841,7 @@ class Barometric_pressure(object):
 
         agruments can also be the ANGUA file_function, e.g.
         F = file_function(sww_filename,domain,quantities,interpolation_points)
-        The interpolation_points must be the mesh vertices returned by 
+        The interpolation_points must be the mesh vertices returned by
         domain.get_nodes(). Quantities = ['barometric_pressure']
 
         The file_function is passed using
@@ -934,7 +925,7 @@ class Barometric_pressure(object):
                                      xmom_update, ymom_update)
 
 
-def assign_pressure_field_values(height, pressure, x, triangles, 
+def assign_pressure_field_values(height, pressure, x, triangles,
                                  xmom_update, ymom_update):
     """Python version of assigning pressure field to update vectors.
     """
@@ -965,16 +956,16 @@ def assign_pressure_field_values(height, pressure, x, triangles,
         ymom_update[k] += height[k]*py/rho_w
 
 
-class Barometric_pressure_fast(object):
+class Barometric_pressure_fast:
     """ Apply barometric pressure stress to water momentum in terms of
         barometric pressure p [hPa]. If the pressure data is stored in a file
-        file_function is used to create a callable function. The data file 
+        file_function is used to create a callable function. The data file
         contains pressure values at a set of possibly arbitrarily located nodes
-        at a set o possibly irregular but increasing times. file_function 
+        at a set o possibly irregular but increasing times. file_function
         interpolates from the file data onto the vertices of the domain.mesh
-        for each time. Two arrays are then stored p0=p(t0,:) and p1=p(t1,:) 
+        for each time. Two arrays are then stored p0=p(t0,:) and p1=p(t1,:)
         where t0<=domain.get_time()<=t1. These arrays are recalculated when necessary
-        i.e t>t1. A linear temporal interpolation is used to approximate 
+        i.e t>t1. A linear temporal interpolation is used to approximate
         pressure at time t.
     """
     def __init__(self, *args, **kwargs):
@@ -997,7 +988,7 @@ class Barometric_pressure_fast(object):
 
         Agruments can also be the ANGUA file_function, e.g.
         F = file_function(sww_filename,domain,quantities,interpolation_points)
-        The interpolation_points must be the mesh vertices returned by 
+        The interpolation_points must be the mesh vertices returned by
         domain.get_nodes(). Quantities = ['barometric_pressure']
 
         The file_function is passed using
@@ -1072,11 +1063,11 @@ class Barometric_pressure_fast(object):
             if (self.file_time[-2]<domain.starttime and self.file_time[-1]>domain.starttime):
                 raise Exception(msg)
 
-            # FIXME(JJ): How do we check that evolve 
-            # finaltime  < pressure_file.finaltime      
-            
+            # FIXME(JJ): How do we check that evolve
+            # finaltime  < pressure_file.finaltime
 
-            self.index=0;
+
+            self.index=0
             for i in range(len(self.file_time)):
                 if (self.file_time[i]<domain.starttime):
                     self.index=i
@@ -1127,7 +1118,7 @@ class Barometric_pressure_fast(object):
 
         point = domain.get_vertex_coordinates()
 
-        assign_pressure_field_values(height, self.p_vec, point, 
+        assign_pressure_field_values(height, self.p_vec, point,
                                      domain.triangles,
                                      xmom_update, ymom_update)
 
@@ -1136,22 +1127,22 @@ class Barometric_pressure_fast(object):
             self.index+=1
             self.prev_pressure_vertex_values=copy(self.next_pressure_vertex_values)
             for i in range(self.prev_pressure_vertex_values.shape[0]):
-                self.next_pressure_vertex_values[i]=self.pressure(self.file_time[self.index+1],i)[0] 
+                self.next_pressure_vertex_values[i]=self.pressure(self.file_time[self.index+1],i)[0]
 
 
-class Wind_stress_fast(object):
+class Wind_stress_fast:
     """ Apply wind stress to water momentum in terms of
-        wind speed [m/s] and wind direction [degrees]. 
+        wind speed [m/s] and wind direction [degrees].
         If the wind data is stored in a file
-        file_function is used to create a callable function. The data file 
-        contains wind speed and direction values at a set of possibly 
+        file_function is used to create a callable function. The data file
+        contains wind speed and direction values at a set of possibly
         arbitrarily located nodes
-        at a set of possibly irregular but increasing times. file_function 
+        at a set of possibly irregular but increasing times. file_function
         interpolates from the file data onto the centroids of the domain.mesh
         for each time. Two arrays for each wind quantity are then stored \
-        q0=q(t0,:) and q1=q(t1,:) 
+        q0=q(t0,:) and q1=q(t1,:)
         where t0<=domain.get_time()<=t1. These arrays are recalculated when necessary
-        i.e t>t1. A linear temporal interpolation is used to approximate 
+        i.e t>t1. A linear temporal interpolation is used to approximate
         pressure at time t.
     """
     def __init__(self, *args, **kwargs):
@@ -1250,11 +1241,11 @@ class Wind_stress_fast(object):
             if (self.file_time[-2]<domain.starttime and self.file_time[-1]>domain.starttime):
                 raise Exception(msg)
 
-            # FIXME(JJ): How do we check that evolve 
-            # finaltime  < wind_file.finaltime      
-            
+            # FIXME(JJ): How do we check that evolve
+            # finaltime  < wind_file.finaltime
 
-            self.index=0;
+
+            self.index=0
             for i in range(len(self.file_time)):
                 if (self.file_time[i]<domain.starttime):
                     self.index=i
@@ -1337,5 +1328,5 @@ class Wind_stress_fast(object):
             self.prev_windspeed_centroid_values=copy(self.next_windspeed_centroid_values)
             self.prev_windangle_centroid_values=copy(self.next_windangle_centroid_values)
             for i in range(self.next_windspeed_centroid_values.shape[0]):
-                self.next_windspeed_centroid_values[i]=self.speed(self.file_time[self.index+1],i) 
-                self.next_windangle_centroid_values[i]=self.phi(self.file_time[self.index+1],i) 
+                self.next_windspeed_centroid_values[i]=self.speed(self.file_time[self.index+1],i)
+                self.next_windangle_centroid_values[i]=self.phi(self.file_time[self.index+1],i)

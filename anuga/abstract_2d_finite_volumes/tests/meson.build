@@ -4,6 +4,7 @@
 # py3 = import('python').find_installation()
 
 python_sources = [
+    'test_basic_mesh.py',
     'test_ermapper.py',
     'test_gauge.py',
     'test_general_mesh.py',

@@ -208,7 +208,7 @@ class Sparse:
         return R
 
 
-class Sparse_CSR(object):
+class Sparse_CSR:
 
     def __init__(self, A=None, data=None, Colind=None, rowptr=None, m=None, n=None):
         """Create sparse matrix in csr format.

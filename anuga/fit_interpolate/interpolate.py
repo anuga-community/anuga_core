@@ -231,7 +231,7 @@ class Interpolate (FitInterpolate):
         #
         # This has now been addressed through an attempt in interpolate_block
 
-        if verbose: log.critical('Build intepolation object')
+        if verbose: log.info('Build intepolation object')
         if isinstance(point_coordinates, Geospatial_data):
             point_coordinates = point_coordinates.get_data_points(absolute=True)
 
@@ -243,7 +243,7 @@ class Interpolate (FitInterpolate):
             elif self._point_coordinates is not None:
                 #     if verbose, give warning
                 if verbose:
-                    log.critical('WARNING: Recalculating A matrix, '
+                    log.warning('WARNING: Recalculating A matrix, '
                                  'due to blocking.')
                 point_coordinates = self._point_coordinates
             else:
@@ -409,12 +409,12 @@ class Interpolate (FitInterpolate):
             Point_coordindates and mesh vertices have the same origin.
         """
 
-        if verbose: log.critical('Building interpolation matrix')
+        if verbose: log.info('Building interpolation matrix')
 
         # Convert point_coordinates to numeric arrays, in case it was a list.
         point_coordinates = ensure_numeric(point_coordinates, float)
 
-        if verbose: log.critical('Getting indices inside mesh boundary')
+        if verbose: log.info('Getting indices inside mesh boundary')
 
         # Quick test against boundary, but will not deal with holes in the mesh,
         # that is done below
@@ -425,17 +425,17 @@ class Interpolate (FitInterpolate):
 
         # Build n x m interpolation matrix
         if verbose and len(outside_poly_indices) > 0:
-            log.critical('WARNING: Points outside mesh boundary.')
+            log.warning('WARNING: Points outside mesh boundary.')
 
         # Since you can block, throw a warning, not an error.
         if verbose and 0 == len(inside_boundary_indices):
-            log.critical('WARNING: No points within the mesh!')
+            log.warning('WARNING: No points within the mesh!')
 
         m = self.mesh.number_of_nodes  # Nbr of basis functions (1/vertex)
         n = point_coordinates.shape[0] # Nbr of data points
 
-        if verbose: log.critical('Number of datapoints: %d' % n)
-        if verbose: log.critical('Number of basis functions: %d' % m)
+        if verbose: log.info('Number of datapoints: %d' % n)
+        if verbose: log.info('Number of basis functions: %d' % m)
 
         A = Sparse(n,m)
 
@@ -445,12 +445,12 @@ class Interpolate (FitInterpolate):
         inside_poly_indices = []
 
         # Compute matrix elements for points inside the mesh
-        if verbose: log.critical('Building interpolation matrix from %d points'
+        if verbose: log.info('Building interpolation matrix from %d points'
                                  % n)
 
         for d, i in enumerate(inside_boundary_indices):
             # For each data_coordinate point
-            if verbose and d % ((n+10) / 10) == 0: log.critical('Doing %d of %d'
+            if verbose and d % ((n+10) / 10) == 0: log.info('Doing %d of %d'
                                                                 %(d, n))
 
             x = point_coordinates[i]
@@ -481,7 +481,7 @@ class Interpolate (FitInterpolate):
                     centroids.append(self.mesh.centroid_coordinates[k])
             else:
                 if verbose:
-                    log.critical('Mesh has a hole - moving this point to outside list')
+                    log.info('Mesh has a hole - moving this point to outside list')
 
                 # This is a numpy arrays, so we need to do a slow transfer
                 outside_poly_indices = num.append(outside_poly_indices, [i], axis=0)
@@ -656,16 +656,16 @@ def interpolate_sww2csv(sww_file,
     heading.insert(0, 'time')
 
     csv_files.write_headings(heading)
-    for time in callable_sww.get_time():
-        depths = [time]
-        velocity_xs = [time]
-        velocity_ys = [time]
+    for t in callable_sww.get_time():
+        depths = [t]
+        velocity_xs = [t]
+        velocity_ys = [t]
 
-        stages = [time]   # May not be used if stage file is None, but makes code below simpler
-        froudes = [time]  # May not be used if stage file is None, but makes code below simpler
+        stages = [t]   # May not be used if stage file is None, but makes code below simpler
+        froudes = [t]  # May not be used if stage file is None, but makes code below simpler
 
         for point_i, point in enumerate(points):
-            quantities = callable_sww(time,point_i)
+            quantities = callable_sww(t, point_i)
 
             w = quantities[0]
             z = quantities[1]
@@ -707,7 +707,7 @@ def interpolate_sww2csv(sww_file,
     csv_files.close_all()
 
 
-class Interpolation_function(object):
+class Interpolation_function:
     """Interpolation_interface - creates callable object f(t, id) or f(t, x, y)
     which is interpolated from time series defined at vertices of
     triangular mesh (such as those stored in sww files)
@@ -772,7 +772,7 @@ class Interpolation_function(object):
         from anuga.config import time_format
 
         if verbose is True:
-            log.critical('Interpolation_function: input checks')
+            log.info('Interpolation_function: input checks')
 
         # Check temporal info
         time = ensure_numeric(time)
@@ -807,7 +807,7 @@ class Interpolation_function(object):
             self.spatial = True
 
         if verbose is True:
-            log.critical('Interpolation_function: thinning by %d'
+            log.info('Interpolation_function: thinning by %d'
                          % time_thinning)
 
 
@@ -819,7 +819,7 @@ class Interpolation_function(object):
                 quantities[name] = num.array(quantities[name][::time_thinning,:])
 
         if verbose is True:
-            log.critical('Interpolation_function: precomputing')
+            log.info('Interpolation_function: precomputing')
 
         # Save for use with statistics
         self.quantities_range = {}
@@ -898,7 +898,7 @@ class Interpolation_function(object):
                     # looking for NaN's. However, NANs are handy as they can
                     # be ignored leaving good points for continued processing.
                     if verbose:
-                        log.critical(msg)
+                        log.info(msg)
                     #raise Exception(msg)
 
             elif triangles is None and vertex_coordinates is not None:    #jj
@@ -930,7 +930,7 @@ class Interpolation_function(object):
                 self.precomputed_values[name] = num.zeros((p, m), float)
 
             if verbose is True:
-                log.critical('Build interpolator')
+                log.info('Build interpolator')
 
 
             # Build interpolator
@@ -940,7 +940,7 @@ class Interpolation_function(object):
                     msg += '(%d vertices, %d triangles)' \
                            % (vertex_coordinates.shape[0],
                               triangles.shape[0])
-                    log.critical(msg)
+                    log.info(msg)
 
                 # This one is no longer needed for STS files
                 interpol = Interpolate(vertex_coordinates,
@@ -949,25 +949,25 @@ class Interpolation_function(object):
 
             elif triangles is None and vertex_coordinates is not None:
                 if verbose:
-                    log.critical('Interpolation from STS file')
+                    log.info('Interpolation from STS file')
 
 
 
             if verbose:
-                log.critical('Interpolating (%d interpolation points, %d timesteps).'
+                log.info('Interpolating (%d interpolation points, %d timesteps).'
                              % (self.interpolation_points.shape[0], self.time.shape[0]))
 
                 if time_thinning > 1:
-                    log.critical('Timesteps were thinned by a factor of %d'
+                    log.info('Timesteps were thinned by a factor of %d'
                                  % time_thinning)
                 else:
-                    log.critical()
+                    log.info()
 
             for i, t in enumerate(self.time):
                 # Interpolate quantities at this timestep
                 #if verbose and i%((p+10)/10) == 0:
                 if verbose:
-                    log.critical('  time step %d of %d' % (i, p))
+                    log.info('  time step %d of %d' % (i, p))
 
                 for name in quantity_names:
                     if len(quantities[name].shape) == 2:
@@ -977,7 +977,7 @@ class Interpolation_function(object):
 
                     #if verbose and i%((p+10)/10) == 0:
                     if verbose:
-                        log.critical('    quantity %s, size=%d' % (name, len(Q)))
+                        log.info('    quantity %s, size=%d' % (name, len(Q)))
 
                     # Interpolate
                     if triangles is not None and vertex_coordinates is not None:
@@ -999,7 +999,7 @@ class Interpolation_function(object):
 
             # Report
             if verbose:
-                log.critical(self.statistics())
+                log.info(self.statistics())
         else:
             # Store quantitites as is
             for name in quantity_names:
@@ -1180,11 +1180,11 @@ def interpolate_sww(sww_file, time, interpolation_points,
 
     #open sww file
     x, y, volumes, time, quantities = read_sww(sww_file)
-    log.critical("x=%s" % str(x))
-    log.critical("y=%s" % str(y))
+    log.info("x=%s" % str(x))
+    log.info("y=%s" % str(y))
 
-    log.critical("time=%s" % str(time))
-    log.critical("quantities=%s" % str(quantities))
+    log.info("time=%s" % str(time))
+    log.info("quantities=%s" % str(quantities))
 
     #Add the x and y together
     vertex_coordinates = num.concatenate((x[:,num.newaxis], y[:,num.newaxis]),

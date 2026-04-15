@@ -24,7 +24,7 @@ from anuga.shallow_water import Domain, Reflective_boundary,\
 
 from anuga.culvert_flows.culvert_class import Culvert_flow
 from anuga.culvert_flows.culvert_routines import boyd_generalised_culvert_model
-     
+
 from math import pi,pow,sqrt
 
 import numpy as num
@@ -45,7 +45,7 @@ dx = dy = 1           # Resolution: Length of subdivisions on both axes
 
 points, vertices, boundary = rectangular_cross(int(length/dx), int(width/dy),
                                                len1=length, len2=width)
-domain = Domain(points, vertices, boundary)   
+domain = Domain(points, vertices, boundary)
 domain.set_name('Test_Culv_Flat_WL')                 # Output name
 domain.set_default_order(2)
 domain.H0 = 0.01
@@ -59,12 +59,12 @@ print('Size', len(domain))
 
 def topography(x, y):
     """Set up a weir
-    
+
     A culvert will connect either side
     """
     # General Slope of Topography
     z=-x/1000
-    
+
     #       NOW Add bits and Pieces to topography
     N = len(x)
     for i in range(N):
@@ -82,14 +82,14 @@ def topography(x, y):
                z[i]=z[i]
             else:
                z[i] +=  2.5-1.0*(x[i] -12.0)       # Sloping D/S Face
-        		   
-        
-		
+
+
+
     return z
 
 print('Setting Quantities....')
 domain.set_quantity('elevation', topography)  # Use function for elevation
-domain.set_quantity('friction', 0.01)         # Constant friction 
+domain.set_quantity('friction', 0.01)         # Constant friction
 domain.set_quantity('stage',
                     expression='elevation')   # Dry initial condition
 
@@ -110,18 +110,18 @@ print('DEFINING any Structures if Required')
 
 culvert_rating = Culvert_flow(domain,
                        culvert_description_filename='example_rating_curve.csv',
-                       end_point0=[9.0, 2.5], 
+                       end_point0=[9.0, 2.5],
                        end_point1=[13.0, 2.5],
                        verbose=True)
 
 
 culvert_energy = Culvert_flow(domain,
                        label='Culvert No. 1',
-                       description='This culvert is a test unit 1.2m Wide by 0.75m High',   
-                       end_point0=[9.0, 2.5], 
+                       description='This culvert is a test unit 1.2m Wide by 0.75m High',
+                       end_point0=[9.0, 2.5],
                        end_point1=[13.0, 2.5],
                        width=1.20,height=0.75,
-                       culvert_routine=boyd_generalised_culvert_model,        
+                       culvert_routine=boyd_generalised_culvert_model,
                        number_of_barrels=1,
                        update_interval=2,
                        log_file=True,
@@ -148,22 +148,23 @@ domain.set_boundary({'left': Btus, 'right': Btds, 'top': Br, 'bottom': Br})
 
 #for t in domain.evolve(yieldstep = 1, finaltime = 25):
 #    print domain.timestepping_statistics()
-    
 
-    
-    
-#import sys; sys.exit() 
+
+
+
+#import sys; sys.exit()
 # Profiling code
 import time
 t0 = time.time()
-    
+
 s = 'for t in domain.evolve(yieldstep = 1, finaltime = 25): domain.write_time()'
 
-import profile, pstats
+import profile
+import pstats
 FN = 'profile.dat'
 
 profile.run(s, FN)
-    
+
 print('That took %.2f seconds' %(time.time()-t0))
 
 S = pstats.Stats(FN)

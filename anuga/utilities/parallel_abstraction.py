@@ -13,7 +13,7 @@ import numpy as np
 # Roberto Vidmar, 20130415: the following imports mpi4py
 try:
   from mpi4py import MPI
-  
+
 except ImportError:
   print ('WARNING: Could not import mpi4py - '
       'defining sequential interface')
@@ -119,7 +119,7 @@ else:
   mpiWrapper = 'mpi4py'
   #MAX_COMBUF = 15
 
-  class Status(object):
+  class Status:
     """ Simulate pypar return_status object
     """
     def __init__(self, status, buf):
@@ -348,5 +348,5 @@ def global_except_hook(exctype, value, traceback):
             sys.stderr.flush()
             raise e
 
-  
+
 

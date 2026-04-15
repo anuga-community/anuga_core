@@ -1,5 +1,4 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 """
 Read a TOML configuration file for an ANUGA scenario.
 
@@ -150,6 +149,8 @@ class ProjectDataTOML:
         self._parse_rainfall(cfg.get('rainfall', []))
         self._parse_bridges(cfg.get('bridges', []))
         self._parse_pumping_stations(cfg.get('pumping_stations', []))
+        self._parse_culverts(cfg.get('culverts', []))
+        self._parse_weirs(cfg.get('weirs', []))
 
     # -----------------------------------------------------------------------
     # Project settings
@@ -434,3 +435,144 @@ class ProjectDataTOML:
             self.elevation_clip_range = [[float('-inf'), float('inf')]] + self.elevation_clip_range
 
             self.pumping_station_data.append(row)
+
+    # -----------------------------------------------------------------------
+    # Culverts  (Boyd box and Boyd pipe)
+    # -----------------------------------------------------------------------
+
+    def _parse_culverts(self, culverts):
+        """Parse ``[[culverts]]`` entries into ``self.culvert_data``.
+
+        Each entry is stored as a dict so that ``setup_culverts.py`` can
+        access parameters by name rather than by positional index.
+
+        Supported ``type`` values: ``"boyd_box"`` (default), ``"boyd_pipe"``.
+
+        Geometry is specified with either:
+        * ``exchange_line_0`` / ``exchange_line_1`` — paths to CSV polyline
+          files that define the upstream / downstream exchange zones, or
+        * ``end_point_0`` / ``end_point_1`` — ``[x, y]`` arrays for the two
+          culvert barrel ends (simpler; no polyline files required).
+        """
+        self.culvert_data = []
+        for c in culverts:
+            if not c.get('enabled', True):
+                continue
+
+            ctype = str(c.get('type', 'boyd_box'))
+            if ctype not in ('boyd_box', 'boyd_pipe'):
+                raise ValueError(
+                    f"Culvert '{c.get('label', '?')}': unknown type {ctype!r}. "
+                    f"Expected 'boyd_box' or 'boyd_pipe'.")
+
+            row = {
+                'label':               str(c['label']),
+                'type':                ctype,
+                'losses':              float(c.get('losses', 0.0)),
+                'barrels':             float(c.get('barrels', 1.0)),
+                'blockage':            float(c.get('blockage', 0.0)),
+                'z1':                  float(c.get('z1', 0.0)),
+                'z2':                  float(c.get('z2', 0.0)),
+                'apron':               float(c.get('apron', 0.1)),
+                'manning':             float(c.get('manning', 0.013)),
+                'enquiry_gap':         float(c.get('enquiry_gap', 0.2)),
+                'smoothing_timescale': float(c.get('smoothing_timescale', 0.0)),
+                'use_momentum_jet':    bool(c.get('use_momentum_jet', True)),
+                'use_velocity_head':   bool(c.get('use_velocity_head', True)),
+            }
+
+            # Type-specific geometry
+            if ctype == 'boyd_box':
+                row['width']    = float(c['width'])
+                row['height']   = float(c['height']) if 'height' in c else None
+                row['diameter'] = None
+            else:
+                row['diameter'] = float(c['diameter'])
+                row['width']    = None
+                row['height']   = None
+
+            # Exchange lines (file paths) or end points ([x, y] pairs)
+            if 'exchange_line_0' in c:
+                el0 = _normpath(str(c['exchange_line_0']))
+                el1 = _normpath(str(c['exchange_line_1']))
+                for fpath, key in [(el0, 'exchange_line_0'),
+                                   (el1, 'exchange_line_1')]:
+                    if not os.path.exists(fpath):
+                        raise FileNotFoundError(
+                            f"Culvert '{row['label']}': {key} not found: {fpath!r}")
+                row['exchange_line_0'] = el0
+                row['exchange_line_1'] = el1
+                row['end_point_0']     = None
+                row['end_point_1']     = None
+            else:
+                row['exchange_line_0'] = None
+                row['exchange_line_1'] = None
+                row['end_point_0']     = list(c['end_point_0'])
+                row['end_point_1']     = list(c['end_point_1'])
+
+            # Optional explicit invert elevations [upstream_m, downstream_m]
+            if 'invert_elevations' in c:
+                row['invert_elevations'] = [float(v) for v in c['invert_elevations']]
+            else:
+                row['invert_elevations'] = None
+
+            self.culvert_data.append(row)
+
+    # -----------------------------------------------------------------------
+    # Weirs  (weir / orifice with trapezoidal cross-section)
+    # -----------------------------------------------------------------------
+
+    def _parse_weirs(self, weirs):
+        """Parse ``[[weirs]]`` entries into ``self.weir_data``.
+
+        Uses the ``Weir_orifice_trapezoid_operator``.  Parameters and geometry
+        specification follow the same conventions as ``[[culverts]]``.
+        """
+        self.weir_data = []
+        for w in weirs:
+            if not w.get('enabled', True):
+                continue
+
+            row = {
+                'label':               str(w['label']),
+                'width':               float(w['width']),
+                'height':              float(w['height']) if 'height' in w else None,
+                'losses':              float(w.get('losses', 0.0)),
+                'barrels':             float(w.get('barrels', 1.0)),
+                'blockage':            float(w.get('blockage', 0.0)),
+                'z1':                  float(w.get('z1', 0.0)),
+                'z2':                  float(w.get('z2', 0.0)),
+                'apron':               float(w.get('apron', 0.1)),
+                'manning':             float(w.get('manning', 0.013)),
+                'enquiry_gap':         float(w.get('enquiry_gap', 0.0)),
+                'smoothing_timescale': float(w.get('smoothing_timescale', 0.0)),
+                'use_momentum_jet':    bool(w.get('use_momentum_jet', True)),
+                'use_velocity_head':   bool(w.get('use_velocity_head', True)),
+            }
+
+            # Exchange lines or end points
+            if 'exchange_line_0' in w:
+                el0 = _normpath(str(w['exchange_line_0']))
+                el1 = _normpath(str(w['exchange_line_1']))
+                for fpath, key in [(el0, 'exchange_line_0'),
+                                   (el1, 'exchange_line_1')]:
+                    if not os.path.exists(fpath):
+                        raise FileNotFoundError(
+                            f"Weir '{row['label']}': {key} not found: {fpath!r}")
+                row['exchange_line_0'] = el0
+                row['exchange_line_1'] = el1
+                row['end_point_0']     = None
+                row['end_point_1']     = None
+            else:
+                row['exchange_line_0'] = None
+                row['exchange_line_1'] = None
+                row['end_point_0']     = list(w['end_point_0'])
+                row['end_point_1']     = list(w['end_point_1'])
+
+            # Optional explicit invert elevations [upstream_m, downstream_m]
+            if 'invert_elevations' in w:
+                row['invert_elevations'] = [float(v) for v in w['invert_elevations']]
+            else:
+                row['invert_elevations'] = None
+
+            self.weir_data.append(row)

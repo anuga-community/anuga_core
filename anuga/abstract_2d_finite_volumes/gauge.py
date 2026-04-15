@@ -7,7 +7,6 @@
    Ole Nielsen, Stephen Roberts, Duncan Gray, Christopher Zoppou, James Hudson
    Geoscience Australia
 """
-from six import string_types
 import numpy as num
 
 from anuga.geospatial_data.geospatial_data import ensure_absolute
@@ -136,8 +135,8 @@ def sww2csv_gauges(sww_file,
     from anuga.utilities.file_utils import get_all_swwfiles
     from anuga.abstract_2d_finite_volumes.util import file_function
 
-    assert isinstance(gauge_file,string_types) or isinstance(gauge_file, str), 'Gauge filename must be a string or unicode'
-    assert isinstance(out_name,string_types) or isinstance(out_name, str), 'Output filename prefix must be a string'
+    assert isinstance(gauge_file, str), 'Gauge filename must be a string or unicode'
+    assert isinstance(out_name, str), 'Output filename prefix must be a string'
 
     try:
         gid = open(gauge_file)
@@ -147,7 +146,7 @@ def sww2csv_gauges(sww_file,
         msg = 'File "%s" could not be opened: Error="%s"' % (gauge_file, e)
         raise Exception(msg)
 
-    if verbose: log.critical('Gauges obtained from: %s' % gauge_file)
+    if verbose: log.info('Gauges obtained from: %s' % gauge_file)
 
     gid = open(gauge_file)
     point_reader = reader(gid)
@@ -186,7 +185,7 @@ def sww2csv_gauges(sww_file,
         dir_name =getcwd()
 
     if access(sww_file,R_OK):
-        if verbose: log.critical('File %s exists' % sww_file)
+        if verbose: log.info('File %s exists' % sww_file)
     else:
         msg = 'File "%s" could not be opened: no read permission' % sww_file
         raise Exception(msg)
@@ -199,7 +198,7 @@ def sww2csv_gauges(sww_file,
     sww_files.sort()
 
     if verbose:
-        log.critical('sww files=%s' % sww_files)
+        log.info('sww files=%s' % sww_files)
 
     #to make all the quantities lower case for file_function
     quantities = [quantity.lower() for quantity in quantities]
@@ -215,7 +214,7 @@ def sww2csv_gauges(sww_file,
     heading.insert(0,'time')
     heading.insert(1,'hours')
 
-    if verbose: log.critical('Writing csv files')
+    if verbose: log.info('Writing csv files')
 
     quake_offset_time = None
 
@@ -376,7 +375,7 @@ def sww2timeseries(swwfiles,
     msg += 'files called sww2csv_gauges in anuga.abstract_2d_finite_volumes.util'
     msg += ' PLUS another new function to create graphs from csv files called '
     msg += 'csv2timeseries_graphs in anuga.abstract_2d_finite_volumes.util'
-    log.critical(msg)
+    log.info(msg)
 
     k = _sww2timeseries(swwfiles,
                         gauge_filename,
@@ -415,7 +414,7 @@ def _sww2timeseries(swwfiles,
                     output_centroids = False):
 
     # FIXME(Ole): Shouldn't print statements here be governed by verbose?
-    assert type(gauge_filename) == type(''), 'Gauge filename must be a string'
+    assert type(gauge_filename) == str, 'Gauge filename must be a string'
 
     try:
         fid = open(gauge_filename)
@@ -441,7 +440,7 @@ def _sww2timeseries(swwfiles,
     if title_on is None:
         title_on = True
 
-    if verbose: log.critical('Gauges obtained from: %s' % gauge_filename)
+    if verbose: log.info('Gauges obtained from: %s' % gauge_filename)
 
     gauges, locations, elev = gauge_get_from_file(gauge_filename)
 
@@ -462,7 +461,7 @@ def _sww2timeseries(swwfiles,
             raise Exception(msg)
 
         if verbose:
-            log.critical('swwfile = %s' % swwfile)
+            log.info('swwfile = %s' % swwfile)
 
         # Extract parent dir name and use as label
         path, _ = os.path.split(swwfile)
@@ -484,17 +483,17 @@ def _sww2timeseries(swwfiles,
         for k, g in enumerate(gauges):
             if f(0.0, point_id = k)[2] > 1.0e6:
                 count += 1
-                if count == 1: log.critical('Gauges not contained here:')
-                log.critical(locations[k])
+                if count == 1: log.info('Gauges not contained here:')
+                log.info(locations[k])
             else:
                 gauge_index.append(k)
 
         if len(gauge_index) > 0:
-            log.critical('Gauges contained here:')
+            log.info('Gauges contained here:')
         else:
-            log.critical('No gauges contained here.')
+            log.info('No gauges contained here.')
         for i in range(len(gauge_index)):
-             log.critical(locations[gauge_index[i]])
+             log.info(locations[gauge_index[i]])
 
         index = swwfile.rfind(sep)
         file_loc.append(swwfile[:index+1])
@@ -521,7 +520,7 @@ def _sww2timeseries(swwfiles,
             raise Exception(msg)
 
     if verbose and len(gauge_index) > 0:
-         log.critical('Inputs OK - going to generate figures')
+         log.info('Inputs OK - going to generate figures')
 
     if len(gauge_index) != 0:
         texfile, elev_output = \
@@ -556,7 +555,7 @@ def gauge_get_from_file(filename):
     line1 = lines[0]
     line11 = line1.split(',')
 
-    if isinstance(line11[0], string_types) is True:
+    if isinstance(line11[0], str):
         # We have found text in the first line
         east_index = None
         north_index = None
@@ -642,14 +641,14 @@ def _generate_figures(plot_quantity, file_loc, report, reportname, surface,
             texfilename = texfile + '.tex'
             fid = open(texfilename, 'w')
 
-            if verbose: log.critical('Latex output printed to %s' % texfilename)
+            if verbose: log.info('Latex output printed to %s' % texfilename)
         else:
             texfile = texdir+reportname
             texfile2 = reportname
             texfilename = texfile + '.tex'
             fid = open(texfilename, 'w')
 
-            if verbose: log.critical('Latex output printed to %s' % texfilename)
+            if verbose: log.info('Latex output printed to %s' % texfilename)
     else:
         texfile = ''
         texfile2 = ''
@@ -693,7 +692,7 @@ def _generate_figures(plot_quantity, file_loc, report, reportname, surface,
 
     ##### loop over each swwfile #####
     for j, f in enumerate(f_list):
-        if verbose: log.critical('swwfile %d of %d' % (j, len(f_list)))
+        if verbose: log.info('swwfile %d of %d' % (j, len(f_list)))
 
         starttime = f.starttime
         comparefile = file_loc[j] + sep + 'gauges_maxmins' + '.csv'
@@ -703,7 +702,7 @@ def _generate_figures(plot_quantity, file_loc, report, reportname, surface,
 
         ##### loop over each gauge #####
         for k in gauge_index:
-            if verbose: log.critical('Gauge %d of %d' % (k, len(gauges)))
+            if verbose: log.info('Gauge %d of %d' % (k, len(gauges)))
 
             g = gauges[k]
             min_stage = 10
@@ -787,7 +786,7 @@ def _generate_figures(plot_quantity, file_loc, report, reportname, surface,
         eastings_plot3d[:,] = eastings[:,:,j]
 
         if surface is True:
-            log.critical('Printing surface figure')
+            log.info('Printing surface figure')
             for i in range(2):
                 fig = p1.figure(10)
                 ax = p3.Axes3D(fig)

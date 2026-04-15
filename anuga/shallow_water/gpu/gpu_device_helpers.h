@@ -385,6 +385,65 @@ static inline void gpu_adjust_edgeflux_with_weir(
     }
 }
 
+// Apply throughflow (orifice/seepage) discharge through the wall body.
+// Called AFTER gpu_adjust_edgeflux_with_weir.
+// Adds Q_through to edgeflux[0] (mass flux); momentum contribution is zero
+// for the first implementation (conservative and stable).
+//
+// Physics: submerged orifice formula
+//   Q = Cd_through * h_eff * sqrt(2 * g * |Δstage|) * sign(Δstage)
+// where h_eff is the upstream submerged depth — the depth below the wall
+// crest on the high-stage (driving) side. Using the upstream depth (not
+// the minimum of both sides) gives correct non-zero flow when the
+// downstream side is dry, which is the common case for levee/embankment
+// scenarios where a river is contained by a wall against a dry floodplain.
+//
+// Parameters:
+//   edgeflux:                [3] mass + x-mom + y-mom fluxes (modified in place)
+//   stage_left, stage_right: cell-centroid stage on each side
+//   z_bed_left, z_bed_right: bed elevation at left/right cell centroids
+//   z_wall:                  riverwall crest elevation at this edge
+//   g:                       gravitational acceleration
+//   Cd_through:              discharge coefficient (0 = impermeable, default)
+//   max_speed_local:         updated with orifice exit velocity if significant
+static inline void gpu_adjust_edgeflux_with_throughflow(
+    double * restrict edgeflux,
+    double stage_left, double stage_right,
+    double z_bed_left, double z_bed_right,
+    double z_wall, double g,
+    double Cd_through,
+    double * restrict max_speed_local) {
+
+    if (Cd_through <= 0.0) return;
+
+    // Submerged depth on each side (depth of water below the wall crest)
+    double h_left_sub  = fmax(fmin(stage_left,  z_wall) - z_bed_left,  0.0);
+    double h_right_sub = fmax(fmin(stage_right, z_wall) - z_bed_right, 0.0);
+
+    // h_eff = upstream (driving-side) submerged depth.
+    // min() was rejected: gives zero when downstream is dry, which is wrong
+    // for culvert and seepage models (the common levee-against-dry-floodplain case).
+    double h_eff = (stage_left >= stage_right) ? h_left_sub : h_right_sub;
+
+    if (h_eff <= 0.0) return;
+
+    double delta_stage = stage_left - stage_right;
+    double abs_delta   = fabs(delta_stage);
+    if (abs_delta <= 0.0) return;
+
+    double Q_through = Cd_through * h_eff * sqrt(2.0 * g * abs_delta);
+    if (stage_right > stage_left) Q_through = -Q_through;
+
+    edgeflux[0] += Q_through;
+    // Momentum: zero for first implementation (conservative)
+
+    // Update max_speed estimate for stable timestep control
+    double speed_est = Cd_through * sqrt(2.0 * g * abs_delta);
+    if (speed_est > *max_speed_local) {
+        *max_speed_local = speed_est;
+    }
+}
+
 #pragma omp end declare target
 
 #endif // GPU_DEVICE_HELPERS_H

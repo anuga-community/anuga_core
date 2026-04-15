@@ -146,7 +146,7 @@ def interpolate2d(x, y, Z, points, mode='linear', bounds_error=False):
     outside = (xi < x[0]) + (eta < y[0]) + (xi > x[-1]) + (eta > y[-1])
     outside += numpy.isnan(xi) + numpy.isnan(eta)
     numpy.seterr(**oldset)  # Restore warnings
-    
+
     # Restrict interpolation points to those that are inside the grid
     inside = numpy.logical_not(outside)  # Invert boolean array to find elements inside
     xi = xi[inside]

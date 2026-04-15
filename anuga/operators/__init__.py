@@ -1,6 +1,6 @@
 """
     operator classes for ANUGA.
-    
+
 """
 
 from numpy._pytesttester import PytestTester

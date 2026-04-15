@@ -20,7 +20,7 @@ from anuga.utilities.function_utils import determine_function_type
 #from anuga import indent
 
 
-class Region(object):
+class Region:
     """ Object which defines a region within the domain
 
     """
@@ -46,11 +46,11 @@ class Region(object):
         :param line: List of [x,y] points defining a polyline
         :param poly: An old argument which was used to define a polyline or polygon
         :param expand_polygon: If set true, then calculation of intersection of polygon with triangles based on vertices, otherwise based just on centroids
-        :param verbose: Set to True for more verbose output 
+        :param verbose: Set to True for more verbose output
 
         Setup region (defined by indices, polygon or center/radius).
         Useful in defining where to apply certain operations
-        
+
         """
 
 
@@ -300,7 +300,7 @@ class Region(object):
 
         self.verbose = verbose
 
-class Centroid_field(object):
+class Centroid_field:
 
     def __init__(self, region, value, verbose=None):
 

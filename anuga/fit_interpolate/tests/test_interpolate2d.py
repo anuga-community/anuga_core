@@ -249,14 +249,14 @@ class Test_interpolate(unittest.TestCase):
         # Then test that interpolated points can contain NaN
         xis = numpy.linspace(x[0], x[-1], 10)
         etas = numpy.linspace(y[0], y[-1], 10)
-        
+
         xis[6:7] = numpy.nan
         etas[3] = numpy.nan
         points = axes2points(xis, etas)
-        
+
         vals = interpolate2d(x, y, A, points, mode='linear')
         refs = linear_function(points[:, 0], points[:, 1])
-        
+
         assert nanallclose(vals, refs, rtol=1e-12, atol=1e-12)
 
     def test_linear_interpolation_nan_array(self):
@@ -304,8 +304,8 @@ class Test_interpolate(unittest.TestCase):
         A = numpy.zeros((len(x), len(y)))
 
         # Define arbitrary values for each x, y pair
-        numpy.random.seed(17)
-        A = numpy.random.random((len(x), len(y))) * 10
+        rng = numpy.random.default_rng(17)
+        A = rng.random((len(x), len(y))) * 10
 
         # Create islands of NaN
         A[5, 13] = numpy.nan

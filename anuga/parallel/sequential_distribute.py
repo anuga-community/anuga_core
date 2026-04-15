@@ -19,7 +19,7 @@ from anuga.parallel.parallel_shallow_water import Parallel_domain
 
 
 
-class Sequential_distribute(object):
+class Sequential_distribute:
 
     def __init__(self, domain, verbose=False, debug=False, parameters=None):
 
@@ -79,7 +79,7 @@ class Sequential_distribute(object):
         if verbose: print('sequential_distribute: Build submeshes')
         if verbose: print('sequential_distribute: parameters: ',parameters)
 
-        submesh = build_submesh(new_mesh, quantities, triangles_per_proc, 
+        submesh = build_submesh(new_mesh, quantities, triangles_per_proc,
                                 parameters=parameters, verbose=verbose)
 
         if verbose:

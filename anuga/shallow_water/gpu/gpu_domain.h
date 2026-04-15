@@ -38,10 +38,16 @@ struct halo_exchange {
     int *send_offsets;           // Start offset in flat_send_indices for each neighbor [num_neighbors+1]
     int *recv_offsets;           // Start offset in flat_recv_indices for each neighbor [num_neighbors+1]
 
-    // Communication buffers (allocated on both host and device)
-    // Each element sends/receives 3 quantities: stage, xmom, ymom (centroid values)
+    // Communication buffers: device buffers for pack/unpack (GPU_AWARE_MPI: omp_target_alloc,
+    // else: host malloc used directly for MPI too)
     double *send_buffer;         // [3 * total_send_size]
     double *recv_buffer;         // [3 * total_recv_size]
+
+    // Host staging buffers used by GPU_AWARE_MPI path to work around UCX transports
+    // (e.g. uct_mm shared-memory) that cannot handle omp_target_alloc device pointers.
+    // NULL in the non-GPU_AWARE_MPI path (send_buffer/recv_buffer are already host).
+    double *host_send_buffer;    // [3 * total_send_size]  (GPU_AWARE_MPI only)
+    double *host_recv_buffer;    // [3 * total_recv_size]  (GPU_AWARE_MPI only)
 
     // MPI request arrays for non-blocking communication
     MPI_Request *requests;       // [2 * num_neighbors] for Isend/Irecv pairs
@@ -101,6 +107,20 @@ struct time_boundary {
     int mapped;                  // Whether arrays are mapped to GPU
 };
 
+// File_boundary / Field_boundary - spatially varying time-dependent values
+// The Python side evaluates F(t, point_id=i) for each edge each timestep and
+// pushes the resulting per-edge arrays to the device via set_values.
+struct file_boundary {
+    int num_edges;               // Number of file boundary edges
+    int *boundary_indices;       // Where to write in boundary_values arrays [num_edges]
+    int *vol_ids;                // Interior cell IDs [num_edges]
+    int *edge_ids;               // Which edge (0, 1, or 2) [num_edges]
+    double *stage_values;        // Per-edge stage  (updated each timestep from Python) [num_edges]
+    double *xmom_values;         // Per-edge xmom   [num_edges]
+    double *ymom_values;         // Per-edge ymom   [num_edges]
+    int mapped;                  // Whether arrays are mapped to GPU
+};
+
 // Boundary edge sync buffers - pre-allocated for efficient sparse sync
 // Allocated once during setup, reused every timestep
 struct boundary_edge_sync {
@@ -121,7 +141,12 @@ struct boundary_edge_sync {
 
 // Rate operator info - for GPU-accelerated rate application (rain, etc.)
 // Supports both positive rates (inflow) and negative rates (extraction)
-#define MAX_RATE_OPERATORS 64
+//
+// MAX_RATE_OPERATORS / MAX_INLET_OPERATORS / MAX_CULVERTS are the *initial*
+// heap allocation sizes.  The arrays grow automatically (doubling) so there
+// is no hard limit on the number of operators.
+#define MAX_RATE_OPERATORS  64
+#define MAX_INLET_OPERATORS 32
 
 struct rate_operator_info {
     int num_indices;             // Number of triangles this operator applies to
@@ -138,15 +163,15 @@ struct rate_operator_info {
 };
 
 struct rate_operators {
-    struct rate_operator_info ops[MAX_RATE_OPERATORS];
-    int num_operators;           // Number of active operators
+    struct rate_operator_info *ops; // heap-allocated, capacity entries
+    int num_operators;              // Number of active operators
+    int capacity;                   // Allocated size of ops array (0 = uninitialised)
     int initialized;
 };
 
 // Inlet operator info - for GPU-accelerated inlet operations
 // The inlet only touches 10-100 triangles, so we do small D2H/H2D
 // of just those values (~6KB) instead of full domain sync (~235MB)
-#define MAX_INLET_OPERATORS 32
 
 struct inlet_operator_info {
     int num_indices;             // Number of inlet triangles
@@ -163,23 +188,27 @@ struct inlet_operator_info {
 };
 
 struct inlet_operators {
-    struct inlet_operator_info ops[MAX_INLET_OPERATORS];
+    struct inlet_operator_info *ops; // heap-allocated, capacity entries
     int num_operators;
+    int capacity;                    // Allocated size of ops array
 };
 
 // Culvert operator types
 #define MAX_CULVERTS 64
 #define MAX_INLET_TRIANGLES 64
-#define CULVERT_TYPE_BOX  0
-#define CULVERT_TYPE_PIPE 1
+#define CULVERT_TYPE_BOX              0
+#define CULVERT_TYPE_PIPE             1
+#define CULVERT_TYPE_WEIR_TRAPEZOID   2
 
 // Static geometry parameters for one culvert
 struct culvert_params {
-    int type;                    // CULVERT_TYPE_BOX or CULVERT_TYPE_PIPE
+    int type;                    // CULVERT_TYPE_BOX / PIPE / WEIR_TRAPEZOID
     double g;                    // Gravity [m/s^2] (from domain)
-    double width;                // Box width [m]
-    double height;               // Box height [m]
+    double width;                // Box/trapezoid bottom width [m]
+    double height;               // Box/trapezoid height [m]
     double diameter;             // Pipe diameter [m]
+    double z1;                   // Trapezoid left side slope (horiz/vert); 0 for box/pipe
+    double z2;                   // Trapezoid right side slope (horiz/vert); 0 for box/pipe
     double length;               // Culvert length [m]
     double manning;              // Manning's n for culvert
     double sum_loss;             // Sum of loss coefficients
@@ -229,9 +258,10 @@ struct culvert_state {
 // Culvert manager (lives inside gpu_domain)
 struct culvert_operators {
     int num_culverts;
-    struct culvert_params params[MAX_CULVERTS];
-    struct culvert_indices indices[MAX_CULVERTS];
-    struct culvert_state state[MAX_CULVERTS];
+    int capacity;                    // Allocated size of params/indices/state arrays
+    struct culvert_params *params;   // heap-allocated, capacity entries
+    struct culvert_indices *indices; // heap-allocated, capacity entries
+    struct culvert_state *state;     // heap-allocated, capacity entries
     int initialized;
 
     // Scratch buffers for batched gather/scatter
@@ -301,6 +331,7 @@ struct gpu_domain {
     int gpu_initialized;
     int device_id;
     int gpu_aware_mpi;           // Runtime flag: 1 if GPU-aware MPI available
+    int verbose;                 // 0 = silent (default), 1 = print init/mapping messages
 
     // Halo exchange info
     struct halo_exchange halo;
@@ -311,6 +342,7 @@ struct gpu_domain {
     struct transmissive_boundary transmissive;
     struct transmissive_n_zero_t_boundary transmissive_n_zero_t;
     struct time_boundary time_bdry;
+    struct file_boundary file_bdry;
 
     // Boundary edge sync (for sparse edge value sync)
     struct boundary_edge_sync edge_sync;
@@ -356,7 +388,10 @@ int gpu_halo_init(struct gpu_domain *GD,
 void gpu_halo_finalize(struct gpu_domain *GD);
 
 // GPU memory management
-void gpu_domain_map_arrays(struct gpu_domain *GD);
+size_t gpu_estimate_required_memory(anuga_int n, anuga_int nb);
+int    gpu_query_device_memory(size_t *free_bytes, size_t *total_bytes);
+int    gpu_check_device_memory(struct gpu_domain *GD);
+int    gpu_domain_map_arrays(struct gpu_domain *GD);
 void gpu_remap_boundary_arrays(struct gpu_domain *GD);
 void gpu_domain_unmap_arrays(struct gpu_domain *GD);
 void gpu_domain_sync_to_device(struct gpu_domain *GD);
@@ -404,6 +439,14 @@ void gpu_transmissive_n_zero_t_finalize(struct gpu_domain *GD);
 void gpu_transmissive_n_zero_t_set_stage(struct gpu_domain *GD, double stage_value);
 void gpu_evaluate_transmissive_n_zero_t_boundary(struct gpu_domain *GD);
 
+// File_boundary / Field_boundary - spatially varying time-dependent values
+int  gpu_file_boundary_init(struct gpu_domain *GD, int num_edges,
+                             int *boundary_indices, int *vol_ids, int *edge_ids);
+void gpu_file_boundary_finalize(struct gpu_domain *GD);
+void gpu_file_boundary_set_values(struct gpu_domain *GD,
+                                   double *stage, double *xmom, double *ymom);
+void gpu_evaluate_file_boundary(struct gpu_domain *GD);
+
 // Time_boundary - time-dependent Dirichlet values
 int gpu_time_boundary_init(struct gpu_domain *GD, int num_edges,
                            int *boundary_indices, int *vol_ids, int *edge_ids);
@@ -412,7 +455,7 @@ void gpu_time_boundary_set_values(struct gpu_domain *GD, double stage, double xm
 void gpu_evaluate_time_boundary(struct gpu_domain *GD);
 
 // Rate operators - rain, extraction, etc.
-// Returns operator ID (0 to MAX_RATE_OPERATORS-1) or -1 on error
+// Returns operator ID (>= 0) or -1 on error
 int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
                            double *areas, int *full_indices, int num_full);
 void gpu_rate_operator_finalize(struct gpu_domain *GD, int op_id);
@@ -448,6 +491,7 @@ double gpu_compute_fluxes(struct gpu_domain *GD);
 void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep);
 void gpu_backup_conserved_quantities(struct gpu_domain *GD);
 void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b);
+void gpu_saxpy3_conserved_quantities(struct gpu_domain *GD, double a, double b, double c);
 double gpu_protect(struct gpu_domain *GD);
 double gpu_compute_water_volume(struct gpu_domain *GD);
 void gpu_manning_friction(struct gpu_domain *GD);
@@ -456,8 +500,12 @@ void gpu_manning_friction(struct gpu_domain *GD);
 // max_timestep: Maximum allowed timestep (respecting yieldstep/finaltime constraints)
 double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
 
+// Full SSP-RK3 step on GPU (Shu-Osher 3-stage)
+double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
+
 // Utility functions
 int detect_gpu_aware_mpi(void);
+int gpu_is_available(void);
 void print_gpu_domain_info(struct gpu_domain *GD);
 
 // FLOP counter functions (Gordon Bell performance profiling)
@@ -488,7 +536,7 @@ double gpu_flop_counters_get_global_flops(struct gpu_domain *GD);
 void gpu_flop_counters_print_global(struct gpu_domain *GD);
 
 // Inlet operators - GPU-accelerated inlet flow
-// Returns operator ID (0 to MAX_INLET_OPERATORS-1) or -1 on error
+// Returns operator ID (>= 0) or -1 on error
 int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices, int *indices, double *areas);
 void gpu_inlet_operator_finalize(struct gpu_domain *GD, int op_id);
 void gpu_inlet_operators_finalize_all(struct gpu_domain *GD);
@@ -521,7 +569,8 @@ int gpu_culvert_init(struct gpu_domain *GD,
                      int inlet1_num, int *inlet1_indices, double *inlet1_areas,
                      int master_proc, int enquiry_proc_0, int enquiry_proc_1,
                      int inlet_master_proc_0, int inlet_master_proc_1,
-                     int is_local, int mpi_tag_base);
+                     int is_local, int mpi_tag_base,
+                     double init_smooth_Q, double init_smooth_delta_total_energy);
 void gpu_culvert_finalize(struct gpu_domain *GD, int culvert_id);
 void gpu_culverts_finalize_all(struct gpu_domain *GD);
 void gpu_culverts_map(struct gpu_domain *GD);

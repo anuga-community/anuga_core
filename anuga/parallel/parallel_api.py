@@ -1150,7 +1150,7 @@ def mpicmd(script_name='echo', numprocs=3):
 
     extra_options = mpi_extra_options()
 
-    return "mpiexec -np %d  %s  python -m mpi4py %s" % (numprocs, extra_options, script_name)  
+    return "mpiexec -np %d  %s  python -m mpi4py %s" % (numprocs, extra_options, script_name)
 
 def mpi_extra_options():
 

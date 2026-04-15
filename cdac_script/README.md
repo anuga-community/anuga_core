@@ -127,9 +127,22 @@ pip install -e . --no-build-isolation \
 ### GPU build with GPU-aware MPI
 
 ```bash
+# V100 (default - cc70)
+pip install -e . --no-build-isolation \
+    -Csetup-args=-Dgpu_offload=true \
+    -Csetup-args=-Dgpu_arch=cc70 \
+    -Csetup-args=-Dgpu_aware_mpi=true
+
+# A100 (cc80)
 pip install -e . --no-build-isolation \
     -Csetup-args=-Dgpu_offload=true \
     -Csetup-args=-Dgpu_arch=cc80 \
+    -Csetup-args=-Dgpu_aware_mpi=true
+
+# H100 (cc90)
+pip install -e . --no-build-isolation \
+    -Csetup-args=-Dgpu_offload=true \
+    -Csetup-args=-Dgpu_arch=cc90 \
     -Csetup-args=-Dgpu_aware_mpi=true
 ```
 
@@ -156,8 +169,8 @@ All unit tests pass, using `pytest --pyargs anuga`. It will be slow-ish because 
 
 | Mode | RK2 Loop | Use Case |
 |------|----------|----------|
-| `set_multiprocessor_mode(1)` | Python (`use_c_rk2_loop=False`) | Debugging, flexibility, Python callbacks |
-| `set_multiprocessor_mode(2)` | C (`use_c_rk2_loop=True`) | Performance, GPU (data stays on device) |
+| `set_multiprocessor_mode(1)` | Python (`use_c_rk_loop=False`) | Debugging, flexibility, Python callbacks |
+| `set_multiprocessor_mode(2)` | C (`use_c_rk_loop=True`) | Performance, GPU (data stays on device) |
 
 Both modes use the same unified `core_kernels.c`. The only difference is:
 - **Mode 1**: RK2 time-stepping orchestrated by Python (more flexible)
@@ -393,6 +406,6 @@ If you use an unsupported boundary type, ALL boundaries fall back to CPU evaluat
 
 ### Known Issues
 
-mpi4py failure due to lack of GPU awareness, fix by: `CC=mpicc pip install mpi4py --no-cache-dir --no-binary mpi4py ` rebuilding mpi4py locally with a GPU aware MPI install
+mpi4py failure due to lack of GPU awareness, fix by: `CFLAGS="-noswitcherror" CC=mpicc pip install mpi4py --no-cache-dir --no-binary mpi4py ` rebuilding mpi4py locally with a GPU aware MPI install
 
 
