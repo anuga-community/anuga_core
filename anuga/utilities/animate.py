@@ -67,6 +67,9 @@ class Domain_plotter:
         self.speed_depth = self.speed*self.depth
 
         self.domain = domain
+        self._depth_frame_count = 0
+        self._stage_frame_count = 0
+        self._speed_frame_count = 0
 
 
     #------------------------------------------
@@ -129,16 +132,17 @@ class Domain_plotter:
 
         plot_dir = self.plot_dir
         name = self.domain.get_name()
-        time = self.domain.get_time()
+        frame = self._depth_frame_count
 
         fig, ax = self._depth_frame(figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
-            fig.savefig(name+'_depth_{0:0>10}.png'.format(int(time)))
+            fig.savefig(name+'_depth_{0:0>10}.png'.format(frame))
         else:
             fig.savefig(os.path.join(plot_dir, name
-                                     + '_depth_{0:0>10}.png'.format(int(time))))
+                                     + '_depth_{0:0>10}.png'.format(frame)))
 
+        self._depth_frame_count += 1
         fig.clf()
         plt.close()
 
@@ -235,16 +239,17 @@ class Domain_plotter:
 
         plot_dir = self.plot_dir
         name = self.domain.get_name()
-        time = self.domain.get_time()
+        frame = self._stage_frame_count
 
         fig, ax = self._stage_frame(figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
-            fig.savefig(name+'_stage_{0:0>10}.png'.format(int(time)))
+            fig.savefig(name+'_stage_{0:0>10}.png'.format(frame))
         else:
             fig.savefig(os.path.join(plot_dir, name
-                                     + '_stage_{0:0>10}.png'.format(int(time))))
+                                     + '_stage_{0:0>10}.png'.format(frame)))
 
+        self._stage_frame_count += 1
         fig.clf()
         plt.close()
 
@@ -350,15 +355,17 @@ class Domain_plotter:
 
         plot_dir = self.plot_dir
         name = self.domain.get_name()
-        time = self.domain.get_time()
+        frame = self._speed_frame_count
 
         fig, ax = self._speed_frame(figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
-            fig.savefig(name+'_speed_{0:0>10}.png'.format(int(time)))
+            fig.savefig(name+'_speed_{0:0>10}.png'.format(frame))
         else:
             fig.savefig(os.path.join(plot_dir, name
-                                     + '_speed_{0:0>10}.png'.format(int(time))))
+                                     + '_speed_{0:0>10}.png'.format(frame)))
+
+        self._speed_frame_count += 1
         fig.clf()
         plt.close()
 
@@ -557,6 +564,11 @@ class SWW_plotter:
 
         self.time = np.array(p.variables['time'])
 
+        self._depth_frame_count = 0
+        self._stage_frame_count = 0
+        self._speed_depth_frame_count = 0
+        self._speed_frame_count = 0
+
     #------------------------------------------
     # General plots
     #------------------------------------------
@@ -627,16 +639,17 @@ class SWW_plotter:
         import matplotlib.pyplot as plt
 
         name = self.name
-        time = self.time[frame]
         plot_dir = self.plot_dir
+        frame_num = self._depth_frame_count
 
         fig, ax = self._depth_frame(frame, figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
-            fig.savefig(name+'_depth_{0:0>10}.png'.format(int(time)))
+            fig.savefig(name+'_depth_{0:0>10}.png'.format(frame_num))
         else:
             fig.savefig(os.path.join(plot_dir, name
-                                     + '_depth_{0:0>10}.png'.format(int(time))))
+                                     + '_depth_{0:0>10}.png'.format(frame_num)))
+        self._depth_frame_count += 1
         plt.close()
         fig.clf()
 
@@ -704,16 +717,17 @@ class SWW_plotter:
         import matplotlib.pyplot as plt
 
         name = self.name
-        time = self.time[frame]
         plot_dir = self.plot_dir
+        frame_num = self._stage_frame_count
 
         fig, ax = self._stage_frame(frame, figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
-            fig.savefig(name+'_stage_{0:0>10}.png'.format(int(time)))
+            fig.savefig(name+'_stage_{0:0>10}.png'.format(frame_num))
         else:
             fig.savefig(os.path.join(plot_dir, name
-                                     + '_stage_{0:0>10}.png'.format(int(time))))
+                                     + '_stage_{0:0>10}.png'.format(frame_num)))
+        self._stage_frame_count += 1
         plt.close()
         fig.clf()
 
@@ -780,16 +794,17 @@ class SWW_plotter:
         import matplotlib.pyplot as plt
 
         name = self.name
-        time = self.time[frame]
         plot_dir = self.plot_dir
+        frame_num = self._speed_depth_frame_count
 
         fig, ax = self._speed_depth_frame(frame, figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
-            fig.savefig(name+'_speed_depth_{0:0>10}.png'.format(int(time)))
+            fig.savefig(name+'_speed_depth_{0:0>10}.png'.format(frame_num))
         else:
             fig.savefig(os.path.join(plot_dir, name
-                                     + '_speed_depth_{0:0>10}.png'.format(int(time))))
+                                     + '_speed_depth_{0:0>10}.png'.format(frame_num)))
+        self._speed_depth_frame_count += 1
         plt.close()
         fig.clf()
 
@@ -852,16 +867,17 @@ class SWW_plotter:
                          vmin=0.0, vmax=10.0):
 
         name = self.name
-        time = self.time[frame]
         plot_dir = self.plot_dir
+        frame_num = self._speed_frame_count
 
         fig, ax = self._speed_frame(frame, figsize, dpi, vmin, vmax)
 
         if plot_dir is None:
-            fig.savefig(name+'_speed_{0:0>10}.png'.format(int(time)))
+            fig.savefig(name+'_speed_{0:0>10}.png'.format(frame_num))
         else:
             fig.savefig(os.path.join(plot_dir, name
-                                     + '_speed_{0:0>10}.png'.format(int(time))))
+                                     + '_speed_{0:0>10}.png'.format(frame_num)))
+        self._speed_frame_count += 1
         plt.close()
         fig.clf()
 
