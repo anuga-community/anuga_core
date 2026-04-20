@@ -186,6 +186,9 @@ class SWWAnimationGUI:
                   'RdBu_r', 'coolwarm', 'seismic', 'jet', 'turbo']
         ttk.Combobox(row3, textvariable=self._cmap_var,
                      values=_CMAPS, width=10).pack(side=tk.LEFT, padx=2)
+        self._cmap_reverse_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(row3, text='Reverse',
+                        variable=self._cmap_reverse_var).pack(side=tk.LEFT, padx=(2, 0))
 
         self._basemap_var = tk.BooleanVar(value=False)
         self._basemap_chk = ttk.Checkbutton(row3, text='Basemap:',
@@ -428,7 +431,9 @@ class SWWAnimationGUI:
             self._set_status(f'Invalid parameter: {e}')
             return
 
-        cmap    = self._cmap_var.get().strip() or 'viridis'
+        cmap = self._cmap_var.get().strip() or 'viridis'
+        if self._cmap_reverse_var.get() and not cmap.endswith('_r'):
+            cmap = cmap + '_r'
         basemap = self._basemap_var.get()
         alpha   = max(0.0, min(1.0, self._alpha_var.get()))
 
