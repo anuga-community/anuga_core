@@ -336,11 +336,11 @@ class SWWAnimationGUI:
         self._progress_bar.config(maximum=n_frames)
         self._progress_var.set(0)
         self._progress_label.config(text=f'0 / {n_frames}')
-
         self._gen_btn.config(state=tk.DISABLED)
         self._cancel_btn.config(state=tk.NORMAL)
         self._cancel_flag = False
         self._set_status(f'Generating {n_frames} {qty} frames...')
+        self.root.update_idletasks()
 
         # Reset plotter frame counters and re-point it at the output dir
         self._splotter.plot_dir = plot_dir
@@ -369,6 +369,7 @@ class SWWAnimationGUI:
 
         self._progress_var.set(idx + 1)
         self._progress_label.config(text=f'{idx + 1} / {n_frames}')
+        self.root.update_idletasks()
 
         if idx + 1 < n_frames:
             self._gen_after_id = self.root.after(
