@@ -114,6 +114,10 @@ class SWWAnimationGUI:
         self._pick_mode = False
         self._pick_cid = None
         self._pick_key_cid = None
+        self._pick_overlay = None
+        self._plot_transform = None
+        self._gen_used_basemap = False
+        self._last_gen_dpi = 100
 
         self._build_ui()
 
@@ -307,7 +311,7 @@ class SWWAnimationGUI:
         ttk.Button(ts_ctrl, text='Close',
                    command=self._close_timeseries).pack(side=tk.RIGHT, padx=4)
 
-        self._ts_fig, self._ts_ax = plt.subplots(figsize=(10, 2.5))
+        self._ts_fig, self._ts_ax = plt.subplots(figsize=(10, 1.8))
         self._ts_fig.tight_layout(pad=1.5)
         self._ts_canvas = FigureCanvasTkAgg(self._ts_fig, master=self._ts_outer)
         self._ts_canvas.draw()
@@ -504,6 +508,9 @@ class SWWAnimationGUI:
                      '_speed_frame_count', '_speed_depth_frame_count'):
             setattr(self._splotter, attr, 0)
 
+        self._gen_used_basemap = basemap
+        self._last_gen_dpi = dpi
+
         save_method = getattr(self._splotter, _QTY_SAVE_METHOD[qty])
         self._generate_next_frame(0, sww_frames, save_method, dpi, vmin, vmax,
                                    plot_dir, qty, cmap, basemap, alpha,
@@ -558,7 +565,50 @@ class SWWAnimationGUI:
         prefix = self._sww_prefix
         self._set_status(
             f'Done -{n_frames} frames saved to {plot_dir}')
+        self._compute_plot_transform(self._last_gen_dpi)
         self._load_frames(plot_dir, qty, prefix)
+
+    def _compute_plot_transform(self, dpi):
+        """Render frame 0 via Agg (no Tk window) to get the axes coordinate transform."""
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+        import numpy as np
+        sp = self._splotter
+        if sp is None:
+            self._plot_transform = None
+            return
+        try:
+            depth = sp.depth[0, :]
+            try:
+                elev = sp.elev[0, :]
+            except (IndexError, TypeError):
+                elev = sp.elev
+
+            fig = Figure(figsize=(10, 6), dpi=dpi)
+            FigureCanvasAgg(fig)
+            ax = fig.add_subplot(111)
+
+            sp.triang.set_mask(depth > sp.min_depth)
+            ax.tripcolor(sp.triang, facecolors=elev, cmap='Greys_r')
+            sp.triang.set_mask(depth < sp.min_depth)
+            im = ax.tripcolor(sp.triang, facecolors=depth, cmap='viridis')
+            sp.triang.set_mask(None)
+            ax.set_aspect('equal')
+            ax.set_xlabel('Easting (m)')
+            ax.set_ylabel('Northing (m)')
+            fig.colorbar(im, ax=ax)
+
+            fig.canvas.draw()
+
+            self._plot_transform = dict(
+                pos=ax.get_position(),
+                xlim=ax.get_xlim(),
+                ylim=ax.get_ylim(),
+                W=int(fig.get_figwidth() * fig.get_dpi()),
+                H=int(fig.get_figheight() * fig.get_dpi()),
+            )
+        except Exception:
+            self._plot_transform = None
 
     # -------------------------------------------------------------- #
     # Frame loading and display                                       #
@@ -588,9 +638,11 @@ class SWWAnimationGUI:
         img = mpimage.imread(self._frames[idx])
         if self._im is None:
             self._im = self._ax.imshow(img, aspect='equal')
+            self._im.set_extent([0, img.shape[1], img.shape[0], 0])
         else:
             self._im.set_data(img)
             self._im.set_extent([0, img.shape[1], img.shape[0], 0])
+        self._update_pick_overlay()
         self._canvas.draw_idle()
         self._update_ts_cursor()
 
@@ -684,25 +736,37 @@ class SWWAnimationGUI:
         md = sp.min_depth
         try:
             elev = sp.elev[fidx, :]
-        except IndexError:
+        except (IndexError, TypeError):
             elev = sp.elev
+
+        use_basemap = self._gen_used_basemap and (sp.epsg is not None)
+        triang_pick = sp.triang_abs if use_basemap else sp.triang
 
         self._ax.cla()
         self._im = None   # detached by cla(); reset so _show_frame recreates it
+        self._remove_pick_overlay()
         self._ax.set_aspect('equal')
         self._ax.set_title(
             'Click to pick a timeseries point  |  Esc to cancel', fontsize=9)
 
-        sp.triang.set_mask(depth > md)
-        self._ax.tripcolor(sp.triang, facecolors=elev, cmap='Greys_r')
-        sp.triang.set_mask(depth <= md)
-        self._ax.tripcolor(sp.triang, facecolors=depth, cmap='viridis', alpha=0.8)
-        sp.triang.set_mask(None)
+        if not use_basemap:
+            triang_pick.set_mask(depth > md)
+            self._ax.tripcolor(triang_pick, facecolors=elev, cmap='Greys_r')
+        triang_pick.set_mask(depth <= md)
+        self._ax.tripcolor(triang_pick, facecolors=depth, cmap='viridis', alpha=0.8)
+        triang_pick.set_mask(None)
+
+        if use_basemap:
+            from anuga.utilities.animate import _add_basemap, BASEMAP_PROVIDERS
+            provider_label = self._basemap_provider_var.get()
+            provider_str = BASEMAP_PROVIDERS.get(provider_label, 'OpenStreetMap.Mapnik')
+            _add_basemap(self._ax, sp.epsg, provider_str)
 
         # Mark existing pick if present
         if self._ts_triangle is not None:
-            self._ax.plot(sp.xc[self._ts_triangle], sp.yc[self._ts_triangle],
-                          'r*', markersize=14, zorder=5, label='current pick')
+            mx = sp.xc[self._ts_triangle] + (sp.xllcorner if use_basemap else 0)
+            my = sp.yc[self._ts_triangle] + (sp.yllcorner if use_basemap else 0)
+            self._ax.plot(mx, my, 'r*', markersize=14, zorder=5)
 
         self._ax.set_xlabel('Easting (m)')
         self._ax.set_ylabel('Northing (m)')
@@ -723,7 +787,13 @@ class SWWAnimationGUI:
             return
         import numpy as np
         sp = self._splotter
-        dist = np.sqrt((sp.xc - event.xdata)**2 + (sp.yc - event.ydata)**2)
+        use_basemap = self._gen_used_basemap and (sp.epsg is not None)
+        if use_basemap:
+            xc = sp.xc + sp.xllcorner
+            yc = sp.yc + sp.yllcorner
+        else:
+            xc, yc = sp.xc, sp.yc
+        dist = np.sqrt((xc - event.xdata)**2 + (yc - event.ydata)**2)
         self._ts_triangle = int(dist.argmin())
         self._exit_pick_mode()
         self._update_timeseries()
@@ -835,6 +905,55 @@ class SWWAnimationGUI:
         self._ts_canvas.draw_idle()
         if self._ts_outer.winfo_ismapped():
             self._ts_outer.pack_forget()
+        self._remove_pick_overlay()
+        self._canvas.draw_idle()
+
+    def _remove_pick_overlay(self):
+        """Remove the centroid marker from the animation canvas."""
+        if self._pick_overlay is not None:
+            try:
+                self._pick_overlay.remove()
+            except Exception:
+                pass
+            self._pick_overlay = None
+
+    def _update_pick_overlay(self):
+        """Add/update the centroid marker on the animation PNG (no draw_idle call)."""
+        self._remove_pick_overlay()
+        if (self._ts_triangle is None or self._plot_transform is None
+                or not self._frames or self._pick_mode):
+            return
+
+        sp = self._splotter
+        tri = self._ts_triangle
+        pt = self._plot_transform
+
+        # Centroid in the coordinate system used to generate frames
+        use_basemap = self._gen_used_basemap and (sp.epsg is not None)
+        if use_basemap:
+            xd = sp.xc[tri] + sp.xllcorner
+            yd = sp.yc[tri] + sp.yllcorner
+            # Shift the cached (relative-coord) limits to absolute coords
+            xlim = (pt['xlim'][0] + sp.xllcorner, pt['xlim'][1] + sp.xllcorner)
+            ylim = (pt['ylim'][0] + sp.yllcorner, pt['ylim'][1] + sp.yllcorner)
+        else:
+            xd, yd = sp.xc[tri], sp.yc[tri]
+            xlim, ylim = pt['xlim'], pt['ylim']
+
+        pos = pt['pos']
+        W, H = pt['W'], pt['H']
+
+        xfrac = (xd - xlim[0]) / (xlim[1] - xlim[0])
+        yfrac = (yd - ylim[0]) / (ylim[1] - ylim[0])
+
+        # Convert figure-fraction position to image pixel coords,
+        # then map to axes data coords (axes x = col, axes y = row for our extent).
+        ax_x = (pos.x0 + pos.width * xfrac) * W
+        ax_y = (1.0 - (pos.y0 + pos.height * yfrac)) * H
+
+        self._pick_overlay, = self._ax.plot(
+            ax_x, ax_y, 'r*', markersize=12, zorder=10,
+            markeredgecolor='white', markeredgewidth=0.5)
 
     # -------------------------------------------------------------- #
     # Helpers                                                         #
