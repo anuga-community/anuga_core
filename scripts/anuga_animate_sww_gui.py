@@ -13,8 +13,6 @@ Usage::
 
 import os
 import glob
-import queue
-import threading
 import tkinter as tk
 from tkinter import ttk, filedialog
 
@@ -87,9 +85,8 @@ class SWWAnimationGUI:
 
         # generation state
         self._splotter = None
-        self._gen_thread = None
-        self._gen_queue = queue.Queue()
         self._cancel_flag = False
+        self._gen_after_id = None
 
         self._build_ui()
 
@@ -352,50 +349,40 @@ class SWWAnimationGUI:
             setattr(self._splotter, attr, 0)
 
         save_method = getattr(self._splotter, _QTY_SAVE_METHOD[qty])
+        self._generate_next_frame(0, n_frames, save_method, dpi, vmin, vmax,
+                                   plot_dir, qty)
 
-        def _run():
-            try:
-                for i in range(n_frames):
-                    if self._cancel_flag:
-                        self._gen_queue.put(('cancelled', i))
-                        return
-                    save_method(frame=i, dpi=dpi, vmin=vmin, vmax=vmax)
-                    self._gen_queue.put(('progress', i + 1))
-            except Exception as e:
-                self._gen_queue.put(('error', str(e)))
-                return
-            self._gen_queue.put(('done', n_frames))
-
-        self._gen_thread = threading.Thread(target=_run, daemon=True)
-        self._gen_thread.start()
-        self._poll_generation(plot_dir, qty, n_frames)
-
-    def _poll_generation(self, plot_dir, qty, n_frames):
+    def _generate_next_frame(self, idx, n_frames, save_method,
+                              dpi, vmin, vmax, plot_dir, qty):
+        if self._cancel_flag:
+            self._set_status(f'Generation cancelled after {idx} frames.')
+            self._gen_btn.config(state=tk.NORMAL)
+            self._cancel_btn.config(state=tk.DISABLED)
+            return
         try:
-            while True:
-                kind, value = self._gen_queue.get_nowait()
-                if kind == 'progress':
-                    self._progress_var.set(value)
-                    self._progress_label.config(text=f'{value} / {n_frames}')
-                elif kind == 'done':
-                    self._on_generation_done(plot_dir, qty, n_frames)
-                    return
-                elif kind == 'cancelled':
-                    self._set_status(f'Generation cancelled after {value} frames.')
-                    self._gen_btn.config(state=tk.NORMAL)
-                    self._cancel_btn.config(state=tk.DISABLED)
-                    return
-                elif kind == 'error':
-                    self._set_status(f'Error during generation: {value}')
-                    self._gen_btn.config(state=tk.NORMAL)
-                    self._cancel_btn.config(state=tk.DISABLED)
-                    return
-        except queue.Empty:
-            pass
-        self.root.after(100, lambda: self._poll_generation(plot_dir, qty, n_frames))
+            save_method(frame=idx, dpi=dpi, vmin=vmin, vmax=vmax)
+        except Exception as e:
+            self._set_status(f'Error generating frame {idx}: {e}')
+            self._gen_btn.config(state=tk.NORMAL)
+            self._cancel_btn.config(state=tk.DISABLED)
+            return
+
+        self._progress_var.set(idx + 1)
+        self._progress_label.config(text=f'{idx + 1} / {n_frames}')
+
+        if idx + 1 < n_frames:
+            self._gen_after_id = self.root.after(
+                1, lambda: self._generate_next_frame(
+                    idx + 1, n_frames, save_method,
+                    dpi, vmin, vmax, plot_dir, qty))
+        else:
+            self._on_generation_done(plot_dir, qty, n_frames)
 
     def _cancel_generation(self):
         self._cancel_flag = True
+        if self._gen_after_id is not None:
+            self.root.after_cancel(self._gen_after_id)
+            self._gen_after_id = None
 
     def _on_generation_done(self, plot_dir, qty, n_frames):
         self._progress_var.set(n_frames)
