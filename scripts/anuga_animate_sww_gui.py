@@ -208,29 +208,27 @@ class SWWAnimationGUI:
                     textvariable=self._alpha_var,
                     format='%.2f', width=5).pack(side=tk.LEFT, padx=2)
 
-        # ---- Row 4: SWW info + generate button ----
+        # ---- Row 4: SWW info ----
         row4 = ttk.Frame(ctrl)
-        row4.pack(fill=tk.X, pady=4)
+        row4.pack(fill=tk.X, pady=(4, 0))
         self._sww_info_label = ttk.Label(row4, text='No SWW file loaded.',
                                           foreground='grey')
         self._sww_info_label.pack(side=tk.LEFT, padx=4)
 
-        self._cancel_btn = ttk.Button(row4, text='Cancel',
-                                       command=self._cancel_generation,
-                                       state=tk.DISABLED)
-        self._cancel_btn.pack(side=tk.RIGHT, padx=2)
-        self._gen_btn = ttk.Button(row4, text='Generate Frames',
-                                    command=self._start_generation,
-                                    state=tk.DISABLED)
-        self._gen_btn.pack(side=tk.RIGHT, padx=2)
-
-        # ---- Row 5: progress bar ----
+        # ---- Row 5: generate/cancel + progress bar ----
         row5 = ttk.Frame(ctrl)
         row5.pack(fill=tk.X, pady=2)
-        ttk.Label(row5, text='Progress:').pack(side=tk.LEFT)
+        self._gen_btn = ttk.Button(row5, text='Generate Frames',
+                                    command=self._start_generation,
+                                    state=tk.DISABLED)
+        self._gen_btn.pack(side=tk.LEFT, padx=(0, 2))
+        self._cancel_btn = ttk.Button(row5, text='Cancel',
+                                       command=self._cancel_generation,
+                                       state=tk.DISABLED)
+        self._cancel_btn.pack(side=tk.LEFT, padx=2)
         self._progress_var = tk.IntVar(value=0)
         self._progress_bar = ttk.Progressbar(row5, variable=self._progress_var,
-                                              maximum=100, length=400)
+                                              maximum=100)
         self._progress_bar.pack(side=tk.LEFT, padx=4, fill=tk.X, expand=True)
         self._progress_label = ttk.Label(row5, text='', width=14)
         self._progress_label.pack(side=tk.LEFT)
