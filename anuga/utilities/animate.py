@@ -755,7 +755,7 @@ class SWW_plotter:
 
     def save_depth_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
-                         alpha=1.0):
+                         alpha=1.0, basemap_provider=BASEMAP_DEFAULT):
 
         import matplotlib.pyplot as plt
 
@@ -840,7 +840,7 @@ class SWW_plotter:
 
     def save_stage_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=-20.0, vmax=20.0, cmap='viridis', basemap=False,
-                         alpha=1.0):
+                         alpha=1.0, basemap_provider=BASEMAP_DEFAULT):
 
         import matplotlib.pyplot as plt
 
@@ -999,7 +999,7 @@ class SWW_plotter:
 
     def save_speed_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=0.0, vmax=10.0, cmap='viridis', basemap=False,
-                         alpha=1.0):
+                         alpha=1.0, basemap_provider=BASEMAP_DEFAULT):
 
         name = self.name
         plot_dir = self.plot_dir
