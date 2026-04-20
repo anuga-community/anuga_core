@@ -281,7 +281,7 @@ class AnimationGUI:
 
         img = mpimage.imread(self._frames[idx])
         if self._im is None:
-            self._im = self._ax.imshow(img, aspect='auto')
+            self._im = self._ax.imshow(img, aspect='equal')
         else:
             self._im.set_data(img)
             self._im.set_extent([0, img.shape[1], img.shape[0], 0])
