@@ -2,9 +2,40 @@
 A module to allow interactive plotting in a Jupyter notebook of quantities and mesh
 associated with an ANUGA domain and SWW file.
 """
+import warnings
 import numpy as np
 import os
-import matplotlib.pyplot as plt
+
+try:
+    import matplotlib.pyplot as plt
+except ImportError:
+    raise ImportError(
+        "matplotlib is required for anuga.utilities.animate. "
+        "Install it with: conda install matplotlib  or  pip install matplotlib"
+    )
+
+
+def _add_basemap(ax, epsg):
+    """Overlay an OpenStreetMap basemap on *ax* using contextily.
+
+    The axis must already contain data plotted in the coordinate system given
+    by *epsg* (absolute coordinates). Warns and returns if contextily is not
+    installed or tile fetching fails.
+    """
+    try:
+        import contextily as cx
+    except ImportError:
+        warnings.warn(
+            "contextily is not installed — OSM basemap will be skipped. "
+            "Install it with: conda install contextily  or  pip install contextily",
+            stacklevel=3)
+        return
+    try:
+        cx.add_basemap(ax, crs=f'EPSG:{epsg}',
+                       source=cx.providers.OpenStreetMap.Mapnik,
+                       attribution_size=6)
+    except Exception as e:
+        warnings.warn(f"OSM basemap could not be fetched: {e}", stacklevel=3)
 
 
 class Domain_plotter:
@@ -45,6 +76,16 @@ class Domain_plotter:
 
         import matplotlib.tri as tri
         self.triang = tri.Triangulation(self.x, self.y, self.triangles)
+
+        self.epsg = domain.geo_reference.epsg
+
+        if self.epsg is not None and not absolute:
+            self.triang_abs = tri.Triangulation(
+                self.x + self.xllcorner,
+                self.y + self.yllcorner,
+                self.triangles)
+        else:
+            self.triang_abs = self.triang
 
         self.elev = domain.quantities['elevation'].centroid_values
         self.stage = domain.quantities['stage'].centroid_values
@@ -91,7 +132,8 @@ class Domain_plotter:
 
         return fig, ax
 
-    def _depth_frame(self, figsize, dpi, vmin, vmax):
+    def _depth_frame(self, figsize, dpi, vmin, vmax, cmap='viridis',
+                     basemap=False, alpha=1.0):
 
 
         name = os.path.basename(self.domain.get_name())
@@ -105,28 +147,32 @@ class Domain_plotter:
 
         ax.set_title('Depth: Time {0:0>4}'.format(time))
 
-        self.triang.set_mask(self.depth > md)
-        ax.tripcolor(self.triang,
-                      facecolors=self.elev,
-                      cmap='Greys_r')
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        if not (basemap and self.epsg):
+            triang.set_mask(self.depth > md)
+            ax.tripcolor(triang, facecolors=self.elev, cmap='Greys_r')
 
-
-        self.triang.set_mask(self.depth <= md)
-        im = ax.tripcolor(self.triang,
+        triang.set_mask(self.depth <= md)
+        im = ax.tripcolor(triang,
                       facecolors=self.depth,
-                      cmap='viridis',
+                      cmap=cmap,
+                      alpha=alpha,
                       vmin=vmin, vmax=vmax)
 
-        self.triang.set_mask(None)
+        triang.set_mask(None)
 
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
         fig.colorbar(im, ax=ax)
 
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg)
+
         return fig, ax
 
     def save_depth_frame(self, figsize=(10, 6), dpi=80,
-                         vmin=0.0, vmax=20):
+                         vmin=0.0, vmax=20, cmap='viridis',
+                         basemap=False, alpha=1.0):
 
 
 
@@ -134,7 +180,7 @@ class Domain_plotter:
         name = os.path.basename(self.domain.get_name())
         frame = self._depth_frame_count
 
-        fig, ax = self._depth_frame(figsize, dpi, vmin, vmax)
+        fig, ax = self._depth_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha)
 
         if plot_dir is None:
             fig.savefig(name+'_depth_{0:0>10}.png'.format(frame))
@@ -199,7 +245,8 @@ class Domain_plotter:
 
         return anim
 
-    def _stage_frame(self, figsize, dpi, vmin, vmax):
+    def _stage_frame(self, figsize, dpi, vmin, vmax, cmap='viridis',
+                     basemap=False, alpha=1.0):
 
         name = os.path.basename(self.domain.get_name())
         time = self.domain.get_time()
@@ -212,28 +259,32 @@ class Domain_plotter:
 
         ax.set_title('Stage: Time {0:0>4}'.format(time))
 
-        self.triang.set_mask(self.depth > md)
-        ax.tripcolor(self.triang,
-                      facecolors=self.elev,
-                      cmap='Greys_r')
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        if not (basemap and self.epsg):
+            triang.set_mask(self.depth > md)
+            ax.tripcolor(triang, facecolors=self.elev, cmap='Greys_r')
 
-        self.triang.set_mask(self.depth <= md)
-        im = ax.tripcolor(self.triang,
+        triang.set_mask(self.depth <= md)
+        im = ax.tripcolor(triang,
                       facecolors=self.stage,
-                      cmap='viridis',
+                      cmap=cmap,
+                      alpha=alpha,
                       vmin=vmin, vmax=vmax)
 
+        triang.set_mask(None)
 
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
         fig.colorbar(im, ax=ax)
 
-        self.triang.set_mask(None)
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg)
 
         return fig, ax
 
     def save_stage_frame(self, figsize=(10, 6), dpi=80,
-                         vmin=-20.0, vmax=20.0):
+                         vmin=-20.0, vmax=20.0, cmap='viridis',
+                         basemap=False, alpha=1.0):
 
         import matplotlib.pyplot as plt
 
@@ -241,7 +292,7 @@ class Domain_plotter:
         name = os.path.basename(self.domain.get_name())
         frame = self._stage_frame_count
 
-        fig, ax = self._stage_frame(figsize, dpi, vmin, vmax)
+        fig, ax = self._stage_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha)
 
         if plot_dir is None:
             fig.savefig(name+'_stage_{0:0>10}.png'.format(frame))
@@ -307,7 +358,8 @@ class Domain_plotter:
 
         return anim
 
-    def _speed_frame(self, figsize, dpi, vmin, vmax):
+    def _speed_frame(self, figsize, dpi, vmin, vmax, cmap='viridis',
+                     basemap=False, alpha=1.0):
 
 
         name = os.path.basename(self.domain.get_name())
@@ -329,27 +381,32 @@ class Domain_plotter:
 
         ax.set_title('Speed: Time {0:0>4}'.format(time))
 
-        self.triang.set_mask(self.depth > md)
-        ax.tripcolor(self.triang,
-                      facecolors=self.elev,
-                      cmap='Greys_r')
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        if not (basemap and self.epsg):
+            triang.set_mask(self.depth > md)
+            ax.tripcolor(triang, facecolors=self.elev, cmap='Greys_r')
 
-        self.triang.set_mask(self.depth <= md)
-        im = ax.tripcolor(self.triang,
+        triang.set_mask(self.depth <= md)
+        im = ax.tripcolor(triang,
                       facecolors=self.speed,
-                      cmap='viridis',
+                      cmap=cmap,
+                      alpha=alpha,
                       vmin=vmin, vmax=vmax)
+
+        triang.set_mask(None)
 
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
         fig.colorbar(im, ax=ax)
 
-        self.triang.set_mask(None)
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg)
 
         return fig, ax
 
     def save_speed_frame(self, figsize=(10, 6), dpi=80,
-                         vmin=-20.0, vmax=20.0):
+                         vmin=-20.0, vmax=20.0, cmap='viridis',
+                         basemap=False, alpha=1.0):
 
         import matplotlib.pyplot as plt
 
@@ -357,7 +414,7 @@ class Domain_plotter:
         name = os.path.basename(self.domain.get_name())
         frame = self._speed_frame_count
 
-        fig, ax = self._speed_frame(figsize, dpi, vmin, vmax)
+        fig, ax = self._speed_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_{0:0>10}.png'.format(frame))
@@ -531,12 +588,26 @@ class SWW_plotter:
         self.timezone = p.timezone
         self.starttime = p.starttime
 
+        try:
+            self.epsg = int(p.epsg)
+        except AttributeError:
+            self.epsg = None
+
         if absolute is True:
             self.x[:] = self.x + self.xllcorner
             self.y[:] = self.y + self.yllcorner
 
             self.xc[:] = self.xc + self.xllcorner
             self.yc[:] = self.yc + self.yllcorner
+
+        # Absolute-coordinate triangulation used when drawing a basemap
+        if self.epsg is not None and not absolute:
+            self.triang_abs = tri.Triangulation(
+                self.x + self.xllcorner,
+                self.y + self.yllcorner,
+                self.triangles)
+        else:
+            self.triang_abs = self.triang
 
 
         self.elev = np.array(p.variables['elevation_c'])
@@ -591,7 +662,8 @@ class SWW_plotter:
     #------------------------------------------
     # Depth procedures
     #------------------------------------------
-    def _depth_frame(self, frame, figsize, dpi, vmin, vmax):
+    def _depth_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
+                     basemap=False, alpha=1.0):
 
         name = self.name
         time = self.time[frame]
@@ -612,29 +684,34 @@ class SWW_plotter:
 
         plt.title('Depth: Time {0:0>4}'.format(time))
 
-        self.triang.set_mask(depth > md)
-        ax.tripcolor(self.triang,
-                      facecolors=elev,
-                      cmap='Greys_r')
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        if not (basemap and self.epsg):
+            triang.set_mask(depth > md)
+            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
 
-        self.triang.set_mask(depth < md)
-        im = ax.tripcolor(self.triang,
+        triang.set_mask(depth < md)
+        im = ax.tripcolor(triang,
                       facecolors=depth,
-                      cmap='viridis',
+                      cmap=cmap,
+                      alpha=alpha,
                       vmin=vmin, vmax=vmax)
 
 
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
 
-        self.triang.set_mask(None)
+        triang.set_mask(None)
 
         fig.colorbar(im, ax=ax)
+
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg)
 
         return fig, ax
 
     def save_depth_frame(self, frame=-1, figsize=(10, 6), dpi=160,
-                         vmin=0.0, vmax=20.0):
+                         vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
+                         alpha=1.0):
 
         import matplotlib.pyplot as plt
 
@@ -642,7 +719,7 @@ class SWW_plotter:
         plot_dir = self.plot_dir
         frame_num = self._depth_frame_count
 
-        fig, ax = self._depth_frame(frame, figsize, dpi, vmin, vmax)
+        fig, ax = self._depth_frame(frame, figsize, dpi, vmin, vmax, cmap, basemap, alpha)
 
         if plot_dir is None:
             fig.savefig(name+'_depth_{0:0>10}.png'.format(frame_num))
@@ -668,7 +745,8 @@ class SWW_plotter:
     #------------------------------------------
     # Stage procedures
     #------------------------------------------
-    def _stage_frame(self, frame, figsize, dpi, vmin, vmax):
+    def _stage_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
+                     basemap=False, alpha=1.0):
 
         import matplotlib.pyplot as plt
 
@@ -690,18 +768,19 @@ class SWW_plotter:
 
         plt.title('Stage: Time {0:0>4}'.format(time))
 
-        self.triang.set_mask(depth > md)
-        ax.tripcolor(self.triang,
-                      facecolors=elev,
-                      cmap='Greys_r')
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        if not (basemap and self.epsg):
+            triang.set_mask(depth > md)
+            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
 
-        self.triang.set_mask(depth < md)
-        im = ax.tripcolor(self.triang,
+        triang.set_mask(depth < md)
+        im = ax.tripcolor(triang,
                       facecolors=stage,
-                      cmap='viridis',
+                      cmap=cmap,
+                      alpha=alpha,
                       vmin=vmin, vmax=vmax)
 
-        self.triang.set_mask(None)
+        triang.set_mask(None)
 
 
         ax.set_xlabel('Easting (m)')
@@ -709,10 +788,14 @@ class SWW_plotter:
 
         fig.colorbar(im, ax=ax)
 
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg)
+
         return fig, ax
 
     def save_stage_frame(self, frame=-1, figsize=(10, 6), dpi=160,
-                         vmin=-20.0, vmax=20.0):
+                         vmin=-20.0, vmax=20.0, cmap='viridis', basemap=False,
+                         alpha=1.0):
 
         import matplotlib.pyplot as plt
 
@@ -720,7 +803,7 @@ class SWW_plotter:
         plot_dir = self.plot_dir
         frame_num = self._stage_frame_count
 
-        fig, ax = self._stage_frame(frame, figsize, dpi, vmin, vmax)
+        fig, ax = self._stage_frame(frame, figsize, dpi, vmin, vmax, cmap, basemap, alpha)
 
         if plot_dir is None:
             fig.savefig(name+'_stage_{0:0>10}.png'.format(frame_num))
@@ -822,7 +905,8 @@ class SWW_plotter:
     #------------------------------------------
     # Speed procedures
     #------------------------------------------
-    def _speed_frame(self, frame, figsize, dpi, vmin, vmax):
+    def _speed_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
+                     basemap=False, alpha=1.0):
 
         import matplotlib.pyplot as plt
 
@@ -844,33 +928,38 @@ class SWW_plotter:
 
         plt.title('Speed: Time {0:0>4}'.format(time))
 
-        self.triang.set_mask(depth > md)
-        ax.tripcolor(self.triang,
-                      facecolors=elev,
-                      cmap='Greys_r')
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        if not (basemap and self.epsg):
+            triang.set_mask(depth > md)
+            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
 
-        self.triang.set_mask(depth < md)
-        im = ax.tripcolor(self.triang,
+        triang.set_mask(depth < md)
+        im = ax.tripcolor(triang,
                       facecolors=speed,
-                      cmap='viridis',
+                      cmap=cmap,
+                      alpha=alpha,
                       vmin=vmin, vmax=vmax)
 
-        self.triang.set_mask(None)
+        triang.set_mask(None)
 
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
         fig.colorbar(im, ax=ax)
 
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg)
+
         return fig, ax
 
     def save_speed_frame(self, frame=-1, figsize=(10, 6), dpi=160,
-                         vmin=0.0, vmax=10.0):
+                         vmin=0.0, vmax=10.0, cmap='viridis', basemap=False,
+                         alpha=1.0):
 
         name = self.name
         plot_dir = self.plot_dir
         frame_num = self._speed_frame_count
 
-        fig, ax = self._speed_frame(frame, figsize, dpi, vmin, vmax)
+        fig, ax = self._speed_frame(frame, figsize, dpi, vmin, vmax, cmap, basemap, alpha)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_{0:0>10}.png'.format(frame_num))

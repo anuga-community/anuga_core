@@ -13,14 +13,34 @@ Usage::
 
 import os
 import glob
-import tkinter as tk
-from tkinter import ttk, filedialog
+import sys
 
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib import image as mpimage
+try:
+    import tkinter as tk
+    from tkinter import ttk, filedialog
+except ImportError:
+    sys.exit(
+        "Error: tkinter is not available.\n"
+        "On Debian/Ubuntu: sudo apt install python3-tk\n"
+        "On conda: conda install tk"
+    )
+
+try:
+    import matplotlib
+    matplotlib.use('TkAgg')
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib import image as mpimage
+except ImportError as _e:
+    sys.exit(
+        f"Error: matplotlib is required but could not be loaded: {_e}\n"
+        "Install it with: conda install matplotlib  or  pip install matplotlib"
+    )
+except Exception as _e:
+    sys.exit(
+        f"Error: could not initialise the TkAgg matplotlib backend: {_e}\n"
+        "Ensure a display is available and tkinter is installed."
+    )
 
 
 # ------------------------------------------------------------------ #
@@ -159,6 +179,27 @@ class SWWAnimationGUI:
                     textvariable=self._stride_var, width=5).pack(side=tk.LEFT, padx=2)
         ttk.Label(row3, text='frames').pack(side=tk.LEFT)
 
+        ttk.Label(row3, text='   Colormap:').pack(side=tk.LEFT, padx=(8, 0))
+        self._cmap_var = tk.StringVar(value='viridis')
+        _CMAPS = ['viridis', 'plasma', 'inferno', 'magma', 'cividis',
+                  'Blues', 'Greens', 'Oranges', 'Reds', 'YlOrRd',
+                  'RdBu_r', 'coolwarm', 'seismic', 'jet', 'turbo']
+        ttk.Combobox(row3, textvariable=self._cmap_var,
+                     values=_CMAPS, width=10).pack(side=tk.LEFT, padx=2)
+
+        self._basemap_var = tk.BooleanVar(value=False)
+        self._basemap_chk = ttk.Checkbutton(row3, text='OSM basemap',
+                                             variable=self._basemap_var,
+                                             command=self._on_basemap_toggle,
+                                             state=tk.DISABLED)
+        self._basemap_chk.pack(side=tk.LEFT, padx=(8, 0))
+
+        ttk.Label(row3, text='  Alpha:').pack(side=tk.LEFT, padx=(4, 0))
+        self._alpha_var = tk.DoubleVar(value=1.0)
+        ttk.Spinbox(row3, from_=0.0, to=1.0, increment=0.05,
+                    textvariable=self._alpha_var,
+                    format='%.2f', width=5).pack(side=tk.LEFT, padx=2)
+
         # ---- Row 4: SWW info + generate button ----
         row4 = ttk.Frame(ctrl)
         row4.pack(fill=tk.X, pady=4)
@@ -278,8 +319,9 @@ class SWWAnimationGUI:
         n = len(self._splotter.time)
         t0 = self._splotter.time[0]
         t1 = self._splotter.time[-1]
+        epsg_msg = getattr(self, '_epsg_msg', '')
         self._sww_info_label.config(
-            text=f'{n} timesteps  |  t={t0:.1f} .. {t1:.1f} s',
+            text=f'{n} timesteps  |  t={t0:.1f} .. {t1:.1f} s{epsg_msg}',
             foreground='grey')
         self._gen_btn.config(state=tk.NORMAL)
         self._set_status(f'Loaded {os.path.basename(sww)} -{n} timesteps')
@@ -294,6 +336,35 @@ class SWWAnimationGUI:
             min_depth=float(self._mindepth_var.get()))
 
         self._sww_prefix = self._splotter.name  # bare basename, no extension
+
+        # Enable OSM basemap checkbox only when the SWW has an EPSG code
+        # and contextily is installed
+        has_epsg = self._splotter.epsg is not None
+        has_contextily = False
+        if has_epsg:
+            try:
+                import contextily  # noqa: F401
+                has_contextily = True
+            except ImportError:
+                pass
+        if has_epsg and has_contextily:
+            self._basemap_chk.config(state=tk.NORMAL)
+            epsg_msg = f'  EPSG:{self._splotter.epsg}'
+        elif has_epsg:
+            self._basemap_chk.config(state=tk.DISABLED)
+            self._basemap_var.set(False)
+            epsg_msg = f'  EPSG:{self._splotter.epsg} (install contextily for basemap)'
+        else:
+            self._basemap_chk.config(state=tk.DISABLED)
+            self._basemap_var.set(False)
+            epsg_msg = ''
+        self._epsg_msg = epsg_msg
+
+    def _on_basemap_toggle(self):
+        if self._basemap_var.get():
+            self._alpha_var.set(0.6)
+        else:
+            self._alpha_var.set(1.0)
 
     def _on_qty_change(self):
         qty = self._qty_var.get()
@@ -330,6 +401,14 @@ class SWWAnimationGUI:
         os.makedirs(plot_dir, exist_ok=True)
 
         qty   = self._qty_var.get()
+
+        # Remove stale frames from a previous generation
+        for old_file in _find_frames(plot_dir, qty, self._sww_prefix):
+            try:
+                os.remove(old_file)
+            except OSError:
+                pass
+
         try:
             vmin   = float(self._vmin_var.get())
             vmax   = float(self._vmax_var.get())
@@ -338,6 +417,10 @@ class SWWAnimationGUI:
         except ValueError as e:
             self._set_status(f'Invalid parameter: {e}')
             return
+
+        cmap    = self._cmap_var.get().strip() or 'viridis'
+        basemap = self._basemap_var.get()
+        alpha   = max(0.0, min(1.0, self._alpha_var.get()))
 
         n_total   = len(self._splotter.time)
         sww_frames = list(range(0, n_total, stride))
@@ -362,10 +445,11 @@ class SWWAnimationGUI:
 
         save_method = getattr(self._splotter, _QTY_SAVE_METHOD[qty])
         self._generate_next_frame(0, sww_frames, save_method, dpi, vmin, vmax,
-                                   plot_dir, qty)
+                                   plot_dir, qty, cmap, basemap, alpha)
 
     def _generate_next_frame(self, pos, sww_frames, save_method,
-                              dpi, vmin, vmax, plot_dir, qty):
+                              dpi, vmin, vmax, plot_dir, qty,
+                              cmap='viridis', basemap=False, alpha=1.0):
         n_to_gen  = len(sww_frames)
         sww_frame = sww_frames[pos]
 
@@ -375,7 +459,8 @@ class SWWAnimationGUI:
             self._cancel_btn.config(state=tk.DISABLED)
             return
         try:
-            save_method(frame=sww_frame, dpi=dpi, vmin=vmin, vmax=vmax)
+            save_method(frame=sww_frame, dpi=dpi, vmin=vmin, vmax=vmax,
+                        cmap=cmap, basemap=basemap, alpha=alpha)
         except Exception as e:
             self._set_status(f'Error generating frame {sww_frame}: {e}')
             self._gen_btn.config(state=tk.NORMAL)
@@ -390,7 +475,7 @@ class SWWAnimationGUI:
             self._gen_after_id = self.root.after(
                 1, lambda: self._generate_next_frame(
                     pos + 1, sww_frames, save_method,
-                    dpi, vmin, vmax, plot_dir, qty))
+                    dpi, vmin, vmax, plot_dir, qty, cmap, basemap, alpha))
         else:
             self._on_generation_done(plot_dir, qty, n_to_gen)
 
@@ -513,7 +598,7 @@ class SWWAnimationGUI:
         self._status_var.set(msg)
 
     def _on_close(self):
-        self._cancel_flag = True
+        self._cancel_generation()
         self._stop_playback()
         plt.close(self._fig)
         self.root.destroy()

@@ -13,14 +13,34 @@ Usage::
 
 import os
 import glob
-import tkinter as tk
-from tkinter import ttk, filedialog
+import sys
 
-import matplotlib
-matplotlib.use('TkAgg')
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
-from matplotlib import image as mpimage
+try:
+    import tkinter as tk
+    from tkinter import ttk, filedialog
+except ImportError:
+    sys.exit(
+        "Error: tkinter is not available.\n"
+        "On Debian/Ubuntu: sudo apt install python3-tk\n"
+        "On conda: conda install tk"
+    )
+
+try:
+    import matplotlib
+    matplotlib.use('TkAgg')
+    import matplotlib.pyplot as plt
+    from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib import image as mpimage
+except ImportError as _e:
+    sys.exit(
+        f"Error: matplotlib is required but could not be loaded: {_e}\n"
+        "Install it with: conda install matplotlib  or  pip install matplotlib"
+    )
+except Exception as _e:
+    sys.exit(
+        f"Error: could not initialise the TkAgg matplotlib backend: {_e}\n"
+        "Ensure a display is available and tkinter is installed."
+    )
 
 
 # ------------------------------------------------------------------ #
