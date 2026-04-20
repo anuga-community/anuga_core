@@ -153,6 +153,12 @@ class SWWAnimationGUI:
         self._mindepth_var = tk.StringVar(value='0.001')
         ttk.Entry(row3, textvariable=self._mindepth_var, width=7).pack(side=tk.LEFT, padx=2)
 
+        ttk.Label(row3, text='   Every N:').pack(side=tk.LEFT, padx=(8, 0))
+        self._stride_var = tk.StringVar(value='1')
+        ttk.Spinbox(row3, from_=1, to=1000, increment=1,
+                    textvariable=self._stride_var, width=5).pack(side=tk.LEFT, padx=2)
+        ttk.Label(row3, text='frames').pack(side=tk.LEFT)
+
         # ---- Row 4: SWW info + generate button ----
         row4 = ttk.Frame(ctrl)
         row4.pack(fill=tk.X, pady=4)
@@ -325,21 +331,27 @@ class SWWAnimationGUI:
 
         qty   = self._qty_var.get()
         try:
-            vmin  = float(self._vmin_var.get())
-            vmax  = float(self._vmax_var.get())
-            dpi   = int(self._dpi_var.get())
+            vmin   = float(self._vmin_var.get())
+            vmax   = float(self._vmax_var.get())
+            dpi    = int(self._dpi_var.get())
+            stride = max(1, int(self._stride_var.get()))
         except ValueError as e:
             self._set_status(f'Invalid parameter: {e}')
             return
 
-        n_frames = len(self._splotter.time)
-        self._progress_bar.config(maximum=n_frames)
+        n_total   = len(self._splotter.time)
+        sww_frames = list(range(0, n_total, stride))
+        n_to_gen   = len(sww_frames)
+
+        stride_msg = f' (every {stride})' if stride > 1 else ''
+        self._progress_bar.config(maximum=n_to_gen)
         self._progress_var.set(0)
-        self._progress_label.config(text=f'0 / {n_frames}')
+        self._progress_label.config(text=f'0 / {n_to_gen}')
         self._gen_btn.config(state=tk.DISABLED)
         self._cancel_btn.config(state=tk.NORMAL)
         self._cancel_flag = False
-        self._set_status(f'Generating {n_frames} {qty} frames...')
+        self._set_status(
+            f'Generating {n_to_gen} {qty} frames{stride_msg}...')
         self.root.update_idletasks()
 
         # Reset plotter frame counters and re-point it at the output dir
@@ -349,35 +361,38 @@ class SWWAnimationGUI:
             setattr(self._splotter, attr, 0)
 
         save_method = getattr(self._splotter, _QTY_SAVE_METHOD[qty])
-        self._generate_next_frame(0, n_frames, save_method, dpi, vmin, vmax,
+        self._generate_next_frame(0, sww_frames, save_method, dpi, vmin, vmax,
                                    plot_dir, qty)
 
-    def _generate_next_frame(self, idx, n_frames, save_method,
+    def _generate_next_frame(self, pos, sww_frames, save_method,
                               dpi, vmin, vmax, plot_dir, qty):
+        n_to_gen  = len(sww_frames)
+        sww_frame = sww_frames[pos]
+
         if self._cancel_flag:
-            self._set_status(f'Generation cancelled after {idx} frames.')
+            self._set_status(f'Generation cancelled after {pos} frames.')
             self._gen_btn.config(state=tk.NORMAL)
             self._cancel_btn.config(state=tk.DISABLED)
             return
         try:
-            save_method(frame=idx, dpi=dpi, vmin=vmin, vmax=vmax)
+            save_method(frame=sww_frame, dpi=dpi, vmin=vmin, vmax=vmax)
         except Exception as e:
-            self._set_status(f'Error generating frame {idx}: {e}')
+            self._set_status(f'Error generating frame {sww_frame}: {e}')
             self._gen_btn.config(state=tk.NORMAL)
             self._cancel_btn.config(state=tk.DISABLED)
             return
 
-        self._progress_var.set(idx + 1)
-        self._progress_label.config(text=f'{idx + 1} / {n_frames}')
+        self._progress_var.set(pos + 1)
+        self._progress_label.config(text=f'{pos + 1} / {n_to_gen}')
         self.root.update_idletasks()
 
-        if idx + 1 < n_frames:
+        if pos + 1 < n_to_gen:
             self._gen_after_id = self.root.after(
                 1, lambda: self._generate_next_frame(
-                    idx + 1, n_frames, save_method,
+                    pos + 1, sww_frames, save_method,
                     dpi, vmin, vmax, plot_dir, qty))
         else:
-            self._on_generation_done(plot_dir, qty, n_frames)
+            self._on_generation_done(plot_dir, qty, n_to_gen)
 
     def _cancel_generation(self):
         self._cancel_flag = True
