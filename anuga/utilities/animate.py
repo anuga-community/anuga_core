@@ -162,6 +162,7 @@ class Domain_plotter:
         ax.triplot(self.triang, linewidth=0.4)
 
         ax.set_title('Mesh')
+        ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
 
@@ -199,6 +200,7 @@ class Domain_plotter:
 
         triang.set_mask(None)
 
+        ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
         fig.colorbar(im, ax=ax)
@@ -313,6 +315,7 @@ class Domain_plotter:
 
         triang.set_mask(None)
 
+        ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
         fig.colorbar(im, ax=ax)
@@ -437,6 +440,7 @@ class Domain_plotter:
 
         triang.set_mask(None)
 
+        ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
         fig.colorbar(im, ax=ax)
@@ -695,6 +699,7 @@ class SWW_plotter:
         im = ax.triplot(self.triang, linewidth=0.4, **kwargs)
 
         ax.set_title('Mesh')
+        ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
 
@@ -741,6 +746,7 @@ class SWW_plotter:
                       vmin=vmin, vmax=vmax)
 
 
+        ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
 
@@ -828,6 +834,7 @@ class SWW_plotter:
         triang.set_mask(None)
 
 
+        ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
 
@@ -910,6 +917,7 @@ class SWW_plotter:
         self.triang.set_mask(None)
 
 
+        ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
         fig.colorbar(im, ax=ax)
@@ -988,6 +996,7 @@ class SWW_plotter:
 
         triang.set_mask(None)
 
+        ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
         fig.colorbar(im, ax=ax)
