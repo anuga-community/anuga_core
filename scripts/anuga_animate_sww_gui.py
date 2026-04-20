@@ -318,9 +318,9 @@ class SWWAnimationGUI:
         self._ax.axis('off')
         self._fig.tight_layout(pad=0)
 
-        canvas_frame = ttk.Frame(self.root)
-        canvas_frame.pack(fill=tk.BOTH, expand=True)
-        self._canvas = FigureCanvasTkAgg(self._fig, master=canvas_frame)
+        self._canvas_frame = ttk.Frame(self.root)
+        self._canvas_frame.pack(fill=tk.BOTH, expand=True)
+        self._canvas = FigureCanvasTkAgg(self._fig, master=self._canvas_frame)
         self._canvas.draw()
         self._canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
@@ -688,6 +688,7 @@ class SWWAnimationGUI:
             elev = sp.elev
 
         self._ax.cla()
+        self._im = None   # detached by cla(); reset so _show_frame recreates it
         self._ax.set_aspect('equal')
         self._ax.set_title(
             'Click to pick a timeseries point  |  Esc to cancel', fontsize=9)
@@ -807,9 +808,11 @@ class SWWAnimationGUI:
         self._ts_info_label.config(
             text=f'Triangle {tri}  |  x={xc:.1f}  y={yc:.1f}')
 
-        # Show the panel if not already visible
+        # Show the panel if not already visible.
+        # Pack it before the canvas frame so it takes space from the bottom.
         if not self._ts_outer.winfo_ismapped():
-            self._ts_outer.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=False)
+            self._ts_outer.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=False,
+                                before=self._canvas_frame)
 
     def _update_ts_cursor(self):
         """Move the vertical cursor line to the current animation time."""
