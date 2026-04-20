@@ -283,27 +283,14 @@ class SWWAnimationGUI:
         self._update_auto_limits()
 
     def _load_splotter(self, sww):
-        """Create SWW_plotter, working from the SWW file's directory so that
-        the name prefix stays as a bare basename (avoiding path-join bugs)."""
         from anuga.utilities.animate import SWW_plotter
 
-        sww_abs  = os.path.abspath(sww)
-        sww_dir  = os.path.dirname(sww_abs)
-        sww_base = os.path.basename(sww_abs)
+        self._splotter = SWW_plotter(
+            swwfile=sww,
+            plot_dir=None,        # suppress automatic make_plot_dir
+            min_depth=float(self._mindepth_var.get()))
 
-        old_cwd = os.getcwd()
-        try:
-            os.chdir(sww_dir)
-            self._splotter = SWW_plotter(
-                swwfile=sww_base,
-                plot_dir=None,        # suppress automatic make_plot_dir
-                min_depth=float(self._mindepth_var.get()))
-        finally:
-            os.chdir(old_cwd)
-
-        self._sww_abs  = sww_abs
-        self._sww_dir  = sww_dir
-        self._sww_base = sww_base
+        self._sww_prefix = self._splotter.name  # bare basename, no extension
 
     def _on_qty_change(self):
         qty = self._qty_var.get()
@@ -367,9 +354,7 @@ class SWWAnimationGUI:
         save_method = getattr(self._splotter, _QTY_SAVE_METHOD[qty])
 
         def _run():
-            old_cwd = os.getcwd()
             try:
-                os.chdir(self._sww_dir)
                 for i in range(n_frames):
                     if self._cancel_flag:
                         self._gen_queue.put(('cancelled', i))
@@ -378,8 +363,7 @@ class SWWAnimationGUI:
                     self._gen_queue.put(('progress', i + 1))
             except Exception as e:
                 self._gen_queue.put(('error', str(e)))
-            finally:
-                os.chdir(old_cwd)
+                return
             self._gen_queue.put(('done', n_frames))
 
         self._gen_thread = threading.Thread(target=_run, daemon=True)
@@ -418,7 +402,7 @@ class SWWAnimationGUI:
         self._progress_label.config(text=f'{n_frames} / {n_frames}')
         self._gen_btn.config(state=tk.NORMAL)
         self._cancel_btn.config(state=tk.DISABLED)
-        prefix = os.path.splitext(self._sww_base)[0]
+        prefix = self._sww_prefix
         self._set_status(
             f'Done -{n_frames} frames saved to {plot_dir}')
         self._load_frames(plot_dir, qty, prefix)

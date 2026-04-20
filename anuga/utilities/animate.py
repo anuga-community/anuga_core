@@ -94,7 +94,7 @@ class Domain_plotter:
     def _depth_frame(self, figsize, dpi, vmin, vmax):
 
 
-        name = self.domain.get_name()
+        name = os.path.basename(self.domain.get_name())
         time = self.domain.get_time()
 
         self.depth[:] = self.stage - self.elev
@@ -131,7 +131,7 @@ class Domain_plotter:
 
 
         plot_dir = self.plot_dir
-        name = self.domain.get_name()
+        name = os.path.basename(self.domain.get_name())
         frame = self._depth_frame_count
 
         fig, ax = self._depth_frame(figsize, dpi, vmin, vmax)
@@ -165,7 +165,7 @@ class Domain_plotter:
         from matplotlib import pyplot as plt
 
         plot_dir = self.plot_dir
-        name = self.domain.get_name()
+        name = os.path.basename(self.domain.get_name())
         time = self.domain.get_time()
 
         if plot_dir is None:
@@ -201,7 +201,7 @@ class Domain_plotter:
 
     def _stage_frame(self, figsize, dpi, vmin, vmax):
 
-        name = self.domain.get_name()
+        name = os.path.basename(self.domain.get_name())
         time = self.domain.get_time()
 
         self.depth[:] = self.stage - self.elev
@@ -238,7 +238,7 @@ class Domain_plotter:
         import matplotlib.pyplot as plt
 
         plot_dir = self.plot_dir
-        name = self.domain.get_name()
+        name = os.path.basename(self.domain.get_name())
         frame = self._stage_frame_count
 
         fig, ax = self._stage_frame(figsize, dpi, vmin, vmax)
@@ -272,7 +272,7 @@ class Domain_plotter:
         from matplotlib import pyplot as plt
 
         plot_dir = self.plot_dir
-        name = self.domain.get_name()
+        name = os.path.basename(self.domain.get_name())
         time = self.domain.get_time()
 
         if plot_dir is None:
@@ -310,7 +310,7 @@ class Domain_plotter:
     def _speed_frame(self, figsize, dpi, vmin, vmax):
 
 
-        name = self.domain.get_name()
+        name = os.path.basename(self.domain.get_name())
         time = self.domain.get_time()
 
         md = self.min_depth
@@ -354,7 +354,7 @@ class Domain_plotter:
         import matplotlib.pyplot as plt
 
         plot_dir = self.plot_dir
-        name = self.domain.get_name()
+        name = os.path.basename(self.domain.get_name())
         frame = self._speed_frame_count
 
         fig, ax = self._speed_frame(figsize, dpi, vmin, vmax)
@@ -388,7 +388,7 @@ class Domain_plotter:
         from matplotlib import pyplot as plt
 
         plot_dir = self.plot_dir
-        name = self.domain.get_name()
+        name = os.path.basename(self.domain.get_name())
         time = self.domain.get_time()
 
         if plot_dir is None:
@@ -507,7 +507,7 @@ class SWW_plotter:
         import matplotlib.tri as tri
         import numpy as np
 
-        self.name = os.path.splitext(swwfile)[0]
+        self.name = os.path.basename(os.path.splitext(swwfile)[0])
 
         from anuga.file.netcdf import NetCDFFile
         p = NetCDFFile(swwfile)
