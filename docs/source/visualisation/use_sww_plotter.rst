@@ -98,10 +98,20 @@ arguments in addition to ``frame``, ``figsize``, ``dpi``, ``vmin``, and
        name, e.g. ``'plasma'``, ``'Blues'``, ``'jet'``.
    * - ``basemap``
      - ``False``
-     - If ``True``, overlay OpenStreetMap tiles behind the quantity plot.
+     - If ``True``, overlay a tile basemap behind the quantity plot.
        Requires the ``contextily`` package and the SWW file to contain a
        valid EPSG code.  Dry cells are left transparent so the map shows
        through.
+   * - ``basemap_provider``
+     - ``'OpenStreetMap.Mapnik'``
+     - Dot-notation provider string.  Any key from
+       ``anuga.utilities.animate.BASEMAP_PROVIDERS`` is accepted, or any
+       ``contextily`` provider path.  Useful alternatives:
+       ``'Esri.WorldImagery'`` (satellite),
+       ``'Esri.WorldShadedRelief'`` (hillshade),
+       ``'Esri.WorldTopoMap'`` (topographic),
+       ``'OpenTopoMap'`` (OSM-based topo),
+       ``'CartoDB.Positron'`` (light minimal).
    * - ``alpha``
      - ``1.0``
      - Opacity of the wet-area colour layer (0 = fully transparent,

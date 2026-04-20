@@ -15,27 +15,64 @@ except ImportError:
     )
 
 
-def _add_basemap(ax, epsg):
-    """Overlay an OpenStreetMap basemap on *ax* using contextily.
+# Curated basemap providers useful for hydrological/terrain work.
+# Keys are human-readable labels; values are contextily provider strings
+# in 'Provider' or 'Provider.Style' dot notation.
+BASEMAP_PROVIDERS = {
+    'OpenStreetMap':          'OpenStreetMap.Mapnik',
+    'Satellite (Esri)':       'Esri.WorldImagery',
+    'Shaded Relief (Esri)':   'Esri.WorldShadedRelief',
+    'Topo Map (Esri)':        'Esri.WorldTopoMap',
+    'Topo Map (OpenTopo)':    'OpenTopoMap',
+    'Light (CartoDB)':        'CartoDB.Positron',
+    'Dark (CartoDB)':         'CartoDB.DarkMatter',
+}
 
-    The axis must already contain data plotted in the coordinate system given
-    by *epsg* (absolute coordinates). Warns and returns if contextily is not
-    installed or tile fetching fails.
+# Default provider used when basemap=True but no provider is specified
+BASEMAP_DEFAULT = 'OpenStreetMap.Mapnik'
+
+
+def _resolve_provider(cx, provider_str):
+    """Return the contextily provider dict for a dot-notation string."""
+    parts = provider_str.split('.', 1)
+    obj = cx.providers
+    for part in parts:
+        obj = obj[part]
+    return obj
+
+
+def _add_basemap(ax, epsg, provider=BASEMAP_DEFAULT):
+    """Overlay a tile basemap on *ax* using contextily.
+
+    Parameters
+    ----------
+    ax : matplotlib Axes
+        Must already contain data plotted in the CRS given by *epsg*.
+    epsg : int
+        EPSG code of the data coordinate system.
+    provider : str
+        Dot-notation provider string, e.g. ``'Esri.WorldImagery'`` or
+        ``'OpenTopoMap'``.  See :data:`BASEMAP_PROVIDERS` for the curated
+        list, or use any key from ``contextily.providers``.
+
+    Warns and returns silently if contextily is not installed or tile
+    fetching fails.
     """
     try:
         import contextily as cx
     except ImportError:
         warnings.warn(
-            "contextily is not installed — OSM basemap will be skipped. "
+            "contextily is not installed — basemap will be skipped. "
             "Install it with: conda install contextily  or  pip install contextily",
             stacklevel=3)
         return
     try:
-        cx.add_basemap(ax, crs=f'EPSG:{epsg}',
-                       source=cx.providers.OpenStreetMap.Mapnik,
+        source = _resolve_provider(cx, provider)
+        cx.add_basemap(ax, crs=f'EPSG:{epsg}', source=source,
                        attribution_size=6)
     except Exception as e:
-        warnings.warn(f"OSM basemap could not be fetched: {e}", stacklevel=3)
+        warnings.warn(f"Basemap '{provider}' could not be fetched: {e}",
+                      stacklevel=3)
 
 
 class Domain_plotter:
@@ -133,7 +170,8 @@ class Domain_plotter:
         return fig, ax
 
     def _depth_frame(self, figsize, dpi, vmin, vmax, cmap='viridis',
-                     basemap=False, alpha=1.0):
+                     basemap=False, alpha=1.0,
+                     basemap_provider=BASEMAP_DEFAULT):
 
 
         name = os.path.basename(self.domain.get_name())
@@ -166,13 +204,14 @@ class Domain_plotter:
         fig.colorbar(im, ax=ax)
 
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg)
+            _add_basemap(ax, self.epsg, basemap_provider)
 
         return fig, ax
 
     def save_depth_frame(self, figsize=(10, 6), dpi=80,
                          vmin=0.0, vmax=20, cmap='viridis',
-                         basemap=False, alpha=1.0):
+                         basemap=False, alpha=1.0,
+                     basemap_provider=BASEMAP_DEFAULT):
 
 
 
@@ -180,7 +219,7 @@ class Domain_plotter:
         name = os.path.basename(self.domain.get_name())
         frame = self._depth_frame_count
 
-        fig, ax = self._depth_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha)
+        fig, ax = self._depth_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider)
 
         if plot_dir is None:
             fig.savefig(name+'_depth_{0:0>10}.png'.format(frame))
@@ -246,7 +285,8 @@ class Domain_plotter:
         return anim
 
     def _stage_frame(self, figsize, dpi, vmin, vmax, cmap='viridis',
-                     basemap=False, alpha=1.0):
+                     basemap=False, alpha=1.0,
+                     basemap_provider=BASEMAP_DEFAULT):
 
         name = os.path.basename(self.domain.get_name())
         time = self.domain.get_time()
@@ -278,13 +318,14 @@ class Domain_plotter:
         fig.colorbar(im, ax=ax)
 
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg)
+            _add_basemap(ax, self.epsg, basemap_provider)
 
         return fig, ax
 
     def save_stage_frame(self, figsize=(10, 6), dpi=80,
                          vmin=-20.0, vmax=20.0, cmap='viridis',
-                         basemap=False, alpha=1.0):
+                         basemap=False, alpha=1.0,
+                     basemap_provider=BASEMAP_DEFAULT):
 
         import matplotlib.pyplot as plt
 
@@ -292,7 +333,7 @@ class Domain_plotter:
         name = os.path.basename(self.domain.get_name())
         frame = self._stage_frame_count
 
-        fig, ax = self._stage_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha)
+        fig, ax = self._stage_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider)
 
         if plot_dir is None:
             fig.savefig(name+'_stage_{0:0>10}.png'.format(frame))
@@ -359,7 +400,8 @@ class Domain_plotter:
         return anim
 
     def _speed_frame(self, figsize, dpi, vmin, vmax, cmap='viridis',
-                     basemap=False, alpha=1.0):
+                     basemap=False, alpha=1.0,
+                     basemap_provider=BASEMAP_DEFAULT):
 
 
         name = os.path.basename(self.domain.get_name())
@@ -400,13 +442,14 @@ class Domain_plotter:
         fig.colorbar(im, ax=ax)
 
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg)
+            _add_basemap(ax, self.epsg, basemap_provider)
 
         return fig, ax
 
     def save_speed_frame(self, figsize=(10, 6), dpi=80,
                          vmin=-20.0, vmax=20.0, cmap='viridis',
-                         basemap=False, alpha=1.0):
+                         basemap=False, alpha=1.0,
+                     basemap_provider=BASEMAP_DEFAULT):
 
         import matplotlib.pyplot as plt
 
@@ -414,7 +457,7 @@ class Domain_plotter:
         name = os.path.basename(self.domain.get_name())
         frame = self._speed_frame_count
 
-        fig, ax = self._speed_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha)
+        fig, ax = self._speed_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_{0:0>10}.png'.format(frame))
@@ -663,7 +706,8 @@ class SWW_plotter:
     # Depth procedures
     #------------------------------------------
     def _depth_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
-                     basemap=False, alpha=1.0):
+                     basemap=False, alpha=1.0,
+                     basemap_provider=BASEMAP_DEFAULT):
 
         name = self.name
         time = self.time[frame]
@@ -705,7 +749,7 @@ class SWW_plotter:
         fig.colorbar(im, ax=ax)
 
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg)
+            _add_basemap(ax, self.epsg, basemap_provider)
 
         return fig, ax
 
@@ -719,7 +763,7 @@ class SWW_plotter:
         plot_dir = self.plot_dir
         frame_num = self._depth_frame_count
 
-        fig, ax = self._depth_frame(frame, figsize, dpi, vmin, vmax, cmap, basemap, alpha)
+        fig, ax = self._depth_frame(frame, figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider)
 
         if plot_dir is None:
             fig.savefig(name+'_depth_{0:0>10}.png'.format(frame_num))
@@ -746,7 +790,8 @@ class SWW_plotter:
     # Stage procedures
     #------------------------------------------
     def _stage_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
-                     basemap=False, alpha=1.0):
+                     basemap=False, alpha=1.0,
+                     basemap_provider=BASEMAP_DEFAULT):
 
         import matplotlib.pyplot as plt
 
@@ -789,7 +834,7 @@ class SWW_plotter:
         fig.colorbar(im, ax=ax)
 
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg)
+            _add_basemap(ax, self.epsg, basemap_provider)
 
         return fig, ax
 
@@ -803,7 +848,7 @@ class SWW_plotter:
         plot_dir = self.plot_dir
         frame_num = self._stage_frame_count
 
-        fig, ax = self._stage_frame(frame, figsize, dpi, vmin, vmax, cmap, basemap, alpha)
+        fig, ax = self._stage_frame(frame, figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider)
 
         if plot_dir is None:
             fig.savefig(name+'_stage_{0:0>10}.png'.format(frame_num))
@@ -906,7 +951,8 @@ class SWW_plotter:
     # Speed procedures
     #------------------------------------------
     def _speed_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
-                     basemap=False, alpha=1.0):
+                     basemap=False, alpha=1.0,
+                     basemap_provider=BASEMAP_DEFAULT):
 
         import matplotlib.pyplot as plt
 
@@ -947,7 +993,7 @@ class SWW_plotter:
         fig.colorbar(im, ax=ax)
 
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg)
+            _add_basemap(ax, self.epsg, basemap_provider)
 
         return fig, ax
 
@@ -959,7 +1005,7 @@ class SWW_plotter:
         plot_dir = self.plot_dir
         frame_num = self._speed_frame_count
 
-        fig, ax = self._speed_frame(frame, figsize, dpi, vmin, vmax, cmap, basemap, alpha)
+        fig, ax = self._speed_frame(frame, figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_{0:0>10}.png'.format(frame_num))

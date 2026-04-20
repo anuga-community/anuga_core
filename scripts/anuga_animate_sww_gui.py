@@ -188,11 +188,19 @@ class SWWAnimationGUI:
                      values=_CMAPS, width=10).pack(side=tk.LEFT, padx=2)
 
         self._basemap_var = tk.BooleanVar(value=False)
-        self._basemap_chk = ttk.Checkbutton(row3, text='OSM basemap',
+        self._basemap_chk = ttk.Checkbutton(row3, text='Basemap:',
                                              variable=self._basemap_var,
                                              command=self._on_basemap_toggle,
                                              state=tk.DISABLED)
         self._basemap_chk.pack(side=tk.LEFT, padx=(8, 0))
+
+        from anuga.utilities.animate import BASEMAP_PROVIDERS
+        self._basemap_provider_var = tk.StringVar(value='OpenStreetMap')
+        self._basemap_provider_combo = ttk.Combobox(
+            row3, textvariable=self._basemap_provider_var,
+            values=list(BASEMAP_PROVIDERS.keys()),
+            width=20, state=tk.DISABLED)
+        self._basemap_provider_combo.pack(side=tk.LEFT, padx=2)
 
         ttk.Label(row3, text='  Alpha:').pack(side=tk.LEFT, padx=(4, 0))
         self._alpha_var = tk.DoubleVar(value=1.0)
@@ -353,18 +361,22 @@ class SWWAnimationGUI:
         elif has_epsg:
             self._basemap_chk.config(state=tk.DISABLED)
             self._basemap_var.set(False)
+            self._basemap_provider_combo.config(state=tk.DISABLED)
             epsg_msg = f'  EPSG:{self._splotter.epsg} (install contextily for basemap)'
         else:
             self._basemap_chk.config(state=tk.DISABLED)
             self._basemap_var.set(False)
+            self._basemap_provider_combo.config(state=tk.DISABLED)
             epsg_msg = ''
         self._epsg_msg = epsg_msg
 
     def _on_basemap_toggle(self):
         if self._basemap_var.get():
             self._alpha_var.set(0.6)
+            self._basemap_provider_combo.config(state='readonly')
         else:
             self._alpha_var.set(1.0)
+            self._basemap_provider_combo.config(state=tk.DISABLED)
 
     def _on_qty_change(self):
         qty = self._qty_var.get()
@@ -422,6 +434,10 @@ class SWWAnimationGUI:
         basemap = self._basemap_var.get()
         alpha   = max(0.0, min(1.0, self._alpha_var.get()))
 
+        from anuga.utilities.animate import BASEMAP_PROVIDERS, BASEMAP_DEFAULT
+        provider_label = self._basemap_provider_var.get()
+        basemap_provider = BASEMAP_PROVIDERS.get(provider_label, BASEMAP_DEFAULT)
+
         n_total   = len(self._splotter.time)
         sww_frames = list(range(0, n_total, stride))
         n_to_gen   = len(sww_frames)
@@ -445,11 +461,13 @@ class SWWAnimationGUI:
 
         save_method = getattr(self._splotter, _QTY_SAVE_METHOD[qty])
         self._generate_next_frame(0, sww_frames, save_method, dpi, vmin, vmax,
-                                   plot_dir, qty, cmap, basemap, alpha)
+                                   plot_dir, qty, cmap, basemap, alpha,
+                                   basemap_provider)
 
     def _generate_next_frame(self, pos, sww_frames, save_method,
                               dpi, vmin, vmax, plot_dir, qty,
-                              cmap='viridis', basemap=False, alpha=1.0):
+                              cmap='viridis', basemap=False, alpha=1.0,
+                              basemap_provider='OpenStreetMap.Mapnik'):
         n_to_gen  = len(sww_frames)
         sww_frame = sww_frames[pos]
 
@@ -460,7 +478,8 @@ class SWWAnimationGUI:
             return
         try:
             save_method(frame=sww_frame, dpi=dpi, vmin=vmin, vmax=vmax,
-                        cmap=cmap, basemap=basemap, alpha=alpha)
+                        cmap=cmap, basemap=basemap, alpha=alpha,
+                        basemap_provider=basemap_provider)
         except Exception as e:
             self._set_status(f'Error generating frame {sww_frame}: {e}')
             self._gen_btn.config(state=tk.NORMAL)
@@ -475,7 +494,8 @@ class SWWAnimationGUI:
             self._gen_after_id = self.root.after(
                 1, lambda: self._generate_next_frame(
                     pos + 1, sww_frames, save_method,
-                    dpi, vmin, vmax, plot_dir, qty, cmap, basemap, alpha))
+                    dpi, vmin, vmax, plot_dir, qty, cmap, basemap, alpha,
+                    basemap_provider))
         else:
             self._on_generation_done(plot_dir, qty, n_to_gen)
 
