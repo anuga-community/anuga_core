@@ -180,6 +180,14 @@ configure_file(
     install_mode: 'rwxr-xr-x'
 )
 
+configure_file(
+    input: 'scripts/anuga_animate_sww_gui.py',
+    output: 'anuga_animate_sww_gui',
+    configuration: conf,
+    install_dir: get_option('bindir'),
+    install_mode: 'rwxr-xr-x'
+)
+
 # Add subdirectories which contains python sources
 subdir('anuga')
 
