@@ -108,6 +108,10 @@ class SWWAnimationGUI:
         self._cancel_flag = False
         self._gen_after_id = None
 
+        # timeseries state
+        self._ts_triangle = None
+        self._ts_vline = None
+
         self._build_ui()
 
         if initial_qty and initial_qty in _QUANTITIES:
@@ -255,6 +259,12 @@ class SWWAnimationGUI:
         ttk.Spinbox(row6, from_=0.5, to=30.0, increment=0.5,
                     textvariable=self._fps_var, width=6).pack(side=tk.LEFT, padx=4)
 
+        ttk.Separator(row6, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        self._pick_btn = ttk.Button(row6, text='Pick timeseries',
+                                     command=self._open_pick_window,
+                                     state=tk.DISABLED)
+        self._pick_btn.pack(side=tk.LEFT, padx=2)
+
         self._frame_label = ttk.Label(row6, text='-')
         self._frame_label.pack(side=tk.RIGHT, padx=10)
 
@@ -269,7 +279,38 @@ class SWWAnimationGUI:
                                   command=self._on_slider)
         self._slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
 
-        # ---- matplotlib canvas ----
+        # ---- status bar (packed first so it anchors to bottom) ----
+        self._status_var = tk.StringVar(value='Open an SWW file to begin.')
+        ttk.Label(self.root, textvariable=self._status_var,
+                  relief=tk.SUNKEN, anchor=tk.W,
+                  padding=(4, 1)).pack(side=tk.BOTTOM, fill=tk.X)
+
+        # ---- timeseries panel (hidden until a point is picked) ----
+        self._ts_outer = ttk.Frame(self.root)
+        # not packed yet
+
+        ts_ctrl = ttk.Frame(self._ts_outer)
+        ts_ctrl.pack(fill=tk.X)
+        ttk.Label(ts_ctrl, text='Timeseries:').pack(side=tk.LEFT, padx=4)
+        self._ts_qty_var = tk.StringVar(value='depth')
+        ts_qty_combo = ttk.Combobox(ts_ctrl, textvariable=self._ts_qty_var,
+                                    values=['depth', 'stage', 'speed', 'speed_depth'],
+                                    width=12, state='readonly')
+        ts_qty_combo.pack(side=tk.LEFT, padx=2)
+        ts_qty_combo.bind('<<ComboboxSelected>>',
+                          lambda _e: self._update_timeseries())
+        self._ts_info_label = ttk.Label(ts_ctrl, text='', foreground='grey')
+        self._ts_info_label.pack(side=tk.LEFT, padx=8)
+        ttk.Button(ts_ctrl, text='Close',
+                   command=self._close_timeseries).pack(side=tk.RIGHT, padx=4)
+
+        self._ts_fig, self._ts_ax = plt.subplots(figsize=(10, 2.5))
+        self._ts_fig.tight_layout(pad=1.5)
+        self._ts_canvas = FigureCanvasTkAgg(self._ts_fig, master=self._ts_outer)
+        self._ts_canvas.draw()
+        self._ts_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # ---- matplotlib map canvas ----
         self._fig, self._ax = plt.subplots(figsize=(10, 6))
         self._ax.axis('off')
         self._fig.tight_layout(pad=0)
@@ -279,12 +320,6 @@ class SWWAnimationGUI:
         self._canvas = FigureCanvasTkAgg(self._fig, master=canvas_frame)
         self._canvas.draw()
         self._canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
-
-        # ---- status bar ----
-        self._status_var = tk.StringVar(value='Open an SWW file to begin.')
-        ttk.Label(self.root, textvariable=self._status_var,
-                  relief=tk.SUNKEN, anchor=tk.W,
-                  padding=(4, 1)).pack(side=tk.BOTTOM, fill=tk.X)
 
     # -------------------------------------------------------------- #
     # SWW file selection                                              #
@@ -311,6 +346,7 @@ class SWWAnimationGUI:
         if not sww or not os.path.isfile(sww):
             self._sww_info_label.config(text='File not found.', foreground='red')
             self._gen_btn.config(state=tk.DISABLED)
+            self._pick_btn.config(state=tk.DISABLED)
             self._splotter = None
             return
 
@@ -333,8 +369,10 @@ class SWWAnimationGUI:
             text=f'{n} timesteps  |  t={t0:.1f} .. {t1:.1f} s{epsg_msg}',
             foreground='grey')
         self._gen_btn.config(state=tk.NORMAL)
+        self._pick_btn.config(state=tk.NORMAL)
         self._set_status(f'Loaded {os.path.basename(sww)} -{n} timesteps')
         self._update_auto_limits()
+        self._close_timeseries()
 
     def _load_splotter(self, sww):
         from anuga.utilities.animate import SWW_plotter
@@ -550,6 +588,7 @@ class SWWAnimationGUI:
             self._im.set_data(img)
             self._im.set_extent([0, img.shape[1], img.shape[0], 0])
         self._canvas.draw_idle()
+        self._update_ts_cursor()
 
     def _on_slider(self, val):
         try:
@@ -614,6 +653,117 @@ class SWWAnimationGUI:
         self._show_frame(len(self._frames) - 1)
 
     # -------------------------------------------------------------- #
+    # Timeseries                                                      #
+    # -------------------------------------------------------------- #
+
+    def _open_pick_window(self):
+        """Open an interactive mesh window; clicking picks the nearest centroid."""
+        if self._splotter is None:
+            return
+        import numpy as np
+
+        sp = self._splotter
+        fig, ax = plt.subplots(figsize=(8, 6))
+        ax.set_aspect('equal')
+        ax.set_title('Click to pick a point for timeseries  (close to cancel)')
+        ax.triplot(sp.triang, linewidth=0.3, color='grey')
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        fig.tight_layout()
+
+        def _on_pick(event):
+            if event.inaxes != ax or event.xdata is None:
+                return
+            dist = np.sqrt((sp.xc - event.xdata)**2 +
+                           (sp.yc - event.ydata)**2)
+            self._ts_triangle = int(dist.argmin())
+            plt.close(fig)
+            self._update_timeseries()
+
+        fig.canvas.mpl_connect('button_press_event', _on_pick)
+        plt.show(block=False)
+
+    def _update_timeseries(self):
+        """Plot quantity vs time for the picked centroid."""
+        if self._ts_triangle is None or self._splotter is None:
+            return
+        import numpy as np
+
+        sp  = self._splotter
+        qty = self._ts_qty_var.get()
+        tri = self._ts_triangle
+
+        data_map = {
+            'depth':       sp.depth,
+            'stage':       sp.stage,
+            'speed':       sp.speed,
+            'speed_depth': sp.speed_depth,
+        }
+        ylabel_map = {
+            'depth':       'Depth (m)',
+            'stage':       'Stage (m)',
+            'speed':       'Speed (m/s)',
+            'speed_depth': 'Speed×Depth (m²/s)',
+        }
+
+        y = data_map[qty][:, tri]
+        t = sp.time
+
+        self._ts_ax.cla()
+        self._ts_ax.plot(t, y, color='steelblue', linewidth=1.2)
+        self._ts_ax.set_xlabel('Time (s)')
+        self._ts_ax.set_ylabel(ylabel_map[qty])
+        self._ts_ax.set_xlim(t[0], t[-1])
+        self._ts_ax.grid(True, linestyle=':', alpha=0.5)
+
+        # Vertical cursor at current animation time
+        current_time = sp.time[0]
+        if self._frames and self._current < len(self._frames):
+            # map current PNG frame index back to a SWW time index
+            # frames were generated at stride intervals; approximate by
+            # scaling through the stored time array
+            frac = self._current / max(len(self._frames) - 1, 1)
+            ts_idx = int(round(frac * (len(t) - 1)))
+            current_time = t[ts_idx]
+
+        self._ts_vline = self._ts_ax.axvline(current_time,
+                                              color='red', linewidth=1.0,
+                                              linestyle='--')
+        self._ts_fig.tight_layout(pad=1.5)
+        self._ts_canvas.draw_idle()
+
+        xc = sp.xc[tri] + sp.xllcorner
+        yc = sp.yc[tri] + sp.yllcorner
+        self._ts_info_label.config(
+            text=f'Triangle {tri}  |  x={xc:.1f}  y={yc:.1f}')
+
+        # Show the panel if not already visible
+        if not self._ts_outer.winfo_ismapped():
+            self._ts_outer.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=False)
+
+    def _update_ts_cursor(self):
+        """Move the vertical cursor line to the current animation time."""
+        if self._ts_vline is None or self._splotter is None:
+            return
+        t = self._splotter.time
+        if len(self._frames) > 1:
+            frac = self._current / (len(self._frames) - 1)
+        else:
+            frac = 0.0
+        ts_idx = int(round(frac * (len(t) - 1)))
+        self._ts_vline.set_xdata([t[ts_idx], t[ts_idx]])
+        self._ts_canvas.draw_idle()
+
+    def _close_timeseries(self):
+        """Hide the timeseries panel and reset state."""
+        self._ts_triangle = None
+        self._ts_vline = None
+        self._ts_ax.cla()
+        self._ts_canvas.draw_idle()
+        if self._ts_outer.winfo_ismapped():
+            self._ts_outer.pack_forget()
+
+    # -------------------------------------------------------------- #
     # Helpers                                                         #
     # -------------------------------------------------------------- #
 
@@ -624,6 +774,7 @@ class SWWAnimationGUI:
         self._cancel_generation()
         self._stop_playback()
         plt.close(self._fig)
+        plt.close(self._ts_fig)
         self.root.destroy()
 
 
