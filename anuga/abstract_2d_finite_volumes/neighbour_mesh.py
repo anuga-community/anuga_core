@@ -1230,6 +1230,57 @@ class Mesh(General_mesh):
 
         return new_mesh
 
+    def save_mesh_to_tsh(self, filename):
+        """Save the mesh geometry to a TSH file.
+
+        Writes vertices, triangles (with neighbour links and region tags), and
+        boundary segments.  The outline section (regions, holes, max areas) is
+        left empty because that information belongs to the mesh generator
+        (pmesh) and is not retained in the runtime Mesh object.
+
+        Parameters
+        ----------
+        filename : str
+            Output path.  Must end in ``.tsh``.
+
+        Examples
+        --------
+        >>> mesh.save_mesh_to_tsh('my_mesh.tsh')
+        """
+        from anuga.load_mesh.loadASCII import export_mesh_file
+
+        _EDGE_VERTS = [(1, 2), (2, 0), (0, 1)]
+
+        # --- triangle tags (invert tagged_elements: tag -> [elems]) ---
+        N = self.number_of_triangles
+        tri_tags = [''] * N
+        for tag, elems in self.tagged_elements.items():
+            for e in elems:
+                tri_tags[e] = tag
+
+        # --- boundary segments from boundary dict ---
+        segments = []
+        seg_tags = []
+        for (tri_id, edge_id), tag in self.boundary.items():
+            vi, vj = _EDGE_VERTS[edge_id]
+            v0 = int(self.triangles[tri_id, vi])
+            v1 = int(self.triangles[tri_id, vj])
+            segments.append([v0, v1])
+            seg_tags.append(tag)
+
+        mesh_dict = {
+            'vertices':               self.nodes.tolist(),
+            'vertex_attributes':      [],
+            'vertex_attribute_titles': [],
+            'triangles':              self.triangles.tolist(),
+            'triangle_tags':          tri_tags,
+            'triangle_neighbors':     self.neighbours.tolist(),
+            'segments':               segments,
+            'segment_tags':           seg_tags,
+            'geo_reference':          self.geo_reference,
+        }
+
+        export_mesh_file(filename, mesh_dict)
 
 
 class Triangle_intersection:

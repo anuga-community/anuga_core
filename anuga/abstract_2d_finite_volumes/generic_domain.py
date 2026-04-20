@@ -2660,6 +2660,86 @@ class Generic_Domain:
 
         return normfunc(self.quantities[quantity].centroid_values)
 
+    # ------------------------------------------------------------------ #
+    # Memory diagnostics                                                   #
+    # ------------------------------------------------------------------ #
+
+    def memory_stats(self):
+        """Return a string showing current process RSS memory usage.
+
+        Returns
+        -------
+        str
+            e.g. ``'mem=342MB'`` or ``'mem=1.50GB'``.
+        """
+        from anuga.utilities.system_tools import memory_stats
+        return memory_stats()
+
+    def print_memory_stats(self):
+        """Print current process RSS memory usage to stdout."""
+        print(self.memory_stats())
+
+    def quantity_memory_stats(self):
+        """Return a detailed breakdown of memory used by all quantities.
+
+        Returns
+        -------
+        str
+            Multi-line table showing per-quantity array allocations in kB.
+        """
+        from anuga.utilities.system_tools import quantity_memory_stats
+        return quantity_memory_stats(self)
+
+    def print_quantity_memory_stats(self):
+        """Print a detailed breakdown of memory used by all quantities."""
+        print(self.quantity_memory_stats())
+
+    def domain_memory_stats(self):
+        """Return a breakdown of memory used by the domain and its quantities.
+
+        Returns
+        -------
+        str
+            Multi-line table grouping numpy arrays by category plus RSS.
+        """
+        from anuga.utilities.system_tools import domain_memory_stats
+        return domain_memory_stats(self)
+
+    def print_domain_memory_stats(self):
+        """Print a breakdown of memory used by the domain and its quantities."""
+        print(self.domain_memory_stats())
+
+    def domain_struct_stats(self):
+        """Return a breakdown of the C domain struct and GPU domain struct.
+
+        Returns
+        -------
+        str
+            Multi-line diagnostic string for C/GPU struct sizes.
+        """
+        from anuga.utilities.system_tools import domain_struct_stats
+        return domain_struct_stats(self)
+
+    def print_domain_struct_stats(self):
+        """Print a breakdown of the C domain struct and GPU domain struct."""
+        print(self.domain_struct_stats())
+
+    def save_mesh_to_tsh(self, filename):
+        """Save the mesh geometry to a TSH file.
+
+        Delegates to :meth:`Mesh.save_mesh_to_tsh`.  Writes vertices, triangles
+        (with neighbour links and region tags), and boundary segments.
+
+        Parameters
+        ----------
+        filename : str
+            Output path.  Must end in ``.tsh``.
+
+        Examples
+        --------
+        >>> domain.save_mesh_to_tsh('my_mesh.tsh')
+        """
+        self.mesh.save_mesh_to_tsh(filename)
 
 
 if __name__ == "__main__":
