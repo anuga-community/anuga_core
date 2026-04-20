@@ -111,6 +111,9 @@ class SWWAnimationGUI:
         # timeseries state
         self._ts_triangle = None
         self._ts_vline = None
+        self._pick_mode = False
+        self._pick_cid = None
+        self._pick_key_cid = None
 
         self._build_ui()
 
@@ -261,7 +264,7 @@ class SWWAnimationGUI:
 
         ttk.Separator(row6, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
         self._pick_btn = ttk.Button(row6, text='Pick timeseries',
-                                     command=self._open_pick_window,
+                                     command=self._toggle_pick,
                                      state=tk.DISABLED)
         self._pick_btn.pack(side=tk.LEFT, padx=2)
 
@@ -372,6 +375,7 @@ class SWWAnimationGUI:
         self._pick_btn.config(state=tk.NORMAL)
         self._set_status(f'Loaded {os.path.basename(sww)} -{n} timesteps')
         self._update_auto_limits()
+        self._exit_pick_mode()
         self._close_timeseries()
 
     def _load_splotter(self, sww):
@@ -656,32 +660,98 @@ class SWWAnimationGUI:
     # Timeseries                                                      #
     # -------------------------------------------------------------- #
 
-    def _open_pick_window(self):
-        """Open an interactive mesh window; clicking picks the nearest centroid."""
+    def _toggle_pick(self):
+        if self._pick_mode:
+            self._exit_pick_mode()
+        else:
+            self._enter_pick_mode()
+
+    def _enter_pick_mode(self):
+        """Render the live mesh in the main canvas for interactive point picking."""
         if self._splotter is None:
             return
         import numpy as np
 
         sp = self._splotter
-        fig, ax = plt.subplots(figsize=(8, 6))
-        ax.set_aspect('equal')
-        ax.set_title('Click to pick a point for timeseries  (close to cancel)')
-        ax.triplot(sp.triang, linewidth=0.3, color='grey')
-        ax.set_xlabel('Easting (m)')
-        ax.set_ylabel('Northing (m)')
-        fig.tight_layout()
+        n_ts = len(sp.time)
+        if self._frames and len(self._frames) > 1:
+            frac = self._current / (len(self._frames) - 1)
+            fidx = int(round(frac * (n_ts - 1)))
+        else:
+            fidx = 0
 
-        def _on_pick(event):
-            if event.inaxes != ax or event.xdata is None:
-                return
-            dist = np.sqrt((sp.xc - event.xdata)**2 +
-                           (sp.yc - event.ydata)**2)
-            self._ts_triangle = int(dist.argmin())
-            plt.close(fig)
-            self._update_timeseries()
+        depth = sp.depth[fidx, :]
+        md = sp.min_depth
+        try:
+            elev = sp.elev[fidx, :]
+        except IndexError:
+            elev = sp.elev
 
-        fig.canvas.mpl_connect('button_press_event', _on_pick)
-        plt.show(block=False)
+        self._ax.cla()
+        self._ax.set_aspect('equal')
+        self._ax.set_title(
+            'Click to pick a timeseries point  |  Esc to cancel', fontsize=9)
+
+        sp.triang.set_mask(depth > md)
+        self._ax.tripcolor(sp.triang, facecolors=elev, cmap='Greys_r')
+        sp.triang.set_mask(depth <= md)
+        self._ax.tripcolor(sp.triang, facecolors=depth, cmap='viridis', alpha=0.8)
+        sp.triang.set_mask(None)
+
+        # Mark existing pick if present
+        if self._ts_triangle is not None:
+            self._ax.plot(sp.xc[self._ts_triangle], sp.yc[self._ts_triangle],
+                          'r*', markersize=14, zorder=5, label='current pick')
+
+        self._ax.set_xlabel('Easting (m)')
+        self._ax.set_ylabel('Northing (m)')
+        self._fig.tight_layout(pad=1.0)
+        self._canvas.draw()
+        self._canvas.get_tk_widget().config(cursor='crosshair')
+
+        self._pick_cid = self._canvas.mpl_connect(
+            'button_press_event', self._on_pick_click)
+        self._pick_key_cid = self._canvas.mpl_connect(
+            'key_press_event', self._on_pick_key)
+
+        self._pick_mode = True
+        self._pick_btn.config(text='Cancel pick')
+
+    def _on_pick_click(self, event):
+        if event.inaxes != self._ax or event.xdata is None:
+            return
+        import numpy as np
+        sp = self._splotter
+        dist = np.sqrt((sp.xc - event.xdata)**2 + (sp.yc - event.ydata)**2)
+        self._ts_triangle = int(dist.argmin())
+        self._exit_pick_mode()
+        self._update_timeseries()
+
+    def _on_pick_key(self, event):
+        if event.key == 'escape':
+            self._exit_pick_mode()
+
+    def _exit_pick_mode(self):
+        """Disconnect pick events and restore the animation frame."""
+        if not self._pick_mode:
+            return
+        for cid in (self._pick_cid, self._pick_key_cid):
+            if cid is not None:
+                self._canvas.mpl_disconnect(cid)
+        self._pick_cid = None
+        self._pick_key_cid = None
+        self._pick_mode = False
+        self._pick_btn.config(text='Pick timeseries')
+        self._canvas.get_tk_widget().config(cursor='')
+        # restore PNG display
+        self._ax.cla()
+        self._ax.axis('off')
+        self._fig.tight_layout(pad=0)
+        self._im = None
+        if self._frames:
+            self._show_frame(self._current)
+        else:
+            self._canvas.draw_idle()
 
     def _update_timeseries(self):
         """Plot quantity vs time for the picked centroid."""
