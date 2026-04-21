@@ -811,11 +811,11 @@ class SWWAnimationGUI:
 
         dist = np.sqrt((xc - xmesh)**2 + (yc - ymesh)**2)
         self._ts_triangle = int(dist.argmin())
-        self._exit_pick_mode()
+        # Stay in pick mode so the user can keep clicking new points.
+        # _update_timeseries may pack the ts panel (resize), so force a
+        # synchronous draw afterwards to ensure the star is visible.
         self._update_timeseries()
-        # Force a synchronous redraw after both _exit_pick_mode and
-        # _update_timeseries (which may resize the canvas) have finished,
-        # so the pick overlay is visible in the final layout.
+        self._update_pick_overlay()
         self._canvas.draw()
 
     def _on_pick_key(self, event):
@@ -945,7 +945,7 @@ class SWWAnimationGUI:
         """Add/update the centroid marker on the animation PNG (no draw_idle call)."""
         self._remove_pick_overlay()
         if (self._ts_triangle is None or self._plot_transform is None
-                or not self._frames or self._pick_mode):
+                or not self._frames):
             return
 
         sp = self._splotter
