@@ -952,17 +952,17 @@ class SWWAnimationGUI:
         tri = self._ts_triangle
         pt = self._plot_transform
 
-        # Centroid in the coordinate system used to generate frames
+        # Centroid in the coordinate system used to generate frames.
+        # _compute_plot_transform renders with triang_abs when basemap is used,
+        # so pt['xlim'/'ylim'] are already in absolute coords for basemap and
+        # relative coords for non-basemap — no further offset needed.
         use_basemap = self._gen_used_basemap and (sp.epsg is not None)
         if use_basemap:
             xd = sp.xc[tri] + sp.xllcorner
             yd = sp.yc[tri] + sp.yllcorner
-            # Shift the cached (relative-coord) limits to absolute coords
-            xlim = (pt['xlim'][0] + sp.xllcorner, pt['xlim'][1] + sp.xllcorner)
-            ylim = (pt['ylim'][0] + sp.yllcorner, pt['ylim'][1] + sp.yllcorner)
         else:
             xd, yd = sp.xc[tri], sp.yc[tri]
-            xlim, ylim = pt['xlim'], pt['ylim']
+        xlim, ylim = pt['xlim'], pt['ylim']
 
         pos = pt['pos']
         W, H = pt['W'], pt['H']
@@ -976,7 +976,7 @@ class SWWAnimationGUI:
         ax_y = (1.0 - (pos.y0 + pos.height * yfrac)) * H
 
         self._pick_overlay, = self._ax.plot(
-            ax_x, ax_y, 'r*', markersize=12, zorder=10,
+            ax_x, ax_y, 'r*', markersize=8, zorder=10,
             markeredgecolor='white', markeredgewidth=0.5,
             scalex=False, scaley=False)
 
