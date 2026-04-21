@@ -47,29 +47,39 @@ except Exception as _e:
 # Quantity configuration                                              #
 # ------------------------------------------------------------------ #
 
-_QUANTITIES = ('depth', 'stage', 'speed', 'speed_depth')
+_QUANTITIES = ('depth', 'stage', 'speed', 'speed_depth',
+               'max_depth', 'max_speed', 'max_speed_depth')
 
 _QTY_DEFAULTS = {
-    'depth':       dict(vmin=0.0,   vmax=20.0),
-    'stage':       dict(vmin=-20.0, vmax=20.0),
-    'speed':       dict(vmin=0.0,   vmax=10.0),
-    'speed_depth': dict(vmin=0.0,   vmax=20.0),
+    'depth':           dict(vmin=0.0,   vmax=20.0),
+    'stage':           dict(vmin=-20.0, vmax=20.0),
+    'speed':           dict(vmin=0.0,   vmax=10.0),
+    'speed_depth':     dict(vmin=0.0,   vmax=20.0),
+    'max_depth':       dict(vmin=0.0,   vmax=20.0),
+    'max_speed':       dict(vmin=0.0,   vmax=10.0),
+    'max_speed_depth': dict(vmin=0.0,   vmax=20.0),
 }
 
-# Attribute on SWW_plotter that holds the data array for each quantity
+# Attribute on SWW_plotter used to compute auto vmin/vmax
 _QTY_DATA_ATTR = {
-    'depth':       'depth',
-    'stage':       'stage',
-    'speed':       'speed',
-    'speed_depth': 'speed_depth',
+    'depth':           'depth',
+    'stage':           'stage',
+    'speed':           'speed',
+    'speed_depth':     'speed_depth',
+    'max_depth':       'depth',
+    'max_speed':       'speed',
+    'max_speed_depth': 'speed_depth',
 }
 
 # Method name on SWW_plotter to save a single frame
 _QTY_SAVE_METHOD = {
-    'depth':       'save_depth_frame',
-    'stage':       'save_stage_frame',
-    'speed':       'save_speed_frame',
-    'speed_depth': 'save_speed_depth_frame',
+    'depth':           'save_depth_frame',
+    'stage':           'save_stage_frame',
+    'speed':           'save_speed_frame',
+    'speed_depth':     'save_speed_depth_frame',
+    'max_depth':       'save_max_depth_frame',
+    'max_speed':       'save_max_speed_frame',
+    'max_speed_depth': 'save_max_speed_depth_frame',
 }
 
 
@@ -494,11 +504,15 @@ class SWWAnimationGUI:
         provider_label = self._basemap_provider_var.get()
         basemap_provider = BASEMAP_PROVIDERS.get(provider_label, BASEMAP_DEFAULT)
 
-        n_total   = len(self._splotter.time)
-        sww_frames = list(range(0, n_total, stride))
-        n_to_gen   = len(sww_frames)
-
-        stride_msg = f' (every {stride})' if stride > 1 else ''
+        n_total = len(self._splotter.time)
+        if qty.startswith('max_'):
+            # Maximum quantities collapse all timesteps into one image
+            sww_frames = [0]
+            stride_msg = ''
+        else:
+            sww_frames = list(range(0, n_total, stride))
+            stride_msg = f' (every {stride})' if stride > 1 else ''
+        n_to_gen = len(sww_frames)
         self._progress_bar.config(maximum=n_to_gen)
         self._progress_var.set(0)
         self._progress_label.config(text=f'0 / {n_to_gen}')
@@ -512,7 +526,9 @@ class SWWAnimationGUI:
         # Reset plotter frame counters and re-point it at the output dir
         self._splotter.plot_dir = plot_dir
         for attr in ('_depth_frame_count', '_stage_frame_count',
-                     '_speed_frame_count', '_speed_depth_frame_count'):
+                     '_speed_frame_count', '_speed_depth_frame_count',
+                     '_max_depth_frame_count', '_max_speed_frame_count',
+                     '_max_speed_depth_frame_count'):
             setattr(self._splotter, attr, 0)
 
         self._gen_used_basemap = basemap
@@ -589,7 +605,12 @@ class SWWAnimationGUI:
             self._plot_transform = None
             return
         try:
-            depth = sp.depth[0, :]
+            import numpy as np
+            # For max quantities use the actual max; others use frame 0
+            if self._last_gen_qty.startswith('max_'):
+                depth = np.max(sp.depth, axis=0)
+            else:
+                depth = sp.depth[0, :]
             try:
                 elev = sp.elev[0, :]
             except (IndexError, TypeError):

@@ -686,6 +686,9 @@ class SWW_plotter:
         self._stage_frame_count = 0
         self._speed_depth_frame_count = 0
         self._speed_frame_count = 0
+        self._max_depth_frame_count = 0
+        self._max_speed_frame_count = 0
+        self._max_speed_depth_frame_count = 0
 
     #------------------------------------------
     # General plots
@@ -1035,6 +1038,124 @@ class SWW_plotter:
         #plt.show()
 
         return fig, ax
+
+    #------------------------------------------
+    # Maximum-over-time procedures
+    #------------------------------------------
+
+    def save_max_depth_frame(self, frame=None, figsize=(10, 6), dpi=160,
+                             vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
+                             alpha=1.0, basemap_provider=BASEMAP_DEFAULT):
+        """Save a single frame showing the maximum depth at each triangle."""
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        max_depth = np.max(self.depth, axis=0)
+        md = self.min_depth
+        try:
+            elev = self.elev[0, :]
+        except (IndexError, TypeError):
+            elev = self.elev
+
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+        plt.title('Max Depth')
+        if not (basemap and self.epsg):
+            triang.set_mask(max_depth > md)
+            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
+        triang.set_mask(max_depth <= md)
+        im = ax.tripcolor(triang, facecolors=max_depth, cmap=cmap,
+                          alpha=alpha, vmin=vmin, vmax=vmax)
+        triang.set_mask(None)
+        ax.set_aspect('equal')
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        fig.colorbar(im, ax=ax)
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg, basemap_provider)
+        fname = '{}_max_depth_{:0>10}.png'.format(self.name, self._max_depth_frame_count)
+        path = fname if self.plot_dir is None else os.path.join(self.plot_dir, fname)
+        fig.savefig(path)
+        self._max_depth_frame_count += 1
+        plt.close()
+        fig.clf()
+
+    def save_max_speed_frame(self, frame=None, figsize=(10, 6), dpi=160,
+                             vmin=0.0, vmax=10.0, cmap='viridis', basemap=False,
+                             alpha=1.0, basemap_provider=BASEMAP_DEFAULT):
+        """Save a single frame showing the maximum speed at each triangle."""
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        max_depth = np.max(self.depth, axis=0)
+        max_speed = np.max(self.speed, axis=0)
+        md = self.min_depth
+        try:
+            elev = self.elev[0, :]
+        except (IndexError, TypeError):
+            elev = self.elev
+
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+        plt.title('Max Speed')
+        if not (basemap and self.epsg):
+            triang.set_mask(max_depth > md)
+            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
+        triang.set_mask(max_depth <= md)
+        im = ax.tripcolor(triang, facecolors=max_speed, cmap=cmap,
+                          alpha=alpha, vmin=vmin, vmax=vmax)
+        triang.set_mask(None)
+        ax.set_aspect('equal')
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        fig.colorbar(im, ax=ax)
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg, basemap_provider)
+        fname = '{}_max_speed_{:0>10}.png'.format(self.name, self._max_speed_frame_count)
+        path = fname if self.plot_dir is None else os.path.join(self.plot_dir, fname)
+        fig.savefig(path)
+        self._max_speed_frame_count += 1
+        plt.close()
+        fig.clf()
+
+    def save_max_speed_depth_frame(self, frame=None, figsize=(10, 6), dpi=160,
+                                   vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
+                                   alpha=1.0, basemap_provider=BASEMAP_DEFAULT):
+        """Save a single frame showing the maximum speed×depth at each triangle."""
+        import matplotlib.pyplot as plt
+        import numpy as np
+
+        max_depth = np.max(self.depth, axis=0)
+        max_speed_depth = np.max(self.speed_depth, axis=0)
+        md = self.min_depth
+        try:
+            elev = self.elev[0, :]
+        except (IndexError, TypeError):
+            elev = self.elev
+
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+        plt.title('Max Speed×Depth')
+        if not (basemap and self.epsg):
+            triang.set_mask(max_depth > md)
+            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
+        triang.set_mask(max_depth <= md)
+        im = ax.tripcolor(triang, facecolors=max_speed_depth, cmap=cmap,
+                          alpha=alpha, vmin=vmin, vmax=vmax)
+        triang.set_mask(None)
+        ax.set_aspect('equal')
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        fig.colorbar(im, ax=ax)
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg, basemap_provider)
+        fname = '{}_max_speed_depth_{:0>10}.png'.format(
+            self.name, self._max_speed_depth_frame_count)
+        path = fname if self.plot_dir is None else os.path.join(self.plot_dir, fname)
+        fig.savefig(path)
+        self._max_speed_depth_frame_count += 1
+        plt.close()
+        fig.clf()
 
     #------------------------------------------
     # Animation procedures
