@@ -287,6 +287,8 @@ class SWWAnimationGUI:
                                      state=tk.DISABLED)
         self._pick_btn.pack(side=tk.LEFT, padx=2)
 
+        ttk.Button(row6, text='Help', command=self._show_help).pack(
+            side=tk.RIGHT, padx=(4, 0))
         self._frame_label = ttk.Label(row6, text='-')
         self._frame_label.pack(side=tk.RIGHT, padx=10)
 
@@ -1056,6 +1058,103 @@ class SWWAnimationGUI:
     # -------------------------------------------------------------- #
     # Helpers                                                         #
     # -------------------------------------------------------------- #
+
+    def _show_help(self):
+        """Open a scrollable help window."""
+        win = tk.Toplevel(self.root)
+        win.title('ANUGA SWW Animation GUI — Help')
+        win.resizable(True, True)
+
+        text = tk.Text(win, wrap=tk.WORD, width=72, height=42,
+                       padx=10, pady=8, relief=tk.FLAT)
+        sb = ttk.Scrollbar(win, command=text.yview)
+        text.configure(yscrollcommand=sb.set)
+        sb.pack(side=tk.RIGHT, fill=tk.Y)
+        text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+
+        text.tag_configure('h1', font=('TkDefaultFont', 13, 'bold'), spacing3=4)
+        text.tag_configure('h2', font=('TkDefaultFont', 10, 'bold'), spacing1=6, spacing3=2)
+        text.tag_configure('kw', font=('TkFixedFont', 9))
+
+        def h1(s): text.insert(tk.END, s + '\n', 'h1')
+        def h2(s): text.insert(tk.END, s + '\n', 'h2')
+        def p(s):  text.insert(tk.END, s + '\n')
+        def kw(s): text.insert(tk.END, s, 'kw')
+        def nl():  text.insert(tk.END, '\n')
+
+        h1('ANUGA SWW Animation GUI')
+        p('Visualise and explore SWW simulation output as animated frames.')
+        nl()
+
+        h2('Quick-start workflow')
+        p('1. Open an SWW file with Browse… or pass --sww on the command line.')
+        p('2. Choose a Quantity, set vmin/vmax (or tick Auto from data).')
+        p('3. Click Generate Frames — PNGs are written to the Output dir.')
+        p('4. Use Play / step buttons to animate, or drag the Frame slider.')
+        nl()
+
+        h2('Generation settings')
+        h2('  Quantity')
+        p('  depth, stage, speed, speed_depth — animated per timestep.')
+        p('  max_depth, max_speed, max_speed_depth — single frame showing')
+        p('  the maximum value at each triangle over all timesteps.')
+        nl()
+        h2('  vmin / vmax')
+        p('  Colormap range.  Tick "Auto from data" to set automatically.')
+        nl()
+        h2('  DPI')
+        p('  Resolution of generated PNG frames (default 100).')
+        nl()
+        h2('  min depth')
+        p('  Triangles with depth below this value are treated as dry and')
+        p('  shown in grey (elevation shading).')
+        nl()
+        h2('  Every N frames')
+        p('  Stride: generate one frame every N SWW timesteps.')
+        p('  Use a larger value for a quick preview of a long simulation.')
+        nl()
+        h2('  Colormap / Reverse')
+        p('  Any matplotlib colormap name.  Tick Reverse to invert it.')
+        nl()
+        h2('  Basemap / provider / Alpha')
+        p('  Overlay an online tile basemap (OpenStreetMap, Esri Satellite,')
+        p('  etc.).  Requires the SWW file to carry an EPSG code and an')
+        p('  internet connection.  Alpha controls mesh transparency over')
+        p('  the basemap.')
+        nl()
+
+        h2('Playback controls')
+        p('  Play/Pause — start or stop the animation.')
+        p('  |< < > >|  — jump to first, step back, step forward, last frame.')
+        p('  FPS        — playback speed in frames per second.')
+        p('  Frame slider — drag to scrub through frames.')
+        nl()
+
+        h2('Pick timeseries')
+        p('Click "Pick timeseries" to enter pick mode:')
+        p('  • The cursor changes to a crosshair.')
+        p('  • Click any point on the image to select the nearest triangle')
+        p('    centroid and plot its time series in the panel below.')
+        p('  • Click again to pick a different point — the timeseries and')
+        p('    the red star marker update immediately.')
+        p('  • Change the quantity in the timeseries dropdown to replot')
+        p('    the same triangle for depth / stage / speed / speed_depth.')
+        p('  • Press Esc or click "Cancel pick" to exit pick mode.')
+        nl()
+
+        h2('Timeseries panel')
+        p('  Quantity dropdown — switch the plotted variable.')
+        p('  Red dashed line  — current animation frame time.')
+        p('  Export CSV       — save the displayed time series to a CSV file.')
+        p('  Close            — hide the timeseries panel.')
+        nl()
+
+        h2('Command-line usage')
+        kw('  anuga_animate_sww_gui [--sww FILE] [--qty QUANTITY]\n')
+        nl()
+
+        text.configure(state=tk.DISABLED)
+        ttk.Button(win, text='Close', command=win.destroy).pack(pady=6)
 
     def _set_status(self, msg):
         self._status_var.set(msg)
