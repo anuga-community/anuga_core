@@ -770,6 +770,7 @@ class SWWAnimationGUI:
 
         self._canvas.draw_idle()
         self._canvas.get_tk_widget().config(cursor='crosshair')
+        self._canvas.get_tk_widget().focus_set()  # needed for key_press_event (Esc)
 
         self._pick_cid = self._canvas.mpl_connect(
             'button_press_event', self._on_pick_click)
@@ -812,6 +813,10 @@ class SWWAnimationGUI:
         self._ts_triangle = int(dist.argmin())
         self._exit_pick_mode()
         self._update_timeseries()
+        # Force a synchronous redraw after both _exit_pick_mode and
+        # _update_timeseries (which may resize the canvas) have finished,
+        # so the pick overlay is visible in the final layout.
+        self._canvas.draw()
 
     def _on_pick_key(self, event):
         if event.key == 'escape':
