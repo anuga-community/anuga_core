@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-15 (session 21)
+Last updated: 2026-04-21 (session 22)
 Branch: `develop` (all feature branches merged)
 
 ---
@@ -11,7 +11,7 @@ Branch: `develop` (all feature branches merged)
 |------|--------------|------|-----------|
 | Code improvements (original list) | 60 | 50 | 10 |
 | Documentation improvements | 20 | 20 | 0 |
-| Additional enhancements | 27 | 27 | 0 |
+| Additional enhancements | 36 | 36 | 0 |
 | Hydrata Phase 0 — Test infrastructure | 5 | 5 | 0 |
 | Hydrata Phase 1 — Dependencies | 4 | 4 | 0 |
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
@@ -26,7 +26,8 @@ Branch: `develop` (all feature branches merged)
 | Domain memory reduction | 3 | 3 | 0 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 7 | 7 | 0 |
-| **Total** | **174** | **166** | **8** |
+| **Total** | **180** | **167** | **13** |
+
 
 ---
 
@@ -178,7 +179,7 @@ These were completed during sessions as natural extensions or user requests:
 | Fix `sww_merge` not propagating `hemisphere` and `epsg` to merged SWW — replace field-by-field attribute copy with `Geo_reference(NetCDFObject=fid)` + `write_NetCDF()` in all three merge functions | `anuga/utilities/sww_merge.py` | 2026-03-28 |
 | Fix `sww_merge` not propagating `timezone` to merged SWW — read from first input file, pass to `store_header()` | `anuga/utilities/sww_merge.py` | 2026-03-28 |
 | Add `sww2vtu` converter — SWW → VTU + PVD for ParaView, no VTK dependency, binary base64 encoding, derived depth and speed quantities, `--z-scale` and `--absolute-coords` options | `anuga/file_conversion/sww2vtu.py` | 2026-03-28 |
-| GPU verbose flag (`int verbose` in C struct, controlled from Cython) — suppresses C printf output during pytest, shown with `-s` | `gpu_domain.h`, `gpu_domain_core.c`, `gpu_boundaries.c`, `sw_domain_gpu_ext.pyx` | 2026-04-01 |
+| GPU verbose flag (`int verbose` in C struct, controlled from Cython) — suppresses C printf output during pytest, shown with -s | `gpu_domain.h`, `gpu_domain_core.c`, `gpu_boundaries.c`, `sw_domain_gpu_ext.pyx` | 2026-04-01 |
 | Fix pyproj DeprecationWarning for 1-element arrays (NumPy ≥ 2.0) — use `.item()` for scalar path in `epsg_to_ll`, `ll_to_epsg`, `tif2point_values` | `redfearn.py`, `tif2point_values.py` | 2026-04-01 |
 | Fix ReadTheDocs shallow-clone version showing `0.0.0+unknown` — add `git fetch --unshallow --tags` pre-install step | `.readthedocs.yaml` | 2026-04-02 |
 | Vectorise `get_flow_through_cross_section` — NumPy segment scan replaces Python loop; C pre-filter skips non-intersecting triangles | `anuga/shallow_water/shallow_water_domain.py` | 2026-04-03 |
@@ -196,6 +197,14 @@ These were completed during sessions as natural extensions or user requests:
 | Propagate v3.3.0, v3.3.1, v3.3.2 tags/releases to GeoscienceAustralia remote | `ga` remote | 2026-04-05 |
 | L5: 715 `log.critical()` → `log.info()` across 70+ production files; ~35 genuine warning conditions → `log.warning()`; `log.py` itself unchanged; fix `test_sww2dem_verbose_True` to use `mock.patch` instead of fragile FileHandler approach | 70+ `anuga/**/*.py`, `anuga/file_conversion/tests/test_sww2dem.py` | 2026-04-06 |
 | Drop Python 3.9: `X \| Y` union type syntax requires Python>=3.10; update `requires-python`, CI matrix, remove `Union` import from `animate.py` | `pyproject.toml`, `.github/workflows/conda-setup.yml`, `anuga/utilities/animate.py` | 2026-04-06 |
+| **anuga_animate_sww_gui** — parallel frame generation (ProcessPoolExecutor, fork on Linux, up to 4 workers); new `_animate_worker.py` registered in meson.build | `scripts/anuga_animate_sww_gui.py`, `anuga/utilities/_animate_worker.py`, `anuga/utilities/meson.build` | 2026-04-21 |
+| **anuga_animate_sww_gui** — Fix View Mesh opening multiple windows (Toplevel + FigureCanvasTkAgg); fix Cancel not re-enabling button; fix app not closing on window close | `scripts/anuga_animate_sww_gui.py` | 2026-04-21 |
+| **anuga_animate_sww_gui** — Zoom region feature: rubber-band rectangle selection re-generates frames at full resolution for selected area (Set Zoom / Reset Zoom) | `scripts/anuga_animate_sww_gui.py`, `anuga/utilities/animate.py` | 2026-04-21 |
+| **anuga_animate_sww_gui** — `elev` quantity: static (1-D) or time-varying (2-D for erosion); uses terrain colormap; shown in timeseries panel | `scripts/anuga_animate_sww_gui.py`, `anuga/utilities/animate.py`, `anuga/utilities/_animate_worker.py` | 2026-04-21 |
+| **anuga_animate_sww_gui** — Add terrain, gist_earth, gray to colormap dropdown | `scripts/anuga_animate_sww_gui.py` | 2026-04-21 |
+| **anuga_animate_sww_gui** — Suppress repeated "Figure files for each frame..." print in parallel workers (only print on directory creation) | `anuga/utilities/animate.py` | 2026-04-21 |
+| **anuga_animate_sww_gui** — Add `[gui]` optional extras to pyproject.toml (contextily, Pillow) | `pyproject.toml` | 2026-04-21 |
+| **anuga_animate_sww_gui** — Sphinx docs page with installation, performance, zoom, pick timeseries, figures; `docs/capture_gui_screenshots.py` for automated doc screenshots | `docs/source/visualisation/use_animate_sww_gui.rst`, `docs/capture_gui_screenshots.py`, `docs/source/visualisation/img/*.png` | 2026-04-21 |
 
 ---
 
@@ -241,7 +250,7 @@ Current state: no linter, formatter, type checker, or pre-commit hooks. 4,189 fu
 
 ### Phase 4 — Expanded Test Coverage
 
-Current state: **63.88% coverage** (fail_under=63, full suite passing), 2,264+ tests (fast run), ~40 s fast / ~3 min full. All 37 validation scenarios have automated scripts. Note: commit `ea7e0f7b` accidentally reverted fail_under from 63→54 while fixing coveragerc path prefixes; restored to 58 after scenario tests added.
+Current state: **70% coverage** (full suite), **67%** (fast/not-slow tests), 2,264+ tests (fast run), ~40 s fast / ~3 min full. All 37 validation scenarios have automated scripts. Note: commit `ea7e0f7b` accidentally reverted fail_under from 63→54 while fixing coveragerc path prefixes; restored to 58 after scenario tests added.
 
 - [ ] **4.1 Modernise test patterns** — Convert key test classes from `unittest.TestCase` to plain pytest functions selectively. Add pytest fixtures for domain creation.
 - [x] **4.2 Integrate validation tests** — Added 33 `validate_*.py` scripts covering all remaining scenarios: analytical comparison (transcritical, MacDonald, depth expansion, parabolic/paraboloid basin), run-only short/slow (lake-at-rest, river-at-rest, runup, rundown, trapezoidal channel, deep wave, landslide tsunami), behaviour-only (bridge/weir HEC-RAS, lid-driven cavity), and case studies (merewether, towradgi, patong). Patong skips unless data downloaded; added to `dirs_to_skip` in runner. *(2026-04-10)*
@@ -386,5 +395,5 @@ Full plan: `claude/GPU_DEVELOPMENT_PLAN.md`
 
 ### Long-term / opportunistic
 - **H4.1** Modernise test patterns — convert `unittest.TestCase` to plain pytest functions and shared fixtures incrementally, when files are touched for other reasons. Not worth a dedicated pass.
-- **Coverage to 65%** — Currently enforced at 63% (`fail_under=63`, full suite at 63.88%). Reaching 65% needs ~200 additional covered lines; add tests opportunistically when touching files.
+- **Coverage** — Full suite at **70%**, fast suite at **67%** (as of 2026-04-21). `fail_under` should be raised to match; add tests opportunistically when touching files.
 - **Local-timestepping** — `flux_update_frequency`, `update_next_flux`, `update_extrapolation`, `edge_timestep` are allocated in a planned but unimplemented feature (`compute_flux_update_frequency` is a `pass` stub). When implementing, allocate these arrays on demand in `set_local_time_stepping()` rather than at domain creation.
