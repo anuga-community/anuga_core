@@ -835,8 +835,13 @@ class SWWAnimationGUI:
             except Exception:
                 pass
             self._pick_text = None
-        self._update_pick_overlay()
-        self._canvas.draw_idle()
+        # Re-show the current frame: reapplies the correct imshow extent/limits
+        # before adding the pick overlay (plain draw_idle is not enough because
+        # ax.plot() in _update_pick_overlay can corrupt the axes limits).
+        if self._frames:
+            self._show_frame(self._current)
+        else:
+            self._canvas.draw_idle()
 
     def _update_timeseries(self):
         """Plot quantity vs time for the picked centroid."""
@@ -967,7 +972,8 @@ class SWWAnimationGUI:
 
         self._pick_overlay, = self._ax.plot(
             ax_x, ax_y, 'r*', markersize=12, zorder=10,
-            markeredgecolor='white', markeredgewidth=0.5)
+            markeredgecolor='white', markeredgewidth=0.5,
+            scalex=False, scaley=False)
 
     # -------------------------------------------------------------- #
     # Helpers                                                         #
