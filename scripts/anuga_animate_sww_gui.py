@@ -315,6 +315,8 @@ class SWWAnimationGUI:
         self._ts_info_label.pack(side=tk.LEFT, padx=8)
         ttk.Button(ts_ctrl, text='Close',
                    command=self._close_timeseries).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(ts_ctrl, text='Export CSV',
+                   command=self._export_timeseries).pack(side=tk.RIGHT, padx=4)
 
         self._ts_fig, self._ts_ax = plt.subplots(figsize=(10, 1.8))
         self._ts_fig.tight_layout(pad=1.5)
@@ -907,6 +909,56 @@ class SWWAnimationGUI:
         if not self._ts_outer.winfo_ismapped():
             self._ts_outer.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=False,
                                 before=self._canvas_frame)
+
+    def _export_timeseries(self):
+        """Save the current timeseries to a CSV file chosen by the user."""
+        if self._ts_triangle is None or self._splotter is None:
+            return
+        import csv
+        from tkinter import filedialog
+
+        sp  = self._splotter
+        qty = self._ts_qty_var.get()
+        tri = self._ts_triangle
+        t   = sp.time
+
+        data_map = {
+            'depth':       sp.depth,
+            'stage':       sp.stage,
+            'speed':       sp.speed,
+            'speed_depth': sp.speed_depth,
+        }
+        y = data_map[qty][:, tri]
+
+        xc = sp.xc[tri] + sp.xllcorner
+        yc = sp.yc[tri] + sp.yllcorner
+
+        default_name = f'{self._sww_prefix}_{qty}_tri{tri}.csv'
+        path = filedialog.asksaveasfilename(
+            title='Export timeseries',
+            initialfile=default_name,
+            defaultextension='.csv',
+            filetypes=[('CSV files', '*.csv'), ('All files', '*.*')])
+        if not path:
+            return
+
+        qty_label = {
+            'depth':       'depth_m',
+            'stage':       'stage_m',
+            'speed':       'speed_m_s',
+            'speed_depth': 'speed_depth_m2_s',
+        }[qty]
+
+        with open(path, 'w', newline='') as f:
+            writer = csv.writer(f)
+            writer.writerow([f'# SWW file: {self._sww_prefix}',
+                             f'triangle: {tri}',
+                             f'x: {xc:.3f}', f'y: {yc:.3f}'])
+            writer.writerow(['time_s', qty_label])
+            for ti, yi in zip(t, y):
+                writer.writerow([f'{ti:.6g}', f'{yi:.6g}'])
+
+        self._set_status(f'Exported {len(t)} rows → {path}')
 
     def _update_ts_cursor(self):
         """Move the vertical cursor line to the current animation time."""
