@@ -2029,7 +2029,8 @@ class Test_Mesh_extra2(unittest.TestCase):
 
     def test_save_mesh_to_tsh_vertices_and_triangles(self):
         """save_mesh_to_tsh writes correct vertices and triangles."""
-        import tempfile, os
+        import tempfile
+        import os
         from anuga.load_mesh.loadASCII import import_mesh_file
 
         nodes = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
@@ -2053,7 +2054,8 @@ class Test_Mesh_extra2(unittest.TestCase):
 
     def test_save_mesh_to_tsh_neighbours(self):
         """save_mesh_to_tsh preserves triangle neighbour information."""
-        import tempfile, os
+        import tempfile
+        import os
         from anuga.load_mesh.loadASCII import import_mesh_file
 
         nodes = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
@@ -2077,7 +2079,8 @@ class Test_Mesh_extra2(unittest.TestCase):
 
     def test_save_mesh_to_tsh_boundary_segments(self):
         """save_mesh_to_tsh writes boundary segments with correct tags."""
-        import tempfile, os
+        import tempfile
+        import os
         from anuga.load_mesh.loadASCII import import_mesh_file
 
         nodes = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
@@ -2103,7 +2106,8 @@ class Test_Mesh_extra2(unittest.TestCase):
 
     def test_save_mesh_to_tsh_triangle_tags(self):
         """save_mesh_to_tsh preserves tagged_elements (region tags per triangle)."""
-        import tempfile, os
+        import tempfile
+        import os
         from anuga.load_mesh.loadASCII import import_mesh_file
 
         nodes = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
@@ -2124,7 +2128,8 @@ class Test_Mesh_extra2(unittest.TestCase):
 
     def test_save_mesh_to_tsh_geo_reference(self):
         """save_mesh_to_tsh writes geo_reference zone and origin correctly."""
-        import tempfile, os
+        import tempfile
+        import os
         from anuga.load_mesh.loadASCII import import_mesh_file
 
         nodes = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
@@ -2148,7 +2153,8 @@ class Test_Mesh_extra2(unittest.TestCase):
 
     def test_save_mesh_to_tsh_roundtrip(self):
         """Mesh saved to TSH and reloaded via pmesh2domain gives same triangles."""
-        import tempfile, os
+        import tempfile
+        import os
         from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_to_domain
 
         points, vertices, boundary = rectangular(3, 3)

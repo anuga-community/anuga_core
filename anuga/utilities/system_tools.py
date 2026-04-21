@@ -394,9 +394,9 @@ def quantity_memory_stats(domain):
 
     lines = [
         f"Quantity memory (N={N:,} tri, L={L:,} bndry) — kB, '--'=lazy",
-        f"  type: evol=evolved  e_diag=edge_diagnostic  c_only=centroid_only  coord=coordinate",
-        f"  cols: cntrd=centroid  edge=edge  vert=vertex  bndry=boundary  ex_up=explicit_update",
-        f"        si_up=semi_implicit_update  ct_bk=centroid_backup  x/y_grd=gradients",
+        "  type: evol=evolved  e_diag=edge_diagnostic  c_only=centroid_only  coord=coordinate",
+        "  cols: cntrd=centroid  edge=edge  vert=vertex  bndry=boundary  ex_up=explicit_update",
+        "        si_up=semi_implicit_update  ct_bk=centroid_backup  x/y_grd=gradients",
         sep,
         header_row,
         sep,
@@ -702,7 +702,7 @@ def domain_struct_stats(domain):
         f'    status          : {c_status}',
         f'    sizeof estimate : {_C_STRUCT_SIZE} B  '
         f'({10} int64 scalars, {13} double scalars, {_C_STRUCT_PTRS} pointers)',
-        f'    note            : pointers reference Python numpy arrays — no extra data',
+        '    note            : pointers reference Python numpy arrays — no extra data',
     ]
 
     # ------------------------------------------------------------------ #
@@ -739,7 +739,7 @@ def domain_struct_stats(domain):
             lines += [
                 f'    gpu available   : {gpu_avail}',
                 f'    device memory   : {est_mb:.1f} MB  (estimate for N={N:,}, nb={nb:,})',
-                f'    note            : device arrays are OpenMP-mapped copies of numpy arrays',
+                '    note            : device arrays are OpenMP-mapped copies of numpy arrays',
             ]
         except ImportError:
             lines.append('    device memory   : (sw_domain_gpu_ext not importable)')

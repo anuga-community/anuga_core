@@ -1459,7 +1459,8 @@ class Test_Domain_delegation(unittest.TestCase):
 
     def test_domain_save_mesh_to_tsh_basic(self):
         """domain.save_mesh_to_tsh writes a readable TSH file."""
-        import tempfile, os
+        import tempfile
+        import os
         from anuga.load_mesh.loadASCII import import_mesh_file
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_cross
 
@@ -1481,7 +1482,8 @@ class Test_Domain_delegation(unittest.TestCase):
 
     def test_domain_save_mesh_to_tsh_boundary_tags(self):
         """domain.save_mesh_to_tsh preserves boundary segment tags."""
-        import tempfile, os
+        import tempfile
+        import os
         from anuga.load_mesh.loadASCII import import_mesh_file
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
 
@@ -1505,7 +1507,8 @@ class Test_Domain_delegation(unittest.TestCase):
 
     def test_domain_save_mesh_to_tsh_roundtrip(self):
         """TSH file written by domain can be reloaded as a new domain."""
-        import tempfile, os
+        import tempfile
+        import os
         from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_cross
 
         points, vertices, boundary = rectangular_cross(3, 3)
