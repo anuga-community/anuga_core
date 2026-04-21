@@ -41,7 +41,7 @@ def _resolve_provider(cx, provider_str):
     return obj
 
 
-def _add_basemap(ax, epsg, provider=BASEMAP_DEFAULT):
+def _add_basemap(ax, epsg, provider=BASEMAP_DEFAULT, cache=None):
     """Overlay a tile basemap on *ax* using contextily.
 
     Parameters
@@ -54,6 +54,11 @@ def _add_basemap(ax, epsg, provider=BASEMAP_DEFAULT):
         Dot-notation provider string, e.g. ``'Esri.WorldImagery'`` or
         ``'OpenTopoMap'``.  See :data:`BASEMAP_PROVIDERS` for the curated
         list, or use any key from ``contextily.providers``.
+    cache : dict or None
+        Optional in-memory cache dict.  On the first call the fetched tile
+        image is stored; subsequent calls with the same bounds and provider
+        reuse the cached image via ``ax.imshow``, avoiding repeated network
+        and disk access.  Pass ``{}`` once per SWW_plotter instance.
 
     Warns and returns silently if contextily is not installed or tile
     fetching fails.
@@ -66,10 +71,35 @@ def _add_basemap(ax, epsg, provider=BASEMAP_DEFAULT):
             "Install it with: conda install contextily  or  pip install contextily",
             stacklevel=3)
         return
+
+    xl, xr = ax.get_xlim()
+    yb, yt = ax.get_ylim()
+    # Round to nearest metre — sub-metre differences never change the tile set
+    cache_key = (epsg, provider, round(xl), round(xr), round(yb), round(yt))
+
     try:
         source = _resolve_provider(cx, provider)
-        cx.add_basemap(ax, crs=f'EPSG:{epsg}', source=source,
-                       attribution_size=6)
+
+        if cache is not None and cache_key in cache:
+            img, extent = cache[cache_key]
+            ax.imshow(img, extent=extent, interpolation='bilinear',
+                      origin='upper', aspect='equal', zorder=0)
+            ax.set_xlim(xl, xr)
+            ax.set_ylim(yb, yt)
+        else:
+            # First call: fetch tiles via contextily and capture the result
+            n_before = len(ax.get_images())
+            cx.add_basemap(ax, crs=f'EPSG:{epsg}', source=source,
+                           attribution_size=6)
+            if cache is not None:
+                images = ax.get_images()
+                if len(images) > n_before:
+                    img_artist = images[n_before]
+                    arr = img_artist.get_array()
+                    # get_array() may return a masked array; store plain ndarray
+                    cache[cache_key] = (
+                        arr.data if hasattr(arr, 'data') else arr,
+                        img_artist.get_extent())
     except Exception as e:
         warnings.warn(f"Basemap '{provider}' could not be fetched: {e}",
                       stacklevel=3)
@@ -123,6 +153,8 @@ class Domain_plotter:
                 self.triangles)
         else:
             self.triang_abs = self.triang
+
+        self._basemap_cache = {}
 
         self.elev = domain.quantities['elevation'].centroid_values
         self.stage = domain.quantities['stage'].centroid_values
@@ -206,7 +238,7 @@ class Domain_plotter:
         fig.colorbar(im, ax=ax)
 
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg, basemap_provider)
+            _add_basemap(ax, self.epsg, basemap_provider, cache=self._basemap_cache)
 
         return fig, ax
 
@@ -321,7 +353,7 @@ class Domain_plotter:
         fig.colorbar(im, ax=ax)
 
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg, basemap_provider)
+            _add_basemap(ax, self.epsg, basemap_provider, cache=self._basemap_cache)
 
         return fig, ax
 
@@ -446,7 +478,7 @@ class Domain_plotter:
         fig.colorbar(im, ax=ax)
 
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg, basemap_provider)
+            _add_basemap(ax, self.epsg, basemap_provider, cache=self._basemap_cache)
 
         return fig, ax
 
@@ -549,7 +581,7 @@ class Domain_plotter:
                         '*** Cannot clobber existing directory %s' % plot_dir)
             else:
                 os.mkdir("%s" % plot_dir)
-            print("Figure files for each frame will be stored in " + plot_dir)
+                print("Figure files for each frame will be stored in " + plot_dir)
 
 
 class SWW_plotter:
@@ -689,6 +721,10 @@ class SWW_plotter:
         self._max_depth_frame_count = 0
         self._max_speed_frame_count = 0
         self._max_speed_depth_frame_count = 0
+        self._elev_frame_count = 0
+
+        self._basemap_cache = {}
+        self._figure_cache = {}
 
     #------------------------------------------
     # General plots
@@ -711,68 +747,96 @@ class SWW_plotter:
         return fig, ax, im
 
     #------------------------------------------
-    # Depth procedures
+    # Frame rendering helpers (figure reuse)
     #------------------------------------------
-    def _depth_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
-                     basemap=False, alpha=1.0,
-                     basemap_provider=BASEMAP_DEFAULT):
 
-        name = self.name
+
+    def _animated_frame(self, frame, qty_name, qty_data, qty_label,
+                        figsize, dpi, vmin, vmax, cmap, basemap, alpha,
+                        basemap_provider, xlim=None, ylim=None):
+        """Shared core for depth/stage/speed/speed_depth frame rendering."""
+        import matplotlib.pyplot as plt
+
         time = self.time[frame]
         depth = self.depth[frame, :]
-
-        md = self.min_depth
-
         try:
             elev = self.elev[frame, :]
         except IndexError:
             elev = self.elev
+        md = self.min_depth
 
-        ims = []
+        cache_key = (qty_name, figsize, dpi, basemap, basemap_provider,
+                     cmap, vmin, vmax, alpha,
+                     tuple(xlim) if xlim is not None else None,
+                     tuple(ylim) if ylim is not None else None)
 
-        #fig = plt.figure(figsize=figsize, dpi=dpi)
+        if cache_key not in self._figure_cache:
+            self._figure_cache[cache_key] = plt.figure(figsize=figsize, dpi=dpi)
 
-        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
-
-        plt.title('Depth: Time {0:0>4}'.format(time))
+        fig = self._figure_cache[cache_key]
+        fig.clf()
+        ax = fig.add_subplot(111)
+        ax.set_aspect('equal')
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        ax.set_title(f'{qty_label}: Time {time:.2f}')
 
         triang = self.triang_abs if (basemap and self.epsg) else self.triang
+
         if not (basemap and self.epsg):
             triang.set_mask(depth > md)
             ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
 
         triang.set_mask(depth < md)
-        im = ax.tripcolor(triang,
-                      facecolors=depth,
-                      cmap=cmap,
-                      alpha=alpha,
-                      vmin=vmin, vmax=vmax)
-
-
-        ax.set_aspect('equal')
-        ax.set_xlabel('Easting (m)')
-        ax.set_ylabel('Northing (m)')
-
+        im = ax.tripcolor(triang, facecolors=qty_data,
+                          cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
         triang.set_mask(None)
+
+        # Apply zoom limits before colorbar/basemap so tiles are fetched
+        # for the correct region.
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        if ylim is not None:
+            ax.set_ylim(ylim)
 
         fig.colorbar(im, ax=ax)
 
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg, basemap_provider)
+            _add_basemap(ax, self.epsg, basemap_provider,
+                         cache=self._basemap_cache)
 
         return fig, ax
 
+    def _clear_figure_cache(self):
+        """Close all cached figures and release their memory."""
+        import matplotlib.pyplot as plt
+        for fig in self._figure_cache.values():
+            plt.close(fig)
+        self._figure_cache = {}
+
+    #------------------------------------------
+    # Depth procedures
+    #------------------------------------------
+    def _depth_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
+                     basemap=False, alpha=1.0,
+                     basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None):
+        return self._animated_frame(
+            frame, 'depth', self.depth[frame, :], 'Depth',
+            figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
+            xlim=xlim, ylim=ylim)
+
     def save_depth_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
-                         alpha=1.0, basemap_provider=BASEMAP_DEFAULT):
-
-        import matplotlib.pyplot as plt
+                         alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
+                         xlim=None, ylim=None):
 
         name = self.name
         plot_dir = self.plot_dir
         frame_num = self._depth_frame_count
 
-        fig, ax = self._depth_frame(frame, figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider)
+        fig, ax = self._depth_frame(frame, figsize, dpi, vmin, vmax, cmap,
+                                    basemap, alpha, basemap_provider,
+                                    xlim=xlim, ylim=ylim)
 
         if plot_dir is None:
             fig.savefig(name+'_depth_{0:0>10}.png'.format(frame_num))
@@ -780,8 +844,6 @@ class SWW_plotter:
             fig.savefig(os.path.join(plot_dir, name
                                      + '_depth_{0:0>10}.png'.format(frame_num)))
         self._depth_frame_count += 1
-        plt.close()
-        fig.clf()
 
     def plot_depth_frame(self, frame=-1, figsize=(10, 6), dpi = 80,
                          vmin=0.0, vmax=20.0):
@@ -800,65 +862,24 @@ class SWW_plotter:
     #------------------------------------------
     def _stage_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
                      basemap=False, alpha=1.0,
-                     basemap_provider=BASEMAP_DEFAULT):
-
-        import matplotlib.pyplot as plt
-
-        name = self.name
-        time = self.time[frame]
-        stage = self.stage[frame, :]
-        depth = self.depth[frame, :]
-
-        md = self.min_depth
-
-        try:
-            elev = self.elev[frame, :]
-        except IndexError:
-            elev = self.elev
-
-        ims = []
-
-        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
-
-        plt.title('Stage: Time {0:0>4}'.format(time))
-
-        triang = self.triang_abs if (basemap and self.epsg) else self.triang
-        if not (basemap and self.epsg):
-            triang.set_mask(depth > md)
-            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
-
-        triang.set_mask(depth < md)
-        im = ax.tripcolor(triang,
-                      facecolors=stage,
-                      cmap=cmap,
-                      alpha=alpha,
-                      vmin=vmin, vmax=vmax)
-
-        triang.set_mask(None)
-
-
-        ax.set_aspect('equal')
-        ax.set_xlabel('Easting (m)')
-        ax.set_ylabel('Northing (m)')
-
-        fig.colorbar(im, ax=ax)
-
-        if basemap and self.epsg:
-            _add_basemap(ax, self.epsg, basemap_provider)
-
-        return fig, ax
+                     basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None):
+        return self._animated_frame(
+            frame, 'stage', self.stage[frame, :], 'Stage',
+            figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
+            xlim=xlim, ylim=ylim)
 
     def save_stage_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=-20.0, vmax=20.0, cmap='viridis', basemap=False,
-                         alpha=1.0, basemap_provider=BASEMAP_DEFAULT):
-
-        import matplotlib.pyplot as plt
+                         alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
+                         xlim=None, ylim=None):
 
         name = self.name
         plot_dir = self.plot_dir
         frame_num = self._stage_frame_count
 
-        fig, ax = self._stage_frame(frame, figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider)
+        fig, ax = self._stage_frame(frame, figsize, dpi, vmin, vmax, cmap,
+                                    basemap, alpha, basemap_provider,
+                                    xlim=xlim, ylim=ylim)
 
         if plot_dir is None:
             fig.savefig(name+'_stage_{0:0>10}.png'.format(frame_num))
@@ -866,8 +887,6 @@ class SWW_plotter:
             fig.savefig(os.path.join(plot_dir, name
                                      + '_stage_{0:0>10}.png'.format(frame_num)))
         self._stage_frame_count += 1
-        plt.close()
-        fig.clf()
 
     def plot_stage_frame(self, frame=-1, figsize=(5, 3), dpi=80,
                          vmin=-20, vmax=20.0):
@@ -883,60 +902,28 @@ class SWW_plotter:
     #------------------------------------------
     # Depth Speed procedures
     #------------------------------------------
-    def _speed_depth_frame(self, frame, figsize, dpi, vmin, vmax):
-
-        import matplotlib.pyplot as plt
-
-        name = self.name
-        time = self.time[frame]
-        stage = self.stage[frame, :]
-        speed_depth = self.speed_depth[frame, :]
-        depth = self.depth[frame, :]
-
-        md = self.min_depth
-
-        try:
-            elev = self.elev[frame, :]
-        except IndexError:
-            elev = self.elev
-
-        ims = []
-
-        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
-
-        plt.title('Speed_Depth: Time {0:0>4}'.format(time))
-
-        self.triang.set_mask(depth > md)
-        ax.tripcolor(self.triang,
-                      facecolors=speed_depth,
-                      cmap='Greys_r')
-
-        self.triang.set_mask(depth < md)
-        im = ax.tripcolor(self.triang,
-                      facecolors=elev,
-                      cmap='viridis',
-                      vmin=vmin, vmax=vmax)
-
-        self.triang.set_mask(None)
-
-
-        ax.set_aspect('equal')
-        ax.set_xlabel('Easting (m)')
-        ax.set_ylabel('Northing (m)')
-        fig.colorbar(im, ax=ax)
-
-        return fig, ax
+    def _speed_depth_frame(self, frame, figsize, dpi, vmin, vmax,
+                           cmap='viridis', basemap=False, alpha=1.0,
+                           basemap_provider=BASEMAP_DEFAULT,
+                           xlim=None, ylim=None):
+        return self._animated_frame(
+            frame, 'speed_depth', self.speed_depth[frame, :], 'Speed×Depth',
+            figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
+            xlim=xlim, ylim=ylim)
 
     def save_speed_depth_frame(self, frame=-1, figsize=(10, 6), dpi=160,
-                         vmin=-20.0, vmax=20.0):
-
-        import matplotlib.pyplot as plt
+                               vmin=0.0, vmax=20.0, cmap='viridis',
+                               basemap=False, alpha=1.0,
+                               basemap_provider=BASEMAP_DEFAULT,
+                               xlim=None, ylim=None):
 
         name = self.name
         plot_dir = self.plot_dir
         frame_num = self._speed_depth_frame_count
 
-        fig, ax = self._speed_depth_frame(frame, figsize, dpi, vmin, vmax)
+        fig, ax = self._speed_depth_frame(frame, figsize, dpi, vmin, vmax,
+                                          cmap, basemap, alpha, basemap_provider,
+                                          xlim=xlim, ylim=ylim)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_depth_{0:0>10}.png'.format(frame_num))
@@ -944,8 +931,6 @@ class SWW_plotter:
             fig.savefig(os.path.join(plot_dir, name
                                      + '_speed_depth_{0:0>10}.png'.format(frame_num)))
         self._speed_depth_frame_count += 1
-        plt.close()
-        fig.clf()
 
     def plot_speed_depth_frame(self, frame=-1, figsize=(5, 3), dpi=80,
                          vmin=-20, vmax=20.0):
@@ -963,61 +948,24 @@ class SWW_plotter:
     #------------------------------------------
     def _speed_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
                      basemap=False, alpha=1.0,
-                     basemap_provider=BASEMAP_DEFAULT):
-
-        import matplotlib.pyplot as plt
-
-        name = self.name
-        time = self.time[frame]
-        depth = self.depth[frame, :]
-
-        md = self.min_depth
-
-        try:
-            elev = self.elev[frame, :]
-        except IndexError:
-            elev = self.elev
-        speed = self.speed[frame, :]
-
-        ims = []
-
-        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
-
-        plt.title('Speed: Time {0:0>4}'.format(time))
-
-        triang = self.triang_abs if (basemap and self.epsg) else self.triang
-        if not (basemap and self.epsg):
-            triang.set_mask(depth > md)
-            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
-
-        triang.set_mask(depth < md)
-        im = ax.tripcolor(triang,
-                      facecolors=speed,
-                      cmap=cmap,
-                      alpha=alpha,
-                      vmin=vmin, vmax=vmax)
-
-        triang.set_mask(None)
-
-        ax.set_aspect('equal')
-        ax.set_xlabel('Easting (m)')
-        ax.set_ylabel('Northing (m)')
-        fig.colorbar(im, ax=ax)
-
-        if basemap and self.epsg:
-            _add_basemap(ax, self.epsg, basemap_provider)
-
-        return fig, ax
+                     basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None):
+        return self._animated_frame(
+            frame, 'speed', self.speed[frame, :], 'Speed',
+            figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
+            xlim=xlim, ylim=ylim)
 
     def save_speed_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=0.0, vmax=10.0, cmap='viridis', basemap=False,
-                         alpha=1.0, basemap_provider=BASEMAP_DEFAULT):
+                         alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
+                         xlim=None, ylim=None):
 
         name = self.name
         plot_dir = self.plot_dir
         frame_num = self._speed_frame_count
 
-        fig, ax = self._speed_frame(frame, figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider)
+        fig, ax = self._speed_frame(frame, figsize, dpi, vmin, vmax, cmap,
+                                    basemap, alpha, basemap_provider,
+                                    xlim=xlim, ylim=ylim)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_{0:0>10}.png'.format(frame_num))
@@ -1025,8 +973,6 @@ class SWW_plotter:
             fig.savefig(os.path.join(plot_dir, name
                                      + '_speed_{0:0>10}.png'.format(frame_num)))
         self._speed_frame_count += 1
-        plt.close()
-        fig.clf()
 
     def plot_speed_frame(self, frame=-1, figsize=(10, 6), dpi=80,
                          vmin=0.0, vmax=10.0):
@@ -1040,12 +986,101 @@ class SWW_plotter:
         return fig, ax
 
     #------------------------------------------
+    # Elevation procedures (static or time-varying)
+    #------------------------------------------
+
+    def _elev_frame(self, frame, figsize, dpi, vmin, vmax, cmap='terrain',
+                    basemap=False, alpha=1.0,
+                    basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None):
+        """Render one elevation frame.
+
+        Works for both static (1-D) and time-varying (2-D) elevation arrays.
+        No wet/dry masking is applied — elevation is shown everywhere.
+        """
+        import matplotlib.pyplot as plt
+
+        if self.elev.ndim == 2:
+            elev_data = self.elev[frame, :]
+            title = f'Elevation: Time {self.time[frame]:.2f}'
+        else:
+            elev_data = self.elev
+            title = 'Elevation'
+
+        cache_key = ('elev', figsize, dpi, basemap, basemap_provider,
+                     cmap, vmin, vmax, alpha,
+                     tuple(xlim) if xlim is not None else None,
+                     tuple(ylim) if ylim is not None else None)
+
+        if cache_key not in self._figure_cache:
+            self._figure_cache[cache_key] = plt.figure(figsize=figsize, dpi=dpi)
+
+        fig = self._figure_cache[cache_key]
+        fig.clf()
+        ax = fig.add_subplot(111)
+        ax.set_aspect('equal')
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        ax.set_title(title)
+
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        triang.set_mask(None)
+        im = ax.tripcolor(triang, facecolors=elev_data,
+                          cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
+
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        if ylim is not None:
+            ax.set_ylim(ylim)
+        fig.colorbar(im, ax=ax, label='Elevation (m)')
+
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg, basemap_provider,
+                         cache=self._basemap_cache)
+
+        return fig, ax
+
+    def save_elev_frame(self, frame=-1, figsize=(10, 6), dpi=160,
+                        vmin=-20.0, vmax=100.0, cmap='terrain', basemap=False,
+                        alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
+                        xlim=None, ylim=None):
+        """Save one elevation frame to disk.
+
+        For static elevation (1-D) the *frame* argument is ignored.
+        """
+        name = self.name
+        plot_dir = self.plot_dir
+        frame_num = self._elev_frame_count
+
+        # For static elevation there is only one frame; always render it.
+        render_frame = 0 if self.elev.ndim == 1 else frame
+        fig, ax = self._elev_frame(render_frame, figsize, dpi, vmin, vmax, cmap,
+                                   basemap, alpha, basemap_provider,
+                                   xlim=xlim, ylim=ylim)
+
+        fname = name + '_elev_{0:0>10}.png'.format(frame_num)
+        if plot_dir is None:
+            fig.savefig(fname)
+        else:
+            fig.savefig(os.path.join(plot_dir, fname))
+        self._elev_frame_count += 1
+
+    def plot_elev_frame(self, frame=-1, figsize=(10, 6), dpi=80,
+                        vmin=-20.0, vmax=100.0):
+
+        import matplotlib.pyplot as plt
+
+        render_frame = 0 if self.elev.ndim == 1 else frame
+        fig, ax = self._elev_frame(render_frame, figsize, dpi, vmin, vmax)
+        return fig, ax
+
+    #------------------------------------------
     # Maximum-over-time procedures
     #------------------------------------------
 
     def save_max_depth_frame(self, frame=None, figsize=(10, 6), dpi=160,
                              vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
-                             alpha=1.0, basemap_provider=BASEMAP_DEFAULT):
+                             alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
+                             xlim=None, ylim=None):
         """Save a single frame showing the maximum depth at each triangle."""
         import matplotlib.pyplot as plt
         import numpy as np
@@ -1070,9 +1105,13 @@ class SWW_plotter:
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        if ylim is not None:
+            ax.set_ylim(ylim)
         fig.colorbar(im, ax=ax)
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg, basemap_provider)
+            _add_basemap(ax, self.epsg, basemap_provider, cache=self._basemap_cache)
         fname = '{}_max_depth_{:0>10}.png'.format(self.name, self._max_depth_frame_count)
         path = fname if self.plot_dir is None else os.path.join(self.plot_dir, fname)
         fig.savefig(path)
@@ -1082,7 +1121,8 @@ class SWW_plotter:
 
     def save_max_speed_frame(self, frame=None, figsize=(10, 6), dpi=160,
                              vmin=0.0, vmax=10.0, cmap='viridis', basemap=False,
-                             alpha=1.0, basemap_provider=BASEMAP_DEFAULT):
+                             alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
+                             xlim=None, ylim=None):
         """Save a single frame showing the maximum speed at each triangle."""
         import matplotlib.pyplot as plt
         import numpy as np
@@ -1108,9 +1148,13 @@ class SWW_plotter:
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        if ylim is not None:
+            ax.set_ylim(ylim)
         fig.colorbar(im, ax=ax)
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg, basemap_provider)
+            _add_basemap(ax, self.epsg, basemap_provider, cache=self._basemap_cache)
         fname = '{}_max_speed_{:0>10}.png'.format(self.name, self._max_speed_frame_count)
         path = fname if self.plot_dir is None else os.path.join(self.plot_dir, fname)
         fig.savefig(path)
@@ -1120,7 +1164,8 @@ class SWW_plotter:
 
     def save_max_speed_depth_frame(self, frame=None, figsize=(10, 6), dpi=160,
                                    vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
-                                   alpha=1.0, basemap_provider=BASEMAP_DEFAULT):
+                                   alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
+                                   xlim=None, ylim=None):
         """Save a single frame showing the maximum speed×depth at each triangle."""
         import matplotlib.pyplot as plt
         import numpy as np
@@ -1146,9 +1191,13 @@ class SWW_plotter:
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
         ax.set_ylabel('Northing (m)')
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        if ylim is not None:
+            ax.set_ylim(ylim)
         fig.colorbar(im, ax=ax)
         if basemap and self.epsg:
-            _add_basemap(ax, self.epsg, basemap_provider)
+            _add_basemap(ax, self.epsg, basemap_provider, cache=self._basemap_cache)
         fname = '{}_max_speed_depth_{:0>10}.png'.format(
             self.name, self._max_speed_depth_frame_count)
         path = fname if self.plot_dir is None else os.path.join(self.plot_dir, fname)
@@ -1239,7 +1288,31 @@ class SWW_plotter:
                       '*** Cannot clobber existing directory %s' % plot_dir)
             else:
                 os.mkdir("%s" % plot_dir)
-            print("Figure files for each frame will be stored in " + plot_dir)
+                print("Figure files for each frame will be stored in " + plot_dir)
+
+    def set_epsg(self, epsg):
+        """Set (or override) the EPSG code and rebuild the absolute-coordinate
+        triangulation used for basemap overlays.
+
+        Useful when the SWW file pre-dates EPSG storage (older files lack the
+        attribute).  Call this before generating frames with ``basemap=True``.
+
+        Parameters
+        ----------
+        epsg : int or None
+            EPSG code of the coordinate system, e.g. 32756 for UTM zone 56 S.
+            Pass ``None`` to clear the code and disable basemap support.
+        """
+        import matplotlib.tri as tri
+        self.epsg = int(epsg) if epsg is not None else None
+        self._basemap_cache = {}  # tiles fetched under old EPSG are invalid
+        if self.epsg is not None:
+            self.triang_abs = tri.Triangulation(
+                self.x + self.xllcorner,
+                self.y + self.yllcorner,
+                self.triangles)
+        else:
+            self.triang_abs = self.triang
 
     def triplot(self, figsize = (10, 6), dpi=80, **kwargs):
         """
@@ -1258,7 +1331,7 @@ class SWW_plotter:
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
-        lines = ax.triplot(self.triang, *args, **kwargs)
+        lines = ax.triplot(self.triang, **kwargs)
         return fig, ax, lines
 
 

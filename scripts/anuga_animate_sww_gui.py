@@ -48,7 +48,8 @@ except Exception as _e:
 # ------------------------------------------------------------------ #
 
 _QUANTITIES = ('depth', 'stage', 'speed', 'speed_depth',
-               'max_depth', 'max_speed', 'max_speed_depth')
+               'max_depth', 'max_speed', 'max_speed_depth',
+               'elev')
 
 _QTY_DEFAULTS = {
     'depth':           dict(vmin=0.0,   vmax=20.0),
@@ -58,6 +59,7 @@ _QTY_DEFAULTS = {
     'max_depth':       dict(vmin=0.0,   vmax=20.0),
     'max_speed':       dict(vmin=0.0,   vmax=10.0),
     'max_speed_depth': dict(vmin=0.0,   vmax=20.0),
+    'elev':            dict(vmin=-20.0, vmax=100.0),
 }
 
 # Attribute on SWW_plotter used to compute auto vmin/vmax
@@ -69,6 +71,7 @@ _QTY_DATA_ATTR = {
     'max_depth':       'depth',
     'max_speed':       'speed',
     'max_speed_depth': 'speed_depth',
+    'elev':            'elev',
 }
 
 # Method name on SWW_plotter to save a single frame
@@ -80,6 +83,7 @@ _QTY_SAVE_METHOD = {
     'max_depth':       'save_max_depth_frame',
     'max_speed':       'save_max_speed_frame',
     'max_speed_depth': 'save_max_speed_depth_frame',
+    'elev':            'save_elev_frame',
 }
 
 
@@ -117,6 +121,18 @@ class SWWAnimationGUI:
         self._splotter = None
         self._cancel_flag = False
         self._gen_after_id = None
+        self._executor = None
+        self._futures = []
+        self._gen_plot_dir = ''
+        self._gen_qty = 'depth'
+        self._n_to_gen = 0
+
+        # zoom state
+        self._zoom_xlim = None
+        self._zoom_ylim = None
+        self._zoom_rect_patch = None
+        self._zoom_selector = None
+        self._zoom_mode = False
 
         # timeseries state
         self._ts_triangle = None
@@ -209,7 +225,8 @@ class SWWAnimationGUI:
         self._cmap_var = tk.StringVar(value='viridis')
         _CMAPS = ['viridis', 'plasma', 'inferno', 'magma', 'cividis',
                   'Blues', 'Greens', 'Oranges', 'Reds', 'YlOrRd',
-                  'RdBu_r', 'coolwarm', 'seismic', 'jet', 'turbo']
+                  'RdBu_r', 'coolwarm', 'seismic', 'jet', 'turbo',
+                  'terrain', 'gist_earth', 'gray']
         ttk.Combobox(row3, textvariable=self._cmap_var,
                      values=_CMAPS, width=10).pack(side=tk.LEFT, padx=2)
         self._cmap_reverse_var = tk.BooleanVar(value=False)
@@ -237,12 +254,19 @@ class SWWAnimationGUI:
                     textvariable=self._alpha_var,
                     format='%.2f', width=5).pack(side=tk.LEFT, padx=2)
 
-        # ---- Row 4: SWW info ----
+        # ---- Row 4: SWW info + EPSG override ----
         row4 = ttk.Frame(ctrl)
         row4.pack(fill=tk.X, pady=(4, 0))
         self._sww_info_label = ttk.Label(row4, text='No SWW file loaded.',
                                           foreground='grey')
         self._sww_info_label.pack(side=tk.LEFT, padx=4)
+        ttk.Label(row4, text='EPSG:').pack(side=tk.LEFT, padx=(12, 0))
+        self._epsg_var = tk.StringVar(value='')
+        self._epsg_entry = ttk.Entry(row4, textvariable=self._epsg_var, width=8)
+        self._epsg_entry.pack(side=tk.LEFT, padx=2)
+        self._epsg_entry.bind('<Return>', lambda _e: self._on_set_epsg())
+        ttk.Button(row4, text='Set', width=4,
+                   command=self._on_set_epsg).pack(side=tk.LEFT, padx=2)
 
         # ---- Row 5: generate/cancel + progress bar ----
         row5 = ttk.Frame(ctrl)
@@ -291,8 +315,22 @@ class SWWAnimationGUI:
                                      state=tk.DISABLED)
         self._pick_btn.pack(side=tk.LEFT, padx=2)
 
+        ttk.Separator(row6, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        self._zoom_btn = ttk.Button(row6, text='Set Zoom',
+                                     command=self._toggle_zoom_mode,
+                                     state=tk.DISABLED)
+        self._zoom_btn.pack(side=tk.LEFT, padx=2)
+        self._reset_zoom_btn = ttk.Button(row6, text='Reset Zoom',
+                                           command=self._reset_zoom,
+                                           state=tk.DISABLED)
+        self._reset_zoom_btn.pack(side=tk.LEFT, padx=2)
+
         ttk.Button(row6, text='Help', command=self._show_help).pack(
             side=tk.RIGHT, padx=(4, 0))
+        self._mesh_btn = ttk.Button(row6, text='View Mesh',
+                                     command=self._show_mesh,
+                                     state=tk.DISABLED)
+        self._mesh_btn.pack(side=tk.RIGHT, padx=4)
         self._save_frame_btn = ttk.Button(row6, text='Save Frame',
                                            command=self._save_frame,
                                            state=tk.DISABLED)
@@ -326,7 +364,8 @@ class SWWAnimationGUI:
         ttk.Label(ts_ctrl, text='Timeseries:').pack(side=tk.LEFT, padx=4)
         self._ts_qty_var = tk.StringVar(value='depth')
         ts_qty_combo = ttk.Combobox(ts_ctrl, textvariable=self._ts_qty_var,
-                                    values=['depth', 'stage', 'speed', 'speed_depth'],
+                                    values=['depth', 'stage', 'speed',
+                                            'speed_depth', 'elev'],
                                     width=12, state='readonly')
         ts_qty_combo.pack(side=tk.LEFT, padx=2)
         ts_qty_combo.bind('<<ComboboxSelected>>',
@@ -381,6 +420,7 @@ class SWWAnimationGUI:
             self._sww_info_label.config(text='File not found.', foreground='red')
             self._gen_btn.config(state=tk.DISABLED)
             self._pick_btn.config(state=tk.DISABLED)
+            self._mesh_btn.config(state=tk.DISABLED)
             self._splotter = None
             return
 
@@ -398,16 +438,17 @@ class SWWAnimationGUI:
         n = len(self._splotter.time)
         t0 = self._splotter.time[0]
         t1 = self._splotter.time[-1]
-        epsg_msg = getattr(self, '_epsg_msg', '')
         self._sww_info_label.config(
-            text=f'{n} timesteps  |  t={t0:.1f} .. {t1:.1f} s{epsg_msg}',
+            text=f'{n} timesteps  |  t={t0:.1f} .. {t1:.1f} s',
             foreground='grey')
         self._gen_btn.config(state=tk.NORMAL)
         self._pick_btn.config(state=tk.NORMAL)
+        self._mesh_btn.config(state=tk.NORMAL)
         self._set_status(f'Loaded {os.path.basename(sww)} -{n} timesteps')
         self._update_auto_limits()
         self._exit_pick_mode()
         self._close_timeseries()
+        self._reset_zoom()
 
     def _load_splotter(self, sww):
         from anuga.utilities.animate import SWW_plotter
@@ -419,8 +460,16 @@ class SWWAnimationGUI:
 
         self._sww_prefix = self._splotter.name  # bare basename, no extension
 
-        # Enable OSM basemap checkbox only when the SWW has an EPSG code
-        # and contextily is installed
+        # Populate the EPSG entry from the file (may be empty for old SWW files)
+        epsg_val = self._splotter.epsg
+        self._epsg_var.set(str(epsg_val) if epsg_val is not None else '')
+
+        self._refresh_basemap_state()
+
+    def _refresh_basemap_state(self):
+        """Enable/disable the basemap checkbox based on current EPSG + contextily."""
+        if self._splotter is None:
+            return
         has_epsg = self._splotter.epsg is not None
         has_contextily = False
         if has_epsg:
@@ -431,18 +480,44 @@ class SWWAnimationGUI:
                 pass
         if has_epsg and has_contextily:
             self._basemap_chk.config(state=tk.NORMAL)
-            epsg_msg = f'  EPSG:{self._splotter.epsg}'
         elif has_epsg:
             self._basemap_chk.config(state=tk.DISABLED)
             self._basemap_var.set(False)
             self._basemap_provider_combo.config(state=tk.DISABLED)
-            epsg_msg = f'  EPSG:{self._splotter.epsg} (install contextily for basemap)'
         else:
             self._basemap_chk.config(state=tk.DISABLED)
             self._basemap_var.set(False)
             self._basemap_provider_combo.config(state=tk.DISABLED)
-            epsg_msg = ''
-        self._epsg_msg = epsg_msg
+
+    def _on_set_epsg(self):
+        """Apply the EPSG code typed in the entry field to the loaded SWW_plotter."""
+        if self._splotter is None:
+            self._set_status('Load an SWW file first.')
+            return
+        raw = self._epsg_var.get().strip()
+        if raw == '':
+            self._splotter.set_epsg(None)
+            self._refresh_basemap_state()
+            self._set_status('EPSG cleared — basemap disabled.')
+            return
+        try:
+            code = int(raw)
+        except ValueError:
+            self._set_status(f'Invalid EPSG code "{raw}" — enter an integer, e.g. 32756.')
+            return
+        self._splotter.set_epsg(code)
+        self._refresh_basemap_state()
+        has_contextily = False
+        try:
+            import contextily  # noqa: F401
+            has_contextily = True
+        except ImportError:
+            pass
+        if has_contextily:
+            self._set_status(f'EPSG set to {code} — basemap enabled.')
+        else:
+            self._set_status(
+                f'EPSG set to {code} — install contextily for basemap support.')
 
     def _on_basemap_toggle(self):
         if self._basemap_var.get():
@@ -473,6 +548,19 @@ class SWWAnimationGUI:
         self._vmin_var.set(f'{float(data.min()):.4g}')
         self._vmax_var.set(f'{float(data.max()):.4g}')
 
+    def _is_static_qty(self, qty):
+        """Return True if qty produces a single frame (not time-animated).
+
+        max_* quantities always produce one frame.  elev produces one frame
+        when elevation is static (1-D array); it is animated when the SWW
+        contains time-varying elevation (2-D array, e.g. from an erosion run).
+        """
+        if qty.startswith('max_'):
+            return True
+        if qty == 'elev' and self._splotter is not None:
+            return self._splotter.elev.ndim == 1
+        return False
+
     # -------------------------------------------------------------- #
     # Frame generation                                                #
     # -------------------------------------------------------------- #
@@ -480,6 +568,11 @@ class SWWAnimationGUI:
     def _start_generation(self):
         if self._splotter is None:
             return
+
+        # Stop playback and discard frame list before deleting files so that
+        # _advance cannot try to read a file that is about to be removed.
+        self._stop_playback()
+        self._frames = []
 
         # resolve output directory
         plot_dir = self._dir_var.get().strip() or '_plot'
@@ -515,8 +608,8 @@ class SWWAnimationGUI:
         basemap_provider = BASEMAP_PROVIDERS.get(provider_label, BASEMAP_DEFAULT)
 
         n_total = len(self._splotter.time)
-        if qty.startswith('max_'):
-            # Maximum quantities collapse all timesteps into one image
+        if self._is_static_qty(qty):
+            # Static quantities (max_*, static elev) collapse to one image
             sww_frames = [0]
             stride_msg = ''
         else:
@@ -538,8 +631,10 @@ class SWWAnimationGUI:
         for attr in ('_depth_frame_count', '_stage_frame_count',
                      '_speed_frame_count', '_speed_depth_frame_count',
                      '_max_depth_frame_count', '_max_speed_frame_count',
-                     '_max_speed_depth_frame_count'):
+                     '_max_speed_depth_frame_count', '_elev_frame_count'):
             setattr(self._splotter, attr, 0)
+        # Close any figures cached from a previous generation run
+        self._splotter._clear_figure_cache()
 
         self._gen_used_basemap = basemap
         self._last_gen_dpi = dpi
@@ -548,10 +643,30 @@ class SWWAnimationGUI:
         self._last_gen_cmap = cmap
         self._last_gen_qty = qty
 
-        save_method = getattr(self._splotter, _QTY_SAVE_METHOD[qty])
-        self._generate_next_frame(0, sww_frames, save_method, dpi, vmin, vmax,
-                                   plot_dir, qty, cmap, basemap, alpha,
-                                   basemap_provider)
+        # Single frame (max_* quantities) always runs sequentially.
+        # For multi-frame quantities, attempt parallel generation and fall
+        # back to sequential if multiprocessing is unavailable.
+        if n_to_gen <= 1:
+            save_method = getattr(self._splotter, _QTY_SAVE_METHOD[qty])
+            self._generate_next_frame(0, sww_frames, save_method, dpi, vmin, vmax,
+                                      plot_dir, qty, cmap, basemap, alpha,
+                                      basemap_provider)
+        else:
+            try:
+                self._start_parallel_generation(
+                    sww_frames, plot_dir, qty, dpi, vmin, vmax,
+                    cmap, basemap, alpha, basemap_provider)
+            except Exception as e:
+                import traceback
+                print(f'[anuga_animate] parallel init failed: {e}',
+                      file=sys.stderr, flush=True)
+                traceback.print_exc(file=sys.stderr)
+                self._set_status(
+                    f'Parallel init failed ({e}); falling back to sequential.')
+                save_method = getattr(self._splotter, _QTY_SAVE_METHOD[qty])
+                self._generate_next_frame(0, sww_frames, save_method, dpi, vmin,
+                                          vmax, plot_dir, qty, cmap, basemap,
+                                          alpha, basemap_provider)
 
     def _generate_next_frame(self, pos, sww_frames, save_method,
                               dpi, vmin, vmax, plot_dir, qty,
@@ -568,7 +683,8 @@ class SWWAnimationGUI:
         try:
             save_method(frame=sww_frame, dpi=dpi, vmin=vmin, vmax=vmax,
                         cmap=cmap, basemap=basemap, alpha=alpha,
-                        basemap_provider=basemap_provider)
+                        basemap_provider=basemap_provider,
+                        xlim=self._zoom_xlim, ylim=self._zoom_ylim)
         except Exception as e:
             self._set_status(f'Error generating frame {sww_frame}: {e}')
             self._gen_btn.config(state=tk.NORMAL)
@@ -588,11 +704,95 @@ class SWWAnimationGUI:
         else:
             self._on_generation_done(plot_dir, qty, n_to_gen)
 
+    def _start_parallel_generation(self, sww_frames, plot_dir, qty,
+                                     dpi, vmin, vmax, cmap, basemap,
+                                     alpha, basemap_provider):
+        """Spawn a ProcessPoolExecutor and submit all frames."""
+        import multiprocessing as mp
+        import platform
+        from concurrent.futures import ProcessPoolExecutor
+        from anuga.utilities._animate_worker import worker_init, worker_frame
+
+        sww_path  = self._sww_var.get()
+        min_depth = float(self._mindepth_var.get())
+        epsg      = self._splotter.epsg
+        n_workers = max(1, min(os.cpu_count() or 4, len(sww_frames), 4))
+
+        # 'fork' on Linux: workers inherit parent memory, no reimport overhead.
+        # 'spawn' on Windows/macOS: safer for GUI apps.
+        ctx_name = 'fork' if platform.system() == 'Linux' else 'spawn'
+        ctx = mp.get_context(ctx_name)
+        self._executor = ProcessPoolExecutor(
+            max_workers=n_workers,
+            mp_context=ctx,
+            initializer=worker_init,
+            initargs=(sww_path, plot_dir, min_depth, epsg))
+
+        save_name = _QTY_SAVE_METHOD[qty]
+        self._futures = [
+            self._executor.submit(
+                worker_frame,
+                frame, pos, save_name, qty,
+                dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
+                self._zoom_xlim, self._zoom_ylim)
+            for pos, frame in enumerate(sww_frames)
+        ]
+        self._gen_plot_dir = plot_dir
+        self._gen_qty      = qty
+        self._n_to_gen     = len(sww_frames)
+        self._set_status(
+            f'Generating {self._n_to_gen} {qty} frames '
+            f'({n_workers} workers)...')
+        self._poll_generation()
+
+    def _poll_generation(self):
+        """Check parallel futures every 200 ms; update the progress bar."""
+        if self._cancel_flag:
+            # _cancel_generation already shut down the executor.
+            return
+
+        n_done = sum(1 for f in self._futures if f.done())
+        self._progress_var.set(n_done)
+        self._progress_label.config(text=f'{n_done} / {self._n_to_gen}')
+        self.root.update_idletasks()
+
+        # Surface first worker exception immediately.
+        for fut in self._futures:
+            if fut.done() and fut.exception() is not None:
+                exc = fut.exception()
+                for f in self._futures:
+                    f.cancel()
+                self._executor.shutdown(wait=False, cancel_futures=True)
+                self._executor = None
+                self._futures = []
+                self._gen_btn.config(state=tk.NORMAL)
+                self._cancel_btn.config(state=tk.DISABLED)
+                self._set_status(f'Frame generation error: {exc}')
+                return
+
+        if n_done == self._n_to_gen:
+            self._executor.shutdown(wait=False)
+            self._executor = None
+            self._futures = []
+            self._on_generation_done(
+                self._gen_plot_dir, self._gen_qty, self._n_to_gen)
+        else:
+            self._gen_after_id = self.root.after(200, self._poll_generation)
+
     def _cancel_generation(self):
         self._cancel_flag = True
         if self._gen_after_id is not None:
             self.root.after_cancel(self._gen_after_id)
             self._gen_after_id = None
+        if self._executor is not None:
+            for fut in self._futures:
+                fut.cancel()
+            self._executor.shutdown(wait=False, cancel_futures=True)
+            self._executor = None
+            self._futures = []
+        self._gen_btn.config(state=tk.NORMAL)
+        self._cancel_btn.config(state=tk.DISABLED)
+        self._set_status('Generation cancelled.')
 
     def _on_generation_done(self, plot_dir, qty, n_frames):
         self._progress_var.set(n_frames)
@@ -646,6 +846,10 @@ class SWWAnimationGUI:
             ax.set_aspect('equal')
             ax.set_xlabel('Easting (m)')
             ax.set_ylabel('Northing (m)')
+            if self._zoom_xlim is not None:
+                ax.set_xlim(self._zoom_xlim)
+            if self._zoom_ylim is not None:
+                ax.set_ylim(self._zoom_ylim)
             fig.colorbar(im, ax=ax)
 
             if use_basemap:
@@ -653,7 +857,7 @@ class SWWAnimationGUI:
                 provider_label = self._basemap_provider_var.get()
                 provider_str = BASEMAP_PROVIDERS.get(
                     provider_label, 'OpenStreetMap.Mapnik')
-                _add_basemap(ax, sp.epsg, provider_str)
+                _add_basemap(ax, sp.epsg, provider_str, cache=sp._basemap_cache)
 
             fig.canvas.draw()
 
@@ -682,9 +886,12 @@ class SWWAnimationGUI:
         self._slider.configure(to=n - 1)
         self._slider_var.set(0)
         self._current = 0
+        # Remove any zoom rectangle — new frames already reflect the zoom
+        self._remove_zoom_patch()
         self._show_frame(0)
         self._save_frame_btn.config(state=tk.NORMAL)
         self._save_anim_btn.config(state=tk.NORMAL)
+        self._zoom_btn.config(state=tk.NORMAL)
         self._set_status(f'Loaded {n} frames  |  {plot_dir}')
 
     def _show_frame(self, idx):
@@ -695,7 +902,12 @@ class SWWAnimationGUI:
         self._slider_var.set(idx)
         self._frame_label.config(text=f'Frame {idx + 1} / {len(self._frames)}')
 
-        img = mpimage.imread(self._frames[idx])
+        try:
+            img = mpimage.imread(self._frames[idx])
+        except FileNotFoundError:
+            self._set_status('Frame file missing — click Generate Frames to rebuild.')
+            self._stop_playback()
+            return
         if self._im is None:
             self._im = self._ax.imshow(img, aspect='equal')
             self._im.set_extent([0, img.shape[1], img.shape[0], 0])
@@ -742,7 +954,10 @@ class SWWAnimationGUI:
     def _schedule_next(self):
         if not self._playing:
             return
-        fps = max(0.1, self._fps_var.get())
+        try:
+            fps = max(0.1, self._fps_var.get())
+        except tk.TclError:
+            fps = 5.0
         self._after_id = self.root.after(int(1000 / fps), self._advance)
 
     def _advance(self):
@@ -820,20 +1035,8 @@ class SWWAnimationGUI:
             return
         import numpy as np
         sp = self._splotter
-        pt = self._plot_transform
 
-        # event.xdata/ydata are image-pixel coords because the axes shows an
-        # imshow with extent [0, W, H, 0].  Invert the transform to get the
-        # mesh coordinates that correspond to the clicked pixel.
-        pos = pt['pos']
-        xlim, ylim = pt['xlim'], pt['ylim']
-        W, H = pt['W'], pt['H']
-
-        xfrac = (event.xdata / W - pos.x0) / pos.width
-        yfrac = (1.0 - event.ydata / H - pos.y0) / pos.height
-
-        xmesh = xlim[0] + xfrac * (xlim[1] - xlim[0])
-        ymesh = ylim[0] + yfrac * (ylim[1] - ylim[0])
+        xmesh, ymesh = self._imshow_to_mesh(event.xdata, event.ydata)
 
         # Centroids are stored in relative coords; for basemap the xlim/ylim
         # from the transform already include the xllcorner/yllcorner offset.
@@ -893,6 +1096,8 @@ class SWWAnimationGUI:
         qty = self._ts_qty_var.get()
         tri = self._ts_triangle
 
+        import numpy as _np
+
         data_map = {
             'depth':       sp.depth,
             'stage':       sp.stage,
@@ -904,9 +1109,16 @@ class SWWAnimationGUI:
             'stage':       'Stage (m)',
             'speed':       'Speed (m/s)',
             'speed_depth': 'Speed×Depth (m²/s)',
+            'elev':        'Elevation (m)',
         }
 
-        y = data_map[qty][:, tri]
+        if qty == 'elev':
+            if sp.elev.ndim == 2:
+                y = sp.elev[:, tri]
+            else:
+                y = _np.full(len(sp.time), sp.elev[tri])
+        else:
+            y = data_map[qty][:, tri]
         t = sp.time
 
         self._ts_ax.cla()
@@ -955,13 +1167,21 @@ class SWWAnimationGUI:
         tri = self._ts_triangle
         t   = sp.time
 
+        import numpy as _np2
+
         data_map = {
             'depth':       sp.depth,
             'stage':       sp.stage,
             'speed':       sp.speed,
             'speed_depth': sp.speed_depth,
         }
-        y = data_map[qty][:, tri]
+        if qty == 'elev':
+            if sp.elev.ndim == 2:
+                y = sp.elev[:, tri]
+            else:
+                y = _np2.full(len(t), sp.elev[tri])
+        else:
+            y = data_map[qty][:, tri]
 
         xc = sp.xc[tri] + sp.xllcorner
         yc = sp.yc[tri] + sp.yllcorner
@@ -980,6 +1200,7 @@ class SWWAnimationGUI:
             'stage':       'stage_m',
             'speed':       'speed_m_s',
             'speed_depth': 'speed_depth_m2_s',
+            'elev':        'elevation_m',
         }[qty]
 
         with open(path, 'w', newline='') as f:
@@ -1066,8 +1287,118 @@ class SWWAnimationGUI:
             scalex=False, scaley=False)
 
     # -------------------------------------------------------------- #
-    # Helpers                                                         #
+    # Zoom                                                            #
     # -------------------------------------------------------------- #
+
+    def _toggle_zoom_mode(self):
+        if self._zoom_mode:
+            self._exit_zoom_mode()
+        else:
+            self._enter_zoom_mode()
+
+    def _enter_zoom_mode(self):
+        """Activate rubber-band selection mode for choosing a zoom region."""
+        if self._plot_transform is None:
+            self._set_status('Generate frames first to enable zoom.')
+            return
+        from matplotlib.widgets import RectangleSelector
+        self._zoom_selector = RectangleSelector(
+            self._ax, self._on_zoom_select,
+            useblit=False,
+            button=[1],
+            minspanx=5, minspany=5,
+            spancoords='pixels',
+            interactive=False)
+        self._zoom_mode = True
+        self._zoom_btn.config(text='Cancel Zoom')
+        self._canvas.get_tk_widget().config(cursor='crosshair')
+        self._set_status('Drag a rectangle on the image to set the zoom region.')
+
+    def _exit_zoom_mode(self):
+        if self._zoom_selector is not None:
+            self._zoom_selector.set_active(False)
+            self._zoom_selector = None
+        self._zoom_mode = False
+        self._zoom_btn.config(text='Set Zoom')
+        self._canvas.get_tk_widget().config(cursor='')
+
+    def _on_zoom_select(self, eclick, erelease):
+        """Convert the rubber-band selection to mesh coordinates and store."""
+        pt = self._plot_transform
+        if pt is None:
+            return
+        x1, y1 = self._imshow_to_mesh(eclick.xdata,   eclick.ydata)
+        x2, y2 = self._imshow_to_mesh(erelease.xdata, erelease.ydata)
+        self._zoom_xlim = (min(x1, x2), max(x1, x2))
+        self._zoom_ylim = (min(y1, y2), max(y1, y2))
+        self._exit_zoom_mode()
+        self._draw_zoom_patch()
+        self._reset_zoom_btn.config(state=tk.NORMAL)
+        self._set_status(
+            f'Zoom set — x: {self._zoom_xlim[0]:.1f}–{self._zoom_xlim[1]:.1f}  '
+            f'y: {self._zoom_ylim[0]:.1f}–{self._zoom_ylim[1]:.1f}  '
+            '— click Generate Frames to apply.')
+
+    def _draw_zoom_patch(self):
+        """Draw a yellow rectangle on the animation canvas showing the zoom region."""
+        self._remove_zoom_patch()
+        if self._zoom_xlim is None or self._plot_transform is None:
+            return
+        from matplotlib.patches import Rectangle
+        px0, py0 = self._mesh_to_imshow(self._zoom_xlim[0], self._zoom_ylim[0])
+        px1, py1 = self._mesh_to_imshow(self._zoom_xlim[1], self._zoom_ylim[1])
+        x = min(px0, px1)
+        y = min(py0, py1)
+        w = abs(px1 - px0)
+        h = abs(py1 - py0)
+        self._zoom_rect_patch = Rectangle(
+            (x, y), w, h,
+            linewidth=2, edgecolor='yellow', facecolor='yellow',
+            alpha=0.15, zorder=12)
+        self._ax.add_patch(self._zoom_rect_patch)
+        self._canvas.draw_idle()
+
+    def _remove_zoom_patch(self):
+        if self._zoom_rect_patch is not None:
+            try:
+                self._zoom_rect_patch.remove()
+            except Exception:
+                pass
+            self._zoom_rect_patch = None
+        self._canvas.draw_idle()
+
+    def _reset_zoom(self):
+        """Clear the zoom region and remove the overlay patch."""
+        self._exit_zoom_mode()
+        self._zoom_xlim = None
+        self._zoom_ylim = None
+        self._remove_zoom_patch()
+        self._reset_zoom_btn.config(state=tk.DISABLED)
+        self._set_status('Zoom reset — full extent will be used for generation.')
+
+    def _imshow_to_mesh(self, px, py):
+        """Convert imshow pixel coordinates to mesh/absolute coordinates."""
+        pt = self._plot_transform
+        pos = pt['pos']
+        xlim, ylim = pt['xlim'], pt['ylim']
+        W, H = pt['W'], pt['H']
+        xfrac = (px / W - pos.x0) / pos.width
+        yfrac = (1.0 - py / H - pos.y0) / pos.height
+        mx = xlim[0] + xfrac * (xlim[1] - xlim[0])
+        my = ylim[0] + yfrac * (ylim[1] - ylim[0])
+        return mx, my
+
+    def _mesh_to_imshow(self, mx, my):
+        """Convert mesh/absolute coordinates to imshow pixel coordinates."""
+        pt = self._plot_transform
+        pos = pt['pos']
+        xlim, ylim = pt['xlim'], pt['ylim']
+        W, H = pt['W'], pt['H']
+        xfrac = (mx - xlim[0]) / (xlim[1] - xlim[0])
+        yfrac = (my - ylim[0]) / (ylim[1] - ylim[0])
+        px = (pos.x0 + pos.width  * xfrac) * W
+        py = (1.0 - (pos.y0 + pos.height * yfrac)) * H
+        return px, py
 
     # -------------------------------------------------------------- #
     # Save frame / animation                                         #
@@ -1181,6 +1512,54 @@ class SWWAnimationGUI:
             os.unlink(concat_path)
         self._set_status(f'MP4 saved ({len(self._frames)} frames) → {path}')
 
+    def _show_mesh(self):
+        """Open a Toplevel window showing the triangulation."""
+        if self._splotter is None:
+            return
+        sp = self._splotter
+        use_basemap = self._gen_used_basemap and sp.epsg is not None
+        triang = sp.triang_abs if use_basemap else sp.triang
+
+        win = tk.Toplevel(self.root)
+        win.title(f'Mesh — {len(sp.triangles)} triangles')
+        win.resizable(True, True)
+
+        from matplotlib.figure import Figure
+        mesh_fig = Figure(figsize=(8, 6))
+        ax = mesh_fig.add_subplot(111)
+        ax.triplot(triang, color='steelblue', linewidth=0.4, alpha=0.7)
+        ax.set_aspect('equal')
+
+        if use_basemap:
+            ax.set_xlabel('Easting (m)')
+            ax.set_ylabel('Northing (m)')
+            ax.set_title(f'Mesh  ({len(sp.triangles)} triangles)')
+            from anuga.utilities.animate import BASEMAP_PROVIDERS, _add_basemap
+            provider_label = self._basemap_provider_var.get()
+            provider_str = BASEMAP_PROVIDERS.get(provider_label, 'OpenStreetMap.Mapnik')
+            try:
+                _add_basemap(ax, sp.epsg, provider_str, cache=sp._basemap_cache)
+            except Exception as e:
+                ax.set_title(
+                    f'Mesh  ({len(sp.triangles)} triangles)  — basemap failed: {e}')
+        else:
+            ax.set_xlabel('x (m)')
+            ax.set_ylabel('y (m)')
+            ax.set_title(f'Mesh  ({len(sp.triangles)} triangles)')
+
+        mesh_fig.tight_layout()
+
+        mesh_canvas = FigureCanvasTkAgg(mesh_fig, master=win)
+        mesh_canvas.draw()
+        mesh_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        def _close_mesh():
+            plt.close(mesh_fig)
+            win.destroy()
+
+        win.protocol('WM_DELETE_WINDOW', _close_mesh)
+        ttk.Button(win, text='Close', command=_close_mesh).pack(pady=4)
+
     def _show_help(self):
         """Open a scrollable help window."""
         win = tk.Toplevel(self.root)
@@ -1191,6 +1570,7 @@ class SWWAnimationGUI:
                        padx=10, pady=8, relief=tk.FLAT)
         sb = ttk.Scrollbar(win, command=text.yview)
         text.configure(yscrollcommand=sb.set)
+        ttk.Button(win, text='Close', command=win.destroy).pack(side=tk.BOTTOM, pady=6)
         sb.pack(side=tk.RIGHT, fill=tk.Y)
         text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
@@ -1220,6 +1600,9 @@ class SWWAnimationGUI:
         p('  depth, stage, speed, speed_depth — animated per timestep.')
         p('  max_depth, max_speed, max_speed_depth — single frame showing')
         p('  the maximum value at each triangle over all timesteps.')
+        p('  elev — elevation (bed level).  Produces a single static frame')
+        p('  when elevation is constant, or one frame per timestep when the')
+        p('  SWW contains time-varying elevation (e.g. erosion simulations).')
         nl()
         h2('  vmin / vmax')
         p('  Colormap range.  Tick "Auto from data" to set automatically.')
@@ -1238,11 +1621,17 @@ class SWWAnimationGUI:
         h2('  Colormap / Reverse')
         p('  Any matplotlib colormap name.  Tick Reverse to invert it.')
         nl()
+        h2('  EPSG')
+        p('  Override or supply the coordinate-system code.  Older SWW')
+        p('  files do not store an EPSG code — type the integer (e.g. 32756')
+        p('  for UTM zone 56 S) and press Set or Enter to enable basemap.')
+        p('  If the file already carries an EPSG it is pre-populated.')
+        nl()
         h2('  Basemap / provider / Alpha')
         p('  Overlay an online tile basemap (OpenStreetMap, Esri Satellite,')
-        p('  etc.).  Requires the SWW file to carry an EPSG code and an')
-        p('  internet connection.  Alpha controls mesh transparency over')
-        p('  the basemap.')
+        p('  etc.).  Requires an EPSG code (from file or entered manually)')
+        p('  and an internet connection.  Alpha controls mesh transparency.')
+        p('  Requires contextily:  pip install contextily')
         nl()
 
         h2('Playback controls')
@@ -1271,15 +1660,49 @@ class SWWAnimationGUI:
         p('  Close            — hide the timeseries panel.')
         nl()
 
+        h2('Zoom region')
+        p('Click "Set Zoom" to enter rubber-band selection mode:')
+        p('  • Drag a rectangle on the animation frame to select a region.')
+        p('  • A yellow highlight shows the selected area.')
+        p('  • The status bar shows the mesh coordinate bounds of the selection.')
+        p('  • Click "Generate Frames" to regenerate at full resolution for')
+        p('    the selected region only.')
+        p('  • Click "Reset Zoom" to clear the selection and return to')
+        p('    full-extent generation.')
+        p('  Note: Set Zoom is only available after frames have been generated.')
+        nl()
+
+        h2('View Mesh')
+        p('  Opens a separate window showing the full triangulation.  If a')
+        p('  basemap was used for the last generation the mesh is drawn in')
+        p('  absolute coordinates with the same basemap provider overlaid.')
+        nl()
+
         h2('Saving frames and animations')
         p('  Save Frame       — saves the current frame (with any pick-marker')
         p('  overlay) as PNG, PDF, or SVG.')
         nl()
         p('  Save Animation…  — saves all loaded frames as:')
-        p('    GIF  — requires Pillow (pip install Pillow).')
+        p('    GIF  — requires Pillow:  pip install Pillow')
         p('    MP4  — requires ffmpeg on PATH; produces smaller, higher-quality')
         p('           files.  MP4 is offered first when ffmpeg is detected.')
+        p('           Install:  conda install ffmpeg  or  apt install ffmpeg')
         p('  Playback FPS is used as the animation frame rate.')
+        nl()
+
+        h2('Performance')
+        p('  Frame generation is automatically parallelised across up to 4')
+        p('  CPU cores.  The progress bar advances in chunks as batches of')
+        p('  frames complete.  Basemap tiles are cached in memory so the')
+        p('  network is only hit once per generation run.')
+        nl()
+
+        h2('Optional dependencies')
+        p('  Install all GUI extras with:  pip install anuga[gui]')
+        p('  or individually:')
+        p('    contextily — basemap tile overlay')
+        p('    Pillow     — GIF animation export')
+        p('    ffmpeg     — MP4 animation export (system package)')
         nl()
 
         h2('Command-line usage')
@@ -1287,7 +1710,6 @@ class SWWAnimationGUI:
         nl()
 
         text.configure(state=tk.DISABLED)
-        ttk.Button(win, text='Close', command=win.destroy).pack(pady=6)
 
     def _set_status(self, msg):
         self._status_var.set(msg)
@@ -1295,8 +1717,8 @@ class SWWAnimationGUI:
     def _on_close(self):
         self._cancel_generation()
         self._stop_playback()
-        plt.close(self._fig)
-        plt.close(self._ts_fig)
+        plt.close('all')
+        self.root.quit()
         self.root.destroy()
 
 

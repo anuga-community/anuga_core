@@ -6,12 +6,46 @@ SWW Animation GUI (``anuga_animate_sww_gui``)
 ``anuga_animate_sww_gui`` is an interactive desktop application for
 visualising and exploring the output of ANUGA simulations stored in SWW
 files.  It generates PNG frames from a chosen quantity, plays them as an
-animation, and supports interactive timeseries extraction at any mesh
-point.
+animation, supports interactive timeseries extraction at any mesh point,
+and can display the underlying triangulation mesh.
 
 .. contents:: Contents
    :local:
    :depth: 2
+
+
+Installation
+------------
+
+``anuga_animate_sww_gui`` requires the optional ``gui`` extras::
+
+    pip install anuga[gui]
+
+or with conda::
+
+    conda install contextily pillow
+
+The core GUI requires **tkinter** (Python standard library on most platforms)
+and **matplotlib** (installed as part of the core ``anuga`` dependency).
+
+Optional but recommended:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 80
+
+   * - Package
+     - Purpose
+   * - **contextily**
+     - Tile basemap overlay (OpenStreetMap, Esri Satellite, etc.).
+       Install: ``conda install contextily`` or ``pip install contextily``.
+   * - **Pillow**
+     - GIF animation export.
+       Install: ``conda install pillow`` or ``pip install Pillow``.
+   * - **ffmpeg**
+     - MP4 animation export.  System tool, not a Python package.
+       Install: ``conda install ffmpeg``, ``apt install ffmpeg``, or from
+       https://ffmpeg.org.  Offered automatically when detected on ``PATH``.
 
 
 Starting the GUI
@@ -27,7 +61,16 @@ Pass an SWW file and/or an initial quantity to open directly::
 
 Available quantities for ``--qty`` are:
 ``depth``, ``stage``, ``speed``, ``speed_depth``,
-``max_depth``, ``max_speed``, ``max_speed_depth``.
+``max_depth``, ``max_speed``, ``max_speed_depth``,
+``elev``.
+
+
+.. figure:: img/gui_main.png
+   :alt: Main GUI window showing an animation frame
+   :align: center
+   :width: 90%
+
+   Main window after frame generation — animation loaded and ready to play.
 
 
 Quick-start workflow
@@ -64,6 +107,10 @@ Generation settings
        selected timestep.  Maximum quantities (``max_depth``,
        ``max_speed``, ``max_speed_depth``) produce a single frame
        showing the spatial maximum over the entire simulation.
+       ``elev`` plots bed elevation: one static frame when the SWW
+       contains constant elevation, or one frame per timestep when
+       elevation is time-varying (e.g. from an erosion simulation).
+       Default colormap is ``terrain``.
    * - **vmin / vmax**
      - Colormap range.  Tick *Auto from data* to set automatically
        from the full data range.
@@ -78,11 +125,18 @@ Generation settings
        value for a quick preview of a long simulation.
    * - **Colormap / Reverse**
      - Any matplotlib colormap name.  Tick *Reverse* to invert it.
+   * - **EPSG**
+     - Override or supply the coordinate-system code for the SWW file.
+       Older SWW files do not store an EPSG code; type the correct integer
+       (e.g. ``32756`` for UTM zone 56 S) and press **Set** or Enter to
+       enable basemap support.  If the file already contains an EPSG code
+       the field is pre-populated automatically.
    * - **Basemap / provider / Alpha**
      - Overlay an online tile basemap (OpenStreetMap, Esri Satellite,
-       etc.) behind the mesh.  Requires the SWW file to carry an EPSG
-       code and an active internet connection.  *Alpha* controls the
-       transparency of the mesh colour overlay.
+       etc.) behind the mesh.  Requires an EPSG code (from the file or
+       entered manually) and an active internet connection.  *Alpha*
+       controls the transparency of the mesh colour overlay.
+       Requires ``contextily``.
 
 
 Playback controls
@@ -103,6 +157,39 @@ Playback controls
      - Playback speed in frames per second.
    * - **Frame slider**
      - Drag to scrub through frames.
+   * - **View Mesh**
+     - Opens a standalone window showing the full triangulation.  If a
+       basemap was used for the last generation, the mesh is drawn in
+       absolute coordinates with the same tile provider overlaid.
+       Available as soon as an SWW file is loaded — no frames need to
+       be generated first.
+
+
+Zooming in on a region
+----------------------
+
+Click **Set Zoom** to enter rubber-band selection mode (available after frames
+have been generated):
+
+1. **Drag a rectangle** on the animation frame to select a region of interest.
+   A yellow semi-transparent highlight shows the selected area, and the status
+   bar displays the mesh coordinate bounds.
+
+2. **Click Generate Frames** to regenerate all frames at full resolution for the
+   selected region only.  The same DPI, colormap, and all other generation
+   settings apply as normal.
+
+3. **Click Reset Zoom** to clear the selection and return to full-extent
+   generation.
+
+.. note::
+
+   Zooming triggers a full re-generation of frames — it does not simply crop the
+   existing images.  This ensures the selected region is rendered at the full
+   requested DPI with no loss of detail.
+
+   Pick timeseries works normally on zoomed frames: click any point within the
+   zoomed view to extract the time series for the nearest triangle centroid.
 
 
 Pick timeseries
@@ -119,6 +206,14 @@ Click **Pick timeseries** to enter interactive pick mode:
 * **Click again** to pick a different location — the timeseries and
   marker update immediately without leaving pick mode.
 * **Escape** or click **Cancel pick** to exit pick mode.
+
+.. figure:: img/gui_timeseries.png
+   :alt: GUI with timeseries panel open
+   :align: center
+   :width: 90%
+
+   Timeseries panel showing depth vs. time for a picked triangle.  The red
+   dashed line tracks the current animation frame.
 
 The timeseries panel
 ~~~~~~~~~~~~~~~~~~~~
@@ -142,6 +237,30 @@ The timeseries panel
        followed by ``time_s`` and the quantity column.
    * - **Close**
      - Hide the timeseries panel.  Pick state is reset.
+
+
+Viewing the mesh
+----------------
+
+Click **View Mesh** (playback row, right side) at any time after loading an
+SWW file to open a standalone window showing the triangulation:
+
+* The mesh is drawn using ``ax.triplot`` with equal aspect ratio.
+* If the last generation used a basemap, the mesh is rendered in absolute
+  coordinates (easting / northing) and the same tile provider is overlaid,
+  giving a georeferenced view of the mesh extent.
+* Without a basemap the mesh is shown in relative mesh coordinates.
+* The window title reports the triangle count.
+
+.. figure:: img/gui_mesh.png
+   :alt: View Mesh window
+   :align: center
+   :width: 70%
+
+   View Mesh window showing the full triangulation.
+
+No frames need to be generated before using **View Mesh** — it works
+immediately after loading the file.
 
 
 Saving frames and animations
@@ -203,6 +322,26 @@ All other settings (colormap, vmin/vmax, basemap, DPI) apply as normal.
 The *Pick timeseries* tool remains available — clicking a triangle
 while viewing a maximum frame still shows the full time series for that
 location.
+
+
+Performance
+-----------
+
+Frame generation is automatically parallelised across up to four CPU cores
+using Python's ``multiprocessing`` module.  Each worker process loads the
+SWW file once and then renders its share of frames independently.
+
+Two additional optimisations run automatically:
+
+* **Basemap tile cache** — tile images are fetched from the network only
+  on the first frame; all subsequent frames reuse the cached images from
+  memory, eliminating repeated network requests during generation.
+* **Figure reuse** — the matplotlib ``Figure`` object is reused across
+  frames within each worker, avoiding repeated figure creation and
+  destruction overhead.
+
+For maximum-envelope quantities (``max_depth`` etc.) only a single frame
+is generated, so parallel workers are not used.
 
 
 Output files
