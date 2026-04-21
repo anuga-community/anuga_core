@@ -1,9 +1,9 @@
-.. _animate_sww_gui:
+.. _sww_gui:
 
-SWW Animation GUI (``anuga_animate_sww_gui``)
-=============================================
+SWW Animation GUI (``anuga_sww_gui``)
+======================================
 
-``anuga_animate_sww_gui`` is an interactive desktop application for
+``anuga_sww_gui`` is an interactive desktop application for
 visualising and exploring the output of ANUGA simulations stored in SWW
 files.  It generates PNG frames from a chosen quantity, plays them as an
 animation, supports interactive timeseries extraction at any mesh point,
@@ -17,7 +17,7 @@ and can display the underlying triangulation mesh.
 Installation
 ------------
 
-``anuga_animate_sww_gui`` requires the optional ``gui`` extras::
+``anuga_sww_gui`` requires the optional ``gui`` extras::
 
     pip install anuga[gui]
 
@@ -53,11 +53,11 @@ Starting the GUI
 
 From the command line::
 
-    anuga_animate_sww_gui
+    anuga_sww_gui
 
 Pass an SWW file and/or an initial quantity to open directly::
 
-    anuga_animate_sww_gui --sww results/towradgi.sww --qty depth
+    anuga_sww_gui --sww results/towradgi.sww --qty depth
 
 Available quantities for ``--qty`` are:
 ``depth``, ``stage``, ``speed``, ``speed_depth``,

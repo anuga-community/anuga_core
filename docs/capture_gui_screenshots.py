@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Capture documentation screenshots for anuga_animate_sww_gui.
+Capture documentation screenshots for anuga_sww_gui.
 
 Usage:
     python docs/capture_gui_screenshots.py --sww path/to/file.sww
@@ -50,7 +50,7 @@ def run(sww_path):
     matplotlib.use('TkAgg')
 
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'scripts'))
-    from anuga_animate_sww_gui import SWWAnimationGUI
+    from anuga_sww_gui import SWWAnimationGUI
 
     root = tk.Tk()
     gui = SWWAnimationGUI(root, initial_sww=sww_path, initial_qty='depth')

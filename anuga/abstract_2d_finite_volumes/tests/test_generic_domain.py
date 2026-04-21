@@ -1454,11 +1454,11 @@ class Test_Domain_delegation(unittest.TestCase):
         self.assertEqual(domain.get_multiprocessor_mode(), 1)
 
     # ------------------------------------------------------------------
-    # save_mesh_to_tsh tests
+    # save_mesh_to_file tests
     # ------------------------------------------------------------------
 
-    def test_domain_save_mesh_to_tsh_basic(self):
-        """domain.save_mesh_to_tsh writes a readable TSH file."""
+    def test_domain_save_mesh_to_file_basic(self):
+        """domain.save_mesh_to_file writes a readable TSH file."""
         import tempfile
         import os
         from anuga.load_mesh.loadASCII import import_mesh_file
@@ -1472,7 +1472,7 @@ class Test_Domain_delegation(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
             fname = f.name
         try:
-            domain.save_mesh_to_tsh(fname)
+            domain.save_mesh_to_file(fname)
             d = import_mesh_file(fname)
         finally:
             os.unlink(fname)
@@ -1480,8 +1480,8 @@ class Test_Domain_delegation(unittest.TestCase):
         self.assertEqual(len(d['vertices']), len(points))
         self.assertEqual(len(d['triangles']), len(vertices))
 
-    def test_domain_save_mesh_to_tsh_boundary_tags(self):
-        """domain.save_mesh_to_tsh preserves boundary segment tags."""
+    def test_domain_save_mesh_to_file_boundary_tags(self):
+        """domain.save_mesh_to_file preserves boundary segment tags."""
         import tempfile
         import os
         from anuga.load_mesh.loadASCII import import_mesh_file
@@ -1495,7 +1495,7 @@ class Test_Domain_delegation(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
             fname = f.name
         try:
-            domain.save_mesh_to_tsh(fname)
+            domain.save_mesh_to_file(fname)
             d = import_mesh_file(fname)
         finally:
             os.unlink(fname)
@@ -1505,7 +1505,7 @@ class Test_Domain_delegation(unittest.TestCase):
         self.assertTrue(tags <= {'left', 'right', 'bottom', 'top', 'exterior'})
         self.assertTrue(len(d['segments']) > 0)
 
-    def test_domain_save_mesh_to_tsh_roundtrip(self):
+    def test_domain_save_mesh_to_file_roundtrip(self):
         """TSH file written by domain can be reloaded as a new domain."""
         import tempfile
         import os
@@ -1519,7 +1519,7 @@ class Test_Domain_delegation(unittest.TestCase):
         with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
             fname = f.name
         try:
-            domain.save_mesh_to_tsh(fname)
+            domain.save_mesh_to_file(fname)
             domain2 = Generic_Domain(fname,
                                      conserved_quantities=['stage'],
                                      evolved_quantities=['stage'])

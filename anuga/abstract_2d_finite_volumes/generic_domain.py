@@ -2724,22 +2724,31 @@ class Generic_Domain:
         """Print a breakdown of the C domain struct and GPU domain struct."""
         print(self.domain_struct_stats())
 
-    def save_mesh_to_tsh(self, filename):
-        """Save the mesh geometry to a TSH file.
+    def save_mesh_to_file(self, filename):
+        """Save the mesh geometry to a TSH or MSH file.
 
-        Delegates to :meth:`Mesh.save_mesh_to_tsh`.  Writes vertices, triangles
+        Delegates to :meth:`Mesh.save_to_file`.  Writes vertices, triangles
         (with neighbour links and region tags), and boundary segments.
 
         Parameters
         ----------
         filename : str
-            Output path.  Must end in ``.tsh``.
+            Output path.  Must end in ``.tsh`` (ASCII) or ``.msh`` (NetCDF).
 
         Examples
         --------
-        >>> domain.save_mesh_to_tsh('my_mesh.tsh')
+        >>> domain.save_mesh_to_file('my_mesh.tsh')
+        >>> domain.save_mesh_to_file('my_mesh.msh')
         """
-        self.mesh.save_mesh_to_tsh(filename)
+        self.mesh.save_to_file(filename)
+
+    def save_mesh_to_tsh(self, filename):
+        """Deprecated — use :meth:`save_mesh_to_file` instead."""
+        import warnings
+        warnings.warn(
+            'save_mesh_to_tsh() is deprecated; use save_mesh_to_file() instead.',
+            DeprecationWarning, stacklevel=2)
+        self.save_mesh_to_file(filename)
 
 
 if __name__ == "__main__":

@@ -1230,8 +1230,8 @@ class Mesh(General_mesh):
 
         return new_mesh
 
-    def save_mesh_to_tsh(self, filename):
-        """Save the mesh geometry to a TSH file.
+    def save_to_file(self, filename):
+        """Save the mesh geometry to a TSH or MSH file.
 
         Writes vertices, triangles (with neighbour links and region tags), and
         boundary segments.  The outline section (regions, holes, max areas) is
@@ -1241,13 +1241,19 @@ class Mesh(General_mesh):
         Parameters
         ----------
         filename : str
-            Output path.  Must end in ``.tsh``.
+            Output path.  Must end in ``.tsh`` (ASCII) or ``.msh`` (NetCDF).
 
         Examples
         --------
-        >>> mesh.save_mesh_to_tsh('my_mesh.tsh')
+        >>> mesh.save_to_file('my_mesh.tsh')
+        >>> mesh.save_to_file('my_mesh.msh')
         """
         from anuga.load_mesh.loadASCII import export_mesh_file
+
+        ext = filename[-4:].lower()
+        if ext not in ('.tsh', '.msh'):
+            raise ValueError(
+                f"filename must end in '.tsh' or '.msh', got: {filename!r}")
 
         _EDGE_VERTS = [(1, 2), (2, 0), (0, 1)]
 
@@ -1281,6 +1287,14 @@ class Mesh(General_mesh):
         }
 
         export_mesh_file(filename, mesh_dict)
+
+    def save_mesh_to_tsh(self, filename):
+        """Deprecated — use :meth:`save_to_file` instead."""
+        import warnings
+        warnings.warn(
+            'save_mesh_to_tsh() is deprecated; use save_to_file() instead.',
+            DeprecationWarning, stacklevel=2)
+        self.save_to_file(filename)
 
 
 class Triangle_intersection:

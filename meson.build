@@ -181,8 +181,8 @@ configure_file(
 )
 
 configure_file(
-    input: 'scripts/anuga_animate_sww_gui.py',
-    output: 'anuga_animate_sww_gui',
+    input: 'scripts/anuga_sww_gui.py',
+    output: 'anuga_sww_gui',
     configuration: conf,
     install_dir: get_option('bindir'),
     install_mode: 'rwxr-xr-x'

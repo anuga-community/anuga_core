@@ -6,9 +6,9 @@ SWW_plotter, then plays them as an animation.
 
 Usage::
 
-    anuga_animate_sww_gui
-    anuga_animate_sww_gui --sww domain.sww
-    anuga_animate_sww_gui --sww domain.sww --qty depth
+    anuga_sww_gui
+    anuga_sww_gui --sww domain.sww
+    anuga_sww_gui --sww domain.sww --qty depth
 """
 
 import os
@@ -1706,7 +1706,7 @@ class SWWAnimationGUI:
         nl()
 
         h2('Command-line usage')
-        kw('  anuga_animate_sww_gui [--sww FILE] [--qty QUANTITY]\n')
+        kw('  anuga_sww_gui [--sww FILE] [--qty QUANTITY]\n')
         nl()
 
         text.configure(state=tk.DISABLED)
