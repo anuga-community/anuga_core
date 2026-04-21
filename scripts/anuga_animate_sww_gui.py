@@ -115,9 +115,14 @@ class SWWAnimationGUI:
         self._pick_cid = None
         self._pick_key_cid = None
         self._pick_overlay = None
+        self._pick_text = None
         self._plot_transform = None
         self._gen_used_basemap = False
         self._last_gen_dpi = 100
+        self._last_gen_vmin = 0.0
+        self._last_gen_vmax = 20.0
+        self._last_gen_cmap = 'viridis'
+        self._last_gen_qty = 'depth'
 
         self._build_ui()
 
@@ -510,6 +515,10 @@ class SWWAnimationGUI:
 
         self._gen_used_basemap = basemap
         self._last_gen_dpi = dpi
+        self._last_gen_vmin = vmin
+        self._last_gen_vmax = vmax
+        self._last_gen_cmap = cmap
+        self._last_gen_qty = qty
 
         save_method = getattr(self._splotter, _QTY_SAVE_METHOD[qty])
         self._generate_next_frame(0, sww_frames, save_method, dpi, vmin, vmax,
@@ -569,10 +578,10 @@ class SWWAnimationGUI:
         self._load_frames(plot_dir, qty, prefix)
 
     def _compute_plot_transform(self, dpi):
-        """Render frame 0 via Agg (no Tk window) to get the axes coordinate transform."""
+        """Render frame 0 off-screen (Agg) with the same params used to generate
+        frames so that the resulting axes position/limits exactly match the PNGs."""
         from matplotlib.figure import Figure
         from matplotlib.backends.backend_agg import FigureCanvasAgg
-        import numpy as np
         sp = self._splotter
         if sp is None:
             self._plot_transform = None
@@ -584,19 +593,34 @@ class SWWAnimationGUI:
             except (IndexError, TypeError):
                 elev = sp.elev
 
+            vmin = self._last_gen_vmin
+            vmax = self._last_gen_vmax
+            cmap = self._last_gen_cmap
+            use_basemap = self._gen_used_basemap and (sp.epsg is not None)
+            triang = sp.triang_abs if use_basemap else sp.triang
+
             fig = Figure(figsize=(10, 6), dpi=dpi)
             FigureCanvasAgg(fig)
             ax = fig.add_subplot(111)
 
-            sp.triang.set_mask(depth > sp.min_depth)
-            ax.tripcolor(sp.triang, facecolors=elev, cmap='Greys_r')
-            sp.triang.set_mask(depth < sp.min_depth)
-            im = ax.tripcolor(sp.triang, facecolors=depth, cmap='viridis')
-            sp.triang.set_mask(None)
+            if not use_basemap:
+                triang.set_mask(depth > sp.min_depth)
+                ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
+            triang.set_mask(depth < sp.min_depth)
+            im = ax.tripcolor(triang, facecolors=depth, cmap=cmap,
+                              vmin=vmin, vmax=vmax)
+            triang.set_mask(None)
             ax.set_aspect('equal')
             ax.set_xlabel('Easting (m)')
             ax.set_ylabel('Northing (m)')
             fig.colorbar(im, ax=ax)
+
+            if use_basemap:
+                from anuga.utilities.animate import _add_basemap, BASEMAP_PROVIDERS
+                provider_label = self._basemap_provider_var.get()
+                provider_str = BASEMAP_PROVIDERS.get(
+                    provider_label, 'OpenStreetMap.Mapnik')
+                _add_basemap(ax, sp.epsg, provider_str)
 
             fig.canvas.draw()
 
@@ -606,6 +630,7 @@ class SWWAnimationGUI:
                 ylim=ax.get_ylim(),
                 W=int(fig.get_figwidth() * fig.get_dpi()),
                 H=int(fig.get_figheight() * fig.get_dpi()),
+                use_basemap=use_basemap,
             )
         except Exception:
             self._plot_transform = None
@@ -719,59 +744,31 @@ class SWWAnimationGUI:
             self._enter_pick_mode()
 
     def _enter_pick_mode(self):
-        """Render the live mesh in the main canvas for interactive point picking."""
-        if self._splotter is None:
+        """Enter pick mode: keep the current animation frame as-is, overlay an
+        instruction banner, and connect click events.  The frame image does not
+        change size or appearance."""
+        if self._splotter is None or not self._frames:
             return
-        import numpy as np
+        if self._plot_transform is None:
+            self._set_status('Computing pick transform…')
+            self.root.update_idletasks()
+            self._compute_plot_transform(self._last_gen_dpi)
+        if self._plot_transform is None:
+            self._set_status('Pick mode unavailable: transform could not be computed')
+            return
 
-        sp = self._splotter
-        n_ts = len(sp.time)
-        if self._frames and len(self._frames) > 1:
-            frac = self._current / (len(self._frames) - 1)
-            fidx = int(round(frac * (n_ts - 1)))
-        else:
-            fidx = 0
+        # Overlay a semi-transparent instruction banner using axes-fraction coords
+        # so it is independent of image size.
+        self._pick_text = self._ax.text(
+            0.5, 0.02,
+            'Click to pick a timeseries point  |  Esc to cancel',
+            ha='center', va='bottom', fontsize=9,
+            color='white', fontweight='bold',
+            bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.65),
+            zorder=20,
+            transform=self._ax.transAxes)
 
-        depth = sp.depth[fidx, :]
-        md = sp.min_depth
-        try:
-            elev = sp.elev[fidx, :]
-        except (IndexError, TypeError):
-            elev = sp.elev
-
-        use_basemap = self._gen_used_basemap and (sp.epsg is not None)
-        triang_pick = sp.triang_abs if use_basemap else sp.triang
-
-        self._ax.cla()
-        self._im = None   # detached by cla(); reset so _show_frame recreates it
-        self._remove_pick_overlay()
-        self._ax.set_aspect('equal')
-        self._ax.set_title(
-            'Click to pick a timeseries point  |  Esc to cancel', fontsize=9)
-
-        if not use_basemap:
-            triang_pick.set_mask(depth > md)
-            self._ax.tripcolor(triang_pick, facecolors=elev, cmap='Greys_r')
-        triang_pick.set_mask(depth <= md)
-        self._ax.tripcolor(triang_pick, facecolors=depth, cmap='viridis', alpha=0.8)
-        triang_pick.set_mask(None)
-
-        if use_basemap:
-            from anuga.utilities.animate import _add_basemap, BASEMAP_PROVIDERS
-            provider_label = self._basemap_provider_var.get()
-            provider_str = BASEMAP_PROVIDERS.get(provider_label, 'OpenStreetMap.Mapnik')
-            _add_basemap(self._ax, sp.epsg, provider_str)
-
-        # Mark existing pick if present
-        if self._ts_triangle is not None:
-            mx = sp.xc[self._ts_triangle] + (sp.xllcorner if use_basemap else 0)
-            my = sp.yc[self._ts_triangle] + (sp.yllcorner if use_basemap else 0)
-            self._ax.plot(mx, my, 'r*', markersize=14, zorder=5)
-
-        self._ax.set_xlabel('Easting (m)')
-        self._ax.set_ylabel('Northing (m)')
-        self._fig.tight_layout(pad=1.0)
-        self._canvas.draw()
+        self._canvas.draw_idle()
         self._canvas.get_tk_widget().config(cursor='crosshair')
 
         self._pick_cid = self._canvas.mpl_connect(
@@ -787,13 +784,31 @@ class SWWAnimationGUI:
             return
         import numpy as np
         sp = self._splotter
+        pt = self._plot_transform
+
+        # event.xdata/ydata are image-pixel coords because the axes shows an
+        # imshow with extent [0, W, H, 0].  Invert the transform to get the
+        # mesh coordinates that correspond to the clicked pixel.
+        pos = pt['pos']
+        xlim, ylim = pt['xlim'], pt['ylim']
+        W, H = pt['W'], pt['H']
+
+        xfrac = (event.xdata / W - pos.x0) / pos.width
+        yfrac = (1.0 - event.ydata / H - pos.y0) / pos.height
+
+        xmesh = xlim[0] + xfrac * (xlim[1] - xlim[0])
+        ymesh = ylim[0] + yfrac * (ylim[1] - ylim[0])
+
+        # Centroids are stored in relative coords; for basemap the xlim/ylim
+        # from the transform already include the xllcorner/yllcorner offset.
         use_basemap = self._gen_used_basemap and (sp.epsg is not None)
         if use_basemap:
             xc = sp.xc + sp.xllcorner
             yc = sp.yc + sp.yllcorner
         else:
             xc, yc = sp.xc, sp.yc
-        dist = np.sqrt((xc - event.xdata)**2 + (yc - event.ydata)**2)
+
+        dist = np.sqrt((xc - xmesh)**2 + (yc - ymesh)**2)
         self._ts_triangle = int(dist.argmin())
         self._exit_pick_mode()
         self._update_timeseries()
@@ -803,7 +818,7 @@ class SWWAnimationGUI:
             self._exit_pick_mode()
 
     def _exit_pick_mode(self):
-        """Disconnect pick events and restore the animation frame."""
+        """Disconnect pick events and remove the instruction banner."""
         if not self._pick_mode:
             return
         for cid in (self._pick_cid, self._pick_key_cid):
@@ -814,15 +829,14 @@ class SWWAnimationGUI:
         self._pick_mode = False
         self._pick_btn.config(text='Pick timeseries')
         self._canvas.get_tk_widget().config(cursor='')
-        # restore PNG display
-        self._ax.cla()
-        self._ax.axis('off')
-        self._fig.tight_layout(pad=0)
-        self._im = None
-        if self._frames:
-            self._show_frame(self._current)
-        else:
-            self._canvas.draw_idle()
+        if self._pick_text is not None:
+            try:
+                self._pick_text.remove()
+            except Exception:
+                pass
+            self._pick_text = None
+        self._update_pick_overlay()
+        self._canvas.draw_idle()
 
     def _update_timeseries(self):
         """Plot quantity vs time for the picked centroid."""
