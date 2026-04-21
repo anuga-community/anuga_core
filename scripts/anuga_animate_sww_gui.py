@@ -255,6 +255,10 @@ class SWWAnimationGUI:
                                        command=self._cancel_generation,
                                        state=tk.DISABLED)
         self._cancel_btn.pack(side=tk.LEFT, padx=2)
+        self._save_anim_btn = ttk.Button(row5, text='Save Animation…',
+                                          command=self._save_animation,
+                                          state=tk.DISABLED)
+        self._save_anim_btn.pack(side=tk.RIGHT, padx=4)
         self._progress_var = tk.IntVar(value=0)
         self._progress_bar = ttk.Progressbar(row5, variable=self._progress_var,
                                               maximum=100)
@@ -289,6 +293,10 @@ class SWWAnimationGUI:
 
         ttk.Button(row6, text='Help', command=self._show_help).pack(
             side=tk.RIGHT, padx=(4, 0))
+        self._save_frame_btn = ttk.Button(row6, text='Save Frame',
+                                           command=self._save_frame,
+                                           state=tk.DISABLED)
+        self._save_frame_btn.pack(side=tk.RIGHT, padx=4)
         self._frame_label = ttk.Label(row6, text='-')
         self._frame_label.pack(side=tk.RIGHT, padx=10)
 
@@ -675,6 +683,8 @@ class SWWAnimationGUI:
         self._slider_var.set(0)
         self._current = 0
         self._show_frame(0)
+        self._save_frame_btn.config(state=tk.NORMAL)
+        self._save_anim_btn.config(state=tk.NORMAL)
         self._set_status(f'Loaded {n} frames  |  {plot_dir}')
 
     def _show_frame(self, idx):
@@ -1059,6 +1069,118 @@ class SWWAnimationGUI:
     # Helpers                                                         #
     # -------------------------------------------------------------- #
 
+    # -------------------------------------------------------------- #
+    # Save frame / animation                                         #
+    # -------------------------------------------------------------- #
+
+    def _save_frame(self):
+        """Save the currently displayed frame (with any pick overlay) to a file."""
+        if not self._frames:
+            return
+        from tkinter import filedialog
+        default = (f'{self._sww_prefix}_{self._last_gen_qty}'
+                   f'_frame{self._current + 1:04d}')
+        path = filedialog.asksaveasfilename(
+            title='Save current frame',
+            initialfile=default,
+            defaultextension='.png',
+            filetypes=[('PNG image', '*.png'),
+                       ('PDF document', '*.pdf'),
+                       ('SVG image', '*.svg'),
+                       ('All files', '*.*')])
+        if not path:
+            return
+        self._fig.savefig(path, dpi=self._last_gen_dpi, bbox_inches='tight')
+        self._set_status(f'Frame saved → {path}')
+
+    def _save_animation(self):
+        """Save all loaded frames as a GIF or MP4 animation."""
+        if not self._frames:
+            return
+        import shutil
+        from tkinter import filedialog
+
+        has_ffmpeg = shutil.which('ffmpeg') is not None
+        filetypes = []
+        if has_ffmpeg:
+            filetypes.append(('MP4 video', '*.mp4'))
+        filetypes.append(('GIF animation', '*.gif'))
+        filetypes.append(('All files', '*.*'))
+
+        default_ext = '.mp4' if has_ffmpeg else '.gif'
+        default = f'{self._sww_prefix}_{self._last_gen_qty}'
+        path = filedialog.asksaveasfilename(
+            title='Save animation',
+            initialfile=default,
+            defaultextension=default_ext,
+            filetypes=filetypes)
+        if not path:
+            return
+
+        fps = max(0.5, self._fps_var.get())
+        if path.lower().endswith('.mp4'):
+            self._save_animation_mp4(path, fps)
+        else:
+            self._save_animation_gif(path, fps)
+
+    def _save_animation_gif(self, path, fps):
+        try:
+            from PIL import Image
+        except ImportError:
+            from tkinter import messagebox
+            messagebox.showerror(
+                'Missing dependency',
+                'Pillow is required to save GIF animations.\n'
+                'Install with:  pip install Pillow')
+            return
+        self._set_status(f'Saving GIF ({len(self._frames)} frames)…')
+        self.root.update_idletasks()
+        duration_ms = max(20, int(1000 / fps))
+        imgs = [Image.open(f).convert('RGBA') for f in self._frames]
+        imgs[0].save(path, save_all=True, append_images=imgs[1:],
+                     loop=0, duration=duration_ms, optimize=False)
+        self._set_status(f'GIF saved ({len(imgs)} frames) → {path}')
+
+    def _save_animation_mp4(self, path, fps):
+        import shutil
+        if not shutil.which('ffmpeg'):
+            from tkinter import messagebox
+            messagebox.showerror(
+                'ffmpeg not found',
+                'ffmpeg must be installed and on PATH to save MP4 videos.\n'
+                'Download from https://ffmpeg.org or install via conda/apt/brew.')
+            return
+        import subprocess
+        import tempfile
+        import os
+        self._set_status(f'Saving MP4 ({len(self._frames)} frames)…')
+        self.root.update_idletasks()
+        # Write a concat list so arbitrary frame sets work (stride, etc.)
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt',
+                                         delete=False, encoding='utf-8') as f:
+            dur = 1.0 / fps
+            for frame_path in self._frames:
+                f.write(f"file '{frame_path}'\n")
+                f.write(f"duration {dur:.6f}\n")
+            # ffmpeg concat requires the last entry twice (no duration on final)
+            f.write(f"file '{self._frames[-1]}'\n")
+            concat_path = f.name
+        try:
+            result = subprocess.run(
+                ['ffmpeg', '-y', '-f', 'concat', '-safe', '0',
+                 '-i', concat_path,
+                 '-c:v', 'libx264', '-pix_fmt', 'yuv420p',
+                 '-movflags', '+faststart', path],
+                capture_output=True, text=True)
+            if result.returncode != 0:
+                from tkinter import messagebox
+                messagebox.showerror('ffmpeg error',
+                                     result.stderr[-800:] or result.stdout[-800:])
+                return
+        finally:
+            os.unlink(concat_path)
+        self._set_status(f'MP4 saved ({len(self._frames)} frames) → {path}')
+
     def _show_help(self):
         """Open a scrollable help window."""
         win = tk.Toplevel(self.root)
@@ -1147,6 +1269,17 @@ class SWWAnimationGUI:
         p('  Red dashed line  — current animation frame time.')
         p('  Export CSV       — save the displayed time series to a CSV file.')
         p('  Close            — hide the timeseries panel.')
+        nl()
+
+        h2('Saving frames and animations')
+        p('  Save Frame       — saves the current frame (with any pick-marker')
+        p('  overlay) as PNG, PDF, or SVG.')
+        nl()
+        p('  Save Animation…  — saves all loaded frames as:')
+        p('    GIF  — requires Pillow (pip install Pillow).')
+        p('    MP4  — requires ffmpeg on PATH; produces smaller, higher-quality')
+        p('           files.  MP4 is offered first when ffmpeg is detected.')
+        p('  Playback FPS is used as the animation frame rate.')
         nl()
 
         h2('Command-line usage')

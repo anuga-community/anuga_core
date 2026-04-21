@@ -144,8 +144,50 @@ The timeseries panel
      - Hide the timeseries panel.  Pick state is reset.
 
 
+Saving frames and animations
+----------------------------
+
+Save Frame
+~~~~~~~~~~
+
+The **Save Frame** button (playback row, right side) saves the currently
+displayed frame — including any pick-marker overlay — to a file.
+Supported formats: **PNG**, **PDF**, **SVG**.  PNG is the default.
+
+Save Animation
+~~~~~~~~~~~~~~
+
+The **Save Animation…** button (next to *Generate Frames*) assembles all
+loaded frames into a single animation file.  The playback **FPS** setting
+is used as the frame rate.
+
+Two output formats are supported:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 15 85
+
+   * - Format
+     - Notes
+   * - **MP4**
+     - Requires ``ffmpeg`` to be installed and on ``PATH``.  Produces
+       compact, high-quality video using the H.264 codec
+       (``libx264``, ``yuv420p`` pixel format).  Offered as the default
+       when ``ffmpeg`` is detected.  Install via conda
+       (``conda install ffmpeg``), apt, brew, or from
+       https://ffmpeg.org.
+   * - **GIF**
+     - Requires `Pillow <https://pillow.readthedocs.io>`_
+       (``pip install Pillow``).  Works everywhere with no codec
+       required.  File size can be large for long or high-DPI
+       animations.
+
+If ``ffmpeg`` is not found, only GIF is offered.  If Pillow is missing, an
+error dialog is shown when GIF is selected.
+
+
 Maximum-envelope quantities
----------------------------
+----------------------------
 
 Selecting ``max_depth``, ``max_speed``, or ``max_speed_depth`` as the
 *Quantity* generates a **single static frame** showing the maximum
