@@ -561,7 +561,6 @@ void core_manning_friction_flat_semi_implicit(struct domain *D) {
     anuga_int n = D->number_of_elements;
     double g = D->g;
     double minimum_allowed_height = D->minimum_allowed_height;
-    double seven_thirds = 7.0 / 3.0;
 
     double * restrict stage_cv = D->stage_centroid_values;
     double * restrict bed_cv = D->bed_centroid_values;
@@ -574,19 +573,21 @@ void core_manning_friction_flat_semi_implicit(struct domain *D) {
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
-        double S = 0.0;
         double uh = xmom_cv[k];
         double vh = ymom_cv[k];
         double eta = friction_cv[k];
+        double h = stage_cv[k] - bed_cv[k];
         double abs_mom = sqrt(uh * uh + vh * vh);
 
-        if (eta > 1.0e-15) {  // ETA_SMALL
-            double h = stage_cv[k] - bed_cv[k];
-            if (h >= minimum_allowed_height) {
-                S = -g * eta * eta * abs_mom;
-                S /= pow(h, seven_thirds);
-            }
-        }
+        // Branchless computation to enable SIMD vectorization.
+        // h^(7/3) = h^2 * cbrt(h) replaces the non-vectorizable pow() call.
+        // The active mask prevents division by zero for dry/frictionless cells.
+        // Bitwise & (not short-circuit &&) is intentional: both comparisons must
+        // be evaluated to allow the compiler to emit branchless SIMD code.
+        int active = (eta > 1.0e-15) & (h >= minimum_allowed_height);
+        double h_safe = active ? h : 1.0;
+        double S = active ? (-g * eta * eta * abs_mom / (h_safe * h_safe * cbrt(h_safe))) : 0.0;
+
         xmom_siu[k] += S * uh;
         ymom_siu[k] += S * vh;
     }
@@ -614,39 +615,41 @@ void core_manning_friction_sloped_semi_implicit(struct domain *D) {
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
         double h = height_cv[k];
+        anuga_int k3 = k * 3;
+        anuga_int k6 = k * 6;
 
-        if (h > minimum_allowed_height) {
-            anuga_int k3 = k * 3;
-            anuga_int k6 = k * 6;
+        // Compute bed slope geometry unconditionally to enable SIMD vectorization.
+        // Valid mesh triangles always have non-zero determinant.
+        double x0 = vertex_coords[k6 + 0];
+        double y0 = vertex_coords[k6 + 1];
+        double x1 = vertex_coords[k6 + 2];
+        double y1 = vertex_coords[k6 + 3];
+        double x2 = vertex_coords[k6 + 4];
+        double y2 = vertex_coords[k6 + 5];
 
-            // Compute bed slope
-            double x0 = vertex_coords[k6 + 0];
-            double y0 = vertex_coords[k6 + 1];
-            double x1 = vertex_coords[k6 + 2];
-            double y1 = vertex_coords[k6 + 3];
-            double x2 = vertex_coords[k6 + 4];
-            double y2 = vertex_coords[k6 + 5];
+        double z0 = bed_vv[k3 + 0];
+        double z1 = bed_vv[k3 + 1];
+        double z2 = bed_vv[k3 + 2];
 
-            double z0 = bed_vv[k3 + 0];
-            double z1 = bed_vv[k3 + 1];
-            double z2 = bed_vv[k3 + 2];
+        double det = (y2 - y0) * (x1 - x0) - (y1 - y0) * (x2 - x0);
+        double dzx = ((y2 - y0) * (z1 - z0) - (y1 - y0) * (z2 - z0)) / det;
+        double dzy = ((x1 - x0) * (z2 - z0) - (x2 - x0) * (z1 - z0)) / det;
 
-            double det = (y2 - y0) * (x1 - x0) - (y1 - y0) * (x2 - x0);
-            double dzx = ((y2 - y0) * (z1 - z0) - (y1 - y0) * (z2 - z0)) / det;
-            double dzy = ((x1 - x0) * (z2 - z0) - (x2 - x0) * (z1 - z0)) / det;
+        double slope = sqrt(1.0 + dzx * dzx + dzy * dzy);
 
-            double slope = sqrt(1.0 + dzx * dzx + dzy * dzy);
+        double eta = friction_cv[k];
+        double xmom = xmom_cv[k];
+        double ymom = ymom_cv[k];
 
-            double eta = friction_cv[k];
-            double xmom = xmom_cv[k];
-            double ymom = ymom_cv[k];
+        // Branchless computation to enable SIMD vectorization.
+        // h^(7/3) = h^2 * cbrt(h) replaces the non-vectorizable pow() call.
+        int active = (h > minimum_allowed_height);
+        double h_safe = active ? h : 1.0;
+        double S = active ? (-g * eta * eta * sqrt(xmom * xmom + ymom * ymom) * slope
+                             / (h_safe * h_safe * cbrt(h_safe))) : 0.0;
 
-            double S = -g * eta * eta * sqrt(xmom * xmom + ymom * ymom) * slope;
-            S /= pow(h, 7.0 / 3.0);
-
-            xmom_siu[k] += S;
-            ymom_siu[k] += S;
-        }
+        xmom_siu[k] += S;
+        ymom_siu[k] += S;
     }
 }
 
@@ -761,6 +764,100 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
     double local_timestep = 1.0e+100;
     double boundary_flux_sum_substep = 0.0;
 
+#ifdef CPU_ONLY_MODE
+    // -----------------------------------------------------------------------
+    // Pre-scatter pass (CPU only)
+    //
+    // The main flux loop is blocked from SIMD vectorization by irregular
+    // gathers: for each interior edge, neighbour state is loaded from
+    // stage_ev[neighbour*3 + neighbour_edges[ki]], which has a
+    // data-dependent, non-unit-stride index.
+    //
+    // Here we pre-scatter all right-state data into SoA (Structure of Arrays)
+    // buffers indexed as nr_VAR[edge_index][element_k].  After this pass the
+    // main loop performs only unit-stride reads, making SIMD vectorization
+    // possible for the common case (no riverwalls, serial simulation).
+    //
+    // Layout: nr_VAR[i] is a contiguous array of length n; nr_VAR[i][k] is
+    // the right-state VAR for element k's edge i.  One array per edge (SoA)
+    // keeps the access pattern stride-1 for the outer k loop after the inner
+    // i loop is unrolled.
+    //
+    // 7 double arrays × 3 edges = 21*n doubles.
+    // 1 int8_t array  × 3 edges =  3*n bytes (ghost-cell flag).
+    // -----------------------------------------------------------------------
+    double * restrict nr_stage[3];
+    double * restrict nr_xmom[3];
+    double * restrict nr_ymom[3];
+    double * restrict nr_zr[3];
+    double * restrict nr_hre[3];
+    double * restrict nr_hc_n[3];
+    double * restrict nr_zc_n[3];
+    int8_t * restrict nr_neigh_full[3];
+
+    double *scatter_buf  = (double *)malloc((anuga_int)(n * 7 * 3) * sizeof(double));
+    int8_t *scatter_ibuf = (int8_t *)malloc((anuga_int)(n * 1 * 3) * sizeof(int8_t));
+    if (!scatter_buf || !scatter_ibuf) {
+        fprintf(stderr, "core_compute_fluxes_central: pre-scatter malloc failed "
+                        "(n=%lld)\n", (long long)n);
+        free(scatter_buf);
+        free(scatter_ibuf);
+        return local_timestep;
+    }
+
+    for (int _i = 0; _i < 3; _i++) {
+        nr_stage[_i]  = scatter_buf  + (anuga_int)n * (7 * _i + 0);
+        nr_xmom[_i]   = scatter_buf  + (anuga_int)n * (7 * _i + 1);
+        nr_ymom[_i]   = scatter_buf  + (anuga_int)n * (7 * _i + 2);
+        nr_zr[_i]     = scatter_buf  + (anuga_int)n * (7 * _i + 3);
+        nr_hre[_i]    = scatter_buf  + (anuga_int)n * (7 * _i + 4);
+        nr_hc_n[_i]   = scatter_buf  + (anuga_int)n * (7 * _i + 5);
+        nr_zc_n[_i]   = scatter_buf  + (anuga_int)n * (7 * _i + 6);
+        nr_neigh_full[_i] = scatter_ibuf + (anuga_int)n * _i;
+    }
+
+    // Fill pre-scatter buffers: gather neighbour state for each element/edge.
+    // The irregular gathers are concentrated here in a simple copy loop so
+    // the main computation loop can stay free of them.
+    #pragma omp parallel for schedule(static)
+    for (anuga_int k = 0; k < n; k++) {
+        const double hc_k = height_cv[k];
+        const double zc_k = bed_cv[k];
+        for (int i = 0; i < 3; i++) {
+            const int ki = 3 * k + i;
+            const anuga_int nb = neighbours[ki];
+            if (nb < 0) {
+                // Boundary edge: mirror geometry, pull state from boundary arrays
+                const int m = -nb - 1;
+                const double ql_stage = stage_bv[m];
+                const double ql_bed   = bed_ev[ki];
+                nr_stage[i][k]  = ql_stage;
+                nr_xmom[i][k]   = xmom_bv[m];
+                nr_ymom[i][k]   = ymom_bv[m];
+                nr_zr[i][k]     = ql_bed;
+                nr_hre[i][k]    = fmax(ql_stage - ql_bed, 0.0);
+                nr_hc_n[i][k]   = hc_k;
+                nr_zc_n[i][k]   = zc_k;
+                nr_neigh_full[i][k] = (int8_t)0;
+            } else {
+                // Internal edge: gather from neighbour's opposite edge
+                const int m  = neighbour_edges[ki];
+                const int nm = nb * 3 + m;
+                nr_stage[i][k]  = stage_ev[nm];
+                nr_xmom[i][k]   = xmom_ev[nm];
+                nr_ymom[i][k]   = ymom_ev[nm];
+                nr_zr[i][k]     = bed_ev[nm];
+                nr_hre[i][k]    = height_ev[nm];
+                nr_hc_n[i][k]   = height_cv[nb];
+                nr_zc_n[i][k]   = bed_cv[nb];
+                // Pre-compute ghost-cell flag (used for boundary-flux tracking)
+                nr_neigh_full[i][k] = (tri_full_flag != NULL && tri_full_flag[nb] == 0)
+                                      ? (int8_t)1 : (int8_t)0;
+            }
+        }
+    }
+#endif /* CPU_ONLY_MODE pre-scatter */
+
     // Main flux computation loop with reductions
     #ifdef CPU_ONLY_MODE
     #pragma omp parallel for simd reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
@@ -798,12 +895,25 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
             double n1 = normals[ki2];
             double n2 = normals[ki2 + 1];
 
-            // Get neighbour info
+            // Get neighbour index (stride-3; needed for riverwall and boundary-flux
+            // tracking even in the CPU pre-scatter path)
             anuga_int neighbour = neighbours[ki];
             int is_boundary = (neighbour < 0);
 
             double zr, hre, hc_n, zc_n;
 
+#ifdef CPU_ONLY_MODE
+            // Unit-stride reads from pre-scattered SoA buffers.
+            // Eliminates the irregular gathers that block SIMD vectorization
+            // of this loop in the original code.
+            qr[0] = nr_stage[i][k];
+            qr[1] = nr_xmom[i][k];
+            qr[2] = nr_ymom[i][k];
+            zr   = nr_zr[i][k];
+            hre  = nr_hre[i][k];
+            hc_n = nr_hc_n[i][k];
+            zc_n = nr_zc_n[i][k];
+#else
             if (is_boundary) {
                 // Boundary edge - get values from boundary arrays
                 int m = -neighbour - 1;
@@ -826,6 +936,7 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
                 hc_n = height_cv[neighbour];
                 zc_n = bed_cv[neighbour];
             }
+#endif
 
             // Compute z_half (max bed elevation at edge)
             double z_half = fmax(zl, zr);
@@ -928,7 +1039,12 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
             // is a boundary condition OR a ghost cell, add the flux to boundary integral
             if (tri_full_flag != NULL) {
                 int is_full = (tri_full_flag[k] == 1);
+#ifdef CPU_ONLY_MODE
+                // Unit-stride read from pre-scattered ghost-cell flag
+                int neighbour_is_ghost = (int)nr_neigh_full[i][k];
+#else
                 int neighbour_is_ghost = (!is_boundary && tri_full_flag[neighbour] == 0);
+#endif
                 if ((is_boundary && is_full) || (is_full && neighbour_is_ghost)) {
                     boundary_flux_sum_substep += edgeflux[0];
                 }
@@ -960,6 +1076,11 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
         ymom_eu[k] *= inv_area;
 
     } // End element loop
+
+#ifdef CPU_ONLY_MODE
+    free(scatter_buf);
+    free(scatter_ibuf);
+#endif
 
     // Store boundary flux sum for this substep
     if (D->boundary_flux_sum != NULL && substep_count < timestep_fluxcalls) {
