@@ -7,8 +7,8 @@ Covers modules not tested elsewhere:
   - setup_riverwalls
   - end-to-end: initial conditions + rainfall + evolve
 
-All tests use a synthetic 1×1 rectangular domain (rectangular_cross_domain)
-so no external data files are required.
+All tests use a synthetic 1×1 rectangular domain (rectangular_cross_domain,
+10×10 cells) so no external data files are required.
 """
 
 import os
@@ -37,8 +37,13 @@ except ImportError as _e:
 # ---------------------------------------------------------------------------
 
 def _make_domain():
-    """3×3 rectangular cross domain on [0,1]×[0,1]."""
-    return rectangular_cross_domain(3, 3)
+    """10×10 rectangular cross domain on [0,1]×[0,1].
+
+    The finer grid (0.1 m cells) ensures culvert enquiry points land in a
+    different triangle from the inlet exchange region, avoiding the
+    "Enquiry point is in an inlet triangle" UserWarning.
+    """
+    return rectangular_cross_domain(10, 10)
 
 
 def _make_initial_project(**overrides):

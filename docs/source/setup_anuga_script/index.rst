@@ -16,6 +16,7 @@ Script Structure
    initial_conditions
    boundaries
    operators
+   riverwalls
    evolve
    checkpointing
    logging

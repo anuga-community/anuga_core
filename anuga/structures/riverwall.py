@@ -521,6 +521,101 @@ class RiverWall:
 
     #####################################################################################
 
+    ###################################################################
+    # Public interface for inspecting and modifying riverwall state
+    # at runtime (e.g. inside a yield-step loop).
+    ###################################################################
+
+    def _name_to_index(self, name):
+        if name not in self.names:
+            raise KeyError(
+                "Riverwall '{}' not found. Available walls: {}".format(
+                    name, self.names))
+        return self.names.index(name)
+
+    def _param_to_col(self, param):
+        if param not in self.hydraulic_variable_names:
+            raise KeyError(
+                "Parameter '{}' not recognised. Valid parameters: {}".format(
+                    param, self.hydraulic_variable_names))
+        return self.hydraulic_variable_names.index(param)
+
+    def get_wall_names(self):
+        """Return a list of riverwall names."""
+        return list(self.names)
+
+    def get_edge_coordinates(self, name):
+        """Return (n, 2) array of absolute xy coordinates for edges of *name*.
+
+        Coordinates are in the same CRS as the domain inputs (georeferencing
+        offset is added back).
+        """
+        idx = self._name_to_index(name)
+        mask = self.hydraulic_properties_rowIndex == idx
+        edge_inds = self.riverwall_edges[mask]
+        xy = self.domain.edge_coordinates[edge_inds, :].copy()
+        xy[:, 0] += self.domain.geo_reference.xllcorner
+        xy[:, 1] += self.domain.geo_reference.yllcorner
+        return xy
+
+    def get_elevation(self, name):
+        """Return a copy of the crest elevations (m) for all edges of *name*."""
+        idx = self._name_to_index(name)
+        mask = self.hydraulic_properties_rowIndex == idx
+        return self.riverwall_elevation[mask].copy()
+
+    def set_elevation(self, name, elevation):
+        """Set crest elevation(s) for riverwall *name*.
+
+        Parameters
+        ----------
+        name : str
+            Riverwall name.
+        elevation : float or array-like of length n
+            Scalar applied uniformly to all edges, or array matching the
+            number of edges exactly.
+        """
+        idx = self._name_to_index(name)
+        mask = self.hydraulic_properties_rowIndex == idx
+        n = int(mask.sum())
+        elev = numpy.asarray(elevation, dtype=float)
+        if elev.ndim == 0:
+            self.riverwall_elevation[mask] = float(elev)
+        elif elev.shape == (n,):
+            self.riverwall_elevation[mask] = elev
+        else:
+            raise ValueError(
+                "elevation length {} does not match {} edges for "
+                "riverwall '{}'".format(len(elev), n, name))
+
+    def set_elevation_offset(self, name, offset):
+        """Add *offset* (m) to the current crest elevation of riverwall *name*."""
+        idx = self._name_to_index(name)
+        mask = self.hydraulic_properties_rowIndex == idx
+        self.riverwall_elevation[mask] += float(offset)
+
+    def get_hydraulic_parameter(self, name, param):
+        """Return the hydraulic parameter *param* for riverwall *name*.
+
+        Valid parameter names: ``Qfactor``, ``s1``, ``s2``, ``h1``, ``h2``,
+        ``Cd_through``.
+        """
+        idx = self._name_to_index(name)
+        col = self._param_to_col(param)
+        return float(self.hydraulic_properties[idx, col])
+
+    def set_hydraulic_parameter(self, name, param, value):
+        """Set hydraulic parameter *param* to *value* for riverwall *name*.
+
+        Valid parameter names: ``Qfactor``, ``s1``, ``s2``, ``h1``, ``h2``,
+        ``Cd_through``.
+        """
+        idx = self._name_to_index(name)
+        col = self._param_to_col(param)
+        self.hydraulic_properties[idx, col] = float(value)
+
+    #####################################################################################
+
     def get_centroids_corresponding_to_edgeInds(self, riverwalledgeInds):
         """
           Get indices of centroids containing edges with indices riverwalledgeInds

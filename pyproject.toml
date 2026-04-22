@@ -132,4 +132,10 @@ testpaths = [
 markers = [
     "slow: marks tests as slow — omit --run-fast to include in the default run",
 ]
+filterwarnings = [
+    # numpy.ndarray size-changed warning is a known side-effect of importing
+    # ANUGA's C extensions when numpy was compiled with a different ABI than
+    # the running numpy.  It is harmless and appears across the whole suite.
+    "ignore:numpy.ndarray size changed:RuntimeWarning",
+]
 
