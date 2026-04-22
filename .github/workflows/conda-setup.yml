@@ -101,5 +101,5 @@ jobs:
           pip install pytest-cov
           cd sandpit
           export OMP_NUM_THREADS=1
-          pytest --pyargs anuga --cov=anuga --cov-report=xml --cov-report=term-missing
+          pytest --pyargs anuga --cov=anuga --cov-report=xml --cov-report=term-missing --cov-config=../.coveragerc
 
