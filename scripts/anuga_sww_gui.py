@@ -86,6 +86,30 @@ _QTY_SAVE_METHOD = {
     'elev':            'save_elev_frame',
 }
 
+# Colorbar label for each quantity (used by the clean-export renderer)
+_QTY_CBAR_LABEL = {
+    'depth':           'Depth (m)',
+    'stage':           'Stage (m)',
+    'speed':           'Speed (m/s)',
+    'speed_depth':     'Flow depth (m²/s)',
+    'max_depth':       'Max depth (m)',
+    'max_speed':       'Max speed (m/s)',
+    'max_speed_depth': 'Max flow depth (m²/s)',
+    'elev':            'Elevation (m)',
+}
+
+# Human-readable quantity name for figure titles
+_QTY_TITLE = {
+    'depth':           'Water depth',
+    'stage':           'Water stage',
+    'speed':           'Flow speed',
+    'speed_depth':     'Flow depth',
+    'max_depth':       'Maximum water depth',
+    'max_speed':       'Maximum flow speed',
+    'max_speed_depth': 'Maximum flow depth',
+    'elev':            'Bed elevation',
+}
+
 
 # ------------------------------------------------------------------ #
 # Frame helpers (shared with anuga_animate_gui convention)           #
@@ -335,6 +359,10 @@ class SWWAnimationGUI:
                                            command=self._save_frame,
                                            state=tk.DISABLED)
         self._save_frame_btn.pack(side=tk.RIGHT, padx=4)
+        self._export_frame_btn = ttk.Button(row6, text='Export frame…',
+                                             command=self._export_frame,
+                                             state=tk.DISABLED)
+        self._export_frame_btn.pack(side=tk.RIGHT, padx=4)
         self._frame_label = ttk.Label(row6, text='-')
         self._frame_label.pack(side=tk.RIGHT, padx=10)
 
@@ -890,6 +918,7 @@ class SWWAnimationGUI:
         self._remove_zoom_patch()
         self._show_frame(0)
         self._save_frame_btn.config(state=tk.NORMAL)
+        self._export_frame_btn.config(state=tk.NORMAL)
         self._save_anim_btn.config(state=tk.NORMAL)
         self._zoom_btn.config(state=tk.NORMAL)
         self._set_status(f'Loaded {n} frames  |  {plot_dir}')
@@ -1511,6 +1540,251 @@ class SWWAnimationGUI:
         finally:
             os.unlink(concat_path)
         self._set_status(f'MP4 saved ({len(self._frames)} frames) → {path}')
+
+    # -------------------------------------------------------------- #
+    # Export frame (re-rendered, with configurable decorations)       #
+    # -------------------------------------------------------------- #
+
+    def _export_frame(self):
+        """Open a modal dialog to configure and export a re-rendered frame."""
+        if not self._frames or self._splotter is None:
+            return
+
+        win = tk.Toplevel(self.root)
+        win.title('Export frame')
+        win.resizable(False, False)
+        win.grab_set()
+
+        pad = dict(padx=8, pady=4)
+
+        # --- format + DPI row ---
+        fmt_frame = ttk.Frame(win, padding=6)
+        fmt_frame.pack(fill=tk.X)
+        ttk.Label(fmt_frame, text='Format:').pack(side=tk.LEFT, **pad)
+        fmt_var = tk.StringVar(value='PDF')
+        fmt_combo = ttk.Combobox(fmt_frame, textvariable=fmt_var, width=6,
+                                 state='readonly',
+                                 values=['PNG', 'PDF', 'SVG', 'PGF'])
+        fmt_combo.pack(side=tk.LEFT, padx=(0, 16))
+
+        ttk.Label(fmt_frame, text='DPI (PNG only):').pack(side=tk.LEFT, **pad)
+        dpi_var = tk.IntVar(value=self._last_gen_dpi)
+        dpi_spin = ttk.Spinbox(fmt_frame, from_=72, to=600, increment=25,
+                               textvariable=dpi_var, width=6)
+        dpi_spin.pack(side=tk.LEFT)
+
+        def _toggle_dpi(*_):
+            dpi_spin.config(state='normal' if fmt_var.get() == 'PNG' else 'disabled')
+        fmt_combo.bind('<<ComboboxSelected>>', _toggle_dpi)
+        _toggle_dpi()
+
+        ttk.Separator(win, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=6)
+
+        # --- decoration checkboxes ---
+        chk_frame = ttk.Frame(win, padding=6)
+        chk_frame.pack(fill=tk.X)
+        cbar_var   = tk.BooleanVar(value=True)
+        labels_var = tk.BooleanVar(value=True)
+        title_var  = tk.BooleanVar(value=True)
+        ttk.Checkbutton(chk_frame, text='Colorbar',    variable=cbar_var
+                        ).pack(side=tk.LEFT, **pad)
+        ttk.Checkbutton(chk_frame, text='Axis labels', variable=labels_var
+                        ).pack(side=tk.LEFT, **pad)
+        ttk.Checkbutton(chk_frame, text='Title',       variable=title_var
+                        ).pack(side=tk.LEFT, **pad)
+
+        ttk.Separator(win, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=6)
+
+        # --- buttons ---
+        btn_frame = ttk.Frame(win, padding=6)
+        btn_frame.pack(fill=tk.X)
+        ttk.Button(btn_frame, text='Cancel',
+                   command=win.destroy).pack(side=tk.RIGHT, padx=4)
+
+        def _do_export():
+            fmt = fmt_var.get().lower()
+            ext = f'.{fmt}'
+            default = (f'{self._sww_prefix}_{self._last_gen_qty}'
+                       f'_frame{self._current + 1:04d}')
+            filetypes = {
+                'png': [('PNG image', '*.png')],
+                'pdf': [('PDF document', '*.pdf')],
+                'svg': [('SVG image', '*.svg')],
+                'pgf': [('PGF/LaTeX', '*.pgf')],
+            }
+            path = filedialog.asksaveasfilename(
+                parent=win,
+                title='Export frame',
+                initialfile=default,
+                defaultextension=ext,
+                filetypes=filetypes.get(fmt, [('All files', '*.*')]))
+            if not path:
+                return
+            win.destroy()
+            try:
+                self._render_and_export_frame(
+                    path,
+                    show_colorbar=cbar_var.get(),
+                    show_labels=labels_var.get(),
+                    show_title=title_var.get(),
+                    dpi=dpi_var.get(),
+                )
+                self._set_status(f'Frame exported → {path}')
+            except Exception as exc:
+                from tkinter import messagebox
+                messagebox.showerror('Export error', str(exc))
+
+        ttk.Button(btn_frame, text='Export…',
+                   command=_do_export).pack(side=tk.RIGHT, padx=4)
+
+        win.wait_window()
+
+    def _render_and_export_frame(self, path, show_colorbar=True,
+                                  show_labels=True, show_title=True, dpi=150):
+        """Re-render the current frame from raw SWW data and save to *path*.
+
+        Unlike "Save Frame" (which screenshots the imshow canvas), this
+        re-renders via tripcolor so the output is independent of the screen
+        resolution and can be saved as a true vector PDF/SVG/PGF.
+
+        Parameters
+        ----------
+        path : str
+            Output file path.  Extension determines the format
+            (png / pdf / svg / pgf).
+        show_colorbar : bool
+            Include the colorbar.
+        show_labels : bool
+            Include x/y axis labels and tick labels.
+        show_title : bool
+            Include a title showing quantity name and simulation time.
+        dpi : int
+            Raster resolution (only relevant for PNG output).
+        """
+        import numpy as np
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+        sp   = self._splotter
+        qty  = self._last_gen_qty
+        vmin = self._last_gen_vmin
+        vmax = self._last_gen_vmax
+        cmap = self._last_gen_cmap
+        use_basemap = self._gen_used_basemap and (sp.epsg is not None)
+        triang = sp.triang_abs if use_basemap else sp.triang
+
+        # --- resolve data array for the current frame ---
+        is_static = qty.startswith('max_') or (
+            qty == 'elev' and sp.elev.ndim == 1)
+
+        if qty == 'elev':
+            raw = sp.elev
+            data = raw if raw.ndim == 1 else raw[self._frame_to_sww_idx(), :]
+            elev_bg = None
+        else:
+            data_map = {
+                'depth':           sp.depth,
+                'stage':           sp.stage,
+                'speed':           sp.speed,
+                'speed_depth':     sp.speed_depth,
+                'max_depth':       sp.depth,
+                'max_speed':       sp.speed,
+                'max_speed_depth': sp.speed_depth,
+            }
+            raw = data_map[qty]
+            if is_static:
+                data = np.max(raw, axis=0)
+            else:
+                data = raw[self._frame_to_sww_idx(), :]
+
+            try:
+                elev_bg = sp.elev[0, :] if sp.elev.ndim == 2 else sp.elev
+            except (IndexError, TypeError):
+                elev_bg = sp.elev
+
+        # --- build figure ---
+        is_pgf = path.lower().endswith('.pgf')
+        fig = Figure(figsize=(10, 6))
+        if is_pgf:
+            try:
+                from matplotlib.backends.backend_pgf import FigureCanvasPgf
+                FigureCanvasPgf(fig)
+            except Exception:
+                FigureCanvasAgg(fig)   # fall back; savefig will raise below
+        else:
+            FigureCanvasAgg(fig)
+
+        ax = fig.add_subplot(111)
+
+        if elev_bg is not None and not use_basemap:
+            mask_bg = data > sp.min_depth
+            triang.set_mask(mask_bg)
+            ax.tripcolor(triang, facecolors=elev_bg, cmap='Greys_r')
+
+        if elev_bg is not None:
+            triang.set_mask(data < sp.min_depth)
+        else:
+            triang.set_mask(None)
+
+        im = ax.tripcolor(triang, facecolors=data, cmap=cmap,
+                          vmin=vmin, vmax=vmax)
+        triang.set_mask(None)
+        ax.set_aspect('equal')
+
+        if self._zoom_xlim is not None:
+            ax.set_xlim(self._zoom_xlim)
+        if self._zoom_ylim is not None:
+            ax.set_ylim(self._zoom_ylim)
+
+        if use_basemap:
+            from anuga.utilities.animate import _add_basemap, BASEMAP_PROVIDERS
+            provider_label = self._basemap_provider_var.get()
+            provider_str = BASEMAP_PROVIDERS.get(
+                provider_label, 'OpenStreetMap.Mapnik')
+            _add_basemap(ax, sp.epsg, provider_str, cache=sp._basemap_cache)
+
+        if show_colorbar:
+            fig.colorbar(im, ax=ax,
+                         label=_QTY_CBAR_LABEL.get(qty, qty))
+
+        if show_labels:
+            ax.set_xlabel('Easting (m)')
+            ax.set_ylabel('Northing (m)')
+        else:
+            ax.set_xticklabels([])
+            ax.set_yticklabels([])
+
+        if show_title:
+            if is_static:
+                ax.set_title(f'{_QTY_TITLE.get(qty, qty)}  —  {self._sww_prefix}')
+            else:
+                t = sp.time[self._frame_to_sww_idx()]
+                ax.set_title(
+                    f'{_QTY_TITLE.get(qty, qty)}  —  '
+                    f'{self._sww_prefix}  t = {t:.1f} s')
+
+        try:
+            fig.savefig(path, dpi=dpi, bbox_inches='tight')
+        except FileNotFoundError as exc:
+            if 'latex' in str(exc).lower() or 'xelatex' in str(exc).lower() \
+                    or 'pdflatex' in str(exc).lower():
+                raise RuntimeError(
+                    'PGF export requires a LaTeX installation '
+                    '(xelatex or pdflatex) to be available on your PATH.\n'
+                    'Install TeX Live (Linux/macOS) or MiKTeX (Windows) '
+                    'and ensure the binaries are on PATH, then try again.'
+                ) from exc
+            raise
+
+    def _frame_to_sww_idx(self):
+        """Map self._current (frame index) to the SWW time-step index."""
+        sp = self._splotter
+        n_frames = len(self._frames)
+        n_sww    = len(sp.time)
+        if n_frames <= 1 or n_sww <= 1:
+            return 0
+        frac = self._current / (n_frames - 1)
+        return int(round(frac * (n_sww - 1)))
 
     def _show_mesh(self):
         """Open a Toplevel window showing the triangulation."""
