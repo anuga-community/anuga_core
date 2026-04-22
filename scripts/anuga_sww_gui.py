@@ -1573,10 +1573,30 @@ class SWWAnimationGUI:
                                textvariable=dpi_var, width=6)
         dpi_spin.pack(side=tk.LEFT)
 
-        def _toggle_dpi(*_):
+        # --- PGF TeX engine row (shown only when PGF is selected) ---
+        import shutil as _shutil
+        _tex_engines = [e for e in ('pdflatex', 'xelatex', 'lualatex')
+                        if _shutil.which(e)]
+        pgf_row = ttk.Frame(win, padding=(6, 0, 6, 2))
+        tex_var = tk.StringVar(value=_tex_engines[0] if _tex_engines else 'pdflatex')
+        ttk.Label(pgf_row, text='TeX engine:').pack(side=tk.LEFT, **pad)
+        tex_combo = ttk.Combobox(pgf_row, textvariable=tex_var, width=10,
+                                 state='readonly',
+                                 values=['pdflatex', 'xelatex', 'lualatex'])
+        tex_combo.pack(side=tk.LEFT)
+        if not _tex_engines:
+            ttk.Label(pgf_row, text='⚠ none found on PATH',
+                      foreground='red').pack(side=tk.LEFT, padx=8)
+
+        def _toggle_pgf_row(*_):
             dpi_spin.config(state='normal' if fmt_var.get() == 'PNG' else 'disabled')
-        fmt_combo.bind('<<ComboboxSelected>>', _toggle_dpi)
-        _toggle_dpi()
+            if fmt_var.get() == 'PGF':
+                pgf_row.pack(fill=tk.X, after=fmt_frame)
+            else:
+                pgf_row.pack_forget()
+
+        fmt_combo.bind('<<ComboboxSelected>>', _toggle_pgf_row)
+        _toggle_pgf_row()
 
         ttk.Separator(win, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=6)
 
@@ -1628,6 +1648,7 @@ class SWWAnimationGUI:
                     show_labels=labels_var.get(),
                     show_title=title_var.get(),
                     dpi=dpi_var.get(),
+                    tex_engine=tex_var.get(),
                 )
                 self._set_status(f'Frame exported → {path}')
             except Exception as exc:
@@ -1640,7 +1661,8 @@ class SWWAnimationGUI:
         win.wait_window()
 
     def _render_and_export_frame(self, path, show_colorbar=True,
-                                  show_labels=True, show_title=True, dpi=150):
+                                  show_labels=True, show_title=True, dpi=150,
+                                  tex_engine='pdflatex'):
         """Re-render the current frame from raw SWW data and save to *path*.
 
         Unlike "Save Frame" (which screenshots the imshow canvas), this
@@ -1660,8 +1682,11 @@ class SWWAnimationGUI:
             Include a title showing quantity name and simulation time.
         dpi : int
             Raster resolution (only relevant for PNG output).
+        tex_engine : str
+            LaTeX engine for PGF output: 'pdflatex', 'xelatex', or 'lualatex'.
         """
         import numpy as np
+        import matplotlib
         from matplotlib.figure import Figure
         from matplotlib.backends.backend_agg import FigureCanvasAgg
 
@@ -1706,6 +1731,7 @@ class SWWAnimationGUI:
         is_pgf = path.lower().endswith('.pgf')
         fig = Figure(figsize=(10, 6))
         if is_pgf:
+            matplotlib.rcParams['pgf.texsystem'] = tex_engine
             try:
                 from matplotlib.backends.backend_pgf import FigureCanvasPgf
                 FigureCanvasPgf(fig)
@@ -1766,13 +1792,15 @@ class SWWAnimationGUI:
         try:
             fig.savefig(path, dpi=dpi, bbox_inches='tight')
         except FileNotFoundError as exc:
-            if 'latex' in str(exc).lower() or 'xelatex' in str(exc).lower() \
-                    or 'pdflatex' in str(exc).lower():
+            if any(e in str(exc).lower()
+                   for e in ('latex', 'xelatex', 'pdflatex', 'lualatex')):
                 raise RuntimeError(
-                    'PGF export requires a LaTeX installation '
-                    '(xelatex or pdflatex) to be available on your PATH.\n'
-                    'Install TeX Live (Linux/macOS) or MiKTeX (Windows) '
-                    'and ensure the binaries are on PATH, then try again.'
+                    f'PGF export failed: {tex_engine!r} was not found.\n\n'
+                    'Make sure a LaTeX distribution is installed '
+                    '(TeX Live on Linux/macOS, MiKTeX on Windows) '
+                    'and the binaries are on your PATH.\n\n'
+                    'Then choose the matching engine in the "TeX engine" '
+                    'selector and try again.'
                 ) from exc
             raise
 
