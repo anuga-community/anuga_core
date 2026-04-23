@@ -158,6 +158,9 @@ class SWWAnimationGUI:
         self._zoom_selector = None
         self._zoom_mode = False
 
+        # mesh overlay state
+        self._mesh_overlay_lines = []
+
         # timeseries state
         self._ts_triangle = None
         self._ts_vline = None
@@ -355,6 +358,17 @@ class SWWAnimationGUI:
                                      command=self._show_mesh,
                                      state=tk.DISABLED)
         self._mesh_btn.pack(side=tk.RIGHT, padx=4)
+        self._save_mesh_btn = ttk.Button(row6, text='Save Mesh…',
+                                          command=self._save_mesh,
+                                          state=tk.DISABLED)
+        self._save_mesh_btn.pack(side=tk.RIGHT, padx=4)
+        ttk.Separator(row6, orient=tk.VERTICAL).pack(side=tk.RIGHT, fill=tk.Y, padx=6)
+        self._show_mesh_var = tk.BooleanVar(value=False)
+        self._show_mesh_chk = ttk.Checkbutton(row6, text='Show Mesh',
+                                               variable=self._show_mesh_var,
+                                               command=self._on_show_mesh_toggle,
+                                               state=tk.DISABLED)
+        self._show_mesh_chk.pack(side=tk.RIGHT, padx=4)
         self._save_frame_btn = ttk.Button(row6, text='Save Frame',
                                            command=self._save_frame,
                                            state=tk.DISABLED)
@@ -897,6 +911,7 @@ class SWWAnimationGUI:
                 H=int(fig.get_figheight() * fig.get_dpi()),
                 use_basemap=use_basemap,
             )
+            self._update_mesh_overlay()
         except Exception:
             self._plot_transform = None
 
@@ -921,6 +936,8 @@ class SWWAnimationGUI:
         self._export_frame_btn.config(state=tk.NORMAL)
         self._save_anim_btn.config(state=tk.NORMAL)
         self._zoom_btn.config(state=tk.NORMAL)
+        self._save_mesh_btn.config(state=tk.NORMAL)
+        self._show_mesh_chk.config(state=tk.NORMAL)
         self._set_status(f'Loaded {n} frames  |  {plot_dir}')
 
     def _show_frame(self, idx):
@@ -1405,6 +1422,118 @@ class SWWAnimationGUI:
         self._reset_zoom_btn.config(state=tk.DISABLED)
         self._set_status('Zoom reset — full extent will be used for generation.')
 
+    # -------------------------------------------------------------- #
+    # Mesh overlay                                                   #
+    # -------------------------------------------------------------- #
+
+    def _on_show_mesh_toggle(self):
+        self._update_mesh_overlay()
+        self._canvas.draw_idle()
+
+    def _remove_mesh_overlay(self):
+        for artist in self._mesh_overlay_lines:
+            try:
+                artist.remove()
+            except Exception:
+                pass
+        self._mesh_overlay_lines = []
+
+    def _update_mesh_overlay(self):
+        """Build (or remove) a triplot overlay on the animation canvas.
+
+        The overlay is drawn in image-pixel coordinates so it stays aligned
+        with the imshow across all frames without per-frame rebuilding.
+        """
+        self._remove_mesh_overlay()
+        if not self._show_mesh_var.get():
+            return
+        if self._plot_transform is None or self._splotter is None:
+            return
+
+        import numpy as np
+        from matplotlib.tri import Triangulation
+
+        sp  = self._splotter
+        pt  = self._plot_transform
+        use_basemap = self._gen_used_basemap and sp.epsg is not None
+        src = sp.triang_abs if use_basemap else sp.triang
+
+        xlim, ylim = pt['xlim'], pt['ylim']
+        pos = pt['pos']
+        W, H = pt['W'], pt['H']
+
+        # Vectorised transform: mesh coords → image pixel coords
+        xv = src.x
+        yv = src.y
+        px = (pos.x0 + pos.width  * (xv - xlim[0]) / (xlim[1] - xlim[0])) * W
+        py = (1.0 - (pos.y0 + pos.height * (yv - ylim[0]) / (ylim[1] - ylim[0]))) * H
+
+        triang_px = Triangulation(px, py, src.triangles)
+        self._mesh_overlay_lines = self._ax.triplot(
+            triang_px, color='black', linewidth=0.25, alpha=0.45,
+            scalex=False, scaley=False)
+
+    # -------------------------------------------------------------- #
+    # Save mesh                                                      #
+    # -------------------------------------------------------------- #
+
+    def _save_mesh(self):
+        """Render the triangulation to a file (PNG / PDF / SVG)."""
+        if self._splotter is None:
+            return
+        default = f'{self._sww_prefix}_mesh'
+        path = filedialog.asksaveasfilename(
+            title='Save mesh',
+            initialfile=default,
+            defaultextension='.pdf',
+            filetypes=[('PDF document', '*.pdf'),
+                       ('PNG image',    '*.png'),
+                       ('SVG image',    '*.svg'),
+                       ('All files',    '*.*')])
+        if not path:
+            return
+        try:
+            self._render_and_save_mesh(path)
+            self._set_status(f'Mesh saved → {path}')
+        except Exception as exc:
+            from tkinter import messagebox
+            messagebox.showerror('Save mesh error', str(exc))
+
+    def _render_and_save_mesh(self, path, dpi=150):
+        """Render the triangulation with triplot and save to *path*."""
+        from matplotlib.figure import Figure
+        from matplotlib.backends.backend_agg import FigureCanvasAgg
+
+        sp = self._splotter
+        use_basemap = self._gen_used_basemap and sp.epsg is not None
+        triang = sp.triang_abs if use_basemap else sp.triang
+
+        fig = Figure(figsize=(8, 6))
+        FigureCanvasAgg(fig)
+        ax = fig.add_subplot(111)
+        ax.triplot(triang, color='steelblue', linewidth=0.4, alpha=0.7)
+        ax.set_aspect('equal')
+
+        if use_basemap:
+            ax.set_xlabel('Easting (m)')
+            ax.set_ylabel('Northing (m)')
+            from anuga.utilities.animate import _add_basemap, BASEMAP_PROVIDERS
+            provider_label = self._basemap_provider_var.get()
+            provider_str = BASEMAP_PROVIDERS.get(
+                provider_label, 'OpenStreetMap.Mapnik')
+            try:
+                _add_basemap(ax, sp.epsg, provider_str, cache=sp._basemap_cache)
+            except Exception:
+                pass
+        else:
+            ax.set_xlabel('x (m)')
+            ax.set_ylabel('y (m)')
+
+        ax.set_title(f'{self._sww_prefix}  —  mesh  '
+                     f'({len(sp.triangles)} triangles)')
+        fig.tight_layout()
+        fig.savefig(path, dpi=dpi, bbox_inches='tight')
+
     def _imshow_to_mesh(self, px, py):
         """Convert imshow pixel coordinates to mesh/absolute coordinates."""
         pt = self._plot_transform
@@ -1859,8 +1988,33 @@ class SWWAnimationGUI:
             plt.close(mesh_fig)
             win.destroy()
 
+        btn_row = ttk.Frame(win)
+        btn_row.pack(pady=4)
+
+        def _save_from_viewer():
+            default = f'{self._sww_prefix}_mesh'
+            path = filedialog.asksaveasfilename(
+                parent=win,
+                title='Save mesh',
+                initialfile=default,
+                defaultextension='.pdf',
+                filetypes=[('PDF document', '*.pdf'),
+                           ('PNG image',    '*.png'),
+                           ('SVG image',    '*.svg'),
+                           ('All files',    '*.*')])
+            if path:
+                try:
+                    self._render_and_save_mesh(path)
+                    self._set_status(f'Mesh saved → {path}')
+                except Exception as exc:
+                    from tkinter import messagebox
+                    messagebox.showerror('Save mesh error', str(exc))
+
+        ttk.Button(btn_row, text='Save Mesh…',
+                   command=_save_from_viewer).pack(side=tk.LEFT, padx=6)
+        ttk.Button(btn_row, text='Close',
+                   command=_close_mesh).pack(side=tk.LEFT, padx=6)
         win.protocol('WM_DELETE_WINDOW', _close_mesh)
-        ttk.Button(win, text='Close', command=_close_mesh).pack(pady=4)
 
     def _show_help(self):
         """Open a scrollable help window."""
