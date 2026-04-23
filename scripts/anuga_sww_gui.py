@@ -1630,10 +1630,13 @@ class SWWAnimationGUI:
             self._build_elev_contour_data()
 
         triang_px, elev_nodes, levels = self._elev_contour_data
+        xlim, ylim = self._ax.get_xlim(), self._ax.get_ylim()
         cs = self._ax.tricontour(triang_px, elev_nodes, levels=levels,
                                  colors='dimgray', linewidths=0.6, alpha=0.7)
         labels = self._ax.clabel(cs, fmt='%g m', fontsize=6,
                                  inline=True, inline_spacing=2)
+        self._ax.set_xlim(xlim)
+        self._ax.set_ylim(ylim)
         self._elev_overlay_artists = [cs] + labels
 
     # -------------------------------------------------------------- #
