@@ -80,9 +80,9 @@ Quick-start workflow
    the path directly and press Enter.  The info bar shows the number of
    triangles and timesteps.
 
-2. **Configure generation settings** — choose a *Quantity*, set
-   *vmin* / *vmax* (or tick *Auto from data*), adjust *DPI* and other
-   options as needed.
+2. **Configure generation settings** — choose a *Quantity*; *Auto from
+   data* is ticked by default so vmin/vmax are set automatically.
+   Adjust *DPI* and other options as needed.
 
 3. **Click Generate Frames** — PNG files are written to the *Output dir*
    (default ``_plot``).  A progress bar tracks completion.  Click
@@ -111,18 +111,16 @@ Generation settings
        contains constant elevation, or one frame per timestep when
        elevation is time-varying (e.g. from an erosion simulation).
        Default colormap is ``terrain``.
-   * - **vmin / vmax**
-     - Colormap range.  Tick *Auto from data* to set automatically
-       from the full data range.
+   * - **vmin / vmax / Auto**
+     - Colormap range.  *Auto from data* is ticked by default and sets
+       the range automatically from the full data in each generation run.
+       Untick to enter fixed values manually.
    * - **DPI**
      - Resolution of generated PNG frames.  Higher values give sharper
        images but take longer to generate and more disk space.
    * - **min depth**
      - Triangles with depth below this threshold are treated as dry and
        rendered in grey using elevation shading.
-   * - **Every N frames**
-     - Stride: generate one PNG every *N* SWW timesteps.  Use a larger
-       value for a quick preview of a long simulation.
    * - **Colormap / Reverse**
      - Any matplotlib colormap name.  Tick *Reverse* to invert it.
    * - **EPSG**
@@ -136,7 +134,19 @@ Generation settings
        etc.) behind the mesh.  Requires an EPSG code (from the file or
        entered manually) and an active internet connection.  *Alpha*
        controls the transparency of the mesh colour overlay.
+       When the SWW file contains an EPSG code and ``contextily`` is
+       installed, the basemap is enabled automatically on file load.
        Requires ``contextily``.
+   * - **Flat View**
+     - When unchecked (the default) the mesh is rendered with smooth
+       Gouraud shading — colour is interpolated across each triangle so
+       no triangle edges are visible.  Tick *Flat View* to revert to
+       piecewise-constant (flat) rendering where each triangle has a
+       single uniform colour.
+   * - **Every N frames**
+     - Stride: generate one PNG every *N* SWW timesteps.  Located on the
+       *Generate Frames* row.  Use a larger value for a quick preview of
+       a long simulation.
 
 
 Playback controls
@@ -155,14 +165,11 @@ Playback controls
        last frame.
    * - **FPS**
      - Playback speed in frames per second.
+   * - **Show Mesh**
+     - Toggle a triangulation overlay on the current animation frame.
+       Available after frames have been generated.
    * - **Frame slider**
      - Drag to scrub through frames.
-   * - **View Mesh**
-     - Opens a standalone window showing the full triangulation.  If a
-       basemap was used for the last generation, the mesh is drawn in
-       absolute coordinates with the same tile provider overlaid.
-       Available as soon as an SWW file is loaded — no frames need to
-       be generated first.
 
 
 Zooming in on a region
@@ -242,7 +249,7 @@ The timeseries panel
 Viewing the mesh
 ----------------
 
-Click **View Mesh** (playback row, right side) at any time after loading an
+Click **View Mesh** (output row, right side) at any time after loading an
 SWW file to open a standalone window showing the triangulation:
 
 * The mesh is drawn using ``ax.triplot`` with equal aspect ratio.
@@ -269,16 +276,22 @@ Saving frames and animations
 Save Frame
 ~~~~~~~~~~
 
-The **Save Frame** button (playback row, right side) saves the currently
+The **Save Frame** button (output row, left side) saves the currently
 displayed frame — including any pick-marker overlay — to a file.
 Supported formats: **PNG**, **PDF**, **SVG**.  PNG is the default.
+
+Export frame
+~~~~~~~~~~~~
+
+The **Export frame…** button opens a save-file dialog that lets you
+choose the output path and format explicitly.
 
 Save Animation
 ~~~~~~~~~~~~~~
 
-The **Save Animation…** button (next to *Generate Frames*) assembles all
-loaded frames into a single animation file.  The playback **FPS** setting
-is used as the frame rate.
+The **Save Animation…** button (output row, after *Export frame…*)
+assembles all loaded frames into a single animation file.  The playback
+**FPS** setting is used as the frame rate.
 
 Two output formats are supported:
 

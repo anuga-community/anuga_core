@@ -67,7 +67,7 @@ def _add_basemap(ax, epsg, provider=BASEMAP_DEFAULT, cache=None):
         import contextily as cx
     except ImportError:
         warnings.warn(
-            "contextily is not installed — basemap will be skipped. "
+            "contextily is not installed - basemap will be skipped. "
             "Install it with: conda install contextily  or  pip install contextily",
             stacklevel=3)
         return
@@ -584,6 +584,39 @@ class Domain_plotter:
                 print("Figure files for each frame will be stored in " + plot_dir)
 
 
+def _face_to_vertex(triang, face_values, face_mask=None):
+    """Average per-triangle (centroid) scalar values onto mesh vertices.
+
+    Used to convert flat-shaded centroid data to per-vertex values for
+    Gouraud (smooth) shading in tripcolor.
+
+    Parameters
+    ----------
+    triang : matplotlib.tri.Triangulation
+    face_values : array-like, shape (n_tris,)
+    face_mask : boolean array, shape (n_tris,), optional
+        If given, only triangles where face_mask is *False* contribute to
+        the vertex averages.  (Convention matches Triangulation.set_mask:
+        True = masked = excluded.)
+    """
+    import numpy as np
+    n_v = len(triang.x)
+    tris = triang.triangles          # shape (n_tris, 3)
+    fv   = np.asarray(face_values, dtype=float)
+    if face_mask is not None:
+        active = ~np.asarray(face_mask, dtype=bool)
+        tris = tris[active]
+        fv   = fv[active]
+    if tris.shape[0] == 0:
+        return np.zeros(n_v)
+    tris_flat = tris.ravel()
+    vals_flat = np.repeat(fv, 3)
+    v_sum = np.bincount(tris_flat, weights=vals_flat, minlength=n_v)
+    v_cnt = np.bincount(tris_flat, minlength=n_v).astype(float)
+    v_cnt[v_cnt == 0] = 1            # guard isolated vertices
+    return v_sum / v_cnt
+
+
 class SWW_plotter:
     """
     A class to wrap ANUGA swwfile centroid values for stage, height, elevation
@@ -753,8 +786,14 @@ class SWW_plotter:
 
     def _animated_frame(self, frame, qty_name, qty_data, qty_label,
                         figsize, dpi, vmin, vmax, cmap, basemap, alpha,
-                        basemap_provider, xlim=None, ylim=None):
-        """Shared core for depth/stage/speed/speed_depth frame rendering."""
+                        basemap_provider, xlim=None, ylim=None,
+                        smooth=False):
+        """Shared core for depth/stage/speed/speed_depth frame rendering.
+
+        smooth=True uses Gouraud shading (per-vertex interpolation) which
+        eliminates visible triangle-edge artefacts at the cost of slightly
+        blurring sharp gradients.
+        """
         import matplotlib.pyplot as plt
 
         time = self.time[frame]
@@ -783,13 +822,72 @@ class SWW_plotter:
 
         triang = self.triang_abs if (basemap and self.epsg) else self.triang
 
-        if not (basemap and self.epsg):
-            triang.set_mask(depth > md)
-            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
+        # Pin axes to full mesh extent before any plotting so that flat
+        # (PolyCollection) and smooth (TriMesh / imshow) modes produce
+        # identical axis limits.  TriMesh reports limits from ALL vertex
+        # coordinates while PolyCollection only uses unmasked triangle
+        # vertices, causing a small but visible jump when toggling show_edges.
+        ax.set_xlim(triang.x.min(), triang.x.max())
+        ax.set_ylim(triang.y.min(), triang.y.max())
 
-        triang.set_mask(depth < md)
-        im = ax.tripcolor(triang, facecolors=qty_data,
-                          cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
+        if smooth:
+            import matplotlib.tri as _mtri
+            import numpy as _np
+            wet_mask = depth < md   # True = dry  → quantity hides dry cells
+
+            if basemap and self.epsg:
+                # With a basemap, Gouraud gradient creases are visible against
+                # the high-contrast imagery even with linewidths=0.  Instead,
+                # interpolate the wet data to a regular grid and display with
+                # imshow — masked (dry) pixels are transparent so the basemap
+                # shows through, while the wet region is perfectly smooth.
+                from matplotlib.tri import LinearTriInterpolator as _LTI
+                triang_wet = _mtri.Triangulation(
+                    triang.x, triang.y, triang.triangles, mask=wet_mask)
+                v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
+                x0, x1 = float(triang.x.min()), float(triang.x.max())
+                y0, y1 = float(triang.y.min()), float(triang.y.max())
+                _span = max(x1 - x0, y1 - y0)
+                nx = max(100, int(400 * (x1 - x0) / _span))
+                ny = max(100, int(400 * (y1 - y0) / _span))
+                xi = _np.linspace(x0, x1, nx)
+                yi = _np.linspace(y0, y1, ny)
+                Xi, Yi = _np.meshgrid(xi, yi)
+                zi = _LTI(triang_wet, v_qty)(Xi, Yi)  # masked where dry/outside
+                im = ax.imshow(zi, extent=[x0, x1, y0, y1], origin='lower',
+                               cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha,
+                               interpolation='bilinear', zorder=1)
+            else:
+                # No basemap: Gouraud shading on separate Triangulations.
+                # Gouraud needs separate Triangulation objects per collection
+                # because TriMesh reads the mask dynamically at draw time.
+                dry_mask = depth > md
+                triang_dry = _mtri.Triangulation(
+                    triang.x, triang.y, triang.triangles, mask=dry_mask)
+                v_elev = _face_to_vertex(triang, elev, face_mask=dry_mask)
+                # Normalise colormap to dry-cell elevation range; wet-only
+                # vertices get v_elev=0 from _face_to_vertex which would
+                # otherwise skew the auto-scale and make terrain appear white.
+                dry_elev = _np.asarray(elev)[~_np.asarray(dry_mask, dtype=bool)]
+                e_vmin = float(dry_elev.min()) if dry_elev.size else 0.0
+                e_vmax = float(dry_elev.max()) if dry_elev.size else 1.0
+                if e_vmin >= e_vmax:
+                    e_vmax = e_vmin + 1.0
+                ax.tripcolor(triang_dry, v_elev, shading='gouraud', cmap='Greys_r',
+                             vmin=e_vmin, vmax=e_vmax).set_linewidths(0)
+                triang_wet = _mtri.Triangulation(
+                    triang.x, triang.y, triang.triangles, mask=wet_mask)
+                v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
+                im = ax.tripcolor(triang_wet, v_qty, shading='gouraud',
+                                  cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
+                im.set_linewidths(0)
+        else:
+            if not (basemap and self.epsg):
+                triang.set_mask(depth > md)
+                ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
+            triang.set_mask(depth < md)
+            im = ax.tripcolor(triang, facecolors=qty_data,
+                              cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
         triang.set_mask(None)
 
         # Apply zoom limits before colorbar/basemap so tiles are fetched
@@ -819,16 +917,17 @@ class SWW_plotter:
     #------------------------------------------
     def _depth_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
                      basemap=False, alpha=1.0,
-                     basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None):
+                     basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None,
+                     smooth=False):
         return self._animated_frame(
             frame, 'depth', self.depth[frame, :], 'Depth',
             figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
-            xlim=xlim, ylim=ylim)
+            xlim=xlim, ylim=ylim, smooth=smooth)
 
     def save_depth_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
                          alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                         xlim=None, ylim=None):
+                         xlim=None, ylim=None, smooth=False):
 
         name = self.name
         plot_dir = self.plot_dir
@@ -836,7 +935,7 @@ class SWW_plotter:
 
         fig, ax = self._depth_frame(frame, figsize, dpi, vmin, vmax, cmap,
                                     basemap, alpha, basemap_provider,
-                                    xlim=xlim, ylim=ylim)
+                                    xlim=xlim, ylim=ylim, smooth=smooth)
 
         if plot_dir is None:
             fig.savefig(name+'_depth_{0:0>10}.png'.format(frame_num))
@@ -862,16 +961,17 @@ class SWW_plotter:
     #------------------------------------------
     def _stage_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
                      basemap=False, alpha=1.0,
-                     basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None):
+                     basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None,
+                     smooth=False):
         return self._animated_frame(
             frame, 'stage', self.stage[frame, :], 'Stage',
             figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
-            xlim=xlim, ylim=ylim)
+            xlim=xlim, ylim=ylim, smooth=smooth)
 
     def save_stage_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=-20.0, vmax=20.0, cmap='viridis', basemap=False,
                          alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                         xlim=None, ylim=None):
+                         xlim=None, ylim=None, smooth=False):
 
         name = self.name
         plot_dir = self.plot_dir
@@ -879,7 +979,7 @@ class SWW_plotter:
 
         fig, ax = self._stage_frame(frame, figsize, dpi, vmin, vmax, cmap,
                                     basemap, alpha, basemap_provider,
-                                    xlim=xlim, ylim=ylim)
+                                    xlim=xlim, ylim=ylim, smooth=smooth)
 
         if plot_dir is None:
             fig.savefig(name+'_stage_{0:0>10}.png'.format(frame_num))
@@ -905,17 +1005,17 @@ class SWW_plotter:
     def _speed_depth_frame(self, frame, figsize, dpi, vmin, vmax,
                            cmap='viridis', basemap=False, alpha=1.0,
                            basemap_provider=BASEMAP_DEFAULT,
-                           xlim=None, ylim=None):
+                           xlim=None, ylim=None, smooth=False):
         return self._animated_frame(
-            frame, 'speed_depth', self.speed_depth[frame, :], 'Speed×Depth',
+            frame, 'speed_depth', self.speed_depth[frame, :], 'Speed x Depth',
             figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
-            xlim=xlim, ylim=ylim)
+            xlim=xlim, ylim=ylim, smooth=smooth)
 
     def save_speed_depth_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                                vmin=0.0, vmax=20.0, cmap='viridis',
                                basemap=False, alpha=1.0,
                                basemap_provider=BASEMAP_DEFAULT,
-                               xlim=None, ylim=None):
+                               xlim=None, ylim=None, smooth=False):
 
         name = self.name
         plot_dir = self.plot_dir
@@ -923,7 +1023,8 @@ class SWW_plotter:
 
         fig, ax = self._speed_depth_frame(frame, figsize, dpi, vmin, vmax,
                                           cmap, basemap, alpha, basemap_provider,
-                                          xlim=xlim, ylim=ylim)
+                                          xlim=xlim, ylim=ylim,
+                                          smooth=smooth)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_depth_{0:0>10}.png'.format(frame_num))
@@ -948,16 +1049,17 @@ class SWW_plotter:
     #------------------------------------------
     def _speed_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
                      basemap=False, alpha=1.0,
-                     basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None):
+                     basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None,
+                     smooth=False):
         return self._animated_frame(
             frame, 'speed', self.speed[frame, :], 'Speed',
             figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
-            xlim=xlim, ylim=ylim)
+            xlim=xlim, ylim=ylim, smooth=smooth)
 
     def save_speed_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=0.0, vmax=10.0, cmap='viridis', basemap=False,
                          alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                         xlim=None, ylim=None):
+                         xlim=None, ylim=None, smooth=False):
 
         name = self.name
         plot_dir = self.plot_dir
@@ -965,7 +1067,7 @@ class SWW_plotter:
 
         fig, ax = self._speed_frame(frame, figsize, dpi, vmin, vmax, cmap,
                                     basemap, alpha, basemap_provider,
-                                    xlim=xlim, ylim=ylim)
+                                    xlim=xlim, ylim=ylim, smooth=smooth)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_{0:0>10}.png'.format(frame_num))
@@ -991,7 +1093,8 @@ class SWW_plotter:
 
     def _elev_frame(self, frame, figsize, dpi, vmin, vmax, cmap='terrain',
                     basemap=False, alpha=1.0,
-                    basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None):
+                    basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None,
+                    smooth=False):
         """Render one elevation frame.
 
         Works for both static (1-D) and time-varying (2-D) elevation arrays.
@@ -1024,8 +1127,16 @@ class SWW_plotter:
 
         triang = self.triang_abs if (basemap and self.epsg) else self.triang
         triang.set_mask(None)
-        im = ax.tripcolor(triang, facecolors=elev_data,
-                          cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
+        if smooth:
+            import matplotlib.tri as _mtri
+            triang_all = _mtri.Triangulation(triang.x, triang.y, triang.triangles)
+            v_elev = _face_to_vertex(triang, elev_data)
+            im = ax.tripcolor(triang_all, v_elev, shading='gouraud',
+                              cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
+            im.set_linewidths(0)
+        else:
+            im = ax.tripcolor(triang, facecolors=elev_data,
+                              cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
 
         if xlim is not None:
             ax.set_xlim(xlim)
@@ -1042,7 +1153,7 @@ class SWW_plotter:
     def save_elev_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                         vmin=-20.0, vmax=100.0, cmap='terrain', basemap=False,
                         alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                        xlim=None, ylim=None):
+                        xlim=None, ylim=None, smooth=False):
         """Save one elevation frame to disk.
 
         For static elevation (1-D) the *frame* argument is ignored.
@@ -1055,7 +1166,7 @@ class SWW_plotter:
         render_frame = 0 if self.elev.ndim == 1 else frame
         fig, ax = self._elev_frame(render_frame, figsize, dpi, vmin, vmax, cmap,
                                    basemap, alpha, basemap_provider,
-                                   xlim=xlim, ylim=ylim)
+                                   xlim=xlim, ylim=ylim, smooth=smooth)
 
         fname = name + '_elev_{0:0>10}.png'.format(frame_num)
         if plot_dir is None:
@@ -1077,10 +1188,64 @@ class SWW_plotter:
     # Maximum-over-time procedures
     #------------------------------------------
 
+    def _render_max_qty(self, ax, triang, max_depth, qty_data, elev, md,
+                        basemap, cmap, alpha, vmin, vmax, smooth):
+        """Shared renderer for save_max_*_frame; returns the ScalarMappable."""
+        import numpy as np
+        ax.set_xlim(triang.x.min(), triang.x.max())
+        ax.set_ylim(triang.y.min(), triang.y.max())
+        if smooth:
+            import matplotlib.tri as _mtri
+            wet_mask = max_depth <= md   # True = never-wet → exclude from quantity
+            if basemap and self.epsg:
+                from matplotlib.tri import LinearTriInterpolator as _LTI
+                triang_wet = _mtri.Triangulation(
+                    triang.x, triang.y, triang.triangles, mask=wet_mask)
+                v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
+                x0, x1 = float(triang.x.min()), float(triang.x.max())
+                y0, y1 = float(triang.y.min()), float(triang.y.max())
+                _span = max(x1 - x0, y1 - y0)
+                nx = max(100, int(400 * (x1 - x0) / _span))
+                ny = max(100, int(400 * (y1 - y0) / _span))
+                xi = np.linspace(x0, x1, nx)
+                yi = np.linspace(y0, y1, ny)
+                Xi, Yi = np.meshgrid(xi, yi)
+                zi = _LTI(triang_wet, v_qty)(Xi, Yi)
+                im = ax.imshow(zi, extent=[x0, x1, y0, y1], origin='lower',
+                               cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha,
+                               interpolation='bilinear', zorder=1)
+            else:
+                dry_mask = max_depth > md
+                triang_dry = _mtri.Triangulation(
+                    triang.x, triang.y, triang.triangles, mask=dry_mask)
+                v_elev = _face_to_vertex(triang, elev, face_mask=dry_mask)
+                dry_elev = np.asarray(elev)[~np.asarray(dry_mask, dtype=bool)]
+                e_vmin = float(dry_elev.min()) if dry_elev.size else 0.0
+                e_vmax = float(dry_elev.max()) if dry_elev.size else 1.0
+                if e_vmin >= e_vmax:
+                    e_vmax = e_vmin + 1.0
+                ax.tripcolor(triang_dry, v_elev, shading='gouraud', cmap='Greys_r',
+                             vmin=e_vmin, vmax=e_vmax).set_linewidths(0)
+                triang_wet = _mtri.Triangulation(
+                    triang.x, triang.y, triang.triangles, mask=wet_mask)
+                v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
+                im = ax.tripcolor(triang_wet, v_qty, shading='gouraud',
+                                  cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
+                im.set_linewidths(0)
+        else:
+            if not (basemap and self.epsg):
+                triang.set_mask(max_depth > md)
+                ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
+            triang.set_mask(max_depth <= md)
+            im = ax.tripcolor(triang, facecolors=qty_data, cmap=cmap,
+                              alpha=alpha, vmin=vmin, vmax=vmax)
+            triang.set_mask(None)
+        return im
+
     def save_max_depth_frame(self, frame=None, figsize=(10, 6), dpi=160,
                              vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
                              alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                             xlim=None, ylim=None):
+                             xlim=None, ylim=None, smooth=False):
         """Save a single frame showing the maximum depth at each triangle."""
         import matplotlib.pyplot as plt
         import numpy as np
@@ -1095,12 +1260,8 @@ class SWW_plotter:
         triang = self.triang_abs if (basemap and self.epsg) else self.triang
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
         plt.title('Max Depth')
-        if not (basemap and self.epsg):
-            triang.set_mask(max_depth > md)
-            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
-        triang.set_mask(max_depth <= md)
-        im = ax.tripcolor(triang, facecolors=max_depth, cmap=cmap,
-                          alpha=alpha, vmin=vmin, vmax=vmax)
+        im = self._render_max_qty(ax, triang, max_depth, max_depth, elev, md,
+                                   basemap, cmap, alpha, vmin, vmax, smooth)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
@@ -1122,7 +1283,7 @@ class SWW_plotter:
     def save_max_speed_frame(self, frame=None, figsize=(10, 6), dpi=160,
                              vmin=0.0, vmax=10.0, cmap='viridis', basemap=False,
                              alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                             xlim=None, ylim=None):
+                             xlim=None, ylim=None, smooth=False):
         """Save a single frame showing the maximum speed at each triangle."""
         import matplotlib.pyplot as plt
         import numpy as np
@@ -1138,12 +1299,8 @@ class SWW_plotter:
         triang = self.triang_abs if (basemap and self.epsg) else self.triang
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
         plt.title('Max Speed')
-        if not (basemap and self.epsg):
-            triang.set_mask(max_depth > md)
-            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
-        triang.set_mask(max_depth <= md)
-        im = ax.tripcolor(triang, facecolors=max_speed, cmap=cmap,
-                          alpha=alpha, vmin=vmin, vmax=vmax)
+        im = self._render_max_qty(ax, triang, max_depth, max_speed, elev, md,
+                                   basemap, cmap, alpha, vmin, vmax, smooth)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
@@ -1165,7 +1322,7 @@ class SWW_plotter:
     def save_max_speed_depth_frame(self, frame=None, figsize=(10, 6), dpi=160,
                                    vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
                                    alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                                   xlim=None, ylim=None):
+                                   xlim=None, ylim=None, smooth=False):
         """Save a single frame showing the maximum speed×depth at each triangle."""
         import matplotlib.pyplot as plt
         import numpy as np
@@ -1180,13 +1337,9 @@ class SWW_plotter:
 
         triang = self.triang_abs if (basemap and self.epsg) else self.triang
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
-        plt.title('Max Speed×Depth')
-        if not (basemap and self.epsg):
-            triang.set_mask(max_depth > md)
-            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
-        triang.set_mask(max_depth <= md)
-        im = ax.tripcolor(triang, facecolors=max_speed_depth, cmap=cmap,
-                          alpha=alpha, vmin=vmin, vmax=vmax)
+        plt.title('Max Speed x Depth')
+        im = self._render_max_qty(ax, triang, max_depth, max_speed_depth, elev, md,
+                                   basemap, cmap, alpha, vmin, vmax, smooth)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
