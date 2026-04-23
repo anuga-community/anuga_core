@@ -161,6 +161,10 @@ class SWWAnimationGUI:
         # mesh overlay state
         self._mesh_overlay_lines = []
 
+        # elevation contour overlay state
+        self._elev_overlay_artists = []
+        self._elev_contour_data = None    # cached (triang_px, elev_nodes, levels)
+
         # timeseries state
         self._ts_triangle = None
         self._ts_vline = None
@@ -368,6 +372,22 @@ class SWWAnimationGUI:
                                                command=self._on_show_mesh_toggle,
                                                state=tk.DISABLED)
         self._show_mesh_chk.pack(side=tk.LEFT, padx=2)
+
+        ttk.Separator(row6, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
+        self._show_elev_var = tk.BooleanVar(value=False)
+        self._show_elev_chk = ttk.Checkbutton(row6, text='Show Elev',
+                                               variable=self._show_elev_var,
+                                               command=self._on_show_elev_toggle,
+                                               state=tk.DISABLED)
+        self._show_elev_chk.pack(side=tk.LEFT, padx=(2, 0))
+        self._elev_levels_var = tk.StringVar(value='10')
+        self._elev_levels_spin = ttk.Spinbox(row6, from_=3, to=50, increment=1,
+                                              textvariable=self._elev_levels_var,
+                                              width=3, state=tk.DISABLED,
+                                              command=self._on_elev_levels_changed)
+        self._elev_levels_spin.pack(side=tk.LEFT, padx=(2, 2))
+        self._elev_levels_spin.bind('<Return>',    lambda _e: self._on_elev_levels_changed())
+        self._elev_levels_spin.bind('<FocusOut>',  lambda _e: self._on_elev_levels_changed())
 
         # ---- Row 6b: frame/mesh output controls ----
         row6b = ttk.Frame(ctrl)
@@ -944,7 +964,9 @@ class SWWAnimationGUI:
                 H=int(fig.get_figheight() * fig.get_dpi()),
                 use_basemap=use_basemap,
             )
+            self._elev_contour_data = None    # transform changed — invalidate cache
             self._update_mesh_overlay()
+            self._update_elev_overlay()
         except Exception:
             self._plot_transform = None
 
@@ -971,6 +993,9 @@ class SWWAnimationGUI:
         self._zoom_btn.config(state=tk.NORMAL)
         self._save_mesh_btn.config(state=tk.NORMAL)
         self._show_mesh_chk.config(state=tk.NORMAL)
+        self._show_elev_chk.config(state=tk.NORMAL)
+        self._elev_levels_spin.config(state=tk.NORMAL)
+        self._elev_contour_data = None    # invalidate on new generation
         self._set_status(f'Loaded {n} frames  |  {plot_dir}')
 
     def _show_frame(self, idx):
@@ -1507,6 +1532,111 @@ class SWWAnimationGUI:
             scalex=False, scaley=False)
 
     # -------------------------------------------------------------- #
+    # Elevation contour overlay                                       #
+    # -------------------------------------------------------------- #
+
+    def _on_show_elev_toggle(self):
+        self._update_elev_overlay()
+        self._canvas.draw_idle()
+
+    def _on_elev_levels_changed(self):
+        self._elev_contour_data = None    # force recompute at new level count
+        if self._show_elev_var.get():
+            self._update_elev_overlay()
+            self._canvas.draw_idle()
+
+    def _remove_elev_overlay(self):
+        for obj in self._elev_overlay_artists:
+            try:
+                obj.remove()
+            except Exception:
+                # TriContourSet in older matplotlib needs per-collection removal
+                try:
+                    for coll in obj.collections:
+                        coll.remove()
+                except Exception:
+                    pass
+        self._elev_overlay_artists = []
+
+    @staticmethod
+    def _nice_contour_levels(vmin, vmax, n):
+        """Return contour levels as multiples of a round step spanning vmin..vmax."""
+        import numpy as _np
+        span = vmax - vmin
+        if span <= 0:
+            return n
+        raw_step = span / max(n, 1)
+        magnitude = 10.0 ** _np.floor(_np.log10(raw_step))
+        for factor in (1, 2, 5, 10, 20, 50, 100):
+            step = magnitude * factor
+            if span / step <= n * 1.5:
+                break
+        first = _np.ceil(vmin / step) * step
+        levels = _np.arange(first, vmax + step * 0.01, step)
+        return levels if len(levels) >= 2 else n
+
+    def _build_elev_contour_data(self):
+        """Build pixel-space triangulation + per-vertex elevation + nice levels.
+
+        Cached until the plot transform or level count changes.
+        Uses t=0 elevation for time-varying SWW files.
+        """
+        import numpy as _np
+        from matplotlib.tri import Triangulation as _Tri
+        from anuga.utilities.animate import _face_to_vertex
+
+        sp  = self._splotter
+        pt  = self._plot_transform
+        use_basemap = self._gen_used_basemap and sp.epsg is not None
+        src = sp.triang_abs if use_basemap else sp.triang
+
+        elev_raw = sp.elev
+        if elev_raw.ndim == 2:
+            elev_face = elev_raw[0]
+            self._set_status('Elev contours from t=0 (time-varying elevation)')
+        else:
+            elev_face = elev_raw
+
+        elev_nodes = _face_to_vertex(src, elev_face)
+
+        try:
+            n_levels = max(3, int(self._elev_levels_var.get()))
+        except ValueError:
+            n_levels = 10
+
+        levels = self._nice_contour_levels(
+            float(elev_nodes.min()), float(elev_nodes.max()), n_levels)
+
+        # build pixel-space triangulation (same transform as mesh overlay)
+        xlim, ylim = pt['xlim'], pt['ylim']
+        pos = pt['pos']
+        W, H = pt['W'], pt['H']
+        xv = src.x
+        yv = src.y
+        px = (pos.x0 + pos.width  * (xv - xlim[0]) / (xlim[1] - xlim[0])) * W
+        py = (1.0 - (pos.y0 + pos.height * (yv - ylim[0]) / (ylim[1] - ylim[0]))) * H
+        triang_px = _Tri(px, py, src.triangles)
+
+        self._elev_contour_data = (triang_px, elev_nodes, levels)
+
+    def _update_elev_overlay(self):
+        self._remove_elev_overlay()
+        if not self._show_elev_var.get():
+            return
+        if self._plot_transform is None or self._splotter is None:
+            return
+
+        if self._elev_contour_data is None:
+            self._build_elev_contour_data()
+
+        triang_px, elev_nodes, levels = self._elev_contour_data
+        cs = self._ax.tricontour(triang_px, elev_nodes, levels=levels,
+                                 colors='dimgray', linewidths=0.6, alpha=0.7)
+        labels = self._ax.clabel(cs, fmt='%g m', fontsize=6,
+                                 inline=True, inline_spacing=2)
+        self._elev_overlay_artists = [cs] + labels
+
+    # -------------------------------------------------------------- #
     # Save mesh                                                      #
     # -------------------------------------------------------------- #
 
@@ -1911,7 +2041,9 @@ class SWWAnimationGUI:
         cbar_var   = tk.BooleanVar(value=True)
         labels_var = tk.BooleanVar(value=True)
         title_var  = tk.BooleanVar(value=True)
-        edges_var  = tk.BooleanVar(value=self._last_gen_show_edges)  # mirrors generation setting
+        edges_var  = tk.BooleanVar(value=self._last_gen_show_edges)
+        mesh_var   = tk.BooleanVar(value=self._show_mesh_var.get())
+        elev_var   = tk.BooleanVar(value=self._show_elev_var.get())
         ttk.Checkbutton(chk_frame, text='Colorbar',    variable=cbar_var
                         ).pack(side=tk.LEFT, **pad)
         ttk.Checkbutton(chk_frame, text='Axis labels', variable=labels_var
@@ -1919,6 +2051,10 @@ class SWWAnimationGUI:
         ttk.Checkbutton(chk_frame, text='Title',       variable=title_var
                         ).pack(side=tk.LEFT, **pad)
         ttk.Checkbutton(chk_frame, text='Flat View',   variable=edges_var
+                        ).pack(side=tk.LEFT, **pad)
+        ttk.Checkbutton(chk_frame, text='Mesh',        variable=mesh_var
+                        ).pack(side=tk.LEFT, **pad)
+        ttk.Checkbutton(chk_frame, text='Elev contours', variable=elev_var
                         ).pack(side=tk.LEFT, **pad)
 
         ttk.Separator(win, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=6)
@@ -1956,6 +2092,9 @@ class SWWAnimationGUI:
                     show_labels=labels_var.get(),
                     show_title=title_var.get(),
                     show_edges=edges_var.get(),
+                    show_mesh=mesh_var.get(),
+                    show_elev=elev_var.get(),
+                    elev_levels=max(3, int(self._elev_levels_var.get())),
                     dpi=dpi_var.get(),
                     tex_engine=tex_var.get(),
                 )
@@ -1971,8 +2110,9 @@ class SWWAnimationGUI:
 
     def _render_and_export_frame(self, path, show_colorbar=True,
                                   show_labels=True, show_title=True,
-                                  show_edges=False, dpi=150,
-                                  tex_engine='pdflatex'):
+                                  show_edges=False, show_mesh=False,
+                                  show_elev=False, elev_levels=10,
+                                  dpi=150, tex_engine='pdflatex'):
         """Re-render the current frame from raw SWW data and save to *path*.
 
         Unlike "Save Frame" (which screenshots the imshow canvas), this
@@ -2130,6 +2270,19 @@ class SWWAnimationGUI:
             provider_str = BASEMAP_PROVIDERS.get(
                 provider_label, 'OpenStreetMap.Mapnik')
             _add_basemap(ax, sp.epsg, provider_str, cache=sp._basemap_cache)
+
+        if show_mesh:
+            ax.triplot(triang, color='black', linewidth=0.25, alpha=0.45)
+
+        if show_elev:
+            elev_raw = sp.elev
+            elev_face = elev_raw[0] if elev_raw.ndim == 2 else elev_raw
+            elev_v = _face_to_vertex(triang, elev_face)
+            nice_levels = self._nice_contour_levels(
+                float(elev_v.min()), float(elev_v.max()), elev_levels)
+            cs_elev = ax.tricontour(triang, elev_v, levels=nice_levels,
+                                    colors='dimgrey', linewidths=0.6, alpha=0.55)
+            ax.clabel(cs_elev, inline=True, fontsize=7, fmt='%g')
 
         if show_colorbar:
             fig.colorbar(im, ax=ax,
