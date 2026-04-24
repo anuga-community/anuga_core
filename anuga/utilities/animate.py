@@ -617,6 +617,42 @@ def _face_to_vertex(triang, face_values, face_mask=None):
     return v_sum / v_cnt
 
 
+def _nice_contour_levels(vmin, vmax, n):
+    """Return elevation contour levels as round multiples spanning [vmin, vmax].
+
+    Picks the smallest step from 1/2/5/10/20/50/100 × order-of-magnitude so
+    that levels fall on clean values (e.g. 5 m, 50 m, 500 m).
+    """
+    import numpy as _np
+    span = vmax - vmin
+    if span <= 0:
+        return n
+    raw_step = span / max(n, 1)
+    magnitude = 10.0 ** _np.floor(_np.log10(raw_step))
+    for factor in (1, 2, 5, 10, 20, 50, 100):
+        step = magnitude * factor
+        if span / step <= n * 1.5:
+            break
+    first = _np.ceil(vmin / step) * step
+    levels = _np.arange(first, vmax + step * 0.01, step)
+    return levels if len(levels) >= 2 else n
+
+
+def _draw_elev_contours(ax, triang, elev_face, n_levels):
+    """Draw elevation contours + labels onto *ax* using data-space *triang*.
+
+    Saves/restores axis limits to prevent tricontour autoscale side-effects.
+    """
+    v_elev = _face_to_vertex(triang, elev_face)
+    levels = _nice_contour_levels(float(v_elev.min()), float(v_elev.max()), n_levels)
+    xlim, ylim = ax.get_xlim(), ax.get_ylim()
+    cs = ax.tricontour(triang, v_elev, levels=levels,
+                       colors='dimgray', linewidths=0.6, alpha=0.7, zorder=3)
+    ax.clabel(cs, fmt='%g m', fontsize=6, inline=True, inline_spacing=2)
+    ax.set_xlim(xlim)
+    ax.set_ylim(ylim)
+
+
 class SWW_plotter:
     """
     A class to wrap ANUGA swwfile centroid values for stage, height, elevation
@@ -787,7 +823,8 @@ class SWW_plotter:
     def _animated_frame(self, frame, qty_name, qty_data, qty_label,
                         figsize, dpi, vmin, vmax, cmap, basemap, alpha,
                         basemap_provider, xlim=None, ylim=None,
-                        smooth=False):
+                        smooth=False, show_elev=False, elev_levels=10,
+                        show_mesh=False):
         """Shared core for depth/stage/speed/speed_depth frame rendering.
 
         smooth=True uses Gouraud shading (per-vertex interpolation) which
@@ -807,7 +844,8 @@ class SWW_plotter:
         cache_key = (qty_name, figsize, dpi, basemap, basemap_provider,
                      cmap, vmin, vmax, alpha,
                      tuple(xlim) if xlim is not None else None,
-                     tuple(ylim) if ylim is not None else None)
+                     tuple(ylim) if ylim is not None else None,
+                     show_elev, elev_levels, show_mesh)
 
         if cache_key not in self._figure_cache:
             self._figure_cache[cache_key] = plt.figure(figsize=figsize, dpi=dpi)
@@ -897,6 +935,12 @@ class SWW_plotter:
         if ylim is not None:
             ax.set_ylim(ylim)
 
+        if show_elev:
+            _draw_elev_contours(ax, triang, elev, elev_levels)
+        if show_mesh:
+            ax.triplot(triang, color='black', linewidth=0.25, alpha=0.45,
+                       zorder=4)
+
         fig.colorbar(im, ax=ax)
 
         if basemap and self.epsg:
@@ -918,16 +962,19 @@ class SWW_plotter:
     def _depth_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
                      basemap=False, alpha=1.0,
                      basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None,
-                     smooth=False):
+                     smooth=False, show_elev=False, elev_levels=10,
+                     show_mesh=False):
         return self._animated_frame(
             frame, 'depth', self.depth[frame, :], 'Depth',
             figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
-            xlim=xlim, ylim=ylim, smooth=smooth)
+            xlim=xlim, ylim=ylim, smooth=smooth,
+            show_elev=show_elev, elev_levels=elev_levels, show_mesh=show_mesh)
 
     def save_depth_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
                          alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                         xlim=None, ylim=None, smooth=False):
+                         xlim=None, ylim=None, smooth=False,
+                         show_elev=False, elev_levels=10, show_mesh=False):
 
         name = self.name
         plot_dir = self.plot_dir
@@ -935,7 +982,10 @@ class SWW_plotter:
 
         fig, ax = self._depth_frame(frame, figsize, dpi, vmin, vmax, cmap,
                                     basemap, alpha, basemap_provider,
-                                    xlim=xlim, ylim=ylim, smooth=smooth)
+                                    xlim=xlim, ylim=ylim, smooth=smooth,
+                                    show_elev=show_elev,
+                                    elev_levels=elev_levels,
+                                    show_mesh=show_mesh)
 
         if plot_dir is None:
             fig.savefig(name+'_depth_{0:0>10}.png'.format(frame_num))
@@ -962,16 +1012,19 @@ class SWW_plotter:
     def _stage_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
                      basemap=False, alpha=1.0,
                      basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None,
-                     smooth=False):
+                     smooth=False, show_elev=False, elev_levels=10,
+                     show_mesh=False):
         return self._animated_frame(
             frame, 'stage', self.stage[frame, :], 'Stage',
             figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
-            xlim=xlim, ylim=ylim, smooth=smooth)
+            xlim=xlim, ylim=ylim, smooth=smooth,
+            show_elev=show_elev, elev_levels=elev_levels, show_mesh=show_mesh)
 
     def save_stage_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=-20.0, vmax=20.0, cmap='viridis', basemap=False,
                          alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                         xlim=None, ylim=None, smooth=False):
+                         xlim=None, ylim=None, smooth=False,
+                         show_elev=False, elev_levels=10, show_mesh=False):
 
         name = self.name
         plot_dir = self.plot_dir
@@ -979,7 +1032,10 @@ class SWW_plotter:
 
         fig, ax = self._stage_frame(frame, figsize, dpi, vmin, vmax, cmap,
                                     basemap, alpha, basemap_provider,
-                                    xlim=xlim, ylim=ylim, smooth=smooth)
+                                    xlim=xlim, ylim=ylim, smooth=smooth,
+                                    show_elev=show_elev,
+                                    elev_levels=elev_levels,
+                                    show_mesh=show_mesh)
 
         if plot_dir is None:
             fig.savefig(name+'_stage_{0:0>10}.png'.format(frame_num))
@@ -1005,17 +1061,21 @@ class SWW_plotter:
     def _speed_depth_frame(self, frame, figsize, dpi, vmin, vmax,
                            cmap='viridis', basemap=False, alpha=1.0,
                            basemap_provider=BASEMAP_DEFAULT,
-                           xlim=None, ylim=None, smooth=False):
+                           xlim=None, ylim=None, smooth=False,
+                           show_elev=False, elev_levels=10, show_mesh=False):
         return self._animated_frame(
             frame, 'speed_depth', self.speed_depth[frame, :], 'Speed x Depth',
             figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
-            xlim=xlim, ylim=ylim, smooth=smooth)
+            xlim=xlim, ylim=ylim, smooth=smooth,
+            show_elev=show_elev, elev_levels=elev_levels, show_mesh=show_mesh)
 
     def save_speed_depth_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                                vmin=0.0, vmax=20.0, cmap='viridis',
                                basemap=False, alpha=1.0,
                                basemap_provider=BASEMAP_DEFAULT,
-                               xlim=None, ylim=None, smooth=False):
+                               xlim=None, ylim=None, smooth=False,
+                               show_elev=False, elev_levels=10,
+                               show_mesh=False):
 
         name = self.name
         plot_dir = self.plot_dir
@@ -1024,7 +1084,10 @@ class SWW_plotter:
         fig, ax = self._speed_depth_frame(frame, figsize, dpi, vmin, vmax,
                                           cmap, basemap, alpha, basemap_provider,
                                           xlim=xlim, ylim=ylim,
-                                          smooth=smooth)
+                                          smooth=smooth,
+                                          show_elev=show_elev,
+                                          elev_levels=elev_levels,
+                                          show_mesh=show_mesh)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_depth_{0:0>10}.png'.format(frame_num))
@@ -1050,16 +1113,19 @@ class SWW_plotter:
     def _speed_frame(self, frame, figsize, dpi, vmin, vmax, cmap='viridis',
                      basemap=False, alpha=1.0,
                      basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None,
-                     smooth=False):
+                     smooth=False, show_elev=False, elev_levels=10,
+                     show_mesh=False):
         return self._animated_frame(
             frame, 'speed', self.speed[frame, :], 'Speed',
             figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
-            xlim=xlim, ylim=ylim, smooth=smooth)
+            xlim=xlim, ylim=ylim, smooth=smooth,
+            show_elev=show_elev, elev_levels=elev_levels, show_mesh=show_mesh)
 
     def save_speed_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                          vmin=0.0, vmax=10.0, cmap='viridis', basemap=False,
                          alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                         xlim=None, ylim=None, smooth=False):
+                         xlim=None, ylim=None, smooth=False,
+                         show_elev=False, elev_levels=10, show_mesh=False):
 
         name = self.name
         plot_dir = self.plot_dir
@@ -1067,7 +1133,10 @@ class SWW_plotter:
 
         fig, ax = self._speed_frame(frame, figsize, dpi, vmin, vmax, cmap,
                                     basemap, alpha, basemap_provider,
-                                    xlim=xlim, ylim=ylim, smooth=smooth)
+                                    xlim=xlim, ylim=ylim, smooth=smooth,
+                                    show_elev=show_elev,
+                                    elev_levels=elev_levels,
+                                    show_mesh=show_mesh)
 
         if plot_dir is None:
             fig.savefig(name+'_speed_{0:0>10}.png'.format(frame_num))
@@ -1094,7 +1163,7 @@ class SWW_plotter:
     def _elev_frame(self, frame, figsize, dpi, vmin, vmax, cmap='terrain',
                     basemap=False, alpha=1.0,
                     basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None,
-                    smooth=False):
+                    smooth=False, show_mesh=False):
         """Render one elevation frame.
 
         Works for both static (1-D) and time-varying (2-D) elevation arrays.
@@ -1112,7 +1181,8 @@ class SWW_plotter:
         cache_key = ('elev', figsize, dpi, basemap, basemap_provider,
                      cmap, vmin, vmax, alpha,
                      tuple(xlim) if xlim is not None else None,
-                     tuple(ylim) if ylim is not None else None)
+                     tuple(ylim) if ylim is not None else None,
+                     show_mesh)
 
         if cache_key not in self._figure_cache:
             self._figure_cache[cache_key] = plt.figure(figsize=figsize, dpi=dpi)
@@ -1142,6 +1212,11 @@ class SWW_plotter:
             ax.set_xlim(xlim)
         if ylim is not None:
             ax.set_ylim(ylim)
+
+        if show_mesh:
+            ax.triplot(triang, color='black', linewidth=0.25, alpha=0.45,
+                       zorder=4)
+
         fig.colorbar(im, ax=ax, label='Elevation (m)')
 
         if basemap and self.epsg:
@@ -1153,7 +1228,8 @@ class SWW_plotter:
     def save_elev_frame(self, frame=-1, figsize=(10, 6), dpi=160,
                         vmin=-20.0, vmax=100.0, cmap='terrain', basemap=False,
                         alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                        xlim=None, ylim=None, smooth=False):
+                        xlim=None, ylim=None, smooth=False,
+                        show_elev=False, elev_levels=10, show_mesh=False):
         """Save one elevation frame to disk.
 
         For static elevation (1-D) the *frame* argument is ignored.
@@ -1166,7 +1242,8 @@ class SWW_plotter:
         render_frame = 0 if self.elev.ndim == 1 else frame
         fig, ax = self._elev_frame(render_frame, figsize, dpi, vmin, vmax, cmap,
                                    basemap, alpha, basemap_provider,
-                                   xlim=xlim, ylim=ylim, smooth=smooth)
+                                   xlim=xlim, ylim=ylim, smooth=smooth,
+                                   show_mesh=show_mesh)
 
         fname = name + '_elev_{0:0>10}.png'.format(frame_num)
         if plot_dir is None:
@@ -1189,7 +1266,8 @@ class SWW_plotter:
     #------------------------------------------
 
     def _render_max_qty(self, ax, triang, max_depth, qty_data, elev, md,
-                        basemap, cmap, alpha, vmin, vmax, smooth):
+                        basemap, cmap, alpha, vmin, vmax, smooth,
+                        show_elev=False, elev_levels=10, show_mesh=False):
         """Shared renderer for save_max_*_frame; returns the ScalarMappable."""
         import numpy as np
         ax.set_xlim(triang.x.min(), triang.x.max())
@@ -1240,12 +1318,18 @@ class SWW_plotter:
             im = ax.tripcolor(triang, facecolors=qty_data, cmap=cmap,
                               alpha=alpha, vmin=vmin, vmax=vmax)
             triang.set_mask(None)
+        if show_elev:
+            _draw_elev_contours(ax, triang, elev, elev_levels)
+        if show_mesh:
+            ax.triplot(triang, color='black', linewidth=0.25, alpha=0.45,
+                       zorder=4)
         return im
 
     def save_max_depth_frame(self, frame=None, figsize=(10, 6), dpi=160,
                              vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
                              alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                             xlim=None, ylim=None, smooth=False):
+                             xlim=None, ylim=None, smooth=False,
+                             show_elev=False, elev_levels=10, show_mesh=False):
         """Save a single frame showing the maximum depth at each triangle."""
         import matplotlib.pyplot as plt
         import numpy as np
@@ -1261,7 +1345,9 @@ class SWW_plotter:
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
         plt.title('Max Depth')
         im = self._render_max_qty(ax, triang, max_depth, max_depth, elev, md,
-                                   basemap, cmap, alpha, vmin, vmax, smooth)
+                                   basemap, cmap, alpha, vmin, vmax, smooth,
+                                   show_elev=show_elev, elev_levels=elev_levels,
+                                   show_mesh=show_mesh)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
@@ -1283,7 +1369,8 @@ class SWW_plotter:
     def save_max_speed_frame(self, frame=None, figsize=(10, 6), dpi=160,
                              vmin=0.0, vmax=10.0, cmap='viridis', basemap=False,
                              alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                             xlim=None, ylim=None, smooth=False):
+                             xlim=None, ylim=None, smooth=False,
+                             show_elev=False, elev_levels=10, show_mesh=False):
         """Save a single frame showing the maximum speed at each triangle."""
         import matplotlib.pyplot as plt
         import numpy as np
@@ -1300,7 +1387,9 @@ class SWW_plotter:
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
         plt.title('Max Speed')
         im = self._render_max_qty(ax, triang, max_depth, max_speed, elev, md,
-                                   basemap, cmap, alpha, vmin, vmax, smooth)
+                                   basemap, cmap, alpha, vmin, vmax, smooth,
+                                   show_elev=show_elev, elev_levels=elev_levels,
+                                   show_mesh=show_mesh)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
@@ -1322,7 +1411,9 @@ class SWW_plotter:
     def save_max_speed_depth_frame(self, frame=None, figsize=(10, 6), dpi=160,
                                    vmin=0.0, vmax=20.0, cmap='viridis', basemap=False,
                                    alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
-                                   xlim=None, ylim=None, smooth=False):
+                                   xlim=None, ylim=None, smooth=False,
+                                   show_elev=False, elev_levels=10,
+                                   show_mesh=False):
         """Save a single frame showing the maximum speed×depth at each triangle."""
         import matplotlib.pyplot as plt
         import numpy as np
@@ -1339,7 +1430,9 @@ class SWW_plotter:
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
         plt.title('Max Speed x Depth')
         im = self._render_max_qty(ax, triang, max_depth, max_speed_depth, elev, md,
-                                   basemap, cmap, alpha, vmin, vmax, smooth)
+                                   basemap, cmap, alpha, vmin, vmax, smooth,
+                                   show_elev=show_elev, elev_levels=elev_levels,
+                                   show_mesh=show_mesh)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')

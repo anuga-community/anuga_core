@@ -166,12 +166,12 @@ class SWWAnimationGUI:
         self._elev_contour_data = None    # cached (triang_px, elev_nodes, levels)
 
         # timeseries state
-        self._ts_triangle = None
+        self._ts_triangles = []       # list of picked triangle indices (in order)
         self._ts_vline = None
         self._pick_mode = False
         self._pick_cid = None
         self._pick_key_cid = None
-        self._pick_overlay = None
+        self._pick_overlays = []      # one artist per picked point
         self._pick_text = None
         self._plot_transform = None
         self._gen_used_basemap = False
@@ -181,6 +181,9 @@ class SWWAnimationGUI:
         self._last_gen_cmap = 'viridis'
         self._last_gen_qty = 'depth'
         self._last_gen_show_edges = False
+        self._last_gen_show_elev = False
+        self._last_gen_elev_levels = 10
+        self._last_gen_show_mesh = False
 
         self._build_ui()
 
@@ -195,244 +198,275 @@ class SWWAnimationGUI:
     # -------------------------------------------------------------- #
 
     def _build_ui(self):
-        ctrl = ttk.Frame(self.root, padding=6)
-        ctrl.pack(side=tk.TOP, fill=tk.X)
-
-        # ---- Row 1: SWW file + Help ----
-        row1 = ttk.Frame(ctrl)
-        row1.pack(fill=tk.X, pady=2)
-        ttk.Label(row1, text='SWW file:').pack(side=tk.LEFT)
-        ttk.Button(row1, text='Help', command=self._show_help).pack(side=tk.RIGHT, padx=(4, 0))
-        self._sww_var = tk.StringVar()
-        sww_entry = ttk.Entry(row1, textvariable=self._sww_var, width=50)
-        sww_entry.pack(side=tk.LEFT, padx=4, fill=tk.X, expand=True)
-        sww_entry.bind('<Return>', lambda _e: self._on_sww_change())
-        ttk.Button(row1, text='Browse...', command=self._browse_sww).pack(side=tk.LEFT)
-
-        # ---- Row 2: output dir ----
-        row2 = ttk.Frame(ctrl)
-        row2.pack(fill=tk.X, pady=2)
-        ttk.Label(row2, text='Output dir:').pack(side=tk.LEFT)
-        self._dir_var = tk.StringVar(value='_plot')
-        ttk.Entry(row2, textvariable=self._dir_var, width=30).pack(side=tk.LEFT, padx=4)
-        ttk.Button(row2, text='Browse...', command=self._browse_dir).pack(side=tk.LEFT)
-
-        # ---- Row 3: quantity + colour range + frame settings + colormap ----
-        row3 = ttk.Frame(ctrl)
-        row3.pack(fill=tk.X, pady=(6, 0))
-        ttk.Label(row3, text='Quantity:').pack(side=tk.LEFT)
-        self._qty_var = tk.StringVar(value='depth')
-        qty_combo = ttk.Combobox(row3, textvariable=self._qty_var,
-                                  values=list(_QUANTITIES), width=12,
-                                  state='readonly')
-        qty_combo.pack(side=tk.LEFT, padx=(2, 4))
-        qty_combo.bind('<<ComboboxSelected>>', lambda _e: self._on_qty_change())
-        ttk.Separator(row3, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
-        ttk.Label(row3, text='vmin:').pack(side=tk.LEFT)
-        self._vmin_var = tk.StringVar(value='0.0')
-        ttk.Entry(row3, textvariable=self._vmin_var, width=8).pack(side=tk.LEFT, padx=2)
-        ttk.Label(row3, text='vmax:').pack(side=tk.LEFT, padx=(4, 0))
-        self._vmax_var = tk.StringVar(value='20.0')
-        ttk.Entry(row3, textvariable=self._vmax_var, width=8).pack(side=tk.LEFT, padx=2)
-        self._auto_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(row3, text='Auto',
-                        variable=self._auto_var,
-                        command=self._on_auto_toggle).pack(side=tk.LEFT, padx=4)
-
-        ttk.Separator(row3, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
-        ttk.Label(row3, text='DPI:').pack(side=tk.LEFT)
-        self._dpi_var = tk.StringVar(value='100')
-        ttk.Entry(row3, textvariable=self._dpi_var, width=5).pack(side=tk.LEFT, padx=2)
-
-        ttk.Separator(row3, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
-        ttk.Label(row3, text='min depth:').pack(side=tk.LEFT)
-        self._mindepth_var = tk.StringVar(value='0.001')
-        ttk.Entry(row3, textvariable=self._mindepth_var, width=7).pack(side=tk.LEFT, padx=2)
-
-        ttk.Separator(row3, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
-        ttk.Label(row3, text='Colormap:').pack(side=tk.LEFT)
-        self._cmap_var = tk.StringVar(value='viridis')
-        _CMAPS = ['viridis', 'plasma', 'inferno', 'magma', 'cividis',
-                  'Blues', 'Greens', 'Oranges', 'Reds', 'YlOrRd',
-                  'RdBu_r', 'coolwarm', 'seismic', 'jet', 'turbo',
-                  'terrain', 'gist_earth', 'gray']
-        ttk.Combobox(row3, textvariable=self._cmap_var,
-                     values=_CMAPS, width=10).pack(side=tk.LEFT, padx=2)
-        self._cmap_reverse_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(row3, text='Reverse',
-                        variable=self._cmap_reverse_var).pack(side=tk.LEFT, padx=(2, 4))
-
-        # ---- Row 4: EPSG + basemap + quantity + alpha ----
-        row4 = ttk.Frame(ctrl)
-        row4.pack(fill=tk.X, pady=(6, 0))
-        ttk.Label(row4, text='EPSG:').pack(side=tk.LEFT)
-        self._epsg_var = tk.StringVar(value='')
-        self._epsg_entry = ttk.Entry(row4, textvariable=self._epsg_var, width=8)
-        self._epsg_entry.pack(side=tk.LEFT, padx=2)
-        self._epsg_entry.bind('<Return>', lambda _e: self._on_set_epsg())
-        ttk.Button(row4, text='Set', width=4,
-                   command=self._on_set_epsg).pack(side=tk.LEFT, padx=(2, 4))
-
-        ttk.Separator(row4, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
-        self._basemap_var = tk.BooleanVar(value=False)
-        self._basemap_chk = ttk.Checkbutton(row4, text='Basemap:',
-                                             variable=self._basemap_var,
-                                             command=self._on_basemap_toggle,
-                                             state=tk.DISABLED)
-        self._basemap_chk.pack(side=tk.LEFT, padx=(4, 0))
-        from anuga.utilities.animate import BASEMAP_PROVIDERS
-        self._basemap_provider_var = tk.StringVar(value='OpenStreetMap')
-        self._basemap_provider_combo = ttk.Combobox(
-            row4, textvariable=self._basemap_provider_var,
-            values=list(BASEMAP_PROVIDERS.keys()),
-            width=20, state=tk.DISABLED)
-        self._basemap_provider_combo.pack(side=tk.LEFT, padx=2)
-
-        ttk.Separator(row4, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
-        ttk.Label(row4, text='Alpha:').pack(side=tk.LEFT)
-        self._alpha_var = tk.DoubleVar(value=1.0)
-        ttk.Spinbox(row4, from_=0.0, to=1.0, increment=0.05,
-                    textvariable=self._alpha_var,
-                    format='%.2f', width=5).pack(side=tk.LEFT, padx=2)
-
-        ttk.Separator(row4, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
-        self._show_edges_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(row4, text='Flat View',
-                        variable=self._show_edges_var).pack(side=tk.LEFT, padx=4)
-
-        # ---- SWW info (shown after file load) ----
-        row4b = ttk.Frame(ctrl)
-        row4b.pack(fill=tk.X, pady=(2, 0))
-        self._sww_info_label = ttk.Label(row4b, text='No SWW file loaded.',
-                                          foreground='grey')
-        self._sww_info_label.pack(side=tk.LEFT, padx=4)
-
-        # ---- Row 5: generate/cancel + progress bar ----
-        row5 = ttk.Frame(ctrl)
-        row5.pack(fill=tk.X, pady=2)
-        self._gen_btn = ttk.Button(row5, text='Generate Frames',
-                                    command=self._start_generation,
-                                    state=tk.DISABLED)
-        self._gen_btn.pack(side=tk.LEFT, padx=(0, 2))
-        self._cancel_btn = ttk.Button(row5, text='Cancel',
-                                       command=self._cancel_generation,
-                                       state=tk.DISABLED)
-        self._cancel_btn.pack(side=tk.LEFT, padx=2)
-        ttk.Label(row5, text='frames').pack(side=tk.RIGHT, padx=(0, 4))
-        self._stride_var = tk.StringVar(value='1')
-        ttk.Spinbox(row5, from_=1, to=1000, increment=1,
-                    textvariable=self._stride_var, width=5).pack(side=tk.RIGHT, padx=2)
-        ttk.Label(row5, text='Every N:').pack(side=tk.RIGHT, padx=(4, 0))
-        self._progress_var = tk.IntVar(value=0)
-        self._progress_bar = ttk.Progressbar(row5, variable=self._progress_var,
-                                              maximum=100)
-        self._progress_bar.pack(side=tk.LEFT, padx=4, fill=tk.X, expand=True)
-        self._progress_label = ttk.Label(row5, text='', width=14)
-        self._progress_label.pack(side=tk.LEFT)
-
-        ttk.Separator(ctrl, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=4)
-
-        # ---- Row 6a: playback controls ----
-        row6 = ttk.Frame(ctrl)
-        row6.pack(fill=tk.X, pady=(6, 0))
-
-        self._play_btn = ttk.Button(row6, text='Play', width=6,
-                                     command=self._toggle_play)
-        self._play_btn.pack(side=tk.LEFT, padx=2)
-        ttk.Button(row6, text='|<', width=3, command=self._go_first).pack(side=tk.LEFT, padx=1)
-        ttk.Button(row6, text='<',  width=3, command=self._step_back).pack(side=tk.LEFT, padx=1)
-        ttk.Button(row6, text='>',  width=3, command=self._step_fwd).pack(side=tk.LEFT, padx=1)
-        ttk.Button(row6, text='>|', width=3, command=self._go_last).pack(side=tk.LEFT, padx=1)
-
-        ttk.Label(row6, text='   FPS:').pack(side=tk.LEFT)
-        self._fps_var = tk.DoubleVar(value=5.0)
-        ttk.Spinbox(row6, from_=0.5, to=30.0, increment=0.5,
-                    textvariable=self._fps_var, width=6).pack(side=tk.LEFT, padx=4)
-
-        ttk.Separator(row6, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        self._pick_btn = ttk.Button(row6, text='Pick timeseries',
-                                     command=self._toggle_pick,
-                                     state=tk.DISABLED)
-        self._pick_btn.pack(side=tk.LEFT, padx=2)
-
-        ttk.Separator(row6, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        self._zoom_btn = ttk.Button(row6, text='Set Zoom',
-                                     command=self._toggle_zoom_mode,
-                                     state=tk.DISABLED)
-        self._zoom_btn.pack(side=tk.LEFT, padx=2)
-        self._reset_zoom_btn = ttk.Button(row6, text='Reset Zoom',
-                                           command=self._reset_zoom,
-                                           state=tk.DISABLED)
-        self._reset_zoom_btn.pack(side=tk.LEFT, padx=2)
-
-        ttk.Separator(row6, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        self._show_mesh_var = tk.BooleanVar(value=False)
-        self._show_mesh_chk = ttk.Checkbutton(row6, text='Show Mesh',
-                                               variable=self._show_mesh_var,
-                                               command=self._on_show_mesh_toggle,
-                                               state=tk.DISABLED)
-        self._show_mesh_chk.pack(side=tk.LEFT, padx=2)
-
-        ttk.Separator(row6, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=8)
-        self._show_elev_var = tk.BooleanVar(value=False)
-        self._show_elev_chk = ttk.Checkbutton(row6, text='Show Elev',
-                                               variable=self._show_elev_var,
-                                               command=self._on_show_elev_toggle,
-                                               state=tk.DISABLED)
-        self._show_elev_chk.pack(side=tk.LEFT, padx=(2, 0))
-        self._elev_levels_var = tk.StringVar(value='10')
-        self._elev_levels_spin = ttk.Spinbox(row6, from_=3, to=50, increment=1,
-                                              textvariable=self._elev_levels_var,
-                                              width=3, state=tk.DISABLED,
-                                              command=self._on_elev_levels_changed)
-        self._elev_levels_spin.pack(side=tk.LEFT, padx=(2, 2))
-        self._elev_levels_spin.bind('<Return>',    lambda _e: self._on_elev_levels_changed())
-        self._elev_levels_spin.bind('<FocusOut>',  lambda _e: self._on_elev_levels_changed())
-
-        # ---- Row 6b: frame/mesh output controls ----
-        row6b = ttk.Frame(ctrl)
-        row6b.pack(fill=tk.X, pady=(4, 2))
-
-        self._save_frame_btn = ttk.Button(row6b, text='Save Frame',
-                                           command=self._save_frame,
-                                           state=tk.DISABLED)
-        self._save_frame_btn.pack(side=tk.LEFT, padx=2)
-        self._export_frame_btn = ttk.Button(row6b, text='Export frame...',
-                                             command=self._export_frame,
-                                             state=tk.DISABLED)
-        self._export_frame_btn.pack(side=tk.LEFT, padx=2)
-        self._save_anim_btn = ttk.Button(row6b, text='Save Animation...',
-                                          command=self._save_animation,
-                                          state=tk.DISABLED)
-        self._save_anim_btn.pack(side=tk.LEFT, padx=2)
-
-        self._save_mesh_btn = ttk.Button(row6b, text='Save Mesh...',
-                                          command=self._save_mesh,
-                                          state=tk.DISABLED)
-        self._save_mesh_btn.pack(side=tk.RIGHT, padx=2)
-        self._mesh_btn = ttk.Button(row6b, text='View Mesh',
-                                     command=self._show_mesh,
-                                     state=tk.DISABLED)
-        self._mesh_btn.pack(side=tk.RIGHT, padx=2)
-
-        # ---- Row 7: frame slider + frame counter ----
-        row7 = ttk.Frame(ctrl)
-        row7.pack(fill=tk.X, pady=(4, 2))
-        ttk.Label(row7, text='Frame:').pack(side=tk.LEFT)
-        self._frame_label = ttk.Label(row7, text='-')
-        self._frame_label.pack(side=tk.RIGHT, padx=10)
-        self._slider_var = tk.IntVar(value=0)
-        self._slider = ttk.Scale(row7, from_=0, to=0,
-                                  variable=self._slider_var,
-                                  orient=tk.HORIZONTAL,
-                                  command=self._on_slider)
-        self._slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
-
-        # ---- status bar (packed first so it anchors to bottom) ----
+        # ---- status bar (packed first so it anchors to the bottom) ----
         self._status_var = tk.StringVar(value='Open an SWW file to begin.')
         ttk.Label(self.root, textvariable=self._status_var,
                   relief=tk.SUNKEN, anchor=tk.W,
                   padding=(4, 1)).pack(side=tk.BOTTOM, fill=tk.X)
+
+        # ================================================================
+        # Top control panel
+        # ================================================================
+        ctrl = ttk.Frame(self.root, padding=(6, 4, 6, 2))
+        ctrl.pack(side=tk.TOP, fill=tk.X)
+
+        # ---- SWW file row (always visible) ----
+        file_row = ttk.Frame(ctrl)
+        file_row.pack(fill=tk.X, pady=(0, 4))
+        ttk.Label(file_row, text='SWW file:').pack(side=tk.LEFT)
+        self._sww_var = tk.StringVar()
+        sww_entry = ttk.Entry(file_row, textvariable=self._sww_var)
+        sww_entry.pack(side=tk.LEFT, padx=4, fill=tk.X, expand=True)
+        sww_entry.bind('<Return>', lambda _e: self._on_sww_change())
+        ttk.Button(file_row, text='Browse...',
+                   command=self._browse_sww).pack(side=tk.LEFT)
+        ttk.Button(file_row, text='Help',
+                   command=self._show_help).pack(side=tk.LEFT, padx=(8, 0))
+        self._sww_info_label = ttk.Label(file_row, text='No SWW file loaded.',
+                                         foreground='grey')
+        self._sww_info_label.pack(side=tk.LEFT, padx=(12, 0))
+
+        # ================================================================
+        # Notebook — Plot / Generate / Output tabs
+        # ================================================================
+        _CMAPS = ['viridis', 'plasma', 'inferno', 'magma', 'cividis',
+                  'Blues', 'Greens', 'Oranges', 'Reds', 'YlOrRd',
+                  'RdBu_r', 'coolwarm', 'seismic', 'jet', 'turbo',
+                  'terrain', 'gist_earth', 'gray']
+
+        nb = ttk.Notebook(ctrl)
+        nb.pack(fill=tk.X, pady=(0, 4))
+
+        # ----------------------------------------------------------------
+        # Tab 1 — Plot
+        # ----------------------------------------------------------------
+        tab_plot = ttk.Frame(nb, padding=(8, 6))
+        nb.add(tab_plot, text='  Plot  ')
+
+        # Row A: Quantity | vmin / vmax / Auto
+        rA = ttk.Frame(tab_plot)
+        rA.pack(fill=tk.X, pady=2)
+        ttk.Label(rA, text='Quantity:').pack(side=tk.LEFT)
+        self._qty_var = tk.StringVar(value='depth')
+        qty_combo = ttk.Combobox(rA, textvariable=self._qty_var,
+                                 values=list(_QUANTITIES), width=13,
+                                 state='readonly')
+        qty_combo.pack(side=tk.LEFT, padx=(2, 8))
+        qty_combo.bind('<<ComboboxSelected>>', lambda _e: self._on_qty_change())
+
+        ttk.Label(rA, text='vmin:').pack(side=tk.LEFT)
+        self._vmin_var = tk.StringVar(value='0.0')
+        ttk.Entry(rA, textvariable=self._vmin_var, width=8).pack(side=tk.LEFT, padx=2)
+        ttk.Label(rA, text='vmax:').pack(side=tk.LEFT, padx=(6, 0))
+        self._vmax_var = tk.StringVar(value='20.0')
+        ttk.Entry(rA, textvariable=self._vmax_var, width=8).pack(side=tk.LEFT, padx=2)
+        self._auto_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(rA, text='Auto from data',
+                        variable=self._auto_var,
+                        command=self._on_auto_toggle).pack(side=tk.LEFT, padx=(4, 0))
+
+        # Row B: Colormap | Reverse | min depth | Flat View
+        rB = ttk.Frame(tab_plot)
+        rB.pack(fill=tk.X, pady=2)
+        ttk.Label(rB, text='Colormap:').pack(side=tk.LEFT)
+        self._cmap_var = tk.StringVar(value='viridis')
+        ttk.Combobox(rB, textvariable=self._cmap_var,
+                     values=_CMAPS, width=12).pack(side=tk.LEFT, padx=2)
+        self._cmap_reverse_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(rB, text='Reverse',
+                        variable=self._cmap_reverse_var).pack(side=tk.LEFT, padx=(2, 16))
+
+        ttk.Label(rB, text='min depth:').pack(side=tk.LEFT)
+        self._mindepth_var = tk.StringVar(value='0.001')
+        ttk.Entry(rB, textvariable=self._mindepth_var, width=8).pack(side=tk.LEFT, padx=2)
+
+        ttk.Separator(rB, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=12)
+        self._show_edges_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(rB, text='Flat View',
+                        variable=self._show_edges_var).pack(side=tk.LEFT, padx=(0, 12))
+
+        ttk.Separator(rB, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=12)
+        self._show_mesh_var = tk.BooleanVar(value=False)
+        self._show_mesh_chk = ttk.Checkbutton(rB, text='Show Mesh',
+                                               variable=self._show_mesh_var,
+                                               command=self._on_show_mesh_toggle,
+                                               state=tk.DISABLED)
+        self._show_mesh_chk.pack(side=tk.LEFT, padx=(0, 8))
+
+        self._show_elev_var = tk.BooleanVar(value=False)
+        self._show_elev_chk = ttk.Checkbutton(rB, text='Show Elev',
+                                               variable=self._show_elev_var,
+                                               command=self._on_show_elev_toggle,
+                                               state=tk.DISABLED)
+        self._show_elev_chk.pack(side=tk.LEFT, padx=(0, 2))
+        self._elev_levels_var = tk.StringVar(value='10')
+        self._elev_levels_spin = ttk.Spinbox(rB, from_=3, to=50, increment=1,
+                                              textvariable=self._elev_levels_var,
+                                              width=3, state=tk.DISABLED,
+                                              command=self._on_elev_levels_changed)
+        self._elev_levels_spin.pack(side=tk.LEFT, padx=(0, 2))
+        self._elev_levels_spin.bind('<Return>',   lambda _e: self._on_elev_levels_changed())
+        self._elev_levels_spin.bind('<FocusOut>', lambda _e: self._on_elev_levels_changed())
+        ttk.Label(rB, text='levels', foreground='grey').pack(side=tk.LEFT)
+
+        # ----------------------------------------------------------------
+        # Tab 2 — Generate
+        # ----------------------------------------------------------------
+        tab_gen = ttk.Frame(nb, padding=(8, 6))
+        nb.add(tab_gen, text='  Generate  ')
+
+        # Row A: Output dir | DPI | Every N
+        gA = ttk.Frame(tab_gen)
+        gA.pack(fill=tk.X, pady=2)
+        ttk.Label(gA, text='Output dir:').pack(side=tk.LEFT)
+        self._dir_var = tk.StringVar(value='_plot')
+        ttk.Entry(gA, textvariable=self._dir_var, width=28).pack(side=tk.LEFT, padx=(2, 2))
+        ttk.Button(gA, text='Browse...',
+                   command=self._browse_dir).pack(side=tk.LEFT, padx=(0, 16))
+
+        ttk.Label(gA, text='DPI:').pack(side=tk.LEFT)
+        self._dpi_var = tk.StringVar(value='100')
+        ttk.Entry(gA, textvariable=self._dpi_var, width=5).pack(side=tk.LEFT, padx=2)
+
+        ttk.Separator(gA, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=12)
+        ttk.Label(gA, text='Every N:').pack(side=tk.LEFT)
+        self._stride_var = tk.StringVar(value='1')
+        ttk.Spinbox(gA, from_=1, to=1000, increment=1,
+                    textvariable=self._stride_var, width=5).pack(side=tk.LEFT, padx=2)
+        ttk.Label(gA, text='frames', foreground='grey').pack(side=tk.LEFT, padx=(2, 0))
+
+        # Row B: EPSG | Basemap | Alpha
+        gB = ttk.Frame(tab_gen)
+        gB.pack(fill=tk.X, pady=2)
+        ttk.Label(gB, text='EPSG:').pack(side=tk.LEFT)
+        self._epsg_var = tk.StringVar(value='')
+        self._epsg_entry = ttk.Entry(gB, textvariable=self._epsg_var, width=8)
+        self._epsg_entry.pack(side=tk.LEFT, padx=2)
+        self._epsg_entry.bind('<Return>', lambda _e: self._on_set_epsg())
+        ttk.Button(gB, text='Set', width=4,
+                   command=self._on_set_epsg).pack(side=tk.LEFT, padx=(0, 12))
+
+        from anuga.utilities.animate import BASEMAP_PROVIDERS
+        self._basemap_var = tk.BooleanVar(value=False)
+        self._basemap_chk = ttk.Checkbutton(gB, text='Basemap:',
+                                             variable=self._basemap_var,
+                                             command=self._on_basemap_toggle,
+                                             state=tk.DISABLED)
+        self._basemap_chk.pack(side=tk.LEFT, padx=(0, 2))
+        self._basemap_provider_var = tk.StringVar(value='OpenStreetMap')
+        self._basemap_provider_combo = ttk.Combobox(
+            gB, textvariable=self._basemap_provider_var,
+            values=list(BASEMAP_PROVIDERS.keys()),
+            width=20, state=tk.DISABLED)
+        self._basemap_provider_combo.pack(side=tk.LEFT, padx=(0, 12))
+
+        ttk.Label(gB, text='Alpha:').pack(side=tk.LEFT)
+        self._alpha_var = tk.DoubleVar(value=1.0)
+        ttk.Spinbox(gB, from_=0.0, to=1.0, increment=0.05,
+                    textvariable=self._alpha_var,
+                    format='%.2f', width=5).pack(side=tk.LEFT, padx=2)
+
+        # ----------------------------------------------------------------
+        # Tab 3 — Output
+        # ----------------------------------------------------------------
+        tab_out = ttk.Frame(nb, padding=(8, 6))
+        nb.add(tab_out, text='  Output  ')
+
+        out_row = ttk.Frame(tab_out)
+        out_row.pack(fill=tk.X, pady=4)
+        self._save_frame_btn = ttk.Button(out_row, text='Save Frame...',
+                                           command=self._save_frame,
+                                           state=tk.DISABLED)
+        self._save_frame_btn.pack(side=tk.LEFT, padx=(0, 4))
+        self._export_frame_btn = ttk.Button(out_row, text='Export Frame...',
+                                             command=self._export_frame,
+                                             state=tk.DISABLED)
+        self._export_frame_btn.pack(side=tk.LEFT, padx=4)
+        self._save_anim_btn = ttk.Button(out_row, text='Save Animation...',
+                                          command=self._save_animation,
+                                          state=tk.DISABLED)
+        self._save_anim_btn.pack(side=tk.LEFT, padx=4)
+
+        ttk.Separator(out_row, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=12)
+        self._mesh_btn = ttk.Button(out_row, text='View Mesh',
+                                     command=self._show_mesh,
+                                     state=tk.DISABLED)
+        self._mesh_btn.pack(side=tk.LEFT, padx=4)
+        self._save_mesh_btn = ttk.Button(out_row, text='Save Mesh...',
+                                          command=self._save_mesh,
+                                          state=tk.DISABLED)
+        self._save_mesh_btn.pack(side=tk.LEFT, padx=4)
+
+        # ================================================================
+        # Generate Frames bar (always visible, below notebook)
+        # ================================================================
+        gen_bar = ttk.Frame(ctrl, padding=(0, 2, 0, 2))
+        gen_bar.pack(fill=tk.X)
+
+        self._gen_btn = ttk.Button(gen_bar, text='Generate Frames',
+                                    command=self._start_generation,
+                                    state=tk.DISABLED)
+        self._gen_btn.pack(side=tk.LEFT, padx=(0, 4))
+        self._cancel_btn = ttk.Button(gen_bar, text='Cancel',
+                                       command=self._cancel_generation,
+                                       state=tk.DISABLED)
+        self._cancel_btn.pack(side=tk.LEFT, padx=(0, 8))
+
+        self._progress_var = tk.IntVar(value=0)
+        self._progress_bar = ttk.Progressbar(gen_bar, variable=self._progress_var,
+                                              maximum=100)
+        self._progress_bar.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(0, 4))
+        self._progress_label = ttk.Label(gen_bar, text='', width=14)
+        self._progress_label.pack(side=tk.LEFT)
+
+        ttk.Separator(ctrl, orient=tk.HORIZONTAL).pack(fill=tk.X, pady=(4, 2))
+
+        # ================================================================
+        # Playback bar (always visible)
+        # ================================================================
+        pb = ttk.Frame(ctrl, padding=(0, 2))
+        pb.pack(fill=tk.X)
+
+        self._play_btn = ttk.Button(pb, text='Play', width=6,
+                                     command=self._toggle_play)
+        self._play_btn.pack(side=tk.LEFT, padx=(0, 2))
+        ttk.Button(pb, text='|<', width=3, command=self._go_first).pack(side=tk.LEFT, padx=1)
+        ttk.Button(pb, text='<',  width=3, command=self._step_back).pack(side=tk.LEFT, padx=1)
+        ttk.Button(pb, text='>',  width=3, command=self._step_fwd).pack(side=tk.LEFT, padx=1)
+        ttk.Button(pb, text='>|', width=3, command=self._go_last).pack(side=tk.LEFT, padx=1)
+        ttk.Label(pb, text='FPS:').pack(side=tk.LEFT, padx=(8, 0))
+        self._fps_var = tk.DoubleVar(value=5.0)
+        ttk.Spinbox(pb, from_=0.5, to=30.0, increment=0.5,
+                    textvariable=self._fps_var, width=5).pack(side=tk.LEFT, padx=2)
+
+        ttk.Separator(pb, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        self._pick_btn = ttk.Button(pb, text='Pick timeseries',
+                                     command=self._toggle_pick,
+                                     state=tk.DISABLED)
+        self._pick_btn.pack(side=tk.LEFT, padx=(0, 4))
+
+        ttk.Separator(pb, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        self._zoom_btn = ttk.Button(pb, text='Set Zoom',
+                                     command=self._toggle_zoom_mode,
+                                     state=tk.DISABLED)
+        self._zoom_btn.pack(side=tk.LEFT, padx=(0, 4))
+        self._reset_zoom_btn = ttk.Button(pb, text='Reset Zoom',
+                                           command=self._reset_zoom,
+                                           state=tk.DISABLED)
+        self._reset_zoom_btn.pack(side=tk.LEFT, padx=(0, 4))
+
+        # ---- Frame slider (always visible) ----
+        slider_row = ttk.Frame(ctrl)
+        slider_row.pack(fill=tk.X, pady=(4, 2))
+        ttk.Label(slider_row, text='Frame:').pack(side=tk.LEFT)
+        self._frame_label = ttk.Label(slider_row, text='-')
+        self._frame_label.pack(side=tk.RIGHT, padx=10)
+        self._slider_var = tk.IntVar(value=0)
+        self._slider = ttk.Scale(slider_row, from_=0, to=0,
+                                  variable=self._slider_var,
+                                  orient=tk.HORIZONTAL,
+                                  command=self._on_slider)
+        self._slider.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=4)
 
         # ---- timeseries panel (hidden until a point is picked) ----
         self._ts_outer = ttk.Frame(self.root)
@@ -452,6 +486,8 @@ class SWWAnimationGUI:
         self._ts_info_label = ttk.Label(ts_ctrl, text='', foreground='grey')
         self._ts_info_label.pack(side=tk.LEFT, padx=8)
         ttk.Button(ts_ctrl, text='Close',
+                   command=self._close_timeseries).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(ts_ctrl, text='Clear picks',
                    command=self._close_timeseries).pack(side=tk.RIGHT, padx=4)
         ttk.Button(ts_ctrl, text='Export CSV',
                    command=self._export_timeseries).pack(side=tk.RIGHT, padx=4)
@@ -728,6 +764,17 @@ class SWWAnimationGUI:
         self._last_gen_show_edges = show_edges
         smooth = not show_edges
 
+        show_elev = self._show_elev_var.get()
+        try:
+            elev_levels = max(3, int(self._elev_levels_var.get()))
+        except (ValueError, AttributeError):
+            elev_levels = 10
+        show_mesh = self._show_mesh_var.get()
+
+        self._last_gen_show_elev = show_elev
+        self._last_gen_elev_levels = elev_levels
+        self._last_gen_show_mesh = show_mesh
+
         # Single frame (max_* quantities) always runs sequentially.
         # For multi-frame quantities, attempt parallel generation and fall
         # back to sequential if multiprocessing is unavailable.
@@ -735,13 +782,17 @@ class SWWAnimationGUI:
             save_method = getattr(self._splotter, _QTY_SAVE_METHOD[qty])
             self._generate_next_frame(0, sww_frames, save_method, dpi, vmin, vmax,
                                       plot_dir, qty, cmap, basemap, alpha,
-                                      basemap_provider, smooth=smooth)
+                                      basemap_provider, smooth=smooth,
+                                      show_elev=show_elev,
+                                      elev_levels=elev_levels,
+                                      show_mesh=show_mesh)
         else:
             try:
                 self._start_parallel_generation(
                     sww_frames, plot_dir, qty, dpi, vmin, vmax,
                     cmap, basemap, alpha, basemap_provider,
-                    smooth=smooth)
+                    smooth=smooth, show_elev=show_elev,
+                    elev_levels=elev_levels, show_mesh=show_mesh)
             except Exception as e:
                 import traceback
                 print(f'[anuga_animate] parallel init failed: {e}',
@@ -753,13 +804,17 @@ class SWWAnimationGUI:
                 self._generate_next_frame(0, sww_frames, save_method, dpi, vmin,
                                           vmax, plot_dir, qty, cmap, basemap,
                                           alpha, basemap_provider,
-                                          smooth=smooth)
+                                          smooth=smooth,
+                                          show_elev=show_elev,
+                                          elev_levels=elev_levels,
+                                          show_mesh=show_mesh)
 
     def _generate_next_frame(self, pos, sww_frames, save_method,
                               dpi, vmin, vmax, plot_dir, qty,
                               cmap='viridis', basemap=False, alpha=1.0,
                               basemap_provider='OpenStreetMap.Mapnik',
-                              smooth=False):
+                              smooth=False, show_elev=False, elev_levels=10,
+                              show_mesh=False):
         n_to_gen  = len(sww_frames)
         sww_frame = sww_frames[pos]
 
@@ -773,7 +828,8 @@ class SWWAnimationGUI:
                         cmap=cmap, basemap=basemap, alpha=alpha,
                         basemap_provider=basemap_provider,
                         xlim=self._zoom_xlim, ylim=self._zoom_ylim,
-                        smooth=smooth)
+                        smooth=smooth, show_elev=show_elev,
+                        elev_levels=elev_levels, show_mesh=show_mesh)
         except Exception as e:
             self._set_status(f'Error generating frame {sww_frame}: {e}')
             self._gen_btn.config(state=tk.NORMAL)
@@ -789,14 +845,17 @@ class SWWAnimationGUI:
                 1, lambda: self._generate_next_frame(
                     pos + 1, sww_frames, save_method,
                     dpi, vmin, vmax, plot_dir, qty, cmap, basemap, alpha,
-                    basemap_provider, smooth=smooth))
+                    basemap_provider, smooth=smooth,
+                    show_elev=show_elev, elev_levels=elev_levels,
+                    show_mesh=show_mesh))
         else:
             self._on_generation_done(plot_dir, qty, n_to_gen)
 
     def _start_parallel_generation(self, sww_frames, plot_dir, qty,
                                      dpi, vmin, vmax, cmap, basemap,
                                      alpha, basemap_provider,
-                                     smooth=False):
+                                     smooth=False, show_elev=False,
+                                     elev_levels=10, show_mesh=False):
         """Spawn a ProcessPoolExecutor and submit all frames."""
         import multiprocessing as mp
         import platform
@@ -825,7 +884,7 @@ class SWWAnimationGUI:
                 frame, pos, save_name, qty,
                 dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
                 self._zoom_xlim, self._zoom_ylim,
-                smooth)
+                smooth, show_elev, elev_levels, show_mesh)
             for pos, frame in enumerate(sww_frames)
         ]
         self._gen_plot_dir = plot_dir
@@ -1115,7 +1174,7 @@ class SWWAnimationGUI:
         # so it is independent of image size.
         self._pick_text = self._ax.text(
             0.5, 0.02,
-            'Click to pick a timeseries point  |  Esc to cancel',
+            'Click to add timeseries points  |  Esc to finish',
             ha='center', va='bottom', fontsize=9,
             color='white', fontweight='bold',
             bbox=dict(boxstyle='round,pad=0.3', facecolor='black', alpha=0.65),
@@ -1152,10 +1211,12 @@ class SWWAnimationGUI:
             xc, yc = sp.xc, sp.yc
 
         dist = np.sqrt((xc - xmesh)**2 + (yc - ymesh)**2)
-        self._ts_triangle = int(dist.argmin())
-        # Stay in pick mode so the user can keep clicking new points.
+        tri = int(dist.argmin())
+        if tri not in self._ts_triangles:
+            self._ts_triangles.append(tri)
+        # Stay in pick mode so the user can keep clicking to add more points.
         # _update_timeseries may pack the ts panel (resize), so force a
-        # synchronous draw afterwards to ensure the star is visible.
+        # synchronous draw afterwards to ensure the markers are visible.
         self._update_timeseries()
         self._update_pick_overlay()
         self._canvas.draw()
@@ -1190,17 +1251,23 @@ class SWWAnimationGUI:
         else:
             self._canvas.draw_idle()
 
+    # tab10 colour cycle (matches matplotlib default)
+    _TS_COLORS = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728', '#9467bd',
+                  '#8c564b', '#e377c2', '#7f7f7f', '#bcbd22', '#17becf']
+
+    @classmethod
+    def _ts_color(cls, i):
+        return cls._TS_COLORS[i % len(cls._TS_COLORS)]
+
     def _update_timeseries(self):
-        """Plot quantity vs time for the picked centroid."""
-        if self._ts_triangle is None or self._splotter is None:
+        """Plot quantity vs time for all picked centroids."""
+        if not self._ts_triangles or self._splotter is None:
             return
-        import numpy as np
+        import numpy as _np
 
         sp  = self._splotter
         qty = self._ts_qty_var.get()
-        tri = self._ts_triangle
-
-        import numpy as _np
+        t   = sp.time
 
         data_map = {
             'depth':       sp.depth,
@@ -1216,28 +1283,28 @@ class SWWAnimationGUI:
             'elev':        'Elevation (m)',
         }
 
-        if qty == 'elev':
-            if sp.elev.ndim == 2:
-                y = sp.elev[:, tri]
-            else:
-                y = _np.full(len(sp.time), sp.elev[tri])
-        else:
-            y = data_map[qty][:, tri]
-        t = sp.time
-
         self._ts_ax.cla()
-        self._ts_ax.plot(t, y, color='steelblue', linewidth=1.2)
+        for i, tri in enumerate(self._ts_triangles):
+            if qty == 'elev':
+                y = sp.elev[:, tri] if sp.elev.ndim == 2 else _np.full(len(t), sp.elev[tri])
+            else:
+                y = data_map[qty][:, tri]
+            xc = sp.xc[tri] + sp.xllcorner
+            yc = sp.yc[tri] + sp.yllcorner
+            label = f'T{tri} ({xc:.0f}, {yc:.0f})'
+            self._ts_ax.plot(t, y, color=self._ts_color(i),
+                             linewidth=1.2, label=label)
+
         self._ts_ax.set_xlabel('Time (s)')
         self._ts_ax.set_ylabel(ylabel_map[qty])
         self._ts_ax.set_xlim(t[0], t[-1])
         self._ts_ax.grid(True, linestyle=':', alpha=0.5)
+        if len(self._ts_triangles) > 1:
+            self._ts_ax.legend(fontsize=7, loc='upper right', framealpha=0.7)
 
         # Vertical cursor at current animation time
-        current_time = sp.time[0]
+        current_time = t[0]
         if self._frames and self._current < len(self._frames):
-            # map current PNG frame index back to a SWW time index
-            # frames were generated at stride intervals; approximate by
-            # scaling through the stored time array
             frac = self._current / max(len(self._frames) - 1, 1)
             ts_idx = int(round(frac * (len(t) - 1)))
             current_time = t[ts_idx]
@@ -1248,30 +1315,27 @@ class SWWAnimationGUI:
         self._ts_fig.tight_layout(pad=1.5)
         self._ts_canvas.draw_idle()
 
-        xc = sp.xc[tri] + sp.xllcorner
-        yc = sp.yc[tri] + sp.yllcorner
+        n = len(self._ts_triangles)
         self._ts_info_label.config(
-            text=f'Triangle {tri}  |  x={xc:.1f}  y={yc:.1f}')
+            text=f'{n} point{"s" if n != 1 else ""} picked')
 
         # Show the panel if not already visible.
-        # Pack it before the canvas frame so it takes space from the bottom.
         if not self._ts_outer.winfo_ismapped():
             self._ts_outer.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=False,
                                 before=self._canvas_frame)
 
     def _export_timeseries(self):
-        """Save the current timeseries to a CSV file chosen by the user."""
-        if self._ts_triangle is None or self._splotter is None:
+        """Save all picked timeseries to a single CSV file."""
+        if not self._ts_triangles or self._splotter is None:
             return
         import csv
+        import numpy as _np2
         from tkinter import filedialog
 
         sp  = self._splotter
         qty = self._ts_qty_var.get()
-        tri = self._ts_triangle
         t   = sp.time
-
-        import numpy as _np2
+        tris = self._ts_triangles
 
         data_map = {
             'depth':       sp.depth,
@@ -1279,26 +1343,6 @@ class SWWAnimationGUI:
             'speed':       sp.speed,
             'speed_depth': sp.speed_depth,
         }
-        if qty == 'elev':
-            if sp.elev.ndim == 2:
-                y = sp.elev[:, tri]
-            else:
-                y = _np2.full(len(t), sp.elev[tri])
-        else:
-            y = data_map[qty][:, tri]
-
-        xc = sp.xc[tri] + sp.xllcorner
-        yc = sp.yc[tri] + sp.yllcorner
-
-        default_name = f'{self._sww_prefix}_{qty}_tri{tri}.csv'
-        path = filedialog.asksaveasfilename(
-            title='Export timeseries',
-            initialfile=default_name,
-            defaultextension='.csv',
-            filetypes=[('CSV files', '*.csv'), ('All files', '*.*')])
-        if not path:
-            return
-
         qty_label = {
             'depth':       'depth_m',
             'stage':       'stage_m',
@@ -1307,16 +1351,41 @@ class SWWAnimationGUI:
             'elev':        'elevation_m',
         }[qty]
 
+        # Build array of y-values: shape (n_times, n_tris)
+        ys = []
+        for tri in tris:
+            if qty == 'elev':
+                y = sp.elev[:, tri] if sp.elev.ndim == 2 else _np2.full(len(t), sp.elev[tri])
+            else:
+                y = data_map[qty][:, tri]
+            ys.append(y)
+
+        tri_str = '_'.join(str(tri) for tri in tris)
+        default_name = f'{self._sww_prefix}_{qty}_tri{tri_str}.csv'
+        path = filedialog.asksaveasfilename(
+            title='Export timeseries',
+            initialfile=default_name,
+            defaultextension='.csv',
+            filetypes=[('CSV files', '*.csv'), ('All files', '*.*')])
+        if not path:
+            return
+
         with open(path, 'w', newline='') as f:
             writer = csv.writer(f)
-            writer.writerow([f'# SWW file: {self._sww_prefix}',
-                             f'triangle: {tri}',
-                             f'x: {xc:.3f}', f'y: {yc:.3f}'])
-            writer.writerow(['time_s', qty_label])
-            for ti, yi in zip(t, y):
-                writer.writerow([f'{ti:.6g}', f'{yi:.6g}'])
+            # header comment rows — one per triangle
+            for tri in tris:
+                xc = sp.xc[tri] + sp.xllcorner
+                yc = sp.yc[tri] + sp.yllcorner
+                writer.writerow([f'# triangle: {tri}',
+                                 f'x: {xc:.3f}', f'y: {yc:.3f}'])
+            # column headers
+            col_headers = ['time_s'] + [f'{qty_label}_tri{tri}' for tri in tris]
+            writer.writerow(col_headers)
+            for row_i, ti in enumerate(t):
+                row = [f'{ti:.6g}'] + [f'{ys[j][row_i]:.6g}' for j in range(len(tris))]
+                writer.writerow(row)
 
-        self._set_status(f'Exported {len(t)} rows to {path}')
+        self._set_status(f'Exported {len(t)} rows x {len(tris)} points to {path}')
 
     def _update_ts_cursor(self):
         """Move the vertical cursor line to the current animation time."""
@@ -1332,63 +1401,58 @@ class SWWAnimationGUI:
         self._ts_canvas.draw_idle()
 
     def _close_timeseries(self):
-        """Hide the timeseries panel and reset state."""
-        self._ts_triangle = None
+        """Hide the timeseries panel and clear all picked points."""
+        self._ts_triangles = []
         self._ts_vline = None
         self._ts_ax.cla()
         self._ts_canvas.draw_idle()
+        self._ts_info_label.config(text='')
         if self._ts_outer.winfo_ismapped():
             self._ts_outer.pack_forget()
         self._remove_pick_overlay()
         self._canvas.draw_idle()
 
     def _remove_pick_overlay(self):
-        """Remove the centroid marker from the animation canvas."""
-        if self._pick_overlay is not None:
+        """Remove all centroid markers from the animation canvas."""
+        for artist in self._pick_overlays:
             try:
-                self._pick_overlay.remove()
+                artist.remove()
             except Exception:
                 pass
-            self._pick_overlay = None
+        self._pick_overlays = []
 
     def _update_pick_overlay(self):
-        """Add/update the centroid marker on the animation PNG (no draw_idle call)."""
+        """Add/update one coloured star per picked centroid on the animation canvas."""
         self._remove_pick_overlay()
-        if (self._ts_triangle is None or self._plot_transform is None
+        if (not self._ts_triangles or self._plot_transform is None
                 or not self._frames):
             return
 
-        sp = self._splotter
-        tri = self._ts_triangle
-        pt = self._plot_transform
-
-        # Centroid in the coordinate system used to generate frames.
-        # _compute_plot_transform renders with triang_abs when basemap is used,
-        # so pt['xlim'/'ylim'] are already in absolute coords for basemap and
-        # relative coords for non-basemap — no further offset needed.
+        sp  = self._splotter
+        pt  = self._plot_transform
         use_basemap = self._gen_used_basemap and (sp.epsg is not None)
-        if use_basemap:
-            xd = sp.xc[tri] + sp.xllcorner
-            yd = sp.yc[tri] + sp.yllcorner
-        else:
-            xd, yd = sp.xc[tri], sp.yc[tri]
         xlim, ylim = pt['xlim'], pt['ylim']
-
         pos = pt['pos']
         W, H = pt['W'], pt['H']
 
-        xfrac = (xd - xlim[0]) / (xlim[1] - xlim[0])
-        yfrac = (yd - ylim[0]) / (ylim[1] - ylim[0])
+        for i, tri in enumerate(self._ts_triangles):
+            if use_basemap:
+                xd = sp.xc[tri] + sp.xllcorner
+                yd = sp.yc[tri] + sp.yllcorner
+            else:
+                xd, yd = sp.xc[tri], sp.yc[tri]
 
-        # Convert figure-fraction position to image pixel coords,
-        # then map to axes data coords (axes x = col, axes y = row for our extent).
-        ax_x = (pos.x0 + pos.width * xfrac) * W
-        ax_y = (1.0 - (pos.y0 + pos.height * yfrac)) * H
+            xfrac = (xd - xlim[0]) / (xlim[1] - xlim[0])
+            yfrac = (yd - ylim[0]) / (ylim[1] - ylim[0])
+            ax_x = (pos.x0 + pos.width  * xfrac) * W
+            ax_y = (1.0 - (pos.y0 + pos.height * yfrac)) * H
 
-        self._pick_overlay, = self._ax.plot(
-            ax_x, ax_y, 'r*', markersize=8, zorder=10,
-            markeredgecolor='white', markeredgewidth=0.5,
-            scalex=False, scaley=False)
+            marker, = self._ax.plot(
+                ax_x, ax_y, '*', markersize=9, zorder=10,
+                color=self._ts_color(i),
+                markeredgecolor='white', markeredgewidth=0.5,
+                scalex=False, scaley=False)
+            self._pick_overlays.append(marker)
 
     # -------------------------------------------------------------- #
     # Zoom                                                            #
@@ -1506,6 +1570,9 @@ class SWWAnimationGUI:
         if not self._show_mesh_var.get():
             return
         if self._plot_transform is None or self._splotter is None:
+            return
+        # Skip canvas overlay if mesh is already baked into frames
+        if self._last_gen_show_mesh:
             return
 
         import numpy as np
@@ -1625,6 +1692,9 @@ class SWWAnimationGUI:
             return
         if self._plot_transform is None or self._splotter is None:
             return
+        # Skip canvas overlay if elevation contours are already baked into frames
+        if self._last_gen_show_elev:
+            return
 
         if self._elev_contour_data is None:
             self._build_elev_contour_data()
@@ -1701,12 +1771,20 @@ class SWWAnimationGUI:
         # --- decoration checkboxes (no colorbar — mesh has none) ---
         chk_frame = ttk.Frame(win, padding=6)
         chk_frame.pack(fill=tk.X)
-        labels_var = tk.BooleanVar(value=True)
-        title_var  = tk.BooleanVar(value=True)
+        labels_var  = tk.BooleanVar(value=True)
+        title_var   = tk.BooleanVar(value=True)
+        sp = self._splotter
+        _bm_available = sp is not None and sp.epsg is not None
+        basemap_var = tk.BooleanVar(
+            value=self._gen_used_basemap and _bm_available)
         ttk.Checkbutton(chk_frame, text='Axis labels', variable=labels_var
                         ).pack(side=tk.LEFT, **pad)
         ttk.Checkbutton(chk_frame, text='Title',       variable=title_var
                         ).pack(side=tk.LEFT, **pad)
+        bm_chk = ttk.Checkbutton(chk_frame, text='Basemap', variable=basemap_var)
+        bm_chk.pack(side=tk.LEFT, **pad)
+        if not _bm_available:
+            bm_chk.config(state='disabled')
 
         ttk.Separator(win, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=6)
 
@@ -1742,6 +1820,7 @@ class SWWAnimationGUI:
                     show_title=title_var.get(),
                     dpi=dpi_var.get(),
                     tex_engine=tex_var.get(),
+                    use_basemap=basemap_var.get(),
                 )
                 self._set_status(f'Mesh saved to {path}')
             except Exception as exc:
@@ -1754,13 +1833,14 @@ class SWWAnimationGUI:
         win.wait_window()
 
     def _render_and_save_mesh(self, path, show_labels=True, show_title=True,
-                               dpi=150, tex_engine='pdflatex'):
+                               dpi=150, tex_engine='pdflatex', use_basemap=None):
         """Render the triangulation with triplot and save to *path*."""
         import os
         import matplotlib
 
         sp = self._splotter
-        use_basemap = self._gen_used_basemap and sp.epsg is not None
+        if use_basemap is None:
+            use_basemap = self._gen_used_basemap and sp.epsg is not None
         triang = sp.triang_abs if use_basemap else sp.triang
 
         ext = os.path.splitext(path)[1].lower()
@@ -1871,25 +1951,143 @@ class SWWAnimationGUI:
     # Save frame / animation                                         #
     # -------------------------------------------------------------- #
 
+    @staticmethod
+    def _parse_times(text):
+        """Parse a comma-separated string of floats; silently skip bad tokens."""
+        times = []
+        for part in text.split(','):
+            part = part.strip()
+            if part:
+                try:
+                    times.append(float(part))
+                except ValueError:
+                    pass
+        return times
+
+    def _time_to_sww_idx(self, t):
+        """Return the SWW timestep index nearest to time *t*."""
+        import numpy as _np
+        return int(_np.argmin(_np.abs(self._splotter.time - t)))
+
+    def _time_to_frame_idx(self, t):
+        """Return the loaded-frame index nearest to SWW time *t*."""
+        sww_idx = self._time_to_sww_idx(t)
+        n_sww   = len(self._splotter.time)
+        n_frames = len(self._frames)
+        if n_frames <= 1 or n_sww <= 1:
+            return 0
+        frac = sww_idx / (n_sww - 1)
+        return int(round(frac * (n_frames - 1)))
+
     def _save_frame(self):
-        """Save the currently displayed frame (with any pick overlay) to a file."""
+        """Open a dialog to save the current frame, or a set of times, to PNG."""
         if not self._frames:
             return
-        from tkinter import filedialog
-        default = (f'{self._sww_prefix}_{self._last_gen_qty}'
-                   f'_frame{self._current + 1:04d}')
-        path = filedialog.asksaveasfilename(
-            title='Save current frame',
-            initialfile=default,
-            defaultextension='.png',
-            filetypes=[('PNG image', '*.png'),
-                       ('PDF document', '*.pdf'),
-                       ('SVG image', '*.svg'),
-                       ('All files', '*.*')])
-        if not path:
-            return
-        self._fig.savefig(path, dpi=self._last_gen_dpi, bbox_inches='tight')
-        self._set_status(f'Frame saved to {path}')
+
+        win = tk.Toplevel(self.root)
+        win.title('Save Frame')
+        win.resizable(False, False)
+        win.grab_set()
+        pad = dict(padx=8, pady=4)
+
+        # --- frame selection ---
+        sel_lf = ttk.LabelFrame(win, text='Frames', padding=6)
+        sel_lf.pack(fill=tk.X, padx=8, pady=(8, 4))
+
+        sel_var = tk.StringVar(value='current')
+        ttk.Radiobutton(sel_lf, text='Current frame',
+                        variable=sel_var, value='current').grid(
+            row=0, column=0, sticky=tk.W)
+        ttk.Radiobutton(sel_lf, text='Times (s):',
+                        variable=sel_var, value='times').grid(
+            row=1, column=0, sticky=tk.W, pady=(4, 0))
+
+        sp = self._splotter
+        t0, t1 = float(sp.time[0]), float(sp.time[-1])
+        times_var = tk.StringVar(value=f'{t0:.1f}')
+        times_entry = ttk.Entry(sel_lf, textvariable=times_var, width=40)
+        times_entry.grid(row=1, column=1, sticky=tk.EW, padx=(4, 0), pady=(4, 0))
+        ttk.Label(sel_lf, text=f'(comma-separated; range {t0:.1f} – {t1:.1f} s)',
+                  foreground='grey').grid(row=2, column=1, sticky=tk.W, padx=(4, 0))
+        sel_lf.columnconfigure(1, weight=1)
+
+        ttk.Separator(win, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=6, pady=4)
+
+        # --- buttons ---
+        btn_frame = ttk.Frame(win, padding=6)
+        btn_frame.pack(fill=tk.X)
+        ttk.Button(btn_frame, text='Cancel',
+                   command=win.destroy).pack(side=tk.RIGHT, padx=4)
+
+        def _do_save():
+            from tkinter import filedialog
+            if sel_var.get() == 'current':
+                default = (f'{self._sww_prefix}_{self._last_gen_qty}'
+                           f'_frame{self._current + 1:04d}')
+                path = filedialog.asksaveasfilename(
+                    parent=win,
+                    title='Save frame',
+                    initialfile=default,
+                    defaultextension='.png',
+                    filetypes=[('PNG image', '*.png'),
+                               ('PDF document', '*.pdf'),
+                               ('SVG image', '*.svg'),
+                               ('All files', '*.*')])
+                if not path:
+                    return
+                win.destroy()
+                self._fig.savefig(path, dpi=self._last_gen_dpi, bbox_inches='tight')
+                self._set_status(f'Frame saved to {path}')
+            else:
+                times = self._parse_times(times_var.get())
+                if not times:
+                    from tkinter import messagebox
+                    messagebox.showerror('No times', 'Enter at least one time value.',
+                                         parent=win)
+                    return
+                if len(times) == 1:
+                    # Single time → single file save dialog
+                    fidx = self._time_to_frame_idx(times[0])
+                    t_actual = sp.time[self._time_to_sww_idx(times[0])]
+                    default = (f'{self._sww_prefix}_{self._last_gen_qty}'
+                               f'_t{t_actual:.1f}')
+                    path = filedialog.asksaveasfilename(
+                        parent=win,
+                        title='Save frame',
+                        initialfile=default,
+                        defaultextension='.png',
+                        filetypes=[('PNG image', '*.png'), ('All files', '*.*')])
+                    if not path:
+                        return
+                    win.destroy()
+                    import shutil
+                    shutil.copy2(self._frames[fidx], path)
+                    self._set_status(f'Frame saved to {path}')
+                else:
+                    # Multiple times → choose output directory
+                    out_dir = filedialog.askdirectory(
+                        parent=win,
+                        title='Choose output directory for frames')
+                    if not out_dir:
+                        return
+                    win.destroy()
+                    import shutil
+                    saved = []
+                    for t_req in times:
+                        fidx = self._time_to_frame_idx(t_req)
+                        t_actual = sp.time[self._time_to_sww_idx(t_req)]
+                        fname = (f'{self._sww_prefix}_{self._last_gen_qty}'
+                                 f'_t{t_actual:.1f}.png')
+                        dest = os.path.join(out_dir, fname)
+                        shutil.copy2(self._frames[fidx], dest)
+                        saved.append(dest)
+                    self._set_status(
+                        f'Saved {len(saved)} frames to {out_dir}')
+
+        ttk.Button(btn_frame, text='Save...',
+                   command=_do_save).pack(side=tk.RIGHT, padx=4)
+
+        win.wait_window()
 
     def _save_animation(self):
         """Save all loaded frames as a GIF or MP4 animation."""
@@ -2038,6 +2236,31 @@ class SWWAnimationGUI:
 
         ttk.Separator(win, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=6)
 
+        # --- frame selection ---
+        sel_lf = ttk.LabelFrame(win, text='Frames', padding=6)
+        sel_lf.pack(fill=tk.X, padx=6, pady=4)
+
+        exp_sel_var = tk.StringVar(value='current')
+        ttk.Radiobutton(sel_lf, text='Current frame',
+                        variable=exp_sel_var, value='current').grid(
+            row=0, column=0, sticky=tk.W)
+        ttk.Radiobutton(sel_lf, text='Times (s):',
+                        variable=exp_sel_var, value='times').grid(
+            row=1, column=0, sticky=tk.W, pady=(4, 0))
+
+        sp = self._splotter
+        t0e, t1e = float(sp.time[0]), float(sp.time[-1])
+        exp_times_var = tk.StringVar(value=f'{t0e:.1f}')
+        exp_times_entry = ttk.Entry(sel_lf, textvariable=exp_times_var, width=40)
+        exp_times_entry.grid(row=1, column=1, sticky=tk.EW,
+                             padx=(4, 0), pady=(4, 0))
+        ttk.Label(sel_lf,
+                  text=f'(comma-separated; range {t0e:.1f} – {t1e:.1f} s)',
+                  foreground='grey').grid(row=2, column=1, sticky=tk.W, padx=(4, 0))
+        sel_lf.columnconfigure(1, weight=1)
+
+        ttk.Separator(win, orient=tk.HORIZONTAL).pack(fill=tk.X, padx=6)
+
         # --- decoration checkboxes ---
         chk_frame = ttk.Frame(win, padding=6)
         chk_frame.pack(fill=tk.X)
@@ -2069,42 +2292,103 @@ class SWWAnimationGUI:
                    command=win.destroy).pack(side=tk.RIGHT, padx=4)
 
         def _do_export():
+            from tkinter import messagebox
             fmt = fmt_var.get().lower()
             ext = f'.{fmt}'
-            default = (f'{self._sww_prefix}_{self._last_gen_qty}'
-                       f'_frame{self._current + 1:04d}')
             filetypes = {
                 'png': [('PNG image', '*.png')],
                 'pdf': [('PDF document', '*.pdf')],
                 'svg': [('SVG image', '*.svg')],
                 'pgf': [('PGF/LaTeX', '*.pgf')],
             }
-            path = filedialog.asksaveasfilename(
-                parent=win,
-                title='Export frame',
-                initialfile=default,
-                defaultextension=ext,
-                filetypes=filetypes.get(fmt, [('All files', '*.*')]))
-            if not path:
-                return
-            win.destroy()
-            try:
-                self._render_and_export_frame(
-                    path,
-                    show_colorbar=cbar_var.get(),
-                    show_labels=labels_var.get(),
-                    show_title=title_var.get(),
-                    show_edges=edges_var.get(),
-                    show_mesh=mesh_var.get(),
-                    show_elev=elev_var.get(),
-                    elev_levels=max(3, int(self._elev_levels_var.get())),
-                    dpi=dpi_var.get(),
-                    tex_engine=tex_var.get(),
-                )
-                self._set_status(f'Frame exported to {path}')
-            except Exception as exc:
-                from tkinter import messagebox
-                messagebox.showerror('Export error', str(exc))
+            kw = dict(
+                show_colorbar=cbar_var.get(),
+                show_labels=labels_var.get(),
+                show_title=title_var.get(),
+                show_edges=edges_var.get(),
+                show_mesh=mesh_var.get(),
+                show_elev=elev_var.get(),
+                elev_levels=max(3, int(self._elev_levels_var.get())),
+                dpi=dpi_var.get(),
+                tex_engine=tex_var.get(),
+            )
+
+            if exp_sel_var.get() == 'current':
+                default = (f'{self._sww_prefix}_{self._last_gen_qty}'
+                           f'_frame{self._current + 1:04d}')
+                path = filedialog.asksaveasfilename(
+                    parent=win,
+                    title='Export frame',
+                    initialfile=default,
+                    defaultextension=ext,
+                    filetypes=filetypes.get(fmt, [('All files', '*.*')]))
+                if not path:
+                    return
+                win.destroy()
+                try:
+                    self._render_and_export_frame(path, **kw)
+                    self._set_status(f'Frame exported to {path}')
+                except Exception as exc:
+                    messagebox.showerror('Export error', str(exc))
+            else:
+                times = self._parse_times(exp_times_var.get())
+                if not times:
+                    messagebox.showerror('No times',
+                                         'Enter at least one time value.',
+                                         parent=win)
+                    return
+                if len(times) == 1:
+                    t_actual = sp.time[self._time_to_sww_idx(times[0])]
+                    default = (f'{self._sww_prefix}_{self._last_gen_qty}'
+                               f'_t{t_actual:.1f}')
+                    path = filedialog.asksaveasfilename(
+                        parent=win,
+                        title='Export frame',
+                        initialfile=default,
+                        defaultextension=ext,
+                        filetypes=filetypes.get(fmt, [('All files', '*.*')]))
+                    if not path:
+                        return
+                    win.destroy()
+                    try:
+                        saved_current = self._current
+                        self._current = self._time_to_frame_idx(times[0])
+                        self._render_and_export_frame(path, **kw)
+                        self._current = saved_current
+                        self._set_status(f'Frame exported to {path}')
+                    except Exception as exc:
+                        messagebox.showerror('Export error', str(exc))
+                else:
+                    out_dir = filedialog.askdirectory(
+                        parent=win,
+                        title='Choose output directory for exported frames')
+                    if not out_dir:
+                        return
+                    win.destroy()
+                    saved_current = self._current
+                    exported = []
+                    errors = []
+                    for t_req in times:
+                        sww_idx = self._time_to_sww_idx(t_req)
+                        t_actual = float(sp.time[sww_idx])
+                        fname = (f'{self._sww_prefix}_{self._last_gen_qty}'
+                                 f'_t{t_actual:.1f}{ext}')
+                        path = os.path.join(out_dir, fname)
+                        try:
+                            self._current = self._time_to_frame_idx(t_req)
+                            self._render_and_export_frame(path, **kw)
+                            exported.append(path)
+                        except Exception as exc:
+                            errors.append(f't={t_actual:.1f}: {exc}')
+                    self._current = saved_current
+                    msg = f'Exported {len(exported)} frames to {out_dir}'
+                    if errors:
+                        msg += f' ({len(errors)} errors)'
+                    self._set_status(msg)
+                    if errors:
+                        from tkinter import messagebox as _mb
+                        _mb.showwarning('Export warnings',
+                                        '\n'.join(errors[:10]))
 
         ttk.Button(btn_frame, text='Export...',
                    command=_do_export).pack(side=tk.RIGHT, padx=4)
@@ -2337,8 +2621,7 @@ class SWWAnimationGUI:
         if self._splotter is None:
             return
         sp = self._splotter
-        use_basemap = self._gen_used_basemap and sp.epsg is not None
-        triang = sp.triang_abs if use_basemap else sp.triang
+        _bm_available = sp.epsg is not None
 
         win = tk.Toplevel(self.root)
         win.title(f'Mesh - {len(sp.triangles)} triangles')
@@ -2347,31 +2630,40 @@ class SWWAnimationGUI:
         from matplotlib.figure import Figure
         mesh_fig = Figure(figsize=(8, 6))
         ax = mesh_fig.add_subplot(111)
-        ax.triplot(triang, color='steelblue', linewidth=0.4, alpha=0.7)
-        ax.set_aspect('equal')
-
-        if use_basemap:
-            ax.set_xlabel('Easting (m)')
-            ax.set_ylabel('Northing (m)')
-            ax.set_title(f'Mesh  ({len(sp.triangles)} triangles)')
-            from anuga.utilities.animate import BASEMAP_PROVIDERS, _add_basemap
-            provider_label = self._basemap_provider_var.get()
-            provider_str = BASEMAP_PROVIDERS.get(provider_label, 'OpenStreetMap.Mapnik')
-            try:
-                _add_basemap(ax, sp.epsg, provider_str, cache=sp._basemap_cache)
-            except Exception as e:
-                ax.set_title(
-                    f'Mesh  ({len(sp.triangles)} triangles)  - basemap failed: {e}')
-        else:
-            ax.set_xlabel('x (m)')
-            ax.set_ylabel('y (m)')
-            ax.set_title(f'Mesh  ({len(sp.triangles)} triangles)')
-
-        mesh_fig.tight_layout()
-
         mesh_canvas = FigureCanvasTkAgg(mesh_fig, master=win)
-        mesh_canvas.draw()
         mesh_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        bm_var = tk.BooleanVar(value=self._gen_used_basemap and _bm_available)
+
+        def _redraw_mesh(*_):
+            use_basemap = bm_var.get() and _bm_available
+            triang = sp.triang_abs if use_basemap else sp.triang
+            ax.cla()
+            ax.triplot(triang, color='steelblue', linewidth=0.4, alpha=0.7)
+            ax.set_aspect('equal')
+            n_tri = len(sp.triangles)
+            if use_basemap:
+                ax.set_xlabel('Easting (m)')
+                ax.set_ylabel('Northing (m)')
+                ax.set_title(f'Mesh  ({n_tri} triangles)')
+                from anuga.utilities.animate import BASEMAP_PROVIDERS, _add_basemap
+                provider_label = self._basemap_provider_var.get()
+                provider_str = BASEMAP_PROVIDERS.get(
+                    provider_label, 'OpenStreetMap.Mapnik')
+                try:
+                    _add_basemap(ax, sp.epsg, provider_str,
+                                 cache=sp._basemap_cache)
+                except Exception as e:
+                    ax.set_title(
+                        f'Mesh  ({n_tri} triangles)  – basemap failed: {e}')
+            else:
+                ax.set_xlabel('x (m)')
+                ax.set_ylabel('y (m)')
+                ax.set_title(f'Mesh  ({n_tri} triangles)')
+            mesh_fig.tight_layout()
+            mesh_canvas.draw()
+
+        _redraw_mesh()
 
         def _close_mesh():
             plt.close(mesh_fig)
@@ -2380,8 +2672,13 @@ class SWWAnimationGUI:
         btn_row = ttk.Frame(win)
         btn_row.pack(pady=4)
 
+        bm_chk = ttk.Checkbutton(btn_row, text='Basemap', variable=bm_var,
+                                  command=_redraw_mesh)
+        bm_chk.pack(side=tk.LEFT, padx=6)
+        if not _bm_available:
+            bm_chk.config(state='disabled')
+
         def _save_from_viewer():
-            # Delegate to the full options dialog
             self._save_mesh()
 
         ttk.Button(btn_row, text='Save Mesh...',
@@ -2420,12 +2717,21 @@ class SWWAnimationGUI:
 
         h2('Quick-start workflow')
         p('1. Open an SWW file with Browse... or pass --sww on the command line.')
-        p('2. Choose a Quantity; vmin/vmax default to Auto from data.')
+        p('2. On the Plot tab choose a Quantity; vmin/vmax default to Auto.')
         p('3. Click Generate Frames - PNGs are written to the Output dir.')
         p('4. Use Play / step buttons to animate, or drag the Frame slider.')
         nl()
 
-        h2('Generation settings (rows 3-4)')
+        h2('Interface layout')
+        p('The GUI uses three tabs plus always-visible bars:')
+        p('  Plot tab     - quantity, colour range, colormap, overlays.')
+        p('  Generate tab - output directory, DPI, stride, EPSG, basemap.')
+        p('  Output tab   - Save/Export frame, Save Animation, View/Save Mesh.')
+        p('Always visible: file row, Generate Frames bar, playback bar,')
+        p('  frame slider, status bar.')
+        nl()
+
+        h2('Plot tab settings')
         h2('  Quantity')
         p('  depth, stage, speed, speed_depth - animated per timestep.')
         p('  max_depth, max_speed, max_speed_depth - single frame showing')
@@ -2438,15 +2744,40 @@ class SWWAnimationGUI:
         p('  Colormap range.  "Auto from data" (ticked by default) sets the')
         p('  range automatically from the data in the current generation run.')
         nl()
-        h2('  DPI')
-        p('  Resolution of generated PNG frames (default 100).')
+        h2('  Colormap / Reverse')
+        p('  Any matplotlib colormap name.  Tick Reverse to invert it.')
         nl()
         h2('  min depth')
         p('  Triangles with depth below this value are treated as dry and')
         p('  shown in grey (elevation shading).')
         nl()
-        h2('  Colormap / Reverse')
-        p('  Any matplotlib colormap name.  Tick Reverse to invert it.')
+        h2('  Flat View')
+        p('  When unchecked (the default) the mesh is rendered with smooth')
+        p('  Gouraud shading - colour is interpolated across each triangle')
+        p('  so no triangle edges are visible.  Tick "Flat View" to revert')
+        p('  to piecewise-constant (flat) rendering where each triangle is')
+        p('  a single uniform colour.')
+        nl()
+        h2('  Show Mesh')
+        p('  Tick to overlay the triangulation on every generated frame.')
+        p('  The mesh is baked into the PNG so it appears at the correct')
+        p('  z-order even over basemap tiles.  The canvas overlay toggle')
+        p('  in the playback bar works independently for quick preview.')
+        nl()
+        h2('  Show Elev / levels')
+        p('  Tick to overlay elevation contours on every generated frame.')
+        p('  "levels" sets the target number of contour lines (rounded to')
+        p('  a round step value).  Like Show Mesh, the contours are baked')
+        p('  into the PNG during generation.')
+        nl()
+
+        h2('Generate tab settings')
+        h2('  DPI')
+        p('  Resolution of generated PNG frames (default 100).')
+        nl()
+        h2('  Every N frames')
+        p('  Stride: generate one PNG every N SWW timesteps.')
+        p('  Use a larger value for a quick preview of a long simulation.')
         nl()
         h2('  EPSG / Set')
         p('  Override or supply the coordinate-system code.  Older SWW')
@@ -2462,46 +2793,38 @@ class SWWAnimationGUI:
         p('  installed, the basemap is enabled automatically on file load.')
         p('  Requires contextily:  pip install contextily')
         nl()
-        h2('  Flat View')
-        p('  When unchecked (the default) the mesh is rendered with smooth')
-        p('  Gouraud shading - colour is interpolated across each triangle')
-        p('  so no triangle edges are visible.  Tick "Flat View" to revert')
-        p('  to piecewise-constant (flat) rendering where each triangle is')
-        p('  a single uniform colour.')
-        nl()
 
-        h2('Generate row (row 5)')
-        p('  Generate Frames - start frame generation.')
+        h2('Generate Frames bar')
+        p('  Generate Frames - start frame generation (parallelised).')
         p('  Cancel          - abort an in-progress generation.')
-        p('  Every N frames  - stride: generate one PNG every N SWW')
-        p('  timesteps.  Use a larger value for a quick preview.')
+        p('  Progress label  - shows n / total frames completed.')
         nl()
 
-        h2('Playback controls (row 6)')
+        h2('Playback controls')
         p('  Play/Pause  - start or stop the animation.')
         p('  |< < > >|   - jump to first, step back, step forward, last frame.')
         p('  FPS         - playback speed in frames per second.')
-        p('  Show Mesh   - toggle a triangulation overlay on the current frame.')
-        p('  Frame slider (row 7) - drag to scrub through frames.')
+        p('  Show Mesh   - canvas overlay toggle (quick preview only).')
+        p('  Frame slider - drag to scrub through frames.')
         nl()
 
         h2('Pick timeseries')
         p('Click "Pick timeseries" to enter pick mode:')
         p('  * The cursor changes to a crosshair.')
-        p('  * Click any point on the image to select the nearest triangle')
-        p('    centroid and plot its time series in the panel below.')
-        p('  * Click again to pick a different point - the timeseries and')
-        p('    the red star marker update immediately.')
-        p('  * Change the quantity in the timeseries dropdown to replot')
-        p('    the same triangle for depth / stage / speed / speed_depth.')
+        p('  * Click any point on the image to add the nearest triangle')
+        p('    centroid to the timeseries panel.  Each picked point gets')
+        p('    a distinct colour; its star marker appears on every frame.')
+        p('  * Click further points to add more series to the same plot.')
         p('  * Press Esc or click "Cancel pick" to exit pick mode.')
+        p('  * Click "Clear picks" to remove all picks and close the panel.')
         nl()
 
         h2('Timeseries panel')
-        p('  Quantity dropdown - switch the plotted variable.')
-        p('  Red dashed line  - current animation frame time.')
-        p('  Export CSV       - save the displayed time series to a CSV file.')
-        p('  Close            - hide the timeseries panel.')
+        p('  Quantity dropdown - switch the plotted variable for all picks.')
+        p('  Dashed lines     - mark the current animation frame time.')
+        p('  Export CSV       - save all picked time series to one CSV file.')
+        p('  Clear picks      - reset all picks and hide the panel.')
+        p('  Close            - hide the panel (picks are also cleared).')
         nl()
 
         h2('Zoom region')
@@ -2516,11 +2839,12 @@ class SWWAnimationGUI:
         p('  Note: Set Zoom is only available after frames have been generated.')
         nl()
 
-        h2('Output row (row 6, right side)')
+        h2('Output tab')
         p('  Save Frame      - saves the current frame (with any pick-marker')
-        p('  overlay) as PNG, PDF, or SVG.')
+        p('  overlay).  Choose "Current frame" or enter a list of times (s)')
+        p('  to save multiple frames at once.')
         nl()
-        p('  Export frame... - export the current frame to a chosen format.')
+        p('  Export frame... - like Save Frame but with explicit format choice.')
         nl()
         p('  Save Animation... - saves all loaded frames as:')
         p('    GIF - requires Pillow:  pip install Pillow')
@@ -2529,8 +2853,11 @@ class SWWAnimationGUI:
         p('          Install:  conda install ffmpeg  or  apt install ffmpeg')
         p('  Playback FPS is used as the animation frame rate.')
         nl()
-        p('  View Mesh / Save Mesh... - open the mesh viewer or save the')
-        p('  triangulation to a file.')
+        p('  View Mesh - open the mesh viewer.  The Basemap checkbox at the')
+        p('  bottom of the viewer toggles the tile basemap on/off live.')
+        nl()
+        p('  Save Mesh... - save the mesh to PNG, PDF, SVG, or PGF.')
+        p('  Options include axis labels, title, and a Basemap checkbox.')
         nl()
 
         h2('Performance')

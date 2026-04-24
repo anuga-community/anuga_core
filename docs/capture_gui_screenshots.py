@@ -7,8 +7,8 @@ Usage:
 
 Saves to docs/source/visualisation/img/:
     gui_main.png        — main window after frame generation
-    gui_timeseries.png  — timeseries panel open
-    gui_mesh.png        — View Mesh window
+    gui_timeseries.png  — timeseries panel open (two picked points)
+    gui_mesh.png        — View Mesh window (with Basemap checkbox visible)
 """
 
 import argparse
@@ -100,10 +100,12 @@ def run(sww_path):
             root.after(300, next_step)
 
         elif s == 4:
-            # Pick a triangle directly via the internal API (no synthetic mouse event)
+            # Pick two triangles to demonstrate multi-point timeseries
             sp  = gui._splotter
-            mid = len(sp.xc) // 2
-            gui._ts_triangle = mid
+            n   = len(sp.xc)
+            tri1 = n // 3
+            tri2 = 2 * n // 3
+            gui._ts_triangles = [tri1, tri2]
             gui._compute_plot_transform(gui._last_gen_dpi)
             gui._enter_pick_mode()
             gui._update_timeseries()
@@ -122,7 +124,7 @@ def run(sww_path):
             root.after(800, next_step)
 
         elif s == 6:
-            # Screenshot 2: timeseries panel open
+            # Screenshot 2: timeseries panel open with two picked points
             img = grab_window(root)
             path = os.path.join(OUT_DIR, 'gui_timeseries.png')
             img.save(path)

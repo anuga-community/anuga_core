@@ -40,7 +40,8 @@ def worker_init(sww_path, plot_dir, min_depth, epsg):
 
 def worker_frame(sww_frame, out_pos, save_method_name, qty,
                  dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
-                 xlim=None, ylim=None, smooth=False):
+                 xlim=None, ylim=None, smooth=False,
+                 show_elev=False, elev_levels=10, show_mesh=False):
     """Render one frame to disk; returns out_pos on success."""
     global _wp
     setattr(_wp, _COUNTER_ATTR[qty], out_pos)
@@ -48,5 +49,7 @@ def worker_frame(sww_frame, out_pos, save_method_name, qty,
     save_fn(frame=sww_frame, dpi=dpi, vmin=vmin, vmax=vmax,
             cmap=cmap, basemap=basemap, alpha=alpha,
             basemap_provider=basemap_provider,
-            xlim=xlim, ylim=ylim, smooth=smooth)
+            xlim=xlim, ylim=ylim, smooth=smooth,
+            show_elev=show_elev, elev_levels=elev_levels,
+            show_mesh=show_mesh)
     return out_pos
