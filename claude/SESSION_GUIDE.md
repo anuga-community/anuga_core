@@ -291,12 +291,10 @@ Sphinx RST, in-app help, and screenshots all updated. Commit `49c5b7d8`.
 See `claude/PROGRESS.md` — "Remaining Work" section for full list. Summary:
 
 ### SC26 (needs GPU hardware)
-1. **Culvert segfault** — intra-node MPI segfault when culverts span rank boundaries; culverts currently disabled to proceed; need stack trace (culvert MPI buffers are stack-allocated host memory so not the same `uct_mm` issue — likely an out-of-bounds GPU kernel access with invalid local indices)
-2. **G4.1** Gordon Bell metrics — per-kernel timing, roofline model
-3. **G4.2** Physical benchmark validation — Thacker, dam break (Ritter) in GPU mode
-4. **G4.3** Multi-node strong scaling — 20 M triangles, 1→64 GPUs (scripts ready)
+1. **G4.1** Gordon Bell metrics — per-kernel timing, roofline model
+2. **G4.2** Physical benchmark validation — Thacker, dam break (Ritter) in GPU mode
+3. **G4.3** Multi-node strong scaling — 20 M triangles, 1→64 GPUs (scripts ready)
 
 ### Best standalone value (no GPU hardware needed)
-5. **Coverage** — full suite at **70%**, fast suite at **67%** (2026-04-21). `fail_under` should be raised to match; add tests opportunistically.
-6. **Local-timestepping** — implement `compute_flux_update_frequency` (currently a `pass` stub); allocate the 4 local-timestepping arrays on demand in `set_local_time_stepping()` when `nlevels > 0`.
-7. **anuga_sww_gui** — further ideas: erosion delta-bed visualisation (show change in elevation vs frame 0), side-by-side dual-quantity view, export zoomed animation.
+4. **Coverage** — fast suite **~55%**, full suite **~58%** (2026-04-22, branch+statement with omit list). `fail_under = 57` in `.coveragerc`; CI runs the full suite so 58% > 57 passes with a 1-point margin. Earlier "67–70%" figures were artefacts of CI running from `sandpit/` without finding `.coveragerc`. Add tests opportunistically when touching files.
+5. **anuga_sww_gui** — further ideas: erosion delta-bed visualisation (show change in elevation vs frame 0), side-by-side dual-quantity view, export zoomed animation.
