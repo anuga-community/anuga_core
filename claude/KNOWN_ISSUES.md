@@ -120,6 +120,26 @@ Simple rectangular domains don't suffice.
 
 ---
 
+## SWW GUI / animate.py
+
+### `replace_all=True` in Edit tool can change more than intended
+
+When reverting a colormap from `terrain` → `Greys_r` with `replace_all=True`, the `_elev_frame` and `save_elev_frame` default arguments (which must stay `terrain`) were also reverted — requiring a second manual fix. Always check every occurrence of the target string in the file before using `replace_all`.
+
+### Worker must accept all params even when a save method doesn't use them
+
+`worker_frame` in `_animate_worker.py` calls `save_fn(frame=..., show_elev=..., elev_levels=..., show_mesh=...)` for every quantity. If a `save_*` method (e.g. `save_elev_frame`) doesn't declare those params, it raises `TypeError`. All `save_*` methods must accept `show_elev`, `elev_levels`, `show_mesh` even if they ignore the values.
+
+### Double overlays when baked + canvas overlay both active
+
+If Show Elev or Show Mesh is ticked during generation (baked into PNGs) and the canvas overlay is also active, contours/mesh appear twice. The canvas overlay methods check `self._last_gen_show_elev` / `self._last_gen_show_mesh` and return early when already baked. This guard must be maintained if either system is extended.
+
+### Live mesh viewer redraw requires `ax.cla()` + full re-draw
+
+When toggling the Basemap checkbox in `_show_mesh`, a simple `ax.set_visible()` or artist removal is not sufficient — the basemap tiles are added by `contextily` as Axes-level patches. The only reliable approach is `ax.cla()` (clear axis), re-draw the triplot, conditionally call `_add_basemap`, call `mesh_fig.tight_layout()`, then `mesh_canvas.draw()`.
+
+---
+
 ## Scenario Module
 
 ### `anuga/scenario/` depends on `spatialInputUtil`

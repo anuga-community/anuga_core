@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-21 (session 22)
+Last updated: 2026-04-24 (session 23)
 Branch: `develop` (all feature branches merged)
 
 ---
@@ -11,7 +11,7 @@ Branch: `develop` (all feature branches merged)
 |------|--------------|------|-----------|
 | Code improvements (original list) | 60 | 50 | 10 |
 | Documentation improvements | 20 | 20 | 0 |
-| Additional enhancements | 36 | 36 | 0 |
+| Additional enhancements | 42 | 42 | 0 |
 | Hydrata Phase 0 — Test infrastructure | 5 | 5 | 0 |
 | Hydrata Phase 1 — Dependencies | 4 | 4 | 0 |
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
@@ -26,7 +26,7 @@ Branch: `develop` (all feature branches merged)
 | Domain memory reduction | 3 | 3 | 0 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 7 | 7 | 0 |
-| **Total** | **180** | **167** | **13** |
+| **Total** | **186** | **173** | **13** |
 
 
 ---
@@ -205,6 +205,12 @@ These were completed during sessions as natural extensions or user requests:
 | **anuga_animate_sww_gui** — Suppress repeated "Figure files for each frame..." print in parallel workers (only print on directory creation) | `anuga/utilities/animate.py` | 2026-04-21 |
 | **anuga_animate_sww_gui** — Add `[gui]` optional extras to pyproject.toml (contextily, Pillow) | `pyproject.toml` | 2026-04-21 |
 | **anuga_animate_sww_gui** — Sphinx docs page with installation, performance, zoom, pick timeseries, figures; `docs/capture_gui_screenshots.py` for automated doc screenshots | `docs/source/visualisation/use_animate_sww_gui.rst`, `docs/capture_gui_screenshots.py`, `docs/source/visualisation/img/*.png` | 2026-04-21 |
+| **anuga_sww_gui** — Baked overlay generation: Show Elev (contours via `_draw_elev_contours` / `_nice_contour_levels`) and Show Mesh baked into PNG frames at correct z-order during parallel generation; canvas overlays skip double-render when already baked | `scripts/anuga_sww_gui.py`, `anuga/utilities/animate.py`, `anuga/utilities/_animate_worker.py` | 2026-04-24 |
+| **anuga_sww_gui** — Multi-point timeseries picking: `_ts_triangles` list replaces single `_ts_triangle`; tab10 colour palette; per-point coloured star overlay on animation frames; legend when >1 point; single multi-column CSV export; Clear picks button; instruction banner updates | `scripts/anuga_sww_gui.py` | 2026-04-24 |
+| **anuga_sww_gui** — Save Frame / Export Frame time selection: dialog gains radio "Current frame" \| "Times (s)" with comma-separated entry; single time → single file, multiple times → directory with auto-named files; `_parse_times`, `_time_to_sww_idx`, `_time_to_frame_idx` helpers | `scripts/anuga_sww_gui.py` | 2026-04-24 |
+| **anuga_sww_gui** — UI reorganisation: 9 flat rows replaced by 3-tab ttk.Notebook (Plot / Generate / Output) + always-visible file row, Generate Frames bar, playback bar, frame slider, status bar | `scripts/anuga_sww_gui.py` | 2026-04-24 |
+| **anuga_sww_gui** — Basemap checkbox for mesh viewer and save dialog: `_show_mesh` gets live-toggle Basemap checkbox (re-renders via `ax.cla()` on toggle, greyed out when no EPSG); `_save_mesh` dialog gets Basemap checkbox; `_render_and_save_mesh` gains `use_basemap=None` param | `scripts/anuga_sww_gui.py` | 2026-04-24 |
+| **anuga_sww_gui** — Updated in-app help (`_show_help`) and Sphinx RST (`use_sww_gui.rst`) for tabbed layout, multi-pick, baked overlays, time-selection save, and mesh basemap checkbox; fresh screenshots via updated `capture_gui_screenshots.py` | `scripts/anuga_sww_gui.py`, `docs/source/visualisation/use_sww_gui.rst`, `docs/capture_gui_screenshots.py`, `docs/source/visualisation/img/*.png` | 2026-04-24 |
 
 ---
 

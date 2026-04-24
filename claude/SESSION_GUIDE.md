@@ -248,6 +248,18 @@ dropdown. Fix View Mesh multiple windows, Cancel button, app-close hang. Full
 Sphinx docs with automated screenshot capture (`docs/capture_gui_screenshots.py`).
 Commit `ebc68c37`.
 
+**Session 23 (2026-04-24):** `anuga_sww_gui` GUI overhaul (renamed from
+`anuga_animate_sww_gui`). Baked overlays: Show Elev (elevation contours via
+`_draw_elev_contours`/`_nice_contour_levels`) and Show Mesh baked into PNG
+frames at correct z-order during parallel generation; canvas overlays skip
+double-render when already baked. Multi-point timeseries: `_ts_triangles`
+list, tab10 colour palette, legend, multi-column CSV export, Clear picks
+button. Save Frame / Export Frame: time-selection dialog (current frame or
+comma-separated list of simulation times). UI reorganisation: 9 flat rows →
+3-tab ttk.Notebook (Plot / Generate / Output) + always-visible bars. Basemap
+checkbox for mesh viewer (live re-render on toggle) and Save Mesh dialog.
+Sphinx RST, in-app help, and screenshots all updated. Commit `49c5b7d8`.
+
 ---
 
 ## File locations for common operations
@@ -287,4 +299,4 @@ See `claude/PROGRESS.md` — "Remaining Work" section for full list. Summary:
 ### Best standalone value (no GPU hardware needed)
 5. **Coverage** — full suite at **70%**, fast suite at **67%** (2026-04-21). `fail_under` should be raised to match; add tests opportunistically.
 6. **Local-timestepping** — implement `compute_flux_update_frequency` (currently a `pass` stub); allocate the 4 local-timestepping arrays on demand in `set_local_time_stepping()` when `nlevels > 0`.
-7. **anuga_animate_sww_gui** — further ideas: erosion delta-bed visualisation (show change in elevation vs frame 0), side-by-side dual-quantity view, export zoomed animation.
+7. **anuga_sww_gui** — further ideas: erosion delta-bed visualisation (show change in elevation vs frame 0), side-by-side dual-quantity view, export zoomed animation.
