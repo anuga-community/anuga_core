@@ -371,12 +371,6 @@ def sww2timeseries(swwfiles,
 
     """
 
-    msg = 'NOTE: A new function is available to create csv files from sww '
-    msg += 'files called sww2csv_gauges in anuga.abstract_2d_finite_volumes.util'
-    msg += ' PLUS another new function to create graphs from csv files called '
-    msg += 'csv2timeseries_graphs in anuga.abstract_2d_finite_volumes.util'
-    log.info(msg)
-
     k = _sww2timeseries(swwfiles,
                         gauge_filename,
                         production_dirs,
@@ -413,7 +407,6 @@ def _sww2timeseries(swwfiles,
                     verbose = False,
                     output_centroids = False):
 
-    # FIXME(Ole): Shouldn't print statements here be governed by verbose?
     assert type(gauge_filename) == str, 'Gauge filename must be a string'
 
     try:
@@ -483,17 +476,19 @@ def _sww2timeseries(swwfiles,
         for k, g in enumerate(gauges):
             if f(0.0, point_id = k)[2] > 1.0e6:
                 count += 1
-                if count == 1: log.info('Gauges not contained here:')
-                log.info(locations[k])
+                if verbose:
+                    if count == 1: log.info('Gauges not contained here:')
+                    log.info(locations[k])
             else:
                 gauge_index.append(k)
 
-        if len(gauge_index) > 0:
-            log.info('Gauges contained here:')
-        else:
-            log.info('No gauges contained here.')
-        for i in range(len(gauge_index)):
-             log.info(locations[gauge_index[i]])
+        if verbose:
+            if len(gauge_index) > 0:
+                log.info('Gauges contained here:')
+            else:
+                log.info('No gauges contained here.')
+            for i in range(len(gauge_index)):
+                log.info(locations[gauge_index[i]])
 
         index = swwfile.rfind(sep)
         file_loc.append(swwfile[:index+1])
@@ -786,7 +781,7 @@ def _generate_figures(plot_quantity, file_loc, report, reportname, surface,
         eastings_plot3d[:,] = eastings[:,:,j]
 
         if surface is True:
-            log.info('Printing surface figure')
+            if verbose: log.info('Printing surface figure')
             for i in range(2):
                 fig = p1.figure(10)
                 ax = p3.Axes3D(fig)
