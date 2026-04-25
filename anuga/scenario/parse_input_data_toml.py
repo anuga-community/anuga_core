@@ -15,6 +15,86 @@ import glob as glob_module
 
 from anuga.utilities import spatialInputUtil as su
 
+_VALID_FLOW_ALGORITHMS = ('DE0', 'DE1', 'DE2', 'DE0_7', 'DE1_7')
+
+# ---------------------------------------------------------------------------
+# Validation helper
+# ---------------------------------------------------------------------------
+
+class _Validator:
+    """Accumulates TOML configuration errors for batch reporting.
+
+    Each check method silently records an error entry rather than raising
+    immediately, so that all problems in a config file are reported at once.
+    Call :meth:`raise_if_errors` at the end of parsing to raise a single
+    ``ValueError`` listing every problem found.
+    """
+
+    def __init__(self):
+        self.errors = []
+
+    def require(self, mapping, key, section):
+        """Return ``mapping[key]``, recording an error if the key is absent."""
+        if key not in mapping:
+            self.errors.append(
+                f'[{section}]: required field {key!r} is missing')
+            return None
+        return mapping[key]
+
+    def to_float(self, mapping, key, section):
+        """Return ``float(mapping[key])``, recording errors for absent or
+        non-numeric values."""
+        val = self.require(mapping, key, section)
+        if val is None:
+            return None
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            self.errors.append(
+                f'[{section}] {key!r}: expected a number, got {val!r}')
+            return None
+
+    def positive(self, val, name, section):
+        """Record an error if *val* is not ``> 0``."""
+        if val is not None and val <= 0:
+            self.errors.append(
+                f'[{section}] {name!r}: must be > 0, got {val!r}')
+
+    def non_negative(self, val, name, section):
+        """Record an error if *val* is negative."""
+        if val is not None and val < 0:
+            self.errors.append(
+                f'[{section}] {name!r}: must be >= 0, got {val!r}')
+
+    def in_range(self, val, lo, hi, name, section):
+        """Record an error if *val* is outside ``[lo, hi]``."""
+        if val is not None and not (lo <= val <= hi):
+            self.errors.append(
+                f'[{section}] {name!r}: must be in [{lo}, {hi}], got {val!r}')
+
+    def one_of(self, val, choices, name, section):
+        """Record an error if *val* is not in *choices*."""
+        if val is not None and val not in choices:
+            self.errors.append(
+                f'[{section}] {name!r}: must be one of {list(choices)}, '
+                f'got {val!r}')
+
+    def integer_multiple(self, val, base, name, section):
+        """Record an error if *val* is not an integer multiple of *base*."""
+        if val is not None and base is not None and base > 0:
+            ratio = val / base
+            if abs(ratio - round(ratio)) > 1e-6:
+                self.errors.append(
+                    f'[{section}] {name!r}: must be an integer multiple of '
+                    f'yieldstep ({base}), got {val!r}')
+
+    def raise_if_errors(self, filename):
+        """Raise ``ValueError`` listing all accumulated errors, or do nothing."""
+        if self.errors:
+            bullets = '\n'.join(f'  • {e}' for e in self.errors)
+            raise ValueError(
+                f'Configuration errors in {filename!r}:\n{bullets}')
+
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -136,9 +216,10 @@ class ProjectDataTOML:
         ]
 
         cfg = _load_toml(filename)
+        _v = _Validator()
 
-        self._parse_project(cfg.get('project', {}))
-        self._parse_mesh(cfg.get('mesh', {}))
+        self._parse_project(cfg.get('project', {}), _v)
+        self._parse_mesh(cfg.get('mesh', {}), _v)
         # Initial conditions must be parsed before bridges / pumping stations
         # because those prepend entries to elevation_data / breakline_files.
         self._parse_initial_conditions(
@@ -149,42 +230,62 @@ class ProjectDataTOML:
         self._parse_rainfall(cfg.get('rainfall', []))
         self._parse_bridges(cfg.get('bridges', []))
         self._parse_pumping_stations(cfg.get('pumping_stations', []))
-        self._parse_culverts(cfg.get('culverts', []))
-        self._parse_weirs(cfg.get('weirs', []))
+        self._parse_culverts(cfg.get('culverts', []), _v)
+        self._parse_weirs(cfg.get('weirs', []), _v)
+
+        _v.raise_if_errors(filename)
 
     # -----------------------------------------------------------------------
     # Project settings
     # -----------------------------------------------------------------------
 
-    def _parse_project(self, p):
-        self.scenario       = str(p['scenario'])
-        self.output_basedir = str(p['output_base_directory'])
-        self.yieldstep      = float(p['yieldstep'])
-        self.finaltime      = float(p['finaltime'])
+    def _parse_project(self, p, _v):
+        raw_scenario = _v.require(p, 'scenario', 'project')
+        self.scenario = str(raw_scenario) if raw_scenario is not None else ''
 
-        proj = p['projection_information']
-        if isinstance(proj, float):
-            self.projection_information = int(proj)
-        elif isinstance(proj, int):
-            self.projection_information = proj
+        raw_outdir = _v.require(p, 'output_base_directory', 'project')
+        self.output_basedir = str(raw_outdir) if raw_outdir is not None else ''
+
+        yieldstep = _v.to_float(p, 'yieldstep', 'project')
+        _v.positive(yieldstep, 'yieldstep', 'project')
+        self.yieldstep = yieldstep if yieldstep is not None else 1.0
+
+        finaltime = _v.to_float(p, 'finaltime', 'project')
+        _v.positive(finaltime, 'finaltime', 'project')
+        self.finaltime = finaltime if finaltime is not None else float('inf')
+
+        raw_proj = _v.require(p, 'projection_information', 'project')
+        if raw_proj is None:
+            self.projection_information = None
+        elif isinstance(raw_proj, float):
+            self.projection_information = int(raw_proj)
+        elif isinstance(raw_proj, int):
+            self.projection_information = raw_proj
         else:
-            self.projection_information = str(proj)
+            self.projection_information = str(raw_proj)
 
-        self.flow_algorithm = str(p['flow_algorithm'])
+        raw_alg = _v.require(p, 'flow_algorithm', 'project')
+        _v.one_of(raw_alg, _VALID_FLOW_ALGORITHMS, 'flow_algorithm', 'project')
+        self.flow_algorithm = str(raw_alg) if raw_alg is not None else 'DE0'
 
         self.output_tif_cellsize = float(p.get('output_tif_cellsize', 50.0))
+        _v.positive(self.output_tif_cellsize, 'output_tif_cellsize', 'project')
 
         otbp = p.get('output_tif_bounding_polygon', '')
         self.output_tif_bounding_polygon = str(otbp) if otbp else None
 
         self.max_quantity_update_frequency = int(
             p.get('max_quantity_update_frequency', 1))
+        _v.positive(self.max_quantity_update_frequency,
+                    'max_quantity_update_frequency', 'project')
+
         self.max_quantity_collection_start_time = float(
             p.get('max_quantity_collection_starttime', 0.0))
-
-        if self.max_quantity_collection_start_time >= self.finaltime:
-            raise ValueError(
-                'max_quantity_collection_starttime must be < finaltime')
+        if finaltime is not None and \
+                self.max_quantity_collection_start_time >= self.finaltime:
+            _v.errors.append(
+                '[project] max_quantity_collection_starttime must be < finaltime'
+                f' (got {self.max_quantity_collection_start_time}, finaltime={self.finaltime})')
 
         self.store_vertices_uniquely        = bool(p.get('store_vertices_uniquely', False))
         self.store_elevation_every_timestep = bool(p.get('store_elevation_every_timestep', False))
@@ -197,29 +298,47 @@ class ProjectDataTOML:
 
         # Number of OpenMP threads (1 = single-threaded; None = use OMP_NUM_THREADS env var)
         raw_omp = p.get('omp_num_threads', None)
-        self.omp_num_threads = int(raw_omp) if raw_omp is not None else None
+        if raw_omp is not None:
+            self.omp_num_threads = int(raw_omp)
+            _v.positive(self.omp_num_threads, 'omp_num_threads', 'project')
+        else:
+            self.omp_num_threads = None
 
         # Multiprocessor mode: 1 = OpenMP (default), 2 = CuPy/GPU
         self.multiprocessor_mode = int(p.get('multiprocessor_mode', 1))
+        _v.one_of(self.multiprocessor_mode, (1, 2), 'multiprocessor_mode', 'project')
 
         # SWW output interval [seconds]; None means write every yieldstep.
         # Must be an integer multiple of yieldstep.
         raw_os = p.get('outputstep', None)
-        self.outputstep = float(raw_os) if raw_os is not None else None
+        if raw_os is not None:
+            self.outputstep = float(raw_os)
+            _v.positive(self.outputstep, 'outputstep', 'project')
+            _v.integer_multiple(self.outputstep, yieldstep, 'outputstep', 'project')
+        else:
+            self.outputstep = None
 
     # -----------------------------------------------------------------------
     # Mesh
     # -----------------------------------------------------------------------
 
-    def _parse_mesh(self, m):
-        self.use_existing_mesh_pickle       = bool(m.get('use_existing_mesh_pickle', False))
-        self.bounding_polygon_and_tags_file = _normpath(str(m['bounding_polygon']))
-        self.default_res                    = float(m['default_res'])
+    def _parse_mesh(self, m, _v):
+        self.use_existing_mesh_pickle = bool(m.get('use_existing_mesh_pickle', False))
 
-        self.interior_regions_data = [
-            [_normpath(str(ir['polygon'])), float(ir['resolution'])]
-            for ir in m.get('interior_regions', [])
-        ]
+        raw_bp = _v.require(m, 'bounding_polygon', 'mesh')
+        self.bounding_polygon_and_tags_file = (
+            _normpath(str(raw_bp)) if raw_bp is not None else '')
+
+        default_res = _v.to_float(m, 'default_res', 'mesh')
+        _v.positive(default_res, 'default_res', 'mesh')
+        self.default_res = default_res if default_res is not None else 1.0
+
+        self.interior_regions_data = []
+        for ir in m.get('interior_regions', []):
+            poly = _normpath(str(ir['polygon']))
+            res  = float(ir['resolution'])
+            _v.positive(res, f'interior_regions resolution ({poly!r})', 'mesh')
+            self.interior_regions_data.append([poly, res])
 
         # Explicit boundary tags — required when bounding_polygon is a CSV file,
         # ignored when it is a shapefile (tags come from the shapefile attributes)
@@ -437,7 +556,7 @@ class ProjectDataTOML:
     # Culverts  (Boyd box and Boyd pipe)
     # -----------------------------------------------------------------------
 
-    def _parse_culverts(self, culverts):
+    def _parse_culverts(self, culverts, _v):
         """Parse ``[[culverts]]`` entries into ``self.culvert_data``.
 
         Each entry is stored as a dict so that ``setup_culverts.py`` can
@@ -462,18 +581,36 @@ class ProjectDataTOML:
                     f"Culvert '{c.get('label', '?')}': unknown type {ctype!r}. "
                     f"Expected 'boyd_box' or 'boyd_pipe'.")
 
+            label   = str(c['label'])
+            sec     = f'culverts[{label!r}]'
+            losses  = float(c.get('losses', 0.0))
+            barrels = float(c.get('barrels', 1.0))
+            blockage= float(c.get('blockage', 0.0))
+            manning = float(c.get('manning', 0.013))
+            eq_gap  = float(c.get('enquiry_gap', 0.2))
+            apron   = float(c.get('apron', 0.1))
+            smoothing = float(c.get('smoothing_timescale', 0.0))
+
+            _v.positive(barrels,  'barrels',  sec)
+            _v.positive(manning,  'manning',  sec)
+            _v.non_negative(losses,   'losses',   sec)
+            _v.non_negative(eq_gap,   'enquiry_gap', sec)
+            _v.non_negative(apron,    'apron',    sec)
+            _v.non_negative(smoothing,'smoothing_timescale', sec)
+            _v.in_range(blockage, 0.0, 1.0, 'blockage', sec)
+
             row = {
-                'label':               str(c['label']),
+                'label':               label,
                 'type':                ctype,
-                'losses':              float(c.get('losses', 0.0)),
-                'barrels':             float(c.get('barrels', 1.0)),
-                'blockage':            float(c.get('blockage', 0.0)),
+                'losses':              losses,
+                'barrels':             barrels,
+                'blockage':            blockage,
                 'z1':                  float(c.get('z1', 0.0)),
                 'z2':                  float(c.get('z2', 0.0)),
-                'apron':               float(c.get('apron', 0.1)),
-                'manning':             float(c.get('manning', 0.013)),
-                'enquiry_gap':         float(c.get('enquiry_gap', 0.2)),
-                'smoothing_timescale': float(c.get('smoothing_timescale', 0.0)),
+                'apron':               apron,
+                'manning':             manning,
+                'enquiry_gap':         eq_gap,
+                'smoothing_timescale': smoothing,
                 'use_momentum_jet':    bool(c.get('use_momentum_jet', True)),
                 'use_velocity_head':   bool(c.get('use_velocity_head', True)),
             }
@@ -483,10 +620,14 @@ class ProjectDataTOML:
                 row['width']    = float(c['width'])
                 row['height']   = float(c['height']) if 'height' in c else None
                 row['diameter'] = None
+                _v.positive(row['width'], 'width', sec)
+                if row['height'] is not None:
+                    _v.positive(row['height'], 'height', sec)
             else:
                 row['diameter'] = float(c['diameter'])
                 row['width']    = None
                 row['height']   = None
+                _v.positive(row['diameter'], 'diameter', sec)
 
             # Exchange lines (file paths) or end points ([x, y] pairs)
             if 'exchange_line_0' in c:
@@ -519,7 +660,7 @@ class ProjectDataTOML:
     # Weirs  (weir / orifice with trapezoidal cross-section)
     # -----------------------------------------------------------------------
 
-    def _parse_weirs(self, weirs):
+    def _parse_weirs(self, weirs, _v):
         """Parse ``[[weirs]]`` entries into ``self.weir_data``.
 
         Uses the ``Weir_orifice_trapezoid_operator``.  Parameters and geometry
@@ -530,19 +671,42 @@ class ProjectDataTOML:
             if not w.get('enabled', True):
                 continue
 
+            label    = str(w['label'])
+            sec      = f'weirs[{label!r}]'
+            width    = float(w['width'])
+            height   = float(w['height']) if 'height' in w else None
+            losses   = float(w.get('losses', 0.0))
+            barrels  = float(w.get('barrels', 1.0))
+            blockage = float(w.get('blockage', 0.0))
+            manning  = float(w.get('manning', 0.013))
+            eq_gap   = float(w.get('enquiry_gap', 0.0))
+            apron    = float(w.get('apron', 0.1))
+            smoothing= float(w.get('smoothing_timescale', 0.0))
+
+            _v.positive(width,   'width',   sec)
+            _v.positive(barrels, 'barrels', sec)
+            _v.positive(manning, 'manning', sec)
+            _v.non_negative(losses,    'losses',   sec)
+            _v.non_negative(eq_gap,    'enquiry_gap', sec)
+            _v.non_negative(apron,     'apron',    sec)
+            _v.non_negative(smoothing, 'smoothing_timescale', sec)
+            _v.in_range(blockage, 0.0, 1.0, 'blockage', sec)
+            if height is not None:
+                _v.positive(height, 'height', sec)
+
             row = {
-                'label':               str(w['label']),
-                'width':               float(w['width']),
-                'height':              float(w['height']) if 'height' in w else None,
-                'losses':              float(w.get('losses', 0.0)),
-                'barrels':             float(w.get('barrels', 1.0)),
-                'blockage':            float(w.get('blockage', 0.0)),
+                'label':               label,
+                'width':               width,
+                'height':              height,
+                'losses':              losses,
+                'barrels':             barrels,
+                'blockage':            blockage,
                 'z1':                  float(w.get('z1', 0.0)),
                 'z2':                  float(w.get('z2', 0.0)),
-                'apron':               float(w.get('apron', 0.1)),
-                'manning':             float(w.get('manning', 0.013)),
-                'enquiry_gap':         float(w.get('enquiry_gap', 0.0)),
-                'smoothing_timescale': float(w.get('smoothing_timescale', 0.0)),
+                'apron':               apron,
+                'manning':             manning,
+                'enquiry_gap':         eq_gap,
+                'smoothing_timescale': smoothing,
                 'use_momentum_jet':    bool(w.get('use_momentum_jet', True)),
                 'use_velocity_head':   bool(w.get('use_velocity_head', True)),
             }

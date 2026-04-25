@@ -1448,5 +1448,350 @@ class TestWeirs(unittest.TestCase):
             ProjectDataTOML(path)
 
 
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestValidation(unittest.TestCase):
+    """Tests for the _Validator-based batch error reporting in ProjectDataTOML."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _path(self, name='config.toml'):
+        return os.path.join(self.tmpdir, name)
+
+    def _make(self, content):
+        p = self._path()
+        _write_toml(p, content)
+        return ProjectDataTOML(p)
+
+    def _assert_fails(self, content, *expected_fragments):
+        """Assert that parsing raises ValueError and that the message contains
+        each fragment in *expected_fragments*."""
+        p = self._path()
+        _write_toml(p, content)
+        with self.assertRaises(ValueError) as ctx:
+            ProjectDataTOML(p)
+        msg = str(ctx.exception)
+        for frag in expected_fragments:
+            self.assertIn(frag, msg,
+                          f'Expected {frag!r} in error message:\n{msg}')
+
+    # --- project section ---
+
+    def test_missing_scenario_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """), 'scenario', 'missing')
+
+    def test_missing_yieldstep_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """), 'yieldstep', 'missing')
+
+    def test_negative_yieldstep_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = -10.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """), 'yieldstep', '> 0')
+
+    def test_invalid_flow_algorithm_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "BADFLOW"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """), 'flow_algorithm', 'BADFLOW')
+
+    def test_invalid_multiprocessor_mode_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            multiprocessor_mode = 5
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """), 'multiprocessor_mode', '5')
+
+    def test_outputstep_not_multiple_of_yieldstep_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            outputstep = 91.0
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """), 'outputstep', 'yieldstep')
+
+    def test_multiple_project_errors_reported_together(self):
+        """All errors in the project section must appear in a single ValueError."""
+        path = self._path()
+        _write_toml(path, textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = -10.0
+            finaltime = -1.0
+            projection_information = -55
+            flow_algorithm = "BAD"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """))
+        with self.assertRaises(ValueError) as ctx:
+            ProjectDataTOML(path)
+        msg = str(ctx.exception)
+        self.assertIn('yieldstep', msg)
+        self.assertIn('finaltime', msg)
+        self.assertIn('flow_algorithm', msg)
+
+    # --- mesh section ---
+
+    def test_missing_default_res_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+        """), 'default_res', 'missing')
+
+    def test_negative_default_res_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = -500.0
+        """), 'default_res', '> 0')
+
+    def test_negative_interior_region_resolution_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[mesh.interior_regions]]
+            polygon = "reg.shp"
+            resolution = -100.0
+        """), 'resolution', '> 0')
+
+    # --- culvert physical range checks ---
+
+    def test_culvert_negative_width_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[culverts]]
+            label = "c1"
+            width = -1.0
+            end_point_0 = [0.0, 0.0]
+            end_point_1 = [10.0, 0.0]
+        """), 'width', '> 0')
+
+    def test_culvert_blockage_above_one_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[culverts]]
+            label = "c1"
+            width = 1.0
+            blockage = 1.5
+            end_point_0 = [0.0, 0.0]
+            end_point_1 = [10.0, 0.0]
+        """), 'blockage', '[0.0, 1.0]')
+
+    def test_culvert_negative_manning_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[culverts]]
+            label = "c1"
+            width = 1.0
+            manning = -0.013
+            end_point_0 = [0.0, 0.0]
+            end_point_1 = [10.0, 0.0]
+        """), 'manning', '> 0')
+
+    def test_culvert_pipe_negative_diameter_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[culverts]]
+            label = "c1"
+            type = "boyd_pipe"
+            diameter = -0.5
+            end_point_0 = [0.0, 0.0]
+            end_point_1 = [10.0, 0.0]
+        """), 'diameter', '> 0')
+
+    # --- weir physical range checks ---
+
+    def test_weir_negative_width_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[weirs]]
+            label = "w1"
+            width = -2.0
+            end_point_0 = [0.0, 0.0]
+            end_point_1 = [5.0, 0.0]
+        """), 'width', '> 0')
+
+    def test_weir_blockage_negative_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[weirs]]
+            label = "w1"
+            width = 2.0
+            blockage = -0.1
+            end_point_0 = [0.0, 0.0]
+            end_point_1 = [5.0, 0.0]
+        """), 'blockage', '[0.0, 1.0]')
+
+    def test_error_message_names_file(self):
+        """The ValueError message must include the TOML filename."""
+        path = self._path('my_scenario.toml')
+        _write_toml(path, textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = -1.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """))
+        with self.assertRaises(ValueError) as ctx:
+            ProjectDataTOML(path)
+        self.assertIn('my_scenario.toml', str(ctx.exception))
+
+    def test_valid_config_no_error(self):
+        """A fully valid minimal config must parse without errors."""
+        p = self._make(textwrap.dedent("""\
+            [project]
+            scenario = "ok"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE1"
+            outputstep = 120.0
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 10000.0
+        """))
+        self.assertEqual(p.flow_algorithm, 'DE1')
+        self.assertAlmostEqual(p.outputstep, 120.0)
+
+
 if __name__ == '__main__':
     unittest.main()
