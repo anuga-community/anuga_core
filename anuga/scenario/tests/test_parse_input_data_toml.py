@@ -308,7 +308,6 @@ class TestProjectSection(unittest.TestCase):
 
     def test_optional_defaults(self):
         p = self._make()
-        self.assertFalse(p.use_local_extrapolation_and_flux_updating)
         self.assertAlmostEqual(p.output_tif_cellsize, 50.0)
         self.assertIsNone(p.output_tif_bounding_polygon)
         self.assertEqual(p.max_quantity_update_frequency, 1)
@@ -325,7 +324,6 @@ class TestProjectSection(unittest.TestCase):
 
     def test_optional_overrides(self):
         extra = textwrap.dedent("""\
-            use_local_extrapolation_and_flux_updating = true
             output_tif_cellsize = 25.0
             output_tif_bounding_polygon = "clip.shp"
             max_quantity_update_frequency = 5
@@ -335,7 +333,6 @@ class TestProjectSection(unittest.TestCase):
             outputstep = 120.0
         """)
         p = self._make(project_extra=extra)
-        self.assertTrue(p.use_local_extrapolation_and_flux_updating)
         self.assertAlmostEqual(p.output_tif_cellsize, 25.0)
         self.assertEqual(p.output_tif_bounding_polygon, 'clip.shp')
         self.assertEqual(p.max_quantity_update_frequency, 5)

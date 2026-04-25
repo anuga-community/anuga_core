@@ -452,24 +452,6 @@ class Domain(Generic_Domain):
         self.neigh_work          = None  # (9N,)  — unused, NULL in C struct
         self.pressuregrad_work   = None  # (3N,)  — unused, NULL in C struct
 
-        ############################################################################
-        ## Local-timestepping information
-        ############################################################################
-        self.max_flux_update_frequency = 2**0  # Must be a power of 2.
-
-        # Local-timestepping arrays — allocated only when local-timestepping is
-        # enabled (max_flux_update_frequency > 1).  The C computation code never
-        # reads these when compute_flux_update_frequency is unimplemented (pass),
-        # so they remain None (→ NULL) for standard single-rate evolve.
-        self.flux_update_frequency = None  # (3N,) int — local-timestepping
-        self.update_next_flux      = None  # (3N,) int — local-timestepping
-        self.update_extrapolation  = None  # (N,)  int — local-timestepping
-        self.edge_timestep         = None  # (3N,) float — local-timestepping
-
-        # Do we allow the timestep to increase (not every time if local
-        # extrapolation/flux updating is used)
-        self.allow_timestep_increase=num.zeros(1).astype(int)+1
-
 
         #-----------------------------------
         # parameters for structures
@@ -1325,29 +1307,6 @@ class Domain(Generic_Domain):
             msg = 'Unknown compute_fluxes_method. \nPossible choices are:\n'+ \
             ', '.join(compute_fluxes_methods)+'.'
             raise Exception(msg)
-
-
-    def set_local_extrapolation_and_flux_updating(self,nlevels=8):
-        """
-            Use local flux and extrapolation updating
-
-            nlevels == number of flux_update_frequency levels > 1
-
-                   For example, to allow flux updating every 1,2,4,8
-                   timesteps, do:
-
-                    domain.set_local_extrapolation_and_flux_updating(nlevels=3)
-
-                   (since 2**3==8)
-        """
-
-        self.max_flux_update_frequency=2**nlevels
-
-        if(self.max_flux_update_frequency != 1):
-            if self.timestepping_method != 'euler':
-                raise Exception('Local extrapolation and flux updating only supported with euler timestepping')
-            if self.compute_fluxes_method != 'DE':
-                raise Exception('Local extrapolation and flux updating only supported for discontinuous flow algorithms')
 
 
     def get_compute_fluxes_method(self):
@@ -3856,27 +3815,6 @@ class Domain(Generic_Domain):
     def print_volumetric_balance_statistics(self):
 
         print (self.volumetric_balance_statistics())
-
-    def compute_flux_update_frequency(self):
-        """
-            Update the 'flux_update_frequency' and 'update_extrapolate' variables
-            Used to control updating of fluxes / extrapolation for 'local-time-stepping'
-        """
-
-        nvtxRangePush('compute_flux_update_frequency')
-        # Choose the correct extension module
-        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
-            from .sw_domain_openmp_ext import compute_flux_update_frequency
-        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
-            # change over to cuda routines as developed
-            from .sw_domain_openmp_ext import compute_flux_update_frequency
-        else:
-            raise Exception('Not implemented')
-
-
-        compute_flux_update_frequency(self, self.timestep)
-
-        nvtxRangePop()
 
     def report_water_volume_statistics(self, verbose=True, returnStats=False):
         """

@@ -499,18 +499,17 @@ def domain_memory_stats(domain):
         ],
         'work arrays': [
             'edge_flux_work', 'neigh_work', 'pressuregrad_work',
-            'flux_update_frequency', 'update_next_flux', 'edge_timestep',
             'already_computed_flux', 'work_centroid_values',
             'x_centroid_work', 'y_centroid_work',
             '_grad_workspace_x', '_grad_workspace_y', '_phi_workspace',
-            'max_speed', 'update_extrapolation',
+            'max_speed',
         ],
         'river wall': [
             'edge_flux_type', 'edge_river_wall_counter',
         ],
         'flags/parallel': [
             'tri_full_flag', 'node_full_flag',
-            'allow_timestep_increase', 'boundary_flux_sum',
+            'boundary_flux_sum',
             'boundary_cells', 'boundary_edges',
         ],
     }

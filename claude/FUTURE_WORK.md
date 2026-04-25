@@ -34,13 +34,11 @@ honour a `verbose` flag.
 `Rainfall`, `Wind_stress` in `shallow_water/forcing.py`. Add explicit `DeprecationWarning`
 pointing to `Rate_operator`. Matches the camelCase deprecation pattern already established.
 
-**P1.6 Implement `local_timestepping` or remove the dead infrastructure**
-`generic_domain.py:2627` — `compute_flux_update_frequency` is a `pass` stub called every
-timestep when `max_flux_update_frequency != 1`. Four supporting arrays (`edge_timestep`,
-`update_next_flux`, `update_extrapolation`, `flux_update_frequency`) are allocated
-unconditionally. Either implement it (2–5× speedup on dry-area-heavy domains) or remove the
-call and allocations to recover memory. Lazy-allocation pattern from session 21 (DM work)
-is the model.
+~~**P1.6 Remove local-timestepping dead infrastructure**~~ — Done (session 23). Removed
+`max_flux_update_frequency`, `flux_update_frequency`, `update_next_flux`,
+`update_extrapolation`, `edge_timestep`, and `allow_timestep_increase` from Python domain,
+C header, Cython wrapper, scenario system, and tests. Deleted
+`test_local_extrapolation_and_flux_updating.py`. See P3.1 for the future implementation plan.
 
 **P1.7 Write tests for `anuga/utilities/animate.py`**
 `SWW_plotter`, `_animated_frame`, `_draw_elev_contours` etc. have no test file under
@@ -113,12 +111,22 @@ entries for the TOML culvert/weir support added in session 13.
 
 ## Priority 3 — Larger initiatives (weeks to months)
 
-**P3.1 Implement local timestepping**
-`compute_flux_update_frequency` has been a `pass` stub for years. Local timestepping (skipping
-flux recalculation in slow-moving regions) can give 2–5× speedup on domains with large dry/slow
-areas. Infrastructure is in place (four arrays allocated). Requires criterion function
-(velocity + triangle size → update frequency) and validation against analytical solutions for
-conservation. See P1.6 — implement rather than remove.
+**P3.1 Implement local timestepping (GPU-compatible redesign)**
+The 3.1.9 implementation (tag `anuga_core_3.1.9`, `swDE1_domain.c`) used per-edge power-of-2
+update frequencies computed by a 3-pass algorithm (lines 482–641). The skip logic in
+`_compute_fluxes_central` checked `update_next_flux[ki] != 1` before computing each edge flux.
+**Why this design is not GPU-compatible**: uses `already_computed_flux[k,i]` as a per-edge
+mutex (race condition under parallel), accumulates a static `local_timestep` across skipped
+steps, and processes edge pairs sequentially. The current GPU kernel
+(`core_kernels.c:_compute_fluxes_central`) uses `#pragma omp target teams distribute parallel
+for` with reductions — incompatible with per-edge skip flags.
+
+**GPU-compatible redesign**: per-triangle activity mask (grouped sub-cycling). Slow triangles
+sit out for multiple steps, but the flux loop remains fully data-parallel. Requires: (1) CFL
+criterion mapping triangle velocity+size → activity level, (2) grouped sub-cycle scheduler,
+(3) conservation validation against analytical solutions. Estimated 2–5× speedup on domains
+with large dry/slow areas. The 3.1.9 source in `/home/steve/anuga_core_3.1.9` is the
+algorithmic reference.
 
 **P3.2 Higher-order spatial reconstruction**
 Current extrapolation is linear (second-order smooth, first-order near gradients). Limited

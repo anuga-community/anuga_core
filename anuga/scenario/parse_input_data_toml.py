@@ -172,9 +172,6 @@ class ProjectDataTOML:
 
         self.flow_algorithm = str(p['flow_algorithm'])
 
-        self.use_local_extrapolation_and_flux_updating = bool(
-            p.get('use_local_extrapolation_and_flux_updating', False))
-
         self.output_tif_cellsize = float(p.get('output_tif_cellsize', 50.0))
 
         otbp = p.get('output_tif_bounding_polygon', '')

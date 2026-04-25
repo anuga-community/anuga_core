@@ -24,7 +24,6 @@ struct domain {
     anuga_int extrapolate_velocity_second_order;
     anuga_int low_froude;
     anuga_int timestep_fluxcalls;
-    anuga_int max_flux_update_frequency;
     anuga_int ncol_riverwall_hydraulic_properties;
     anuga_int nrow_riverwall_hydraulic_properties;
 
@@ -97,18 +96,12 @@ struct domain {
     double* xmom_explicit_update;
     double* ymom_explicit_update;
 
-    anuga_int* flux_update_frequency;
-    anuga_int* update_next_flux;
-    anuga_int* update_extrapolation;
-    double* edge_timestep;
     double* edge_flux_work;
     double* neigh_work;
     double* pressuregrad_work;
     double* x_centroid_work;
     double* y_centroid_work;
     double* boundary_flux_sum;
-
-    anuga_int* allow_timestep_increase;
 
     anuga_int* edge_river_wall_counter;
     double* riverwall_elevation;

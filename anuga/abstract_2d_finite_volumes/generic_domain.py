@@ -2103,14 +2103,6 @@ class Generic_Domain:
         nvtxRangePop()
 
         #nvtx marker
-        nvtxRangePush('compute_flux_update_frequency')
-        if self.max_flux_update_frequency != 1:
-            # Update flux_update_frequency using the new timestep
-            self.compute_flux_update_frequency()
-        #nvtx marker
-        nvtxRangePop()
-
-        #nvtx marker
         nvtxRangePush('update_conserved_quantities')
         # Update conserved quantities
         self.update_conserved_quantities()
@@ -2621,13 +2613,6 @@ class Generic_Domain:
     def update_other_quantities(self):
         """ There may be a need to calculates some of the other quantities
         based on the new values of conserved quantities
-        """
-        pass
-
-    def compute_flux_update_frequency(self):
-        """Some flux calculations can be sped up by not recalculating
-        fluxes and interpolation for regions with low velocities and large
-        triangles
         """
         pass
 
