@@ -83,15 +83,6 @@ def file_function(filename,
     further documentation
     """
 
-    # FIXME (OLE): Should check origin of domain against that of file
-    # In fact, this is where origin should be converted to that of domain
-    # Also, check that file covers domain fully.
-
-    # Take into account:
-    # - domain's georef
-    # - sww file's georef
-    # - interpolation points as absolute UTM coordinates
-
     if quantities is None:
         if verbose:
             msg = 'Quantities specified in file_function are None,'
@@ -108,10 +99,9 @@ def file_function(filename,
     # Build arguments and keyword arguments for use with caching or apply.
     args = (filename,)
 
-    # FIXME (Ole): Caching this function will not work well
-    # if domain is passed in as instances change hash code.
-    # Instead we pass in those attributes that are needed (and return them
-    # if modified)
+    # domain is not passed to the cache key directly because instance hash
+    # codes change; only the scalar attributes needed (domain_starttime) are
+    # extracted above so the cache key stays stable.
     kwargs = {'quantities': quantities,
               'interpolation_points': interpolation_points,
               'domain_starttime': domain_starttime,
@@ -138,9 +128,6 @@ def file_function(filename,
                              verbose=verbose)
     else:
         f, starttime = _file_function(*args, **kwargs)
-
-    #FIXME (Ole): Pass cache arguments, such as compression, in some sort of
-    #structure
 
     f.starttime = starttime
     f.filename = filename
@@ -209,9 +196,6 @@ def _file_function(filename,
                                         boundary_polygon=boundary_polygon,
                                         output_centroids=output_centroids)
     elif ext in [".csv"]:
-        # FIXME (Ole): Could add csv file here to address Ted Rigby's
-        # suggestion about reading hydrographs.
-        # This may also deal with the gist of ticket:289
         raise Exception('Must be a NetCDF File')
     else:
 
@@ -240,12 +224,11 @@ def get_netcdf_file_function(filename,
     See Interpolation function for further documentation
     """
 
-    # FIXME: Check that model origin is the same as file's origin
-    # (both in UTM coordinates)
-    # If not - modify those from file to match domain
-    # (origin should be passed in)
-    # Take this code from e.g. dem2pts in data_manager.py
-    # FIXME: Use geo_reference to read and write xllcorner...
+    # Origin reconciliation: interpolation_points are supplied as absolute UTM
+    # coordinates and are shifted by (xllcorner, yllcorner) below to match the
+    # file's local coordinate frame.  A full zone-consistency check between
+    # domain and file would require passing domain.geo_reference through the
+    # call chain — left for a future enhancement.
 
     import time
     import calendar
@@ -323,7 +306,8 @@ def get_netcdf_file_function(filename,
     if not use_relative_time:
         time = time + starttime
 
-    # FIXME(Ole): Is time monotoneous?
+    msg = 'Time vector in %s is not monotonically increasing' % filename
+    assert num.all(num.diff(time) > 0), msg
 
     # Apply time limit if requested
     upper_time_index = len(time)
@@ -374,13 +358,9 @@ def get_netcdf_file_function(filename,
         vertex_coordinates = num.concatenate((x, y), axis=1) #m x 2 array
 
         if boundary_polygon is not None:
-            # Remove sts points that do not lie on boundary
-            # FIXME(Ole): Why don't we just remove such points from the list of
-            # points and associated data?
-            # I am actually convinced we can get rid of neighbour_gauge_id
-            # altogether as the sts file is produced using the ordering file.
-            # All sts points are therefore always present in the boundary.
-            # In fact, they *define* parts of the boundary.
+            # Restrict to STS points that lie on the boundary polygon.
+            # STS points are produced using an ordering file so all should
+            # be present, but we filter defensively.
             boundary_polygon=ensure_numeric(boundary_polygon)
             boundary_polygon[:, 0] -= xllcorner
             boundary_polygon[:, 1] -= yllcorner
@@ -391,10 +371,9 @@ def get_netcdf_file_function(filename,
                 for j in range(len(x)):
                     if num.allclose(vertex_coordinates[j],
                                     boundary_polygon[i], rtol=1e-4, atol=1e-4):
-                        #FIXME:
-                        #currently gauges lat and long is stored as float and
-                        #then cast to double. This cuases slight repositioning
-                        #of vertex_coordinates.
+                        # Loose tolerance because gauge lat/lon stored as
+                        # float32 in STS files, causing slight coordinate drift
+                        # when cast to float64.
                         temp.append(boundary_polygon[i])
                         gauge_id.append(j)
                         boundary_id.append(i)
@@ -436,12 +415,6 @@ def get_netcdf_file_function(filename,
         # move time back - relative to domain's time
         if domain_starttime > starttime:
             time = time - domain_starttime + starttime
-
-        # FIXME Use method in geo to reconcile
-        # if spatial:
-        # assert domain.geo_reference.xllcorner == xllcorner
-        # assert domain.geo_reference.yllcorner == yllcorner
-        # assert domain.geo_reference.zone == zone
 
     if verbose:
         log.info('File_function data obtained from: %s' % filename)
