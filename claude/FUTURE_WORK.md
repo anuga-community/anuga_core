@@ -65,11 +65,7 @@ Both have ~188-line `compute_rates` methods with nearly identical hydraulic logi
 shared orifice/weir/pipe calculations into `anuga/culvert_flows/hydraulic_utils.py`. The
 `new_culvert_class` naming signals an intended migration never completed.
 
-**P2.5 Improve `Rate_operator` usability**
-`anuga/operators/rate_operators.py` — 16 constructor parameters, inconsistent defaults, no
-input validation, no factory methods. Add `Rate_operator.rainfall(domain, rate)` and
-`Rate_operator.inflow(domain, rate)` convenience constructors. Add validation for type
-compatibility between `rate` and `factor`.
+~~**P2.5 Improve `Rate_operator` usability**~~ — Done (session 24). Added `Rate_operator.rainfall(domain, rate_mm_hr)` and `Rate_operator.inflow(domain, rate_m3s)` factory classmethods; input validation (bad rate type → TypeError, region+polygon conflict → ValueError); updated `__init__` docstring pointing to factories. 13 new tests.
 
 **P2.6 Raise fast-suite coverage threshold**
 Fast suite at 54.66% against `fail_under=57` set for the full suite. Either set separate

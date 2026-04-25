@@ -1735,6 +1735,131 @@ class Test_set_friction_operator(unittest.TestCase):
         op()  # should update friction for all triangles
 
 
+class Test_rate_operator_factories(unittest.TestCase):
+    """Tests for Rate_operator.rainfall() and Rate_operator.inflow() factories
+    and for __init__ input validation."""
+
+    def setUp(self):
+        self.domain = rectangular_cross_domain(4, 4)
+        self.domain.set_quantity('elevation', 0.0)
+        self.domain.set_quantity('stage', 1.0)
+        self.domain.set_boundary({'left':   anuga.Reflective_boundary(self.domain),
+                                  'right':  anuga.Reflective_boundary(self.domain),
+                                  'top':    anuga.Reflective_boundary(self.domain),
+                                  'bottom': anuga.Reflective_boundary(self.domain)})
+
+    # ------------------------------------------------------------------
+    # rainfall factory
+    # ------------------------------------------------------------------
+
+    def test_rainfall_scalar_factor_correct(self):
+        """rainfall() sets factor = 1/(1000*3600) to convert mm/hr to m/s."""
+        op = Rate_operator.rainfall(self.domain, rate=3600000.0)
+        # factor * rate should give 1.0 m/s
+        self.assertAlmostEqual(op.get_factor() * op.rate, 1.0, places=10)
+
+    def test_rainfall_applies_water(self):
+        """Calling a rainfall operator increases stage."""
+        op = Rate_operator.rainfall(self.domain, rate=3600000.0)  # 1 m/s effective
+        stage_before = self.domain.quantities['stage'].centroid_values.copy()
+        self.domain.timestep = 1.0
+        op()
+        stage_after = self.domain.quantities['stage'].centroid_values
+        self.assertTrue(numpy.all(stage_after > stage_before))
+
+    def test_rainfall_callable_rate(self):
+        """rainfall() works with a time-varying callable in mm/hr."""
+        op = Rate_operator.rainfall(self.domain, rate=lambda t: 3600000.0)
+        self.domain.timestep = 1.0
+        stage_before = self.domain.quantities['stage'].centroid_values.copy()
+        op()
+        stage_after = self.domain.quantities['stage'].centroid_values
+        self.assertTrue(numpy.all(stage_after > stage_before))
+
+    def test_rainfall_polygon(self):
+        """rainfall() with a polygon restricts the application area."""
+        poly = [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]]
+        op = Rate_operator.rainfall(self.domain, rate=3600000.0, polygon=poly)
+        # Only triangles inside the polygon should be affected
+        self.assertIsNotNone(op.indices)
+        self.assertLess(len(op.indices), self.domain.number_of_elements)
+
+    # ------------------------------------------------------------------
+    # inflow factory
+    # ------------------------------------------------------------------
+
+    def test_inflow_volume_conservation(self):
+        """inflow() at Q m³/s adds Q*dt m³ of water per timestep."""
+        Q = 2.0   # m³/s
+        dt = 1.0  # s
+        op = Rate_operator.inflow(self.domain, rate=Q)
+        self.domain.timestep = dt
+        influx_before = op.cumulative_influx
+        op()
+        added = op.cumulative_influx - influx_before
+        self.assertAlmostEqual(added, Q * dt, places=6)
+
+    def test_inflow_callable_rate(self):
+        """inflow() works with a time-varying callable in m³/s."""
+        Q = 2.0
+        op = Rate_operator.inflow(self.domain, rate=lambda t: Q)
+        self.domain.timestep = 1.0
+        influx_before = op.cumulative_influx
+        op()
+        self.assertAlmostEqual(op.cumulative_influx - influx_before, Q, places=6)
+
+    def test_inflow_polygon_volume_conservation(self):
+        """inflow() with a polygon still adds exactly Q m³/s."""
+        poly = [[0.0, 0.0], [0.5, 0.0], [0.5, 0.5], [0.0, 0.5]]
+        Q = 1.0
+        dt = 1.0
+        op = Rate_operator.inflow(self.domain, rate=Q, polygon=poly)
+        self.domain.timestep = dt
+        influx_before = op.cumulative_influx
+        op()
+        self.assertAlmostEqual(op.cumulative_influx - influx_before, Q * dt, places=6)
+
+    # ------------------------------------------------------------------
+    # input validation
+    # ------------------------------------------------------------------
+
+    def test_validation_rate_bad_type_raises(self):
+        """Passing a string as rate raises TypeError."""
+        with self.assertRaises(TypeError):
+            Rate_operator(self.domain, rate='5mm/hr')
+
+    def test_validation_rate_list_raises(self):
+        """Passing a plain list as rate raises TypeError (use ndarray instead)."""
+        with self.assertRaises(TypeError):
+            Rate_operator(self.domain, rate=[1.0, 2.0, 3.0])
+
+    def test_validation_region_and_polygon_raises(self):
+        """Specifying both a Region and a polygon raises ValueError."""
+        from anuga import Region
+        region = Region(self.domain)
+        poly = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+        with self.assertRaises(ValueError):
+            Rate_operator(self.domain, rate=1.0, region=region, polygon=poly)
+
+    def test_validation_region_and_indices_raises(self):
+        """Specifying both a Region and indices raises ValueError."""
+        from anuga import Region
+        region = Region(self.domain)
+        with self.assertRaises(ValueError):
+            Rate_operator(self.domain, rate=1.0, region=region, indices=[0, 1])
+
+    def test_validation_rate_ndarray_accepted(self):
+        """A numpy array of shape (n_triangles,) is a valid rate."""
+        rate_arr = numpy.zeros(self.domain.number_of_triangles)
+        op = Rate_operator(self.domain, rate=rate_arr)
+        self.assertEqual(op.rate_type, 'centroid_array')
+
+    def test_validation_rate_scalar_accepted(self):
+        """Scalar rate does not raise."""
+        op = Rate_operator(self.domain, rate=1e-4)
+        self.assertEqual(op.rate_type, 'scalar')
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_rate_operators)
     runner = unittest.TextTestRunner(verbosity=1)

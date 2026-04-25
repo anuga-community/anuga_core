@@ -38,37 +38,59 @@ class Rate_operator(Operator):
                  logging = False,
                  verbose = False,
                  monitor = False):
+        """Create a Rate_operator that adds water over a region at a specified rate.
+
+        The applied rate is ``rate * factor`` in m/s (depth per second).
+        For common use-cases prefer the factory constructors:
+
+        * ``Rate_operator.rainfall(domain, rate_mm_hr)`` — rainfall in mm/hr
+        * ``Rate_operator.inflow(domain, rate_m3_s)``    — inflow in m³/s
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+        rate : scalar, callable, Quantity, or ndarray
+            Rate in m/s (after multiplication by *factor*).  May be a scalar,
+            a function of ``t``, ``(x, y)``, or ``(x, y, t)``, a Quantity,
+            a numpy array of shape ``(n_triangles,)``, or an xarray DataArray.
+        factor : scalar or callable(t)
+            Multiplier applied to *rate* before adding to stage.  Use to
+            convert units (e.g. ``1/(1000*3600)`` for mm/hr → m/s).
+        region : Region, optional
+            Pre-built Region.  Cannot be combined with *polygon*, *center*,
+            *radius*, or *indices*.
+        indices : list, optional
+            Triangle indices where the rate is applied.
+        polygon : list of [x, y], optional
+            Polygon bounding the application area.
+        center : [x, y], optional
+            Centre of a circular application area.
+        radius : float, optional
+            Radius of the circular application area.
+        default_rate : scalar or callable(t), optional
+            Rate to use outside the time interval of the rate function/xarray.
+        description, label, logging, verbose, monitor :
+            Passed to the base ``Operator``.
         """
-Create a Rate_operator that adds water over a region at a specified
-rate (ms^{-1} = vol/Area/sec)
-
-Parameters specifying locaton of operator
-
-:param region: Region object where water applied
-:param indices: List of triangles where water applied
-:param polygon: List of [x,y] points specifying a polygon where water applied
-:param center: [x.y] point of circle where water applied
-:param radius: radius of circle where water applied
-
-Parameters specifying rate
-
-:param rate: scalar, function of (t), (x,y), or (x,y,t), or a Quantity,
-                a numpy array of size (number_of_triangles),
-                or an xarray with rate at points and time
-:param factor: scalar, function of t, or 2 by n numpy array time sequence,
-                used to specify conversion from rate argument to m/s
-:param default_rate: use this rate if outside time interval of rate function or xarray
-
-Parameters involving communication
-
-:param description:
-:param label:
-:param logging:
-:param verbose:
-:param monitor:
-    """
 
 
+
+        # --------------------------------------------------
+        # Input validation
+        # --------------------------------------------------
+        if isinstance(region, Region) and any(
+                arg is not None for arg in (polygon, center, radius, indices)):
+            raise ValueError(
+                'Rate_operator: cannot specify both a Region object and '
+                'polygon/center/radius/indices — the Region already encodes location')
+
+        if not (rate is None
+                or isinstance(rate, (int, float, num.ndarray))
+                or callable(rate)
+                or hasattr(rate, 'centroid_values')):  # Quantity duck-type
+            raise TypeError(
+                'Rate_operator: rate must be a number, callable, Quantity, or '
+                'numpy array; got %s' % type(rate).__name__)
 
         Operator.__init__(self, domain, description, label, logging, verbose)
 
@@ -713,6 +735,102 @@ Parameters involving communication
                 raise Exception(msg)
 
         self.default_rate = default_rate
+
+    # ------------------------------------------------------------------
+    # Factory constructors
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def rainfall(cls, domain, rate, polygon=None, region=None,
+                 center=None, radius=None, indices=None,
+                 default_rate=0.0, label=None, description=None,
+                 logging=False, verbose=False, monitor=False):
+        """Create a Rate_operator for rainfall.
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+        rate : scalar, callable(t), or array
+            Rainfall intensity in **mm/hr**.  All other rate forms accepted
+            by ``Rate_operator`` (callables, arrays) are also supported and
+            are interpreted as mm/hr.
+        polygon, region, center, radius, indices :
+            Location arguments — same as ``Rate_operator.__init__``.
+
+        Returns
+        -------
+        Rate_operator
+            Operator with ``factor = 1 / (1000 * 3600)`` so that mm/hr is
+            converted to m/s automatically.
+
+        Examples
+        --------
+        >>> rain = Rate_operator.rainfall(domain, rate=10.0)          # 10 mm/hr
+        >>> rain = Rate_operator.rainfall(domain, rate=lambda t: 5.0) # time-varying
+        """
+        MM_HR_TO_M_S = 1.0 / (1000.0 * 3600.0)
+        return cls(domain, rate=rate, factor=MM_HR_TO_M_S,
+                   polygon=polygon, region=region,
+                   center=center, radius=radius, indices=indices,
+                   default_rate=default_rate, label=label,
+                   description=description, logging=logging,
+                   verbose=verbose, monitor=monitor)
+
+    @classmethod
+    def inflow(cls, domain, rate, polygon=None, region=None,
+               center=None, radius=None, indices=None,
+               default_rate=0.0, label=None, description=None,
+               logging=False, verbose=False, monitor=False):
+        """Create a Rate_operator for a volumetric inflow.
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+        rate : scalar or callable(t)
+            Volumetric flow rate in **m³/s**.  The operator divides by the
+            total region area so that the net inflow equals *rate* m³/s.
+
+        Returns
+        -------
+        Rate_operator
+
+        Raises
+        ------
+        ValueError
+            If the specified region has zero area.
+
+        Examples
+        --------
+        >>> op = Rate_operator.inflow(domain, rate=0.5, polygon=poly)
+        >>> op = Rate_operator.inflow(domain, rate=lambda t: 0.1*t)
+        """
+        # Build the operator with rate=0 first to resolve the region/area.
+        op = cls(domain, rate=0.0, factor=1.0,
+                 polygon=polygon, region=region,
+                 center=center, radius=radius, indices=indices,
+                 default_rate=default_rate, label=label,
+                 description=description, logging=logging,
+                 verbose=verbose, monitor=monitor)
+
+        total_area = float(op.areas.sum()) if op.areas is not None and len(op.areas) > 0 else 0.0
+        if total_area <= 0.0:
+            raise ValueError(
+                'Rate_operator.inflow: region has zero area — '
+                'check that the polygon/center/radius overlaps the domain')
+
+        # Convert m³/s → m/s by dividing by region area.
+        # Use a closure factory so the wrapper has exactly one argument (t),
+        # which determine_function_type correctly classifies as type 't'.
+        if callable(rate):
+            def _make_scaled(fn, area):
+                def scaled(t):
+                    return fn(t) / area
+                return scaled
+            op.set_rate(_make_scaled(rate, total_area))
+        else:
+            op.set_rate(rate / total_area)
+
+        return op
 
     def _prepare_xarray_rate(self, xa):
 
