@@ -674,6 +674,161 @@ class Test_quantities2csv(unittest.TestCase):
         self.assertAlmostEqual(result[3], 5.0/2.0)   # speed = 5/2
 
 
+class Test_gauge_get_from_file(unittest.TestCase):
+    """Unit tests for gauge_get_from_file."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _write(self, name, content):
+        path = os.path.join(self.tmpdir, name)
+        with open(path, 'w') as f:
+            f.write(content)
+        return path
+
+    def test_full_header(self):
+        from anuga.abstract_2d_finite_volumes.gauge import gauge_get_from_file
+        path = self._write('gauges.csv',
+            'easting,northing,name,elevation\n'
+            '100.0,200.0,gauge1,5.0\n'
+            '300.0,400.0,gauge2,10.0\n')
+        gauges, locations, elev = gauge_get_from_file(path)
+        self.assertEqual(len(gauges), 2)
+        self.assertAlmostEqual(gauges[0][0], 100.0)
+        self.assertAlmostEqual(gauges[0][1], 200.0)
+        self.assertEqual(locations[0].strip(), 'gauge1')
+        self.assertAlmostEqual(elev[0], 5.0)
+        self.assertAlmostEqual(gauges[1][0], 300.0)
+        self.assertAlmostEqual(elev[1], 10.0)
+
+    def test_header_any_column_order(self):
+        from anuga.abstract_2d_finite_volumes.gauge import gauge_get_from_file
+        path = self._write('gauges_reorder.csv',
+            'name,elevation,northing,easting\n'
+            'siteA,3.5,250.0,150.0\n')
+        gauges, locations, elev = gauge_get_from_file(path)
+        self.assertAlmostEqual(gauges[0][0], 150.0)   # easting
+        self.assertAlmostEqual(gauges[0][1], 250.0)   # northing
+        self.assertAlmostEqual(elev[0], 3.5)
+        self.assertEqual(locations[0].strip(), 'siteA')
+
+    def test_missing_easting_raises(self):
+        from anuga.abstract_2d_finite_volumes.gauge import gauge_get_from_file
+        path = self._write('bad.csv',
+            'northing,name,elevation\n'
+            '200.0,g1,5.0\n')
+        with self.assertRaises(Exception) as ctx:
+            gauge_get_from_file(path)
+        self.assertIn('easting', str(ctx.exception).lower())
+
+    def test_missing_elevation_raises(self):
+        from anuga.abstract_2d_finite_volumes.gauge import gauge_get_from_file
+        path = self._write('no_elev.csv',
+            'easting,northing,name\n'
+            '100.0,200.0,g1\n')
+        with self.assertRaises(Exception) as ctx:
+            gauge_get_from_file(path)
+        self.assertIn('elevation', str(ctx.exception).lower())
+
+    def test_missing_name_raises(self):
+        from anuga.abstract_2d_finite_volumes.gauge import gauge_get_from_file
+        path = self._write('no_name.csv',
+            'easting,northing,elevation\n'
+            '100.0,200.0,5.0\n')
+        with self.assertRaises(Exception) as ctx:
+            gauge_get_from_file(path)
+        self.assertIn('name', str(ctx.exception).lower())
+
+    def test_header_case_insensitive(self):
+        from anuga.abstract_2d_finite_volumes.gauge import gauge_get_from_file
+        path = self._write('gauges_upper.csv',
+            'Easting,Northing,Name,Elevation\n'
+            '10.0,20.0,PT1,1.0\n')
+        gauges, locations, elev = gauge_get_from_file(path)
+        self.assertAlmostEqual(gauges[0][0], 10.0)
+        self.assertAlmostEqual(elev[0], 1.0)
+
+
+class Test_sww2timeseries(unittest.TestCase):
+    """Smoke test for sww2timeseries — CSV output only, no figures."""
+
+    def setUp(self):
+        import shutil
+        from anuga.pmesh.mesh import Pmesh
+        from anuga.file.sww import SWW_file
+        from anuga.utilities.numerical_tools import mean
+
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig_dir = os.getcwd()
+        os.chdir(self.tmpdir)
+
+        mesh_file = tempfile.mktemp('.tsh')
+        points = [[0.0, 0.0], [6.0, 0.0], [6.0, 6.0], [0.0, 6.0]]
+        m = Pmesh()
+        m.add_vertices(points)
+        m.auto_segment()
+        m.generate_mesh(verbose=False)
+        m.export_mesh_file(mesh_file)
+
+        domain = anuga.Domain(mesh_file)
+        domain.default_order = 2
+        domain.tight_slope_limiters = 0
+        domain.set_quantity('elevation', lambda x, y: -x)
+        domain.set_quantity('friction', 0.03)
+        domain.set_quantity('xmomentum', 1.0)
+        domain.set_quantity('ymomentum', 0.0)
+        domain.set_boundary({'exterior': anuga.Transmissive_boundary(domain)})
+        domain.distribute_to_vertices_and_edges()
+        domain.set_quantity('stage', 1.0)
+        domain.set_name('sww2ts_test')
+        domain.smooth = True
+        domain.reduction = mean
+
+        sww = SWW_file(domain)
+        sww.store_connectivity()
+        sww.store_timestep()
+        domain.set_quantity('stage', 2.0)
+        domain.set_time(domain.get_time() + 2.0)
+        sww.store_timestep()
+
+        self.swwfile = sww.filename
+        self.swwdir = os.path.dirname(os.path.abspath(sww.filename))
+
+        gauge_path = os.path.join(self.tmpdir, 'gauges.csv')
+        with open(gauge_path, 'w') as f:
+            f.write('easting,northing,name,elevation\n'
+                    '3.0,3.0,mid,0.0\n')
+        self.gauge_file = gauge_path
+
+    def tearDown(self):
+        import shutil
+        os.chdir(self.orig_dir)
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_csv_output_created(self):
+        from anuga.abstract_2d_finite_volumes.gauge import sww2timeseries
+        swwfiles = {self.swwfile: ''}
+        sww2timeseries(swwfiles,
+                       self.gauge_file,
+                       production_dirs={self.swwdir: 'test'},
+                       report=False,
+                       generate_fig=False,
+                       plot_quantity=['depth'],
+                       use_cache=False,
+                       verbose=False)
+        # A CSV for the gauge should appear in the sww directory
+        csv_name = os.path.join(self.swwdir, 'gauges_time_series_mid.csv')
+        self.assertTrue(os.path.exists(csv_name),
+                        'Expected gauge CSV not found: %s' % csv_name)
+        with open(csv_name) as f:
+            lines = f.readlines()
+        self.assertGreater(len(lines), 1)   # header + data rows
+
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":

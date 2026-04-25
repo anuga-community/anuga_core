@@ -78,8 +78,7 @@ def _quantities2csv(quantities, point_quantities, centroids, point_i):
 def sww2csv_gauges(sww_file,
                    gauge_file,
                    out_name='gauge_',
-                   quantities=['stage', 'depth', 'elevation',
-                               'xmomentum', 'ymomentum'],
+                   quantities=None,
                    verbose=False,
                    use_cache=True,
                    output_centroids=False):
@@ -129,53 +128,41 @@ def sww2csv_gauges(sww_file,
     This is really returning speed, not velocity.
     """
 
-    from csv import reader,writer
+    from csv import reader, writer
     from anuga.utilities.numerical_tools import ensure_numeric, mean, NAN
-    import string
     from anuga.utilities.file_utils import get_all_swwfiles
     from anuga.abstract_2d_finite_volumes.util import file_function
+
+    if quantities is None:
+        quantities = ['stage', 'depth', 'elevation', 'xmomentum', 'ymomentum']
 
     assert isinstance(gauge_file, str), 'Gauge filename must be a string or unicode'
     assert isinstance(out_name, str), 'Output filename prefix must be a string'
 
+    if verbose: log.info('Gauges obtained from: %s' % gauge_file)
+
     try:
-        gid = open(gauge_file)
-        point_reader = reader(gid)
-        gid.close()
+        points = []
+        point_name = []
+        with open(gauge_file) as gid:
+            point_reader = reader(gid)
+            for i, row in enumerate(point_reader):
+                if i == 0:
+                    for j, value in enumerate(row):
+                        if value.strip() == 'easting':  easting = j
+                        if value.strip() == 'northing': northing = j
+                        if value.strip() == 'name':     name = j
+                        if value.strip() == 'elevation': elevation = j
+                else:
+                    points.append([float(row[easting]), float(row[northing])])
+                    point_name.append(row[name])
     except Exception as e:
         msg = 'File "%s" could not be opened: Error="%s"' % (gauge_file, e)
         raise Exception(msg)
 
-    if verbose: log.info('Gauges obtained from: %s' % gauge_file)
-
-    gid = open(gauge_file)
-    point_reader = reader(gid)
-
-    points = []
-    point_name = []
-
-    # read point info from file
-    for i,row in enumerate(point_reader):
-        # read header and determine the column numbers to read correctly.
-        if i==0:
-            for j,value in enumerate(row):
-                if value.strip()=='easting':easting=j
-                if value.strip()=='northing':northing=j
-                if value.strip()=='name':name=j
-                if value.strip()=='elevation':elevation=j
-        else:
-            #points.append([float(row[easting]),float(row[northing])])
-            points.append([float(row[easting]),float(row[northing])])
-            point_name.append(row[name])
-
-    gid.close()
-
-    #convert to array for file_function
-    points_array = num.array(points,float)
-
+    # convert to array for file_function
+    points_array = num.array(points, float)
     points_array = ensure_absolute(points_array)
-
-    #print 'points_array', points_array
 
     dir_name, base = os.path.split(sww_file)
 
@@ -232,32 +219,24 @@ def sww2csv_gauges(sww_file,
             quake_offset_time = callable_sww.starttime
 
         for point_i, point in enumerate(points_array):
-            for time in callable_sww.get_time():
-                # add domain starttime to relative time.
-                quake_time = time + quake_offset_time
-                point_quantities = callable_sww(time, point_i) # __call__ is overridden
-
-
-                if point_quantities[0] != NAN:
-                    if is_opened[point_i] == False:
-                        points_handle = open(dir_name + sep + gauge_file
-                                             + point_name[point_i] + '.csv', 'w', newline='')
-                        points_writer = writer(points_handle)
-                        points_writer.writerow(heading)
-                        is_opened[point_i] = True
-                    else:
-                        points_handle = open(dir_name + sep + gauge_file
-                                             + point_name[point_i] + '.csv', 'a', newline='')
-                        points_writer = writer(points_handle)
-
-
-                    points_list = [quake_time, quake_time/3600.] +  _quantities2csv(quantities, point_quantities, callable_sww.centroids, point_i)
-                    points_writer.writerow(points_list)
-                    points_handle.close()
-                else:
-                    if verbose:
-                        msg = 'gauge' + point_name[point_i] + 'falls off the mesh in file ' + sww_file + '.'
-                        log.warning(msg)
+            csv_path = dir_name + sep + gauge_file + point_name[point_i] + '.csv'
+            mode = 'w' if not is_opened[point_i] else 'a'
+            with open(csv_path, mode, newline='') as points_handle:
+                points_writer = writer(points_handle)
+                if not is_opened[point_i]:
+                    points_writer.writerow(heading)
+                    is_opened[point_i] = True
+                for time in callable_sww.get_time():
+                    quake_time = time + quake_offset_time
+                    point_quantities = callable_sww(time, point_i)
+                    if point_quantities[0] != NAN:
+                        points_list = ([quake_time, quake_time / 3600.] +
+                                       _quantities2csv(quantities, point_quantities,
+                                                       callable_sww.centroids, point_i))
+                        points_writer.writerow(points_list)
+                    elif verbose:
+                        log.warning('gauge %s falls off the mesh in file %s.'
+                                    % (point_name[point_i], sww_file))
 
 def sww2timeseries(swwfiles,
                    gauge_filename,
@@ -407,10 +386,10 @@ def _sww2timeseries(swwfiles,
                     verbose = False,
                     output_centroids = False):
 
-    assert type(gauge_filename) == str, 'Gauge filename must be a string'
+    assert isinstance(gauge_filename, str), 'Gauge filename must be a string'
 
     try:
-        fid = open(gauge_filename)
+        open(gauge_filename).close()
     except Exception as e:
         msg = 'File "%s" could not be opened: Error="%s"' % (gauge_filename, e)
         raise Exception(msg)
@@ -421,7 +400,7 @@ def _sww2timeseries(swwfiles,
     if plot_quantity is None:
         plot_quantity = ['depth', 'speed']
     else:
-        assert type(plot_quantity) == list, 'plot_quantity must be a list'
+        assert isinstance(plot_quantity, list), 'plot_quantity must be a list'
         check_list(plot_quantity)
 
     if surface is None:
@@ -532,15 +511,14 @@ def _sww2timeseries(swwfiles,
 
 
 def gauge_get_from_file(filename):
-    """ Read in gauge information from file
+    """Read gauge locations from a CSV file.
+
+    The file must have a header row with columns ``easting``, ``northing``,
+    ``name``, and ``elevation`` (order is flexible, case-insensitive).
     """
 
-    from os import sep, getcwd, access, F_OK, mkdir
-
-    # Get data from the gauge file
-    fid = open(filename)
-    lines = fid.readlines()
-    fid.close()
+    with open(filename) as fid:
+        lines = fid.readlines()
 
     gauges = []
     gaugelocation = []
@@ -563,21 +541,19 @@ def gauge_get_from_file(filename):
             if line11[i].strip().lower() == 'name':      name_index = i
             if line11[i].strip().lower() == 'elevation': elev_index = i
 
-        if east_index < len(line11) and north_index < len(line11):
-            pass
-        else:
-            msg = 'WARNING: %s does not contain correct header information' \
-                  % filename
-            msg += 'The header must be: easting, northing, name, elevation'
+        if east_index is None or north_index is None:
+            msg = ('File %s does not contain required header columns. '
+                   'Header must include: easting, northing, name, elevation'
+                   % filename)
             raise Exception(msg)
 
         if elev_index is None:
-            raise Exception
+            raise Exception('File %s is missing required column: elevation' % filename)
 
         if name_index is None:
-            raise Exception
+            raise Exception('File %s is missing required column: name' % filename)
 
-        lines = lines[1:] # Remove header from data
+        lines = lines[1:]  # Remove header from data
     else:
         # No header, assume that this is a simple easting, northing file
 
@@ -775,6 +751,11 @@ def _generate_figures(plot_quantity, file_loc, report, reportname, surface,
             max_speeds.append(max_speed)
             min_speeds.append(min_speed)
             #### finished generating quantities for each swwfile #####
+            if j == 0:
+                fid_out.close()
+
+        fid_compare.close()
+        fid_0.close()
 
         model_time_plot3d[:,:] = model_time[:,:,j]
         stages_plot3d[:,:] = stages[:,:,j]
@@ -1078,5 +1059,8 @@ def _generate_figures(plot_quantity, file_loc, report, reportname, surface,
                 #### finished generating figures ###
 
             close('all')
+
+    if report:
+        fid.close()
 
     return texfile2, elev_output
