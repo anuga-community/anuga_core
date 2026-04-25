@@ -2,33 +2,23 @@
 import pytest
 import unittest
 import os
-import time
-import os.path
-from math import pi, sqrt
 import tempfile
+from math import pi, sqrt
 
 from anuga.file.netcdf import NetCDFFile
-from anuga.file.sww import extent_sww
 
 from anuga.config import g, epsilon
-from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a
-from anuga.utilities.numerical_tools import mean, ensure_numeric
-from anuga.geometry.polygon import is_inside_polygon
+from anuga.config import netcdf_mode_r
+from anuga.utilities.numerical_tools import mean
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 from anuga.geospatial_data.geospatial_data import Geospatial_data
 from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_cross, \
                                             rectangular
 from anuga.abstract_2d_finite_volumes.quantity import Quantity
 from anuga.shallow_water.forcing import Inflow, Cross_section
-from anuga.geospatial_data.geospatial_data import ensure_geospatial
+from anuga.shallow_water.forcing import Rainfall
 
 from anuga.utilities.system_tools import get_pathname_from_package
-
-from anuga.abstract_2d_finite_volumes.generic_boundary_conditions \
-        import Dirichlet_boundary
-from anuga.shallow_water.forcing import Rainfall, Wind_stress
-from anuga.shallow_water.forcing import Inflow, Cross_section
-from anuga.shallow_water.sww_interrogate import get_flow_through_cross_section
 
 from anuga.shallow_water.shallow_water_domain import Domain
 
@@ -36,14 +26,10 @@ from anuga.shallow_water.shallow_water_domain import Domain
 from anuga.shallow_water.boundaries import Reflective_boundary, \
             Field_boundary, Transmissive_momentum_set_stage_boundary, \
             Transmissive_stage_zero_momentum_boundary
-from anuga.abstract_2d_finite_volumes.generic_boundary_conditions\
-     import Transmissive_boundary, Dirichlet_boundary, \
-            Time_boundary, File_boundary, AWI_boundary
+from anuga.abstract_2d_finite_volumes.generic_boundary_conditions \
+     import Transmissive_boundary, Dirichlet_boundary, Time_boundary
 
 import numpy as num
-from anuga.config import g
-
-from pprint import pprint
 
 # Get gateway to C implementation of flux function for direct testing
 from anuga.shallow_water.sw_domain_openmp_ext import flux_function_central as flux_function
@@ -327,21 +313,6 @@ class Test_Shallow_Water(unittest.TestCase):
             assert num.allclose(edgeflux, [0., 0., 0.])
 
 
-    #def test_flux_slope(self):
-    #    #FIXME: TODO
-    #    w = 2.0
-    #
-    #    normal = array([1.,0])
-    #    ql = array([w, 0, 0])
-    #    qr = array([w, 0, 0])
-    #    zl = zr = 0.
-    #    h = w - (zl+zr)/2
-    #
-    #    flux, max_speed = flux_function(normal, ql, qr, zl, zr)
-    #
-    #    assert allclose(flux, [0., 0.5*g*h**2, 0.])
-    #    assert max_speed == sqrt(g*h)
-
     def test_flux1(self):
         # Use data from previous version of abstract_2d_finite_volumes
         normal = num.array([1., 0])
@@ -463,7 +434,6 @@ class Test_Shallow_Water(unittest.TestCase):
 
         domain.compute_fluxes()
 
-        #print domain.get_quantity('stage').explicit_update
         # FIXME (Ole): TODO the general case
         #assert allclose(domain.get_quantity('stage').explicit_update[1], ...??)
 
@@ -642,8 +612,6 @@ class Test_Shallow_Water(unittest.TestCase):
                 domain.get_conserved_quantities(3, edge=2)[0])
 
         # Xmomentum
-        #print domain.quantities['xmomentum'].boundary_values
-        #print domain.quantities['ymomentum'].boundary_values
 
         # Reflective
         assert domain.quantities['xmomentum'].boundary_values[0] == 1.0
@@ -1012,7 +980,6 @@ class Test_Shallow_Water(unittest.TestCase):
         low_froude = 0
         max_speed, pressure_flux0 = flux_function(normal, ql, qr, hl, hr, hle, hre, edgeflux0, epsilon, ze, g, H0, hc, hc_n, low_froude)
 
-        #print(max_speed, pressure_flux, edgeflux0)
         # Flux across edge in the east direction (as per normal vector)
         assert num.allclose(max_speed, 9.21592824046)
         assert num.allclose(pressure_flux0, 253.71111111)
@@ -1038,7 +1005,6 @@ class Test_Shallow_Water(unittest.TestCase):
         edgeflux0[1] += normal[0]*bedslope_work0
         edgeflux0[2] += normal[1]*bedslope_work0
 
-        #print(edgeflux0)
         assert num.allclose(edgeflux0, [-15.3598804, 253.71111111, 0.])
 
         # Flux across upper edge of volume 1
@@ -1062,7 +1028,6 @@ class Test_Shallow_Water(unittest.TestCase):
         edgeflux1[1] += normal[0]*bedslope_work1
         edgeflux1[2] += normal[1]*bedslope_work1
 
-        #print(edgeflux1)
         assert num.allclose(edgeflux1, [2.4098563, 0., 123.04444444])
 
         # Flux across lower left hypotenuse of volume 1
@@ -1089,7 +1054,6 @@ class Test_Shallow_Water(unittest.TestCase):
         edgeflux2[1] += normal[0]*bedslope_work2
         edgeflux2[2] += normal[1]*bedslope_work2
 
-        #print(edgeflux2)
         assert num.allclose(edgeflux2, [9.63942522, -61.59685738, -61.59685738])
 
         # FIXME (Ole): This type of test was great for internal integrity and should really be reinstated by incorporating pressure_flux
@@ -1102,7 +1066,6 @@ class Test_Shallow_Water(unittest.TestCase):
         total_flux = -(e0*edgeflux0 +
                        e1*edgeflux1 +
                        e2*edgeflux2) / domain.areas[1]
-        #print(total_flux)
         assert num.allclose(total_flux, [-0.68218178, -166.6, -35.93333333])
 
         # Now check that compute_flux yields the same
@@ -1110,7 +1073,6 @@ class Test_Shallow_Water(unittest.TestCase):
 
         for i, name in enumerate(['stage', 'xmomentum', 'ymomentum']):
 
-            #print(i,name, total_flux[i],
             #                    domain.quantities[name].explicit_update[1])
             assert num.allclose(total_flux[i],
                                 domain.quantities[name].explicit_update[1])
@@ -1308,7 +1270,6 @@ class Test_Shallow_Water(unittest.TestCase):
         domain.compute_fluxes()
 
         for i, name in enumerate(['stage', 'xmomentum', 'ymomentum']):
-            #print(i,name, total_flux[i],
             #                    domain.quantities[name].explicit_update[1])
             assert num.allclose(total_flux[i],
                                 domain.quantities[name].explicit_update[1])
@@ -1531,7 +1492,6 @@ class Test_Shallow_Water(unittest.TestCase):
         domain.compute_fluxes()
 
         for i, name in enumerate(['stage', 'xmomentum', 'ymomentum']):
-            #print(i, total_flux[i], domain.quantities[name].explicit_update[1])
             assert num.allclose(total_flux[i],
                                 domain.quantities[name].explicit_update[1])
 
@@ -1652,7 +1612,6 @@ class Test_Shallow_Water(unittest.TestCase):
         # Doesn't that affect direction?
         # Can this be tested?
         #for i, name in enumerate(['stage', 'xmomentum', 'ymomentum']):
-        #    print(i, name, total_flux[i], domain.quantities[name].explicit_update[1])
         #    assert num.allclose(total_flux[i],
         #                        domain.quantities[name].explicit_update[1])
 
@@ -1764,7 +1723,6 @@ class Test_Shallow_Water(unittest.TestCase):
         #domain.set_quantity('height', hc)
 
         max_speed0, pressure_flux0 = flux_function(normal, ql, qr, hl, hr, hle, hre, edgeflux0, epsilon, z_half, g, H0, hc, hc_n, low_froude)
-        #print("1 0 edgeflux python %e %e %e"% (edgeflux0[0]*l0,edgeflux0[1]*l0,edgeflux0[2]*l0))
 
         bedslope_work0 = -g*0.5*(hl*hl - hle*hle -(hle+hc)*(zl-zc))+pressure_flux0
         edgeflux0[1] += normal[0]*bedslope_work0
@@ -1800,7 +1758,6 @@ class Test_Shallow_Water(unittest.TestCase):
 
 
         max_speed, pressure_flux1 = flux_function(normal, ql, qr, hl, hr, hle, hre, edgeflux1, epsilon, z_half, g, H0, hc, hc_n, low_froude)
-        #print("1 1 edgeflux python %e %e %e"% (edgeflux1[0]*l1,edgeflux1[1]*l1,edgeflux1[2]*l1))
 
         bedslope_work1 = -g*0.5*(hl*hl - hle*hle -(hle+hc)*(zl-zc))+pressure_flux1
         edgeflux1[1] += normal[0]*bedslope_work1
@@ -1830,7 +1787,6 @@ class Test_Shallow_Water(unittest.TestCase):
         hr = max(hre+zr-z_half,0.0)
 
         max_speed, pressure_flux2 = flux_function(normal, ql, qr, hl, hr, hle, hre, edgeflux2, epsilon, z_half, g, H0, hc, hc_n, low_froude)
-        #print("1 2 edgeflux python %e %e %e"% (edgeflux2[0]*l2,edgeflux2[1]*l2,edgeflux2[2]*l2))
 
         bedslope_work2 = -g*0.5*(hl*hl - hle*hle -(hle+hc)*(zl-zc))+pressure_flux2
         edgeflux2[1] += normal[0]*bedslope_work2
@@ -1850,7 +1806,6 @@ class Test_Shallow_Water(unittest.TestCase):
             msg = 'Expected %f for %s but got %f' % ((domain.quantities[name].explicit_update[1]),
                                                      name,
                                                      total_flux[i])
-            #print(total_flux[i])
             assert num.allclose(total_flux[i],
                                 domain.quantities[name].explicit_update[1]), msg
 
@@ -2850,20 +2805,8 @@ class Test_Shallow_Water(unittest.TestCase):
         # pprint.pprint(gauge_values[2])
         # pprint.pprint(gauge_values[3])
 
-        # print(num.linalg.norm(num.array(G0)-gauge_values[0]))
-        # print(num.linalg.norm(num.array(G1)-gauge_values[1]))
-        # print(num.linalg.norm(num.array(G2)-gauge_values[2]))
-        # print(num.linalg.norm(num.array(G3)-gauge_values[3]))
 
-        # print(num.linalg.norm(num.array(G0_1)-gauge_values[0]))
-        # print(num.linalg.norm(num.array(G1_1)-gauge_values[1]))
-        # print(num.linalg.norm(num.array(G2_1)-gauge_values[2]))
-        # print(num.linalg.norm(num.array(G3_1)-gauge_values[3]))
 
-        # print(num.linalg.norm(num.array(G0_1)-num.array(G0_1)))
-        # print(num.linalg.norm(num.array(G1_1)-num.array(G1_1)))
-        # print(num.linalg.norm(num.array(G2_1)-num.array(G2_1)))
-        # print(num.linalg.norm(num.array(G3_1)-num.array(G3_1)))
 
 
 
@@ -3033,8 +2976,6 @@ class Test_Shallow_Water(unittest.TestCase):
         from anuga.shallow_water.sw_domain_openmp_ext import gravity
         gravity(domain)
 
-        #print domain.quantities['xmomentum'].explicit_update
-        #print domain.quantities['ymomentum'].explicit_update
 
 
         assert num.allclose(domain.quantities['stage'].explicit_update, 0)
@@ -3080,8 +3021,6 @@ class Test_Shallow_Water(unittest.TestCase):
         from anuga.shallow_water.sw_domain_openmp_ext import gravity
         gravity(domain)
 
-        #print domain.quantities['xmomentum'].explicit_update
-        #print domain.quantities['ymomentum'].explicit_update
 
 
         assert num.allclose(domain.quantities['stage'].explicit_update, 0)
@@ -3127,8 +3066,6 @@ class Test_Shallow_Water(unittest.TestCase):
         gravity_wb(domain)
 
 
-        #print domain.quantities['xmomentum'].explicit_update
-        #print domain.quantities['ymomentum'].explicit_update
 
 
         assert num.allclose(domain.quantities['stage'].explicit_update, 0)
@@ -3174,8 +3111,6 @@ class Test_Shallow_Water(unittest.TestCase):
         gravity_wb(domain)
 
 
-        #print domain.quantities['xmomentum'].explicit_update
-        #print domain.quantities['ymomentum'].explicit_update
 
         assert num.allclose(domain.quantities['stage'].explicit_update, 0)
         assert num.allclose(domain.quantities['xmomentum'].explicit_update,
@@ -3627,7 +3562,6 @@ class Test_Shallow_Water(unittest.TestCase):
         # Apply equivalent outflow only and check volumes
         # for a range of stage values
         for stage in [2.0, 1.0, 0.5, 0.25, 0.1, 0.0]:
-            #print stage
 
             domain.set_time(0.0)
             domain.set_quantity('stage', stage)
@@ -3639,14 +3573,12 @@ class Test_Shallow_Water(unittest.TestCase):
             dt = 0.05
             for t in domain.evolve(yieldstep=dt, finaltime=5.0):
                 volume = domain.quantities['stage'].get_integral()
-                #print(t, volume, predicted_volume)
                 assert num.allclose (volume, predicted_volume)
                 predicted_volume = predicted_volume - 2.0 / pi / 100 / dt # Why 100?
 
         # Apply both inflow and outflow and check volumes being constant for a
         # range of stage values
         for stage in [2.0, 1.0, 0.5, 0.25, 0.1, 0.0]:
-            #print stage
 
             domain.set_time(0.0)
             domain.set_quantity('stage', stage)
@@ -3661,7 +3593,6 @@ class Test_Shallow_Water(unittest.TestCase):
             for t in domain.evolve(yieldstep=dt, finaltime=5.0):
                 volume = domain.quantities['stage'].get_integral()
 
-                #print t, volume
                 assert num.allclose(volume, initial_volume)
 
     #####################################################
@@ -3934,7 +3865,6 @@ class Test_Shallow_Water(unittest.TestCase):
         domain.distribute_to_vertices_and_edges()
 
 
-        #print L[1]
         #print [0.298, 20.001, 20.001]
 
         assert num.allclose(L[1], [  0.1,  20.1,  20.1])
@@ -4094,9 +4024,6 @@ class Test_Shallow_Water(unittest.TestCase):
         X_EX = [ 0.0170432 ,  0.01674667,  0.00654035]
         Y_EX = [ -1.56119371e-04,   1.10107449e-04,  -5.74034758e-05]
 
-        #pprint(L[1,:])
-        #pprint(X[1,:])
-        #pprint(Y[1,:])
 
         L_EX1 = [-0.01434766, -0.01292565,  0.03824164]
         X_EX1 = [ 0.01631331,  0.01583494,  0.00596076]
@@ -4176,9 +4103,6 @@ class Test_Shallow_Water(unittest.TestCase):
         #domain.distribute_to_vertices_and_edges()
 
 
-        # print( L[1,:])
-        # print( X[1,:])
-        # print( Y[1,:])
 
         # L_EX = [-0.00137913, -0.00098143,  0.0133289 ]
         # X_EX = [ 0.01998251,  0.01948814,  0.00247195]
@@ -4792,7 +4716,6 @@ class Test_Shallow_Water(unittest.TestCase):
             #I don't believe that the total momentum should be the same
             #It starts with zero and ends with zero though
             #xmom = domain.quantities['xmomentum'].get_integral()
-            #print xmom
             #assert allclose (xmom, initial_xmom)
 
         os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
@@ -4838,7 +4761,6 @@ class Test_Shallow_Water(unittest.TestCase):
 
             #FIXME: What would we expect from momentum
             #xmom = domain.quantities['xmomentum'].get_integral()
-            #print xmom
             #assert allclose (xmom, initial_xmom)
 
         os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
@@ -5019,7 +4941,6 @@ class Test_Shallow_Water(unittest.TestCase):
             stage =  domain.quantities['stage'].get_integral()
             xmom = domain.quantities['xmomentum'].get_integral()
             ymom = domain.quantities['ymomentum'].get_integral()
-            #print stage,xmom,ymom
 
             if num.allclose(t, 10):    # Steady state reached
                 steady_xmom = domain.quantities['xmomentum'].get_integral()
@@ -5188,7 +5109,6 @@ class Test_Shallow_Water(unittest.TestCase):
         # Data from earlier version of abstract_2d_finite_volumes
         #assert allclose(domain.recorded_min_timestep, 0.0396825396825)
         #assert allclose(domain.recorded_max_timestep, 0.0396825396825)
-        #print domain.quantities['stage'].centroid_values
 
         os.remove(os.path.join(domain.get_datadir(), domain.get_name() + '.sww'))
 
@@ -5417,9 +5337,6 @@ class Test_Shallow_Water(unittest.TestCase):
                 assert num.allclose(domain.recorded_min_timestep, 0.018940360)
                 assert num.allclose(domain.recorded_max_timestep, 0.018940360)
 
-            #print(domain.quantities['stage'].centroid_values[:4])
-            #print(domain.quantities['xmomentum'].centroid_values[:4])
-            #print(domain.quantities['ymomentum'].centroid_values[:4])
 
             #Centroids were correct but not vertices.
             #Hence the check of distribute below.
@@ -5455,9 +5372,6 @@ class Test_Shallow_Water(unittest.TestCase):
             UH_EX = [-0.00271431,  0.02744767,  0.00023944,  0.02746294]
             VH_EX = [1.10413075e-03,  2.62134850e-04, -2.72890315e-05,  2.77104392e-04]
 
-            #pprint(domain.quantities['stage'].vertex_values[:4,0])
-            #pprint(domain.quantities['xmomentum'].vertex_values[:4,0])
-            #pprint(domain.quantities['ymomentum'].vertex_values[:4,0])
 
 
             assert num.allclose(domain.quantities['xmomentum'].vertex_values[:4,0],
@@ -5499,7 +5413,6 @@ class Test_Shallow_Water(unittest.TestCase):
             pass
 
         # FIXME (Ole): Need some other assertion here!
-        #print domain.min_timestep, domain.max_timestep
         #assert allclose(domain.recorded_min_timestep, 0.050010003001)
         #assert allclose(domain.recorded_max_timestep, 0.050010003001)
 
@@ -6059,7 +5972,6 @@ class Test_Shallow_Water(unittest.TestCase):
         -2.15457373e-03,  -1.48932625e-03,  -3.24804437e-03,
         -1.09719715e-03,   3.38706650e-03,  -8.98151209e-04]
 
-        #pprint(domain.quantities['ymomentum'].centroid_values)
 
 
         assert num.allclose(domain.quantities['ymomentum'].centroid_values, VH_EX)
@@ -6228,9 +6140,6 @@ class Test_Shallow_Water(unittest.TestCase):
         for t in domain.evolve(yieldstep=0.05, finaltime=0.1):
             pass
 
-        #pprint(domain.quantities['stage'].centroid_values[:4])
-        #pprint(domain.quantities['xmomentum'].centroid_values[:4])
-        #pprint(domain.quantities['ymomentum'].centroid_values[:4])
 
         W = domain.quantities['stage'].centroid_values[:4]
         UH = domain.quantities['xmomentum'].centroid_values[:4]
@@ -8029,7 +7938,6 @@ friction  \n \
         domain.set_quantities_to_be_stored({'elevation': 2,
                                             'stage': 2})
 
-        #pprint(domain.get_algorithm_parameters())
         #---------------------------------------------------------------------
         # Setup initial conditions
         #---------------------------------------------------------------------
@@ -8066,7 +7974,6 @@ friction  \n \
         #-------------------------------------------------------------------
 
         for t in domain.evolve(yieldstep=1, finaltime=3.0):
-            #print domain.timestepping_statistics()
 
             domain.add_quantity('elevation', pole_increment, location='centroids')
 
@@ -8342,8 +8249,6 @@ friction  \n \
                 for t in domain.evolve(yieldstep=100.0, finaltime=finaltime):
                     pass
                     #if verbose :
-                    #    print domain.timestepping_statistics()
-                    #    print domain.volumetric_balance_statistics()
 
 
 
