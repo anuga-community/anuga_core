@@ -3,7 +3,11 @@
 python_sources = [
 '__init__.py',
 'test_boundaries.py',
+'test_boundaries_sw.py',
+'test_extrapolation_sw.py',
 'test_flow_algorithms.py',
+'test_flux.py',
+'test_physics_sw.py',
 'test_regression_snapshots.py',
 'test_data_manager.py',
 'test_sw_domain_openmp.py',
