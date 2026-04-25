@@ -1,4 +1,12 @@
+"""Legacy culvert flow classes — deprecated.
+
+Use :class:`anuga.Boyd_box_operator` (box culverts),
+:class:`anuga.Boyd_pipe_operator` (pipe/circular culverts), or
+:class:`anuga.Weir_orifice_trapezoid_operator` (weirs) instead.
+"""
+
 import sys
+from warnings import warn
 
 from anuga.shallow_water.forcing import Inflow, General_forcing
 from anuga.culvert_flows.culvert_polygons import create_culvert_polygons
@@ -146,7 +154,12 @@ class Culvert_flow_general:
                  discharge_hydrograph=False,
                  verbose=False):
 
-
+        warn(
+            'Culvert_flow_general (and the Culvert_flow alias) is deprecated '
+            'and will be removed in a future release. '
+            'Use anuga.Boyd_box_operator (box culverts) or '
+            'anuga.Boyd_pipe_operator (pipe/circular culverts) instead.',
+            DeprecationWarning, stacklevel=2)
 
         # Input check
 
@@ -837,7 +850,11 @@ class Culvert_flow_rating:
                  discharge_hydrograph=False,
                  verbose=False):
 
-
+        warn(
+            'Culvert_flow_rating is deprecated and will be removed in a future release. '
+            'Use anuga.Boyd_box_operator (box culverts) or '
+            'anuga.Boyd_pipe_operator (pipe/circular culverts) instead.',
+            DeprecationWarning, stacklevel=2)
 
         label, type, width, height, length, number_of_barrels, description, rating_curve = read_culvert_description(culvert_description_filename)
 
@@ -1202,6 +1219,12 @@ class Culvert_flow_energy:
                  enquiry_point1=None,
                  update_interval=None,
                  verbose=False):
+
+        warn(
+            'Culvert_flow_energy is deprecated and will be removed in a future release. '
+            'Use anuga.Boyd_box_operator (box culverts) or '
+            'anuga.Boyd_pipe_operator (pipe/circular culverts) instead.',
+            DeprecationWarning, stacklevel=2)
 
         # Input check
         if diameter is not None:
