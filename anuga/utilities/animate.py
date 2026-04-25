@@ -717,9 +717,9 @@ class SWW_plotter:
         from anuga.file.netcdf import NetCDFFile
         p = NetCDFFile(swwfile)
 
-        self.x = np.array(p.variables['x'])
-        self.y = np.array(p.variables['y'])
-        self.triangles = np.array(p.variables['volumes'])
+        self.x = p.variables['x'][:]
+        self.y = p.variables['y'][:]
+        self.triangles = p.variables['volumes'][:]
 
         vols0 = self.triangles[:, 0]
         vols1 = self.triangles[:, 1]
@@ -758,10 +758,10 @@ class SWW_plotter:
             self.triang_abs = self.triang
 
 
-        self.elev = np.array(p.variables['elevation_c'])
-        self.stage = np.array(p.variables['stage_c'])
-        self.xmom = np.array(p.variables['xmomentum_c'])
-        self.ymom = np.array(p.variables['ymomentum_c'])
+        self.elev = p.variables['elevation_c'][:]
+        self.stage = p.variables['stage_c'][:]
+        self.xmom = p.variables['xmomentum_c'][:]
+        self.ymom = p.variables['ymomentum_c'][:]
 
         self.depth = np.zeros_like(self.stage)
         if(len(self.elev.shape) == 2):
@@ -781,7 +781,7 @@ class SWW_plotter:
 
         self.speed_depth = self.speed*self.depth
 
-        self.time = np.array(p.variables['time'])
+        self.time = p.variables['time'][:]
 
         self._depth_frame_count = 0
         self._stage_frame_count = 0
