@@ -9,7 +9,7 @@ Branch: `develop` (all feature branches merged)
 
 | Area | Total actions | Done | Remaining |
 |------|--------------|------|-----------|
-| Code improvements (original list) | 60 | 50 | 10 |
+| Code improvements (original list) | 60 | 53 | 7 |
 | Documentation improvements | 20 | 20 | 0 |
 | Additional enhancements | 47 | 47 | 0 |
 | Hydrata Phase 0 — Test infrastructure | 5 | 5 | 0 |
@@ -26,7 +26,7 @@ Branch: `develop` (all feature branches merged)
 | Domain memory reduction | 3 | 3 | 0 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 7 | 7 | 0 |
-| **Total** | **191** | **178** | **13** |
+| **Total** | **191** | **181** | **10** |
 
 
 ---

@@ -9,24 +9,15 @@ Items marked ~~strikethrough~~ have been invalidated (see notes).
 
 ## Priority 1 — High value, low effort (1–3 days each)
 
-**P1.1 Delete or absorb `boyd_box_operator_Amended3.py`**
-`anuga/structures/boyd_box_operator_Amended3.py` (247 lines) sits alongside the canonical
-515-line `boyd_box_operator.py`. Not imported or exported anywhere. Either merge any unique
-improvements into the canonical version or delete it.
+~~**P1.1 Delete or absorb `boyd_box_operator_Amended3.py`**~~ — Done (session 25).
 
-**P1.2 Add tests for the `rain` module**
-`anuga/rain/` has no test directory. `calibrated_radar_rain.py` and
-`raster_time_slice_data.py` are used in real scenarios but have zero automated coverage.
-Target: initialisation, temporal interpolation, boundary conditions.
+~~**P1.2 Add tests for the `rain` module**~~ — Done (session 25).
 
 ~~**P1.3 Add tests for `simulation/` and `validation_utilities/`**~~ — Done. `test_simulation.py` and `test_validation_utilities.py` exist.
 
 ~~**P1.4 Fix `gauge.py` verbose/print hygiene**~~ — Done (P2.7 session 24). No bare `print` calls remain; all logging via `log.info()`/`log.warning()`.
 
-**P1.5 Add deprecation warnings to legacy forcing classes**
-`anuga/__init__.py` comments say "These are old, should use operators" for `Inflow`,
-`Rainfall`, `Wind_stress` in `shallow_water/forcing.py`. Add explicit `DeprecationWarning`
-pointing to `Rate_operator`. Matches the camelCase deprecation pattern already established.
+~~**P1.5 Add deprecation warnings to legacy forcing classes**~~ — Done (session 25). `DeprecationWarning` added to `Inflow`, `Rainfall`, `Wind_stress`, `Barometric_pressure` in `shallow_water/forcing.py`; `filterwarnings` in `pyproject.toml` suppresses them in the test suite.
 
 ~~**P1.6 Remove local-timestepping dead infrastructure**~~ — Done (session 23). Removed
 `max_flux_update_frequency`, `flux_update_frequency`, `update_next_flux`,
@@ -176,12 +167,12 @@ per-variable size limit. The NetCDF3 classic restriction does not apply. (Invali
 
 | Priority | Total | Remaining | Effort | Biggest payoff |
 |----------|-------|-----------|--------|----------------|
-| P1 — Quick wins | 8 | 3 | 1–3 days | Dead code, coverage lift, logging consistency |
+| P1 — Quick wins | 8 | 0 ✅ | 1–3 days | All done |
 | P2 — Medium | 9 | 6 | 1–2 weeks | Usability, type safety, test coverage |
 | P3 — Initiatives | 7 | 6 | 1–3 months | Performance, scalability, accuracy |
 | Speculative | 4 | 4 | 6+ months | Strategic differentiation |
 
 **Top 3 near-term recommendations:**
-1. **P1.1** — Delete or absorb `boyd_box_operator_Amended3.py` (10-minute quick win, eliminates dead-code confusion)
-2. **P1.2** — Add tests for the `rain` module (used in real scenarios, currently zero automated coverage)
-3. **P2.8** — Scenario system input validation (biggest source of user friction in operational use)
+1. **P2.6** — Raise fast-suite coverage threshold (fast suite trails full suite; targeted tests in `file/`, `fit_interpolate/`, `structures/`)
+2. **P2.8** — Scenario system input validation (biggest source of user friction in operational use)
+3. **P2.9** — Document the scenario/TOML system (TOML keys undocumented; high leverage for new users)
