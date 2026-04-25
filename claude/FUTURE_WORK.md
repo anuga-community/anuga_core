@@ -140,11 +140,7 @@ reduction work (session 13, ~58% saving) helps but is not sufficient for contine
 runs. Options: CUDA Unified Memory (`cudaMallocManaged`) or selective quantity transfer (only
 GPU what's needed per sub-step).
 
-**P3.6 `anuga_sww_gui` erosion delta-bed view**
-For erosion/deposition simulations, a "delta elevation" display mode (elevation at frame T
-minus elevation at frame 0) would immediately reveal net deposition/erosion zones. The
-`_elev_frame` infrastructure is in place; this is a new `qty='elev_delta'` path in
-`SWW_plotter` and a new entry in the Quantity dropdown.
+~~**P3.6 `anuga_sww_gui` erosion delta-bed view**~~ — Done (session 24). Added `elev_delta` quantity: `elev_delta` property on `SWW_plotter`, `_elev_delta_frame`/`save_elev_delta_frame` methods (RdBu_r colormap, symmetric auto-limits), `_elev_delta_frame_count`, worker entry in `_animate_worker.py`, full GUI wiring in `anuga_sww_gui.py`. 6 new tests.
 
 **P3.7 Streaming SWW reads for very long simulations**
 `SWW_plotter` currently reads the full time dimension into memory on load. For very long

@@ -466,6 +466,130 @@ class TestSWWPlotter(unittest.TestCase):
 
 
 # ---------------------------------------------------------------------------
+# SWW_plotter — elev_delta (time-varying elevation)
+# ---------------------------------------------------------------------------
+
+def _write_sww_with_time_varying_elev(path, n_timesteps=3):
+    """Write a SWW file where elevation_c is 2-D (time-varying, e.g. erosion)."""
+    from anuga.file.netcdf import NetCDFFile
+    from anuga.config import netcdf_mode_w
+
+    n_nodes = 4
+    n_tris = 2
+
+    x    = np.array([0.0, 2.0, 2.0, 0.0], dtype=np.float32)
+    y    = np.array([0.0, 0.0, 1.0, 1.0], dtype=np.float32)
+    vols = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int32)
+    t    = np.array([0.0, 10.0, 20.0], dtype=np.float64)[:n_timesteps]
+
+    # elevation changes over time: erodes by 0.1 m/step on first triangle
+    elev_t0 = np.array([-1.0, -0.5], dtype=np.float32)
+    elev = np.zeros((n_timesteps, n_tris), dtype=np.float32)
+    for i in range(n_timesteps):
+        elev[i, 0] = elev_t0[0] - 0.1 * i   # first tri erodes
+        elev[i, 1] = elev_t0[1]              # second tri static
+
+    stage = np.zeros((n_timesteps, n_tris), dtype=np.float32)
+    xmom  = np.zeros((n_timesteps, n_tris), dtype=np.float32)
+    ymom  = np.zeros((n_timesteps, n_tris), dtype=np.float32)
+
+    fid = NetCDFFile(path, netcdf_mode_w)
+    fid.starttime = 0.0
+    fid.timezone  = 'UTC'
+    fid.xllcorner = 300000.0
+    fid.yllcorner = 6000000.0
+    fid.zone      = 55
+
+    fid.createDimension('number_of_volumes',   n_tris)
+    fid.createDimension('number_of_vertices',  3)
+    fid.createDimension('number_of_points',    n_nodes)
+    fid.createDimension('number_of_timesteps', n_timesteps)
+
+    fid.createVariable('x',            'f', ('number_of_points',))
+    fid.createVariable('y',            'f', ('number_of_points',))
+    fid.createVariable('volumes',      'i', ('number_of_volumes', 'number_of_vertices'))
+    fid.createVariable('time',         'd', ('number_of_timesteps',))
+    fid.createVariable('elevation_c',  'f', ('number_of_timesteps', 'number_of_volumes'))
+    fid.createVariable('stage_c',      'f', ('number_of_timesteps', 'number_of_volumes'))
+    fid.createVariable('xmomentum_c',  'f', ('number_of_timesteps', 'number_of_volumes'))
+    fid.createVariable('ymomentum_c',  'f', ('number_of_timesteps', 'number_of_volumes'))
+
+    fid.variables['x'][:]           = x
+    fid.variables['y'][:]           = y
+    fid.variables['volumes'][:]     = vols
+    fid.variables['time'][:]        = t
+    fid.variables['elevation_c'][:] = elev
+    fid.variables['stage_c'][:]     = stage
+    fid.variables['xmomentum_c'][:] = xmom
+    fid.variables['ymomentum_c'][:] = ymom
+    fid.close()
+
+    return elev   # return for assertion use
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestElevDelta(unittest.TestCase):
+    """Tests for the elev_delta property and save_elev_delta_frame method."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+        self.plot_dir = os.path.join(self.tmpdir, 'frames')
+        os.makedirs(self.plot_dir, exist_ok=True)
+        # static-elev SWW
+        self.static_sww = os.path.join(self.tmpdir, 'static.sww')
+        _write_minimal_sww(self.static_sww)
+        # time-varying-elev SWW
+        self.dynamic_sww = os.path.join(self.tmpdir, 'dynamic.sww')
+        self._elev_array = _write_sww_with_time_varying_elev(self.dynamic_sww)
+
+    def tearDown(self):
+        import matplotlib.pyplot as plt
+        plt.close('all')
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_elev_delta_is_none_for_static_elev(self):
+        sp = SWW_plotter(self.static_sww, plot_dir=self.plot_dir)
+        self.assertIsNone(sp.elev_delta)
+
+    def test_elev_delta_shape_for_time_varying_elev(self):
+        sp = SWW_plotter(self.dynamic_sww, plot_dir=self.plot_dir)
+        self.assertEqual(sp.elev.ndim, 2)
+        delta = sp.elev_delta
+        self.assertIsNotNone(delta)
+        self.assertEqual(delta.shape, sp.elev.shape)
+
+    def test_elev_delta_values_correct(self):
+        sp = SWW_plotter(self.dynamic_sww, plot_dir=self.plot_dir)
+        delta = sp.elev_delta
+        # frame 0: delta should be zero everywhere
+        np.testing.assert_allclose(delta[0, :], 0.0, atol=1e-6)
+        # frame 1: first tri eroded by 0.1
+        self.assertAlmostEqual(float(delta[1, 0]), -0.1, places=5)
+        self.assertAlmostEqual(float(delta[1, 1]),  0.0, places=5)
+        # frame 2: first tri eroded by 0.2
+        self.assertAlmostEqual(float(delta[2, 0]), -0.2, places=5)
+
+    def test_save_elev_delta_frame_creates_png(self):
+        sp = SWW_plotter(self.dynamic_sww, plot_dir=self.plot_dir)
+        sp.save_elev_delta_frame(frame=1, dpi=20)
+        png = os.path.join(self.plot_dir, 'dynamic_elev_delta_0000000000.png')
+        self.assertTrue(os.path.exists(png))
+
+    def test_save_elev_delta_frame_increments_counter(self):
+        sp = SWW_plotter(self.dynamic_sww, plot_dir=self.plot_dir)
+        sp.save_elev_delta_frame(frame=0, dpi=20)
+        sp.save_elev_delta_frame(frame=1, dpi=20)
+        self.assertEqual(sp._elev_delta_frame_count, 2)
+
+    def test_save_elev_delta_frame_static_elev_creates_png(self):
+        # For static elevation, delta is always zero — should still produce a file
+        sp = SWW_plotter(self.static_sww, plot_dir=self.plot_dir)
+        sp.save_elev_delta_frame(frame=0, dpi=20)
+        png = os.path.join(self.plot_dir, 'static_elev_delta_0000000000.png')
+        self.assertTrue(os.path.exists(png))
+
+
+# ---------------------------------------------------------------------------
 # Domain_plotter
 # ---------------------------------------------------------------------------
 

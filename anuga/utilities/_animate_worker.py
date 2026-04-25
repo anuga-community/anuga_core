@@ -16,6 +16,7 @@ _COUNTER_ATTR = {
     'max_speed':       '_max_speed_frame_count',
     'max_speed_depth': '_max_speed_depth_frame_count',
     'elev':            '_elev_frame_count',
+    'elev_delta':      '_elev_delta_frame_count',
 }
 
 

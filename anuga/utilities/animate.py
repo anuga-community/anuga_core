@@ -791,6 +791,7 @@ class SWW_plotter:
         self._max_speed_frame_count = 0
         self._max_speed_depth_frame_count = 0
         self._elev_frame_count = 0
+        self._elev_delta_frame_count = 0
 
         self._basemap_cache = {}
         self._figure_cache = {}
@@ -1260,6 +1261,100 @@ class SWW_plotter:
         render_frame = 0 if self.elev.ndim == 1 else frame
         fig, ax = self._elev_frame(render_frame, figsize, dpi, vmin, vmax)
         return fig, ax
+
+    #------------------------------------------
+    # Elevation-change (delta) procedures
+    #------------------------------------------
+
+    @property
+    def elev_delta(self):
+        """Bed elevation change from t=0: shape (n_time, n_tri), or None for static."""
+        if self.elev.ndim == 2:
+            return self.elev - self.elev[0, :]
+        return None
+
+    def _elev_delta_frame(self, frame, figsize, dpi, vmin, vmax, cmap='RdBu_r',
+                          basemap=False, alpha=1.0,
+                          basemap_provider=BASEMAP_DEFAULT, xlim=None, ylim=None,
+                          smooth=False, show_mesh=False):
+        """Render one elevation-change frame: elev[t] - elev[0]."""
+        import matplotlib.pyplot as plt
+
+        if self.elev.ndim == 2:
+            delta_data = self.elev[frame, :] - self.elev[0, :]
+            title = f'Elevation change: Time {self.time[frame]:.2f}'
+        else:
+            import numpy as np
+            delta_data = np.zeros(self.elev.shape)
+            title = 'Elevation change (static)'
+
+        cache_key = ('elev_delta', figsize, dpi, basemap, basemap_provider,
+                     cmap, vmin, vmax, alpha,
+                     tuple(xlim) if xlim is not None else None,
+                     tuple(ylim) if ylim is not None else None,
+                     show_mesh)
+
+        if cache_key not in self._figure_cache:
+            self._figure_cache[cache_key] = plt.figure(figsize=figsize, dpi=dpi)
+
+        fig = self._figure_cache[cache_key]
+        fig.clf()
+        ax = fig.add_subplot(111)
+        ax.set_aspect('equal')
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        ax.set_title(title)
+
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        triang.set_mask(None)
+        if smooth:
+            import matplotlib.tri as _mtri
+            triang_all = _mtri.Triangulation(triang.x, triang.y, triang.triangles)
+            v_delta = _face_to_vertex(triang, delta_data)
+            im = ax.tripcolor(triang_all, v_delta, shading='gouraud',
+                              cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
+            im.set_linewidths(0)
+        else:
+            im = ax.tripcolor(triang, facecolors=delta_data,
+                              cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
+
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        if ylim is not None:
+            ax.set_ylim(ylim)
+
+        if show_mesh:
+            ax.triplot(triang, color='black', linewidth=0.25, alpha=0.45, zorder=4)
+
+        fig.colorbar(im, ax=ax, label='Elevation change (m)')
+
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg, basemap_provider, cache=self._basemap_cache)
+
+        return fig, ax
+
+    def save_elev_delta_frame(self, frame=-1, figsize=(10, 6), dpi=160,
+                              vmin=-5.0, vmax=5.0, cmap='RdBu_r', basemap=False,
+                              alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
+                              xlim=None, ylim=None, smooth=False,
+                              show_elev=False, elev_levels=10, show_mesh=False):
+        """Save one elevation-change frame (elev[t] - elev[0]) to disk."""
+        name = self.name
+        plot_dir = self.plot_dir
+        frame_num = self._elev_delta_frame_count
+
+        render_frame = 0 if self.elev.ndim == 1 else frame
+        fig, ax = self._elev_delta_frame(render_frame, figsize, dpi, vmin, vmax, cmap,
+                                         basemap, alpha, basemap_provider,
+                                         xlim=xlim, ylim=ylim, smooth=smooth,
+                                         show_mesh=show_mesh)
+
+        fname = name + '_elev_delta_{0:0>10}.png'.format(frame_num)
+        if plot_dir is None:
+            fig.savefig(fname)
+        else:
+            fig.savefig(os.path.join(plot_dir, fname))
+        self._elev_delta_frame_count += 1
 
     #------------------------------------------
     # Maximum-over-time procedures

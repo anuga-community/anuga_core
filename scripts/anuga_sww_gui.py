@@ -49,7 +49,7 @@ except Exception as _e:
 
 _QUANTITIES = ('depth', 'stage', 'speed', 'speed_depth',
                'max_depth', 'max_speed', 'max_speed_depth',
-               'elev')
+               'elev', 'elev_delta')
 
 _QTY_DEFAULTS = {
     'depth':           dict(vmin=0.0,   vmax=20.0),
@@ -60,6 +60,7 @@ _QTY_DEFAULTS = {
     'max_speed':       dict(vmin=0.0,   vmax=10.0),
     'max_speed_depth': dict(vmin=0.0,   vmax=20.0),
     'elev':            dict(vmin=-20.0, vmax=100.0),
+    'elev_delta':      dict(vmin=-5.0,  vmax=5.0),
 }
 
 # Attribute on SWW_plotter used to compute auto vmin/vmax
@@ -72,6 +73,7 @@ _QTY_DATA_ATTR = {
     'max_speed':       'speed',
     'max_speed_depth': 'speed_depth',
     'elev':            'elev',
+    'elev_delta':      'elev_delta',
 }
 
 # Method name on SWW_plotter to save a single frame
@@ -84,6 +86,7 @@ _QTY_SAVE_METHOD = {
     'max_speed':       'save_max_speed_frame',
     'max_speed_depth': 'save_max_speed_depth_frame',
     'elev':            'save_elev_frame',
+    'elev_delta':      'save_elev_delta_frame',
 }
 
 # Colorbar label for each quantity (used by the clean-export renderer)
@@ -96,6 +99,7 @@ _QTY_CBAR_LABEL = {
     'max_speed':       'Max speed (m/s)',
     'max_speed_depth': 'Max flow depth (m2/s)',
     'elev':            'Elevation (m)',
+    'elev_delta':      'Elevation change (m)',
 }
 
 # Human-readable quantity name for figure titles
@@ -108,6 +112,7 @@ _QTY_TITLE = {
     'max_speed':       'Maximum flow speed',
     'max_speed_depth': 'Maximum flow depth',
     'elev':            'Bed elevation',
+    'elev_delta':      'Bed elevation change',
 }
 
 
@@ -662,19 +667,28 @@ class SWWAnimationGUI:
         qty = self._qty_var.get()
         attr = _QTY_DATA_ATTR[qty]
         data = getattr(self._splotter, attr)
-        self._vmin_var.set(f'{float(data.min()):.4g}')
-        self._vmax_var.set(f'{float(data.max()):.4g}')
+        if data is None:
+            return
+        if qty == 'elev_delta':
+            # symmetric range around zero
+            import numpy as np
+            max_abs = float(max(abs(float(data.min())), abs(float(data.max()))))
+            self._vmin_var.set(f'{-max_abs:.4g}')
+            self._vmax_var.set(f'{max_abs:.4g}')
+        else:
+            self._vmin_var.set(f'{float(data.min()):.4g}')
+            self._vmax_var.set(f'{float(data.max()):.4g}')
 
     def _is_static_qty(self, qty):
         """Return True if qty produces a single frame (not time-animated).
 
-        max_* quantities always produce one frame.  elev produces one frame
-        when elevation is static (1-D array); it is animated when the SWW
-        contains time-varying elevation (2-D array, e.g. from an erosion run).
+        max_* quantities always produce one frame.  elev and elev_delta produce
+        one frame when elevation is static (1-D); they are animated when the SWW
+        contains time-varying elevation (2-D, e.g. from an erosion run).
         """
         if qty.startswith('max_'):
             return True
-        if qty == 'elev' and self._splotter is not None:
+        if qty in ('elev', 'elev_delta') and self._splotter is not None:
             return self._splotter.elev.ndim == 1
         return False
 
@@ -748,7 +762,8 @@ class SWWAnimationGUI:
         for attr in ('_depth_frame_count', '_stage_frame_count',
                      '_speed_frame_count', '_speed_depth_frame_count',
                      '_max_depth_frame_count', '_max_speed_frame_count',
-                     '_max_speed_depth_frame_count', '_elev_frame_count'):
+                     '_max_speed_depth_frame_count', '_elev_frame_count',
+                     '_elev_delta_frame_count'):
             setattr(self._splotter, attr, 0)
         # Close any figures cached from a previous generation run
         self._splotter._clear_figure_cache()
