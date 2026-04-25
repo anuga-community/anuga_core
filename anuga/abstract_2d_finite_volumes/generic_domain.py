@@ -161,42 +161,55 @@ class Generic_Domain:
         if verbose:
             log.info('Domain: Initialising')
 
-        # FIXME SR: This is a bug
-        # FIXME(Ole): Do you mean a hack?
-        # FIXME SR: Of course, a hack.
-        number_of_full_nodes = None
-        number_of_full_triangles = None
+        vertex_quantity_dict = self._init_mesh(
+            source, triangles, boundary, tagged_elements, geo_reference,
+            use_inscribed_circle, mesh_filename, use_cache, verbose)
 
+        self._init_quantities(
+            conserved_quantities, evolved_quantities, other_quantities, verbose)
+
+        self._init_parallel(
+            full_send_dict, ghost_recv_dict,
+            processor, numproc, ghost_layer_width, verbose)
+
+        self._init_timestepping(starttime, verbose)
+
+        if vertex_quantity_dict:
+            if verbose:
+                log.info('Domain: Initialising quantity values')
+            self.set_quantity_vertices_dict(vertex_quantity_dict)
+
+        if verbose:
+            log.info('Domain: Done')
+
+    def _init_mesh(self, source, triangles, boundary, tagged_elements,
+                   geo_reference, use_inscribed_circle, mesh_filename,
+                   use_cache, verbose):
+        """Construct self.mesh and expose its attributes on the domain.
+
+        Returns vertex_quantity_dict (non-empty only when loading from a mesh file).
+        """
+        vertex_quantity_dict = {}
         mesh_input = None
+        coordinates = None
 
-        # Determine whether source is a mesh filename or coordinates
         if isinstance(source, str):
             mesh_filename = source
-            mesh_input = None
-            coordinates = None
         elif isinstance(source, Mesh):
             mesh_input = source
-            coordinates = None
         else:
-            # Check if source is a pmesh Pmesh object (returned by
-            # create_mesh_from_regions) and convert it to an anuga Mesh.
             try:
                 from anuga.pmesh.mesh import Mesh as Pmesh
                 if isinstance(source, Pmesh):
                     from .pmesh2domain import pmesh_to_mesh
                     mesh_input = pmesh_to_mesh(source, verbose=verbose)
                     mesh_filename = None
-                    coordinates = None
                 else:
                     coordinates = source
-                    mesh_input = None
             except ImportError:
                 coordinates = source
-                mesh_input = None
 
-        # In case a filename has been specified, extract content
         if mesh_filename is not None:
-
             coordinates, triangles, boundary, vertex_quantity_dict, \
                 tagged_elements, geo_reference = \
                     pmesh_to_domain(file_name=mesh_filename,
@@ -204,20 +217,14 @@ class Generic_Domain:
                                     verbose=verbose)
 
         if mesh_input is not None:
-
             self.mesh = mesh_input
-            # FIXME: We should update tagged_elements
-
         else:
-            # Initialise underlying mesh structure
             self.mesh = Mesh(coordinates, triangles,
-                            boundary=boundary,
-                            tagged_elements=tagged_elements,
-                            geo_reference=geo_reference,
-                            use_inscribed_circle=use_inscribed_circle,
-                            # number_of_full_nodes=number_of_full_nodes,
-                            # number_of_full_triangles=number_of_full_triangles,
-                            verbose=verbose)
+                             boundary=boundary,
+                             tagged_elements=tagged_elements,
+                             geo_reference=geo_reference,
+                             use_inscribed_circle=use_inscribed_circle,
+                             verbose=verbose)
 
         if verbose:
             log.info('Domain: Expose mesh attributes')
@@ -243,10 +250,7 @@ class Generic_Domain:
         self.number_of_boundaries = self.mesh.number_of_boundaries
         self.boundary_length = self.mesh.boundary_length
         self.tag_boundary_cells = self.mesh.tag_boundary_cells
-        # self.number_of_full_nodes = self.mesh.number_of_full_nodes
-        # self.number_of_full_triangles = self.mesh.number_of_full_triangles
-        self.number_of_triangles_per_node = \
-            self.mesh.number_of_triangles_per_node
+        self.number_of_triangles_per_node = self.mesh.number_of_triangles_per_node
         self.node_index = self.mesh.node_index
         self.vertex_value_indices = self.mesh.vertex_value_indices
         self.number_of_triangles = self.mesh.number_of_triangles
@@ -254,79 +258,47 @@ class Generic_Domain:
 
         self.geo_reference = self.mesh.geo_reference
         self.institution = 'Geosciences Australia'
-
         self.verbose = verbose
 
+        return vertex_quantity_dict
+
+    def _init_quantities(self, conserved_quantities, evolved_quantities,
+                         other_quantities, verbose):
+        """Set up quantity name lists, build Quantity instances, and initialise operator lists."""
         if verbose:
             log.info('Domain: Expose quantity names and types')
 
-        # List of quantity names entering the conservation equations
-        if conserved_quantities is None:
-            self.conserved_quantities = []
-        else:
-            self.conserved_quantities = conserved_quantities
+        self.conserved_quantities = conserved_quantities if conserved_quantities is not None else []
+        self.evolved_quantities = evolved_quantities if evolved_quantities is not None else self.conserved_quantities
+        self.other_quantities = other_quantities if other_quantities is not None else []
 
-        if evolved_quantities is None:
-            self.evolved_quantities = self.conserved_quantities
-        else:
-            self.evolved_quantities = evolved_quantities
-
-        # List of other quantity names
-        if other_quantities is None:
-            self.other_quantities = []
-        else:
-            self.other_quantities = other_quantities
-
-        # Test that conserved_quantities are stored in the first entries of
-        # evolved_quantities
-        for i, quantity in enumerate(self.conserved_quantities):
-            msg = 'The conserved quantities must be the first entries of '
-            msg += 'evolved_quantities'
-            assert quantity == self.evolved_quantities[i], msg
+        for i, q in enumerate(self.conserved_quantities):
+            assert q == self.evolved_quantities[i], \
+                'The conserved quantities must be the first entries of evolved_quantities'
 
         if verbose:
             log.info('Domain: Build Quantities')
 
-        # Build dictionary of Quantity instances keyed by quantity names
         self.quantities = {}
-
         for name in self.evolved_quantities:
-            # self.quantities[name] = Quantity(self, name=name)
             Quantity(self, name=name, register=True)
         for name in self.other_quantities:
-            # self.quantities[name] = Quantity(self, name=name)
             Quantity(self, name=name, register=True)
 
-        # Create an empty list for forcing terms
         self.forcing_terms = []
-
-        # Create an empty list for fractional step operators
         self.fractional_step_operators = []
         self.fractional_step_volume_integral = 0.
 
-        # by default domain is not parallel
+    def _init_parallel(self, full_send_dict, ghost_recv_dict,
+                       processor, numproc, ghost_layer_width, verbose):
+        """Set up parallel communication buffers, ghost/full flags, and processor attributes."""
         self.parallel = False
-
         self.number_of_global_triangles = self.number_of_triangles
         self.number_of_global_nodes = self.number_of_nodes
 
-        # Setup the ghost cell communication
-        if full_send_dict is None:
-            self.full_send_dict = {}
-        else:
-            self.full_send_dict = full_send_dict
+        self.full_send_dict = full_send_dict if full_send_dict is not None else {}
+        self.ghost_recv_dict = ghost_recv_dict if ghost_recv_dict is not None else {}
 
-        # List of other quantity names
-        if ghost_recv_dict is None:
-            self.ghost_recv_dict = {}
-        else:
-            self.ghost_recv_dict = ghost_recv_dict
-
-        #-------------------------------
-        # Set multiprocessor mode
-        # 1. openmp (in development)
-        # 2. cuda (in development)
-        #-------------------------------
         self.set_multiprocessor_mode(MULTIPROCESSOR_OPENMP)
 
         self.processor = processor
@@ -336,72 +308,42 @@ class Generic_Domain:
         self.communication_reduce_time = 0.0
         self.communication_broadcast_time = 0.0
 
-        # Setup Communication Buffers
         if verbose:
             log.info('Domain: Set up communication buffers ')
 
         self.nsys = len(self.conserved_quantities)
         for key in self.full_send_dict:
             buffer_shape = self.full_send_dict[key][0].shape[0]
-            self.full_send_dict[key].append(num.zeros((buffer_shape,
-                                                       self.nsys),
-                                                      float))
+            self.full_send_dict[key].append(
+                num.zeros((buffer_shape, self.nsys), float))
 
         for key in self.ghost_recv_dict:
             buffer_shape = self.ghost_recv_dict[key][0].shape[0]
-            self.ghost_recv_dict[key].append(num.zeros((buffer_shape,
-                                                        self.nsys),
-                                                       float))
+            self.ghost_recv_dict[key].append(
+                num.zeros((buffer_shape, self.nsys), float))
 
-        # Setup triangle full flag
         if verbose:
             log.info('Domain: Set up triangle/node full flags ')
 
-        N = len(self)  # Number_of_elements
+        N = len(self)
         self.number_of_elements = N
-
-        # =1 for full
-        # =0 for ghost
         self.tri_full_flag = num.ones(N, int)
-
         for i in list(self.ghost_recv_dict.keys()):
-            id = self.ghost_recv_dict[i][0]
-            self.tri_full_flag[id] = 0
-
+            self.tri_full_flag[self.ghost_recv_dict[i][0]] = 0
         self.number_of_full_triangles = int(num.sum(self.tri_full_flag))
 
-        # Identify full nodes as those that intersect a full triangle.
-        Vol_ids = self.vertex_value_indices // 3
-
-        # Want this
-        # W = num.repeat(self.tri_full_flag, 3)
-        # but without creating extra memeory
-        # Got this
-        # b = np.lib.stride_tricks.as_strided(a, (1000, a.size), (0, a.itemsize))
-        # from
-        # http://stackoverflow.com/questions/5564098/repeat-numpy-array-without-replicating-data
+        # Identify full nodes as those intersecting at least one full triangle.
+        # stride_tricks avoids the memory cost of num.repeat(tri_full_flag, 3).
         a = self.tri_full_flag
         b = num.lib.stride_tricks.as_strided(a, (a.size, 3), (a.itemsize, 0))
         W = b.flat
-
-#        print a
-#        print a.itemsize
-#        print list(b)
-#        print num.repeat(self.tri_full_flag, 3)
-
-        self.node_full_flag = num.minimum(num.bincount(self.triangles.flat, weights=W).astype(int), 1)
-
-        # FIXME SR: The following line leads to a nasty segmentation fault!
-        # self.number_of_full_nodes = int(num.sum(self.node_full_flag))
+        self.node_full_flag = num.minimum(
+            num.bincount(self.triangles.flat, weights=W).astype(int), 1)
+        # FIXME SR: num.sum(node_full_flag) causes a segfault — use node count directly
         self.number_of_full_nodes = self.number_of_nodes
 
-        # Test the assumption that all full triangles are stored before
-        # the ghost triangles.
-        # if not num.allclose(self.tri_full_flag[:self.number_of_full_nodes], 1):
-        #     log.info('WARNING: Not all full triangles are stored before '
-        #                      'ghost triangles')
-
-        # Defaults
+    def _init_timestepping(self, starttime, verbose):
+        """Set up timestepping parameters, algorithm flags, and work arrays."""
         if verbose:
             log.info('Domain: Set defaults')
 
@@ -427,43 +369,37 @@ class Generic_Domain:
 
         self.boundary_map = None  # Will be populated by set_boundary
 
-        # Model time
         self.finaltime = None
         self.recorded_min_timestep = self.recorded_max_timestep = 0.0
-        self.starttime = starttime  # Physical starttime if any
+        self.starttime = starttime
         self.evolve_starttime = 0.0
-        self.relative_time= self.evolve_starttime
+        self.relative_time = self.evolve_starttime
         self.timestep = 0.0
         self.flux_timestep = 0.0
         self.evolved_called = False
 
-        self.last_walltime    = walltime()
+        self.last_walltime = walltime()
         self.initial_walltime = self.last_walltime
         self.evolve_start_walltime = self.last_walltime
         self.relative_finaltime = None
 
-        # Monitoring
         self.quantities_to_be_monitored = None
         self.monitor_polygon = None
         self.monitor_time_interval = None
         self.monitor_indices = None
 
-        # Checkpointing and storage
         from anuga.config import default_datadir
-
         self.datadir = default_datadir
         self.simulation_name = 'domain'
         self.checkpoint = False
 
-        # Early algorithms need elevation to remain continuous
         self.set_using_discontinuous_elevation(False)
-        self.set_using_centroid_averaging(False)
         self.set_using_centroid_averaging(False)
 
         if verbose:
             log.info('Domain: Set work arrays')
 
-        N = len(self)  # Number_of_triangles
+        N = len(self)
 
         # Confirmed-dead arrays: allocated historically but never read by the C
         # computation code.  Kept as None (→ NULL in C struct) permanently.
@@ -479,17 +415,6 @@ class Generic_Domain:
         self._grad_workspace_x = num.zeros(N, float)
         self._grad_workspace_y = num.zeros(N, float)
         self._phi_workspace    = num.zeros(N, float)
-
-        if mesh_filename is not None:
-            # If the mesh file passed any quantity values,
-            # initialise with these values.
-            if verbose:
-                log.info('Domain: Initialising quantity values')
-
-            self.set_quantity_vertices_dict(vertex_quantity_dict)
-
-        if verbose:
-            log.info('Domain: Done')
 
     ######
     # Expose underlying Mesh functionality

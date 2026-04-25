@@ -49,11 +49,9 @@ C header, Cython wrapper, scenario system, and tests. Deleted
 Start with return types and key parameters. Enables IDE autocomplete and catches signature
 mismatches.
 
-**P2.2 Refactor `Generic_Domain.__init__` (367 lines)**
-`generic_domain.py:63` — constructor handles mesh setup, quantity initialisation,
-timestepping config, algorithm selection, parallel setup, and NVTX hooks in 367 lines.
-Extract into `_init_quantities()`, `_init_timestepping()`, `_init_algorithms()`,
-`_init_parallel()`.
+~~**P2.2 Refactor `Generic_Domain.__init__` (367 lines)**~~ — Done (session 25). Extracted
+`_init_mesh()`, `_init_quantities()`, `_init_parallel()`, `_init_timestepping()`.
+`__init__` is now ~25 lines. 743 domain/shallow-water tests pass.
 
 ~~**P2.3 Refactor `create_riverwalls` (300 lines)**~~ — Done (session 25). Extracted
 `_validate_riverwall_inputs()`, `_match_edges_to_segments()`, `_build_hydraulic_properties()`
