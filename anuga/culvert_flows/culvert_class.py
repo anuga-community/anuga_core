@@ -374,8 +374,14 @@ class Culvert_flow_general:
         # that has been calculated
         #
         # This will take place at every internal timestep and update the domain
+        stable_timestep = domain.get_evolve_max_timestep()
         for opening in self.openings:
-            opening(domain)
+            if opening(domain) is not None:
+                stable_timestep = min(opening(domain), stable_timestep)
+            else:
+                stable_timestep = None
+
+        return stable_timestep
 
 
 

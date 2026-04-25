@@ -13,7 +13,7 @@ from anuga.geometry.polygon_function import Polygon_function
 from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_cross
 from anuga.abstract_2d_finite_volumes.quantity import Quantity
 
-from anuga.culvert_flows.new_culvert_class import Culvert_flow
+from anuga.culvert_flows.culvert_class import Culvert_flow
 from anuga.culvert_flows.culvert_routines import boyd_generalised_culvert_model
 
 from math import pi,pow,sqrt
