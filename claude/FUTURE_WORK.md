@@ -1,7 +1,7 @@
 # Future Work Recommendations
 
-Generated: 2026-04-24 (session 23)
-Based on codebase investigation cross-referenced against 23 sessions of completed work.
+Generated: 2026-04-24 (session 23). Last updated: 2026-04-25 (session 25).
+Based on codebase investigation cross-referenced against 25 sessions of completed work.
 
 Items marked ~~strikethrough~~ have been invalidated (see notes).
 
@@ -174,14 +174,14 @@ per-variable size limit. The NetCDF3 classic restriction does not apply. (Invali
 
 ## Summary
 
-| Priority | Items | Effort | Biggest payoff |
-|----------|-------|--------|----------------|
-| P1 — Quick wins | 8 | 1–3 days | Coverage lift, dead code, logging consistency |
-| P2 — Medium | 9 | 1–2 weeks | Usability, type safety, test coverage |
-| P3 — Initiatives | 7 | 1–3 months | Performance, scalability, accuracy |
-| Speculative | 4 | 6+ months | Strategic differentiation |
+| Priority | Total | Remaining | Effort | Biggest payoff |
+|----------|-------|-----------|--------|----------------|
+| P1 — Quick wins | 8 | 3 | 1–3 days | Dead code, coverage lift, logging consistency |
+| P2 — Medium | 9 | 6 | 1–2 weeks | Usability, type safety, test coverage |
+| P3 — Initiatives | 7 | 6 | 1–3 months | Performance, scalability, accuracy |
+| Speculative | 4 | 4 | 6+ months | Strategic differentiation |
 
 **Top 3 near-term recommendations:**
-1. **P1.6** — Resolve the local-timestepping dead code (implement or remove)
-2. **P1.7** — Add animate.py tests (regression protection for the GUI's most complex code)
+1. **P1.1** — Delete or absorb `boyd_box_operator_Amended3.py` (10-minute quick win, eliminates dead-code confusion)
+2. **P1.2** — Add tests for the `rain` module (used in real scenarios, currently zero automated coverage)
 3. **P2.8** — Scenario system input validation (biggest source of user friction in operational use)

@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-24 (session 23)
+Last updated: 2026-04-25 (session 25)
 Branch: `develop` (all feature branches merged)
 
 ---
@@ -11,7 +11,7 @@ Branch: `develop` (all feature branches merged)
 |------|--------------|------|-----------|
 | Code improvements (original list) | 60 | 50 | 10 |
 | Documentation improvements | 20 | 20 | 0 |
-| Additional enhancements | 42 | 42 | 0 |
+| Additional enhancements | 47 | 47 | 0 |
 | Hydrata Phase 0 — Test infrastructure | 5 | 5 | 0 |
 | Hydrata Phase 1 — Dependencies | 4 | 4 | 0 |
 | Hydrata Phase 2 — Linting | 3 | 3 | 0 |
@@ -26,7 +26,7 @@ Branch: `develop` (all feature branches merged)
 | Domain memory reduction | 3 | 3 | 0 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 7 | 7 | 0 |
-| **Total** | **186** | **173** | **13** |
+| **Total** | **191** | **178** | **13** |
 
 
 ---
@@ -211,6 +211,11 @@ These were completed during sessions as natural extensions or user requests:
 | **anuga_sww_gui** — UI reorganisation: 9 flat rows replaced by 3-tab ttk.Notebook (Plot / Generate / Output) + always-visible file row, Generate Frames bar, playback bar, frame slider, status bar | `scripts/anuga_sww_gui.py` | 2026-04-24 |
 | **anuga_sww_gui** — Basemap checkbox for mesh viewer and save dialog: `_show_mesh` gets live-toggle Basemap checkbox (re-renders via `ax.cla()` on toggle, greyed out when no EPSG); `_save_mesh` dialog gets Basemap checkbox; `_render_and_save_mesh` gains `use_basemap=None` param | `scripts/anuga_sww_gui.py` | 2026-04-24 |
 | **anuga_sww_gui** — Updated in-app help (`_show_help`) and Sphinx RST (`use_sww_gui.rst`) for tabbed layout, multi-pick, baked overlays, time-selection save, and mesh basemap checkbox; fresh screenshots via updated `capture_gui_screenshots.py` | `scripts/anuga_sww_gui.py`, `docs/source/visualisation/use_sww_gui.rst`, `docs/capture_gui_screenshots.py`, `docs/source/visualisation/img/*.png` | 2026-04-24 |
+| **P2.3 `create_riverwalls` refactor** — Extracted `_validate_riverwall_inputs()`, `_match_edges_to_segments()`, `_build_hydraulic_properties()` from 300-line monolith; `create_riverwalls` reduced to ~50-line orchestrator. All 43 riverwall tests pass. | `anuga/structures/riverwall.py` | 2026-04-25 |
+| **P2.2 `Generic_Domain.__init__` refactor** — Extracted `_init_mesh()`, `_init_quantities()`, `_init_parallel()`, `_init_timestepping()` from 367-line constructor; `__init__` reduced to ~25 lines. Key fix: use `if vertex_quantity_dict:` (not `mesh_filename`) to detect pmesh file source. 743 tests pass. | `anuga/abstract_2d_finite_volumes/generic_domain.py` | 2026-04-25 |
+| **`test_shallow_water_domain.py` cleanup** — Removed duplicate imports (`Inflow`, `Cross_section`, `Dirichlet_boundary`, `g`), unused imports (11 symbols), commented-out skeleton function, and 66 debug print/pprint lines. Net −101 lines. | `anuga/shallow_water/tests/test_shallow_water_domain.py` | 2026-04-25 |
+| **Split `test_shallow_water_domain.py` into 5 files** — Extracted `test_flux.py` (15 tests), `test_boundaries_sw.py` (9 tests), `test_extrapolation_sw.py` (14 tests), `test_physics_sw.py` (21 tests); 48 tests retained in original. Registered all 4 new files in `meson.build`. | `anuga/shallow_water/tests/test_flux.py`, `test_boundaries_sw.py`, `test_extrapolation_sw.py`, `test_physics_sw.py`, `meson.build` | 2026-04-25 |
+| **Fix 383 pytest warnings** — (1) `np.array(netcdf_var)` → `netcdf_var[:]` in `animate.py` (NumPy 2.0 `copy=False` DeprecationWarning); (2) zero-timestep guard for `local_max/min` in `rate_operators.py`; (3) message-based `filterwarnings` in `pyproject.toml` for 5 deprecated legacy forcing classes. | `anuga/utilities/animate.py`, `anuga/operators/rate_operators.py`, `pyproject.toml` | 2026-04-25 |
 
 ---
 
