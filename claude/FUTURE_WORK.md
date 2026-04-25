@@ -19,15 +19,9 @@ improvements into the canonical version or delete it.
 `raster_time_slice_data.py` are used in real scenarios but have zero automated coverage.
 Target: initialisation, temporal interpolation, boundary conditions.
 
-**P1.3 Add tests for `simulation/` and `validation_utilities/`**
-Neither module has a test file. `anuga/simulation/` handles checkpoint save/restore;
-`anuga/validation_utilities/` wraps all the `validate_*.py` scripts. Both exercised only
-via integration runs.
+~~**P1.3 Add tests for `simulation/` and `validation_utilities/`**~~ — Done. `test_simulation.py` and `test_validation_utilities.py` exist.
 
-**P1.4 Fix `gauge.py` verbose/print hygiene**
-`anuga/abstract_2d_finite_volumes/gauge.py` — `sww2csv_gauges` and `sww2timeseries` print
-unconditionally despite logging refactor (sessions 10/11). Convert to `log.info()` and
-honour a `verbose` flag.
+~~**P1.4 Fix `gauge.py` verbose/print hygiene**~~ — Done (P2.7 session 24). No bare `print` calls remain; all logging via `log.info()`/`log.warning()`.
 
 **P1.5 Add deprecation warnings to legacy forcing classes**
 `anuga/__init__.py` comments say "These are old, should use operators" for `Inflow`,
@@ -40,16 +34,9 @@ pointing to `Rate_operator`. Matches the camelCase deprecation pattern already e
 C header, Cython wrapper, scenario system, and tests. Deleted
 `test_local_extrapolation_and_flux_updating.py`. See P3.1 for the future implementation plan.
 
-**P1.7 Write tests for `anuga/utilities/animate.py`**
-`SWW_plotter`, `_animated_frame`, `_draw_elev_contours` etc. have no test file under
-`anuga/utilities/tests/`. Create a small SWW fixture, call `save_depth_frame`, verify output
-file exists and has plausible pixel statistics.
+~~**P1.7 Write tests for `anuga/utilities/animate.py`**~~ — Done. `test_animate.py` exists under `anuga/utilities/tests/`.
 
-**P1.8 Clean up `file_function.py` FIXMEs**
-`anuga/abstract_2d_finite_volumes/file_function.py` has 9 FIXME comments about coordinate
-origin reconciliation and caching. The `Geo_reference` EPSG work (session 4) resolved the
-coordinate system side — now `FIXME: Check that model origin is the same as file's origin`
-and `FIXME: Use geo_reference to read and write xllcorner` are directly addressable.
+~~**P1.8 Clean up `file_function.py` FIXMEs**~~ — Done (session 24). FIXMEs already resolved; deleted dead commented-out blocks, replaced raw `fid.xllcorner`/`fid.yllcorner`/`fid.zone` reads with `Geo_reference(NetCDFObject=fid)`, cleaned up redundant `.csv` branch and trailing NOTE comment.
 
 ---
 

@@ -168,16 +168,6 @@ def _file_function(filename,
     assert isinstance(filename, str),\
                'First argument to File_function must be a string'
 
-    #try:
-    #    fid = open(filename)
-    #except IOError, e:
-    #    msg = 'File "%s" could not be opened: Error="%s"' % (filename, e)
-    #    raise IOError(msg)
-
-    # read first line of file, guess file type
-    #line = fid.readline()
-    #fid.close()
-
     import os
     ext = os.path.splitext(filename)[1]
     msg = 'Extension should be csv  sww, tms or sts '
@@ -195,11 +185,8 @@ def _file_function(filename,
                                         verbose=verbose,
                                         boundary_polygon=boundary_polygon,
                                         output_centroids=output_centroids)
-    elif ext in [".csv"]:
-        raise Exception('Must be a NetCDF File')
     else:
-
-        raise Exception('Must be a NetCDF File')
+        raise Exception('file_function requires a .sww, .tms or .sts file, got %s' % ext)
 
 
 def get_netcdf_file_function(filename,
@@ -285,12 +272,6 @@ def get_netcdf_file_function(filename,
         msg = 'Files of type STS must contain spatial information'
         raise Exception(msg)
 
-    # JJ REMOVED
-    #if filename[-3:] == 'sts' and boundary_polygon is None:
-    #    #What if mux file only contains one point
-    #    msg = 'Files of type sts require boundary polygon'
-    #    raise Exception(msg)
-
     # Get first timestep
     try:
         starttime = float(fid.starttime)
@@ -339,14 +320,13 @@ def get_netcdf_file_function(filename,
 
     # Get time independent stuff
     if spatial:
-        # Get origin
-        #xllcorner = fid.xllcorner[0]
-        #yllcorner = fid.yllcorner[0]
-        #zone = fid.zone[0]
-
-        xllcorner = fid.xllcorner
-        yllcorner = fid.yllcorner
-        zone = fid.zone
+        # Get origin — use Geo_reference so zone, hemisphere and EPSG are
+        # read consistently (same as sww_merge, SWW_file, etc.)
+        from anuga.coordinate_transforms.geo_reference import Geo_reference
+        geo_ref = Geo_reference(NetCDFObject=fid)
+        xllcorner = geo_ref.get_xllcorner()
+        yllcorner = geo_ref.get_yllcorner()
+        zone = geo_ref.zone
 
         x = fid.variables['x'][:]
         y = fid.variables['y'][:]
@@ -461,6 +441,3 @@ def get_netcdf_file_function(filename,
                                    gauge_neighbour_id=gauge_neighbour_id,
                                    output_centroids=output_centroids),
             starttime)
-
-    # NOTE (Ole): Caching Interpolation function is too slow as
-    # the very long parameters need to be hashed.
