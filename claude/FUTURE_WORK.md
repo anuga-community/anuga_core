@@ -55,10 +55,10 @@ timestepping config, algorithm selection, parallel setup, and NVTX hooks in 367 
 Extract into `_init_quantities()`, `_init_timestepping()`, `_init_algorithms()`,
 `_init_parallel()`.
 
-**P2.3 Refactor `create_riverwalls` (300 lines)**
-`riverwall.py:158` — monolithic function with nested polygon loops. The throughflow work
-(session 9) added more complexity. Extract `_validate_riverwall_inputs()`,
-`_create_riverwall_segments()`, `_assign_boundary_tags()`, `_setup_weir_operators()`.
+~~**P2.3 Refactor `create_riverwalls` (300 lines)**~~ — Done (session 25). Extracted
+`_validate_riverwall_inputs()`, `_match_edges_to_segments()`, `_build_hydraulic_properties()`
+from the 300-line monolith. `create_riverwalls` is now a ~50-line orchestrator. All 43
+riverwall tests pass.
 
 **P2.4 Consolidate `culvert_class.py` / `new_culvert_class.py` compute_rates duplication**
 Both have ~188-line `compute_rates` methods with nearly identical hydraulic logic. Extract
