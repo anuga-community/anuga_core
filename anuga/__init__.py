@@ -240,6 +240,8 @@ from anuga.shallow_water.sww_interrogate import get_flow_through_cross_section
 from anuga.operators.kinematic_viscosity_operator import Kinematic_viscosity_operator
 
 from anuga.operators.rate_operators import Rate_operator
+from anuga.operators.wind_stress_operator import Wind_stress_operator
+from anuga.operators.barometric_pressure import Barometric_pressure_operator
 from anuga.operators.set_friction_operators import Set_depth_friction_operator
 
 from anuga.operators.set_elevation_operator import Set_elevation_operator
@@ -378,6 +380,8 @@ __all__ = [
     'Flat_slice_erosion_operator',
     'Kinematic_viscosity_operator',
     'Rate_operator',
+    'Wind_stress_operator',
+    'Barometric_pressure_operator',
     'Sanddune_erosion_operator',
     'Set_depth_friction_operator',
     'Set_elevation',

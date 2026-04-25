@@ -38,6 +38,8 @@ python_sources = [
   'set_stage_operator.py',
   'set_stage.py',
   'set_w_uh_vh_operator.py',
+  'wind_stress_operator.py',
+  'barometric_pressure.py',
 ]
 
 py3.install_sources(

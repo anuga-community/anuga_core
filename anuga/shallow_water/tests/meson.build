@@ -11,7 +11,6 @@ python_sources = [
 'test_forcing.py',
 'test_friction.py',
 'test_loadsave.py',
-'test_local_extrapolation_and_flux_updating.py',
 'test_most2nc.py',
 'test_shallow_water_domain.py',
 'test_sww_interrogate.py',

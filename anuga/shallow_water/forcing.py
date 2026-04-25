@@ -122,6 +122,11 @@ class Wind_stress:
         domain.forcing_terms.append(W)
         """
 
+        warn(
+            'Wind_stress is deprecated and will be removed in a future release. '
+            'Use anuga.operators.wind_stress_operator.Wind_stress_operator instead.',
+            DeprecationWarning, stacklevel=2)
+
         from anuga.config import rho_a, rho_w, eta_w
 
         self.use_coordinates=True
@@ -557,6 +562,12 @@ class Rainfall(General_forcing):
                  default_rate=None,
                  verbose=False):
 
+        warn(
+            'Rainfall is deprecated and will be removed in a future release. '
+            'Use anuga.operators.rate_operators.Rate_operator instead '
+            '(convert mm/s to m/s by dividing by 1000).',
+            DeprecationWarning, stacklevel=2)
+
         # Converting mm/s to m/s to apply in ANUGA)
         if callable(rate):
             rain = lambda t: rate(t)/1000.0
@@ -650,6 +661,11 @@ class Inflow(General_forcing):
         default_rate
         verbose       True if this instance is to be verbose
         """
+
+        warn(
+            'Inflow is deprecated and will be removed in a future release. '
+            'Use anuga.operators.rate_operators.Rate_operator instead.',
+            DeprecationWarning, stacklevel=2)
 
         # Create object first to make area is available
         General_forcing.__init__(self,
@@ -853,6 +869,11 @@ class Barometric_pressure:
 
         domain.forcing_terms.append(P)
         """
+
+        warn(
+            'Barometric_pressure is deprecated and will be removed in a future release. '
+            'Use anuga.operators.barometric_pressure.Barometric_pressure_operator instead.',
+            DeprecationWarning, stacklevel=2)
 
         from anuga.config import rho_a, rho_w, eta_w
 
