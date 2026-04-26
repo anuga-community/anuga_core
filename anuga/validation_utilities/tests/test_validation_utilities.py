@@ -14,7 +14,13 @@ import sys
 import tempfile
 import shutil
 import unittest
+import importlib
 from unittest.mock import patch, MagicMock, call
+
+# __init__.py imports the function `produce_report` into the package namespace,
+# shadowing the submodule of the same name for getattr-based lookup. Use
+# importlib.import_module to get the actual module via sys.modules.
+_pr_mod = importlib.import_module('anuga.validation_utilities.produce_report')
 
 
 class TestRunValidationScript(unittest.TestCase):
@@ -126,30 +132,27 @@ class TestProduceReport(unittest.TestCase):
 
     def test_calls_run_script_then_plot_then_typeset(self):
         args = self._make_args()
-        with patch('anuga.validation_utilities.produce_report.run_anuga_script') as mock_run, \
-             patch('anuga.validation_utilities.produce_report.typeset_report') as mock_ts:
-            from anuga.validation_utilities.produce_report import produce_report
-            produce_report('myscript.py', args=args)
+        with patch.object(_pr_mod, 'run_anuga_script') as mock_run, \
+             patch.object(_pr_mod, 'typeset_report') as mock_ts:
+            _pr_mod.produce_report('myscript.py', args=args)
 
         self.assertEqual(mock_run.call_count, 2)
         self.assertEqual(mock_ts.call_count, 1)
 
     def test_first_run_uses_supplied_script(self):
         args = self._make_args()
-        with patch('anuga.validation_utilities.produce_report.run_anuga_script') as mock_run, \
-             patch('anuga.validation_utilities.produce_report.typeset_report'):
-            from anuga.validation_utilities.produce_report import produce_report
-            produce_report('sim.py', args=args)
+        with patch.object(_pr_mod, 'run_anuga_script') as mock_run, \
+             patch.object(_pr_mod, 'typeset_report'):
+            _pr_mod.produce_report('sim.py', args=args)
 
         first_call_script = mock_run.call_args_list[0][0][0]
         self.assertEqual(first_call_script, 'sim.py')
 
     def test_second_run_uses_plot_results(self):
         args = self._make_args()
-        with patch('anuga.validation_utilities.produce_report.run_anuga_script') as mock_run, \
-             patch('anuga.validation_utilities.produce_report.typeset_report'):
-            from anuga.validation_utilities.produce_report import produce_report
-            produce_report('sim.py', args=args)
+        with patch.object(_pr_mod, 'run_anuga_script') as mock_run, \
+             patch.object(_pr_mod, 'typeset_report'):
+            _pr_mod.produce_report('sim.py', args=args)
 
         second_call_script = mock_run.call_args_list[1][0][0]
         self.assertEqual(second_call_script, 'plot_results.py')
@@ -157,10 +160,9 @@ class TestProduceReport(unittest.TestCase):
     def test_np_set_to_1_for_plot_step(self):
         """produce_report forces np=1 for the plot_results.py step."""
         args = self._make_args(np=4)
-        with patch('anuga.validation_utilities.produce_report.run_anuga_script'), \
-             patch('anuga.validation_utilities.produce_report.typeset_report'):
-            from anuga.validation_utilities.produce_report import produce_report
-            produce_report('sim.py', args=args)
+        with patch.object(_pr_mod, 'run_anuga_script'), \
+             patch.object(_pr_mod, 'typeset_report'):
+            _pr_mod.produce_report('sim.py', args=args)
 
         self.assertEqual(args.np, 1)
 
