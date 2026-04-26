@@ -1971,6 +1971,116 @@ class Test_Interpolate(unittest.TestCase):
 
 ################################################################################
 
+class Test_Interpolation_function(unittest.TestCase):
+    """Tests for Interpolation_function: statistics(), __call__ error paths,
+    non-spatial replication, and Modeltime boundary exceptions."""
+
+    def _make_spatial(self):
+        """Return a simple spatial Interpolation_function with 2 timesteps."""
+        vertices = num.array([[-1.,0.],[3.,4.],[4.,1.],
+                               [-3.,2.],[-1.,-2.],[1.,-2.]], float)
+        triangles = num.array([[0,1,3],[1,0,2],[0,4,5],[0,5,2]])
+        time = num.array([0.0, 1.0])
+        Q = num.ones((2, len(vertices)), float)
+        pts = num.array([[0.,0.],[1.,1.]])
+        return Interpolation_function(
+            time, {'stage': Q},
+            vertex_coordinates=vertices, triangles=triangles,
+            interpolation_points=pts)
+
+    def _make_nonspatial(self):
+        """Return a non-spatial Interpolation_function."""
+        time = num.array([0.0, 1.0, 2.0])
+        Q = num.array([10.0, 20.0, 30.0])
+        return Interpolation_function(time, Q)
+
+    def test_statistics_spatial(self):
+        """statistics() returns a non-empty string for spatial case."""
+        f = self._make_spatial()
+        s = f.statistics()
+        assert isinstance(s, str) and len(s) > 0
+        assert 'Interpolation_function' in s
+        assert 'stage' in s
+
+    def test_statistics_nonspatial(self):
+        """statistics() works when vertex_coordinates is None."""
+        f = self._make_nonspatial()
+        s = f.statistics()
+        assert isinstance(s, str)
+        assert 'Attribute' in s
+
+    def test_get_time(self):
+        """get_time() returns the time array."""
+        f = self._make_nonspatial()
+        assert num.allclose(f.get_time(), [0.0, 1.0, 2.0])
+
+    def test_call_nonspatial_time_interpolation(self):
+        """Non-spatial call returns linearly interpolated value."""
+        f = self._make_nonspatial()
+        q = f(0.5)
+        assert num.allclose(q[0], 15.0)
+
+    def test_call_nonspatial_x_y_scalar(self):
+        """Non-spatial call with scalar x raises TypeError (len fails), returns q."""
+        f = self._make_nonspatial()
+        q = f(0.0, x=1.0, y=2.0)
+        assert num.allclose(q[0], 10.0)
+
+    def test_call_nonspatial_x_y_vector(self):
+        """Non-spatial call with vector x replicates q into columns."""
+        f = self._make_nonspatial()
+        result = f(0.0, x=num.array([1.0, 2.0, 3.0]),
+                       y=num.array([0.0, 0.0, 0.0]))
+        assert len(result) == 1
+        assert num.allclose(result[0], [10.0, 10.0, 10.0])
+
+    def test_modeltime_too_early_raises(self):
+        """Calling before time[0] raises Modeltime_too_early."""
+        from anuga.fit_interpolate.interpolate import Modeltime_too_early
+        f = self._make_nonspatial()
+        with self.assertRaises(Modeltime_too_early):
+            f(-1.0)
+
+    def test_modeltime_too_late_raises(self):
+        """Calling after time[-1] raises Modeltime_too_late."""
+        from anuga.fit_interpolate.interpolate import Modeltime_too_late
+        f = self._make_nonspatial()
+        with self.assertRaises(Modeltime_too_late):
+            f(99.0)
+
+    def test_call_spatial_no_point_id_raises(self):
+        """Spatial call with no point_id and no x,y raises."""
+        f = self._make_spatial()
+        with self.assertRaises(Exception) as ctx:
+            f(0.0)
+        assert 'point_id' in str(ctx.exception) or 'x and y' in str(ctx.exception)
+
+    def test_call_spatial_xy_raises_not_implemented(self):
+        """Spatial call with x,y raises not-implemented exception."""
+        f = self._make_spatial()
+        with self.assertRaises(Exception) as ctx:
+            f(0.0, x=0.0, y=0.0)
+        assert 'not yet implemented' in str(ctx.exception)
+
+    def test_call_spatial_at_last_timestep(self):
+        """Calling at exactly t[-1] (ratio=0 edge case) returns correct value."""
+        f = self._make_spatial()
+        q = f(1.0, point_id=0)
+        assert num.allclose(q[0], 1.0)
+
+    def test_benchmark_interpolate_returns_values(self):
+        """benchmark_interpolate returns interpolated values, not None."""
+        from anuga.fit_interpolate.interpolate import benchmark_interpolate
+        vertices = num.array([[-1.,0.],[3.,4.],[4.,1.],
+                               [-3.,2.],[-1.,-2.],[1.,-2.]], float)
+        triangles = num.array([[0,1,3],[1,0,2],[0,4,5],[0,5,2]])
+        attrs = linear_function(vertices)
+        pts = num.array([[0.,0.],[1.,1.]])
+        result = benchmark_interpolate(vertices, attrs, triangles, pts)
+        assert result is not None
+        assert num.allclose(result, linear_function(pts))
+
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Interpolate)
     runner = unittest.TextTestRunner() #verbosity=1)

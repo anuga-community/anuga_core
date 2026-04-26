@@ -13,15 +13,6 @@
    Ole Nielsen, Stephen Roberts, Duncan Gray, Christopher Zoppou
    Geoscience Australia, 2004.
 
-DESIGN ISSUES
-* what variables should be global?
-- if there are no global vars functions can be moved around alot easier
-
-* The public interface to Interpolate
-__init__
-interpolate
-interpolate_block
-
 """
 
 import time
@@ -118,9 +109,6 @@ def interpolate(vertex_coordinates,
 
     """
 
-    # FIXME(Ole): Probably obsolete since I is precomputed and
-    #             interpolate_block caches
-
     from anuga.caching import cache
 
     # Create interpolation object with matrix
@@ -176,8 +164,6 @@ class Interpolate (FitInterpolate):
               a mesh origin, since geospatial has its own mesh origin.
         """
 
-        # FIXME (Ole): Need an input check
-
         FitInterpolate.__init__(self,
                                 vertex_coordinates=vertex_coordinates,
                                 triangles=triangles,
@@ -189,7 +175,6 @@ class Interpolate (FitInterpolate):
         self.interpolation_matrices = {}  # In-memory cache: hash → (A, points)
 
 
-    # FIXME: What is a good start_blocking_len value?
     def interpolate(self,
                     f,
                     point_coordinates=None,
@@ -476,13 +461,11 @@ def benchmark_interpolate(vertices,
 
     interp = Interpolate(vertices,
                          triangles,
-                         max_vertices_per_cell=max_points_per_cell,
                          mesh_origin=mesh_origin)
 
-    calc = interp.interpolate(vertex_attributes,
+    return interp.interpolate(vertex_attributes,
                               points,
                               start_blocking_len=start_blocking_len)
-
 
 
 
@@ -704,10 +687,6 @@ class Interpolation_function:
     quantities are to be computed whenever object is called.
     If None, return average value
 
-    FIXME (Ole): Need to allow vertex coordinates and interpolation points to
-                 be geospatial data objects
-
-    (FIXME (Ole): This comment should be removed)
     Time assumed to be relative to starttime
     All coordinates assume origin of (0,0) - e.g. georeferencing must be
     taken care of outside this function
@@ -760,8 +739,6 @@ class Interpolation_function:
         if vertex_coordinates is None:
             self.spatial = False
         else:
-            # FIXME (Ole): Try ensure_numeric here -
-            #              this function knows nothing about georefering.
             vertex_coordinates = ensure_absolute(vertex_coordinates)
 
             if triangles is not None:
@@ -984,10 +961,8 @@ class Interpolation_function:
           If no spatial info is present, point_id arguments are ignored
           making f a function of time only.
 
-          FIXME: f(t, x, y) x, y could overrided location, point_id ignored
-          FIXME: point_id could also be a slice
-          FIXME: What if x and y are vectors?
-          FIXME: What about f(x,y) without t?
+          Note: x,y spatial interpolation is not yet implemented; passing
+          x and y raises an exception.
         """
 
         from math import pi, cos, sin, sqrt
@@ -1053,8 +1028,6 @@ class Interpolation_function:
             else:
                 q[i] = Q0
 
-        # Return vector of interpolated values
-        # FIXME:
         if self.spatial is True:
             return q
         else:
