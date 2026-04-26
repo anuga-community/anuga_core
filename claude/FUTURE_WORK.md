@@ -67,18 +67,21 @@ thresholds in `.coveragerc` for fast vs full, or add targeted tests in `anuga/fi
 `anuga/fit_interpolate/`, and `anuga/structures/` to lift the fast-suite baseline. Session
 20 added ~90 tests as a model.
 
-**P2.7 Modernise `sww2timeseries` / gauge module** (partially done session 27)
-`anuga/abstract_2d_finite_volumes/gauge.py` — session 27 completed:
+~~**P2.7 Modernise `sww2timeseries` / gauge module**~~ — Done (session 27).
 - `gauge_get_from_file` rewritten with `csv.DictReader` (case-insensitive, whitespace-tolerant)
 - `open().close()` file-existence checks replaced with `os.path.isfile()`
 - `_generate_figures` marked `# pragma: no cover` (matplotlib/LaTeX display dependency)
+- `test_gauge.py` expanded with Test_sww2csv_gauges_errors, Test_sww2timeseries_branches,
+  Test_gauge_get_from_file, Test_quantities2csv — gauge.py at 97% coverage (38 tests)
 
-Remaining work:
-- Add EPSG/`Geo_reference` coordinate support to `gauge_get_from_file` (accept optional
-  EPSG code, convert gauge coordinates to domain projection)
-- Expand `test_gauge.py` to cover `gauge_get_from_file`, `_sww2timeseries` (non-figure path)
-- `_generate_figures` (470 lines) is legacy LaTeX+matplotlib report generation — consider
-  deprecating in favour of the newer `sww2csv_gauges` + external plotting workflow
+Known issue: `Interpolation_function` verbose precompute path calls matplotlib to plot
+the mesh boundary polygon; this triggers a TypeError in matplotlib 3.x/numpy 2.x
+(line `ax = projection_class(self, *args, **pkw)` with `_NoValueType`). Affects lines
+238, 453-454, 462 in gauge.py (verbose + off-mesh gauge paths) — not coverable until
+the matplotlib compat issue in `plot_utils.py` is fixed.
+
+Speculative future work: add EPSG/`Geo_reference` coordinate support to
+`gauge_get_from_file` (accept optional EPSG code, convert to domain projection).
 
 ~~**P2.8 Scenario system input validation**~~ — Done (session 25). Schema validation added to TOML inputs; detailed error messages naming bad fields and expected types; range checks for physical parameters.
 
@@ -173,11 +176,11 @@ per-variable size limit. The NetCDF3 classic restriction does not apply. (Invali
 | Priority | Total | Remaining | Effort | Biggest payoff |
 |----------|-------|-----------|--------|----------------|
 | P1 — Quick wins | 8 | 0 ✅ | 1–3 days | All done |
-| P2 — Medium | 9 | 4 | 1–2 weeks | Usability, type safety, test coverage |
+| P2 — Medium | 9 | 3 | 1–2 weeks | Usability, type safety, test coverage |
 | P3 — Initiatives | 7 | 6 | 1–3 months | Performance, scalability, accuracy |
 | Speculative | 4 | 4 | 6+ months | Strategic differentiation |
 
 **Top 3 near-term recommendations:**
-1. **P2.6** — Raise fast-suite coverage threshold (fast suite trails full suite; targeted tests in `file/`, `fit_interpolate/`, `structures/`)
-2. **P2.7** — Modernise `sww2timeseries` / gauge module (primary post-processing tool for users; predates EPSG and logging refactors)
-3. **P2.4** — Consolidate `culvert_class.py` / `new_culvert_class.py` duplicate `compute_rates` (188-line near-identical methods)
+1. **P2.1** — Type hints on public API (`quantity.py`, `shallow_water_domain.py`, `base_operator.py`)
+2. **P2.4** — Complete `culvert_flows/` removal: update `run_open_slot_wide_bridge.py` example, delete remaining files, target v5.0
+3. **P2.6** — Continue raising fast-suite coverage threshold (currently 58%; next targets in `fit_interpolate/` and `structures/`)
