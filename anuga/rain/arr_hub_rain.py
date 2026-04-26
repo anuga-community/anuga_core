@@ -36,7 +36,7 @@ class Arr_hub_rain:
         self._open_hubfile()
 
     def _open_hubfile(self):
-        with open(self.hub_filename, 'r') as fh:
+        with open(self.hub_filename) as fh:
             lines = fh.readlines()
         self.lines = lines
         for lcount, line in enumerate(lines):
@@ -88,15 +88,15 @@ class ARR_point_rainfall_patterns:
             zf = zipfile.ZipFile(pattern_zip_file)
             files_in_zip = zf.namelist()
         except Exception as exc:
-            raise IOError(f'Cannot open pattern zip file: {pattern_zip_file}') from exc
+            raise OSError(f'Cannot open pattern zip file: {pattern_zip_file}') from exc
 
         allstats_name   = Tpat_code + '_AllStats.csv'
         increments_name = Tpat_code + '_Increments.csv'
 
         if allstats_name not in files_in_zip:
-            raise IOError(f'{allstats_name} not found in {pattern_zip_file}')
+            raise OSError(f'{allstats_name} not found in {pattern_zip_file}')
         if increments_name not in files_in_zip:
-            raise IOError(f'{increments_name} not found in {pattern_zip_file}')
+            raise OSError(f'{increments_name} not found in {pattern_zip_file}')
 
         with zf.open(allstats_name) as f:
             lines_astat = f.readlines()

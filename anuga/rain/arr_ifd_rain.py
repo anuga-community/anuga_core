@@ -266,7 +266,7 @@ class Arr_grd:
 
         for poly_file in glob.glob(os.path.join(self.IFD_DIR, '*.ply')):
             xp, yp = [], []
-            with open(poly_file, 'r') as f:
+            with open(poly_file) as f:
                 for ln in f.readlines():
                     xp.append(float(ln.split(',')[0]))
                     yp.append(float(ln.split(',')[1]))
