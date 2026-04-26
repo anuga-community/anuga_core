@@ -111,12 +111,13 @@ third-order reconstruction (MUSCL-Hancock or ADER) would improve accuracy for lo
 tsunami propagation. The consolidated `quantity_openmp_ext.pyx` (session 14, H3.1) is the
 right place. Requires careful monotonicity limiting.
 
-**P3.3 Improve `fit_interpolate` accuracy and performance**
-`anuga/fit_interpolate/interpolate.py` (1200 lines, multiple "DESIGN ISSUES" comments) —
-least-squares smoother is sensitive to alpha (smoothing parameter) with no auto-selection
-guidance; quadtree search has known degenerate cases. Work: (1) alpha auto-selection via
-L-curve or GCV, (2) validation suite against known surfaces, (3) profile and vectorise inner
-loops.
+**P3.3 Improve `fit_interpolate` accuracy and performance** *(partial — sessions 25–26)*
+Session 25–26: `Fit.select_alpha()` added with L-curve criterion (20 log-spaced candidates
+1e-6 … 100, scipy sparse solves, max-curvature corner detection, fallback to DEFAULT_ALPHA).
+`dok_to_csr` added to `fitsmooth_ext.pyx` for non-destructive DOK→CSR conversion.
+`alpha='auto'` wired in `Fit.fit()`.  fit.py coverage 78→92%.
+Remaining: (2) validation suite against known surfaces, (3) profile and vectorise inner loops
+in `interpolate.py` (1200 lines, multiple "DESIGN ISSUES" comments, 82% coverage).
 
 **P3.4 Parallel load-balancing monitoring**
 Static METIS decomposition doesn't adapt as the wet front advances in inundation simulations.

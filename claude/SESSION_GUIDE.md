@@ -73,7 +73,7 @@ autopep8 anuga/path/to/module.py
 
 ---
 
-## Recent session summaries (sessions 21–25)
+## Recent session summaries (sessions 21–26)
 
 **Session 21 (2026-04-15):** Domain work-array memory reduction — ~740 MB saved
 at N=2.25M. DM1: 9 dead C work arrays removed from `_ensure_work_arrays()`;
@@ -108,6 +108,14 @@ extracted 4 helpers, `__init__` ~25 lines. Split `test_shallow_water_domain.py`
 into 5 files; cleanup −101 lines. Fix 383 pytest warnings (animate.py,
 rate_operators.py, pyproject.toml). P2.8/P2.9 scenario validation and TOML
 docs done. claude/ rationalisation.
+
+**Session 26 (2026-04-26):** P3.3 `fit_interpolate` L-curve alpha auto-selection.
+`Fit.select_alpha()`: 20 log-spaced candidates (1e-6 … 100), numerically stable
+RSS via normal equations, max-curvature corner detection, fallback to DEFAULT_ALPHA.
+`dok_to_csr` added to `fitsmooth_ext.pyx` (non-destructive DOK→CSR). `alpha='auto'`
+wired in `Fit.fit()`. Removed dead `_RawCSR`/`_SumRawCSR`. 13 new tests covering
+row_ptr extension, multi-attribute, degenerate/interior paths. fit.py 85→92%.
+P2.7 gauge modernisation fully done (session continuation). Commit `12864187`.
 
 ---
 
