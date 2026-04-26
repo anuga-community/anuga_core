@@ -272,10 +272,18 @@ class Interpolate (FitInterpolate):
 
         from anuga.caching import myhash
 
-        # In-memory cache: reuse interpolation matrix when same points are seen.
-        # The matrix A depends only on point geometry and output_centroids flag,
-        # not on the quantity values f — so it is safe to reuse across timesteps.
-        cache_key = (myhash(point_coordinates), bool(output_centroids))
+        # Fast path: same Python array object as last call — guaranteed same data.
+        # We hold a strong reference (_last_pts_ref) to prevent the GC from freeing
+        # the old array and letting a new one reuse its id() — the `is` check is
+        # therefore safe even inside blocking loops that create temporary slices.
+        _oc = bool(output_centroids)
+        if (getattr(self, '_last_pts_ref', None) is point_coordinates and
+                getattr(self, '_last_output_centroids', None) is _oc):
+            return self._get_point_data_z(f, NODATA_value=NODATA_value)
+
+        # In-memory hash cache: handles distinct-but-equal arrays and first call.
+        # The matrix A depends only on point geometry and output_centroids flag.
+        cache_key = (myhash(point_coordinates), _oc)
         reuse_A = False
         if cache_key in self.interpolation_matrices:
             X, stored_points = self.interpolation_matrices[cache_key]
@@ -286,7 +294,15 @@ class Interpolate (FitInterpolate):
             X = self._build_interpolation_matrix_A(point_coordinates,
                                                    output_centroids,
                                                    verbose=verbose)
+            # Store as Sparse_CSR so _get_point_data_z uses the fast C matvec
+            A_sparse, inside, outside, centroids = X
+            X = (Sparse_CSR(A_sparse), inside, outside, centroids)
             self.interpolation_matrices[cache_key] = (X, point_coordinates)
+
+        # Update fast-path sentinel (strong ref keeps the array alive, preventing
+        # its id from being recycled before the next call)
+        self._last_pts_ref = point_coordinates
+        self._last_output_centroids = _oc
 
         # Unpack result
         self._A, self.inside_poly_indices, self.outside_poly_indices, self.centroids = X
