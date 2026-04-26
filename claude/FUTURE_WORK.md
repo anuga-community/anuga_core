@@ -67,11 +67,18 @@ thresholds in `.coveragerc` for fast vs full, or add targeted tests in `anuga/fi
 `anuga/fit_interpolate/`, and `anuga/structures/` to lift the fast-suite baseline. Session
 20 added ~90 tests as a model.
 
-**P2.7 Modernise `sww2timeseries` / gauge module**
-`anuga/abstract_2d_finite_volumes/gauge.py` — `sww2timeseries` (270 lines) and
-`_sww2timeseries` (140 lines) predate the EPSG work and logging refactor. Update to use
-`Geo_reference` EPSG support, replace print statements with `log.info()`, add a test file.
-Primary post-processing tool for users.
+**P2.7 Modernise `sww2timeseries` / gauge module** (partially done session 27)
+`anuga/abstract_2d_finite_volumes/gauge.py` — session 27 completed:
+- `gauge_get_from_file` rewritten with `csv.DictReader` (case-insensitive, whitespace-tolerant)
+- `open().close()` file-existence checks replaced with `os.path.isfile()`
+- `_generate_figures` marked `# pragma: no cover` (matplotlib/LaTeX display dependency)
+
+Remaining work:
+- Add EPSG/`Geo_reference` coordinate support to `gauge_get_from_file` (accept optional
+  EPSG code, convert gauge coordinates to domain projection)
+- Expand `test_gauge.py` to cover `gauge_get_from_file`, `_sww2timeseries` (non-figure path)
+- `_generate_figures` (470 lines) is legacy LaTeX+matplotlib report generation — consider
+  deprecating in favour of the newer `sww2csv_gauges` + external plotting workflow
 
 ~~**P2.8 Scenario system input validation**~~ — Done (session 25). Schema validation added to TOML inputs; detailed error messages naming bad fields and expected types; range checks for physical parameters.
 
