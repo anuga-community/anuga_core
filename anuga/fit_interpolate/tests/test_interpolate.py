@@ -1077,22 +1077,13 @@ class Test_Interpolate(unittest.TestCase):
             'Expected matrix to be built once; got %d builds' % mock_build.call_count
         )
 
-    def xxtest_interpolate_reuse_if_same(self):
+    def test_interpolate_reuse_if_same(self):
+        """Matrix is built once and results are correct for repeated same-point calls."""
+        from unittest.mock import patch
 
-        # This on tests that repeated identical interpolation
-        # points makes use of precomputed matrix (Ole)
-        # This is not really a test and is disabled for now
-
-        a = [-1.0, 0.0]
-        b = [3.0, 4.0]
-        c = [4.0, 1.0]
-        d = [-3.0, 2.0] #3
-        e = [-1.0, -2.0]
-        f = [1.0, -2.0] #5
-
-        vertices = [a, b, c, d,e,f]
-        triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]] #abd bac aef afc
-
+        vertices = [[-1.0, 0.0], [3.0, 4.0], [4.0, 1.0],
+                    [-3.0, 2.0], [-1.0, -2.0], [1.0, -2.0]]
+        triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]]
 
         point_coords = [[-2.0,  2.0],
                         [-1.0,  1.0],
@@ -1108,21 +1099,24 @@ class Test_Interpolate(unittest.TestCase):
                         [ 3.0,  1.0]]
 
         interp = Interpolate(vertices, triangles)
-        f = num.array([linear_function(vertices), 2*linear_function(vertices)])
-        f = num.transpose(f)
-        z = interp.interpolate(f, point_coords)
-        answer = [linear_function(point_coords),
-                  2*linear_function(point_coords) ]
-        answer = num.transpose(answer)
+        f = num.transpose(num.array([linear_function(vertices),
+                                     2*linear_function(vertices)]))
+        answer = num.transpose(num.array([linear_function(point_coords),
+                                          2*linear_function(point_coords)]))
 
-        assert num.allclose(z, answer)
-        assert num.allclose(interp._A_can_be_reused, True)
+        with patch.object(interp, '_build_interpolation_matrix_A',
+                          wraps=interp._build_interpolation_matrix_A) as mock_build:
+            z1 = interp.interpolate(f, point_coords)
+            z2 = interp.interpolate(f, point_coords)
+            z3 = interp.interpolate(f, point_coords)
 
-
-        z = interp.interpolate(f)    # None
-        assert num.allclose(z, answer)
-        z = interp.interpolate(f, point_coords) # Repeated (not really a test)
-        assert num.allclose(z, answer)
+        assert num.allclose(z1, answer)
+        assert num.allclose(z2, answer)
+        assert num.allclose(z3, answer)
+        assert mock_build.call_count == 1, (
+            'Expected 1 matrix build for 3 identical calls; got %d'
+            % mock_build.call_count
+        )
 
 
 
