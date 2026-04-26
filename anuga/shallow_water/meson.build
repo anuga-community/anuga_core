@@ -92,6 +92,13 @@ else
   endif
   # Define macro so code knows it's CPU-only mode
   gpu_c_args += ['-DCPU_ONLY_MODE']
+  # GCC/Clang warn about variables used only in #pragma omp target map() clauses
+  # in CPU_ONLY_MODE because the target region is a no-op; NVIDIA HPC SDK does not.
+  if effective_compiler_id == 'gcc'
+    gpu_c_args += ['-Wno-unused-variable', '-Wno-unused-but-set-variable', '-Wno-unused-function']
+  elif effective_compiler_id == 'clang'
+    gpu_c_args += ['-Wno-unused-variable', '-Wno-unused-function']
+  endif
   message('CPU multicore mode enabled (no GPU offloading)')
 endif
 

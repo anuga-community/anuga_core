@@ -558,9 +558,7 @@ void _openmp_set_omp_num_threads(anuga_int num_threads)
 void _openmp_evaluate_reflective_segment(const struct domain *__restrict D, anuga_int N,
    anuga_int *edge_segment, anuga_int *vol_ids, anuga_int *edge_ids){
 
-  anuga_int boundary_length = D->boundary_length;
   anuga_int number_of_edges = N;
-  anuga_int number_of_elements = D->number_of_elements; 
 
     #pragma omp parallel for schedule(static)
      for(anuga_int k = 0; k < number_of_edges; k++){

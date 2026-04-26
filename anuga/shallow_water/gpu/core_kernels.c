@@ -659,14 +659,12 @@ int core_gravity(struct domain *D) {
     double g = D->g;
 
     double * restrict height_cv = D->height_centroid_values;
-    double * restrict stage_vv = D->stage_vertex_values;
     double * restrict bed_vv = D->bed_vertex_values;
 
     double * restrict xmom_eu = D->xmom_explicit_update;
     double * restrict ymom_eu = D->ymom_explicit_update;
 
     double * restrict vertex_coords = D->vertex_coordinates;
-    double * restrict areas = D->areas;
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
@@ -720,8 +718,6 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
 
     // Extract array pointers
     double * restrict stage_cv = D->stage_centroid_values;
-    double * restrict xmom_cv = D->xmom_centroid_values;
-    double * restrict ymom_cv = D->ymom_centroid_values;
     double * restrict bed_cv = D->bed_centroid_values;
     double * restrict height_cv = D->height_centroid_values;
 

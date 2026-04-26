@@ -181,7 +181,7 @@ void boyd_pipe_discharge(const struct culvert_params *p,
         outlet_culvert_depth = dcrit1;
     }
 
-    double flow_area, perimeter, flow_width;
+    double flow_area, perimeter;
     double alpha;
     double bd = bf * diameter;
 
@@ -190,12 +190,10 @@ void boyd_pipe_discharge(const struct culvert_params *p,
         outlet_culvert_depth = bd;
         flow_area = barrels * (bd / 2.0) * (bd / 2.0) * M_PI;
         perimeter = barrels * bd * M_PI;
-        flow_width = barrels * bd;
     } else {
         // Partial fill
         alpha = acos(1.0 - 2.0 * outlet_culvert_depth / bd) * 2.0;
         flow_area = barrels * bd * bd / 8.0 * (alpha - sin(alpha));
-        flow_width = barrels * bd * sin(alpha / 2.0);
         perimeter = barrels * (alpha * bd / 2.0);
     }
 
@@ -206,7 +204,6 @@ void boyd_pipe_discharge(const struct culvert_params *p,
             outlet_culvert_depth = bd;
             flow_area = barrels * (bd / 2.0) * (bd / 2.0) * M_PI;
             perimeter = barrels * bd * M_PI;
-            flow_width = barrels * bd;
         } else {
             // Partial flow - recalculate critical depth
             dcrit1 = bd / 1.26 * pow(Q / sqrt(p->g) / pow(bd, 2.5), 1.0 / 3.75);
@@ -221,11 +218,9 @@ void boyd_pipe_discharge(const struct culvert_params *p,
                 outlet_culvert_depth = bd;
                 flow_area = barrels * (bd / 2.0) * (bd / 2.0) * M_PI;
                 perimeter = barrels * bd * M_PI;
-                flow_width = barrels * bd;
             } else {
                 alpha = acos(1.0 - 2.0 * outlet_culvert_depth / bd) * 2.0;
                 flow_area = barrels * bd * bd / 8.0 * (alpha - sin(alpha));
-                flow_width = barrels * bd * sin(alpha / 2.0);
                 perimeter = barrels * alpha * bd / 2.0;
             }
         }
