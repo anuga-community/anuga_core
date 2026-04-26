@@ -829,6 +829,203 @@ class Test_sww2timeseries(unittest.TestCase):
         self.assertGreater(len(lines), 1)   # header + data rows
 
 
+class Test_sww2csv_gauges_errors(unittest.TestCase):
+    """Edge-case and error-path coverage for sww2csv_gauges."""
+
+    def setUp(self):
+        import shutil
+        from anuga.pmesh.mesh import Pmesh
+        from anuga.file.sww import SWW_file
+        from anuga.utilities.numerical_tools import mean
+
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig_dir = os.getcwd()
+        os.chdir(self.tmpdir)
+
+        mesh_file = tempfile.mktemp('.tsh')
+        points = [[0.0, 0.0], [6.0, 0.0], [6.0, 6.0], [0.0, 6.0]]
+        m = Pmesh()
+        m.add_vertices(points)
+        m.auto_segment()
+        m.generate_mesh(verbose=False)
+        m.export_mesh_file(mesh_file)
+
+        domain = anuga.Domain(mesh_file)
+        domain.default_order = 2
+        domain.tight_slope_limiters = 0
+        domain.set_quantity('elevation', lambda x, y: -x)
+        domain.set_quantity('friction', 0.03)
+        domain.set_boundary({'exterior': anuga.Transmissive_boundary(domain)})
+        domain.distribute_to_vertices_and_edges()
+        domain.set_quantity('stage', 1.0)
+        domain.set_name('err_test')
+        domain.smooth = True
+        domain.reduction = mean
+
+        sww = SWW_file(domain)
+        sww.store_connectivity()
+        sww.store_timestep()
+
+        self.swwfile = sww.filename
+
+    def tearDown(self):
+        import shutil
+        os.chdir(self.orig_dir)
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def test_bad_gauge_file_raises(self):
+        """sww2csv_gauges raises when gauge file does not exist."""
+        with self.assertRaises(Exception) as ctx:
+            sww2csv_gauges(self.swwfile, '/no/such/file.csv',
+                           use_cache=False, verbose=False)
+        self.assertIn('could not be opened', str(ctx.exception))
+
+    def test_verbose_runs(self):
+        """sww2csv_gauges with verbose=True runs without error."""
+        gauge_path = os.path.join(self.tmpdir, 'g.csv')
+        with open(gauge_path, 'w') as f:
+            f.write('name,easting,northing,elevation\n'
+                    'p1,3.0,3.0,0.0\n')
+        sww2csv_gauges(self.swwfile, gauge_path,
+                       use_cache=False, verbose=True)
+
+
+
+class Test_sww2timeseries_branches(unittest.TestCase):
+    """Coverage for _sww2timeseries defaults, error paths and verbose branches."""
+
+    def setUp(self):
+        import shutil
+        from anuga.pmesh.mesh import Pmesh
+        from anuga.file.sww import SWW_file
+        from anuga.utilities.numerical_tools import mean
+
+        self.tmpdir = tempfile.mkdtemp()
+        self.orig_dir = os.getcwd()
+        os.chdir(self.tmpdir)
+
+        mesh_file = tempfile.mktemp('.tsh')
+        points = [[0.0, 0.0], [6.0, 0.0], [6.0, 6.0], [0.0, 6.0]]
+        m = Pmesh()
+        m.add_vertices(points)
+        m.auto_segment()
+        m.generate_mesh(verbose=False)
+        m.export_mesh_file(mesh_file)
+
+        domain = anuga.Domain(mesh_file)
+        domain.default_order = 2
+        domain.tight_slope_limiters = 0
+        domain.set_quantity('elevation', lambda x, y: -x)
+        domain.set_quantity('friction', 0.03)
+        domain.set_boundary({'exterior': anuga.Transmissive_boundary(domain)})
+        domain.distribute_to_vertices_and_edges()
+        domain.set_quantity('stage', 1.0)
+        domain.set_name('ts_branch_test')
+        domain.smooth = True
+        domain.reduction = mean
+
+        sww = SWW_file(domain)
+        sww.store_connectivity()
+        sww.store_timestep()
+        domain.set_quantity('stage', 2.0)
+        domain.set_time(domain.get_time() + 2.0)
+        sww.store_timestep()
+
+        self.swwfile = sww.filename
+        self.swwdir = os.path.dirname(os.path.abspath(sww.filename))
+
+        gauge_path = os.path.join(self.tmpdir, 'gauges.csv')
+        with open(gauge_path, 'w') as f:
+            f.write('easting,northing,name,elevation\n'
+                    '3.0,3.0,mid,0.0\n')
+        self.gauge_file = gauge_path
+
+    def tearDown(self):
+        import shutil
+        os.chdir(self.orig_dir)
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _call(self, **kwargs):
+        from anuga.abstract_2d_finite_volumes.gauge import sww2timeseries
+        defaults = dict(
+            report=False, generate_fig=False,
+            plot_quantity=['depth'], use_cache=False, verbose=False,
+        )
+        defaults.update(kwargs)
+        return sww2timeseries(
+            {self.swwfile: ''},
+            self.gauge_file,
+            production_dirs={self.swwdir: 'test'},
+            **defaults,
+        )
+
+    def test_gauge_file_not_found_raises(self):
+        from anuga.abstract_2d_finite_volumes.gauge import sww2timeseries
+        with self.assertRaises(Exception) as ctx:
+            sww2timeseries(
+                {self.swwfile: ''}, '/no/such/gauges.csv',
+                production_dirs={}, report=False, generate_fig=False,
+                use_cache=False, verbose=False,
+            )
+        self.assertIn('could not be opened', str(ctx.exception))
+
+    def test_swwfile_not_found_raises(self):
+        from anuga.abstract_2d_finite_volumes.gauge import sww2timeseries
+        with self.assertRaises(Exception) as ctx:
+            sww2timeseries(
+                {'/no/such.sww': ''}, self.gauge_file,
+                production_dirs={}, report=False, generate_fig=False,
+                use_cache=False, verbose=False,
+            )
+        self.assertIn('could not be opened', str(ctx.exception))
+
+    def test_defaults_none_values(self):
+        """Passing None for report/plot_quantity/surface/time_unit/title_on
+        exercises the default-value branches in _sww2timeseries."""
+        self._call(report=None, plot_quantity=None,
+                   surface=None, time_unit=None, title_on=None)
+
+    def test_verbose_true(self):
+        """verbose=True exercises the log.info paths."""
+        self._call(verbose=True)
+
+    def test_time_min_too_early_raises(self):
+        """time_min earlier than simulation start raises."""
+        with self.assertRaises(Exception) as ctx:
+            self._call(time_min=-999.0)
+        self.assertIn('Minimum time', str(ctx.exception))
+
+    def test_time_max_too_late_raises(self):
+        """time_max later than simulation end raises."""
+        with self.assertRaises(Exception) as ctx:
+            self._call(time_max=99999.0)
+        self.assertIn('Maximum time', str(ctx.exception))
+
+    def test_all_gauges_off_mesh_returns_empty(self):
+        """When all gauges are outside the mesh the texfile is empty."""
+        off_gauge = os.path.join(self.tmpdir, 'off.csv')
+        with open(off_gauge, 'w') as f:
+            f.write('easting,northing,name,elevation\n'
+                    '999.0,999.0,off,0.0\n')
+        from anuga.abstract_2d_finite_volumes.gauge import sww2timeseries
+        texfile, elev_output = sww2timeseries(
+            {self.swwfile: ''}, off_gauge,
+            production_dirs={self.swwdir: 'test'},
+            report=False, generate_fig=False,
+            plot_quantity=['depth'], use_cache=False, verbose=False,
+        )
+        self.assertEqual(texfile, '')
+        self.assertEqual(elev_output, [])
+
+    def test_explicit_surface_time_unit_title_on(self):
+        """Passing non-None surface/time_unit/title_on skips their default branches."""
+        self._call(surface=False, time_unit='hours', title_on=True)
+
+    def test_explicit_valid_time_bounds(self):
+        """Explicit time_min/time_max within the run range are accepted."""
+        self._call(time_min=0.0, time_max=2.0)
+
+
 #-------------------------------------------------------------
 
 if __name__ == "__main__":
