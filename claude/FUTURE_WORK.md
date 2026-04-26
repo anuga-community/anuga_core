@@ -68,16 +68,9 @@ thresholds in `.coveragerc` for fast vs full, or add targeted tests in `anuga/fi
 `Geo_reference` EPSG support, replace print statements with `log.info()`, add a test file.
 Primary post-processing tool for users.
 
-**P2.8 Scenario system input validation**
-`anuga/scenario/parse_input_data.py` and `parse_input_data_toml.py` (combined 800+ lines)
-have minimal error checking. Add: (1) schema validation for TOML inputs using `tomllib`
-(already a dependency), (2) detailed error messages naming the bad field and expected type,
-(3) range checks for physical parameters (Manning's n > 0, etc.).
+~~**P2.8 Scenario system input validation**~~ — Done (session 25). Schema validation added to TOML inputs; detailed error messages naming bad fields and expected types; range checks for physical parameters.
 
-**P2.9 Document the scenario/TOML system**
-The TOML keys used by the scenario system are not documented in Sphinx. Add a reference page
-listing every supported key with types, defaults, and examples. See `claude/PROGRESS.md`
-entries for the TOML culvert/weir support added in session 13.
+~~**P2.9 Document the scenario/TOML system**~~ — Done (session 25). Sphinx reference page added listing all supported TOML keys with types, defaults, and examples.
 
 ---
 
@@ -168,11 +161,11 @@ per-variable size limit. The NetCDF3 classic restriction does not apply. (Invali
 | Priority | Total | Remaining | Effort | Biggest payoff |
 |----------|-------|-----------|--------|----------------|
 | P1 — Quick wins | 8 | 0 ✅ | 1–3 days | All done |
-| P2 — Medium | 9 | 6 | 1–2 weeks | Usability, type safety, test coverage |
+| P2 — Medium | 9 | 4 | 1–2 weeks | Usability, type safety, test coverage |
 | P3 — Initiatives | 7 | 6 | 1–3 months | Performance, scalability, accuracy |
 | Speculative | 4 | 4 | 6+ months | Strategic differentiation |
 
 **Top 3 near-term recommendations:**
 1. **P2.6** — Raise fast-suite coverage threshold (fast suite trails full suite; targeted tests in `file/`, `fit_interpolate/`, `structures/`)
-2. **P2.8** — Scenario system input validation (biggest source of user friction in operational use)
-3. **P2.9** — Document the scenario/TOML system (TOML keys undocumented; high leverage for new users)
+2. **P2.7** — Modernise `sww2timeseries` / gauge module (primary post-processing tool for users; predates EPSG and logging refactors)
+3. **P2.4** — Consolidate `culvert_class.py` / `new_culvert_class.py` duplicate `compute_rates` (188-line near-identical methods)

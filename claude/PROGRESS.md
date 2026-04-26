@@ -26,7 +26,7 @@ Branch: `develop` (all feature branches merged)
 | Domain memory reduction | 3 | 3 | 0 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 7 | 7 | 0 |
-| **Total** | **191** | **181** | **10** |
+| **Total** | **191** | **183** | **8** |
 
 
 ---
