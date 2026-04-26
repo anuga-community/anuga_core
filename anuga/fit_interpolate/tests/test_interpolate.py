@@ -1015,7 +1015,6 @@ class Test_Interpolate(unittest.TestCase):
         vertices = [a, b, c, d,e,f]
         triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]] #abd bac aef afc
 
-
         point_coords = [[-2.0,  2.0],
                         [-1.0,  1.0],
                         [ 0.0,  2.0],
@@ -1032,35 +1031,51 @@ class Test_Interpolate(unittest.TestCase):
         interp = Interpolate(vertices, triangles)
         f = num.array([linear_function(vertices),2*linear_function(vertices)])
         f = num.transpose(f)
-        z = interp.interpolate(f, point_coords,
-                               start_blocking_len=20)
-        answer = [linear_function(point_coords),
-                  2*linear_function(point_coords) ]
-        answer = num.transpose(answer)
-        #print "z",z
-        #print "answer",answer
+        z = interp.interpolate(f, point_coords, start_blocking_len=20)
+        answer = num.transpose([linear_function(point_coords),
+                                 2*linear_function(point_coords)])
         assert num.allclose(z, answer)
-        assert num.allclose(interp._A_can_be_reused, True)
 
+        # Calling with point_coordinates=None reuses stored points
         z = interp.interpolate(f)
         assert num.allclose(z, answer)
 
-        # This causes blocking to occur.
+        # Blocking path still gives correct results
         z = interp.interpolate(f, start_blocking_len=10)
         assert num.allclose(z, answer)
-        assert num.allclose(interp._A_can_be_reused, False)
 
-        #A is recalculated
+        # After blocking, None-reuse path still works
         z = interp.interpolate(f)
         assert num.allclose(z, answer)
-        assert num.allclose(interp._A_can_be_reused, True)
 
-        interp = Interpolate(vertices, triangles)
-        #Must raise an exception, no points specified
+        # Fresh instance with no stored points must raise
+        interp2 = Interpolate(vertices, triangles)
         try:
-            z = interp.interpolate(f)
+            z = interp2.interpolate(f)
         except Exception:
             pass
+
+    def test_interpolation_matrix_cached(self):
+        """Interpolation matrix is built once and reused for repeated same-point calls."""
+        from unittest.mock import patch
+
+        vertices = [[-1.0, 0.0], [3.0, 4.0], [4.0, 1.0],
+                    [-3.0, 2.0], [-1.0, -2.0], [1.0, -2.0]]
+        triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]]
+        point_coords = num.array([[0.0, 0.0], [1.0, 1.0], [-1.0, 1.0]])
+        f = num.array(linear_function(vertices))
+
+        interp = Interpolate(vertices, triangles)
+
+        with patch.object(interp, '_build_interpolation_matrix_A',
+                          wraps=interp._build_interpolation_matrix_A) as mock_build:
+            interp.interpolate(f, point_coords)
+            interp.interpolate(f, point_coords)
+            interp.interpolate(f, point_coords)
+
+        assert mock_build.call_count == 1, (
+            'Expected matrix to be built once; got %d builds' % mock_build.call_count
+        )
 
     def xxtest_interpolate_reuse_if_same(self):
 

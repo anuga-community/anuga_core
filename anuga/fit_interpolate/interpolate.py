@@ -185,9 +185,8 @@ class Interpolate (FitInterpolate):
                                 verbose=verbose)
 
         # Initialise variables
-        self._A_can_be_reused = False  # FIXME (Ole): Probably obsolete
-        self._point_coordinates = None # FIXME (Ole): Probably obsolete
-        self.interpolation_matrices = {} # Store precomputed matrices
+        self._point_coordinates = None  # Last-used points, for None-reuse path
+        self.interpolation_matrices = {}  # In-memory cache: hash → (A, points)
 
 
     # FIXME: What is a good start_blocking_len value?
@@ -224,64 +223,47 @@ class Interpolate (FitInterpolate):
           Interpolated values at inputted points (z).
         """
 
-        # FIXME (Ole): Why is the interpolation matrix rebuilt everytime the
-        # method is called even if interpolation points are unchanged.
-        # This really should use some kind of caching in cases where
-        # interpolation points are reused.
-        #
-        # This has now been addressed through an attempt in interpolate_block
-
-        if verbose: log.info('Build intepolation object')
+        if verbose: log.info('Build interpolation object')
         if isinstance(point_coordinates, Geospatial_data):
             point_coordinates = point_coordinates.get_data_points(absolute=True)
 
-        # Can I interpolate, based on previous point_coordinates?
         if point_coordinates is None:
-            if self._A_can_be_reused is True \
-               and len(self._point_coordinates) < start_blocking_len:
-                z = self._get_point_data_z(f, NODATA_value=NODATA_value, verbose=verbose)
-            elif self._point_coordinates is not None:
-                #     if verbose, give warning
-                if verbose:
-                    log.warning('WARNING: Recalculating A matrix, '
-                                 'due to blocking.')
+            if self._point_coordinates is not None:
                 point_coordinates = self._point_coordinates
             else:
-                # There are no good point_coordinates. import sys; sys.exit()
                 msg = 'ERROR (interpolate.py): No point_coordinates inputted'
                 raise Exception(msg)
 
-        if point_coordinates is not None:
-            self._point_coordinates = point_coordinates
-            if len(point_coordinates) < start_blocking_len \
-               or start_blocking_len == 0:
-                self._A_can_be_reused = True
-                z = self.interpolate_block(f, point_coordinates, NODATA_value = NODATA_value,
-                                           verbose=verbose, output_centroids=output_centroids)
+        self._point_coordinates = point_coordinates
+
+        if len(point_coordinates) < start_blocking_len or start_blocking_len == 0:
+            z = self.interpolate_block(f, point_coordinates, NODATA_value=NODATA_value,
+                                       verbose=verbose, output_centroids=output_centroids)
+        else:
+            # Handle blocking
+            start = 0
+            f = ensure_numeric(f, float)
+            if len(f.shape) > 1:
+                z = num.zeros((0, f.shape[1]), int)
             else:
-                # Handle blocking
-                self._A_can_be_reused = False
-                start = 0
-                # creating a dummy array to concatenate to.
+                z = num.zeros((0,), int)
 
-                f = ensure_numeric(f, float)
-                if len(f.shape) > 1:
-                    z = num.zeros((0, f.shape[1]), int)     #array default#
-                else:
-                    z = num.zeros((0,), int)        #array default#
+            for end in range(start_blocking_len,
+                             len(point_coordinates),
+                             start_blocking_len):
+                t = self.interpolate_block(f, point_coordinates[start:end],
+                                           NODATA_value=NODATA_value,
+                                           verbose=verbose,
+                                           output_centroids=output_centroids)
+                z = num.concatenate((z, t), axis=0)
+                start = end
 
-                for end in range(start_blocking_len,
-                                 len(point_coordinates),
-                                 start_blocking_len):
-                    t = self.interpolate_block(f, point_coordinates[start:end], NODATA_value=NODATA_value,
-                                               verbose=verbose, output_centroids=output_centroids)
-                    z = num.concatenate((z, t), axis=0)    #??default#
-                    start = end
-
-                end = len(point_coordinates)
-                t = self.interpolate_block(f, point_coordinates[start:end], NODATA_value=NODATA_value,
-                                           verbose=verbose, output_centroids=output_centroids)
-                z = num.concatenate((z, t), axis=0)    #??default#
+            end = len(point_coordinates)
+            t = self.interpolate_block(f, point_coordinates[start:end],
+                                       NODATA_value=NODATA_value,
+                                       verbose=verbose,
+                                       output_centroids=output_centroids)
+            z = num.concatenate((z, t), axis=0)
         return z
 
 
@@ -296,10 +278,6 @@ class Interpolate (FitInterpolate):
         See interpolate for doc info.
         """
 
-        # FIXME (Ole): I reckon we should change the interface so that
-        # the user can specify the interpolation matrix instead of the
-        # interpolation points to save time.
-
         if isinstance(point_coordinates, Geospatial_data):
             point_coordinates = point_coordinates.get_data_points(absolute=True)
 
@@ -308,38 +286,22 @@ class Interpolate (FitInterpolate):
         f = ensure_numeric(f, float)
 
         from anuga.caching import myhash
-        import sys
 
-        if use_cache is True:
-            if sys.platform != 'win32':
-                # FIXME (Ole): (Why doesn't this work on windoze?)
-                # Still absolutely fails on Win 24 Oct 2008
+        # In-memory cache: reuse interpolation matrix when same points are seen.
+        # The matrix A depends only on point geometry and output_centroids flag,
+        # not on the quantity values f — so it is safe to reuse across timesteps.
+        cache_key = (myhash(point_coordinates), bool(output_centroids))
+        reuse_A = False
+        if cache_key in self.interpolation_matrices:
+            X, stored_points = self.interpolation_matrices[cache_key]
+            if num.all(stored_points == point_coordinates):
+                reuse_A = True
 
-                X = cache(self._build_interpolation_matrix_A,
-                          args=(point_coordinates, output_centroids),
-                          kwargs={'verbose': verbose},
-                          verbose=verbose)
-            else:
-                # FIXME
-                # Hash point_coordinates to memory location, reuse if possible
-                # This will work on Linux as well if we want to use it there.
-                key = myhash(point_coordinates)
-
-                reuse_A = False
-
-                if key in self.interpolation_matrices:
-                    X, stored_points = self.interpolation_matrices[key]
-                    if num.all(stored_points == point_coordinates):
-                        reuse_A = True                # Reuse interpolation matrix
-
-                if reuse_A is False:
-                    X = self._build_interpolation_matrix_A(point_coordinates,
-                                                           output_centroids,
-                                                           verbose=verbose)
-                    self.interpolation_matrices[key] = (X, point_coordinates)
-        else:
-            X = self._build_interpolation_matrix_A(point_coordinates, output_centroids,
+        if not reuse_A:
+            X = self._build_interpolation_matrix_A(point_coordinates,
+                                                   output_centroids,
                                                    verbose=verbose)
+            self.interpolation_matrices[cache_key] = (X, point_coordinates)
 
         # Unpack result
         self._A, self.inside_poly_indices, self.outside_poly_indices, self.centroids = X
