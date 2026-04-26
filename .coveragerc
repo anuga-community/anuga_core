@@ -44,7 +44,7 @@ omit =
     */anuga/scenario/setup_weirs.py
 
 [report]
-fail_under = 57
+fail_under = 57.5
 show_missing = true
 skip_covered = false
 exclude_lines =
