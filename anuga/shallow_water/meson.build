@@ -102,9 +102,10 @@ endif
 
 # Runtime GPU-aware MPI detection via MPIX_Query_cuda_support / MPIX_Query_rocm_support.
 # These are non-standard extensions present in Open MPI and MVAPICH2 GPU builds.
-# We probe the MPI compiler for <mpi-ext.h> and the relevant symbol; if found,
-# compile-time flags enable the runtime detection path in detect_gpu_aware_mpi().
-if mpi_dep.found()
+# Only probe when actually building with GPU offloading: on CPU-only builds (CI on
+# macOS/Windows) Open MPI ships MPIX_Query_cuda_support() as a zero-returning stub
+# even without CUDA, causing a false-positive detection and a misleading message.
+if mpi_dep.found() and gpu_offload
   if cc.has_header('mpi-ext.h', dependencies: [mpi_dep])
     if cc.has_function('MPIX_Query_cuda_support',
                        prefix: '#include <mpi.h>\n#include <mpi-ext.h>',
@@ -194,8 +195,9 @@ if mpi_dep.found() and have_mpi4py
     message('Unified extension built with CPU multicore target')
   endif
 else
-  warning('MPI or mpi4py not found - sw_domain_gpu_ext will NOT be built')
-  warning('multiprocessor_mode=2 will not be available')
+  # Expected on Windows (MSMPI has no mpicc/pkg-config) and minimal Linux installs.
+  # GPU tests will be skipped via ImportError on those platforms.
+  message('MPI or mpi4py not found - sw_domain_gpu_ext will NOT be built (multiprocessor_mode=2 unavailable)')
 endif
 
 
