@@ -5,7 +5,6 @@ python_sources = [
   'culvert_polygons.py',
   'culvert_routines.py',
   '__init__.py',
-  'new_culvert_class.py',
 ]
 
 py3.install_sources(

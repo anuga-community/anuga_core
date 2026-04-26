@@ -10,7 +10,6 @@ python_sources = [
   'test_culvert_routines_pipe_10pct.py',
   'test_culvert_routines_pipe_1pct.py',
   'test_culvert_routines.py',
-  'test_new_culvert_class.py',
 ]
 
 py3.install_sources(

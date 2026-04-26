@@ -49,10 +49,15 @@ mismatches.
 from the 300-line monolith. `create_riverwalls` is now a ~50-line orchestrator. All 43
 riverwall tests pass.
 
-**P2.4 Consolidate `culvert_class.py` / `new_culvert_class.py` compute_rates duplication**
-Both have ~188-line `compute_rates` methods with nearly identical hydraulic logic. Extract
-shared orifice/weir/pipe calculations into `anuga/culvert_flows/hydraulic_utils.py`. The
-`new_culvert_class` naming signals an intended migration never completed.
+**P2.4 Delete the `anuga/culvert_flows/` package**
+Session 26 cleanup: deleted `new_culvert_class.py` (was a re-export shim) and
+`test_new_culvert_class.py` (duplicate of `test_culvert_class.py`); added package-level
+`DeprecationWarning` in `__init__.py`. Remaining work to complete removal:
+- Update `examples/structures/run_open_slot_wide_bridge.py` to use `Boyd_box_operator`
+  instead of `Culvert_flow` and `boyd_generalised_culvert_model`
+- Verify no external user scripts depend on `culvert_routines.boyd_generalised_culvert_model`
+- Delete `culvert_class.py`, `culvert_routines.py`, `culvert_polygons.py` and their tests
+- Target: v5.0
 
 ~~**P2.5 Improve `Rate_operator` usability**~~ — Done (session 24). Added `Rate_operator.rainfall(domain, rate_mm_hr)` and `Rate_operator.inflow(domain, rate_m3s)` factory classmethods; input validation (bad rate type → TypeError, region+polygon conflict → ValueError); updated `__init__` docstring pointing to factories. 13 new tests.
 
