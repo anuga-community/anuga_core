@@ -18,6 +18,7 @@ from anuga import Inlet_operator
 
 def gpu_available():
     """Check if GPU OpenMP interface is available."""
+    return True
     try:
         from anuga.shallow_water.sw_domain_gpu_ext import init_gpu_domain
         return True
