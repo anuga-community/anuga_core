@@ -889,6 +889,15 @@ class Test_sww2csv_gauges_errors(unittest.TestCase):
         sww2csv_gauges(self.swwfile, gauge_path,
                        use_cache=False, verbose=True)
 
+    def test_verbose_off_mesh_gauge_warns(self):
+        """sww2csv_gauges with verbose=True and an off-mesh gauge logs a warning."""
+        gauge_path = os.path.join(self.tmpdir, 'off.csv')
+        with open(gauge_path, 'w') as f:
+            f.write('name,easting,northing,elevation\n'
+                    'off,999.0,999.0,0.0\n')
+        sww2csv_gauges(self.swwfile, gauge_path,
+                       use_cache=False, verbose=True)
+
 
 
 class Test_sww2timeseries_branches(unittest.TestCase):
@@ -1024,6 +1033,42 @@ class Test_sww2timeseries_branches(unittest.TestCase):
     def test_explicit_valid_time_bounds(self):
         """Explicit time_min/time_max within the run range are accepted."""
         self._call(time_min=0.0, time_max=2.0)
+
+    def test_all_gauges_off_mesh_verbose(self):
+        """verbose=True with all gauges off-mesh hits the 'No gauges contained' log path."""
+        off_gauge = os.path.join(self.tmpdir, 'off.csv')
+        with open(off_gauge, 'w') as f:
+            f.write('easting,northing,name,elevation\n'
+                    '999.0,999.0,off,0.0\n')
+        from anuga.abstract_2d_finite_volumes.gauge import sww2timeseries
+        sww2timeseries(
+            {self.swwfile: ''}, off_gauge,
+            production_dirs={self.swwdir: 'test'},
+            report=False, generate_fig=False,
+            plot_quantity=['depth'], use_cache=False, verbose=True,
+        )
+
+    def test_some_gauges_off_mesh_verbose(self):
+        """verbose=True with mixed on/off-mesh gauges hits 'Gauges not contained here' path."""
+        mixed_gauge = os.path.join(self.tmpdir, 'mixed.csv')
+        with open(mixed_gauge, 'w') as f:
+            f.write('easting,northing,name,elevation\n'
+                    '3.0,3.0,on,0.0\n'
+                    '999.0,999.0,off,0.0\n')
+        self._call_with_gauge(mixed_gauge, verbose=True)
+
+    def _call_with_gauge(self, gauge_file, **kwargs):
+        from anuga.abstract_2d_finite_volumes.gauge import sww2timeseries
+        defaults = dict(
+            report=False, generate_fig=False,
+            plot_quantity=['depth'], use_cache=False, verbose=False,
+        )
+        defaults.update(kwargs)
+        return sww2timeseries(
+            {self.swwfile: ''}, gauge_file,
+            production_dirs={self.swwdir: 'test'},
+            **defaults,
+        )
 
 
 #-------------------------------------------------------------
