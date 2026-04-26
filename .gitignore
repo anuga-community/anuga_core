@@ -234,3 +234,8 @@ scripts/test.tsh
 anuga/__config__.py
 anuga/version.py
 benchmarks/results/
+
+# claude/ working files — not part of the project record
+claude/.coverage
+claude/coverage.xml
+claude/CDAC_EXECUTIVE_SUMMARY.md
