@@ -13,17 +13,8 @@
    A negative alpha is not allowed.
    A typical value of alpha is 1.0e-6
 
-
    Ole Nielsen, Stephen Roberts, Duncan Gray, Christopher Zoppou
    Geoscience Australia, 2004.
-
-   TO DO
-   * test geo_ref, geo_spatial
-
-   IDEAS
-   * (DSG-) Change the interface of fit, so a domain object can
-      be passed in. (I don't know if this is feasible). If could
-      save time/memory.
 """
 import numpy as num
 from . import fitsmooth_ext as fitsmooth
@@ -357,9 +348,6 @@ class Fit(FitInterpolate):
 
         self._build_coefficient_matrix_B(verbose)
         loners = self.mesh.get_lone_vertices()
-        # FIXME  - make this as error message.
-        # test with
-        # Not_yet_test_smooth_att_to_mesh_with_excess_verts.
         if len(loners) > 0:
             msg = 'WARNING: (least_squares): \nVertices with no triangles\n'
             msg += 'All vertices should be part of a triangle.\n'
@@ -423,9 +411,7 @@ def fit_to_mesh(point_coordinates,
                      compression=False,
                      dependencies=dep)
     else:
-        res = _fit_to_mesh(*args, **kwargs)
-        "print intep should go out of range"
-        return res
+        return _fit_to_mesh(*args, **kwargs)
 
 
 # point_coordinates can also be a points file name
@@ -475,9 +461,6 @@ def _fit_to_mesh(point_coordinates,
     """
 
     if mesh is None:
-        # FIXME(DSG): Throw errors if triangles or vertex_coordinates
-        # are None
-
         # Convert input to numeric arrays
         triangles = ensure_numeric(triangles, int)
         vertex_coordinates = ensure_absolute(vertex_coordinates,
@@ -588,7 +571,6 @@ def fit_to_mesh_file(mesh_file, point_file, mesh_output_file,
     if verbose:
         log.info("finished fitting to mesh")
 
-    # FIXME have this overwrite attributes with the same title - DSG
     # Put the newer attributes last
     if old_title_list != []:
         old_title_list.extend(title_list)

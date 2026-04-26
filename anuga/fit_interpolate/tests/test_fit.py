@@ -1164,6 +1164,150 @@ class Test_Fit(unittest.TestCase):
 
 
 #-------------------------------------------------------------
+
+class Test_Fit_coverage(unittest.TestCase):
+    """Targeted tests for previously-uncovered branches in fit.py and
+    general_fit_interpolate.py."""
+
+    # ------------------------------------------------------------------
+    # Shared mesh: 3 vertices, 1 triangle
+    # ------------------------------------------------------------------
+    _pts  = num.array([[0.,0.],[0.,5.],[5.,0.]], float)
+    _tris = num.array([[1,0,2]], int)
+    _data = num.array([[1.,1.],[1.,3.],[3.,1.]], float)
+    _z    = num.array([2., 4., 4.], float)
+
+    def _fit(self, **kw):
+        f = Fit(self._pts, self._tris, **kw)
+        f._build_matrix_AtA_Atz(self._data, self._z)
+        return f
+
+    # ------------------------------------------------------------------
+    # Fit.__init__ verbose path
+    # ------------------------------------------------------------------
+    def test_fit_init_verbose(self):
+        """Fit.__init__ with verbose=True covers the log.info smoothing path."""
+        f = Fit(self._pts, self._tris, verbose=True)
+        assert f.D is not None
+
+    # ------------------------------------------------------------------
+    # Fit.fit verbose path and no-data warning
+    # ------------------------------------------------------------------
+    def test_fit_fit_verbose(self):
+        """Fit.fit with verbose=True covers the print('Initializing') branch."""
+        f = self._fit()
+        result = f.fit(self._data, self._z, verbose=True)
+        assert result is not None
+
+    def test_fit_fit_no_data_verbose(self):
+        """fit() with no data and verbose=True logs the no-data warning."""
+        f = self._fit()
+        # Force a second call with None so the no-data branch fires
+        result = f.fit(None, verbose=True)
+        assert result is not None
+
+    # ------------------------------------------------------------------
+    # TooFewPointsError when alpha=0 and not enough points
+    # ------------------------------------------------------------------
+    def test_too_few_points_raises(self):
+        """Fewer data points than mesh vertices with alpha=0 raises TooFewPointsError."""
+        f = Fit(self._pts, self._tris, alpha=0.0)
+        # 1 data point < 3 vertices
+        f._build_matrix_AtA_Atz(num.array([[1., 1.]]), num.array([2.]))
+        with self.assertRaises(TooFewPointsError):
+            f.fit()
+
+    # ------------------------------------------------------------------
+    # fit_to_mesh use_cache path
+    # ------------------------------------------------------------------
+    def test_fit_to_mesh_use_cache(self):
+        """fit_to_mesh with use_cache=True exercises the cache() branch."""
+        result = fit_to_mesh(self._data, self._pts, self._tris,
+                             point_attributes=self._z,
+                             alpha=0.1, use_cache=True, verbose=False)
+        assert result is not None
+        assert len(result) == len(self._pts)
+
+    # ------------------------------------------------------------------
+    # _build_matrix_AtA_Atz verbose dot path
+    # ------------------------------------------------------------------
+    def test_build_matrix_verbose_dot(self):
+        """_build_matrix_AtA_Atz with verbose=True, output='dot' hits print path."""
+        f = Fit(self._pts, self._tris)
+        f._build_matrix_AtA_Atz(self._data, self._z, verbose=True, output='dot')
+        assert f.AtA is not None
+
+    # ------------------------------------------------------------------
+    # general_fit_interpolate verbose and build_quad_tree
+    # ------------------------------------------------------------------
+    def test_fitinterpolate_verbose(self):
+        """FitInterpolate.__init__ with verbose=True covers the log.info paths."""
+        from anuga.fit_interpolate.general_fit_interpolate import FitInterpolate
+        fi = FitInterpolate(vertex_coordinates=self._pts,
+                            triangles=self._tris, verbose=True)
+        assert fi.mesh is not None
+
+    def test_fitinterpolate_build_quad_tree(self):
+        """build_quad_tree() rebuilds self.root."""
+        from anuga.fit_interpolate.general_fit_interpolate import FitInterpolate
+        fi = FitInterpolate(vertex_coordinates=self._pts, triangles=self._tris)
+        old_root = fi.root
+        fi.build_quad_tree()
+        assert fi.root is not None
+
+    def test_fitinterpolate_mesh_none(self):
+        """FitInterpolate with no vertices/triangles leaves mesh as None."""
+        from anuga.fit_interpolate.general_fit_interpolate import FitInterpolate
+        fi = FitInterpolate()
+        assert fi.mesh is None
+
+    def test_get_build_quadtree_time(self):
+        """get_build_quadtree_time() returns a non-negative float."""
+        from anuga.fit_interpolate.general_fit_interpolate import get_build_quadtree_time, FitInterpolate
+        FitInterpolate(vertex_coordinates=self._pts, triangles=self._tris)
+        assert get_build_quadtree_time() >= 0.0
+
+    def test_fitinterpolate_repr(self):
+        """__repr__ returns a non-empty string."""
+        from anuga.fit_interpolate.general_fit_interpolate import FitInterpolate
+        fi = FitInterpolate(vertex_coordinates=self._pts, triangles=self._tris)
+        assert 'Interpolation' in repr(fi)
+
+    # ------------------------------------------------------------------
+    # interpolate.py — output_centroids=True path
+    # ------------------------------------------------------------------
+    def test_interpolate_output_centroids(self):
+        """interpolate_block with output_centroids=True returns centroid values."""
+        from anuga.fit_interpolate.interpolate import Interpolate
+        vertices = num.array([[-1.,0.],[3.,4.],[4.,1.],
+                               [-3.,2.],[-1.,-2.],[1.,-2.]], float)
+        triangles = num.array([[0,1,3],[1,0,2],[0,4,5],[0,5,2]])
+        interp = Interpolate(vertices, triangles)
+        f = linear_function(vertices)
+        pts = num.array([[0.,0.],[1.,1.]])
+        z = interp.interpolate(f, pts, output_centroids=True)
+        assert z is not None
+        assert len(z) == len(pts)
+        # centroids list is populated
+        assert len(interp.centroids) > 0
+
+    # ------------------------------------------------------------------
+    # interpolate.py — Interpolate verbose path in _build_interpolation_matrix_A
+    # ------------------------------------------------------------------
+    def test_interpolate_block_verbose(self):
+        """interpolate_block with verbose=True runs log.info paths."""
+        from anuga.fit_interpolate.interpolate import Interpolate
+        vertices = num.array([[-1.,0.],[3.,4.],[4.,1.],
+                               [-3.,2.],[-1.,-2.],[1.,-2.]], float)
+        triangles = num.array([[0,1,3],[1,0,2],[0,4,5],[0,5,2]])
+        interp = Interpolate(vertices, triangles)
+        f = linear_function(vertices)
+        pts = num.array([[0.,0.],[1.,1.]])
+        z = interp.interpolate_block(f, pts, verbose=True)
+        assert z is not None
+
+
+#-------------------------------------------------------------
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Fit)
     runner = unittest.TextTestRunner() #verbosity=1)
