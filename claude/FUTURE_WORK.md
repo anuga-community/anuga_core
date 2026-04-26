@@ -67,18 +67,15 @@ thresholds in `.coveragerc` for fast vs full, or add targeted tests in `anuga/fi
 `anuga/fit_interpolate/`, and `anuga/structures/` to lift the fast-suite baseline. Session
 20 added ~90 tests as a model.
 
-~~**P2.7 Modernise `sww2timeseries` / gauge module**~~ — Done (session 27).
+~~**P2.7 Modernise `sww2timeseries` / gauge module**~~ — Done (sessions 27–28).
 - `gauge_get_from_file` rewritten with `csv.DictReader` (case-insensitive, whitespace-tolerant)
 - `open().close()` file-existence checks replaced with `os.path.isfile()`
 - `_generate_figures` marked `# pragma: no cover` (matplotlib/LaTeX display dependency)
-- `test_gauge.py` expanded with Test_sww2csv_gauges_errors, Test_sww2timeseries_branches,
-  Test_gauge_get_from_file, Test_quantities2csv — gauge.py at 97% coverage (38 tests)
-
-Known issue: `Interpolation_function` verbose precompute path calls matplotlib to plot
-the mesh boundary polygon; this triggers a TypeError in matplotlib 3.x/numpy 2.x
-(line `ax = projection_class(self, *args, **pkw)` with `_NoValueType`). Affects lines
-238, 453-454, 462 in gauge.py (verbose + off-mesh gauge paths) — not coverable until
-the matplotlib compat issue in `plot_utils.py` is fixed.
+- `plot_polygons` in `geometry/polygon.py` fixed: replaced `matplotlib.use('Agg')` with
+  `plt.switch_backend('Agg')` (safe post-import); added defensive try-except around import
+  block and plot body — resolves the matplotlib 3.10 / numpy 2.x `_NoValueType` crash
+- `test_gauge.py` at 41 tests covering gauge.py at 99% (only lines 177-178, read-permission
+  error path, remain uncovered)
 
 Speculative future work: add EPSG/`Geo_reference` coordinate support to
 `gauge_get_from_file` (accept optional EPSG code, convert to domain projection).
