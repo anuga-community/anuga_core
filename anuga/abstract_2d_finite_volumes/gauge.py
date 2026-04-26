@@ -388,11 +388,8 @@ def _sww2timeseries(swwfiles,
 
     assert isinstance(gauge_filename, str), 'Gauge filename must be a string'
 
-    try:
-        open(gauge_filename).close()
-    except Exception as e:
-        msg = 'File "%s" could not be opened: Error="%s"' % (gauge_filename, e)
-        raise Exception(msg)
+    if not os.path.isfile(gauge_filename):
+        raise Exception('File "%s" could not be opened: not found' % gauge_filename)
 
     if report is None:
         report = False
@@ -426,11 +423,8 @@ def _sww2timeseries(swwfiles,
     theminT = 0.0
 
     for swwfile in list(swwfiles.keys()):
-        try:
-            fid = open(swwfile)
-        except Exception as e:
-            msg = 'File "%s" could not be opened: Error="%s"' % (swwfile, e)
-            raise Exception(msg)
+        if not os.path.isfile(swwfile):
+            raise Exception('File "%s" could not be opened: not found' % swwfile)
 
         if verbose:
             log.info('swwfile = %s' % swwfile)
@@ -515,81 +509,50 @@ def gauge_get_from_file(filename):
 
     The file must have a header row with columns ``easting``, ``northing``,
     ``name``, and ``elevation`` (order is flexible, case-insensitive).
+
+    Parameters
+    ----------
+    filename : str
+        Path to a CSV gauge file with columns: easting, northing, name,
+        elevation (header row required; column order is flexible).
+
+    Returns
+    -------
+    gauges : list of [easting, northing]
+    locations : list of str
+    elev : list of float
     """
+    from csv import DictReader
 
-    with open(filename) as fid:
-        lines = fid.readlines()
+    with open(filename, newline='') as fid:
+        # Read and normalise the header line separately so key lookup is
+        # case-insensitive and whitespace-tolerant without a double seek.
+        first_line = fid.readline()
+        fieldnames = [h.strip().lower() for h in first_line.split(',')]
 
-    gauges = []
-    gaugelocation = []
-    elev = []
+        for required in ('easting', 'northing', 'name', 'elevation'):
+            if required not in fieldnames:
+                raise Exception(
+                    'File %s is missing required column: %s' % (filename, required))
 
-    # Check header information
-    line1 = lines[0]
-    line11 = line1.split(',')
+        reader = DictReader(fid, fieldnames=fieldnames, skipinitialspace=True)
 
-    if isinstance(line11[0], str):
-        # We have found text in the first line
-        east_index = None
-        north_index = None
-        name_index = None
-        elev_index = None
-
-        for i in range(len(line11)):
-            if line11[i].strip().lower() == 'easting':   east_index = i
-            if line11[i].strip().lower() == 'northing':  north_index = i
-            if line11[i].strip().lower() == 'name':      name_index = i
-            if line11[i].strip().lower() == 'elevation': elev_index = i
-
-        if east_index is None or north_index is None:
-            msg = ('File %s does not contain required header columns. '
-                   'Header must include: easting, northing, name, elevation'
-                   % filename)
-            raise Exception(msg)
-
-        if elev_index is None:
-            raise Exception('File %s is missing required column: elevation' % filename)
-
-        if name_index is None:
-            raise Exception('File %s is missing required column: name' % filename)
-
-        lines = lines[1:]  # Remove header from data
-    else:
-        # No header, assume that this is a simple easting, northing file
-
-        msg = 'There was no header in file %s and the number of columns is %d' \
-              % (filename, len(line11))
-        msg += '- was assuming two columns corresponding to Easting and Northing'
-        assert len(line11) == 2, msg
-
-        east_index = 0
-        north_index = 1
-
-        N = len(lines)
-        elev = [-9999]*N
-        gaugelocation = list(range(N))
-
-    # Read in gauge data
-    for line in lines:
-        fields = line.split(',')
-
-        gauges.append([float(fields[east_index]), float(fields[north_index])])
-
-        if len(fields) > 2:
-            elev.append(float(fields[elev_index]))
-            loc = fields[name_index]
-            gaugelocation.append(loc.strip(r'\n'))
+        gauges = []
+        gaugelocation = []
+        elev = []
+        for row in reader:
+            gauges.append([float(row['easting']), float(row['northing'])])
+            gaugelocation.append(row['name'].strip())
+            elev.append(float(row['elevation']))
 
     return gauges, gaugelocation, elev
 
 
-def _generate_figures(plot_quantity, file_loc, report, reportname, surface,
+def _generate_figures(plot_quantity, file_loc, report, reportname, surface,  # pragma: no cover
                      leg_label, f_list, gauges, locations, elev, gauge_index,
                      production_dirs, time_min, time_max, time_unit,
                      title_on, label_id, generate_fig, verbose):
-    """ Generate figures based on required quantities and gauges for
-    each sww file
-    """
+    """Generate figures based on required quantities and gauges for each sww file."""
     from os import sep, altsep, getcwd, mkdir, access, F_OK, environ
 
     if generate_fig is True:
