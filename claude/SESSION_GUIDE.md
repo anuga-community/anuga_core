@@ -117,6 +117,19 @@ wired in `Fit.fit()`. Removed dead `_RawCSR`/`_SumRawCSR`. 13 new tests covering
 row_ptr extension, multi-attribute, degenerate/interior paths. fit.py 85→92%.
 P2.7 gauge modernisation fully done (session continuation). Commit `12864187`.
 
+**Session 27 (2026-04-27):** `Kinematic_viscosity_operator` MPI-parallel (Option B
+distributed CG). Phase 1: removed Apple OpenMP guards from 4 C files. Phase 2:
+`parabolic_solve` serial path routed through C CG (`cg_solve_c_precon`) with Jacobi
+preconditioner. Phase 3: full distributed CG — `_exchange_ghost_vector` (MPI tag 198
+non-blocking), `_distributed_dot` (Allreduce), `_parabolic_matvec_distributed` (ghost
+exchange before SpMV), `_parabolic_solve_distributed` (n_full-length CG loop). `parallel_safe()`
+returns True. New `run_parallel_kv_operator.py` + `test_parallel_kv_operator.py`
+(serial-vs-parallel xvel, max diff 8.6×10⁻⁶). New `run_parallel_kv_unit_tests.py`
++ `test_parallel_kv_unit_tests.py` (4 in-process MPI assertions for each primitive).
+Bug fix: `test_select_alpha_degenerate_falls_back_to_default` platform-dependent on
+Windows py3.10/3.11/3.13 — now uses `return_curve=True` to branch on actual kappa.
+Commits `61418742`, `5498f98d`. All CI passed.
+
 ---
 
 ## File locations for common operations

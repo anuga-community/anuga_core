@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-25 (session 25)
+Last updated: 2026-04-27 (session 27)
 Branch: `develop` (all feature branches merged)
 
 Full history of completed work: `claude/PROGRESS_ARCHIVE.md`
@@ -23,7 +23,8 @@ Future work recommendations: `claude/FUTURE_WORK.md`
 | Domain memory reduction | 3 | 3 | 0 |
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 7 | 7 | 0 |
-| **Total** | **191** | **183** | **8** |
+| Kinematic viscosity parallelisation | 4 | 4 | 0 |
+| **Total** | **195** | **187** | **8** |
 
 ---
 

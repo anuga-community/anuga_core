@@ -294,3 +294,12 @@ Full plan: `claude/archive/GPU_DEVELOPMENT_PLAN.md`
 - [x] **G3.2** Riverwall GPU support *(2026-04-10)*
 - [x] **G3.3** Dynamic operator slot limits *(2026-04-10)*
 - [x] **G3.4** GPU documentation page *(2026-04-10)*
+
+---
+
+## Kinematic Viscosity Parallelisation ✅ Complete (session 27, 2026-04-27)
+
+- [x] **KV1** Remove Apple OpenMP guards from 4 C files (`sparse.c`, `kinematic_viscosity_operator.c`, `cg.c`, `fitsmooth.c`) — plain `#include "omp.h"` now that conda-forge llvm-openmp supports macOS *(2026-04-27)*
+- [x] **KV2** Serial path: `parabolic_solve` routed through C CG (`cg_solve_c_precon`) with Jacobi preconditioner; `_build_parabolic_csr()` builds n×n parabolic matrix via vectorised numpy *(2026-04-27)*
+- [x] **KV3** MPI parallel path (Option B distributed CG): `_exchange_ghost_vector` (non-blocking Irecv/Isend, tag 198), `_distributed_dot` (Allreduce SUM), `_parabolic_matvec_distributed` (ghost exchange before SpMV, n_full-length result), `_parabolic_solve_distributed` (standard CG loop on owned triangles only). `parallel_safe()` returns True. *(2026-04-27)*
+- [x] **KV4** Tests: `run_parallel_kv_operator.py` + `test_parallel_kv_operator.py` (serial-vs-3proc xvelocity comparison, max diff 8.6×10⁻⁶); `run_parallel_kv_unit_tests.py` + `test_parallel_kv_unit_tests.py` (4 in-process MPI assertions: ghost exchange global-index round-trip, distributed dot Allreduce, matvec identity at dt=0, CG self-consistency). Bug fix: `test_select_alpha_degenerate_falls_back_to_default` was platform-dependent on Windows py3.10/3.11/3.13 due to numpy gradient differences — now uses `return_curve=True` to branch on actual kappa. Commits `61418742`, `5498f98d`. All CI passed. *(2026-04-27)*
