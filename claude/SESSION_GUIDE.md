@@ -130,6 +130,14 @@ Bug fix: `test_select_alpha_degenerate_falls_back_to_default` platform-dependent
 Windows py3.10/3.11/3.13 — now uses `return_curve=True` to branch on actual kappa.
 Commits `61418742`, `5498f98d`. All CI passed.
 
+**Session 28 (2026-04-27):** P2.6 fast-suite coverage continued. `anuga/file/`:
+`test_netcdf_nc.py` (10 tests, netcdf.py 34%→100%), `test_sts.py` (11 tests,
+sts.py 47%→89%). `anuga/structures/`: 9 new tests in `test_inlet_operator.py`
+(inlet_operator.py 45%→64%); 16 new tests in `test_structure_operator.py`
+(structure_operator.py 65%→96% — enquiry getters, setters, skew 4-point, error
+paths, print/timestepping stats, non-constant elevation warning). Overall fast
+suite: 58.13% → 58.68%.
+
 ---
 
 ## File locations for common operations
