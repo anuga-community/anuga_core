@@ -457,10 +457,13 @@ class Test_inlet_operator(unittest.TestCase):
 
     def test_set_default_callable(self):
         """set_default accepts a callable and get_default returns its value."""
+        import warnings
         domain = self._simple_domain()
         line = [[8.0, 5.0], [12.0, 5.0]]
         op = Inlet_operator(domain, line, Q=1.0, default=lambda t: 99.0)
-        val = op.get_default(0.0)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            val = op.get_default(0.0)
         self.assertAlmostEqual(val, 99.0)
 
     def test_set_default_bad_callable_raises(self):

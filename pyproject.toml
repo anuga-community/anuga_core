@@ -146,5 +146,6 @@ filterwarnings = [
     "ignore:Wind_stress is deprecated:DeprecationWarning",
     "ignore:Barometric_pressure is deprecated:DeprecationWarning",
     "ignore:Culvert_flow_general.*is deprecated:DeprecationWarning",
+    "ignore:anuga.culvert_flows is deprecated:DeprecationWarning",
 ]
 

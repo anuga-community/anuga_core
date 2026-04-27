@@ -4,6 +4,7 @@
 import sys
 import os
 import platform
+import warnings
 
 # Record Python version
 major_version = int(platform.python_version_tuple()[0])
@@ -539,7 +540,9 @@ def domain_memory_stats(domain):
         if attr.startswith('__') or attr in accounted_attrs:
             continue
         try:
-            val = getattr(domain, attr)
+            with warnings.catch_warnings():
+                warnings.simplefilter('ignore', DeprecationWarning)
+                val = getattr(domain, attr)
         except Exception:
             continue
         if isinstance(val, np.ndarray) and val.nbytes > 0:
