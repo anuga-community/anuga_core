@@ -130,6 +130,17 @@ Bug fix: `test_select_alpha_degenerate_falls_back_to_default` platform-dependent
 Windows py3.10/3.11/3.13 — now uses `return_curve=True` to branch on actual kappa.
 Commits `61418742`, `5498f98d`. All CI passed.
 
+**Session 29 (2026-04-28):** Investigated numpy `_NoValue` reload issue triggered
+by `--cov=anuga.submodule` targeted coverage runs. Root cause: coverage.py's
+`sys_modules_saved()` context in `inorout.py` calls `importlib.util.find_spec()`
+on the subpackage, auto-importing the parent chain including numpy, then purging
+all new imports from sys.modules. The second real numpy import fires the reload
+guard and corrupts the C-level `_NoValue` singleton. Fix: removed `numpy._pytesttester.PytestTester`
+from `anuga/__init__.py` (replaced with plain `def test()`) and all 23 subpackage
+`__init__.py` files (was unused boilerplate). Targeted submodule `--cov=` runs are
+unfixable from conftest.py (pytest-cov starts before conftest.py loads);
+use `--cov=anuga` always. Documented in KNOWN_ISSUES.md. Commit `af71f10b`.
+
 **Session 28 (2026-04-27):** P2.6 fast-suite coverage continued. `anuga/file/`:
 `test_netcdf_nc.py` (10 tests, netcdf.py 34%→100%), `test_sts.py` (11 tests,
 sts.py 47%→89%). `anuga/structures/`: 9 new tests in `test_inlet_operator.py`

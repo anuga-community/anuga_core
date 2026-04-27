@@ -51,6 +51,31 @@ Tests in `anuga/parallel/tests/` spawn `mpiexec` subprocesses. They cannot be
 parallelised with `pytest-xdist` and must run serially. They are marked slow
 and skipped by `--run-fast`.
 
+### Targeted `--cov=anuga.submodule` runs corrupt numpy's `_NoValue` sentinel
+
+Running `pytest --cov=anuga.structures.structure_operator` (or any sub-package
+path) causes test failures with:
+```
+TypeError: float() argument must be a string or a real number, not '_NoValueType'
+```
+
+**Root cause:** coverage.py calls `importlib.util.find_spec('anuga.structures.structure_operator')`
+inside a `sys_modules_saved()` context (in `inorout.py`). This auto-imports parent
+packages (including `anuga/__init__.py` → `shallow_water_domain.py` → numpy),
+then purges all newly-imported modules from `sys.modules`. The subsequent real
+import re-executes `numpy/__init__.py`. Since numpy's C extension (`_multiarray_umath`)
+was already initialized, the reload guard fires and a new `_NoValue` singleton is
+created — but C extensions hold references to the old one, breaking identity checks.
+
+**Workaround:** Always use `--cov=anuga` (not a sub-path). For per-module numbers:
+```bash
+pytest --run-fast --cov=anuga anuga/structures/tests/ -q 2>&1 | grep structure_operator
+```
+
+**Not fixable** from conftest.py: pytest-cov creates `CovPlugin` (which starts
+coverage) inside `pytest_load_initial_conftests(tryfirst=True)` — before conftest.py
+is even loaded.
+
 ---
 
 ## Numerical
