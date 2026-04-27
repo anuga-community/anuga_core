@@ -1322,7 +1322,8 @@ class Test_Fit_coverage(unittest.TestCase):
             'triangle_neighbors': [[-1, -1, -1]],
             'segment_tags': ['external', 'external', 'external'],
         }
-        import tempfile, os
+        import tempfile
+        import os
         fd, path = tempfile.mkstemp('.tsh')
         os.close(fd)
         export_mesh_file(path, mesh_dic)
@@ -1330,7 +1331,8 @@ class Test_Fit_coverage(unittest.TestCase):
 
     def _make_points_file(self):
         """Helper: write a minimal points .csv file, return path."""
-        import tempfile, os
+        import tempfile
+        import os
         fd, path = tempfile.mkstemp('.csv')
         os.close(fd)
         with open(path, 'w') as f:
@@ -1339,7 +1341,8 @@ class Test_Fit_coverage(unittest.TestCase):
 
     def test_fit_to_mesh_file_verbose(self):
         """fit_to_mesh_file with verbose=True covers all log.info branches."""
-        import tempfile, os
+        import tempfile
+        import os
         mesh_file = self._make_mesh_file()
         point_file = self._make_points_file()
         fd, out_file = tempfile.mkstemp('.tsh')
@@ -1359,7 +1362,8 @@ class Test_Fit_coverage(unittest.TestCase):
 
     def test_fit_to_mesh_file_bad_mesh_display_errors_true(self):
         """fit_to_mesh_file logs warning when mesh file is bad and display_errors=True."""
-        import tempfile, os
+        import tempfile
+        import os
         fd, bad_mesh = tempfile.mkstemp('.tsh')
         os.close(fd)
         with open(bad_mesh, 'w') as f:
@@ -1381,7 +1385,8 @@ class Test_Fit_coverage(unittest.TestCase):
 
     def test_fit_to_mesh_file_bad_points_display_errors_true(self):
         """fit_to_mesh_file logs warning when points file is bad and display_errors=True."""
-        import tempfile, os
+        import tempfile
+        import os
         mesh_file = self._make_mesh_file()
         # Bad points file: header missing comma between last two columns → SyntaxError
         fd, bad_pts = tempfile.mkstemp('.csv')
