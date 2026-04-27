@@ -34,11 +34,18 @@ import sys
 _stdout = sys.stdout
 
 # ---------------------------------
-# Setup the tester from numpy
+# Convenience test runner — avoids numpy._pytesttester to prevent the
+# Python 3.14 / NumPy 2.x reload guard from firing when coverage.py
+# instruments submodules (coverage imports numpy before anuga does, so
+# importing numpy._pytesttester re-enters numpy/__init__.py).
 # ---------------------------------
-from numpy._pytesttester import PytestTester
-test = PytestTester(__name__)
-del PytestTester
+def test(*args, **kwargs):
+    """Run the anuga test suite via pytest.
+
+    Equivalent to: pytest --pyargs anuga
+    """
+    import pytest
+    return pytest.main(['--pyargs', 'anuga'] + list(args))
 
 #from anuga.__config__ import show as show_config
 
