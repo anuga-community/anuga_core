@@ -14,11 +14,7 @@
 #include <stdint.h>
 #include "anuga_typedefs.h"
 
-#if defined(__APPLE__)
-   // Apple clang does not support OpenMP by default
-#else
-   #include "omp.h"
-#endif
+#include "omp.h"
 
 //Matrix-vector routine
 // y must be pre-zeroed by the caller (csr_mv in sparse_ext.pyx uses np.zeros).

@@ -3,11 +3,7 @@
 #include <stdint.h>
 #include "anuga_typedefs.h"
 
-#if defined(__APPLE__)
-   // Apple clang does not support OpenMP by default
-#else
-   #include "omp.h"
-#endif
+#include "omp.h"
 // JORGE TODO: replace with library call!!!!
 //Rough quicksort implementation (for build_operator_matrix)
 // taken from http://cprogramminglanguage.net/quicksort-algorithm-c-source-code.aspx

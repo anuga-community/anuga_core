@@ -21,11 +21,7 @@
 #include <stdint.h>
 #include "anuga_typedefs.h"
 
-#if defined(__APPLE__)
-   // clang doesn't have openmp
-#else
-   #include "omp.h"
-#endif
+#include "omp.h"
 
 
 

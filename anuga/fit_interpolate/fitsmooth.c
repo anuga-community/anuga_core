@@ -10,11 +10,7 @@
 #include "quad_tree.h"  /* in utilities */
 #include "anuga_typedefs.h" /* in utilities */
 
-#if defined(__APPLE__)
-   // clang doesn't have openmp
-#else
-   #include "omp.h"
-#endif
+#include "omp.h"
 
 // Errors defined for netcdf reading
 #define ERRCODE 2
