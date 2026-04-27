@@ -1,7 +1,8 @@
 
 from anuga import Quantity
 from anuga.utilities.sparse import Sparse, Sparse_CSR
-from anuga.utilities.cg_solve import conjugate_gradient
+from anuga.utilities.cg_solve import conjugate_gradient, Stats, ConvergenceError
+from anuga.utilities.cg_ext import cg_solve_c_precon, jacobi_precon_c
 import anuga.abstract_2d_finite_volumes.neighbour_mesh as neighbour_mesh
 from anuga import Dirichlet_boundary
 import numpy as num
@@ -497,6 +498,43 @@ class Kinematic_viscosity_operator(Operator):
 
 
 
+    def _build_parabolic_csr(self):
+        """Return P = I - dt * A_{nn} * T^{-1} as a Sparse_CSR (n x n).
+
+        Only interior columns (colind < n) of the elliptic matrix contribute;
+        boundary columns are handled via boundary_term in the rhs.
+        If apply_triangle_areas is False, T^{-1} is omitted (identity scaling).
+        """
+        n   = self.n
+        dt  = self.dt
+        areas = self.mesh.areas
+
+        op_data   = self.operator_data    # shape (4n,)
+        op_colind = self.operator_colind  # shape (4n,), some entries may be >= n
+
+        # Row index for every entry (exactly 4 entries per row)
+        row_idx = num.repeat(num.arange(n, dtype=num.int64), 4)
+
+        # Keep only entries whose column is an interior triangle
+        interior = op_colind < n
+        i_rows = row_idx[interior]
+        i_cols = op_colind[interior].astype(num.int64)
+
+        if self.apply_triangle_areas:
+            i_vals = -dt * op_data[interior] / areas[i_cols]
+        else:
+            i_vals = -dt * op_data[interior].copy()
+
+        # Add identity on the diagonal
+        i_vals[i_rows == i_cols] += 1.0
+
+        counts = num.bincount(i_rows, minlength=n).astype(num.int64)
+        rowptr = num.zeros(n + 1, dtype=num.int64)
+        num.cumsum(counts, out=rowptr[1:])
+
+        return Sparse_CSR(None, i_vals, i_cols, rowptr, n, n)
+
+
     def parabolic_solve(self, u_in, b, a = None, u_out = None, update_matrix=True, \
                        output_stats=False, use_dt_tol=True, iprint=None, imax=10000):
         """
@@ -520,42 +558,45 @@ class Kinematic_viscosity_operator(Operator):
 
         """
 
-
         if use_dt_tol:
-            tol  = min(self.dt,1.0e-5)
-            atol = min(self.dt,1.0e-5)
+            tol  = min(self.dt, 1.0e-5)
+            atol = min(self.dt, 1.0e-5)
         else:
             tol  = 1.0e-5
             atol = 1.0e-5
 
-
-
-
         if u_out is None:
             u_out = Quantity(self.domain)
 
-        if update_matrix :
+        if update_matrix:
             self.update_elliptic_matrix(a)
 
         self.update_elliptic_boundary_term(u_in)
 
-        self.set_parabolic_solve(True)
+        rhs = num.ascontiguousarray(b.centroid_values + self.dt * self.boundary_term)
+        x0  = u_in.centroid_values.copy()
 
+        # Build n x n parabolic matrix P = I - dt * A_{nn} * T^{-1} and solve P x = rhs
+        P = self._build_parabolic_csr()
+        precon = num.empty(self.n, dtype=float)
+        jacobi_precon_c(P, precon)
 
-        # Pull out arrays and a matrix operator
-        IdtA = self
-        rhs = b.centroid_values + (self.dt * self.boundary_term)
-        x0 = u_in.centroid_values
+        err = cg_solve_c_precon(P, x0, rhs, imax, tol, atol, 1, precon)
 
-        x, stats = conjugate_gradient(IdtA,rhs,x0,imax=imax, tol=tol, atol=atol,
-                                      iprint=iprint, output_stats=True)
+        if err == -1:
+            raise ConvergenceError('parabolic_solve: conjugate gradient did not converge')
 
-        self.set_parabolic_solve(False)
-
-        u_out.set_values(x, location='centroids')
+        u_out.set_values(x0, location='centroids')
         u_out.set_boundary_values(u_in.boundary_values)
 
         if output_stats:
+            stats = Stats()
+            stats.iter = 0
+            stats.rTr  = 0.0
+            stats.rTr0 = 0.0
+            stats.dx   = 0.0
+            stats.x    = num.linalg.norm(x0)
+            stats.x0   = num.linalg.norm(u_in.centroid_values)
             return u_out, stats
         else:
             return u_out
