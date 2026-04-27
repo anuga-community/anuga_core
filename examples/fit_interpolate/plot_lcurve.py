@@ -58,7 +58,7 @@ rng = num.random.default_rng(42)
 xy = rng.uniform(0.05, 0.95, (n_pts, 2))
 z_true = num.sin(3 * xy[:, 0]) * num.cos(3 * xy[:, 1])
 
-noise_low  = 0.3
+noise_low  = 0.1
 noise_high = 1.0
 z_low  = z_true + rng.standard_normal(n_pts) * noise_low
 z_high = z_true + rng.standard_normal(n_pts) * noise_high
@@ -93,7 +93,7 @@ def extract_scipy_matrices(fit_obj):
 # ---------------------------------------------------------------------------
 # For overdetermined systems the L-corner typically sits at alpha ~ O(1).
 # A log-spaced grid from 1e-3 to 10 captures the full curve.
-alphas = num.logspace(-3, 1, 25)
+alphas = num.logspace(-4, 4, 25)
 
 
 def compute_lcurve(z):
