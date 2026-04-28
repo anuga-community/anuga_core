@@ -2791,13 +2791,13 @@ class Domain(Generic_Domain):
 
         Q^{n+1} = Q^n + dt * R(Q^{n+1/2})
 
-        The C-K predictor advances centroid values to the half-step using
-        SWE time derivatives derived from the reconstructed slopes.  No
-        communication is required for the predictor (it is purely local).
+        Single-flux-call variant: the previous step's CFL timestep is reused
+        for the predictor half-advance, so only one flux call is needed per step
+        (vs RK2's two).  The first step bootstraps with dt=0 (Euler) to establish
+        the initial CFL timestep; all subsequent steps are full ADER-2.
 
-        Cost: 2 extrapolations + 1 C-K predictor + 2 flux calls.
-        Accuracy: 2nd-order in space and time, same as RK2 but with a
-        more faithful midpoint estimate from the PDE structure.
+        Cost: 1 flux call + 2 extrapolations + 1 C-K predictor (after step 1).
+        Accuracy: 2nd-order in space and time.
         """
         # GPU mode: use C loop (faster) or Python-orchestrated GPU loop
         if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
@@ -2809,25 +2809,37 @@ class Domain(Generic_Domain):
 
         from .sw_domain_openmp_ext import ader_ck_predictor
 
-        # Backup Q^n so we can restore it after the predictor overwrite
+        # Bootstrap: prev_dt=0 on first call → Euler step to establish CFL dt
+        if not hasattr(self, '_ader2_prev_dt'):
+            self._ader2_prev_dt = 0.0
+
+        prev_dt = self._ader2_prev_dt
+
+        # Backup Q^n (needed to restore before the final Godunov update)
         self.backup_conserved_quantities()
 
-        # --- Step 1: determine CFL-stable timestep from Q^n ---
+        # Extrapolate Q^n centroids → edges
         self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
         self.update_boundary()
-        self.compute_fluxes()
-        self.update_timestep(yieldstep, finaltime)
 
-        # --- Step 2: advance centroids to Q^{n+1/2} via C-K predictor ---
-        ader_ck_predictor(self, self.timestep * 0.5)
+        if prev_dt > 0.0:
+            # C-K predictor: advance centroids Q^n → Q^{n+1/2} using prev_dt
+            ader_ck_predictor(self, prev_dt * 0.5)
+            # Re-extrapolate from Q^{n+1/2} to edges
+            self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
+            self.update_boundary()
 
-        # --- Step 3: compute flux at predicted midpoint state ---
-        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
-        self.update_boundary()
+        # Single flux call: from Q^{n+1/2} (or Q^n on bootstrap step)
         self.compute_fluxes()
         self.compute_forcing_terms()
 
-        # --- Step 4: restore Q^n and apply the midpoint-state update ---
+        # Save CFL dt before update_timestep may overwrite flux_timestep
+        self._ader2_prev_dt = self.CFL * self.flux_timestep
+
+        # Clip to yieldstep / finaltime / evolve_max_timestep
+        self.update_timestep(yieldstep, finaltime)
+
+        # Restore Q^n and apply the midpoint-flux Godunov update
         self.saxpy_conserved_quantities(0.0, 1.0)   # Q = 0*Q + 1*backup = Q^n
         self.update_conserved_quantities()           # Q^{n+1} = Q^n + dt*R(Q^{n+1/2})
 
