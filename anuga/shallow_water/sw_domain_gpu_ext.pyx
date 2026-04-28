@@ -224,6 +224,12 @@ cdef extern from "gpu_domain.h" nogil:
     double gpu_compute_water_volume(gpu_domain *GD)
     void gpu_manning_friction(gpu_domain *GD)
 
+    # ADER-2 Cauchy-Kovalewski predictor
+    void gpu_ader_ck_predictor(gpu_domain *GD, double dt)
+
+    # Full ADER-2 step
+    double gpu_evolve_one_ader2_step(gpu_domain *GD, double max_timestep, int apply_forcing)
+
     # Full RK2 step
     double gpu_evolve_one_rk2_step(gpu_domain *GD, double max_timestep, int apply_forcing)
 
@@ -1427,6 +1433,48 @@ def evolve_one_rk3_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_fo
         The timestep used
     """
     return gpu_evolve_one_rk3_step(&gpu_dom.GD, max_timestep, apply_forcing)
+
+
+def ader_ck_predictor_gpu(GPUDomain gpu_dom, double dt):
+    """
+    Apply the ADER Cauchy-Kovalewski predictor on GPU.
+
+    Advances centroid values from Q^n to Q^{n+1/2} in-place using
+    local SWE time derivatives derived from the reconstructed slopes.
+    Must be called after extrapolate_second_order_gpu().
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    dt : float
+        Half-timestep (dt/2) to advance centroids by
+    """
+    gpu_ader_ck_predictor(&gpu_dom.GD, dt)
+
+
+def evolve_one_ader2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
+    """
+    Execute one ADER-2 timestep on GPU.
+
+    2nd-order in space and time via a local Cauchy-Kovalewski midpoint estimate.
+    Cost: 2 extrapolations + 1 predictor + 2 flux calls (same kernel count as RK2).
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    max_timestep : float
+        Maximum allowed timestep (respecting yieldstep/finaltime constraints)
+    apply_forcing : int
+        Whether to apply GPU-compatible forcing terms
+
+    Returns
+    -------
+    float
+        The timestep used
+    """
+    return gpu_evolve_one_ader2_step(&gpu_dom.GD, max_timestep, apply_forcing)
 
 
 def finalize_gpu_domain(GPUDomain gpu_dom):

@@ -2750,6 +2750,14 @@ class Domain(Generic_Domain):
         Accuracy: 2nd-order in space and time, same as RK2 but with a
         more faithful midpoint estimate from the PDE structure.
         """
+        # GPU mode: use C loop (faster) or Python-orchestrated GPU loop
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            if self.use_c_rk_loop:
+                self._evolve_one_ader2_step_c(yieldstep, finaltime)
+            else:
+                self._evolve_one_ader2_step_gpu(yieldstep, finaltime)
+            return
+
         from .sw_domain_openmp_ext import ader_ck_predictor
 
         # Backup Q^n so we can restore it after the predictor overwrite
@@ -2773,6 +2781,198 @@ class Domain(Generic_Domain):
         # --- Step 4: restore Q^n and apply the midpoint-state update ---
         self.saxpy_conserved_quantities(0.0, 1.0)   # Q = 0*Q + 1*backup = Q^n
         self.update_conserved_quantities()           # Q^{n+1} = Q^n + dt*R(Q^{n+1/2})
+
+    def _evolve_one_ader2_step_gpu(self, yieldstep, finaltime):
+        """Python-orchestrated GPU implementation of ADER-2 step.
+
+        Fallback when the C ADER-2 loop cannot be used (e.g., unsupported
+        boundary types). Prefer _evolve_one_ader2_step_c() for better performance.
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            backup_conserved_quantities_gpu,
+            extrapolate_second_order_gpu,
+            protect_gpu,
+            compute_fluxes_gpu,
+            update_conserved_quantities_gpu,
+            saxpy_conserved_quantities_gpu,
+            ader_ck_predictor_gpu,
+            sync_boundary_values,
+            init_boundary_edge_sync,
+            boundary_edge_sync,
+            exchange_ghosts,
+            evaluate_reflective_boundary_gpu,
+            evaluate_dirichlet_boundary_gpu,
+            evaluate_transmissive_boundary_gpu,
+            set_transmissive_n_zero_t_stage,
+            evaluate_transmissive_n_zero_t_boundary_gpu,
+            set_time_boundary_values,
+            evaluate_time_boundary_gpu,
+            set_file_boundary_values_from_domain,
+            evaluate_file_boundary_gpu,
+        )
+        import numpy as np
+
+        gpu_dom = self.gpu_interface.gpu_dom
+
+        GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+
+        if not hasattr(self, '_gpu_boundary_info_initialized'):
+            self._gpu_cpu_tags = []
+            self._gpu_all_on_gpu = True
+            cpu_boundary_types = []
+            self._gpu_transmissive_n_zero_t_boundaries = []
+            self._gpu_time_boundaries = []
+
+            for tag, B in self.boundary_map.items():
+                if B is not None:
+                    btype = B.__class__.__name__
+                    if btype not in GPU_BOUNDARY_TYPES:
+                        self._gpu_cpu_tags.append(tag)
+                        self._gpu_all_on_gpu = False
+                        cpu_boundary_types.append((tag, btype))
+                    elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                        self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                    elif btype == 'Time_boundary':
+                        self._gpu_time_boundaries.append(B)
+
+            if not self._gpu_all_on_gpu:
+                boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
+                init_boundary_edge_sync(gpu_dom, boundary_cell_ids)
+                print("WARNING: GPU boundary evaluation disabled - falling back to CPU")
+                print(f"  Unsupported boundary types: {cpu_boundary_types}")
+
+            self._gpu_boundary_info_initialized = True
+
+        backup_conserved_quantities_gpu(gpu_dom)
+
+        def _eval_boundaries():
+            if self._gpu_all_on_gpu:
+                evaluate_reflective_boundary_gpu(gpu_dom)
+                evaluate_dirichlet_boundary_gpu(gpu_dom)
+                evaluate_transmissive_boundary_gpu(gpu_dom)
+                for B in self._gpu_transmissive_n_zero_t_boundaries:
+                    stage_val = B.get_boundary_values()
+                    try:
+                        stage_val = float(stage_val)
+                    except (TypeError, ValueError):
+                        stage_val = float(stage_val[0])
+                    set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+                evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+                for B in self._gpu_time_boundaries:
+                    q = B.get_boundary_values()
+                    set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+                evaluate_time_boundary_gpu(gpu_dom)
+                set_file_boundary_values_from_domain(gpu_dom, self)
+                evaluate_file_boundary_gpu(gpu_dom)
+            else:
+                boundary_edge_sync(gpu_dom)
+                for tag in self.tag_boundary_cells:
+                    B = self.boundary_map[tag]
+                    if B is not None:
+                        B.evaluate_segment(self, self.tag_boundary_cells[tag])
+                sync_boundary_values(gpu_dom)
+
+        # --- Step 1: CFL timestep from Q^n ---
+        protect_gpu(gpu_dom)
+        extrapolate_second_order_gpu(gpu_dom)
+        _eval_boundaries()
+        self.flux_timestep = compute_fluxes_gpu(gpu_dom)
+        self.update_timestep(yieldstep, finaltime)
+
+        # --- Step 2: C-K predictor to Q^{n+1/2} ---
+        ader_ck_predictor_gpu(gpu_dom, self.timestep * 0.5)
+
+        # --- Step 3: flux from Q^{n+1/2} ---
+        extrapolate_second_order_gpu(gpu_dom)
+        _eval_boundaries()
+        compute_fluxes_gpu(gpu_dom)
+        self.compute_forcing_terms()
+
+        # --- Step 4: restore Q^n and update ---
+        saxpy_conserved_quantities_gpu(gpu_dom, 0.0, 1.0)  # Q = backup
+        update_conserved_quantities_gpu(gpu_dom, self.timestep)
+
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+        self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
+        self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
+
+    def _evolve_one_ader2_step_c(self, yieldstep, finaltime):
+        """ADER-2 step executed entirely in C - eliminates Python round-trip overhead.
+
+        Prefer this over _evolve_one_ader2_step_gpu() for better performance.
+        Falls back to _evolve_one_ader2_step_gpu() if any boundary requires CPU.
+        Rate_operators must be applied separately (after this call).
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            evolve_one_ader2_step_gpu,
+            set_transmissive_n_zero_t_stage,
+            set_time_boundary_values,
+            set_file_boundary_values_from_domain,
+        )
+
+        gpu_dom = self.gpu_interface.gpu_dom
+
+        GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+
+        if not hasattr(self, '_gpu_boundary_info_initialized'):
+            self._gpu_cpu_tags = []
+            self._gpu_all_on_gpu = True
+            cpu_boundary_types = []
+            self._gpu_transmissive_n_zero_t_boundaries = []
+            self._gpu_time_boundaries = []
+
+            for tag, B in self.boundary_map.items():
+                if B is not None:
+                    btype = B.__class__.__name__
+                    if btype not in GPU_BOUNDARY_TYPES:
+                        self._gpu_cpu_tags.append(tag)
+                        self._gpu_all_on_gpu = False
+                        cpu_boundary_types.append((tag, btype))
+                    elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                        self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                    elif btype == 'Time_boundary':
+                        self._gpu_time_boundaries.append(B)
+
+            if not self._gpu_all_on_gpu:
+                print("WARNING: C ADER-2 loop requires all GPU-supported boundary types")
+                print("  Falling back to Python-orchestrated GPU loop")
+                print(f"  Unsupported types: {cpu_boundary_types}")
+
+            self._gpu_boundary_info_initialized = True
+
+        if not self._gpu_all_on_gpu:
+            return self._evolve_one_ader2_step_gpu(yieldstep, finaltime)
+
+        for B in self._gpu_transmissive_n_zero_t_boundaries:
+            stage_val = B.get_boundary_values()
+            try:
+                stage_val = float(stage_val)
+            except (TypeError, ValueError):
+                stage_val = float(stage_val[0])
+            set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+
+        for B in self._gpu_time_boundaries:
+            q = B.get_boundary_values()
+            set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+
+        set_file_boundary_values_from_domain(gpu_dom, self)
+
+        remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
+        if finaltime is not None:
+            remaining_finaltime = finaltime - self.get_time()
+            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep, remaining_finaltime)
+        else:
+            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
+
+        self.timestep = evolve_one_ader2_step_gpu(gpu_dom, max_timestep, 1)
+
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+        self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
+        self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
 
     def _evolve_one_rk2_step_gpu(self, yieldstep, finaltime):
         """Python-orchestrated GPU implementation of RK2 step.

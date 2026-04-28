@@ -1011,9 +1011,10 @@ void core_ader_ck_predictor(struct domain *D, double dt) {
         double dxv1 = edge_coords[k6 + 2] - xc;
         double dyv1 = edge_coords[k6 + 3] - yc;
 
-        // Determinant of the 2x2 linear system; skip degenerate cells
+        // Determinant of the 2x2 linear system; skip degenerate cells.
+        // Use if-block (not continue) for GPU target-loop compatibility.
         double det = dxv0 * dyv1 - dxv1 * dyv0;
-        if (fabs(det) < 1.0e-20) continue;
+        if (fabs(det) >= 1.0e-20) {
         double inv_det = 1.0 / det;
 
         // Centroid state
@@ -1084,5 +1085,6 @@ void core_ader_ck_predictor(struct domain *D, double dt) {
         xmom_cv[k]   = uh_pred;
         ymom_cv[k]   = vh_pred;
         height_cv[k] = h_pred;
+        } // end if (fabs(det) >= 1.0e-20)
     }
 }
