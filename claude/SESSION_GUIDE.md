@@ -130,6 +130,15 @@ Bug fix: `test_select_alpha_degenerate_falls_back_to_default` platform-dependent
 Windows py3.10/3.11/3.13 — now uses `return_curve=True` to branch on actual kappa.
 Commits `61418742`, `5498f98d`. All CI passed.
 
+**Session 30 (2026-04-29):** ADER-2 timestepping via Cauchy-Kovalewski predictor.
+`core_ader_ck_predictor()` in `core_kernels.c`: recovers cell slopes from the 2×2
+edge system (edges 0 and 1), evaluates well-balanced SWE time derivatives locally
+(dz/dx = dw/dx − dh/dx from reconstruction), advances centroids by dt in-place.
+`evolve_one_ader2_step()` in `shallow_water_domain.py`: backup → CFL step →
+C-K predictor(dt/2) → midpoint flux → restore Q^n → update. `boundary_flux_integral_operator`
+updated for 'ader2'. 10 tests: well-balance (flat/sloped), mass conservation, dam-break
+consistency, non-negative depths. All 2656 fast-suite tests pass. Commit `825f1e5f`.
+
 **Session 29 (2026-04-28):** Investigated numpy `_NoValue` reload issue triggered
 by `--cov=anuga.submodule` targeted coverage runs. Root cause: coverage.py's
 `sys_modules_saved()` context in `inorout.py` calls `importlib.util.find_spec()`
