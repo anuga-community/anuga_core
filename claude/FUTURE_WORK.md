@@ -111,6 +111,52 @@ third-order reconstruction (MUSCL-Hancock or ADER) would improve accuracy for lo
 tsunami propagation. The consolidated `quantity_openmp_ext.pyx` (session 14, H3.1) is the
 right place. Requires careful monotonicity limiting.
 
+**P3.8 ADER-2 fused predict-extrapolate kernel (single extrapolation)**
+Current `DE_ader2` uses two extrapolation passes per step:
+1. Extrapolate Q^n → edges (predictor reads these to recover limited slopes)
+2. Predictor overwrites centroids Q^n → Q^{n+1/2}
+3. Re-extrapolate Q^{n+1/2} → edges (flux reads these)
+
+The two passes are forced because the predictor *consumes* Q^n edges as input but
+the flux call needs Q^{n+1/2} edges as output — different states, different passes.
+
+**Proposed redesign:** fuse steps 1–3 into a single `core_predict_extrapolate` kernel:
+- For each cell k, recover slopes from *neighbour centroid values* (Green-Gauss) and apply
+  the existing limiter (beta_w, beta_uh, beta_vh with hfactor wet-dry damping)
+- Evaluate the C-K time derivative at k from those slopes
+- Write Q^{n+1/2} directly into edge_values[k, 0..2] (not into centroids)
+
+This produces Q^{n+1/2} edge values in one pass; the flux call follows immediately with
+no second extrapolation. The scheme per step becomes:
+
+```
+backup Q^n
+fused_predict_extrapolate(prev_dt)   # 1 pass: Green-Gauss + limit + CK → edge values
+update_boundary
+compute_fluxes                        # 1 flux call
+compute_forcing_terms
+restore Q^n, update_conserved_quantities
+```
+
+Cost: 1 fused kernel + 1 flux call — identical overhead to a first-order Euler step
+but with second-order accuracy in space and time.
+
+**Implementation notes:**
+- The fused kernel needs neighbour centroid access (read `neighbours[k,i]` to get the
+  opposing centroid), which the current predictor already avoids by reading pre-computed
+  edge values. Green-Gauss over the 3 neighbours gives the same slopes as the current
+  extrapolation for well-behaved meshes.
+- The limiter logic (`a_tmp/b_tmp/c_tmp/d_tmp` hfactor, per-quantity beta) must be
+  replicated inside the fused kernel. The existing `core_extrapolate_second_order_edge`
+  in `core_kernels.c` is the reference; the fused kernel replaces its centroid-write
+  with the C-K advance and writes to edge_values directly.
+- Bootstrap (first step) still runs a plain extrapolation + Euler pass to establish
+  `_ader2_prev_dt`.
+- The fused kernel writes edge values but does NOT update centroid values (Q^n centroids
+  are preserved intact for the `saxpy`/restore before `update_conserved_quantities`).
+- Expected speedup over current `DE_ader2`: ~1.15–1.25× (eliminates one full
+  extrapolation call, ~220 FLOP/cell). Over `DE1` (RK2): ~1.35–1.45×.
+
 **P3.3 Improve `fit_interpolate` accuracy and performance** *(partial — sessions 25–26)*
 Session 25–26: `Fit.select_alpha()` added with L-curve criterion (20 log-spaced candidates
 1e-6 … 100, scipy sparse solves, max-curvature corner detection, fallback to DEFAULT_ALPHA).
@@ -175,7 +221,7 @@ per-variable size limit. The NetCDF3 classic restriction does not apply. (Invali
 |----------|-------|-----------|--------|----------------|
 | P1 — Quick wins | 8 | 0 ✅ | 1–3 days | All done |
 | P2 — Medium | 9 | 3 | 1–2 weeks | Usability, type safety, test coverage |
-| P3 — Initiatives | 7 | 6 | 1–3 months | Performance, scalability, accuracy |
+| P3 — Initiatives | 8 | 7 | 1–3 months | Performance, scalability, accuracy |
 | Speculative | 4 | 4 | 6+ months | Strategic differentiation |
 
 **Top 3 near-term recommendations:**
