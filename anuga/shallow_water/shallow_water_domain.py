@@ -830,6 +830,52 @@ class Domain(Generic_Domain):
             print('#')
             print('##########################################################################')
 
+    def _set_DE_ader2_defaults(self):
+        """Set up the defaults for running the flow_algorithm "DE_ader2"
+           DE1 settings with ADER-2 (Cauchy-Kovalewski) timestepping.
+        """
+
+        self._set_config_defaults()
+
+        self.set_cfl(1.0)
+        self.set_use_kinematic_viscosity(False)
+        self.set_timestepping_method('ader2')
+
+        self.set_using_discontinuous_elevation(True)
+        self.set_using_centroid_averaging(True)
+        self.set_compute_fluxes_method('DE')
+
+        self.minimum_allowed_height = 1.0e-5
+
+        self.set_default_order(2)
+        self.set_extrapolate_velocity()
+
+        self.beta_w = 1.0
+        self.beta_w_dry = 0.0
+        self.beta_uh = 1.0
+        self.beta_uh_dry = 0.0
+        self.beta_vh = 1.0
+        self.beta_vh_dry = 0.0
+
+        self.set_store_centroids(True)
+
+        self.optimise_dry_cells = False
+
+        self.edge_coordinates = self.get_edge_midpoint_coordinates()
+
+        self.maximum_allowed_speed = 0.0
+
+        if self.processor == 0 and self.verbose:
+            print('##########################################################################')
+            print('#')
+            print('# Using discontinuous elevation solver DE_ader2')
+            print('#')
+            print('# Uses ADER-2 (Cauchy-Kovalewski) timestepping')
+            print('#')
+            print('# Make sure you use centroid values when reporting on important output quantities')
+            print('#')
+            print('##########################################################################')
+
     def _set_DE2_defaults(self):
         """Set up the defaults for running the flow_algorithm "DE2"
            A 'discontinuous elevation' method
@@ -1337,7 +1383,7 @@ class Domain(Generic_Domain):
 
 
         flow_algorithms = ['DE0', 'DE1', 'DE2', \
-                           'DE0_7', 'DE1_7']
+                           'DE0_7', 'DE1_7', 'DE_ader2']
 
         if algorithm in flow_algorithms:
             self.flow_algorithm = algorithm
@@ -1360,6 +1406,9 @@ class Domain(Generic_Domain):
 
         if self.flow_algorithm == 'DE1_7':
             self._set_DE1_7_defaults()
+
+        if self.flow_algorithm == 'DE_ader2':
+            self._set_DE_ader2_defaults()
 
 
     def get_flow_algorithm(self):
