@@ -2737,6 +2737,43 @@ class Domain(Generic_Domain):
         # Combine steps
         self.saxpy_conserved_quantities(0.5, 0.5) # has C, not ported
 
+    def evolve_one_ader2_step(self, yieldstep, finaltime):
+        """One ADER-2 timestep using the local Cauchy-Kovalewski predictor.
+
+        Q^{n+1} = Q^n + dt * R(Q^{n+1/2})
+
+        The C-K predictor advances centroid values to the half-step using
+        SWE time derivatives derived from the reconstructed slopes.  No
+        communication is required for the predictor (it is purely local).
+
+        Cost: 2 extrapolations + 1 C-K predictor + 2 flux calls.
+        Accuracy: 2nd-order in space and time, same as RK2 but with a
+        more faithful midpoint estimate from the PDE structure.
+        """
+        from .sw_domain_openmp_ext import ader_ck_predictor
+
+        # Backup Q^n so we can restore it after the predictor overwrite
+        self.backup_conserved_quantities()
+
+        # --- Step 1: determine CFL-stable timestep from Q^n ---
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
+        self.update_boundary()
+        self.compute_fluxes()
+        self.update_timestep(yieldstep, finaltime)
+
+        # --- Step 2: advance centroids to Q^{n+1/2} via C-K predictor ---
+        ader_ck_predictor(self, self.timestep * 0.5)
+
+        # --- Step 3: compute flux at predicted midpoint state ---
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
+        self.update_boundary()
+        self.compute_fluxes()
+        self.compute_forcing_terms()
+
+        # --- Step 4: restore Q^n and apply the midpoint-state update ---
+        self.saxpy_conserved_quantities(0.0, 1.0)   # Q = 0*Q + 1*backup = Q^n
+        self.update_conserved_quantities()           # Q^{n+1} = Q^n + dt*R(Q^{n+1/2})
+
     def _evolve_one_rk2_step_gpu(self, yieldstep, finaltime):
         """Python-orchestrated GPU implementation of RK2 step.
 

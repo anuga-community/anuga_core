@@ -1606,8 +1606,8 @@ class Generic_Domain:
 
     def set_timestepping_method(self, timestepping_method):
         # Number of calls to compute_fluxes within the timestep
-        methods = ['euler', 'rk2', 'rk3']
-        substeps= [   1   ,  2   ,  3   ]
+        methods = ['euler', 'rk2', 'rk3', 'ader2']
+        substeps= [   1   ,  2   ,  3   ,   1    ]
 
         if timestepping_method in methods:
             self.timestepping_method = timestepping_method
@@ -1914,6 +1914,9 @@ class Generic_Domain:
 
             elif self.get_timestepping_method() == 'rk3':
                 self.evolve_one_rk3_step(yieldstep, self.finaltime)
+
+            elif self.get_timestepping_method() == 'ader2':
+                self.evolve_one_ader2_step(yieldstep, self.finaltime)
 
             # Apply other fractional steps
             self.apply_fractional_steps()
@@ -2237,6 +2240,18 @@ class Generic_Domain:
 
         # Update ghosts
         # self.update_ghosts()
+
+    def evolve_one_ader2_step(self, yieldstep, finaltime):
+        """One ADER-2 timestep using a local Cauchy-Kovalewski predictor.
+
+        Q^{n+1} = Q^n + dt * R(Q^{n+1/2})
+
+        Subclasses with access to the C predictor should override this.
+        """
+        raise NotImplementedError(
+            'evolve_one_ader2_step requires the shallow_water domain '
+            '(the ADER predictor is implemented in sw_domain_openmp_ext)'
+        )
 
     def evolve_to_end(self, finaltime=1.0):
         """Iterate evolve all the way to the end."""

@@ -153,6 +153,12 @@ void _openmp_distribute_edges_to_vertices(struct domain *__restrict D)
     core_distribute_edges_to_vertices(D);
 }
 
+void _openmp_ader_ck_predictor(struct domain *__restrict D, double dt)
+{
+    // ADER Cauchy-Kovalewski predictor — calls core_ader_ck_predictor from core_kernels.c
+    core_ader_ck_predictor(D, dt);
+}
+
 void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict D)
 {
     // Unified: calls core_manning_friction_flat_semi_implicit from core_kernels.c

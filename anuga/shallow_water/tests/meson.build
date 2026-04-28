@@ -2,6 +2,7 @@
 
 python_sources = [
 '__init__.py',
+'test_ader2.py',
 'test_boundaries.py',
 'test_boundaries_sw.py',
 'test_extrapolation_sw.py',

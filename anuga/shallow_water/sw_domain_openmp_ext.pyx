@@ -124,6 +124,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	anuga_int _openmp_saxpy_conserved_quantities(domain *D, double a, double b, double c)
 	anuga_int _openmp_backup_conserved_quantities(domain *D)
 	void _openmp_distribute_edges_to_vertices(domain *D)
+	void _openmp_ader_ck_predictor(domain *D, double dt)
 	# FIXME SR: Change over to domain* D argument ?
 	void _openmp_manning_friction_flat(double g, double eps, anuga_int N, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom, double* ymom)
 	void _openmp_manning_friction_sloped(double g, double eps, anuga_int N, double* x, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom_update, double* ymom_update)
@@ -1112,7 +1113,17 @@ def backup_conserved_quantities(object domain_py_object, update_domain_c_struct=
 	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
 
 	with nogil:
-		_openmp_backup_conserved_quantities(D)	
+		_openmp_backup_conserved_quantities(D)
+
+def ader_ck_predictor(object domain_py_object, double dt, update_domain_c_struct=False):
+	"""ADER Cauchy-Kovalewski predictor: advance centroids by dt in-place.
+	Call after distribute_to_vertices_and_edges(); uses edge values to recover
+	cell slopes, then evaluates SWE time derivatives locally.
+	"""
+	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
+
+	with nogil:
+		_openmp_ader_ck_predictor(D, dt)
 
 def evaluate_reflective_segment(object domain_py_object, 
                                 np.ndarray[np.int64_t, ndim=1, mode="c"] segment_edges not None, 
