@@ -1,92 +1,183 @@
 """
-run_auto_validation_tests.py 
+run_auto_validation_tests.py
 
-Will search all the sub-directories for scripts of the form starting with
+Runs two groups of validation tests:
 
-validate_
+1. validate_*.py  — simulation + accuracy checks (analytical / experimental)
+   Run directly as  python validate_*.py -alg DE1 -np 1
 
-and then run the scripts. 
-
-
+2. test_regression_*.py  — pytest-regressions baseline checks (behaviour_only)
+   Run via  pytest test_regression_*.py
+   On first run use --force-regen to generate the baseline .csv files.
 """
 
-import os, time, sys
+import os
+import sys
+import time
+import subprocess
+import argparse
 
 import anuga
-args = anuga.get_args()
-
-#print args
+anuga_args = anuga.get_args()
 
 
-# List any sub directory to exclude from validation.
-# Current working directory ('.') should always be excluded to avoid 
-#infinite recursion
-dirs_to_skip = ['.'] # Always skip current dir
-dirs_to_skip += ['patong'] # Requires downloaded data and takes many hours
-#dirs_to_skip += ['patong_beach_validation'] # Old name, kept for reference
+# ---------------------------------------------------------------------------
+# Discovery
+# ---------------------------------------------------------------------------
 
-validation_dirs_and_files = []
+dirs_to_skip = ['.']       # avoid infinite recursion
+dirs_to_skip += ['patong'] # requires downloaded data, takes many hours
+
+# (dirpath, filename, runner)  where runner is 'python' or 'pytest'
+all_tests = []
+
 for dirpath, dirnames, filenames in os.walk('.'):
 
     if '.svn' in dirnames:
-        dirnames.remove('.svn')  # don't visit SVN directories
+        dirnames.remove('.svn')
 
-    dir = os.path.split(dirpath)[-1]
-    if dir in dirs_to_skip:
-        #print 'Skipping %s' % dirpath
+    dirname = os.path.split(dirpath)[-1]
+    if dirname in dirs_to_skip:
         continue
-    
-    #print 'Searching dir', dirpath
-   
 
-    for filename in filenames:
+    for filename in sorted(filenames):
         if filename.startswith('validate_') and filename.endswith('.py'):
-            #print 'Found %s in %s' %(filename, dirpath)
-            validation_dirs_and_files.append((dirpath, filename))            
+            all_tests.append((dirpath, filename, 'python'))
+        elif filename.startswith('test_regression_') and filename.endswith('.py'):
+            all_tests.append((dirpath, filename, 'pytest'))
 
-    # get repeatable order on different machines
-    validation_dirs_and_files.sort()
+all_tests.sort()
+
+# Separate the two groups for display
+validate_tests   = [(p, f) for p, f, r in all_tests if r == 'python']
+regression_tests = [(p, f) for p, f, r in all_tests if r == 'pytest']
 
 
-print() 
+# ---------------------------------------------------------------------------
+# Header
+# ---------------------------------------------------------------------------
+
+print()
 print(80*'=')
 print('Running all validation tests - some may take many minutes')
 print('and some may require memory in the order of 8-16GB       ')
 print(80*'=')
 
-print('Validation test suites:')
-for path, filename in validation_dirs_and_files:
-     print ('    ', os.path.join(path, filename))
-print()
+print('Simulation + accuracy tests (validate_*.py):')
+for path, filename in validate_tests:
+    print('    ', os.path.join(path, filename))
+
+if regression_tests:
+    print()
+    print('Regression baseline tests (test_regression_*.py):')
+    for path, filename in regression_tests:
+        print('    ', os.path.join(path, filename))
+
 print()
 
 t0 = time.time()
 parentdir = os.getcwd()
 
+# Results: list of (label, returncode, elapsed, runner)
+results = []
 
-for path, filename in validation_dirs_and_files:
-    # print 'filename path', path, filename
 
+# ---------------------------------------------------------------------------
+# Run validate_*.py tests
+# ---------------------------------------------------------------------------
+
+for path, filename in validate_tests:
+    label = os.path.join(path, filename)
     os.chdir(path)
-    #anuga.run_anuga_script(filename, args = args)
-    #print filename
-    if args.verbose:
-        cmd = 'python {0} -alg {1} -np {2} -v'.format(filename, args.alg, args.np)
-    else:
-        cmd = 'python {0} -alg {1} -np {2} '.format(filename, args.alg, args.np)
 
-    print() 
+    cmd = [sys.executable, filename, '-alg', str(anuga_args.alg), '-np', str(anuga_args.np)]
+    if anuga_args.verbose:
+        cmd.append('-v')
+
+    print()
     print(80*'=')
-    print(cmd)
+    print(' '.join(cmd))
     print(80*'=')
-    os.system(cmd)
-    
-    # Back to parent directory
+    sys.stdout.flush()
+
+    t_start = time.time()
+    proc = subprocess.run(cmd)
+    elapsed = time.time() - t_start
+
+    results.append((label, proc.returncode, elapsed, 'python'))
+    status = 'PASSED' if proc.returncode == 0 else f'FAILED (exit code {proc.returncode})'
+    print(f'  --> {status}  ({elapsed:.1f} s)')
+
     os.chdir(parentdir)
 
-    # print 'current dir', os.getcwd() 
-    
-print('That took %.2f seconds in total' %(time.time()-t0))
-    
 
-        
+# ---------------------------------------------------------------------------
+# Run test_regression_*.py tests via pytest
+# ---------------------------------------------------------------------------
+
+for path, filename in regression_tests:
+    label = os.path.join(path, filename)
+    os.chdir(path)
+
+    cmd = ['pytest', filename, '-v']
+    if anuga_args.verbose:
+        cmd.append('-s')
+
+    print()
+    print(80*'=')
+    print(' '.join(cmd))
+    print(80*'=')
+    sys.stdout.flush()
+
+    t_start = time.time()
+    proc = subprocess.run(cmd)
+    elapsed = time.time() - t_start
+
+    results.append((label, proc.returncode, elapsed, 'pytest'))
+    status = 'PASSED' if proc.returncode == 0 else f'FAILED (exit code {proc.returncode})'
+    print(f'  --> {status}  ({elapsed:.1f} s)')
+
+    os.chdir(parentdir)
+
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
+
+total_elapsed = time.time() - t0
+n_passed = sum(1 for _, rc, _, _ in results if rc == 0)
+n_failed = len(results) - n_passed
+
+print()
+print(80*'=')
+print(f'VALIDATION SUMMARY  ({total_elapsed:.1f} s total)')
+print(80*'=')
+
+col = 56
+print(f"  {'Test':<{col}} {'Runner':>6}  {'Result':>12}  {'Time':>8}")
+print(f"  {'-'*col}  {'-'*6}  {'-'*12}  {'-'*8}")
+for label, rc, elapsed, runner in results:
+    status = 'PASSED' if rc == 0 else f'FAILED ({rc})'
+    marker = '  ' if rc == 0 else '* '
+    print(f"{marker}{label:<{col}} {runner:>6}  {status:>12}  {elapsed:>7.1f}s")
+
+print()
+if n_failed == 0:
+    print(f'All {n_passed} validation tests PASSED.')
+else:
+    print(f'{n_passed} PASSED,  {n_failed} FAILED.')
+    print()
+    print('Failed tests:')
+    for label, rc, _, runner in results:
+        if rc != 0:
+            print(f'  * [{runner}] {label}  (exit code {rc})')
+
+print()
+if regression_tests:
+    print('To regenerate regression baselines after an intentional change:')
+    print('  cd validation_tests/behaviour_only')
+    print('  pytest test_regression_*.py --force-regen')
+
+print(80*'=')
+
+sys.exit(0 if n_failed == 0 else 1)
