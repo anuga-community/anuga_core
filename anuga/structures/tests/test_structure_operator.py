@@ -176,7 +176,8 @@ class Test_Structure_operator(unittest.TestCase):
 
     def test_print_statistics(self):
         """print_statistics() writes the statistics string to stdout."""
-        import io, sys
+        import io
+        import sys
         op = self._make_operator()
         captured = io.StringIO()
         sys.stdout = captured
@@ -196,7 +197,8 @@ class Test_Structure_operator(unittest.TestCase):
 
     def test_print_timestepping_statistics(self):
         """print_timestepping_statistics() writes to stdout."""
-        import io, sys
+        import io
+        import sys
         op = self._make_operator()
         op.case = 'test'
         captured = io.StringIO()
