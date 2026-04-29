@@ -40,12 +40,14 @@ the active working branch. feat/sc26 contains GPU/OpenMP-offloading work
 | Branch | Purpose |
 |--------|---------|
 | `main` | Stable — v3.3.1 release |
-| `develop` | Active development for v4.0.0 — contains feat/sc26 GPU work |
+| `develop` | Active development for v4.0.0 — contains GPU work + ADER-2 |
 | `develop_sc26` | Working branch for GPU/SC26 incremental improvements |
 | `develop_gpu` / `develop_cupy` | Earlier GPU experiments (CuPy-based) |
 | `experiment/claude_culvert_refactor` | Culvert structure refactoring experiment |
 
 Target PR branch is `develop` for all new work going into v4.0.0.
+
+`develop_ader` merged into `develop` 2026-04-29.
 
 ---
 
@@ -129,6 +131,18 @@ returns True. New `run_parallel_kv_operator.py` + `test_parallel_kv_operator.py`
 Bug fix: `test_select_alpha_degenerate_falls_back_to_default` platform-dependent on
 Windows py3.10/3.11/3.13 — now uses `return_curve=True` to branch on actual kappa.
 Commits `61418742`, `5498f98d`. All CI passed.
+
+**Session 31 (2026-04-29):** ADER-2 GPU wiring + optimisation. `gpu_ader_ck_predictor` /
+`gpu_evolve_one_ader2_step` added to `gpu_kernels.c` + declared in `gpu_domain.h` (fix for
+missing header causing Windows/3.12 CI failure). `evolve_one_ader2_step` dispatches to
+`_evolve_one_ader2_step_c` / `_evolve_one_ader2_step_gpu` in GPU mode. `DE_ader2` flow
+algorithm added to `set_flow_algorithm()` (DE1 settings + ader2 timestepping). Single-flux-call
+optimisation: reuses previous step's `CFL * flux_timestep` as predictor half-dt (bootstrap
+first step = Euler); drops from 2 flux calls to 1 per step → ~1.18× faster than DE1 on
+80×80 dam-break. `FLOPS_ADER_PREDICTOR=105` constant. P3.8 (fused predict-extrapolate kernel,
+MUSCL-Hancock option A + C-K option B) documented in `FUTURE_WORK.md`. Fix: `create_sts_boundary`
+in `sts.py` now calls `fid.close()` in a `try/finally` block (Windows WinError 32).
+`develop_ader` merged into `develop`. Commits `e9d15803`–`3b00dc79`.
 
 **Session 30 (2026-04-29):** ADER-2 timestepping via Cauchy-Kovalewski predictor.
 `core_ader_ck_predictor()` in `core_kernels.c`: recovers cell slopes from the 2×2
