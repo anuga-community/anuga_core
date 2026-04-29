@@ -159,6 +159,12 @@ void _openmp_ader_ck_predictor(struct domain *__restrict D, double dt)
     core_ader_ck_predictor(D, dt);
 }
 
+void _openmp_ader_ck_predictor_edge(struct domain *__restrict D, double dt)
+{
+    // Fused ADER-2 predictor: writes Q^{n+1/2} to edge values, centroids untouched
+    core_ader_ck_predictor_edge(D, dt);
+}
+
 void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict D)
 {
     // Unified: calls core_manning_friction_flat_semi_implicit from core_kernels.c

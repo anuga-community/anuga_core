@@ -2791,12 +2791,15 @@ class Domain(Generic_Domain):
 
         Q^{n+1} = Q^n + dt * R(Q^{n+1/2})
 
-        Single-flux-call variant: the previous step's CFL timestep is reused
-        for the predictor half-advance, so only one flux call is needed per step
-        (vs RK2's two).  The first step bootstraps with dt=0 (Euler) to establish
-        the initial CFL timestep; all subsequent steps are full ADER-2.
+        Uses the fused edge predictor: edge values are shifted to Q^{n+1/2}
+        in-place while centroid values remain at Q^n, eliminating the second
+        extrapolation pass and the backup/saxpy restore pattern.
 
-        Cost: 1 flux call + 2 extrapolations + 1 C-K predictor (after step 1).
+        Single-flux-call variant: the previous step's CFL timestep is reused
+        for the predictor half-advance.  The first step bootstraps with dt=0
+        (Euler) to establish the initial CFL timestep.
+
+        Cost: 1 flux call + 1 extrapolation + 1 edge C-K predictor (after step 1).
         Accuracy: 2nd-order in space and time.
         """
         # GPU mode: use C loop (faster) or Python-orchestrated GPU loop
@@ -2807,7 +2810,7 @@ class Domain(Generic_Domain):
                 self._evolve_one_ader2_step_gpu(yieldstep, finaltime)
             return
 
-        from .sw_domain_openmp_ext import ader_ck_predictor
+        from .sw_domain_openmp_ext import ader_ck_predictor_edge
 
         # Bootstrap: prev_dt=0 on first call → Euler step to establish CFL dt
         if not hasattr(self, '_ader2_prev_dt'):
@@ -2815,21 +2818,17 @@ class Domain(Generic_Domain):
 
         prev_dt = self._ader2_prev_dt
 
-        # Backup Q^n (needed to restore before the final Godunov update)
-        self.backup_conserved_quantities()
-
-        # Extrapolate Q^n centroids → edges
+        # Extrapolate Q^n centroids → edges (1 pass; centroids untouched)
         self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
         self.update_boundary()
 
         if prev_dt > 0.0:
-            # C-K predictor: advance centroids Q^n → Q^{n+1/2} using prev_dt
-            ader_ck_predictor(self, prev_dt * 0.5)
-            # Re-extrapolate from Q^{n+1/2} to edges
-            self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
+            # Fused edge predictor: shift edge values to Q^{n+1/2}, Q^n in centroids
+            ader_ck_predictor_edge(self, prev_dt * 0.5)
+            # Re-apply boundary conditions to boundary edges
             self.update_boundary()
 
-        # Single flux call: from Q^{n+1/2} (or Q^n on bootstrap step)
+        # Single flux call from Q^{n+1/2} edge values (or Q^n on bootstrap step)
         self.compute_fluxes()
         self.compute_forcing_terms()
 
@@ -2839,8 +2838,7 @@ class Domain(Generic_Domain):
         # Clip to yieldstep / finaltime / evolve_max_timestep
         self.update_timestep(yieldstep, finaltime)
 
-        # Restore Q^n and apply the midpoint-flux Godunov update
-        self.saxpy_conserved_quantities(0.0, 1.0)   # Q = 0*Q + 1*backup = Q^n
+        # Q^n centroids are untouched — update directly (no saxpy restore needed)
         self.update_conserved_quantities()           # Q^{n+1} = Q^n + dt*R(Q^{n+1/2})
 
     def _evolve_one_ader2_step_gpu(self, yieldstep, finaltime):

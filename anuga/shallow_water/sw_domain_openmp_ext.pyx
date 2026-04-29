@@ -125,6 +125,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	anuga_int _openmp_backup_conserved_quantities(domain *D)
 	void _openmp_distribute_edges_to_vertices(domain *D)
 	void _openmp_ader_ck_predictor(domain *D, double dt)
+	void _openmp_ader_ck_predictor_edge(domain *D, double dt)
 	# FIXME SR: Change over to domain* D argument ?
 	void _openmp_manning_friction_flat(double g, double eps, anuga_int N, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom, double* ymom)
 	void _openmp_manning_friction_sloped(double g, double eps, anuga_int N, double* x, double* w, double* zv, double* uh, double* vh, double* eta, double* xmom_update, double* ymom_update)
@@ -1124,6 +1125,18 @@ def ader_ck_predictor(object domain_py_object, double dt, update_domain_c_struct
 
 	with nogil:
 		_openmp_ader_ck_predictor(D, dt)
+
+def ader_ck_predictor_edge(object domain_py_object, double dt, update_domain_c_struct=False):
+	"""Fused ADER-2 predictor: shift edge values to Q^{n+1/2}, centroids unchanged.
+
+	Equivalent to ader_ck_predictor() followed by distribute_to_vertices_and_edges(),
+	but faster: skips the full extrapolation pass and leaves Q^n in centroids so no
+	backup/saxpy restore is needed in evolve_one_ader2_step().
+	"""
+	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
+
+	with nogil:
+		_openmp_ader_ck_predictor_edge(D, dt)
 
 def evaluate_reflective_segment(object domain_py_object, 
                                 np.ndarray[np.int64_t, ndim=1, mode="c"] segment_edges not None, 
