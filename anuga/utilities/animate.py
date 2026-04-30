@@ -869,61 +869,84 @@ class SWW_plotter:
         ax.set_xlim(triang.x.min(), triang.x.max())
         ax.set_ylim(triang.y.min(), triang.y.max())
 
-        if smooth:
+        if basemap and self.epsg:
+            # When a basemap is active, always render via imshow regardless of
+            # the smooth flag.  Flat tripcolor leaves blocky triangle-edge
+            # artefacts at the wet/dry interface because the basemap imagery is
+            # visible between adjacent triangles of opposite wetness.  Imshow
+            # with a LinearTriInterpolator gives a smooth boundary: dry pixels
+            # are masked (alpha=0) so the basemap shows through cleanly.
+            #
+            # Resolution: compute the interpolation grid over the *visible*
+            # region (zoom window if set, otherwise the full mesh extent).
+            # This gives proper pixel density even when zoomed into a small
+            # coastal area of a large domain.
+            import matplotlib.tri as _mtri
+            import numpy as _np
+            from matplotlib.tri import LinearTriInterpolator as _LTI
+
+            wet_mask = depth < md
+            triang_wet = _mtri.Triangulation(
+                triang.x, triang.y, triang.triangles, mask=wet_mask)
+            # Use face-to-vertex averaging so the interpolator gets smooth data
+            v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
+
+            # Visible region: clip zoom limits to mesh bounds
+            mx0 = float(triang.x.min()); mx1 = float(triang.x.max())
+            my0 = float(triang.y.min()); my1 = float(triang.y.max())
+            x0 = max(mx0, xlim[0]) if xlim is not None else mx0
+            x1 = min(mx1, xlim[1]) if xlim is not None else mx1
+            y0 = max(my0, ylim[0]) if ylim is not None else my0
+            y1 = min(my1, ylim[1]) if ylim is not None else my1
+            if x0 >= x1:
+                x0, x1 = mx0, mx1
+            if y0 >= y1:
+                y0, y1 = my0, my1
+
+            # Target ~600 pixels across the longer visible axis
+            _span = max(x1 - x0, y1 - y0)
+            nx = max(200, int(600 * (x1 - x0) / _span))
+            ny = max(200, int(600 * (y1 - y0) / _span))
+            xi = _np.linspace(x0, x1, nx)
+            yi = _np.linspace(y0, y1, ny)
+            Xi, Yi = _np.meshgrid(xi, yi)
+            zi = _LTI(triang_wet, v_qty)(Xi, Yi)   # masked outside wet region
+            im = ax.imshow(zi, extent=[x0, x1, y0, y1], origin='lower',
+                           cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha,
+                           interpolation='bilinear', zorder=1)
+
+        elif smooth:
             import matplotlib.tri as _mtri
             import numpy as _np
             wet_mask = depth < md   # True = dry  → quantity hides dry cells
 
-            if basemap and self.epsg:
-                # With a basemap, Gouraud gradient creases are visible against
-                # the high-contrast imagery even with linewidths=0.  Instead,
-                # interpolate the wet data to a regular grid and display with
-                # imshow — masked (dry) pixels are transparent so the basemap
-                # shows through, while the wet region is perfectly smooth.
-                from matplotlib.tri import LinearTriInterpolator as _LTI
-                triang_wet = _mtri.Triangulation(
-                    triang.x, triang.y, triang.triangles, mask=wet_mask)
-                v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
-                x0, x1 = float(triang.x.min()), float(triang.x.max())
-                y0, y1 = float(triang.y.min()), float(triang.y.max())
-                _span = max(x1 - x0, y1 - y0)
-                nx = max(100, int(400 * (x1 - x0) / _span))
-                ny = max(100, int(400 * (y1 - y0) / _span))
-                xi = _np.linspace(x0, x1, nx)
-                yi = _np.linspace(y0, y1, ny)
-                Xi, Yi = _np.meshgrid(xi, yi)
-                zi = _LTI(triang_wet, v_qty)(Xi, Yi)  # masked where dry/outside
-                im = ax.imshow(zi, extent=[x0, x1, y0, y1], origin='lower',
-                               cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha,
-                               interpolation='bilinear', zorder=1)
-            else:
-                # No basemap: Gouraud shading on separate Triangulations.
-                # Gouraud needs separate Triangulation objects per collection
-                # because TriMesh reads the mask dynamically at draw time.
-                dry_mask = depth > md
-                triang_dry = _mtri.Triangulation(
-                    triang.x, triang.y, triang.triangles, mask=dry_mask)
-                v_elev = _face_to_vertex(triang, elev, face_mask=dry_mask)
-                # Normalise colormap to dry-cell elevation range; wet-only
-                # vertices get v_elev=0 from _face_to_vertex which would
-                # otherwise skew the auto-scale and make terrain appear white.
-                dry_elev = _np.asarray(elev)[~_np.asarray(dry_mask, dtype=bool)]
-                e_vmin = float(dry_elev.min()) if dry_elev.size else 0.0
-                e_vmax = float(dry_elev.max()) if dry_elev.size else 1.0
-                if e_vmin >= e_vmax:
-                    e_vmax = e_vmin + 1.0
-                ax.tripcolor(triang_dry, v_elev, shading='gouraud', cmap='Greys_r',
-                             vmin=e_vmin, vmax=e_vmax).set_linewidths(0)
-                triang_wet = _mtri.Triangulation(
-                    triang.x, triang.y, triang.triangles, mask=wet_mask)
-                v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
-                im = ax.tripcolor(triang_wet, v_qty, shading='gouraud',
-                                  cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
-                im.set_linewidths(0)
+            # No basemap: Gouraud shading on separate Triangulations.
+            # Gouraud needs separate Triangulation objects per collection
+            # because TriMesh reads the mask dynamically at draw time.
+            dry_mask = depth > md
+            triang_dry = _mtri.Triangulation(
+                triang.x, triang.y, triang.triangles, mask=dry_mask)
+            v_elev = _face_to_vertex(triang, elev, face_mask=dry_mask)
+            # Normalise colormap to dry-cell elevation range; wet-only
+            # vertices get v_elev=0 from _face_to_vertex which would
+            # otherwise skew the auto-scale and make terrain appear white.
+            dry_elev = _np.asarray(elev)[~_np.asarray(dry_mask, dtype=bool)]
+            e_vmin = float(dry_elev.min()) if dry_elev.size else 0.0
+            e_vmax = float(dry_elev.max()) if dry_elev.size else 1.0
+            if e_vmin >= e_vmax:
+                e_vmax = e_vmin + 1.0
+            ax.tripcolor(triang_dry, v_elev, shading='gouraud', cmap='Greys_r',
+                         vmin=e_vmin, vmax=e_vmax).set_linewidths(0)
+            triang_wet = _mtri.Triangulation(
+                triang.x, triang.y, triang.triangles, mask=wet_mask)
+            v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
+            im = ax.tripcolor(triang_wet, v_qty, shading='gouraud',
+                              cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
+            im.set_linewidths(0)
         else:
-            if not (basemap and self.epsg):
-                triang.set_mask(depth > md)
-                ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
+            # Flat tripcolor, no basemap
+            triang.set_mask(depth > md)
+            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
             triang.set_mask(depth < md)
             im = ax.tripcolor(triang, facecolors=qty_data,
                               cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
