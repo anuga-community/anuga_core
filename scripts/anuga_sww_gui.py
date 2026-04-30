@@ -190,6 +190,10 @@ class SWWAnimationGUI:
         self._last_gen_elev_levels = 10
         self._last_gen_show_mesh = False
 
+        # hover coordinate readout state
+        self._hover_cid = None
+        self._trifinder = None
+
         self._build_ui()
 
         if initial_qty and initial_qty in _QUANTITIES:
@@ -204,10 +208,16 @@ class SWWAnimationGUI:
 
     def _build_ui(self):
         # ---- status bar (packed first so it anchors to the bottom) ----
+        status_frame = ttk.Frame(self.root)
+        status_frame.pack(side=tk.BOTTOM, fill=tk.X)
         self._status_var = tk.StringVar(value='Open an SWW file to begin.')
-        ttk.Label(self.root, textvariable=self._status_var,
+        ttk.Label(status_frame, textvariable=self._status_var,
                   relief=tk.SUNKEN, anchor=tk.W,
-                  padding=(4, 1)).pack(side=tk.BOTTOM, fill=tk.X)
+                  padding=(4, 1)).pack(side=tk.LEFT, fill=tk.X, expand=True)
+        self._coord_var = tk.StringVar()
+        ttk.Label(status_frame, textvariable=self._coord_var,
+                  relief=tk.SUNKEN, anchor=tk.E,
+                  padding=(4, 1), width=44).pack(side=tk.RIGHT)
 
         # ================================================================
         # Top control panel
@@ -513,6 +523,8 @@ class SWWAnimationGUI:
         self._canvas = FigureCanvasTkAgg(self._fig, master=self._canvas_frame)
         self._canvas.draw()
         self._canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+        self._hover_cid = self._canvas.mpl_connect(
+            'motion_notify_event', self._on_hover)
 
     # -------------------------------------------------------------- #
     # SWW file selection                                              #
@@ -573,6 +585,7 @@ class SWWAnimationGUI:
     def _load_splotter(self, sww):
         from anuga.utilities.animate import SWW_plotter
 
+        self._trifinder = None   # invalidate cached trifinder for new mesh
         self._splotter = SWW_plotter(
             swwfile=sww,
             plot_dir=None,        # suppress automatic make_plot_dir
@@ -1937,6 +1950,33 @@ class SWWAnimationGUI:
 
         fig.tight_layout()
         fig.savefig(path, dpi=dpi, bbox_inches='tight')
+
+    def _on_hover(self, event):
+        """Update the coordinate readout as the cursor moves over the animation."""
+        if (self._plot_transform is None
+                or self._splotter is None
+                or event.inaxes != self._ax
+                or event.xdata is None):
+            self._coord_var.set('')
+            return
+
+        xmesh, ymesh = self._imshow_to_mesh(event.xdata, event.ydata)
+
+        if self._trifinder is None:
+            import matplotlib.tri as _mtri
+            sp = self._splotter
+            use_basemap = self._gen_used_basemap and (sp.epsg is not None)
+            src = sp.triang_abs if use_basemap else sp.triang
+            # Build trifinder on a mask-free copy so every point in the domain
+            # returns a valid triangle index (wet or dry).
+            tf_triang = _mtri.Triangulation(src.x, src.y, src.triangles)
+            self._trifinder = tf_triang.get_trifinder()
+
+        tri = int(self._trifinder(xmesh, ymesh))
+        if tri < 0:
+            self._coord_var.set(f'x={xmesh:.1f}  y={ymesh:.1f}')
+        else:
+            self._coord_var.set(f'x={xmesh:.1f}  y={ymesh:.1f}  tri={tri}')
 
     def _imshow_to_mesh(self, px, py):
         """Convert imshow pixel coordinates to mesh/absolute coordinates."""
