@@ -1527,6 +1527,7 @@ class SWWAnimationGUI:
         x2, y2 = self._imshow_to_mesh(erelease.xdata, erelease.ydata)
         self._zoom_xlim = (min(x1, x2), max(x1, x2))
         self._zoom_ylim = (min(y1, y2), max(y1, y2))
+        self._elev_contour_data = None   # recompute levels for the new zoom region
         self._exit_zoom_mode()
         self._draw_zoom_patch()
         self._reset_zoom_btn.config(state=tk.NORMAL)
@@ -1568,6 +1569,7 @@ class SWWAnimationGUI:
         self._exit_zoom_mode()
         self._zoom_xlim = None
         self._zoom_ylim = None
+        self._elev_contour_data = None   # recompute levels for full extent
         self._remove_zoom_patch()
         self._reset_zoom_btn.config(state=tk.DISABLED)
         self._set_status('Zoom reset - full extent will be used for generation.')
@@ -1621,7 +1623,18 @@ class SWWAnimationGUI:
         px = (pos.x0 + pos.width  * (xv - xlim[0]) / (xlim[1] - xlim[0])) * W
         py = (1.0 - (pos.y0 + pos.height * (yv - ylim[0]) / (ylim[1] - ylim[0]))) * H
 
-        triang_px = Triangulation(px, py, src.triangles)
+        # When zoomed, mask triangles whose centroid is outside the visible
+        # region.  Without this, edges from large off-screen triangles extend
+        # across the whole window.
+        mask = None
+        if self._zoom_xlim is not None:
+            tris = src.triangles
+            xc = (xv[tris[:, 0]] + xv[tris[:, 1]] + xv[tris[:, 2]]) / 3.0
+            yc = (yv[tris[:, 0]] + yv[tris[:, 1]] + yv[tris[:, 2]]) / 3.0
+            mask = ((xc < xlim[0]) | (xc > xlim[1]) |
+                    (yc < ylim[0]) | (yc > ylim[1]))
+
+        triang_px = Triangulation(px, py, src.triangles, mask=mask)
         self._mesh_overlay_lines = self._ax.triplot(
             triang_px, color='black', linewidth=0.25, alpha=0.45,
             scalex=False, scaley=False)
@@ -1699,9 +1712,6 @@ class SWWAnimationGUI:
         except ValueError:
             n_levels = 10
 
-        levels = self._nice_contour_levels(
-            float(elev_nodes.min()), float(elev_nodes.max()), n_levels)
-
         # build pixel-space triangulation (same transform as mesh overlay)
         xlim, ylim = pt['xlim'], pt['ylim']
         pos = pt['pos']
@@ -1710,7 +1720,35 @@ class SWWAnimationGUI:
         yv = src.y
         px = (pos.x0 + pos.width  * (xv - xlim[0]) / (xlim[1] - xlim[0])) * W
         py = (1.0 - (pos.y0 + pos.height * (yv - ylim[0]) / (ylim[1] - ylim[0]))) * H
-        triang_px = _Tri(px, py, src.triangles)
+
+        # When zoomed, mask triangles outside the visible region (by centroid)
+        # so contours don't extend across the whole window.
+        mask = None
+        if self._zoom_xlim is not None:
+            tris = src.triangles
+            xc = (xv[tris[:, 0]] + xv[tris[:, 1]] + xv[tris[:, 2]]) / 3.0
+            yc = (yv[tris[:, 0]] + yv[tris[:, 1]] + yv[tris[:, 2]]) / 3.0
+            mask = ((xc < xlim[0]) | (xc > xlim[1]) |
+                    (yc < ylim[0]) | (yc > ylim[1]))
+        triang_px = _Tri(px, py, src.triangles, mask=mask)
+
+        # Compute contour levels from the elevation within the visible region
+        # only, so the requested number of levels actually appears in the view.
+        if self._zoom_xlim is not None:
+            in_zoom = ((xv >= xlim[0]) & (xv <= xlim[1]) &
+                       (yv >= ylim[0]) & (yv <= ylim[1]))
+            elev_vis = elev_nodes[in_zoom]
+            if elev_vis.size >= 2:
+                e_vmin = float(elev_vis.min())
+                e_vmax = float(elev_vis.max())
+            else:
+                e_vmin = float(elev_nodes.min())
+                e_vmax = float(elev_nodes.max())
+        else:
+            e_vmin = float(elev_nodes.min())
+            e_vmax = float(elev_nodes.max())
+
+        levels = self._nice_contour_levels(e_vmin, e_vmax, n_levels)
 
         self._elev_contour_data = (triang_px, elev_nodes, levels)
 
