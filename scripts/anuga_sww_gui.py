@@ -116,6 +116,11 @@ _QTY_TITLE = {
 }
 
 
+_CMAPS = ['viridis', 'plasma', 'inferno', 'magma', 'cividis',
+          'Blues', 'Greens', 'Oranges', 'Reds', 'YlOrRd',
+          'RdBu_r', 'coolwarm', 'seismic', 'jet', 'turbo',
+          'terrain', 'gist_earth', 'gray']
+
 # ------------------------------------------------------------------ #
 # Frame helpers (shared with anuga_animate_gui convention)           #
 # ------------------------------------------------------------------ #
@@ -133,7 +138,13 @@ def _find_frames(plot_dir, quantity, prefix):
 class SWWAnimationGUI:
     """Tkinter + matplotlib GUI: open SWW -> generate frames -> animate."""
 
-    def __init__(self, root, initial_sww=None, initial_qty=None):
+    def __init__(self, root, initial_sww=None, initial_qty=None,
+                 initial_vmin=None, initial_vmax=None,
+                 initial_cmap=None, initial_cmap_reverse=False,
+                 initial_mindepth=None, initial_flat_view=False,
+                 initial_outdir=None, initial_dpi=None, initial_stride=None,
+                 initial_epsg=None, initial_basemap=None,
+                 initial_basemap_provider=None, initial_alpha=None):
         self.root = root
         self.root.title('ANUGA SWW Animator')
         self.root.minsize(860, 640)
@@ -196,11 +207,48 @@ class SWWAnimationGUI:
 
         self._build_ui()
 
+        # Apply render-tab params (independent of SWW file)
         if initial_qty and initial_qty in _QUANTITIES:
             self._qty_var.set(initial_qty)
+        if initial_vmin is not None:
+            self._vmin_var.set(str(initial_vmin))
+            self._auto_var.set(False)
+        if initial_vmax is not None:
+            self._vmax_var.set(str(initial_vmax))
+            self._auto_var.set(False)
+        if initial_cmap and initial_cmap in _CMAPS:
+            self._cmap_var.set(initial_cmap)
+        if initial_cmap_reverse:
+            self._cmap_reverse_var.set(True)
+        if initial_mindepth is not None:
+            self._mindepth_var.set(str(initial_mindepth))
+        if initial_flat_view:
+            self._show_edges_var.set(True)
+        # Apply generate-tab params
+        if initial_outdir:
+            self._dir_var.set(initial_outdir)
+        if initial_dpi is not None:
+            self._dpi_var.set(str(initial_dpi))
+        if initial_stride is not None:
+            self._stride_var.set(str(initial_stride))
+        if initial_alpha is not None:
+            self._alpha_var.set(initial_alpha)
+        if initial_basemap_provider:
+            from anuga.utilities.animate import BASEMAP_PROVIDERS
+            if initial_basemap_provider in BASEMAP_PROVIDERS:
+                self._basemap_provider_var.set(initial_basemap_provider)
+
         if initial_sww:
             self._sww_var.set(os.path.abspath(initial_sww))
             self._on_sww_change()
+
+        # EPSG and basemap override are applied after SWW load (needs _splotter)
+        if initial_epsg is not None and self._splotter is not None:
+            self._epsg_var.set(str(initial_epsg))
+            self._on_set_epsg()
+        if initial_basemap is not None and self._splotter is not None:
+            self._basemap_var.set(initial_basemap)
+            self._on_basemap_toggle()
 
     # -------------------------------------------------------------- #
     # UI construction                                                 #
@@ -244,11 +292,6 @@ class SWWAnimationGUI:
         # ================================================================
         # Notebook — Plot / Generate / Output tabs
         # ================================================================
-        _CMAPS = ['viridis', 'plasma', 'inferno', 'magma', 'cividis',
-                  'Blues', 'Greens', 'Oranges', 'Reds', 'YlOrRd',
-                  'RdBu_r', 'coolwarm', 'seismic', 'jet', 'turbo',
-                  'terrain', 'gist_earth', 'gray']
-
         nb = ttk.Notebook(ctrl)
         nb.pack(fill=tk.X, pady=(0, 4))
 
@@ -2979,7 +3022,23 @@ class SWWAnimationGUI:
         nl()
 
         h2('Command-line usage')
-        kw('  anuga_sww_gui [--sww FILE] [--qty QUANTITY]\n')
+        kw('  anuga_sww_gui [--sww FILE] [--qty QUANTITY] [options]\n')
+        nl()
+        p('  Render options:')
+        p('    --vmin / --vmax FLOAT    colour scale limits (disables auto-scale)')
+        p('    --cmap NAME              colormap (viridis, jet, terrain, ...)')
+        p('    --cmap-reverse           reverse the colormap')
+        p('    --mindepth FLOAT         wet/dry depth threshold (m)')
+        p('    --flat-view              flat per-triangle rendering')
+        nl()
+        p('  Generate options:')
+        p('    --outdir PATH            output directory for frame PNGs')
+        p('    --dpi INT                frame resolution')
+        p('    --stride INT             generate every Nth frame')
+        p('    --alpha FLOAT            quantity layer opacity (0–1)')
+        p('    --epsg INT               EPSG code (enables basemap)')
+        p('    --basemap / --no-basemap toggle basemap (requires --epsg)')
+        p('    --basemap-provider NAME  tile provider (OpenStreetMap, Satellite (Esri), ...)')
         nl()
 
         text.configure(state=tk.DISABLED)
@@ -3001,18 +3060,78 @@ class SWWAnimationGUI:
 
 def main():
     import argparse
+    from anuga.utilities.animate import BASEMAP_PROVIDERS
+
     parser = argparse.ArgumentParser(
         description='ANUGA SWW animation viewer',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    # File / quantity
     parser.add_argument('--sww', default=None,
                         help='SWW file to open on startup')
     parser.add_argument('--qty', default=None,
                         choices=list(_QUANTITIES),
-                        help='Quantity to display on startup')
+                        help='Quantity to display')
+
+    # Render tab
+    parser.add_argument('--vmin', type=float, default=None,
+                        help='Colour scale minimum (disables auto-scale)')
+    parser.add_argument('--vmax', type=float, default=None,
+                        help='Colour scale maximum (disables auto-scale)')
+    parser.add_argument('--cmap', default=None,
+                        choices=_CMAPS,
+                        help='Colormap name')
+    parser.add_argument('--cmap-reverse', action='store_true', default=False,
+                        help='Reverse the colormap')
+    parser.add_argument('--mindepth', type=float, default=None,
+                        help='Minimum depth threshold for wet/dry (m)')
+    parser.add_argument('--flat-view', action='store_true', default=False,
+                        help='Use flat (per-triangle) rendering instead of smooth Gouraud')
+
+    # Generate tab
+    parser.add_argument('--outdir', default=None,
+                        help='Output directory for generated frame PNGs')
+    parser.add_argument('--dpi', type=int, default=None,
+                        help='DPI for generated frames')
+    parser.add_argument('--stride', type=int, default=None,
+                        help='Generate every Nth frame (1 = all frames)')
+    parser.add_argument('--alpha', type=float, default=None,
+                        help='Quantity layer opacity (0–1)')
+    parser.add_argument('--epsg', type=int, default=None,
+                        help='EPSG code for coordinate reference system (enables basemap)')
+    parser.add_argument('--basemap', dest='basemap', action='store_true',
+                        default=None,
+                        help='Enable basemap tile overlay (requires --epsg and contextily)')
+    parser.add_argument('--no-basemap', dest='basemap', action='store_false',
+                        help='Disable basemap tile overlay')
+    parser.add_argument('--basemap-provider', default=None,
+                        choices=list(BASEMAP_PROVIDERS.keys()),
+                        metavar='PROVIDER',
+                        help=('Basemap tile provider. Choices: '
+                              + ', '.join(BASEMAP_PROVIDERS.keys())))
+    parser.set_defaults(basemap=None)
+
     args = parser.parse_args()
 
     root = tk.Tk()
-    SWWAnimationGUI(root, initial_sww=args.sww, initial_qty=args.qty)
+    SWWAnimationGUI(
+        root,
+        initial_sww=args.sww,
+        initial_qty=args.qty,
+        initial_vmin=args.vmin,
+        initial_vmax=args.vmax,
+        initial_cmap=args.cmap,
+        initial_cmap_reverse=args.cmap_reverse,
+        initial_mindepth=args.mindepth,
+        initial_flat_view=args.flat_view,
+        initial_outdir=args.outdir,
+        initial_dpi=args.dpi,
+        initial_stride=args.stride,
+        initial_alpha=args.alpha,
+        initial_epsg=args.epsg,
+        initial_basemap=args.basemap,
+        initial_basemap_provider=args.basemap_provider,
+    )
     root.mainloop()
 
 
