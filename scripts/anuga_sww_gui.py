@@ -264,6 +264,15 @@ class SWWAnimationGUI:
         self._last_gen_elev_levels = 10
         self._last_gen_show_mesh = False
 
+        # cross-section state
+        self._xs_mode = False
+        self._xs_pts = []          # list of (x, y) in RELATIVE mesh coords, max 2
+        self._xs_artists = []      # overlay artists on _ax
+        self._xs_cid = None
+        self._xs_key_cid = None
+        self._xs_flux = None       # ndarray (n_times,) discharge m³/s
+        self._xs_vline = None      # vertical cursor in xs plot
+
         # hover coordinate readout state
         self._hover_cid = None
         self._trifinder = None
@@ -573,6 +582,16 @@ class SWWAnimationGUI:
         self._pick_btn.pack(side=tk.LEFT, padx=(0, 4))
 
         ttk.Separator(pb, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
+        self._xs_btn = ttk.Button(pb, text='Cross-section',
+                                   command=self._toggle_xs_mode,
+                                   state=tk.DISABLED)
+        self._xs_btn.pack(side=tk.LEFT, padx=(0, 4))
+        self._clear_xs_btn = ttk.Button(pb, text='Clear XS',
+                                         command=self._clear_xs,
+                                         state=tk.DISABLED)
+        self._clear_xs_btn.pack(side=tk.LEFT, padx=(0, 4))
+
+        ttk.Separator(pb, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=10)
         self._zoom_btn = ttk.Button(pb, text='Set Zoom',
                                      command=self._toggle_zoom_mode,
                                      state=tk.DISABLED)
@@ -624,6 +643,26 @@ class SWWAnimationGUI:
         self._ts_canvas = FigureCanvasTkAgg(self._ts_fig, master=self._ts_outer)
         self._ts_canvas.draw()
         self._ts_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
+
+        # ---- cross-section discharge panel (hidden until XS is defined) ----
+        self._xs_outer = ttk.Frame(self.root)
+        # not packed yet
+
+        xs_ctrl = ttk.Frame(self._xs_outer)
+        xs_ctrl.pack(fill=tk.X)
+        ttk.Label(xs_ctrl, text='Cross-section discharge:').pack(side=tk.LEFT, padx=4)
+        self._xs_info_lbl = ttk.Label(xs_ctrl, text='', foreground='grey')
+        self._xs_info_lbl.pack(side=tk.LEFT, padx=8)
+        ttk.Button(xs_ctrl, text='Close',
+                   command=self._close_xs_panel).pack(side=tk.RIGHT, padx=4)
+        ttk.Button(xs_ctrl, text='Export CSV',
+                   command=self._export_xs).pack(side=tk.RIGHT, padx=4)
+
+        self._xs_fig, self._xs_ax_plot = plt.subplots(figsize=(10, 1.8))
+        self._xs_fig.tight_layout(pad=1.5)
+        self._xs_fig_canvas = FigureCanvasTkAgg(self._xs_fig, master=self._xs_outer)
+        self._xs_fig_canvas.draw()
+        self._xs_fig_canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
 
         # ---- matplotlib map canvas ----
         self._fig, self._ax = plt.subplots(figsize=(10, 6))
@@ -687,12 +726,14 @@ class SWWAnimationGUI:
             foreground='grey')
         self._gen_btn.config(state=tk.NORMAL)
         self._pick_btn.config(state=tk.NORMAL)
+        self._xs_btn.config(state=tk.NORMAL)
         self._mesh_btn.config(state=tk.NORMAL)
         self._set_status(f'Loaded {os.path.basename(sww)} -{n} timesteps')
         self._update_auto_limits()
         self._exit_pick_mode()
         self._close_timeseries()
         self._reset_zoom()
+        self._clear_xs()
 
     def _load_splotter(self, sww):
         from anuga.utilities.animate import SWW_plotter
@@ -1166,6 +1207,7 @@ class SWWAnimationGUI:
             self._elev_contour_data = None    # transform changed — invalidate cache
             self._update_mesh_overlay()
             self._update_elev_overlay()
+            self._update_xs_overlay()
         except Exception:
             self._plot_transform = None
 
@@ -1195,6 +1237,7 @@ class SWWAnimationGUI:
         self._show_elev_chk.config(state=tk.NORMAL)
         self._elev_levels_spin.config(state=tk.NORMAL)
         self._elev_contour_data = None    # invalidate on new generation
+        self._update_xs_overlay()
         self._set_status(f'Loaded {n} frames  |  {plot_dir}')
 
     def _show_frame(self, idx):
@@ -1529,7 +1572,7 @@ class SWWAnimationGUI:
 
     def _update_ts_cursor(self):
         """Move the vertical cursor line to the current animation time."""
-        if self._ts_vline is None or self._splotter is None:
+        if self._splotter is None:
             return
         t = self._splotter.time
         if len(self._frames) > 1:
@@ -1537,8 +1580,13 @@ class SWWAnimationGUI:
         else:
             frac = 0.0
         ts_idx = int(round(frac * (len(t) - 1)))
-        self._ts_vline.set_xdata([t[ts_idx], t[ts_idx]])
-        self._ts_canvas.draw_idle()
+        t_cur = t[ts_idx]
+        if self._ts_vline is not None:
+            self._ts_vline.set_xdata([t_cur, t_cur])
+            self._ts_canvas.draw_idle()
+        if self._xs_vline is not None:
+            self._xs_vline.set_xdata([t_cur, t_cur])
+            self._xs_fig_canvas.draw_idle()
 
     def _close_timeseries(self):
         """Hide the timeseries panel and clear all picked points."""
@@ -1593,6 +1641,198 @@ class SWWAnimationGUI:
                 markeredgecolor='white', markeredgewidth=0.5,
                 scalex=False, scaley=False)
             self._pick_overlays.append(marker)
+
+    # -------------------------------------------------------------- #
+    # Cross-section discharge                                         #
+    # -------------------------------------------------------------- #
+
+    def _toggle_xs_mode(self):
+        if self._xs_mode:
+            self._exit_xs_mode()
+        else:
+            self._enter_xs_mode()
+
+    def _enter_xs_mode(self):
+        if self._splotter is None:
+            self._set_status('Load an SWW file first.')
+            return
+        self._exit_pick_mode()   # mutually exclusive with pick mode
+        self._xs_pts = []
+        self._remove_xs_overlay()
+        self._xs_mode = True
+        self._xs_btn.config(text='Cancel XS')
+        self._canvas.get_tk_widget().config(cursor='crosshair')
+        self._canvas.get_tk_widget().focus_set()
+        self._xs_cid = self._canvas.mpl_connect(
+            'button_press_event', self._on_xs_click)
+        self._xs_key_cid = self._canvas.mpl_connect(
+            'key_press_event', self._on_xs_key)
+        self._set_status('Click to set cross-section start point.')
+
+    def _exit_xs_mode(self):
+        if not self._xs_mode:
+            return
+        for cid in (self._xs_cid, self._xs_key_cid):
+            if cid is not None:
+                self._canvas.mpl_disconnect(cid)
+        self._xs_cid = None
+        self._xs_key_cid = None
+        self._xs_mode = False
+        self._xs_btn.config(text='Cross-section')
+        self._canvas.get_tk_widget().config(cursor='')
+
+    def _on_xs_click(self, event):
+        if event.inaxes != self._ax or event.xdata is None:
+            return
+        sp = self._splotter
+        xm, ym = self._imshow_to_mesh(event.xdata, event.ydata)
+        # Store in relative (mesh) coords
+        use_basemap = self._gen_used_basemap and (sp.epsg is not None)
+        if use_basemap:
+            xm -= sp.xllcorner
+            ym -= sp.yllcorner
+        self._xs_pts.append((xm, ym))
+        self._update_xs_overlay()
+        self._canvas.draw()
+        if len(self._xs_pts) == 1:
+            self._set_status('Start point set.  Click to set end point.')
+        elif len(self._xs_pts) >= 2:
+            self._exit_xs_mode()
+            self._compute_xs_flux()
+
+    def _on_xs_key(self, event):
+        if event.key == 'escape':
+            self._xs_pts = []
+            self._remove_xs_overlay()
+            self._canvas.draw_idle()
+            self._exit_xs_mode()
+
+    def _compute_xs_flux(self):
+        """Compute discharge Q(t) through the cross-section using exact mesh edge intersections."""
+        import numpy as np
+        sp = self._splotter
+        P1, P2 = self._xs_pts[0], self._xs_pts[1]
+        # xs_pts are in relative mesh coords; get_flow_through_cross_section
+        # needs absolute coords (relative + geo_reference origin).
+        ox, oy = sp.xllcorner, sp.yllcorner
+        polyline = [[P1[0] + ox, P1[1] + oy], [P2[0] + ox, P2[1] + oy]]
+        self._set_status('Computing cross-section discharge...')
+        self.root.update_idletasks()
+        try:
+            _, Q = sp.get_flow_through_cross_section(polyline)
+            self._xs_flux = np.asarray(Q)
+        except Exception as e:
+            self._set_status(f'Cross-section error: {e}')
+            return
+        dx = P2[0] - P1[0]
+        dy = P2[1] - P1[1]
+        L = float(np.sqrt(dx*dx + dy*dy))
+        self._xs_info_lbl.config(
+            text=f'length={L:.0f} m  |  '
+                 f'P1=({P1[0]:.0f}, {P1[1]:.0f})  '
+                 f'P2=({P2[0]:.0f}, {P2[1]:.0f})')
+        self._update_xs_plot()
+        if not self._xs_outer.winfo_ismapped():
+            self._xs_outer.pack(fill=tk.X, before=self._canvas_frame)
+        self._clear_xs_btn.config(state=tk.NORMAL)
+        self._set_status(
+            f'Cross-section discharge computed.  '
+            f'Q range [{self._xs_flux.min():.3g}, {self._xs_flux.max():.3g}] m³/s')
+
+    def _update_xs_plot(self):
+        if self._xs_flux is None or self._splotter is None:
+            return
+        ax = self._xs_ax_plot
+        ax.cla()
+        t = self._splotter.time
+        ax.plot(t, self._xs_flux, color='steelblue', linewidth=1.0)
+        ax.set_xlabel('Time (s)')
+        ax.set_ylabel('Q (m³/s)')
+        ax.set_xlim(t[0], t[-1])
+        ax.grid(True, linestyle=':', alpha=0.5)
+        # Vertical cursor at current frame
+        if len(self._frames) > 1:
+            frac = self._current / (len(self._frames) - 1)
+        else:
+            frac = 0.0
+        ts_idx = int(round(frac * (len(t) - 1)))
+        self._xs_vline = ax.axvline(t[ts_idx], color='red',
+                                    linestyle='--', linewidth=0.8)
+        self._xs_fig.tight_layout(pad=1.5)
+        self._xs_fig_canvas.draw()
+
+    def _update_xs_overlay(self):
+        """Draw cross-section endpoints and line on the animation canvas."""
+        self._remove_xs_overlay()
+        if not self._xs_pts or self._plot_transform is None:
+            return
+        sp = self._splotter
+        use_basemap = self._gen_used_basemap and (sp is not None) and (sp.epsg is not None)
+        for xr, yr in self._xs_pts:
+            xa = xr + sp.xllcorner if use_basemap else xr
+            ya = yr + sp.yllcorner if use_basemap else yr
+            px, py = self._mesh_to_imshow(xa, ya)
+            m, = self._ax.plot(px, py, 'o', color='cyan', markersize=8,
+                               zorder=10, scalex=False, scaley=False)
+            self._xs_artists.append(m)
+        if len(self._xs_pts) == 2:
+            (xr0, yr0), (xr1, yr1) = self._xs_pts
+            xa0 = xr0 + sp.xllcorner if use_basemap else xr0
+            ya0 = yr0 + sp.yllcorner if use_basemap else yr0
+            xa1 = xr1 + sp.xllcorner if use_basemap else xr1
+            ya1 = yr1 + sp.yllcorner if use_basemap else yr1
+            px0, py0 = self._mesh_to_imshow(xa0, ya0)
+            px1, py1 = self._mesh_to_imshow(xa1, ya1)
+            ln, = self._ax.plot([px0, px1], [py0, py1], '-',
+                                color='cyan', linewidth=1.5,
+                                zorder=9, scalex=False, scaley=False)
+            self._xs_artists.append(ln)
+        self._canvas.draw_idle()
+
+    def _remove_xs_overlay(self):
+        for a in self._xs_artists:
+            try:
+                a.remove()
+            except Exception:
+                pass
+        self._xs_artists = []
+
+    def _close_xs_panel(self):
+        if self._xs_outer.winfo_ismapped():
+            self._xs_outer.pack_forget()
+
+    def _clear_xs(self):
+        self._exit_xs_mode()
+        self._xs_pts = []
+        self._xs_flux = None
+        self._xs_vline = None
+        self._remove_xs_overlay()
+        self._xs_ax_plot.cla()
+        self._xs_fig_canvas.draw()
+        self._xs_info_lbl.config(text='')
+        self._close_xs_panel()
+        if hasattr(self, '_clear_xs_btn'):
+            self._clear_xs_btn.config(state=tk.DISABLED)
+        self._canvas.draw_idle()
+
+    def _export_xs(self):
+        if self._xs_flux is None or self._splotter is None:
+            return
+        path = filedialog.asksaveasfilename(
+            title='Export cross-section discharge',
+            defaultextension='.csv',
+            filetypes=[('CSV', '*.csv'), ('All files', '*.*')],
+            initialfile='cross_section_discharge.csv')
+        if not path:
+            return
+        import csv
+        t = self._splotter.time
+        with open(path, 'w', newline='') as fh:
+            writer = csv.writer(fh)
+            writer.writerow(['time_s', 'discharge_m3_per_s'])
+            for ti, qi in zip(t, self._xs_flux):
+                writer.writerow([f'{float(ti):.4f}', f'{float(qi):.6f}'])
+        self._set_status(f'Cross-section discharge exported to {os.path.basename(path)}')
 
     # -------------------------------------------------------------- #
     # Zoom                                                            #
