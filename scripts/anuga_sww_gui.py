@@ -763,7 +763,7 @@ class SWWAnimationGUI:
         self._progress_bar.config(maximum=n_to_gen)
         self._progress_var.set(0)
         self._progress_label.config(text=f'0 / {n_to_gen}')
-        self._gen_btn.config(state=tk.DISABLED)
+        self._gen_btn.config(state=tk.DISABLED, text='Generate Frames')
         self._cancel_btn.config(state=tk.NORMAL)
         self._cancel_flag = False
         self._set_status(
@@ -1531,10 +1531,11 @@ class SWWAnimationGUI:
         self._exit_zoom_mode()
         self._draw_zoom_patch()
         self._reset_zoom_btn.config(state=tk.NORMAL)
+        self._gen_btn.config(text='↻ Regenerate Frames')
         self._set_status(
             f'Zoom set - x: {self._zoom_xlim[0]:.1f} to {self._zoom_xlim[1]:.1f}  '
             f'y: {self._zoom_ylim[0]:.1f} to {self._zoom_ylim[1]:.1f}  '
-            '- click Generate Frames to apply.')
+            '- click ↻ Regenerate Frames to apply.')
 
     def _draw_zoom_patch(self):
         """Draw a yellow rectangle on the animation canvas showing the zoom region."""
@@ -1572,6 +1573,7 @@ class SWWAnimationGUI:
         self._elev_contour_data = None   # recompute levels for full extent
         self._remove_zoom_patch()
         self._reset_zoom_btn.config(state=tk.DISABLED)
+        self._gen_btn.config(text='↻ Regenerate Frames')
         self._set_status('Zoom reset - full extent will be used for generation.')
 
     # -------------------------------------------------------------- #
