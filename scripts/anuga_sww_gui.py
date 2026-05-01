@@ -131,6 +131,69 @@ def _find_frames(plot_dir, quantity, prefix):
     return sorted(glob.glob(pattern))
 
 
+def _toml_value(v):
+    """Format a Python value as an inline TOML literal."""
+    if isinstance(v, bool):
+        return 'true' if v else 'false'
+    if isinstance(v, str):
+        return '"' + v.replace('\\', '\\\\').replace('"', '\\"') + '"'
+    return repr(v)
+
+
+def _apply_config_to_gui(data, gui):
+    """Apply a flat/sectioned TOML dict to a SWWAnimationGUI instance.
+
+    Sections ``[render]`` and ``[generate]`` are merged with top-level keys
+    so both flat and sectioned TOML layouts are accepted.
+    """
+    from anuga.utilities.animate import BASEMAP_PROVIDERS
+
+    # Flatten render/generate sections into a single dict
+    cfg = {}
+    cfg.update(data.get('render',   {}))
+    cfg.update(data.get('generate', {}))
+    cfg.update(data.get('file',     {}))
+    # Also accept top-level keys (flat layout)
+    for k, v in data.items():
+        if not isinstance(v, dict):
+            cfg[k] = v
+
+    if 'qty' in cfg and cfg['qty'] in _QUANTITIES:
+        gui._qty_var.set(cfg['qty'])
+    if 'vmin' in cfg:
+        gui._vmin_var.set(str(cfg['vmin']))
+        gui._auto_var.set(False)
+    if 'vmax' in cfg:
+        gui._vmax_var.set(str(cfg['vmax']))
+        gui._auto_var.set(False)
+    if 'cmap' in cfg and cfg['cmap'] in _CMAPS:
+        gui._cmap_var.set(cfg['cmap'])
+    if 'cmap_reverse' in cfg:
+        gui._cmap_reverse_var.set(bool(cfg['cmap_reverse']))
+    if 'mindepth' in cfg:
+        gui._mindepth_var.set(str(cfg['mindepth']))
+    if 'flat_view' in cfg:
+        gui._show_edges_var.set(bool(cfg['flat_view']))
+    if 'outdir' in cfg:
+        gui._dir_var.set(str(cfg['outdir']))
+    if 'dpi' in cfg:
+        gui._dpi_var.set(str(cfg['dpi']))
+    if 'stride' in cfg:
+        gui._stride_var.set(str(cfg['stride']))
+    if 'alpha' in cfg:
+        gui._alpha_var.set(float(cfg['alpha']))
+    if 'basemap_provider' in cfg:
+        provider = cfg['basemap_provider']
+        if provider in BASEMAP_PROVIDERS:
+            gui._basemap_provider_var.set(provider)
+    if 'epsg' in cfg and gui._splotter is not None:
+        gui._epsg_var.set(str(cfg['epsg']))
+        gui._on_set_epsg()
+    if 'basemap' in cfg and gui._splotter is not None:
+        gui._basemap_var.set(bool(cfg['basemap']))
+        gui._on_basemap_toggle()
+
+
 # ------------------------------------------------------------------ #
 # GUI                                                                 #
 # ------------------------------------------------------------------ #
@@ -423,6 +486,12 @@ class SWWAnimationGUI:
         ttk.Spinbox(gB, from_=0.0, to=1.0, increment=0.05,
                     textvariable=self._alpha_var,
                     format='%.2f', width=5).pack(side=tk.LEFT, padx=2)
+
+        # Row C: config file
+        gC = ttk.Frame(tab_gen)
+        gC.pack(fill=tk.X, pady=2)
+        ttk.Button(gC, text='Save Config...', command=self._save_config).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(gC, text='Load Config...', command=self._load_config).pack(side=tk.LEFT)
 
         # ----------------------------------------------------------------
         # Tab 3 — Output
@@ -3022,7 +3091,9 @@ class SWWAnimationGUI:
         nl()
 
         h2('Command-line usage')
-        kw('  anuga_sww_gui [--sww FILE] [--qty QUANTITY] [options]\n')
+        kw('  anuga_sww_gui [--config FILE.toml] [--sww FILE] [--qty QUANTITY] [options]\n')
+        nl()
+        p('  --config FILE.toml   load settings from a TOML file (CLI args override)')
         nl()
         p('  Render options:')
         p('    --vmin / --vmax FLOAT    colour scale limits (disables auto-scale)')
@@ -3042,6 +3113,90 @@ class SWWAnimationGUI:
         nl()
 
         text.configure(state=tk.DISABLED)
+
+    # -------------------------------------------------------------- #
+    # Config file (TOML)                                             #
+    # -------------------------------------------------------------- #
+
+    def _current_config(self):
+        """Return a dict of all current GUI parameter values."""
+        sww = self._sww_var.get().strip()
+        epsg_raw = self._epsg_var.get().strip()
+        try:
+            epsg_val = int(epsg_raw)
+        except (ValueError, TypeError):
+            epsg_val = None
+        cfg = {}
+        if sww:
+            cfg['sww'] = sww
+        cfg['qty']              = self._qty_var.get()
+        cfg['vmin']             = float(self._vmin_var.get())
+        cfg['vmax']             = float(self._vmax_var.get())
+        cfg['cmap']             = self._cmap_var.get()
+        cfg['cmap_reverse']     = bool(self._cmap_reverse_var.get())
+        cfg['mindepth']         = float(self._mindepth_var.get())
+        cfg['flat_view']        = bool(self._show_edges_var.get())
+        cfg['outdir']           = self._dir_var.get()
+        cfg['dpi']              = int(self._dpi_var.get())
+        cfg['stride']           = int(self._stride_var.get())
+        cfg['alpha']            = float(self._alpha_var.get())
+        if epsg_val is not None:
+            cfg['epsg']         = epsg_val
+        cfg['basemap']          = bool(self._basemap_var.get())
+        cfg['basemap_provider'] = self._basemap_provider_var.get()
+        return cfg
+
+    def _save_config(self):
+        """Write current settings to a TOML file chosen by the user."""
+        path = filedialog.asksaveasfilename(
+            title='Save config',
+            defaultextension='.toml',
+            filetypes=[('TOML config', '*.toml'), ('All files', '*.*')],
+            initialfile='anuga_sww_gui.toml')
+        if not path:
+            return
+        try:
+            cfg = self._current_config()
+            lines = ['# anuga_sww_gui configuration\n', '\n',
+                     '[render]\n']
+            for key in ('qty', 'vmin', 'vmax', 'cmap', 'cmap_reverse',
+                        'mindepth', 'flat_view'):
+                if key in cfg:
+                    lines.append(f'{key} = {_toml_value(cfg[key])}\n')
+            lines += ['\n', '[generate]\n']
+            for key in ('outdir', 'dpi', 'stride', 'alpha', 'epsg',
+                        'basemap', 'basemap_provider'):
+                if key in cfg:
+                    lines.append(f'{key} = {_toml_value(cfg[key])}\n')
+            if 'sww' in cfg:
+                lines += ['\n', '[file]\n',
+                          f'sww = {_toml_value(cfg["sww"])}\n']
+            with open(path, 'w') as fh:
+                fh.writelines(lines)
+            self._set_status(f'Config saved to {os.path.basename(path)}')
+        except Exception as e:
+            self._set_status(f'Failed to save config: {e}')
+
+    def _load_config(self):
+        """Load settings from a TOML file chosen by the user."""
+        path = filedialog.askopenfilename(
+            title='Load config',
+            filetypes=[('TOML config', '*.toml'), ('All files', '*.*')])
+        if not path:
+            return
+        try:
+            import tomllib
+        except ImportError:
+            self._set_status('tomllib not available (requires Python 3.11+)')
+            return
+        try:
+            with open(path, 'rb') as fh:
+                data = tomllib.load(fh)
+        except Exception as e:
+            self._set_status(f'Failed to read config: {e}')
+            return
+        _apply_config_to_gui(data, self)
+        self._set_status(f'Config loaded from {os.path.basename(path)}')
 
     def _set_status(self, msg):
         self._status_var.set(msg)
@@ -3065,6 +3220,10 @@ def main():
     parser = argparse.ArgumentParser(
         description='ANUGA SWW animation viewer',
         formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+
+    # Config file
+    parser.add_argument('--config', default=None, metavar='FILE',
+                        help='TOML config file; CLI args override config values')
 
     # File / quantity
     parser.add_argument('--sww', default=None,
@@ -3113,24 +3272,56 @@ def main():
 
     args = parser.parse_args()
 
+    # Load TOML config (if given); explicit CLI args take precedence.
+    cfg = {}
+    if args.config:
+        try:
+            import tomllib
+        except ImportError:
+            import sys
+            sys.exit('--config requires Python 3.11+ (tomllib not available)')
+        try:
+            with open(args.config, 'rb') as fh:
+                raw = tomllib.load(fh)
+            # Flatten render/generate/file sections
+            cfg.update(raw.get('render',   {}))
+            cfg.update(raw.get('generate', {}))
+            cfg.update(raw.get('file',     {}))
+            for k, v in raw.items():
+                if not isinstance(v, dict):
+                    cfg[k] = v
+        except Exception as e:
+            import sys
+            sys.exit(f'Failed to read config file: {e}')
+
+    def _r(cli_val, key, default=None):
+        """Return cli_val if set, else config value, else default."""
+        return cli_val if cli_val is not None else cfg.get(key, default)
+
+    def _rb(cli_val, key, default=False):
+        """Boolean resolve: explicit True CLI flag wins; else config; else default."""
+        if cli_val:
+            return True
+        return bool(cfg.get(key, default))
+
     root = tk.Tk()
     SWWAnimationGUI(
         root,
-        initial_sww=args.sww,
-        initial_qty=args.qty,
-        initial_vmin=args.vmin,
-        initial_vmax=args.vmax,
-        initial_cmap=args.cmap,
-        initial_cmap_reverse=args.cmap_reverse,
-        initial_mindepth=args.mindepth,
-        initial_flat_view=args.flat_view,
-        initial_outdir=args.outdir,
-        initial_dpi=args.dpi,
-        initial_stride=args.stride,
-        initial_alpha=args.alpha,
-        initial_epsg=args.epsg,
-        initial_basemap=args.basemap,
-        initial_basemap_provider=args.basemap_provider,
+        initial_sww=             _r(args.sww,              'sww'),
+        initial_qty=             _r(args.qty,              'qty'),
+        initial_vmin=            _r(args.vmin,             'vmin'),
+        initial_vmax=            _r(args.vmax,             'vmax'),
+        initial_cmap=            _r(args.cmap,             'cmap'),
+        initial_cmap_reverse=    _rb(args.cmap_reverse,    'cmap_reverse'),
+        initial_mindepth=        _r(args.mindepth,         'mindepth'),
+        initial_flat_view=       _rb(args.flat_view,       'flat_view'),
+        initial_outdir=          _r(args.outdir,           'outdir'),
+        initial_dpi=             _r(args.dpi,              'dpi'),
+        initial_stride=          _r(args.stride,           'stride'),
+        initial_alpha=           _r(args.alpha,            'alpha'),
+        initial_epsg=            _r(args.epsg,             'epsg'),
+        initial_basemap=         _r(args.basemap,          'basemap'),
+        initial_basemap_provider=_r(args.basemap_provider, 'basemap_provider'),
     )
     root.mainloop()
 
