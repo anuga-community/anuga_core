@@ -1573,7 +1573,8 @@ class SWWAnimationGUI:
         self._elev_contour_data = None   # recompute levels for full extent
         self._remove_zoom_patch()
         self._reset_zoom_btn.config(state=tk.DISABLED)
-        self._gen_btn.config(text='↻ Regenerate Frames')
+        if self._frames:
+            self._gen_btn.config(text='↻ Regenerate Frames')
         self._set_status('Zoom reset - full extent will be used for generation.')
 
     # -------------------------------------------------------------- #
