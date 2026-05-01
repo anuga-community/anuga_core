@@ -1623,16 +1623,19 @@ class SWWAnimationGUI:
         px = (pos.x0 + pos.width  * (xv - xlim[0]) / (xlim[1] - xlim[0])) * W
         py = (1.0 - (pos.y0 + pos.height * (yv - ylim[0]) / (ylim[1] - ylim[0]))) * H
 
-        # When zoomed, mask triangles whose centroid is outside the visible
-        # region.  Without this, edges from large off-screen triangles extend
-        # across the whole window.
+        # When zoomed, mask any triangle that has a vertex outside the visible
+        # region so no edges extend beyond the plot boundary.
         mask = None
         if self._zoom_xlim is not None:
             tris = src.triangles
-            xc = (xv[tris[:, 0]] + xv[tris[:, 1]] + xv[tris[:, 2]]) / 3.0
-            yc = (yv[tris[:, 0]] + yv[tris[:, 1]] + yv[tris[:, 2]]) / 3.0
-            mask = ((xc < xlim[0]) | (xc > xlim[1]) |
-                    (yc < ylim[0]) | (yc > ylim[1]))
+            mask = (
+                (xv[tris[:, 0]] < xlim[0]) | (xv[tris[:, 0]] > xlim[1]) |
+                (yv[tris[:, 0]] < ylim[0]) | (yv[tris[:, 0]] > ylim[1]) |
+                (xv[tris[:, 1]] < xlim[0]) | (xv[tris[:, 1]] > xlim[1]) |
+                (yv[tris[:, 1]] < ylim[0]) | (yv[tris[:, 1]] > ylim[1]) |
+                (xv[tris[:, 2]] < xlim[0]) | (xv[tris[:, 2]] > xlim[1]) |
+                (yv[tris[:, 2]] < ylim[0]) | (yv[tris[:, 2]] > ylim[1])
+            )
 
         triang_px = Triangulation(px, py, src.triangles, mask=mask)
         self._mesh_overlay_lines = self._ax.triplot(
@@ -1721,15 +1724,19 @@ class SWWAnimationGUI:
         px = (pos.x0 + pos.width  * (xv - xlim[0]) / (xlim[1] - xlim[0])) * W
         py = (1.0 - (pos.y0 + pos.height * (yv - ylim[0]) / (ylim[1] - ylim[0]))) * H
 
-        # When zoomed, mask triangles outside the visible region (by centroid)
-        # so contours don't extend across the whole window.
+        # When zoomed, mask any triangle with a vertex outside the visible
+        # region so contour lines don't extend beyond the plot boundary.
         mask = None
         if self._zoom_xlim is not None:
             tris = src.triangles
-            xc = (xv[tris[:, 0]] + xv[tris[:, 1]] + xv[tris[:, 2]]) / 3.0
-            yc = (yv[tris[:, 0]] + yv[tris[:, 1]] + yv[tris[:, 2]]) / 3.0
-            mask = ((xc < xlim[0]) | (xc > xlim[1]) |
-                    (yc < ylim[0]) | (yc > ylim[1]))
+            mask = (
+                (xv[tris[:, 0]] < xlim[0]) | (xv[tris[:, 0]] > xlim[1]) |
+                (yv[tris[:, 0]] < ylim[0]) | (yv[tris[:, 0]] > ylim[1]) |
+                (xv[tris[:, 1]] < xlim[0]) | (xv[tris[:, 1]] > xlim[1]) |
+                (yv[tris[:, 1]] < ylim[0]) | (yv[tris[:, 1]] > ylim[1]) |
+                (xv[tris[:, 2]] < xlim[0]) | (xv[tris[:, 2]] > xlim[1]) |
+                (yv[tris[:, 2]] < ylim[0]) | (yv[tris[:, 2]] > ylim[1])
+            )
         triang_px = _Tri(px, py, src.triangles, mask=mask)
 
         # Compute contour levels from the elevation within the visible region
