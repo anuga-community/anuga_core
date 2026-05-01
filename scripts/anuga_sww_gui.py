@@ -1733,7 +1733,8 @@ class SWWAnimationGUI:
                  f'P2=({P2[0]:.0f}, {P2[1]:.0f})')
         self._update_xs_plot()
         if not self._xs_outer.winfo_ismapped():
-            self._xs_outer.pack(fill=tk.X, before=self._canvas_frame)
+            self._xs_outer.pack(side=tk.BOTTOM, fill=tk.BOTH, expand=False,
+                                before=self._canvas_frame)
         self._clear_xs_btn.config(state=tk.NORMAL)
         self._set_status(
             f'Cross-section discharge computed.  '
