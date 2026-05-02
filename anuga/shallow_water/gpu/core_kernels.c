@@ -1111,7 +1111,6 @@ void core_ader_ck_predictor_edge(struct domain *D, double dt) {
     double * restrict xmom_cv   = D->xmom_centroid_values;
     double * restrict ymom_cv   = D->ymom_centroid_values;
     double * restrict bed_cv    = D->bed_centroid_values;
-    double * restrict height_cv = D->height_centroid_values;
 
     double * restrict stage_ev  = D->stage_edge_values;
     double * restrict xmom_ev   = D->xmom_edge_values;

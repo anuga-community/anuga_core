@@ -31,6 +31,42 @@ mpi_dep = dependency('mpi', language: 'c', required: false)
 mpi4py_check = run_command(py3, ['-c', 'import mpi4py; print(mpi4py.get_include())'], check: false)
 have_mpi4py = mpi4py_check.returncode() == 0
 
+# Fallback: if standard MPI detection failed but mpi4py is available,
+# construct MPI dependency from mpi4py's own mpicc wrapper.
+# Handles conda envs where mpicc exists but isn't on the PATH seen by meson.
+if not mpi_dep.found() and have_mpi4py
+  mpi_flags_result = run_command(py3, ['-c', '''
+import sys, subprocess
+try:
+    import mpi4py
+    cfg = mpi4py.get_config()
+    mpicc = cfg.get("mpicc", "")
+    if not mpicc:
+        sys.exit(1)
+    out = subprocess.check_output([mpicc, "-show"], text=True).strip()
+    tokens = out.split()
+    cflags = [t for t in tokens[1:] if t.startswith(("-I", "-D"))]
+    lflags = [t for t in tokens[1:] if t.startswith(("-L", "-l", "-Wl,", "-rpath"))]
+    print("|".join(cflags) + "##" + "|".join(lflags))
+except Exception:
+    sys.exit(1)
+'''], check: false)
+
+  if mpi_flags_result.returncode() == 0
+    mpi_output = mpi_flags_result.stdout().strip()
+    mpi_parts = mpi_output.split('##')
+    if mpi_parts.length() == 2
+      mpi_compile_args = mpi_parts[0] != '' ? mpi_parts[0].split('|') : []
+      mpi_link_args = mpi_parts[1] != '' ? mpi_parts[1].split('|') : []
+      mpi_dep = declare_dependency(
+        compile_args: mpi_compile_args,
+        link_args: mpi_link_args,
+      )
+      message('MPI found via mpi4py configuration (fallback)')
+    endif
+  endif
+endif
+
 if mpi_dep.found() and have_mpi4py
   mpi4py_incdir = mpi4py_check.stdout().strip()
   gpu_inc_dir = include_directories('../utilities', incdir_numpy, mpi4py_incdir, 'gpu')
