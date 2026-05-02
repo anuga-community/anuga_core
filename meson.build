@@ -188,16 +188,25 @@ configure_file(
     install_mode: 'rwxr-xr-x'
 )
 
-# If mpicc is not on meson's PATH (common in conda envs), locate it via
-# mpi4py's own configuration and register it so that dependency('mpi', ...)
-# in subdirectories can find it via the config-tool method.
+# If mpicc is not on meson's PATH (common in conda envs where the env bin
+# dir is in the user's PATH but not in the subprocess PATH seen by meson),
+# locate it via mpi4py config + shutil.which + sys.prefix/bin fallback, then
+# register it so dependency('mpi', ...) in subdirectories finds it correctly.
 _mpicc_from_mpi4py = run_command(py3, ['-c', '''
-import sys
+import sys, os, shutil
 try:
     import mpi4py
     cfg = mpi4py.get_config()
     mpicc = cfg.get("mpicc", "")
-    if mpicc:
+    # Resolve bare name to absolute path
+    if mpicc and not os.path.isabs(mpicc):
+        mpicc = shutil.which(mpicc) or ""
+    # Fallback: look directly in the active Python env's bin/
+    if not mpicc or not os.path.isfile(mpicc):
+        candidate = os.path.join(sys.prefix, "bin", "mpicc")
+        if os.path.isfile(candidate):
+            mpicc = candidate
+    if mpicc and os.path.isfile(mpicc):
         print(mpicc)
     else:
         sys.exit(1)

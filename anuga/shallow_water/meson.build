@@ -32,37 +32,49 @@ mpi4py_check = run_command(py3, ['-c', 'import mpi4py; print(mpi4py.get_include(
 have_mpi4py = mpi4py_check.returncode() == 0
 
 # Fallback: if standard MPI detection failed but mpi4py is available,
-# construct MPI dependency from mpi4py's own mpicc wrapper.
-# Handles conda envs where mpicc exists but isn't on the PATH seen by meson.
+# construct MPI dependency directly from the Python env prefix.
+# In conda envs, MPI headers and libs live in sys.prefix/{include,lib},
+# so we can bypass mpicc entirely.
 if not mpi_dep.found() and have_mpi4py
-  mpi_flags_result = run_command(py3, ['-c', '''
-import sys, subprocess
+  mpi_prefix_result = run_command(py3, ['-c', '''
+import sys, os, subprocess, shutil
 try:
     import mpi4py
+    prefix = sys.prefix
+    inc = os.path.join(prefix, "include")
+    lib = os.path.join(prefix, "lib")
+    # Confirm mpi.h is actually present in the env
+    if not os.path.isfile(os.path.join(inc, "mpi.h")):
+        sys.exit(1)
+    # Try to get link flags from mpicc if available
     cfg = mpi4py.get_config()
     mpicc = cfg.get("mpicc", "")
+    if mpicc and not os.path.isabs(mpicc):
+        mpicc = shutil.which(mpicc) or os.path.join(prefix, "bin", "mpicc")
     if not mpicc:
-        sys.exit(1)
-    out = subprocess.check_output([mpicc, "-show"], text=True).strip()
-    tokens = out.split()
-    cflags = [t for t in tokens[1:] if t.startswith(("-I", "-D"))]
-    lflags = [t for t in tokens[1:] if t.startswith(("-L", "-l", "-Wl,", "-rpath"))]
-    print("|".join(cflags) + "##" + "|".join(lflags))
+        mpicc = os.path.join(prefix, "bin", "mpicc")
+    try:
+        out = subprocess.check_output([mpicc, "-show"], text=True).strip()
+        tokens = out.split()
+        lflags = [t for t in tokens[1:] if t.startswith(("-L", "-l", "-Wl,", "-rpath"))]
+    except Exception:
+        lflags = ["-L" + lib, "-lmpi"]
+    print(inc + "##" + "|".join(lflags))
 except Exception:
     sys.exit(1)
 '''], check: false)
 
-  if mpi_flags_result.returncode() == 0
-    mpi_output = mpi_flags_result.stdout().strip()
+  if mpi_prefix_result.returncode() == 0
+    mpi_output = mpi_prefix_result.stdout().strip()
     mpi_parts = mpi_output.split('##')
     if mpi_parts.length() == 2
-      mpi_compile_args = mpi_parts[0] != '' ? mpi_parts[0].split('|') : []
-      mpi_link_args = mpi_parts[1] != '' ? mpi_parts[1].split('|') : []
+      mpi_inc = mpi_parts[0]
+      mpi_link_args = mpi_parts[1] != '' ? mpi_parts[1].split('|') : ['-lmpi']
       mpi_dep = declare_dependency(
-        compile_args: mpi_compile_args,
+        compile_args: ['-I' + mpi_inc],
         link_args: mpi_link_args,
       )
-      message('MPI found via mpi4py configuration (fallback)')
+      message('MPI found via Python env prefix (fallback): ' + mpi_inc)
     endif
   endif
 endif
