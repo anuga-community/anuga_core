@@ -136,11 +136,10 @@ Commits `61418742`, `5498f98d`. All CI passed.
 `gpu_evolve_one_ader2_step` added to `gpu_kernels.c` + declared in `gpu_domain.h` (fix for
 missing header causing Windows/3.12 CI failure). `evolve_one_ader2_step` dispatches to
 `_evolve_one_ader2_step_c` / `_evolve_one_ader2_step_gpu` in GPU mode. `DE_ader2` flow
-algorithm added to `set_flow_algorithm()` (DE1 settings + ader2 timestepping). Single-flux-call
-optimisation: reuses previous step's `CFL * flux_timestep` as predictor half-dt (bootstrap
-first step = Euler); drops from 2 flux calls to 1 per step → ~1.18× faster than DE1 on
-80×80 dam-break. `FLOPS_ADER_PREDICTOR=105` constant. P3.8 (fused predict-extrapolate kernel,
-MUSCL-Hancock option A + C-K option B) documented in `FUTURE_WORK.md`. Fix: `create_sts_boundary`
+algorithm added to `set_flow_algorithm()` (DE1 settings + ader2 timestepping). Fused
+predict-extrapolate C-K loop (P3.8): merged extrapolation and C-K predictor into a single
+kernel pass — eliminates the second extrapolation entirely → **1.75× faster than DE1**.
+`FLOPS_ADER_PREDICTOR=105` constant. Fix: `create_sts_boundary`
 in `sts.py` now calls `fid.close()` in a `try/finally` block (Windows WinError 32).
 `develop_ader` merged into `develop`. Commits `e9d15803`–`3b00dc79`.
 

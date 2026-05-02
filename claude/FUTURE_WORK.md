@@ -111,68 +111,7 @@ third-order reconstruction (MUSCL-Hancock or ADER) would improve accuracy for lo
 tsunami propagation. The consolidated `quantity_openmp_ext.pyx` (session 14, H3.1) is the
 right place. Requires careful monotonicity limiting.
 
-**P3.8 ADER-2 / MUSCL-Hancock fused predict-extrapolate kernel (single extrapolation)**
-Current `DE_ader2` uses two extrapolation passes per step:
-1. Extrapolate Q^n → edges (predictor reads these to recover limited slopes)
-2. Predictor overwrites centroids Q^n → Q^{n+1/2}
-3. Re-extrapolate Q^{n+1/2} → edges (flux reads these)
-
-The two passes are forced because the predictor *consumes* Q^n edges as input but
-the flux call needs Q^{n+1/2} edges as output — different states, different passes.
-
-**Two equivalent approaches to eliminate the second extrapolation:**
-
-**Option A — MUSCL-Hancock predictor (simpler):**
-The Hancock half-step uses the Q^n edge values that already exist after extrapolation
-to estimate the local flux divergence, then shifts all edge values by the same amount:
-```
-div_F ≈ (1/A_k) * Σ_i  F(Q_edge^n[k,i]) · n_i * |e_i|
-Q_edge^{n+1/2}[k,i] = Q_edge^n[k,i]  -  (dt/2) * div_F
-```
-This is purely local (no neighbour access), requires no re-limiting (slopes are
-preserved, only the centroid level shifts), and writes Q^{n+1/2} edge values in-place.
-The full scheme per step:
-```
-extrapolate Q^n → edges                # 1 extrapolation (same as now)
-update_boundary
-fused_hancock_predict(prev_dt)         # in-place edge update, purely local
-compute_fluxes from Q^{n+1/2} edges   # 1 flux call
-compute_forcing_terms
-saxpy(0,1) + update_conserved_quantities
-```
-**Well-balance caveat:** the flux divergence F = [uh, u²h+gh²/2, uvh] omits the bed
-slope source term g*h*∂z/∂x. On a sloped still-water bed the Hancock predictor
-produces nonzero div_F even at rest, disturbing the well-balance property. Fix: add
-the discrete bed-slope correction `g*h_c * Σ_i z_edge[k,i] * n_i * |e_i| / A_k`
-to the divergence estimate, analogous to the well-balanced pressure decomposition
-already used in `core_compute_fluxes_central`.
-
-**Option B — C-K fused kernel (more accurate, more complex):**
-Recover slopes from neighbour centroid values (Green-Gauss), apply the existing
-limiter, evaluate the full SWE C-K time derivative (inherently well-balanced via
-w_x = h_x + z_x decomposition), and write Q^{n+1/2} directly into edge_values:
-```
-for each cell k:
-    slopes from neighbours[k,0..2] centroid values via Green-Gauss
-    apply beta limiter (replicate hfactor logic from core_extrapolate_second_order_edge)
-    CK time derivatives (same as current core_ader_ck_predictor)
-    edge_values[k,i] = (Q_c^n + slope*offset) + (dt/2)*dQ/dt   for i=0,1,2
-```
-More complex to implement (needs neighbour access, full limiter replication) but
-naturally well-balanced and matches the existing C-K predictor's accuracy.
-
-**Recommendation:** start with Option A (Hancock) — it reuses the existing
-extrapolation output with minimal new code. Add the well-balance correction from
-the outset. Option B is worth pursuing if Option A shows accuracy issues on
-strongly sloped beds.
-
-**Common to both options:**
-- Bootstrap (first step) still runs plain extrapolation + Euler to establish
-  `_ader2_prev_dt`. All subsequent steps use 1 extrapolation + 1 flux call.
-- The fused kernel must NOT update centroid values — Q^n centroids are preserved
-  intact for the `saxpy(0,1)` restore before `update_conserved_quantities`.
-- Expected speedup over current `DE_ader2`: ~1.15–1.25× (one fewer extrapolation,
-  ~220 FLOP/cell). Over `DE1` (RK2): ~1.35–1.45×.
+~~**P3.8 ADER-2 / MUSCL-Hancock fused predict-extrapolate kernel (single extrapolation)**~~ — Done (session 31). Fused C-K predictor + extrapolation into a single kernel pass, eliminating the second extrapolation. **1.75× faster than DE1.**
 
 **P3.3 Improve `fit_interpolate` accuracy and performance** *(partial — sessions 25–26)*
 Session 25–26: `Fit.select_alpha()` added with L-curve criterion (20 log-spaced candidates
@@ -238,7 +177,7 @@ per-variable size limit. The NetCDF3 classic restriction does not apply. (Invali
 |----------|-------|-----------|--------|----------------|
 | P1 — Quick wins | 8 | 0 ✅ | 1–3 days | All done |
 | P2 — Medium | 9 | 3 | 1–2 weeks | Usability, type safety, test coverage |
-| P3 — Initiatives | 8 | 7 | 1–3 months | Performance, scalability, accuracy |
+| P3 — Initiatives | 8 | 6 | 1–3 months | Performance, scalability, accuracy |
 | Speculative | 4 | 4 | 6+ months | Strategic differentiation |
 
 **Top 3 near-term recommendations:**

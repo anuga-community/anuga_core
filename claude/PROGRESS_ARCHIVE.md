@@ -114,7 +114,7 @@ Source: `docs/doc_improvement_actions.md` — Generated: 2026-03-23
 
 ---
 
-## Additional Enhancements ✅ All 47 complete
+## Additional Enhancements ✅ All 57 complete
 
 | Item | Files | Done |
 |------|-------|------|
@@ -166,6 +166,14 @@ Source: `docs/doc_improvement_actions.md` — Generated: 2026-03-23
 | **`test_shallow_water_domain.py` cleanup** — removed duplicate/unused imports, 66 debug prints, dead skeleton; net −101 lines | `anuga/shallow_water/tests/test_shallow_water_domain.py` | 2026-04-25 |
 | **Split `test_shallow_water_domain.py` into 5 files** — `test_flux.py` (15), `test_boundaries_sw.py` (9), `test_extrapolation_sw.py` (14), `test_physics_sw.py` (21); registered in meson.build | `anuga/shallow_water/tests/` | 2026-04-25 |
 | **Fix 383 pytest warnings** — `np.array(netcdf_var)` → `netcdf_var[:]` in animate.py; zero-timestep guard in rate_operators.py; message-based filterwarnings for 5 deprecated forcing classes | `anuga/utilities/animate.py`, `anuga/operators/rate_operators.py`, `pyproject.toml` | 2026-04-25 |
+| **anuga_sww_gui** — Basemap wet/dry smooth rendering: `LinearTriInterpolator` + `imshow` path in `_animated_frame`; zoom-aware grid (600 px across visible span, min 200 px) | `anuga/utilities/animate.py` | 2026-05-01 |
+| **anuga_sww_gui** — Live x/y/triangle hover readout: status bar restructured; `_trifinder` cached; `_on_hover` sets right-side `_coord_var` StringVar | `scripts/anuga_sww_gui.py` | 2026-05-01 |
+| **anuga_sww_gui** — Zoom clipping for mesh/elevation overlays: vertex-based exclusion (any vertex outside xlim/ylim); contour levels computed from visible elevation range | `scripts/anuga_sww_gui.py` | 2026-05-01 |
+| **anuga_sww_gui** — `↻ Regenerate Frames` button prompt after zoom set/reset; reverts to `Generate Frames` at startup and when generation starts | `scripts/anuga_sww_gui.py` | 2026-05-01 |
+| **anuga_sww_gui** — 14 new CLI parameters: `--vmin`, `--vmax`, `--cmap`, `--cmap-reverse`, `--mindepth`, `--flat-view`, `--outdir`, `--dpi`, `--stride`, `--alpha`, `--epsg`, `--basemap`/`--no-basemap`, `--basemap-provider` | `scripts/anuga_sww_gui.py` | 2026-05-01 |
+| **anuga_sww_gui** — TOML config file support: `--config FILE.toml` CLI arg; Save Config / Load Config buttons; sectioned `[render]`/`[generate]`/`[file]` layout; CLI args override config | `scripts/anuga_sww_gui.py` | 2026-05-01 |
+| **anuga_sww_gui** — Cross-section discharge panel: pick two points, compute Q(t) via `get_flow_through_cross_section`; cyan overlay markers + line on animation; vertical cursor synced with playback | `scripts/anuga_sww_gui.py` | 2026-05-01 |
+| **anuga_sww_gui** — Cross-section panel repositioned below animation canvas (matching timeseries panel layout) | `scripts/anuga_sww_gui.py` | 2026-05-01 |
 
 ---
 

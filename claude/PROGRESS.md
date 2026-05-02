@@ -1,6 +1,6 @@
 # ANUGA Code & Documentation Improvement Progress
 
-Last updated: 2026-04-27 (session 27)
+Last updated: 2026-05-01 (session 28)
 Branch: `develop` (all feature branches merged)
 
 Full history of completed work: `claude/PROGRESS_ARCHIVE.md`
@@ -14,7 +14,7 @@ Future work recommendations: `claude/FUTURE_WORK.md`
 |------|-------|------|-----------|
 | Code improvements (original list) | 60 | 53 | 7 |
 | Documentation improvements | 20 | 20 | 0 |
-| Additional enhancements | 47 | 47 | 0 |
+| Additional enhancements | 57 | 57 | 0 |
 | Hydrata Phases 0–4 | 21 | 21 | 0 |
 | GPU Phase 1–3 | 15 | 15 | 0 |
 | GPU Phase 4 — SC26 paper | 3 | 0 | 3 |
@@ -24,7 +24,7 @@ Future work recommendations: `claude/FUTURE_WORK.md`
 | Benchmark suite | 2 | 2 | 0 |
 | Bug fixes | 7 | 7 | 0 |
 | Kinematic viscosity parallelisation | 4 | 4 | 0 |
-| **Total** | **195** | **187** | **8** |
+| **Total** | **205** | **197** | **8** |
 
 ---
 
