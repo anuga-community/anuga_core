@@ -188,6 +188,32 @@ configure_file(
     install_mode: 'rwxr-xr-x'
 )
 
+# If mpicc is not on meson's PATH (common in conda envs), locate it via
+# mpi4py's own configuration and register it so that dependency('mpi', ...)
+# in subdirectories can find it via the config-tool method.
+_mpicc_from_mpi4py = run_command(py3, ['-c', '''
+import sys
+try:
+    import mpi4py
+    cfg = mpi4py.get_config()
+    mpicc = cfg.get("mpicc", "")
+    if mpicc:
+        print(mpicc)
+    else:
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+'''], check: false)
+
+if _mpicc_from_mpi4py.returncode() == 0
+  _mpicc_path = _mpicc_from_mpi4py.stdout().strip()
+  _mpicc_prog = find_program(_mpicc_path, required: false)
+  if _mpicc_prog.found()
+    meson.override_find_program('mpicc', _mpicc_prog)
+    message('mpicc registered from mpi4py: ' + _mpicc_path)
+  endif
+endif
+
 # Add subdirectories which contains python sources
 subdir('anuga')
 
