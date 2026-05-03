@@ -16,19 +16,32 @@ from anuga import rectangular_cross_domain
 from anuga import Inlet_operator
 
 
+_gpu_error = None
+_gpu_avail = None
+
+
 def gpu_available():
     """Check if GPU OpenMP interface is available."""
+    global _gpu_error, _gpu_avail
+    if _gpu_avail is not None:
+        return _gpu_avail
     try:
         from anuga.shallow_water.sw_domain_gpu_ext import init_gpu_domain
-        return True
+        _gpu_avail = True
     except Exception as e:
-        # Print the actual error so CI logs show why the module failed to load
-        # (e.g. missing libmpi.dylib on macOS, or missing mpi4py on Windows)
-        print(f"sw_domain_gpu_ext not available: {type(e).__name__}: {e}", file=sys.stderr)
-        return False
+        _gpu_avail = False
+        _gpu_error = f"{type(e).__name__}: {e}"
+        print(f"sw_domain_gpu_ext not available: {_gpu_error}", flush=True)
+    return _gpu_avail
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+def _gpu_skip_reason():
+    if _gpu_error:
+        return f"GPU OpenMP interface not available: {_gpu_error}"
+    return "GPU OpenMP interface not available"
+
+
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_Kernels(unittest.TestCase):
     """Unit tests for individual GPU kernels."""
 
@@ -139,7 +152,7 @@ class Test_GPU_Kernels(unittest.TestCase):
                                    err_msg="Edge values mismatch after extrapolation")
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_RK2(unittest.TestCase):
     """Tests for complete RK2 step on GPU."""
 
@@ -234,7 +247,7 @@ class Test_GPU_RK2(unittest.TestCase):
                         f"Xmomentum difference too large: max={xmom_diff.max():.2e}")
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_Boundaries(unittest.TestCase):
     """Tests for GPU boundary evaluation."""
 
@@ -375,7 +388,7 @@ class Test_GPU_Boundaries(unittest.TestCase):
             self.assertAlmostEqual(stage_bv[idx], -0.3, places=5)
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_Initialization(unittest.TestCase):
     """Tests for GPU initialization and error handling."""
 
@@ -419,7 +432,7 @@ class Test_GPU_Initialization(unittest.TestCase):
         self.assertTrue(domain.gpu_interface.initialized)
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_LargeDomain(unittest.TestCase):
     """Tests with larger domains to verify scaling."""
 
@@ -484,7 +497,7 @@ class Test_GPU_LargeDomain(unittest.TestCase):
                         f"Large domain stage difference: max={stage_diff.max():.2e}")
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_InletOperator(unittest.TestCase):
     """Tests for Inlet_operator with GPU acceleration."""
 
@@ -660,7 +673,7 @@ class Test_GPU_InletOperator(unittest.TestCase):
                         f"Xmomentum difference too large: max={xmom_diff.max():.2e}")
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_Riverwall(unittest.TestCase):
     """Tests for riverwall/weir support with GPU acceleration."""
 
@@ -899,7 +912,7 @@ class Test_GPU_Riverwall(unittest.TestCase):
                         "Water should have flowed over the wall, reducing the level difference")
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_EndToEnd(unittest.TestCase):
     """End-to-end regression tests comparing mode=1 (Python RK2) vs mode=2 (C RK2).
 
@@ -1021,7 +1034,7 @@ class Test_GPU_EndToEnd(unittest.TestCase):
                 f'final={final_volume:.6f}')
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_RK3(unittest.TestCase):
     """Tests for SSP-RK3 timestepping in GPU mode (DE2 flow algorithm).
 
@@ -1135,7 +1148,7 @@ class Test_GPU_RK3(unittest.TestCase):
             finalize_gpu_domain(gpu)
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_Culvert(unittest.TestCase):
     """Tests for Boyd box/pipe culvert operators in GPU mode."""
 
@@ -1248,7 +1261,7 @@ class Test_GPU_Culvert(unittest.TestCase):
             'Right side should have gained water through the culvert')
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_WeirTrapezoid(unittest.TestCase):
     """Tests for Weir_orifice_trapezoid_operator in GPU mode."""
 
@@ -1351,7 +1364,7 @@ class Test_GPU_WeirTrapezoid(unittest.TestCase):
             err_msg='Weir trapezoid (z1=z2=0.5) 5s: stage mismatch between mode=1 and mode=2')
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_SlotLimits(unittest.TestCase):
     """Tests that GPU operator arrays grow dynamically beyond the initial capacity."""
 
@@ -1404,7 +1417,7 @@ class Test_GPU_SlotLimits(unittest.TestCase):
         self.assertEqual(len(operators), 34)
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_FileBoundary(unittest.TestCase):
     """Tests for G1.1: File_boundary / Field_boundary GPU support."""
 
@@ -1518,7 +1531,7 @@ class Test_GPU_FileBoundary(unittest.TestCase):
         finalize_gpu_domain(gpu)
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_DeviceMemory(unittest.TestCase):
     """Tests for G1.2: device memory check before array mapping."""
 

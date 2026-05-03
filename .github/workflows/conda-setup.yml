@@ -64,6 +64,13 @@ jobs:
         run: |
            conda install -c conda-forge -n anuga_env compilers
 
+      - name: Set macOS library path for MPI
+        if: runner.os == 'macOS'
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          echo "DYLD_LIBRARY_PATH=$CONDA_PREFIX/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+
       - name: Install gxx with openmp compiler on Linux
         if: runner.os == 'Linux'
         shell: bash -el {0}
