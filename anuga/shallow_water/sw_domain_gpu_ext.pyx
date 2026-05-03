@@ -34,6 +34,7 @@ cdef extern from "gpu_domain.h" nogil:
         double maximum_allowed_speed
         double evolve_max_timestep
         int64_t low_froude
+        int64_t timestep_fluxcalls
         int64_t extrapolate_velocity_second_order
         # Beta values for gradient limiting
         double beta_w
@@ -86,6 +87,7 @@ cdef extern from "gpu_domain.h" nogil:
         # Work arrays for extrapolation
         double* x_centroid_work
         double* y_centroid_work
+        double* boundary_flux_sum
         # Friction
         double* friction_centroid_values
         # Ghost cell flag (1=full/owned, 0=ghost); NULL for single-process domains
@@ -162,6 +164,7 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_domain_sync_to_device(gpu_domain *GD)
     void gpu_domain_sync_from_device(gpu_domain *GD)
     void gpu_domain_sync_all_from_device(gpu_domain *GD)
+    void gpu_sync_boundary_flux_sum_from_device(gpu_domain *GD)
     void gpu_sync_boundary_values(gpu_domain *GD)
     void gpu_sync_edge_values_from_device(gpu_domain *GD)
     int gpu_boundary_edge_sync_init(gpu_domain *GD, int num_boundary_cells, int *boundary_cell_ids)
@@ -216,6 +219,9 @@ cdef extern from "gpu_domain.h" nogil:
     # GPU kernels
     void gpu_extrapolate_second_order(gpu_domain *GD)
     double gpu_compute_fluxes(gpu_domain *GD)
+    double gpu_compute_fluxes_substep(gpu_domain *GD, int substep_count,
+                                      int timestep_fluxcalls, int compute_timestep,
+                                      int compute_boundary_flux)
     void gpu_update_conserved_quantities(gpu_domain *GD, double timestep)
     void gpu_backup_conserved_quantities(gpu_domain *GD)
     void gpu_saxpy_conserved_quantities(gpu_domain *GD, double a, double b)
@@ -225,10 +231,12 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_manning_friction(gpu_domain *GD)
 
     # Full RK2 step
-    double gpu_evolve_one_rk2_step(gpu_domain *GD, double max_timestep, int apply_forcing)
+    double gpu_evolve_one_rk2_step(gpu_domain *GD, double max_timestep,
+                                   int apply_forcing, int compute_boundary_flux)
 
     # Full SSP-RK3 step
-    double gpu_evolve_one_rk3_step(gpu_domain *GD, double max_timestep, int apply_forcing)
+    double gpu_evolve_one_rk3_step(gpu_domain *GD, double max_timestep,
+                                   int apply_forcing, int compute_boundary_flux)
 
     void print_gpu_domain_info(gpu_domain *GD)
     int detect_gpu_aware_mpi()
@@ -264,6 +272,10 @@ cdef extern from "gpu_domain.h" nogil:
                            double *vel_u, double *vel_v, int num_vel,
                            int has_velocity, double ext_vel_u, double ext_vel_v,
                            int zero_velocity)
+    double gpu_inlet_apply_v2(gpu_domain *GD, int op_id, double volume,
+                              double total_area,
+                              int has_velocity, double ext_vel_u, double ext_vel_v,
+                              int zero_velocity, double *current_volume_out)
 
     # Culvert operators (Boyd box/pipe/weir_trapezoid - batched GPU gather/scatter)
     struct culvert_params:
@@ -440,6 +452,7 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     cdef double[::1] areas, radii, max_speed
     cdef double[:,::1] centroid_coords, edge_coords
     cdef double[::1] x_centroid_work, y_centroid_work
+    cdef double[::1] boundary_flux_sum
     cdef int64_t[::1] tri_full_flag
 
     # Get basic parameters
@@ -451,6 +464,7 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     D.minimum_allowed_height = domain_object.minimum_allowed_height
     D.maximum_allowed_speed = domain_object.maximum_allowed_speed
     D.evolve_max_timestep = domain_object.evolve_max_timestep
+    D.timestep_fluxcalls = domain_object.timestep_fluxcalls
 
     # Copy CFL and evolve_max_timestep to GPU domain struct (used by C RK2 loop)
     GD.CFL = domain_object.CFL
@@ -578,6 +592,9 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
 
     y_centroid_work = domain_object.y_centroid_work
     D.y_centroid_work = &y_centroid_work[0]
+
+    boundary_flux_sum = domain_object.boundary_flux_sum
+    D.boundary_flux_sum = &boundary_flux_sum[0]
 
     # Friction
     cdef double[::1] friction_cv
@@ -948,6 +965,11 @@ def sync_all_from_device(GPUDomain gpu_dom):
     Use this when you need to inspect intermediate GPU values.
     """
     gpu_domain_sync_all_from_device(&gpu_dom.GD)
+
+
+def sync_boundary_flux_sum_from_device(GPUDomain gpu_dom):
+    """Sync the small boundary_flux_sum array from device to host."""
+    gpu_sync_boundary_flux_sum_from_device(&gpu_dom.GD)
 
 
 def sync_boundary_values(GPUDomain gpu_dom):
@@ -1376,7 +1398,8 @@ def evaluate_time_boundary_gpu(GPUDomain gpu_dom):
     gpu_evaluate_time_boundary(&gpu_dom.GD)
 
 
-def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
+def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing,
+                            int compute_boundary_flux=1):
     """
     Execute one RK2 timestep on GPU.
 
@@ -1394,10 +1417,11 @@ def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_fo
     float
         The timestep used
     """
-    return gpu_evolve_one_rk2_step(&gpu_dom.GD, max_timestep, apply_forcing)
+    return gpu_evolve_one_rk2_step(&gpu_dom.GD, max_timestep, apply_forcing, compute_boundary_flux)
 
 
-def evolve_one_rk3_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
+def evolve_one_rk3_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing,
+                            int compute_boundary_flux=1):
     """
     Execute one SSP-RK3 timestep on GPU (Shu-Osher 3-stage).
 
@@ -1415,7 +1439,7 @@ def evolve_one_rk3_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_fo
     float
         The timestep used
     """
-    return gpu_evolve_one_rk3_step(&gpu_dom.GD, max_timestep, apply_forcing)
+    return gpu_evolve_one_rk3_step(&gpu_dom.GD, max_timestep, apply_forcing, compute_boundary_flux)
 
 
 def finalize_gpu_domain(GPUDomain gpu_dom):
@@ -1456,6 +1480,20 @@ def compute_fluxes_gpu(GPUDomain gpu_dom):
         The local minimum timestep (caller should do MPI_Allreduce for global min)
     """
     return gpu_compute_fluxes(&gpu_dom.GD)
+
+
+def compute_fluxes_substep_gpu(GPUDomain gpu_dom, int substep_count,
+                               int timestep_fluxcalls=1,
+                               int compute_timestep=1,
+                               int compute_boundary_flux=1):
+    """
+    Compute fluxes for one RK substep.
+
+    Later RK stages can set compute_timestep=0 to avoid max-speed/timestep
+    work while still refreshing explicit updates.
+    """
+    return gpu_compute_fluxes_substep(&gpu_dom.GD, substep_count, timestep_fluxcalls,
+                                      compute_timestep, compute_boundary_flux)
 
 
 def update_conserved_quantities_gpu(GPUDomain gpu_dom, double timestep):
@@ -1770,6 +1808,26 @@ def inlet_apply_gpu(GPUDomain gpu_dom, int op_id, double volume,
                            u_ptr, v_ptr, n_vel,
                            has_velocity, ext_vel_u, ext_vel_v,
                            zero_velocity)
+
+
+def inlet_apply_gpu_v2(GPUDomain gpu_dom, int op_id, double volume,
+                       double total_area,
+                       int has_velocity, double ext_vel_u, double ext_vel_v,
+                       int zero_velocity):
+    """
+    Apply inlet operator on GPU with volume, velocity capture, and momentum
+    update combined in one C path.
+
+    Returns
+    -------
+    (actual_volume, current_volume)
+    """
+    cdef double current_volume = 0.0
+    cdef double actual_volume = gpu_inlet_apply_v2(&gpu_dom.GD, op_id, volume,
+                                                   total_area,
+                                                   has_velocity, ext_vel_u, ext_vel_v,
+                                                   zero_velocity, &current_volume)
+    return actual_volume, current_volume
 
 
 # ============================================================================

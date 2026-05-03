@@ -2075,6 +2075,7 @@ class Domain(Generic_Domain):
                     # Need to sync from device, run, sync back
                     self.gpu_interface.sync_from_device()
                     f(self)
+                    self.gpu_interface.mark_host_dirty()
                     self.gpu_interface.sync_to_device()
         else:
             for f in self.forcing_terms:
@@ -2086,10 +2087,6 @@ class Domain(Generic_Domain):
         """ extrapolate centroid values to vertices and edges"""
 
         nvtxRangePush('distribute_to_vertices_and_edges')
-
-        # Sync from GPU if in GPU mode (needed before CPU reads data at yieldsteps)
-        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
-            self.gpu_interface.sync_from_device()
 
         # Do protection step
         self.protect_against_infinitesimal_and_negative_heights()
@@ -2606,6 +2603,8 @@ class Domain(Generic_Domain):
         """
 
         nvtxRangePush('store_timestep')
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            self.gpu_interface.sync_from_device()
         self.writer.store_timestep()
         nvtxRangePop()
 
@@ -2754,7 +2753,7 @@ class Domain(Generic_Domain):
             backup_conserved_quantities_gpu,
             extrapolate_second_order_gpu,
             protect_gpu,
-            compute_fluxes_gpu,
+            compute_fluxes_substep_gpu,
             update_conserved_quantities_gpu,
             saxpy_conserved_quantities_gpu,
             sync_boundary_values,
@@ -2774,6 +2773,7 @@ class Domain(Generic_Domain):
         import numpy as np
 
         gpu_dom = self.gpu_interface.gpu_dom
+        compute_boundary_flux = 1 if self._gpu_needs_boundary_flux_sum() else 0
 
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
@@ -2846,7 +2846,8 @@ class Domain(Generic_Domain):
             sync_boundary_values(gpu_dom)
 
         # Compute fluxes
-        self.flux_timestep = compute_fluxes_gpu(gpu_dom)
+        self.flux_timestep = compute_fluxes_substep_gpu(
+            gpu_dom, 0, 2, 1, compute_boundary_flux)
 
         # Forcing terms
         self.compute_forcing_terms()
@@ -2899,7 +2900,7 @@ class Domain(Generic_Domain):
             sync_boundary_values(gpu_dom)
 
         # Compute fluxes (ignore timestep from second step)
-        compute_fluxes_gpu(gpu_dom)
+        compute_fluxes_substep_gpu(gpu_dom, 1, 2, 0, compute_boundary_flux)
 
         # Forcing terms
         self.compute_forcing_terms()
@@ -2909,6 +2910,7 @@ class Domain(Generic_Domain):
 
         # RK2 averaging
         saxpy_conserved_quantities_gpu(gpu_dom, 0.5, 0.5)
+        self.gpu_interface.mark_device_dirty()
 
 
     def _evolve_one_rk2_step_c(self, yieldstep, finaltime):
@@ -2995,7 +2997,9 @@ class Domain(Generic_Domain):
 
         # Execute full RK2 step in C (includes MPI timestep reduction)
         # apply_forcing=1 enables Manning friction on GPU
-        self.timestep = evolve_one_rk2_step_gpu(gpu_dom, max_timestep, 1)
+        compute_boundary_flux = 1 if self._gpu_needs_boundary_flux_sum() else 0
+        self.timestep = evolve_one_rk2_step_gpu(gpu_dom, max_timestep, 1, compute_boundary_flux)
+        self.gpu_interface.mark_device_dirty()
 
         # Update internal time tracking
         self.set_relative_time(self.get_relative_time() + self.timestep)
@@ -3015,7 +3019,7 @@ class Domain(Generic_Domain):
             backup_conserved_quantities_gpu,
             extrapolate_second_order_gpu,
             protect_gpu,
-            compute_fluxes_gpu,
+            compute_fluxes_substep_gpu,
             update_conserved_quantities_gpu,
             saxpy_conserved_quantities_gpu,
             saxpy3_conserved_quantities_gpu,
@@ -3036,6 +3040,7 @@ class Domain(Generic_Domain):
         import numpy as np
 
         gpu_dom = self.gpu_interface.gpu_dom
+        compute_boundary_flux = 1 if self._gpu_needs_boundary_flux_sum() else 0
 
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
@@ -3111,7 +3116,8 @@ class Domain(Generic_Domain):
         extrapolate_second_order_gpu(gpu_dom)
         _eval_boundaries()
 
-        self.flux_timestep = compute_fluxes_gpu(gpu_dom)
+        self.flux_timestep = compute_fluxes_substep_gpu(
+            gpu_dom, 0, 3, 1, compute_boundary_flux)
 
         # Forcing terms
         self.compute_forcing_terms()
@@ -3134,7 +3140,7 @@ class Domain(Generic_Domain):
         extrapolate_second_order_gpu(gpu_dom)
         _eval_boundaries()
 
-        compute_fluxes_gpu(gpu_dom)
+        compute_fluxes_substep_gpu(gpu_dom, 1, 3, 0, compute_boundary_flux)
         self.compute_forcing_terms()
         update_conserved_quantities_gpu(gpu_dom, self.timestep)
 
@@ -3154,12 +3160,13 @@ class Domain(Generic_Domain):
         extrapolate_second_order_gpu(gpu_dom)
         _eval_boundaries()
 
-        compute_fluxes_gpu(gpu_dom)
+        compute_fluxes_substep_gpu(gpu_dom, 2, 3, 0, compute_boundary_flux)
         self.compute_forcing_terms()
         update_conserved_quantities_gpu(gpu_dom, self.timestep)
 
         # Final: Q^{n+1} = (2*Q^(3) + Q^n) / 3
         saxpy3_conserved_quantities_gpu(gpu_dom, 2.0, 1.0, 3.0)
+        self.gpu_interface.mark_device_dirty()
 
         self.set_relative_time(initial_relative_time + self.timestep)
 
@@ -3246,7 +3253,9 @@ class Domain(Generic_Domain):
 
         # Execute full RK3 step in C (includes MPI timestep reduction)
         # apply_forcing=1 enables Manning friction on GPU
-        self.timestep = evolve_one_rk3_step_gpu(gpu_dom, max_timestep, 1)
+        compute_boundary_flux = 1 if self._gpu_needs_boundary_flux_sum() else 0
+        self.timestep = evolve_one_rk3_step_gpu(gpu_dom, max_timestep, 1, compute_boundary_flux)
+        self.gpu_interface.mark_device_dirty()
 
         # Update internal time tracking
         self.set_relative_time(self.get_relative_time() + self.timestep)
@@ -3412,6 +3421,7 @@ class Domain(Generic_Domain):
             if c is not None:
                 from anuga.shallow_water.sw_domain_gpu_ext import saxpy3_conserved_quantities_gpu
                 saxpy3_conserved_quantities_gpu(self.gpu_interface.gpu_dom, a, b, c)
+                self.gpu_interface.mark_device_dirty()
             else:
                 self.gpu_interface.saxpy_conserved_quantities_kernel(self, a, b)
         else:
@@ -3493,6 +3503,13 @@ class Domain(Generic_Domain):
         self._cached_has_cpu_only_ops = result
         return result
 
+    def _gpu_needs_boundary_flux_sum(self):
+        """Return True when a fractional operator consumes boundary_flux_sum."""
+        from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
+
+        return any(isinstance(op, boundary_flux_integral_operator)
+                   for op in self.fractional_step_operators)
+
     def apply_fractional_steps(self):
         """Override to sync GPU data before fractional step operators run.
 
@@ -3513,6 +3530,10 @@ class Domain(Generic_Domain):
             if gpu_culverts_active:
                 self.gpu_culvert_manager.apply_all()
 
+            if self._gpu_needs_boundary_flux_sum():
+                from anuga.shallow_water.sw_domain_gpu_ext import sync_boundary_flux_sum_from_device
+                sync_boundary_flux_sum_from_device(self.gpu_interface.gpu_dom)
+
         # Run remaining operators (skip Boyd operators handled by GPU manager)
         for operator in self.fractional_step_operators:
             if gpu_culverts_active and operator in self.gpu_culvert_manager.operators:
@@ -3520,6 +3541,7 @@ class Domain(Generic_Domain):
             operator()
 
         if gpu_mode and needs_cpu_sync:
+            self.gpu_interface.mark_host_dirty()
             self.gpu_interface.sync_to_device()
 
     def update_ghosts(self, quantities=None):

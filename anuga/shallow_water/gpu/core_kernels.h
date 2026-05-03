@@ -50,4 +50,12 @@ int core_gravity_wb(struct domain *D);
 // timestep_fluxcalls: total number of flux calls per timestep (for boundary flux array indexing)
 double core_compute_fluxes_central(struct domain *D, int substep_count, int timestep_fluxcalls);
 
+// Variant used by GPU timestep drivers to skip per-cell timestep and/or
+// boundary-flux work on later RK stages when those reductions are not needed.
+double core_compute_fluxes_central_substep(struct domain *D,
+                                           int substep_count,
+                                           int timestep_fluxcalls,
+                                           int compute_timestep,
+                                           int compute_boundary_flux);
+
 #endif // CORE_KERNELS_H

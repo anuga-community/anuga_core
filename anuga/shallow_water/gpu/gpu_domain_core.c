@@ -415,6 +415,8 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
     anuga_int *number_of_boundaries = GD->D.number_of_boundaries;
     double *x_centroid_work = GD->D.x_centroid_work;
     double *y_centroid_work = GD->D.y_centroid_work;
+    double *boundary_flux_sum = GD->D.boundary_flux_sum;
+    anuga_int timestep_fluxcalls = GD->D.timestep_fluxcalls > 0 ? GD->D.timestep_fluxcalls : 3;
 
     // Friction array
     double *friction_cv = GD->D.friction_centroid_values;
@@ -440,6 +442,10 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
     // Map tri_full_flag only when present (parallel domains only)
     if (tri_full_flag != NULL) {
         #pragma omp target enter data map(to: tri_full_flag[0:n])
+    }
+
+    if (boundary_flux_sum != NULL) {
+        #pragma omp target enter data map(to: boundary_flux_sum[0:timestep_fluxcalls])
     }
 
     // Map boundary values if present (including bed and height for reflective boundary)
@@ -759,6 +765,8 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     anuga_int *number_of_boundaries = GD->D.number_of_boundaries;
     double *x_centroid_work = GD->D.x_centroid_work;
     double *y_centroid_work = GD->D.y_centroid_work;
+    double *boundary_flux_sum = GD->D.boundary_flux_sum;
+    anuga_int timestep_fluxcalls = GD->D.timestep_fluxcalls > 0 ? GD->D.timestep_fluxcalls : 3;
 
     // Friction array
     double *friction_cv = GD->D.friction_centroid_values;
@@ -784,6 +792,10 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     // Unmap tri_full_flag only when it was mapped (parallel domains only)
     if (tri_full_flag != NULL) {
         #pragma omp target exit data map(delete: tri_full_flag[0:n])
+    }
+
+    if (boundary_flux_sum != NULL) {
+        #pragma omp target exit data map(delete: boundary_flux_sum[0:timestep_fluxcalls])
     }
 
     if (nb > 0) {
@@ -1005,6 +1017,15 @@ void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
         double *ymom_backup = GD->D.ymom_backup_values;
         #pragma omp target update from(stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
     }
+}
+
+void gpu_sync_boundary_flux_sum_from_device(struct gpu_domain *GD) {
+    if (!GD->gpu_initialized || GD->D.boundary_flux_sum == NULL) return;
+
+    anuga_int n = GD->D.timestep_fluxcalls > 0 ? GD->D.timestep_fluxcalls : 3;
+    double *boundary_flux_sum = GD->D.boundary_flux_sum;
+
+    #pragma omp target update from(boundary_flux_sum[0:n])
 }
 
 void gpu_sync_boundary_values(struct gpu_domain *GD) {

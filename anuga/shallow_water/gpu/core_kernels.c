@@ -73,18 +73,14 @@ void core_extrapolate_second_order_edge(struct domain *D) {
         height_cv[k] = dk;
 
         int is_dry = (dk <= minimum_allowed_height);
-        int extrapolate = (extrapolate_velocity_second_order == 1) && (dk > minimum_allowed_height);
-
         double xmom_out = is_dry ? 0.0 : xmom;
         double ymom_out = is_dry ? 0.0 : ymom;
 
-        double inv_dk = extrapolate ? (1.0 / dk) : 1.0;
+        x_centroid_work[k] = xmom_out;
+        y_centroid_work[k] = ymom_out;
 
-        x_centroid_work[k] = extrapolate ? xmom_out : 0.0;
-        y_centroid_work[k] = extrapolate ? ymom_out : 0.0;
-
-        xmom_cv[k] = xmom_out * inv_dk;
-        ymom_cv[k] = ymom_out * inv_dk;
+        xmom_cv[k] = xmom_out;
+        ymom_cv[k] = ymom_out;
     }
 
     // Step 2: Main extrapolation loop
@@ -140,12 +136,37 @@ void core_extrapolate_second_order_edge(struct domain *D) {
             ymom_cv[k] = 0.0;
         }
 
+        double xmom_q  = xmom_cv[k];
+        double ymom_q  = ymom_cv[k];
+        double xmom_q0 = xmom_cv[k0];
+        double ymom_q0 = ymom_cv[k0];
+        double xmom_q1 = xmom_cv[k1];
+        double ymom_q1 = ymom_cv[k1];
+        double xmom_q2 = xmom_cv[sn2];
+        double ymom_q2 = ymom_cv[sn2];
+
+        if (extrapolate_velocity_second_order == 1) {
+            double hk  = height_cv[k];
+            double h0q = height_cv[k0];
+            double h1q = height_cv[k1];
+            double h2q = height_cv[sn2];
+
+            xmom_q  = (hk  > minimum_allowed_height) ? (x_centroid_work[k] / hk) : 0.0;
+            ymom_q  = (hk  > minimum_allowed_height) ? (y_centroid_work[k] / hk) : 0.0;
+            xmom_q0 = (h0q > minimum_allowed_height) ? (x_centroid_work[k0] / h0q) : 0.0;
+            ymom_q0 = (h0q > minimum_allowed_height) ? (y_centroid_work[k0] / h0q) : 0.0;
+            xmom_q1 = (h1q > minimum_allowed_height) ? (x_centroid_work[k1] / h1q) : 0.0;
+            ymom_q1 = (h1q > minimum_allowed_height) ? (y_centroid_work[k1] / h1q) : 0.0;
+            xmom_q2 = (h2q > minimum_allowed_height) ? (x_centroid_work[sn2] / h2q) : 0.0;
+            ymom_q2 = (h2q > minimum_allowed_height) ? (y_centroid_work[sn2] / h2q) : 0.0;
+        }
+
         int num_boundaries = number_of_boundaries[k];
 
         if (num_boundaries == 3) {
             double stage_c = stage_cv[k];
-            double xmom_c = xmom_cv[k];
-            double ymom_c = ymom_cv[k];
+            double xmom_c = xmom_q;
+            double ymom_c = ymom_q;
             double height_c = height_cv[k];
             double bed_c = bed_cv[k];
 
@@ -207,11 +228,11 @@ void core_extrapolate_second_order_edge(struct domain *D) {
             double beta_xmom = beta_uh_dry + (beta_uh - beta_uh_dry) * hfactor;
             if (beta_xmom > 0.0) {
                 gpu_calc_edge_values_with_gradient(
-                    xmom_cv[k], xmom_cv[k0], xmom_cv[k1], xmom_cv[sn2],
+                    xmom_q, xmom_q0, xmom_q1, xmom_q2,
                     dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
                     dx1, dx2, dy1, dy2, inv_area2, beta_xmom, edge_vals);
             } else {
-                gpu_set_constant_edge_values(xmom_cv[k], edge_vals);
+                gpu_set_constant_edge_values(xmom_q, edge_vals);
             }
             xmom_ev[k3 + 0] = edge_vals[0];
             xmom_ev[k3 + 1] = edge_vals[1];
@@ -221,11 +242,11 @@ void core_extrapolate_second_order_edge(struct domain *D) {
             double beta_ymom = beta_vh_dry + (beta_vh - beta_vh_dry) * hfactor;
             if (beta_ymom > 0.0) {
                 gpu_calc_edge_values_with_gradient(
-                    ymom_cv[k], ymom_cv[k0], ymom_cv[k1], ymom_cv[sn2],
+                    ymom_q, ymom_q0, ymom_q1, ymom_q2,
                     dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
                     dx1, dx2, dy1, dy2, inv_area2, beta_ymom, edge_vals);
             } else {
-                gpu_set_constant_edge_values(ymom_cv[k], edge_vals);
+                gpu_set_constant_edge_values(ymom_q, edge_vals);
             }
             ymom_ev[k3 + 0] = edge_vals[0];
             ymom_ev[k3 + 1] = edge_vals[1];
@@ -277,24 +298,32 @@ void core_extrapolate_second_order_edge(struct domain *D) {
             height_ev[k3 + 2] = height_cv[k] + dqv[2];
 
             // X-momentum
-            dq1 = xmom_cv[kn] - xmom_cv[k];
+            double xmom_kn = xmom_cv[kn];
+            double ymom_kn = ymom_cv[kn];
+            if (extrapolate_velocity_second_order == 1) {
+                double hkn = height_cv[kn];
+                xmom_kn = (hkn > minimum_allowed_height) ? (x_centroid_work[kn] / hkn) : 0.0;
+                ymom_kn = (hkn > minimum_allowed_height) ? (y_centroid_work[kn] / hkn) : 0.0;
+            }
+
+            dq1 = xmom_kn - xmom_q;
             gpu_compute_dqv_from_gradient(dq1, grad_dx2, grad_dy2,
                                           dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dqv);
             gpu_compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
             gpu_limit_gradient(dqv, qmin, qmax, beta_w);
-            xmom_ev[k3 + 0] = xmom_cv[k] + dqv[0];
-            xmom_ev[k3 + 1] = xmom_cv[k] + dqv[1];
-            xmom_ev[k3 + 2] = xmom_cv[k] + dqv[2];
+            xmom_ev[k3 + 0] = xmom_q + dqv[0];
+            xmom_ev[k3 + 1] = xmom_q + dqv[1];
+            xmom_ev[k3 + 2] = xmom_q + dqv[2];
 
             // Y-momentum
-            dq1 = ymom_cv[kn] - ymom_cv[k];
+            dq1 = ymom_kn - ymom_q;
             gpu_compute_dqv_from_gradient(dq1, grad_dx2, grad_dy2,
                                           dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dqv);
             gpu_compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
             gpu_limit_gradient(dqv, qmin, qmax, beta_w);
-            ymom_ev[k3 + 0] = ymom_cv[k] + dqv[0];
-            ymom_ev[k3 + 1] = ymom_cv[k] + dqv[1];
-            ymom_ev[k3 + 2] = ymom_cv[k] + dqv[2];
+            ymom_ev[k3 + 0] = ymom_q + dqv[0];
+            ymom_ev[k3 + 1] = ymom_q + dqv[1];
+            ymom_ev[k3 + 2] = ymom_q + dqv[2];
         }
 
         // Convert velocity edge values back to momentum if needed
@@ -312,14 +341,8 @@ void core_extrapolate_second_order_edge(struct domain *D) {
         }
     }
 
-    // Step 3: Restore centroid momentum values if we converted to velocity
-    if (extrapolate_velocity_second_order) {
-        OMP_PARALLEL_LOOP
-        for (anuga_int k = 0; k < n; k++) {
-            xmom_cv[k] = x_centroid_work[k];
-            ymom_cv[k] = y_centroid_work[k];
-        }
-    }
+    // Centroid momenta stay in momentum form throughout; velocities are
+    // reconstructed in registers above when velocity extrapolation is enabled.
 }
 
 // ============================================================================
@@ -381,6 +404,8 @@ void core_update_conserved_quantities(struct domain *D, double timestep) {
     double * restrict stage_cv = D->stage_centroid_values;
     double * restrict xmom_cv = D->xmom_centroid_values;
     double * restrict ymom_cv = D->ymom_centroid_values;
+    double * restrict bed_cv = D->bed_centroid_values;
+    double * restrict height_cv = D->height_centroid_values;
 
     double * restrict stage_eu = D->stage_explicit_update;
     double * restrict xmom_eu = D->xmom_explicit_update;
@@ -418,6 +443,8 @@ void core_update_conserved_quantities(struct domain *D, double timestep) {
 
         denom = 1.0 - timestep * ymom_si;
         if (denom > 0.0) ymom_cv[k] /= denom;
+
+        height_cv[k] = fmax(stage_cv[k] - bed_cv[k], 0.0);
 
         // Reset semi-implicit updates for next timestep
         stage_siu[k] = 0.0;
@@ -459,30 +486,24 @@ void core_saxpy_conserved_quantities(struct domain *D, double a, double b, doubl
     double * restrict stage_cv = D->stage_centroid_values;
     double * restrict xmom_cv = D->xmom_centroid_values;
     double * restrict ymom_cv = D->ymom_centroid_values;
+    double * restrict bed_cv = D->bed_centroid_values;
+    double * restrict height_cv = D->height_centroid_values;
 
     double * restrict stage_bk = D->stage_backup_values;
     double * restrict xmom_bk = D->xmom_backup_values;
     double * restrict ymom_bk = D->ymom_backup_values;
 
-    // Standard SAXPY: Q = a*Q + b*Q_backup
+    double scale = (c != 1.0 && c != 0.0) ? (1.0 / c) : 1.0;
+
+    // Standard SAXPY: Q = (a*Q + b*Q_backup) / c, with height kept current.
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
-        stage_cv[k] = a * stage_cv[k] + b * stage_bk[k];
-        xmom_cv[k] = a * xmom_cv[k] + b * xmom_bk[k];
-        ymom_cv[k] = a * ymom_cv[k] + b * ymom_bk[k];
-    }
+        double stage = (a * stage_cv[k] + b * stage_bk[k]) * scale;
 
-    // Apply c scaling if needed: Q = Q / c
-    // Used for numerical stability with RK coefficients like a=1/3, b=2/3
-    // Skip if c=0.0 (RK2 passes 0.0) or c=1.0 (no scaling needed)
-    if (c != 1.0 && c != 0.0) {
-        double c_inv = 1.0 / c;
-        OMP_PARALLEL_LOOP
-        for (anuga_int k = 0; k < n; k++) {
-            stage_cv[k] *= c_inv;
-            xmom_cv[k] *= c_inv;
-            ymom_cv[k] *= c_inv;
-        }
+        stage_cv[k] = stage;
+        xmom_cv[k] = (a * xmom_cv[k] + b * xmom_bk[k]) * scale;
+        ymom_cv[k] = (a * ymom_cv[k] + b * ymom_bk[k]) * scale;
+        height_cv[k] = fmax(stage - bed_cv[k], 0.0);
     }
 }
 
@@ -498,6 +519,7 @@ double core_protect(struct domain *D) {
     double * restrict xmom_cv = D->xmom_centroid_values;
     double * restrict ymom_cv = D->ymom_centroid_values;
     double * restrict bed_cv = D->bed_centroid_values;
+    double * restrict height_cv = D->height_centroid_values;
     double * restrict areas = D->areas;
 
     double mass_error = 0.0;
@@ -516,7 +538,10 @@ double core_protect(struct domain *D) {
             // Negative depth - track mass error and set stage to bed
             mass_error += (-h) * areas[k];
             stage_cv[k] = bed_cv[k];
+            h = 0.0;
         }
+
+        height_cv[k] = fmax(h, 0.0);
     }
 
     return mass_error;
@@ -713,6 +738,14 @@ int core_gravity_wb(struct domain *D) {
 // ============================================================================
 
 double core_compute_fluxes_central(struct domain *D, int substep_count, int timestep_fluxcalls) {
+    return core_compute_fluxes_central_substep(D, substep_count, timestep_fluxcalls, 1, 1);
+}
+
+double core_compute_fluxes_central_substep(struct domain *D,
+                                           int substep_count,
+                                           int timestep_fluxcalls,
+                                           int compute_timestep,
+                                           int compute_boundary_flux) {
     anuga_int n = D->number_of_elements;
     double g = D->g;
     double epsilon = D->epsilon;
@@ -756,6 +789,10 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
     double * restrict riverwall_elevation = D->riverwall_elevation;
     anuga_int * restrict riverwall_rowIndex = D->riverwall_rowIndex;
     double * restrict riverwall_hydraulic_properties = D->riverwall_hydraulic_properties;
+    int has_riverwalls = (n_riverwall_edges > 0 &&
+                          edge_flux_type != NULL &&
+                          edge_river_wall_counter != NULL &&
+                          riverwall_elevation != NULL);
 
     // Reduction variables
     double local_timestep = 1.0e+100;
@@ -833,9 +870,7 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
             // Check for riverwall elevation override
             int is_riverwall = 0;
             double zwall = 0.0;
-            if (n_riverwall_edges > 0 && edge_flux_type != NULL &&
-                edge_river_wall_counter != NULL && riverwall_elevation != NULL &&
-                edge_flux_type[ki] == 1) {
+            if (has_riverwalls && edge_flux_type[ki] == 1) {
                 int riverwall_index = edge_river_wall_counter[ki] - 1;
                 if (riverwall_index >= 0) {
                     is_riverwall = 1;
@@ -926,7 +961,7 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
 
             // Boundary flux tracking: if this cell is not a ghost, and the neighbour
             // is a boundary condition OR a ghost cell, add the flux to boundary integral
-            if (tri_full_flag != NULL) {
+            if (compute_boundary_flux && tri_full_flag != NULL) {
                 int is_full = (tri_full_flag[k] == 1);
                 int neighbour_is_ghost = (!is_boundary && tri_full_flag[neighbour] == 0);
                 if ((is_boundary && is_full) || (is_full && neighbour_is_ghost)) {
@@ -943,7 +978,7 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
         } // End edge loop
 
         // Update timestep only on first substep and for non-ghost cells
-        if (substep_count == 0) {
+        if (compute_timestep && substep_count == 0) {
             if (tri_full_flag == NULL || tri_full_flag[k] == 1) {
                 if (speed_max_last > epsilon) {
                     double cell_timestep = radii[k] / speed_max_last;
@@ -962,7 +997,7 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
     } // End element loop
 
     // Store boundary flux sum for this substep
-    if (D->boundary_flux_sum != NULL && substep_count < timestep_fluxcalls) {
+    if (compute_boundary_flux && D->boundary_flux_sum != NULL && substep_count < timestep_fluxcalls) {
         D->boundary_flux_sum[substep_count] = boundary_flux_sum_substep;
     }
 

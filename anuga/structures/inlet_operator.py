@@ -108,11 +108,7 @@ class Inlet_operator(anuga.Operator):
         timestep = self.domain.get_timestep()
         t = self.domain.get_time()
 
-        # Get current volume from GPU (small reduction, returns scalar)
-        current_volume = gpu_ext.inlet_get_volume_gpu(gpu_dom, op_id)
         total_area = self.inlet.area
-
-        assert current_volume >= 0.0
 
         # Compute Q on CPU (scalar, cheap)
         Q1 = self.update_Q(t)
@@ -122,18 +118,18 @@ class Inlet_operator(anuga.Operator):
 
         self.applied_Q = Q
 
-        # Get velocities from GPU (small D2H)
-        vel_u, vel_v = gpu_ext.inlet_get_velocities_gpu(gpu_dom, op_id)
-
         has_velocity = 1 if self.velocity is not None else 0
         ext_vel_u = self.velocity[0] if has_velocity else 0.0
         ext_vel_v = self.velocity[1] if has_velocity else 0.0
         zero_vel = 1 if self.zero_velocity else 0
 
-        # Apply on GPU (handles all 3 cases)
-        actual_volume = gpu_ext.inlet_apply_gpu(
-            gpu_dom, op_id, volume, current_volume, total_area,
-            vel_u, vel_v, has_velocity, ext_vel_u, ext_vel_v, zero_vel)
+        # Apply on GPU (handles all 3 cases and returns the pre-update volume)
+        actual_volume, current_volume = gpu_ext.inlet_apply_gpu_v2(
+            gpu_dom, op_id, volume, total_area,
+            has_velocity, ext_vel_u, ext_vel_v, zero_vel)
+
+        assert current_volume >= 0.0
+        self.domain.gpu_interface.mark_device_dirty()
 
         # Update tracking variables
         self.total_requested_volume += volume

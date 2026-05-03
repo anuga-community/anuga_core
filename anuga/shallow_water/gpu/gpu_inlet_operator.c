@@ -619,3 +619,98 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
 
     return actual_volume;
 }
+
+double gpu_inlet_apply_v2(struct gpu_domain *GD, int op_id, double volume,
+                          double total_area,
+                          int has_velocity, double ext_vel_u, double ext_vel_v,
+                          int zero_velocity, double *current_volume_out) {
+    if (op_id < 0 || op_id >= GD->inlet_ops.capacity) {
+        if (current_volume_out) *current_volume_out = 0.0;
+        return 0.0;
+    }
+
+    struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];
+    if (!op->active || op->num_indices == 0) {
+        if (current_volume_out) *current_volume_out = 0.0;
+        return 0.0;
+    }
+
+    omp_set_default_device(GD->device_id);
+
+    int n = op->num_indices;
+    int * restrict indices = op->indices;
+    double * restrict stage_c = GD->D.stage_centroid_values;
+    double * restrict bed_c = GD->D.bed_centroid_values;
+    double * restrict xmom_c = GD->D.xmom_centroid_values;
+    double * restrict ymom_c = GD->D.ymom_centroid_values;
+
+    double current_volume = gpu_inlet_get_volume(GD, op_id);
+    if (current_volume_out) *current_volume_out = current_volume;
+
+    double *old_u = op->scratch_xmom;
+    double *old_v = op->scratch_ymom;
+
+    if (!zero_velocity && !has_velocity) {
+        OMP_PARALLEL_LOOP
+        for (int k = 0; k < n; k++) {
+            int i = indices[k];
+            double depth = stage_c[i] - bed_c[i];
+            double denom = depth * depth + VELOCITY_PROTECTION;
+            old_u[k] = xmom_c[i] * depth / denom;
+            old_v[k] = ymom_c[i] * depth / denom;
+        }
+    }
+
+    double actual_volume = volume;
+
+    if (volume >= 0.0) {
+        gpu_inlet_set_stages_evenly(GD, op_id, volume);
+
+        OMP_PARALLEL_LOOP
+        for (int k = 0; k < n; k++) {
+            int i = indices[k];
+            double depth = stage_c[i] - bed_c[i];
+            if (zero_velocity) {
+                xmom_c[i] = 0.0;
+                ymom_c[i] = 0.0;
+            } else if (has_velocity) {
+                xmom_c[i] = depth * ext_vel_u;
+                ymom_c[i] = depth * ext_vel_v;
+            } else {
+                xmom_c[i] = depth * old_u[k];
+                ymom_c[i] = depth * old_v[k];
+            }
+        }
+
+    } else if (current_volume + volume >= 0.0) {
+        double depth = (current_volume + volume) / total_area;
+
+        OMP_PARALLEL_LOOP
+        for (int k = 0; k < n; k++) {
+            int i = indices[k];
+            stage_c[i] = bed_c[i] + depth;
+            if (zero_velocity) {
+                xmom_c[i] = 0.0;
+                ymom_c[i] = 0.0;
+            } else if (has_velocity) {
+                xmom_c[i] = depth * ext_vel_u;
+                ymom_c[i] = depth * ext_vel_v;
+            } else {
+                xmom_c[i] = depth * old_u[k];
+                ymom_c[i] = depth * old_v[k];
+            }
+        }
+
+    } else {
+        OMP_PARALLEL_LOOP
+        for (int k = 0; k < n; k++) {
+            int i = indices[k];
+            stage_c[i] = bed_c[i];
+            xmom_c[i] = 0.0;
+            ymom_c[i] = 0.0;
+        }
+        actual_volume = -current_volume;
+    }
+
+    return actual_volume;
+}

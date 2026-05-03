@@ -34,6 +34,8 @@ class GPU_OMP_interface:
         self.gpu_dom = None
         self.initialized = False
         self.boundaries_initialized = False
+        self.host_dirty = False
+        self.device_dirty = False
 
     def setup(self):
         """
@@ -64,6 +66,8 @@ class GPU_OMP_interface:
         map_to_gpu(self.gpu_dom)
 
         self.initialized = True
+        self.host_dirty = False
+        self.device_dirty = False
 
     def finalize(self):
         """
@@ -121,11 +125,25 @@ class GPU_OMP_interface:
         """Sync centroid values from host to device."""
         from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device
         sync_to_device(self.gpu_dom)
+        self.host_dirty = False
+        self.device_dirty = False
 
     def sync_from_device(self):
         """Sync centroid values from device to host."""
         from anuga.shallow_water.sw_domain_gpu_ext import sync_from_device
         sync_from_device(self.gpu_dom)
+        self.host_dirty = False
+        self.device_dirty = False
+
+    def mark_host_dirty(self):
+        """Mark host arrays as newer than device arrays."""
+        self.host_dirty = True
+        self.device_dirty = False
+
+    def mark_device_dirty(self):
+        """Mark device arrays as newer than host arrays."""
+        self.device_dirty = True
+        self.host_dirty = False
 
     def sync_boundary_values(self):
         """Sync boundary values from host to device."""
@@ -154,6 +172,7 @@ class GPU_OMP_interface:
         """
         from anuga.shallow_water.sw_domain_gpu_ext import extrapolate_second_order_gpu
         extrapolate_second_order_gpu(self.gpu_dom)
+        self.mark_device_dirty()
 
     def compute_fluxes_ext_central_kernel(self, domain, timestep):
         """
@@ -165,17 +184,22 @@ class GPU_OMP_interface:
             Local minimum timestep (MPI allreduce needed for global min)
         """
         from anuga.shallow_water.sw_domain_gpu_ext import compute_fluxes_gpu
-        return compute_fluxes_gpu(self.gpu_dom)
+        timestep = compute_fluxes_gpu(self.gpu_dom)
+        self.mark_device_dirty()
+        return timestep
 
     def protect_against_infinitesimal_and_negative_heights_kernel(self, domain):
         """Protect against negative water depths."""
         from anuga.shallow_water.sw_domain_gpu_ext import protect_gpu
-        return protect_gpu(self.gpu_dom)
+        mass_error = protect_gpu(self.gpu_dom)
+        self.mark_device_dirty()
+        return mass_error
 
     def update_conserved_quantities_kernel(self, domain, timestep):
         """Update conserved quantities with explicit and semi-implicit terms."""
         from anuga.shallow_water.sw_domain_gpu_ext import update_conserved_quantities_gpu
         update_conserved_quantities_gpu(self.gpu_dom, timestep)
+        self.mark_device_dirty()
         # GPU protect kernel handles negative cells, return 0 for compatibility
         return 0
 
@@ -188,16 +212,19 @@ class GPU_OMP_interface:
         """RK2 combination: Q = a*Q_current + b*Q_backup."""
         from anuga.shallow_water.sw_domain_gpu_ext import saxpy_conserved_quantities_gpu
         saxpy_conserved_quantities_gpu(self.gpu_dom, a, b)
+        self.mark_device_dirty()
 
     def saxpy3_conserved_quantities_kernel(self, domain, a, b, c):
         """RK3 final combination: Q = (a*Q_current + b*Q_backup) / c."""
         from anuga.shallow_water.sw_domain_gpu_ext import saxpy3_conserved_quantities_gpu
         saxpy3_conserved_quantities_gpu(self.gpu_dom, a, b, c)
+        self.mark_device_dirty()
 
     def manning_friction_kernel(self, domain):
         """Apply Manning friction (semi-implicit)."""
         from anuga.shallow_water.sw_domain_gpu_ext import manning_friction_gpu
         manning_friction_gpu(self.gpu_dom)
+        self.mark_device_dirty()
 
     # =========================================================================
     # FLOP Counter API (Gordon Bell Performance Profiling)

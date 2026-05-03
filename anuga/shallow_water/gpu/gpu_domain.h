@@ -397,6 +397,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD);
 void gpu_domain_sync_to_device(struct gpu_domain *GD);
 void gpu_domain_sync_from_device(struct gpu_domain *GD);
 void gpu_domain_sync_all_from_device(struct gpu_domain *GD);  // Debug: sync ALL arrays
+void gpu_sync_boundary_flux_sum_from_device(struct gpu_domain *GD);
 
 // Sync boundary values TO GPU (after CPU boundary evaluation)
 void gpu_sync_boundary_values(struct gpu_domain *GD);
@@ -488,6 +489,11 @@ void gpu_exchange_ghosts(struct gpu_domain *GD);
 // GPU kernels (stubs - will be implemented in sw_domain_gpu.c)
 void gpu_extrapolate_second_order(struct gpu_domain *GD);
 double gpu_compute_fluxes(struct gpu_domain *GD);
+double gpu_compute_fluxes_substep(struct gpu_domain *GD,
+                                  int substep_count,
+                                  int timestep_fluxcalls,
+                                  int compute_timestep,
+                                  int compute_boundary_flux);
 void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep);
 void gpu_backup_conserved_quantities(struct gpu_domain *GD);
 void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b);
@@ -498,10 +504,12 @@ void gpu_manning_friction(struct gpu_domain *GD);
 
 // Full RK2 step on GPU (calls all the above in sequence)
 // max_timestep: Maximum allowed timestep (respecting yieldstep/finaltime constraints)
-double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
+double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing,
+                               int compute_boundary_flux);
 
 // Full SSP-RK3 step on GPU (Shu-Osher 3-stage)
-double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
+double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int apply_forcing,
+                               int compute_boundary_flux);
 
 // Utility functions
 int detect_gpu_aware_mpi(void);
@@ -560,6 +568,10 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
                        double *vel_u, double *vel_v, int num_vel,
                        int has_velocity, double ext_vel_u, double ext_vel_v,
                        int zero_velocity);
+double gpu_inlet_apply_v2(struct gpu_domain *GD, int op_id, double volume,
+                          double total_area,
+                          int has_velocity, double ext_vel_u, double ext_vel_v,
+                          int zero_velocity, double *current_volume_out);
 
 // Culvert operators (Boyd box/pipe - batched GPU gather/scatter with MPI)
 int gpu_culvert_init(struct gpu_domain *GD,
