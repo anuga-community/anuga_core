@@ -32,9 +32,9 @@ mpi4py_check = run_command(py3, ['-c', 'import mpi4py; print(mpi4py.get_include(
 have_mpi4py = mpi4py_check.returncode() == 0
 
 # Fallback: if standard MPI detection failed but mpi4py is available,
-# construct MPI dependency directly from the Python env prefix.
-# In conda envs, MPI headers and libs live in sys.prefix/{include,lib},
-# so we can bypass mpicc entirely.
+# construct MPI dependency from mpicc -show output so that compile flags
+# (especially -I paths) match exactly what mpi4py was built against.
+# Falls back to sys.prefix/{include,lib} only if mpicc cannot be executed.
 if not mpi_dep.found() and have_mpi4py
   mpi_prefix_result = run_command(py3, ['-c', '''
 import sys, os, subprocess, shutil
@@ -43,23 +43,27 @@ try:
     prefix = sys.prefix
     inc = os.path.join(prefix, "include")
     lib = os.path.join(prefix, "lib")
-    # Confirm mpi.h is actually present in the env
-    if not os.path.isfile(os.path.join(inc, "mpi.h")):
-        sys.exit(1)
-    # Try to get link flags from mpicc if available
+    # Locate mpicc (absolute path so subprocess can run it)
     cfg = mpi4py.get_config()
     mpicc = cfg.get("mpicc", "")
     if mpicc and not os.path.isabs(mpicc):
-        mpicc = shutil.which(mpicc) or os.path.join(prefix, "bin", "mpicc")
-    if not mpicc:
+        mpicc = shutil.which(mpicc) or ""
+    if not mpicc or not os.path.isfile(mpicc):
         mpicc = os.path.join(prefix, "bin", "mpicc")
+    # Get compile+link flags from mpicc -show (same headers mpi4py was built with)
     try:
         out = subprocess.check_output([mpicc, "-show"], text=True).strip()
         tokens = out.split()
+        cflags = [t for t in tokens[1:] if t.startswith(("-I", "-D"))]
         lflags = [t for t in tokens[1:] if t.startswith(("-L", "-l", "-Wl,", "-rpath"))]
+        if not cflags:
+            cflags = ["-I" + inc]
     except Exception:
+        if not os.path.isfile(os.path.join(inc, "mpi.h")):
+            sys.exit(1)
+        cflags = ["-I" + inc]
         lflags = ["-L" + lib, "-lmpi"]
-    print(inc + "##" + "|".join(lflags))
+    print("|".join(cflags) + "##" + "|".join(lflags))
 except Exception:
     sys.exit(1)
 '''], check: false)
@@ -68,13 +72,13 @@ except Exception:
     mpi_output = mpi_prefix_result.stdout().strip()
     mpi_parts = mpi_output.split('##')
     if mpi_parts.length() == 2
-      mpi_inc = mpi_parts[0]
+      mpi_compile_args = mpi_parts[0] != '' ? mpi_parts[0].split('|') : []
       mpi_link_args = mpi_parts[1] != '' ? mpi_parts[1].split('|') : ['-lmpi']
       mpi_dep = declare_dependency(
-        compile_args: ['-I' + mpi_inc],
+        compile_args: mpi_compile_args,
         link_args: mpi_link_args,
       )
-      message('MPI found via Python env prefix (fallback): ' + mpi_inc)
+      message('MPI found via mpicc -show (fallback): ' + mpi_parts[0])
     endif
   endif
 endif
