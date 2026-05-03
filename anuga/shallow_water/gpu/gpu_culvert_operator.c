@@ -504,7 +504,8 @@ int gpu_culvert_init(struct gpu_domain *GD,
                      int inlet1_num, int *inlet1_indices, double *inlet1_areas,
                      int master_proc, int enquiry_proc_0, int enquiry_proc_1,
                      int inlet_master_proc_0, int inlet_master_proc_1,
-                     int is_local, int mpi_tag_base) {
+                     int is_local, int mpi_tag_base,
+                     double init_smooth_Q, double init_smooth_delta_total_energy) {
 
     struct culvert_operators *CO = &GD->culvert_ops;
 
@@ -579,9 +580,11 @@ int gpu_culvert_init(struct gpu_domain *GD,
     ci->is_local = is_local;
     ci->mpi_tag_base = mpi_tag_base;
 
-    // Initialize state
-    CO->state[id].smooth_delta_total_energy = 0.0;
-    CO->state[id].smooth_Q = 0.0;
+    // Initialize smoothing state from CPU operator's pre-seeded values.
+    // Python __init__ runs discharge_routine() once to seed these (boyd_box_operator.py:193);
+    // matters when smoothing_timescale > 0 so the GPU side starts from the same smoothed state.
+    CO->state[id].smooth_delta_total_energy = init_smooth_delta_total_energy;
+    CO->state[id].smooth_Q = init_smooth_Q;
 
     CO->num_culverts++;
     return id;

@@ -304,7 +304,8 @@ cdef extern from "gpu_domain.h" nogil:
                          int inlet1_num, int *inlet1_indices, double *inlet1_areas,
                          int master_proc, int enquiry_proc_0, int enquiry_proc_1,
                          int inlet_master_proc_0, int inlet_master_proc_1,
-                         int is_local, int mpi_tag_base)
+                         int is_local, int mpi_tag_base,
+                         double init_smooth_Q, double init_smooth_delta_total_energy)
     void gpu_culvert_finalize(gpu_domain *GD, int culvert_id)
     void gpu_culverts_finalize_all(gpu_domain *GD)
     void gpu_culverts_map(gpu_domain *GD)
@@ -1860,7 +1861,9 @@ def init_culvert_operator(GPUDomain gpu_dom,
                           int is_local=1,
                           int mpi_tag_base=0,
                           double z1=0.0,
-                          double z2=0.0):
+                          double z2=0.0,
+                          double init_smooth_Q=0.0,
+                          double init_smooth_delta_total_energy=0.0):
     """
     Register a culvert (Boyd box, pipe, or weir/orifice trapezoid) with the GPU culvert manager.
 
@@ -1929,7 +1932,8 @@ def init_culvert_operator(GPUDomain gpu_dom,
                             n1, p_inlet1, p_area1,
                             master_proc, enquiry_proc_0, enquiry_proc_1,
                             inlet_master_proc_0, inlet_master_proc_1,
-                            is_local, mpi_tag_base)
+                            is_local, mpi_tag_base,
+                            init_smooth_Q, init_smooth_delta_total_energy)
 
 
 def finalize_culvert_operator(GPUDomain gpu_dom, int culvert_id):
