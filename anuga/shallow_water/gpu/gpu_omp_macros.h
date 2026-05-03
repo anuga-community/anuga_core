@@ -40,6 +40,46 @@
 // Device pointer clause - no-op on CPU
 #define OMP_IS_DEVICE_PTR(ptr)
 
+// ============================================================================
+// CPU MULTICORE MODE stubs for OpenMP target-offloading API
+//
+// The standard libomp on macOS (and minimal Linux builds) does NOT ship the
+// OpenMP 4.5 target-allocation API (omp_target_alloc, omp_target_free,
+// omp_target_memcpy, omp_target_is_present).  In CPU_ONLY_MODE there is no
+// GPU device, so we provide static inline stubs and redirect every call site
+// via macros.  The redirect must happen here (after <omp.h> is already
+// included by the .c files) so the macros suppress external symbol references
+// without conflicting with omp.h's extern declarations.
+// ============================================================================
+
+#include <stdlib.h>
+#include <string.h>
+
+static inline void *_anuga_omp_target_alloc(size_t size, int dev) {
+    (void)dev; return malloc(size);
+}
+static inline void _anuga_omp_target_free(void *ptr, int dev) {
+    (void)dev; free(ptr);
+}
+static inline int _anuga_omp_target_memcpy(
+        void *dst, const void *src, size_t length,
+        size_t dst_offset, size_t src_offset,
+        int dst_dev, int src_dev) {
+    (void)dst_dev; (void)src_dev;
+    memcpy((char *)dst + dst_offset, (const char *)src + src_offset, length);
+    return 0;
+}
+static inline int _anuga_omp_target_is_present(const void *ptr, int dev) {
+    (void)ptr; (void)dev; return 1;
+}
+static inline int _anuga_omp_get_initial_device(void) { return 0; }
+
+#define omp_target_alloc        _anuga_omp_target_alloc
+#define omp_target_free         _anuga_omp_target_free
+#define omp_target_memcpy       _anuga_omp_target_memcpy
+#define omp_target_is_present   _anuga_omp_target_is_present
+#define omp_get_initial_device  _anuga_omp_get_initial_device
+
 #else
 
 // ============================================================================
