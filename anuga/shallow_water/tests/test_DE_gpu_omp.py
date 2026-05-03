@@ -21,7 +21,10 @@ def gpu_available():
     try:
         from anuga.shallow_water.sw_domain_gpu_ext import init_gpu_domain
         return True
-    except ImportError:
+    except Exception as e:
+        # Print the actual error so CI logs show why the module failed to load
+        # (e.g. missing libmpi.dylib on macOS, or missing mpi4py on Windows)
+        print(f"sw_domain_gpu_ext not available: {type(e).__name__}: {e}", file=sys.stderr)
         return False
 
 

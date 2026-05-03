@@ -249,14 +249,19 @@ if mpi_dep.found() and have_mpi4py
 
   # On macOS, SIP strips DYLD_LIBRARY_PATH from child processes so libmpi.dylib
   # is not found at dlopen time even though it is present in the conda env.
-  # Embed an rpath pointing to sys.prefix/lib so the dynamic linker finds it
-  # without any environment variable.
+  # Embed two rpaths:
+  #   @executable_path/../lib  — resolves to $CONDA_PREFIX/lib relative to the
+  #                              Python binary; portable across any conda env path
+  #   sys.prefix/lib           — absolute fallback for non-standard layouts
   gpu_link_args = []
   if host_machine.system() == 'darwin'
     _py_prefix = run_command(py3, ['-c', 'import sys; print(sys.prefix)'], check: false)
     if _py_prefix.returncode() == 0
       _mpi_lib_dir = _py_prefix.stdout().strip() + '/lib'
-      gpu_link_args = ['-Wl,-rpath,' + _mpi_lib_dir]
+      gpu_link_args = [
+        '-Wl,-rpath,@executable_path/../lib',
+        '-Wl,-rpath,' + _mpi_lib_dir,
+      ]
       message('macOS: embedding rpath for libmpi.dylib: ' + _mpi_lib_dir)
     endif
   endif
