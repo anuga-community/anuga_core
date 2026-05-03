@@ -41,28 +41,47 @@ import sys, os, subprocess, shutil
 try:
     import mpi4py
     prefix = sys.prefix
-    inc = os.path.join(prefix, "include")
-    lib = os.path.join(prefix, "lib")
-    # Locate mpicc (absolute path so subprocess can run it)
+    is_windows = sys.platform == "win32"
+    # conda on Windows puts headers/libs under Library/; Unix uses prefix directly
+    if is_windows:
+        inc = os.path.join(prefix, "Library", "include")
+        lib = os.path.join(prefix, "Library", "lib")
+    else:
+        inc = os.path.join(prefix, "include")
+        lib = os.path.join(prefix, "lib")
     cfg = mpi4py.get_config()
-    mpicc = cfg.get("mpicc", "")
-    if mpicc and not os.path.isabs(mpicc):
-        mpicc = shutil.which(mpicc) or ""
-    if not mpicc or not os.path.isfile(mpicc):
-        mpicc = os.path.join(prefix, "bin", "mpicc")
-    # Get compile+link flags from mpicc -show (same headers mpi4py was built with)
-    try:
-        out = subprocess.check_output([mpicc, "-show"], text=True).strip()
-        tokens = out.split()
-        cflags = [t for t in tokens[1:] if t.startswith(("-I", "-D"))]
-        lflags = [t for t in tokens[1:] if t.startswith(("-L", "-l", "-Wl,", "-rpath"))]
-        if not cflags:
-            cflags = ["-I" + inc]
-    except Exception:
-        if not os.path.isfile(os.path.join(inc, "mpi.h")):
-            sys.exit(1)
+    # mpi4py.get_config() may supply explicit dirs; prefer those if present
+    cfg_incs = cfg.get("include_dirs", [])
+    cfg_libs = cfg.get("library_dirs", [])
+    if cfg_incs:
+        inc = cfg_incs[0]
+    if cfg_libs:
+        lib = cfg_libs[0]
+    if not os.path.isfile(os.path.join(inc, "mpi.h")):
+        sys.exit(1)
+    if is_windows:
+        # No mpicc on Windows; build flags from known conda paths.
+        # Library names from mpi4py config, defaulting to msmpi (conda-forge).
+        libnames = cfg.get("libraries", ["msmpi"]) or ["msmpi"]
         cflags = ["-I" + inc]
-        lflags = ["-L" + lib, "-lmpi"]
+        lflags = ["-L" + lib] + ["-l" + n for n in libnames]
+    else:
+        # Unix: run mpicc -show to get the exact flags mpi4py was built with
+        mpicc = cfg.get("mpicc", "")
+        if mpicc and not os.path.isabs(mpicc):
+            mpicc = shutil.which(mpicc) or ""
+        if not mpicc or not os.path.isfile(mpicc):
+            mpicc = os.path.join(prefix, "bin", "mpicc")
+        try:
+            out = subprocess.check_output([mpicc, "-show"], text=True).strip()
+            tokens = out.split()
+            cflags = [t for t in tokens[1:] if t.startswith(("-I", "-D"))]
+            lflags = [t for t in tokens[1:] if t.startswith(("-L", "-l", "-Wl,", "-rpath"))]
+            if not cflags:
+                cflags = ["-I" + inc]
+        except Exception:
+            cflags = ["-I" + inc]
+            lflags = ["-L" + lib, "-lmpi"]
     print("|".join(cflags) + "##" + "|".join(lflags))
 except Exception:
     sys.exit(1)

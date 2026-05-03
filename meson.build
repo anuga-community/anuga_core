@@ -195,6 +195,8 @@ configure_file(
 _mpicc_from_mpi4py = run_command(py3, ['-c', '''
 import sys, os, shutil
 try:
+    if sys.platform == "win32":
+        sys.exit(1)  # Windows has no mpicc wrapper; skip override
     import mpi4py
     cfg = mpi4py.get_config()
     mpicc = cfg.get("mpicc", "")
