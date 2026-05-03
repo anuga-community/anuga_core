@@ -759,7 +759,7 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
 
     // Main flux computation loop with reductions
     #ifdef CPU_ONLY_MODE
-    #pragma omp parallel for simd reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
+    #pragma omp parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
     #else
     #pragma omp target teams distribute parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
     #endif
