@@ -132,6 +132,18 @@ Bug fix: `test_select_alpha_degenerate_falls_back_to_default` platform-dependent
 Windows py3.10/3.11/3.13 — now uses `return_curve=True` to branch on actual kappa.
 Commits `61418742`, `5498f98d`. All CI passed.
 
+**Session 32 (2026-05-03):** CI fixes. macOS `sw_domain_gpu_ext` import failure
+resolved: `_omp_target_is_present` missing from conda-forge libomp — fixed by adding
+`static inline` stubs + macro redirects for all OpenMP 4.5 target-alloc API functions
+(`omp_target_alloc/free/memcpy`, `omp_target_is_present`, `omp_get_initial_device`) in
+`gpu_omp_macros.h` under `CPU_ONLY_MODE`. Also: MPI ABI fix for Linux conda envs (use
+`mpicc -show` compile flags, not hardcoded sys.prefix), Windows MPI detection (Library/
+include path, msmpi), macOS rpath for libmpi.dylib (`@executable_path/../lib` +
+`DYLD_LIBRARY_PATH` in CI), macOS simd-reduction warnings (dropped `simd` from reduction
+macros), CI Node.js 24 upgrades (setup-miniconda v4, setup-python v6), skip-reason
+diagnostics in test_DE_gpu_omp.py. macOS GPU tests now run (not skipped).
+Commits `94c4d74f`–`7cc69fac`.
+
 **Session 31 (2026-04-29):** ADER-2 GPU wiring + optimisation. `gpu_ader_ck_predictor` /
 `gpu_evolve_one_ader2_step` added to `gpu_kernels.c` + declared in `gpu_domain.h` (fix for
 missing header causing Windows/3.12 CI failure). `evolve_one_ader2_step` dispatches to
