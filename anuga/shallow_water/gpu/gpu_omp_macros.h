@@ -22,9 +22,11 @@
 #define OMP_PARALLEL_LOOP_SIMD _Pragma("omp parallel for simd")
 
 // Reductions - use DO_PRAGMA to allow variable name expansion
-#define OMP_PARALLEL_LOOP_REDUCTION_PLUS(var) DO_PRAGMA(omp parallel for simd reduction(+:var))
-#define OMP_PARALLEL_LOOP_REDUCTION_MIN(var) DO_PRAGMA(omp parallel for simd reduction(min:var))
-#define OMP_PARALLEL_LOOP_REDUCTION_MAX(var) DO_PRAGMA(omp parallel for simd reduction(max:var))
+// Note: simd is omitted here; reduction loops cannot be SIMD-vectorized and
+// clang warns (-Wpass-failed=transform-warning) when simd is requested.
+#define OMP_PARALLEL_LOOP_REDUCTION_PLUS(var) DO_PRAGMA(omp parallel for reduction(+:var))
+#define OMP_PARALLEL_LOOP_REDUCTION_MIN(var) DO_PRAGMA(omp parallel for reduction(min:var))
+#define OMP_PARALLEL_LOOP_REDUCTION_MAX(var) DO_PRAGMA(omp parallel for reduction(max:var))
 
 // Data mapping - no-op on CPU (data already in host memory)
 #define OMP_TARGET_ENTER_DATA_MAP_TO(...)
