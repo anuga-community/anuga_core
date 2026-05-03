@@ -228,6 +228,20 @@ endif
 if mpi_dep.found() and have_mpi4py
   gpu_deps = openmp_deps + [mpi_dep] + nvtx_dep
 
+  # On macOS, SIP strips DYLD_LIBRARY_PATH from child processes so libmpi.dylib
+  # is not found at dlopen time even though it is present in the conda env.
+  # Embed an rpath pointing to sys.prefix/lib so the dynamic linker finds it
+  # without any environment variable.
+  gpu_link_args = []
+  if host_machine.system() == 'darwin'
+    _py_prefix = run_command(py3, ['-c', 'import sys; print(sys.prefix)'], check: false)
+    if _py_prefix.returncode() == 0
+      _mpi_lib_dir = _py_prefix.stdout().strip() + '/lib'
+      gpu_link_args = ['-Wl,-rpath,' + _mpi_lib_dir]
+      message('macOS: embedding rpath for libmpi.dylib: ' + _mpi_lib_dir)
+    endif
+  endif
+
   py3.extension_module('sw_domain_gpu_ext',
     sources: [
       'sw_domain_gpu_ext.pyx',
@@ -242,6 +256,7 @@ if mpi_dep.found() and have_mpi4py
       'gpu/core_kernels.c',
     ],
     c_args: gpu_c_args,
+    link_args: gpu_link_args,
     include_directories: gpu_inc_dir,
     dependencies: gpu_deps,
     subdir: 'anuga/shallow_water',
