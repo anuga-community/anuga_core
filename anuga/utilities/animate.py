@@ -1016,6 +1016,7 @@ class SWW_plotter:
         else:
             fig.savefig(os.path.join(plot_dir, name
                                      + '_depth_{0:0>10}.png'.format(frame_num)))
+        plt.close(fig)
         self._depth_frame_count += 1
 
     def plot_depth_frame(self, frame=-1, figsize=(10, 6), dpi = 80,
@@ -1066,6 +1067,7 @@ class SWW_plotter:
         else:
             fig.savefig(os.path.join(plot_dir, name
                                      + '_stage_{0:0>10}.png'.format(frame_num)))
+        plt.close(fig)
         self._stage_frame_count += 1
 
     def plot_stage_frame(self, frame=-1, figsize=(5, 3), dpi=80,
@@ -1118,6 +1120,7 @@ class SWW_plotter:
         else:
             fig.savefig(os.path.join(plot_dir, name
                                      + '_speed_depth_{0:0>10}.png'.format(frame_num)))
+        plt.close(fig)
         self._speed_depth_frame_count += 1
 
     def plot_speed_depth_frame(self, frame=-1, figsize=(5, 3), dpi=80,
@@ -1167,6 +1170,7 @@ class SWW_plotter:
         else:
             fig.savefig(os.path.join(plot_dir, name
                                      + '_speed_{0:0>10}.png'.format(frame_num)))
+        plt.close(fig)
         self._speed_frame_count += 1
 
     def plot_speed_frame(self, frame=-1, figsize=(10, 6), dpi=80,
@@ -1274,6 +1278,7 @@ class SWW_plotter:
             fig.savefig(fname)
         else:
             fig.savefig(os.path.join(plot_dir, fname))
+        plt.close(fig)
         self._elev_frame_count += 1
 
     def plot_elev_frame(self, frame=-1, figsize=(10, 6), dpi=80,
@@ -1377,6 +1382,7 @@ class SWW_plotter:
             fig.savefig(fname)
         else:
             fig.savefig(os.path.join(plot_dir, fname))
+        plt.close(fig)
         self._elev_delta_frame_count += 1
 
     #------------------------------------------
