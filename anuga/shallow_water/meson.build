@@ -26,10 +26,22 @@ gpu_offload = get_option('gpu_offload')
 
 # MPI is optional - if not found, sw_domain_gpu_ext won't be built
 mpi_dep = dependency('mpi', language: 'c', required: false)
+if mpi_dep.found()
+  message('MPI dependency found via pkg-config/cmake')
+else
+  message('MPI dependency NOT found via pkg-config/cmake - will try mpi4py fallback')
+endif
 
 # Check if mpi4py is available
 mpi4py_check = run_command(py3, ['-c', 'import mpi4py; print(mpi4py.get_include())'], check: false)
 have_mpi4py = mpi4py_check.returncode() == 0
+
+if have_mpi4py
+  message('mpi4py found, include dir: ' + mpi4py_check.stdout().strip())
+else
+  message('mpi4py NOT importable (rc=' + mpi4py_check.returncode().to_string() + ')'
+          + (mpi4py_check.stderr().strip() != '' ? ': ' + mpi4py_check.stderr().strip() : ''))
+endif
 
 # Fallback: if standard MPI detection failed but mpi4py is available,
 # construct MPI dependency from mpicc -show output so that compile flags
@@ -42,23 +54,28 @@ try:
     import mpi4py
     prefix = sys.prefix
     is_windows = sys.platform == "win32"
-    # conda on Windows puts headers/libs under Library/; Unix uses prefix directly
-    if is_windows:
-        inc = os.path.join(prefix, "Library", "include")
-        lib = os.path.join(prefix, "Library", "lib")
-    else:
-        inc = os.path.join(prefix, "include")
-        lib = os.path.join(prefix, "lib")
     cfg = mpi4py.get_config()
     # mpi4py.get_config() may supply explicit dirs; prefer those if present
     cfg_incs = cfg.get("include_dirs", [])
     cfg_libs = cfg.get("library_dirs", [])
-    if cfg_incs:
-        inc = cfg_incs[0]
-    if cfg_libs:
-        lib = cfg_libs[0]
-    if not os.path.isfile(os.path.join(inc, "mpi.h")):
+    if is_windows:
+        # conda on Windows: try cfg first, then Library/include, then bare include
+        candidates_inc = (cfg_incs or []) + [
+            os.path.join(prefix, "Library", "include"),
+            os.path.join(prefix, "include"),
+        ]
+        candidates_lib = (cfg_libs or []) + [
+            os.path.join(prefix, "Library", "lib"),
+            os.path.join(prefix, "lib"),
+        ]
+    else:
+        candidates_inc = (cfg_incs or []) + [os.path.join(prefix, "include")]
+        candidates_lib = (cfg_libs or []) + [os.path.join(prefix, "lib")]
+    inc = next((d for d in candidates_inc if os.path.isfile(os.path.join(d, "mpi.h"))), None)
+    if inc is None:
+        print("mpi.h not found; tried: " + str(candidates_inc), file=sys.stderr)
         sys.exit(1)
+    lib = candidates_lib[0]  # take first; linker will search anyway
     if is_windows:
         # No mpicc on Windows; build flags from known conda paths.
         # Library names from mpi4py config, defaulting to msmpi (conda-forge).
@@ -83,7 +100,8 @@ try:
             cflags = ["-I" + inc]
             lflags = ["-L" + lib, "-lmpi"]
     print("|".join(cflags) + "##" + "|".join(lflags))
-except Exception:
+except Exception as e:
+    print("MPI fallback exception: " + str(e), file=sys.stderr)
     sys.exit(1)
 '''], check: false)
 
@@ -99,6 +117,9 @@ except Exception:
       )
       message('MPI found via mpicc -show (fallback): ' + mpi_parts[0])
     endif
+  else
+    message('MPI fallback script failed (rc=' + mpi_prefix_result.returncode().to_string() + ')'
+            + (mpi_prefix_result.stderr().strip() != '' ? ': ' + mpi_prefix_result.stderr().strip() : ''))
   endif
 endif
 
