@@ -84,19 +84,17 @@ def metis_partition(domain, n_procs):
 
 
     if metis_version == "5_part_graph":
-        # build adjacency list
-        # neighbours uses negative integer-indices to denote boudary edges.
-        # pymetis totally cant handle that, so we have to delete these.
-        neigh = domain.neighbours.tolist()
-        for i in range(len(neigh)):
-            if neigh[i][2] < 0:
-                del neigh[i][2]
-            if neigh[i][1] < 0:
-                del neigh[i][1]
-            if neigh[i][0] < 0:
-                del neigh[i][0]
+        # neighbours uses negative entries for boundary edges; pymetis can't
+        # handle them, so we build a CSR adjacency that omits them.
+        N = domain.neighbours
+        mask = N >= 0
+        adjncy = N[mask].astype(np.int32)
+        counts = mask.sum(axis=1).astype(np.int32)
+        xadj = np.empty(N.shape[0] + 1, dtype=np.int32)
+        xadj[0] = 0
+        np.cumsum(counts, out=xadj[1:])
 
-        cutcount, partvert = part_graph(n_procs, neigh)
+        cutcount, partvert = part_graph(n_procs, xadj=xadj, adjncy=adjncy)
 
         epart = partvert
 
