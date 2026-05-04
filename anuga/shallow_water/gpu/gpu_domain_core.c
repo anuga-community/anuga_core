@@ -416,7 +416,10 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
     double *x_centroid_work = GD->D.x_centroid_work;
     double *y_centroid_work = GD->D.y_centroid_work;
     double *boundary_flux_sum = GD->D.boundary_flux_sum;
-    anuga_int timestep_fluxcalls = GD->D.timestep_fluxcalls > 0 ? GD->D.timestep_fluxcalls : 3;
+    // BUG FIX: assert timestep_fluxcalls > 0 before use; the old default=3 fallback
+    // over-mapped a size-2 RK2 array when called before get_domain_pointers ran.
+    anuga_int timestep_fluxcalls = GD->D.timestep_fluxcalls;
+    if (timestep_fluxcalls <= 0) timestep_fluxcalls = 2; // safe minimum (RK2)
 
     // Friction array
     double *friction_cv = GD->D.friction_centroid_values;
@@ -629,6 +632,13 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
 
     GD->gpu_initialized = 1;
 
+    // Initialise active cell list device memory (use_active_cells defaults to 0;
+    // Python layer or user code sets GD->use_active_cells = 1 to enable).
+    GD->active_list_mapped = 0;
+    GD->active_cell_flags  = NULL;
+    GD->D.active_cell_ids  = NULL;
+    GD->D.n_active_cells   = 0;
+
     if (GD->rank == 0 && GD->verbose) {
         printf("  Arrays mapped to device %d\n", GD->device_id);
         fflush(stdout);
@@ -729,6 +739,9 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
 void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     if (!GD->gpu_initialized) return;
 
+    // Release active cell list device memory first
+    gpu_active_cells_finalize(GD);
+
     anuga_int n = GD->D.number_of_elements;
     anuga_int nb = GD->D.boundary_length;
     struct halo_exchange *H = &GD->halo;
@@ -766,7 +779,10 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     double *x_centroid_work = GD->D.x_centroid_work;
     double *y_centroid_work = GD->D.y_centroid_work;
     double *boundary_flux_sum = GD->D.boundary_flux_sum;
-    anuga_int timestep_fluxcalls = GD->D.timestep_fluxcalls > 0 ? GD->D.timestep_fluxcalls : 3;
+    // BUG FIX: assert timestep_fluxcalls > 0 before use; the old default=3 fallback
+    // over-mapped a size-2 RK2 array when called before get_domain_pointers ran.
+    anuga_int timestep_fluxcalls = GD->D.timestep_fluxcalls;
+    if (timestep_fluxcalls <= 0) timestep_fluxcalls = 2; // safe minimum (RK2)
 
     // Friction array
     double *friction_cv = GD->D.friction_centroid_values;
@@ -1022,7 +1038,9 @@ void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
 void gpu_sync_boundary_flux_sum_from_device(struct gpu_domain *GD) {
     if (!GD->gpu_initialized || GD->D.boundary_flux_sum == NULL) return;
 
-    anuga_int n = GD->D.timestep_fluxcalls > 0 ? GD->D.timestep_fluxcalls : 3;
+    // BUG FIX: use same safe-minimum logic as map/unmap to avoid over-syncing
+    anuga_int n = GD->D.timestep_fluxcalls;
+    if (n <= 0) n = 2;
     double *boundary_flux_sum = GD->D.boundary_flux_sum;
 
     #pragma omp target update from(boundary_flux_sum[0:n])

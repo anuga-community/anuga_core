@@ -654,7 +654,10 @@ double gpu_inlet_apply_v2(struct gpu_domain *GD, int op_id, double volume,
         OMP_PARALLEL_LOOP
         for (int k = 0; k < n; k++) {
             int i = indices[k];
-            double depth = stage_c[i] - bed_c[i];
+            // BUG FIX: clamp depth to >= 0.0.  stage < bed is possible before
+            // core_protect runs (e.g. first inlet step, or sub-bed init).
+            // Without the clamp, depth is negative → velocity has wrong sign.
+            double depth = fmax(stage_c[i] - bed_c[i], 0.0);
             double denom = depth * depth + VELOCITY_PROTECTION;
             old_u[k] = xmom_c[i] * depth / denom;
             old_v[k] = ymom_c[i] * depth / denom;

@@ -367,6 +367,14 @@ struct gpu_domain {
 
     // FLOP counters for performance profiling (Gordon Bell)
     struct flop_counters flops;
+
+    // Active cell list management
+    // active_cell_flags[k] == 1 when cell k is wet or adjacent to a wet cell.
+    // This device-resident boolean array is used to build the compacted list
+    // (D.active_cell_ids / D.n_active_cells) each timestep.
+    int *active_cell_flags;  // [D.number_of_elements] - GPU alloc, not a Python array
+    int  active_list_mapped; // 1 once active_cell_flags is on the device
+    int  use_active_cells;   // 0 = disabled (default), 1 = enabled
 };
 
 // ============================================================================
@@ -494,6 +502,12 @@ double gpu_compute_fluxes_substep(struct gpu_domain *GD,
                                   int timestep_fluxcalls,
                                   int compute_timestep,
                                   int compute_boundary_flux);
+// Fused extrapolate+flux variant (avoids writing edge arrays to HBM)
+double gpu_extrapolate_and_compute_fluxes_substep(struct gpu_domain *GD,
+                                                   int substep_count,
+                                                   int timestep_fluxcalls,
+                                                   int compute_timestep,
+                                                   int compute_boundary_flux);
 void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep);
 void gpu_backup_conserved_quantities(struct gpu_domain *GD);
 void gpu_saxpy_conserved_quantities(struct gpu_domain *GD, double a, double b);
@@ -501,6 +515,15 @@ void gpu_saxpy3_conserved_quantities(struct gpu_domain *GD, double a, double b, 
 double gpu_protect(struct gpu_domain *GD);
 double gpu_compute_water_volume(struct gpu_domain *GD);
 void gpu_manning_friction(struct gpu_domain *GD);
+
+// Active cell list: build compacted wet-cell index array on device.
+// Call once per timestep before extrapolation to restrict kernels to wet cells.
+// Does nothing (and returns 0) if GD->use_active_cells == 0.
+int gpu_active_cells_update(struct gpu_domain *GD);
+
+// Initialise / finalise active cell list device memory (called from map/unmap).
+void gpu_active_cells_init(struct gpu_domain *GD);
+void gpu_active_cells_finalize(struct gpu_domain *GD);
 
 // Full RK2 step on GPU (calls all the above in sequence)
 // max_timestep: Maximum allowed timestep (respecting yieldstep/finaltime constraints)

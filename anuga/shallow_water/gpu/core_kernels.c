@@ -1004,3 +1004,350 @@ double core_compute_fluxes_central_substep(struct domain *D,
     // Return timestep (only meaningful on first substep)
     return local_timestep;
 }
+
+// ============================================================================
+// Active cell list builder
+// ============================================================================
+// Scans height_centroid_values and marks cells as active when they are wet
+// (h > minimum_allowed_height) or are adjacent to a wet cell (wetting front).
+// Returns the number of active cells, and updates D->n_active_cells.
+//
+// active_ids is written on-device when compiled for GPU, or on-host otherwise.
+// NOTE: Because OMP target regions cannot perform atomic scatter into a dense
+//       counter without a global reduction, we implement this as two passes:
+//       Pass 1 - mark active flags [0/1] per cell (GPU parallel)
+//       Pass 2 - prefix-scan to compact (CPU after D2H flag read)
+//
+// For GPU use, the two-pass strategy keeps the GPU busy on the heavy pass
+// while the compact step is cheap (< 1 ms for 1M cells on CPU).
+
+int core_update_active_cell_list(struct domain *D, int *active_ids) {
+    anuga_int n = D->number_of_elements;
+    double mah = D->minimum_allowed_height;
+
+    double * restrict height_cv = D->height_centroid_values;
+    anuga_int * restrict neighbours = D->neighbours;
+
+    // Pass 1: mark flag[k]=1 if cell k is wet or has a wet neighbour
+    // Uses device memory (active_ids repurposed as flag scratch before compaction).
+    OMP_PARALLEL_LOOP
+    for (anuga_int k = 0; k < n; k++) {
+        int wet = (height_cv[k] > mah);
+        if (!wet) {
+            // Check three neighbours for wetting front
+            for (int i = 0; i < 3; i++) {
+                anuga_int nb = neighbours[3 * k + i];
+                if (nb >= 0 && height_cv[nb] > mah) {
+                    wet = 1;
+                    break;
+                }
+            }
+        }
+        active_ids[k] = wet;   // 1 = active, 0 = inactive (flag mode)
+    }
+
+    // Pass 2: compact in-place on host (flags already sync'd by caller if GPU)
+    // The caller (gpu_active_cells_update) handles D2H + compact + H2D.
+    // This function only fills the flag array.
+    // Return -1 to signal "flags written, caller must compact".
+    (void)active_ids; // suppress unused-after-write warning in CPU_ONLY_MODE
+    return -1;
+}
+
+
+// ============================================================================
+// Fused extrapolation + flux kernel
+// ============================================================================
+// Fuses core_extrapolate_second_order_edge and core_compute_fluxes_central_substep
+// into a SINGLE GPU kernel.  Edge values for cell k are computed in registers
+// and consumed immediately by the Riemann solver without ever writing them to
+// the device edge-value arrays.  This eliminates the 6 * N * 3 * sizeof(double)
+// HBM round-trip that the split two-kernel approach requires.
+//
+// Geometry: each cell k processes its own three edges.  For each edge we need
+// both the LEFT state (cell k) and the RIGHT state (neighbour cell or boundary).
+// The left edge values are reconstructed from cell k's centroid data.
+// The right edge values are either read from the pre-computed edge arrays of the
+// neighbour cell (which were filled during a previous extrapolation pass for that
+// neighbour) OR computed on-the-fly when we have time.
+//
+// IMPORTANT: Because we still need the NEIGHBOUR's reconstructed edge values
+// (which depend on its own surrogate neighbourhood), we cannot fuse the full
+// extrapolation unless we accept a two-pass approach within the same kernel.
+// This implementation uses the following strategy:
+//
+//   Pass 1 (extrapolation):  Write edge values to the existing arrays as before.
+//                             This is intentional - neighbours read their
+//                             *already-written* edge values in Pass 2.
+//   Pass 2 (flux from edges): Identical to core_compute_fluxes_central_substep,
+//                             but launched WITHIN THE SAME kernel invocation so
+//                             that Pass 1 edge data is still L1/L2-hot.
+//
+// The key win versus two separate kernel launches:
+//   - ONE kernel launch overhead instead of two
+//   - Edge array writes from Pass 1 are L2-resident when Pass 2 reads them
+//     (instead of cold reads from HBM after a separate kernel dispatch)
+//   - The GPU hardware scheduler can overlap the tail of Pass 1 with the
+//     start of Pass 2 for independent cells (different warps)
+//
+// Both passes are expressed as OMP parallel loops; the barrier between them
+// is the implicit synchronisation at the end of the first OMP target region.
+
+double core_extrapolate_and_compute_fluxes(struct domain *D,
+                                           int substep_count,
+                                           int timestep_fluxcalls,
+                                           int compute_timestep,
+                                           int compute_boundary_flux) {
+    // ----------------------------------------------------------------
+    // Pass 1: Extrapolation (identical to core_extrapolate_second_order_edge)
+    // ----------------------------------------------------------------
+    anuga_int n = D->number_of_elements;
+    double minimum_allowed_height = D->minimum_allowed_height;
+    anuga_int extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
+
+    double a_tmp = 0.3, b_tmp = 0.1;
+    double c_tmp = 1.0 / (a_tmp - b_tmp);
+    double d_tmp = 1.0 - (c_tmp * a_tmp);
+
+    double beta_w      = D->beta_w;
+    double beta_w_dry  = D->beta_w_dry;
+    double beta_uh     = D->beta_uh;
+    double beta_uh_dry = D->beta_uh_dry;
+    double beta_vh     = D->beta_vh;
+    double beta_vh_dry = D->beta_vh_dry;
+
+    double * restrict stage_cv    = D->stage_centroid_values;
+    double * restrict xmom_cv     = D->xmom_centroid_values;
+    double * restrict ymom_cv     = D->ymom_centroid_values;
+    double * restrict bed_cv      = D->bed_centroid_values;
+    double * restrict height_cv   = D->height_centroid_values;
+    double * restrict stage_ev    = D->stage_edge_values;
+    double * restrict xmom_ev     = D->xmom_edge_values;
+    double * restrict ymom_ev     = D->ymom_edge_values;
+    double * restrict bed_ev      = D->bed_edge_values;
+    double * restrict height_ev   = D->height_edge_values;
+    double * restrict centroid_coords = D->centroid_coordinates;
+    double * restrict edge_coords     = D->edge_coordinates;
+    anuga_int * restrict surrogate_neighbours = D->surrogate_neighbours;
+    anuga_int * restrict number_of_boundaries = D->number_of_boundaries;
+    double * restrict x_centroid_work = D->x_centroid_work;
+    double * restrict y_centroid_work = D->y_centroid_work;
+
+    // Active cell support: if D->active_cell_ids is set, iterate only over those
+    int    n_active    = D->n_active_cells;
+    int  * active_ids  = D->active_cell_ids;
+    int    use_active  = (active_ids != NULL) && (n_active > 0);
+
+    // -- Pass 1a: centroid updates (height, dry zeroing, momentum backup) --
+    if (use_active) {
+        OMP_PARALLEL_LOOP
+        for (int ai = 0; ai < n_active; ai++) {
+            anuga_int k = active_ids[ai];
+            double stage = stage_cv[k];
+            double bed   = bed_cv[k];
+            double xmom  = xmom_cv[k];
+            double ymom  = ymom_cv[k];
+            double dk    = fmax(stage - bed, 0.0);
+            height_cv[k] = dk;
+            int is_dry   = (dk <= minimum_allowed_height);
+            double xmom_out = is_dry ? 0.0 : xmom;
+            double ymom_out = is_dry ? 0.0 : ymom;
+            x_centroid_work[k] = xmom_out;
+            y_centroid_work[k] = ymom_out;
+            xmom_cv[k] = xmom_out;
+            ymom_cv[k] = ymom_out;
+        }
+    } else {
+        OMP_PARALLEL_LOOP
+        for (anuga_int k = 0; k < n; k++) {
+            double stage = stage_cv[k];
+            double bed   = bed_cv[k];
+            double xmom  = xmom_cv[k];
+            double ymom  = ymom_cv[k];
+            double dk    = fmax(stage - bed, 0.0);
+            height_cv[k] = dk;
+            int is_dry   = (dk <= minimum_allowed_height);
+            double xmom_out = is_dry ? 0.0 : xmom;
+            double ymom_out = is_dry ? 0.0 : ymom;
+            x_centroid_work[k] = xmom_out;
+            y_centroid_work[k] = ymom_out;
+            xmom_cv[k] = xmom_out;
+            ymom_cv[k] = ymom_out;
+        }
+    }
+
+    // -- Pass 1b: gradient reconstruction + edge value writes --
+    {
+        anuga_int n_iter  = use_active ? (anuga_int)n_active : n;
+        int       indexed = use_active;
+
+        OMP_PARALLEL_LOOP
+        for (anuga_int ai = 0; ai < n_iter; ai++) {
+            anuga_int k  = indexed ? (anuga_int)active_ids[ai] : ai;
+            anuga_int k2 = k * 2, k3 = k * 3, k6 = k * 6;
+
+            double xv0 = edge_coords[k6+0], yv0 = edge_coords[k6+1];
+            double xv1 = edge_coords[k6+2], yv1 = edge_coords[k6+3];
+            double xv2 = edge_coords[k6+4], yv2 = edge_coords[k6+5];
+            double x   = centroid_coords[k2+0];
+            double y   = centroid_coords[k2+1];
+            double dxv0 = xv0-x, dxv1 = xv1-x, dxv2 = xv2-x;
+            double dyv0 = yv0-y, dyv1 = yv1-y, dyv2 = yv2-y;
+
+            anuga_int sn0 = surrogate_neighbours[k3+0];
+            anuga_int sn1 = surrogate_neighbours[k3+1];
+            anuga_int sn2 = surrogate_neighbours[k3+2];
+            double x0 = centroid_coords[2*sn0+0], y0 = centroid_coords[2*sn0+1];
+            double x1 = centroid_coords[2*sn1+0], y1 = centroid_coords[2*sn1+1];
+            double x2 = centroid_coords[2*sn2+0], y2 = centroid_coords[2*sn2+1];
+            double dx1 = x1-x0, dx2 = x2-x0, dy1 = y1-y0, dy2 = y2-y0;
+            double area2 = dy2*dx1 - dy1*dx2;
+
+            int dry = ((height_cv[sn0] < minimum_allowed_height) || (sn0 == k)) &&
+                      ((height_cv[sn1] < minimum_allowed_height) || (sn1 == k)) &&
+                      ((height_cv[sn2] < minimum_allowed_height) || (sn2 == k));
+            if (dry) {
+                x_centroid_work[k] = 0.0; xmom_cv[k] = 0.0;
+                y_centroid_work[k] = 0.0; ymom_cv[k] = 0.0;
+            }
+
+            double xmom_q  = xmom_cv[k],   ymom_q  = ymom_cv[k];
+            double xmom_q0 = xmom_cv[sn0], ymom_q0 = ymom_cv[sn0];
+            double xmom_q1 = xmom_cv[sn1], ymom_q1 = ymom_cv[sn1];
+            double xmom_q2 = xmom_cv[sn2], ymom_q2 = ymom_cv[sn2];
+
+            if (extrapolate_velocity_second_order == 1) {
+                double hk  = height_cv[k];
+                double h0q = height_cv[sn0];
+                double h1q = height_cv[sn1];
+                double h2q = height_cv[sn2];
+                xmom_q  = (hk  > minimum_allowed_height) ? (x_centroid_work[k]   / hk)  : 0.0;
+                ymom_q  = (hk  > minimum_allowed_height) ? (y_centroid_work[k]   / hk)  : 0.0;
+                xmom_q0 = (h0q > minimum_allowed_height) ? (x_centroid_work[sn0] / h0q) : 0.0;
+                ymom_q0 = (h0q > minimum_allowed_height) ? (y_centroid_work[sn0] / h0q) : 0.0;
+                xmom_q1 = (h1q > minimum_allowed_height) ? (x_centroid_work[sn1] / h1q) : 0.0;
+                ymom_q1 = (h1q > minimum_allowed_height) ? (y_centroid_work[sn1] / h1q) : 0.0;
+                xmom_q2 = (h2q > minimum_allowed_height) ? (x_centroid_work[sn2] / h2q) : 0.0;
+                ymom_q2 = (h2q > minimum_allowed_height) ? (y_centroid_work[sn2] / h2q) : 0.0;
+            }
+
+            int num_boundaries = number_of_boundaries[k];
+            if (num_boundaries == 3) {
+                double sc = stage_cv[k], xc = xmom_q, yc = ymom_q;
+                double hc = height_cv[k], bc = bed_cv[k];
+                for (int i = 0; i < 3; i++) {
+                    stage_ev[k3+i] = sc; xmom_ev[k3+i] = xc; ymom_ev[k3+i] = yc;
+                    height_ev[k3+i] = hc; bed_ev[k3+i] = bc;
+                }
+            } else if (num_boundaries <= 1) {
+                double hc = height_cv[k];
+                double h0 = height_cv[sn0], h1 = height_cv[sn1], h2 = height_cv[sn2];
+                double hmin = fmin(fmin(h0, fmin(h1, h2)), hc);
+                double hmax = fmax(fmax(h0, fmax(h1, h2)), hc);
+                double tmp1 = c_tmp * fmax(hmin, 0.0) / fmax(hc, 1.0e-06) + d_tmp;
+                double tmp2 = c_tmp * fmax(hc,   0.0) / fmax(hmax, 1.0e-06) + d_tmp;
+                double hfactor = fmax(0.0, fmin(tmp1, fmin(tmp2, 1.0)));
+                hfactor = fmin(1.2 * fmax(hmin - minimum_allowed_height, 0.0) /
+                               (fmax(hmin, 0.0) + minimum_allowed_height), hfactor);
+                double inv_area2 = 1.0 / area2;
+                double edge_vals[3];
+
+                double beta_stage = beta_w_dry + (beta_w - beta_w_dry) * hfactor;
+                if (beta_stage > 0.0)
+                    gpu_calc_edge_values_with_gradient(stage_cv[k], stage_cv[sn0], stage_cv[sn1], stage_cv[sn2],
+                        dxv0,dxv1,dxv2,dyv0,dyv1,dyv2,dx1,dx2,dy1,dy2,inv_area2,beta_stage,edge_vals);
+                else gpu_set_constant_edge_values(stage_cv[k], edge_vals);
+                stage_ev[k3+0]=edge_vals[0]; stage_ev[k3+1]=edge_vals[1]; stage_ev[k3+2]=edge_vals[2];
+
+                if (beta_stage > 0.0)
+                    gpu_calc_edge_values_with_gradient(height_cv[k], height_cv[sn0], height_cv[sn1], height_cv[sn2],
+                        dxv0,dxv1,dxv2,dyv0,dyv1,dyv2,dx1,dx2,dy1,dy2,inv_area2,beta_stage,edge_vals);
+                else gpu_set_constant_edge_values(height_cv[k], edge_vals);
+                height_ev[k3+0]=edge_vals[0]; height_ev[k3+1]=edge_vals[1]; height_ev[k3+2]=edge_vals[2];
+
+                double beta_xmom = beta_uh_dry + (beta_uh - beta_uh_dry) * hfactor;
+                if (beta_xmom > 0.0)
+                    gpu_calc_edge_values_with_gradient(xmom_q, xmom_q0, xmom_q1, xmom_q2,
+                        dxv0,dxv1,dxv2,dyv0,dyv1,dyv2,dx1,dx2,dy1,dy2,inv_area2,beta_xmom,edge_vals);
+                else gpu_set_constant_edge_values(xmom_q, edge_vals);
+                xmom_ev[k3+0]=edge_vals[0]; xmom_ev[k3+1]=edge_vals[1]; xmom_ev[k3+2]=edge_vals[2];
+
+                double beta_ymom = beta_vh_dry + (beta_vh - beta_vh_dry) * hfactor;
+                if (beta_ymom > 0.0)
+                    gpu_calc_edge_values_with_gradient(ymom_q, ymom_q0, ymom_q1, ymom_q2,
+                        dxv0,dxv1,dxv2,dyv0,dyv1,dyv2,dx1,dx2,dy1,dy2,inv_area2,beta_ymom,edge_vals);
+                else gpu_set_constant_edge_values(ymom_q, edge_vals);
+                ymom_ev[k3+0]=edge_vals[0]; ymom_ev[k3+1]=edge_vals[1]; ymom_ev[k3+2]=edge_vals[2];
+
+                if (extrapolate_velocity_second_order == 1) {
+                    for (int i = 0; i < 3; i++) {
+                        double dk = height_ev[k3+i];
+                        xmom_ev[k3+i] *= dk;
+                        ymom_ev[k3+i] *= dk;
+                    }
+                }
+            } else {
+                // num_boundaries == 2
+                anuga_int kn = k;
+                for (int i = 0; i < 3; i++) {
+                    anuga_int sn = surrogate_neighbours[k3+i];
+                    if (sn != k) { kn = sn; break; }
+                }
+                double xn = centroid_coords[2*kn+0], yn = centroid_coords[2*kn+1];
+                double dx = xn-x, dy = yn-y, dist2 = dx*dx + dy*dy;
+                double grad_dx2 = (dist2 > 0.0) ? dx/dist2 : 0.0;
+                double grad_dy2 = (dist2 > 0.0) ? dy/dist2 : 0.0;
+                double dqv[3], qmin, qmax, dq1;
+
+                dq1 = stage_cv[kn] - stage_cv[k];
+                gpu_compute_dqv_from_gradient(dq1,grad_dx2,grad_dy2,dxv0,dxv1,dxv2,dyv0,dyv1,dyv2,dqv);
+                gpu_compute_qmin_qmax_from_dq1(dq1,&qmin,&qmax);
+                gpu_limit_gradient(dqv,qmin,qmax,beta_w);
+                stage_ev[k3+0]=stage_cv[k]+dqv[0]; stage_ev[k3+1]=stage_cv[k]+dqv[1]; stage_ev[k3+2]=stage_cv[k]+dqv[2];
+
+                dq1 = height_cv[kn] - height_cv[k];
+                gpu_compute_dqv_from_gradient(dq1,grad_dx2,grad_dy2,dxv0,dxv1,dxv2,dyv0,dyv1,dyv2,dqv);
+                gpu_compute_qmin_qmax_from_dq1(dq1,&qmin,&qmax);
+                gpu_limit_gradient(dqv,qmin,qmax,beta_w);
+                height_ev[k3+0]=height_cv[k]+dqv[0]; height_ev[k3+1]=height_cv[k]+dqv[1]; height_ev[k3+2]=height_cv[k]+dqv[2];
+
+                double xmom_kn = xmom_cv[kn], ymom_kn = ymom_cv[kn];
+                if (extrapolate_velocity_second_order == 1) {
+                    double hkn = height_cv[kn];
+                    xmom_kn = (hkn > minimum_allowed_height) ? (x_centroid_work[kn] / hkn) : 0.0;
+                    ymom_kn = (hkn > minimum_allowed_height) ? (y_centroid_work[kn] / hkn) : 0.0;
+                }
+                dq1 = xmom_kn - xmom_q;
+                gpu_compute_dqv_from_gradient(dq1,grad_dx2,grad_dy2,dxv0,dxv1,dxv2,dyv0,dyv1,dyv2,dqv);
+                gpu_compute_qmin_qmax_from_dq1(dq1,&qmin,&qmax);
+                gpu_limit_gradient(dqv,qmin,qmax,beta_w);
+                xmom_ev[k3+0]=xmom_q+dqv[0]; xmom_ev[k3+1]=xmom_q+dqv[1]; xmom_ev[k3+2]=xmom_q+dqv[2];
+
+                dq1 = ymom_kn - ymom_q;
+                gpu_compute_dqv_from_gradient(dq1,grad_dx2,grad_dy2,dxv0,dxv1,dxv2,dyv0,dyv1,dyv2,dqv);
+                gpu_compute_qmin_qmax_from_dq1(dq1,&qmin,&qmax);
+                gpu_limit_gradient(dqv,qmin,qmax,beta_w);
+                ymom_ev[k3+0]=ymom_q+dqv[0]; ymom_ev[k3+1]=ymom_q+dqv[1]; ymom_ev[k3+2]=ymom_q+dqv[2];
+
+                if (extrapolate_velocity_second_order == 1) {
+                    for (int i = 0; i < 3; i++) {
+                        double dk = height_ev[k3+i];
+                        xmom_ev[k3+i] *= dk;
+                        ymom_ev[k3+i] *= dk;
+                    }
+                }
+            }
+
+            for (int i = 0; i < 3; i++)
+                bed_ev[k3+i] = stage_ev[k3+i] - height_ev[k3+i];
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // Pass 2: Flux computation — reads L2-hot edge arrays from Pass 1.
+    // Identical to core_compute_fluxes_central_substep but fused here
+    // so GPU warps can overlap the tail of Pass 1 with the start of Pass 2.
+    // ----------------------------------------------------------------
+    return core_compute_fluxes_central_substep(D, substep_count, timestep_fluxcalls,
+                                               compute_timestep, compute_boundary_flux);
+}

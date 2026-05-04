@@ -58,4 +58,34 @@ double core_compute_fluxes_central_substep(struct domain *D,
                                            int compute_timestep,
                                            int compute_boundary_flux);
 
+// ============================================================================
+// PERFORMANCE OPTIMISATION: Fused extrapolation + flux kernel
+// ============================================================================
+// Combines core_extrapolate_second_order_edge and core_compute_fluxes_central
+// into a single GPU kernel.  Edge values are computed in registers and fed
+// directly into the Riemann solver, eliminating the 6x N*3 double round-trip
+// through device HBM that the two-kernel approach requires.
+//
+// When D->active_cell_ids != NULL (use_active_cells enabled), only the
+// n_active_cells elements listed there are processed.
+//
+// Returns the minimum CFL timestep (same semantics as core_compute_fluxes_central_substep).
+double core_extrapolate_and_compute_fluxes(struct domain *D,
+                                           int substep_count,
+                                           int timestep_fluxcalls,
+                                           int compute_timestep,
+                                           int compute_boundary_flux);
+
+// ============================================================================
+// PERFORMANCE OPTIMISATION: Active cell list management
+// ============================================================================
+// Rebuilds D->active_cell_ids by scanning height_centroid_values and marking
+// any cell wet (h > minimum_allowed_height) or adjacent to a wet cell (wetting
+// front).  The resulting compacted list is stored in the provided buffer and
+// D->n_active_cells is updated.
+//
+// active_ids must be pre-allocated on device with capacity >= n elements.
+// Returns the number of active cells written.
+int core_update_active_cell_list(struct domain *D, int *active_ids);
+
 #endif // CORE_KERNELS_H

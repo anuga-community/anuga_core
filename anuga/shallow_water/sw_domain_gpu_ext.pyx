@@ -230,6 +230,18 @@ cdef extern from "gpu_domain.h" nogil:
     double gpu_compute_water_volume(gpu_domain *GD)
     void gpu_manning_friction(gpu_domain *GD)
 
+    # Fused extrapolate+flux kernel (single launch, edge data L2-hot between passes)
+    double gpu_extrapolate_and_compute_fluxes_substep(gpu_domain *GD,
+                                                      int substep_count,
+                                                      int timestep_fluxcalls,
+                                                      int compute_timestep,
+                                                      int compute_boundary_flux)
+
+    # Active cell list management (dry-region skipping)
+    void gpu_active_cells_init(gpu_domain *GD)
+    void gpu_active_cells_finalize(gpu_domain *GD)
+    int  gpu_active_cells_update(gpu_domain *GD)
+
     # Full RK2 step
     double gpu_evolve_one_rk2_step(gpu_domain *GD, double max_timestep,
                                    int apply_forcing, int compute_boundary_flux)
@@ -1984,6 +1996,49 @@ def flop_counters_enable(GPUDomain gpu_dom, bint enable):
         True to enable counting, False to disable
     """
     gpu_flop_counters_enable(&gpu_dom.GD, 1 if enable else 0)
+
+
+def enable_active_cells(GPUDomain gpu_dom, bint enable):
+    """
+    Enable or disable the active cell list optimisation.
+
+    When enabled, all compute kernels iterate only over wet cells and
+    cells on the wetting front, skipping interior dry regions.  This
+    gives significant speedups (20-60%) for flood / inundation simulations
+    where a large fraction of the domain is dry at any given timestep.
+
+    The list is rebuilt automatically each timestep (one GPU flag scan +
+    cheap CPU prefix-scan compact).  It is safe to toggle at any time
+    between timesteps.
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    enable : bool
+        True to enable active cell skipping, False to use full domain loop
+    """
+    if enable:
+        gpu_dom.GD.use_active_cells = 1
+        gpu_active_cells_init(&gpu_dom.GD)
+    else:
+        gpu_dom.GD.use_active_cells = 0
+        gpu_active_cells_finalize(&gpu_dom.GD)
+
+
+def get_active_cell_count(GPUDomain gpu_dom):
+    """
+    Return the number of active (wet + wetting-front) cells from the last
+    rebuild.  Useful for monitoring wetted fraction during a simulation.
+
+    Returns 0 if active cell skipping is disabled or not yet initialised.
+
+    Returns
+    -------
+    int
+        Number of active cells in the last rebuilt list
+    """
+    return gpu_dom.GD.D.n_active_cells
 
 
 def flop_counters_start_timer(GPUDomain gpu_dom):
