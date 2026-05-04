@@ -408,4 +408,8 @@ If you use an unsupported boundary type, ALL boundaries fall back to CPU evaluat
 
 mpi4py failure due to lack of GPU awareness, fix by: `CFLAGS="-noswitcherror" CC=mpicc pip install mpi4py --no-cache-dir --no-binary mpi4py ` rebuilding mpi4py locally with a GPU aware MPI install
 
+On Gadi sometimes it does not find the right python, gotta remove some pkgconfig:
 
+```
+export PKG_CONFIG_PATH=$(echo $PKG_CONFIG_PATH | tr ':' '\n' | grep -v '/half-root' | paste -sd:)
+```
