@@ -259,23 +259,16 @@ int gpu_active_cells_update(struct gpu_domain *GD) {
 
     anuga_int n   = GD->D.number_of_elements;
     double    mah = GD->D.minimum_allowed_height;
+    (void)mah;  // used indirectly through core_update_active_cell_list
 
-    double * restrict height_cv = GD->D.height_centroid_values;
-    anuga_int * restrict neighbours = GD->D.neighbours;
     int *flags = GD->active_cell_flags;
 
-    // Pass 1 on device: mark flags
-    OMP_PARALLEL_LOOP
-    for (anuga_int k = 0; k < n; k++) {
-        int wet = (height_cv[k] > mah);
-        if (!wet) {
-            for (int i = 0; i < 3; i++) {
-                anuga_int nb = neighbours[3*k+i];
-                if (nb >= 0 && height_cv[nb] > mah) { wet = 1; break; }
-            }
-        }
-        flags[k] = wet;
-    }
+    // Pass 1 on device: mark flags via shared core kernel (avoids duplication
+    // with core_update_active_cell_list in core_kernels.c).
+    // core_update_active_cell_list writes 1/0 into act_ids[] as a flag array,
+    // then returns -1 to signal that the caller must compact.
+    int *act_ids = GD->D.active_cell_ids;
+    core_update_active_cell_list(&GD->D, flags);
 
     // Pass 2 on host: D2H flags, compact, H2D active_ids
 #ifndef CPU_ONLY_MODE
@@ -283,7 +276,6 @@ int gpu_active_cells_update(struct gpu_domain *GD) {
 #endif
 
     int count = 0;
-    int *act_ids = GD->D.active_cell_ids;
     for (anuga_int k = 0; k < n; k++) {
         if (flags[k]) act_ids[count++] = (int)k;
     }
