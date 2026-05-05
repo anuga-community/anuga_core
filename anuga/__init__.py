@@ -160,6 +160,9 @@ from anuga.shallow_water.boundaries import \
                     Transmissive_n_momentum_zero_t_momentum_set_stage_boundary
 from anuga.shallow_water.boundaries import \
                     Flather_external_stage_zero_velocity_boundary
+from anuga.shallow_water.boundaries import \
+                    Absorbing_wave_boundary, \
+                    Characteristic_wave_boundary
 from anuga.abstract_2d_finite_volumes.generic_boundary_conditions import \
                     Compute_fluxes_boundary
 
@@ -375,6 +378,8 @@ __all__ = [
     'Dirichlet_boundary',
     'Field_boundary',
     'File_boundary',
+    'Absorbing_wave_boundary',
+    'Characteristic_wave_boundary',
     'Flather_external_stage_zero_velocity_boundary',
     'Reflective_boundary',
     'Time_boundary',
