@@ -101,6 +101,9 @@ cdef extern from "gpu_domain.h" nogil:
         double* riverwall_elevation
         int64_t* riverwall_rowIndex
         double* riverwall_hydraulic_properties
+        # Active cell list for dry-region skipping optimisation
+        int* active_cell_ids
+        int  n_active_cells
 
     struct halo_exchange:
         int num_neighbors
