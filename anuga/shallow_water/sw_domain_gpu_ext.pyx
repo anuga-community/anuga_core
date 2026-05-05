@@ -146,6 +146,8 @@ cdef extern from "gpu_domain.h" nogil:
         double CFL
         double evolve_max_timestep
         double fixed_flux_timestep
+        int use_active_cells
+        int active_list_mapped
 
     # Function declarations - initialization and cleanup
     int gpu_domain_init(gpu_domain *GD, MPI_Comm comm, int rank, int nprocs)

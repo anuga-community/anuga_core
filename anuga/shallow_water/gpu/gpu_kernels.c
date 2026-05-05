@@ -239,8 +239,8 @@ void gpu_active_cells_finalize(struct gpu_domain *GD) {
     {
         int *flags   = GD->active_cell_flags;
         int *act_ids = GD->D.active_cell_ids;
-        if (flags)   { #pragma omp target exit data map(delete: flags[0:n]) }
-        if (act_ids) { #pragma omp target exit data map(delete: act_ids[0:n]) }
+        #pragma omp target exit data map(delete: flags[0:n])
+        #pragma omp target exit data map(delete: act_ids[0:n])
     }
 #endif
 
