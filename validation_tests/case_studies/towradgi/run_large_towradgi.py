@@ -77,8 +77,15 @@ finaltime=1800. #83700.
 scale = 10
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
-# Choices are 1 (openmp) 2 (copenmp)
-multiprocessor_mode = 2
+# Choices are 1 (openmp) 2 (GPU offload)
+multiprocessor_mode = 2   # GPU mode (requires build with gpu_offload=true)
+
+# ── NEW: Active cell list optimisation (PR review fix) ──────────────────────
+# When True, all GPU compute kernels (flux, extrapolation, protect, friction,
+# update) iterate only over wet + wetting-front cells, skipping interior dry
+# regions.  Expected speedup: 20-60% for inundation cases.
+# Set False to use legacy full-domain loops (baseline for benchmarking).
+use_active_cells = True
 
 checkpoint_time = max(600/scale, 60)
 checkpoint_dir = 'CHECKPOINTS'
@@ -973,8 +980,23 @@ Creating domain from scratch.
 
 
 domain.fixed_flux_timestep = 0.05
-domain.set_multiprocessor_mode(multiprocessor_mode )
+domain.set_multiprocessor_mode(multiprocessor_mode)
 domain.use_c_rk_loop = True
+
+# ── NEW: Enable active cell list optimisation on GPU domain ─────────────────
+if multiprocessor_mode == 2 and use_active_cells:
+    try:
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            enable_active_cells, get_active_cell_count
+        )
+        enable_active_cells(domain.gpu_interface, True)
+        if myid == 0:
+            n_total = domain.number_of_elements
+            print(f'[active_cells] enabled — domain has {n_total} cells')
+            print(f'[active_cells] initial wet count: {get_active_cell_count(domain.gpu_interface)}')
+    except Exception as e:
+        if myid == 0:
+            print(f'[active_cells] WARNING: could not enable ({e}); running full-domain loop')
 
 # ------------------------------------------------------------------------------
 # EVOLVE SYSTEM THROUGH TIME
@@ -995,6 +1017,16 @@ for t in domain.evolve(yieldstep=yieldstep, outputstep=outputstep, finaltime=fin
         pass  # Checkpoint loaded, no rainfall_quantity defined
     if myid == 0:
         domain.write_time()
+        # ── NEW: report wetted fraction at each yieldstep ────────────────
+        if multiprocessor_mode == 2 and use_active_cells:
+            try:
+                from anuga.shallow_water.sw_domain_gpu_ext import get_active_cell_count
+                n_active = get_active_cell_count(domain.gpu_interface)
+                n_total  = domain.number_of_elements
+                pct = 100.0 * n_active / max(n_total, 1)
+                print(f'[active_cells] t={t:.0f}s  wet={n_active}/{n_total} ({pct:.1f}%)')
+            except Exception:
+                pass
 
 profiler.disable()
 
