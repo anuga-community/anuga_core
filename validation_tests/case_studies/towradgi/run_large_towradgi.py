@@ -989,11 +989,12 @@ if multiprocessor_mode == 2 and use_active_cells:
         from anuga.shallow_water.sw_domain_gpu_ext import (
             enable_active_cells, get_active_cell_count
         )
-        enable_active_cells(domain.gpu_interface, True)
+        gpu_dom = domain.gpu_interface.gpu_dom
+        enable_active_cells(gpu_dom, True)
         if myid == 0:
             n_total = domain.number_of_elements
             print(f'[active_cells] enabled — domain has {n_total} cells')
-            print(f'[active_cells] initial wet count: {get_active_cell_count(domain.gpu_interface)}')
+            print(f'[active_cells] initial wet count: {get_active_cell_count(gpu_dom)}')
     except Exception as e:
         if myid == 0:
             print(f'[active_cells] WARNING: could not enable ({e}); running full-domain loop')
@@ -1021,7 +1022,7 @@ for t in domain.evolve(yieldstep=yieldstep, outputstep=outputstep, finaltime=fin
         if multiprocessor_mode == 2 and use_active_cells:
             try:
                 from anuga.shallow_water.sw_domain_gpu_ext import get_active_cell_count
-                n_active = get_active_cell_count(domain.gpu_interface)
+                n_active = get_active_cell_count(domain.gpu_interface.gpu_dom)
                 n_total  = domain.number_of_elements
                 pct = 100.0 * n_active / max(n_total, 1)
                 print(f'[active_cells] t={t:.0f}s  wet={n_active}/{n_total} ({pct:.1f}%)')
