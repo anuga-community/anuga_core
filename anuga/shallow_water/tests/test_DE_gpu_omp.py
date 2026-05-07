@@ -1534,6 +1534,81 @@ class Test_GPU_FileBoundary(unittest.TestCase):
 
 
 @pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
+class Test_GPU_FlatherBoundary(unittest.TestCase):
+    """Tests for Flather_external_stage_zero_velocity_boundary GPU support."""
+
+    def _make_domain(self, M=15, N=15):
+        d = rectangular_cross_domain(M, N, len1=1.0, len2=1.0)
+        d.set_flow_algorithm('DE0')
+        d.set_low_froude(0)
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', 0.0)
+        d.set_quantity('friction', 0.0)
+        d.set_quantity('stage', 0.1)
+        return d
+
+    def _run_mode(self, mode):
+        from anuga import Flather_external_stage_zero_velocity_boundary
+        d = self._make_domain()
+        Br = Reflective_boundary(d)
+        Bf = Flather_external_stage_zero_velocity_boundary(d, function=lambda t: 0.0)
+        d.set_boundary({'left': Bf, 'right': Br, 'top': Br, 'bottom': Br})
+        d.set_multiprocessor_mode(mode)
+        d.set_quantities_to_be_stored(None)
+        gauge_tri = d.get_triangle_containing_point([0.5, 0.5])
+        stage = d.get_quantity('stage')
+        vals = []
+        for _ in d.evolve(yieldstep=0.1, finaltime=0.3):
+            vals.append(float(stage.centroid_values[gauge_tri]))
+        return vals
+
+    def test_flather_boundary_mode1_vs_mode2(self):
+        """Flather boundary produces identical results in mode=1 and mode=2."""
+        g1 = self._run_mode(1)
+        g2 = self._run_mode(2)
+        self.assertEqual(len(g1), len(g2))
+        for v1, v2 in zip(g1, g2):
+            self.assertAlmostEqual(v1, v2, places=10,
+                msg=f"mode=1 gauge={v1} vs mode=2 gauge={v2}")
+
+    def test_flather_boundary_in_gpu_boundary_types(self):
+        """Flather_external_stage_zero_velocity_boundary is GPU-supported (no CPU fallback)."""
+        from anuga import Flather_external_stage_zero_velocity_boundary
+        d = self._make_domain()
+        Br = Reflective_boundary(d)
+        Bf = Flather_external_stage_zero_velocity_boundary(d, function=lambda t: 0.0)
+        d.set_boundary({'left': Bf, 'right': Br, 'top': Br, 'bottom': Br})
+        d.set_multiprocessor_mode(2)
+        d.set_quantities_to_be_stored(None)
+        for _ in d.evolve(yieldstep=0.1, finaltime=0.1):
+            pass
+        self.assertTrue(d._gpu_all_on_gpu,
+            "Flather_external_stage_zero_velocity_boundary should be GPU-supported")
+
+    def test_flather_boundary_init_via_ext(self):
+        """init_flather_boundary populates GPU struct correctly."""
+        from anuga import Flather_external_stage_zero_velocity_boundary
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            init_gpu_domain, map_to_gpu, unmap_from_gpu, finalize_gpu_domain,
+            init_flather_boundary,
+        )
+        d = self._make_domain(10, 10)
+        Br = Reflective_boundary(d)
+        Bf = Flather_external_stage_zero_velocity_boundary(d, function=lambda t: 0.0)
+        d.set_boundary({'left': Bf, 'right': Br, 'top': Br, 'bottom': Br})
+
+        gpu = init_gpu_domain(d)
+        n = init_flather_boundary(gpu, d)
+        map_to_gpu(gpu)
+
+        self.assertGreater(n, 0, "Flather BC should find edges on 'left' boundary")
+
+        unmap_from_gpu(gpu)
+        finalize_gpu_domain(gpu)
+
+
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_WaveBoundaries(unittest.TestCase):
     """Tests for Absorbing_wave_boundary and Characteristic_wave_boundary GPU support."""
 

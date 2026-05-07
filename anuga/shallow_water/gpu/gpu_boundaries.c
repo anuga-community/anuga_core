@@ -984,3 +984,142 @@ void gpu_evaluate_characteristic_wave_boundary(struct gpu_domain *GD) {
         }
     }
 }
+
+// ============================================================================
+// Flather_external_stage_zero_velocity_boundary
+// Weakly-reflecting Flather-type BC: exterior stage prescribed from Python
+// each timestep; interior state read on device to compute ghost via
+// characteristic decomposition (Blayo & Debreu 2005).
+// ============================================================================
+
+int gpu_flather_init(struct gpu_domain *GD, int num_edges,
+                     int *boundary_indices, int *vol_ids, int *edge_ids) {
+    struct flather_boundary *B = &GD->flather;
+
+    B->num_edges     = num_edges;
+    B->stage_outside = 0.0;
+    B->mapped        = 0;
+
+    if (num_edges == 0) {
+        B->boundary_indices = NULL;
+        B->vol_ids = NULL;
+        B->edge_ids = NULL;
+        return 0;
+    }
+
+    B->boundary_indices = (int*)malloc(num_edges * sizeof(int));
+    B->vol_ids          = (int*)malloc(num_edges * sizeof(int));
+    B->edge_ids         = (int*)malloc(num_edges * sizeof(int));
+
+    if (!B->boundary_indices || !B->vol_ids || !B->edge_ids) {
+        fprintf(stderr, "Failed to allocate flather_boundary arrays\n");
+        return -1;
+    }
+
+    memcpy(B->boundary_indices, boundary_indices, num_edges * sizeof(int));
+    memcpy(B->vol_ids,          vol_ids,          num_edges * sizeof(int));
+    memcpy(B->edge_ids,         edge_ids,         num_edges * sizeof(int));
+    return 0;
+}
+
+void gpu_flather_finalize(struct gpu_domain *GD) {
+    struct flather_boundary *B = &GD->flather;
+
+    if (B->mapped && B->num_edges > 0) {
+        int ne = B->num_edges;
+        int *b_idx = B->boundary_indices;
+        int *v_ids = B->vol_ids;
+        int *e_ids = B->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+    }
+
+    if (B->boundary_indices) free(B->boundary_indices);
+    if (B->vol_ids)          free(B->vol_ids);
+    if (B->edge_ids)         free(B->edge_ids);
+
+    B->num_edges        = 0;
+    B->boundary_indices = NULL;
+    B->vol_ids          = NULL;
+    B->edge_ids         = NULL;
+    B->mapped = 0;
+}
+
+void gpu_flather_set_value(struct gpu_domain *GD, double stage_outside) {
+    GD->flather.stage_outside = stage_outside;
+}
+
+void gpu_evaluate_flather_boundary(struct gpu_domain *GD) {
+    struct flather_boundary *B = &GD->flather;
+    if (B->num_edges == 0) return;
+    if (!B->mapped) return;
+
+    int num_edges         = B->num_edges;
+    int *boundary_indices = B->boundary_indices;
+    int *vol_ids          = B->vol_ids;
+    int *edge_ids         = B->edge_ids;
+    double stage_out      = B->stage_outside;
+    double g              = GD->D.g;
+
+    double *stage_ev  = GD->D.stage_edge_values;
+    double *bed_ev    = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+    double *xmom_ev   = GD->D.xmom_edge_values;
+    double *ymom_ev   = GD->D.ymom_edge_values;
+    double *normals   = GD->D.normals;
+
+    double *stage_bv  = GD->D.stage_boundary_values;
+    double *bed_bv    = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
+    double *xmom_bv   = GD->D.xmom_boundary_values;
+    double *ymom_bv   = GD->D.ymom_boundary_values;
+
+    OMP_PARALLEL_LOOP
+    for (int k = 0; k < num_edges; k++) {
+        int bid = boundary_indices[k];
+        int vid = vol_ids[k];
+        int eid = edge_ids[k];
+
+        double stage_int = stage_ev[3 * vid + eid];
+        double bed       = bed_ev[3 * vid + eid];
+        double depth_int = stage_int - bed;
+        if (depth_int < 0.0) depth_int = 0.0;
+
+        bed_bv[bid]    = bed;
+        height_bv[bid] = height_ev[3 * vid + eid];
+
+        if (depth_int == 0.0) {
+            // Dry interior: prescribe exterior stage if it would wet the cell
+            stage_bv[bid] = (bed <= stage_out) ? stage_out : bed;
+            xmom_bv[bid]  = 0.0;
+            ymom_bv[bid]  = 0.0;
+        } else {
+            double n1    = normals[vid * 6 + 2 * eid];
+            double n2    = normals[vid * 6 + 2 * eid + 1];
+            double q1    = xmom_ev[3 * vid + eid];
+            double q2    = ymom_ev[3 * vid + eid];
+
+            // sqrt(g / depth_inside) -- characteristic speed scaling
+            double sqrt_g_d = sqrt(g / depth_int);
+
+            // Normal momentum (outward positive)
+            double ndotq = n1 * q1 + n2 * q2;
+
+            // Characteristic variables (Blayo & Debreu 2005, p.239)
+            // w1: exterior; w2: inside (outflow) or 0 (inflow); w3: interior
+            double w1 = 0.0 - sqrt_g_d * stage_out;
+            double w2 = (ndotq > 0.0)
+                        ? (n2 * q1 - n1 * q2) / depth_int   // outflow: inside tangential vel
+                        : 0.0;                                // inflow: exterior tangential vel = 0
+            double w3 = ndotq / depth_int + sqrt_g_d * stage_int;
+
+            // Recover ghost conserved quantities
+            double q0_ghost = (w3 - w1) / (2.0 * sqrt_g_d);
+            double qperp    = (w3 + w1) / 2.0 * depth_int;
+            double qpar     = w2 * depth_int;
+
+            stage_bv[bid] = q0_ghost;
+            xmom_bv[bid]  = qperp * n1 + qpar * n2;
+            ymom_bv[bid]  = qperp * n2 - qpar * n1;
+        }
+    }
+}

@@ -205,6 +205,7 @@ All standard boundary types are supported in GPU mode:
 - ``Time_boundary``, ``Time_stage_zero_momentum_boundary``
 - ``Absorbing_wave_boundary`` (wave scalar pushed from Python; ghost state computed on device)
 - ``Characteristic_wave_boundary`` (wave scalar pushed from Python; nonlinear characteristic kernel on device)
+- ``Flather_external_stage_zero_velocity_boundary`` (exterior stage scalar pushed from Python; Blayo & Debreu characteristic decomposition kernel on device)
 
 Custom boundary classes not in the above list are evaluated on the CPU with an
 automatic device sync.

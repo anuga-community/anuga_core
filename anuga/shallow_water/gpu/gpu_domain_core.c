@@ -296,6 +296,14 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->characteristic_wave.background_stage = 0.0;
     GD->characteristic_wave.mapped           = 0;
 
+    // Initialize flather boundary to empty
+    GD->flather.num_edges        = 0;
+    GD->flather.boundary_indices = NULL;
+    GD->flather.vol_ids          = NULL;
+    GD->flather.edge_ids         = NULL;
+    GD->flather.stage_outside    = 0.0;
+    GD->flather.mapped           = 0;
+
     // Initialize boundary edge sync to empty
     GD->edge_sync.num_boundary_cells = 0;
     GD->edge_sync.cell_ids = NULL;
@@ -366,6 +374,7 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
     gpu_file_boundary_finalize(GD);
     gpu_absorbing_wave_finalize(GD);
     gpu_characteristic_wave_finalize(GD);
+    gpu_flather_finalize(GD);
 
     // Free boundary edge sync structures
     gpu_boundary_edge_sync_finalize(GD);
@@ -612,6 +621,23 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         }
     }
 
+    // Map flather boundary arrays if initialized
+    struct flather_boundary *FL = &GD->flather;
+    if (FL->num_edges > 0 && FL->boundary_indices != NULL) {
+        int ne = FL->num_edges;
+        int *b_idx = FL->boundary_indices;
+        int *v_ids = FL->vol_ids;
+        int *e_ids = FL->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        FL->mapped = 1;
+
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Flather boundary: %d edges\n", ne);
+            fflush(stdout);
+        }
+    }
+
     // Map riverwall arrays if present
     // edge_flux_type is always mapped (size 3*n); other arrays only if riverwalls exist
     anuga_int *edge_flux_type = GD->D.edge_flux_type;
@@ -805,6 +831,23 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
             fflush(stdout);
         }
     }
+
+    // Map flather boundary arrays if initialized but not yet mapped
+    struct flather_boundary *FL = &GD->flather;
+    if (FL->num_edges > 0 && FL->boundary_indices != NULL && !FL->mapped) {
+        int ne = FL->num_edges;
+        int *b_idx = FL->boundary_indices;
+        int *v_ids = FL->vol_ids;
+        int *e_ids = FL->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        FL->mapped = 1;
+
+        if (GD->rank == 0 && GD->verbose) {
+            printf("Flather boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
+        }
+    }
 }
 
 void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
@@ -974,6 +1017,17 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *e_ids = CW->edge_ids;
         #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         CW->mapped = 0;
+    }
+
+    // Unmap flather boundary arrays if mapped
+    struct flather_boundary *FL = &GD->flather;
+    if (FL->mapped && FL->num_edges > 0) {
+        int ne = FL->num_edges;
+        int *b_idx = FL->boundary_indices;
+        int *v_ids = FL->vol_ids;
+        int *e_ids = FL->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        FL->mapped = 0;
     }
 
     // Unmap riverwall arrays

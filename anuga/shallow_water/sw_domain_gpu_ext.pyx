@@ -228,6 +228,13 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_characteristic_wave_set_value(gpu_domain *GD, double wave_value)
     void gpu_evaluate_characteristic_wave_boundary(gpu_domain *GD)
 
+    # Flather_external_stage_zero_velocity_boundary
+    int  gpu_flather_init(gpu_domain *GD, int num_edges,
+                          int *boundary_indices, int *vol_ids, int *edge_ids)
+    void gpu_flather_finalize(gpu_domain *GD)
+    void gpu_flather_set_value(gpu_domain *GD, double stage_outside)
+    void gpu_evaluate_flather_boundary(gpu_domain *GD)
+
     # GPU kernels
     void gpu_extrapolate_second_order(gpu_domain *GD)
     double gpu_compute_fluxes(gpu_domain *GD)
@@ -1509,6 +1516,59 @@ def set_characteristic_wave_value(GPUDomain gpu_dom, double wave_value):
 def evaluate_characteristic_wave_boundary_gpu(GPUDomain gpu_dom):
     """Evaluate Characteristic_wave_boundary on GPU using the current wave_value."""
     gpu_evaluate_characteristic_wave_boundary(&gpu_dom.GD)
+
+
+def init_flather_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize Flather_external_stage_zero_velocity_boundary for GPU.
+
+    Scans domain.boundary_map for Flather_external_stage_zero_velocity_boundary
+    objects, collects their edges, and initialises the GPU struct.
+    Call once after domain setup, BEFORE map_to_gpu.
+
+    Returns
+    -------
+    int
+        Number of boundary edges found (0 if none).
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+
+    if domain_object.boundary_map is None:
+        return 0
+
+    all_ids = []
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and \
+                boundary.__class__.__name__ == 'Flather_external_stage_zero_velocity_boundary':
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                all_ids.extend(segment_edges)
+
+    if len(all_ids) == 0:
+        return 0
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr  = np.ascontiguousarray(domain_object.boundary_cells[ids],  dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_flather_init(&gpu_dom.GD, num_edges,
+                     &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0])
+    return num_edges
+
+
+def set_flather_value(GPUDomain gpu_dom, double stage_outside):
+    """Update the exterior stage scalar for Flather boundary (called each timestep)."""
+    gpu_flather_set_value(&gpu_dom.GD, stage_outside)
+
+
+def evaluate_flather_boundary_gpu(GPUDomain gpu_dom):
+    """Evaluate Flather_external_stage_zero_velocity_boundary on GPU."""
+    gpu_evaluate_flather_boundary(&gpu_dom.GD)
 
 
 def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):

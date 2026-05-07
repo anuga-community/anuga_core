@@ -145,6 +145,18 @@ struct characteristic_wave_boundary {
     int mapped;
 };
 
+// Flather_external_stage_zero_velocity_boundary - weakly-reflecting Flather-type BC.
+// stage_outside (exterior stage) updated each timestep from Python; interior state
+// read on device to form the characteristic-variable ghost state.
+struct flather_boundary {
+    int num_edges;
+    int *boundary_indices;
+    int *vol_ids;
+    int *edge_ids;
+    double stage_outside;        // Exterior stage (updated each timestep from Python)
+    int mapped;
+};
+
 // Boundary edge sync buffers - pre-allocated for efficient sparse sync
 // Allocated once during setup, reused every timestep
 struct boundary_edge_sync {
@@ -369,6 +381,7 @@ struct gpu_domain {
     struct file_boundary file_bdry;
     struct absorbing_wave_boundary absorbing_wave;
     struct characteristic_wave_boundary characteristic_wave;
+    struct flather_boundary flather;
 
     // Boundary edge sync (for sparse edge value sync)
     struct boundary_edge_sync edge_sync;
@@ -487,6 +500,13 @@ int  gpu_characteristic_wave_init(struct gpu_domain *GD, int num_edges,
 void gpu_characteristic_wave_finalize(struct gpu_domain *GD);
 void gpu_characteristic_wave_set_value(struct gpu_domain *GD, double wave_value);
 void gpu_evaluate_characteristic_wave_boundary(struct gpu_domain *GD);
+
+// Flather_external_stage_zero_velocity_boundary - weakly-reflecting characteristic BC
+int  gpu_flather_init(struct gpu_domain *GD, int num_edges,
+                      int *boundary_indices, int *vol_ids, int *edge_ids);
+void gpu_flather_finalize(struct gpu_domain *GD);
+void gpu_flather_set_value(struct gpu_domain *GD, double stage_outside);
+void gpu_evaluate_flather_boundary(struct gpu_domain *GD);
 
 // Time_boundary - time-dependent Dirichlet values
 int gpu_time_boundary_init(struct gpu_domain *GD, int num_edges,

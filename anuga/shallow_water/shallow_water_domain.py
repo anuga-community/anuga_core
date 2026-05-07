@@ -2015,6 +2015,8 @@ class Domain(Generic_Domain):
                 evaluate_absorbing_wave_boundary_gpu,
                 set_characteristic_wave_value,
                 evaluate_characteristic_wave_boundary_gpu,
+                set_flather_value,
+                evaluate_flather_boundary_gpu,
                 boundary_edge_sync,
                 sync_boundary_values,
                 init_boundary_edge_sync,
@@ -2026,7 +2028,8 @@ class Domain(Generic_Domain):
             GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                                   'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
                                   'Time_boundary', 'File_boundary', 'Field_boundary',
-                                  'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
+                                  'Absorbing_wave_boundary', 'Characteristic_wave_boundary',
+                                  'Flather_external_stage_zero_velocity_boundary'}
 
             if not hasattr(self, '_gpu_boundary_info_initialized'):
                 self._gpu_cpu_tags = []
@@ -2035,6 +2038,7 @@ class Domain(Generic_Domain):
                 self._gpu_time_boundaries = []
                 self._gpu_absorbing_wave_boundaries = []
                 self._gpu_characteristic_wave_boundaries = []
+                self._gpu_flather_boundaries = []
 
                 for tag, B in self.boundary_map.items():
                     if B is not None:
@@ -2050,6 +2054,8 @@ class Domain(Generic_Domain):
                             self._gpu_absorbing_wave_boundaries.append(B)
                         elif btype == 'Characteristic_wave_boundary':
                             self._gpu_characteristic_wave_boundaries.append(B)
+                        elif btype == 'Flather_external_stage_zero_velocity_boundary':
+                            self._gpu_flather_boundaries.append(B)
 
                 # Set up boundary edge sync if we have ANY CPU-evaluated boundaries
                 if not self._gpu_all_on_gpu:
@@ -2103,6 +2109,15 @@ class Domain(Generic_Domain):
                         perturb = float(value[0])
                     set_characteristic_wave_value(gpu_dom, perturb)
                 evaluate_characteristic_wave_boundary_gpu(gpu_dom)
+
+                for B in self._gpu_flather_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        stage_val = float(value)
+                    except (TypeError, ValueError):
+                        stage_val = float(value[0])
+                    set_flather_value(gpu_dom, stage_val)
+                evaluate_flather_boundary_gpu(gpu_dom)
             else:
                 # Some boundaries need CPU - sync edge values, evaluate on CPU, sync back
                 boundary_edge_sync(gpu_dom)
@@ -2979,6 +2994,15 @@ class Domain(Generic_Domain):
                         perturb = float(value[0])
                     set_characteristic_wave_value(gpu_dom, perturb)
                 evaluate_characteristic_wave_boundary_gpu(gpu_dom)
+
+                for B in self._gpu_flather_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        stage_val = float(value)
+                    except (TypeError, ValueError):
+                        stage_val = float(value[0])
+                    set_flather_value(gpu_dom, stage_val)
+                evaluate_flather_boundary_gpu(gpu_dom)
             else:
                 boundary_edge_sync(gpu_dom)
                 for tag in self.tag_boundary_cells:
@@ -3025,6 +3049,7 @@ class Domain(Generic_Domain):
             set_file_boundary_values_from_domain,
             set_absorbing_wave_value,
             set_characteristic_wave_value,
+            set_flather_value,
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
@@ -3099,6 +3124,14 @@ class Domain(Generic_Domain):
                 perturb = float(value[0])
             set_characteristic_wave_value(gpu_dom, perturb)
 
+        for B in self._gpu_flather_boundaries:
+            value = B.get_boundary_values()
+            try:
+                stage_val = float(value)
+            except (TypeError, ValueError):
+                stage_val = float(value[0])
+            set_flather_value(gpu_dom, stage_val)
+
         remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
         if finaltime is not None:
             remaining_finaltime = finaltime - self.get_time()
@@ -3142,6 +3175,8 @@ class Domain(Generic_Domain):
             evaluate_absorbing_wave_boundary_gpu,
             set_characteristic_wave_value,
             evaluate_characteristic_wave_boundary_gpu,
+            set_flather_value,
+            evaluate_flather_boundary_gpu,
         )
         import numpy as np
 
@@ -3232,6 +3267,15 @@ class Domain(Generic_Domain):
                     perturb = float(value[0])
                 set_characteristic_wave_value(gpu_dom, perturb)
             evaluate_characteristic_wave_boundary_gpu(gpu_dom)
+
+            for B in self._gpu_flather_boundaries:
+                value = B.get_boundary_values()
+                try:
+                    stage_val = float(value)
+                except (TypeError, ValueError):
+                    stage_val = float(value[0])
+                set_flather_value(gpu_dom, stage_val)
+            evaluate_flather_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -3301,6 +3345,15 @@ class Domain(Generic_Domain):
                     perturb = float(value[0])
                 set_characteristic_wave_value(gpu_dom, perturb)
             evaluate_characteristic_wave_boundary_gpu(gpu_dom)
+
+            for B in self._gpu_flather_boundaries:
+                value = B.get_boundary_values()
+                try:
+                    stage_val = float(value)
+                except (TypeError, ValueError):
+                    stage_val = float(value[0])
+                set_flather_value(gpu_dom, stage_val)
+            evaluate_flather_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -3341,6 +3394,7 @@ class Domain(Generic_Domain):
             set_file_boundary_values_from_domain,
             set_absorbing_wave_value,
             set_characteristic_wave_value,
+            set_flather_value,
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
@@ -3420,6 +3474,14 @@ class Domain(Generic_Domain):
                 perturb = float(value[0])
             set_characteristic_wave_value(gpu_dom, perturb)
 
+        for B in self._gpu_flather_boundaries:
+            value = B.get_boundary_values()
+            try:
+                stage_val = float(value)
+            except (TypeError, ValueError):
+                stage_val = float(value[0])
+            set_flather_value(gpu_dom, stage_val)
+
         # Compute max allowed timestep (respecting yieldstep and finaltime)
         # This mirrors the logic in update_timestep()
         remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
@@ -3472,6 +3534,8 @@ class Domain(Generic_Domain):
             evaluate_absorbing_wave_boundary_gpu,
             set_characteristic_wave_value,
             evaluate_characteristic_wave_boundary_gpu,
+            set_flather_value,
+            evaluate_flather_boundary_gpu,
         )
         import numpy as np
 
@@ -3553,6 +3617,15 @@ class Domain(Generic_Domain):
                         perturb = float(value[0])
                     set_characteristic_wave_value(gpu_dom, perturb)
                 evaluate_characteristic_wave_boundary_gpu(gpu_dom)
+
+                for B in self._gpu_flather_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        stage_val = float(value)
+                    except (TypeError, ValueError):
+                        stage_val = float(value[0])
+                    set_flather_value(gpu_dom, stage_val)
+                evaluate_flather_boundary_gpu(gpu_dom)
             else:
                 boundary_edge_sync(gpu_dom)
                 for tag in self.tag_boundary_cells:
@@ -3646,6 +3719,7 @@ class Domain(Generic_Domain):
             set_file_boundary_values_from_domain,
             set_absorbing_wave_value,
             set_characteristic_wave_value,
+            set_flather_value,
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
@@ -3723,6 +3797,14 @@ class Domain(Generic_Domain):
             except (TypeError, ValueError):
                 perturb = float(value[0])
             set_characteristic_wave_value(gpu_dom, perturb)
+
+        for B in self._gpu_flather_boundaries:
+            value = B.get_boundary_values()
+            try:
+                stage_val = float(value)
+            except (TypeError, ValueError):
+                stage_val = float(value[0])
+            set_flather_value(gpu_dom, stage_val)
 
         # Compute max allowed timestep (respecting yieldstep and finaltime)
         remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
