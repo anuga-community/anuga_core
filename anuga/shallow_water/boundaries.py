@@ -1662,6 +1662,7 @@ class Characteristic_wave_boundary(Boundary):
     Parameters
     ----------
     domain : anuga.Domain
+        The domain to which this boundary is attached.
     function : callable
         ``f(t)`` returning the stage *perturbation* at time *t*.
     background_stage : float, optional
