@@ -279,6 +279,23 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->file_bdry.ymom_values      = NULL;
     GD->file_bdry.mapped           = 0;
 
+    // Initialize absorbing_wave boundary to empty
+    GD->absorbing_wave.num_edges        = 0;
+    GD->absorbing_wave.boundary_indices = NULL;
+    GD->absorbing_wave.vol_ids          = NULL;
+    GD->absorbing_wave.edge_ids         = NULL;
+    GD->absorbing_wave.wave_value       = 0.0;
+    GD->absorbing_wave.mapped           = 0;
+
+    // Initialize characteristic_wave boundary to empty
+    GD->characteristic_wave.num_edges        = 0;
+    GD->characteristic_wave.boundary_indices = NULL;
+    GD->characteristic_wave.vol_ids          = NULL;
+    GD->characteristic_wave.edge_ids         = NULL;
+    GD->characteristic_wave.wave_value       = 0.0;
+    GD->characteristic_wave.background_stage = 0.0;
+    GD->characteristic_wave.mapped           = 0;
+
     // Initialize boundary edge sync to empty
     GD->edge_sync.num_boundary_cells = 0;
     GD->edge_sync.cell_ids = NULL;
@@ -347,6 +364,8 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
     gpu_transmissive_finalize(GD);
     gpu_transmissive_n_zero_t_finalize(GD);
     gpu_file_boundary_finalize(GD);
+    gpu_absorbing_wave_finalize(GD);
+    gpu_characteristic_wave_finalize(GD);
 
     // Free boundary edge sync structures
     gpu_boundary_edge_sync_finalize(GD);
@@ -559,6 +578,40 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         }
     }
 
+    // Map absorbing_wave boundary arrays if initialized
+    struct absorbing_wave_boundary *AW = &GD->absorbing_wave;
+    if (AW->num_edges > 0 && AW->boundary_indices != NULL) {
+        int ne = AW->num_edges;
+        int *b_idx = AW->boundary_indices;
+        int *v_ids = AW->vol_ids;
+        int *e_ids = AW->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        AW->mapped = 1;
+
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Absorbing wave boundary: %d edges\n", ne);
+            fflush(stdout);
+        }
+    }
+
+    // Map characteristic_wave boundary arrays if initialized
+    struct characteristic_wave_boundary *CW = &GD->characteristic_wave;
+    if (CW->num_edges > 0 && CW->boundary_indices != NULL) {
+        int ne = CW->num_edges;
+        int *b_idx = CW->boundary_indices;
+        int *v_ids = CW->vol_ids;
+        int *e_ids = CW->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        CW->mapped = 1;
+
+        if (GD->rank == 0 && GD->verbose) {
+            printf("  Characteristic wave boundary: %d edges\n", ne);
+            fflush(stdout);
+        }
+    }
+
     // Map riverwall arrays if present
     // edge_flux_type is always mapped (size 3*n); other arrays only if riverwalls exist
     anuga_int *edge_flux_type = GD->D.edge_flux_type;
@@ -718,6 +771,40 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
             fflush(stdout);
         }
     }
+
+    // Map absorbing_wave boundary arrays if initialized but not yet mapped
+    struct absorbing_wave_boundary *AW = &GD->absorbing_wave;
+    if (AW->num_edges > 0 && AW->boundary_indices != NULL && !AW->mapped) {
+        int ne = AW->num_edges;
+        int *b_idx = AW->boundary_indices;
+        int *v_ids = AW->vol_ids;
+        int *e_ids = AW->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        AW->mapped = 1;
+
+        if (GD->rank == 0 && GD->verbose) {
+            printf("Absorbing_wave boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
+        }
+    }
+
+    // Map characteristic_wave boundary arrays if initialized but not yet mapped
+    struct characteristic_wave_boundary *CW = &GD->characteristic_wave;
+    if (CW->num_edges > 0 && CW->boundary_indices != NULL && !CW->mapped) {
+        int ne = CW->num_edges;
+        int *b_idx = CW->boundary_indices;
+        int *v_ids = CW->vol_ids;
+        int *e_ids = CW->edge_ids;
+
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        CW->mapped = 1;
+
+        if (GD->rank == 0 && GD->verbose) {
+            printf("Characteristic_wave boundary arrays mapped to GPU (late): %d edges\n", ne);
+            fflush(stdout);
+        }
+    }
 }
 
 void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
@@ -865,6 +952,28 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
                                                  stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
         FB->mapped = 0;
+    }
+
+    // Unmap absorbing_wave boundary arrays if mapped
+    struct absorbing_wave_boundary *AW = &GD->absorbing_wave;
+    if (AW->mapped && AW->num_edges > 0) {
+        int ne = AW->num_edges;
+        int *b_idx = AW->boundary_indices;
+        int *v_ids = AW->vol_ids;
+        int *e_ids = AW->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        AW->mapped = 0;
+    }
+
+    // Unmap characteristic_wave boundary arrays if mapped
+    struct characteristic_wave_boundary *CW = &GD->characteristic_wave;
+    if (CW->mapped && CW->num_edges > 0) {
+        int ne = CW->num_edges;
+        int *b_idx = CW->boundary_indices;
+        int *v_ids = CW->vol_ids;
+        int *e_ids = CW->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        CW->mapped = 0;
     }
 
     // Unmap riverwall arrays

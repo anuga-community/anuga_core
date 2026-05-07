@@ -213,6 +213,21 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_time_boundary_set_values(gpu_domain *GD, double stage, double xmom, double ymom)
     void gpu_evaluate_time_boundary(gpu_domain *GD)
 
+    # Absorbing_wave_boundary
+    int  gpu_absorbing_wave_init(gpu_domain *GD, int num_edges,
+                                 int *boundary_indices, int *vol_ids, int *edge_ids)
+    void gpu_absorbing_wave_finalize(gpu_domain *GD)
+    void gpu_absorbing_wave_set_value(gpu_domain *GD, double wave_value)
+    void gpu_evaluate_absorbing_wave_boundary(gpu_domain *GD)
+
+    # Characteristic_wave_boundary
+    int  gpu_characteristic_wave_init(gpu_domain *GD, int num_edges,
+                                      int *boundary_indices, int *vol_ids, int *edge_ids,
+                                      double background_stage)
+    void gpu_characteristic_wave_finalize(gpu_domain *GD)
+    void gpu_characteristic_wave_set_value(gpu_domain *GD, double wave_value)
+    void gpu_evaluate_characteristic_wave_boundary(gpu_domain *GD)
+
     # GPU kernels
     void gpu_extrapolate_second_order(gpu_domain *GD)
     double gpu_compute_fluxes(gpu_domain *GD)
@@ -1392,6 +1407,108 @@ def evaluate_time_boundary_gpu(GPUDomain gpu_dom):
     Call set_time_boundary_values first to set the values.
     """
     gpu_evaluate_time_boundary(&gpu_dom.GD)
+
+
+def init_absorbing_wave_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize Absorbing_wave_boundary for GPU.
+
+    Scans domain.boundary_map for Absorbing_wave_boundary objects, collects
+    their edges, and initialises the GPU struct.  Call once after domain setup,
+    BEFORE map_to_gpu.
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+
+    if domain_object.boundary_map is None:
+        return 0
+
+    all_ids = []
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and boundary.__class__.__name__ == 'Absorbing_wave_boundary':
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                all_ids.extend(segment_edges)
+
+    if len(all_ids) == 0:
+        return 0
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr  = np.ascontiguousarray(domain_object.boundary_cells[ids],  dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_absorbing_wave_init(&gpu_dom.GD, num_edges,
+                            &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0])
+    return num_edges
+
+
+def set_absorbing_wave_value(GPUDomain gpu_dom, double wave_value):
+    """Update the wave stage scalar for Absorbing_wave_boundary (called each timestep)."""
+    gpu_absorbing_wave_set_value(&gpu_dom.GD, wave_value)
+
+
+def evaluate_absorbing_wave_boundary_gpu(GPUDomain gpu_dom):
+    """Evaluate Absorbing_wave_boundary on GPU using the current wave_value."""
+    gpu_evaluate_absorbing_wave_boundary(&gpu_dom.GD)
+
+
+def init_characteristic_wave_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize Characteristic_wave_boundary for GPU.
+
+    Scans domain.boundary_map for Characteristic_wave_boundary objects.
+    If multiple such boundaries exist with different background_stage values,
+    only the first background_stage encountered is used for the GPU struct
+    (consistent with the scalar-update pattern used by Time_boundary).
+    Call once after domain setup, BEFORE map_to_gpu.
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+
+    if domain_object.boundary_map is None:
+        return 0
+
+    all_ids = []
+    bg_stage = 0.0
+    found_first = False
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and boundary.__class__.__name__ == 'Characteristic_wave_boundary':
+            if not found_first:
+                bg_stage = float(boundary.background_stage)
+                found_first = True
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                all_ids.extend(segment_edges)
+
+    if len(all_ids) == 0:
+        return 0
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr  = np.ascontiguousarray(domain_object.boundary_cells[ids],  dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_characteristic_wave_init(&gpu_dom.GD, num_edges,
+                                 &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0],
+                                 bg_stage)
+    return num_edges
+
+
+def set_characteristic_wave_value(GPUDomain gpu_dom, double wave_value):
+    """Update the perturbation scalar for Characteristic_wave_boundary (called each timestep)."""
+    gpu_characteristic_wave_set_value(&gpu_dom.GD, wave_value)
+
+
+def evaluate_characteristic_wave_boundary_gpu(GPUDomain gpu_dom):
+    """Evaluate Characteristic_wave_boundary on GPU using the current wave_value."""
+    gpu_evaluate_characteristic_wave_boundary(&gpu_dom.GD)
 
 
 def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):

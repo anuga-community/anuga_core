@@ -2011,6 +2011,10 @@ class Domain(Generic_Domain):
                 evaluate_time_boundary_gpu,
                 set_file_boundary_values_from_domain,
                 evaluate_file_boundary_gpu,
+                set_absorbing_wave_value,
+                evaluate_absorbing_wave_boundary_gpu,
+                set_characteristic_wave_value,
+                evaluate_characteristic_wave_boundary_gpu,
                 boundary_edge_sync,
                 sync_boundary_values,
                 init_boundary_edge_sync,
@@ -2021,13 +2025,16 @@ class Domain(Generic_Domain):
             # Lazily initialize GPU boundary info
             GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                                   'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                                  'Time_boundary', 'File_boundary', 'Field_boundary'}
+                                  'Time_boundary', 'File_boundary', 'Field_boundary',
+                                  'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
             if not hasattr(self, '_gpu_boundary_info_initialized'):
                 self._gpu_cpu_tags = []
                 self._gpu_all_on_gpu = True
                 self._gpu_transmissive_n_zero_t_boundaries = []
                 self._gpu_time_boundaries = []
+                self._gpu_absorbing_wave_boundaries = []
+                self._gpu_characteristic_wave_boundaries = []
 
                 for tag, B in self.boundary_map.items():
                     if B is not None:
@@ -2039,6 +2046,10 @@ class Domain(Generic_Domain):
                             self._gpu_transmissive_n_zero_t_boundaries.append(B)
                         elif btype == 'Time_boundary':
                             self._gpu_time_boundaries.append(B)
+                        elif btype == 'Absorbing_wave_boundary':
+                            self._gpu_absorbing_wave_boundaries.append(B)
+                        elif btype == 'Characteristic_wave_boundary':
+                            self._gpu_characteristic_wave_boundaries.append(B)
 
                 # Set up boundary edge sync if we have ANY CPU-evaluated boundaries
                 if not self._gpu_all_on_gpu:
@@ -2072,6 +2083,26 @@ class Domain(Generic_Domain):
                 # Handle File_boundary / Field_boundary (per-edge values from SWW interpolation)
                 set_file_boundary_values_from_domain(gpu_dom, self)
                 evaluate_file_boundary_gpu(gpu_dom)
+
+                # Handle Absorbing_wave_boundary (scalar wave stage updated each timestep)
+                for B in self._gpu_absorbing_wave_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        wave_val = float(value)
+                    except (TypeError, ValueError):
+                        wave_val = float(value[0])
+                    set_absorbing_wave_value(gpu_dom, wave_val)
+                evaluate_absorbing_wave_boundary_gpu(gpu_dom)
+
+                # Handle Characteristic_wave_boundary (scalar perturbation updated each timestep)
+                for B in self._gpu_characteristic_wave_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        perturb = float(value)
+                    except (TypeError, ValueError):
+                        perturb = float(value[0])
+                    set_characteristic_wave_value(gpu_dom, perturb)
+                evaluate_characteristic_wave_boundary_gpu(gpu_dom)
             else:
                 # Some boundaries need CPU - sync edge values, evaluate on CPU, sync back
                 boundary_edge_sync(gpu_dom)
@@ -2875,7 +2906,8 @@ class Domain(Generic_Domain):
 
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
         if not hasattr(self, '_gpu_boundary_info_initialized'):
             self._gpu_cpu_tags = []
@@ -2883,6 +2915,8 @@ class Domain(Generic_Domain):
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []
             self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -2895,6 +2929,10 @@ class Domain(Generic_Domain):
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
                         self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
@@ -2925,6 +2963,22 @@ class Domain(Generic_Domain):
                 evaluate_time_boundary_gpu(gpu_dom)
                 set_file_boundary_values_from_domain(gpu_dom, self)
                 evaluate_file_boundary_gpu(gpu_dom)
+                for B in self._gpu_absorbing_wave_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        wave_val = float(value)
+                    except (TypeError, ValueError):
+                        wave_val = float(value[0])
+                    set_absorbing_wave_value(gpu_dom, wave_val)
+                evaluate_absorbing_wave_boundary_gpu(gpu_dom)
+                for B in self._gpu_characteristic_wave_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        perturb = float(value)
+                    except (TypeError, ValueError):
+                        perturb = float(value[0])
+                    set_characteristic_wave_value(gpu_dom, perturb)
+                evaluate_characteristic_wave_boundary_gpu(gpu_dom)
             else:
                 boundary_edge_sync(gpu_dom)
                 for tag in self.tag_boundary_cells:
@@ -2969,13 +3023,16 @@ class Domain(Generic_Domain):
             set_transmissive_n_zero_t_stage,
             set_time_boundary_values,
             set_file_boundary_values_from_domain,
+            set_absorbing_wave_value,
+            set_characteristic_wave_value,
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
 
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
         if not hasattr(self, '_gpu_boundary_info_initialized'):
             self._gpu_cpu_tags = []
@@ -2983,6 +3040,8 @@ class Domain(Generic_Domain):
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []
             self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -2995,6 +3054,10 @@ class Domain(Generic_Domain):
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
                         self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 print("WARNING: C ADER-2 loop requires all GPU-supported boundary types")
@@ -3019,6 +3082,22 @@ class Domain(Generic_Domain):
             set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
 
         set_file_boundary_values_from_domain(gpu_dom, self)
+
+        for B in self._gpu_absorbing_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                wave_val = float(value)
+            except (TypeError, ValueError):
+                wave_val = float(value[0])
+            set_absorbing_wave_value(gpu_dom, wave_val)
+
+        for B in self._gpu_characteristic_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                perturb = float(value)
+            except (TypeError, ValueError):
+                perturb = float(value[0])
+            set_characteristic_wave_value(gpu_dom, perturb)
 
         remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
         if finaltime is not None:
@@ -3059,6 +3138,10 @@ class Domain(Generic_Domain):
             evaluate_time_boundary_gpu,
             set_file_boundary_values_from_domain,
             evaluate_file_boundary_gpu,
+            set_absorbing_wave_value,
+            evaluate_absorbing_wave_boundary_gpu,
+            set_characteristic_wave_value,
+            evaluate_characteristic_wave_boundary_gpu,
         )
         import numpy as np
 
@@ -3067,7 +3150,8 @@ class Domain(Generic_Domain):
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
         # Lazy init: identify which boundaries need CPU evaluation vs GPU
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3076,6 +3160,8 @@ class Domain(Generic_Domain):
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []
             self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -3088,6 +3174,10 @@ class Domain(Generic_Domain):
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
                         self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
@@ -3126,6 +3216,22 @@ class Domain(Generic_Domain):
             evaluate_time_boundary_gpu(gpu_dom)
             set_file_boundary_values_from_domain(gpu_dom, self)
             evaluate_file_boundary_gpu(gpu_dom)
+            for B in self._gpu_absorbing_wave_boundaries:
+                value = B.get_boundary_values()
+                try:
+                    wave_val = float(value)
+                except (TypeError, ValueError):
+                    wave_val = float(value[0])
+                set_absorbing_wave_value(gpu_dom, wave_val)
+            evaluate_absorbing_wave_boundary_gpu(gpu_dom)
+            for B in self._gpu_characteristic_wave_boundaries:
+                value = B.get_boundary_values()
+                try:
+                    perturb = float(value)
+                except (TypeError, ValueError):
+                    perturb = float(value[0])
+                set_characteristic_wave_value(gpu_dom, perturb)
+            evaluate_characteristic_wave_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -3179,6 +3285,22 @@ class Domain(Generic_Domain):
             evaluate_time_boundary_gpu(gpu_dom)
             set_file_boundary_values_from_domain(gpu_dom, self)
             evaluate_file_boundary_gpu(gpu_dom)
+            for B in self._gpu_absorbing_wave_boundaries:
+                value = B.get_boundary_values()
+                try:
+                    wave_val = float(value)
+                except (TypeError, ValueError):
+                    wave_val = float(value[0])
+                set_absorbing_wave_value(gpu_dom, wave_val)
+            evaluate_absorbing_wave_boundary_gpu(gpu_dom)
+            for B in self._gpu_characteristic_wave_boundaries:
+                value = B.get_boundary_values()
+                try:
+                    perturb = float(value)
+                except (TypeError, ValueError):
+                    perturb = float(value[0])
+                set_characteristic_wave_value(gpu_dom, perturb)
+            evaluate_characteristic_wave_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -3217,6 +3339,8 @@ class Domain(Generic_Domain):
             set_transmissive_n_zero_t_stage,
             set_time_boundary_values,
             set_file_boundary_values_from_domain,
+            set_absorbing_wave_value,
+            set_characteristic_wave_value,
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
@@ -3224,7 +3348,8 @@ class Domain(Generic_Domain):
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
         # Lazy init: identify which boundaries need special handling
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3233,6 +3358,8 @@ class Domain(Generic_Domain):
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []
             self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -3245,6 +3372,10 @@ class Domain(Generic_Domain):
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
                         self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 print("WARNING: C RK2 loop requires all GPU-supported boundary types")
@@ -3272,6 +3403,22 @@ class Domain(Generic_Domain):
             set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
 
         set_file_boundary_values_from_domain(gpu_dom, self)
+
+        for B in self._gpu_absorbing_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                wave_val = float(value)
+            except (TypeError, ValueError):
+                wave_val = float(value[0])
+            set_absorbing_wave_value(gpu_dom, wave_val)
+
+        for B in self._gpu_characteristic_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                perturb = float(value)
+            except (TypeError, ValueError):
+                perturb = float(value[0])
+            set_characteristic_wave_value(gpu_dom, perturb)
 
         # Compute max allowed timestep (respecting yieldstep and finaltime)
         # This mirrors the logic in update_timestep()
@@ -3321,6 +3468,10 @@ class Domain(Generic_Domain):
             evaluate_time_boundary_gpu,
             set_file_boundary_values_from_domain,
             evaluate_file_boundary_gpu,
+            set_absorbing_wave_value,
+            evaluate_absorbing_wave_boundary_gpu,
+            set_characteristic_wave_value,
+            evaluate_characteristic_wave_boundary_gpu,
         )
         import numpy as np
 
@@ -3329,7 +3480,8 @@ class Domain(Generic_Domain):
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
         # Lazy init: identify which boundaries need CPU evaluation vs GPU
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3338,6 +3490,8 @@ class Domain(Generic_Domain):
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []
             self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -3350,6 +3504,10 @@ class Domain(Generic_Domain):
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
                         self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
@@ -3379,6 +3537,22 @@ class Domain(Generic_Domain):
                 evaluate_time_boundary_gpu(gpu_dom)
                 set_file_boundary_values_from_domain(gpu_dom, self)
                 evaluate_file_boundary_gpu(gpu_dom)
+                for B in self._gpu_absorbing_wave_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        wave_val = float(value)
+                    except (TypeError, ValueError):
+                        wave_val = float(value[0])
+                    set_absorbing_wave_value(gpu_dom, wave_val)
+                evaluate_absorbing_wave_boundary_gpu(gpu_dom)
+                for B in self._gpu_characteristic_wave_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        perturb = float(value)
+                    except (TypeError, ValueError):
+                        perturb = float(value[0])
+                    set_characteristic_wave_value(gpu_dom, perturb)
+                evaluate_characteristic_wave_boundary_gpu(gpu_dom)
             else:
                 boundary_edge_sync(gpu_dom)
                 for tag in self.tag_boundary_cells:
@@ -3470,6 +3644,8 @@ class Domain(Generic_Domain):
             set_transmissive_n_zero_t_stage,
             set_time_boundary_values,
             set_file_boundary_values_from_domain,
+            set_absorbing_wave_value,
+            set_characteristic_wave_value,
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
@@ -3477,7 +3653,8 @@ class Domain(Generic_Domain):
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
         # Lazy init: identify which boundaries need special handling
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3486,6 +3663,8 @@ class Domain(Generic_Domain):
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []
             self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -3498,6 +3677,10 @@ class Domain(Generic_Domain):
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
                         self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 print("WARNING: C RK3 loop requires all GPU-supported boundary types")
@@ -3524,6 +3707,22 @@ class Domain(Generic_Domain):
             set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
 
         set_file_boundary_values_from_domain(gpu_dom, self)
+
+        for B in self._gpu_absorbing_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                wave_val = float(value)
+            except (TypeError, ValueError):
+                wave_val = float(value[0])
+            set_absorbing_wave_value(gpu_dom, wave_val)
+
+        for B in self._gpu_characteristic_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                perturb = float(value)
+            except (TypeError, ValueError):
+                perturb = float(value[0])
+            set_characteristic_wave_value(gpu_dom, perturb)
 
         # Compute max allowed timestep (respecting yieldstep and finaltime)
         remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
