@@ -1692,6 +1692,82 @@ class Domain(Generic_Domain):
                                    num.arange(len(depth)))
         return wet_indices
 
+    def load_balance_statistics(self, minimum_height=None):
+        """Return load balance statistics for this domain (single-rank version).
+
+        For a parallel domain use :meth:`Parallel_domain.load_balance_statistics`
+        which gathers across all MPI ranks via Allgather.  This serial version
+        returns a dict with length-1 arrays so the interface is identical.
+
+        Parameters
+        ----------
+        minimum_height : float, optional
+            Depth threshold for "wet" classification.  Defaults to
+            ``anuga.config.minimum_allowed_height``.
+
+        Returns
+        -------
+        dict
+            Keys and shapes are the same as the parallel version::
+
+                n_full           int[1]   total triangle count
+                n_ghost          int[1]   0 (no ghost triangles in serial)
+                n_wet_full       int[1]   wet triangle count
+                wet_fraction     float[1] n_wet_full / n_full
+                ghost_fraction   float[1] 0.0
+                wall_time        float[1] total wall time since evolve() started
+                comm_time        float[1] 0.0
+                reduce_wait_time float[1] 0.0
+                compute_time     float[1] same as wall_time
+                imbalance_ratio  float    1.0
+                wet_compute_corr float    nan
+        """
+        from time import time as walltime
+        from anuga.config import minimum_allowed_height as default_mah
+
+        if minimum_height is None:
+            minimum_height = default_mah
+
+        n_full = self.get_number_of_triangles()
+        stage_c = self.get_quantity('stage').centroid_values
+        elev_c  = self.get_quantity('elevation').centroid_values
+        n_wet   = int(num.sum((stage_c - elev_c) > minimum_height))
+
+        w_time = walltime() - self.evolve_start_walltime
+
+        return {
+            'n_full':           num.array([n_full], dtype=int),
+            'n_ghost':          num.array([0],      dtype=int),
+            'n_wet_full':       num.array([n_wet],  dtype=int),
+            'wet_fraction':     num.array([n_wet / n_full if n_full > 0 else 0.0]),
+            'ghost_fraction':   num.array([0.0]),
+            'wall_time':        num.array([w_time]),
+            'comm_time':        num.array([0.0]),
+            'reduce_wait_time': num.array([0.0]),
+            'compute_time':     num.array([w_time]),
+            'imbalance_ratio':  1.0,
+            'wet_compute_corr': float('nan'),
+        }
+
+    def print_load_balance_statistics(self, minimum_height=None):
+        """Print a load balance summary to stdout.
+
+        For a single-process domain this just reports wet fraction and
+        triangle count.  The parallel override prints a per-rank table.
+
+        Parameters
+        ----------
+        minimum_height : float, optional
+            Passed through to :meth:`load_balance_statistics`.
+        """
+        stats = self.load_balance_statistics(minimum_height=minimum_height)
+        n      = stats['n_full'][0]
+        n_wet  = stats['n_wet_full'][0]
+        wf     = stats['wet_fraction'][0]
+        w_time = stats['wall_time'][0]
+        print(f"Load balance: triangles={n}, wet={n_wet} ({100*wf:.1f}%), "
+              f"wall_time={w_time:.3f}s")
+
     def get_maximum_inundation_elevation(self, indices=None, minimum_height=None):
         """Return highest elevation where h > 0
 
