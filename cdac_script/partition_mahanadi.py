@@ -67,7 +67,7 @@ def main():
     # Import ANUGA
     print("\nImporting ANUGA...")
     t_start = time.time()
-    from anuga import create_domain_from_file
+    from mesh_cache import create_domain_from_file
     from anuga.parallel.sequential_distribute import Sequential_distribute
     import anuga
     print(f"  Done in {time.time() - t_start:.2f}s")
@@ -106,21 +106,9 @@ def main():
         print(f"  Reading {n_triangles:,} triangles × 3 vertices = {n_triangles*3:,} values")
         t0 = time.time()
 
-        triangle_index = []
-        triangle_index_elvation_main = []
-
-        for tri_index in range(n_triangles):
-            if args.verbose and tri_index % max(1, n_triangles // 10) == 0:
-                print(f"    Processing triangle {tri_index:,}/{n_triangles:,} ({100*tri_index/n_triangles:.1f}%)")
-
-            vertices = domain.get_triangles(tri_index)
-            triangle_index.append(tri_index)
-
-            triangle_index_elvation = []
-            triangle_index_elvation.insert(0, np.double(linecache.getline(elevation_filename, vertices[0] + 1)))
-            triangle_index_elvation.insert(1, np.double(linecache.getline(elevation_filename, vertices[1] + 1)))
-            triangle_index_elvation.insert(2, np.double(linecache.getline(elevation_filename, vertices[2] + 1)))
-            triangle_index_elvation_main.append(triangle_index_elvation)
+        elev_per_node = np.loadtxt(elevation_filename)
+        triangle_index_elvation_main = elev_per_node[domain.triangles].tolist()
+        triangle_index = list(range(n_triangles))
 
         t_read = time.time() - t0
         print(f"  Read elevation data in {t_read:.2f}s")

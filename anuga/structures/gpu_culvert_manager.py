@@ -252,6 +252,9 @@ class GPUCulvertManager:
             inlet_master_proc_1=inlet_master_proc_1,
             is_local=1 if is_local else 0,
             mpi_tag_base=mpi_tag_base,
+            init_smooth_Q=float(getattr(op, 'smooth_Q', 0.0)),
+            init_smooth_delta_total_energy=float(
+                getattr(op, 'smooth_delta_total_energy', 0.0)),
         )
 
         if culvert_id < 0:

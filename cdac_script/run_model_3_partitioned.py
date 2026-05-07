@@ -50,11 +50,11 @@ bypass = True
 TIMEFORMATCU = "%d_%m_%Y"
 
 # CONFIGURATION: Set mesh resolution here (100, 300, or 900)
-MESH_SIZE = 300 # <-- CHANGE THIS for different mesh sizes
+MESH_SIZE = 900 # <-- CHANGE THIS for different mesh sizes
 
 name_stem = f'delta11372sqkm_uniform_mesh_{MESH_SIZE}sqm_Chilka{MESH_SIZE}sqm'
 partition_name = f'mahanadi_delta_{MESH_SIZE}sqm'  # Must match partition_mahanadi.py output
-partition_dir = './partitions'
+partition_dir = './bench_partitions_check'
 
 poly = anuga.read_polygon('polygons/Chilka_Modified_Poly.csv')
 poly_bounding = anuga.read_polygon('polygons/Delta_11372_sqkm.csv')
@@ -68,9 +68,11 @@ log.log_filename = output_dir + '/log_' + domain_name
 checkpoint_dir = 'checkpoints'
 #yieldstep = 50
 #finaltime = 200
-yieldstep = 10800
+yieldstep = 1000
+finaltime = 3000
+#yieldstep = 10800
 #finaltime = 43200.0 # 12 hours
-finaltime = 86400.0 # only for running 21_07_2021 simulation
+#finaltime = 86400.0 # only for running 21_07_2021 simulation
 #finaltime = 3600.0
 min_allowed_height = 0.008
 max_allowed_speed = 1.0
@@ -216,9 +218,10 @@ dict2 = {'exterior': Br}
 dict3 = dict(itertools.chain(list(dict2.items()), list(dict1.items())))
 domain.set_boundary(dict3)
 
-domain.set_multiprocessor_mode(2)
-domain.use_c_rk_loop = True
 
+domain.fixed_flux_timestep = 0.21853963
+domain.set_multiprocessor_mode(1)
+domain.use_c_rk2_loop = True
 barrier()
 
 # Input Discharge with Time Series Naraj Barrage
@@ -252,16 +255,23 @@ if myid == 0 and verbose:
     print('EVOLVE')
 
 barrier()
-domain.gpu.flop_counters_reset()
-domain.gpu.flop_counters_start_timer()
+#domain.gpu.flop_counters_reset()
+#domain.gpu.flop_counters_start_timer()
+import numpy as np
+rank = domain.processor
+n = domain.number_of_elements
+stage = domain.quantities['stage'].centroid_values
+bed = domain.quantities['elevation'].centroid_values
+depth = stage - bed
+n_wet = np.sum(depth > domain.minimum_allowed_height)
+print(f"[Rank {rank}] elements={n}, wet={n_wet} ({100*n_wet/n:.1f}%)")
 import time
 
 t0 = time.time()
 import cProfile
 import pstats
-
-#profiler = cProfile.Profile()
-#profiler.enable()
+profiler = cProfile.Profile()
+profiler.enable()
 rain_set_zero = True
 
 for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
@@ -449,7 +459,7 @@ for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
             linecache.clearcache()
             rain_opertor.set_rate(rate=Q)
         elif rain_set_zero:
-            print("The Rainfall IMD/GPM/GFS files does not exist setting rain to 0.004 !!")
+            #print("The Rainfall IMD/GPM/GFS files does not exist setting rain to 0.004 !!")
             domain.set_quantity('Rain', 0.000) #set rainfall with hardcoded value = 4mm #modifed by RK
             rain_opertor.set_rate(rate=Q)
     else:
@@ -491,23 +501,23 @@ for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
     file2.close()
     file3.close()
 
-#profiler.disable()
+profiler.disable()
 barrier()
 
-domain.gpu.flop_counters_stop_timer()
-domain.gpu.flop_counters_print_global()
+#domain.gpu.flop_counters_stop_timer()
+#domain.gpu.flop_counters_print_global()
 
-#if myid == 0:
-#    print("\n" + "="*80)
-#    print("PROFILING RESULTS - Top 40 by cumulative time")
-#    print("="*80)
-#    stats = pstats.Stats(profiler)
-#    stats.sort_stats('cumulative')
-#    stats.print_stats(40)
+if myid == 0:
+    print("\n" + "="*80)
+    print("PROFILING RESULTS - Top 40 by cumulative time")
+    print("="*80)
+    stats = pstats.Stats(profiler)
+    stats.sort_stats('cumulative')
+    stats.print_stats(40)
 
    # Also save to file for detailed analysis
-#    profiler.dump_stats('profile.prof')
-#    print(f"\nProfile saved to profile.prof - view with: python -m pstats profile.prof")
+    profiler.dump_stats('profile.prof')
+    print(f"\nProfile saved to profile.prof - view with: python -m pstats profile.prof")
 
 for p in range(numprocs):
     if myid == p:

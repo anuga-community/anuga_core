@@ -569,7 +569,8 @@ int gpu_culvert_init(struct gpu_domain *GD,
                      int inlet1_num, int *inlet1_indices, double *inlet1_areas,
                      int master_proc, int enquiry_proc_0, int enquiry_proc_1,
                      int inlet_master_proc_0, int inlet_master_proc_1,
-                     int is_local, int mpi_tag_base);
+                     int is_local, int mpi_tag_base,
+                     double init_smooth_Q, double init_smooth_delta_total_energy);
 void gpu_culvert_finalize(struct gpu_domain *GD, int culvert_id);
 void gpu_culverts_finalize_all(struct gpu_domain *GD);
 void gpu_culverts_map(struct gpu_domain *GD);

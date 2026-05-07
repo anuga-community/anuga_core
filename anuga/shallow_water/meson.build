@@ -81,7 +81,7 @@ else
     gpu_c_args = ['-O3', '-mp=multicore', '-Minfo=accel', '-g']
   elif effective_compiler_id == 'intel' or effective_compiler_id == 'intel-cl'
     gpu_c_args = ['-O3', '-qopenmp', '-g']
-  elif effective_compiler_id == 'intel-llvm'
+  elif effective_compiler_id == 'intel-llvm' or effective_compiler_id == 'icx'
     gpu_c_args = ['-O3', '-fiopenmp', '-g']
   elif effective_compiler_id == 'clang'
     # Clang with libomp (LLVM, Homebrew macOS, or AOMP)
