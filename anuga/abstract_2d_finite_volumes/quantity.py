@@ -5,7 +5,8 @@ from __future__ import annotations
 
 import types
 import os.path
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
+from collections.abc import Callable
 from numpy.typing import ArrayLike
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 
