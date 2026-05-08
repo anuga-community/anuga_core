@@ -255,7 +255,26 @@ void gpu_active_cells_finalize(struct gpu_domain *GD) {
 // Rebuild the active cell list each timestep.
 // Returns the new n_active_cells (0 if disabled).
 int gpu_active_cells_update(struct gpu_domain *GD) {
-    if (!GD->use_active_cells || !GD->active_list_mapped) return 0;
+    if (!GD->use_active_cells) return 0;
+
+    // Issue 9: guard against use_active_cells=1 but active_list_mapped=0.
+    // This can happen when a gpu_domain struct is re-mapped (map_arrays resets
+    // active_list_mapped to 0) while use_active_cells was already 1.  Without
+    // this guard the optimisation silently becomes a no-op with no warning.
+    if (!GD->active_list_mapped) {
+        fprintf(stderr,
+            "[gpu_active_cells_update] WARNING: use_active_cells=1 but "
+            "active_list_mapped=0.  Calling gpu_active_cells_init now.\n");
+        gpu_active_cells_init(GD);
+        if (!GD->active_list_mapped) {
+            // Allocation failed inside init — disable to avoid a crash.
+            fprintf(stderr,
+                "[gpu_active_cells_update] ERROR: gpu_active_cells_init failed; "
+                "disabling active cell optimisation for safety.\n");
+            GD->use_active_cells = 0;
+            return 0;
+        }
+    }
 
     anuga_int n   = GD->D.number_of_elements;
     double    mah = GD->D.minimum_allowed_height;
@@ -296,7 +315,14 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
                                int compute_boundary_flux) {
     NVTX_PUSH("gpu_evolve_one_rk2_step");
 
-    double local_timestep, global_timestep, timestep;
+    double local_timestep, global_timestep;
+
+    // Defensive initialisation: timestep is explicitly set through every branch
+    // of the fixed/async/sync/serial MPI logic below, but starting with
+    // max_timestep ensures that any future code insertion between the async
+    // MPI_Iallreduce and its MPI_Wait cannot silently read an uninitialised
+    // value (Issue 7).
+    double timestep = max_timestep;
 
     // Update active cell list once per timestep (cheap flag scan + CPU compact)
     gpu_active_cells_update(GD);
@@ -408,7 +434,10 @@ double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int a
                                int compute_boundary_flux) {
     NVTX_PUSH("gpu_evolve_one_rk3_step");
 
-    double local_timestep, global_timestep, timestep;
+    double local_timestep, global_timestep;
+
+    // Same defensive initialisation as the RK2 step (Issue 7).
+    double timestep = max_timestep;
 
     // Update active cell list once per timestep
     gpu_active_cells_update(GD);

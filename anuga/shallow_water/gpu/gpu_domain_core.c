@@ -632,8 +632,11 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
 
     GD->gpu_initialized = 1;
 
-    // Initialise active cell list device memory (use_active_cells defaults to 0;
-    // Python layer or user code sets GD->use_active_cells = 1 to enable).
+    // Initialise active cell list fields.  use_active_cells is explicitly set to
+    // 0 here so that re-mapped gpu_domain structs never inherit stale state from
+    // a previous run (Issue 8: struct field was previously left uninitialised).
+    // The Python layer calls enable_active_cells() after map_arrays to opt in.
+    GD->use_active_cells   = 0;
     GD->active_list_mapped = 0;
     GD->active_cell_flags  = NULL;
     GD->D.active_cell_ids  = NULL;
