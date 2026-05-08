@@ -386,21 +386,39 @@ class Domain(Generic_Domain):
 
         #-------------------------------
         # Useful auxiliary quantity
+        # Set centroid and edge values directly from mesh coordinate arrays
+        # without allocating vertex_values (kept lazy to save memory).
+        # Edge formula matches _interpolate in quantity_openmp.c:
+        #   edge[0] = 0.5*(v[1]+v[2]),  edge[1] = 0.5*(v[2]+v[0]),
+        #   edge[2] = 0.5*(v[0]+v[1])
         #-------------------------------
         n = self.number_of_elements
-        self.quantities['x'].set_values(self.vertex_coordinates[:,0].reshape(n,3))
-        self.quantities['x'].set_boundary_values_from_edges()
+        vx = self.vertex_coordinates[:, 0].reshape(n, 3)
+        vy = self.vertex_coordinates[:, 1].reshape(n, 3)
 
-        self.quantities['y'].set_values(self.vertex_coordinates[:,1].reshape(n,3))
-        self.quantities['y'].set_boundary_values_from_edges()
+        qx = self.quantities['x']
+        qx.centroid_values[:]  = (vx[:, 0] + vx[:, 1] + vx[:, 2]) / 3.0
+        qx.edge_values[:, 0]   = 0.5 * (vx[:, 1] + vx[:, 2])
+        qx.edge_values[:, 1]   = 0.5 * (vx[:, 2] + vx[:, 0])
+        qx.edge_values[:, 2]   = 0.5 * (vx[:, 0] + vx[:, 1])
+        qx.set_boundary_values_from_edges()
+
+        qy = self.quantities['y']
+        qy.centroid_values[:]  = (vy[:, 0] + vy[:, 1] + vy[:, 2]) / 3.0
+        qy.edge_values[:, 0]   = 0.5 * (vy[:, 1] + vy[:, 2])
+        qy.edge_values[:, 1]   = 0.5 * (vy[:, 2] + vy[:, 0])
+        qy.edge_values[:, 2]   = 0.5 * (vy[:, 0] + vy[:, 1])
+        qy.set_boundary_values_from_edges()
 
         # For riverwalls, we need to know the 'edge_flux_type' for each edge
         # Edge-flux-type of 0 == Normal edge, with shallow water flux
         #                   1 == riverwall
         #                   2 == ?
         #                   etc
-        self.edge_flux_type=num.zeros(len(self.edge_coordinates[:,0])).astype(int)
-        self.edge_river_wall_counter=num.zeros(len(self.edge_coordinates[:,0])).astype(int)
+        # Lazy: allocated by _ensure_work_arrays() (no river walls) or by
+        # create_riverwalls() (before evolve).  Saves ~108 MB at N=2.25M.
+        self.edge_flux_type = None          # (3N,) int — 0=normal, 1=riverwall
+        self.edge_river_wall_counter = None # (3N,) int — per-edge riverwall index
         self.number_of_riverwall_edges = 0
 
         # Riverwalls -- initialise with dummy values
@@ -422,44 +440,17 @@ class Domain(Generic_Domain):
         # List to store the volumes we computed before
         self.volume_history=[]
 
-        # Work arrays [avoid allocate statements in compute_fluxes or extrapolate_second_order]
-        # FIXME SR: Should rationalise these arrays -- some may be redundant
-        self.edge_flux_work=num.zeros(len(self.edge_coordinates[:,0])*3) # Advective fluxes
-        self.neigh_work=num.zeros(len(self.edge_coordinates[:,0])*3) # Advective fluxes
-        self.pressuregrad_work=num.zeros(len(self.edge_coordinates[:,0])) # Gravity related terms
-        self.x_centroid_work=num.zeros(len(self.edge_coordinates[:,0])//3)
-        self.y_centroid_work=num.zeros(len(self.edge_coordinates[:,0])//3)
+        # Work arrays actually read by the C extension — allocated lazily on the
+        # first evolve step (via setup_Domain_C_struct → _ensure_work_arrays).
+        self.x_centroid_work     = None  # (N,)   scratch for velocity extrapolation
+        self.y_centroid_work     = None  # (N,)   scratch for velocity extrapolation
 
-        ############################################################################
-        ## Local-timestepping information
-        ############################################################################
-        # FIXME SR: Nice idea but is not generally used, so should hive off to
-        # another branch of the code and removed for general use
-
-        #
-        # Fluxes can be updated every 1, 2, 4, 8, .. max_flux_update_frequency timesteps
-        # The global timestep is not allowed to increase except when
-        # number_of_timesteps%max_flux_update_frequency==0
-        self.max_flux_update_frequency=2**0 # Must be a power of 2.
-
-        # flux_update_frequency. The edge flux terms are re-computed only when
-        #    number_of_timesteps%flux_update_frequency[myEdge]==0
-        self.flux_update_frequency=num.zeros(len(self.edge_coordinates[:,0])).astype(int)+1
-
-        # Flag: should we update the flux on the next compute fluxes call?
-        self.update_next_flux=num.zeros(len(self.edge_coordinates[:,0])).astype(int)+1
-
-        # Flag: should we update the extrapolation on the next extrapolation call?
-        # (Only do this if one or more of the fluxes on that triangle will be computed on
-        # the next timestep, assuming only the flux computation uses edge/vertex values)
-        self.update_extrapolation=num.zeros(len(self.edge_coordinates[:,0])//3).astype(int)+1
-
-        # edge_timestep [wavespeed/radius] -- not updated every timestep
-        self.edge_timestep=num.zeros(len(self.edge_coordinates[:,0]))+1.0e+100
-
-        # Do we allow the timestep to increase (not every time if local
-        # extrapolation/flux updating is used)
-        self.allow_timestep_increase=num.zeros(1).astype(int)+1
+        # The following arrays were historically allocated but are confirmed dead
+        # (C computation never reads them).  They remain None (→ NULL in C struct)
+        # for the entire simulation lifetime, saving ~600+ MB at N=2.25M.
+        self.edge_flux_work      = None  # (9N,)  — unused, NULL in C struct
+        self.neigh_work          = None  # (9N,)  — unused, NULL in C struct
+        self.pressuregrad_work   = None  # (3N,)  — unused, NULL in C struct
 
 
         #-----------------------------------
@@ -493,6 +484,28 @@ class Domain(Generic_Domain):
         from .sw_domain_openmp_ext import update_Domain_C_struct
         update_Domain_C_struct(self)
 
+    def _ensure_work_arrays(self):
+        """Allocate the work arrays actually needed by the C extension.
+
+        Called by ``setup_Domain_C_struct`` in the Cython extension before the
+        C domain struct is populated.  Only arrays that the C computation code
+        actually reads are allocated here — confirmed-dead arrays remain None
+        (passed as NULL to the C struct) for the full simulation lifetime.
+        """
+        if self.x_centroid_work is not None:
+            return  # already allocated
+
+        N  = self.number_of_elements
+
+        # ---- scratch arrays used by the C extrapolation kernel ----
+        self.x_centroid_work   = num.zeros(N)               # (N,)
+        self.y_centroid_work   = num.zeros(N)               # (N,)
+
+        # ---- per-element max wave speed (CFL timestep calculation) ----
+        self.max_speed         = num.zeros(N, float)        # (N,)
+
+        # Note: edge_flux_type / edge_river_wall_counter stay None unless
+        # create_riverwalls() is called; all other struct fields remain NULL.
 
     #---------------------------------------------------------------
     # Plotting methods
@@ -812,6 +825,52 @@ class Domain(Generic_Domain):
             print('# Using discontinuous elevation solver DE1 ')
             print('#')
             print('# Uses rk2 timestepping')
+            print('#')
+            print('# Make sure you use centroid values when reporting on important output quantities')
+            print('#')
+            print('##########################################################################')
+
+    def _set_DE_ader2_defaults(self):
+        """Set up the defaults for running the flow_algorithm "DE_ader2"
+           DE1 settings with ADER-2 (Cauchy-Kovalewski) timestepping.
+        """
+
+        self._set_config_defaults()
+
+        self.set_cfl(1.0)
+        self.set_use_kinematic_viscosity(False)
+        self.set_timestepping_method('ader2')
+
+        self.set_using_discontinuous_elevation(True)
+        self.set_using_centroid_averaging(True)
+        self.set_compute_fluxes_method('DE')
+
+        self.minimum_allowed_height = 1.0e-5
+
+        self.set_default_order(2)
+        self.set_extrapolate_velocity()
+
+        self.beta_w = 1.0
+        self.beta_w_dry = 0.0
+        self.beta_uh = 1.0
+        self.beta_uh_dry = 0.0
+        self.beta_vh = 1.0
+        self.beta_vh_dry = 0.0
+
+        self.set_store_centroids(True)
+
+        self.optimise_dry_cells = False
+
+        self.edge_coordinates = self.get_edge_midpoint_coordinates()
+
+        self.maximum_allowed_speed = 0.0
+
+        if self.processor == 0 and self.verbose:
+            print('##########################################################################')
+            print('#')
+            print('# Using discontinuous elevation solver DE_ader2')
+            print('#')
+            print('# Uses ADER-2 (Cauchy-Kovalewski) timestepping')
             print('#')
             print('# Make sure you use centroid values when reporting on important output quantities')
             print('#')
@@ -1296,29 +1355,6 @@ class Domain(Generic_Domain):
             raise Exception(msg)
 
 
-    def set_local_extrapolation_and_flux_updating(self,nlevels=8):
-        """
-            Use local flux and extrapolation updating
-
-            nlevels == number of flux_update_frequency levels > 1
-
-                   For example, to allow flux updating every 1,2,4,8
-                   timesteps, do:
-
-                    domain.set_local_extrapolation_and_flux_updating(nlevels=3)
-
-                   (since 2**3==8)
-        """
-
-        self.max_flux_update_frequency=2**nlevels
-
-        if(self.max_flux_update_frequency != 1):
-            if self.timestepping_method != 'euler':
-                raise Exception('Local extrapolation and flux updating only supported with euler timestepping')
-            if self.compute_fluxes_method != 'DE':
-                raise Exception('Local extrapolation and flux updating only supported for discontinuous flow algorithms')
-
-
     def get_compute_fluxes_method(self):
         """Get method for computing fluxes.
 
@@ -1347,7 +1383,7 @@ class Domain(Generic_Domain):
 
 
         flow_algorithms = ['DE0', 'DE1', 'DE2', \
-                           'DE0_7', 'DE1_7']
+                           'DE0_7', 'DE1_7', 'DE_ader2']
 
         if algorithm in flow_algorithms:
             self.flow_algorithm = algorithm
@@ -1370,6 +1406,9 @@ class Domain(Generic_Domain):
 
         if self.flow_algorithm == 'DE1_7':
             self._set_DE1_7_defaults()
+
+        if self.flow_algorithm == 'DE_ader2':
+            self._set_DE_ader2_defaults()
 
 
     def get_flow_algorithm(self):
@@ -1742,6 +1781,9 @@ class Domain(Generic_Domain):
         """
         from anuga import numprocs
         import numpy as num
+
+        if self.max_speed is None:
+            return 0.0
 
         local_max = num.max(self.max_speed)
 
@@ -2744,6 +2786,253 @@ class Domain(Generic_Domain):
         # Combine steps
         self.saxpy_conserved_quantities(0.5, 0.5) # has C, not ported
 
+    def evolve_one_ader2_step(self, yieldstep, finaltime):
+        """One ADER-2 timestep using the local Cauchy-Kovalewski predictor.
+
+        Q^{n+1} = Q^n + dt * R(Q^{n+1/2})
+
+        Uses the fused edge predictor: edge values are shifted to Q^{n+1/2}
+        in-place while centroid values remain at Q^n, eliminating the second
+        extrapolation pass and the backup/saxpy restore pattern.
+
+        Single-flux-call variant: the previous step's CFL timestep is reused
+        for the predictor half-advance.  The first step bootstraps with dt=0
+        (Euler) to establish the initial CFL timestep.
+
+        Cost: 1 flux call + 1 extrapolation + 1 edge C-K predictor (after step 1).
+        Accuracy: 2nd-order in space and time.
+        """
+        # GPU mode: use C loop (faster) or Python-orchestrated GPU loop
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            if self.use_c_rk_loop:
+                self._evolve_one_ader2_step_c(yieldstep, finaltime)
+            else:
+                self._evolve_one_ader2_step_gpu(yieldstep, finaltime)
+            return
+
+        from .sw_domain_openmp_ext import ader_ck_predictor_edge
+
+        # Bootstrap: prev_dt=0 on first call → Euler step to establish CFL dt
+        if not hasattr(self, '_ader2_prev_dt'):
+            self._ader2_prev_dt = 0.0
+
+        prev_dt = self._ader2_prev_dt
+
+        # Extrapolate Q^n centroids → edges (1 pass; centroids untouched)
+        self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
+        self.update_boundary()
+
+        if prev_dt > 0.0:
+            # Fused edge predictor: shift edge values to Q^{n+1/2}, Q^n in centroids
+            ader_ck_predictor_edge(self, prev_dt * 0.5)
+            # Re-apply boundary conditions to boundary edges
+            self.update_boundary()
+
+        # Single flux call from Q^{n+1/2} edge values (or Q^n on bootstrap step)
+        self.compute_fluxes()
+        self.compute_forcing_terms()
+
+        # Save CFL dt before update_timestep may overwrite flux_timestep
+        self._ader2_prev_dt = self.CFL * self.flux_timestep
+
+        # Clip to yieldstep / finaltime / evolve_max_timestep
+        self.update_timestep(yieldstep, finaltime)
+
+        # Q^n centroids are untouched — update directly (no saxpy restore needed)
+        self.update_conserved_quantities()           # Q^{n+1} = Q^n + dt*R(Q^{n+1/2})
+
+    def _evolve_one_ader2_step_gpu(self, yieldstep, finaltime):
+        """Python-orchestrated GPU implementation of ADER-2 step.
+
+        Fallback when the C ADER-2 loop cannot be used (e.g., unsupported
+        boundary types). Prefer _evolve_one_ader2_step_c() for better performance.
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            backup_conserved_quantities_gpu,
+            extrapolate_second_order_gpu,
+            protect_gpu,
+            compute_fluxes_gpu,
+            update_conserved_quantities_gpu,
+            saxpy_conserved_quantities_gpu,
+            ader_ck_predictor_gpu,
+            sync_boundary_values,
+            init_boundary_edge_sync,
+            boundary_edge_sync,
+            exchange_ghosts,
+            evaluate_reflective_boundary_gpu,
+            evaluate_dirichlet_boundary_gpu,
+            evaluate_transmissive_boundary_gpu,
+            set_transmissive_n_zero_t_stage,
+            evaluate_transmissive_n_zero_t_boundary_gpu,
+            set_time_boundary_values,
+            evaluate_time_boundary_gpu,
+            set_file_boundary_values_from_domain,
+            evaluate_file_boundary_gpu,
+        )
+        import numpy as np
+
+        gpu_dom = self.gpu_interface.gpu_dom
+
+        GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+
+        if not hasattr(self, '_gpu_boundary_info_initialized'):
+            self._gpu_cpu_tags = []
+            self._gpu_all_on_gpu = True
+            cpu_boundary_types = []
+            self._gpu_transmissive_n_zero_t_boundaries = []
+            self._gpu_time_boundaries = []
+
+            for tag, B in self.boundary_map.items():
+                if B is not None:
+                    btype = B.__class__.__name__
+                    if btype not in GPU_BOUNDARY_TYPES:
+                        self._gpu_cpu_tags.append(tag)
+                        self._gpu_all_on_gpu = False
+                        cpu_boundary_types.append((tag, btype))
+                    elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                        self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                    elif btype == 'Time_boundary':
+                        self._gpu_time_boundaries.append(B)
+
+            if not self._gpu_all_on_gpu:
+                boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
+                init_boundary_edge_sync(gpu_dom, boundary_cell_ids)
+                print("WARNING: GPU boundary evaluation disabled - falling back to CPU")
+                print(f"  Unsupported boundary types: {cpu_boundary_types}")
+
+            self._gpu_boundary_info_initialized = True
+
+        backup_conserved_quantities_gpu(gpu_dom)
+
+        def _eval_boundaries():
+            if self._gpu_all_on_gpu:
+                evaluate_reflective_boundary_gpu(gpu_dom)
+                evaluate_dirichlet_boundary_gpu(gpu_dom)
+                evaluate_transmissive_boundary_gpu(gpu_dom)
+                for B in self._gpu_transmissive_n_zero_t_boundaries:
+                    stage_val = B.get_boundary_values()
+                    try:
+                        stage_val = float(stage_val)
+                    except (TypeError, ValueError):
+                        stage_val = float(stage_val[0])
+                    set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+                evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
+                for B in self._gpu_time_boundaries:
+                    q = B.get_boundary_values()
+                    set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+                evaluate_time_boundary_gpu(gpu_dom)
+                set_file_boundary_values_from_domain(gpu_dom, self)
+                evaluate_file_boundary_gpu(gpu_dom)
+            else:
+                boundary_edge_sync(gpu_dom)
+                for tag in self.tag_boundary_cells:
+                    B = self.boundary_map[tag]
+                    if B is not None:
+                        B.evaluate_segment(self, self.tag_boundary_cells[tag])
+                sync_boundary_values(gpu_dom)
+
+        # --- Step 1: CFL timestep from Q^n ---
+        protect_gpu(gpu_dom)
+        extrapolate_second_order_gpu(gpu_dom)
+        _eval_boundaries()
+        self.flux_timestep = compute_fluxes_gpu(gpu_dom)
+        self.update_timestep(yieldstep, finaltime)
+
+        # --- Step 2: C-K predictor to Q^{n+1/2} ---
+        ader_ck_predictor_gpu(gpu_dom, self.timestep * 0.5)
+
+        # --- Step 3: flux from Q^{n+1/2} ---
+        extrapolate_second_order_gpu(gpu_dom)
+        _eval_boundaries()
+        compute_fluxes_gpu(gpu_dom)
+        self.compute_forcing_terms()
+
+        # --- Step 4: restore Q^n and update ---
+        saxpy_conserved_quantities_gpu(gpu_dom, 0.0, 1.0)  # Q = backup
+        update_conserved_quantities_gpu(gpu_dom, self.timestep)
+
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+        self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
+        self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
+
+    def _evolve_one_ader2_step_c(self, yieldstep, finaltime):
+        """ADER-2 step executed entirely in C - eliminates Python round-trip overhead.
+
+        Prefer this over _evolve_one_ader2_step_gpu() for better performance.
+        Falls back to _evolve_one_ader2_step_gpu() if any boundary requires CPU.
+        Rate_operators must be applied separately (after this call).
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            evolve_one_ader2_step_gpu,
+            set_transmissive_n_zero_t_stage,
+            set_time_boundary_values,
+            set_file_boundary_values_from_domain,
+        )
+
+        gpu_dom = self.gpu_interface.gpu_dom
+
+        GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+
+        if not hasattr(self, '_gpu_boundary_info_initialized'):
+            self._gpu_cpu_tags = []
+            self._gpu_all_on_gpu = True
+            cpu_boundary_types = []
+            self._gpu_transmissive_n_zero_t_boundaries = []
+            self._gpu_time_boundaries = []
+
+            for tag, B in self.boundary_map.items():
+                if B is not None:
+                    btype = B.__class__.__name__
+                    if btype not in GPU_BOUNDARY_TYPES:
+                        self._gpu_cpu_tags.append(tag)
+                        self._gpu_all_on_gpu = False
+                        cpu_boundary_types.append((tag, btype))
+                    elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                        self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                    elif btype == 'Time_boundary':
+                        self._gpu_time_boundaries.append(B)
+
+            if not self._gpu_all_on_gpu:
+                print("WARNING: C ADER-2 loop requires all GPU-supported boundary types")
+                print("  Falling back to Python-orchestrated GPU loop")
+                print(f"  Unsupported types: {cpu_boundary_types}")
+
+            self._gpu_boundary_info_initialized = True
+
+        if not self._gpu_all_on_gpu:
+            return self._evolve_one_ader2_step_gpu(yieldstep, finaltime)
+
+        for B in self._gpu_transmissive_n_zero_t_boundaries:
+            stage_val = B.get_boundary_values()
+            try:
+                stage_val = float(stage_val)
+            except (TypeError, ValueError):
+                stage_val = float(stage_val[0])
+            set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+
+        for B in self._gpu_time_boundaries:
+            q = B.get_boundary_values()
+            set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+
+        set_file_boundary_values_from_domain(gpu_dom, self)
+
+        remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
+        if finaltime is not None:
+            remaining_finaltime = finaltime - self.get_time()
+            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep, remaining_finaltime)
+        else:
+            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
+
+        self.timestep = evolve_one_ader2_step_gpu(gpu_dom, max_timestep, 1)
+
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+        self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
+        self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
+
     def _evolve_one_rk2_step_gpu(self, yieldstep, finaltime):
         """Python-orchestrated GPU implementation of RK2 step.
 
@@ -3571,7 +3860,7 @@ class Domain(Generic_Domain):
                                                      time_unit=time_unit,
                                                      datetime=datetime)
 
-        if track_speeds is True:
+        if track_speeds is True and self.max_speed is not None:
             # qwidth determines the text field used for quantities
             qwidth = self.qwidth
 
@@ -3822,27 +4111,6 @@ class Domain(Generic_Domain):
     def print_volumetric_balance_statistics(self):
 
         print (self.volumetric_balance_statistics())
-
-    def compute_flux_update_frequency(self):
-        """
-            Update the 'flux_update_frequency' and 'update_extrapolate' variables
-            Used to control updating of fluxes / extrapolation for 'local-time-stepping'
-        """
-
-        nvtxRangePush('compute_flux_update_frequency')
-        # Choose the correct extension module
-        if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
-            from .sw_domain_openmp_ext import compute_flux_update_frequency
-        elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
-            # change over to cuda routines as developed
-            from .sw_domain_openmp_ext import compute_flux_update_frequency
-        else:
-            raise Exception('Not implemented')
-
-
-        compute_flux_update_frequency(self, self.timestep)
-
-        nvtxRangePop()
 
     def report_water_volume_statistics(self, verbose=True, returnStats=False):
         """

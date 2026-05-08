@@ -31,6 +31,77 @@ mpi_dep = dependency('mpi', language: 'c', required: false)
 mpi4py_check = run_command(py3, ['-c', 'import mpi4py; print(mpi4py.get_include())'], check: false)
 have_mpi4py = mpi4py_check.returncode() == 0
 
+# Fallback: if standard MPI detection failed but mpi4py is available,
+# construct MPI dependency from mpicc -show output so that compile flags
+# (especially -I paths) match exactly what mpi4py was built against.
+# Falls back to sys.prefix/{include,lib} only if mpicc cannot be executed.
+if not mpi_dep.found() and have_mpi4py
+  mpi_prefix_result = run_command(py3, ['-c', '''
+import sys, os, subprocess, shutil
+try:
+    import mpi4py
+    prefix = sys.prefix
+    is_windows = sys.platform == "win32"
+    # conda on Windows puts headers/libs under Library/; Unix uses prefix directly
+    if is_windows:
+        inc = os.path.join(prefix, "Library", "include")
+        lib = os.path.join(prefix, "Library", "lib")
+    else:
+        inc = os.path.join(prefix, "include")
+        lib = os.path.join(prefix, "lib")
+    cfg = mpi4py.get_config()
+    # mpi4py.get_config() may supply explicit dirs; prefer those if present
+    cfg_incs = cfg.get("include_dirs", [])
+    cfg_libs = cfg.get("library_dirs", [])
+    if cfg_incs:
+        inc = cfg_incs[0]
+    if cfg_libs:
+        lib = cfg_libs[0]
+    if not os.path.isfile(os.path.join(inc, "mpi.h")):
+        sys.exit(1)
+    if is_windows:
+        # No mpicc on Windows; build flags from known conda paths.
+        # Library names from mpi4py config, defaulting to msmpi (conda-forge).
+        libnames = cfg.get("libraries", ["msmpi"]) or ["msmpi"]
+        cflags = ["-I" + inc]
+        lflags = ["-L" + lib] + ["-l" + n for n in libnames]
+    else:
+        # Unix: run mpicc -show to get the exact flags mpi4py was built with
+        mpicc = cfg.get("mpicc", "")
+        if mpicc and not os.path.isabs(mpicc):
+            mpicc = shutil.which(mpicc) or ""
+        if not mpicc or not os.path.isfile(mpicc):
+            mpicc = os.path.join(prefix, "bin", "mpicc")
+        try:
+            out = subprocess.check_output([mpicc, "-show"], text=True).strip()
+            tokens = out.split()
+            cflags = [t for t in tokens[1:] if t.startswith(("-I", "-D"))]
+            lflags = [t for t in tokens[1:] if t.startswith(("-L", "-l", "-Wl,", "-rpath"))]
+            if not cflags:
+                cflags = ["-I" + inc]
+        except Exception:
+            cflags = ["-I" + inc]
+            lflags = ["-L" + lib, "-lmpi"]
+    print("|".join(cflags) + "##" + "|".join(lflags))
+except Exception:
+    sys.exit(1)
+'''], check: false)
+
+  if mpi_prefix_result.returncode() == 0
+    mpi_output = mpi_prefix_result.stdout().strip()
+    mpi_parts = mpi_output.split('##')
+    if mpi_parts.length() == 2
+      mpi_compile_args = mpi_parts[0] != '' ? mpi_parts[0].split('|') : []
+      mpi_link_args = mpi_parts[1] != '' ? mpi_parts[1].split('|') : ['-lmpi']
+      mpi_dep = declare_dependency(
+        compile_args: mpi_compile_args,
+        link_args: mpi_link_args,
+      )
+      message('MPI found via mpicc -show (fallback): ' + mpi_parts[0])
+    endif
+  endif
+endif
+
 if mpi_dep.found() and have_mpi4py
   mpi4py_incdir = mpi4py_check.stdout().strip()
   gpu_inc_dir = include_directories('../utilities', incdir_numpy, mpi4py_incdir, 'gpu')
@@ -92,6 +163,13 @@ else
   endif
   # Define macro so code knows it's CPU-only mode
   gpu_c_args += ['-DCPU_ONLY_MODE']
+  # GCC/Clang warn about variables used only in #pragma omp target map() clauses
+  # in CPU_ONLY_MODE because the target region is a no-op; NVIDIA HPC SDK does not.
+  if effective_compiler_id == 'gcc'
+    gpu_c_args += ['-Wno-unused-variable', '-Wno-unused-but-set-variable', '-Wno-unused-function']
+  elif effective_compiler_id == 'clang'
+    gpu_c_args += ['-Wno-unused-variable', '-Wno-unused-function']
+  endif
   message('CPU multicore mode enabled (no GPU offloading)')
 endif
 
@@ -102,9 +180,10 @@ endif
 
 # Runtime GPU-aware MPI detection via MPIX_Query_cuda_support / MPIX_Query_rocm_support.
 # These are non-standard extensions present in Open MPI and MVAPICH2 GPU builds.
-# We probe the MPI compiler for <mpi-ext.h> and the relevant symbol; if found,
-# compile-time flags enable the runtime detection path in detect_gpu_aware_mpi().
-if mpi_dep.found()
+# Only probe when actually building with GPU offloading: on CPU-only builds (CI on
+# macOS/Windows) Open MPI ships MPIX_Query_cuda_support() as a zero-returning stub
+# even without CUDA, causing a false-positive detection and a misleading message.
+if mpi_dep.found() and gpu_offload
   if cc.has_header('mpi-ext.h', dependencies: [mpi_dep])
     if cc.has_function('MPIX_Query_cuda_support',
                        prefix: '#include <mpi.h>\n#include <mpi-ext.h>',
@@ -168,6 +247,25 @@ endif
 if mpi_dep.found() and have_mpi4py
   gpu_deps = openmp_deps + [mpi_dep] + nvtx_dep
 
+  # On macOS, SIP strips DYLD_LIBRARY_PATH from child processes so libmpi.dylib
+  # is not found at dlopen time even though it is present in the conda env.
+  # Embed two rpaths:
+  #   @executable_path/../lib  — resolves to $CONDA_PREFIX/lib relative to the
+  #                              Python binary; portable across any conda env path
+  #   sys.prefix/lib           — absolute fallback for non-standard layouts
+  gpu_link_args = []
+  if host_machine.system() == 'darwin'
+    _py_prefix = run_command(py3, ['-c', 'import sys; print(sys.prefix)'], check: false)
+    if _py_prefix.returncode() == 0
+      _mpi_lib_dir = _py_prefix.stdout().strip() + '/lib'
+      gpu_link_args = [
+        '-Wl,-rpath,@executable_path/../lib',
+        '-Wl,-rpath,' + _mpi_lib_dir,
+      ]
+      message('macOS: embedding rpath for libmpi.dylib: ' + _mpi_lib_dir)
+    endif
+  endif
+
   py3.extension_module('sw_domain_gpu_ext',
     sources: [
       'sw_domain_gpu_ext.pyx',
@@ -182,6 +280,7 @@ if mpi_dep.found() and have_mpi4py
       'gpu/core_kernels.c',
     ],
     c_args: gpu_c_args,
+    link_args: gpu_link_args,
     include_directories: gpu_inc_dir,
     dependencies: gpu_deps,
     subdir: 'anuga/shallow_water',
@@ -194,8 +293,9 @@ if mpi_dep.found() and have_mpi4py
     message('Unified extension built with CPU multicore target')
   endif
 else
-  warning('MPI or mpi4py not found - sw_domain_gpu_ext will NOT be built')
-  warning('multiprocessor_mode=2 will not be available')
+  # Expected on Windows (MSMPI has no mpicc/pkg-config) and minimal Linux installs.
+  # GPU tests will be skipped via ImportError on those platforms.
+  message('MPI or mpi4py not found - sw_domain_gpu_ext will NOT be built (multiprocessor_mode=2 unavailable)')
 endif
 
 

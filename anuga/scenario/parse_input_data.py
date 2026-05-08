@@ -131,11 +131,6 @@ class ProjectData:
 
         # Coerce this to a logical variable
 
-        self.use_local_extrapolation_and_flux_updating = \
-            data_source.get_var(project_ws,
-                                'use_local_extrapolation_and_flux_updating',
-                                offset=[0, 1], post_process=bool)
-
         self.output_tif_cellsize = data_source.get_var(
             project_ws,
             'output_tif_cellsize',

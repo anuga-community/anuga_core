@@ -40,12 +40,14 @@ the active working branch. feat/sc26 contains GPU/OpenMP-offloading work
 | Branch | Purpose |
 |--------|---------|
 | `main` | Stable — v3.3.1 release |
-| `develop` | Active development for v4.0.0 — contains feat/sc26 GPU work |
+| `develop` | Active development for v4.0.0 — contains GPU work + ADER-2 |
 | `develop_sc26` | Working branch for GPU/SC26 incremental improvements |
 | `develop_gpu` / `develop_cupy` | Earlier GPU experiments (CuPy-based) |
 | `experiment/claude_culvert_refactor` | Culvert structure refactoring experiment |
 
 Target PR branch is `develop` for all new work going into v4.0.0.
+
+`develop_ader` merged into `develop` 2026-04-29.
 
 ---
 
@@ -73,85 +75,113 @@ autopep8 anuga/path/to/module.py
 
 ---
 
-## What was improved (session summaries)
+## Recent session summaries (sessions 21–26)
 
-**Session 1 (2026-03-23):** All 20 documentation improvements — new RST pages,
-expanded existing pages, fixed broken content, added MPI/GPU docs.
+**Session 21 (2026-04-15):** Domain work-array memory reduction — ~740 MB saved
+at N=2.25M. DM1: 9 dead C work arrays removed from `_ensure_work_arrays()`;
+only 3 live arrays remain. DM2: `edge_flux_type`/`edge_river_wall_counter` lazy
+for non-riverwall simulations; `sw_domain.h` NULL guard added. DM3:
+`domain_memory_stats`/`print_domain_memory_stats`/`domain_struct_stats`/`print_domain_struct_stats`
+added to `system_tools.py` and exported from `anuga`.
 
-**Session 2 (2026-03-24):** 49/60 code improvements — mutable defaults, bare except,
-with statements, dead code, correctness fixes, 17 new tests, API quality (naming,
-deprecations, `__all__`), performance vectorisation, docstrings.
+**Session 22 (2026-04-21):** `anuga_animate_sww_gui` major feature release.
+Parallel frame generation (ProcessPoolExecutor, fork on Linux, up to 4 workers)
+via new `_animate_worker.py`. Zoom region (Set Zoom / Reset Zoom). `elev`
+quantity: static or time-varying (erosion); terrain colormap; timeseries panel.
+Fix View Mesh multiple windows, Cancel button, app-close hang. Sphinx docs with
+automated screenshot capture. Commit `ebc68c37`.
 
-**Session 3 (2026-03-26):** Noise reduction in pytest output (triangle library,
-logging), memory reporting, fast/slow test infrastructure, new API functions
-(`memory_stats`, `basic_mesh_from_mesh_file`, `distribute_basic_mesh`),
-`claude/` session-continuity directory created, Hydrata REFACTOR_PLAN incorporated,
-release ROADMAP documented, `pyproject.toml` dependencies fixed.
+**Session 23 (2026-04-24):** `anuga_sww_gui` GUI overhaul (renamed from
+`anuga_animate_sww_gui`). Baked overlays (elevation contours + mesh at correct
+z-order). Multi-point timeseries picking (tab10 palette, legend, CSV export,
+Clear button). Save Frame time-selection dialog. 3-tab ttk.Notebook UI. Basemap
+checkbox for mesh viewer and Save Mesh dialog. Sphinx RST, help, screenshots
+updated. Commit `49c5b7d8`.
 
-**Session 4 (2026-03-26):** EPSG/CRS support added to `Geo_reference` — `epsg`
-property (auto-computed for WGS84 UTM), `is_located()`, non-UTM national grids
-(RD New, BNG, etc.) with pyproj-populated metadata (datum, projection, false
-easting/northing), fixed pre-existing `read_NetCDF` bug, 23 new tests. New
-CRS documentation page in Sphinx; `Geo_reference` added to API reference.
+**Session 24 (2026-04-24):** P2.5 `Rate_operator` factories — `rainfall()` and
+`inflow()` classmethods, input validation (TypeError/ValueError), 13 new tests.
+P1.4/P1.8: `gauge.py` print hygiene (all `log.info()`), `file_function.py`
+FIXMEs resolved. P3.6 erosion delta-bed view (`elev_delta` quantity, RdBu_r
+colormap, symmetric auto-limits, 6 new tests). All P1 FUTURE_WORK items done.
 
-**Session 5 (2026-03-28):** Fixed `sww_merge` not propagating `hemisphere`,
-`epsg`, and `timezone` from individual SWW files to the merged output — all
-three merge functions (`_sww_merge`, `_sww_merge_parallel_smooth`,
-`_sww_merge_parallel_non_smooth`) now use `Geo_reference(NetCDFObject=fid)` +
-`write_NetCDF()` instead of field-by-field copying, and pass `timezone` to
-`store_header()`. Added `sww2vtu` converter
-(`anuga/file_conversion/sww2vtu.py`) for ParaView — writes VTU + PVD directly
-(no VTK dependency), includes derived `depth` and `speed` quantities,
-`--z-scale` and `--absolute-coords` options.
+**Session 25 (2026-04-25):** P2.3 `create_riverwalls` refactor — extracted 3
+helpers, orchestrator ~50 lines. P2.2 `Generic_Domain.__init__` refactor —
+extracted 4 helpers, `__init__` ~25 lines. Split `test_shallow_water_domain.py`
+into 5 files; cleanup −101 lines. Fix 383 pytest warnings (animate.py,
+rate_operators.py, pyproject.toml). P2.8/P2.9 scenario validation and TOML
+docs done. claude/ rationalisation.
 
-**Session 6 (2026-04-01):** GPU verbose flag (`int verbose` in C struct) to
-suppress C printf output during pytest; fix pyproj DeprecationWarning for
-1-element NumPy ≥ 2.0 arrays in `redfearn.py` and `tif2point_values.py`.
-v3.3.1 tagged and shipped (PyPI + conda-forge). `feat/sc26` merged into
-`develop`; `develop` is now the active v4.0.0 branch.
+**Session 26 (2026-04-26):** P3.3 `fit_interpolate` L-curve alpha auto-selection.
+`Fit.select_alpha()`: 20 log-spaced candidates (1e-6 … 100), numerically stable
+RSS via normal equations, max-curvature corner detection, fallback to DEFAULT_ALPHA.
+`dok_to_csr` added to `fitsmooth_ext.pyx` (non-destructive DOK→CSR). `alpha='auto'`
+wired in `Fit.fit()`. Removed dead `_RawCSR`/`_SumRawCSR`. 13 new tests covering
+row_ptr extension, multi-attribute, degenerate/interior paths. fit.py 85→92%.
+P2.7 gauge modernisation fully done (session continuation). Commit `12864187`.
 
-**Session 7 (2026-04-02):** Fixed ReadTheDocs shallow-clone showing
-`0.0.0+unknown` — added `git fetch --unshallow --tags` pre-install step in
-`.readthedocs.yaml`.
+**Session 27 (2026-04-27):** `Kinematic_viscosity_operator` MPI-parallel (Option B
+distributed CG). Phase 1: removed Apple OpenMP guards from 4 C files. Phase 2:
+`parabolic_solve` serial path routed through C CG (`cg_solve_c_precon`) with Jacobi
+preconditioner. Phase 3: full distributed CG — `_exchange_ghost_vector` (MPI tag 198
+non-blocking), `_distributed_dot` (Allreduce), `_parabolic_matvec_distributed` (ghost
+exchange before SpMV), `_parabolic_solve_distributed` (n_full-length CG loop). `parallel_safe()`
+returns True. New `run_parallel_kv_operator.py` + `test_parallel_kv_operator.py`
+(serial-vs-parallel xvel, max diff 8.6×10⁻⁶). New `run_parallel_kv_unit_tests.py`
++ `test_parallel_kv_unit_tests.py` (4 in-process MPI assertions for each primitive).
+Bug fix: `test_select_alpha_degenerate_falls_back_to_default` platform-dependent on
+Windows py3.10/3.11/3.13 — now uses `return_curve=True` to branch on actual kappa.
+Commits `61418742`, `5498f98d`. All CI passed.
 
-**Session 8 (2026-04-03):** Vectorised `get_flow_through_cross_section` —
-NumPy segment scan replaces Python loop; C pre-filter skips non-intersecting
-triangles (merged from `develop_3.x.x`). Added ruff linting config to
-`pyproject.toml` and fixed all genuine violations. Pre-commit hooks (ruff),
-CI lint workflow (`.github/workflows/lint.yml`), CI fast/slow test split
-(`conda-setup.yml`), coverage config (`.coveragerc`). Full test isolation
-sweep: `tempfile.mktemp` → `mkstemp`, `set_datadir('.')` → `mkdtemp()`, all
-`sww2dem` output paths use full temp dir paths, orphaned CWD files cleaned up.
-1 pre-existing failure (`test_sww2csv_multiple_files`) confirmed, 1537 pass.
+**Session 32 (2026-05-03):** CI fixes. macOS `sw_domain_gpu_ext` import failure
+resolved: `_omp_target_is_present` missing from conda-forge libomp — fixed by adding
+`static inline` stubs + macro redirects for all OpenMP 4.5 target-alloc API functions
+(`omp_target_alloc/free/memcpy`, `omp_target_is_present`, `omp_get_initial_device`) in
+`gpu_omp_macros.h` under `CPU_ONLY_MODE`. Also: MPI ABI fix for Linux conda envs (use
+`mpicc -show` compile flags, not hardcoded sys.prefix), Windows MPI detection (Library/
+include path, msmpi), macOS rpath for libmpi.dylib (`@executable_path/../lib` +
+`DYLD_LIBRARY_PATH` in CI), macOS simd-reduction warnings (dropped `simd` from reduction
+macros), CI Node.js 24 upgrades (setup-miniconda v4, setup-python v6), skip-reason
+diagnostics in test_DE_gpu_omp.py. macOS GPU tests now run (not skipped).
+Commits `94c4d74f`–`7cc69fac`.
 
-**Session 10 (2026-04-06):** L1-L4 logging refactor: `TeeStream` (tees print/stdout to terminal+file), lazy log file (no file until `set_logfile()` called), `log.verbose()`, `log.file_only()` context manager, `setup_mesh.py` quieted. Logging docs page added. Fix pyproj DeprecationWarning in `tif2point_values.py`. Archive CuPy/CUDA files to `archive/cupy_cuda/`. Fix `test_sww2csv_multiple_files` stale-file pollution (chdir to tmpdir). CI: add `pytest-regressions` to all 13 env YMLs; drop Python 3.8. Recalibrate 3 NPY002 expected values in `test_geospatial_data.py`. Propagate v3.3.0/3.3.1/3.3.2 to GA remote. All cherry-picked from `main` → `develop` (had been on wrong branch). L5: 715 `log.critical()` → `log.info()`/`log.warning()` across 70+ production files; fix `test_sww2dem_verbose_True` with `mock.patch`. Drop Python 3.9 (`X | Y` syntax requires ≥3.10). 116/156 tracked items done.
+**Session 31 (2026-04-29):** ADER-2 GPU wiring + optimisation. `gpu_ader_ck_predictor` /
+`gpu_evolve_one_ader2_step` added to `gpu_kernels.c` + declared in `gpu_domain.h` (fix for
+missing header causing Windows/3.12 CI failure). `evolve_one_ader2_step` dispatches to
+`_evolve_one_ader2_step_c` / `_evolve_one_ader2_step_gpu` in GPU mode. `DE_ader2` flow
+algorithm added to `set_flow_algorithm()` (DE1 settings + ader2 timestepping). Fused
+predict-extrapolate C-K loop (P3.8): merged extrapolation and C-K predictor into a single
+kernel pass — eliminates the second extrapolation entirely → **1.75× faster than DE1**.
+`FLOPS_ADER_PREDICTOR=105` constant. Fix: `create_sts_boundary`
+in `sts.py` now calls `fid.close()` in a `try/finally` block (Windows WinError 32).
+`develop_ader` merged into `develop`. Commits `e9d15803`–`3b00dc79`.
 
-**Session 16 (2026-04-10):** H4.2 validation test scripts — 33 `validate_*.py` scripts covering all remaining scenarios (analytical comparison, behaviour-only, case studies, experimental). Fixed `run_anuga_script.py` silently returning 0 on subprocess failure. Fixed `scipy.genfromtxt` → `numpy.genfromtxt` in `landslide_tsunami/runup.py`. H4.3 coverage enforcement — extended `.coveragerc` omit rules (~3000 lines excluded), deleted dead `change_friction_operator.py`, added `test_mannings_operator.py` (8 tests) and `test_sww2vtu.py`, registered `sww2vtu.py` in meson.build, switched CI coverage to full suite, removed `continue-on-error: true`, enforced `fail_under=52`. Commit `dcf57756`.
+**Session 30 (2026-04-29):** ADER-2 timestepping via Cauchy-Kovalewski predictor.
+`core_ader_ck_predictor()` in `core_kernels.c`: recovers cell slopes from the 2×2
+edge system (edges 0 and 1), evaluates well-balanced SWE time derivatives locally
+(dz/dx = dw/dx − dh/dx from reconstruction), advances centroids by dt in-place.
+`evolve_one_ader2_step()` in `shallow_water_domain.py`: backup → CFL step →
+C-K predictor(dt/2) → midpoint flux → restore Q^n → update. `boundary_flux_integral_operator`
+updated for 'ader2'. 10 tests: well-balance (flat/sloped), mass conservation, dam-break
+consistency, non-negative depths. All 2656 fast-suite tests pass. Commit `825f1e5f`.
 
-**Session 17 (2026-04-11):** 4 GPU bug fixes on real hardware. BF2: relaxed culvert/weir CPU↔GPU test tolerances from `atol=1e-12` to `atol=0.02` (FP arithmetic diverges over ~50 timesteps on real GPU). BF3: Mannings operator `RuntimeWarning` in dry cells (`power(negative_h, 7/3)`) fixed with `safe_h = maximum(h, 1e-15)`. BF4: `Rate_operator._init_gpu` empty-array check fixed (`== []` broadcasts; changed to `len(...) == 0`). BF5: GPU_AWARE_MPI segfault on intra-node MPI — UCX `uct_mm` transport cannot handle `omp_target_alloc` device pointers in `MPI_Isend`; added `host_send_buffer`/`host_recv_buffer` staging in `gpu_halo.c` (`omp_target_memcpy` D2H before MPI, H2D after). BF6: Rate_operator parallel false CPU-only — rainfall polygons with no local triangles on a rank left `_gpu_initialized=False`, triggering `sync_from_device`/`sync_to_device` every timestep; marking empty-indices operators as `_gpu_initialized=True` eliminates ~70 s overhead. Result: 4-GPU run of towradgi drops from 140 s (n=1) to 70 s (n=4), 2× speedup.
+**Session 29 (2026-04-28):** Investigated numpy `_NoValue` reload issue triggered
+by `--cov=anuga.submodule` targeted coverage runs. Root cause: coverage.py's
+`sys_modules_saved()` context in `inorout.py` calls `importlib.util.find_spec()`
+on the subpackage, auto-importing the parent chain including numpy, then purging
+all new imports from sys.modules. The second real numpy import fires the reload
+guard and corrupts the C-level `_NoValue` singleton. Fix: removed `numpy._pytesttester.PytestTester`
+from `anuga/__init__.py` (replaced with plain `def test()`) and all 23 subpackage
+`__init__.py` files (was unused boilerplate). Targeted submodule `--cov=` runs are
+unfixable from conftest.py (pytest-cov starts before conftest.py loads);
+use `--cov=anuga` always. Documented in KNOWN_ISSUES.md. Commit `af71f10b`.
 
-**Session 18 (2026-04-12):** BF7: Fixed double `get_triangle_containing_point` call in `Parallel_Inlet_enquiry.compute_enquiry_index` — result `k` was discarded then the O(N) search repeated for every inlet. BF8: Threshold-triggered spatial index for `get_triangle_containing_point` — `MeshQuadtree` built on 6th call, reused for all subsequent queries; measurable speedup in culvert setup on real runs. Culvert segfault resolved (no recurrence in latest GPU runs with culverts re-enabled — likely a timing/install issue). H3.2: Extracted 3 MPI helper methods into `Parallel_Structure_operator`; rewrote `discharge_routine` in all 3 culvert wrappers (−125 lines net). Full test suite: 0 failures.
-
-**Session 19 (2026-04-13):** H3.4: Cleaned up `system_tools.py` — removed `six` dependency (`string_types` → `str` in `gauge.py` and `file_function.py`), deleted dead code (`store_svn_revision_info`, `get_web_file`, `tar_file`, `untar_file`, `get_file_hexdigest`, `make_digest_file`, `MemoryUpdate`), trimmed imports. 335 lines removed. Structural split into focused modules rejected (62 import sites + wildcard import). 158/169 tracked items done.
-
-**Session 20 (2026-04-13):** H4.4 coverage push — systematic `Test_*_extra` classes across 10 test files targeting previously-unreached branches: `test_polygon.py` (26 tests, geometry 76%→95%), `test_lat_long_UTM_conversion.py` (6), `test_numerical_tools.py` (13), `test_xml_tools.py` (9), `test_alpha_shape.py` (7), `test_sparse.py` (10), `test_geo_reference.py` (12), `test_function_utils.py` (8), `test_cg_solve.py` (3), `test_set_quantity.py` (4). Fixed `log.debug` call-signature bug in `operators/set_quantity.py`. Raised `fail_under` to 55. Full suite at **54.67%** — just below threshold. Next: a few more easy wins in `set_elevation.py`, `region.py`, `util.py` should clear 55. Commit `133b26b1`.
-
-**Session 11 (2026-04-07):** G1.3 slot limit hard errors — `Rate_operator`, `Inlet_operator`, `Parallel_inlet_operator` now raise `RuntimeError` on GPU slot overflow (2 tests). Benchmark suite: `benchmarks/run_benchmarks.py` (single-process, all modes, JSON output) + `benchmarks/compare_benchmarks.py` (±% delta table). MPI distribution benchmark: `benchmarks/distribute_benchmarks.py` merges old `scripts/benchmark_distribute.py` + `scripts/benchmark_distribute_mesh.py` into unified 4-method comparison (`distribute()`, `collaborative()`, `distribute_basic_mesh()`, `dump+load`); `benchmarks/run_benchmark_grid.py` updated. Bug fix: `Basic_mesh.reorder()` produced stale neighbours when `_neighbours` hadn't been accessed before reorder — caused `distribute_basic_mesh()` to generate ~59% more ghost triangles than `distribute()` for same mesh/scheme. Fix: trigger `_build_neighbours()` at start of `reorder()`. Regression test added. 122/159 tracked items done.
-
-**Session 9 (2026-04-04):** Riverwall throughflow (`Cd_through`) — submerged
-orifice formula in `core_kernels.c`/`gpu_device_helpers.h`; column 5 of
-`hydraulic_variable_names`; 6 new tests; backward-compatible guard; Jupyter
-notebook demo section added. Fixed 4 parallel test failures (MPI-safe tempdir
-broadcast in `test_parallel_dist_settings`; sww path fixes in
-`test_sequential_dist_sw_flow`; run-scripts reverted to CWD). NPY002: 17
-legacy `np.random.*` calls → `np.random.default_rng()` in 6 files. H1.2
-GDAL fully removed: `gdal_available` → `spatial_available`; `gdalwarp`,
-`gdal_rasterize`, `gdal_calc.py` CLI calls in `scenario/raster_outputs.py`
-replaced with rasterio/fiona/numpy. H0.2 `test_sww2csv_multiple_files`
-already passing (fixed by session 8 isolation work). H0.3 golden-master
-snapshots: 6 `pytest-regressions` tests (dam break DE0/DE1, friction, Thacker
-bowl, extrapolation, timestep sequence) committed with baselines. 108/148
-tracked items done.
+**Session 28 (2026-04-27):** P2.6 fast-suite coverage continued. `anuga/file/`:
+`test_netcdf_nc.py` (10 tests, netcdf.py 34%→100%), `test_sts.py` (11 tests,
+sts.py 47%→89%). `anuga/structures/`: 9 new tests in `test_inlet_operator.py`
+(inlet_operator.py 45%→64%); 16 new tests in `test_structure_operator.py`
+(structure_operator.py 65%→96% — enquiry getters, setters, skew 4-point, error
+paths, print/timestepping stats, non-constant elevation warning). Overall fast
+suite: 58.13% → 58.68%.
 
 ---
 
@@ -179,16 +209,10 @@ tracked items done.
 | anuga-community GitHub | https://github.com/anuga-community/anuga_core |
 | Hydrata fork | https://github.com/Hydrata/anuga_core |
 
-## Suggested next priorities
+## Next priorities
 
-See `claude/PROGRESS.md` — "Remaining Work" section for full list. Summary:
+See `claude/FUTURE_WORK.md` for the full prioritised list (P1–P3).
 
-### SC26 (needs GPU hardware)
-1. **Culvert segfault** — intra-node MPI segfault when culverts span rank boundaries; culverts currently disabled to proceed; need stack trace (culvert MPI buffers are stack-allocated host memory so not the same `uct_mm` issue — likely an out-of-bounds GPU kernel access with invalid local indices)
-2. **G4.1** Gordon Bell metrics — per-kernel timing, roofline model
-3. **G4.2** Physical benchmark validation — Thacker, dam break (Ritter) in GPU mode
-4. **G4.3** Multi-node strong scaling — 20 M triangles, 1→64 GPUs (scripts ready)
+**SC26 (needs GPU hardware):** G4.1 Gordon Bell metrics, G4.2 physical benchmark validation, G4.3 multi-node strong scaling (scripts in `benchmarks/` and `scripts/hpc/` are ready).
 
-### Best standalone value (no GPU hardware needed)
-5. **QM7** Shared gradient workspace (C extension, ~72 MB saving for erosion models)
-6. **H4.4** Coverage — full suite at **63.88%** (fail_under=63, passing). Next target: 65%.
+**Best standalone value:** P2.6 fast-suite coverage, P2.7 gauge module modernisation, P2.4 culvert compute_rates deduplication.

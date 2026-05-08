@@ -734,11 +734,17 @@ def plot_polygons(polygons_points,
     """
 
     try:
-        import matplotlib
-        matplotlib.use('Agg')
-        from matplotlib.pyplot import plot, savefig, xlabel, \
-            ylabel, title, close, title, fill
+        import matplotlib.pyplot as plt
+        # switch_backend is safe to call even if pyplot is already initialised,
+        # unlike matplotlib.use() which must be called before any pyplot import.
+        plt.switch_backend('Agg')
+        from matplotlib.pyplot import plot, savefig, xlabel, ylabel, title, close, fill
     except ImportError:
+        return
+    except Exception:
+        # matplotlib/numpy incompatibility (e.g. numpy 2.x + older matplotlib)
+        import anuga.utilities.log as log
+        log.warning('plot_polygons: matplotlib backend switch failed; skipping plot')
         return
 
     assert type(polygons_points) == list, \
@@ -775,21 +781,25 @@ def plot_polygons(polygons_points,
             if style_name not in ['line', 'outside', 'point']:
                 colour.append(style_name)
 
-    for i, item in enumerate(polygons_points):
-        pt_x, pt_y = _poly_xy(item)
-        plot(pt_x, pt_y, colour[i])
-        if alpha:
-            fill(pt_x, pt_y, colour[i], alpha=alpha)
-        xlabel('x')
-        ylabel('y')
-        title(label)
+    try:
+        for i, item in enumerate(polygons_points):
+            pt_x, pt_y = _poly_xy(item)
+            plot(pt_x, pt_y, colour[i])
+            if alpha:
+                fill(pt_x, pt_y, colour[i], alpha=alpha)
+            xlabel('x')
+            ylabel('y')
+            title(label)
 
-    if figname is not None:
-        savefig(figname)
-    else:
-        savefig('test_image')
+        if figname is not None:
+            savefig(figname)
+        else:
+            savefig('test_image')
 
-    close('all')
+        close('all')
+    except Exception:
+        import anuga.utilities.log as log
+        log.warning('plot_polygons: plotting failed; skipping plot')
 
 
 def _poly_xy(polygon):

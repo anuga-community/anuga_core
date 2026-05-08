@@ -2023,6 +2023,202 @@ class Test_Mesh_extra2(unittest.TestCase):
         self.assertEqual(len(midpoints), 2)
         num.testing.assert_allclose(midpoints[0], [1.0, 0.0])
 
+    # ------------------------------------------------------------------
+    # save_to_file tests
+    # ------------------------------------------------------------------
+
+    def test_save_to_file_vertices_and_triangles(self):
+        """save_to_file writes correct vertices and triangles."""
+        import tempfile
+        import os
+        from anuga.load_mesh.loadASCII import import_mesh_file
+
+        nodes = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+        triangles = [[0, 1, 2], [1, 3, 2]]
+        mesh = Mesh(nodes, triangles)
+
+        with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
+            fname = f.name
+        try:
+            mesh.save_to_file(fname)
+            d = import_mesh_file(fname)
+        finally:
+            os.unlink(fname)
+
+        self.assertEqual(len(d['vertices']), 4)
+        self.assertEqual(len(d['triangles']), 2)
+        num.testing.assert_allclose(d['vertices'][0], [0.0, 0.0])
+        num.testing.assert_allclose(d['vertices'][3], [1.0, 1.0])
+        self.assertEqual(d['triangles'][0], [0, 1, 2])
+        self.assertEqual(d['triangles'][1], [1, 3, 2])
+
+    def test_save_to_file_neighbours(self):
+        """save_to_file preserves triangle neighbour information."""
+        import tempfile
+        import os
+        from anuga.load_mesh.loadASCII import import_mesh_file
+
+        nodes = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+        triangles = [[0, 1, 2], [1, 3, 2]]
+        mesh = Mesh(nodes, triangles)
+
+        with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
+            fname = f.name
+        try:
+            mesh.save_to_file(fname)
+            d = import_mesh_file(fname)
+        finally:
+            os.unlink(fname)
+
+        # The two triangles share one edge; each should list the other as a
+        # neighbour on that shared edge and -1 elsewhere.
+        neighbors0 = d['triangle_neighbors'][0]
+        neighbors1 = d['triangle_neighbors'][1]
+        self.assertIn(1, neighbors0)
+        self.assertIn(0, neighbors1)
+
+    def test_save_to_file_boundary_segments(self):
+        """save_to_file writes boundary segments with correct tags."""
+        import tempfile
+        import os
+        from anuga.load_mesh.loadASCII import import_mesh_file
+
+        nodes = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+        triangles = [[0, 1, 2], [1, 3, 2]]
+        boundary = {(0, 1): 'left', (0, 2): 'bottom',
+                    (1, 0): 'right', (1, 2): 'top'}
+        mesh = Mesh(nodes, triangles, boundary=boundary)
+
+        with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
+            fname = f.name
+        try:
+            mesh.save_to_file(fname)
+            d = import_mesh_file(fname)
+        finally:
+            os.unlink(fname)
+
+        self.assertEqual(len(d['segments']), 4)
+        tags = set(d['segment_tags'])
+        self.assertIn('left', tags)
+        self.assertIn('right', tags)
+        self.assertIn('bottom', tags)
+        self.assertIn('top', tags)
+
+    def test_save_to_file_triangle_tags(self):
+        """save_to_file preserves tagged_elements (region tags per triangle)."""
+        import tempfile
+        import os
+        from anuga.load_mesh.loadASCII import import_mesh_file
+
+        nodes = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0], [1.0, 1.0]]
+        triangles = [[0, 1, 2], [1, 3, 2]]
+        mesh = Mesh(nodes, triangles,
+                    tagged_elements={'inland': [0], 'ocean': [1]})
+
+        with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
+            fname = f.name
+        try:
+            mesh.save_to_file(fname)
+            d = import_mesh_file(fname)
+        finally:
+            os.unlink(fname)
+
+        self.assertEqual(d['triangle_tags'][0], 'inland')
+        self.assertEqual(d['triangle_tags'][1], 'ocean')
+
+    def test_save_to_file_geo_reference(self):
+        """save_to_file writes geo_reference zone and origin correctly."""
+        import tempfile
+        import os
+        from anuga.load_mesh.loadASCII import import_mesh_file
+
+        nodes = [[0.0, 0.0], [1.0, 0.0], [0.0, 1.0]]
+        triangles = [[0, 1, 2]]
+        geo = Geo_reference(zone=55, xllcorner=300000.0, yllcorner=6000000.0)
+        mesh = Mesh(nodes, triangles, geo_reference=geo)
+
+        with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
+            fname = f.name
+        try:
+            mesh.save_to_file(fname)
+            d = import_mesh_file(fname)
+        finally:
+            os.unlink(fname)
+
+        gr = d.get('geo_reference')
+        self.assertIsNotNone(gr)
+        self.assertEqual(gr.zone, 55)
+        self.assertAlmostEqual(gr.xllcorner, 300000.0)
+        self.assertAlmostEqual(gr.yllcorner, 6000000.0)
+
+    def test_save_to_file_roundtrip(self):
+        """Mesh saved to TSH and reloaded via pmesh2domain gives same triangles."""
+        import tempfile
+        import os
+        from anuga.abstract_2d_finite_volumes.pmesh2domain import pmesh_to_domain
+
+        points, vertices, boundary = rectangular(3, 3)
+        mesh = Mesh(points, vertices, boundary=boundary)
+
+        with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
+            fname = f.name
+        try:
+            mesh.save_to_file(fname)
+            coords, tris, _, _, _, _ = pmesh_to_domain(file_name=fname)
+        finally:
+            os.unlink(fname)
+
+        self.assertEqual(len(tris), len(vertices))
+        self.assertEqual(len(coords), len(points))
+
+    def test_save_to_file_msh(self):
+        """Mesh.save_to_file accepts .msh extension (NetCDF format)."""
+        import tempfile
+        import os
+
+        points, vertices, boundary = rectangular(3, 3)
+        mesh = Mesh(points, vertices, boundary=boundary)
+
+        with tempfile.NamedTemporaryFile(suffix='.msh', delete=False) as f:
+            fname = f.name
+        try:
+            mesh.save_to_file(fname)
+            self.assertTrue(os.path.getsize(fname) > 0)
+        finally:
+            os.unlink(fname)
+
+    def test_save_to_file_bad_extension(self):
+        """Mesh.save_to_file raises ValueError for unsupported extensions."""
+        import tempfile
+        import os
+
+        points, vertices, boundary = rectangular(2, 2)
+        mesh = Mesh(points, vertices, boundary=boundary)
+
+        with self.assertRaises(ValueError):
+            mesh.save_to_file('output.xyz')
+
+    def test_save_mesh_to_tsh_deprecated(self):
+        """save_mesh_to_tsh emits DeprecationWarning and still works."""
+        import tempfile
+        import os
+        import warnings
+
+        points, vertices, boundary = rectangular(2, 2)
+        mesh = Mesh(points, vertices, boundary=boundary)
+
+        with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
+            fname = f.name
+        try:
+            with warnings.catch_warnings(record=True) as w:
+                warnings.simplefilter('always')
+                mesh.save_mesh_to_tsh(fname)
+            self.assertEqual(len(w), 1)
+            self.assertIn('deprecated', str(w[0].message).lower())
+            self.assertTrue(os.path.exists(fname))
+        finally:
+            os.unlink(fname)
+
 
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Mesh)

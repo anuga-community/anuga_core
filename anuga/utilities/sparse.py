@@ -284,6 +284,8 @@ class Sparse_CSR:
             raise ValueError(
                 'Sparse_CSR(A) expects A == Sparse Matrix *or* data==array,colind==array,rowptr==array,m==int,n==int')
 
+        self.shape = (self.M, self.N)
+
     def __repr__(self):
         return '%d X %d sparse matrix:\n' % (self.M, self.N) + 'data ' + repr(self.data) + '\ncolind ' + \
             repr(self.colind) + '\nrow_ptr ' + repr(self.row_ptr)

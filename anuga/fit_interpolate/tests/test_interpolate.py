@@ -1015,7 +1015,6 @@ class Test_Interpolate(unittest.TestCase):
         vertices = [a, b, c, d,e,f]
         triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]] #abd bac aef afc
 
-
         point_coords = [[-2.0,  2.0],
                         [-1.0,  1.0],
                         [ 0.0,  2.0],
@@ -1032,52 +1031,59 @@ class Test_Interpolate(unittest.TestCase):
         interp = Interpolate(vertices, triangles)
         f = num.array([linear_function(vertices),2*linear_function(vertices)])
         f = num.transpose(f)
-        z = interp.interpolate(f, point_coords,
-                               start_blocking_len=20)
-        answer = [linear_function(point_coords),
-                  2*linear_function(point_coords) ]
-        answer = num.transpose(answer)
-        #print "z",z
-        #print "answer",answer
+        z = interp.interpolate(f, point_coords, start_blocking_len=20)
+        answer = num.transpose([linear_function(point_coords),
+                                 2*linear_function(point_coords)])
         assert num.allclose(z, answer)
-        assert num.allclose(interp._A_can_be_reused, True)
 
+        # Calling with point_coordinates=None reuses stored points
         z = interp.interpolate(f)
         assert num.allclose(z, answer)
 
-        # This causes blocking to occur.
+        # Blocking path still gives correct results
         z = interp.interpolate(f, start_blocking_len=10)
         assert num.allclose(z, answer)
-        assert num.allclose(interp._A_can_be_reused, False)
 
-        #A is recalculated
+        # After blocking, None-reuse path still works
         z = interp.interpolate(f)
         assert num.allclose(z, answer)
-        assert num.allclose(interp._A_can_be_reused, True)
 
-        interp = Interpolate(vertices, triangles)
-        #Must raise an exception, no points specified
+        # Fresh instance with no stored points must raise
+        interp2 = Interpolate(vertices, triangles)
         try:
-            z = interp.interpolate(f)
+            z = interp2.interpolate(f)
         except Exception:
             pass
 
-    def xxtest_interpolate_reuse_if_same(self):
+    def test_interpolation_matrix_cached(self):
+        """Interpolation matrix is built once and reused for repeated same-point calls."""
+        from unittest.mock import patch
 
-        # This on tests that repeated identical interpolation
-        # points makes use of precomputed matrix (Ole)
-        # This is not really a test and is disabled for now
+        vertices = [[-1.0, 0.0], [3.0, 4.0], [4.0, 1.0],
+                    [-3.0, 2.0], [-1.0, -2.0], [1.0, -2.0]]
+        triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]]
+        point_coords = num.array([[0.0, 0.0], [1.0, 1.0], [-1.0, 1.0]])
+        f = num.array(linear_function(vertices))
 
-        a = [-1.0, 0.0]
-        b = [3.0, 4.0]
-        c = [4.0, 1.0]
-        d = [-3.0, 2.0] #3
-        e = [-1.0, -2.0]
-        f = [1.0, -2.0] #5
+        interp = Interpolate(vertices, triangles)
 
-        vertices = [a, b, c, d,e,f]
-        triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]] #abd bac aef afc
+        with patch.object(interp, '_build_interpolation_matrix_A',
+                          wraps=interp._build_interpolation_matrix_A) as mock_build:
+            interp.interpolate(f, point_coords)
+            interp.interpolate(f, point_coords)
+            interp.interpolate(f, point_coords)
 
+        assert mock_build.call_count == 1, (
+            'Expected matrix to be built once; got %d builds' % mock_build.call_count
+        )
+
+    def test_interpolate_reuse_if_same(self):
+        """Matrix is built once and results are correct for repeated same-point calls."""
+        from unittest.mock import patch
+
+        vertices = [[-1.0, 0.0], [3.0, 4.0], [4.0, 1.0],
+                    [-3.0, 2.0], [-1.0, -2.0], [1.0, -2.0]]
+        triangles = [[0,1,3], [1,0,2], [0,4,5], [0,5,2]]
 
         point_coords = [[-2.0,  2.0],
                         [-1.0,  1.0],
@@ -1093,21 +1099,24 @@ class Test_Interpolate(unittest.TestCase):
                         [ 3.0,  1.0]]
 
         interp = Interpolate(vertices, triangles)
-        f = num.array([linear_function(vertices), 2*linear_function(vertices)])
-        f = num.transpose(f)
-        z = interp.interpolate(f, point_coords)
-        answer = [linear_function(point_coords),
-                  2*linear_function(point_coords) ]
-        answer = num.transpose(answer)
+        f = num.transpose(num.array([linear_function(vertices),
+                                     2*linear_function(vertices)]))
+        answer = num.transpose(num.array([linear_function(point_coords),
+                                          2*linear_function(point_coords)]))
 
-        assert num.allclose(z, answer)
-        assert num.allclose(interp._A_can_be_reused, True)
+        with patch.object(interp, '_build_interpolation_matrix_A',
+                          wraps=interp._build_interpolation_matrix_A) as mock_build:
+            z1 = interp.interpolate(f, point_coords)
+            z2 = interp.interpolate(f, point_coords)
+            z3 = interp.interpolate(f, point_coords)
 
-
-        z = interp.interpolate(f)    # None
-        assert num.allclose(z, answer)
-        z = interp.interpolate(f, point_coords) # Repeated (not really a test)
-        assert num.allclose(z, answer)
+        assert num.allclose(z1, answer)
+        assert num.allclose(z2, answer)
+        assert num.allclose(z3, answer)
+        assert mock_build.call_count == 1, (
+            'Expected 1 matrix build for 3 identical calls; got %d'
+            % mock_build.call_count
+        )
 
 
 
@@ -1961,6 +1970,116 @@ class Test_Interpolate(unittest.TestCase):
         assert num.allclose(z, answer)
 
 ################################################################################
+
+class Test_Interpolation_function(unittest.TestCase):
+    """Tests for Interpolation_function: statistics(), __call__ error paths,
+    non-spatial replication, and Modeltime boundary exceptions."""
+
+    def _make_spatial(self):
+        """Return a simple spatial Interpolation_function with 2 timesteps."""
+        vertices = num.array([[-1.,0.],[3.,4.],[4.,1.],
+                               [-3.,2.],[-1.,-2.],[1.,-2.]], float)
+        triangles = num.array([[0,1,3],[1,0,2],[0,4,5],[0,5,2]])
+        time = num.array([0.0, 1.0])
+        Q = num.ones((2, len(vertices)), float)
+        pts = num.array([[0.,0.],[1.,1.]])
+        return Interpolation_function(
+            time, {'stage': Q},
+            vertex_coordinates=vertices, triangles=triangles,
+            interpolation_points=pts)
+
+    def _make_nonspatial(self):
+        """Return a non-spatial Interpolation_function."""
+        time = num.array([0.0, 1.0, 2.0])
+        Q = num.array([10.0, 20.0, 30.0])
+        return Interpolation_function(time, Q)
+
+    def test_statistics_spatial(self):
+        """statistics() returns a non-empty string for spatial case."""
+        f = self._make_spatial()
+        s = f.statistics()
+        assert isinstance(s, str) and len(s) > 0
+        assert 'Interpolation_function' in s
+        assert 'stage' in s
+
+    def test_statistics_nonspatial(self):
+        """statistics() works when vertex_coordinates is None."""
+        f = self._make_nonspatial()
+        s = f.statistics()
+        assert isinstance(s, str)
+        assert 'Attribute' in s
+
+    def test_get_time(self):
+        """get_time() returns the time array."""
+        f = self._make_nonspatial()
+        assert num.allclose(f.get_time(), [0.0, 1.0, 2.0])
+
+    def test_call_nonspatial_time_interpolation(self):
+        """Non-spatial call returns linearly interpolated value."""
+        f = self._make_nonspatial()
+        q = f(0.5)
+        assert num.allclose(q[0], 15.0)
+
+    def test_call_nonspatial_x_y_scalar(self):
+        """Non-spatial call with scalar x raises TypeError (len fails), returns q."""
+        f = self._make_nonspatial()
+        q = f(0.0, x=1.0, y=2.0)
+        assert num.allclose(q[0], 10.0)
+
+    def test_call_nonspatial_x_y_vector(self):
+        """Non-spatial call with vector x replicates q into columns."""
+        f = self._make_nonspatial()
+        result = f(0.0, x=num.array([1.0, 2.0, 3.0]),
+                       y=num.array([0.0, 0.0, 0.0]))
+        assert len(result) == 1
+        assert num.allclose(result[0], [10.0, 10.0, 10.0])
+
+    def test_modeltime_too_early_raises(self):
+        """Calling before time[0] raises Modeltime_too_early."""
+        from anuga.fit_interpolate.interpolate import Modeltime_too_early
+        f = self._make_nonspatial()
+        with self.assertRaises(Modeltime_too_early):
+            f(-1.0)
+
+    def test_modeltime_too_late_raises(self):
+        """Calling after time[-1] raises Modeltime_too_late."""
+        from anuga.fit_interpolate.interpolate import Modeltime_too_late
+        f = self._make_nonspatial()
+        with self.assertRaises(Modeltime_too_late):
+            f(99.0)
+
+    def test_call_spatial_no_point_id_raises(self):
+        """Spatial call with no point_id and no x,y raises."""
+        f = self._make_spatial()
+        with self.assertRaises(Exception) as ctx:
+            f(0.0)
+        assert 'point_id' in str(ctx.exception) or 'x and y' in str(ctx.exception)
+
+    def test_call_spatial_xy_raises_not_implemented(self):
+        """Spatial call with x,y raises not-implemented exception."""
+        f = self._make_spatial()
+        with self.assertRaises(Exception) as ctx:
+            f(0.0, x=0.0, y=0.0)
+        assert 'not yet implemented' in str(ctx.exception)
+
+    def test_call_spatial_at_last_timestep(self):
+        """Calling at exactly t[-1] (ratio=0 edge case) returns correct value."""
+        f = self._make_spatial()
+        q = f(1.0, point_id=0)
+        assert num.allclose(q[0], 1.0)
+
+    def test_benchmark_interpolate_returns_values(self):
+        """benchmark_interpolate returns interpolated values, not None."""
+        from anuga.fit_interpolate.interpolate import benchmark_interpolate
+        vertices = num.array([[-1.,0.],[3.,4.],[4.,1.],
+                               [-3.,2.],[-1.,-2.],[1.,-2.]], float)
+        triangles = num.array([[0,1,3],[1,0,2],[0,4,5],[0,5,2]])
+        attrs = linear_function(vertices)
+        pts = num.array([[0.,0.],[1.,1.]])
+        result = benchmark_interpolate(vertices, attrs, triangles, pts)
+        assert result is not None
+        assert num.allclose(result, linear_function(pts))
+
 
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_Interpolate)

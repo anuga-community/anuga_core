@@ -34,12 +34,13 @@ jobs:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0  # fetch full history so git describe can find tags
-      - uses: conda-incubator/setup-miniconda@v3
+      - uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest      # Installs Miniforge instead of Miniconda
           use-mamba: true                # Recommended for faster installs
           python-version: ${{ matrix.python-version }}
           auto-update-conda: true        # Auto-update conda or mamba
+          conda-remove-defaults: true    # Don't add 'defaults' channel (Miniforge uses conda-forge)
           
       - name: Install Our own environment
         shell: bash -el {0}
@@ -62,6 +63,13 @@ jobs:
         shell: bash -el {0}
         run: |
            conda install -c conda-forge -n anuga_env compilers
+
+      - name: Set macOS library path for MPI
+        if: runner.os == 'macOS'
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          echo "DYLD_LIBRARY_PATH=$CONDA_PREFIX/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
 
       - name: Install gxx with openmp compiler on Linux
         if: runner.os == 'Linux'
@@ -101,5 +109,5 @@ jobs:
           pip install pytest-cov
           cd sandpit
           export OMP_NUM_THREADS=1
-          pytest --pyargs anuga --cov=anuga --cov-report=xml --cov-report=term-missing
+          pytest --pyargs anuga --cov=anuga --cov-report=xml --cov-report=term-missing --cov-config=../.coveragerc
 

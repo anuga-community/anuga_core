@@ -48,9 +48,4 @@ TSH -> SWW:  Conversion of TSH to sww viewable using Swollen
 TSH + Boundary SWW -> SWW: Simluation using abstract_2d_finite_volumes
 """
 
-from numpy._pytesttester import PytestTester
-test = PytestTester(__name__)
-del PytestTester
-
-__all__ = ['test']
 

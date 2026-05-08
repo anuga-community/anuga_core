@@ -210,6 +210,59 @@ configure_file(
     install_mode: 'rwxr-xr-x'
 )
 
+configure_file(
+    input: 'scripts/anuga_animate_gui.py',
+    output: 'anuga_animate_gui',
+    configuration: conf,
+    install_dir: get_option('bindir'),
+    install_mode: 'rwxr-xr-x'
+)
+
+configure_file(
+    input: 'scripts/anuga_sww_gui.py',
+    output: 'anuga_sww_gui',
+    configuration: conf,
+    install_dir: get_option('bindir'),
+    install_mode: 'rwxr-xr-x'
+)
+
+# If mpicc is not on meson's PATH (common in conda envs where the env bin
+# dir is in the user's PATH but not in the subprocess PATH seen by meson),
+# locate it via mpi4py config + shutil.which + sys.prefix/bin fallback, then
+# register it so dependency('mpi', ...) in subdirectories finds it correctly.
+_mpicc_from_mpi4py = run_command(py3, ['-c', '''
+import sys, os, shutil
+try:
+    if sys.platform == "win32":
+        sys.exit(1)  # Windows has no mpicc wrapper; skip override
+    import mpi4py
+    cfg = mpi4py.get_config()
+    mpicc = cfg.get("mpicc", "")
+    # Resolve bare name to absolute path
+    if mpicc and not os.path.isabs(mpicc):
+        mpicc = shutil.which(mpicc) or ""
+    # Fallback: look directly in the active Python env's bin/
+    if not mpicc or not os.path.isfile(mpicc):
+        candidate = os.path.join(sys.prefix, "bin", "mpicc")
+        if os.path.isfile(candidate):
+            mpicc = candidate
+    if mpicc and os.path.isfile(mpicc):
+        print(mpicc)
+    else:
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+'''], check: false)
+
+if _mpicc_from_mpi4py.returncode() == 0
+  _mpicc_path = _mpicc_from_mpi4py.stdout().strip()
+  _mpicc_prog = find_program(_mpicc_path, required: false)
+  if _mpicc_prog.found()
+    meson.override_find_program('mpicc', _mpicc_prog)
+    message('mpicc registered from mpi4py: ' + _mpicc_path)
+  endif
+endif
+
 # Add subdirectories which contains python sources
 subdir('anuga')
 

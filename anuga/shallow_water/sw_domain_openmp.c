@@ -153,6 +153,18 @@ void _openmp_distribute_edges_to_vertices(struct domain *__restrict D)
     core_distribute_edges_to_vertices(D);
 }
 
+void _openmp_ader_ck_predictor(struct domain *__restrict D, double dt)
+{
+    // ADER Cauchy-Kovalewski predictor — calls core_ader_ck_predictor from core_kernels.c
+    core_ader_ck_predictor(D, dt);
+}
+
+void _openmp_ader_ck_predictor_edge(struct domain *__restrict D, double dt)
+{
+    // Fused ADER-2 predictor: writes Q^{n+1/2} to edge values, centroids untouched
+    core_ader_ck_predictor_edge(D, dt);
+}
+
 void _openmp_manning_friction_flat_semi_implicit(const struct domain *__restrict D)
 {
     // Unified: calls core_manning_friction_flat_semi_implicit from core_kernels.c
@@ -558,9 +570,7 @@ void _openmp_set_omp_num_threads(anuga_int num_threads)
 void _openmp_evaluate_reflective_segment(const struct domain *__restrict D, anuga_int N,
    anuga_int *edge_segment, anuga_int *vol_ids, anuga_int *edge_ids){
 
-  anuga_int boundary_length = D->boundary_length;
   anuga_int number_of_edges = N;
-  anuga_int number_of_elements = D->number_of_elements; 
 
     #pragma omp parallel for schedule(static)
      for(anuga_int k = 0; k < number_of_edges; k++){

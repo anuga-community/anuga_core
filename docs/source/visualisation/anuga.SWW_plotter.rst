@@ -22,14 +22,20 @@
       ~SWW_plotter.make_speed_depth_animation
       ~SWW_plotter.make_stage_animation
       ~SWW_plotter.plot_depth_frame
+      ~SWW_plotter.plot_elev_frame
       ~SWW_plotter.plot_mesh
       ~SWW_plotter.plot_speed_depth_frame
       ~SWW_plotter.plot_speed_frame
       ~SWW_plotter.plot_stage_frame
       ~SWW_plotter.save_depth_frame
+      ~SWW_plotter.save_elev_frame
+      ~SWW_plotter.save_max_depth_frame
+      ~SWW_plotter.save_max_speed_depth_frame
+      ~SWW_plotter.save_max_speed_frame
       ~SWW_plotter.save_speed_depth_frame
       ~SWW_plotter.save_speed_frame
       ~SWW_plotter.save_stage_frame
+      ~SWW_plotter.set_epsg
       ~SWW_plotter.tripcolor
       ~SWW_plotter.triplot
       ~SWW_plotter.water_volume

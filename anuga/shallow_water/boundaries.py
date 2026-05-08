@@ -816,7 +816,9 @@ class Characteristic_stage_boundary(Boundary):
         h_inside  = np.maximum(Stage.boundary_values[ids] - Elev.boundary_values[ids], 0)
         uh_inside = n1 * Xmom.boundary_values[ids] + n2 * Ymom.boundary_values[ids]
         vh_inside = n2 * Xmom.boundary_values[ids] - n1 * Ymom.boundary_values[ids]
-        u_inside  = np.where(h_inside>0.0, uh_inside/h_inside, 0.0)
+        u_inside  = np.divide(uh_inside, h_inside,
+                              out=np.zeros_like(uh_inside),
+                              where=h_inside > 0.0)
 
         h_outside = np.maximum(w_outside - Elev.boundary_values[ids], 0)
 

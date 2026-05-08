@@ -250,6 +250,29 @@ def return_full_D(object D_cap, int64_t n):
 
 	return ret_D
 
+def dok_to_csr(object cap):
+	"""Convert a sparse_dok capsule to CSR format without mutating it.
+
+	Calls convert_to_csr_ptr which only sorts the hash table (values intact).
+	Returns [data, colind, row_ptr] in the same format as build_matrix_B.
+	"""
+	cdef sparse_dok* dok
+	cdef sparse_csr* csr
+	cdef list data, colind, row_ptr
+
+	dok = <sparse_dok* > PyCapsule_GetPointer(cap, "sparse dok")
+
+	csr = make_csr()
+	convert_to_csr_ptr(csr, dok)
+
+	data    = c_double_array_to_list(csr.data,    csr.num_entries)
+	colind  = c_int_array_to_list(csr.colind,     csr.num_entries)
+	row_ptr = c_int_array_to_list(csr.row_ptr,    csr.num_rows)
+
+	delete_csr_matrix(csr)
+
+	return [data, colind, row_ptr]
+
 def build_matrix_B(object smoothing_mat_cap, object AtA_cap, double alpha):
 
 	cdef sparse_dok* smoothing_mat

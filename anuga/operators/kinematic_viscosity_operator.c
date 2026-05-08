@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdint.h>
 #include "anuga_typedefs.h"
+
+#include "omp.h"
 // JORGE TODO: replace with library call!!!!
 //Rough quicksort implementation (for build_operator_matrix)
 // taken from http://cprogramminglanguage.net/quicksort-algorithm-c-source-code.aspx
@@ -51,6 +53,7 @@ anuga_int _build_geo_structure(anuga_int n,
         double *geo_values) {
     anuga_int i, edge, j, m;
     double dist, this_x, this_y, other_x, other_y, edge_length;
+    #pragma omp parallel for private(edge, j, m, dist, this_x, this_y, other_x, other_y, edge_length)
     for (i = 0; i < n; i++) {
         //The centroid coordinates of triangle i
         this_x = centroids[2 * i];
@@ -147,6 +150,8 @@ anuga_int _build_elliptic_matrix(anuga_int n,
         anuga_int *colind) {
     anuga_int i, k, edge, j[4], sorted_j[4], this_index;
     double h_j, v[3], v_i; //v[k] = value of the interaction of edge k in a given triangle, v_i = (i,i) entry
+    // Each row i writes only to data[4*i:4*i+4] and colind[4*i:4*i+4] — no race.
+    #pragma omp parallel for private(k, edge, j, sorted_j, this_index, h_j, v, v_i)
     for (i = 0; i < n; i++) {
         v_i = 0.0;
         j[3] = i;
@@ -249,6 +254,8 @@ anuga_int _update_elliptic_matrix(anuga_int n,
         anuga_int *colind) {
     anuga_int i, k, edge, j[4], sorted_j[4], this_index;
     double h_j, v[3], v_i; //v[k] = value of the interaction of edge k in a given triangle, v_i = (i,i) entry
+    // Each row i writes only to data[4*i:4*i+4] and colind[4*i:4*i+4] — no race.
+    #pragma omp parallel for private(k, edge, j, sorted_j, this_index, h_j, v, v_i)
     for (i = 0; i < n; i++) {
         v_i = 0.0;
         j[3] = i;

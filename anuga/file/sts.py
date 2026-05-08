@@ -277,14 +277,17 @@ def create_sts_boundary(sts_filename):
         msg = 'Cannot open %s' % stsname_postfixed
         raise OSError(msg)
 
-    xllcorner = fid.xllcorner
-    yllcorner = fid.yllcorner
+    try:
+        xllcorner = fid.xllcorner
+        yllcorner = fid.yllcorner
 
-    #Points stored in sts file are normalised to [xllcorner,yllcorner] but
-    #we cannot assume that boundary polygon will be. At least the
-    #additional points specified by the user after this function is called
-    x = fid.variables['x'][:] + xllcorner
-    y = fid.variables['y'][:] + yllcorner
+        #Points stored in sts file are normalised to [xllcorner,yllcorner] but
+        #we cannot assume that boundary polygon will be. At least the
+        #additional points specified by the user after this function is called
+        x = fid.variables['x'][:] + xllcorner
+        y = fid.variables['y'][:] + yllcorner
+    finally:
+        fid.close()
 
     x = num.reshape(x, (len(x), 1))
     y = num.reshape(y, (len(y), 1))

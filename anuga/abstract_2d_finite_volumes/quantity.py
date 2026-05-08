@@ -90,13 +90,13 @@ class Quantity:
 
         if vertex_values is None:
             N = len(domain)             # number_of_elements
-            # Lazy: vertex_values allocated on first access (see property below).
-            # 'coordinate' quantities (x, y) need them immediately since
-            # generic_domain assigns vertex coordinates right after construction.
-            if qty_type == 'coordinate':
-                self._vertex_values = num.zeros((N, 3), float)
-            else:
-                self._vertex_values = None
+            # Lazy for ALL types: vertex_values allocated on first access via
+            # the property below.  'coordinate' quantities (x, y) are
+            # initialised by setting centroid_values and edge_values directly
+            # from the mesh coordinate arrays, so vertex_values are only
+            # needed if a caller explicitly requests them (e.g. expression
+            # evaluation such as set_quantity('xmom', expression='2*x+3*y')).
+            self._vertex_values = None
         else:
             self._vertex_values = num.array(vertex_values, float)
             N, V = self._vertex_values.shape
@@ -166,7 +166,20 @@ class Quantity:
     def vertex_values(self):
         if self._vertex_values is None:
             N = self.centroid_values.shape[0]
-            self._vertex_values = num.zeros((N, 3), float)
+            if self._qty_type == 'coordinate' and self.edge_values is not None:
+                # Reconstruct exactly from edge values using the inverse of the
+                # edge-midpoint formula (exact for linear fields such as x/y):
+                #   v[0] = e[1] + e[2] - e[0]
+                #   v[1] = e[2] + e[0] - e[1]
+                #   v[2] = e[0] + e[1] - e[2]
+                e = self.edge_values
+                vv = num.empty((N, 3), float)
+                vv[:, 0] = e[:, 1] + e[:, 2] - e[:, 0]
+                vv[:, 1] = e[:, 2] + e[:, 0] - e[:, 1]
+                vv[:, 2] = e[:, 0] + e[:, 1] - e[:, 2]
+                self._vertex_values = vv
+            else:
+                self._vertex_values = num.zeros((N, 3), float)
         return self._vertex_values
 
     @vertex_values.setter

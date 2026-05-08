@@ -25,6 +25,7 @@
 #define FLOPS_SAXPY              9
 #define FLOPS_RATE_OPERATOR      8
 #define FLOPS_GHOST_EXCHANGE     0
+#define FLOPS_ADER_PREDICTOR     105
 
 // ============================================================================
 // Device Helper Functions
