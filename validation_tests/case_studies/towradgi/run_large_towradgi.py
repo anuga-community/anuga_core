@@ -105,6 +105,34 @@ domain_name = join('Towradgi_historic_flood')
 meshname = join('DEM_bridges', 'towradgi.tsh')
 func = file_function(join('Forcing', 'Tide', 'Pioneer.tms'), quantities='rainfall')
 
+# Pre-build a fast numpy.interp lookup from the tide file — avoids calling the
+# full ANUGA interpolation stack (0.96s / 1800s sim at 36k× per yieldstep).
+# Falls back to func(t) if the .tms file cannot be read directly.
+_tide_t = None
+_tide_v = None
+try:
+    import csv as _csv
+    _tide_rows = []
+    with open(join('Forcing', 'Tide', 'Pioneer.tms')) as _f:
+        for _row in _csv.reader(_f, delimiter=','):
+            try:
+                _tide_rows.append((float(_row[0]), float(_row[1])))
+            except (ValueError, IndexError):
+                pass  # skip header lines
+    if len(_tide_rows) >= 2:
+        _tide_t = numpy.array([r[0] for r in _tide_rows], dtype=numpy.float64)
+        _tide_v = numpy.array([r[1] for r in _tide_rows], dtype=numpy.float64)
+        if myid == 0:
+            print(f'[tide] pre-built numpy.interp from {len(_tide_rows)} points')
+except Exception as _te:
+    if myid == 0:
+        print(f'[tide] WARNING: fast path failed ({_te}), using ANUGA file_function')
+
+def _tide_fast(t):
+    if _tide_t is not None:
+        return float(numpy.interp(t, _tide_t, _tide_v))
+    return float(func(t)[0])
+
 # ------------------------------------------------------------------------------
 # Use a try statement to read in previous checkpoint file and if not possible
 # just go ahead as normal and produce domain as usual.
@@ -977,7 +1005,7 @@ Creating domain from scratch.
     
     Bd = anuga.Dirichlet_boundary([0, 0, 0])
     Bw = anuga.Time_boundary(domain=domain, function=lambda t: [
-                             func(t)[0], 0.0, 0.0])
+                             _tide_fast(t), 0.0, 0.0])
     
     domain.set_boundary({'west': Bd, 'south': Bd, 'north': Bd, 'east': Bw})
     

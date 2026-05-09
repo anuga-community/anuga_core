@@ -52,6 +52,10 @@ class boundary_flux_integral_operator(Operator):
         """Accumulate boundary flux for each timestep."""
         dt = self.domain.timestep
         bfs = self.domain.boundary_flux_sum
+        # Strip masked-array wrapper if present — the mask is never used and
+        # numpy.ma dispatch costs ~0.37s/1800s sim (72k× __getitem__).
+        if hasattr(bfs, 'data'):
+            bfs = bfs.data
 
         if self._bfs_coeff is not None:
             n, rk3 = self._bfs_coeff
@@ -62,12 +66,11 @@ class boundary_flux_integral_operator(Operator):
             else:  # rk3
                 self.boundary_flux_integral += (dt / 6.0) * (bfs[0] + bfs[1] + 4.0 * bfs[2])
         else:
-            # Fallback: original code path for unknown timestepping methods
             ts_method = self.domain.timestepping_method
             if ts_method == 'euler':
                 self.boundary_flux_integral += dt * bfs[0]
             elif ts_method == 'rk2':
-                self.boundary_flux_integral += 0.5 * dt * bfs[0:2].sum()
+                self.boundary_flux_integral += 0.5 * dt * (bfs[0] + bfs[1])
             elif ts_method == 'rk3':
                 self.boundary_flux_integral += (dt / 6.0) * (bfs[0] + bfs[1] + 4.0 * bfs[2])
             else:
