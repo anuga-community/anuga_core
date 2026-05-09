@@ -20,7 +20,7 @@
 #define FLOPS_COMPUTE_FLUXES     400
 #define FLOPS_UPDATE             21
 #define FLOPS_PROTECT            5
-#define FLOPS_MANNING            18
+#define FLOPS_MANNING            10  // reduced from 18: pow(h,7/3) → h*h*cbrt(h) saves ~8 FLOPs per call
 #define FLOPS_BACKUP             0
 #define FLOPS_SAXPY              9
 #define FLOPS_RATE_OPERATOR      8
@@ -152,16 +152,22 @@ static inline void gpu_rotate(double * restrict q, double n1, double n2) {
 }
 
 // Compute velocity terms with zero-depth handling
+//
+// Opt-5: 'h * inv_h_edge' was computed twice in the original (once for *uh,
+// once for *vh via "h * inv_h_edge * vh_raw").  Factor it into 'scale' so
+// the multiply executes once.  Called 2× per Riemann solve (left + right
+// states), 3 edges per cell — 6 times per cell per timestep.
 static inline void gpu_compute_velocity_terms(
     double h, double h_edge,
     double uh_raw, double vh_raw,
     double * restrict u, double * restrict uh, double * restrict v, double * restrict vh) {
     if (h_edge > 0.0) {
         double inv_h_edge = 1.0 / h_edge;
-        *u = uh_raw * inv_h_edge;
-        *uh = h * (*u);
-        *v = vh_raw * inv_h_edge;
-        *vh = h * inv_h_edge * vh_raw;
+        double scale      = h * inv_h_edge;   // h / h_edge — computed once
+        *u  = uh_raw * inv_h_edge;
+        *uh = uh_raw * scale;
+        *v  = vh_raw * inv_h_edge;
+        *vh = vh_raw * scale;
     } else {
         *u = 0.0;
         *uh = 0.0;
