@@ -69,6 +69,8 @@ Reference:
 Constraints: See license in the user guide
 """
 
+from __future__ import annotations
+
 
 
 
@@ -95,6 +97,13 @@ import numpy as num
 import sys
 import os
 import time
+from typing import TYPE_CHECKING
+from collections.abc import Callable, Iterator
+from numpy.typing import ArrayLike
+
+if TYPE_CHECKING:
+    from datetime import datetime as DateTime
+    from zoneinfo import ZoneInfo as ZoneInfoType
 
 
 try:
@@ -233,27 +242,27 @@ class Domain(Generic_Domain):
     """
 
     def __init__(self,
-                 coordinates=None,
-                 vertices=None,
-                 boundary=None,
-                 tagged_elements=None,
+                 coordinates: ArrayLike | str | None = None,
+                 vertices: ArrayLike | None = None,
+                 boundary: dict | None = None,
+                 tagged_elements: dict | None = None,
                  geo_reference=None,
-                 use_inscribed_circle=False,
-                 mesh_filename=None,
-                 use_cache=False,
-                 verbose=False,
-                 conserved_quantities = None,
-                 evolved_quantities = None,
-                 other_quantities = None,
-                 full_send_dict=None,
-                 ghost_recv_dict=None,
-                 starttime=0,
-                 processor=0,
-                 numproc=1,
-                 number_of_full_nodes=None,
-                 number_of_full_triangles=None,
-                 ghost_layer_width=2,
-                 **kwargs):
+                 use_inscribed_circle: bool = False,
+                 mesh_filename: str | None = None,
+                 use_cache: bool = False,
+                 verbose: bool = False,
+                 conserved_quantities: list[str] | None = None,
+                 evolved_quantities: list[str] | None = None,
+                 other_quantities: list[str] | None = None,
+                 full_send_dict: dict | None = None,
+                 ghost_recv_dict: dict | None = None,
+                 starttime: float = 0,
+                 processor: int = 0,
+                 numproc: int = 1,
+                 number_of_full_nodes: int | None = None,
+                 number_of_full_triangles: int | None = None,
+                 ghost_layer_width: int = 2,
+                 **kwargs) -> None:
 
         """Instantiate a shallow water domain.
 
@@ -663,7 +672,7 @@ class Domain(Generic_Domain):
 
         self.set_store_centroids(False)
 
-    def get_algorithm_parameters(self):
+    def get_algorithm_parameters(self) -> dict:
         """
         Get the standard parameter that are currently set (as a dictionary)
         """
@@ -691,7 +700,7 @@ class Domain(Generic_Domain):
 
         return parameters
 
-    def print_algorithm_parameters(self):
+    def print_algorithm_parameters(self) -> None:
         """
         Print the standard parameters that are curently set (as a dictionary)
         """
@@ -1069,7 +1078,7 @@ class Domain(Generic_Domain):
     # the set_quantity function to be profiled individually.
     # Need to uncomment the decorator at top of file.
     #@profileit("set_quantity.profile")
-    def set_quantity(self, name, *args, **kwargs):
+    def set_quantity(self, name: str, *args, **kwargs) -> None:
         """Set values for named quantity
 
         We have to do something special for 'elevation'
@@ -1088,7 +1097,7 @@ class Domain(Generic_Domain):
         Generic_Domain.set_quantity(self, name, *args, **kwargs)
 
 
-    def set_timezone(self, tz = None):
+    def set_timezone(self, tz: str | ZoneInfoType | None = None) -> None:
         """Set timezone for domain
 
         :param tz: either a timezone object or string
@@ -1129,12 +1138,12 @@ class Domain(Generic_Domain):
 
         self.timezone = new_tz
 
-    def get_timezone(self):
+    def get_timezone(self) -> ZoneInfoType:
         """Retrieve current domain timezone"""
 
         return self.timezone
 
-    def get_datetime(self, timestamp=None):
+    def get_datetime(self, timestamp: float | None = None) -> DateTime:
         """Retrieve datetime corresponding to current timestamp wrt to domain timezone
 
         param: timestamp: return datetime corresponding to given timestamp"""
@@ -1157,7 +1166,7 @@ class Domain(Generic_Domain):
         current_dt = utc_datetime.astimezone(self.timezone)
         return current_dt
 
-    def set_starttime(self, timestamp=0.0):
+    def set_starttime(self, timestamp: float | DateTime = 0.0) -> None:
         """Set the starttime for the evolution
 
         :param timestamp: Either a float or a datetime object
@@ -1249,7 +1258,7 @@ class Domain(Generic_Domain):
         # starttime is now the origin for relative_time
         self.set_relative_time(0.0)
 
-    def get_starttime(self, datetime=False):
+    def get_starttime(self, datetime: bool = False) -> float | DateTime:
         """return starttime, either as timestamp, or as a datetime"""
 
         starttime = self.starttime
@@ -1260,32 +1269,33 @@ class Domain(Generic_Domain):
             return self.get_datetime(starttime)
 
 
-    def set_store(self, flag=True):
+    def set_store(self, flag: bool = True) -> None:
         """Set whether data saved to sww file.
         """
 
         self.store = flag
 
-    def get_store(self):
+    def get_store(self) -> bool:
         """Get whether data saved to sww file.
         """
 
         return self.store
 
 
-    def set_store_centroids(self, flag=True):
+    def set_store_centroids(self, flag: bool = True) -> None:
         """Set whether centroid data is saved to sww file.
         """
 
         self.store_centroids = flag
 
-    def get_store_centroids(self):
+    def get_store_centroids(self) -> bool:
         """Get whether data saved to sww file.
         """
 
         return self.store_centroids
 
-    def set_checkpointing(self, checkpoint= True, checkpoint_dir = 'CHECKPOINTS', checkpoint_step=10, checkpoint_time = None):
+    def set_checkpointing(self, checkpoint: bool = True, checkpoint_dir: str = 'CHECKPOINTS',
+                          checkpoint_step: int = 10, checkpoint_time: float | None = None) -> None:
         """Set up checkpointing.
 
         param checkpoint: Default = True. Set to False will turn off checkpointing
@@ -1321,7 +1331,7 @@ class Domain(Generic_Domain):
         else:
             self.checkpoint = False
 
-    def set_sloped_mannings_function(self, flag=True):
+    def set_sloped_mannings_function(self, flag: bool = True) -> None:
         """Set mannings friction function to use the sloped
         wetted area.
 
@@ -1334,7 +1344,7 @@ class Domain(Generic_Domain):
             self.use_sloped_mannings = False
 
 
-    def set_compute_fluxes_method(self, flag='original'):
+    def set_compute_fluxes_method(self, flag: str = 'original') -> None:
         """Set method for computing fluxes.
 
         Currently
@@ -1355,7 +1365,7 @@ class Domain(Generic_Domain):
             raise Exception(msg)
 
 
-    def get_compute_fluxes_method(self):
+    def get_compute_fluxes_method(self) -> str:
         """Get method for computing fluxes.
 
         See set_compute_fluxes_method for possible choices.
@@ -1365,7 +1375,7 @@ class Domain(Generic_Domain):
 
 
 
-    def set_flow_algorithm(self, algorithm='DE0'):
+    def set_flow_algorithm(self, algorithm: str = 'DE0') -> None:
         """Set combination of slope limiting and time stepping
 
         Currently
@@ -1411,7 +1421,7 @@ class Domain(Generic_Domain):
             self._set_DE_ader2_defaults()
 
 
-    def get_flow_algorithm(self):
+    def get_flow_algorithm(self) -> str:
         """
         Get method used for timestepping and spatial discretisation
 
@@ -1437,7 +1447,7 @@ class Domain(Generic_Domain):
     #     else:
     #         raise Exception('undefined compute_fluxes method')
 
-    def set_extrapolate_velocity(self, flag=True):
+    def set_extrapolate_velocity(self, flag: bool = True) -> None:
         """ Extrapolation routine uses momentum by default,
         can change to velocity extrapolation which
         seems to work better.
@@ -1448,7 +1458,7 @@ class Domain(Generic_Domain):
         elif flag is False:
             self.extrapolate_velocity_second_order = False
 
-    def set_low_froude(self, low_froude=0):
+    def set_low_froude(self, low_froude: int = 0) -> None:
         """ For low Froude problems the standard flux calculations
         can lead to excessive damping. Set low_froude to 1 or 2 for
         flux calculations which minimize the damping in this case.
@@ -1458,7 +1468,7 @@ class Domain(Generic_Domain):
 
         self.low_froude = low_froude
 
-    def set_use_optimise_dry_cells(self, flag=True):
+    def set_use_optimise_dry_cells(self, flag: bool = True) -> None:
         """ Try to optimize calculations where region is dry
         """
 
@@ -1470,7 +1480,7 @@ class Domain(Generic_Domain):
 
 
 
-    def set_use_kinematic_viscosity(self, flag=True):
+    def set_use_kinematic_viscosity(self, flag: bool = True) -> None:
 
         from anuga.operators.kinematic_viscosity_operator import Kinematic_viscosity_operator
 
@@ -1490,7 +1500,7 @@ class Domain(Generic_Domain):
 
 
 
-    def set_beta(self, beta):
+    def set_beta(self, beta: float) -> None:
         """Shorthand to assign one constant value [0,2] to all limiters.
         0 Corresponds to first order, where as larger values make use of
         the second order scheme.
@@ -1509,7 +1519,8 @@ class Domain(Generic_Domain):
         self.quantities['ymomentum'].beta = beta
 
 
-    def set_betas(self, beta_w, beta_w_dry, beta_uh, beta_uh_dry, beta_vh, beta_vh_dry):
+    def set_betas(self, beta_w: float, beta_w_dry: float, beta_uh: float,
+                  beta_uh_dry: float, beta_vh: float, beta_vh_dry: float) -> None:
         """Assign beta values in the range  [0,2] to all limiters.
         0 Corresponds to first order, where as larger values make use of
         the second order scheme.
@@ -1528,7 +1539,7 @@ class Domain(Generic_Domain):
         self.quantities['ymomentum'].beta = beta_vh
 
 
-    def set_store_vertices_uniquely(self, flag=True, reduction=None):
+    def set_store_vertices_uniquely(self, flag: bool = True, reduction: Callable | None = None) -> None:
         """Decide whether vertex values should be stored uniquely as
         computed in the model (True) or whether they should be reduced to one
         value per vertex using self.reduction (False).
@@ -1543,7 +1554,7 @@ class Domain(Generic_Domain):
             self.reduction = mean
             #self.reduction = min  #Looks better near steep slopes
 
-    def set_store_vertices_smoothly(self, flag=True, reduction=None):
+    def set_store_vertices_smoothly(self, flag: bool = True, reduction: Callable | None = None) -> None:
         """Decide whether vertex values should be stored smoothly (one value per vertex)
         or uniquely as
         computed in the model (False).
@@ -1558,7 +1569,7 @@ class Domain(Generic_Domain):
             self.reduction = mean
             #self.reduction = min  #Looks better near steep slopes
 
-    def set_minimum_storable_height(self, minimum_storable_height):
+    def set_minimum_storable_height(self, minimum_storable_height: float) -> None:
         """Set the minimum depth that will be written to an SWW file.
 
         minimum_storable_height  minimum allowed SWW depth is in meters
@@ -1570,12 +1581,12 @@ class Domain(Generic_Domain):
         self.minimum_storable_height = minimum_storable_height
 
 
-    def get_minimum_storable_height(self):
+    def get_minimum_storable_height(self) -> float:
 
         return self.minimum_storable_height
 
 
-    def set_minimum_allowed_height(self, minimum_allowed_height):
+    def set_minimum_allowed_height(self, minimum_allowed_height: float) -> None:
         """Set minimum depth that will be recognised in the numerical scheme.
 
         minimum_allowed_height  minimum allowed depth in meters
@@ -1595,11 +1606,11 @@ class Domain(Generic_Domain):
 
 
 
-    def get_minimum_allowed_height(self):
+    def get_minimum_allowed_height(self) -> float:
 
         return self.minimum_allowed_height
 
-    def set_maximum_allowed_speed(self, maximum_allowed_speed):
+    def set_maximum_allowed_speed(self, maximum_allowed_speed: float) -> None:
         """Set the maximum particle speed that is allowed in water shallower
         than minimum_allowed_height.
 
@@ -1611,7 +1622,7 @@ class Domain(Generic_Domain):
 
         self.maximum_allowed_speed = maximum_allowed_speed
 
-    def set_points_file_block_line_size(self, points_file_block_line_size):
+    def set_points_file_block_line_size(self, points_file_block_line_size: int) -> None:
         """
         """
 
@@ -1619,7 +1630,7 @@ class Domain(Generic_Domain):
 
 
     # FIXME: Probably obsolete in its curren form
-    def set_quantities_to_be_stored(self, q):
+    def set_quantities_to_be_stored(self, q: dict[str, int] | list[str] | None) -> None:
         """Specify which quantities will be stored in the SWW file.
 
         q must be either:
@@ -1662,7 +1673,8 @@ class Domain(Generic_Domain):
         assert isinstance(q, dict)
         self.quantities_to_be_stored = q
 
-    def get_wet_elements(self, indices=None, minimum_height=None):
+    def get_wet_elements(self, indices: list[int] | num.ndarray | None = None,
+                         minimum_height: float | None = None) -> num.ndarray:
         """Return indices for elements where h > minimum_allowed_height
 
         Optional argument:
@@ -1692,7 +1704,84 @@ class Domain(Generic_Domain):
                                    num.arange(len(depth)))
         return wet_indices
 
-    def get_maximum_inundation_elevation(self, indices=None, minimum_height=None):
+    def load_balance_statistics(self, minimum_height: float | None = None) -> dict:
+        """Return load balance statistics for this domain (single-rank version).
+
+        For a parallel domain use :meth:`Parallel_domain.load_balance_statistics`
+        which gathers across all MPI ranks via Allgather.  This serial version
+        returns a dict with length-1 arrays so the interface is identical.
+
+        Parameters
+        ----------
+        minimum_height : float, optional
+            Depth threshold for "wet" classification.  Defaults to
+            ``anuga.config.minimum_allowed_height``.
+
+        Returns
+        -------
+        dict
+            Keys and shapes are the same as the parallel version::
+
+                n_full           int[1]   total triangle count
+                n_ghost          int[1]   0 (no ghost triangles in serial)
+                n_wet_full       int[1]   wet triangle count
+                wet_fraction     float[1] n_wet_full / n_full
+                ghost_fraction   float[1] 0.0
+                wall_time        float[1] total wall time since evolve() started
+                comm_time        float[1] 0.0
+                reduce_wait_time float[1] 0.0
+                compute_time     float[1] same as wall_time
+                imbalance_ratio  float    1.0
+                wet_compute_corr float    nan
+        """
+        from time import time as walltime
+        from anuga.config import minimum_allowed_height as default_mah
+
+        if minimum_height is None:
+            minimum_height = default_mah
+
+        n_full = self.get_number_of_triangles()
+        stage_c = self.get_quantity('stage').centroid_values
+        elev_c  = self.get_quantity('elevation').centroid_values
+        n_wet   = int(num.sum((stage_c - elev_c) > minimum_height))
+
+        w_time = walltime() - self.evolve_start_walltime
+
+        return {
+            'n_full':           num.array([n_full], dtype=int),
+            'n_ghost':          num.array([0],      dtype=int),
+            'n_wet_full':       num.array([n_wet],  dtype=int),
+            'wet_fraction':     num.array([n_wet / n_full if n_full > 0 else 0.0]),
+            'ghost_fraction':   num.array([0.0]),
+            'wall_time':        num.array([w_time]),
+            'comm_time':        num.array([0.0]),
+            'reduce_wait_time': num.array([0.0]),
+            'compute_time':     num.array([w_time]),
+            'imbalance_ratio':  1.0,
+            'wet_compute_corr': float('nan'),
+        }
+
+    def print_load_balance_statistics(self, minimum_height: float | None = None) -> None:
+        """Print a load balance summary to stdout.
+
+        For a single-process domain this just reports wet fraction and
+        triangle count.  The parallel override prints a per-rank table.
+
+        Parameters
+        ----------
+        minimum_height : float, optional
+            Passed through to :meth:`load_balance_statistics`.
+        """
+        stats = self.load_balance_statistics(minimum_height=minimum_height)
+        n      = stats['n_full'][0]
+        n_wet  = stats['n_wet_full'][0]
+        wf     = stats['wet_fraction'][0]
+        w_time = stats['wall_time'][0]
+        print(f"Load balance: triangles={n}, wet={n_wet} ({100*wf:.1f}%), "
+              f"wall_time={w_time:.3f}s")
+
+    def get_maximum_inundation_elevation(self, indices: list[int] | num.ndarray | None = None,
+                                         minimum_height: float | None = None) -> float:
         """Return highest elevation where h > 0
 
         Optional argument:
@@ -1708,7 +1797,7 @@ class Domain(Generic_Domain):
         return self.get_quantity('elevation').\
                    get_maximum_value(indices=wet_elements)
 
-    def get_maximum_inundation_location(self, indices=None):
+    def get_maximum_inundation_location(self, indices: list[int] | num.ndarray | None = None) -> tuple[float, float]:
         """Return location of highest elevation where h > 0
 
         Optional argument:
@@ -1724,7 +1813,8 @@ class Domain(Generic_Domain):
         return self.get_quantity('elevation').\
                    get_maximum_location(indices=wet_elements)
 
-    def get_global_wet_element_count(self, indices=None, minimum_height=None):
+    def get_global_wet_element_count(self, indices: list[int] | num.ndarray | None = None,
+                                     minimum_height: float | None = None) -> int:
         """Return total number of wet elements across all MPI ranks.
 
         Optional arguments:
@@ -1748,7 +1838,7 @@ class Domain(Generic_Domain):
         global_count = MPI.COMM_WORLD.allreduce(local_count, op=MPI.SUM)
         return global_count
 
-    def get_global_max_stage(self, indices=None):
+    def get_global_max_stage(self, indices: list[int] | num.ndarray | None = None) -> float:
         """Return maximum stage value across all MPI ranks.
 
         Optional argument:
@@ -1771,7 +1861,7 @@ class Domain(Generic_Domain):
         global_max = MPI.COMM_WORLD.allreduce(local_max, op=MPI.MAX)
         return global_max
 
-    def get_global_max_speed(self):
+    def get_global_max_speed(self) -> float:
         """Return maximum speed across all MPI ranks.
 
         Usage:
@@ -1794,7 +1884,7 @@ class Domain(Generic_Domain):
         global_max = MPI.COMM_WORLD.allreduce(local_max, op=MPI.MAX)
         return global_max
 
-    def get_water_volume(self):
+    def get_water_volume(self) -> float:
 
         from anuga import numprocs
 
@@ -1830,7 +1920,7 @@ class Domain(Generic_Domain):
         self.volume_history.append(water_volume)
         return water_volume
 
-    def get_boundary_flux_integral(self):
+    def get_boundary_flux_integral(self) -> float:
         """Compute the boundary flux integral.
 
         Should work in parallel
@@ -1854,7 +1944,7 @@ class Domain(Generic_Domain):
 
         return flux_integral
 
-    def get_fractional_step_volume_integral(self):
+    def get_fractional_step_volume_integral(self) -> float:
         """Compute the integrated flows from fractional steps.
 
         This requires that the fractional step operators update the fractional_step_volume_integral.
@@ -1875,7 +1965,7 @@ class Domain(Generic_Domain):
 
         return flux_integral
 
-    def get_flow_through_cross_section(self, polyline, verbose=False):
+    def get_flow_through_cross_section(self, polyline: ArrayLike, verbose: bool = False) -> float:
         """Get the total flow through an arbitrary poly line.
 
         This is a run-time equivalent of the function with same name
@@ -1897,9 +1987,9 @@ class Domain(Generic_Domain):
         return cross_section.get_flow_through_cross_section()
 
 
-    def get_energy_through_cross_section(self, polyline,
-                                         kind='total',
-                                         verbose=False):
+    def get_energy_through_cross_section(self, polyline: ArrayLike,
+                                         kind: str = 'total',
+                                         verbose: bool = False) -> float:
         """Obtain average energy head [m] across specified cross section.
 
         Inputs:
@@ -1931,7 +2021,7 @@ class Domain(Generic_Domain):
         return cross_section.get_energy_through_cross_section(kind)
 
 
-    def check_integrity(self):
+    def check_integrity(self) -> None:
         """ Run integrity checks on shallow water domain. """
         Generic_Domain.check_integrity(self)
 
@@ -2011,6 +2101,12 @@ class Domain(Generic_Domain):
                 evaluate_time_boundary_gpu,
                 set_file_boundary_values_from_domain,
                 evaluate_file_boundary_gpu,
+                set_absorbing_wave_value,
+                evaluate_absorbing_wave_boundary_gpu,
+                set_characteristic_wave_value,
+                evaluate_characteristic_wave_boundary_gpu,
+                set_flather_value,
+                evaluate_flather_boundary_gpu,
                 boundary_edge_sync,
                 sync_boundary_values,
                 init_boundary_edge_sync,
@@ -2021,13 +2117,18 @@ class Domain(Generic_Domain):
             # Lazily initialize GPU boundary info
             GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                                   'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                                  'Time_boundary', 'File_boundary', 'Field_boundary'}
+                                  'Time_boundary', 'File_boundary', 'Field_boundary',
+                                  'Absorbing_wave_boundary', 'Characteristic_wave_boundary',
+                                  'Flather_external_stage_zero_velocity_boundary'}
 
             if not hasattr(self, '_gpu_boundary_info_initialized'):
                 self._gpu_cpu_tags = []
                 self._gpu_all_on_gpu = True
                 self._gpu_transmissive_n_zero_t_boundaries = []
                 self._gpu_time_boundaries = []
+                self._gpu_absorbing_wave_boundaries = []
+                self._gpu_characteristic_wave_boundaries = []
+                self._gpu_flather_boundaries = []
 
                 for tag, B in self.boundary_map.items():
                     if B is not None:
@@ -2039,6 +2140,12 @@ class Domain(Generic_Domain):
                             self._gpu_transmissive_n_zero_t_boundaries.append(B)
                         elif btype == 'Time_boundary':
                             self._gpu_time_boundaries.append(B)
+                        elif btype == 'Absorbing_wave_boundary':
+                            self._gpu_absorbing_wave_boundaries.append(B)
+                        elif btype == 'Characteristic_wave_boundary':
+                            self._gpu_characteristic_wave_boundaries.append(B)
+                        elif btype == 'Flather_external_stage_zero_velocity_boundary':
+                            self._gpu_flather_boundaries.append(B)
 
                 # Set up boundary edge sync if we have ANY CPU-evaluated boundaries
                 if not self._gpu_all_on_gpu:
@@ -2072,6 +2179,35 @@ class Domain(Generic_Domain):
                 # Handle File_boundary / Field_boundary (per-edge values from SWW interpolation)
                 set_file_boundary_values_from_domain(gpu_dom, self)
                 evaluate_file_boundary_gpu(gpu_dom)
+
+                # Handle Absorbing_wave_boundary (scalar wave stage updated each timestep)
+                for B in self._gpu_absorbing_wave_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        wave_val = float(value)
+                    except (TypeError, ValueError):
+                        wave_val = float(value[0])
+                    set_absorbing_wave_value(gpu_dom, wave_val)
+                evaluate_absorbing_wave_boundary_gpu(gpu_dom)
+
+                # Handle Characteristic_wave_boundary (scalar perturbation updated each timestep)
+                for B in self._gpu_characteristic_wave_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        perturb = float(value)
+                    except (TypeError, ValueError):
+                        perturb = float(value[0])
+                    set_characteristic_wave_value(gpu_dom, perturb)
+                evaluate_characteristic_wave_boundary_gpu(gpu_dom)
+
+                for B in self._gpu_flather_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        stage_val = float(value)
+                    except (TypeError, ValueError):
+                        stage_val = float(value[0])
+                    set_flather_value(gpu_dom, stage_val)
+                evaluate_flather_boundary_gpu(gpu_dom)
             else:
                 # Some boundaries need CPU - sync edge values, evaluate on CPU, sync back
                 boundary_edge_sync(gpu_dom)
@@ -2502,11 +2638,11 @@ class Domain(Generic_Domain):
 
 
     def evolve(self,
-               yieldstep=None,
-               outputstep=None,
-               finaltime=None,
-               duration=None,
-               skip_initial_step=False):
+               yieldstep: float | None = None,
+               outputstep: float | None = None,
+               finaltime: float | DateTime | None = None,
+               duration: float | None = None,
+               skip_initial_step: bool = False) -> Iterator[float]:
         """Evolve method from Domain class.
 
         Parameters
@@ -2624,7 +2760,7 @@ class Domain(Generic_Domain):
         nvtxRangePop()
 
 
-    def initialise_storage(self):
+    def initialise_storage(self) -> None:
         """Create and initialise self.writer object for storing data.
         Also, save x,y and bed elevation
         """
@@ -2640,7 +2776,7 @@ class Domain(Generic_Domain):
         nvtxRangePop()
 
 
-    def store_timestep(self):
+    def store_timestep(self) -> None:
         """Store time dependent quantities and time.
 
         Precondition:
@@ -2652,7 +2788,7 @@ class Domain(Generic_Domain):
         nvtxRangePop()
 
 
-    def sww_merge(self,  *args, **kwargs):
+    def sww_merge(self, *args, **kwargs) -> None:
         """Dummy function for sequential algorithms where the sww produced is the final products.
 
         For parallel runs, a similarly named routine in parallel_shallow_water will merge all the
@@ -2875,7 +3011,8 @@ class Domain(Generic_Domain):
 
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
         if not hasattr(self, '_gpu_boundary_info_initialized'):
             self._gpu_cpu_tags = []
@@ -2883,6 +3020,8 @@ class Domain(Generic_Domain):
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []
             self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -2895,6 +3034,10 @@ class Domain(Generic_Domain):
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
                         self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
@@ -2925,6 +3068,31 @@ class Domain(Generic_Domain):
                 evaluate_time_boundary_gpu(gpu_dom)
                 set_file_boundary_values_from_domain(gpu_dom, self)
                 evaluate_file_boundary_gpu(gpu_dom)
+                for B in self._gpu_absorbing_wave_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        wave_val = float(value)
+                    except (TypeError, ValueError):
+                        wave_val = float(value[0])
+                    set_absorbing_wave_value(gpu_dom, wave_val)
+                evaluate_absorbing_wave_boundary_gpu(gpu_dom)
+                for B in self._gpu_characteristic_wave_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        perturb = float(value)
+                    except (TypeError, ValueError):
+                        perturb = float(value[0])
+                    set_characteristic_wave_value(gpu_dom, perturb)
+                evaluate_characteristic_wave_boundary_gpu(gpu_dom)
+
+                for B in self._gpu_flather_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        stage_val = float(value)
+                    except (TypeError, ValueError):
+                        stage_val = float(value[0])
+                    set_flather_value(gpu_dom, stage_val)
+                evaluate_flather_boundary_gpu(gpu_dom)
             else:
                 boundary_edge_sync(gpu_dom)
                 for tag in self.tag_boundary_cells:
@@ -2969,13 +3137,17 @@ class Domain(Generic_Domain):
             set_transmissive_n_zero_t_stage,
             set_time_boundary_values,
             set_file_boundary_values_from_domain,
+            set_absorbing_wave_value,
+            set_characteristic_wave_value,
+            set_flather_value,
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
 
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
         if not hasattr(self, '_gpu_boundary_info_initialized'):
             self._gpu_cpu_tags = []
@@ -2983,6 +3155,8 @@ class Domain(Generic_Domain):
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []
             self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -2995,6 +3169,10 @@ class Domain(Generic_Domain):
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
                         self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 print("WARNING: C ADER-2 loop requires all GPU-supported boundary types")
@@ -3019,6 +3197,30 @@ class Domain(Generic_Domain):
             set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
 
         set_file_boundary_values_from_domain(gpu_dom, self)
+
+        for B in self._gpu_absorbing_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                wave_val = float(value)
+            except (TypeError, ValueError):
+                wave_val = float(value[0])
+            set_absorbing_wave_value(gpu_dom, wave_val)
+
+        for B in self._gpu_characteristic_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                perturb = float(value)
+            except (TypeError, ValueError):
+                perturb = float(value[0])
+            set_characteristic_wave_value(gpu_dom, perturb)
+
+        for B in self._gpu_flather_boundaries:
+            value = B.get_boundary_values()
+            try:
+                stage_val = float(value)
+            except (TypeError, ValueError):
+                stage_val = float(value[0])
+            set_flather_value(gpu_dom, stage_val)
 
         remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
         if finaltime is not None:
@@ -3059,6 +3261,12 @@ class Domain(Generic_Domain):
             evaluate_time_boundary_gpu,
             set_file_boundary_values_from_domain,
             evaluate_file_boundary_gpu,
+            set_absorbing_wave_value,
+            evaluate_absorbing_wave_boundary_gpu,
+            set_characteristic_wave_value,
+            evaluate_characteristic_wave_boundary_gpu,
+            set_flather_value,
+            evaluate_flather_boundary_gpu,
         )
         import numpy as np
 
@@ -3067,7 +3275,8 @@ class Domain(Generic_Domain):
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
         # Lazy init: identify which boundaries need CPU evaluation vs GPU
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3076,6 +3285,8 @@ class Domain(Generic_Domain):
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []
             self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -3088,6 +3299,10 @@ class Domain(Generic_Domain):
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
                         self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
@@ -3126,6 +3341,31 @@ class Domain(Generic_Domain):
             evaluate_time_boundary_gpu(gpu_dom)
             set_file_boundary_values_from_domain(gpu_dom, self)
             evaluate_file_boundary_gpu(gpu_dom)
+            for B in self._gpu_absorbing_wave_boundaries:
+                value = B.get_boundary_values()
+                try:
+                    wave_val = float(value)
+                except (TypeError, ValueError):
+                    wave_val = float(value[0])
+                set_absorbing_wave_value(gpu_dom, wave_val)
+            evaluate_absorbing_wave_boundary_gpu(gpu_dom)
+            for B in self._gpu_characteristic_wave_boundaries:
+                value = B.get_boundary_values()
+                try:
+                    perturb = float(value)
+                except (TypeError, ValueError):
+                    perturb = float(value[0])
+                set_characteristic_wave_value(gpu_dom, perturb)
+            evaluate_characteristic_wave_boundary_gpu(gpu_dom)
+
+            for B in self._gpu_flather_boundaries:
+                value = B.get_boundary_values()
+                try:
+                    stage_val = float(value)
+                except (TypeError, ValueError):
+                    stage_val = float(value[0])
+                set_flather_value(gpu_dom, stage_val)
+            evaluate_flather_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -3179,6 +3419,31 @@ class Domain(Generic_Domain):
             evaluate_time_boundary_gpu(gpu_dom)
             set_file_boundary_values_from_domain(gpu_dom, self)
             evaluate_file_boundary_gpu(gpu_dom)
+            for B in self._gpu_absorbing_wave_boundaries:
+                value = B.get_boundary_values()
+                try:
+                    wave_val = float(value)
+                except (TypeError, ValueError):
+                    wave_val = float(value[0])
+                set_absorbing_wave_value(gpu_dom, wave_val)
+            evaluate_absorbing_wave_boundary_gpu(gpu_dom)
+            for B in self._gpu_characteristic_wave_boundaries:
+                value = B.get_boundary_values()
+                try:
+                    perturb = float(value)
+                except (TypeError, ValueError):
+                    perturb = float(value[0])
+                set_characteristic_wave_value(gpu_dom, perturb)
+            evaluate_characteristic_wave_boundary_gpu(gpu_dom)
+
+            for B in self._gpu_flather_boundaries:
+                value = B.get_boundary_values()
+                try:
+                    stage_val = float(value)
+                except (TypeError, ValueError):
+                    stage_val = float(value[0])
+                set_flather_value(gpu_dom, stage_val)
+            evaluate_flather_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -3217,6 +3482,9 @@ class Domain(Generic_Domain):
             set_transmissive_n_zero_t_stage,
             set_time_boundary_values,
             set_file_boundary_values_from_domain,
+            set_absorbing_wave_value,
+            set_characteristic_wave_value,
+            set_flather_value,
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
@@ -3224,7 +3492,8 @@ class Domain(Generic_Domain):
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
         # Lazy init: identify which boundaries need special handling
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3233,6 +3502,8 @@ class Domain(Generic_Domain):
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []
             self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -3245,6 +3516,10 @@ class Domain(Generic_Domain):
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
                         self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 print("WARNING: C RK2 loop requires all GPU-supported boundary types")
@@ -3272,6 +3547,30 @@ class Domain(Generic_Domain):
             set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
 
         set_file_boundary_values_from_domain(gpu_dom, self)
+
+        for B in self._gpu_absorbing_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                wave_val = float(value)
+            except (TypeError, ValueError):
+                wave_val = float(value[0])
+            set_absorbing_wave_value(gpu_dom, wave_val)
+
+        for B in self._gpu_characteristic_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                perturb = float(value)
+            except (TypeError, ValueError):
+                perturb = float(value[0])
+            set_characteristic_wave_value(gpu_dom, perturb)
+
+        for B in self._gpu_flather_boundaries:
+            value = B.get_boundary_values()
+            try:
+                stage_val = float(value)
+            except (TypeError, ValueError):
+                stage_val = float(value[0])
+            set_flather_value(gpu_dom, stage_val)
 
         # Compute max allowed timestep (respecting yieldstep and finaltime)
         # This mirrors the logic in update_timestep()
@@ -3321,6 +3620,12 @@ class Domain(Generic_Domain):
             evaluate_time_boundary_gpu,
             set_file_boundary_values_from_domain,
             evaluate_file_boundary_gpu,
+            set_absorbing_wave_value,
+            evaluate_absorbing_wave_boundary_gpu,
+            set_characteristic_wave_value,
+            evaluate_characteristic_wave_boundary_gpu,
+            set_flather_value,
+            evaluate_flather_boundary_gpu,
         )
         import numpy as np
 
@@ -3329,7 +3634,8 @@ class Domain(Generic_Domain):
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
         # Lazy init: identify which boundaries need CPU evaluation vs GPU
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3338,6 +3644,8 @@ class Domain(Generic_Domain):
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []
             self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -3350,6 +3658,10 @@ class Domain(Generic_Domain):
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
                         self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
@@ -3379,6 +3691,31 @@ class Domain(Generic_Domain):
                 evaluate_time_boundary_gpu(gpu_dom)
                 set_file_boundary_values_from_domain(gpu_dom, self)
                 evaluate_file_boundary_gpu(gpu_dom)
+                for B in self._gpu_absorbing_wave_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        wave_val = float(value)
+                    except (TypeError, ValueError):
+                        wave_val = float(value[0])
+                    set_absorbing_wave_value(gpu_dom, wave_val)
+                evaluate_absorbing_wave_boundary_gpu(gpu_dom)
+                for B in self._gpu_characteristic_wave_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        perturb = float(value)
+                    except (TypeError, ValueError):
+                        perturb = float(value[0])
+                    set_characteristic_wave_value(gpu_dom, perturb)
+                evaluate_characteristic_wave_boundary_gpu(gpu_dom)
+
+                for B in self._gpu_flather_boundaries:
+                    value = B.get_boundary_values()
+                    try:
+                        stage_val = float(value)
+                    except (TypeError, ValueError):
+                        stage_val = float(value[0])
+                    set_flather_value(gpu_dom, stage_val)
+                evaluate_flather_boundary_gpu(gpu_dom)
             else:
                 boundary_edge_sync(gpu_dom)
                 for tag in self.tag_boundary_cells:
@@ -3470,6 +3807,9 @@ class Domain(Generic_Domain):
             set_transmissive_n_zero_t_stage,
             set_time_boundary_values,
             set_file_boundary_values_from_domain,
+            set_absorbing_wave_value,
+            set_characteristic_wave_value,
+            set_flather_value,
         )
 
         gpu_dom = self.gpu_interface.gpu_dom
@@ -3477,7 +3817,8 @@ class Domain(Generic_Domain):
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
-                              'Time_boundary', 'File_boundary', 'Field_boundary'}
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
 
         # Lazy init: identify which boundaries need special handling
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3486,6 +3827,8 @@ class Domain(Generic_Domain):
             cpu_boundary_types = []
             self._gpu_transmissive_n_zero_t_boundaries = []
             self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -3498,6 +3841,10 @@ class Domain(Generic_Domain):
                         self._gpu_transmissive_n_zero_t_boundaries.append(B)
                     elif btype == 'Time_boundary':
                         self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 print("WARNING: C RK3 loop requires all GPU-supported boundary types")
@@ -3524,6 +3871,30 @@ class Domain(Generic_Domain):
             set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
 
         set_file_boundary_values_from_domain(gpu_dom, self)
+
+        for B in self._gpu_absorbing_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                wave_val = float(value)
+            except (TypeError, ValueError):
+                wave_val = float(value[0])
+            set_absorbing_wave_value(gpu_dom, wave_val)
+
+        for B in self._gpu_characteristic_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                perturb = float(value)
+            except (TypeError, ValueError):
+                perturb = float(value[0])
+            set_characteristic_wave_value(gpu_dom, perturb)
+
+        for B in self._gpu_flather_boundaries:
+            value = B.get_boundary_values()
+            try:
+                stage_val = float(value)
+            except (TypeError, ValueError):
+                stage_val = float(value[0])
+            set_flather_value(gpu_dom, stage_val)
 
         # Compute max allowed timestep (respecting yieldstep and finaltime)
         remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
@@ -3822,11 +4193,11 @@ class Domain(Generic_Domain):
             super().update_ghosts(quantities)
 
     def timestepping_statistics(self,
-                                track_speeds=False,
-                                triangle_id=None,
-                                relative_time=False,
-                                time_unit='sec',
-                                datetime=False):
+                                track_speeds: bool = False,
+                                triangle_id: int | None = None,
+                                relative_time: bool = False,
+                                time_unit: str = 'sec',
+                                datetime: bool = False) -> str:
         """Return string with time stepping statistics for printing or logging
 
         Parameters
@@ -3973,7 +4344,7 @@ class Domain(Generic_Domain):
 
         return msg
 
-    def print_timestepping_statistics(self, *args, **kwargs):
+    def print_timestepping_statistics(self, *args, **kwargs) -> None:
         """Print time stepping statistics.
 
         Parameters
@@ -3997,7 +4368,7 @@ class Domain(Generic_Domain):
         print(msg, flush=True)
 
 
-    def compute_boundary_flows(self):
+    def compute_boundary_flows(self) -> tuple[dict[str, float], float, float]:
         """Compute boundary flows at current timestep.
 
         Computes the total inflow and outflow across the domain boundary,
@@ -4067,7 +4438,7 @@ class Domain(Generic_Domain):
         return boundary_flows, total_boundary_inflow, total_boundary_outflow
 
 
-    def compute_total_volume(self):
+    def compute_total_volume(self) -> float:
         """
         Compute total volume (m^3) of water in entire domain
 
@@ -4076,7 +4447,7 @@ class Domain(Generic_Domain):
         return self.get_water_volume()
 
 
-    def volumetric_balance_statistics(self):
+    def volumetric_balance_statistics(self) -> str:
         """Create volumetric balance report suitable for printing or logging.
         """
 
@@ -4108,11 +4479,12 @@ class Domain(Generic_Domain):
 
         return message
 
-    def print_volumetric_balance_statistics(self):
+    def print_volumetric_balance_statistics(self) -> None:
 
         print (self.volumetric_balance_statistics())
 
-    def report_water_volume_statistics(self, verbose=True, returnStats=False):
+    def report_water_volume_statistics(self, verbose: bool = True,
+                                       returnStats: bool = False) -> list[float] | None:
         """
         Compute the volume, boundary flux integral, fractional step volume integral, and their difference
 
@@ -4146,7 +4518,7 @@ class Domain(Generic_Domain):
         else:
             return
 
-    def report_cells_with_small_local_timestep(self, threshold_depth=None):
+    def report_cells_with_small_local_timestep(self, threshold_depth: float | None = None) -> None:
         """
         Convenience function to print the locations of cells
         with a small local timestep.
@@ -4193,36 +4565,36 @@ class Domain(Generic_Domain):
 # For full triangles it is possible to enquire self.tri_full_flag == True
 # =======================================================================
 
-    def get_number_of_full_triangles(self, *args, **kwargs):
+    def get_number_of_full_triangles(self, *args, **kwargs) -> int:
         return self.number_of_full_triangles
 
-    def get_full_centroid_coordinates(self, *args, **kwargs):
+    def get_full_centroid_coordinates(self, *args, **kwargs) -> num.ndarray:
         C = self.mesh.get_centroid_coordinates(*args, **kwargs)
         return C[:self.number_of_full_triangles, :]
 
-    def get_full_vertex_coordinates(self, *args, **kwargs):
+    def get_full_vertex_coordinates(self, *args, **kwargs) -> num.ndarray:
         V = self.mesh.get_vertex_coordinates(*args, **kwargs)
         return V[:3*self.number_of_full_triangles,:]
 
-    def get_full_triangles(self, *args, **kwargs):
+    def get_full_triangles(self, *args, **kwargs) -> num.ndarray:
         T = self.mesh.get_triangles(*args, **kwargs)
         return T[:self.number_of_full_triangles,:]
 
-    def get_full_nodes(self, *args, **kwargs):
+    def get_full_nodes(self, *args, **kwargs) -> num.ndarray:
         N = self.mesh.get_nodes(*args, **kwargs)
         return N[:self.number_of_full_nodes,:]
 
-    def get_tri_map(self):
+    def get_tri_map(self) -> num.ndarray | None:
         return self.tri_map
 
-    def get_inv_tri_map(self):
+    def get_inv_tri_map(self) -> num.ndarray | None:
         return self.inv_tri_map
 
 # ==============================================================================
 # Multiprocessor Mode (1=openmp, 2=cupy (in development))
 # ==============================================================================
 
-    def set_multiprocessor_mode(self, multiprocessor_mode=1):
+    def set_multiprocessor_mode(self, multiprocessor_mode: int = 1) -> None:
         """
         Set multiprocessor mode
          1. openmp - Python RK loop (use_c_rk_loop=False)
@@ -4258,7 +4630,7 @@ class Domain(Generic_Domain):
             DeprecationWarning, stacklevel=2)
         self.use_c_rk_loop = value
 
-    def get_multiprocessor_mode(self):
+    def get_multiprocessor_mode(self) -> int:
         """
         Get multiprocessor mode
 
@@ -4267,7 +4639,7 @@ class Domain(Generic_Domain):
         """
         return self.multiprocessor_mode
 
-    def set_omp_num_threads(self, omp_num_threads=None, verbose=True):
+    def set_omp_num_threads(self, omp_num_threads: int | None = None, verbose: bool = True) -> None:
         """
         Set the number of OpenMP threads to use for multithread processing.
         If OMP_NUM_THREADS is not set, this will set it to the specified

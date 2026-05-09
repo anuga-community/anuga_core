@@ -47,7 +47,9 @@ class GPU_OMP_interface:
         from anuga.shallow_water.sw_domain_gpu_ext import (
             init_gpu_domain, map_to_gpu,
             init_reflective_boundary, init_dirichlet_boundary, init_transmissive_boundary,
-            init_transmissive_n_zero_t_boundary, init_time_boundary
+            init_transmissive_n_zero_t_boundary, init_time_boundary,
+            init_absorbing_wave_boundary, init_characteristic_wave_boundary,
+            init_flather_boundary,
         )
 
         # Ensure work arrays (including edge_flux_type) are allocated before
@@ -96,7 +98,9 @@ class GPU_OMP_interface:
 
         from anuga.shallow_water.sw_domain_gpu_ext import (
             init_reflective_boundary, init_dirichlet_boundary, init_transmissive_boundary,
-            init_transmissive_n_zero_t_boundary, init_time_boundary, init_file_boundary
+            init_transmissive_n_zero_t_boundary, init_time_boundary, init_file_boundary,
+            init_absorbing_wave_boundary, init_characteristic_wave_boundary,
+            init_flather_boundary,
         )
 
         init_reflective_boundary(self.gpu_dom, self.domain)
@@ -105,6 +109,9 @@ class GPU_OMP_interface:
         init_transmissive_n_zero_t_boundary(self.gpu_dom, self.domain)
         init_time_boundary(self.gpu_dom, self.domain)
         init_file_boundary(self.gpu_dom, self.domain)
+        init_absorbing_wave_boundary(self.gpu_dom, self.domain)
+        init_characteristic_wave_boundary(self.gpu_dom, self.domain)
+        init_flather_boundary(self.gpu_dom, self.domain)
 
         self.boundaries_initialized = True
 

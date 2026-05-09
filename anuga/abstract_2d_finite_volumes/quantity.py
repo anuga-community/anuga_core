@@ -1,9 +1,18 @@
 
 
 
+from __future__ import annotations
+
 import types
 import os.path
+from typing import TYPE_CHECKING
+from collections.abc import Callable
+from numpy.typing import ArrayLike
 from anuga.coordinate_transforms.geo_reference import Geo_reference
+
+if TYPE_CHECKING:
+    from anuga.abstract_2d_finite_volumes.generic_domain import Generic_Domain
+    from anuga.geospatial_data.geospatial_data import Geospatial_data as GeospatialData
 
 from anuga.utilities.numerical_tools import ensure_numeric, is_scalar
 from anuga.geometry.polygon import inside_polygon
@@ -26,8 +35,9 @@ class Quantity:
 
     counter = 0
 
-    def __init__(self, domain, vertex_values=None, name=None, register=False,
-                 qty_type=None):
+    def __init__(self, domain: Generic_Domain, vertex_values: ArrayLike | None = None,
+                 name: str | None = None, register: bool = False,
+                 qty_type: str | None = None) -> None:
         """Create Quantity object
 
         :param domain: Associated domain structure. Required.
@@ -163,7 +173,7 @@ class Quantity:
     # ------------------------------------------------------------------
 
     @property
-    def vertex_values(self):
+    def vertex_values(self) -> num.ndarray:
         if self._vertex_values is None:
             N = self.centroid_values.shape[0]
             if self._qty_type == 'coordinate' and self.edge_values is not None:
@@ -183,7 +193,7 @@ class Quantity:
         return self._vertex_values
 
     @vertex_values.setter
-    def vertex_values(self, value):
+    def vertex_values(self, value: ArrayLike | None) -> None:
         if value is None:
             self._vertex_values = None
         else:
@@ -196,7 +206,7 @@ class Quantity:
     # ------------------------------------------------------------------
 
     @property
-    def x_gradient(self):
+    def x_gradient(self) -> num.ndarray:
         if self._x_gradient is None:
             N = self.centroid_values.shape[0]
             self._x_gradient = num.zeros(N, float)
@@ -207,7 +217,7 @@ class Quantity:
         self._x_gradient = value
 
     @property
-    def y_gradient(self):
+    def y_gradient(self) -> num.ndarray:
         if self._y_gradient is None:
             N = self.centroid_values.shape[0]
             self._y_gradient = num.zeros(N, float)
@@ -218,7 +228,7 @@ class Quantity:
         self._y_gradient = value
 
     @property
-    def phi(self):
+    def phi(self) -> num.ndarray:
         if self._phi is None:
             N = self.centroid_values.shape[0]
             self._phi = num.zeros(N, float)
@@ -232,10 +242,10 @@ class Quantity:
     # Methods for operator overloading
     ############################################################################
 
-    def __len__(self):
+    def __len__(self) -> int:
         return int(self.centroid_values.shape[0])
 
-    def __neg__(self):
+    def __neg__(self) -> Quantity:
         """Negate all values in this quantity giving meaning to the
         expression -Q where Q is an instance of class Quantity
         """
@@ -244,7 +254,7 @@ class Quantity:
         Q.set_values(-self.vertex_values)
         return Q
 
-    def __add__(self, other):
+    def __add__(self, other: Quantity | ArrayLike | float) -> Quantity:
         """Add to self anything that could populate a quantity
 
         E.g other can be a constant, an array, a function, another quantity
@@ -259,16 +269,16 @@ class Quantity:
         result.set_values(self.vertex_values + Q.vertex_values)
         return result
 
-    def __radd__(self, other):
+    def __radd__(self, other: Quantity | ArrayLike | float) -> Quantity:
         """Handle cases like 7+Q, where Q is an instance of class Quantity
         """
 
         return self + other
 
-    def __sub__(self, other):
+    def __sub__(self, other: Quantity | ArrayLike | float) -> Quantity:
         return self + -other            # Invoke self.__neg__()
 
-    def __mul__(self, other):
+    def __mul__(self, other: Quantity | ArrayLike | float) -> Quantity:
         """Multiply self with anything that could populate a quantity
 
         E.g other can be a constant, an array, a function, another quantity
@@ -294,13 +304,13 @@ class Quantity:
 
         return result
 
-    def __rmul__(self, other):
+    def __rmul__(self, other: Quantity | ArrayLike | float) -> Quantity:
         """Handle cases like 3*Q, where Q is an instance of class Quantity
         """
 
         return self * other
 
-    def __truediv__(self, other):
+    def __truediv__(self, other: Quantity | ArrayLike | float) -> Quantity:
         """Divide self with anything that could populate a quantity
 
         E.g other can be a constant, an array, a function, another quantity
@@ -329,13 +339,13 @@ class Quantity:
 
         return result
 
-    def __rdiv__(self, other):
+    def __rdiv__(self, other: Quantity | ArrayLike | float) -> Quantity:
         """Handle cases like 3/Q, where Q is an instance of class Quantity
         """
 
         return self / other
 
-    def __pow__(self, other):
+    def __pow__(self, other: float) -> Quantity:
         """Raise quantity to (numerical) power
 
         As with __mul__ vertex values are processed entry by entry
@@ -663,7 +673,7 @@ class Quantity:
 
 
 
-    def set_name(self, name=None):
+    def set_name(self, name: str | None = None) -> None:
 
         if name is not None:
             self.name = name
@@ -672,12 +682,12 @@ class Quantity:
 
 
 
-    def get_name(self):
+    def get_name(self) -> str:
 
         return self.name
 
 
-    def set_beta(self, beta):
+    def set_beta(self, beta: float) -> None:
         """Set default beta value for limiting """
 
         if beta < 0.0:
@@ -690,7 +700,7 @@ class Quantity:
     ##
     # @brief Get the current beta value.
     # @return The current beta value.
-    def get_beta(self):
+    def get_beta(self) -> float:
         """Get default beta value for limiting"""
 
         return self.beta
@@ -700,7 +710,7 @@ class Quantity:
     ##
     # @brief Set boundary values using a function or array or scalar
     # @param numeric: function or array or scalar
-    def set_boundary_values(self, numeric = 0.0):
+    def set_boundary_values(self, numeric: ArrayLike | Callable | float = 0.0) -> None:
         """Set boundary values """
 
         if isinstance(numeric, (list, num.ndarray)):
@@ -716,7 +726,7 @@ class Quantity:
                 raise Exception(msg)
             self._set_boundary_values_from_constant(numeric)
 
-    def set_boundary_values_from_edges(self):
+    def set_boundary_values_from_edges(self) -> None:
         """Set boundary values by simply extrapolating
         from the cells
         """
@@ -829,20 +839,21 @@ class Quantity:
     # Public interface for setting quantity values
     #---------------------------------------------
 
-    def set_values(self, numeric=None,         # List, numeric array or constant
-                         quantity=None,        # Another quantity
-                         function=None,        # Callable object: f(x,y)
-                         geospatial_data=None, # Arbitrary dataset
-                         filename=None,
-                         raster=None,          # raster of form (x,y,Z)
-                         attribute_name=None,  # Input from file
-                         alpha=None,
-                         location='vertices',
-                         polygon=None,
-                         indices=None,
-                         smooth=False,
-                         verbose=False,
-                         use_cache=False):
+    def set_values(self,
+                   numeric: ArrayLike | Callable | Quantity | float | str | None = None,
+                   quantity: Quantity | None = None,
+                   function: Callable | None = None,
+                   geospatial_data: GeospatialData | None = None,
+                   filename: str | None = None,
+                   raster: tuple | None = None,
+                   attribute_name: str | None = None,
+                   alpha: float | str | None = None,
+                   location: str = 'vertices',
+                   polygon: ArrayLike | None = None,
+                   indices: list[int] | num.ndarray | None = None,
+                   smooth: bool = False,
+                   verbose: bool = False,
+                   use_cache: bool = False) -> None:
         """Set values for quantity based on different sources.
 
         numeric:
@@ -1894,7 +1905,8 @@ class Quantity:
             # Cleanup centroid values
             self.interpolate()
 
-    def get_extremum_index(self, mode=None, indices=None):
+    def get_extremum_index(self, mode: str | None = None,
+                           indices: list[int] | num.ndarray | None = None) -> int:
         """Return index for maximum or minimum value of quantity (on centroids)
 
         Optional arguments:
@@ -1927,12 +1939,12 @@ class Quantity:
         else:
             return indices[i]
 
-    def get_maximum_index(self, indices=None):
+    def get_maximum_index(self, indices: list[int] | num.ndarray | None = None) -> int:
         """See get extreme index for details"""
 
         return self.get_extremum_index(mode='max', indices=indices)
 
-    def get_maximum_value(self, indices=None):
+    def get_maximum_value(self, indices: list[int] | num.ndarray | None = None) -> float:
         """Return maximum value of quantity (on centroids)
 
         Optional argument:
@@ -1950,7 +1962,7 @@ class Quantity:
 
         return V[i]
 
-    def get_maximum_location(self, indices=None):
+    def get_maximum_location(self, indices: list[int] | num.ndarray | None = None) -> tuple[float, float]:
         """Return location of maximum value of quantity (on centroids)
 
         Optional argument:
@@ -1972,12 +1984,12 @@ class Quantity:
 
         return x, y
 
-    def get_minimum_index(self, indices=None):
+    def get_minimum_index(self, indices: list[int] | num.ndarray | None = None) -> int:
         """See get extreme index for details"""
 
         return self.get_extremum_index(mode='min', indices=indices)
 
-    def get_minimum_value(self, indices=None):
+    def get_minimum_value(self, indices: list[int] | num.ndarray | None = None) -> float:
         """Return minimum value of quantity (on centroids)
 
         Optional argument:
@@ -1995,7 +2007,7 @@ class Quantity:
         return V[i]
 
 
-    def get_minimum_location(self, indices=None):
+    def get_minimum_location(self, indices: list[int] | num.ndarray | None = None) -> tuple[float, float]:
         """Return location of minimum value of quantity (on centroids)
 
         Optional argument:
@@ -2018,9 +2030,9 @@ class Quantity:
         return x, y
 
     def get_interpolated_values(self,
-                                interpolation_points,
-                                use_cache=False,
-                                verbose=False):
+                                interpolation_points: ArrayLike | GeospatialData,
+                                use_cache: bool = False,
+                                verbose: bool = False) -> num.ndarray:
         """Get values at interpolation points
 
         The argument interpolation points must be given as either a
@@ -2062,11 +2074,11 @@ class Quantity:
         return result
 
     def get_values(self,
-                   interpolation_points=None,
-                   location='vertices',
-                   indices=None,
-                   use_cache=False,
-                   verbose=False):
+                   interpolation_points: ArrayLike | GeospatialData | None = None,
+                   location: str = 'vertices',
+                   indices: list[int] | num.ndarray | None = None,
+                   use_cache: bool = False,
+                   verbose: bool = False) -> num.ndarray:
         """Get values for quantity
 
         Extract values for quantity as a numeric array.
@@ -2179,10 +2191,10 @@ class Quantity:
                 return num.take(self.vertex_values, indices, axis=0)
 
     def set_vertex_values(self,
-                          A,
-                          indices=None,
-                          use_cache=False,
-                          verbose=False):
+                          A: ArrayLike,
+                          indices: list[int] | num.ndarray | None = None,
+                          use_cache: bool = False,
+                          verbose: bool = False) -> None:
         """Set vertex values for all unique vertices based on input array A
         which has one entry per unique vertex, i.e. one value for each row in
         array self.domain.nodes.
@@ -2239,7 +2251,7 @@ class Quantity:
         set_vertex_values_c(self, num.array(vertex_list), A)
         self.interpolate()
 
-    def smooth_vertex_values(self, use_cache=False, verbose=False):
+    def smooth_vertex_values(self, use_cache: bool = False, verbose: bool = False) -> None:
         """Smooths vertex values."""
 
         A, V = self.get_vertex_values(xy=False, smooth=True)
@@ -2251,7 +2263,9 @@ class Quantity:
     # Methods for outputting model results
     ############################################################################
 
-    def get_vertex_values(self, xy=True, smooth=None, centroid_averaging=None, precision=None):
+    def get_vertex_values(self, xy: bool = True, smooth: bool | None = None,
+                          centroid_averaging: bool | None = None,
+                          precision: type | None = None) -> tuple[num.ndarray, num.ndarray] | tuple[num.ndarray, num.ndarray, num.ndarray, num.ndarray]:
         """Return vertex values like an OBJ format i.e. one value per node.
 
         The vertex values are returned as one sequence in the 1D float array A.
@@ -2351,7 +2365,8 @@ class Quantity:
             self._x_gradient[:] = 0.0
             self._y_gradient[:] = 0.0
 
-    def get_integral(self, full_only=True, region=None, indices=None):
+    def get_integral(self, full_only: bool = True, region=None,
+                     indices: list[int] | num.ndarray | None = None) -> float:
 
         """Compute the integral of quantity across entire domain,
         or over a region. Eg
@@ -2382,7 +2397,7 @@ class Quantity:
             return num.sum(areas[indices]*self.centroid_values[indices])
 
 
-    def get_gradients(self):
+    def get_gradients(self) -> tuple[num.ndarray, num.ndarray]:
         """Provide gradients. Use compute_gradients first."""
 
         return self.x_gradient, self.y_gradient

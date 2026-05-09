@@ -338,10 +338,12 @@ offmesh1, 50.0, 1.0\n\
 offmesh2, 50.5, 20.25\n")
         file_id.close()
 
-        points_files = ['offmesh1.csv', 'offmesh2.csv']
+        # sww2csv_gauges uses out_name='gauge_' prefix by default
+        points_files = ['gauge_offmesh1.csv', 'gauge_offmesh2.csv']
 
         for point_filename in points_files:
-            if os.path.exists(point_filename): os.remove(point_filename)
+            if os.path.exists(point_filename):
+                os.remove(point_filename)
 
         sww2csv_gauges(self.sww.filename,
                             points_file,
@@ -349,11 +351,20 @@ offmesh2, 50.5, 20.25\n")
                             use_cache=False,
                             verbose=False)
 
+        # Off-mesh gauges produce header-only CSV files; check no data rows written
         for point_filename in points_files:
-            assert not os.path.exists(point_filename)
-
+            if os.path.exists(point_filename):
+                with open(point_filename) as f:
+                    lines = f.readlines()
+                assert len(lines) <= 1, \
+                    f'{point_filename} should have no data rows for off-mesh gauge'
 
         # clean up
+        for point_filename in points_files:
+            try:
+                os.remove(point_filename)
+            except OSError:
+                pass
         try:
             os.remove(points_file)
         except OSError:

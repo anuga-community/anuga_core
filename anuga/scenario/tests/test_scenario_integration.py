@@ -148,6 +148,7 @@ class TestSetupCulverts(unittest.TestCase):
     def setUp(self):
         self.tmpdir = tempfile.mkdtemp()
         self.domain = _make_domain()
+        self.domain.set_datadir(self.tmpdir)
         setup_initial_conditions(self.domain, _make_initial_project(
             elevation=0.0, stage=0.5))
 

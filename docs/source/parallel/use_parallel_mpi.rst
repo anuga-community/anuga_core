@@ -328,3 +328,112 @@ partitioning.  Below that threshold, the overhead of ghost-cell
 communication and MPI synchronisation outweighs the computational
 saving.  Some experimentation for your specific mesh and hardware is
 always worthwhile.
+
+
+.. _load_balance_statistics:
+
+Load balance monitoring
+------------------------
+
+METIS partitions the mesh so that each rank owns roughly the same number
+of triangles.  However, in inundation simulations the computational cost
+per triangle depends on whether it is *wet* or *dry*:
+
+- **Wet triangle**: full flux computation, extrapolation, friction update.
+- **Dry triangle**: flux computation is skipped (``optimise_dry_cells``);
+  far cheaper.
+
+As the inundation front advances, some ranks end up owning mostly wet
+triangles while others own mostly dry coastal-plain triangles.  The dry
+ranks finish their compute phase early and then sit idle in the
+``MPI_Allreduce`` timestep-synchronisation barrier waiting for the wet
+ranks.  This idle time appears in ``domain.communication_reduce_time`` and
+is a direct measure of load imbalance caused by the wet/dry distribution.
+
+``load_balance_statistics`` and ``print_load_balance_statistics`` gather
+these per-rank numbers via ``MPI_Allgather`` and report them on rank 0.
+
+.. code-block:: python
+
+   for t in domain.evolve(yieldstep=60.0, finaltime=3600.0):
+       if anuga.myid == 0:
+           domain.print_timestepping_statistics()
+       domain.print_load_balance_statistics()   # all ranks participate
+
+Example output for a 2-rank inundation run where rank 0 owns the wet
+half and rank 1 owns the dry coastal floodplain::
+
+   Load balance statistics=========================================
+   Rank    n_full   n_ghost    wet%  ghost%  compute(s)   comm(s)  Allreduce_wait(s)
+   ------------------------------------------------------------------------
+      0     19999       145    75.0     0.7       1.42     0.016              0.008
+      1     20001       142     0.0     0.7       0.63     0.016              0.792
+   ================================================================
+     Imbalance ratio (max/mean compute): 1.38
+     Pearson r(wet_fraction, compute_time): +1.000
+     Interpretation: wetter ranks do more work (|r| = 1.000)
+
+Key fields:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 28 72
+
+   * - Field
+     - Meaning
+   * - ``wet%``
+     - Percentage of owned (full) triangles with depth >
+       ``minimum_allowed_height``.
+   * - ``ghost%``
+     - Halo triangles as a fraction of all triangles.  A value above
+       ~15% suggests the subdomain boundary is too large relative to
+       the interior — consider a different partition or fewer ranks.
+   * - ``compute(s)``
+     - Wall time minus all communication time.  The limiting rank sets
+       the pace of the whole simulation.
+   * - ``Allreduce_wait(s)``
+     - Time spent idle in the timestep-sync barrier.  Large values on
+       a rank indicate it arrives early because it has little wet work
+       to do.  This is wasted wall time.
+   * - ``Imbalance ratio``
+     - ``max(compute_time) / mean(compute_time)`` across ranks.  A
+       value of 1.0 is perfect balance; 1.5 means the slowest rank
+       does 50% more work than average and the others wait for it.
+   * - ``Pearson r``
+     - Correlation between wet fraction and compute time across ranks.
+       Values near +1 confirm that wet/dry distribution is the dominant
+       source of imbalance (as opposed to, for example, ghost-cell
+       overhead or structure operator costs).
+
+The method can also be called programmatically:
+
+.. code-block:: python
+
+   stats = domain.load_balance_statistics()
+   # stats is a dict of numpy arrays (length numproc) on rank 0; None on others
+   if anuga.myid == 0:
+       print(f"Imbalance ratio: {stats['imbalance_ratio']:.2f}")
+       print(f"Wet fractions:   {stats['wet_fraction']}")
+
+**What to do about imbalance**
+
+Static METIS decomposition cannot know in advance how the inundation
+front will evolve, so some wet/dry imbalance is expected for most real
+scenarios.  Practical mitigations:
+
+1. **Use fewer ranks for mostly-dry domains.** If most of the domain is
+   dry for most of the simulation, MPI overhead may not be worthwhile.
+
+2. **Weight the METIS partition towards expected wet regions.** If you
+   know in advance (from a coarse serial run or bathymetry) which regions
+   will remain wet, you can provide per-triangle weights to the partitioner
+   so that wet triangles are counted more heavily.
+
+3. **Accept the imbalance and use the saved time differently.** If ranks
+   are idle, consider adding more output or operator work on those ranks
+   rather than spinning in the barrier.
+
+4. **Dynamic repartitioning (future work).** Repartitioning the mesh
+   mid-run as the wet front advances is the algorithmically correct
+   solution but requires transferring all quantity arrays between ranks
+   and is not yet implemented in ANUGA.

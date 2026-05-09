@@ -14,8 +14,6 @@ import anuga
 from anuga.structures.boyd_box_operator import Boyd_box_operator
 from anuga.structures.inlet_operator import Inlet_operator
 
-#from anuga.culvert_flows.culvert_routines import boyd_generalised_culvert_model
-
 from math import pi, pow, sqrt
 
 import numpy as num
@@ -34,7 +32,6 @@ This test exercises the culvert and checks values outside rating curve
 are dealt with
 """
 verbose = False
-path = get_pathname_from_package('anuga.culvert_flows')
 
 length = 40.
 width = 15.
@@ -74,9 +71,6 @@ def topography(x, y):
 
 
     return z
-
-filename=os.path.join(path, 'example_rating_curve.csv')
-
 
 mod_path = get_pathname_from_package('anuga.parallel')
 
