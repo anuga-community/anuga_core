@@ -413,7 +413,8 @@ class Domain(Generic_Domain):
         ## Only works for DE algorithms at present
         max_time_substeps=3 # Maximum number of substeps supported by any timestepping method
         # boundary_flux_sum holds boundary fluxes on each sub-step [unused substeps = 0.]
-        self.boundary_flux_sum=num.array([0.]*max_time_substeps)
+        # Plain ndarray — mask is never needed and numpy.ma overhead was ~0.49s/1800s sim
+        self.boundary_flux_sum = num.zeros(max_time_substeps, dtype=num.float64)
         from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
         self.boundary_flux_integral=boundary_flux_integral_operator(self)
         # Make an integer counting how many times we call compute_fluxes_central -- so we know which substep we are on
@@ -3504,11 +3505,15 @@ class Domain(Generic_Domain):
         return result
 
     def _gpu_needs_boundary_flux_sum(self):
-        """Return True when a fractional operator consumes boundary_flux_sum."""
+        """Return True when a fractional operator consumes boundary_flux_sum.
+        Result cached after first call — operator list never changes during simulation.
+        """
+        if hasattr(self, '_cached_needs_bfs'):
+            return self._cached_needs_bfs
         from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
-
-        return any(isinstance(op, boundary_flux_integral_operator)
-                   for op in self.fractional_step_operators)
+        self._cached_needs_bfs = any(isinstance(op, boundary_flux_integral_operator)
+                                      for op in self.fractional_step_operators)
+        return self._cached_needs_bfs
 
     def apply_fractional_steps(self):
         """Override to sync GPU data before fractional step operators run.

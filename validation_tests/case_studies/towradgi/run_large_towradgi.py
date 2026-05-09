@@ -956,8 +956,15 @@ Creating domain from scratch.
             except:
                 pass  # Outside time range, use default (0)
 
-        # Signal that GPU cache needs refresh
-        rainfall_operator._gpu_rate_array_cache = None
+        # Signal GPU cache to refresh: update in-place rather than rebuild from scratch.
+        # Setting _gpu_rate_array_cache = None causes the Rate_operator to allocate a new
+        # array and copy next call. Instead, update the cached array directly if it exists.
+        if rainfall_operator._gpu_rate_array_cache is not None:
+            import numpy as _np
+            _np.copyto(rainfall_operator._gpu_rate_array_cache,
+                       _np.ascontiguousarray(rainfall_quantity.centroid_values, dtype=_np.float64))
+        else:
+            rainfall_operator._gpu_rate_array_cache = None  # force rebuild on first call
         rainfall_operator._gpu_rate_changed = True
     
     barrier()
@@ -1007,6 +1014,16 @@ t0 = time.time()
 
 import cProfile
 import pstats
+# Pre-hoist active cell helper outside the loop (avoids repeated import + attribute lookup)
+_get_active_count = None
+_n_total = domain.number_of_elements
+if multiprocessor_mode == 2 and use_active_cells:
+    try:
+        from anuga.shallow_water.sw_domain_gpu_ext import get_active_cell_count as _get_active_count
+        _gpu_dom_ref = domain.gpu_interface.gpu_dom
+    except Exception:
+        _gpu_dom_ref = None
+
 profiler = cProfile.Profile()
 profiler.enable()
 
@@ -1018,14 +1035,12 @@ for t in domain.evolve(yieldstep=yieldstep, outputstep=outputstep, finaltime=fin
         pass  # Checkpoint loaded, no rainfall_quantity defined
     if myid == 0:
         domain.write_time()
-        # ── NEW: report wetted fraction at each yieldstep ────────────────
-        if multiprocessor_mode == 2 and use_active_cells:
+        # ── report wetted fraction (uses pre-hoisted reference, no import overhead) ──
+        if _get_active_count is not None and _gpu_dom_ref is not None:
             try:
-                from anuga.shallow_water.sw_domain_gpu_ext import get_active_cell_count
-                n_active = get_active_cell_count(domain.gpu_interface.gpu_dom)
-                n_total  = domain.number_of_elements
-                pct = 100.0 * n_active / max(n_total, 1)
-                print(f'[active_cells] t={t:.0f}s  wet={n_active}/{n_total} ({pct:.1f}%)')
+                n_active = _get_active_count(_gpu_dom_ref)
+                pct = 100.0 * n_active / max(_n_total, 1)
+                print(f'[active_cells] t={t:.0f}s  wet={n_active}/{_n_total} ({pct:.1f}%)')
             except Exception:
                 pass
 

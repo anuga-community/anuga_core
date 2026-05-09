@@ -32,34 +32,48 @@ class boundary_flux_integral_operator(Operator):
 
         Operator.__init__(self, domain, description, label, logging, verbose)
 
-        #------------------------------------------
-        # Setup a quantity to store the boundary flux integral
-        #------------------------------------------
-        self.boundary_flux_integral=num.array([0.])
+        self.boundary_flux_integral = num.array([0.])
+        self.domain = domain
 
-        # Alias for domain
-        self.domain=domain
+        # Cache the RK coefficient once — timestepping_method never changes during a run.
+        # Eliminates a per-step attribute lookup + string comparison (called 36002×).
+        _ts = domain.timestepping_method
+        if _ts == 'euler':
+            self._bfs_coeff = (1, False)   # (substeps to use, rk3_special)
+        elif _ts == 'rk2':
+            self._bfs_coeff = (2, False)
+        elif _ts == 'rk3':
+            self._bfs_coeff = (3, True)
+        else:
+            self._bfs_coeff = None  # fallback to original code path
 
 
     def __call__(self):
-        """
-        Accumulate boundary flux for each timestep
-        """
+        """Accumulate boundary flux for each timestep."""
+        dt = self.domain.timestep
+        bfs = self.domain.boundary_flux_sum
 
-        dt=self.domain.timestep
-        ts_method=self.domain.timestepping_method
-
-        if(ts_method=='euler'):
-            self.boundary_flux_integral = self.boundary_flux_integral + dt*self.domain.boundary_flux_sum[0]
-        elif(ts_method=='rk2'):
-            self.boundary_flux_integral = self.boundary_flux_integral + 0.5*dt*self.domain.boundary_flux_sum[0:2].sum()
-        elif(ts_method=='rk3'):
-            self.boundary_flux_integral = self.boundary_flux_integral + 1.0/6.0*dt*(self.domain.boundary_flux_sum[0] + self.domain.boundary_flux_sum[1] + 4.0*self.domain.boundary_flux_sum[2])
+        if self._bfs_coeff is not None:
+            n, rk3 = self._bfs_coeff
+            if n == 1:
+                self.boundary_flux_integral += dt * bfs[0]
+            elif n == 2:
+                self.boundary_flux_integral += 0.5 * dt * (bfs[0] + bfs[1])
+            else:  # rk3
+                self.boundary_flux_integral += (dt / 6.0) * (bfs[0] + bfs[1] + 4.0 * bfs[2])
         else:
-            raise Exception('Cannot compute boundary flux integral with this timestepping method')
+            # Fallback: original code path for unknown timestepping methods
+            ts_method = self.domain.timestepping_method
+            if ts_method == 'euler':
+                self.boundary_flux_integral += dt * bfs[0]
+            elif ts_method == 'rk2':
+                self.boundary_flux_integral += 0.5 * dt * bfs[0:2].sum()
+            elif ts_method == 'rk3':
+                self.boundary_flux_integral += (dt / 6.0) * (bfs[0] + bfs[1] + 4.0 * bfs[2])
+            else:
+                raise Exception('Cannot compute boundary flux integral with this timestepping method')
 
-        # Zero the boundary_flux_sum
-        self.domain.boundary_flux_sum[:]=0.
+        bfs[:] = 0.0
 
     def parallel_safe(self):
         """Operator is applied independently on each parallel domain
