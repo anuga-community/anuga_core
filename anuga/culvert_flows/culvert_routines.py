@@ -1,14 +1,10 @@
-"""Collection of culvert routines for use with Culvert_flow in culvert_class
+"""Collection of culvert flow routines.
 
-This module holds various routines to determine FLOW through CULVERTS and SIMPLE BRIDGES
-
-
-
-
-Usage:
-
-
-
+.. deprecated::
+    The ``Culvert_flow`` classes in ``culvert_class`` and ``new_culvert_class``
+    that used these routines are deprecated.  Use :class:`anuga.Boyd_box_operator`
+    (box culverts), :class:`anuga.Boyd_pipe_operator` (pipe/circular culverts),
+    or :class:`anuga.Weir_orifice_trapezoid_operator` (weirs) instead.
 """
 
 

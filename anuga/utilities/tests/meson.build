@@ -19,6 +19,7 @@ python_sources = [
 'test_where_close.py',
 'test_xml_tools.py',
 'test_parse_time.py',
+'test_animate.py',
 ]
 
 py3.install_sources(

@@ -50,6 +50,11 @@ class GPU_OMP_interface:
             init_transmissive_n_zero_t_boundary, init_time_boundary
         )
 
+        # Ensure work arrays (including edge_flux_type) are allocated before
+        # the C GPU struct tries to dereference them.
+        if hasattr(self.domain, '_ensure_work_arrays'):
+            self.domain._ensure_work_arrays()
+
         # Initialize GPU domain structure
         self.gpu_dom = init_gpu_domain(self.domain)
 

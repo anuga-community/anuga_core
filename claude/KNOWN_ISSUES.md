@@ -51,6 +51,31 @@ Tests in `anuga/parallel/tests/` spawn `mpiexec` subprocesses. They cannot be
 parallelised with `pytest-xdist` and must run serially. They are marked slow
 and skipped by `--run-fast`.
 
+### Targeted `--cov=anuga.submodule` runs corrupt numpy's `_NoValue` sentinel
+
+Running `pytest --cov=anuga.structures.structure_operator` (or any sub-package
+path) causes test failures with:
+```
+TypeError: float() argument must be a string or a real number, not '_NoValueType'
+```
+
+**Root cause:** coverage.py calls `importlib.util.find_spec('anuga.structures.structure_operator')`
+inside a `sys_modules_saved()` context (in `inorout.py`). This auto-imports parent
+packages (including `anuga/__init__.py` → `shallow_water_domain.py` → numpy),
+then purges all newly-imported modules from `sys.modules`. The subsequent real
+import re-executes `numpy/__init__.py`. Since numpy's C extension (`_multiarray_umath`)
+was already initialized, the reload guard fires and a new `_NoValue` singleton is
+created — but C extensions hold references to the old one, breaking identity checks.
+
+**Workaround:** Always use `--cov=anuga` (not a sub-path). For per-module numbers:
+```bash
+pytest --run-fast --cov=anuga anuga/structures/tests/ -q 2>&1 | grep structure_operator
+```
+
+**Not fixable** from conftest.py: pytest-cov creates `CovPlugin` (which starts
+coverage) inside `pytest_load_initial_conftests(tryfirst=True)` — before conftest.py
+is even loaded.
+
 ---
 
 ## Numerical
@@ -117,6 +142,26 @@ These are marked `@pytest.mark.slow` at module level.
 `anuga/structures/riverwall.py` — tests were deferred because `RiverWall`
 requires a domain with a mesh that has breaklines (specific mesh construction).
 Simple rectangular domains don't suffice.
+
+---
+
+## SWW GUI / animate.py
+
+### `replace_all=True` in Edit tool can change more than intended
+
+When reverting a colormap from `terrain` → `Greys_r` with `replace_all=True`, the `_elev_frame` and `save_elev_frame` default arguments (which must stay `terrain`) were also reverted — requiring a second manual fix. Always check every occurrence of the target string in the file before using `replace_all`.
+
+### Worker must accept all params even when a save method doesn't use them
+
+`worker_frame` in `_animate_worker.py` calls `save_fn(frame=..., show_elev=..., elev_levels=..., show_mesh=...)` for every quantity. If a `save_*` method (e.g. `save_elev_frame`) doesn't declare those params, it raises `TypeError`. All `save_*` methods must accept `show_elev`, `elev_levels`, `show_mesh` even if they ignore the values.
+
+### Double overlays when baked + canvas overlay both active
+
+If Show Elev or Show Mesh is ticked during generation (baked into PNGs) and the canvas overlay is also active, contours/mesh appear twice. The canvas overlay methods check `self._last_gen_show_elev` / `self._last_gen_show_mesh` and return early when already baked. This guard must be maintained if either system is extended.
+
+### Live mesh viewer redraw requires `ax.cla()` + full re-draw
+
+When toggling the Basemap checkbox in `_show_mesh`, a simple `ax.set_visible()` or artist removal is not sufficient — the basemap tiles are added by `contextily` as Axes-level patches. The only reliable approach is `ax.cla()` (clear axis), re-draw the triplot, conditionally call `_add_basemap`, call `mesh_fig.tight_layout()`, then `mesh_canvas.draw()`.
 
 ---
 

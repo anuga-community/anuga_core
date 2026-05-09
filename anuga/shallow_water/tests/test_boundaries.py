@@ -312,6 +312,91 @@ class Test_Time_stage_zero_momentum_boundary_extra(unittest.TestCase):
         with self.assertRaises(Exception):
             Time_stage_zero_momentum_boundary(domain, function=bad_func)
 
+class Test_Characteristic_stage_boundary_evaluate(unittest.TestCase):
+
+    def test_evaluate_segment_runs(self):
+        """evaluate_segment with all boundary ids should not raise."""
+        from anuga.shallow_water.boundaries import Characteristic_stage_boundary
+        domain = _make_domain()
+        B = Characteristic_stage_boundary(domain, function=lambda t: 0.5)
+        Br = anuga.Reflective_boundary(domain)
+        domain.set_boundary({'left': B, 'right': Br, 'top': Br, 'bottom': Br})
+        ids = np.arange(len(domain.boundary_cells))
+        B.evaluate_segment(domain, ids)
+
+    def test_evaluate_segment_dry_cells(self):
+        """evaluate_segment with dry cells (stage=elevation) should not raise."""
+        from anuga.shallow_water.boundaries import Characteristic_stage_boundary
+        domain = _make_domain()
+        domain.set_quantity('stage', 0.0)
+        domain.distribute_to_vertices_and_edges()
+        B = Characteristic_stage_boundary(domain, function=lambda t: 1.0)
+        Br = anuga.Reflective_boundary(domain)
+        domain.set_boundary({'left': B, 'right': Br, 'top': Br, 'bottom': Br})
+        ids = np.arange(len(domain.boundary_cells))
+        B.evaluate_segment(domain, ids)
+
+
+class Test_Flather_boundary(unittest.TestCase):
+
+    def test_init_raises_without_domain(self):
+        from anuga.shallow_water.boundaries import Flather_external_stage_zero_velocity_boundary
+        with self.assertRaises(Exception):
+            Flather_external_stage_zero_velocity_boundary(
+                domain=None, function=lambda t: 0.5)
+
+    def test_init_raises_without_function(self):
+        from anuga.shallow_water.boundaries import Flather_external_stage_zero_velocity_boundary
+        domain = _make_domain()
+        with self.assertRaises(Exception):
+            Flather_external_stage_zero_velocity_boundary(
+                domain=domain, function=None)
+
+    def test_repr(self):
+        from anuga.shallow_water.boundaries import Flather_external_stage_zero_velocity_boundary
+        domain = _make_domain()
+        B = Flather_external_stage_zero_velocity_boundary(
+            domain=domain, function=lambda t: 0.5)
+        self.assertIn('Flather', repr(B))
+
+    def test_evaluate_returns_3_values(self):
+        from anuga.shallow_water.boundaries import Flather_external_stage_zero_velocity_boundary
+        domain = _make_domain()
+        B = Flather_external_stage_zero_velocity_boundary(
+            domain=domain, function=lambda t: 0.5)
+        Br = anuga.Reflective_boundary(domain)
+        domain.set_boundary({'left': B, 'right': Br, 'top': Br, 'bottom': Br})
+        vol_id, edge_id = next(iter(domain.boundary))
+        q = B.evaluate(vol_id, edge_id)
+        self.assertEqual(len(q), 3)
+
+    def test_evaluate_dry_cell(self):
+        """With dry interior, evaluate returns outside stage and zero momentum."""
+        from anuga.shallow_water.boundaries import Flather_external_stage_zero_velocity_boundary
+        domain = _make_domain()
+        domain.set_quantity('stage', 0.0)   # dry
+        domain.distribute_to_vertices_and_edges()
+        B = Flather_external_stage_zero_velocity_boundary(
+            domain=domain, function=lambda t: 1.0)
+        Br = anuga.Reflective_boundary(domain)
+        domain.set_boundary({'left': B, 'right': Br, 'top': Br, 'bottom': Br})
+        vol_id, edge_id = next(iter(domain.boundary))
+        q = B.evaluate(vol_id, edge_id)
+        self.assertAlmostEqual(q[0], 1.0)
+        self.assertAlmostEqual(q[1], 0.0)
+        self.assertAlmostEqual(q[2], 0.0)
+
+    def test_evaluate_segment_runs(self):
+        """evaluate_segment with all boundary ids should not raise."""
+        from anuga.shallow_water.boundaries import Flather_external_stage_zero_velocity_boundary
+        domain = _make_domain()
+        B = Flather_external_stage_zero_velocity_boundary(
+            domain=domain, function=lambda t: 0.5)
+        Br = anuga.Reflective_boundary(domain)
+        domain.set_boundary({'left': B, 'right': Br, 'top': Br, 'bottom': Br})
+        ids = np.arange(len(domain.boundary_cells))
+        B.evaluate_segment(domain, ids)
+
 
 if __name__ == '__main__':
     unittest.main()

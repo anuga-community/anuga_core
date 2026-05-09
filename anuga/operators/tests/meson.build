@@ -13,6 +13,7 @@ python_sources = [
 'test_set_quantity.py',
 'test_set_stage_operator.py',
 'test_set_w_uh_vh_operators.py',
+'test_wind_barometric_operators.py',
 ]
 
 py3.install_sources(

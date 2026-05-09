@@ -442,3 +442,84 @@ if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_system_tools)
     runner = unittest.TextTestRunner()
     runner.run(suite)
+
+
+# ---------------------------------------------------------------------------
+# pytest functions: memory stats helpers
+# ---------------------------------------------------------------------------
+
+import pytest
+
+
+@pytest.fixture(scope='module')
+def simple_domain():
+    import anuga
+    return anuga.rectangular_cross_domain(4, 4)
+
+
+def test_memory_stats_returns_mb_string():
+    from anuga.utilities.system_tools import memory_stats
+    result = memory_stats()
+    assert isinstance(result, str)
+    assert result.startswith('mem=')
+
+
+def test_memory_stats_gb_branch():
+    from anuga.utilities.system_tools import memory_stats
+    from unittest.mock import patch
+    with patch('anuga.utilities.system_tools._get_rss_mb', return_value=2048.0):
+        result = memory_stats()
+    assert 'GB' in result
+
+
+def test_print_memory_stats(capsys):
+    from anuga.utilities.system_tools import print_memory_stats
+    print_memory_stats()
+    out = capsys.readouterr().out
+    assert 'mem=' in out
+
+
+def test_quantity_memory_stats_returns_table(simple_domain):
+    from anuga.utilities.system_tools import quantity_memory_stats
+    result = quantity_memory_stats(simple_domain)
+    assert isinstance(result, str)
+    assert 'GRAND TOTAL' in result
+    assert 'Quantity memory' in result
+
+
+def test_print_quantity_memory_stats(simple_domain, capsys):
+    from anuga.utilities.system_tools import print_quantity_memory_stats
+    print_quantity_memory_stats(simple_domain)
+    out = capsys.readouterr().out
+    assert 'GRAND TOTAL' in out
+
+
+def test_domain_memory_stats_returns_table(simple_domain):
+    from anuga.utilities.system_tools import domain_memory_stats
+    result = domain_memory_stats(simple_domain)
+    assert isinstance(result, str)
+    assert 'Domain memory' in result
+    assert 'geometry' in result
+    assert 'quantities' in result
+
+
+def test_print_domain_memory_stats(simple_domain, capsys):
+    from anuga.utilities.system_tools import print_domain_memory_stats
+    print_domain_memory_stats(simple_domain)
+    out = capsys.readouterr().out
+    assert 'Domain memory' in out
+
+
+def test_domain_struct_stats_no_gpu(simple_domain):
+    from anuga.utilities.system_tools import domain_struct_stats
+    result = domain_struct_stats(simple_domain)
+    assert isinstance(result, str)
+    assert 'C / GPU struct diagnostics' in result
+    assert 'not initialised' in result
+
+
+def test_print_domain_struct_stats(simple_domain, capsys):
+    from anuga.utilities.system_tools import print_domain_struct_stats
+    print_domain_struct_stats(simple_domain)
+    out = capsys.readouterr().out
+    assert 'C / GPU struct diagnostics' in out

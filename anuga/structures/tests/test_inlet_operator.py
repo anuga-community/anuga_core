@@ -367,6 +367,120 @@ class Test_inlet_operator(unittest.TestCase):
         assert numpy.allclose(31.5, vol1-vol0, rtol=1.0e-8)
         assert numpy.allclose(vol1-vol0, domain.fractional_step_volume_integral, rtol=1.0e-8)
 
+    def _simple_domain(self):
+        """Small 20×20 m domain for fast unit-level tests."""
+        domain = self._create_domain(d_length=20.0, d_width=20.0,
+                                     dx=5.0, dy=5.0,
+                                     elevation_0=0.0, elevation_1=0.0,
+                                     stage_0=1.0, stage_1=1.0)
+        return domain
+
+    def test_inlet_with_velocity(self):
+        """Inlet operator with explicit velocity sets momentum correctly."""
+        domain = self._simple_domain()
+        line = [[8.0, 5.0], [12.0, 5.0]]
+        op = Inlet_operator(domain, line, Q=2.0, velocity=[1.0, 0.0])
+
+        for t in domain.evolve(yieldstep=0.5, finaltime=0.5):
+            pass
+
+        # xmomentum should be non-zero in the inlet region
+        xmom = domain.quantities['xmomentum'].centroid_values
+        self.assertTrue(numpy.any(xmom != 0.0))
+
+    def test_inlet_zero_velocity(self):
+        """zero_velocity=True zeroes momentum in the inlet after each step."""
+        domain = self._simple_domain()
+        line = [[8.0, 5.0], [12.0, 5.0]]
+        op = Inlet_operator(domain, line, Q=2.0, zero_velocity=True)
+
+        for t in domain.evolve(yieldstep=0.5, finaltime=0.5):
+            pass
+
+        # Momentum inside the inlet triangles should be zero
+        idx = op.inlet.triangle_indices
+        xmom = domain.quantities['xmomentum'].centroid_values[idx]
+        ymom = domain.quantities['ymomentum'].centroid_values[idx]
+        self.assertTrue(numpy.allclose(xmom, 0.0, atol=1e-10))
+        self.assertTrue(numpy.allclose(ymom, 0.0, atol=1e-10))
+
+    def test_inlet_over_extraction(self):
+        """Extracting more water than available doesn't produce negative depth."""
+        domain = self._simple_domain()
+        line = [[8.0, 5.0], [12.0, 5.0]]
+        # Large negative Q to drain the inlet
+        op = Inlet_operator(domain, line, Q=-1000.0)
+
+        for t in domain.evolve(yieldstep=0.1, finaltime=0.1):
+            pass
+
+        depths = domain.quantities['stage'].centroid_values - \
+                 domain.quantities['elevation'].centroid_values
+        self.assertTrue(numpy.all(depths >= -1e-6))
+
+    def test_statistics_returns_string(self):
+        """statistics() returns a non-empty string."""
+        domain = self._simple_domain()
+        line = [[8.0, 5.0], [12.0, 5.0]]
+        op = Inlet_operator(domain, line, Q=1.0, label='test_inlet')
+        msg = op.statistics()
+        self.assertIsInstance(msg, str)
+        self.assertIn('test_inlet', msg)
+
+    def test_timestepping_statistics(self):
+        """timestepping_statistics() returns a string with Q and volume."""
+        domain = self._simple_domain()
+        line = [[8.0, 5.0], [12.0, 5.0]]
+        op = Inlet_operator(domain, line, Q=3.0)
+        for t in domain.evolve(yieldstep=0.5, finaltime=0.5):
+            pass
+        msg = op.timestepping_statistics()
+        self.assertIsInstance(msg, str)
+        self.assertIn('Q', msg)
+
+    def test_getters_and_setters(self):
+        """set_Q / get_Q / get_inlet / get_applied_Q work correctly."""
+        domain = self._simple_domain()
+        line = [[8.0, 5.0], [12.0, 5.0]]
+        op = Inlet_operator(domain, line, Q=1.0)
+
+        op.set_Q(5.0)
+        self.assertEqual(op.get_Q(), 5.0)
+
+        inlet = op.get_inlet()
+        self.assertIsNotNone(inlet)
+
+        for t in domain.evolve(yieldstep=0.5, finaltime=0.5):
+            pass
+        applied = op.get_applied_Q()
+        self.assertAlmostEqual(applied, 5.0, places=5)
+
+    def test_set_default_callable(self):
+        """set_default accepts a callable and get_default returns its value."""
+        import warnings
+        domain = self._simple_domain()
+        line = [[8.0, 5.0], [12.0, 5.0]]
+        op = Inlet_operator(domain, line, Q=1.0, default=lambda t: 99.0)
+        with warnings.catch_warnings():
+            warnings.simplefilter('ignore', UserWarning)
+            val = op.get_default(0.0)
+        self.assertAlmostEqual(val, 99.0)
+
+    def test_set_default_bad_callable_raises(self):
+        """set_default raises if the callable doesn't accept one argument."""
+        domain = self._simple_domain()
+        line = [[8.0, 5.0], [12.0, 5.0]]
+        with self.assertRaises(Exception):
+            Inlet_operator(domain, line, Q=1.0, default=lambda: 0.0)
+
+    def test_velocity_assertion(self):
+        """velocity must be length-2; wrong length raises AssertionError."""
+        domain = self._simple_domain()
+        line = [[8.0, 5.0], [12.0, 5.0]]
+        with self.assertRaises(AssertionError):
+            Inlet_operator(domain, line, Q=1.0, velocity=[1.0, 0.0, 0.0])
+
+
 # =========================================================================
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_inlet_operator)

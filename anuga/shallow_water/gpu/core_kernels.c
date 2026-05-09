@@ -659,14 +659,12 @@ int core_gravity(struct domain *D) {
     double g = D->g;
 
     double * restrict height_cv = D->height_centroid_values;
-    double * restrict stage_vv = D->stage_vertex_values;
     double * restrict bed_vv = D->bed_vertex_values;
 
     double * restrict xmom_eu = D->xmom_explicit_update;
     double * restrict ymom_eu = D->ymom_explicit_update;
 
     double * restrict vertex_coords = D->vertex_coordinates;
-    double * restrict areas = D->areas;
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
@@ -720,8 +718,6 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
 
     // Extract array pointers
     double * restrict stage_cv = D->stage_centroid_values;
-    double * restrict xmom_cv = D->xmom_centroid_values;
-    double * restrict ymom_cv = D->ymom_centroid_values;
     double * restrict bed_cv = D->bed_centroid_values;
     double * restrict height_cv = D->height_centroid_values;
 
@@ -763,7 +759,7 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
 
     // Main flux computation loop with reductions
     #ifdef CPU_ONLY_MODE
-    #pragma omp parallel for simd reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
+    #pragma omp parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
     #else
     #pragma omp target teams distribute parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
     #endif
@@ -968,4 +964,231 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
 
     // Return timestep (only meaningful on first substep)
     return local_timestep;
+}
+
+// ============================================================================
+// ADER Cauchy-Kovalewski predictor
+// ============================================================================
+
+void core_ader_ck_predictor(struct domain *D, double dt) {
+    // Advance centroid values by dt using a local Cauchy-Kovalewski predictor.
+    // Called after core_extrapolate_second_order_edge() so edge_values hold the
+    // reconstructed state.  Slopes are recovered from the 2x2 linear system
+    // formed by edges 0 and 1 (no new arrays needed).
+    //
+    // Well-balanced form: bed slope is dz/dx = dw/dx - dh/dx derived from
+    // the reconstruction, so still-water equilibrium is preserved exactly.
+
+    anuga_int n = D->number_of_elements;
+    double g   = D->g;
+    double eps = D->minimum_allowed_height;
+
+    double * restrict stage_cv  = D->stage_centroid_values;
+    double * restrict xmom_cv   = D->xmom_centroid_values;
+    double * restrict ymom_cv   = D->ymom_centroid_values;
+    double * restrict bed_cv    = D->bed_centroid_values;
+    double * restrict height_cv = D->height_centroid_values;
+
+    double * restrict stage_ev  = D->stage_edge_values;
+    double * restrict xmom_ev   = D->xmom_edge_values;
+    double * restrict ymom_ev   = D->ymom_edge_values;
+    double * restrict height_ev = D->height_edge_values;
+
+    double * restrict edge_coords     = D->edge_coordinates;
+    double * restrict centroid_coords = D->centroid_coordinates;
+
+    OMP_PARALLEL_LOOP
+    for (anuga_int k = 0; k < n; k++) {
+        anuga_int k3 = k * 3;
+        anuga_int k6 = k * 6;
+        anuga_int k2 = k * 2;
+
+        // Offsets from centroid to edge midpoints 0 and 1
+        double xc   = centroid_coords[k2 + 0];
+        double yc   = centroid_coords[k2 + 1];
+        double dxv0 = edge_coords[k6 + 0] - xc;
+        double dyv0 = edge_coords[k6 + 1] - yc;
+        double dxv1 = edge_coords[k6 + 2] - xc;
+        double dyv1 = edge_coords[k6 + 3] - yc;
+
+        // Determinant of the 2x2 linear system; skip degenerate cells.
+        // Use if-block (not continue) for GPU target-loop compatibility.
+        double det = dxv0 * dyv1 - dxv1 * dyv0;
+        if (fabs(det) >= 1.0e-20) {
+        double inv_det = 1.0 / det;
+
+        // Centroid state
+        double w_c  = stage_cv[k];
+        double h_c  = fmax(w_c - bed_cv[k], 0.0);
+        double uh_c = xmom_cv[k];
+        double vh_c = ymom_cv[k];
+
+        // Centroid velocity (guarded)
+        double inv_h_c = (h_c > eps) ? 1.0 / h_c : 0.0;
+        double u_c = uh_c * inv_h_c;
+        double v_c = vh_c * inv_h_c;
+
+        // Recover gradients from edge differences using edges 0 and 1.
+        // For any variable q:  grad_x = inv_det*(dyv1*dq0 - dyv0*dq1)
+        //                      grad_y = inv_det*(dxv0*dq1 - dxv1*dq0)
+
+        // Stage gradient (∂w/∂x, ∂w/∂y)
+        double dw0 = stage_ev[k3 + 0] - w_c;
+        double dw1 = stage_ev[k3 + 1] - w_c;
+        double wx  = inv_det * (dyv1 * dw0 - dyv0 * dw1);
+        double wy  = inv_det * (dxv0 * dw1 - dxv1 * dw0);
+
+        // Height gradient (∂h/∂x, ∂h/∂y)
+        double dh0 = height_ev[k3 + 0] - h_c;
+        double dh1 = height_ev[k3 + 1] - h_c;
+        double hx  = inv_det * (dyv1 * dh0 - dyv0 * dh1);
+        double hy  = inv_det * (dxv0 * dh1 - dxv1 * dh0);
+
+        // Edge velocities (recover from edge momentum / edge height)
+        double h_e0     = height_ev[k3 + 0];
+        double h_e1     = height_ev[k3 + 1];
+        double inv_h_e0 = (h_e0 > eps) ? 1.0 / h_e0 : 0.0;
+        double inv_h_e1 = (h_e1 > eps) ? 1.0 / h_e1 : 0.0;
+        double u_e0 = xmom_ev[k3 + 0] * inv_h_e0;
+        double u_e1 = xmom_ev[k3 + 1] * inv_h_e1;
+        double v_e0 = ymom_ev[k3 + 0] * inv_h_e0;
+        double v_e1 = ymom_ev[k3 + 1] * inv_h_e1;
+
+        // Velocity gradients (∂u/∂x, ∂u/∂y, ∂v/∂x, ∂v/∂y)
+        double du0 = u_e0 - u_c;
+        double du1 = u_e1 - u_c;
+        double dv0 = v_e0 - v_c;
+        double dv1 = v_e1 - v_c;
+        double ux  = inv_det * (dyv1 * du0 - dyv0 * du1);
+        double uy  = inv_det * (dxv0 * du1 - dxv1 * du0);
+        double vx  = inv_det * (dyv1 * dv0 - dyv0 * dv1);
+        double vy  = inv_det * (dxv0 * dv1 - dxv1 * dv0);
+
+        // Cauchy-Kovalewski time derivatives — well-balanced SWE:
+        //   dz/dx = dw/dx - dh/dx  (from reconstruction, not stored centroid z)
+        // This ensures cancellation in still water (u=v=0, wx=wy=0).
+        double g_h = g * h_c;
+
+        double dw_dt  = -(u_c * hx + h_c * ux + v_c * hy + h_c * vy);
+        double duh_dt = -(2.0*u_c*h_c*ux + u_c*u_c*hx + u_c*v_c*hy
+                         + v_c*h_c*uy + u_c*h_c*vy + g_h * wx);
+        double dvh_dt = -(v_c*h_c*ux + u_c*h_c*vx + u_c*v_c*hx
+                         + 2.0*v_c*h_c*vy + v_c*v_c*hy + g_h * wy);
+
+        // Predict forward by dt (caller passes dt/2 for midpoint)
+        double w_pred  = w_c  + dt * dw_dt;
+        double uh_pred = uh_c + dt * duh_dt;
+        double vh_pred = vh_c + dt * dvh_dt;
+        double h_pred  = fmax(w_pred - bed_cv[k], 0.0);
+
+        stage_cv[k]  = w_pred;
+        xmom_cv[k]   = uh_pred;
+        ymom_cv[k]   = vh_pred;
+        height_cv[k] = h_pred;
+        } // end if (fabs(det) >= 1.0e-20)
+    }
+}
+
+void core_ader_ck_predictor_edge(struct domain *D, double dt) {
+    // Fused ADER-2 predictor: advances edge values to Q^{n+1/2} in-place,
+    // leaving centroid values unchanged.  This eliminates the second full
+    // extrapolation pass needed by core_ader_ck_predictor (centroid variant).
+    //
+    // For any quantity q, the reconstructed edge value is:
+    //   q_edge[i] = q_c + slope * offset_i
+    // Since the predictor adds the same centroid shift dq_c to every edge,
+    //   q_edge_pred[i] = q_edge[i] + dt * dq_c/dt
+    // The cell slopes are preserved exactly.
+    //
+    // Well-balanced: same dz/dx = dw/dx - dh/dx derivation as the centroid
+    // variant; still-water equilibrium is preserved exactly.
+
+    anuga_int n = D->number_of_elements;
+    double g   = D->g;
+    double eps = D->minimum_allowed_height;
+
+    double * restrict stage_cv  = D->stage_centroid_values;
+    double * restrict xmom_cv   = D->xmom_centroid_values;
+    double * restrict ymom_cv   = D->ymom_centroid_values;
+    double * restrict bed_cv    = D->bed_centroid_values;
+
+    double * restrict stage_ev  = D->stage_edge_values;
+    double * restrict xmom_ev   = D->xmom_edge_values;
+    double * restrict ymom_ev   = D->ymom_edge_values;
+    double * restrict height_ev = D->height_edge_values;
+
+    double * restrict edge_coords     = D->edge_coordinates;
+    double * restrict centroid_coords = D->centroid_coordinates;
+
+    OMP_PARALLEL_LOOP
+    for (anuga_int k = 0; k < n; k++) {
+        anuga_int k3 = k * 3;
+        anuga_int k6 = k * 6;
+        anuga_int k2 = k * 2;
+
+        double xc   = centroid_coords[k2 + 0];
+        double yc   = centroid_coords[k2 + 1];
+        double dxv0 = edge_coords[k6 + 0] - xc;
+        double dyv0 = edge_coords[k6 + 1] - yc;
+        double dxv1 = edge_coords[k6 + 2] - xc;
+        double dyv1 = edge_coords[k6 + 3] - yc;
+
+        double det = dxv0 * dyv1 - dxv1 * dyv0;
+        if (fabs(det) >= 1.0e-20) {
+        double inv_det = 1.0 / det;
+
+        double w_c  = stage_cv[k];
+        double h_c  = fmax(w_c - bed_cv[k], 0.0);
+        double uh_c = xmom_cv[k];
+        double vh_c = ymom_cv[k];
+
+        double inv_h_c = (h_c > eps) ? 1.0 / h_c : 0.0;
+        double u_c = uh_c * inv_h_c;
+        double v_c = vh_c * inv_h_c;
+
+        double dw0 = stage_ev[k3 + 0] - w_c;
+        double dw1 = stage_ev[k3 + 1] - w_c;
+        double wx  = inv_det * (dyv1 * dw0 - dyv0 * dw1);
+        double wy  = inv_det * (dxv0 * dw1 - dxv1 * dw0);
+
+        double dh0 = height_ev[k3 + 0] - h_c;
+        double dh1 = height_ev[k3 + 1] - h_c;
+        double hx  = inv_det * (dyv1 * dh0 - dyv0 * dh1);
+        double hy  = inv_det * (dxv0 * dh1 - dxv1 * dh0);
+
+        double h_e0     = height_ev[k3 + 0];
+        double h_e1     = height_ev[k3 + 1];
+        double inv_h_e0 = (h_e0 > eps) ? 1.0 / h_e0 : 0.0;
+        double inv_h_e1 = (h_e1 > eps) ? 1.0 / h_e1 : 0.0;
+        double u_e0 = xmom_ev[k3 + 0] * inv_h_e0;
+        double u_e1 = xmom_ev[k3 + 1] * inv_h_e1;
+        double v_e0 = ymom_ev[k3 + 0] * inv_h_e0;
+        double v_e1 = ymom_ev[k3 + 1] * inv_h_e1;
+
+        double du0 = u_e0 - u_c;
+        double du1 = u_e1 - u_c;
+        double dv0 = v_e0 - v_c;
+        double dv1 = v_e1 - v_c;
+        double ux  = inv_det * (dyv1 * du0 - dyv0 * du1);
+        double uy  = inv_det * (dxv0 * du1 - dxv1 * du0);
+        double vx  = inv_det * (dyv1 * dv0 - dyv0 * dv1);
+        double vy  = inv_det * (dxv0 * dv1 - dxv1 * dv0);
+
+        double g_h = g * h_c;
+        double dw_dt  = -(u_c * hx + h_c * ux + v_c * hy + h_c * vy);
+        double duh_dt = -(2.0*u_c*h_c*ux + u_c*u_c*hx + u_c*v_c*hy
+                         + v_c*h_c*uy + u_c*h_c*vy + g_h * wx);
+        double dvh_dt = -(v_c*h_c*ux + u_c*h_c*vx + u_c*v_c*hx
+                         + 2.0*v_c*h_c*vy + v_c*v_c*hy + g_h * wy);
+
+        // Shift all three edges by the same centroid delta (slopes preserved)
+        for (int i = 0; i < 3; i++) {
+            double new_stage = stage_ev[k3 + i] + dt * dw_dt;
+            stage_ev[k3 + i] = new_stage;
+            xmom_ev[k3 + i] += dt * duh_dt;
+            ymom_ev[k3 + i] += dt * dvh_dt;
+            height_ev[k3 + i] = fmax(height_ev[k3 + i] + dt * dw_dt, 0.0);
+        }
+        } // end if (fabs(det) >= 1.0e-20)
+    }
 }

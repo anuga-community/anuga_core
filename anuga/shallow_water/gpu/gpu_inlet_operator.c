@@ -410,15 +410,6 @@ void gpu_inlet_set_ymoms_array(struct gpu_domain *GD, int op_id,
 // Small D2H gather → CPU sort → small H2D scatter
 // ============================================================================
 
-// Comparison function for sorting by stage value
-static int compare_stage_indices(const void *a, const void *b) {
-    const double *da = (const double*)a;
-    const double *db = (const double*)b;
-    if (*da < *db) return -1;
-    if (*da > *db) return 1;
-    return 0;
-}
-
 void gpu_inlet_set_stages_evenly(struct gpu_domain *GD, int op_id, double volume) {
     if (op_id < 0 || op_id >= GD->inlet_ops.capacity) return;
     struct inlet_operator_info *op = &GD->inlet_ops.ops[op_id];

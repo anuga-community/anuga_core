@@ -273,7 +273,11 @@ Mesh geometry and resolution.
    # default: []
    breakline_files = []
 
-   # Riverwall CSV files — like breaklines but with an elevation column.
+   # Riverwall CSV files — like breaklines but each row has three columns:
+   #   x [m], y [m], crest_elevation [m]
+   # An optional first line may contain hydraulic parameters, e.g.:
+   #   Qfactor: 1.5, s1: 0.94, Cd_through: 0.1
+   # Glob patterns are accepted (e.g. "mesh/riverwalls_*.csv").
    # default: []
    riverwall_csv_files = []
 
@@ -363,12 +367,18 @@ entries.  Earlier entries take priority over later ones.
 Supported quantities: ``elevation``, ``friction``, ``stage``, ``xmomentum``,
 ``ymomentum``.
 
+Each quantity also supports an optional spatial-averaging step controlled by
+a ``{qty}_spatial_average`` key at the ``[initial_conditions]`` level.
+When set, the quantity field is averaged onto a regular grid at the given
+spacing (metres) before being applied to the mesh — useful for smoothing
+noisy DEMs or variable-resolution friction fields:
+
 .. code-block:: toml
 
    [initial_conditions]
-
-   # Optional: spatially average elevation on a grid at this spacing [m]
-   # elevation_spatial_average = 100.0
+   elevation_spatial_average  = 100.0   # smooth DEM at 100 m grid
+   friction_spatial_average   = 50.0    # smooth friction at  50 m grid
+   # stage_spatial_average    = 50.0    # also valid for stage, xmomentum, ymomentum
 
    [[initial_conditions.elevation]]
    polygon  = "Extent"                    # apply over full raster extent
@@ -488,31 +498,6 @@ disable a bridge without removing its definition.
    vertical_datum_offset        = 0.0         # [m] added to curve elevations
    smoothing_timescale          = 20.0        # [s] exponential smoothing constant
 
-.. _toml-pumping:
-
-[[pumping_stations]]
-~~~~~~~~~~~~~~~~~~~~~
-
-Pump operator transferring water between a wet-well basin and a discharge
-point.  Set ``enabled = false`` to disable without removing the definition.
-
-.. code-block:: toml
-
-   [[pumping_stations]]
-   enabled               = true
-   label                 = "pump_1"
-   pump_capacity         = 2.0     # [m³/s] maximum flow rate
-   pump_rate_of_increase = 0.5     # [m³/s per second]
-   pump_rate_of_decrease = 0.5     # [m³/s per second]
-   hw_to_start_pumping   = 0.3     # headwater depth [m] to switch on
-   hw_to_stop_pumping    = 0.1     # headwater depth [m] to switch off
-   basin_polygon_file    = "mesh/pump1_basin.csv"
-   basin_elevation       = -1.0    # [m] bed elevation inside basin polygon
-   exchange_line_0       = "mesh/pump1_wet_well_line.csv"
-   exchange_line_1       = "mesh/pump1_discharge_line.csv"
-   smoothing_timescale   = 30.0    # [s]
-
-
 .. _toml-culverts:
 
 [[culverts]]
@@ -630,6 +615,50 @@ Geometry is specified with the same ``exchange_line_0`` / ``exchange_line_1``
    # invert_elevations  = [1.0, 0.8]      # [m]; sampled from DEM if omitted
 
 Multiple ``[[weirs]]`` entries are supported.
+
+
+.. _toml-pumping:
+
+[[pumping_stations]]
+~~~~~~~~~~~~~~~~~~~~~
+
+Pump operator transferring water between a wet-well basin and a discharge
+point.  Set ``enabled = false`` to disable without removing the definition.
+
+.. code-block:: toml
+
+   [[pumping_stations]]
+   enabled               = true
+   label                 = "pump_1"
+   pump_capacity         = 2.0     # [m³/s] maximum flow rate
+   pump_rate_of_increase = 0.5     # [m³/s per second]
+   pump_rate_of_decrease = 0.5     # [m³/s per second]
+   hw_to_start_pumping   = 0.3     # headwater depth [m] to switch on
+   hw_to_stop_pumping    = 0.1     # headwater depth [m] to switch off
+   basin_polygon_file    = "mesh/pump1_basin.csv"
+   basin_elevation       = -1.0    # [m] bed elevation inside basin polygon
+   exchange_line_0       = "mesh/pump1_wet_well_line.csv"
+   exchange_line_1       = "mesh/pump1_discharge_line.csv"
+   smoothing_timescale   = 30.0    # [s]
+
+Multiple ``[[pumping_stations]]`` entries are supported.
+
+
+Input Validation
+-----------------
+
+The TOML parser validates all required fields and value ranges before the
+simulation starts.  Errors are collected and reported together so you can
+fix all problems in a single pass rather than re-running after each one.
+
+A missing required field or an out-of-range value produces a message like::
+
+   TOML configuration errors in 'scenario.toml':
+     [project] 'scenario' is required but missing
+     [project] 'flow_algorithm' must be one of ('DE0', 'DE1') — got 'de0'
+     culverts['road_culvert_1'] 'width' must be > 0 — got -0.9
+
+The run aborts after reporting all errors.
 
 
 Custom Callbacks: user_functions.py

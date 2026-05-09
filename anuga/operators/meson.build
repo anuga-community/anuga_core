@@ -13,7 +13,8 @@ py3.extension_module('mannings_operator_ext',
 py3.extension_module('kinematic_viscosity_operator_ext',
   sources: ['kinematic_viscosity_operator_ext.pyx'],
   include_directories: inc_dir,
-  dependencies: dependencies,
+  c_args: openmp_c_args,
+  dependencies: openmp_deps,
   subdir: 'anuga/operators',
   install: true,
 )
@@ -38,6 +39,8 @@ python_sources = [
   'set_stage_operator.py',
   'set_stage.py',
   'set_w_uh_vh_operator.py',
+  'wind_stress_operator.py',
+  'barometric_pressure.py',
 ]
 
 py3.install_sources(
