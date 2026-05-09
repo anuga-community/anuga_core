@@ -51,15 +51,13 @@ Commits `6c16986e`, `8f39e645`.
 from the 300-line monolith. `create_riverwalls` is now a ~50-line orchestrator. All 43
 riverwall tests pass.
 
-**P2.4 Delete the `anuga/culvert_flows/` package**
-Session 26 cleanup: deleted `new_culvert_class.py` (was a re-export shim) and
-`test_new_culvert_class.py` (duplicate of `test_culvert_class.py`); added package-level
-`DeprecationWarning` in `__init__.py`. Remaining work to complete removal:
-- Update `examples/structures/run_open_slot_wide_bridge.py` to use `Boyd_box_operator`
-  instead of `Culvert_flow` and `boyd_generalised_culvert_model`
-- Verify no external user scripts depend on `culvert_routines.boyd_generalised_culvert_model`
-- Delete `culvert_class.py`, `culvert_routines.py`, `culvert_polygons.py` and their tests
-- Target: v5.0
+~~**P2.4 Delete the `anuga/culvert_flows/` package**~~ — Done (session 34). Deleted the
+entire package (5 412 lines removed, commit `b151fa66`): `culvert_class.py`,
+`culvert_routines.py`, `culvert_polygons.py`, all tests and test data. Updated
+`run_open_slot_wide_bridge.py` to drop legacy imports and show a `Boyd_box_operator`
+equivalent. Removed dead culvert_flows references from `test_failure.py` and five
+parallel test files. `subdir('culvert_flows')` removed from `anuga/meson.build`.
+All 2 633 fast tests pass.
 
 ~~**P2.5 Improve `Rate_operator` usability**~~ — Done (session 24). Added `Rate_operator.rainfall(domain, rate_mm_hr)` and `Rate_operator.inflow(domain, rate_m3s)` factory classmethods; input validation (bad rate type → TypeError, region+polygon conflict → ValueError); updated `__init__` docstring pointing to factories. 13 new tests.
 
@@ -178,11 +176,11 @@ per-variable size limit. The NetCDF3 classic restriction does not apply. (Invali
 | Priority | Total | Remaining | Effort | Biggest payoff |
 |----------|-------|-----------|--------|----------------|
 | P1 — Quick wins | 8 | 0 ✅ | 1–3 days | All done |
-| P2 — Medium | 9 | 2 | 1–2 weeks | Usability, test coverage |
+| P2 — Medium | 9 | 1 | 1–2 weeks | Test coverage |
 | P3 — Initiatives | 8 | 6 | 1–3 months | Performance, scalability, accuracy |
 | Speculative | 4 | 4 | 6+ months | Strategic differentiation |
 
 **Top 3 near-term recommendations:**
-1. **P2.4** — Complete `culvert_flows/` removal: update `run_open_slot_wide_bridge.py` example, delete remaining files, target v5.0
-2. **P2.6** — Raise fast-suite coverage threshold (currently ~58–59%; next targets in `fit_interpolate/` and `structures/`)
-3. **P3.3** — `fit_interpolate` accuracy: validation suite against known surfaces, profile `interpolate.py` inner loops
+1. **P2.6** — Raise fast-suite coverage threshold (currently ~58–59%; next targets in `fit_interpolate/` and `structures/`)
+2. **P3.3** — `fit_interpolate` accuracy: validation suite against known surfaces, profile `interpolate.py` inner loops
+3. **P3.1** — Local timestepping GPU-compatible redesign (per-triangle activity mask sub-cycling)
