@@ -33,12 +33,14 @@ C header, Cython wrapper, scenario system, and tests. Deleted
 
 ## Priority 2 — Medium effort (1–2 weeks each)
 
-**P2.1 Type hints on the public API**
-`anuga/abstract_2d_finite_volumes/quantity.py` — 81 public methods, 0 type hints. Same for
-`shallow_water_domain.py` (~50 methods), `operators/base_operator.py`,
-`structures/structure_operator.py`. The 171-entry `__all__` is the natural scope boundary.
-Start with return types and key parameters. Enables IDE autocomplete and catches signature
-mismatches.
+~~**P2.1 Type hints on the public API**~~ — Done (session 33). Annotated ~130 public methods
+across four files using `from __future__ import annotations` (PEP 563, Python 3.10+ compatible).
+`base_operator.Operator` (11 methods, full coverage), `quantity.Quantity` (~28 methods),
+`structure_operator.Structure_operator` (~28 methods including all `get_enquiry_*` getters),
+`shallow_water_domain.Domain` (~60 methods including `__init__`, `evolve`, `set_flow_algorithm`,
+`get_wet_elements`, `timestepping_statistics`, all inundation/volume queries). Uses
+`numpy.typing.ArrayLike`, `collections.abc.Callable`, `TYPE_CHECKING` guards for heavy imports.
+Commits `6c16986e`, `8f39e645`.
 
 ~~**P2.2 Refactor `Generic_Domain.__init__` (367 lines)**~~ — Done (session 25). Extracted
 `_init_mesh()`, `_init_quantities()`, `_init_parallel()`, `_init_timestepping()`.
@@ -176,11 +178,11 @@ per-variable size limit. The NetCDF3 classic restriction does not apply. (Invali
 | Priority | Total | Remaining | Effort | Biggest payoff |
 |----------|-------|-----------|--------|----------------|
 | P1 — Quick wins | 8 | 0 ✅ | 1–3 days | All done |
-| P2 — Medium | 9 | 3 | 1–2 weeks | Usability, type safety, test coverage |
+| P2 — Medium | 9 | 2 | 1–2 weeks | Usability, test coverage |
 | P3 — Initiatives | 8 | 6 | 1–3 months | Performance, scalability, accuracy |
 | Speculative | 4 | 4 | 6+ months | Strategic differentiation |
 
 **Top 3 near-term recommendations:**
-1. **P2.1** — Type hints on public API (`quantity.py`, `shallow_water_domain.py`, `base_operator.py`)
-2. **P2.4** — Complete `culvert_flows/` removal: update `run_open_slot_wide_bridge.py` example, delete remaining files, target v5.0
-3. **P2.6** — Continue raising fast-suite coverage threshold (currently 58%; next targets in `fit_interpolate/` and `structures/`)
+1. **P2.4** — Complete `culvert_flows/` removal: update `run_open_slot_wide_bridge.py` example, delete remaining files, target v5.0
+2. **P2.6** — Raise fast-suite coverage threshold (currently ~58–59%; next targets in `fit_interpolate/` and `structures/`)
+3. **P3.3** — `fit_interpolate` accuracy: validation suite against known surfaces, profile `interpolate.py` inner loops
