@@ -236,10 +236,10 @@ class Boyd_pipe_operator(anuga.Structure_operator):
         if self.inflow.get_enquiry_depth() > 0.01: #this value was 0.01:
 
             if local_debug:
-                anuga.log.critical('Specific E & Deltat Tot E = %s, %s'
+                anuga.log.info('Specific E & Deltat Tot E = %s, %s'
                              % (str(self.inflow.get_enquiry_specific_energy()),
                                 str(self.delta_total_energy)))
-                anuga.log.critical('culvert type = %s' % self.__class__.__name__)
+                anuga.log.info('culvert type = %s' % self.__class__.__name__)
             # Water has risen above inlet
 
 
@@ -354,7 +354,7 @@ def boyd_pipe_function(depth,
         flow_width= barrels * bf * diameter
         case = 'Inlet CTRL Outlet submerged Circular PIPE FULL'
         if local_debug:
-            anuga.log.critical('Inlet CTRL Outlet submerged Circular '
+            anuga.log.info('Inlet CTRL Outlet submerged Circular '
                          'PIPE FULL')
     else:
         #alpha = anuga.acos(1 - outlet_culvert_depth/diameter)    # Where did this Come From ????/
@@ -365,9 +365,9 @@ def boyd_pipe_function(depth,
         perimeter = barrels * (alpha*bf*diameter/2.0)
         case = 'INLET CTRL Culvert is open channel flow we will for now assume critical depth'
         if local_debug:
-            anuga.log.critical('INLET CTRL Culvert is open channel flow '
+            anuga.log.info('INLET CTRL Culvert is open channel flow '
                          'we will for now assume critical depth')
-            anuga.log.critical('Q Outlet Depth and ALPHA = %s, %s, %s'
+            anuga.log.info('Q Outlet Depth and ALPHA = %s, %s, %s'
                          % (str(Q), str(outlet_culvert_depth),
                             str(alpha)))
     if delta_total_energy < driving_energy:  #  OUTLET CONTROL !!!!
@@ -381,7 +381,7 @@ def boyd_pipe_function(depth,
             flow_width= barrels * bf*diameter
             case = 'Outlet submerged'
             if local_debug:
-                anuga.log.critical('Outlet submerged')
+                anuga.log.info('Outlet submerged')
         else:   # Culvert running PART FULL for PART OF ITS LENGTH   Here really should use the Culvert Slope to calculate Actual Culvert Depth & Velocity
             # IF  operator.outflow.get_average_depth() < diameter
             dcrit1 = (bf*diameter)/1.26*(Q/anuga.g**0.5*((bf*diameter)**2.5))**(1/3.75)
@@ -397,7 +397,7 @@ def boyd_pipe_function(depth,
                 flow_width= barrels * bf*diameter
                 case = 'Outlet unsubmerged PIPE FULL'
                 if local_debug:
-                    anuga.log.critical('Outlet unsubmerged PIPE FULL')
+                    anuga.log.info('Outlet unsubmerged PIPE FULL')
             else:
                 alpha = anuga.acos(1-2*outlet_culvert_depth/(bf*diameter))*2
                 flow_area = barrels * (bf*diameter)**2/8*(alpha - math.sin(alpha))   # Equation from  GIECK 5th Ed. Pg. B3
@@ -405,22 +405,22 @@ def boyd_pipe_function(depth,
                 perimeter = barrels * alpha*bf*diameter/2.0
                 case = 'Outlet is open channel flow we will for now assume critical depth'
                 if local_debug:
-                    anuga.log.critical('Q Outlet Depth and ALPHA = %s, %s, %s'
+                    anuga.log.info('Q Outlet Depth and ALPHA = %s, %s, %s'
                                  % (str(Q), str(outlet_culvert_depth),
                                     str(alpha)))
-                    anuga.log.critical('Outlet is open channel flow we '
+                    anuga.log.info('Outlet is open channel flow we '
                                  'will for now assume critical depth')
     if local_debug:
-        anuga.log.critical('FLOW AREA = %s' % str(flow_area))
-        anuga.log.critical('PERIMETER = %s' % str(perimeter))
-        anuga.log.critical('Q Interim = %s' % str(Q))
+        anuga.log.info('FLOW AREA = %s' % str(flow_area))
+        anuga.log.info('PERIMETER = %s' % str(perimeter))
+        anuga.log.info('Q Interim = %s' % str(Q))
     hyd_rad = flow_area/perimeter
 
 
     # Outlet control velocity using tail water
     if local_debug:
-        anuga.log.critical('GOT IT ALL CALCULATING Velocity')
-        anuga.log.critical('HydRad = %s' % str(hyd_rad))
+        anuga.log.info('GOT IT ALL CALCULATING Velocity')
+        anuga.log.info('HydRad = %s' % str(hyd_rad))
     # Calculate Pipe Culvert Outlet Control Velocity.... May need initial Estimate First ??
 
     culvert_velocity = math.sqrt(delta_total_energy/((sum_loss/2/anuga.g)+\
@@ -429,24 +429,24 @@ def boyd_pipe_function(depth,
 
 
     if local_debug:
-        anuga.log.critical('VELOCITY = %s' % str(culvert_velocity))
-        anuga.log.critical('Outlet Ctrl Q = %s' % str(Q_outlet_tailwater))
+        anuga.log.info('VELOCITY = %s' % str(culvert_velocity))
+        anuga.log.info('Outlet Ctrl Q = %s' % str(Q_outlet_tailwater))
 
     Q = min(Q, Q_outlet_tailwater)
     if local_debug:
-        anuga.log.critical('%s,%.3f,%.3f'
+        anuga.log.info('%s,%.3f,%.3f'
                      % ('dcrit 1 , dcit2 =',dcrit1,dcrit2))
-        anuga.log.critical('%s,%.3f,%.3f,%.3f'
+        anuga.log.info('%s,%.3f,%.3f,%.3f'
                      % ('Q and Velocity and Depth=', Q,
                         culvert_velocity, outlet_culvert_depth))
 
     culv_froude=math.sqrt(Q**2*flow_width*barrels/(anuga.g*flow_area**3))
     if local_debug:
-        anuga.log.critical('FLOW AREA = %s' % str(flow_area))
-        anuga.log.critical('PERIMETER = %s' % str(perimeter))
-        anuga.log.critical('Q final = %s' % str(Q))
-        anuga.log.critical('FROUDE = %s' % str(culv_froude))
-        anuga.log.critical('Case = %s' % case)
+        anuga.log.info('FLOW AREA = %s' % str(flow_area))
+        anuga.log.info('PERIMETER = %s' % str(perimeter))
+        anuga.log.info('Q final = %s' % str(Q))
+        anuga.log.info('FROUDE = %s' % str(culv_froude))
+        anuga.log.info('Case = %s' % case)
 
     # Determine momentum at the outlet
     barrel_velocity = Q/(flow_area + anuga.velocity_protection/flow_area)

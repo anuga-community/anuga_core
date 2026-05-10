@@ -27,7 +27,8 @@ py3.extension_module('quad_tree_ext',
 py3.extension_module('sparse_ext',
   sources: ['sparse_ext.pyx'],
   include_directories: inc_dir,
-  dependencies: dependencies,
+  c_args: openmp_c_args,
+  dependencies: openmp_deps,
   subdir: 'anuga/utilities',
   install: true,
 )
@@ -51,6 +52,7 @@ py3.extension_module('util_ext',
 
 
 python_sources = [
+'_animate_worker.py',
 'animate.py',
 'argparsing.py',
 'cg_solve.py',

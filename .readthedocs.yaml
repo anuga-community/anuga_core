@@ -10,6 +10,11 @@ build:
   os: ubuntu-22.04
   tools:
     python: "3.10"
+  jobs:
+    pre_install:
+      # ReadTheDocs uses a shallow clone; git describe needs the full tag history
+      # to compute a PEP 440 version string. Unshallow and fetch tags first.
+      - git fetch --unshallow --tags || git fetch --tags
 
 # Build documentation in the docs/ directory with Sphinx
 sphinx:

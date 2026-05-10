@@ -57,5 +57,15 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
 // Subsequent calls to core_gravity and core_manning_friction_sloped_semi_implicit
 // will use the cached values instead of recomputing the gradient each timestep.
 void core_precompute_bed_slope(struct domain *D);
+// ADER Cauchy-Kovalewski predictor: advance centroid values forward by dt.
+// Must be called after core_extrapolate_second_order_edge().
+// Recovers cell slopes from edge values, evaluates SWE time derivatives locally,
+// and updates stage/xmom/ymom/height centroid values in-place.
+void core_ader_ck_predictor(struct domain *D, double dt);
+
+// Fused ADER-2 predictor: advances edge values to Q^{n+1/2}, leaving
+// centroid values unchanged.  Eliminates the second extrapolation pass.
+// Call after core_extrapolate_second_order_edge() + boundary update.
+void core_ader_ck_predictor_edge(struct domain *D, double dt);
 
 #endif // CORE_KERNELS_H

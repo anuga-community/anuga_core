@@ -66,16 +66,16 @@ def metis_partition(domain, n_procs):
     n_tri = domain.number_of_triangles
 
     if n_procs > n_tri:
-        raise ValueError("Number of processors must be less than or equal to the number of triangles")  
+        raise ValueError("Number of processors must be less than or equal to the number of triangles")
 
     if n_procs == 1:
         epart_order = np.arange(n_tri, dtype=int)
         triangles_per_proc = [n_tri]
         return epart_order, triangles_per_proc
 
-    # Use metis to partition the mesh. 
-    # The partitioning routine used depends on the version of metis installed. 
-    # If metis 4 is installed, partMeshNodal is used. If metis 5 is installed, 
+    # Use metis to partition the mesh.
+    # The partitioning routine used depends on the version of metis installed.
+    # If metis 4 is installed, partMeshNodal is used. If metis 5 is installed,
     # part_mesh is used if available, otherwise part_graph
 
     if metis_version == "5_part_mesh":
@@ -84,19 +84,17 @@ def metis_partition(domain, n_procs):
 
 
     if metis_version == "5_part_graph":
-        # build adjacency list
-        # neighbours uses negative integer-indices to denote boudary edges.
-        # pymetis totally cant handle that, so we have to delete these.
-        neigh = domain.neighbours.tolist()
-        for i in range(len(neigh)):
-            if neigh[i][2] < 0:
-                del neigh[i][2]
-            if neigh[i][1] < 0:
-                del neigh[i][1]
-            if neigh[i][0] < 0:
-                del neigh[i][0]
+        # neighbours uses negative entries for boundary edges; pymetis can't
+        # handle them, so we build a CSR adjacency that omits them.
+        N = domain.neighbours
+        mask = N >= 0
+        adjncy = N[mask].astype(np.int32)
+        counts = mask.sum(axis=1).astype(np.int32)
+        xadj = np.empty(N.shape[0] + 1, dtype=np.int32)
+        xadj[0] = 0
+        np.cumsum(counts, out=xadj[1:])
 
-        cutcount, partvert = part_graph(n_procs, neigh)
+        cutcount, partvert = part_graph(n_procs, xadj=xadj, adjncy=adjncy)
 
         epart = partvert
 
@@ -125,7 +123,7 @@ def metis_partition(domain, n_procs):
 
 
 #==============================================================================================================
-# Code for computing Morton (Z-order) codes for 2D points, 
+# Code for computing Morton (Z-order) codes for 2D points,
 # used for spatial locality-preserving ordering of mesh elements.
 # This is based on the "Bit Twiddling Hacks" by Sean Eron Anderson:
 # https://graphics.stanford.edu/~seander/bithacks.html#InterleaveTables
@@ -168,7 +166,7 @@ def morton_partition(domain, n_procs):
     n_tri = domain.number_of_triangles
 
     if n_procs > n_tri:
-        raise ValueError("Number of processors must be less than or equal to the number of triangles")  
+        raise ValueError("Number of processors must be less than or equal to the number of triangles")
 
 
     points = domain.centroid_coordinates
@@ -190,12 +188,12 @@ def morton_encode_2d(x, y):
     """
     Encode 2D coordinates to Morton codes.
     Uses 32 bits per dimension for 64-bit Morton codes.
-    
+
     Parameters
     ----------
     x: np.ndarray of floats
     y: np.ndarray of floats
-        
+
     Returns
     -------
     codes: np.ndarray
@@ -203,40 +201,40 @@ def morton_encode_2d(x, y):
     """
     x = np.asarray(x, dtype=np.float64)
     y = np.asarray(y, dtype=np.float64)
-    
+
     # Ensure x and y have the same shape
     x, y = np.broadcast_arrays(x, y)
-    
+
     min_x, max_x = np.min(x), np.max(x)
     min_y, max_y = np.min(y), np.max(y)
-    
+
     # Add small padding to avoid edge cases
     x_range = max_x - min_x
     y_range = max_y - min_y
     padding = 1e-12  # Smaller padding for maximum resolution
-    
+
     if x_range == 0:
         x_range = 1.0
         padding = 0.5
     if y_range == 0:
         y_range = 1.0
         padding = 0.5
-        
+
     min_x -= x_range * padding
     max_x += x_range * padding
     min_y -= y_range * padding
     max_y += y_range * padding
-    
+
     # Scale coordinates to [0, 2^32 - 1] for maximum resolution
     max_coord = 0xFFFFFFFF  # 2^32 - 1
-    
+
     x_scaled = ((x - min_x) / (max_x - min_x) * max_coord).astype(np.uint64)
     y_scaled = ((y - min_y) / (max_y - min_y) * max_coord).astype(np.uint64)
-    
+
     # Clamp to valid range
     x_scaled = np.clip(x_scaled, 0, max_coord)
     y_scaled = np.clip(y_scaled, 0, max_coord)
-    
+
     # Dilate bits for 32-bit values - maximum resolution bit interleaving
     def dilate_bits_32(vals):
         """Dilate 32-bit values by inserting zeros between bits"""
@@ -248,14 +246,14 @@ def morton_encode_2d(x, y):
         vals = (vals | (vals << 2))  & 0x3333333333333333
         vals = (vals | (vals << 1))  & 0x5555555555555555
         return vals
-    
+
     # Dilate and interleave: x gets odd positions, y gets even positions
     x_dilated = dilate_bits_32(x_scaled)
     y_dilated = dilate_bits_32(y_scaled)
-    
+
     # Interleave by shifting y left by 1 and OR-ing with x
     morton_codes = x_dilated | (y_dilated << 1)
-    
+
     return morton_codes
 
 
@@ -342,7 +340,7 @@ def hilbert_partition(domain, n_procs):
     n_tri = domain.number_of_triangles
 
     if n_procs > n_tri:
-        raise ValueError("Number of processors must be less than or equal to the number of triangles")  
+        raise ValueError("Number of processors must be less than or equal to the number of triangles")
 
 
     points = domain.centroid_coordinates

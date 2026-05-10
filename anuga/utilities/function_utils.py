@@ -25,10 +25,10 @@ def determine_function_type(function):
     if function is None:
         return None
 
-    
-    
+
+
     assert (isinstance(function, (int, float, list)) or
-            isinstance(function, num.ndarray) or 
+            isinstance(function, num.ndarray) or
             callable(function)), msg
 
 
@@ -83,7 +83,7 @@ def determine_function_type(function):
 
 
 def evaluate_temporal_function(function, t, default_left_value=None, default_right_value=None):
-    
+
     if  callable(function):
         try:
             result = function(t)
