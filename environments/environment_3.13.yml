@@ -25,7 +25,6 @@ dependencies:
   - pkg-config
   - pybind11
   - pymetis
-  - parmetis
   - pyproj
   - pytest
   - pytest-regressions
