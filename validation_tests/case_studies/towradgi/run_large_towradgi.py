@@ -131,7 +131,9 @@ except Exception as _te:
 
 def _tide_fast(t):
     if _tide_t is not None:
-        return float(numpy.interp(t, _tide_t, _tide_v))
+        # Call the C-level interp directly, bypassing the Python wrapper's
+        # iscomplexobj check which costs 0.036s across 36k calls.
+        return float(numpy._core._multiarray_umath.interp(t, _tide_t, _tide_v))
     return float(func(t)[0])
 
 # ------------------------------------------------------------------------------

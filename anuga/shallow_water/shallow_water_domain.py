@@ -3261,9 +3261,10 @@ class Domain(Generic_Domain):
         # Update internal time tracking
         self.set_relative_time(self.get_relative_time() + self.timestep)
 
-        # Record timestep stats
-        self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
-        self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
+        # Record timestep stats — direct comparison to avoid builtin dispatch
+        ts = self.timestep
+        if ts > self.recorded_max_timestep: self.recorded_max_timestep = ts
+        if ts < self.recorded_min_timestep: self.recorded_min_timestep = ts
 
 
     def evolve_one_rk3_step(self, yieldstep, finaltime):
@@ -3506,14 +3507,18 @@ class Domain(Generic_Domain):
 
     def _gpu_needs_boundary_flux_sum(self):
         """Return True when a fractional operator consumes boundary_flux_sum.
-        Result cached after first call — operator list never changes during simulation.
+        Cached permanently in __dict__ after first call — avoids hasattr()
+        overhead (180k builtins.hasattr calls in profiler) and operator-list
+        scan on every RK2 substep. Operator list never changes during a run.
         """
-        if hasattr(self, '_cached_needs_bfs'):
-            return self._cached_needs_bfs
-        from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
-        self._cached_needs_bfs = any(isinstance(op, boundary_flux_integral_operator)
-                                      for op in self.fractional_step_operators)
-        return self._cached_needs_bfs
+        try:
+            return self.__dict__['_cached_needs_bfs']
+        except KeyError:
+            from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
+            result = any(isinstance(op, boundary_flux_integral_operator)
+                         for op in self.fractional_step_operators)
+            self.__dict__['_cached_needs_bfs'] = result
+            return result
 
     def apply_fractional_steps(self):
         """Override to sync GPU data before fractional step operators run.
