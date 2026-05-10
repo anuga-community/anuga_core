@@ -35,27 +35,30 @@ class boundary_flux_integral_operator(Operator):
         self.boundary_flux_integral = num.array([0.])
         self.domain = domain
 
-        # Cache the RK coefficient once — timestepping_method never changes during a run.
-        # Eliminates a per-step attribute lookup + string comparison (called 36002×).
+        # Cache the RK coefficient — timestepping_method never changes during a run.
         _ts = domain.timestepping_method
         if _ts == 'euler':
-            self._bfs_coeff = (1, False)   # (substeps to use, rk3_special)
+            self._bfs_coeff = (1, False)
         elif _ts == 'rk2':
             self._bfs_coeff = (2, False)
         elif _ts == 'rk3':
             self._bfs_coeff = (3, True)
         else:
-            self._bfs_coeff = None  # fallback to original code path
+            self._bfs_coeff = None
+
+        # Cache a plain ndarray view of boundary_flux_sum ONCE at init time.
+        # Calling num.asarray() in every __call__ (36k× per run) still dispatches
+        # through MaskedArray.__array__ → _get_data → __getitem__ on every call
+        # (72k+ numpy.ma entries in profiler). Caching here gives a view that
+        # shares the underlying C buffer — GPU in-place writes are reflected
+        # automatically without going through Python on every timestep.
+        self._bfs = num.asarray(domain.boundary_flux_sum)
 
 
     def __call__(self):
         """Accumulate boundary flux for each timestep."""
         dt = self.domain.timestep
-        raw = self.domain.boundary_flux_sum
-        # Strip masked-array wrapper without touching .data (which returns a
-        # raw memoryview/bytes buffer in some numpy versions, not an ndarray).
-        # numpy.asarray() always returns a plain writable ndarray view.
-        bfs = num.asarray(raw)
+        bfs = self._bfs  # pre-cached plain ndarray view — no numpy.ma overhead
 
         if self._bfs_coeff is not None:
             n, rk3 = self._bfs_coeff

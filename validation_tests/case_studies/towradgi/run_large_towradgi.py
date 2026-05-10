@@ -105,34 +105,29 @@ domain_name = join('Towradgi_historic_flood')
 meshname = join('DEM_bridges', 'towradgi.tsh')
 func = file_function(join('Forcing', 'Tide', 'Pioneer.tms'), quantities='rainfall')
 
-# Pre-build a fast numpy.interp lookup from the tide file — avoids calling the
-# full ANUGA interpolation stack (0.96s / 1800s sim at 36k× per yieldstep).
-# Falls back to func(t) if the .tms file cannot be read directly.
+# Build numpy.interp fast path by extracting already-parsed arrays from func.
+# Avoids re-reading the file (encoding issues) and calling the full ANUGA
+# interpolation stack 36,000x per run (~0.96s saving).
 _tide_t = None
 _tide_v = None
 try:
-    import csv as _csv
-    _tide_rows = []
-    for _enc in ('utf-8', 'latin-1', 'cp1252'):
-        try:
-            with open(join('Forcing', 'Tide', 'Pioneer.tms'), encoding=_enc) as _f:
-                for _row in _csv.reader(_f, delimiter=','):
-                    try:
-                        _tide_rows.append((float(_row[0]), float(_row[1])))
-                    except (ValueError, IndexError):
-                        pass
-            break  # succeeded
-        except UnicodeDecodeError:
-            _tide_rows = []
-            continue  # skip header lines
-    if len(_tide_rows) >= 2:
-        _tide_t = numpy.array([r[0] for r in _tide_rows], dtype=numpy.float64)
-        _tide_v = numpy.array([r[1] for r in _tide_rows], dtype=numpy.float64)
-        if myid == 0:
-            print(f'[tide] pre-built numpy.interp from {len(_tide_rows)} points')
-except Exception as _te:
+    _tide_t = numpy.asarray(func.time, dtype=numpy.float64)
+    # precomputed_values[name] shape: (n_times, n_points); scalar TMS => (n,1)
+    _pv = func.precomputed_values.get(
+        'rainfall',
+        func.precomputed_values.get(
+            'stage',
+            next(iter(func.precomputed_values.values()), None)))
+    if _pv is None or len(_tide_t) < 2:
+        raise ValueError(f'no usable data: {list(func.precomputed_values.keys())}')
+    _tide_v = numpy.asarray(_pv, dtype=numpy.float64).ravel()
     if myid == 0:
-        print(f'[tide] WARNING: fast path failed ({_te}), using ANUGA file_function')
+        print(f'[tide] numpy.interp fast path ready: {len(_tide_t)} points')
+except Exception as _te:
+    _tide_t = None
+    _tide_v = None
+    if myid == 0:
+        print(f'[tide] WARNING: fast path unavailable ({_te}), using ANUGA interpolation')
 
 def _tide_fast(t):
     if _tide_t is not None:
