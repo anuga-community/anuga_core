@@ -169,8 +169,6 @@ after each CPU operator call.
 +--------------------------------------------+----------------------------------+
 | ``Kinematic_viscosity_operator``           | No GPU kernel yet                |
 +--------------------------------------------+----------------------------------+
-| ``File_boundary`` / ``Field_boundary``     | Evaluated on GPU via struct push |
-+--------------------------------------------+----------------------------------+
 | ``Weir_orifice_trapezoid_operator``        | GPU via GPUCulvertManager        |
 | (parallel)                                 | (cross-boundary MPI supported)   |
 +--------------------------------------------+----------------------------------+
@@ -205,6 +203,9 @@ All standard boundary types are supported in GPU mode:
 - ``Dirichlet_boundary``
 - ``File_boundary`` / ``Field_boundary`` (per-edge values pushed to device each sub-step)
 - ``Time_boundary``, ``Time_stage_zero_momentum_boundary``
+- ``Absorbing_wave_boundary`` (wave scalar pushed from Python; ghost state computed on device)
+- ``Characteristic_wave_boundary`` (wave scalar pushed from Python; nonlinear characteristic kernel on device)
+- ``Flather_external_stage_zero_velocity_boundary`` (exterior stage scalar pushed from Python; Blayo & Debreu characteristic decomposition kernel on device)
 
 Custom boundary classes not in the above list are evaluated on the CPU with an
 automatic device sync.

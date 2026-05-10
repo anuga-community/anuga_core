@@ -110,11 +110,26 @@ domain = distribute(domain)
 wave_function = anuga.file_function(boundary_filename,
                          domain, verbose=verbose)
 
-# Create and assign boundary objects
-Bts = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(domain, wave_function)
-Bf = anuga.Flather_external_stage_zero_velocity_boundary(domain, lambda t : 2.0*wave_function(t))
-Br = anuga.Reflective_boundary(domain)
-domain.set_boundary({'wave': Bf, 'wall': Br})
+# Boundary condition options (background_stage=0.0 = sea level at rest):
+#
+# Bchar: nonlinear characteristic BC (recommended).
+#        Prescribes incoming Riemann invariant from wave_function and
+#        extrapolates outgoing invariant from the interior.  Handles
+#        large-amplitude reflections from runup correctly without
+#        linearisation error.
+#
+# Babs:  active-absorption BC.  Ghost stage = 2*wave - stage_interior
+#        pins the face to wave(t) exactly.  Good for small-amplitude
+#        waves; less effective for large runup reflections.
+#
+# Bts:   transmissive set-stage BC.  Directly prescribes stage = wave(t)
+#        at the ghost cell and reflects returning waves back into the
+#        domain.  Physically correct for a servo-controlled wavemaker.
+Bts   = anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(domain, wave_function)
+# Bchar = anuga.Characteristic_wave_boundary(domain, wave_function, background_stage=0.0)
+# Babs  = anuga.Absorbing_wave_boundary(domain, wave_function)
+Br    = anuga.Reflective_boundary(domain)
+domain.set_boundary({'wave': Bts, 'wall': Br})
 
 #-------------------------------------------------------------------------
 # Produce a documentation of parameters

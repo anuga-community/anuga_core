@@ -30,6 +30,8 @@ domain.set_quantity('xmomentum', expression='x - x*x')
 domain.set_quantity('ymomentum', expression='y - y*y')
 
 out_dir = os.path.dirname(os.path.abspath(__file__))
+domain.set_datadir(out_dir)
+domain.store = False  # no SWW output needed — we only compare xvelocity arrays
 
 if numprocs > 1:
     domain = distribute(domain)
