@@ -51,11 +51,11 @@ class boundary_flux_integral_operator(Operator):
     def __call__(self):
         """Accumulate boundary flux for each timestep."""
         dt = self.domain.timestep
-        bfs = self.domain.boundary_flux_sum
-        # Strip masked-array wrapper if present — the mask is never used and
-        # numpy.ma dispatch costs ~0.37s/1800s sim (72k× __getitem__).
-        if hasattr(bfs, 'data'):
-            bfs = bfs.data
+        raw = self.domain.boundary_flux_sum
+        # Strip masked-array wrapper without touching .data (which returns a
+        # raw memoryview/bytes buffer in some numpy versions, not an ndarray).
+        # numpy.asarray() always returns a plain writable ndarray view.
+        bfs = num.asarray(raw)
 
         if self._bfs_coeff is not None:
             n, rk3 = self._bfs_coeff

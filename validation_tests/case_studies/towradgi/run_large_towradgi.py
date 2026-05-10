@@ -113,12 +113,18 @@ _tide_v = None
 try:
     import csv as _csv
     _tide_rows = []
-    with open(join('Forcing', 'Tide', 'Pioneer.tms')) as _f:
-        for _row in _csv.reader(_f, delimiter=','):
-            try:
-                _tide_rows.append((float(_row[0]), float(_row[1])))
-            except (ValueError, IndexError):
-                pass  # skip header lines
+    for _enc in ('utf-8', 'latin-1', 'cp1252'):
+        try:
+            with open(join('Forcing', 'Tide', 'Pioneer.tms'), encoding=_enc) as _f:
+                for _row in _csv.reader(_f, delimiter=','):
+                    try:
+                        _tide_rows.append((float(_row[0]), float(_row[1])))
+                    except (ValueError, IndexError):
+                        pass
+            break  # succeeded
+        except UnicodeDecodeError:
+            _tide_rows = []
+            continue  # skip header lines
     if len(_tide_rows) >= 2:
         _tide_t = numpy.array([r[0] for r in _tide_rows], dtype=numpy.float64)
         _tide_v = numpy.array([r[1] for r in _tide_rows], dtype=numpy.float64)
