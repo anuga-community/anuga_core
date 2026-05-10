@@ -2774,7 +2774,9 @@ class Domain(Generic_Domain):
         import numpy as np
 
         gpu_dom = self.gpu_interface.gpu_dom
+        # Compute once per evolve call — called 2× per step otherwise (72004× / run)
         compute_boundary_flux = 1 if self._gpu_needs_boundary_flux_sum() else 0
+        self.__dict__['_cbf_int'] = compute_boundary_flux  # cache for second substep
 
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
@@ -2992,13 +2994,17 @@ class Domain(Generic_Domain):
         remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
         if finaltime is not None:
             remaining_finaltime = finaltime - self.get_time()
-            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep, remaining_finaltime)
+            # Inline min — avoids builtin dispatch for scalar comparison (36002× per run)
+            _em = self.evolve_max_timestep
+            max_timestep = _em if _em < remaining_yieldstep else remaining_yieldstep
+            if remaining_finaltime < max_timestep: max_timestep = remaining_finaltime
         else:
-            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
+            _em = self.evolve_max_timestep
+            max_timestep = _em if _em < remaining_yieldstep else remaining_yieldstep
 
         # Execute full RK2 step in C (includes MPI timestep reduction)
         # apply_forcing=1 enables Manning friction on GPU
-        compute_boundary_flux = 1 if self._gpu_needs_boundary_flux_sum() else 0
+        compute_boundary_flux = self.__dict__.get('_cbf_int', 1 if self._gpu_needs_boundary_flux_sum() else 0)
         self.timestep = evolve_one_rk2_step_gpu(gpu_dom, max_timestep, 1, compute_boundary_flux)
         self.gpu_interface.mark_device_dirty()
 

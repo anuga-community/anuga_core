@@ -1983,13 +1983,14 @@ class Generic_Domain:
             initial_relative_time = self.relative_time
 
             # Apply fluid flow fractional step
-            if self.get_timestepping_method() == 'euler':
+            # Read timestepping_method once per step (was get_timestepping_method()
+            # called 2× per step = 72004 function calls / 1800s run)
+            _tsm = self.timestepping_method
+            if _tsm == 'euler':
                 self.evolve_one_euler_step(yieldstep, self.finaltime)
-
-            elif self.get_timestepping_method() == 'rk2':
+            elif _tsm == 'rk2':
                 self.evolve_one_rk2_step(yieldstep, self.finaltime)
-
-            elif self.get_timestepping_method() == 'rk3':
+            elif _tsm == 'rk3':
                 self.evolve_one_rk3_step(yieldstep, self.finaltime)
 
             # Apply other fractional steps
