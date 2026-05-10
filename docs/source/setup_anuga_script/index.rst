@@ -16,8 +16,11 @@ Script Structure
    initial_conditions
    boundaries
    operators
+   rainfall
+   riverwalls
    evolve
    checkpointing
+   logging
    
 .. only:: html
 

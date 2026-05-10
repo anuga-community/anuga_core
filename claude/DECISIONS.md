@@ -206,6 +206,48 @@ wrappers with `DeprecationWarning`.
 
 ---
 
+## SWW GUI design decisions (2026-04-24)
+
+### Baked overlays vs canvas overlays — two coexisting systems
+
+**Decision:** Show Mesh and Show Elev use two independent rendering paths that coexist:
+- **Canvas overlay** (quick preview): drawn in Tkinter pixel-space on top of the imshow `PhotoImage`. Fast, no re-generation. Tracks `_ax` coordinates.
+- **Baked overlay** (permanent output): rendered into the matplotlib `Figure` during `save_*_frame` calls in `animate.py` using data-space triangulations at the correct z-order (elev contours z=3, mesh z=4). Permanent in the PNG.
+
+When a quantity is generated with Show Elev/Mesh ticked, `_last_gen_show_elev` / `_last_gen_show_mesh` are set and the canvas overlay methods return early, preventing a double-render.
+
+**Why:** Canvas overlays can only go on top of the pre-rendered opaque imshow; baked overlays integrate correctly at any z-order. Both are useful: canvas for cheap live preview while browsing, baked for output files.
+
+### `_nice_contour_levels` rounds steps to 1/2/5/10/20/50/100 × magnitude
+
+**Decision:** Contour levels are not equally-spaced floats — they are computed by finding the nearest round step value (factor of 1, 2, 5, 10 … × the order of magnitude) such that at most `n × 1.5` levels span the data range.
+
+**Why:** Arbitrary equal-spacing (e.g. 7.3 m intervals) produces ugly tick labels. Round steps like 5 m or 50 m are immediately readable.
+
+### Multi-point timeseries — list, not single triangle; tab10 palette for colour consistency
+
+**Decision:** `_ts_triangles` is a list; picks are appended (deduplicated). Both frame-star overlays (`_update_pick_overlay`) and timeseries lines (`_update_timeseries`) call `self._ts_color(i)` for the same index, guaranteeing identical colours in both panels without any cross-communication.
+
+**Why:** A single picked index is a common case, but users asked for the ability to compare multiple points. The tab10 palette is categorical and perceptually distinct up to 10 points — sufficient for practical use.
+
+### Tabbed UI layout — 3 tabs + always-visible bars
+
+**Decision:** The 9 flat rows of the original UI were reorganised into:
+- **Plot tab**: quantity, vmin/vmax, colormap, overlays
+- **Generate tab**: output path, DPI, stride, EPSG, basemap
+- **Output tab**: save/export/animation/mesh buttons
+- Always-visible: file row, Generate Frames bar, playback bar, frame slider, status bar
+
+**Why:** The always-visible bars give access to the most-used controls (generate, play, scrub) without tab switching. Less-used settings (DPI, EPSG, basemap) move to the Generate tab; save/export buttons move to Output. The flat layout became too wide to fit without scrolling as features accumulated.
+
+### `use_basemap=None` sentinel in `_render_and_save_mesh`
+
+**Decision:** The parameter defaults to `None`, which means "inherit from last generation state" (`self._gen_used_basemap and sp.epsg is not None`). An explicit `True` or `False` overrides this.
+
+**Why:** The `_save_mesh` dialog needs to pre-populate the checkbox from the last gen state, but the user can then change it. Passing the checkbox value as an explicit bool ensures the override is honoured. `None` as sentinel keeps the old default behaviour for any caller that doesn't pass the argument.
+
+---
+
 ## Hydrata Refactor Plan Decisions
 
 From [REFACTOR_PLAN.md](https://github.com/Hydrata/anuga_core/blob/anuga-4.0-refactor-plan/REFACTOR_PLAN.md) (2026-02-28). These are adopted as guidance for future work.

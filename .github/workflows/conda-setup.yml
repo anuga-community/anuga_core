@@ -1,4 +1,4 @@
-name: github CI
+name: Conda Forge CI
 
 on:
 
@@ -8,6 +8,7 @@ on:
       - develop
       - develop_gpu
       - develop_cupy
+      - feat/sc26
 
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - develop_gpu
       - develop_cupy
       - jorge/unify_again
+      - feat/sc26
 
 jobs:
   test_conda:
@@ -26,20 +28,21 @@ jobs:
       matrix:
         os: ["ubuntu-latest", "macos-latest", "windows-latest"]
 
-        # 2025/09/18: 3.8 macos and windows has problems with the new compilers.
-        # 2026/01/07: 3.9 problems with argument typing 
+        # 2026/04/05: dropped 3.8 -- numpy>=2.0.0 (required by anuga) requires Python>=3.9
+        # 2026/04/06: dropped 3.9 -- X | Y union type syntax requires Python>=3.10
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0  # fetch full history so git describe can find tags
-      - uses: conda-incubator/setup-miniconda@v3
+      - uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest      # Installs Miniforge instead of Miniconda
           use-mamba: true                # Recommended for faster installs
           python-version: ${{ matrix.python-version }}
           auto-update-conda: true        # Auto-update conda or mamba
+          conda-remove-defaults: true    # Don't add 'defaults' channel (Miniforge uses conda-forge)
           
       - name: Install Our own environment
         shell: bash -el {0}
@@ -63,33 +66,50 @@ jobs:
         run: |
            conda install -c conda-forge -n anuga_env compilers
 
+      - name: Set macOS library path for MPI
+        if: runner.os == 'macOS'
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          echo "DYLD_LIBRARY_PATH=$CONDA_PREFIX/lib:$DYLD_LIBRARY_PATH" >> $GITHUB_ENV
+
       - name: Install gxx with openmp compiler on Linux
         if: runner.os == 'Linux'
         shell: bash -el {0}
         run: |
            conda install -c conda-forge -n anuga_env compilers libgomp
 
-      - name: Problem on windows and Python 3.9 with mpi4py
-        # As of 2025/06/19, strange combination of mpi4py, the new compilers and pytest
-        # caused a segmentation fault on Windows.
-        # This has been resolved by using mpi4py 4.0.3 with Python 3.9
-        if: runner.os == 'Windows' && matrix.python-version == '3.9'
-        shell: bash -el {0}
-        run: |
-          # conda uninstall -n anuga_env mpi4py
-          echo "No longer need to uninstall mpi4py with Python 3.9 if we use mpi4py 4.0.3"
-           
       - name: Install anuga package
         shell: bash -el {0}
         run: |
           conda activate anuga_env
           pip install --no-build-isolation -v .
 
-      - name: Test package
+      - name: Test package (fast — PR feedback)
+        if: github.event_name == 'pull_request'
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          cd sandpit
+          export OMP_NUM_THREADS=1
+          pytest -rs --pyargs anuga --run-fast
+
+      - name: Test package (full suite — push to main/develop)
+        if: github.event_name == 'push'
         shell: bash -el {0}
         run: |
           conda activate anuga_env
           cd sandpit
           export OMP_NUM_THREADS=1
           pytest -rs --pyargs anuga
+
+      - name: Coverage report (Linux / Python 3.12 only)
+        if: runner.os == 'Linux' && matrix.python-version == '3.12'
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          pip install pytest-cov
+          cd sandpit
+          export OMP_NUM_THREADS=1
+          pytest --pyargs anuga --cov=anuga --cov-report=xml --cov-report=term-missing --cov-config=../.coveragerc
 
