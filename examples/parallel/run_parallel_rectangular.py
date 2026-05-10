@@ -223,6 +223,9 @@ t0 = time.time()
 
 # nvtx marker
 #rng = nvtx.start_range(message="rect_exam_evolve_time", color="blue")
+if myid == 0 :
+    anuga.print_domain_memory_stats(domain)
+    #anuga.print_domain_struct_stats(domain)
 
 #===========================================================================
 # Main Evolve Loop
@@ -240,6 +243,10 @@ evolve_time = time.time()-t0
 
 if myid == 0 :
     print ('Evolve: Time',evolve_time)
+
+if myid == 0 :
+    anuga.print_domain_memory_stats(domain)
+    #anuga.print_domain_struct_stats(domain)
 
 if evolve_verbose:
     for p in range(numprocs):

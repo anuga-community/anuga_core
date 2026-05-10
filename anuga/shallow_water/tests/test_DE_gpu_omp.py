@@ -16,16 +16,32 @@ from anuga import rectangular_cross_domain
 from anuga import Inlet_operator
 
 
+_gpu_error = None
+_gpu_avail = None
+
+
 def gpu_available():
     """Check if GPU OpenMP interface is available."""
+    global _gpu_error, _gpu_avail
+    if _gpu_avail is not None:
+        return _gpu_avail
     try:
         from anuga.shallow_water.sw_domain_gpu_ext import init_gpu_domain
-        return True
-    except ImportError:
-        return False
+        _gpu_avail = True
+    except Exception as e:
+        _gpu_avail = False
+        _gpu_error = f"{type(e).__name__}: {e}"
+        print(f"sw_domain_gpu_ext not available: {_gpu_error}", flush=True)
+    return _gpu_avail
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+def _gpu_skip_reason():
+    if _gpu_error:
+        return f"GPU OpenMP interface not available: {_gpu_error}"
+    return "GPU OpenMP interface not available"
+
+
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_Kernels(unittest.TestCase):
     """Unit tests for individual GPU kernels."""
 
@@ -136,7 +152,7 @@ class Test_GPU_Kernels(unittest.TestCase):
                                    err_msg="Edge values mismatch after extrapolation")
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_RK2(unittest.TestCase):
     """Tests for complete RK2 step on GPU."""
 
@@ -231,7 +247,7 @@ class Test_GPU_RK2(unittest.TestCase):
                         f"Xmomentum difference too large: max={xmom_diff.max():.2e}")
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_Boundaries(unittest.TestCase):
     """Tests for GPU boundary evaluation."""
 
@@ -372,7 +388,7 @@ class Test_GPU_Boundaries(unittest.TestCase):
             self.assertAlmostEqual(stage_bv[idx], -0.3, places=5)
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_Initialization(unittest.TestCase):
     """Tests for GPU initialization and error handling."""
 
@@ -416,7 +432,7 @@ class Test_GPU_Initialization(unittest.TestCase):
         self.assertTrue(domain.gpu_interface.initialized)
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_LargeDomain(unittest.TestCase):
     """Tests with larger domains to verify scaling."""
 
@@ -481,7 +497,7 @@ class Test_GPU_LargeDomain(unittest.TestCase):
                         f"Large domain stage difference: max={stage_diff.max():.2e}")
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_InletOperator(unittest.TestCase):
     """Tests for Inlet_operator with GPU acceleration."""
 
@@ -657,7 +673,7 @@ class Test_GPU_InletOperator(unittest.TestCase):
                         f"Xmomentum difference too large: max={xmom_diff.max():.2e}")
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_Riverwall(unittest.TestCase):
     """Tests for riverwall/weir support with GPU acceleration."""
 
@@ -896,7 +912,7 @@ class Test_GPU_Riverwall(unittest.TestCase):
                         "Water should have flowed over the wall, reducing the level difference")
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_EndToEnd(unittest.TestCase):
     """End-to-end regression tests comparing mode=1 (Python RK2) vs mode=2 (C RK2).
 
@@ -1018,7 +1034,7 @@ class Test_GPU_EndToEnd(unittest.TestCase):
                 f'final={final_volume:.6f}')
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_RK3(unittest.TestCase):
     """Tests for SSP-RK3 timestepping in GPU mode (DE2 flow algorithm).
 
@@ -1132,7 +1148,7 @@ class Test_GPU_RK3(unittest.TestCase):
             finalize_gpu_domain(gpu)
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_Culvert(unittest.TestCase):
     """Tests for Boyd box/pipe culvert operators in GPU mode."""
 
@@ -1247,7 +1263,7 @@ class Test_GPU_Culvert(unittest.TestCase):
             'Right side should have gained water through the culvert')
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_WeirTrapezoid(unittest.TestCase):
     """Tests for Weir_orifice_trapezoid_operator in GPU mode."""
 
@@ -1350,7 +1366,7 @@ class Test_GPU_WeirTrapezoid(unittest.TestCase):
             err_msg='Weir trapezoid (z1=z2=0.5) 5s: stage mismatch between mode=1 and mode=2')
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_SlotLimits(unittest.TestCase):
     """Tests that GPU operator arrays grow dynamically beyond the initial capacity."""
 
@@ -1403,7 +1419,7 @@ class Test_GPU_SlotLimits(unittest.TestCase):
         self.assertEqual(len(operators), 34)
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_FileBoundary(unittest.TestCase):
     """Tests for G1.1: File_boundary / Field_boundary GPU support."""
 
@@ -1517,7 +1533,203 @@ class Test_GPU_FileBoundary(unittest.TestCase):
         finalize_gpu_domain(gpu)
 
 
-@pytest.mark.skipif(not gpu_available(), reason="GPU OpenMP interface not available")
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
+class Test_GPU_FlatherBoundary(unittest.TestCase):
+    """Tests for Flather_external_stage_zero_velocity_boundary GPU support."""
+
+    def _make_domain(self, M=15, N=15):
+        d = rectangular_cross_domain(M, N, len1=1.0, len2=1.0)
+        d.set_flow_algorithm('DE0')
+        d.set_low_froude(0)
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', 0.0)
+        d.set_quantity('friction', 0.0)
+        d.set_quantity('stage', 0.1)
+        return d
+
+    def _run_mode(self, mode):
+        from anuga import Flather_external_stage_zero_velocity_boundary
+        d = self._make_domain()
+        Br = Reflective_boundary(d)
+        Bf = Flather_external_stage_zero_velocity_boundary(d, function=lambda t: 0.0)
+        d.set_boundary({'left': Bf, 'right': Br, 'top': Br, 'bottom': Br})
+        d.set_multiprocessor_mode(mode)
+        d.set_quantities_to_be_stored(None)
+        gauge_tri = d.get_triangle_containing_point([0.5, 0.5])
+        stage = d.get_quantity('stage')
+        vals = []
+        for _ in d.evolve(yieldstep=0.1, finaltime=0.3):
+            vals.append(float(stage.centroid_values[gauge_tri]))
+        return vals
+
+    def test_flather_boundary_mode1_vs_mode2(self):
+        """Flather boundary produces identical results in mode=1 and mode=2."""
+        g1 = self._run_mode(1)
+        g2 = self._run_mode(2)
+        self.assertEqual(len(g1), len(g2))
+        for v1, v2 in zip(g1, g2):
+            self.assertAlmostEqual(v1, v2, places=10,
+                msg=f"mode=1 gauge={v1} vs mode=2 gauge={v2}")
+
+    def test_flather_boundary_in_gpu_boundary_types(self):
+        """Flather_external_stage_zero_velocity_boundary is GPU-supported (no CPU fallback)."""
+        from anuga import Flather_external_stage_zero_velocity_boundary
+        d = self._make_domain()
+        Br = Reflective_boundary(d)
+        Bf = Flather_external_stage_zero_velocity_boundary(d, function=lambda t: 0.0)
+        d.set_boundary({'left': Bf, 'right': Br, 'top': Br, 'bottom': Br})
+        d.set_multiprocessor_mode(2)
+        d.set_quantities_to_be_stored(None)
+        for _ in d.evolve(yieldstep=0.1, finaltime=0.1):
+            pass
+        self.assertTrue(d._gpu_all_on_gpu,
+            "Flather_external_stage_zero_velocity_boundary should be GPU-supported")
+
+    def test_flather_boundary_init_via_ext(self):
+        """init_flather_boundary populates GPU struct correctly."""
+        from anuga import Flather_external_stage_zero_velocity_boundary
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            init_gpu_domain, map_to_gpu, unmap_from_gpu, finalize_gpu_domain,
+            init_flather_boundary,
+        )
+        d = self._make_domain(10, 10)
+        Br = Reflective_boundary(d)
+        Bf = Flather_external_stage_zero_velocity_boundary(d, function=lambda t: 0.0)
+        d.set_boundary({'left': Bf, 'right': Br, 'top': Br, 'bottom': Br})
+
+        gpu = init_gpu_domain(d)
+        n = init_flather_boundary(gpu, d)
+        map_to_gpu(gpu)
+
+        self.assertGreater(n, 0, "Flather BC should find edges on 'left' boundary")
+
+        unmap_from_gpu(gpu)
+        finalize_gpu_domain(gpu)
+
+
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
+class Test_GPU_WaveBoundaries(unittest.TestCase):
+    """Tests for Absorbing_wave_boundary and Characteristic_wave_boundary GPU support."""
+
+    def _make_domain(self, M=15, N=15):
+        d = rectangular_cross_domain(M, N, len1=1.0, len2=1.0)
+        d.set_flow_algorithm('DE0')
+        d.set_low_froude(0)
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', 0.0)
+        d.set_quantity('friction', 0.0)
+        d.set_quantity('stage', 0.1)
+        return d
+
+    def _run_mode(self, mode, bc_factory):
+        """Run a short simulation with the given boundary factory and return gauge time series."""
+        d = self._make_domain()
+        Br = Reflective_boundary(d)
+        Bw = bc_factory(d)
+        d.set_boundary({'left': Bw, 'right': Br, 'top': Br, 'bottom': Br})
+        d.set_multiprocessor_mode(mode)
+        d.set_quantities_to_be_stored(None)
+
+        gauge_tri = d.get_triangle_containing_point([0.5, 0.5])
+        stage = d.get_quantity('stage')
+        vals = []
+        for _ in d.evolve(yieldstep=0.1, finaltime=0.3):
+            vals.append(float(stage.centroid_values[gauge_tri]))
+        return vals
+
+    def test_absorbing_wave_boundary_mode1_vs_mode2(self):
+        """Absorbing_wave_boundary produces identical results in mode=1 and mode=2."""
+        from anuga import Absorbing_wave_boundary
+
+        def bc_factory(d):
+            return Absorbing_wave_boundary(d, function=lambda t: 0.0)
+
+        g1 = self._run_mode(1, bc_factory)
+        g2 = self._run_mode(2, bc_factory)
+        self.assertEqual(len(g1), len(g2))
+        for v1, v2 in zip(g1, g2):
+            self.assertAlmostEqual(v1, v2, places=10,
+                msg=f"mode=1 gauge={v1} vs mode=2 gauge={v2}")
+
+    def test_characteristic_wave_boundary_mode1_vs_mode2(self):
+        """Characteristic_wave_boundary produces identical results in mode=1 and mode=2."""
+        from anuga import Characteristic_wave_boundary
+
+        def bc_factory(d):
+            return Characteristic_wave_boundary(d, function=lambda t: 0.0, background_stage=0.1)
+
+        g1 = self._run_mode(1, bc_factory)
+        g2 = self._run_mode(2, bc_factory)
+        self.assertEqual(len(g1), len(g2))
+        for v1, v2 in zip(g1, g2):
+            self.assertAlmostEqual(v1, v2, places=10,
+                msg=f"mode=1 gauge={v1} vs mode=2 gauge={v2}")
+
+    def test_wave_boundaries_in_gpu_boundary_types(self):
+        """Both wave BCs are recognised as GPU-supported (no CPU fallback)."""
+        from anuga import Absorbing_wave_boundary, Characteristic_wave_boundary
+
+        d = self._make_domain()
+        Br = Reflective_boundary(d)
+        Ba = Absorbing_wave_boundary(d, function=lambda t: 0.0)
+        Bc = Characteristic_wave_boundary(d, function=lambda t: 0.0, background_stage=0.1)
+        d.set_boundary({'left': Ba, 'right': Bc, 'top': Br, 'bottom': Br})
+        d.set_multiprocessor_mode(2)
+        d.set_quantities_to_be_stored(None)
+        for _ in d.evolve(yieldstep=0.1, finaltime=0.1):
+            pass
+
+        self.assertTrue(d._gpu_all_on_gpu,
+            "Absorbing/Characteristic wave BCs should be GPU-supported (no CPU fallback)")
+
+    def test_absorbing_wave_boundary_init_via_ext(self):
+        """init_absorbing_wave_boundary populates GPU struct correctly."""
+        from anuga import Absorbing_wave_boundary
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            init_gpu_domain, map_to_gpu, unmap_from_gpu, finalize_gpu_domain,
+            init_absorbing_wave_boundary,
+        )
+
+        d = self._make_domain(10, 10)
+        Br = Reflective_boundary(d)
+        Ba = Absorbing_wave_boundary(d, function=lambda t: 0.0)
+        d.set_boundary({'left': Ba, 'right': Br, 'top': Br, 'bottom': Br})
+
+        gpu = init_gpu_domain(d)
+        n = init_absorbing_wave_boundary(gpu, d)
+        map_to_gpu(gpu)
+
+        self.assertGreater(n, 0, "absorbing_wave BC should find edges on 'left' boundary")
+
+        unmap_from_gpu(gpu)
+        finalize_gpu_domain(gpu)
+
+    def test_characteristic_wave_boundary_init_via_ext(self):
+        """init_characteristic_wave_boundary populates GPU struct correctly."""
+        from anuga import Characteristic_wave_boundary
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            init_gpu_domain, map_to_gpu, unmap_from_gpu, finalize_gpu_domain,
+            init_characteristic_wave_boundary,
+        )
+
+        d = self._make_domain(10, 10)
+        Br = Reflective_boundary(d)
+        Bc = Characteristic_wave_boundary(d, function=lambda t: 0.0, background_stage=0.1)
+        d.set_boundary({'left': Bc, 'right': Br, 'top': Br, 'bottom': Br})
+
+        gpu = init_gpu_domain(d)
+        n = init_characteristic_wave_boundary(gpu, d)
+        map_to_gpu(gpu)
+
+        self.assertGreater(n, 0, "characteristic_wave BC should find edges on 'left' boundary")
+
+        unmap_from_gpu(gpu)
+        finalize_gpu_domain(gpu)
+
+
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_DeviceMemory(unittest.TestCase):
     """Tests for G1.2: device memory check before array mapping."""
 

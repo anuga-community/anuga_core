@@ -881,6 +881,189 @@ class Test_riverwall_notebook(unittest.TestCase):
 
 
 # =========================================================================
+# Tests for the RiverWall runtime interface
+# (get/set elevation, get/set hydraulic parameters, get edge coordinates)
+# =========================================================================
+
+class Test_riverwall_interface(unittest.TestCase):
+    """Unit tests for RiverWall.get/set elevation & hydraulic-parameter methods."""
+
+    def setUp(self):
+        """Build a minimal two-wall domain for interface testing."""
+        bounding_polygon = [[0., 0.], [0., 20.], [20., 20.], [20., 0.]]
+        boundary_tags = {'left': [0], 'top': [1], 'right': [2], 'bottom': [3]}
+        riverWalls = {
+            'wallA': [[5.0,  0.0, 1.0], [5.0,  20.0, 1.0]],
+            'wallB': [[10.0, 0.0, 2.0], [10.0, 20.0, 2.0]],
+        }
+        anuga.create_pmesh_from_regions(
+            bounding_polygon, boundary_tags,
+            maximum_triangle_area=4.0,
+            breaklines=list(riverWalls.values()),
+            use_cache=False, verbose=False,
+            filename='test_rw_interface.msh')
+        self.domain = anuga.create_domain_from_file('test_rw_interface.msh')
+        self.domain.set_flow_algorithm('DE0')
+        self.domain.set_name('test_rw_interface')
+        self.domain.set_store(False)
+        self.domain.set_quantity('elevation', 0.0, location='centroids')
+        self.domain.set_quantity('friction', 0.03, location='centroids')
+        self.domain.set_quantity('stage', 0.0, location='centroids')
+        Br = anuga.Reflective_boundary(self.domain)
+        self.domain.set_boundary(
+            {'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        self.domain.riverwallData.create_riverwalls(
+            riverWalls,
+            {'wallA': {'Qfactor': 0.8, 's1': 0.7, 's2': 0.85,
+                       'h1': 0.9, 'h2': 1.4, 'Cd_through': 0.1},
+             'wallB': {'Qfactor': 1.2}},
+            verbose=False)
+        self.rw = self.domain.riverwallData
+
+    def tearDown(self):
+        for f in ('test_rw_interface.msh', 'test_rw_interface.sww'):
+            try:
+                os.remove(f)
+            except OSError:
+                pass
+
+    # --- get_wall_names ---
+
+    def test_get_wall_names_returns_both(self):
+        names = self.rw.get_wall_names()
+        self.assertIn('wallA', names)
+        self.assertIn('wallB', names)
+        self.assertEqual(len(names), 2)
+
+    def test_get_wall_names_returns_copy(self):
+        names = self.rw.get_wall_names()
+        names.append('extra')
+        self.assertEqual(len(self.rw.get_wall_names()), 2)
+
+    # --- _name_to_index / _param_to_col error paths ---
+
+    def test_name_to_index_bad_name_raises(self):
+        with self.assertRaises(KeyError):
+            self.rw._name_to_index('nonexistent')
+
+    def test_param_to_col_bad_param_raises(self):
+        with self.assertRaises(KeyError):
+            self.rw._param_to_col('bad_param')
+
+    # --- get_edge_coordinates ---
+
+    def test_get_edge_coordinates_shape(self):
+        xy = self.rw.get_edge_coordinates('wallA')
+        self.assertEqual(xy.ndim, 2)
+        self.assertEqual(xy.shape[1], 2)
+        self.assertGreater(xy.shape[0], 0)
+
+    def test_get_edge_coordinates_near_wall(self):
+        """All returned x-coords should be close to wallA x=5."""
+        xy = self.rw.get_edge_coordinates('wallA')
+        numpy.testing.assert_allclose(xy[:, 0], 5.0, atol=0.5)
+
+    # --- get_elevation ---
+
+    def test_get_elevation_returns_correct_values(self):
+        elev = self.rw.get_elevation('wallA')
+        numpy.testing.assert_allclose(elev, 1.0, atol=1e-10)
+
+    def test_get_elevation_returns_copy(self):
+        elev = self.rw.get_elevation('wallA')
+        elev[:] = 999.0
+        elev2 = self.rw.get_elevation('wallA')
+        numpy.testing.assert_allclose(elev2, 1.0, atol=1e-10)
+
+    # --- set_elevation (scalar) ---
+
+    def test_set_elevation_scalar_updates_all_edges(self):
+        self.rw.set_elevation('wallA', 3.5)
+        numpy.testing.assert_allclose(
+            self.rw.get_elevation('wallA'), 3.5, atol=1e-10)
+
+    def test_set_elevation_scalar_does_not_affect_other_wall(self):
+        self.rw.set_elevation('wallA', 3.5)
+        numpy.testing.assert_allclose(
+            self.rw.get_elevation('wallB'), 2.0, atol=1e-10)
+
+    # --- set_elevation (array) ---
+
+    def test_set_elevation_array_updates_edges(self):
+        n = len(self.rw.get_elevation('wallA'))
+        new_vals = numpy.linspace(1.0, 2.0, n)
+        self.rw.set_elevation('wallA', new_vals)
+        numpy.testing.assert_allclose(
+            self.rw.get_elevation('wallA'), new_vals, atol=1e-10)
+
+    def test_set_elevation_wrong_array_length_raises(self):
+        with self.assertRaises(ValueError):
+            self.rw.set_elevation('wallA', [1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0])
+
+    # --- set_elevation_offset ---
+
+    def test_set_elevation_offset_adds_to_current(self):
+        before = self.rw.get_elevation('wallA').copy()
+        self.rw.set_elevation_offset('wallA', 0.5)
+        numpy.testing.assert_allclose(
+            self.rw.get_elevation('wallA'), before + 0.5, atol=1e-10)
+
+    def test_set_elevation_offset_negative(self):
+        before = self.rw.get_elevation('wallB').copy()
+        self.rw.set_elevation_offset('wallB', -1.0)
+        numpy.testing.assert_allclose(
+            self.rw.get_elevation('wallB'), before - 1.0, atol=1e-10)
+
+    # --- get_hydraulic_parameter ---
+
+    def test_get_hydraulic_parameter_qfactor(self):
+        val = self.rw.get_hydraulic_parameter('wallA', 'Qfactor')
+        self.assertAlmostEqual(val, 0.8)
+
+    def test_get_hydraulic_parameter_default(self):
+        val = self.rw.get_hydraulic_parameter('wallB', 'Qfactor')
+        self.assertAlmostEqual(val, 1.2)
+
+    def test_get_hydraulic_parameter_cd_through(self):
+        val = self.rw.get_hydraulic_parameter('wallA', 'Cd_through')
+        self.assertAlmostEqual(val, 0.1)
+
+    # --- set_hydraulic_parameter ---
+
+    def test_set_hydraulic_parameter_updates_value(self):
+        self.rw.set_hydraulic_parameter('wallA', 'Qfactor', 0.5)
+        self.assertAlmostEqual(
+            self.rw.get_hydraulic_parameter('wallA', 'Qfactor'), 0.5)
+
+    def test_set_hydraulic_parameter_does_not_affect_other_wall(self):
+        self.rw.set_hydraulic_parameter('wallA', 'Qfactor', 0.5)
+        self.assertAlmostEqual(
+            self.rw.get_hydraulic_parameter('wallB', 'Qfactor'), 1.2)
+
+    def test_set_hydraulic_parameter_all_params(self):
+        for param, val in [('Qfactor', 0.9), ('s1', 0.6), ('s2', 0.8),
+                           ('h1', 0.5), ('h2', 1.0), ('Cd_through', 0.3)]:
+            self.rw.set_hydraulic_parameter('wallB', param, val)
+            self.assertAlmostEqual(
+                self.rw.get_hydraulic_parameter('wallB', param), val,
+                msg=f"param={param}")
+
+    # --- runtime use: set elevation inside a yield loop ---
+
+    def test_elevation_change_mid_evolve(self):
+        """Changing wall elevation mid-simulation should not crash."""
+        self.domain.set_quantity('stage', 0.5, location='centroids')
+        Br = anuga.Reflective_boundary(self.domain)
+        self.domain.set_boundary(
+            {'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        for t in self.domain.evolve(yieldstep=5.0, finaltime=10.0):
+            if t == 5.0:
+                self.rw.set_elevation('wallA', 0.3)
+        elev = self.rw.get_elevation('wallA')
+        numpy.testing.assert_allclose(elev, 0.3, atol=1e-10)
+
+
+# =========================================================================
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_riverwall_structure)
     runner = unittest.TextTestRunner()

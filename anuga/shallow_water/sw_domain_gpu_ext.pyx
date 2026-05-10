@@ -213,6 +213,28 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_time_boundary_set_values(gpu_domain *GD, double stage, double xmom, double ymom)
     void gpu_evaluate_time_boundary(gpu_domain *GD)
 
+    # Absorbing_wave_boundary
+    int  gpu_absorbing_wave_init(gpu_domain *GD, int num_edges,
+                                 int *boundary_indices, int *vol_ids, int *edge_ids)
+    void gpu_absorbing_wave_finalize(gpu_domain *GD)
+    void gpu_absorbing_wave_set_value(gpu_domain *GD, double wave_value)
+    void gpu_evaluate_absorbing_wave_boundary(gpu_domain *GD)
+
+    # Characteristic_wave_boundary
+    int  gpu_characteristic_wave_init(gpu_domain *GD, int num_edges,
+                                      int *boundary_indices, int *vol_ids, int *edge_ids,
+                                      double background_stage)
+    void gpu_characteristic_wave_finalize(gpu_domain *GD)
+    void gpu_characteristic_wave_set_value(gpu_domain *GD, double wave_value)
+    void gpu_evaluate_characteristic_wave_boundary(gpu_domain *GD)
+
+    # Flather_external_stage_zero_velocity_boundary
+    int  gpu_flather_init(gpu_domain *GD, int num_edges,
+                          int *boundary_indices, int *vol_ids, int *edge_ids)
+    void gpu_flather_finalize(gpu_domain *GD)
+    void gpu_flather_set_value(gpu_domain *GD, double stage_outside)
+    void gpu_evaluate_flather_boundary(gpu_domain *GD)
+
     # GPU kernels
     void gpu_extrapolate_second_order(gpu_domain *GD)
     double gpu_compute_fluxes(gpu_domain *GD)
@@ -223,6 +245,12 @@ cdef extern from "gpu_domain.h" nogil:
     double gpu_protect(gpu_domain *GD)
     double gpu_compute_water_volume(gpu_domain *GD)
     void gpu_manning_friction(gpu_domain *GD)
+
+    # ADER-2 Cauchy-Kovalewski predictor
+    void gpu_ader_ck_predictor(gpu_domain *GD, double dt)
+
+    # Full ADER-2 step
+    double gpu_evolve_one_ader2_step(gpu_domain *GD, double max_timestep, int apply_forcing)
 
     # Full RK2 step
     double gpu_evolve_one_rk2_step(gpu_domain *GD, double max_timestep, int apply_forcing)
@@ -604,9 +632,12 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     # Get riverwallData object
     riverwallData = domain_object.riverwallData
 
-    # Always extract edge_flux_type (needed to detect riverwall edges)
-    edge_flux_type = domain_object.edge_flux_type
-    D.edge_flux_type = &edge_flux_type[0]
+    # Extract edge_flux_type (NULL when no river walls exist)
+    if domain_object.edge_flux_type is not None:
+        edge_flux_type = domain_object.edge_flux_type
+        D.edge_flux_type = &edge_flux_type[0]
+    else:
+        D.edge_flux_type = NULL
 
     # Extract riverwall arrays (may be empty if no riverwalls)
     D.number_of_riverwall_edges = getattr(domain_object, 'number_of_riverwall_edges', 0)
@@ -637,9 +668,12 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     except:
         D.riverwall_hydraulic_properties = NULL
 
-    # edge_river_wall_counter is on domain_object, not riverwallData
-    edge_river_wall_counter = domain_object.edge_river_wall_counter
-    D.edge_river_wall_counter = &edge_river_wall_counter[0]
+    # edge_river_wall_counter is on domain_object, not riverwallData (NULL when no river walls)
+    if domain_object.edge_river_wall_counter is not None:
+        edge_river_wall_counter = domain_object.edge_river_wall_counter
+        D.edge_river_wall_counter = &edge_river_wall_counter[0]
+    else:
+        D.edge_river_wall_counter = NULL
 
 
 # ============================================================================
@@ -757,6 +791,12 @@ def init_gpu_domain(object domain_object, bint verbose=True):
 
     # Propagate verbose flag to C struct so printf calls respect it
     gpu_dom.GD.verbose = 1 if verbose else 0
+
+    # Ensure lazy work arrays are allocated before the C struct is built.
+    # Needed in CPU_ONLY_MODE where GPU kernels call the openmp C extension.
+    # edge_flux_type/edge_river_wall_counter are handled separately (may be NULL).
+    if hasattr(domain_object, '_ensure_work_arrays'):
+        domain_object._ensure_work_arrays()
 
     # Extract array pointers from Python domain
     get_domain_pointers(&gpu_dom.GD, domain_object)
@@ -1376,6 +1416,161 @@ def evaluate_time_boundary_gpu(GPUDomain gpu_dom):
     gpu_evaluate_time_boundary(&gpu_dom.GD)
 
 
+def init_absorbing_wave_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize Absorbing_wave_boundary for GPU.
+
+    Scans domain.boundary_map for Absorbing_wave_boundary objects, collects
+    their edges, and initialises the GPU struct.  Call once after domain setup,
+    BEFORE map_to_gpu.
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+
+    if domain_object.boundary_map is None:
+        return 0
+
+    all_ids = []
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and boundary.__class__.__name__ == 'Absorbing_wave_boundary':
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                all_ids.extend(segment_edges)
+
+    if len(all_ids) == 0:
+        return 0
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr  = np.ascontiguousarray(domain_object.boundary_cells[ids],  dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_absorbing_wave_init(&gpu_dom.GD, num_edges,
+                            &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0])
+    return num_edges
+
+
+def set_absorbing_wave_value(GPUDomain gpu_dom, double wave_value):
+    """Update the wave stage scalar for Absorbing_wave_boundary (called each timestep)."""
+    gpu_absorbing_wave_set_value(&gpu_dom.GD, wave_value)
+
+
+def evaluate_absorbing_wave_boundary_gpu(GPUDomain gpu_dom):
+    """Evaluate Absorbing_wave_boundary on GPU using the current wave_value."""
+    gpu_evaluate_absorbing_wave_boundary(&gpu_dom.GD)
+
+
+def init_characteristic_wave_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize Characteristic_wave_boundary for GPU.
+
+    Scans domain.boundary_map for Characteristic_wave_boundary objects.
+    If multiple such boundaries exist with different background_stage values,
+    only the first background_stage encountered is used for the GPU struct
+    (consistent with the scalar-update pattern used by Time_boundary).
+    Call once after domain setup, BEFORE map_to_gpu.
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+
+    if domain_object.boundary_map is None:
+        return 0
+
+    all_ids = []
+    bg_stage = 0.0
+    found_first = False
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and boundary.__class__.__name__ == 'Characteristic_wave_boundary':
+            if not found_first:
+                bg_stage = float(boundary.background_stage)
+                found_first = True
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                all_ids.extend(segment_edges)
+
+    if len(all_ids) == 0:
+        return 0
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr  = np.ascontiguousarray(domain_object.boundary_cells[ids],  dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_characteristic_wave_init(&gpu_dom.GD, num_edges,
+                                 &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0],
+                                 bg_stage)
+    return num_edges
+
+
+def set_characteristic_wave_value(GPUDomain gpu_dom, double wave_value):
+    """Update the perturbation scalar for Characteristic_wave_boundary (called each timestep)."""
+    gpu_characteristic_wave_set_value(&gpu_dom.GD, wave_value)
+
+
+def evaluate_characteristic_wave_boundary_gpu(GPUDomain gpu_dom):
+    """Evaluate Characteristic_wave_boundary on GPU using the current wave_value."""
+    gpu_evaluate_characteristic_wave_boundary(&gpu_dom.GD)
+
+
+def init_flather_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize Flather_external_stage_zero_velocity_boundary for GPU.
+
+    Scans domain.boundary_map for Flather_external_stage_zero_velocity_boundary
+    objects, collects their edges, and initialises the GPU struct.
+    Call once after domain setup, BEFORE map_to_gpu.
+
+    Returns
+    -------
+    int
+        Number of boundary edges found (0 if none).
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+
+    if domain_object.boundary_map is None:
+        return 0
+
+    all_ids = []
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and \
+                boundary.__class__.__name__ == 'Flather_external_stage_zero_velocity_boundary':
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                all_ids.extend(segment_edges)
+
+    if len(all_ids) == 0:
+        return 0
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr  = np.ascontiguousarray(domain_object.boundary_cells[ids],  dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+
+    gpu_flather_init(&gpu_dom.GD, num_edges,
+                     &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0])
+    return num_edges
+
+
+def set_flather_value(GPUDomain gpu_dom, double stage_outside):
+    """Update the exterior stage scalar for Flather boundary (called each timestep)."""
+    gpu_flather_set_value(&gpu_dom.GD, stage_outside)
+
+
+def evaluate_flather_boundary_gpu(GPUDomain gpu_dom):
+    """Evaluate Flather_external_stage_zero_velocity_boundary on GPU."""
+    gpu_evaluate_flather_boundary(&gpu_dom.GD)
+
+
 def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
     """
     Execute one RK2 timestep on GPU.
@@ -1416,6 +1611,48 @@ def evolve_one_rk3_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_fo
         The timestep used
     """
     return gpu_evolve_one_rk3_step(&gpu_dom.GD, max_timestep, apply_forcing)
+
+
+def ader_ck_predictor_gpu(GPUDomain gpu_dom, double dt):
+    """
+    Apply the ADER Cauchy-Kovalewski predictor on GPU.
+
+    Advances centroid values from Q^n to Q^{n+1/2} in-place using
+    local SWE time derivatives derived from the reconstructed slopes.
+    Must be called after extrapolate_second_order_gpu().
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    dt : float
+        Half-timestep (dt/2) to advance centroids by
+    """
+    gpu_ader_ck_predictor(&gpu_dom.GD, dt)
+
+
+def evolve_one_ader2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
+    """
+    Execute one ADER-2 timestep on GPU.
+
+    2nd-order in space and time via a local Cauchy-Kovalewski midpoint estimate.
+    Cost: 2 extrapolations + 1 predictor + 2 flux calls (same kernel count as RK2).
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    max_timestep : float
+        Maximum allowed timestep (respecting yieldstep/finaltime constraints)
+    apply_forcing : int
+        Whether to apply GPU-compatible forcing terms
+
+    Returns
+    -------
+    float
+        The timestep used
+    """
+    return gpu_evolve_one_ader2_step(&gpu_dom.GD, max_timestep, apply_forcing)
 
 
 def finalize_gpu_domain(GPUDomain gpu_dom):

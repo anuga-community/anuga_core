@@ -110,16 +110,17 @@ Use the `-Dgpu_arch` flag to target different GPUs:
 
 ```bash
 # V100 (default - cc70)
-pip install -e . --no-build-isolation \
-    -Csetup-args=-Dgpu_offload=true
+pip install -v -e . --no-build-isolation \
+    -Csetup-args=-Dgpu_offload=true \
+    -Csetup-args=-Dgpu_arch=cc70
 
 # A100 (cc80)
-pip install -e . --no-build-isolation \
+pip install -v -e . --no-build-isolation \
     -Csetup-args=-Dgpu_offload=true \
     -Csetup-args=-Dgpu_arch=cc80
 
 # H100 (cc90)
-pip install -e . --no-build-isolation \
+pip install -v -e . --no-build-isolation \
     -Csetup-args=-Dgpu_offload=true \
     -Csetup-args=-Dgpu_arch=cc90
 ```
@@ -128,19 +129,19 @@ pip install -e . --no-build-isolation \
 
 ```bash
 # V100 (default - cc70)
-pip install -e . --no-build-isolation \
+pip install -v -e . --no-build-isolation \
     -Csetup-args=-Dgpu_offload=true \
     -Csetup-args=-Dgpu_arch=cc70 \
     -Csetup-args=-Dgpu_aware_mpi=true
 
 # A100 (cc80)
-pip install -e . --no-build-isolation \
+pip install -v -e . --no-build-isolation \
     -Csetup-args=-Dgpu_offload=true \
     -Csetup-args=-Dgpu_arch=cc80 \
     -Csetup-args=-Dgpu_aware_mpi=true
 
 # H100 (cc90)
-pip install -e . --no-build-isolation \
+pip install -v -e . --no-build-isolation \
     -Csetup-args=-Dgpu_offload=true \
     -Csetup-args=-Dgpu_arch=cc90 \
     -Csetup-args=-Dgpu_aware_mpi=true
@@ -408,4 +409,8 @@ If you use an unsupported boundary type, ALL boundaries fall back to CPU evaluat
 
 mpi4py failure due to lack of GPU awareness, fix by: `CFLAGS="-noswitcherror" CC=mpicc pip install mpi4py --no-cache-dir --no-binary mpi4py ` rebuilding mpi4py locally with a GPU aware MPI install
 
+On Gadi sometimes it does not find the right python, gotta remove some pkgconfig:
 
+```
+export PKG_CONFIG_PATH=$(echo $PKG_CONFIG_PATH | tr ':' '\n' | grep -v '/half-root' | paste -sd:)
+```

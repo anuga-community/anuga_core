@@ -214,6 +214,168 @@ class Parallel_domain(Domain):
             Domain.write_time(self)
 
 
+    def load_balance_statistics(self, minimum_height=None):
+        """Gather per-rank load balance statistics and return them on rank 0.
+
+        Measures the correlation between wet fraction and computational load
+        across MPI ranks.  The key insight is that dry triangles do much less
+        work (flux computation is skipped via optimise_dry_cells), so a rank
+        with many dry triangles finishes its compute phase early and then sits
+        idle in the Allreduce timestep-sync barrier.  This idle time shows up
+        in ``domain.communication_reduce_time``.
+
+        Parameters
+        ----------
+        minimum_height : float, optional
+            Depth threshold for "wet" classification.  Defaults to
+            ``anuga.config.minimum_allowed_height``.
+
+        Returns
+        -------
+        dict or None
+            On rank 0: dictionary with arrays of length ``numproc``::
+
+                n_full           int    owned (full) triangle count per rank
+                n_ghost          int    ghost triangle count per rank
+                n_wet_full       int    wet owned triangle count per rank
+                wet_fraction     float  n_wet_full / n_full per rank
+                ghost_fraction   float  n_ghost / (n_full + n_ghost) per rank
+                wall_time        float  total wall time since evolve() started
+                comm_time        float  ghost-exchange wall time per rank
+                reduce_wait_time float  Allreduce wait time per rank (proxy for
+                                        idle time: high ↔ low wet fraction)
+                compute_time     float  wall_time - comm_time - reduce_wait_time
+                imbalance_ratio  float  max(compute_time) / mean(compute_time)
+                wet_compute_corr float  Pearson r(wet_fraction, compute_time)
+
+            On all other ranks: ``None``.
+        """
+        from time import time as walltime
+        from anuga.config import minimum_allowed_height as default_mah
+
+        if minimum_height is None:
+            minimum_height = default_mah
+
+        # ---- per-rank statistics ----
+        n_total    = len(self.tri_full_flag)
+        full_mask  = (self.tri_full_flag == 1)
+        n_full     = int(num.sum(full_mask))
+        n_ghost    = n_total - n_full
+
+        # wet count over FULL triangles only (owned work)
+        stage_c = self.get_quantity('stage').centroid_values
+        elev_c  = self.get_quantity('elevation').centroid_values
+        depth_c = stage_c - elev_c
+        n_wet_full = int(num.sum((depth_c > minimum_height) & full_mask))
+
+        w_time  = walltime() - self.evolve_start_walltime
+        c_time  = self.communication_time
+        r_time  = self.communication_reduce_time
+
+        # Pack into a single float array for Allgather
+        local_stats = num.array([
+            float(n_full),
+            float(n_ghost),
+            float(n_wet_full),
+            w_time,
+            c_time,
+            r_time,
+        ], dtype=float)
+
+        n_fields = len(local_stats)
+        all_stats = num.zeros(self.numproc * n_fields, dtype=float)
+
+        from mpi4py.MPI import DOUBLE
+        pypar.comm.Allgather(
+            [local_stats, DOUBLE],
+            [all_stats,   DOUBLE],
+        )
+
+        if self.processor != 0:
+            return None
+
+        # ---- unpack on rank 0 ----
+        s = all_stats.reshape(self.numproc, n_fields)
+        n_full_arr   = s[:, 0].astype(int)
+        n_ghost_arr  = s[:, 1].astype(int)
+        n_wet_arr    = s[:, 2].astype(int)
+        wall_arr     = s[:, 3]
+        comm_arr     = s[:, 4]
+        reduce_arr   = s[:, 5]
+
+        wet_frac     = num.where(n_full_arr > 0,
+                                 n_wet_arr / n_full_arr, 0.0)
+        ghost_frac   = (n_ghost_arr /
+                        num.maximum(n_full_arr + n_ghost_arr, 1).astype(float))
+        compute_arr  = num.maximum(wall_arr - comm_arr - reduce_arr, 0.0)
+
+        imbalance = (float(num.max(compute_arr)) / float(num.mean(compute_arr))
+                     if num.mean(compute_arr) > 0 else 1.0)
+
+        # Pearson correlation between wet_fraction and compute_time
+        if self.numproc > 1 and num.std(wet_frac) > 0 and num.std(compute_arr) > 0:
+            corr = float(num.corrcoef(wet_frac, compute_arr)[0, 1])
+        else:
+            corr = float('nan')
+
+        return {
+            'n_full':           n_full_arr,
+            'n_ghost':          n_ghost_arr,
+            'n_wet_full':       n_wet_arr,
+            'wet_fraction':     wet_frac,
+            'ghost_fraction':   ghost_frac,
+            'wall_time':        wall_arr,
+            'comm_time':        comm_arr,
+            'reduce_wait_time': reduce_arr,
+            'compute_time':     compute_arr,
+            'imbalance_ratio':  imbalance,
+            'wet_compute_corr': corr,
+        }
+
+    def print_load_balance_statistics(self, minimum_height=None):
+        """Print a formatted load balance report to stdout (rank 0 only).
+
+        Calls :meth:`load_balance_statistics` and formats the result as a
+        table with one row per MPI rank.  Also prints the overall imbalance
+        ratio and the Pearson correlation between wet fraction and compute time.
+
+        Parameters
+        ----------
+        minimum_height : float, optional
+            Passed through to :meth:`load_balance_statistics`.
+        """
+        stats = self.load_balance_statistics(minimum_height=minimum_height)
+        if stats is None:
+            return  # only rank 0 prints
+
+        np = self.numproc
+        header = (
+            f"\n{'Load balance statistics':=<72}\n"
+            f"{'Rank':>4}  {'n_full':>8}  {'n_ghost':>8}  "
+            f"{'wet%':>6}  {'ghost%':>6}  "
+            f"{'compute(s)':>10}  {'comm(s)':>8}  {'Allreduce_wait(s)':>17}\n"
+            f"{'-'*72}"
+        )
+        print(header)
+        for i in range(np):
+            print(
+                f"{i:>4}  {stats['n_full'][i]:>8d}  {stats['n_ghost'][i]:>8d}  "
+                f"{100*stats['wet_fraction'][i]:>6.1f}  "
+                f"{100*stats['ghost_fraction'][i]:>6.1f}  "
+                f"{stats['compute_time'][i]:>10.3f}  "
+                f"{stats['comm_time'][i]:>8.3f}  "
+                f"{stats['reduce_wait_time'][i]:>17.3f}"
+            )
+        print(f"{'='*72}")
+        print(f"  Imbalance ratio (max/mean compute): {stats['imbalance_ratio']:.3f}")
+        corr = stats['wet_compute_corr']
+        if corr == corr:  # not NaN
+            print(f"  Pearson r(wet_fraction, compute_time): {corr:+.3f}")
+            if abs(corr) > 0.5:
+                direction = 'wetter ranks do more work' if corr > 0 else 'unexpected'
+                print(f"  Interpretation: {direction} (|r| = {abs(corr):.3f})")
+        print()
+
     def dump_triangulation(self, filename="domain.png"):
         """
         Outputs domain triangulation, full triangles are shown in green while ghost triangles are shown in blue.

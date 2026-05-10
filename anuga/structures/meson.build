@@ -1,6 +1,5 @@
 
 python_sources = [
-'boyd_box_operator_Amended3.py',
 'boyd_box_operator.py',
 'boyd_pipe_operator.py',
 '__init__.py',

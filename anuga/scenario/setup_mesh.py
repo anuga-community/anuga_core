@@ -199,9 +199,6 @@ def setup_mesh(project, setup_initial_conditions=None):
 
     domain.set_store_vertices_uniquely(project.store_vertices_uniquely)
 
-    if project.use_local_extrapolation_and_flux_updating:
-        domain.set_local_extrapolation_and_flux_updating()
-
     if project.store_elevation_every_timestep:
         domain.quantities_to_be_stored['elevation'] = 2
     else:

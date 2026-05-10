@@ -1453,6 +1453,86 @@ class Test_Domain_delegation(unittest.TestCase):
         domain.set_multiprocessor_mode(1)
         self.assertEqual(domain.get_multiprocessor_mode(), 1)
 
+    # ------------------------------------------------------------------
+    # save_mesh_to_file tests
+    # ------------------------------------------------------------------
+
+    def test_domain_save_mesh_to_file_basic(self):
+        """domain.save_mesh_to_file writes a readable TSH file."""
+        import tempfile
+        import os
+        from anuga.load_mesh.loadASCII import import_mesh_file
+        from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_cross
+
+        points, vertices, boundary = rectangular_cross(4, 4)
+        domain = Generic_Domain(points, vertices, boundary=boundary,
+                                conserved_quantities=['stage'],
+                                evolved_quantities=['stage'])
+
+        with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
+            fname = f.name
+        try:
+            domain.save_mesh_to_file(fname)
+            d = import_mesh_file(fname)
+        finally:
+            os.unlink(fname)
+
+        self.assertEqual(len(d['vertices']), len(points))
+        self.assertEqual(len(d['triangles']), len(vertices))
+
+    def test_domain_save_mesh_to_file_boundary_tags(self):
+        """domain.save_mesh_to_file preserves boundary segment tags."""
+        import tempfile
+        import os
+        from anuga.load_mesh.loadASCII import import_mesh_file
+        from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular
+
+        points, vertices, boundary = rectangular(3, 3)
+        domain = Generic_Domain(points, vertices, boundary=boundary,
+                                conserved_quantities=['stage'],
+                                evolved_quantities=['stage'])
+
+        with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
+            fname = f.name
+        try:
+            domain.save_mesh_to_file(fname)
+            d = import_mesh_file(fname)
+        finally:
+            os.unlink(fname)
+
+        tags = set(d['segment_tags'])
+        # rectangular() uses 'left', 'right', 'bottom', 'top'
+        self.assertTrue(tags <= {'left', 'right', 'bottom', 'top', 'exterior'})
+        self.assertTrue(len(d['segments']) > 0)
+
+    def test_domain_save_mesh_to_file_roundtrip(self):
+        """TSH file written by domain can be reloaded as a new domain."""
+        import tempfile
+        import os
+        from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_cross
+
+        points, vertices, boundary = rectangular_cross(3, 3)
+        domain = Generic_Domain(points, vertices, boundary=boundary,
+                                conserved_quantities=['stage'],
+                                evolved_quantities=['stage'])
+
+        with tempfile.NamedTemporaryFile(suffix='.tsh', delete=False) as f:
+            fname = f.name
+        try:
+            domain.save_mesh_to_file(fname)
+            domain2 = Generic_Domain(fname,
+                                     conserved_quantities=['stage'],
+                                     evolved_quantities=['stage'])
+        finally:
+            os.unlink(fname)
+
+        self.assertEqual(domain2.number_of_triangles, domain.number_of_triangles)
+        self.assertEqual(domain2.number_of_nodes, domain.number_of_nodes)
+        num.testing.assert_allclose(
+            sorted(domain2.nodes.tolist()),
+            sorted(domain.nodes.tolist()),
+        )
+
 
 #-------------------------------------------------------------
 

@@ -135,16 +135,6 @@ class Test_DE_openmp(unittest.TestCase):
 
 
         #print('timestep error              ', abs(timestep1-timestep2))
-        #print('stage explicit update error ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update))
-        #print('xmom  explicit update error ', num.linalg.norm(xmom1.explicit_update-xmom2.explicit_update))
-        #print('ymom  explicit update error ', num.linalg.norm(ymom1.explicit_update-ymom2.explicit_update))
-        #print('max_speed error             ', num.linalg.norm(max_speed_1-max_speed_2))
-        #print('edge timestep error         ', num.linalg.norm(domain1.edge_timestep-domain2.edge_timestep))
-        #print('pressure work error         ', num.linalg.norm(domain1.pressuregrad_work-domain2.pressuregrad_work))
-        #print('edge flux work error        ', num.linalg.norm(domain1.edge_flux_work-domain2.edge_flux_work))
-
-
-
         assert num.allclose(timestep1,timestep2)
         assert num.allclose(stage1.explicit_update,stage2.explicit_update)
         assert num.allclose(xmom1.explicit_update,xmom2.explicit_update)
@@ -258,17 +248,6 @@ class Test_DE_openmp(unittest.TestCase):
 
         #print('domain1 max_speed ', num.max(max_speed_1), ' min ', num.min(max_speed_1))
         #print('domain2 max_speed ', num.max(max_speed_2), ' min ', num.min(max_speed_2))
-
-
-        #print('timestep error              ', abs(timestep1-timestep2))
-        #print('stage explicit update error ', num.linalg.norm(stage1.explicit_update-stage2.explicit_update))
-        #print('xmom  explicit update error ', num.linalg.norm(xmom1.explicit_update-xmom2.explicit_update))
-        #print('ymom  explicit update error ', num.linalg.norm(ymom1.explicit_update-ymom2.explicit_update))
-        #print('max_speed error             ', num.linalg.norm(max_speed_1-max_speed_2))
-        #print('edge timestep error         ', num.linalg.norm(domain1.edge_timestep-domain2.edge_timestep))
-        #print('pressure work error         ', num.linalg.norm(domain1.pressuregrad_work-domain2.pressuregrad_work))
-        #print('edge flux work error        ', num.linalg.norm(domain1.edge_flux_work-domain2.edge_flux_work))
-
 
 
         assert num.allclose(timestep1,timestep2)

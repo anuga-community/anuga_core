@@ -8,12 +8,14 @@ python_sources = [
     'read_boundary_tags_line_shapefile.py',
     'setup_boundary_conditions.py',
     'setup_bridges.py',
+    'setup_culverts.py',
     'setup_initial_conditions.py',
     'setup_inlets.py',
     'setup_mesh.py',
     'setup_pumping_stations.py',
     'setup_rainfall.py',
     'setup_riverwalls.py',
+    'setup_weirs.py',
     'spatially_averaged_function.py',
 ]
 

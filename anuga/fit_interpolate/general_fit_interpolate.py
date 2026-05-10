@@ -4,16 +4,6 @@
 
    Ole Nielsen, Stephen Roberts, Duncan Gray, Christopher Zoppou
    Geoscience Australia, 2004.
-
-DESIGN ISSUES
-* what variables should be global?
-- if there are no global vars functions can be moved around alot easier
-
-* The public interface
-__init__
-interpolate
-interpolate_block
-
 """
 import time
 import os

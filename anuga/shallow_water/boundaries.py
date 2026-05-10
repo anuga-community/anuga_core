@@ -816,7 +816,9 @@ class Characteristic_stage_boundary(Boundary):
         h_inside  = np.maximum(Stage.boundary_values[ids] - Elev.boundary_values[ids], 0)
         uh_inside = n1 * Xmom.boundary_values[ids] + n2 * Ymom.boundary_values[ids]
         vh_inside = n2 * Xmom.boundary_values[ids] - n1 * Ymom.boundary_values[ids]
-        u_inside  = np.where(h_inside>0.0, uh_inside/h_inside, 0.0)
+        u_inside  = np.divide(uh_inside, h_inside,
+                              out=np.zeros_like(uh_inside),
+                              where=h_inside > 0.0)
 
         h_outside = np.maximum(w_outside - Elev.boundary_values[ids], 0)
 
@@ -1438,4 +1440,351 @@ class Flather_external_stage_zero_velocity_boundary(Boundary):
             q2_wet)
 
 
+class Absorbing_wave_boundary(Boundary):
+    """Active-absorption open boundary with prescribed incoming wave.
+
+    Simultaneously prescribes an incoming wave and absorbs outgoing
+    (reflected) waves by setting the ghost-cell stage to::
+
+        stage_ghost = 2 * wave(t) - stage_interior
+
+    so that the boundary face always sees exactly ``wave(t)`` regardless
+    of what is propagating back from inside the domain.  The ghost normal
+    momentum is set to ``ghost_depth × interior_velocity`` (velocity-
+    preserving transmissive): this keeps the ghost velocity bounded when
+    ghost depth is small (e.g. after bed-clamping) and gives the correct
+    incoming-wave energy flux.  Zero ghost momentum would halve the
+    incoming wave amplitude.  Tangential momentum is zeroed.  When the
+    ghost cell is dry (bed-clamped to zero depth), both momentum components
+    are set to zero to avoid a pathological dry-ghost state in the Riemann
+    solver.
+
+    This is the numerical equivalent of an *active-absorption wavemaker* used
+    in physical wave-tank experiments: the paddle continuously adjusts to
+    cancel any reflected wave arriving at the boundary while still generating
+    the desired incoming signal.
+
+    .. note::
+        Absorption efficiency depends on the phase of the standing-wave cycle.
+        At a standing-wave antinode (``u ≈ 0`` at the boundary) the net
+        momentum flux is zero and energy drains slowly over multiple wave
+        periods.  For highly reflective short-domain problems (e.g. the
+        Okushiri benchmark) this is still preferable to a pure Flather
+        condition, which can exhibit 2× stage amplification at the boundary
+        gauge.
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+    function : callable
+        A function ``f(t)`` returning the prescribed stage at model time *t*.
+        Typically a :func:`~anuga.file_function` time series.
+    default_boundary : float, optional
+        Stage returned when model time exceeds the range of *function*.
+        Defaults to ``0.0``.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> Ba = anuga.Absorbing_wave_boundary(domain, lambda t: 0.1 * (t < 5))
+    >>> domain.set_boundary({'left': Ba, 'right': Ba, 'top': Ba, 'bottom': Ba})
+    """
+
+    def __init__(self, domain=None, function=None, default_boundary=0.0):
+        """Initialise an active-absorption open boundary.
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+            The domain to which this boundary is attached.
+        function : callable
+            Prescribed stage function ``f(t)``.
+        default_boundary : float, optional
+            Fallback stage when model time is out of range.  Default ``0.0``.
+
+        Raises
+        ------
+        Exception
+            If *domain* or *function* is ``None``.
+        """
+
+        Boundary.__init__(self)
+
+        if domain is None:
+            raise Exception('Domain must be specified for this type boundary')
+
+        if function is None:
+            raise Exception('Function must be specified for this type boundary')
+
+        self.domain = domain
+        self.function = function
+        self.default_boundary = default_boundary
+
+    def __repr__(self):
+        return 'Absorbing_wave_boundary(%s)' % self.domain
+
+    def evaluate(self, vol_id, edge_id):
+        """Return ghost-cell state for active-absorption boundary."""
+
+        q = self.domain.get_conserved_quantities(vol_id, edge=edge_id)
+        bed = self.domain.quantities['elevation'].centroid_values[vol_id]
+        depth_inside = max(q[0] - bed, 0.0)
+
+        t = self.domain.get_time()
+        value = self.get_boundary_values(t)
+        try:
+            wave = float(value)
+        except (ValueError, TypeError):
+            wave = float(value[0])
+
+        normal = self.domain.get_normal(vol_id, edge_id)
+
+        if depth_inside == 0.0:
+            # Dry interior: prescribe wave stage directly
+            q[0] = wave
+            q[1] = 0.0
+            q[2] = 0.0
+        else:
+            # Active absorption: ghost stage ensures face = wave(t).
+            # Clamp to bed so the ghost depth is never negative — this
+            # can occur when a large reflected wave makes stage_interior
+            # exceed 2*wave(t).
+            ghost_stage = max(2.0 * wave - q[0], bed)
+            ghost_depth = ghost_stage - bed
+
+            # Interior velocity (bounded by depth_inside > 0 guard above)
+            u_int = q[1] / depth_inside
+            v_int = q[2] / depth_inside
+
+            q[0] = ghost_stage
+
+            if ghost_depth > 0.0:
+                # Ghost momentum = ghost_depth × interior_velocity (normal
+                # component only, tangential zeroed).  Preserving velocity
+                # (not raw momentum) keeps the ghost velocity bounded when
+                # ghost_depth << interior_depth; raw transmissive momentum
+                # (ghost_hu = interior_hu) causes ghost velocity → ∞ as
+                # ghost_depth → 0.  For deep boundaries (e.g. Okushiri)
+                # ghost_depth ≈ interior_depth and the result is identical.
+                ndotu = normal[0] * u_int + normal[1] * v_int
+                q[1] = ghost_depth * ndotu * normal[0]
+                q[2] = ghost_depth * ndotu * normal[1]
+            else:
+                q[1] = 0.0
+                q[2] = 0.0
+
+        return q
+
+    def evaluate_segment(self, domain, segment_edges):
+        """Vectorised form for speed."""
+
+        Stage = domain.quantities['stage']
+        Elev  = domain.quantities['elevation']
+        Xmom  = domain.quantities['xmomentum']
+        Ymom  = domain.quantities['ymomentum']
+
+        ids      = segment_edges
+        vol_ids  = domain.boundary_cells[ids]
+        edge_ids = domain.boundary_edges[ids]
+        Normals  = domain.normals
+
+        n1 = Normals[vol_ids, 2 * edge_ids]
+        n2 = Normals[vol_ids, 2 * edge_ids + 1]
+
+        t = self.domain.get_time()
+        value = self.get_boundary_values(t)
+        try:
+            wave_val = float(value)
+        except (ValueError, TypeError):
+            wave_val = float(value[0])
+
+        stage_interior = Stage.edge_values[vol_ids, edge_ids]
+        bed            = Elev.centroid_values[vol_ids]
+        depth_inside   = np.maximum(stage_interior - bed, 0.0)
+
+        # Active absorption ghost stage; clamp to bed to prevent negative
+        # ghost depth when a large reflected wave makes stage_interior > 2*wave
+        raw_ghost = np.where(depth_inside > 0.0, 2.0 * wave_val - stage_interior, wave_val)
+        stage_ghost = np.maximum(raw_ghost, bed)
+        ghost_depth = stage_ghost - bed
+        Stage.boundary_values[ids] = stage_ghost
+
+        # Ghost momentum = ghost_depth × interior_velocity (normal component
+        # only, tangential zeroed).  Preserving velocity (not raw momentum)
+        # keeps ghost velocity bounded when ghost_depth → 0 (bed-clamped);
+        # raw transmissive momentum (ghost_hu = interior_hu) would cause
+        # ghost velocity → ∞.  Zero ghost velocity when either side is dry.
+        both_wet   = (depth_inside > 0.0) & (ghost_depth > 0.0)
+        safe_depth = np.where(depth_inside > 0.0, depth_inside, 1.0)
+        q1    = Xmom.edge_values[vol_ids, edge_ids]
+        q2    = Ymom.edge_values[vol_ids, edge_ids]
+        u_int = q1 / safe_depth
+        v_int = q2 / safe_depth
+        ndotu = n1 * u_int + n2 * v_int
+        Xmom.boundary_values[ids] = np.where(both_wet, ghost_depth * ndotu * n1, 0.0)
+        Ymom.boundary_values[ids] = np.where(both_wet, ghost_depth * ndotu * n2, 0.0)
+
+
+class Characteristic_wave_boundary(Boundary):
+    """Nonlinear characteristic open boundary with prescribed incoming wave.
+
+    Prescribes the incoming Riemann invariant from a wave perturbation and
+    extrapolates the outgoing Riemann invariant from the interior, solving
+    the characteristic equations exactly (no linearisation).
+
+    The ghost state is derived from::
+
+        c_ghost     = (v_n_int + 2*c_int - 2*c0 + 4*c_wave) / 4
+        v_n_ghost   = c0 - 2*c_wave + v_n_int/2 + c_int
+        h_ghost     = c_ghost**2 / g
+        stage_ghost = h_ghost + bed
+
+    where *c0* = sqrt(g*h0) is the background wave speed (computed from
+    ``background_stage`` at each cell), *c_wave* = sqrt(g*h_wave) is the
+    prescribed wave speed, and *v_n* is the outward-normal velocity.
+
+    The wave function returns a **perturbation** from ``background_stage``
+    (not an absolute stage).  This is important: the background depth h0
+    = ``background_stage`` − bed is used to set the incoming Riemann
+    invariant assuming no outgoing wave at the exterior.
+
+    Compared to :class:`Absorbing_wave_boundary`:
+
+    * Better for large-amplitude waves (η ~ h) where linearisation error
+      in the Flather form is significant.
+    * The face stage is not guaranteed to equal wave(t) exactly; the
+      characteristic condition controls energy transport rather than
+      stage directly.
+    * For small-amplitude waves (η ≪ h) both classes give similar results.
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+    function : callable
+        ``f(t)`` returning the stage *perturbation* at time *t*.
+    background_stage : float, optional
+        Still-water stage around which the perturbation is measured.
+        Defaults to ``0.0`` (sea level).
+    default_boundary : float, optional
+        Perturbation returned when model time is out of range.  Default ``0.0``.
+    """
+
+    def __init__(self, domain=None, function=None,
+                 background_stage=0.0, default_boundary=0.0):
+        Boundary.__init__(self)
+        if domain is None:
+            raise Exception('Domain must be specified for this type boundary')
+        if function is None:
+            raise Exception('Function must be specified for this type boundary')
+        self.domain = domain
+        self.function = function
+        self.background_stage = float(background_stage)
+        self.default_boundary = default_boundary
+
+    def __repr__(self):
+        return 'Characteristic_wave_boundary(%s)' % self.domain
+
+    def evaluate(self, vol_id, edge_id):
+        """Return ghost-cell state from nonlinear characteristic decomposition."""
+
+        q = self.domain.get_conserved_quantities(vol_id, edge=edge_id)
+        bed         = self.domain.quantities['elevation'].centroid_values[vol_id]
+        depth_inside = max(q[0] - bed, 0.0)
+        normal      = self.domain.get_normal(vol_id, edge_id)
+
+        t     = self.domain.get_time()
+        value = self.get_boundary_values(t)
+        try:
+            perturb = float(value)
+        except (ValueError, TypeError):
+            perturb = float(value[0])
+
+        stage_wave = self.background_stage + perturb
+        h0     = max(self.background_stage - bed, 0.0)
+        c0     = (gravity * max(h0, 1e-10)) ** 0.5
+        h_wave = max(stage_wave - bed, 0.0)
+        c_wave = (gravity * max(h_wave, 1e-10)) ** 0.5
+
+        if depth_inside == 0.0:
+            q[0] = stage_wave
+            q[1] = 0.0
+            q[2] = 0.0
+        else:
+            u_int   = q[1] / depth_inside
+            v_int   = q[2] / depth_inside
+            c_int   = (gravity * depth_inside) ** 0.5
+            v_n_int = normal[0] * u_int + normal[1] * v_int
+
+            c_ghost   = max((v_n_int + 2.0*c_int - 2.0*c0 + 4.0*c_wave) / 4.0, 0.0)
+            v_n_ghost = c0 - 2.0*c_wave + 0.5*v_n_int + c_int
+            h_ghost   = c_ghost**2 / gravity
+
+            q[0] = h_ghost + bed
+            if c_ghost > 0.0:
+                q[1] = h_ghost * v_n_ghost * normal[0]
+                q[2] = h_ghost * v_n_ghost * normal[1]
+            else:
+                q[1] = 0.0
+                q[2] = 0.0
+
+        return q
+
+    def evaluate_segment(self, domain, segment_edges):
+        """Vectorised form for speed."""
+
+        Stage = domain.quantities['stage']
+        Elev  = domain.quantities['elevation']
+        Xmom  = domain.quantities['xmomentum']
+        Ymom  = domain.quantities['ymomentum']
+
+        ids      = segment_edges
+        vol_ids  = domain.boundary_cells[ids]
+        edge_ids = domain.boundary_edges[ids]
+        Normals  = domain.normals
+
+        n1 = Normals[vol_ids, 2 * edge_ids]
+        n2 = Normals[vol_ids, 2 * edge_ids + 1]
+
+        t     = self.domain.get_time()
+        value = self.get_boundary_values(t)
+        try:
+            perturb = float(value)
+        except (ValueError, TypeError):
+            perturb = float(value[0])
+
+        bed        = Elev.centroid_values[vol_ids]
+        stage_wave = self.background_stage + perturb
+
+        # Background wave speed from still-water depth at each cell
+        h0 = np.maximum(self.background_stage - bed, 0.0)
+        c0 = np.sqrt(gravity * np.maximum(h0, 1e-10))
+
+        # Prescribed wave
+        h_wave = np.maximum(stage_wave - bed, 0.0)
+        c_wave = np.sqrt(gravity * np.maximum(h_wave, 1e-10))
+
+        # Interior state
+        stage_interior = Stage.edge_values[vol_ids, edge_ids]
+        depth_inside   = np.maximum(stage_interior - bed, 0.0)
+        safe_depth     = np.where(depth_inside > 0.0, depth_inside, 1.0)
+        q1     = Xmom.edge_values[vol_ids, edge_ids]
+        q2     = Ymom.edge_values[vol_ids, edge_ids]
+        c_int   = np.sqrt(gravity * safe_depth)
+        v_n_int = (n1 * q1 + n2 * q2) / safe_depth
+
+        # Nonlinear characteristic solution
+        c_ghost   = np.maximum((v_n_int + 2.0*c_int - 2.0*c0 + 4.0*c_wave) / 4.0, 0.0)
+        v_n_ghost = c0 - 2.0*c_wave + 0.5*v_n_int + c_int
+        h_ghost   = c_ghost**2 / gravity
+        stage_ghost = h_ghost + bed
+
+        wet = depth_inside > 0.0
+        Stage.boundary_values[ids] = np.where(wet, stage_ghost, stage_wave)
+        Xmom.boundary_values[ids]  = np.where(wet & (c_ghost > 0.0),
+                                               h_ghost * v_n_ghost * n1, 0.0)
+        Ymom.boundary_values[ids]  = np.where(wet & (c_ghost > 0.0),
+                                               h_ghost * v_n_ghost * n2, 0.0)
 
