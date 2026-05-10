@@ -181,7 +181,7 @@ void boyd_pipe_discharge(const struct culvert_params *p,
         outlet_culvert_depth = dcrit1;
     }
 
-    double flow_area, perimeter, flow_width;
+    double flow_area, perimeter, flow_width = 0.0; (void)flow_width;
     double alpha;
     double bd = bf * diameter;
 

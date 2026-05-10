@@ -411,6 +411,7 @@ void gpu_inlet_set_ymoms_array(struct gpu_domain *GD, int op_id,
 // ============================================================================
 
 // Comparison function for sorting by stage value
+static int compare_stage_indices(const void *a, const void *b) __attribute__((unused));
 static int compare_stage_indices(const void *a, const void *b) {
     const double *da = (const double*)a;
     const double *db = (const double*)b;
@@ -529,8 +530,6 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
     int * restrict indices = op->indices;
     double * restrict stage_c = GD->D.stage_centroid_values;
     double * restrict bed_c = GD->D.bed_centroid_values;
-    double * restrict xmom_c = GD->D.xmom_centroid_values;
-    double * restrict ymom_c = GD->D.ymom_centroid_values;
 
     double actual_volume = volume;
 
