@@ -39,6 +39,8 @@ python_sources = [
   'test_parallel_kv_unit_tests.py',
   'run_parallel_load_balance.py',
   'test_load_balance_statistics.py',
+  'run_parallel_parmetis.py',
+  'test_parmetis.py',
 ]
 
 py3.install_sources(
