@@ -1,9 +1,18 @@
 
 
 
+from __future__ import annotations
+
 import types
 import os.path
+from typing import TYPE_CHECKING
+from collections.abc import Callable
+from numpy.typing import ArrayLike
 from anuga.coordinate_transforms.geo_reference import Geo_reference
+
+if TYPE_CHECKING:
+    from anuga.abstract_2d_finite_volumes.generic_domain import Generic_Domain
+    from anuga.geospatial_data.geospatial_data import Geospatial_data as GeospatialData
 
 from anuga.utilities.numerical_tools import ensure_numeric, is_scalar
 from anuga.geometry.polygon import inside_polygon
@@ -19,26 +28,47 @@ import anuga.utilities.log as log
 import numpy as num
 
 
-class Quantity(object):
+class Quantity:
     """Class Quantity - Implements values at each triangular element
     """
 
 
     counter = 0
 
-    def __init__(self, domain, vertex_values=None, name=None, register=False):
+    def __init__(self, domain: Generic_Domain, vertex_values: ArrayLike | None = None,
+                 name: str | None = None, register: bool = False,
+                 qty_type: str | None = None) -> None:
         """Create Quantity object
-        
+
         :param domain: Associated domain structure. Required.
         :param vertex_values: N x 3 array of values at each vertex for each element. Default None
         :param str name: Provides a way to refer to a created quantity
         :param register: Register a quantity
+        :param str qty_type: Memory allocation strategy. One of:
 
+            * ``'evolved'`` *(default)* — centroid, edge, explicit/semi-implicit
+              update, centroid backup. x/y-gradient and phi are **lazy** (allocated
+              on first access). Use for time-stepped conserved quantities
+              (stage, xmomentum, ymomentum). **56 bytes per triangle eager**;
+              gradients/phi only allocated if accessed (e.g. by erosion operators).
+            * ``'edge_diagnostic'`` — centroid and edge values only.
+              Use for static or derived diagnostic fields (elevation, height, velocity).
+              **32 bytes per triangle.** Gradients lazy.
+            * ``'centroid_only'`` — centroid values only.
+              Use for scalar parameters that are never edge-interpolated
+              (e.g. friction). **8 bytes per triangle.**
+            * ``'coordinate'`` — centroid, edge, and eager vertex values.
+              Use for mesh coordinate quantities (x, y).
+              **56 bytes per triangle.**
+
+            If ``None`` (default), the type is looked up in
+            ``domain._quantity_type_map[name]``, falling back to
+            ``'evolved'`` for unknown names.
 
         Usage:
 
         >>> Quantity(domain, name="newQ", register=True)
-
+        >>> Quantity(domain, name="tracer", register=True, qty_type='centroid_only')
 
         If vertex_values are None Create array of zeros compatible with domain.
         Otherwise check that it is compatible with dimensions of domain.
@@ -47,8 +77,7 @@ class Quantity(object):
         For Quantities that need to be saved during checkpointing, set register=True. Registered
         Quantities can be found in the dictionary domain.quantities (note, other Quantities can
         exist).
-        
-        
+
         """
 
 
@@ -61,13 +90,26 @@ class Quantity(object):
                % (str(Generic_Domain.__name__),str(domain.__class__)))
         assert isinstance(domain, Generic_Domain), msg
 
+        # Determine quantity type for selective array allocation.
+        # Explicit qty_type parameter wins; otherwise consult the domain's
+        # _quantity_type_map; unknown names fall back to 'evolved' for
+        # backward compatibility with third-party domains and operators.
+        if qty_type is None:
+            qty_type = getattr(domain, '_quantity_type_map', {}).get(name, 'evolved')
+        self._qty_type = qty_type
+
         if vertex_values is None:
             N = len(domain)             # number_of_elements
-            self.vertex_values = num.zeros((N, 3), float)
+            # Lazy for ALL types: vertex_values allocated on first access via
+            # the property below.  'coordinate' quantities (x, y) are
+            # initialised by setting centroid_values and edge_values directly
+            # from the mesh coordinate arrays, so vertex_values are only
+            # needed if a caller explicitly requests them (e.g. expression
+            # evaluation such as set_quantity('xmom', expression='2*x+3*y')).
+            self._vertex_values = None
         else:
-            self.vertex_values = num.array(vertex_values, float)
-
-            N, V = self.vertex_values.shape
+            self._vertex_values = num.array(vertex_values, float)
+            N, V = self._vertex_values.shape
             assert V == 3, 'Three vertex values per element must be specified'
 
             msg = 'Number of vertex values (%d) must be consistent with' % N
@@ -76,32 +118,43 @@ class Quantity(object):
 
         self.domain = domain
 
-        # Allocate space for other quantities
+        # centroid_values is always allocated (primary state for all types)
         self.centroid_values = num.zeros(N, float)
-        self.edge_values = num.zeros((N, 3), float)
 
-        # Allocate space for Gradient
-        self.x_gradient = num.zeros(N, float)
-        self.y_gradient = num.zeros(N, float)
+        # edge_values: needed by evolved, static, and edge_diagnostic types.
+        # Not needed by centroid_only (friction).
+        if qty_type == 'centroid_only':
+            self.edge_values = None
+        else:
+            self.edge_values = num.zeros((N, 3), float)
 
-        # Allocate space for Limiter Phi
-        self.phi = num.zeros(N, float)
+        # Gradient and phi arrays are lazy for all types — allocated on first
+        # access via properties below.  The DE solver never reads them from
+        # Python Quantity objects (it uses C-stack locals), so for typical
+        # simulations these are never allocated.  Code that does need them
+        # (e.g. erosion operators, old extrapolation routines) triggers
+        # allocation transparently on first access.
+        self._x_gradient = None
+        self._y_gradient = None
+        self._phi = None
 
-        # Intialise centroid and edge_values
-        self.interpolate()
+        # Initialise centroid and edge_values from vertex_values (if available)
+        if self._vertex_values is not None:
+            self.interpolate()
 
-        # Allocate space for boundary values
-        #self.boundary_length = domain.boundary_length
+        # Boundary values (size = number of boundary edges, not N — always small)
         self.boundary_length = L = self.domain.boundary_length
         self.boundary_values = num.zeros(L, float)
 
-        # Allocate space for updates of conserved quantities by
-        # flux calculations and forcing functions
-
-        # Allocate space for update fields
-        self.explicit_update = num.zeros(N, float )
-        self.semi_implicit_update = num.zeros(N, float )
-        self.centroid_backup_values = num.zeros(N, float)
+        # Update arrays: only needed for evolved (conserved) quantities.
+        if qty_type == 'evolved':
+            self.explicit_update = num.zeros(N, float)
+            self.semi_implicit_update = num.zeros(N, float)
+            self.centroid_backup_values = num.zeros(N, float)
+        else:
+            self.explicit_update = None
+            self.semi_implicit_update = None
+            self.centroid_backup_values = None
 
         self.set_beta(1.0)
 
@@ -114,14 +167,85 @@ class Quantity(object):
         if register:
             self.domain.quantities[self.name] = self
 
+    # ------------------------------------------------------------------
+    # vertex_values — lazy property
+    # Allocated on first access; assignment via setter updates backing store.
+    # ------------------------------------------------------------------
+
+    @property
+    def vertex_values(self) -> num.ndarray:
+        if self._vertex_values is None:
+            N = self.centroid_values.shape[0]
+            if self._qty_type == 'coordinate' and self.edge_values is not None:
+                # Reconstruct exactly from edge values using the inverse of the
+                # edge-midpoint formula (exact for linear fields such as x/y):
+                #   v[0] = e[1] + e[2] - e[0]
+                #   v[1] = e[2] + e[0] - e[1]
+                #   v[2] = e[0] + e[1] - e[2]
+                e = self.edge_values
+                vv = num.empty((N, 3), float)
+                vv[:, 0] = e[:, 1] + e[:, 2] - e[:, 0]
+                vv[:, 1] = e[:, 2] + e[:, 0] - e[:, 1]
+                vv[:, 2] = e[:, 0] + e[:, 1] - e[:, 2]
+                self._vertex_values = vv
+            else:
+                self._vertex_values = num.zeros((N, 3), float)
+        return self._vertex_values
+
+    @vertex_values.setter
+    def vertex_values(self, value: ArrayLike | None) -> None:
+        if value is None:
+            self._vertex_values = None
+        else:
+            self._vertex_values = num.array(value, float)
+
+    # ------------------------------------------------------------------
+    # x_gradient, y_gradient, phi — lazy properties
+    # Allocated on first access; the DE solver never touches these from
+    # Python so they stay None for most runs (saving 24 bytes/triangle).
+    # ------------------------------------------------------------------
+
+    @property
+    def x_gradient(self) -> num.ndarray:
+        if self._x_gradient is None:
+            N = self.centroid_values.shape[0]
+            self._x_gradient = num.zeros(N, float)
+        return self._x_gradient
+
+    @x_gradient.setter
+    def x_gradient(self, value):
+        self._x_gradient = value
+
+    @property
+    def y_gradient(self) -> num.ndarray:
+        if self._y_gradient is None:
+            N = self.centroid_values.shape[0]
+            self._y_gradient = num.zeros(N, float)
+        return self._y_gradient
+
+    @y_gradient.setter
+    def y_gradient(self, value):
+        self._y_gradient = value
+
+    @property
+    def phi(self) -> num.ndarray:
+        if self._phi is None:
+            N = self.centroid_values.shape[0]
+            self._phi = num.zeros(N, float)
+        return self._phi
+
+    @phi.setter
+    def phi(self, value):
+        self._phi = value
+
     ############################################################################
     # Methods for operator overloading
     ############################################################################
 
-    def __len__(self):
+    def __len__(self) -> int:
         return int(self.centroid_values.shape[0])
 
-    def __neg__(self):
+    def __neg__(self) -> Quantity:
         """Negate all values in this quantity giving meaning to the
         expression -Q where Q is an instance of class Quantity
         """
@@ -130,7 +254,7 @@ class Quantity(object):
         Q.set_values(-self.vertex_values)
         return Q
 
-    def __add__(self, other):
+    def __add__(self, other: Quantity | ArrayLike | float) -> Quantity:
         """Add to self anything that could populate a quantity
 
         E.g other can be a constant, an array, a function, another quantity
@@ -145,16 +269,16 @@ class Quantity(object):
         result.set_values(self.vertex_values + Q.vertex_values)
         return result
 
-    def __radd__(self, other):
+    def __radd__(self, other: Quantity | ArrayLike | float) -> Quantity:
         """Handle cases like 7+Q, where Q is an instance of class Quantity
         """
 
         return self + other
 
-    def __sub__(self, other):
+    def __sub__(self, other: Quantity | ArrayLike | float) -> Quantity:
         return self + -other            # Invoke self.__neg__()
 
-    def __mul__(self, other):
+    def __mul__(self, other: Quantity | ArrayLike | float) -> Quantity:
         """Multiply self with anything that could populate a quantity
 
         E.g other can be a constant, an array, a function, another quantity
@@ -180,13 +304,13 @@ class Quantity(object):
 
         return result
 
-    def __rmul__(self, other):
+    def __rmul__(self, other: Quantity | ArrayLike | float) -> Quantity:
         """Handle cases like 3*Q, where Q is an instance of class Quantity
         """
 
         return self * other
 
-    def __truediv__(self, other):
+    def __truediv__(self, other: Quantity | ArrayLike | float) -> Quantity:
         """Divide self with anything that could populate a quantity
 
         E.g other can be a constant, an array, a function, another quantity
@@ -215,13 +339,13 @@ class Quantity(object):
 
         return result
 
-    def __rdiv__(self, other):
+    def __rdiv__(self, other: Quantity | ArrayLike | float) -> Quantity:
         """Handle cases like 3/Q, where Q is an instance of class Quantity
         """
 
         return self / other
 
-    def __pow__(self, other):
+    def __pow__(self, other: float) -> Quantity:
         """Raise quantity to (numerical) power
 
         As with __mul__ vertex values are processed entry by entry
@@ -502,7 +626,7 @@ class Quantity(object):
         assert ymax >= ymin, msg
 
 
-        if verbose: log.critical('Creating grid')
+        if verbose: log.info('Creating grid')
 
         xrange = xmax-xmin
         yrange = ymax-ymin
@@ -541,7 +665,7 @@ class Quantity(object):
         #print outside_indices
 
         if verbose:
-            log.critical('Interpolated values are in [%f, %f]'
+            log.info('Interpolated values are in [%f, %f]'
                          % (num.min(grid_values), num.max(grid_values)))
 
 
@@ -549,7 +673,7 @@ class Quantity(object):
 
 
 
-    def set_name(self, name=None):
+    def set_name(self, name: str | None = None) -> None:
 
         if name is not None:
             self.name = name
@@ -558,25 +682,25 @@ class Quantity(object):
 
 
 
-    def get_name(self):
+    def get_name(self) -> str:
 
         return self.name
 
 
-    def set_beta(self, beta):
+    def set_beta(self, beta: float) -> None:
         """Set default beta value for limiting """
 
         if beta < 0.0:
-            log.critical('WARNING: setting beta < 0.0')
+            log.warning('WARNING: setting beta < 0.0')
         if beta > 2.0:
-            log.critical('WARNING: setting beta > 2.0')
+            log.warning('WARNING: setting beta > 2.0')
 
         self.beta = beta
 
     ##
     # @brief Get the current beta value.
     # @return The current beta value.
-    def get_beta(self):
+    def get_beta(self) -> float:
         """Get default beta value for limiting"""
 
         return self.beta
@@ -586,7 +710,7 @@ class Quantity(object):
     ##
     # @brief Set boundary values using a function or array or scalar
     # @param numeric: function or array or scalar
-    def set_boundary_values(self, numeric = 0.0):
+    def set_boundary_values(self, numeric: ArrayLike | Callable | float = 0.0) -> None:
         """Set boundary values """
 
         if isinstance(numeric, (list, num.ndarray)):
@@ -602,7 +726,7 @@ class Quantity(object):
                 raise Exception(msg)
             self._set_boundary_values_from_constant(numeric)
 
-    def set_boundary_values_from_edges(self):
+    def set_boundary_values_from_edges(self) -> None:
         """Set boundary values by simply extrapolating
         from the cells
         """
@@ -687,19 +811,27 @@ class Quantity(object):
         """Compute interpolated values at edges and centroid
         Pre-condition: vertex_values have been set
         """
+        if self.edge_values is None:
+            # centroid_only type: no edge array, but still compute centroid = mean(vertices)
+            if self._vertex_values is not None:
+                v = self._vertex_values
+                self.centroid_values[:] = (v[:, 0] + v[:, 1] + v[:, 2]) / 3.0
+            return
         from .quantity_openmp_ext import interpolate
         interpolate(self)
 
 
     def interpolate_from_vertices_to_edges(self):
         # Call correct module function (either from this module or C-extension)
-
+        if self.edge_values is None:
+            return
         from .quantity_openmp_ext import interpolate_from_vertices_to_edges
         interpolate_from_vertices_to_edges(self)
 
     def interpolate_from_edges_to_vertices(self):
         # Call correct module function (either from this module or C-extension)
-
+        if self.edge_values is None:
+            return
         from .quantity_openmp_ext import interpolate_from_edges_to_vertices
         interpolate_from_edges_to_vertices(self)
 
@@ -707,20 +839,21 @@ class Quantity(object):
     # Public interface for setting quantity values
     #---------------------------------------------
 
-    def set_values(self, numeric=None,         # List, numeric array or constant
-                         quantity=None,        # Another quantity
-                         function=None,        # Callable object: f(x,y)
-                         geospatial_data=None, # Arbitrary dataset
-                         filename=None,
-                         raster=None,          # raster of form (x,y,Z)
-                         attribute_name=None,  # Input from file
-                         alpha=None,
-                         location='vertices',
-                         polygon=None,
-                         indices=None,
-                         smooth=False,
-                         verbose=False,
-                         use_cache=False):
+    def set_values(self,
+                   numeric: ArrayLike | Callable | Quantity | float | str | None = None,
+                   quantity: Quantity | None = None,
+                   function: Callable | None = None,
+                   geospatial_data: GeospatialData | None = None,
+                   filename: str | None = None,
+                   raster: tuple | None = None,
+                   attribute_name: str | None = None,
+                   alpha: float | str | None = None,
+                   location: str = 'vertices',
+                   polygon: ArrayLike | None = None,
+                   indices: list[int] | num.ndarray | None = None,
+                   smooth: bool = False,
+                   verbose: bool = False,
+                   use_cache: bool = False) -> None:
         """Set values for quantity based on different sources.
 
         numeric:
@@ -746,7 +879,7 @@ class Quantity(object):
 
 
         filename:
-          Name of a points file (extension .pts, .csv, .txt or .xya) or dem file (ext .dem, .asc, .grd or .tif) 
+          Name of a points file (extension .pts, .csv, .txt or .xya) or dem file (ext .dem, .asc, .grd or .tif)
           containing data points and attributes for use with fit_interpolate.fit.
 
         raster:
@@ -1150,13 +1283,13 @@ class Quantity(object):
             M = self.domain.number_of_triangles
             V = self.domain.get_vertex_coordinates()
 
-            x = V[:,0];
+            x = V[:,0]
             y = V[:,1]
             if use_cache is True:
                 values = cache(f, (x, y), verbose=verbose)
             else:
                 if verbose is True:
-                    log.critical('Evaluating function in set_values')
+                    log.info('Evaluating function in set_values')
                 values = f(x, y)
 
             # FIXME (Ole): This code should replace all the
@@ -1304,7 +1437,7 @@ class Quantity(object):
 
         # Call underlying method using array values
         if verbose:
-            log.critical('Applying fitted data to domain')
+            log.info('Applying fitted data to domain')
         self.set_values_from_array(vertex_attributes, location,
                                    indices, use_cache=use_cache,
                                    verbose=verbose)
@@ -1390,7 +1523,7 @@ class Quantity(object):
 
         # Call underlying method using array values
         if verbose:
-            log.critical('Applying fitted data to quantity')
+            log.info('Applying fitted data to quantity')
 
 
         if location == 'centroids':
@@ -1458,7 +1591,7 @@ class Quantity(object):
 
         # Call underlying method using array values
         if verbose:
-            log.critical('Applying fitted data to quantity')
+            log.info('Applying fitted data to quantity')
 
 
         if location == 'centroids':
@@ -1504,7 +1637,7 @@ class Quantity(object):
         if zone == -1:
             msg = 'UTM zone needed for this calculation.\nUse domain.set_zone to set the UTM zone of your simulation'
             raise Exception(msg)
-        
+
         hemisphere = self.domain.get_hemisphere()
 
         # Default hemisphere is south. If hemisphere undefined assume south = True
@@ -1541,7 +1674,7 @@ class Quantity(object):
 
         # Call underlying method using array values
         if verbose:
-            log.critical('Applying fitted data to quantity')
+            log.info('Applying fitted data to quantity')
 
 
         if location == 'centroids':
@@ -1592,8 +1725,8 @@ class Quantity(object):
         NODATA_value  -9999
         28.6 28.6 28.6 28.6 28.7 28.7 28.7 28.7 28.7 28.7 ....
 
-        This file would represent raster data from lower left corner 
-        at 140 long and -30 lat over to upper right corner 141 long -29 lat. 
+        This file would represent raster data from lower left corner
+        at 140 long and -30 lat over to upper right corner 141 long -29 lat.
 
         Here cellsize = 0.025 represents 1/40 of a degree
 
@@ -1601,7 +1734,7 @@ class Quantity(object):
         :param str location: vertices or centroids, interpolation onto these locations
         :param indices: None or a list of indices where interploation occurs
         :param bool northern: Flag to specify northern or southern hemisphere
-        :param bool verbose: level of printed feedback 
+        :param bool verbose: level of printed feedback
         """
 
 
@@ -1622,13 +1755,13 @@ class Quantity(object):
         #Read DEM data
         datafile = open(filename)
 
-        if verbose: log.critical('Reading data from %s' % (filename))
+        if verbose: log.info('Reading data from %s' % (filename))
 
         lines = datafile.readlines()
         datafile.close()
 
 
-        if verbose: log.critical('Got %d lines' % len(lines))
+        if verbose: log.info('Got %d lines' % len(lines))
 
         # Parse the line data
         ncols = int(lines[0].split()[1].strip())
@@ -1699,7 +1832,7 @@ class Quantity(object):
                 points = self.domain.vertex_coordinates[tuple(indices),:]
 
         from anuga.geospatial_data.geospatial_data import ensure_absolute
-        points = ensure_absolute(points, geo_reference=self.domain.geo_reference)               
+        points = ensure_absolute(points, geo_reference=self.domain.geo_reference)
 
         if verbose:
             print (numpy.max(points[:,0]))
@@ -1721,39 +1854,13 @@ class Quantity(object):
         if verbose:
             print(self.domain.geo_reference)
 
-        utm_zone = self.domain.geo_reference.get_zone()
-        utm_hemisphere = self.domain.geo_reference.get_hemisphere()
-
-        northern = True
-        if utm_hemisphere == 'southern':
-            northern = False
-
-        #import re
-        #utm_zone_number = re.findall(r'\d+', utm_zone)[0]
-        #utm_zone_letter = re.findall(r'[A-z]+', utm_zone)[0]
-
-        #print(utm_zone)
-        #print(points)
-
-        # we could use anuga's utmtoLL but it has not been vectorised so lets
-        # use this library, but we will have to download via pip
-        import utm
-        lat, long = utm.to_latlon(points[:,0], points[:,1], utm_zone, northern=northern)
-
-        #print(lat)
-        #print(long)
+        from anuga.coordinate_transforms.redfearn import epsg_to_ll
+        epsg = self.domain.geo_reference.get_epsg()
+        lat, long = epsg_to_ll(points[:,0], points[:,1], epsg)
 
         lat = num.reshape(lat, (-1,1))
         long = num.reshape(long, (-1,1))
         points_ll = num.hstack((long,lat))
-
-
-        # need to pull out the the utm zone number and letter
-
-        
-
-        #import utm
-        #points_ll = utm.to_latlon(easting = points[:,0], northing=points[:,1])
 
 
         #print('points_ll', points_ll)
@@ -1766,7 +1873,7 @@ class Quantity(object):
 
         # Call underlying method using array values
         if verbose:
-            log.critical('Applying fitted data to quantity')
+            log.info('Applying fitted data to quantity')
 
 
         if location == 'centroids':
@@ -1798,7 +1905,8 @@ class Quantity(object):
             # Cleanup centroid values
             self.interpolate()
 
-    def get_extremum_index(self, mode=None, indices=None):
+    def get_extremum_index(self, mode: str | None = None,
+                           indices: list[int] | num.ndarray | None = None) -> int:
         """Return index for maximum or minimum value of quantity (on centroids)
 
         Optional arguments:
@@ -1831,12 +1939,12 @@ class Quantity(object):
         else:
             return indices[i]
 
-    def get_maximum_index(self, indices=None):
+    def get_maximum_index(self, indices: list[int] | num.ndarray | None = None) -> int:
         """See get extreme index for details"""
 
         return self.get_extremum_index(mode='max', indices=indices)
 
-    def get_maximum_value(self, indices=None):
+    def get_maximum_value(self, indices: list[int] | num.ndarray | None = None) -> float:
         """Return maximum value of quantity (on centroids)
 
         Optional argument:
@@ -1854,7 +1962,7 @@ class Quantity(object):
 
         return V[i]
 
-    def get_maximum_location(self, indices=None):
+    def get_maximum_location(self, indices: list[int] | num.ndarray | None = None) -> tuple[float, float]:
         """Return location of maximum value of quantity (on centroids)
 
         Optional argument:
@@ -1876,12 +1984,12 @@ class Quantity(object):
 
         return x, y
 
-    def get_minimum_index(self, indices=None):
+    def get_minimum_index(self, indices: list[int] | num.ndarray | None = None) -> int:
         """See get extreme index for details"""
 
         return self.get_extremum_index(mode='min', indices=indices)
 
-    def get_minimum_value(self, indices=None):
+    def get_minimum_value(self, indices: list[int] | num.ndarray | None = None) -> float:
         """Return minimum value of quantity (on centroids)
 
         Optional argument:
@@ -1899,7 +2007,7 @@ class Quantity(object):
         return V[i]
 
 
-    def get_minimum_location(self, indices=None):
+    def get_minimum_location(self, indices: list[int] | num.ndarray | None = None) -> tuple[float, float]:
         """Return location of minimum value of quantity (on centroids)
 
         Optional argument:
@@ -1922,9 +2030,9 @@ class Quantity(object):
         return x, y
 
     def get_interpolated_values(self,
-                                interpolation_points,
-                                use_cache=False,
-                                verbose=False):
+                                interpolation_points: ArrayLike | GeospatialData,
+                                use_cache: bool = False,
+                                verbose: bool = False) -> num.ndarray:
         """Get values at interpolation points
 
         The argument interpolation points must be given as either a
@@ -1966,11 +2074,11 @@ class Quantity(object):
         return result
 
     def get_values(self,
-                   interpolation_points=None,
-                   location='vertices',
-                   indices=None,
-                   use_cache=False,
-                   verbose=False):
+                   interpolation_points: ArrayLike | GeospatialData | None = None,
+                   location: str = 'vertices',
+                   indices: list[int] | num.ndarray | None = None,
+                   use_cache: bool = False,
+                   verbose: bool = False) -> num.ndarray:
         """Get values for quantity
 
         Extract values for quantity as a numeric array.
@@ -2016,7 +2124,7 @@ class Quantity(object):
         #              resulting values should be ordered.
 
         if verbose is True:
-            log.critical('Getting values from %s' % location)
+            log.info('Getting values from %s' % location)
 
         if interpolation_points is not None:
             return self.get_interpolated_values(interpolation_points,
@@ -2083,10 +2191,10 @@ class Quantity(object):
                 return num.take(self.vertex_values, indices, axis=0)
 
     def set_vertex_values(self,
-                          A,
-                          indices=None,
-                          use_cache=False,
-                          verbose=False):
+                          A: ArrayLike,
+                          indices: list[int] | num.ndarray | None = None,
+                          use_cache: bool = False,
+                          verbose: bool = False) -> None:
         """Set vertex values for all unique vertices based on input array A
         which has one entry per unique vertex, i.e. one value for each row in
         array self.domain.nodes.
@@ -2143,7 +2251,7 @@ class Quantity(object):
         set_vertex_values_c(self, num.array(vertex_list), A)
         self.interpolate()
 
-    def smooth_vertex_values(self, use_cache=False, verbose=False):
+    def smooth_vertex_values(self, use_cache: bool = False, verbose: bool = False) -> None:
         """Smooths vertex values."""
 
         A, V = self.get_vertex_values(xy=False, smooth=True)
@@ -2155,7 +2263,9 @@ class Quantity(object):
     # Methods for outputting model results
     ############################################################################
 
-    def get_vertex_values(self, xy=True, smooth=None, centroid_averaging=None, precision=None):
+    def get_vertex_values(self, xy: bool = True, smooth: bool | None = None,
+                          centroid_averaging: bool | None = None,
+                          precision: type | None = None) -> tuple[num.ndarray, num.ndarray] | tuple[num.ndarray, num.ndarray, num.ndarray, num.ndarray]:
         """Return vertex values like an OBJ format i.e. one value per node.
 
         The vertex values are returned as one sequence in the 1D float array A.
@@ -2197,7 +2307,7 @@ class Quantity(object):
                 centroid_averaging = self.domain.get_using_centroid_averaging()
             except AttributeError:
                 centroid_averaging = False
-                
+
         if precision is None:
             precision = float
 
@@ -2240,20 +2350,23 @@ class Quantity(object):
         for each volume using first order scheme.
         """
 
+        if self.edge_values is None:
+            # centroid_only type (e.g. friction): no edge or vertex arrays to fill
+            return
+
         qc = self.centroid_values
         qv = self.vertex_values
         qe = self.edge_values
 
-        #for i in range(3):
-        #    qe[:,i] = qc
-
         qe[:] = qc[:,num.newaxis]
         qv[:] = qe
 
-        self.x_gradient[:] = 0.0
-        self.y_gradient[:] = 0.0
+        if self._x_gradient is not None:
+            self._x_gradient[:] = 0.0
+            self._y_gradient[:] = 0.0
 
-    def get_integral(self, full_only=True, region=None, indices=None):
+    def get_integral(self, full_only: bool = True, region=None,
+                     indices: list[int] | num.ndarray | None = None) -> float:
 
         """Compute the integral of quantity across entire domain,
         or over a region. Eg
@@ -2284,7 +2397,7 @@ class Quantity(object):
             return num.sum(areas[indices]*self.centroid_values[indices])
 
 
-    def get_gradients(self):
+    def get_gradients(self) -> tuple[num.ndarray, num.ndarray]:
         """Provide gradients. Use compute_gradients first."""
 
         return self.x_gradient, self.y_gradient
@@ -2301,7 +2414,7 @@ class Quantity(object):
             from .quantity_openmp_ext import update
         else:
             from .quantity_openmp_ext import update
-        
+
         return update(self, timestep)
 
     def compute_gradients(self):
@@ -2345,14 +2458,24 @@ class Quantity(object):
         extrapolate_from_gradient(self)
 
     def extrapolate_second_order_and_limit_by_edge(self):
-        # Call correct module function
-        # (either from this module or C-extension)
-        extrapolate_second_order_and_limit_by_edge(self)
+        # Use domain-level gradient workspace so this quantity never needs to
+        # allocate its own x_gradient/y_gradient/phi arrays.
+        domain = self.domain
+        extrapolate_second_order_and_limit_by_edge(
+            self,
+            domain._grad_workspace_x,
+            domain._grad_workspace_y,
+            domain._phi_workspace)
 
     def extrapolate_second_order_and_limit_by_vertex(self):
-        # Call correct module function
-        # (either from this module or C-extension)
-        extrapolate_second_order_and_limit_by_vertex(self)
+        # Use domain-level gradient workspace so this quantity never needs to
+        # allocate its own x_gradient/y_gradient/phi arrays.
+        domain = self.domain
+        extrapolate_second_order_and_limit_by_vertex(
+            self,
+            domain._grad_workspace_x,
+            domain._grad_workspace_y,
+            domain._phi_workspace)
 
     def bound_vertices_below_by_constant(self, bound):
         # Call correct module function

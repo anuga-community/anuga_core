@@ -38,43 +38,65 @@ class Rate_operator(Operator):
                  logging = False,
                  verbose = False,
                  monitor = False):
+        """Create a Rate_operator that adds water over a region at a specified rate.
+
+        The applied rate is ``rate * factor`` in m/s (depth per second).
+        For common use-cases prefer the factory constructors:
+
+        * ``Rate_operator.rainfall(domain, rate_mm_hr)`` — rainfall in mm/hr
+        * ``Rate_operator.inflow(domain, rate_m3_s)``    — inflow in m³/s
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+        rate : scalar, callable, Quantity, or ndarray
+            Rate in m/s (after multiplication by *factor*).  May be a scalar,
+            a function of ``t``, ``(x, y)``, or ``(x, y, t)``, a Quantity,
+            a numpy array of shape ``(n_triangles,)``, or an xarray DataArray.
+        factor : scalar or callable(t)
+            Multiplier applied to *rate* before adding to stage.  Use to
+            convert units (e.g. ``1/(1000*3600)`` for mm/hr → m/s).
+        region : Region, optional
+            Pre-built Region.  Cannot be combined with *polygon*, *center*,
+            *radius*, or *indices*.
+        indices : list, optional
+            Triangle indices where the rate is applied.
+        polygon : list of [x, y], optional
+            Polygon bounding the application area.
+        center : [x, y], optional
+            Centre of a circular application area.
+        radius : float, optional
+            Radius of the circular application area.
+        default_rate : scalar or callable(t), optional
+            Rate to use outside the time interval of the rate function/xarray.
+        description, label, logging, verbose, monitor :
+            Passed to the base ``Operator``.
         """
-Create a Rate_operator that adds water over a region at a specified
-rate (ms^{-1} = vol/Area/sec)
-
-Parameters specifying locaton of operator
-
-:param region: Region object where water applied 
-:param indices: List of triangles where water applied
-:param polygon: List of [x,y] points specifying a polygon where water applied
-:param center: [x.y] point of circle where water applied
-:param radius: radius of circle where water applied
-
-Parameters specifying rate
-
-:param rate: scalar, function of (t), (x,y), or (x,y,t), or a Quantity, 
-                a numpy array of size (number_of_triangles), 
-                or an xarray with rate at points and time
-:param factor: scalar, function of t, or 2 by n numpy array time sequence, 
-                used to specify conversion from rate argument to m/s
-:param default_rate: use this rate if outside time interval of rate function or xarray
-
-Parameters involving communication
-
-:param description:
-:param label:
-:param logging:
-:param verbose:
-:param monitor:
-    """
 
 
+
+        # --------------------------------------------------
+        # Input validation
+        # --------------------------------------------------
+        if isinstance(region, Region) and any(
+                arg is not None for arg in (polygon, center, radius, indices)):
+            raise ValueError(
+                'Rate_operator: cannot specify both a Region object and '
+                'polygon/center/radius/indices — the Region already encodes location')
+
+        if not (rate is None
+                or isinstance(rate, (int, float, num.ndarray))
+                or callable(rate)
+                or hasattr(rate, 'centroid_values')):  # Quantity duck-type
+            raise TypeError(
+                'Rate_operator: rate must be a number, callable, Quantity, or '
+                'numpy array; got %s' % type(rate).__name__)
 
         Operator.__init__(self, domain, description, label, logging, verbose)
 
         #-----------------------------------------------------
         # Make sure region is actually an instance of a region
-        # Otherwise create a new region based on the other 
+        # Otherwise create a new region based on the other
         # input arguments
         #-----------------------------------------------------
         if isinstance(region,Region):
@@ -95,7 +117,7 @@ Parameters involving communication
         #------------------------------------------
         self.indices = self.region.indices
         self.set_areas()
-        self.set_full_indices()        
+        self.set_full_indices()
 
         #--------------------------------
         # Setting up rate
@@ -106,13 +128,13 @@ Parameters involving communication
 
 
         #-------------------------------
-        # Check if rate is actually an xarray. 
+        # Check if rate is actually an xarray.
         # Need xarray package installed
         #-------------------------------
         try:
             import xarray
         except ImportError as e:
-            log.debug('xarray not available, xarray rate inputs disabled: %s', e)
+            log.debug('xarray not available, xarray rate inputs disabled: %s' % e)
             xarray = None
         if xarray is not None:
             if type(rate) is xarray.core.dataarray.DataArray:
@@ -188,8 +210,14 @@ Parameters involving communication
         if self.indices is None:
             indices = num.arange(self.domain.number_of_elements, dtype=num.intc)
             areas = self.domain.areas.copy()
-        elif self.indices is []:
-            return  # No indices, nothing to do
+        elif hasattr(self.indices, '__len__') and len(self.indices) == 0:
+            # No local elements on this rank (e.g. rainfall polygon doesn't
+            # overlap this rank's partition).  This operator is a no-op here.
+            # Mark as GPU-initialized so _has_cpu_only_fractional_operators
+            # doesn't trigger an unnecessary GPU<->CPU sync every timestep.
+            # __call__ still returns immediately at the empty-indices guard.
+            self._gpu_initialized = True
+            return
         else:
             indices = num.asarray(self.indices, dtype=num.intc)
             areas = self.domain.areas[indices].copy()
@@ -200,20 +228,20 @@ Parameters involving communication
         else:
             full_indices = None
 
-        try:
-            from anuga.shallow_water.sw_domain_gpu_ext import init_rate_operator
-            self._gpu_op_id = init_rate_operator(
-                gpu_interface.gpu_dom,
-                indices,
-                areas.astype(num.float64),
-                full_indices
+        from anuga.shallow_water.sw_domain_gpu_ext import init_rate_operator
+        self._gpu_op_id = init_rate_operator(
+            gpu_interface.gpu_dom,
+            indices,
+            areas.astype(num.float64),
+            full_indices
+        )
+        if self._gpu_op_id < 0:
+            raise RuntimeError(
+                f"Failed to register GPU rate operator '{getattr(self, 'label', repr(self))}': "
+                f"slot limit exceeded (MAX_RATE_OPERATORS=64). "
+                f"Reduce the number of Rate_operator instances or increase MAX_RATE_OPERATORS in gpu_domain.h."
             )
-            if self._gpu_op_id >= 0:
-                self._gpu_initialized = True
-        except Exception as e:
-            import warnings
-            warnings.warn(f"Failed to initialize GPU rate operator: {e}")
-            self._gpu_op_id = None
+        self._gpu_initialized = True
 
     def __call__(self):
         """Apply rate operator to the domain for one timestep.
@@ -383,9 +411,9 @@ Parameters involving communication
 
         factor = self.get_factor(t)
 
-        # We need to adjust the momentums if rate < 0 since otherwise 
+        # We need to adjust the momentums if rate < 0 since otherwise
         # the xmom and ymom stay the same but height -> 0 which leads to xvel, yvel -> infty
-        
+
 
         fid = self.full_indices
         if num.all(rate >= 0.0):
@@ -436,28 +464,28 @@ Parameters involving communication
 
 
         try:
-            self.local_max = (local_rates[fid].max()/timestep)
-            self.local_min = (local_rates[fid].min()/timestep)
+            self.local_max = (local_rates[fid].max()/timestep) if timestep != 0.0 else 0.0
+            self.local_min = (local_rates[fid].min()/timestep) if timestep != 0.0 else 0.0
         except (TypeError, IndexError):
-            self.local_max = local_rates/timestep
-            self.local_min = local_rates/timestep
+            self.local_max = local_rates/timestep if timestep != 0.0 else 0.0
+            self.local_min = local_rates/timestep if timestep != 0.0 else 0.0
 
         if isinstance(self.local_max, num.ndarray) and self.local_max.size == 0:
             self.local_max = 0.0
             self.local_min = 0.0
 
         # print(self.local_min, self.local_max)
-        
+
         self.cumulative_influx += self.local_influx
 
         # Update mass inflows from fractional steps
         self.domain.fractional_step_volume_integral+=self.local_influx
-        
+
         if self.monitor:
-            log.critical('Local Flux at time %.2f = %f'
+            log.info('Local Flux at time %.2f = %f'
                          % (self.domain.get_time(), self.local_influx))
 
-            
+
 
         return
 
@@ -535,7 +563,7 @@ Parameters involving communication
             assert rate_shape == (self.domain.number_of_triangles,) \
                 or rate_shape == (self.domain.number_of_triangles, 1), msg
             self.rate_type = 'centroid_array'
-            rate = rate.reshape((-1,)) 
+            rate = rate.reshape((-1,))
         else:
             # Possible types are 'scalar', 't', 'x,y' and 'x,y,t'
             from anuga.utilities.function_utils import determine_function_type
@@ -579,7 +607,7 @@ Parameters involving communication
         if isinstance(factor, num.ndarray):
             factor_shape = factor.shape
             msg =  f"The shape {factor_shape} of the input factor "
-            msg += f"should be (2,n) so that a time function can be constructed"
+            msg += "should be (2,n) so that a time function can be constructed"
             assert factor_shape[0] == 2, msg
             self.factor_type = 'time_sequence'
             from scipy.interpolate import interp1d
@@ -648,7 +676,7 @@ Parameters involving communication
         # FIXME SR: this does not take into account the zeroing of large negative rates
 
         factor = self.get_factor()
-        
+
         if full_only:
             if self.rate_spatial:
                 rate = self.get_spatial_rate() # rate is an array
@@ -708,6 +736,102 @@ Parameters involving communication
 
         self.default_rate = default_rate
 
+    # ------------------------------------------------------------------
+    # Factory constructors
+    # ------------------------------------------------------------------
+
+    @classmethod
+    def rainfall(cls, domain, rate, polygon=None, region=None,
+                 center=None, radius=None, indices=None,
+                 default_rate=0.0, label=None, description=None,
+                 logging=False, verbose=False, monitor=False):
+        """Create a Rate_operator for rainfall.
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+        rate : scalar, callable(t), or array
+            Rainfall intensity in **mm/hr**.  All other rate forms accepted
+            by ``Rate_operator`` (callables, arrays) are also supported and
+            are interpreted as mm/hr.
+        polygon, region, center, radius, indices :
+            Location arguments — same as ``Rate_operator.__init__``.
+
+        Returns
+        -------
+        Rate_operator
+            Operator with ``factor = 1 / (1000 * 3600)`` so that mm/hr is
+            converted to m/s automatically.
+
+        Examples
+        --------
+        >>> rain = Rate_operator.rainfall(domain, rate=10.0)          # 10 mm/hr
+        >>> rain = Rate_operator.rainfall(domain, rate=lambda t: 5.0) # time-varying
+        """
+        MM_HR_TO_M_S = 1.0 / (1000.0 * 3600.0)
+        return cls(domain, rate=rate, factor=MM_HR_TO_M_S,
+                   polygon=polygon, region=region,
+                   center=center, radius=radius, indices=indices,
+                   default_rate=default_rate, label=label,
+                   description=description, logging=logging,
+                   verbose=verbose, monitor=monitor)
+
+    @classmethod
+    def inflow(cls, domain, rate, polygon=None, region=None,
+               center=None, radius=None, indices=None,
+               default_rate=0.0, label=None, description=None,
+               logging=False, verbose=False, monitor=False):
+        """Create a Rate_operator for a volumetric inflow.
+
+        Parameters
+        ----------
+        domain : anuga.Domain
+        rate : scalar or callable(t)
+            Volumetric flow rate in **m³/s**.  The operator divides by the
+            total region area so that the net inflow equals *rate* m³/s.
+
+        Returns
+        -------
+        Rate_operator
+
+        Raises
+        ------
+        ValueError
+            If the specified region has zero area.
+
+        Examples
+        --------
+        >>> op = Rate_operator.inflow(domain, rate=0.5, polygon=poly)
+        >>> op = Rate_operator.inflow(domain, rate=lambda t: 0.1*t)
+        """
+        # Build the operator with rate=0 first to resolve the region/area.
+        op = cls(domain, rate=0.0, factor=1.0,
+                 polygon=polygon, region=region,
+                 center=center, radius=radius, indices=indices,
+                 default_rate=default_rate, label=label,
+                 description=description, logging=logging,
+                 verbose=verbose, monitor=monitor)
+
+        total_area = float(op.areas.sum()) if op.areas is not None and len(op.areas) > 0 else 0.0
+        if total_area <= 0.0:
+            raise ValueError(
+                'Rate_operator.inflow: region has zero area — '
+                'check that the polygon/center/radius overlaps the domain')
+
+        # Convert m³/s → m/s by dividing by region area.
+        # Use a closure factory so the wrapper has exactly one argument (t),
+        # which determine_function_type correctly classifies as type 't'.
+        if callable(rate):
+            def _make_scaled(fn, area):
+                def scaled(t):
+                    return fn(t) / area
+                return scaled
+            op.set_rate(_make_scaled(rate, total_area))
+        else:
+            op.set_rate(rate / total_area)
+
+        return op
+
     def _prepare_xarray_rate(self, xa):
 
         import numpy as np
@@ -756,7 +880,7 @@ Parameters involving communication
             print(f"{self.domain.get_time()} {self.domain.get_datetime()}")
             print(f"UTC time {current_utc_datetime64} type {type(current_utc_datetime64)} ")
             print(self.xa.sel(time=current_utc_datetime64, method='nearest'))
-      
+
         try:
             Q_ref = self.xa.sel(time=current_utc_datetime64, method="ffill", tolerance='5m')
 
@@ -775,13 +899,13 @@ Parameters involving communication
                     self.previous_Q_ref_time = Q_ref_time
             else:
                 Q_numpy = Q_ref[self.ii].to_numpy()
-                  
+
         except Exception:
             Q_numpy = self.default_rate
             if self.verbose:
                 print(f"UTC time {current_utc_datetime64} Using default rate Q = {Q_numpy(self.get_time())}")
-            
-        self.set_rate(rate=Q_numpy)             
+
+        self.set_rate(rate=Q_numpy)
 
     def parallel_safe(self):
         """Operator is applied independently on each cell and

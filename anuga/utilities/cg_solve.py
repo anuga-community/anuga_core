@@ -22,7 +22,7 @@ class PreconditionerError(Exception):
 # Setup for C conjugate gradient solver
 
 
-class Stats(object):
+class Stats:
 
     def __init__(self):
 

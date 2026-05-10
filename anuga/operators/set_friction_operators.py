@@ -41,7 +41,7 @@ class Set_depth_friction_operator(Operator):
 
         #-----------------------------------------------------
         # Make sure region is actually an instance of a region
-        # Otherwise create a new region based on the other 
+        # Otherwise create a new region based on the other
         # input arguments
         #-----------------------------------------------------
         if isinstance(region,Region):

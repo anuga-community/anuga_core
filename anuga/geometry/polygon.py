@@ -207,7 +207,7 @@ def polygon_overlap(triangles, polygon, verbose=False):
     count = _polygon_overlap(polygon, triangles, indices)
 
     if verbose:
-        log.critical('Found %d triangles (out of %d) that polygon' %
+        log.info('Found %d triangles (out of %d) that polygon' %
                      (count, M))
 
     return indices[:count]
@@ -227,7 +227,7 @@ def not_polygon_overlap(triangles, polygon, verbose=False):
     count = _polygon_overlap(polygon, triangles, indices)
 
     if verbose:
-        log.critical('Found %d triangles (out of %d) that polygon' %
+        log.info('Found %d triangles (out of %d) that polygon' %
                      (count, M))
 
     return indices[count:]
@@ -249,7 +249,7 @@ def line_intersect(triangles, line, verbose=False):
     count = _line_intersect(line, triangles, indices)
 
     if verbose:
-        log.critical(
+        log.info(
             'Found %d triangles (out of %d) that intersect line' % (count, M))
 
     return indices[:count]
@@ -278,7 +278,7 @@ def not_line_intersect(triangles, line, verbose=False):
     count = _line_intersect(line, triangles, indices)
 
     if verbose:
-        log.critical(
+        log.info(
             'Found %d triangles (out of %d) that intersect the line' % (count, M))
 
     return indices[count:]
@@ -297,21 +297,21 @@ def is_inside_triangle(point, triangle,
     Point P can then be written as
 
     P = A + alpha * (C-A) + beta * (B-A)
-    or if we let 
-    v=P-A, v0=C-A, v1=B-A    
+    or if we let
+    v=P-A, v0=C-A, v1=B-A
 
-    v = alpha*v0 + beta*v1 
+    v = alpha*v0 + beta*v1
 
     Dot this equation by v0 and v1 to get two:
 
     dot(v0, v) = alpha*dot(v0, v0) + beta*dot(v0, v1)
-    dot(v1, v) = alpha*dot(v1, v0) + beta*dot(v1, v1)    
+    dot(v1, v) = alpha*dot(v1, v0) + beta*dot(v1, v1)
 
     or if a_ij = dot(v_i, v_j) and b_i = dot(v_i, v)
     the matrix equation:
 
     a_00 a_01   alpha     b_0
-                       = 
+                       =
     a_10 a_11   beta      b_1
 
     Solving for alpha and beta yields:
@@ -343,7 +343,7 @@ def is_inside_triangle(point, triangle,
 def is_complex(polygon, closed=True, verbose=False):
     """Check if a polygon is complex (self-intersecting).
        Uses a sweep algorithm that is O(n^2) in the worst case, but
-       for most normal looking polygons it'll be O(n log n). 
+       for most normal looking polygons it'll be O(n log n).
 
        polygon is a list of points that define a closed polygon.
        verbose will print a list of the intersection points if true
@@ -674,7 +674,7 @@ def separate_points_by_polygon(points, polygon,
                                             int(closed), int(verbose))
 
     if verbose:
-        log.critical('Found %d points (out of %d) inside polygon' % (count, M))
+        log.info('Found %d points (out of %d) inside polygon' % (count, M))
 
     return indices, count
 
@@ -743,11 +743,17 @@ def plot_polygons(polygons_points,
     """
 
     try:
-        import matplotlib
-        matplotlib.use('Agg')
-        from matplotlib.pyplot import plot, savefig, xlabel, \
-            ylabel, title, close, title, fill
+        import matplotlib.pyplot as plt
+        # switch_backend is safe to call even if pyplot is already initialised,
+        # unlike matplotlib.use() which must be called before any pyplot import.
+        plt.switch_backend('Agg')
+        from matplotlib.pyplot import plot, savefig, xlabel, ylabel, title, close, fill
     except ImportError:
+        return
+    except Exception:
+        # matplotlib/numpy incompatibility (e.g. numpy 2.x + older matplotlib)
+        import anuga.utilities.log as log
+        log.warning('plot_polygons: matplotlib backend switch failed; skipping plot')
         return
 
     assert type(polygons_points) == list, \
@@ -784,21 +790,25 @@ def plot_polygons(polygons_points,
             if style_name not in ['line', 'outside', 'point']:
                 colour.append(style_name)
 
-    for i, item in enumerate(polygons_points):
-        pt_x, pt_y = _poly_xy(item)
-        plot(pt_x, pt_y, colour[i])
-        if alpha:
-            fill(pt_x, pt_y, colour[i], alpha=alpha)
-        xlabel('x')
-        ylabel('y')
-        title(label)
+    try:
+        for i, item in enumerate(polygons_points):
+            pt_x, pt_y = _poly_xy(item)
+            plot(pt_x, pt_y, colour[i])
+            if alpha:
+                fill(pt_x, pt_y, colour[i], alpha=alpha)
+            xlabel('x')
+            ylabel('y')
+            title(label)
 
-    if figname is not None:
-        savefig(figname)
-    else:
-        savefig('test_image')
+        if figname is not None:
+            savefig(figname)
+        else:
+            savefig('test_image')
 
-    close('all')
+        close('all')
+    except Exception:
+        import anuga.utilities.log as log
+        log.warning('plot_polygons: plotting failed; skipping plot')
 
 
 def _poly_xy(polygon):

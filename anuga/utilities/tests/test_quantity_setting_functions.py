@@ -20,7 +20,6 @@ from anuga.config import g
 from anuga.utilities import quantity_setting_functions as qs
 import os
 
-# See if osgeo is installed
 import sys
 try:
     import rasterio
