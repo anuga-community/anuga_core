@@ -6,7 +6,7 @@
 
 static void *emalloc(size_t amt,char * location)
 {
-    void *v = malloc(amt);  
+    void *v = malloc(amt);
     if(!v){
         fprintf(stderr, "out of mem in quad_tree: %s\n",location);
         exit(EXIT_FAILURE);

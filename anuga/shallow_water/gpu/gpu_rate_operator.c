@@ -17,21 +17,39 @@
 // Rate Operators (rain, extraction, etc.)
 // ============================================================================
 
+// Grow the ops array to at least one more slot.  Returns 0 on success, -1 on OOM.
+static int grow_rate_ops(struct rate_operators *RO) {
+    int new_cap = RO->capacity == 0 ? MAX_RATE_OPERATORS : RO->capacity * 2;
+    struct rate_operator_info *p = (struct rate_operator_info*)
+        realloc(RO->ops, new_cap * sizeof(struct rate_operator_info));
+    if (!p) {
+        fprintf(stderr, "ERROR: Failed to grow rate_operators to %d slots\n", new_cap);
+        return -1;
+    }
+    memset(p + RO->capacity, 0,
+           (new_cap - RO->capacity) * sizeof(struct rate_operator_info));
+    RO->ops = p;
+    RO->capacity = new_cap;
+    return 0;
+}
+
 int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
                            double *areas, int *full_indices, int num_full) {
     struct rate_operators *RO = &GD->rate_ops;
 
-    // Find a free slot
+    // Find a free slot, growing heap array if needed
     int op_id = -1;
-    for (int i = 0; i < MAX_RATE_OPERATORS; i++) {
-        if (!RO->ops[i].active) {
-            op_id = i;
-            break;
+    for (int i = 0; i < RO->capacity; i++) {
+        if (!RO->ops[i].active) { op_id = i; break; }
+    }
+    if (op_id < 0) {
+        if (grow_rate_ops(RO) != 0) return -1;
+        for (int i = 0; i < RO->capacity; i++) {
+            if (!RO->ops[i].active) { op_id = i; break; }
         }
     }
-
     if (op_id < 0) {
-        fprintf(stderr, "ERROR: No free rate operator slots (max %d)\n", MAX_RATE_OPERATORS);
+        fprintf(stderr, "ERROR: No free rate operator slots after grow\n");
         return -1;
     }
 
@@ -99,7 +117,7 @@ int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
 }
 
 void gpu_rate_operator_finalize(struct gpu_domain *GD, int op_id) {
-    if (op_id < 0 || op_id >= MAX_RATE_OPERATORS) return;
+    if (op_id < 0 || op_id >= GD->rate_ops.capacity) return;
 
     struct rate_operator_info *op = &GD->rate_ops.ops[op_id];
     if (!op->active) return;
@@ -138,17 +156,20 @@ void gpu_rate_operator_finalize(struct gpu_domain *GD, int op_id) {
 }
 
 void gpu_rate_operators_finalize_all(struct gpu_domain *GD) {
-    for (int i = 0; i < MAX_RATE_OPERATORS; i++) {
-        if (GD->rate_ops.ops[i].active) {
+    struct rate_operators *RO = &GD->rate_ops;
+    for (int i = 0; i < RO->capacity; i++) {
+        if (RO->ops[i].active) {
             gpu_rate_operator_finalize(GD, i);
         }
     }
-    GD->rate_ops.initialized = 0;
+    if (RO->ops) { free(RO->ops); RO->ops = NULL; }
+    RO->capacity = 0;
+    RO->initialized = 0;
 }
 
 double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
                                double rate, double factor, double timestep) {
-    if (op_id < 0 || op_id >= MAX_RATE_OPERATORS) return 0.0;
+    if (op_id < 0 || op_id >= GD->rate_ops.capacity) return 0.0;
 
     struct rate_operator_info *op = &GD->rate_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return 0.0;
@@ -227,7 +248,7 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
                                      int use_indices_into_rate,
                                      int rate_changed,
                                      double factor, double timestep) {
-    if (op_id < 0 || op_id >= MAX_RATE_OPERATORS) return 0.0;
+    if (op_id < 0 || op_id >= GD->rate_ops.capacity) return 0.0;
 
     struct rate_operator_info *op = &GD->rate_ops.ops[op_id];
     if (!op->active || op->num_indices == 0) return 0.0;

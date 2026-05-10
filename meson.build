@@ -94,6 +94,44 @@ endif
 
 message('Effective compiler ID: ' + effective_compiler_id)
 
+#========================================================
+# Intel MKL Detection
+#========================================================
+# When using Intel compilers, MKL provides optimised BLAS/LAPACK for numpy/scipy.
+# The use_mkl option can be set explicitly; it also auto-enables for Intel compilers.
+
+is_intel_compiler = effective_compiler_id in ['intel', 'intel-cl', 'intel-llvm', 'icx']
+use_mkl_opt = get_option('use_mkl')
+use_mkl = use_mkl_opt or is_intel_compiler
+
+if use_mkl
+  mkl_dep = dependency('mkl-dynamic-lp64-seq', required: false)
+  if not mkl_dep.found()
+    mkl_dep = dependency('mkl', required: false)
+  endif
+  if mkl_dep.found()
+    dependencies += [mkl_dep]
+    message('Intel MKL found and enabled')
+  else
+    if is_intel_compiler
+      warning('Intel compiler detected but MKL not found. ' +
+              'Install MKL via: conda install mkl mkl-devel libblas=*=*mkl. ' +
+              'Using environment_<version>_intel.yml is recommended.')
+    else
+      warning('use_mkl=true but MKL not found — install mkl and mkl-devel.')
+    endif
+  endif
+  if is_intel_compiler
+    # -qmkl is supported by both classic Intel (icc/icpc) and Intel LLVM (icx/icpx).
+    # This flag selects the MKL BLAS/LAPACK implementation at the C-extension level
+    # and works alongside the OpenMP flags (-qopenmp / -fiopenmp) set below.
+    add_project_arguments('-qmkl=sequential', language: ['c', 'cpp'])
+    add_project_link_arguments('-qmkl=sequential', language: ['c', 'cpp'])
+    message('MKL compiler flag -qmkl=sequential added for Intel compiler')
+  endif
+endif
+
+
 if openmp.found()
   # On Windows, the mingw compiler does not support OpenMP ATOMIC operations
   # so using gcc_win-64 gxx_win-64 provided by conda-forge
@@ -106,10 +144,10 @@ if openmp.found()
   #
   # Uses effective_compiler_id to handle Cray wrappers correctly
 
-  if effective_compiler_id in ['intel', 'intel-cl', 'icx']
+  if effective_compiler_id in ['intel', 'intel-cl']
     openmp_c_args = ['-O3', '-qopenmp', '-g']
     add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
-  elif effective_compiler_id == 'intel-llvm'
+  elif effective_compiler_id in ['intel-llvm', 'icx']
     openmp_c_args = ['-O3', '-fiopenmp', '-g']
     add_project_link_arguments('-fiopenmp', language: ['c', 'cpp'])
   elif effective_compiler_id == 'nvidia_hpc'
@@ -171,6 +209,59 @@ configure_file(
     install_dir: get_option('bindir'),
     install_mode: 'rwxr-xr-x'
 )
+
+configure_file(
+    input: 'scripts/anuga_animate_gui.py',
+    output: 'anuga_animate_gui',
+    configuration: conf,
+    install_dir: get_option('bindir'),
+    install_mode: 'rwxr-xr-x'
+)
+
+configure_file(
+    input: 'scripts/anuga_sww_gui.py',
+    output: 'anuga_sww_gui',
+    configuration: conf,
+    install_dir: get_option('bindir'),
+    install_mode: 'rwxr-xr-x'
+)
+
+# If mpicc is not on meson's PATH (common in conda envs where the env bin
+# dir is in the user's PATH but not in the subprocess PATH seen by meson),
+# locate it via mpi4py config + shutil.which + sys.prefix/bin fallback, then
+# register it so dependency('mpi', ...) in subdirectories finds it correctly.
+_mpicc_from_mpi4py = run_command(py3, ['-c', '''
+import sys, os, shutil
+try:
+    if sys.platform == "win32":
+        sys.exit(1)  # Windows has no mpicc wrapper; skip override
+    import mpi4py
+    cfg = mpi4py.get_config()
+    mpicc = cfg.get("mpicc", "")
+    # Resolve bare name to absolute path
+    if mpicc and not os.path.isabs(mpicc):
+        mpicc = shutil.which(mpicc) or ""
+    # Fallback: look directly in the active Python env's bin/
+    if not mpicc or not os.path.isfile(mpicc):
+        candidate = os.path.join(sys.prefix, "bin", "mpicc")
+        if os.path.isfile(candidate):
+            mpicc = candidate
+    if mpicc and os.path.isfile(mpicc):
+        print(mpicc)
+    else:
+        sys.exit(1)
+except Exception:
+    sys.exit(1)
+'''], check: false)
+
+if _mpicc_from_mpi4py.returncode() == 0
+  _mpicc_path = _mpicc_from_mpi4py.stdout().strip()
+  _mpicc_prog = find_program(_mpicc_path, required: false)
+  if _mpicc_prog.found()
+    meson.override_find_program('mpicc', _mpicc_prog)
+    message('mpicc registered from mpi4py: ' + _mpicc_path)
+  endif
+endif
 
 # Add subdirectories which contains python sources
 subdir('anuga')

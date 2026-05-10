@@ -30,6 +30,7 @@ dependencies:
   - pymetis=2023.1.1
   - pyproj=3.5.0
   - pytest=8.3.4
+  - pytest-regressions
   - scipy=1.10.1
   - utm=0.7.0
   - wheel=0.45.1

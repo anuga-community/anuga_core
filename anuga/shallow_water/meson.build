@@ -26,10 +26,102 @@ gpu_offload = get_option('gpu_offload')
 
 # MPI is optional - if not found, sw_domain_gpu_ext won't be built
 mpi_dep = dependency('mpi', language: 'c', required: false)
+if mpi_dep.found()
+  message('MPI dependency found via pkg-config/cmake')
+else
+  message('MPI dependency NOT found via pkg-config/cmake - will try mpi4py fallback')
+endif
 
 # Check if mpi4py is available
 mpi4py_check = run_command(py3, ['-c', 'import mpi4py; print(mpi4py.get_include())'], check: false)
 have_mpi4py = mpi4py_check.returncode() == 0
+
+if have_mpi4py
+  message('mpi4py found, include dir: ' + mpi4py_check.stdout().strip())
+else
+  message('mpi4py NOT importable (rc=' + mpi4py_check.returncode().to_string() + ')'
+          + (mpi4py_check.stderr().strip() != '' ? ': ' + mpi4py_check.stderr().strip() : ''))
+endif
+
+# Fallback: if standard MPI detection failed but mpi4py is available,
+# construct MPI dependency from mpicc -show output so that compile flags
+# (especially -I paths) match exactly what mpi4py was built against.
+# Falls back to sys.prefix/{include,lib} only if mpicc cannot be executed.
+if not mpi_dep.found() and have_mpi4py
+  mpi_prefix_result = run_command(py3, ['-c', '''
+import sys, os, subprocess, shutil
+try:
+    import mpi4py
+    prefix = sys.prefix
+    is_windows = sys.platform == "win32"
+    cfg = mpi4py.get_config()
+    # mpi4py.get_config() may supply explicit dirs; prefer those if present
+    cfg_incs = cfg.get("include_dirs", [])
+    cfg_libs = cfg.get("library_dirs", [])
+    if is_windows:
+        # conda on Windows: try cfg first, then Library/include, then bare include
+        candidates_inc = (cfg_incs or []) + [
+            os.path.join(prefix, "Library", "include"),
+            os.path.join(prefix, "include"),
+        ]
+        candidates_lib = (cfg_libs or []) + [
+            os.path.join(prefix, "Library", "lib"),
+            os.path.join(prefix, "lib"),
+        ]
+    else:
+        candidates_inc = (cfg_incs or []) + [os.path.join(prefix, "include")]
+        candidates_lib = (cfg_libs or []) + [os.path.join(prefix, "lib")]
+    inc = next((d for d in candidates_inc if os.path.isfile(os.path.join(d, "mpi.h"))), None)
+    if inc is None:
+        print("mpi.h not found; tried: " + str(candidates_inc), file=sys.stderr)
+        sys.exit(1)
+    lib = candidates_lib[0]  # take first; linker will search anyway
+    if is_windows:
+        # No mpicc on Windows; build flags from known conda paths.
+        # Library names from mpi4py config, defaulting to msmpi (conda-forge).
+        libnames = cfg.get("libraries", ["msmpi"]) or ["msmpi"]
+        cflags = ["-I" + inc]
+        lflags = ["-L" + lib] + ["-l" + n for n in libnames]
+    else:
+        # Unix: run mpicc -show to get the exact flags mpi4py was built with
+        mpicc = cfg.get("mpicc", "")
+        if mpicc and not os.path.isabs(mpicc):
+            mpicc = shutil.which(mpicc) or ""
+        if not mpicc or not os.path.isfile(mpicc):
+            mpicc = os.path.join(prefix, "bin", "mpicc")
+        try:
+            out = subprocess.check_output([mpicc, "-show"], text=True).strip()
+            tokens = out.split()
+            cflags = [t for t in tokens[1:] if t.startswith(("-I", "-D"))]
+            lflags = [t for t in tokens[1:] if t.startswith(("-L", "-l", "-Wl,", "-rpath"))]
+            if not cflags:
+                cflags = ["-I" + inc]
+        except Exception:
+            cflags = ["-I" + inc]
+            lflags = ["-L" + lib, "-lmpi"]
+    print("|".join(cflags) + "##" + "|".join(lflags))
+except Exception as e:
+    print("MPI fallback exception: " + str(e), file=sys.stderr)
+    sys.exit(1)
+'''], check: false)
+
+  if mpi_prefix_result.returncode() == 0
+    mpi_output = mpi_prefix_result.stdout().strip()
+    mpi_parts = mpi_output.split('##')
+    if mpi_parts.length() == 2
+      mpi_compile_args = mpi_parts[0] != '' ? mpi_parts[0].split('|') : []
+      mpi_link_args = mpi_parts[1] != '' ? mpi_parts[1].split('|') : ['-lmpi']
+      mpi_dep = declare_dependency(
+        compile_args: mpi_compile_args,
+        link_args: mpi_link_args,
+      )
+      message('MPI found via mpicc -show (fallback): ' + mpi_parts[0])
+    endif
+  else
+    message('MPI fallback script failed (rc=' + mpi_prefix_result.returncode().to_string() + ')'
+            + (mpi_prefix_result.stderr().strip() != '' ? ': ' + mpi_prefix_result.stderr().strip() : ''))
+  endif
+endif
 
 if mpi_dep.found() and have_mpi4py
   mpi4py_incdir = mpi4py_check.stdout().strip()
@@ -81,7 +173,7 @@ else
     gpu_c_args = ['-O3', '-mp=multicore', '-Minfo=accel', '-g']
   elif effective_compiler_id == 'intel' or effective_compiler_id == 'intel-cl'
     gpu_c_args = ['-O3', '-qopenmp', '-g']
-  elif effective_compiler_id == 'intel-llvm'
+  elif effective_compiler_id == 'intel-llvm' or effective_compiler_id == 'icx'
     gpu_c_args = ['-O3', '-fiopenmp', '-g']
   elif effective_compiler_id == 'clang'
     # Clang with libomp (LLVM, Homebrew macOS, or AOMP)
@@ -92,6 +184,13 @@ else
   endif
   # Define macro so code knows it's CPU-only mode
   gpu_c_args += ['-DCPU_ONLY_MODE']
+  # GCC/Clang warn about variables used only in #pragma omp target map() clauses
+  # in CPU_ONLY_MODE because the target region is a no-op; NVIDIA HPC SDK does not.
+  if effective_compiler_id == 'gcc'
+    gpu_c_args += ['-Wno-unused-variable', '-Wno-unused-but-set-variable', '-Wno-unused-function']
+  elif effective_compiler_id == 'clang'
+    gpu_c_args += ['-Wno-unused-variable', '-Wno-unused-function']
+  endif
   message('CPU multicore mode enabled (no GPU offloading)')
 endif
 
@@ -100,9 +199,93 @@ if get_option('gpu_aware_mpi') and gpu_offload
   message('GPU-aware MPI enabled')
 endif
 
+# Runtime GPU-aware MPI detection via MPIX_Query_cuda_support / MPIX_Query_rocm_support.
+# These are non-standard extensions present in Open MPI and MVAPICH2 GPU builds.
+# Only probe when actually building with GPU offloading: on CPU-only builds (CI on
+# macOS/Windows) Open MPI ships MPIX_Query_cuda_support() as a zero-returning stub
+# even without CUDA, causing a false-positive detection and a misleading message.
+if mpi_dep.found() and gpu_offload
+  if cc.has_header('mpi-ext.h', dependencies: [mpi_dep])
+    if cc.has_function('MPIX_Query_cuda_support',
+                       prefix: '#include <mpi.h>\n#include <mpi-ext.h>',
+                       dependencies: [mpi_dep])
+      gpu_c_args += ['-DHAVE_MPI_EXT_H', '-DHAVE_MPIX_CUDA_SUPPORT']
+      message('MPIX_Query_cuda_support found - GPU-aware MPI runtime detection enabled (CUDA)')
+    elif cc.has_function('MPIX_Query_rocm_support',
+                         prefix: '#include <mpi.h>\n#include <mpi-ext.h>',
+                         dependencies: [mpi_dep])
+      gpu_c_args += ['-DHAVE_MPI_EXT_H', '-DHAVE_MPIX_ROCM_SUPPORT']
+      message('MPIX_Query_rocm_support found - GPU-aware MPI runtime detection enabled (ROCm)')
+    else
+      message('mpi-ext.h found but no MPIX_Query_*_support - runtime detection disabled')
+    endif
+  else
+    message('mpi-ext.h not found - GPU-aware MPI runtime detection disabled')
+  endif
+endif
+
+# NVTX profiling hooks (-Duse_nvtx=true)
+# Probes for nvToolsExt in standard CUDA toolkit locations.
+# Tries NVTX v3 (standalone header-only install) first, then v1 (CUDA toolkit).
+# When found: adds -DNVTX_ENABLED and links nvToolsExt.
+nvtx_dep = []
+if get_option('use_nvtx')
+  # Check for NVTX v3 header (preferred - header-only, no link needed)
+  if cc.has_header('nvtx3/nvToolsExt.h')
+    gpu_c_args += ['-DNVTX_ENABLED', '-DHAVE_NVTX3']
+    message('NVTX v3 headers found - NVTX profiling enabled (header-only)')
+  else
+    # Fall back to NVTX v1 from CUDA toolkit (requires linking nvToolsExt)
+    nvtx_dep_probe = dependency('nvToolsExt', required: false)
+    if not nvtx_dep_probe.found()
+      # Try manual search in common CUDA toolkit locations
+      cuda_home = run_command('sh', ['-c', 'echo ${CUDA_HOME:-${CUDA_PATH:-/usr/local/cuda}}'],
+                              check: false).stdout().strip()
+      nvtx_lib = cc.find_library('nvToolsExt',
+                                  dirs: [cuda_home / 'lib64', cuda_home / 'lib',
+                                         '/usr/local/cuda/lib64', '/usr/local/cuda/lib'],
+                                  required: false)
+      if nvtx_lib.found() and cc.has_header('nvToolsExt.h',
+                                             args: ['-I' + cuda_home / 'include',
+                                                    '-I/usr/local/cuda/include'])
+        nvtx_dep = [nvtx_lib]
+        gpu_c_args += ['-DNVTX_ENABLED',
+                       '-I' + cuda_home / 'include',
+                       '-I/usr/local/cuda/include']
+        message('NVTX v1 found in CUDA toolkit - NVTX profiling enabled')
+      else
+        warning('use_nvtx=true but nvToolsExt not found - NVTX profiling disabled')
+      endif
+    else
+      nvtx_dep = [nvtx_dep_probe]
+      gpu_c_args += ['-DNVTX_ENABLED']
+      message('NVTX found via pkg-config - NVTX profiling enabled')
+    endif
+  endif
+endif
+
 # Only build sw_domain_gpu_ext if MPI and mpi4py are available
 if mpi_dep.found() and have_mpi4py
-  gpu_deps = openmp_deps + [mpi_dep]
+  gpu_deps = openmp_deps + [mpi_dep] + nvtx_dep
+
+  # On macOS, SIP strips DYLD_LIBRARY_PATH from child processes so libmpi.dylib
+  # is not found at dlopen time even though it is present in the conda env.
+  # Embed two rpaths:
+  #   @executable_path/../lib  — resolves to $CONDA_PREFIX/lib relative to the
+  #                              Python binary; portable across any conda env path
+  #   sys.prefix/lib           — absolute fallback for non-standard layouts
+  gpu_link_args = []
+  if host_machine.system() == 'darwin'
+    _py_prefix = run_command(py3, ['-c', 'import sys; print(sys.prefix)'], check: false)
+    if _py_prefix.returncode() == 0
+      _mpi_lib_dir = _py_prefix.stdout().strip() + '/lib'
+      gpu_link_args = [
+        '-Wl,-rpath,@executable_path/../lib',
+        '-Wl,-rpath,' + _mpi_lib_dir,
+      ]
+      message('macOS: embedding rpath for libmpi.dylib: ' + _mpi_lib_dir)
+    endif
+  endif
 
   py3.extension_module('sw_domain_gpu_ext',
     sources: [
@@ -118,6 +301,7 @@ if mpi_dep.found() and have_mpi4py
       'gpu/core_kernels.c',
     ],
     c_args: gpu_c_args,
+    link_args: gpu_link_args,
     include_directories: gpu_inc_dir,
     dependencies: gpu_deps,
     subdir: 'anuga/shallow_water',
@@ -130,8 +314,9 @@ if mpi_dep.found() and have_mpi4py
     message('Unified extension built with CPU multicore target')
   endif
 else
-  warning('MPI or mpi4py not found - sw_domain_gpu_ext will NOT be built')
-  warning('multiprocessor_mode=2 will not be available')
+  # Expected on Windows (MSMPI has no mpicc/pkg-config) and minimal Linux installs.
+  # GPU tests will be skipped via ImportError on those platforms.
+  message('MPI or mpi4py not found - sw_domain_gpu_ext will NOT be built (multiprocessor_mode=2 unavailable)')
 endif
 
 

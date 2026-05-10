@@ -9,11 +9,11 @@ __date__ ="$13/03/2013 4:24:51 PM$"
 
 
 def typeset_report(report_name='report', verbose=True):
-    
+
     import os
     import subprocess
 
-    if verbose: 
+    if verbose:
         print(50*'=')
         print('Running typeset_report')
         print(50*'=')
@@ -27,11 +27,11 @@ def typeset_report(report_name='report', verbose=True):
         out = subprocess.check_output(cmd, shell=True)
     except (subprocess.CalledProcessError, OSError):
         pass
-            
+
     #os.system('pdflatex -shell-escape  -interaction=batchmode %s.tex' % report_name)
     #os.system('bibtex %s' % report_name)
     #os.system('pdflatex -shell-escape  -interaction=batchmode %s.tex' % report_name)
-    #os.system('pdflatex -shell-escape  -interaction=batchmode %s.tex' % report_name)   
+    #os.system('pdflatex -shell-escape  -interaction=batchmode %s.tex' % report_name)
 
 
 

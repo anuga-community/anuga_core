@@ -67,7 +67,7 @@ def sww_merge_parallel(domain_global_name, np, verbose=False, delete_old=False,
     else:
         _sww_merge_parallel_smooth(swwfiles, output, verbose, delete_old,
                                    chunk_size=chunk_size)
-        
+
 
 def _sww_merge(swwfiles, output, verbose=False):
     """
@@ -123,7 +123,7 @@ def _sww_merge(swwfiles, output, verbose=False):
             from anuga.coordinate_transforms.geo_reference import Geo_reference
             geo_reference = Geo_reference(NetCDFObject=fid)
 
-            description = 'merged:' + getattr(fid, 'description')
+            description = 'merged:' + fid.description
             first_file = False
 
         try: # works with netcdf4
@@ -290,7 +290,7 @@ def _sww_merge_parallel_smooth(swwfiles, output, verbose=False, delete_old=False
             for q in static_c_quantities:
                 out_s_c_quantities[q] = num.zeros((number_of_global_triangles,), num.float32)
 
-            description = 'merged:' + getattr(fid, 'description')
+            description = 'merged:' + fid.description
             first_file = False
 
         # --- Geometry and index arrays ---
@@ -521,7 +521,7 @@ def _sww_merge_parallel_non_smooth(swwfiles, output, verbose=False, delete_old=F
             variables = set(fid.variables.keys())
 
             quantities = list(quantities & variables)
-            
+
             static_c_quantities = []
             dynamic_c_quantities = []
 
@@ -531,11 +531,11 @@ def _sww_merge_parallel_non_smooth(swwfiles, output, verbose=False, delete_old=F
                     dynamic_c_quantities.append(quantity)
                 else:
                     static_c_quantities.append(quantity)
-                
+
             for quantity in static_c_quantities:
                 out_s_c_quantities[quantity] = num.zeros((number_of_global_triangles,),num.float32)
 
-            description = 'merged:' + getattr(fid, 'description')
+            description = 'merged:' + fid.description
             first_file = False
 
 
@@ -598,7 +598,7 @@ def _sww_merge_parallel_non_smooth(swwfiles, output, verbose=False, delete_old=F
 
     sww.store_static_quantities(fido, verbose=verbose, **out_s_quantities)
     sww.store_static_quantities_centroid(fido, verbose=verbose, **out_s_c_quantities)
-    
+
     # Bulk write time
     fido.variables['time'][:] = times
 

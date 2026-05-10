@@ -251,10 +251,10 @@ class Boyd_box_operator(anuga.Structure_operator):
         if self.inflow.get_enquiry_depth() > 0.01: #this value was 0.01:
 
             if local_debug:
-                anuga.log.critical('Specific E & Deltat Tot E = %s, %s'
+                anuga.log.info('Specific E & Deltat Tot E = %s, %s'
                              % (str(self.inflow.get_enquiry_specific_energy()),
                                 str(self.delta_total_energy)))
-                anuga.log.critical('culvert type = %s' % str(self.type))
+                anuga.log.info('culvert type = %s' % str(self.type))
             # Water has risen above inlet
 
 
@@ -448,11 +448,11 @@ def boyd_box_function(width,
         culv_froude=math.sqrt(Q**2*flow_width*barrels/(anuga.g*flow_area**3))
 
     if local_debug:
-        anuga.log.critical('FLOW AREA = %s' % str(flow_area))
-        anuga.log.critical('PERIMETER = %s' % str(perimeter))
-        anuga.log.critical('Q final = %s' % str(Q))
-        anuga.log.critical('FROUDE = %s' % str(culv_froude))
-        anuga.log.critical('Case = %s' % case)
+        anuga.log.info('FLOW AREA = %s' % str(flow_area))
+        anuga.log.info('PERIMETER = %s' % str(perimeter))
+        anuga.log.info('Q final = %s' % str(Q))
+        anuga.log.info('FROUDE = %s' % str(culv_froude))
+        anuga.log.info('Case = %s' % case)
 
     # Determine momentum at the outlet
     barrel_velocity = Q/(flow_area + anuga.velocity_protection/flow_area)

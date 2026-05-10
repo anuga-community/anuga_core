@@ -50,4 +50,15 @@ int core_gravity_wb(struct domain *D);
 // timestep_fluxcalls: total number of flux calls per timestep (for boundary flux array indexing)
 double core_compute_fluxes_central(struct domain *D, int substep_count, int timestep_fluxcalls);
 
+// ADER Cauchy-Kovalewski predictor: advance centroid values forward by dt.
+// Must be called after core_extrapolate_second_order_edge().
+// Recovers cell slopes from edge values, evaluates SWE time derivatives locally,
+// and updates stage/xmom/ymom/height centroid values in-place.
+void core_ader_ck_predictor(struct domain *D, double dt);
+
+// Fused ADER-2 predictor: advances edge values to Q^{n+1/2}, leaving
+// centroid values unchanged.  Eliminates the second extrapolation pass.
+// Call after core_extrapolate_second_order_edge() + boundary update.
+void core_ader_ck_predictor_edge(struct domain *D, double dt);
+
 #endif // CORE_KERNELS_H
