@@ -3002,12 +3002,13 @@ class Domain(Generic_Domain):
         self.timestep = evolve_one_rk2_step_gpu(gpu_dom, max_timestep, 1, compute_boundary_flux)
         self.gpu_interface.mark_device_dirty()
 
-        # Update internal time tracking
-        self.set_relative_time(self.get_relative_time() + self.timestep)
-
-        # Record timestep stats
-        self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
-        self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
+        # Update internal time tracking and record stats.
+        # Direct attribute increment and comparison avoid get/set_relative_time()
+        # and builtin min/max dispatch (108k function calls per run).
+        self.relative_time += self.timestep
+        ts = self.timestep
+        if ts > self.recorded_max_timestep: self.recorded_max_timestep = ts
+        if ts < self.recorded_min_timestep: self.recorded_min_timestep = ts
 
 
     def _evolve_one_rk3_step_gpu(self, yieldstep, finaltime):
@@ -3261,7 +3262,8 @@ class Domain(Generic_Domain):
         # Update internal time tracking
         self.set_relative_time(self.get_relative_time() + self.timestep)
 
-        # Record timestep stats — direct comparison to avoid builtin dispatch
+        # Direct attribute increment avoids get/set_relative_time() overhead
+        self.relative_time += self.timestep
         ts = self.timestep
         if ts > self.recorded_max_timestep: self.recorded_max_timestep = ts
         if ts < self.recorded_min_timestep: self.recorded_min_timestep = ts
