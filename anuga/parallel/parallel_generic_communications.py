@@ -1,6 +1,6 @@
 """
 Generic implementation of update_timestep and update_ghosts for
-parallel domains (eg shallow_water or advection) 
+parallel domains (eg shallow_water or advection)
 
 Ole Nielsen, Stephen Roberts, Duncan Gray, Christopher Zoppou
 Geoscience Australia, 2004-2010
@@ -68,9 +68,9 @@ def communicate_flux_timestep(domain, yieldstep, finaltime):
     t0 = time.time()
 
     domain.communication_broadcast_time += time.time()-t0
-    
+
     domain.flux_timestep = domain.global_timestep[0]
-    
+
 
 def communicate_ghosts_blocking(domain, quantities=None):
 
@@ -158,7 +158,7 @@ def communicate_ghosts_non_blocking(domain, quantities=None):
 
     sendDict = domain.full_send_dict
     recvDict = domain.ghost_recv_dict
-    
+
     if quantities is None:
         quantities = domain.conserved_quantities
 
@@ -178,7 +178,7 @@ def communicate_ghosts_non_blocking(domain, quantities=None):
             Xout[:,i] = num.take(Q_cv, Idf)
 
     #--------------------------------------------
-    # Do all the comuunication using isend/irecv 
+    # Do all the comuunication using isend/irecv
     # via the buffers in the
     # full_send_dict and ghost_recv_dict
     #--------------------------------------------
@@ -210,7 +210,7 @@ def communicate_ghosts_non_blocking(domain, quantities=None):
 
     #-----------------------------------------
     # Now complete communication.
-    # We could put some computation between the 
+    # We could put some computation between the
     # communication calls above and this call.
     # Question: Do we need to wait for the sends to complete as well?
     # Answer: Yes, we should wait for the sends to complete as well, otherwise
@@ -244,7 +244,7 @@ def communicate_ghosts_asynchronous(domain, quantities=None):
     import numpy as num
     import time
     t0 = time.time()
-    
+
     if quantities is None:
         quantities = domain.conserved_quantities
 

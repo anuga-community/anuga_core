@@ -8,14 +8,16 @@ The `claude/` directory contains documents to orient a new session quickly:
 
 | File | Contents |
 |------|---------|
-| `claude/SESSION_GUIDE.md` | Branches, common commands, timeline, next priorities |
-| `claude/ROADMAP.md` | Release plan — v3.3.0 (imminent), v4.0.0 (sp26/SC26 based) |
-| `claude/PROGRESS.md` | Task tracking — code, docs, and Hydrata refactor phases |
+| `claude/SESSION_GUIDE.md` | Branches, common commands, recent session summaries |
+| `claude/ROADMAP.md` | Release plan — v3.3.2 shipped, v4.0.0 (SC26) in progress |
+| `claude/PROGRESS.md` | Overview totals and remaining/deferred items |
+| `claude/PROGRESS_ARCHIVE.md` | Full history of all completed work with dates |
+| `claude/FUTURE_WORK.md` | Prioritised recommendations for future sessions (P1–P3) |
 | `claude/DECISIONS.md` | Key design choices with rationale |
 | `claude/CONVENTIONS.md` | Coding style, naming, testing, import conventions |
 | `claude/KNOWN_ISSUES.md` | Surprises, gotchas, non-obvious behaviour |
 
-**Start here when picking up existing work:** read `claude/SESSION_GUIDE.md` first.
+**Start here when picking up existing work:** read `claude/SESSION_GUIDE.md` then `claude/FUTURE_WORK.md`.
 
 ## What is ANUGA
 
@@ -79,10 +81,11 @@ Validation tests (against analytical solutions and experimental data) live in `v
 ## Code Quality
 
 ```bash
-pyflakes path/to/module.py   # no warnings required for contributions
-pep8 path/to/module.py       # PEP8 compliance required
-autopep8 path/to/module.py   # auto-fix PEP8 issues
+ruff check anuga/path/to/module.py   # linting (configured in pyproject.toml)
+ruff check --fix anuga/path/to/module.py   # auto-fix safe violations
 ```
+
+Pre-commit hooks run `ruff check --fix` and `ruff-format` automatically on staged files.
 
 ## Architecture
 

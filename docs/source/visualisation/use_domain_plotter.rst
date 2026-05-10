@@ -132,28 +132,78 @@ a ``FuncAnimation``).
      - Description
    * - ``plot_mesh(figsize, dpi)``
      - Plot the triangular mesh
-   * - ``plot_depth_frame(figsize, dpi, vmin, vmax)``
+   * - ``plot_depth_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha)``
      - Plot water depth at the current simulation time.
-       Dry cells shown in greyscale elevation.
-   * - ``save_depth_frame(figsize, dpi, vmin, vmax)``
-     - Save depth frame as PNG named ``<domain_name>_depth_<time>.png``
+       Dry cells shown in greyscale elevation (or via basemap).
+   * - ``save_depth_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha)``
+     - Save depth frame as PNG named ``<domain_name>_depth_<N>.png``
    * - ``make_depth_animation()``
      - Assemble all saved depth PNGs into a ``FuncAnimation``
-   * - ``plot_stage_frame(figsize, dpi, vmin, vmax)``
+   * - ``plot_stage_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha)``
      - Plot water surface stage
-   * - ``save_stage_frame(figsize, dpi, vmin, vmax)``
+   * - ``save_stage_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha)``
      - Save stage frame as PNG
    * - ``make_stage_animation()``
      - Assemble all saved stage PNGs into a ``FuncAnimation``
-   * - ``plot_speed_frame(figsize, dpi, vmin, vmax)``
+   * - ``plot_speed_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha)``
      - Plot flow speed
-   * - ``save_speed_frame(figsize, dpi, vmin, vmax)``
+   * - ``save_speed_frame(figsize, dpi, vmin, vmax, cmap, basemap, alpha)``
      - Save speed frame as PNG
    * - ``make_speed_animation()``
      - Assemble all saved speed PNGs into a ``FuncAnimation``
 
 All ``plot_*`` methods return ``(fig, ax)`` so the caller can add titles,
 annotations, or further customisation before displaying.
+
+
+Visualisation options
+---------------------
+
+All ``plot_*`` and ``save_*`` frame methods share these optional keyword
+arguments in addition to ``figsize``, ``dpi``, ``vmin``, and ``vmax``:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 15 65
+
+   * - Argument
+     - Default
+     - Description
+   * - ``cmap``
+     - ``'viridis'``
+     - Any `matplotlib colormap
+       <https://matplotlib.org/stable/gallery/color/colormap_reference.html>`_
+       name, e.g. ``'plasma'``, ``'Blues'``, ``'jet'``.
+   * - ``basemap``
+     - ``False``
+     - If ``True``, overlay a tile basemap behind the quantity plot.
+       Requires the ``contextily`` package and the domain's
+       ``geo_reference`` to carry a valid EPSG code.  Dry cells are left
+       transparent so the map shows through.
+   * - ``basemap_provider``
+     - ``'OpenStreetMap.Mapnik'``
+     - Dot-notation provider string.  Any key from
+       ``anuga.utilities.animate.BASEMAP_PROVIDERS`` is accepted, or any
+       ``contextily`` provider path.  Useful alternatives:
+       ``'Esri.WorldImagery'`` (satellite),
+       ``'Esri.WorldShadedRelief'`` (hillshade),
+       ``'Esri.WorldTopoMap'`` (topographic),
+       ``'OpenTopoMap'`` (OSM-based topo),
+       ``'CartoDB.Positron'`` (light minimal).
+   * - ``alpha``
+     - ``1.0``
+     - Opacity of the wet-area colour layer (0 = fully transparent,
+       1 = fully opaque).  Values around ``0.6`` work well when
+       ``basemap=True`` so the underlying map remains visible.
+
+**Optional dependency:** ``basemap=True`` requires ``contextily``::
+
+    conda install contextily
+    # or
+    pip install contextily
+
+If ``contextily`` is not installed a warning is issued and the basemap is
+skipped — all other plot options continue to work normally.
 
 
 Example: interactive notebook
@@ -193,6 +243,16 @@ accumulate frames, and finally assemble them into an animation.
    anim   # display in Jupyter
 
 
+Example: custom colormap and transparency
+-----------------------------------------
+
+.. code-block:: python
+
+   domain.set_plotter()
+
+   for t in domain.evolve(yieldstep=10.0, finaltime=100.0):
+       domain.save_depth_frame(vmin=0.0, vmax=2.0, cmap='plasma')
+
 Example: quick single-frame plot
 ----------------------------------
 
@@ -209,6 +269,22 @@ To inspect the state at a single point during or after the evolve loop:
    fig, ax = domain.plot_depth_frame(vmin=0.0, vmax=2.0)
    ax.set_title('Depth at t = 30 s')
    plt.show()
+
+Example: OSM basemap (requires contextily and a georeferenced domain)
+----------------------------------------------------------------------
+
+When the domain carries a valid EPSG code in its ``geo_reference``, an
+OpenStreetMap basemap can be added automatically.  Dry cells become
+transparent, and the wet-area layer can be made semi-transparent with
+``alpha`` so the street map shows through:
+
+.. code-block:: python
+
+   domain.set_plotter()
+
+   for t in domain.evolve(yieldstep=10.0, finaltime=100.0):
+       domain.save_depth_frame(vmin=0.0, vmax=2.0,
+                               basemap=True, alpha=0.6)
 
 
 Example: plot the mesh

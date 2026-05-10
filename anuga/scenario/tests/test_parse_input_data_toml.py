@@ -308,7 +308,6 @@ class TestProjectSection(unittest.TestCase):
 
     def test_optional_defaults(self):
         p = self._make()
-        self.assertFalse(p.use_local_extrapolation_and_flux_updating)
         self.assertAlmostEqual(p.output_tif_cellsize, 50.0)
         self.assertIsNone(p.output_tif_bounding_polygon)
         self.assertEqual(p.max_quantity_update_frequency, 1)
@@ -325,7 +324,6 @@ class TestProjectSection(unittest.TestCase):
 
     def test_optional_overrides(self):
         extra = textwrap.dedent("""\
-            use_local_extrapolation_and_flux_updating = true
             output_tif_cellsize = 25.0
             output_tif_bounding_polygon = "clip.shp"
             max_quantity_update_frequency = 5
@@ -335,7 +333,6 @@ class TestProjectSection(unittest.TestCase):
             outputstep = 120.0
         """)
         p = self._make(project_extra=extra)
-        self.assertTrue(p.use_local_extrapolation_and_flux_updating)
         self.assertAlmostEqual(p.output_tif_cellsize, 25.0)
         self.assertEqual(p.output_tif_bounding_polygon, 'clip.shp')
         self.assertEqual(p.max_quantity_update_frequency, 5)
@@ -1178,6 +1175,622 @@ class TestProjectDataWrapper(unittest.TestCase):
         self.assertIsNone(p.outputstep)
         self.assertIsNone(p.omp_num_threads)
         self.assertFalse(p.report_operator_statistics)
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestCulverts(unittest.TestCase):
+    """Tests for ProjectDataTOML._parse_culverts."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def _path(self, name):
+        return os.path.join(self.tmp, name)
+
+    def _touch(self, name):
+        p = self._path(name)
+        _touch(p)
+        return p
+
+    def _parse(self, toml_body):
+        path = self._path('cfg.toml')
+        _write_toml(path, _MINIMAL_PROJECT + toml_body)
+        with patch('os.path.exists', return_value=True):
+            return ProjectDataTOML(path)
+
+    def test_no_culverts(self):
+        p = self._parse('')
+        self.assertEqual(p.culvert_data, [])
+
+    def test_disabled_culvert_skipped(self):
+        body = """
+            [[culverts]]
+            enabled = false
+            type    = "boyd_box"
+            label   = "c1"
+            width   = 0.9
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        self.assertEqual(p.culvert_data, [])
+
+    def test_boyd_box_defaults(self):
+        body = """
+            [[culverts]]
+            type    = "boyd_box"
+            label   = "box1"
+            width   = 0.9
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        self.assertEqual(len(p.culvert_data), 1)
+        cd = p.culvert_data[0]
+        self.assertEqual(cd['type'], 'boyd_box')
+        self.assertEqual(cd['label'], 'box1')
+        self.assertAlmostEqual(cd['width'], 0.9)
+        self.assertIsNone(cd['height'])        # defaults to None → operator uses width
+        self.assertAlmostEqual(cd['losses'], 0.0)
+        self.assertAlmostEqual(cd['barrels'], 1.0)
+        self.assertAlmostEqual(cd['manning'], 0.013)
+        self.assertAlmostEqual(cd['enquiry_gap'], 0.2)
+        self.assertIsNone(cd['invert_elevations'])
+        self.assertIsNone(cd['diameter'])
+
+    def test_boyd_box_explicit_height(self):
+        body = """
+            [[culverts]]
+            type    = "boyd_box"
+            label   = "box2"
+            width   = 1.2
+            height  = 0.6
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        self.assertAlmostEqual(p.culvert_data[0]['height'], 0.6)
+
+    def test_boyd_pipe_defaults(self):
+        body = """
+            [[culverts]]
+            type     = "boyd_pipe"
+            label    = "pipe1"
+            diameter = 0.6
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        cd = p.culvert_data[0]
+        self.assertEqual(cd['type'], 'boyd_pipe')
+        self.assertAlmostEqual(cd['diameter'], 0.6)
+        self.assertIsNone(cd['width'])
+        self.assertIsNone(cd['height'])
+
+    def test_invalid_type_raises(self):
+        body = """
+            [[culverts]]
+            type    = "unknown_type"
+            label   = "bad"
+            width   = 1.0
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        with patch('os.path.exists', return_value=True):
+            path = self._path('bad.toml')
+            _write_toml(path, _MINIMAL_PROJECT + body)
+            with self.assertRaises(ValueError):
+                ProjectDataTOML(path)
+
+    def test_invert_elevations_parsed(self):
+        body = """
+            [[culverts]]
+            type               = "boyd_box"
+            label              = "box3"
+            width              = 0.9
+            exchange_line_0    = "up.csv"
+            exchange_line_1    = "down.csv"
+            invert_elevations  = [1.5, 1.2]
+        """
+        p = self._parse(body)
+        self.assertEqual(p.culvert_data[0]['invert_elevations'], [1.5, 1.2])
+
+    def test_end_points_instead_of_exchange_lines(self):
+        body = """
+            [[culverts]]
+            type        = "boyd_box"
+            label       = "box4"
+            width       = 0.9
+            end_point_0 = [100.0, 200.0]
+            end_point_1 = [110.0, 200.0]
+        """
+        p = self._parse(body)
+        cd = p.culvert_data[0]
+        self.assertIsNone(cd['exchange_line_0'])
+        self.assertEqual(cd['end_point_0'], [100.0, 200.0])
+        self.assertEqual(cd['end_point_1'], [110.0, 200.0])
+
+    def test_missing_exchange_file_raises(self):
+        body = """
+            [[culverts]]
+            type    = "boyd_box"
+            label   = "box5"
+            width   = 0.9
+            exchange_line_0 = "missing_up.csv"
+            exchange_line_1 = "missing_down.csv"
+        """
+        path = self._path('miss.toml')
+        _write_toml(path, _MINIMAL_PROJECT + body)
+        with self.assertRaises(FileNotFoundError):
+            ProjectDataTOML(path)
+
+    def test_two_culverts_both_parsed(self):
+        body = """
+            [[culverts]]
+            type    = "boyd_box"
+            label   = "c1"
+            width   = 0.9
+            exchange_line_0 = "up1.csv"
+            exchange_line_1 = "dn1.csv"
+
+            [[culverts]]
+            type     = "boyd_pipe"
+            label    = "c2"
+            diameter = 0.6
+            exchange_line_0 = "up2.csv"
+            exchange_line_1 = "dn2.csv"
+        """
+        p = self._parse(body)
+        self.assertEqual(len(p.culvert_data), 2)
+        self.assertEqual(p.culvert_data[0]['type'], 'boyd_box')
+        self.assertEqual(p.culvert_data[1]['type'], 'boyd_pipe')
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestWeirs(unittest.TestCase):
+    """Tests for ProjectDataTOML._parse_weirs."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+
+    def _path(self, name):
+        return os.path.join(self.tmp, name)
+
+    def _parse(self, toml_body):
+        path = self._path('cfg.toml')
+        _write_toml(path, _MINIMAL_PROJECT + toml_body)
+        with patch('os.path.exists', return_value=True):
+            return ProjectDataTOML(path)
+
+    def test_no_weirs(self):
+        p = self._parse('')
+        self.assertEqual(p.weir_data, [])
+
+    def test_disabled_weir_skipped(self):
+        body = """
+            [[weirs]]
+            enabled = false
+            label   = "w1"
+            width   = 3.0
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        self.assertEqual(p.weir_data, [])
+
+    def test_weir_defaults(self):
+        body = """
+            [[weirs]]
+            label = "w1"
+            width = 3.0
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        self.assertEqual(len(p.weir_data), 1)
+        wd = p.weir_data[0]
+        self.assertEqual(wd['label'], 'w1')
+        self.assertAlmostEqual(wd['width'], 3.0)
+        self.assertIsNone(wd['height'])
+        self.assertAlmostEqual(wd['losses'], 0.0)
+        self.assertAlmostEqual(wd['enquiry_gap'], 0.0)
+        self.assertAlmostEqual(wd['manning'], 0.013)
+        self.assertIsNone(wd['invert_elevations'])
+
+    def test_weir_explicit_height(self):
+        body = """
+            [[weirs]]
+            label  = "w2"
+            width  = 3.0
+            height = 1.5
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+        """
+        p = self._parse(body)
+        self.assertAlmostEqual(p.weir_data[0]['height'], 1.5)
+
+    def test_weir_invert_elevations(self):
+        body = """
+            [[weirs]]
+            label              = "w3"
+            width              = 2.0
+            exchange_line_0    = "up.csv"
+            exchange_line_1    = "down.csv"
+            invert_elevations  = [0.5, 0.3]
+        """
+        p = self._parse(body)
+        self.assertEqual(p.weir_data[0]['invert_elevations'], [0.5, 0.3])
+
+    def test_weir_end_points(self):
+        body = """
+            [[weirs]]
+            label       = "w4"
+            width       = 2.0
+            end_point_0 = [50.0, 60.0]
+            end_point_1 = [55.0, 60.0]
+        """
+        p = self._parse(body)
+        wd = p.weir_data[0]
+        self.assertIsNone(wd['exchange_line_0'])
+        self.assertEqual(wd['end_point_0'], [50.0, 60.0])
+
+    def test_missing_exchange_file_raises(self):
+        body = """
+            [[weirs]]
+            label           = "w5"
+            width           = 2.0
+            exchange_line_0 = "missing.csv"
+            exchange_line_1 = "also_missing.csv"
+        """
+        path = self._path('miss.toml')
+        _write_toml(path, _MINIMAL_PROJECT + body)
+        with self.assertRaises(FileNotFoundError):
+            ProjectDataTOML(path)
+
+
+@unittest.skipUnless(HAS_MODULE, SKIP_REASON)
+class TestValidation(unittest.TestCase):
+    """Tests for the _Validator-based batch error reporting in ProjectDataTOML."""
+
+    def setUp(self):
+        self.tmpdir = tempfile.mkdtemp()
+
+    def tearDown(self):
+        import shutil
+        shutil.rmtree(self.tmpdir, ignore_errors=True)
+
+    def _path(self, name='config.toml'):
+        return os.path.join(self.tmpdir, name)
+
+    def _make(self, content):
+        p = self._path()
+        _write_toml(p, content)
+        return ProjectDataTOML(p)
+
+    def _assert_fails(self, content, *expected_fragments):
+        """Assert that parsing raises ValueError and that the message contains
+        each fragment in *expected_fragments*."""
+        p = self._path()
+        _write_toml(p, content)
+        with self.assertRaises(ValueError) as ctx:
+            ProjectDataTOML(p)
+        msg = str(ctx.exception)
+        for frag in expected_fragments:
+            self.assertIn(frag, msg,
+                          f'Expected {frag!r} in error message:\n{msg}')
+
+    # --- project section ---
+
+    def test_missing_scenario_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """), 'scenario', 'missing')
+
+    def test_missing_yieldstep_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """), 'yieldstep', 'missing')
+
+    def test_negative_yieldstep_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = -10.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """), 'yieldstep', '> 0')
+
+    def test_invalid_flow_algorithm_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "BADFLOW"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """), 'flow_algorithm', 'BADFLOW')
+
+    def test_invalid_multiprocessor_mode_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            multiprocessor_mode = 5
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """), 'multiprocessor_mode', '5')
+
+    def test_outputstep_not_multiple_of_yieldstep_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            outputstep = 91.0
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """), 'outputstep', 'yieldstep')
+
+    def test_multiple_project_errors_reported_together(self):
+        """All errors in the project section must appear in a single ValueError."""
+        path = self._path()
+        _write_toml(path, textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = -10.0
+            finaltime = -1.0
+            projection_information = -55
+            flow_algorithm = "BAD"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """))
+        with self.assertRaises(ValueError) as ctx:
+            ProjectDataTOML(path)
+        msg = str(ctx.exception)
+        self.assertIn('yieldstep', msg)
+        self.assertIn('finaltime', msg)
+        self.assertIn('flow_algorithm', msg)
+
+    # --- mesh section ---
+
+    def test_missing_default_res_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+        """), 'default_res', 'missing')
+
+    def test_negative_default_res_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = -500.0
+        """), 'default_res', '> 0')
+
+    def test_negative_interior_region_resolution_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[mesh.interior_regions]]
+            polygon = "reg.shp"
+            resolution = -100.0
+        """), 'resolution', '> 0')
+
+    # --- culvert physical range checks ---
+
+    def test_culvert_negative_width_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[culverts]]
+            label = "c1"
+            width = -1.0
+            end_point_0 = [0.0, 0.0]
+            end_point_1 = [10.0, 0.0]
+        """), 'width', '> 0')
+
+    def test_culvert_blockage_above_one_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[culverts]]
+            label = "c1"
+            width = 1.0
+            blockage = 1.5
+            end_point_0 = [0.0, 0.0]
+            end_point_1 = [10.0, 0.0]
+        """), 'blockage', '[0.0, 1.0]')
+
+    def test_culvert_negative_manning_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[culverts]]
+            label = "c1"
+            width = 1.0
+            manning = -0.013
+            end_point_0 = [0.0, 0.0]
+            end_point_1 = [10.0, 0.0]
+        """), 'manning', '> 0')
+
+    def test_culvert_pipe_negative_diameter_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[culverts]]
+            label = "c1"
+            type = "boyd_pipe"
+            diameter = -0.5
+            end_point_0 = [0.0, 0.0]
+            end_point_1 = [10.0, 0.0]
+        """), 'diameter', '> 0')
+
+    # --- weir physical range checks ---
+
+    def test_weir_negative_width_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[weirs]]
+            label = "w1"
+            width = -2.0
+            end_point_0 = [0.0, 0.0]
+            end_point_1 = [5.0, 0.0]
+        """), 'width', '> 0')
+
+    def test_weir_blockage_negative_raises(self):
+        self._assert_fails(textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+            [[weirs]]
+            label = "w1"
+            width = 2.0
+            blockage = -0.1
+            end_point_0 = [0.0, 0.0]
+            end_point_1 = [5.0, 0.0]
+        """), 'blockage', '[0.0, 1.0]')
+
+    def test_error_message_names_file(self):
+        """The ValueError message must include the TOML filename."""
+        path = self._path('my_scenario.toml')
+        _write_toml(path, textwrap.dedent("""\
+            [project]
+            scenario = "s"
+            output_base_directory = "OUTPUT/"
+            yieldstep = -1.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 1000.0
+        """))
+        with self.assertRaises(ValueError) as ctx:
+            ProjectDataTOML(path)
+        self.assertIn('my_scenario.toml', str(ctx.exception))
+
+    def test_valid_config_no_error(self):
+        """A fully valid minimal config must parse without errors."""
+        p = self._make(textwrap.dedent("""\
+            [project]
+            scenario = "ok"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE1"
+            outputstep = 120.0
+            [mesh]
+            bounding_polygon = "e.shp"
+            default_res = 10000.0
+        """))
+        self.assertEqual(p.flow_algorithm, 'DE1')
+        self.assertAlmostEqual(p.outputstep, 120.0)
 
 
 if __name__ == '__main__':

@@ -1,6 +1,7 @@
 
 from tkinter import *
-import string, time
+import string
+import time
 from os.path import join
 
 class ToolBarButton(Label):
@@ -12,7 +13,7 @@ class ToolBarButton(Label):
                        relief='flat', bd=bd, bg=bg)
 
 
-        self.bg = bg 
+        self.bg = bg
         self.activebackground = activebackground
         if image != None:
             if image.split('.')[1] == 'bmp':
@@ -32,8 +33,8 @@ class ToolBarButton(Label):
         self.pack(side='left', anchor=NW, padx=padx, pady=pady)
         if balloonhelp or statushelp:
             top.balloon().bind(self, balloonhelp, statushelp)
-        self.state = state    
-      
+        self.state = state
+
     def activate(self):
         self.icommand(self.tag)
 
@@ -48,7 +49,7 @@ class ToolBarButton(Label):
     def buttonDown(self, event):
         if self.state != 'disabled':
             self.config(relief='sunken', bg=self.activebackground)
-    
+
     def buttonUp(self, event):
         if self.state != 'disabled':
             if self.command != None:
@@ -59,7 +60,7 @@ class ToolBarButton(Label):
                     ToolBarButton.sunkenbutton.config(relief='flat', bg=self.bg)
                 ToolBarButton.sunkenbutton = self
             else:
-                self.config(relief='flat', bg=self.bg)  
+                self.config(relief='flat', bg=self.bg)
 
     def enable(self):
         self.state = 'normal'
@@ -75,7 +76,7 @@ class ToolBarButton(Label):
         if not ToolBarButton.sunkenbutton:
             ToolBarButton.sunkenbutton = self
             self.config(relief='sunken', bg=self.activebackground)
-            
+
     #class variable
     cyclelist = []
     sunkenbutton = None

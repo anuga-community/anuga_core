@@ -26,6 +26,7 @@ dependencies:
   - pymetis
   - pyproj
   - pytest
+  - pytest-regressions
   - scipy
   - utm
   - wheel

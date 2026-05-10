@@ -60,6 +60,14 @@ struct culvert_transfer {
 // Pure computation functions (CPU-side, no GPU dependencies)
 // ============================================================================
 
+void weir_orifice_trapezoid_discharge(const struct culvert_params *p,
+                                      double driving_energy,
+                                      double delta_total_energy,
+                                      double outlet_enquiry_depth,
+                                      double *Q_out, double *barrel_velocity_out,
+                                      double *outlet_culvert_depth_out,
+                                      double *flow_area_out);
+
 void boyd_box_discharge(const struct culvert_params *p,
                         double driving_energy,
                         double delta_total_energy,
