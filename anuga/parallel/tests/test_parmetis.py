@@ -270,7 +270,11 @@ class TestParmetisMPI(unittest.TestCase):
         cmd = (['mpiexec', '-np', str(nprocs)]
                + (extra.split() if extra else [])
                + [sys.executable, run_script])
-        result = subprocess.run(cmd, capture_output=True)
+        try:
+            result = subprocess.run(cmd, capture_output=True, timeout=120)
+        except subprocess.TimeoutExpired:
+            raise AssertionError(
+                f'mpiexec -np {nprocs} timed out after 120 s')
         if result.returncode != 0:
             raise AssertionError(
                 f'mpiexec -np {nprocs} failed:\n'
