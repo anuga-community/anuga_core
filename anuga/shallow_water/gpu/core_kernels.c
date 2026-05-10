@@ -984,8 +984,6 @@ double core_compute_fluxes_hllc(struct domain *D, int substep_count, int timeste
 
     // Extract array pointers
     double * restrict stage_cv = D->stage_centroid_values;
-    double * restrict xmom_cv = D->xmom_centroid_values;
-    double * restrict ymom_cv = D->ymom_centroid_values;
     double * restrict bed_cv = D->bed_centroid_values;
     double * restrict height_cv = D->height_centroid_values;
 
@@ -1216,6 +1214,8 @@ double core_compute_fluxes_hllc(struct domain *D, int substep_count, int timeste
 
     // Return timestep (only meaningful on first substep)
     return local_timestep;
+}
+
 // ADER Cauchy-Kovalewski predictor
 // ============================================================================
 
