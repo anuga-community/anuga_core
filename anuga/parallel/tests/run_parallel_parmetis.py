@@ -34,7 +34,7 @@ if not parmetis_available():
     sys.exit(0)
 
 if myid == 0:
-    print(f"ParMETIS available: True")
+    print("ParMETIS available: True")
     print(f"Running with {numprocs} MPI rank(s)")
 
 # ---------------------------------------------------------------------------
@@ -100,6 +100,6 @@ for t in domain2.evolve(yieldstep=0.05, finaltime=0.1):
     pass
 
 if myid == 0:
-    print(f"Test 2 PASSED — domain evolved to t=0.1 with parmetis partition")
+    print("Test 2 PASSED — domain evolved to t=0.1 with parmetis partition")
 
 finalize()
