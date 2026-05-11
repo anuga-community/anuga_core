@@ -171,13 +171,12 @@ def parmetis_partition(neighbours, n_tri, n_procs, comm):
     if not _PARMETIS_AVAILABLE:
         raise RuntimeError("ParMETIS extension not available")
 
+    # Trivial path — no MPI needed.
+    if n_procs == 1:
+        return np.arange(n_tri, dtype=int), np.array([n_tri])
+
     rank = comm.Get_rank()
     size = comm.Get_size()
-
-    if n_procs == 1:
-        if rank == 0:
-            return np.arange(n_tri, dtype=int), np.array([n_tri])
-        return None, None
 
     # Block distribution: vtxdist[k] = k * n_tri // size
     vtxdist = np.empty(size + 1, dtype=np.int32)

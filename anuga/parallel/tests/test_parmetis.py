@@ -203,17 +203,14 @@ class TestNeighboursToCsr(unittest.TestCase):
 # parmetis_partition() — serial (n_procs=1) path
 # ---------------------------------------------------------------------------
 
-@pytest.mark.skipif(not MPI4PY_AVAILABLE, reason='mpi4py not available')
 @pytest.mark.skipif(not PARMETIS_AVAILABLE, reason='ParMETIS not installed')
 class TestParmetisPartitionSerial(unittest.TestCase):
-
-    def setUp(self):
-        from mpi4py import MPI
-        self.comm = MPI.COMM_WORLD   # size=1 when running serially
+    """Test parmetis_partition() with n_procs=1 (no MPI needed)."""
 
     def _partition(self, nb, n_tri):
         from anuga.parallel.partitioning import parmetis_partition
-        return parmetis_partition(nb, n_tri, 1, self.comm)
+        # n_procs=1 returns before touching comm, so None is safe.
+        return parmetis_partition(nb, n_tri, 1, None)
 
     def test_returns_tuple_of_two(self):
         nb = _chain_neighbours(10)
