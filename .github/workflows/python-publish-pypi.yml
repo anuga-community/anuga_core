@@ -70,8 +70,7 @@ jobs:
         shell: bash -el {0}
         run: |
           conda activate anuga_env
-          pip install build
-          python -m build --wheel --no-isolation --outdir dist-wheel
+          pip wheel --no-build-isolation --no-deps -w dist-wheel .
 
       - name: Repair wheels
         shell: bash -el {0}
@@ -85,6 +84,7 @@ jobs:
         shell: bash -el {0}
         run: |
           conda activate anuga_env
+          pip install build
           python -m build --sdist --no-isolation --outdir dist
           
       - name: Upload distributions
