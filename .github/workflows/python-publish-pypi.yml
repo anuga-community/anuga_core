@@ -120,9 +120,11 @@ jobs:
         shell: bash -el {0}
         run: |
           conda activate anuga_env
+          # PKG_CONFIG_PATH is inherited by the isolated build venv so meson
+          # finds conda's Python headers instead of the broken system ones.
           export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig"
           pip install build
-          python -m build --sdist --no-isolation --outdir dist
+          python -m build --sdist --outdir dist
 
       - name: Upload sdist artifact
         uses: actions/upload-artifact@v7
