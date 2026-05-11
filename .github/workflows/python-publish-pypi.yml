@@ -148,6 +148,7 @@ jobs:
 
     permissions:
       id-token: write  # required for trusted publishing (OIDC)
+      contents: write  # required to upload release assets
 
     steps:
       - name: Download all wheel artifacts
@@ -172,3 +173,8 @@ jobs:
           verify-metadata: false
           verbose: true
           packages-dir: dist/
+
+      - name: Upload wheels and sdist as GitHub Release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload ${{ github.ref_name }} dist/* --clobber --repo ${{ github.repository }}
