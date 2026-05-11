@@ -46,7 +46,7 @@ jobs:
         run: |
           conda create -n anuga_env -c conda-forge \
             python=${{ matrix.python-version }} pip \
-            meson-python meson ninja cython pybind11 numpy
+            meson-python meson ninja cython pybind11 numpy pkg-config
 
       - name: Install compilers (Windows)
         if: runner.os == 'Windows'
@@ -67,6 +67,7 @@ jobs:
         shell: bash -el {0}
         run: |
           conda activate anuga_env
+          export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig"
           pip wheel --no-build-isolation --no-deps -w dist-wheel .
 
       - name: Repair wheel (Linux — make manylinux-compatible)
@@ -113,12 +114,13 @@ jobs:
         shell: bash -el {0}
         run: |
           conda create -n anuga_env -c conda-forge python=3.13 pip \
-            meson-python meson ninja cython pybind11 numpy
+            meson-python meson ninja cython pybind11 numpy pkg-config
 
       - name: Build sdist
         shell: bash -el {0}
         run: |
           conda activate anuga_env
+          export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig"
           pip install build
           python -m build --sdist --no-isolation --outdir dist
 
