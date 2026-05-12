@@ -62,16 +62,12 @@ def ll_to_epsg(lat, lon, epsg):
     """
     from pyproj import Transformer
     t = Transformer.from_crs(4326, epsg, always_xy=True)
-<<<<<<< HEAD
     la = num.asarray(lat, dtype=num.float64)
     lo = num.asarray(lon, dtype=num.float64)
     if la.size == 1:
         easting, northing = t.transform(lo.item(), la.item())
         return num.asarray(easting).reshape(la.shape), num.asarray(northing).reshape(la.shape)
     easting, northing = t.transform(lo, la)
-=======
-    easting, northing = t.transform(lon, lat)
->>>>>>> main
     return num.asarray(easting), num.asarray(northing)
 
 def degminsec2decimal_degrees(dd,mm,ss):
