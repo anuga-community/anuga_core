@@ -8,6 +8,7 @@ on:
       - develop
       - develop_gpu
       - develop_cupy
+      - feat/sc26
 
   push:
     branches:
@@ -16,6 +17,7 @@ on:
       - develop_gpu
       - develop_cupy
       - jorge/unify_again
+      - feat/sc26
 
 jobs:
   test_conda:
