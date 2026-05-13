@@ -355,7 +355,6 @@ class Geospatial_data:
             pts = self.get_data_points(True)
             epsg = self.geo_reference.get_epsg()
             if epsg is None:
-                # Hemisphere not stored in geo_reference — use sign of zone or isSouthHemisphere
                 zone = self.geo_reference.get_zone()
                 if zone < 0:
                     epsg = 32700 + abs(zone)
