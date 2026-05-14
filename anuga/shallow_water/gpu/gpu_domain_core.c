@@ -1095,6 +1095,7 @@ void gpu_domain_sync_to_device(struct gpu_domain *GD) {
     double *height_cv = GD->D.height_centroid_values;
 
     #pragma omp target update to(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+    (void)stage_cv; (void)xmom_cv; (void)ymom_cv; (void)height_cv;
 }
 
 void gpu_domain_sync_from_device(struct gpu_domain *GD) {
@@ -1108,6 +1109,7 @@ void gpu_domain_sync_from_device(struct gpu_domain *GD) {
     double *height_cv = GD->D.height_centroid_values;
 
     #pragma omp target update from(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+    (void)stage_cv; (void)xmom_cv; (void)ymom_cv; (void)height_cv;
 }
 
 void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
@@ -1140,14 +1142,18 @@ void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
 
     // Sync centroid values
     #pragma omp target update from(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+    (void)stage_cv; (void)xmom_cv; (void)ymom_cv; (void)height_cv;
 
     // Sync edge values
     #pragma omp target update from(stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n], \
                                    height_ev[0:3*n], bed_ev[0:3*n])
+    (void)stage_ev; (void)xmom_ev; (void)ymom_ev; (void)height_ev; (void)bed_ev;
 
     // Sync explicit and semi-implicit updates
     #pragma omp target update from(stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n], \
                                    stage_siu[0:n], xmom_siu[0:n], ymom_siu[0:n])
+    (void)stage_eu; (void)xmom_eu; (void)ymom_eu;
+    (void)stage_siu; (void)xmom_siu; (void)ymom_siu;
 
     // Sync boundary values if present
     if (nb > 0) {
@@ -1159,6 +1165,7 @@ void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
 
         #pragma omp target update from(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
                                        height_bv[0:nb], bed_bv[0:nb])
+        (void)stage_bv; (void)xmom_bv; (void)ymom_bv; (void)height_bv; (void)bed_bv;
     }
 
     // Sync backup values if mapped
@@ -1167,6 +1174,7 @@ void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
         double *xmom_backup = GD->D.xmom_backup_values;
         double *ymom_backup = GD->D.ymom_backup_values;
         #pragma omp target update from(stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
+        (void)stage_backup; (void)xmom_backup; (void)ymom_backup;
     }
 }
 
@@ -1185,6 +1193,7 @@ void gpu_sync_boundary_values(struct gpu_domain *GD) {
 
     #pragma omp target update to(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
                                  bed_bv[0:nb], height_bv[0:nb])
+    (void)stage_bv; (void)xmom_bv; (void)ymom_bv; (void)bed_bv; (void)height_bv;
 }
 
 void gpu_sync_edge_values_from_device(struct gpu_domain *GD) {
@@ -1201,6 +1210,7 @@ void gpu_sync_edge_values_from_device(struct gpu_domain *GD) {
 
     #pragma omp target update from(stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n], \
                                    bed_ev[0:3*n], height_ev[0:3*n])
+    (void)stage_ev; (void)xmom_ev; (void)ymom_ev; (void)bed_ev; (void)height_ev;
 }
 
 // Initialize boundary edge sync buffers - call once after boundaries are set

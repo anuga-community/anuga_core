@@ -120,13 +120,19 @@ def reorder_quantities(quantities, epart_order):
 
 def partition_mesh(domain, n_procs,
                    parameters=None,
-                   verbose=False):
+                   verbose=False,
+                   precomputed_epart_order=None,
+                   precomputed_triangles_per_proc=None):
     """Partition a mesh across multiple processors using METIS, Morton, or Hilbert partitioning.
 
     This function takes a serial mesh and distributes it across multiple processors
     by reordering triangles according to a partitioning scheme. It generates
     mappings between serial and parallel triangle indices and reorders mesh quantities
     accordingly.
+
+    When ``precomputed_epart_order`` and ``precomputed_triangles_per_proc`` are
+    provided (e.g. from a prior ParMETIS call), the partitioning step is skipped
+    and only the mesh reordering is performed.
 
     Parameters
     ----------
@@ -215,15 +221,20 @@ def partition_mesh(domain, n_procs,
     else:
         distribute_quantities = {}
 
-    from anuga.parallel.partitioning import metis_partition, morton_partition, hilbert_partition
-
-    if verbose: print("partition_mesh: Computing partitioning using {}...".format(partition_scheme))
-    if partition_scheme == 'morton':
-        epart_order, triangles_per_proc = morton_partition(domain, n_procs)
-    elif partition_scheme == 'hilbert':
-        epart_order, triangles_per_proc = hilbert_partition(domain, n_procs)
+    if precomputed_epart_order is not None and precomputed_triangles_per_proc is not None:
+        if verbose: print("partition_mesh: Using pre-computed partition (e.g. from ParMETIS)")
+        epart_order = precomputed_epart_order
+        triangles_per_proc = precomputed_triangles_per_proc
     else:
-        epart_order, triangles_per_proc = metis_partition(domain, n_procs)
+        from anuga.parallel.partitioning import metis_partition, morton_partition, hilbert_partition
+
+        if verbose: print("partition_mesh: Computing partitioning using {}...".format(partition_scheme))
+        if partition_scheme == 'morton':
+            epart_order, triangles_per_proc = morton_partition(domain, n_procs)
+        elif partition_scheme == 'hilbert':
+            epart_order, triangles_per_proc = hilbert_partition(domain, n_procs)
+        else:
+            epart_order, triangles_per_proc = metis_partition(domain, n_procs)
 
     # Build processor IDs and local indices in a fully vectorized way
     proc_ids = num.repeat(num.arange(n_procs, dtype=int), triangles_per_proc)

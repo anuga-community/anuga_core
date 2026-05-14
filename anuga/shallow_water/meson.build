@@ -124,7 +124,6 @@ except Exception as e:
 endif
 
 if mpi_dep.found() and have_mpi4py
-  mpi4py_incdir = mpi4py_check.stdout().strip()
   gpu_inc_dir = include_directories('../utilities', incdir_numpy, mpi4py_incdir, 'gpu')
 else
   gpu_inc_dir = include_directories('../utilities', incdir_numpy, 'gpu')

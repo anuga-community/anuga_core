@@ -563,6 +563,7 @@ void gpu_file_boundary_set_values(struct gpu_domain *GD,
         double *xmom_v  = B->xmom_values;
         double *ymom_v  = B->ymom_values;
         #pragma omp target update to(stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
+        (void)stage_v; (void)xmom_v; (void)ymom_v;
     }
 }
 
