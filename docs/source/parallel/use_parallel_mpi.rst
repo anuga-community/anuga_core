@@ -39,6 +39,13 @@ The right choice depends on mesh size and how you construct the domain.
      - Like ``distribute_basic_mesh`` but topology is broadcast via shared
        memory.  Use for the largest meshes where even per-rank copies of
        the topology are expensive.
+   * - :func:`sequential_mesh_dump` / :func:`sequential_mesh_load`
+     - O(N) × topology only (preprocessing only)
+     - Offline two-phase workflow: partition the mesh once on any machine
+       with enough RAM (no MPI needed), write one NetCDF4 file per rank,
+       then load and evolve as many times as needed.  Nothing is held on
+       a single rank at runtime — ideal for very large meshes or ensemble
+       runs.  See :ref:`use_sequential_mesh_io`.
 
 **Decision guide**
 
@@ -54,7 +61,8 @@ The right choice depends on mesh size and how you construct the domain.
                 ├─ Yes ──► Do multiple ranks share the same node?
                 │           ├─ No  ──► distribute_basic_mesh()
                 │           └─ Yes ──► distribute_basic_mesh_collaborative()
-                └─ No  ──► Reduce mesh resolution or use more nodes
+                └─ No  ──► Preprocess offline: sequential_mesh_dump / sequential_mesh_load
+                            (see use_sequential_mesh_io)
 
 As a rough guide, a mesh of N triangles with P quantities requires
 approximately ``8 × N × P`` bytes for quantity arrays alone on rank 0
@@ -68,32 +76,38 @@ work rank 0 must do before MPI communication begins.
 
 .. list-table:: Distribution function comparison
    :header-rows: 1
-   :widths: 28 24 24 24
+   :widths: 24 19 19 19 19
 
    * - Feature
      - ``distribute``
      - ``distribute_collaborative``
-     - ``distribute_basic_mesh`` / ``distribute_basic_mesh_collaborative``
+     - ``distribute_basic_mesh`` / ``_collaborative``
+     - ``sequential_mesh_dump`` / ``_load``
    * - Mesh built on rank 0
      - Full ``Domain`` with quantities
      - Full ``Domain`` with quantities
      - ``Basic_mesh`` only (no quantities)
+     - Preprocessing only (offline, no MPI)
    * - Quantities set
      - On rank 0, then distributed
      - On rank 0, then distributed
      - Per-rank after distribution
+     - Per-rank after load
    * - Topology broadcast
      - Point-to-point per rank
      - Shared memory per node
      - Point-to-point / shared memory
-   * - Peak rank-0 memory
+     - Read from disk per rank (no broadcast)
+   * - Peak rank-0 memory at runtime
      - O(N) mesh + O(N) quantities
      - O(N) mesh + O(N) quantities
      - O(N) mesh only
+     - Per-rank partition only
    * - Best for
      - Small–medium meshes, simple scripts
      - Many ranks per node, large meshes
      - Very large meshes; quantities set from functions
+     - Meshes too large for any single node; ensemble runs on the same mesh
 
 
 ``distribute``
@@ -197,10 +211,21 @@ Mesh-first workflows
 ---------------------
 
 For very large meshes where even allocating the full quantity arrays on
-rank 0 is impractical, use the *mesh-first* functions described in
-:ref:`use_distribute_basic_mesh`.  These functions accept a ``Basic_mesh``
-(topology only, no quantities) on rank 0; every rank then sets its own
-initial conditions independently after distribution.
+rank 0 is impractical, two *mesh-first* strategies are available:
+
+* **Online** (:ref:`use_distribute_basic_mesh`) — rank 0 builds a
+  ``Basic_mesh`` at runtime, distributes topology to all ranks, and each
+  rank sets its own quantities.  Rank 0 still needs enough RAM for the
+  full mesh topology.
+
+* **Offline** (:ref:`use_sequential_mesh_io`) — partition the mesh in a
+  separate preprocessing step (no MPI required, can use a large-memory
+  workstation or login node), write one NetCDF4 file per rank, then each
+  rank reads only its own file at simulation time.  Nothing beyond a
+  per-rank partition is ever resident in memory.  This is also the
+  recommended approach for ensemble / scenario runs on the same mesh.
+
+The online approach via :func:`distribute_basic_mesh` is described below.
 
 .. code-block:: python
 
