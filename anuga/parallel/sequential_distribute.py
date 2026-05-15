@@ -353,3 +353,308 @@ def sequential_distribute_load_pickle_file(pickle_name, np=1, verbose = False):
     domain.smooth = domain_smooth
 
     return domain
+
+
+# ---------------------------------------------------------------------------
+# Mesh-only partition save / load  (no quantities)
+# ---------------------------------------------------------------------------
+
+def _write_mesh_partition(fname, rank, numprocs,
+                          points, vertices, boundary,
+                          ghost_recv_dict, full_send_dict,
+                          tri_l2g, node_l2g,
+                          number_of_full_triangles, number_of_full_nodes,
+                          number_of_global_triangles, number_of_global_nodes,
+                          ghost_layer_width, geo_ref):
+    """Write one rank's mesh partition to a NetCDF4 file."""
+    import netCDF4
+
+    with netCDF4.Dataset(fname, 'w', format='NETCDF4') as nc:
+
+        # --- global scalar attributes ---
+        nc.rank = rank
+        nc.numprocs = numprocs
+        nc.number_of_full_triangles = number_of_full_triangles
+        nc.number_of_full_nodes = number_of_full_nodes
+        nc.number_of_global_triangles = number_of_global_triangles
+        nc.number_of_global_nodes = number_of_global_nodes
+        nc.ghost_layer_width = ghost_layer_width
+        geo_ref.write_NetCDF(nc)
+
+        Nnodes = len(points)
+        Ntri   = len(vertices)
+
+        nc.createDimension('node',  Nnodes)
+        nc.createDimension('tri',   Ntri)
+        nc.createDimension('two',   2)
+        nc.createDimension('three', 3)
+
+        # --- mesh arrays ---
+        v = nc.createVariable('points', 'f8', ('node', 'two'))
+        v[:] = points
+        v = nc.createVariable('vertices', 'i4', ('tri', 'three'))
+        v[:] = vertices
+        v = nc.createVariable('tri_l2g', 'i4', ('tri',))
+        v[:] = tri_l2g
+        v = nc.createVariable('node_l2g', 'i4', ('node',))
+        v[:] = node_l2g
+
+        # --- boundary: encode {(tri, edge): tag} as three parallel arrays ---
+        keys      = list(boundary.keys())
+        bnd_tris  = num.array([k[0] for k in keys], dtype='i4')
+        bnd_edges = num.array([k[1] for k in keys], dtype='i4')
+        bnd_tags  = [boundary[k] for k in keys]
+        Nbnd = len(bnd_tris)
+
+        max_tag_len = max((len(t) for t in bnd_tags), default=1)
+        nc.createDimension('bnd',     Nbnd)
+        nc.createDimension('tag_len', max_tag_len)
+        v = nc.createVariable('boundary_tri', 'i4', ('bnd',))
+        v[:] = bnd_tris
+        v = nc.createVariable('boundary_edge', 'i4', ('bnd',))
+        v[:] = bnd_edges
+        tag_var = nc.createVariable('boundary_tag', 'S1', ('bnd', 'tag_len'))
+        for i, tag in enumerate(bnd_tags):
+            padded = tag.ljust(max_tag_len, '\x00')
+            tag_var[i, :] = num.frombuffer(padded.encode('ascii'), dtype='S1')
+
+        # --- send/recv communication: CSR encoding ---
+        # full_send_dict / ghost_recv_dict: {rank: [local_indices, global_indices]}
+        for prefix, comm_dict in (('send', full_send_dict),
+                                  ('recv', ghost_recv_dict)):
+            ranks_sorted  = sorted(comm_dict.keys())
+            local_arrays  = [comm_dict[r][0] for r in ranks_sorted]
+            global_arrays = [comm_dict[r][1] for r in ranks_sorted]
+            offsets = num.zeros(len(ranks_sorted) + 1, dtype='i4')
+            for i, arr in enumerate(local_arrays):
+                offsets[i + 1] = offsets[i] + len(arr)
+            local_packed  = num.concatenate(local_arrays).astype('i4') \
+                if local_arrays else num.array([], dtype='i4')
+            global_packed = num.concatenate(global_arrays).astype('i4') \
+                if global_arrays else num.array([], dtype='i4')
+
+            nr = len(ranks_sorted)
+            nc.createDimension(f'{prefix}_nranks',       nr)
+            nc.createDimension(f'{prefix}_nranks_plus1', nr + 1)
+            nc.createDimension(f'{prefix}_total',        len(local_packed))
+            v = nc.createVariable(f'{prefix}_ranks', 'i4',
+                                  (f'{prefix}_nranks',))
+            v[:] = num.array(ranks_sorted, dtype='i4') if ranks_sorted \
+                else num.array([], dtype='i4')
+            v = nc.createVariable(f'{prefix}_offsets', 'i4',
+                                  (f'{prefix}_nranks_plus1',))
+            v[:] = offsets
+            lv = nc.createVariable(f'{prefix}_local',  'i4',
+                                   (f'{prefix}_total',))
+            gv = nc.createVariable(f'{prefix}_global', 'i4',
+                                   (f'{prefix}_total',))
+            if len(local_packed):
+                lv[:] = local_packed
+                gv[:] = global_packed
+
+
+def _release_mesh_submesh_rank(submesh, p):
+    """Null out submesh arrays for rank *p* to allow GC before next rank."""
+    for key in ('full_nodes', 'full_triangles', 'full_boundary',
+                'ghost_nodes', 'ghost_triangles', 'ghost_commun',
+                'ghost_boundary', 'ghost_layer_width', 'full_commun'):
+        lst = submesh.get(key)
+        if lst is not None and p < len(lst):
+            lst[p] = None
+
+
+def sequential_mesh_dump(domain, numprocs, partition_dir='.', name=None,
+                         verbose=False, parameters=None):
+    """Partition a domain mesh and write one NetCDF4 file per rank.
+
+    Saves mesh topology and halo structure only — no quantities.
+    Suitable as an offline preprocessing step before large parallel runs.
+    After loading with :func:`sequential_mesh_load` the caller sets initial
+    conditions via ``domain.set_quantity()`` before evolving.
+
+    Files are written to ``<partition_dir>/<name>_mesh_P<numprocs>_<rank>.nc``.
+
+    Parameters
+    ----------
+    domain : Domain or Basic_mesh
+        Source mesh.  Quantities present on the domain are ignored.
+    numprocs : int
+        Number of partitions to create.
+    partition_dir : str or path-like
+        Output directory, created if it does not exist.
+    name : str, optional
+        Base name for output files.  Defaults to ``domain.get_name()`` when
+        available, otherwise ``'mesh'``.
+    verbose : bool
+    parameters : dict, optional
+        Forwarded to :func:`~anuga.parallel.distribute_mesh.partition_mesh`
+        and :func:`~anuga.parallel.distribute_mesh.build_submesh`.
+        Recognised keys include ``'partition_scheme'`` (``'metis'``,
+        ``'morton'``, or ``'hilbert'``), ``'ghost_layer_width'``, and
+        ``'cache_dir'``.
+    """
+    import gc
+    import os
+
+    from anuga.coordinate_transforms.geo_reference import Geo_reference
+
+    if name is None:
+        name = domain.get_name() if hasattr(domain, 'get_name') else 'mesh'
+
+    os.makedirs(partition_dir, exist_ok=True)
+
+    geo_ref = getattr(domain, 'geo_reference', Geo_reference())
+    number_of_global_triangles = domain.number_of_triangles
+    number_of_global_nodes     = domain.number_of_nodes
+
+    if verbose:
+        print(f'sequential_mesh_dump: partitioning {number_of_global_triangles}'
+              f' triangles across {numprocs} ranks')
+
+    new_mesh, triangles_per_proc, _, _s2p_map, p2s_map = partition_mesh(
+        domain, numprocs, parameters=parameters, verbose=verbose)
+
+    if verbose:
+        print('sequential_mesh_dump: building submeshes')
+
+    submesh = build_submesh(new_mesh, {}, triangles_per_proc,
+                            parameters=parameters, verbose=verbose)
+
+    if verbose:
+        for p in range(numprocs):
+            N = len(submesh['ghost_nodes'][p])
+            M = len(submesh['ghost_triangles'][p])
+            print(f'sequential_mesh_dump: rank {p}: '
+                  f'{len(submesh["full_triangles"][p])} full triangles, '
+                  f'{M} ghost triangles, {N} ghost nodes')
+
+    for p in range(numprocs):
+        points, vertices, boundary, _quantities, ghost_recv_dict, \
+            full_send_dict, _tri_map, _node_map, tri_l2g, node_l2g, \
+            ghost_layer_width = \
+            extract_submesh(submesh, triangles_per_proc, p2s_map, p)
+
+        number_of_full_triangles = len(submesh['full_triangles'][p])
+        number_of_full_nodes     = len(submesh['full_nodes'][p])
+
+        fname = os.path.join(partition_dir,
+                             f'{name}_mesh_P{numprocs}_{p}.nc')
+        if verbose:
+            print(f'sequential_mesh_dump: writing {fname}')
+
+        _write_mesh_partition(
+            fname, p, numprocs,
+            points, vertices, boundary,
+            ghost_recv_dict, full_send_dict,
+            tri_l2g, node_l2g,
+            number_of_full_triangles, number_of_full_nodes,
+            number_of_global_triangles, number_of_global_nodes,
+            ghost_layer_width, geo_ref)
+
+        _release_mesh_submesh_rank(submesh, p)
+        del points, vertices, boundary, tri_l2g, node_l2g
+        del ghost_recv_dict, full_send_dict
+        gc.collect()
+
+    gc.collect()
+
+
+def sequential_mesh_load(name, partition_dir='.', verbose=False):
+    """Load this rank's mesh partition and return a bare :class:`Parallel_domain`.
+
+    Reads the NetCDF4 file written by :func:`sequential_mesh_dump` for the
+    calling MPI rank.  No quantities are set; call ``domain.set_quantity()``
+    and ``domain.set_boundary()`` before evolving.
+
+    Parameters
+    ----------
+    name : str
+        Base name passed to :func:`sequential_mesh_dump`.
+    partition_dir : str or path-like
+        Directory containing the partition files.
+    verbose : bool
+
+    Returns
+    -------
+    Parallel_domain
+        Domain with mesh topology and halo structure initialised.
+        All quantities are zero; boundary conditions are unset (``None``).
+    """
+    import os
+    import netCDF4
+
+    from anuga import myid, numprocs
+    from anuga.coordinate_transforms.geo_reference import Geo_reference
+
+    fname = os.path.join(partition_dir, f'{name}_mesh_P{numprocs}_{myid}.nc')
+    if verbose:
+        print(f'sequential_mesh_load: rank {myid} reading {fname}')
+
+    with netCDF4.Dataset(fname, 'r') as nc:
+
+        # --- scalar metadata ---
+        number_of_full_triangles   = int(nc.number_of_full_triangles)
+        number_of_full_nodes       = int(nc.number_of_full_nodes)
+        number_of_global_triangles = int(nc.number_of_global_triangles)
+        number_of_global_nodes     = int(nc.number_of_global_nodes)
+        ghost_layer_width          = int(nc.ghost_layer_width)
+        geo_ref = Geo_reference(NetCDFObject=nc)
+
+        # --- mesh arrays ---
+        points   = num.array(nc['points'][:])
+        vertices = num.array(nc['vertices'][:])
+        tri_l2g  = num.array(nc['tri_l2g'][:])
+        node_l2g = num.array(nc['node_l2g'][:])
+
+        # --- boundary dict ---
+        bnd_tris  = num.array(nc['boundary_tri'][:])
+        bnd_edges = num.array(nc['boundary_edge'][:])
+        raw_tags  = nc['boundary_tag'][:]
+        bnd_tags  = [
+            b''.join(row).decode('ascii').rstrip('\x00')
+            for row in raw_tags
+        ]
+        boundary = {
+            (int(bnd_tris[i]), int(bnd_edges[i])): bnd_tags[i]
+            for i in range(len(bnd_tris))
+        }
+
+        # --- communication dicts (CSR → dict) ---
+        def _read_comm_dict(nc, prefix):
+            ranks   = list(nc[f'{prefix}_ranks'][:].astype(int))
+            offsets = nc[f'{prefix}_offsets'][:].astype(int)
+            local_  = num.array(nc[f'{prefix}_local'][:])
+            global_ = num.array(nc[f'{prefix}_global'][:])
+            d = {}
+            for i, r in enumerate(ranks):
+                s, e = offsets[i], offsets[i + 1]
+                d[r] = [local_[s:e], global_[s:e]]
+            return d
+
+        full_send_dict  = _read_comm_dict(nc, 'send')
+        ghost_recv_dict = _read_comm_dict(nc, 'recv')
+
+    domain = Parallel_domain(
+        points, vertices, boundary,
+        full_send_dict=full_send_dict,
+        ghost_recv_dict=ghost_recv_dict,
+        number_of_full_nodes=number_of_full_nodes,
+        number_of_full_triangles=number_of_full_triangles,
+        number_of_global_triangles=number_of_global_triangles,
+        number_of_global_nodes=number_of_global_nodes,
+        processor=myid,
+        numproc=numprocs,
+        s2p_map=None,
+        p2s_map=None,
+        tri_l2g=tri_l2g,
+        node_l2g=node_l2g,
+        ghost_layer_width=ghost_layer_width,
+        geo_reference=geo_ref,
+    )
+
+    # Register all boundary tags with None BCs (caller replaces these).
+    boundary_map = {tag: None for tag in set(boundary.values())}
+    boundary_map['ghost'] = None
+    domain.set_boundary(boundary_map)
+
+    return domain

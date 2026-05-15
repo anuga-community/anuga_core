@@ -12,6 +12,8 @@ from anuga.utilities.parallel_abstraction import pypar_available, barrier
 
 from anuga.parallel.sequential_distribute import sequential_distribute_dump
 from anuga.parallel.sequential_distribute import sequential_distribute_load
+from anuga.parallel.sequential_distribute import sequential_mesh_dump
+from anuga.parallel.sequential_distribute import sequential_mesh_load
 
 # ANUGA parallel engine (only load if pypar can)
 if pypar_available:

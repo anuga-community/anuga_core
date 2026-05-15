@@ -39,6 +39,7 @@ python_sources = [
   'test_parallel_kv_unit_tests.py',
   'run_parallel_load_balance.py',
   'test_load_balance_statistics.py',
+  'test_sequential_mesh_io.py',
 ]
 
 py3.install_sources(
