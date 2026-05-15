@@ -201,24 +201,36 @@ void gpu_ader_ck_predictor(struct gpu_domain *GD, double dt) {
     NVTX_POP();
 }
 
+void gpu_ader_ck_predictor_edge(struct gpu_domain *GD, double dt) {
+    NVTX_PUSH("gpu_ader_ck_predictor_edge");
+    core_ader_ck_predictor_edge(&GD->D, dt);
+    if (GD->flops.enabled) {
+        GD->flops.extrapolate_flops += (uint64_t)GD->D.number_of_elements * FLOPS_ADER_PREDICTOR;
+        GD->flops.extrapolate_calls++;
+    }
+    NVTX_POP();
+}
+
 // ============================================================================
 // Full ADER-2 Step
 // ============================================================================
 
-double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing) {
+double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing, double prev_dt) {
     NVTX_PUSH("gpu_evolve_one_ader2_step");
-    // ADER-2 step: backup -> CFL from Q^n -> C-K predictor(dt/2) ->
-    //              flux from Q^{n+1/2} -> restore Q^n -> update
+    // ADER-2 step: extrapolate Q^n → fused edge C-K predictor(prev_dt/2) →
+    //              single flux call from Q^{n+1/2} → Allreduce → update Q^n
     //
-    // 2nd-order in space and time via a local Cauchy-Kovalewski midpoint estimate.
-    // The predictor requires no inter-cell communication (purely local SWE derivatives).
+    // Single-flux-call variant matching the CPU ADER-2 implementation.
+    // prev_dt is the timestep from the previous step; pass 0.0 on the first
+    // call to bootstrap with a plain Euler step.
+    //
+    // The fused edge predictor shifts edge values to Q^{n+1/2} in-place while
+    // centroid values remain at Q^n, so no backup/restore is needed.
 
     double local_timestep, global_timestep, timestep;
 
-    gpu_backup_conserved_quantities(GD);
-
     // ========================================
-    // Step 1: compute CFL-stable timestep from Q^n
+    // Step 1: protect + extrapolate Q^n → edges + evaluate boundaries
     // ========================================
 
     gpu_protect(GD);
@@ -234,7 +246,36 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
 
+    if (prev_dt > 0.0) {
+        // ========================================
+        // Step 2: fused edge C-K predictor — shifts edges to Q^{n+1/2} in-place
+        // ========================================
+
+        gpu_ader_ck_predictor_edge(GD, prev_dt * 0.5);
+
+        // Re-apply boundary conditions to boundary edges
+        gpu_evaluate_reflective_boundary(GD);
+        gpu_evaluate_dirichlet_boundary(GD);
+        gpu_evaluate_transmissive_boundary(GD);
+        gpu_evaluate_transmissive_n_zero_t_boundary(GD);
+        gpu_evaluate_time_boundary(GD);
+        gpu_evaluate_file_boundary(GD);
+        gpu_evaluate_absorbing_wave_boundary(GD);
+        gpu_evaluate_characteristic_wave_boundary(GD);
+        gpu_evaluate_flather_boundary(GD);
+    }
+
+    // ========================================
+    // Step 3: single flux call from Q^{n+1/2} edges (or Q^n on bootstrap step)
+    // ========================================
+
     local_timestep = gpu_compute_fluxes(GD);
+
+    if (apply_forcing) gpu_manning_friction(GD);
+
+    // ========================================
+    // Step 4: Allreduce for global min CFL timestep + clip to max_timestep
+    // ========================================
 
     static int fixed_ts_printed_ader2 = 0;
     if (GD->fixed_flux_timestep > 0.0) {
@@ -256,37 +297,11 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     }
 
     // ========================================
-    // Step 2: C-K predictor advances centroids to Q^{n+1/2}
+    // Step 5: update Q^{n+1} = Q^n + timestep * R(Q^{n+1/2})
+    // (Q^n centroids are unchanged — no restore needed)
     // ========================================
 
-    gpu_ader_ck_predictor(GD, timestep * 0.5);
-
-    // ========================================
-    // Step 3: compute fluxes from Q^{n+1/2}
-    // ========================================
-
-    gpu_extrapolate_second_order(GD);
-
-    gpu_evaluate_reflective_boundary(GD);
-    gpu_evaluate_dirichlet_boundary(GD);
-    gpu_evaluate_transmissive_boundary(GD);
-    gpu_evaluate_transmissive_n_zero_t_boundary(GD);
-    gpu_evaluate_time_boundary(GD);
-    gpu_evaluate_file_boundary(GD);
-    gpu_evaluate_absorbing_wave_boundary(GD);
-    gpu_evaluate_characteristic_wave_boundary(GD);
-    gpu_evaluate_flather_boundary(GD);
-
-    gpu_compute_fluxes(GD);
-
-    if (apply_forcing) gpu_manning_friction(GD);
-
-    // ========================================
-    // Step 4: restore Q^n (saxpy(0,1) = backup) and apply midpoint-flux update
-    // ========================================
-
-    gpu_saxpy_conserved_quantities(GD, 0.0, 1.0);  // Q = 0*Q + 1*backup = Q^n
-    gpu_update_conserved_quantities(GD, timestep);  // Q^{n+1} = Q^n + dt*R(Q^{n+1/2})
+    gpu_update_conserved_quantities(GD, timestep);
 
     NVTX_POP();  // gpu_evolve_one_ader2_step
     return timestep;

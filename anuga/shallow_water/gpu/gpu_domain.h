@@ -564,11 +564,16 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
 // Full SSP-RK3 step on GPU (Shu-Osher 3-stage)
 double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
 
-// ADER-2 Cauchy-Kovalewski predictor (advance centroids by dt in-place)
+// ADER-2 Cauchy-Kovalewski predictor — centroid variant (advance centroids by dt)
 void gpu_ader_ck_predictor(struct gpu_domain *GD, double dt);
 
-// Full ADER-2 step on GPU (single flux call via previous-step dt reuse)
-double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
+// ADER-2 fused edge predictor — shifts edge values to Q^{n+1/2} in-place,
+// leaving centroid values unchanged (no backup/restore needed).
+void gpu_ader_ck_predictor_edge(struct gpu_domain *GD, double dt);
+
+// Full ADER-2 step: single flux call with fused edge predictor.
+// prev_dt is the timestep from the previous step (0 on bootstrap → Euler).
+double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing, double prev_dt);
 
 // Utility functions
 int detect_gpu_aware_mpi(void);

@@ -246,11 +246,14 @@ cdef extern from "gpu_domain.h" nogil:
     double gpu_compute_water_volume(gpu_domain *GD)
     void gpu_manning_friction(gpu_domain *GD)
 
-    # ADER-2 Cauchy-Kovalewski predictor
+    # ADER-2 Cauchy-Kovalewski predictor — centroid variant
     void gpu_ader_ck_predictor(gpu_domain *GD, double dt)
 
-    # Full ADER-2 step
-    double gpu_evolve_one_ader2_step(gpu_domain *GD, double max_timestep, int apply_forcing)
+    # ADER-2 fused edge predictor (shifts edges to Q^{n+1/2}, centroids unchanged)
+    void gpu_ader_ck_predictor_edge(gpu_domain *GD, double dt)
+
+    # Full ADER-2 step (single flux call with fused edge predictor, prev_dt from prior step)
+    double gpu_evolve_one_ader2_step(gpu_domain *GD, double max_timestep, int apply_forcing, double prev_dt)
 
     # Full RK2 step
     double gpu_evolve_one_rk2_step(gpu_domain *GD, double max_timestep, int apply_forcing)
@@ -1615,7 +1618,7 @@ def evolve_one_rk3_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_fo
 
 def ader_ck_predictor_gpu(GPUDomain gpu_dom, double dt):
     """
-    Apply the ADER Cauchy-Kovalewski predictor on GPU.
+    Apply the ADER Cauchy-Kovalewski predictor on GPU — centroid variant.
 
     Advances centroid values from Q^n to Q^{n+1/2} in-place using
     local SWE time derivatives derived from the reconstructed slopes.
@@ -1631,12 +1634,31 @@ def ader_ck_predictor_gpu(GPUDomain gpu_dom, double dt):
     gpu_ader_ck_predictor(&gpu_dom.GD, dt)
 
 
-def evolve_one_ader2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
+def ader_ck_predictor_edge_gpu(GPUDomain gpu_dom, double dt):
+    """
+    Apply the ADER fused edge predictor on GPU.
+
+    Shifts edge values from Q^n to Q^{n+1/2} in-place while leaving centroid
+    values unchanged.  Must be called after extrapolate_second_order_gpu().
+    No backup/restore of centroid values is needed before/after this call.
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    dt : float
+        Half-timestep (dt/2) to advance edge values by
+    """
+    gpu_ader_ck_predictor_edge(&gpu_dom.GD, dt)
+
+
+def evolve_one_ader2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing, double prev_dt):
     """
     Execute one ADER-2 timestep on GPU.
 
-    2nd-order in space and time via a local Cauchy-Kovalewski midpoint estimate.
-    Cost: 2 extrapolations + 1 predictor + 2 flux calls (same kernel count as RK2).
+    Single-flux-call variant using the fused edge predictor with prev_dt from
+    the previous step.  Matches the CPU ADER-2 implementation exactly.
+    Cost: 1 extrapolation + 1 edge predictor + 1 flux call.
 
     Parameters
     ----------
@@ -1646,13 +1668,16 @@ def evolve_one_ader2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_
         Maximum allowed timestep (respecting yieldstep/finaltime constraints)
     apply_forcing : int
         Whether to apply GPU-compatible forcing terms
+    prev_dt : float
+        Timestep from the previous step (pass 0.0 on first call to bootstrap
+        with a plain Euler step)
 
     Returns
     -------
     float
-        The timestep used
+        The timestep used (save as prev_dt for the next call)
     """
-    return gpu_evolve_one_ader2_step(&gpu_dom.GD, max_timestep, apply_forcing)
+    return gpu_evolve_one_ader2_step(&gpu_dom.GD, max_timestep, apply_forcing, prev_dt)
 
 
 def finalize_gpu_domain(GPUDomain gpu_dom):

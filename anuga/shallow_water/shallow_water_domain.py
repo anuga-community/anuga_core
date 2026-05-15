@@ -2988,15 +2988,16 @@ class Domain(Generic_Domain):
 
         Fallback when the C ADER-2 loop cannot be used (e.g., unsupported
         boundary types). Prefer _evolve_one_ader2_step_c() for better performance.
+
+        Uses the fused edge predictor with _ader2_prev_dt to match the CPU path
+        exactly (single flux call, no backup/restore of centroid values needed).
         """
         from anuga.shallow_water.sw_domain_gpu_ext import (
-            backup_conserved_quantities_gpu,
             extrapolate_second_order_gpu,
             protect_gpu,
             compute_fluxes_gpu,
             update_conserved_quantities_gpu,
-            saxpy_conserved_quantities_gpu,
-            ader_ck_predictor_gpu,
+            ader_ck_predictor_edge_gpu,
             sync_boundary_values,
             init_boundary_edge_sync,
             boundary_edge_sync,
@@ -3053,7 +3054,10 @@ class Domain(Generic_Domain):
 
             self._gpu_boundary_info_initialized = True
 
-        backup_conserved_quantities_gpu(gpu_dom)
+        # Bootstrap: prev_dt=0 on first call → plain Euler step
+        if not hasattr(self, '_ader2_prev_dt'):
+            self._ader2_prev_dt = 0.0
+        prev_dt = self._ader2_prev_dt
 
         def _eval_boundaries():
             if self._gpu_all_on_gpu:
@@ -3107,24 +3111,27 @@ class Domain(Generic_Domain):
                         B.evaluate_segment(self, self.tag_boundary_cells[tag])
                 sync_boundary_values(gpu_dom)
 
-        # --- Step 1: CFL timestep from Q^n ---
+        # --- Step 1: extrapolate Q^n → edges + evaluate boundaries ---
         protect_gpu(gpu_dom)
         extrapolate_second_order_gpu(gpu_dom)
         _eval_boundaries()
+
+        if prev_dt > 0.0:
+            # --- Step 2: fused edge C-K predictor → Q^{n+1/2} edges in-place ---
+            # (centroid values unchanged — no backup/restore needed)
+            ader_ck_predictor_edge_gpu(gpu_dom, prev_dt * 0.5)
+            # Re-apply boundaries to boundary edges
+            _eval_boundaries()
+
+        # --- Step 3: single flux call from Q^{n+1/2} edges ---
         self.flux_timestep = compute_fluxes_gpu(gpu_dom)
-        self.update_timestep(yieldstep, finaltime)
-
-        # --- Step 2: C-K predictor to Q^{n+1/2} ---
-        ader_ck_predictor_gpu(gpu_dom, self.timestep * 0.5)
-
-        # --- Step 3: flux from Q^{n+1/2} ---
-        extrapolate_second_order_gpu(gpu_dom)
-        _eval_boundaries()
-        compute_fluxes_gpu(gpu_dom)
         self.compute_forcing_terms()
 
-        # --- Step 4: restore Q^n and update ---
-        saxpy_conserved_quantities_gpu(gpu_dom, 0.0, 1.0)  # Q = backup
+        # --- Step 4: Allreduce + yieldstep/finaltime clip ---
+        self.update_timestep(yieldstep, finaltime)
+        self._ader2_prev_dt = self.timestep
+
+        # --- Step 5: update Q^{n+1} = Q^n + timestep * R (no restore needed) ---
         update_conserved_quantities_gpu(gpu_dom, self.timestep)
 
         self.set_relative_time(self.get_relative_time() + self.timestep)
@@ -3239,7 +3246,11 @@ class Domain(Generic_Domain):
         else:
             max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
 
-        self.timestep = evolve_one_ader2_step_gpu(gpu_dom, max_timestep, 1)
+        if not hasattr(self, '_ader2_prev_dt'):
+            self._ader2_prev_dt = 0.0
+
+        self.timestep = evolve_one_ader2_step_gpu(gpu_dom, max_timestep, 1, self._ader2_prev_dt)
+        self._ader2_prev_dt = self.timestep
 
         self.set_relative_time(self.get_relative_time() + self.timestep)
         self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)

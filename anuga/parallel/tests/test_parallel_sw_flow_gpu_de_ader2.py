@@ -5,13 +5,10 @@ Verifies that multiprocessor_mode=2 (GPU ADER-2 step, GPU internal MPI ghost
 exchange) produces results matching multiprocessor_mode=1 (CPU ADER-2 step,
 Python MPI ghost exchange) when run in parallel.
 
-The GPU ADER-2 path (mode=2) uses a two-flux-call scheme: a CFL flux call from
-Q^n to determine the timestep, then the C-K predictor using that timestep, then
-a second flux call from Q^{n+1/2}.  The Python ADER-2 path (mode=1) uses a
-single-flux-call scheme: the C-K predictor uses _ader2_prev_dt from the previous
-step.  Both are valid ADER-2 implementations but they differ by O(dt^3)
-truncation terms per step, accumulating to ~O(dt^2) ≈ 1e-3 over the run.
-The test therefore uses a relaxed tolerance (atol=1e-2) rather than machine zero.
+Both modes use the same fused edge C-K predictor with _ader2_prev_dt from the
+previous step.  The only difference is floating-point evaluation order (C loop
+vs Python function calls), so the results agree to ~1e-10 and the test uses
+atol=1e-8.
 
 Run via pytest (auto-marked slow):
 
@@ -49,11 +46,9 @@ N = 29
 YIELDSTEP = 0.25
 FINALTIME = 1.0
 GAUGE_POINTS = [[0.4, 0.5], [0.6, 0.5], [0.8, 0.5], [0.9, 0.5]]
-# mode=1 uses a single-flux-call scheme with _ader2_prev_dt from the previous
-# step; mode=2 uses a two-flux-call scheme with the current CFL dt.  Both are
-# valid ADER-2 implementations but differ by O(dt^3) terms per step, giving
-# ~O(dt^2) accumulated error over the run (~1e-3 for dt≈0.05 over 1 s).
-ATOL = 1e-2
+# Both modes use the same fused edge C-K predictor with _ader2_prev_dt, so
+# the only difference is floating-point ordering (C loop vs Python calls).
+ATOL = 1e-8
 
 
 def topography(x, y):
