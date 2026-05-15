@@ -2968,11 +2968,17 @@ class Domain(Generic_Domain):
         self.compute_fluxes()
         self.compute_forcing_terms()
 
-        # Save CFL dt before update_timestep may overwrite flux_timestep
-        self._ader2_prev_dt = self.CFL * self.flux_timestep
-
-        # Clip to yieldstep / finaltime / evolve_max_timestep
+        # Clip to yieldstep / finaltime / evolve_max_timestep.
+        # In MPI parallel mode update_timestep does an Allreduce so that
+        # self.timestep is the global-minimum CFL dt across all ranks.
+        # _ader2_prev_dt must equal the timestep actually taken so that
+        # all ranks use the same predictor half-step next iteration;
+        # saving the local flux_timestep before the Allreduce would give
+        # each rank a different prev_dt, corrupting ghost-boundary edges.
         self.update_timestep(yieldstep, finaltime)
+
+        # Record the timestep actually taken as prev_dt for the next predictor.
+        self._ader2_prev_dt = self.timestep
 
         # Q^n centroids are untouched — update directly (no saxpy restore needed)
         self.update_conserved_quantities()           # Q^{n+1} = Q^n + dt*R(Q^{n+1/2})
