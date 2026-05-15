@@ -34,6 +34,8 @@ python_sources = [
   'test_parallel_sw_flow_low_froude_1.py',
   'test_parallel_sw_flow.py',
   'test_parallel_sw_flow_gpu.py',
+  'test_parallel_sw_flow_gpu_de2.py',
+  'test_parallel_sw_flow_gpu_de_ader2.py',
   'test_parallel_meshes.py',
   'test_sequential_dist_sw_flow.py',
   'run_parallel_kv_operator.py',

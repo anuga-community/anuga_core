@@ -3131,6 +3131,10 @@ class Domain(Generic_Domain):
         self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
         self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
 
+        # Post-step ghost exchange — update_ghosts() is a no-op in GPU mode
+        if self.ghost_layer_width < 4:
+            exchange_ghosts(gpu_dom)
+
     def _evolve_one_ader2_step_c(self, yieldstep, finaltime):
         """ADER-2 step executed entirely in C - eliminates Python round-trip overhead.
 
@@ -3240,6 +3244,11 @@ class Domain(Generic_Domain):
         self.set_relative_time(self.get_relative_time() + self.timestep)
         self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
         self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
+
+        # Post-step ghost exchange — update_ghosts() is a no-op in GPU mode
+        if self.ghost_layer_width < 4:
+            from anuga.shallow_water.sw_domain_gpu_ext import exchange_ghosts
+            exchange_ghosts(gpu_dom)
 
     def _evolve_one_rk2_step_gpu(self, yieldstep, finaltime):
         """Python-orchestrated GPU implementation of RK2 step.
@@ -3470,6 +3479,10 @@ class Domain(Generic_Domain):
         # RK2 averaging
         saxpy_conserved_quantities_gpu(gpu_dom, 0.5, 0.5)
 
+        # Post-step ghost exchange — update_ghosts() is a no-op in GPU mode
+        if self.ghost_layer_width < 4:
+            exchange_ghosts(gpu_dom)
+
 
     def _evolve_one_rk2_step_c(self, yieldstep, finaltime):
         """RK2 step executed entirely in C - eliminates Python round-trip overhead.
@@ -3597,6 +3610,11 @@ class Domain(Generic_Domain):
         # Record timestep stats
         self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
         self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
+
+        # Post-step ghost exchange — update_ghosts() is a no-op in GPU mode
+        if self.ghost_layer_width < 4:
+            from anuga.shallow_water.sw_domain_gpu_ext import exchange_ghosts
+            exchange_ghosts(gpu_dom)
 
 
     def _evolve_one_rk3_step_gpu(self, yieldstep, finaltime):
@@ -3795,6 +3813,10 @@ class Domain(Generic_Domain):
 
         self.set_relative_time(initial_relative_time + self.timestep)
 
+        # Post-step ghost exchange — update_ghosts() is a no-op in GPU mode
+        if self.ghost_layer_width < 4:
+            exchange_ghosts(gpu_dom)
+
 
     def _evolve_one_rk3_step_c(self, yieldstep, finaltime):
         """RK3 step executed entirely in C - eliminates Python round-trip overhead.
@@ -3920,6 +3942,11 @@ class Domain(Generic_Domain):
         # Record timestep stats
         self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
         self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
+
+        # Post-step ghost exchange — update_ghosts() is a no-op in GPU mode
+        if self.ghost_layer_width < 4:
+            from anuga.shallow_water.sw_domain_gpu_ext import exchange_ghosts
+            exchange_ghosts(gpu_dom)
 
 
     def evolve_one_rk3_step(self, yieldstep, finaltime):
