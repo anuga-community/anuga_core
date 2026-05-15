@@ -27,6 +27,7 @@ python_sources = [
   'test_parallel_riverwall.py',
   'test_parallel_shallow_domain.py',
   'test_parallel_sw_flow_de0.py',
+  'test_parallel_sw_flow_de1.py',
   'test_parallel_sw_flow_de_ader2.py',
   'test_parallel_sw_flow_de2.py',
   'test_parallel_sw_flow_low_froude_0.py',
