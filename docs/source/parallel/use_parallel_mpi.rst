@@ -9,8 +9,9 @@ MPI Distribute Domain-first parallel workflow (``distribute``)
 Choosing an MPI distribution strategy
 --------------------------------------
 
-Four functions are available for distributing a domain across MPI ranks.
-The right choice depends on mesh size and how you construct the domain.
+Six functions and function-pairs are available for distributing a domain
+across MPI ranks.  The right choice depends on mesh size and whether
+initial conditions need to be stored in the partition files.
 
 .. list-table::
    :header-rows: 1
@@ -39,13 +40,18 @@ The right choice depends on mesh size and how you construct the domain.
      - Like ``distribute_basic_mesh`` but topology is broadcast via shared
        memory.  Use for the largest meshes where even per-rank copies of
        the topology are expensive.
+   * - :func:`sequential_distribute_dump` / :func:`sequential_distribute_load`
+     - Full domain + quantities (preprocessing only)
+     - Offline two-phase workflow: build and partition the full domain once
+       (including quantities), write one set of pickle + npy files per rank,
+       then load and evolve.  Nothing is held on rank 0 at runtime.
+       See :ref:`use_sequential_domain_io`.
    * - :func:`sequential_mesh_dump` / :func:`sequential_mesh_load`
-     - O(N) × topology only (preprocessing only)
-     - Offline two-phase workflow: partition the mesh once on any machine
-       with enough RAM (no MPI needed), write one NetCDF4 file per rank,
-       then load and evolve as many times as needed.  Nothing is held on
-       a single rank at runtime — ideal for very large meshes or ensemble
-       runs.  See :ref:`use_sequential_mesh_io`.
+     - Topology only (preprocessing only)
+     - Offline two-phase workflow: partition the mesh topology only (no
+       quantities), write one NetCDF4 file per rank, then load and set
+       quantities per-rank at runtime.  Smallest files; ideal for very
+       large meshes or ensemble runs.  See :ref:`use_sequential_mesh_io`.
 
 **Decision guide**
 
@@ -53,15 +59,20 @@ The right choice depends on mesh size and how you construct the domain.
 
     Does rank 0 have enough RAM to hold the full Domain (mesh + quantities)?
     │
-    ├─ Yes ──► Do multiple ranks share the same node?
-    │           ├─ No  ──► distribute()
-    │           └─ Yes ──► distribute_collaborative()
+    ├─ Yes ──► Run immediately (no preprocessing)?
+    │           ├─ Yes ──► Do multiple ranks share the same node?
+    │           │           ├─ No  ──► distribute()
+    │           │           └─ Yes ──► distribute_collaborative()
+    │           └─ No  ──► Preprocess offline with quantities:
+    │                        sequential_distribute_dump / sequential_distribute_load
+    │                        (see use_sequential_domain_io)
     │
     └─ No  ──► Does rank 0 have enough RAM for topology only (no quantities)?
                 ├─ Yes ──► Do multiple ranks share the same node?
                 │           ├─ No  ──► distribute_basic_mesh()
                 │           └─ Yes ──► distribute_basic_mesh_collaborative()
-                └─ No  ──► Preprocess offline: sequential_mesh_dump / sequential_mesh_load
+                └─ No  ──► Preprocess offline (mesh only):
+                            sequential_mesh_dump / sequential_mesh_load
                             (see use_sequential_mesh_io)
 
 As a rough guide, a mesh of N triangles with P quantities requires
@@ -70,44 +81,55 @@ approximately ``8 × N × P`` bytes for quantity arrays alone on rank 0
 ``~56 × N`` bytes.
 
 
-Three
-distribution functions are available; they differ in how much memory and
-work rank 0 must do before MPI communication begins.
+All six approaches differ in how much memory and work rank 0 must do
+before the evolve loop begins.
 
 .. list-table:: Distribution function comparison
    :header-rows: 1
-   :widths: 24 19 19 19 19
+   :widths: 20 16 16 16 16 16
 
    * - Feature
      - ``distribute``
      - ``distribute_collaborative``
      - ``distribute_basic_mesh`` / ``_collaborative``
+     - ``sequential_distribute_dump`` / ``_load``
      - ``sequential_mesh_dump`` / ``_load``
    * - Mesh built on rank 0
      - Full ``Domain`` with quantities
      - Full ``Domain`` with quantities
      - ``Basic_mesh`` only (no quantities)
      - Preprocessing only (offline, no MPI)
+     - Preprocessing only (offline, no MPI)
    * - Quantities set
      - On rank 0, then distributed
      - On rank 0, then distributed
      - Per-rank after distribution
+     - Stored in files; loaded per-rank
      - Per-rank after load
    * - Topology broadcast
      - Point-to-point per rank
      - Shared memory per node
      - Point-to-point / shared memory
-     - Read from disk per rank (no broadcast)
+     - Read from disk per rank
+     - Read from disk per rank
    * - Peak rank-0 memory at runtime
      - O(N) mesh + O(N) quantities
      - O(N) mesh + O(N) quantities
      - O(N) mesh only
      - Per-rank partition only
+     - Per-rank partition only
+   * - Partition file format
+     - —
+     - —
+     - —
+     - Pickle + npy arrays
+     - NetCDF4
    * - Best for
      - Small–medium meshes, simple scripts
      - Many ranks per node, large meshes
      - Very large meshes; quantities set from functions
-     - Meshes too large for any single node; ensemble runs on the same mesh
+     - Offline partitioning with quantities included (fast restart)
+     - Very large meshes or ensemble runs; quantities set per-rank
 
 
 ``distribute``

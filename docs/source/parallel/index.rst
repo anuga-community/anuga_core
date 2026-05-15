@@ -26,6 +26,7 @@ To diagnose load imbalance caused by wet/dry triangle distributions, see
    use_gpu_offloading
    use_parallel_mpi
    use_distribute_basic_mesh
+   use_sequential_domain_io
    use_sequential_mesh_io
 
 
