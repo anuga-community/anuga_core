@@ -94,7 +94,7 @@ if myid == 0:
 domain.set_name(domain_name)
 domain.set_store(args.store_sww)
 domain.set_flow_algorithm('DE0')
-domain.set_CFL(1.0)
+domain.set_cfl(1.0)
 domain.set_fixed_flux_timestep(fixed_flux_timestep)
 
 domain.set_quantity('elevation', lambda x, y: -1.0 - x)
