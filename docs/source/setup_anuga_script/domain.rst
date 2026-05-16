@@ -77,6 +77,10 @@ and check the :doc:`../../examples/notebook_create_domain_from_regions` for an e
 
 .. seealso::
 
+   :doc:`flow_algorithms`
+      How to choose between DE0, DE1, DE_ader2, and DE2 — trade-offs between
+      cost, accuracy, and robustness.
+
    :doc:`coordinate_reference`
       How to attach a coordinate reference system (UTM zone, national grid,
       or arbitrary local CRS) to a domain via :class:`Geo_reference`.
