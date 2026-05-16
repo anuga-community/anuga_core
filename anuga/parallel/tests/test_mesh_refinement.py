@@ -304,6 +304,44 @@ class TestCreateParallelMesh(unittest.TestCase):
         nc_files = [f for f in os.listdir(self.tmpdir) if f.endswith('.nc')]
         self.assertEqual(len(nc_files), 2)  # exactly one .nc per rank
 
+    def test_accepts_basic_mesh(self):
+        """create_parallel_mesh works when passed a Basic_mesh instead of Domain."""
+        from anuga import Basic_mesh
+        from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_cross
+
+        points, vertices, boundary = rectangular_cross(3, 3, len1=1.0, len2=1.0)
+        mesh = Basic_mesh(points, vertices, boundary)
+        N0 = mesh.number_of_triangles
+
+        name = anuga.create_parallel_mesh(mesh, numprocs=2,
+                                           refinement_levels=1,
+                                           name='bm',
+                                           partition_dir=self.tmpdir)
+        self.assertEqual(name, 'bm')
+        total = 0
+        for p in range(2):
+            fname = os.path.join(self.tmpdir, f'bm_mesh_P2_{p}.nc')
+            self.assertTrue(os.path.exists(fname))
+            with netCDF4.Dataset(fname, 'r') as nc:
+                total += int(nc.number_of_full_triangles)
+                self.assertEqual(int(nc.number_of_global_triangles), 4 * N0)
+        self.assertEqual(total, 4 * N0)
+
+    def test_basic_mesh_default_name(self):
+        """Basic_mesh with no name defaults to 'mesh' for partition files."""
+        from anuga import Basic_mesh
+        from anuga.abstract_2d_finite_volumes.mesh_factory import rectangular_cross
+
+        points, vertices, boundary = rectangular_cross(2, 2, len1=1.0, len2=1.0)
+        mesh = Basic_mesh(points, vertices, boundary)
+
+        name = anuga.create_parallel_mesh(mesh, numprocs=2,
+                                           partition_dir=self.tmpdir)
+        self.assertEqual(name, 'mesh')
+        for p in range(2):
+            fname = os.path.join(self.tmpdir, f'mesh_mesh_P2_{p}.nc')
+            self.assertTrue(os.path.exists(fname))
+
 
 if __name__ == '__main__':
     unittest.main()

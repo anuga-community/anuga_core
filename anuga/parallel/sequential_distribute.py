@@ -1092,17 +1092,18 @@ def sequential_mesh_refine(name, numprocs, levels=1, output_name=None,
 
 def create_parallel_mesh(domain, numprocs, refinement_levels=0, name=None,
                           partition_dir='.', verbose=False, parameters=None):
-    """Partition a domain and optionally refine the mesh offline.
+    """Partition a mesh and optionally refine it offline.
 
     Combines :func:`sequential_mesh_dump` and :func:`sequential_mesh_refine`
-    into a single call.  A coarse domain is partitioned on a single process,
+    into a single call.  A coarse mesh is partitioned on a single process,
     then each partition is uniformly refined *refinement_levels* times.  The
     resulting files are loaded at run-time with :func:`sequential_mesh_load`.
 
     Parameters
     ----------
-    domain : Domain
-        Sequential domain to partition.  Quantities are not stored.
+    domain : Domain or Basic_mesh
+        Sequential domain or lightweight :class:`Basic_mesh` to partition.
+        Quantities present on a Domain are not stored in the partition files.
     numprocs : int
         Number of partitions.
     refinement_levels : int
