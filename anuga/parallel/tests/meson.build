@@ -45,6 +45,7 @@ python_sources = [
   'run_parallel_load_balance.py',
   'test_load_balance_statistics.py',
   'test_sequential_mesh_io.py',
+  'test_mesh_refinement.py',
 ]
 
 py3.install_sources(
