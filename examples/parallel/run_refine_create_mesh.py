@@ -132,5 +132,5 @@ print(f'\nDone in {elapsed:.2f} s')
 print(f'Files  : {partition_dir}/{name}_mesh_P{numprocs}_<rank>.nc')
 print(f'\nTo evolve in parallel:')
 print(f'  mpiexec -np {numprocs} python -u run_smpl_rectangular_load_evolve.py '
-      f'-sn {sqrtN} -gl {args.ghost_layer} -pd {partition_dir}')
+      f'-n {name} -gl {args.ghost_layer} -pd {partition_dir}')
 print(f'\nTip: use -nw N to refine {numprocs} partitions across N worker processes.')

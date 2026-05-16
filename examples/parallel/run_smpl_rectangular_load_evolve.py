@@ -41,6 +41,8 @@ parser.add_argument('-ft', '--finaltime', type=float, default=0.015,
                     help='Final simulation time (s)')
 parser.add_argument('-pd', '--partition_dir', type=str, default='Partitions',
                     help='Directory containing partition files')
+parser.add_argument('-n',  '--name',       type=str, default=None,
+                    help='Partition file base name (default: derived from -sn/-gl/-np)')
 parser.add_argument('-fdt', '--fixed_dt',  type=float, default=0.0,
                     help='Fixed flux timestep (0 = adaptive CFL)')
 parser.add_argument('-v',  '--verbose',    action='store_true',
@@ -58,7 +60,10 @@ partition_dir = args.partition_dir
 verbose       = args.verbose
 fixed_flux_timestep = args.fixed_dt if args.fixed_dt != 0.0 else None
 
-domain_name = f'rect_smpl_gl{args.ghost_layer}_sn{sqrtN}_np{numprocs}'
+if args.name is not None:
+    domain_name = args.name
+else:
+    domain_name = f'rect_smpl_gl{args.ghost_layer}_sn{sqrtN}_np{numprocs}'
 
 if myid == 0:
     print(args)
