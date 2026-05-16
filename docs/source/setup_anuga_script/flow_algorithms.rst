@@ -164,8 +164,74 @@ All four algorithms run on both CPU and GPU (OpenMP target offloading).  See
 instructions on enabling GPU acceleration.
 
 
+Low-Froude correction
+---------------------
+
+The standard Kurganov–Noelle–Petrova (KNP) central-upwind flux scheme applies
+a numerical diffusion term proportional to the local wave speed.  In
+subcritical or nearly-still-water flows — estuaries, tidal flats, ponded
+floodplains — the velocity is much smaller than the wave speed
+(:math:`\mathrm{Fr} = |\mathbf{u}| / \sqrt{gh} \ll 1`) and this diffusion can damp slow-moving features
+more than the physical solution warrants.
+
+The ``low_froude`` setting reduces the momentum diffusion term by a factor
+``local_fr`` computed from the local Froude number at each edge:
+
+.. code-block:: python
+
+    domain.set_low_froude(0)   # default — no correction
+    domain.set_low_froude(1)   # aggressive clamping for strongly subcritical flows
+    domain.set_low_froude(2)   # smooth scaling, recommended for tidal / estuary
+
+.. list-table::
+   :header-rows: 1
+   :widths: 10 20 70
+
+   * - Value
+     - Name
+     - Effect on momentum diffusion scaling factor ``local_fr``
+   * - ``0``
+     - ``LOW_FROUDE_OFF``
+     - ``local_fr = 1.0`` — no correction; standard KNP diffusion
+   * - ``1``
+     - ``LOW_FROUDE_1``
+     - ``local_fr = sqrt(clamp(Fr², 0.001, 1.0))`` — clamps between ~0.032
+       and 1.0; aggressive reduction for strongly subcritical flows
+   * - ``2``
+     - ``LOW_FROUDE_2``
+     - ``local_fr = sqrt(clamp(Fr², 0.01, 1.0))`` with smooth floor —
+       stays at 0.1 for Fr < 0.01 then ramps smoothly to 1.0;
+       gentler and recommended for mixed-regime problems
+
+Only the **momentum** diffusion terms are scaled; the **mass** flux is never
+modified, so conservation is preserved exactly.
+
+**When to use it**
+
+* **0 (default):** suitable for most coastal, flood, and dam-break problems
+  where the flow regularly passes through or near critical (Fr ≈ 1).
+
+* **1:** strongly subcritical flows where Fr stays well below 0.1 throughout
+  (e.g., estuarine hydraulics, slow tidal inundation).  The aggressive clamping
+  provides maximum diffusion reduction but can introduce mild oscillations near
+  steep gradients.
+
+* **2:** the recommended non-zero choice for problems with mixed flow regimes
+  (some fast, some very slow reaches).  The smoother ramp avoids the step-change
+  behaviour of mode 1 near Fr ≈ 0.001.
+
+The setting is independent of the flow algorithm and can be combined with any
+of DE0, DE1, DE_ader2, or DE2:
+
+.. code-block:: python
+
+    domain.set_flow_algorithm('DE1')
+    domain.set_low_froude(2)
+
+
 Reference
 ---------
 
 .. automethod:: Domain.set_flow_algorithm
 .. automethod:: Domain.get_flow_algorithm
+.. automethod:: Domain.set_low_froude
