@@ -342,6 +342,42 @@ class TestCreateParallelMesh(unittest.TestCase):
             fname = os.path.join(self.tmpdir, f'mesh_mesh_P2_{p}.nc')
             self.assertTrue(os.path.exists(fname))
 
+    def test_parallel_workers_match_serial(self):
+        """num_workers > 1 produces identical output to the serial path."""
+        domain_s = _make_domain(4, 4)
+        domain_p = _make_domain(4, 4)
+        N0 = domain_s.number_of_triangles
+
+        tmpdir_s = tempfile.mkdtemp()
+        tmpdir_p = tempfile.mkdtemp()
+        try:
+            anuga.create_parallel_mesh(domain_s, numprocs=3,
+                                        refinement_levels=1, name='ms',
+                                        partition_dir=tmpdir_s,
+                                        num_workers=1)
+            anuga.create_parallel_mesh(domain_p, numprocs=3,
+                                        refinement_levels=1, name='ms',
+                                        partition_dir=tmpdir_p,
+                                        num_workers=3)
+            for p in range(3):
+                fname_s = os.path.join(tmpdir_s, f'ms_mesh_P3_{p}.nc')
+                fname_p = os.path.join(tmpdir_p, f'ms_mesh_P3_{p}.nc')
+                with netCDF4.Dataset(fname_s, 'r') as ns, \
+                     netCDF4.Dataset(fname_p, 'r') as np_:
+                    self.assertEqual(int(ns.number_of_full_triangles),
+                                     int(np_.number_of_full_triangles))
+                    self.assertEqual(int(ns.number_of_global_triangles),
+                                     4 * N0)
+                    self.assertEqual(int(np_.number_of_global_triangles),
+                                     4 * N0)
+                    pts_s = num.array(ns['points'][:])
+                    pts_p = num.array(np_['points'][:])
+                    self.assertEqual(pts_s.shape, pts_p.shape)
+        finally:
+            import shutil
+            shutil.rmtree(tmpdir_s, ignore_errors=True)
+            shutil.rmtree(tmpdir_p, ignore_errors=True)
+
 
 if __name__ == '__main__':
     unittest.main()

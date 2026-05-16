@@ -799,8 +799,181 @@ def _read_partition_nc(fname):
     )
 
 
+def _refine_partition_worker(args):
+    """Refine one partition file (Pass 2 of _refine_one_level).
+
+    Designed as a module-level function so it can be pickled for
+    ``concurrent.futures.ProcessPoolExecutor``.  Global edge data is
+    passed as sorted numpy arrays and looked up with binary search to
+    avoid pickling large Python dicts.
+
+    Parameters (packed into *args* tuple)
+    --------------------------------------
+    p : int
+        Partition rank.
+    numprocs : int
+    fname_in, fname_out : str
+    edge_keys : ndarray int64
+        Encoded global edge keys (ga * M_enc + gb), sorted.
+    mid_global_ids : ndarray int64
+        Global midpoint IDs in the same order as *edge_keys*.
+    full_rank_arr : ndarray int32
+        Owning rank for each edge (-1 if not owned by any full triangle).
+    M_enc : int
+        Encoding multiplier (max global node ID + 1).
+    M_global_new, N_global_new : int
+        Post-refinement global counts.
+    verbose : bool
+    """
+    import numpy as _np
+
+    (p, numprocs, fname_in, fname_out,
+     edge_keys, mid_global_ids, full_rank_arr,
+     M_enc, M_global_new, N_global_new, verbose) = args
+
+    data = _read_partition_nc(fname_in)
+
+    points     = data['points']
+    vertices   = data['vertices']
+    tri_l2g    = data['tri_l2g']
+    node_l2g   = data['node_l2g']
+    boundary   = data['boundary']
+    ghost_recv = data['ghost_recv_dict']
+    full_send  = data['full_send_dict']
+    N_full     = data['number_of_full_triangles']
+    M_full     = data['number_of_full_nodes']
+    glw        = data['ghost_layer_width']
+    geo_ref    = data['geo_ref']
+
+    N_local = len(vertices)
+    M_local = len(points)
+    M_ghost = M_local - M_full
+
+    def _enc(ga, gb):
+        return int(ga) * M_enc + int(gb)
+
+    def _mid_global(encoded):
+        idx = int(_np.searchsorted(edge_keys, encoded))
+        return int(mid_global_ids[idx])
+
+    def _owner(encoded):
+        idx = int(_np.searchsorted(edge_keys, encoded))
+        return int(full_rank_arr[idx])
+
+    # Collect all unique local edges and their encoded global keys.
+    local_edges_map = {}   # (la, lb) → encoded global key
+    for col_a, col_b in ((0, 1), (1, 2), (0, 2)):
+        la_arr = _np.minimum(vertices[:, col_a], vertices[:, col_b])
+        lb_arr = _np.maximum(vertices[:, col_a], vertices[:, col_b])
+        ga_arr = _np.minimum(node_l2g[la_arr], node_l2g[lb_arr])
+        gb_arr = _np.maximum(node_l2g[la_arr], node_l2g[lb_arr])
+        for k in range(N_local):
+            le = (int(la_arr[k]), int(lb_arr[k]))
+            if le not in local_edges_map:
+                local_edges_map[le] = _enc(ga_arr[k], gb_arr[k])
+
+    # Classify: full (owned by this rank) vs ghost midpoints.
+    full_mid_list  = []   # [(le, encoded_ge), ...]
+    ghost_mid_list = []
+    for le, enc_ge in local_edges_map.items():
+        if _owner(enc_ge) == p:
+            full_mid_list.append((le, enc_ge))
+        else:
+            ghost_mid_list.append((le, enc_ge))
+
+    full_mid_list.sort(key=lambda x: _mid_global(x[1]))
+    ghost_mid_list.sort(key=lambda x: _mid_global(x[1]))
+
+    n_full_mids  = len(full_mid_list)
+    n_ghost_mids = len(ghost_mid_list)
+    M_full_new   = M_full + n_full_mids
+    M_local_new  = M_local + n_full_mids + n_ghost_mids
+    N_full_new   = 4 * N_full
+
+    # Local midpoint IDs:
+    #   0..M_full-1                       original full nodes (unchanged)
+    #   M_full..M_full_new-1              new full midpoints
+    #   M_full_new..M_full_new+M_ghost-1  original ghost nodes (shifted)
+    #   M_full_new+M_ghost..              ghost-only midpoints
+    edge_to_local_mid = {}
+    for k, (le, _enc_ge) in enumerate(full_mid_list):
+        edge_to_local_mid[le] = M_full + k
+    for k, (le, _enc_ge) in enumerate(ghost_mid_list):
+        edge_to_local_mid[le] = M_full_new + M_ghost + k
+
+    new_points = _np.zeros((M_local_new, 2))
+    new_points[:M_full] = points[:M_full]
+    for k, ((la, lb), _enc_ge) in enumerate(full_mid_list):
+        new_points[M_full + k] = (points[la] + points[lb]) * 0.5
+    new_points[M_full_new: M_full_new + M_ghost] = points[M_full:]
+    for k, ((la, lb), _enc_ge) in enumerate(ghost_mid_list):
+        new_points[M_full_new + M_ghost + k] = (points[la] + points[lb]) * 0.5
+
+    new_node_l2g = _np.zeros(M_local_new, dtype='i4')
+    new_node_l2g[:M_full] = node_l2g[:M_full]
+    for k, (_le, enc_ge) in enumerate(full_mid_list):
+        new_node_l2g[M_full + k] = _mid_global(enc_ge)
+    new_node_l2g[M_full_new: M_full_new + M_ghost] = node_l2g[M_full:]
+    for k, (_le, enc_ge) in enumerate(ghost_mid_list):
+        new_node_l2g[M_full_new + M_ghost + k] = _mid_global(enc_ge)
+
+    new_vertices = _np.zeros((4 * N_local, 3), dtype='i4')
+    for t in range(N_local):
+        v0 = int(vertices[t, 0])
+        v1 = int(vertices[t, 1])
+        v2 = int(vertices[t, 2])
+        rv0 = v0 if v0 < M_full else v0 + n_full_mids
+        rv1 = v1 if v1 < M_full else v1 + n_full_mids
+        rv2 = v2 if v2 < M_full else v2 + n_full_mids
+        m01 = edge_to_local_mid[(min(v0, v1), max(v0, v1))]
+        m12 = edge_to_local_mid[(min(v1, v2), max(v1, v2))]
+        m02 = edge_to_local_mid[(min(v0, v2), max(v0, v2))]
+        new_vertices[4*t + 0] = (rv0, m01, m02)
+        new_vertices[4*t + 1] = (m01, rv1, m12)
+        new_vertices[4*t + 2] = (m02, m12, rv2)
+        new_vertices[4*t + 3] = (m01, m12, m02)
+
+    new_tri_l2g = (
+        4 * tri_l2g[:, None] + _np.arange(4, dtype='i4')[None, :]
+    ).flatten().astype('i4')
+
+    new_boundary = {}
+    for (tri_loc, edge_j), tag in boundary.items():
+        for child_idx, child_edge in _EDGE_CHILD_INHERITANCE[edge_j]:
+            new_boundary[(4 * tri_loc + child_idx, child_edge)] = tag
+
+    def _expand_comm(d):
+        out = {}
+        for rank_r, (la_arr, ga_arr) in d.items():
+            la = _np.asarray(la_arr, dtype='i4')
+            ga = _np.asarray(ga_arr, dtype='i4')
+            c  = _np.arange(4, dtype='i4')
+            out[rank_r] = [
+                (4 * la[:, None] + c[None, :]).flatten(),
+                (4 * ga[:, None] + c[None, :]).flatten(),
+            ]
+        return out
+
+    new_ghost_recv = _expand_comm(ghost_recv)
+    new_full_send  = _expand_comm(full_send)
+
+    _write_mesh_partition(
+        fname_out, p, numprocs,
+        new_points, new_vertices, new_boundary,
+        new_ghost_recv, new_full_send,
+        new_tri_l2g, new_node_l2g,
+        N_full_new, M_full_new,
+        N_global_new, M_global_new,
+        glw, geo_ref)
+
+    if verbose:
+        print(f'_refine_one_level: wrote {fname_out} '
+              f'({N_full_new} full tri, {M_full_new} full nodes)')
+
+
 def _refine_one_level(input_name, numprocs, output_name,
-                       input_dir, output_dir, verbose=False):
+                       input_dir, output_dir, verbose=False,
+                       num_workers=1):
     """Refine all partition files by one level (each triangle → 4 children).
 
     Two-pass algorithm:
@@ -810,7 +983,8 @@ def _refine_one_level(input_name, numprocs, output_name,
        partition that has the edge in one of its full triangles.
 
     2. For each partition, compute the refined mesh arrays and write a new
-       partition file.
+       partition file.  When *num_workers* > 1 the per-partition work runs
+       in parallel via ``concurrent.futures.ProcessPoolExecutor``.
 
     Parameters
     ----------
@@ -819,6 +993,9 @@ def _refine_one_level(input_name, numprocs, output_name,
     numprocs : int
     input_dir, output_dir : str or path-like
     verbose : bool
+    num_workers : int
+        Number of worker processes for Pass 2.  1 (default) uses the
+        calling process; N > 1 spawns up to N workers in parallel.
     """
     import os
 
@@ -847,14 +1024,12 @@ def _refine_one_level(input_name, numprocs, output_name,
         node_l2g_p = data['node_l2g']   # (M_local,)  global IDs
         N_full_p   = data['number_of_full_triangles']
 
-        # Vectorised: compute global IDs for every triangle vertex.
         vg = node_l2g_p[vertices_p]      # (N_local, 3) global IDs
 
         for col_a, col_b in ((0, 1), (1, 2), (0, 2)):
             ea = num.minimum(vg[:, col_a], vg[:, col_b])
             eb = num.maximum(vg[:, col_a], vg[:, col_b])
-            all_global_edges.update(
-                zip(ea.tolist(), eb.tolist()))
+            all_global_edges.update(zip(ea.tolist(), eb.tolist()))
 
         # Full-triangle edges → candidate ownership for rank p.
         vg_f = vg[:N_full_p]
@@ -866,9 +1041,7 @@ def _refine_one_level(input_name, numprocs, output_name,
                 if ge not in edge_full_rank or edge_full_rank[ge] > p:
                     edge_full_rank[ge] = p
 
-    sorted_edges       = sorted(all_global_edges)
-    edge_to_mid_global = {ge: M_global_in + i
-                          for i, ge in enumerate(sorted_edges)}
+    sorted_edges = sorted(all_global_edges)
     M_global_new = M_global_in + len(sorted_edges)
     N_global_new = 4 * N_global_in
 
@@ -876,155 +1049,51 @@ def _refine_one_level(input_name, numprocs, output_name,
         print(f'_refine_one_level: global tri {N_global_in} → {N_global_new}, '
               f'nodes {M_global_in} → {M_global_new}')
 
+    # Build sorted numpy arrays for efficient pickling + binary-search lookup.
+    M_enc = int(M_global_in) + 1   # encoding multiplier (> any node ID)
+    if sorted_edges:
+        _se = num.array(sorted_edges, dtype='i8')
+        edge_keys      = _se[:, 0] * M_enc + _se[:, 1]   # sorted by construction
+        mid_global_ids = num.arange(len(sorted_edges), dtype='i8') + M_global_in
+        full_rank_arr  = num.full(len(sorted_edges), -1, dtype='i4')
+        if edge_full_rank:
+            _fr_enc = num.array(
+                [ga * M_enc + gb for (ga, gb) in edge_full_rank.keys()],
+                dtype='i8')
+            _fr_rk  = num.array(list(edge_full_rank.values()), dtype='i4')
+            _idx    = num.searchsorted(edge_keys, _fr_enc)
+            full_rank_arr[_idx] = _fr_rk
+    else:
+        edge_keys      = num.empty(0, dtype='i8')
+        mid_global_ids = num.empty(0, dtype='i8')
+        full_rank_arr  = num.empty(0, dtype='i4')
+
     # ------------------------------------------------------------------
-    # Pass 2: refine each partition.
+    # Pass 2: refine each partition (embarrassingly parallel).
     # ------------------------------------------------------------------
-    for p in range(numprocs):
-        fname_in = os.path.join(input_dir,
-                                f'{input_name}_mesh_P{numprocs}_{p}.nc')
-        if verbose:
-            print(f'_refine_one_level: pass 2 refining rank {p}')
-        data = _read_partition_nc(fname_in)
+    worker_args = [
+        (p, numprocs,
+         os.path.join(input_dir,  f'{input_name}_mesh_P{numprocs}_{p}.nc'),
+         os.path.join(output_dir, f'{output_name}_mesh_P{numprocs}_{p}.nc'),
+         edge_keys, mid_global_ids, full_rank_arr,
+         M_enc, M_global_new, N_global_new, verbose)
+        for p in range(numprocs)
+    ]
 
-        points     = data['points']
-        vertices   = data['vertices']
-        tri_l2g    = data['tri_l2g']
-        node_l2g   = data['node_l2g']
-        boundary   = data['boundary']
-        ghost_recv = data['ghost_recv_dict']
-        full_send  = data['full_send_dict']
-        N_full     = data['number_of_full_triangles']
-        M_full     = data['number_of_full_nodes']
-        glw        = data['ghost_layer_width']
-        geo_ref    = data['geo_ref']
-
-        N_local = len(vertices)
-        M_local = len(points)
-        M_ghost = M_local - M_full
-
-        # Collect all unique local edges and their global counterparts.
-        local_edges_map = {}   # (la, lb) → (ga, gb)
-        for col_a, col_b in ((0, 1), (1, 2), (0, 2)):
-            la_arr = num.minimum(vertices[:, col_a], vertices[:, col_b])
-            lb_arr = num.maximum(vertices[:, col_a], vertices[:, col_b])
-            ga_arr = num.minimum(node_l2g[la_arr], node_l2g[lb_arr])
-            gb_arr = num.maximum(node_l2g[la_arr], node_l2g[lb_arr])
-            for k in range(N_local):
-                le = (int(la_arr[k]), int(lb_arr[k]))
-                if le not in local_edges_map:
-                    local_edges_map[le] = (int(ga_arr[k]), int(gb_arr[k]))
-
-        # Classify: full (owned by this rank p) vs ghost.
-        full_mid_list  = []
-        ghost_mid_list = []
-        for le, ge in local_edges_map.items():
-            if edge_full_rank.get(ge, -1) == p:
-                full_mid_list.append((le, ge))
-            else:
-                ghost_mid_list.append((le, ge))
-
-        full_mid_list.sort(key=lambda x: edge_to_mid_global[x[1]])
-        ghost_mid_list.sort(key=lambda x: edge_to_mid_global[x[1]])
-
-        n_full_mids  = len(full_mid_list)
-        n_ghost_mids = len(ghost_mid_list)
-        M_full_new   = M_full + n_full_mids
-        M_local_new  = M_local + n_full_mids + n_ghost_mids
-        N_full_new   = 4 * N_full
-
-        # Local midpoint IDs:
-        #   0..M_full-1           original full nodes (unchanged)
-        #   M_full..M_full_new-1  new full midpoints
-        #   M_full_new..M_full_new+M_ghost-1  original ghost nodes (shifted)
-        #   M_full_new+M_ghost..  ghost-only midpoints
-        edge_to_local_mid = {}
-        for k, (le, _ge) in enumerate(full_mid_list):
-            edge_to_local_mid[le] = M_full + k
-        for k, (le, _ge) in enumerate(ghost_mid_list):
-            edge_to_local_mid[le] = M_full_new + M_ghost + k
-
-        # New points array (coordinates).
-        new_points = num.zeros((M_local_new, 2))
-        new_points[:M_full] = points[:M_full]
-        for k, ((la, lb), _ge) in enumerate(full_mid_list):
-            new_points[M_full + k] = (points[la] + points[lb]) * 0.5
-        new_points[M_full_new: M_full_new + M_ghost] = points[M_full:]
-        for k, ((la, lb), _ge) in enumerate(ghost_mid_list):
-            new_points[M_full_new + M_ghost + k] = \
-                (points[la] + points[lb]) * 0.5
-
-        # New node_l2g.
-        new_node_l2g = num.zeros(M_local_new, dtype='i4')
-        new_node_l2g[:M_full] = node_l2g[:M_full]
-        for k, (_le, ge) in enumerate(full_mid_list):
-            new_node_l2g[M_full + k] = edge_to_mid_global[ge]
-        new_node_l2g[M_full_new: M_full_new + M_ghost] = node_l2g[M_full:]
-        for k, (_le, ge) in enumerate(ghost_mid_list):
-            new_node_l2g[M_full_new + M_ghost + k] = edge_to_mid_global[ge]
-
-        # New vertices (4 × N_local triangles).
-        new_vertices = num.zeros((4 * N_local, 3), dtype='i4')
-        for t in range(N_local):
-            v0 = int(vertices[t, 0])
-            v1 = int(vertices[t, 1])
-            v2 = int(vertices[t, 2])
-            # Remap original node IDs: ghost nodes shift by n_full_mids.
-            rv0 = v0 if v0 < M_full else v0 + n_full_mids
-            rv1 = v1 if v1 < M_full else v1 + n_full_mids
-            rv2 = v2 if v2 < M_full else v2 + n_full_mids
-            m01 = edge_to_local_mid[(min(v0, v1), max(v0, v1))]
-            m12 = edge_to_local_mid[(min(v1, v2), max(v1, v2))]
-            m02 = edge_to_local_mid[(min(v0, v2), max(v0, v2))]
-            new_vertices[4*t + 0] = (rv0, m01, m02)
-            new_vertices[4*t + 1] = (m01, rv1, m12)
-            new_vertices[4*t + 2] = (m02, m12, rv2)
-            new_vertices[4*t + 3] = (m01, m12, m02)
-
-        # New tri_l2g.
-        new_tri_l2g = (
-            4 * tri_l2g[:, None] + num.arange(4, dtype='i4')[None, :]
-        ).flatten().astype('i4')
-
-        # Propagate boundary tags: each parent boundary edge → two children.
-        new_boundary = {}
-        for (tri_loc, edge_j), tag in boundary.items():
-            for child_idx, child_edge in _EDGE_CHILD_INHERITANCE[edge_j]:
-                new_boundary[(4 * tri_loc + child_idx, child_edge)] = tag
-
-        # Expand communication dicts: each ghost/send entry → 4 children.
-        def _expand_comm(d):
-            out = {}
-            for rank_r, (la_arr, ga_arr) in d.items():
-                la = num.asarray(la_arr, dtype='i4')
-                ga = num.asarray(ga_arr, dtype='i4')
-                c  = num.arange(4, dtype='i4')
-                out[rank_r] = [
-                    (4 * la[:, None] + c[None, :]).flatten(),
-                    (4 * ga[:, None] + c[None, :]).flatten(),
-                ]
-            return out
-
-        new_ghost_recv = _expand_comm(ghost_recv)
-        new_full_send  = _expand_comm(full_send)
-
-        fname_out = os.path.join(output_dir,
-                                 f'{output_name}_mesh_P{numprocs}_{p}.nc')
-        _write_mesh_partition(
-            fname_out, p, numprocs,
-            new_points, new_vertices, new_boundary,
-            new_ghost_recv, new_full_send,
-            new_tri_l2g, new_node_l2g,
-            N_full_new, M_full_new,
-            N_global_new, M_global_new,
-            glw, geo_ref)
-
-        if verbose:
-            print(f'_refine_one_level: wrote {fname_out} '
-                  f'({N_full_new} full tri, {M_full_new} full nodes)')
+    if num_workers == 1:
+        for args in worker_args:
+            _refine_partition_worker(args)
+    else:
+        import concurrent.futures
+        actual_workers = min(num_workers, numprocs)
+        with concurrent.futures.ProcessPoolExecutor(
+                max_workers=actual_workers) as executor:
+            list(executor.map(_refine_partition_worker, worker_args))
 
 
 def sequential_mesh_refine(name, numprocs, levels=1, output_name=None,
-                            partition_dir='.', output_dir=None, verbose=False):
+                            partition_dir='.', output_dir=None, verbose=False,
+                            num_workers=1):
     """Uniformly refine pre-computed partition files by one or more levels.
 
     Each refinement level replaces every triangle with four children using
@@ -1049,6 +1118,10 @@ def sequential_mesh_refine(name, numprocs, levels=1, output_name=None,
     output_dir : str, optional
         Directory for output files.  Defaults to *partition_dir*.
     verbose : bool
+    num_workers : int
+        Number of worker processes for the per-partition refinement step.
+        1 (default) is single-process; N > 1 runs up to N partitions in
+        parallel via ``concurrent.futures.ProcessPoolExecutor``.
     """
     import os
     import shutil
@@ -1065,7 +1138,8 @@ def sequential_mesh_refine(name, numprocs, levels=1, output_name=None,
 
     if levels == 1:
         _refine_one_level(name, numprocs, output_name,
-                          partition_dir, output_dir, verbose=verbose)
+                          partition_dir, output_dir, verbose=verbose,
+                          num_workers=num_workers)
         return
 
     # Multi-level: pipe each level's output into the next via temp dirs.
@@ -1082,7 +1156,8 @@ def sequential_mesh_refine(name, numprocs, levels=1, output_name=None,
             if verbose:
                 print(f'sequential_mesh_refine: level {level + 1} / {levels}')
             _refine_one_level(current_name, numprocs, out_name,
-                              current_dir, out_dir, verbose=verbose)
+                              current_dir, out_dir, verbose=verbose,
+                              num_workers=num_workers)
             current_name = out_name
             current_dir  = out_dir
     finally:
@@ -1091,7 +1166,8 @@ def sequential_mesh_refine(name, numprocs, levels=1, output_name=None,
 
 
 def create_parallel_mesh(domain, numprocs, refinement_levels=0, name=None,
-                          partition_dir='.', verbose=False, parameters=None):
+                          partition_dir='.', verbose=False, parameters=None,
+                          num_workers=1):
     """Partition a mesh and optionally refine it offline.
 
     Combines :func:`sequential_mesh_dump` and :func:`sequential_mesh_refine`
@@ -1117,6 +1193,10 @@ def create_parallel_mesh(domain, numprocs, refinement_levels=0, name=None,
     verbose : bool
     parameters : dict, optional
         Forwarded to :func:`sequential_mesh_dump`.
+    num_workers : int
+        Number of worker processes for the per-partition refinement step.
+        1 (default) is single-process; N > 1 uses
+        ``concurrent.futures.ProcessPoolExecutor``.
 
     Returns
     -------
@@ -1146,5 +1226,6 @@ def create_parallel_mesh(domain, numprocs, refinement_levels=0, name=None,
                                     output_name=name,
                                     partition_dir=tmpdir,
                                     output_dir=partition_dir,
-                                    verbose=verbose)
+                                    verbose=verbose,
+                                    num_workers=num_workers)
     return name

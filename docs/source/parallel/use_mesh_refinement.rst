@@ -98,15 +98,25 @@ The recommended parallel workflow when the *refined* mesh would be very large:
     coarse = rectangular_cross_domain(100, 100, len1=10.0, len2=10.0)
     coarse.set_name('flood_mesh')
 
-    # Partition into 32 ranks and refine twice (4² = 16× more triangles)
+    # Partition into 32 ranks and refine twice (4² = 16× more triangles).
+    # num_workers=4 refines 4 partition files concurrently (Pass 2 only).
     anuga.create_parallel_mesh(
         coarse,
         numprocs=32,
         refinement_levels=2,
         partition_dir='Partitions',
         verbose=True,
+        num_workers=4,
     )
     # Writes: Partitions/flood_mesh_mesh_P32_<rank>.nc  (32 files)
+
+.. note::
+
+   ``num_workers`` parallelises **Pass 2** (the per-partition refinement),
+   which is embarrassingly parallel.  Pass 1 (global edge collection) is
+   always single-process and fast.  Set ``num_workers`` to the number of
+   CPU cores available on the preprocessing machine; the wall time for the
+   refinement step scales roughly as ``numprocs / num_workers``.
 
 The load-and-evolve step is identical to the non-refined workflow:
 
@@ -173,12 +183,14 @@ or a previous call to :func:`sequential_mesh_refine`),
     anuga.sequential_mesh_dump(coarse, numprocs=32, partition_dir='Coarse')
 
     # Refine one level — reads from 'Coarse/', writes to 'Fine/'
+    # Use num_workers to refine partitions concurrently.
     anuga.sequential_mesh_refine(
         name='flood_mesh',
         numprocs=32,
         levels=1,
         partition_dir='Coarse',
         output_dir='Fine',
+        num_workers=4,
     )
 
     # Or refine further in a second pass
@@ -188,6 +200,7 @@ or a previous call to :func:`sequential_mesh_refine`),
         levels=1,
         partition_dir='Fine',
         output_dir='Finest',
+        num_workers=4,
     )
 
 This separation is useful when you want to keep coarse partition files for

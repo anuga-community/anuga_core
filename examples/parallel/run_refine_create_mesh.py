@@ -60,6 +60,9 @@ parser.add_argument('-ps',  '--partition_scheme', type=str, default='metis',
                     help='Partitioning algorithm')
 parser.add_argument('-pd',  '--partition_dir', type=str, default='Partitions',
                     help='Output directory for partition files')
+parser.add_argument('-nw',  '--num_workers',  type=int, default=1,
+                    help='Worker processes for parallel partition refinement '
+                         '(Pass 2 only; default 1 = single-process)')
 parser.add_argument('-v',   '--verbose',     action='store_true',
                     help='Verbose output')
 args = parser.parse_args()
@@ -68,6 +71,7 @@ sqrtN            = args.sqrtN
 numprocs         = args.numprocs
 refinement_levels = args.refine_levels
 partition_dir    = args.partition_dir
+num_workers      = args.num_workers
 verbose          = args.verbose
 
 coarse_tri = 4 * sqrtN ** 2
@@ -79,6 +83,7 @@ print(f'Fine mesh         : {fine_tri:,} triangles')
 print(f'Partitions        : {numprocs} ranks')
 print(f'Partition scheme  : {args.partition_scheme}')
 print(f'Output directory  : {partition_dir}')
+print(f'Refine workers    : {num_workers}')
 sys.stdout.flush()
 
 # ---------------------------------------------------------------------------
@@ -118,6 +123,7 @@ anuga.create_parallel_mesh(
     partition_dir=partition_dir,
     verbose=verbose,
     parameters=dist_params,
+    num_workers=num_workers,
 )
 
 elapsed = time.time() - t1
@@ -127,3 +133,4 @@ print(f'Files  : {partition_dir}/{name}_mesh_P{numprocs}_<rank>.nc')
 print(f'\nTo evolve in parallel:')
 print(f'  mpiexec -np {numprocs} python -u run_smpl_rectangular_load_evolve.py '
       f'-sn {sqrtN} -gl {args.ghost_layer} -pd {partition_dir}')
+print(f'\nTip: use -nw N to refine {numprocs} partitions across N worker processes.')
