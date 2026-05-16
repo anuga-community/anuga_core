@@ -138,6 +138,9 @@ from anuga.parallel.parallel_api import sequential_distribute_dump
 from anuga.parallel.parallel_api import sequential_distribute_load
 from anuga.parallel.parallel_api import sequential_mesh_dump
 from anuga.parallel.parallel_api import sequential_mesh_load
+from anuga.parallel.parallel_api import uniform_refine_domain
+from anuga.parallel.parallel_api import sequential_mesh_refine
+from anuga.parallel.parallel_api import create_parallel_mesh
 
 
 # -----------------------------
@@ -496,6 +499,9 @@ __all__ = [
     'sequential_distribute_load',
     'sequential_mesh_dump',
     'sequential_mesh_load',
+    'uniform_refine_domain',
+    'sequential_mesh_refine',
+    'create_parallel_mesh',
     # Model tools / polygon utilities
     'Create_culvert_bridge_Operator',
     'get_polygon_dictionary',
