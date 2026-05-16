@@ -1085,9 +1085,17 @@ def _refine_one_level(input_name, numprocs, output_name,
             _refine_partition_worker(args)
     else:
         import concurrent.futures
+        import multiprocessing
         actual_workers = min(num_workers, numprocs)
+        # mpi4py changes the default start method to 'forkserver', which
+        # re-executes __main__ in each worker and deadlocks when the caller
+        # is a top-level script.  Use 'fork' explicitly on POSIX (safe here
+        # because workers do no MPI); fall back to None (system default) on
+        # Windows where fork is unavailable.
+        mp_ctx = (multiprocessing.get_context('fork')
+                  if hasattr(os, 'fork') else None)
         with concurrent.futures.ProcessPoolExecutor(
-                max_workers=actual_workers) as executor:
+                max_workers=actual_workers, mp_context=mp_ctx) as executor:
             list(executor.map(_refine_partition_worker, worker_args))
 
 
