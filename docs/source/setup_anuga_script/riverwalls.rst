@@ -13,7 +13,7 @@ higher than the surrounding bed without creating mesh artefacts, and its
 crest height can be changed *during* a simulation.
 
 Riverwalls are only available for discontinuous-elevation flow algorithms
-(``'DE0'`` and ``'DE1'``).
+(``'DE0'`` ``'DE1'`` ``'DE2'`` ``'DE_ader2'``).
 
 .. contents:: Contents
    :local:
@@ -88,17 +88,13 @@ A minimal two-step workflow:
                    [40.0, 20.0, 0.8]],
     }
 
-    # Step 1 — mesh with breaklines aligned to the walls
-    anuga.create_pmesh_from_regions(
+    # Step 1 — domain/mesh with breaklines aligned to the walls
+    anuga.create_domain_from_regions(
         bounding_polygon,
         boundary_tags=boundary_tags,
         maximum_triangle_area=4.0,
         breaklines=list(river_walls.values()),
-        filename='mymodel.msh',
     )
-
-    domain = anuga.create_domain_from_file('mymodel.msh')
-    domain.set_flow_algorithm('DE0')   # required for riverwalls
 
     domain.set_quantity('elevation', 0.0, location='centroids')
     domain.set_quantity('friction',  0.03, location='centroids')
@@ -254,7 +250,7 @@ riverwall edges that belong to its subdomain.
 
     domain = anuga.distribute(domain)
 
-    domain.riverwallData.create_riverwalls(river_walls, verbose=False)
+    domain.create_riverwalls(river_walls, verbose=False)
 
     for t in domain.evolve(yieldstep=5.0, finaltime=60.0):
         if anuga.myid == 0:
