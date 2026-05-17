@@ -34,6 +34,12 @@ It is now developed and maintained by a community of volunteers.
    troubleshooting
    genindex
 
+.. toctree::
+   :maxdepth: 2
+   :caption: Appendices:
+
+   parallel/advanced
+
 
    
 

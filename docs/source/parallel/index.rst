@@ -4,12 +4,22 @@
 Parallelisation
 ===============
 
-ANUGA uses two main approaches to parallelisation: MPI-based domain
-decomposition (multiple processes, distributed memory) and OpenMP threading
-(multiple threads, shared memory).  The two approaches can be combined.
+ANUGA supports two parallel approaches that require minimal changes to a
+standard sequential script:
 
-An experimental OpenMP target-offloading GPU backend is included in the
-``develop`` branch — see :ref:`use_gpu_offloading` for full details.
+- **OpenMP** — multi-threaded shared-memory parallelism; enable by setting
+  the thread count before creating the domain.
+- **MPI (distribute)** — multi-process distributed-memory parallelism;
+  create the domain on rank 0 then call :func:`distribute` to partition it
+  across ranks.
+
+The two approaches can be combined.
+
+.. toctree::
+   :maxdepth: 1
+
+   use_parallel_openmp
+   use_parallel_mpi
 
 For long parallel runs, see :ref:`checkpointing` for how to save and restart
 simulations from periodic checkpoints.
@@ -17,26 +27,13 @@ simulations from periodic checkpoints.
 To diagnose load imbalance caused by wet/dry triangle distributions, see
 :ref:`load_balance_statistics`.
 
-.. only:: html
-
-.. toctree::
-   :maxdepth: 1
-
-   use_parallel_openmp
-   use_gpu_offloading
-   use_parallel_mpi
-   use_distribute_basic_mesh
-   use_sequential_domain_io
-   use_sequential_mesh_io
-   use_mesh_refinement
-
-
-
 .. seealso::
+
+   :ref:`advanced_parallel`
+      GPU offloading, mesh-first distribution, offline partitioning, and
+      uniform mesh refinement — for large HPC production runs.
 
    `ANUGA User Manual — Chapter 12: Parallel Simulation
    <https://github.com/anuga-community/anuga_user_manual>`_
    covers the MPI domain decomposition in depth, including ghost cell
    communication, scalability benchmarks, and HPC cluster setup.
-
-.. only:: html
