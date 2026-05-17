@@ -13,11 +13,11 @@ is not sufficient (e.g. meshes too large to fit in memory on a single node).
 .. toctree::
    :maxdepth: 1
 
-   use_gpu_offloading
    use_distribute_basic_mesh
    use_sequential_domain_io
    use_sequential_mesh_io
    use_mesh_refinement
+   use_gpu_offloading
 
 .. seealso::
 
