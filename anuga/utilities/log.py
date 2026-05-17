@@ -155,6 +155,7 @@ def set_logfile(path,
     """Enable logging to *path*, tee-ing all print() output as well.
 
     After this call:
+
     - sys.stdout is replaced with a TeeStream so every print() goes to
       both the terminal and *path*.
     - log.info() writes to both terminal and file.

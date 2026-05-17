@@ -486,6 +486,7 @@ def sequential_mesh_dump(domain, numprocs, partition_dir='.', name=None,
         Base name for output files.  Defaults to ``domain.get_name()`` when
         available, otherwise ``'mesh'``.
     verbose : bool
+        Print progress messages if True.
     parameters : dict, optional
         Forwarded to :func:`~anuga.parallel.distribute_mesh.partition_mesh`
         and :func:`~anuga.parallel.distribute_mesh.build_submesh`.
@@ -573,6 +574,7 @@ def sequential_mesh_load(name, partition_dir='.', verbose=False):
     partition_dir : str or path-like
         Directory containing the partition files.
     verbose : bool
+        Print progress messages if True.
 
     Returns
     -------
@@ -693,6 +695,7 @@ def uniform_refine_domain(domain, verbose=False):
     domain : Domain
         Sequential domain to refine.
     verbose : bool
+        Print progress messages if True.
 
     Returns
     -------
@@ -1126,6 +1129,7 @@ def sequential_mesh_refine(name, numprocs, levels=1, output_name=None,
     output_dir : str, optional
         Directory for output files.  Defaults to *partition_dir*.
     verbose : bool
+        Print progress messages if True.
     num_workers : int
         Number of worker processes for the per-partition refinement step.
         1 (default) is single-process; N > 1 runs up to N partitions in
@@ -1199,6 +1203,7 @@ def create_parallel_mesh(domain, numprocs, refinement_levels=0, name=None,
     partition_dir : str
         Output directory for the final partition files.
     verbose : bool
+        Print progress messages if True.
     parameters : dict, optional
         Forwarded to :func:`sequential_mesh_dump`.
     num_workers : int

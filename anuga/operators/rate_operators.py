@@ -49,6 +49,7 @@ class Rate_operator(Operator):
         Parameters
         ----------
         domain : anuga.Domain
+            The simulation domain.
         rate : scalar, callable, Quantity, or ndarray
             Rate in m/s (after multiplication by *factor*).  May be a scalar,
             a function of ``t``, ``(x, y)``, or ``(x, y, t)``, a Quantity,

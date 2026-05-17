@@ -1,3 +1,5 @@
+.. _checkpointing:
+
 .. currentmodule:: anuga
 
 Checkpointing

@@ -82,7 +82,7 @@
 
       ~Quantity.counter
       ~Quantity.vertex_values
-      ~Quantity._qty_type
+
 
 
 
