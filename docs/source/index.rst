@@ -23,13 +23,11 @@ It is now developed and maintained by a community of volunteers.
    :caption: Contents:
 
    background
-   mathematical_background
    installation/index
    setup_anuga_script/index
    examples/index
    visualisation/index
    parallel/index
-   toml_scenario/index
    reference/index
    troubleshooting
    genindex
@@ -38,6 +36,11 @@ It is now developed and maintained by a community of volunteers.
    :maxdepth: 2
    :caption: Appendices:
 
+   mathematical_background
+   appendices/advanced_script
+   appendices/advanced_visualisation
+   installation/install_anuga_developers
+   toml_scenario/index
    parallel/advanced
 
 

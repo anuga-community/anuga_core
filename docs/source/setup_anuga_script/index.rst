@@ -12,16 +12,17 @@ Script Structure
    :maxdepth: 1
 
    domain
-   flow_algorithms
    coordinate_reference
    initial_conditions
    boundaries
    operators
    rainfall
-   riverwalls
    evolve
-   checkpointing
-   logging
+
+.. seealso::
+
+   :ref:`advanced_script`
+      Flow algorithm selection, riverwalls, checkpointing, and logging.
    
 .. only:: html
 
