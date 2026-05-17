@@ -17,12 +17,13 @@ Script Structure
    boundaries
    operators
    rainfall
+   riverwalls
    evolve
 
 .. seealso::
 
    :ref:`advanced_script`
-      Flow algorithm selection, riverwalls, checkpointing, and logging.
+      Flow algorithm selection, checkpointing, and logging.
    
 .. only:: html
 

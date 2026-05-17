@@ -10,6 +10,5 @@ New users can ignore them until needed.
    :maxdepth: 1
 
    ../setup_anuga_script/flow_algorithms
-   ../setup_anuga_script/riverwalls
    ../setup_anuga_script/checkpointing
    ../setup_anuga_script/logging
