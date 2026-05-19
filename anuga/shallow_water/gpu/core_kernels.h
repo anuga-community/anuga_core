@@ -62,9 +62,13 @@ double core_compute_fluxes_central_substep(struct domain *D,
 // PERFORMANCE OPTIMISATION: Fused extrapolation + flux kernel
 // ============================================================================
 // Combines core_extrapolate_second_order_edge and core_compute_fluxes_central
-// into a single GPU kernel.  Edge values are computed in registers and fed
-// directly into the Riemann solver, eliminating the 6x N*3 double round-trip
-// through device HBM that the two-kernel approach requires.
+// into a single function call, reducing kernel-launch overhead and improving
+// L2-cache reuse.
+//
+// NOTE: true register-level fusion is NOT possible in standard OpenMP — a
+// global barrier is required between extrapolation and flux because each cell
+// depends on its NEIGHBOUR's edge values written in Pass 1 by other threads.
+// The benefit is L2-cache hotness, not register bypass. (PR review comment #3)
 //
 // When D->active_cell_ids != NULL (use_active_cells enabled), only the
 // n_active_cells elements listed there are processed.

@@ -548,7 +548,20 @@ double core_protect(struct domain *D) {
 
     double mass_error = 0.0;
 
-    // Active cell support: iterate only over wet + wetting-front cells when enabled.
+    // height_cv MUST be refreshed for ALL cells regardless of active-cell list.
+    // Reason: the active-cell list is built by scanning height_cv, so stale
+    // height_cv for cells outside the current active list corrupts the next
+    // list rebuild and the hfactor wet-dry limiter in extrapolation.
+    // core_extrapolate_impl(init_centroids=0) relies on height_cv being current
+    // for every cell, not just active ones. (PR review comment #1)
+
+    // Pass 1: full-domain height_cv refresh
+    OMP_PARALLEL_LOOP
+    for (anuga_int k = 0; k < n; k++) {
+        height_cv[k] = fmax(stage_cv[k] - bed_cv[k], 0.0);
+    }
+
+    // Pass 2: momentum zeroing + mass-error (active-cell aware)
     int    n_active_prot = D->n_active_cells;
     int  * active_ids_prot = D->active_cell_ids;
     int    use_active_prot = (active_ids_prot != NULL) && (n_active_prot > 0);
@@ -557,22 +570,19 @@ double core_protect(struct domain *D) {
     OMP_PARALLEL_LOOP_REDUCTION_PLUS(mass_error)
     for (int ai = 0; ai < n_iter_prot; ai++) {
         anuga_int k = use_active_prot ? (anuga_int)active_ids_prot[ai] : (anuga_int)ai;
-        double h = stage_cv[k] - bed_cv[k];
+        double h = height_cv[k];  // already refreshed in Pass 1
 
         if (h < minimum_allowed_height) {
-            // Very shallow - zero momentum to prevent instability
             xmom_cv[k] = 0.0;
             ymom_cv[k] = 0.0;
         }
 
-        if (h < 0.0) {
-            // Negative depth - track mass error and set stage to bed
-            mass_error += (-h) * areas[k];
+        if (stage_cv[k] < bed_cv[k]) {
+            // Negative depth — clamp stage and track mass error
+            mass_error += (bed_cv[k] - stage_cv[k]) * areas[k];
             stage_cv[k] = bed_cv[k];
-            h = 0.0;
+            height_cv[k] = 0.0;
         }
-
-        height_cv[k] = fmax(h, 0.0);
     }
 
     return mass_error;

@@ -419,7 +419,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
     // BUG FIX: assert timestep_fluxcalls > 0 before use; the old default=3 fallback
     // over-mapped a size-2 RK2 array when called before get_domain_pointers ran.
     anuga_int timestep_fluxcalls = GD->D.timestep_fluxcalls;
-    if (timestep_fluxcalls <= 0) timestep_fluxcalls = 2; // safe minimum (RK2)
+    if (timestep_fluxcalls <= 0 || timestep_fluxcalls > 3) timestep_fluxcalls = 3; // safe max for any method (PR review comment #5)
 
     // Friction array
     double *friction_cv = GD->D.friction_centroid_values;
@@ -785,7 +785,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     // BUG FIX: assert timestep_fluxcalls > 0 before use; the old default=3 fallback
     // over-mapped a size-2 RK2 array when called before get_domain_pointers ran.
     anuga_int timestep_fluxcalls = GD->D.timestep_fluxcalls;
-    if (timestep_fluxcalls <= 0) timestep_fluxcalls = 2; // safe minimum (RK2)
+    if (timestep_fluxcalls <= 0 || timestep_fluxcalls > 3) timestep_fluxcalls = 3; // safe max for any method (PR review comment #5)
 
     // Friction array
     double *friction_cv = GD->D.friction_centroid_values;

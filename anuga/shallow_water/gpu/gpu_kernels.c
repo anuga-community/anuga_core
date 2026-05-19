@@ -225,6 +225,13 @@ void gpu_active_cells_init(struct gpu_domain *GD) {
         int *flags    = GD->active_cell_flags;
         int *act_ids  = GD->D.active_cell_ids;
         #pragma omp target enter data map(alloc: flags[0:n], act_ids[0:n])
+        // OMP pointer attachment (OpenMP 5.0+ §2.21.7.1): when D is passed
+        // firstprivate to a target region AFTER this map(alloc), the runtime
+        // automatically replaces D->active_cell_ids / D->active_cell_flags with
+        // their device counterparts. This is correct for NVC/NVHPC 25.x+.
+        // For compilers without attachment support add:
+        //   #pragma omp target update to(GD->D.active_cell_ids)
+        // (PR review comment #2)
     }
 #endif
 
@@ -324,7 +331,11 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // value (Issue 7).
     double timestep = max_timestep;
 
-    // Update active cell list once per timestep (cheap flag scan + CPU compact)
+    // Active cell list reflects wet/dry state from END of previous timestep
+    // (one-step lag). Newly wet cells may be skipped once; newly dried cells
+    // are processed once extra. Both are conservative and bounded by CFL.
+    // Rebuilding after protect/update would add a full-domain scan per substep
+    // at higher cost than the occasional extra work. (PR review comment #4)
     gpu_active_cells_update(GD);
 
     // Backup conserved quantities for RK2

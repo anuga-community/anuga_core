@@ -3009,8 +3009,11 @@ class Domain(Generic_Domain):
         self.gpu_interface.mark_device_dirty()
 
         # Update internal time tracking and record stats.
-        # Direct attribute increment and comparison avoid get/set_relative_time()
-        # and builtin min/max dispatch (108k function calls per run).
+        # Direct attribute increment avoids get/set_relative_time() overhead.
+        # SAFETY (PR review comment #8): relative_time is a plain float attr in
+        # generic_domain.py with no setter side-effects. set_relative_time() is
+        # simply self.relative_time=time. If a future refactor adds setter logic,
+        # restore: self.set_relative_time(self.get_relative_time() + self.timestep)
         self.relative_time += self.timestep
         ts = self.timestep
         if ts > self.recorded_max_timestep: self.recorded_max_timestep = ts

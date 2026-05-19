@@ -52,13 +52,19 @@ class boundary_flux_integral_operator(Operator):
         # (72k+ numpy.ma entries in profiler). Caching here gives a view that
         # shares the underlying C buffer — GPU in-place writes are reflected
         # automatically without going through Python on every timestep.
-        self._bfs = num.asarray(domain.boundary_flux_sum)
+        self._bfs        = num.asarray(domain.boundary_flux_sum)
+        self._bfs_source = domain.boundary_flux_sum  # staleness sentinel (PR review #7)
 
 
     def __call__(self):
         """Accumulate boundary flux for each timestep."""
         dt = self.domain.timestep
-        bfs = self._bfs  # pre-cached plain ndarray view — no numpy.ma overhead
+        # Re-acquire view if boundary_flux_sum was reassigned (e.g. checkpoint restart)
+        _raw = self.domain.boundary_flux_sum
+        if _raw is not self._bfs_source:
+            self._bfs_source = _raw
+            self._bfs = num.asarray(_raw)
+        bfs = self._bfs
 
         if self._bfs_coeff is not None:
             n, rk3 = self._bfs_coeff
