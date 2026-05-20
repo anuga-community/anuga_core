@@ -14,6 +14,9 @@ An experimental OpenMP target-offloading GPU backend is included in the
 For long parallel runs, see :ref:`checkpointing` for how to save and restart
 simulations from periodic checkpoints.
 
+To diagnose load imbalance caused by wet/dry triangle distributions, see
+:ref:`load_balance_statistics`.
+
 .. only:: html
 
 .. toctree::
@@ -23,6 +26,8 @@ simulations from periodic checkpoints.
    use_gpu_offloading
    use_parallel_mpi
    use_distribute_basic_mesh
+   use_sequential_domain_io
+   use_sequential_mesh_io
 
 
 

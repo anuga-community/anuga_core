@@ -81,7 +81,7 @@ def run_simulation(parallel=False, G = None, seq_interpolation_points=None, verb
     domain.set_name('runup')                    # Set sww filename
     domain.set_datadir(tempfile.mkdtemp())                     # Set output dir
 
-    #domain.set_flow_algorithm('DE1')
+    domain.set_flow_algorithm('DE0')
     domain.set_quantities_to_be_stored(None)
 
 

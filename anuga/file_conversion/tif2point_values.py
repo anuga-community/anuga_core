@@ -11,7 +11,6 @@ def tif2point_values(filename, zone=None, south=True, points=None, verbose=False
     import numpy as np
     import rasterio
     from pyproj import CRS, Transformer
-    from affine import Affine
 
     with rasterio.open(filename) as raster:
         ncols = raster.width

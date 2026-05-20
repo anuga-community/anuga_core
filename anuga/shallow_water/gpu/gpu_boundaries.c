@@ -713,3 +713,413 @@ void gpu_evaluate_time_boundary(struct gpu_domain *GD) {
         height_bv[bid] = height_ev[3 * vid + eid];
     }
 }
+
+// ============================================================================
+// Absorbing_wave_boundary
+// ============================================================================
+
+int gpu_absorbing_wave_init(struct gpu_domain *GD, int num_edges,
+                             int *boundary_indices, int *vol_ids, int *edge_ids) {
+    struct absorbing_wave_boundary *B = &GD->absorbing_wave;
+
+    B->num_edges = num_edges;
+    B->wave_value = 0.0;
+    B->mapped = 0;
+
+    if (num_edges == 0) {
+        B->boundary_indices = NULL;
+        B->vol_ids = NULL;
+        B->edge_ids = NULL;
+        return 0;
+    }
+
+    B->boundary_indices = (int*)malloc(num_edges * sizeof(int));
+    B->vol_ids          = (int*)malloc(num_edges * sizeof(int));
+    B->edge_ids         = (int*)malloc(num_edges * sizeof(int));
+
+    if (!B->boundary_indices || !B->vol_ids || !B->edge_ids) {
+        fprintf(stderr, "Failed to allocate absorbing_wave_boundary arrays\n");
+        return -1;
+    }
+
+    memcpy(B->boundary_indices, boundary_indices, num_edges * sizeof(int));
+    memcpy(B->vol_ids,          vol_ids,          num_edges * sizeof(int));
+    memcpy(B->edge_ids,         edge_ids,         num_edges * sizeof(int));
+    return 0;
+}
+
+void gpu_absorbing_wave_finalize(struct gpu_domain *GD) {
+    struct absorbing_wave_boundary *B = &GD->absorbing_wave;
+
+    if (B->mapped && B->num_edges > 0) {
+        int ne = B->num_edges;
+        int *b_idx = B->boundary_indices;
+        int *v_ids = B->vol_ids;
+        int *e_ids = B->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+    }
+
+    if (B->boundary_indices) free(B->boundary_indices);
+    if (B->vol_ids)          free(B->vol_ids);
+    if (B->edge_ids)         free(B->edge_ids);
+
+    B->num_edges        = 0;
+    B->boundary_indices = NULL;
+    B->vol_ids          = NULL;
+    B->edge_ids         = NULL;
+    B->mapped = 0;
+}
+
+void gpu_absorbing_wave_set_value(struct gpu_domain *GD, double wave_value) {
+    GD->absorbing_wave.wave_value = wave_value;
+}
+
+void gpu_evaluate_absorbing_wave_boundary(struct gpu_domain *GD) {
+    struct absorbing_wave_boundary *B = &GD->absorbing_wave;
+    if (B->num_edges == 0) return;
+    if (!B->mapped) return;
+
+    int num_edges         = B->num_edges;
+    int *boundary_indices = B->boundary_indices;
+    int *vol_ids          = B->vol_ids;
+    int *edge_ids         = B->edge_ids;
+    double wave_val       = B->wave_value;
+
+    double *stage_ev  = GD->D.stage_edge_values;
+    double *bed_ev    = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+    double *xmom_ev   = GD->D.xmom_edge_values;
+    double *ymom_ev   = GD->D.ymom_edge_values;
+    double *normals   = GD->D.normals;
+
+    double *stage_bv  = GD->D.stage_boundary_values;
+    double *bed_bv    = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
+    double *xmom_bv   = GD->D.xmom_boundary_values;
+    double *ymom_bv   = GD->D.ymom_boundary_values;
+
+    OMP_PARALLEL_LOOP
+    for (int k = 0; k < num_edges; k++) {
+        int bid = boundary_indices[k];
+        int vid = vol_ids[k];
+        int eid = edge_ids[k];
+
+        double stage_int  = stage_ev[3 * vid + eid];
+        double bed        = bed_ev[3 * vid + eid];
+        double depth_int  = stage_int - bed;
+        if (depth_int < 0.0) depth_int = 0.0;
+
+        bed_bv[bid]    = bed;
+        height_bv[bid] = height_ev[3 * vid + eid];
+
+        if (depth_int == 0.0) {
+            stage_bv[bid] = wave_val;
+            xmom_bv[bid]  = 0.0;
+            ymom_bv[bid]  = 0.0;
+        } else {
+            double raw_ghost   = 2.0 * wave_val - stage_int;
+            double ghost_stage = raw_ghost > bed ? raw_ghost : bed;
+            double ghost_depth = ghost_stage - bed;
+
+            stage_bv[bid] = ghost_stage;
+
+            double q1    = xmom_ev[3 * vid + eid];
+            double q2    = ymom_ev[3 * vid + eid];
+            double u_int = q1 / depth_int;
+            double v_int = q2 / depth_int;
+            double n1    = normals[vid * 6 + 2 * eid];
+            double n2    = normals[vid * 6 + 2 * eid + 1];
+            double ndotu = n1 * u_int + n2 * v_int;
+
+            if (ghost_depth > 0.0) {
+                xmom_bv[bid] = ghost_depth * ndotu * n1;
+                ymom_bv[bid] = ghost_depth * ndotu * n2;
+            } else {
+                xmom_bv[bid] = 0.0;
+                ymom_bv[bid] = 0.0;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Characteristic_wave_boundary
+// ============================================================================
+
+int gpu_characteristic_wave_init(struct gpu_domain *GD, int num_edges,
+                                  int *boundary_indices, int *vol_ids, int *edge_ids,
+                                  double background_stage) {
+    struct characteristic_wave_boundary *B = &GD->characteristic_wave;
+
+    B->num_edges        = num_edges;
+    B->wave_value       = 0.0;
+    B->background_stage = background_stage;
+    B->mapped           = 0;
+
+    if (num_edges == 0) {
+        B->boundary_indices = NULL;
+        B->vol_ids = NULL;
+        B->edge_ids = NULL;
+        return 0;
+    }
+
+    B->boundary_indices = (int*)malloc(num_edges * sizeof(int));
+    B->vol_ids          = (int*)malloc(num_edges * sizeof(int));
+    B->edge_ids         = (int*)malloc(num_edges * sizeof(int));
+
+    if (!B->boundary_indices || !B->vol_ids || !B->edge_ids) {
+        fprintf(stderr, "Failed to allocate characteristic_wave_boundary arrays\n");
+        return -1;
+    }
+
+    memcpy(B->boundary_indices, boundary_indices, num_edges * sizeof(int));
+    memcpy(B->vol_ids,          vol_ids,          num_edges * sizeof(int));
+    memcpy(B->edge_ids,         edge_ids,         num_edges * sizeof(int));
+    return 0;
+}
+
+void gpu_characteristic_wave_finalize(struct gpu_domain *GD) {
+    struct characteristic_wave_boundary *B = &GD->characteristic_wave;
+
+    if (B->mapped && B->num_edges > 0) {
+        int ne = B->num_edges;
+        int *b_idx = B->boundary_indices;
+        int *v_ids = B->vol_ids;
+        int *e_ids = B->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+    }
+
+    if (B->boundary_indices) free(B->boundary_indices);
+    if (B->vol_ids)          free(B->vol_ids);
+    if (B->edge_ids)         free(B->edge_ids);
+
+    B->num_edges        = 0;
+    B->boundary_indices = NULL;
+    B->vol_ids          = NULL;
+    B->edge_ids         = NULL;
+    B->mapped = 0;
+}
+
+void gpu_characteristic_wave_set_value(struct gpu_domain *GD, double wave_value) {
+    GD->characteristic_wave.wave_value = wave_value;
+}
+
+void gpu_evaluate_characteristic_wave_boundary(struct gpu_domain *GD) {
+    struct characteristic_wave_boundary *B = &GD->characteristic_wave;
+    if (B->num_edges == 0) return;
+    if (!B->mapped) return;
+
+    int num_edges         = B->num_edges;
+    int *boundary_indices = B->boundary_indices;
+    int *vol_ids          = B->vol_ids;
+    int *edge_ids         = B->edge_ids;
+    double perturb        = B->wave_value;
+    double bg_stage       = B->background_stage;
+    double g              = GD->D.g;
+    double stage_wave     = bg_stage + perturb;
+
+    double *stage_ev  = GD->D.stage_edge_values;
+    double *bed_ev    = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+    double *xmom_ev   = GD->D.xmom_edge_values;
+    double *ymom_ev   = GD->D.ymom_edge_values;
+    double *normals   = GD->D.normals;
+
+    double *stage_bv  = GD->D.stage_boundary_values;
+    double *bed_bv    = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
+    double *xmom_bv   = GD->D.xmom_boundary_values;
+    double *ymom_bv   = GD->D.ymom_boundary_values;
+
+    OMP_PARALLEL_LOOP
+    for (int k = 0; k < num_edges; k++) {
+        int bid = boundary_indices[k];
+        int vid = vol_ids[k];
+        int eid = edge_ids[k];
+
+        double stage_int = stage_ev[3 * vid + eid];
+        double bed       = bed_ev[3 * vid + eid];
+        double depth_int = stage_int - bed;
+        if (depth_int < 0.0) depth_int = 0.0;
+
+        bed_bv[bid]    = bed;
+        height_bv[bid] = height_ev[3 * vid + eid];
+
+        if (depth_int == 0.0) {
+            stage_bv[bid] = stage_wave;
+            xmom_bv[bid]  = 0.0;
+            ymom_bv[bid]  = 0.0;
+        } else {
+            double n1    = normals[vid * 6 + 2 * eid];
+            double n2    = normals[vid * 6 + 2 * eid + 1];
+            double q1    = xmom_ev[3 * vid + eid];
+            double q2    = ymom_ev[3 * vid + eid];
+            double u_int   = q1 / depth_int;
+            double v_int   = q2 / depth_int;
+            double c_int   = sqrt(g * depth_int);
+            double v_n_int = n1 * u_int + n2 * v_int;
+
+            double h0  = bg_stage - bed;
+            if (h0 < 0.0) h0 = 0.0;
+            double c0  = sqrt(g * (h0 > 1e-10 ? h0 : 1e-10));
+
+            double h_wave = stage_wave - bed;
+            if (h_wave < 0.0) h_wave = 0.0;
+            double c_wave = sqrt(g * (h_wave > 1e-10 ? h_wave : 1e-10));
+
+            double c_ghost   = (v_n_int + 2.0*c_int - 2.0*c0 + 4.0*c_wave) / 4.0;
+            if (c_ghost < 0.0) c_ghost = 0.0;
+            double v_n_ghost = c0 - 2.0*c_wave + 0.5*v_n_int + c_int;
+            double h_ghost   = (c_ghost * c_ghost) / g;
+
+            stage_bv[bid] = h_ghost + bed;
+
+            if (c_ghost > 0.0) {
+                xmom_bv[bid] = h_ghost * v_n_ghost * n1;
+                ymom_bv[bid] = h_ghost * v_n_ghost * n2;
+            } else {
+                xmom_bv[bid] = 0.0;
+                ymom_bv[bid] = 0.0;
+            }
+        }
+    }
+}
+
+// ============================================================================
+// Flather_external_stage_zero_velocity_boundary
+// Weakly-reflecting Flather-type BC: exterior stage prescribed from Python
+// each timestep; interior state read on device to compute ghost via
+// characteristic decomposition (Blayo & Debreu 2005).
+// ============================================================================
+
+int gpu_flather_init(struct gpu_domain *GD, int num_edges,
+                     int *boundary_indices, int *vol_ids, int *edge_ids) {
+    struct flather_boundary *B = &GD->flather;
+
+    B->num_edges     = num_edges;
+    B->stage_outside = 0.0;
+    B->mapped        = 0;
+
+    if (num_edges == 0) {
+        B->boundary_indices = NULL;
+        B->vol_ids = NULL;
+        B->edge_ids = NULL;
+        return 0;
+    }
+
+    B->boundary_indices = (int*)malloc(num_edges * sizeof(int));
+    B->vol_ids          = (int*)malloc(num_edges * sizeof(int));
+    B->edge_ids         = (int*)malloc(num_edges * sizeof(int));
+
+    if (!B->boundary_indices || !B->vol_ids || !B->edge_ids) {
+        fprintf(stderr, "Failed to allocate flather_boundary arrays\n");
+        return -1;
+    }
+
+    memcpy(B->boundary_indices, boundary_indices, num_edges * sizeof(int));
+    memcpy(B->vol_ids,          vol_ids,          num_edges * sizeof(int));
+    memcpy(B->edge_ids,         edge_ids,         num_edges * sizeof(int));
+    return 0;
+}
+
+void gpu_flather_finalize(struct gpu_domain *GD) {
+    struct flather_boundary *B = &GD->flather;
+
+    if (B->mapped && B->num_edges > 0) {
+        int ne = B->num_edges;
+        int *b_idx = B->boundary_indices;
+        int *v_ids = B->vol_ids;
+        int *e_ids = B->edge_ids;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+    }
+
+    if (B->boundary_indices) free(B->boundary_indices);
+    if (B->vol_ids)          free(B->vol_ids);
+    if (B->edge_ids)         free(B->edge_ids);
+
+    B->num_edges        = 0;
+    B->boundary_indices = NULL;
+    B->vol_ids          = NULL;
+    B->edge_ids         = NULL;
+    B->mapped = 0;
+}
+
+void gpu_flather_set_value(struct gpu_domain *GD, double stage_outside) {
+    GD->flather.stage_outside = stage_outside;
+}
+
+void gpu_evaluate_flather_boundary(struct gpu_domain *GD) {
+    struct flather_boundary *B = &GD->flather;
+    if (B->num_edges == 0) return;
+    if (!B->mapped) return;
+
+    int num_edges         = B->num_edges;
+    int *boundary_indices = B->boundary_indices;
+    int *vol_ids          = B->vol_ids;
+    int *edge_ids         = B->edge_ids;
+    double stage_out      = B->stage_outside;
+    double g              = GD->D.g;
+
+    double *stage_ev  = GD->D.stage_edge_values;
+    double *bed_ev    = GD->D.bed_edge_values;
+    double *height_ev = GD->D.height_edge_values;
+    double *xmom_ev   = GD->D.xmom_edge_values;
+    double *ymom_ev   = GD->D.ymom_edge_values;
+    double *normals   = GD->D.normals;
+
+    double *stage_bv  = GD->D.stage_boundary_values;
+    double *bed_bv    = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
+    double *xmom_bv   = GD->D.xmom_boundary_values;
+    double *ymom_bv   = GD->D.ymom_boundary_values;
+
+    OMP_PARALLEL_LOOP
+    for (int k = 0; k < num_edges; k++) {
+        int bid = boundary_indices[k];
+        int vid = vol_ids[k];
+        int eid = edge_ids[k];
+
+        double stage_int = stage_ev[3 * vid + eid];
+        double bed       = bed_ev[3 * vid + eid];
+        double depth_int = stage_int - bed;
+        if (depth_int < 0.0) depth_int = 0.0;
+
+        bed_bv[bid]    = bed;
+        height_bv[bid] = height_ev[3 * vid + eid];
+
+        if (depth_int == 0.0) {
+            // Dry interior: prescribe exterior stage if it would wet the cell
+            stage_bv[bid] = (bed <= stage_out) ? stage_out : bed;
+            xmom_bv[bid]  = 0.0;
+            ymom_bv[bid]  = 0.0;
+        } else {
+            double n1    = normals[vid * 6 + 2 * eid];
+            double n2    = normals[vid * 6 + 2 * eid + 1];
+            double q1    = xmom_ev[3 * vid + eid];
+            double q2    = ymom_ev[3 * vid + eid];
+
+            // sqrt(g / depth_inside) -- characteristic speed scaling
+            double sqrt_g_d = sqrt(g / depth_int);
+
+            // Normal momentum (outward positive)
+            double ndotq = n1 * q1 + n2 * q2;
+
+            // Characteristic variables (Blayo & Debreu 2005, p.239)
+            // w1: exterior; w2: inside (outflow) or 0 (inflow); w3: interior
+            double w1 = 0.0 - sqrt_g_d * stage_out;
+            double w2 = (ndotq > 0.0)
+                        ? (n2 * q1 - n1 * q2) / depth_int   // outflow: inside tangential vel
+                        : 0.0;                                // inflow: exterior tangential vel = 0
+            double w3 = ndotq / depth_int + sqrt_g_d * stage_int;
+
+            // Recover ghost conserved quantities
+            double q0_ghost = (w3 - w1) / (2.0 * sqrt_g_d);
+            double qperp    = (w3 + w1) / 2.0 * depth_int;
+            double qpar     = w2 * depth_int;
+
+            stage_bv[bid] = q0_ghost;
+            xmom_bv[bid]  = qperp * n1 + qpar * n2;
+            ymom_bv[bid]  = qperp * n2 - qpar * n1;
+        }
+    }
+}

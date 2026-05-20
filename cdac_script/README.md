@@ -112,7 +112,7 @@ Use the `-Dgpu_arch` flag to target different GPUs:
 # V100 (default - cc70)
 pip install -v -e . --no-build-isolation \
     -Csetup-args=-Dgpu_offload=true \
-    -Csetup-args=-Dgpu_arch=cc80
+    -Csetup-args=-Dgpu_arch=cc70
 
 # A100 (cc80)
 pip install -v -e . --no-build-isolation \

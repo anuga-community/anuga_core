@@ -136,6 +136,8 @@ from anuga.parallel.parallel_api import mpi_extra_options
 
 from anuga.parallel.parallel_api import sequential_distribute_dump
 from anuga.parallel.parallel_api import sequential_distribute_load
+from anuga.parallel.parallel_api import sequential_mesh_dump
+from anuga.parallel.parallel_api import sequential_mesh_load
 
 
 # -----------------------------
@@ -160,6 +162,9 @@ from anuga.shallow_water.boundaries import \
                     Transmissive_n_momentum_zero_t_momentum_set_stage_boundary
 from anuga.shallow_water.boundaries import \
                     Flather_external_stage_zero_velocity_boundary
+from anuga.shallow_water.boundaries import \
+                    Absorbing_wave_boundary, \
+                    Characteristic_wave_boundary
 from anuga.abstract_2d_finite_volumes.generic_boundary_conditions import \
                     Compute_fluxes_boundary
 
@@ -375,6 +380,8 @@ __all__ = [
     'Dirichlet_boundary',
     'Field_boundary',
     'File_boundary',
+    'Absorbing_wave_boundary',
+    'Characteristic_wave_boundary',
     'Flather_external_stage_zero_velocity_boundary',
     'Reflective_boundary',
     'Time_boundary',
@@ -487,6 +494,8 @@ __all__ = [
     'send',
     'sequential_distribute_dump',
     'sequential_distribute_load',
+    'sequential_mesh_dump',
+    'sequential_mesh_load',
     # Model tools / polygon utilities
     'Create_culvert_bridge_Operator',
     'get_polygon_dictionary',

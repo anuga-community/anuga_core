@@ -28,6 +28,7 @@
       ~SWW_plotter.plot_speed_frame
       ~SWW_plotter.plot_stage_frame
       ~SWW_plotter.save_depth_frame
+      ~SWW_plotter.save_elev_delta_frame
       ~SWW_plotter.save_elev_frame
       ~SWW_plotter.save_max_depth_frame
       ~SWW_plotter.save_max_speed_depth_frame
@@ -43,5 +44,11 @@
    
 
    
+   
+   .. rubric:: Attributes
+
+   .. autosummary::
+   
+      ~SWW_plotter.elev_delta
    
    

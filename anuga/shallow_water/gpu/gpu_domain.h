@@ -121,6 +121,42 @@ struct file_boundary {
     int mapped;                  // Whether arrays are mapped to GPU
 };
 
+// Absorbing_wave_boundary - active-absorption open boundary.
+// Ghost stage = 2*wave(t) - stage_interior; velocity-preserving momentum.
+// wave_value (scalar) is updated each timestep from Python.
+struct absorbing_wave_boundary {
+    int num_edges;
+    int *boundary_indices;
+    int *vol_ids;
+    int *edge_ids;
+    double wave_value;           // Current wave stage (updated each timestep from Python)
+    int mapped;
+};
+
+// Characteristic_wave_boundary - nonlinear Riemann-invariant open boundary.
+// background_stage is fixed at init; wave_value (perturbation) updated each timestep.
+struct characteristic_wave_boundary {
+    int num_edges;
+    int *boundary_indices;
+    int *vol_ids;
+    int *edge_ids;
+    double wave_value;           // Stage perturbation (updated each timestep from Python)
+    double background_stage;     // Still-water stage (fixed)
+    int mapped;
+};
+
+// Flather_external_stage_zero_velocity_boundary - weakly-reflecting Flather-type BC.
+// stage_outside (exterior stage) updated each timestep from Python; interior state
+// read on device to form the characteristic-variable ghost state.
+struct flather_boundary {
+    int num_edges;
+    int *boundary_indices;
+    int *vol_ids;
+    int *edge_ids;
+    double stage_outside;        // Exterior stage (updated each timestep from Python)
+    int mapped;
+};
+
 // Boundary edge sync buffers - pre-allocated for efficient sparse sync
 // Allocated once during setup, reused every timestep
 struct boundary_edge_sync {
@@ -343,6 +379,9 @@ struct gpu_domain {
     struct transmissive_n_zero_t_boundary transmissive_n_zero_t;
     struct time_boundary time_bdry;
     struct file_boundary file_bdry;
+    struct absorbing_wave_boundary absorbing_wave;
+    struct characteristic_wave_boundary characteristic_wave;
+    struct flather_boundary flather;
 
     // Boundary edge sync (for sparse edge value sync)
     struct boundary_edge_sync edge_sync;
@@ -447,6 +486,28 @@ void gpu_file_boundary_set_values(struct gpu_domain *GD,
                                    double *stage, double *xmom, double *ymom);
 void gpu_evaluate_file_boundary(struct gpu_domain *GD);
 
+// Absorbing_wave_boundary - active-absorption open boundary
+int  gpu_absorbing_wave_init(struct gpu_domain *GD, int num_edges,
+                              int *boundary_indices, int *vol_ids, int *edge_ids);
+void gpu_absorbing_wave_finalize(struct gpu_domain *GD);
+void gpu_absorbing_wave_set_value(struct gpu_domain *GD, double wave_value);
+void gpu_evaluate_absorbing_wave_boundary(struct gpu_domain *GD);
+
+// Characteristic_wave_boundary - nonlinear Riemann-invariant open boundary
+int  gpu_characteristic_wave_init(struct gpu_domain *GD, int num_edges,
+                                   int *boundary_indices, int *vol_ids, int *edge_ids,
+                                   double background_stage);
+void gpu_characteristic_wave_finalize(struct gpu_domain *GD);
+void gpu_characteristic_wave_set_value(struct gpu_domain *GD, double wave_value);
+void gpu_evaluate_characteristic_wave_boundary(struct gpu_domain *GD);
+
+// Flather_external_stage_zero_velocity_boundary - weakly-reflecting characteristic BC
+int  gpu_flather_init(struct gpu_domain *GD, int num_edges,
+                      int *boundary_indices, int *vol_ids, int *edge_ids);
+void gpu_flather_finalize(struct gpu_domain *GD);
+void gpu_flather_set_value(struct gpu_domain *GD, double stage_outside);
+void gpu_evaluate_flather_boundary(struct gpu_domain *GD);
+
 // Time_boundary - time-dependent Dirichlet values
 int gpu_time_boundary_init(struct gpu_domain *GD, int num_edges,
                            int *boundary_indices, int *vol_ids, int *edge_ids);
@@ -503,11 +564,16 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
 // Full SSP-RK3 step on GPU (Shu-Osher 3-stage)
 double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
 
-// ADER-2 Cauchy-Kovalewski predictor (advance centroids by dt in-place)
+// ADER-2 Cauchy-Kovalewski predictor — centroid variant (advance centroids by dt)
 void gpu_ader_ck_predictor(struct gpu_domain *GD, double dt);
 
-// Full ADER-2 step on GPU (single flux call via previous-step dt reuse)
-double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
+// ADER-2 fused edge predictor — shifts edge values to Q^{n+1/2} in-place,
+// leaving centroid values unchanged (no backup/restore needed).
+void gpu_ader_ck_predictor_edge(struct gpu_domain *GD, double dt);
+
+// Full ADER-2 step: single flux call with fused edge predictor.
+// prev_dt is the timestep from the previous step (0 on bootstrap → Euler).
+double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing, double prev_dt);
 
 // Utility functions
 int detect_gpu_aware_mpi(void);
