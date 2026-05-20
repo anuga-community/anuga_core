@@ -44,9 +44,18 @@
 // GPU MODE - OpenMP target offloading
 // ============================================================================
 
-// Parallel loops on device
-#define OMP_PARALLEL_LOOP _Pragma("omp target teams loop")
-#define OMP_PARALLEL_LOOP_SIMD _Pragma("omp target teams loop")
+// Parallel loops on device.
+//
+// Opt-8: Use 'distribute parallel for simd' instead of the high-level 'loop'
+// construct.  On Intel GPU (PVC / Xe-HPC) the explicit two-level mapping:
+//   teams  → EU thread groups (outer)
+//   parallel for → EU threads (inner)
+//   simd   → SIMD lanes within an EU thread
+// consistently outperforms the compiler-chosen 'teams loop' heuristic
+// because ICX can pipeline all three levels simultaneously.  The CPU-mode
+// path (below) is unchanged: 'parallel for simd' stays the same.
+#define OMP_PARALLEL_LOOP      _Pragma("omp target teams distribute parallel for simd")
+#define OMP_PARALLEL_LOOP_SIMD _Pragma("omp target teams distribute parallel for simd")
 
 // Reductions on device - use DO_PRAGMA to allow variable name expansion
 // Note: Using distribute parallel for for better reduction support

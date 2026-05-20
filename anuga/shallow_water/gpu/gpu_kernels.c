@@ -66,9 +66,15 @@ void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
     // Delegate to core kernel
     core_update_conserved_quantities(&GD->D, timestep);
 
-    // Count FLOPs: 21 FLOPs per element (explicit + semi-implicit update)
+    // Count FLOPs: 21 FLOPs per element (explicit + semi-implicit update).
+    // When active-cell gating is enabled, charge only the cells actually
+    // iterated; charging number_of_elements over-reports GFLOP/s by the
+    // inverse of the wet fraction and makes Gordon Bell numbers wrong.
     if (GD->flops.enabled) {
-        GD->flops.update_flops += (uint64_t)GD->D.number_of_elements * FLOPS_UPDATE;
+        int n_charged = (GD->use_active_cells && GD->D.n_active_cells > 0)
+                        ? GD->D.n_active_cells
+                        : (int)GD->D.number_of_elements;
+        GD->flops.update_flops += (uint64_t)n_charged * FLOPS_UPDATE;
         GD->flops.update_calls++;
     }
     NVTX_POP();
@@ -119,9 +125,18 @@ double gpu_protect(struct gpu_domain *GD) {
     // Delegate to core kernel
     double mass_error = core_protect(&GD->D);
 
-    // Count FLOPs: 5 FLOPs per element (depth check, mass error)
+    // Count FLOPs: core_protect runs two passes:
+    //   Pass 1 — full-domain height_cv refresh (always n elements)
+    //   Pass 2 — momentum zeroing + mass-error (active-cell gated)
+    // Charge accordingly so the FLOP/s figure is not inflated.
     if (GD->flops.enabled) {
-        GD->flops.protect_flops += (uint64_t)GD->D.number_of_elements * FLOPS_PROTECT;
+        anuga_int n = GD->D.number_of_elements;
+        int n_pass2 = (GD->use_active_cells && GD->D.n_active_cells > 0)
+                      ? GD->D.n_active_cells
+                      : (int)n;
+        // FLOPS_PROTECT covers both passes; split evenly (1 FLOP/cell each pass)
+        // Pass 1: 1 fmax per cell = n FLOPs; Pass 2: ~4 ops per cell = n_pass2*4
+        GD->flops.protect_flops += (uint64_t)n + (uint64_t)n_pass2 * (FLOPS_PROTECT - 1);
         GD->flops.protect_calls++;
     }
 
@@ -158,12 +173,164 @@ void gpu_manning_friction(struct gpu_domain *GD) {
     // Delegate to core kernel
     core_manning_friction_flat_semi_implicit(&GD->D);
 
-    // Count FLOPs: 15 FLOPs per element (sqrt, pow, semi-implicit)
+    // Count FLOPs: 15 FLOPs per element (sqrt, cbrt, semi-implicit).
+    // Charge only active cells when gating is enabled.
     if (GD->flops.enabled) {
-        GD->flops.manning_flops += (uint64_t)GD->D.number_of_elements * FLOPS_MANNING;
+        int n_charged = (GD->use_active_cells && GD->D.n_active_cells > 0)
+                        ? GD->D.n_active_cells
+                        : (int)GD->D.number_of_elements;
+        GD->flops.manning_flops += (uint64_t)n_charged * FLOPS_MANNING;
         GD->flops.manning_calls++;
     }
     NVTX_POP();
+}
+
+// ============================================================================
+// Fused extrapolate + flux GPU wrapper
+// ============================================================================
+
+double gpu_extrapolate_and_compute_fluxes_substep(struct gpu_domain *GD,
+                                                   int substep_count,
+                                                   int timestep_fluxcalls,
+                                                   int compute_timestep,
+                                                   int compute_boundary_flux) {
+    NVTX_PUSH("gpu_extrapolate_and_compute_fluxes");
+
+    double local_timestep = core_extrapolate_and_compute_fluxes(
+        &GD->D, substep_count, timestep_fluxcalls, compute_timestep, compute_boundary_flux);
+
+    if (GD->flops.enabled) {
+        uint64_t n = (uint64_t)GD->D.number_of_elements;
+        // Charge both extrapolation and flux FLOPs in a single call
+        GD->flops.extrapolate_flops   += n * FLOPS_EXTRAPOLATE;
+        GD->flops.compute_fluxes_flops += n * FLOPS_COMPUTE_FLUXES;
+        GD->flops.extrapolate_calls++;
+        GD->flops.compute_fluxes_calls++;
+    }
+
+    NVTX_POP();
+    return local_timestep;
+}
+
+// ============================================================================
+// Active cell list management
+// ============================================================================
+
+void gpu_active_cells_init(struct gpu_domain *GD) {
+    if (GD->active_list_mapped) return;
+    anuga_int n = GD->D.number_of_elements;
+
+    // Allocate host-side scratch and device-side active_ids/flags.
+    // We reuse a single int[n] array on device both for the flag pass
+    // (core_update_active_cell_list) and then overwrite with the compacted IDs.
+    GD->D.active_cell_ids = (int *)malloc(n * sizeof(int));
+    if (!GD->D.active_cell_ids) {
+        fprintf(stderr, "[gpu_active_cells_init] malloc failed for active_cell_ids\n");
+        return;
+    }
+    GD->D.n_active_cells = (int)n; // start as full domain
+
+    // Allocate an int[n] device buffer for the flag pass
+    GD->active_cell_flags = (int *)malloc(n * sizeof(int));
+    if (!GD->active_cell_flags) {
+        fprintf(stderr, "[gpu_active_cells_init] malloc failed for active_cell_flags\n");
+        free(GD->D.active_cell_ids);
+        GD->D.active_cell_ids = NULL;
+        return;
+    }
+
+#ifndef CPU_ONLY_MODE
+    {
+        int *flags    = GD->active_cell_flags;
+        int *act_ids  = GD->D.active_cell_ids;
+        #pragma omp target enter data map(alloc: flags[0:n], act_ids[0:n])
+        // OMP pointer attachment (OpenMP 5.0+ §2.21.7.1): when D is passed
+        // firstprivate to a target region AFTER this map(alloc), the runtime
+        // automatically replaces D->active_cell_ids / D->active_cell_flags with
+        // their device counterparts. This is correct for NVC/NVHPC 25.x+.
+        // For compilers without attachment support add:
+        //   #pragma omp target update to(GD->D.active_cell_ids)
+        // (PR review comment #2)
+    }
+#endif
+
+    GD->active_list_mapped = 1;
+}
+
+void gpu_active_cells_finalize(struct gpu_domain *GD) {
+    if (!GD->active_list_mapped) return;
+    anuga_int n = GD->D.number_of_elements;
+
+#ifndef CPU_ONLY_MODE
+    {
+        int *flags   = GD->active_cell_flags;
+        int *act_ids = GD->D.active_cell_ids;
+        #pragma omp target exit data map(delete: flags[0:n])
+        #pragma omp target exit data map(delete: act_ids[0:n])
+    }
+#endif
+
+    free(GD->active_cell_flags);
+    free(GD->D.active_cell_ids);
+    GD->active_cell_flags     = NULL;
+    GD->D.active_cell_ids     = NULL;
+    GD->D.n_active_cells      = 0;
+    GD->active_list_mapped    = 0;
+}
+
+// Rebuild the active cell list each timestep.
+// Returns the new n_active_cells (0 if disabled).
+int gpu_active_cells_update(struct gpu_domain *GD) {
+    if (!GD->use_active_cells) return 0;
+
+    // Issue 9: guard against use_active_cells=1 but active_list_mapped=0.
+    // This can happen when a gpu_domain struct is re-mapped (map_arrays resets
+    // active_list_mapped to 0) while use_active_cells was already 1.  Without
+    // this guard the optimisation silently becomes a no-op with no warning.
+    if (!GD->active_list_mapped) {
+        fprintf(stderr,
+            "[gpu_active_cells_update] WARNING: use_active_cells=1 but "
+            "active_list_mapped=0.  Calling gpu_active_cells_init now.\n");
+        gpu_active_cells_init(GD);
+        if (!GD->active_list_mapped) {
+            // Allocation failed inside init — disable to avoid a crash.
+            fprintf(stderr,
+                "[gpu_active_cells_update] ERROR: gpu_active_cells_init failed; "
+                "disabling active cell optimisation for safety.\n");
+            GD->use_active_cells = 0;
+            return 0;
+        }
+    }
+
+    anuga_int n   = GD->D.number_of_elements;
+    double    mah = GD->D.minimum_allowed_height;
+    (void)mah;  // used indirectly through core_update_active_cell_list
+
+    int *flags = GD->active_cell_flags;
+
+    // Pass 1 on device: mark flags via shared core kernel (avoids duplication
+    // with core_update_active_cell_list in core_kernels.c).
+    // core_update_active_cell_list writes 1/0 into act_ids[] as a flag array,
+    // then returns -1 to signal that the caller must compact.
+    int *act_ids = GD->D.active_cell_ids;
+    core_update_active_cell_list(&GD->D, flags);
+
+    // Pass 2 on host: D2H flags, compact, H2D active_ids
+#ifndef CPU_ONLY_MODE
+    #pragma omp target update from(flags[0:n])
+#endif
+
+    int count = 0;
+    for (anuga_int k = 0; k < n; k++) {
+        if (flags[k]) act_ids[count++] = (int)k;
+    }
+    GD->D.n_active_cells = count;
+
+#ifndef CPU_ONLY_MODE
+    #pragma omp target update to(act_ids[0:count])
+#endif
+
+    return count;
 }
 
 // ============================================================================
@@ -173,33 +340,31 @@ void gpu_manning_friction(struct gpu_domain *GD) {
 double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing,
                                int compute_boundary_flux) {
     NVTX_PUSH("gpu_evolve_one_rk2_step");
-    // Full RK2 step orchestrated entirely in C - eliminates Python round-trip overhead
-    //
-    // This function performs:
-    // 1. Backup conserved quantities
-    // 2. First Euler step (protect, extrapolate, boundaries, fluxes, forcing, update, ghost exchange)
-    // 3. Second Euler step (same pattern)
-    // 4. RK2 averaging (saxpy)
-    //
-    // Parameters:
-    // - max_timestep: Maximum allowed timestep (respecting yieldstep/finaltime constraints)
-    // - apply_forcing: Whether to apply forcing terms (Manning friction)
-    //
-    // Time-dependent boundary values (Time_boundary, Transmissive_n_zero_t) must be set
-    // by Python BEFORE calling this function via set_time_boundary_values() and
-    // set_transmissive_n_zero_t_stage().
 
-    double local_timestep, global_timestep, timestep;
+    double local_timestep, global_timestep;
+
+    // Defensive initialisation: timestep is explicitly set through every branch
+    // of the fixed/async/sync/serial MPI logic below, but starting with
+    // max_timestep ensures that any future code insertion between the async
+    // MPI_Iallreduce and its MPI_Wait cannot silently read an uninitialised
+    // value (Issue 7).
+    double timestep = max_timestep;
+
+    // Active cell list reflects wet/dry state from END of previous timestep
+    // (one-step lag). Newly wet cells may be skipped once; newly dried cells
+    // are processed once extra. Both are conservative and bounded by CFL.
+    // Rebuilding after protect/update would add a full-domain scan per substep
+    // at higher cost than the occasional extra work. (PR review comment #4)
+    gpu_active_cells_update(GD);
 
     // Backup conserved quantities for RK2
     gpu_backup_conserved_quantities(GD);
 
     // ========================================
-    // First Euler step
+    // First Euler step - FUSED extrapolate+flux
     // ========================================
 
     gpu_protect(GD);
-    gpu_extrapolate_second_order(GD);
 
     // Evaluate all GPU-supported boundary conditions
     gpu_evaluate_reflective_boundary(GD);
@@ -209,40 +374,46 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_time_boundary(GD);
     gpu_evaluate_file_boundary(GD);
 
-    // Compute fluxes - returns local minimum timestep
-    local_timestep = gpu_compute_fluxes_substep(GD, 0, 2, 1, compute_boundary_flux);
+    // Fused extrapolate + flux: single kernel launch, edge data L2-hot between passes
+    local_timestep = gpu_extrapolate_and_compute_fluxes_substep(GD, 0, 2, 1, compute_boundary_flux);
 
-    // Compute global timestep
+    // -----------------------------------------------------------------------
+    // NON-BLOCKING MPI TIMESTEP REDUCTION
+    // Issue MPI_Iallreduce immediately after the first flux call so the
+    // reduction network latency overlaps with Manning friction + update.
+    // We complete the request just before it is needed for the timestep value.
+    // -----------------------------------------------------------------------
     static int fixed_ts_printed = 0;
+    MPI_Request ts_request = MPI_REQUEST_NULL;
+    int use_async_mpi = (GD->nprocs > 1 && GD->fixed_flux_timestep <= 0.0 && apply_forcing);
+
     if (GD->fixed_flux_timestep > 0.0) {
-        // Fixed timestep - skip MPI allreduce entirely
         if (GD->rank == 0 && !fixed_ts_printed) {
             printf("Using a fixed timestep! (dt = %e)\n", GD->fixed_flux_timestep);
             fflush(stdout);
             fixed_ts_printed = 1;
         }
-        timestep = GD->fixed_flux_timestep;
-        if (timestep > max_timestep) {
-            timestep = max_timestep;
-        }
+        timestep = fmin(GD->fixed_flux_timestep, max_timestep);
+    } else if (use_async_mpi) {
+        // Fire-and-forget: overlap reduction with forcing + update below
+        MPI_Iallreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE,
+                       MPI_MIN, GD->comm, &ts_request);
+    } else if (GD->nprocs > 1) {
+        MPI_Allreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE, MPI_MIN, GD->comm);
+        timestep = fmin(GD->CFL * global_timestep, max_timestep);
     } else {
-        // MPI reduce to get global minimum timestep
-        if (GD->nprocs > 1) {
-            MPI_Allreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE, MPI_MIN, GD->comm);
-        } else {
-            global_timestep = local_timestep;
-        }
-
-        // Apply CFL condition and respect max_timestep from Python
-        timestep = GD->CFL * global_timestep;
-        if (timestep > max_timestep) {
-            timestep = max_timestep;
-        }
+        timestep = fmin(GD->CFL * local_timestep, max_timestep);
     }
 
-    // Apply forcing terms (Manning friction on GPU)
+    // Apply forcing (Manning friction) while MPI reduction is in flight
     if (apply_forcing) {
         gpu_manning_friction(GD);
+    }
+
+    // Complete async reduction (if started) now that forcing is done
+    if (use_async_mpi) {
+        MPI_Wait(&ts_request, MPI_STATUS_IGNORE);
+        timestep = fmin(GD->CFL * global_timestep, max_timestep);
     }
 
     // Update conserved quantities with computed timestep
@@ -254,11 +425,10 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     }
 
     // ========================================
-    // Second Euler step
+    // Second Euler step - FUSED extrapolate+flux
     // ========================================
 
     gpu_protect(GD);
-    gpu_extrapolate_second_order(GD);
 
     // Evaluate boundary conditions (same as first step)
     gpu_evaluate_reflective_boundary(GD);
@@ -268,8 +438,8 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_time_boundary(GD);
     gpu_evaluate_file_boundary(GD);
 
-    // Compute fluxes (ignore timestep from second step)
-    gpu_compute_fluxes_substep(GD, 1, 2, 0, compute_boundary_flux);
+    // Fused: skip timestep reduction and ignore the returned local_timestep
+    gpu_extrapolate_and_compute_fluxes_substep(GD, 1, 2, 0, compute_boundary_flux);
 
     // Apply forcing terms (Manning friction on GPU)
     if (apply_forcing) {
@@ -293,18 +463,14 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
 double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int apply_forcing,
                                int compute_boundary_flux) {
     NVTX_PUSH("gpu_evolve_one_rk3_step");
-    // Full SSP-RK3 step orchestrated entirely in C.
-    //
-    // Algorithm (Shu-Osher, 3rd-order strong-stability-preserving):
-    //   Stage 1:      Q^(1)   = Q^n + h * L(Q^n)
-    //   Intermediate: Q^(1)   = 0.25 * Q^(1) + 0.75 * Q^n     [saxpy a=0.25, b=0.75]
-    //   Stage 2:      Q^(2)   = Q^(1)_mid + h * L(Q^(1)_mid)
-    //   Final:        Q^{n+1} = (2 * Q^(2) + Q^n) / 3          [saxpy3 a=2, b=1, c=3]
-    //
-    // Ghost exchanges after Stage 1 and after the intermediate combination.
-    // Time-dependent boundary values must be set by Python BEFORE calling this.
 
-    double local_timestep, global_timestep, timestep;
+    double local_timestep, global_timestep;
+
+    // Same defensive initialisation as the RK2 step (Issue 7).
+    double timestep = max_timestep;
+
+    // Update active cell list once per timestep
+    gpu_active_cells_update(GD);
 
     // Backup Q^n
     gpu_backup_conserved_quantities(GD);
@@ -314,7 +480,6 @@ double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int a
     // ========================================
 
     gpu_protect(GD);
-    gpu_extrapolate_second_order(GD);
 
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
@@ -323,31 +488,38 @@ double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_time_boundary(GD);
     gpu_evaluate_file_boundary(GD);
 
-    local_timestep = gpu_compute_fluxes_substep(GD, 0, 3, 1, compute_boundary_flux);
+    local_timestep = gpu_extrapolate_and_compute_fluxes_substep(GD, 0, 3, 1, compute_boundary_flux);
 
-    // Determine global timestep (same logic as RK2)
+    // Non-blocking MPI reduction overlapped with forcing
     static int fixed_ts_printed_rk3 = 0;
+    MPI_Request ts_request = MPI_REQUEST_NULL;
+    int use_async_mpi = (GD->nprocs > 1 && GD->fixed_flux_timestep <= 0.0 && apply_forcing);
+
     if (GD->fixed_flux_timestep > 0.0) {
         if (GD->rank == 0 && !fixed_ts_printed_rk3) {
             printf("RK3: Using a fixed timestep! (dt = %e)\n", GD->fixed_flux_timestep);
             fflush(stdout);
             fixed_ts_printed_rk3 = 1;
         }
-        timestep = GD->fixed_flux_timestep;
-        if (timestep > max_timestep) timestep = max_timestep;
+        timestep = fmin(GD->fixed_flux_timestep, max_timestep);
+    } else if (use_async_mpi) {
+        MPI_Iallreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE,
+                       MPI_MIN, GD->comm, &ts_request);
+    } else if (GD->nprocs > 1) {
+        MPI_Allreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE, MPI_MIN, GD->comm);
+        timestep = fmin(GD->CFL * global_timestep, max_timestep);
     } else {
-        if (GD->nprocs > 1) {
-            MPI_Allreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE, MPI_MIN, GD->comm);
-        } else {
-            global_timestep = local_timestep;
-        }
-        timestep = GD->CFL * global_timestep;
-        if (timestep > max_timestep) timestep = max_timestep;
+        timestep = fmin(GD->CFL * local_timestep, max_timestep);
     }
 
     if (apply_forcing) gpu_manning_friction(GD);
-    gpu_update_conserved_quantities(GD, timestep);
 
+    if (use_async_mpi) {
+        MPI_Wait(&ts_request, MPI_STATUS_IGNORE);
+        timestep = fmin(GD->CFL * global_timestep, max_timestep);
+    }
+
+    gpu_update_conserved_quantities(GD, timestep);
     if (GD->nprocs > 1) gpu_exchange_ghosts(GD);
 
     // ========================================
@@ -355,8 +527,6 @@ double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int a
     // ========================================
 
     gpu_protect(GD);
-    gpu_extrapolate_second_order(GD);
-
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
     gpu_evaluate_transmissive_boundary(GD);
@@ -364,21 +534,19 @@ double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_time_boundary(GD);
     gpu_evaluate_file_boundary(GD);
 
-    gpu_compute_fluxes_substep(GD, 1, 3, 0, compute_boundary_flux);
+    gpu_extrapolate_and_compute_fluxes_substep(GD, 1, 3, 0, compute_boundary_flux);
     if (apply_forcing) gpu_manning_friction(GD);
     gpu_update_conserved_quantities(GD, timestep);
 
-    // Intermediate: Q = 0.25*Q^(2) + 0.75*Q^n, then sync ghost cells
+    // Intermediate: Q = 0.25*Q^(2) + 0.75*Q^n
     gpu_saxpy_conserved_quantities(GD, 0.25, 0.75);
     if (GD->nprocs > 1) gpu_exchange_ghosts(GD);
 
     // ========================================
-    // Stage 3: Q^(3) = Q^(1)_mid + h*L(Q^(1)_mid)
+    // Stage 3: Q^(3) = Q_mid + h*L(Q_mid)
     // ========================================
 
     gpu_protect(GD);
-    gpu_extrapolate_second_order(GD);
-
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
     gpu_evaluate_transmissive_boundary(GD);
@@ -386,7 +554,7 @@ double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_time_boundary(GD);
     gpu_evaluate_file_boundary(GD);
 
-    gpu_compute_fluxes_substep(GD, 2, 3, 0, compute_boundary_flux);
+    gpu_extrapolate_and_compute_fluxes_substep(GD, 2, 3, 0, compute_boundary_flux);
     if (apply_forcing) gpu_manning_friction(GD);
     gpu_update_conserved_quantities(GD, timestep);
 

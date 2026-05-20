@@ -113,6 +113,12 @@ void gpu_flop_counters_print(struct gpu_domain *GD) {
                (unsigned long)GD->flops.saxpy_calls,
                (unsigned long)(GD->flops.saxpy_flops / GD->flops.saxpy_calls));
     }
+    if (GD->flops.backup_calls > 0) {
+        printf("backup_conserved_quantities  | %10lu | %9lu | %10lu\n",
+               (unsigned long)GD->flops.backup_flops,
+               (unsigned long)GD->flops.backup_calls,
+               (unsigned long)(GD->flops.backup_flops / GD->flops.backup_calls));
+    }
     if (GD->flops.rate_operator_calls > 0) {
         printf("rate_operator_apply          | %10lu | %9lu | %10lu\n",
                (unsigned long)GD->flops.rate_operator_flops,

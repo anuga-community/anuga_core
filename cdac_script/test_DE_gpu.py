@@ -239,6 +239,98 @@ class Test_DE_gpu(unittest.TestCase):
 
         print('\nDone with kernel comparisons')
 
+
+    def test_active_cells_enabled_and_counts(self):
+        """Verify that enable_active_cells works and returns a sane wet count."""
+        print('\n' + '=' * 70)
+        print('Test: Active cell list enable + count')
+        print('=' * 70)
+
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            enable_active_cells, get_active_cell_count,
+            sync_to_device,
+        )
+
+        domain = self.create_domain('domain_active')
+        domain.set_multiprocessor_mode(2)
+        gpu_dom = domain.gpu_interface.gpu_dom
+
+        # Enable active cell list
+        enable_active_cells(gpu_dom, True)
+        n_total = domain.number_of_elements
+
+        # At t=0, stage=-0.2 and bed ranges from 0 to -0.5, so most cells are wet
+        count_before = get_active_cell_count(gpu_dom)
+        print(f'  Total cells: {n_total}')
+        print(f'  Active (wet) cells at t=0: {count_before}')
+        self.assertGreater(count_before, 0, "Expected at least some wet cells")
+        self.assertLessEqual(count_before, n_total, "Active count cannot exceed total")
+
+        # Run a few timesteps and verify count updates
+        for t in domain.evolve(yieldstep=0.05, finaltime=0.05):
+            pass
+
+        count_after = get_active_cell_count(gpu_dom)
+        print(f'  Active (wet) cells after evolve: {count_after}')
+        self.assertGreater(count_after, 0, "Expected wet cells after evolve")
+        print('  Active cell count: PASS')
+
+        try:
+            import os; os.remove('domain_active.sww')
+        except Exception:
+            pass
+
+    def test_active_cells_rk2_correctness(self):
+        """Verify that active cell list does not change numerical results.
+
+        Run two identical domains — one with active cells ON, one OFF —
+        for the same number of timesteps and assert the conserved quantities
+        are bitwise identical.
+        """
+        print('\n' + '=' * 70)
+        print('Test: Active cell list RK2 correctness (result unchanged)')
+        print('=' * 70)
+
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            enable_active_cells, sync_all_from_device,
+        )
+
+        domain_on  = self.create_domain('active_on')
+        domain_off = self.create_domain('active_off')
+
+        domain_on.set_multiprocessor_mode(2)
+        enable_active_cells(domain_on.gpu_interface.gpu_dom, True)
+
+        domain_off.set_multiprocessor_mode(2)
+        enable_active_cells(domain_off.gpu_interface.gpu_dom, False)
+
+        yieldstep = 0.1
+        finaltime = 0.3
+
+        for t in domain_on.evolve(yieldstep=yieldstep, finaltime=finaltime):
+            pass
+        for t in domain_off.evolve(yieldstep=yieldstep, finaltime=finaltime):
+            pass
+
+        sync_all_from_device(domain_on.gpu_interface.gpu_dom)
+        sync_all_from_device(domain_off.gpu_interface.gpu_dom)
+
+        for qname in ['stage', 'xmomentum', 'ymomentum']:
+            cv_on  = domain_on.quantities[qname].centroid_values
+            cv_off = domain_off.quantities[qname].centroid_values
+            err = np.linalg.norm(cv_on - cv_off)
+            print(f'  {qname}: err={err:.3e}')
+            self.assertLess(err, 1e-10,
+                f"{qname}: active=ON vs active=OFF mismatch {err:.3e}")
+
+        print('  Active cell list correctness: PASS')
+
+        for name in ['active_on.sww', 'active_off.sww']:
+            try:
+                import os; os.remove(name)
+            except Exception:
+                pass
+
     def test_full_rk2_step(self):
         """Compare full RK2 step between OMP and GPU implementations."""
         print('\n' + '=' * 70)

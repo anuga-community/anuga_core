@@ -413,7 +413,8 @@ class Domain(Generic_Domain):
         ## Only works for DE algorithms at present
         max_time_substeps=3 # Maximum number of substeps supported by any timestepping method
         # boundary_flux_sum holds boundary fluxes on each sub-step [unused substeps = 0.]
-        self.boundary_flux_sum=num.array([0.]*max_time_substeps)
+        # Plain ndarray — mask is never needed and numpy.ma overhead was ~0.49s/1800s sim
+        self.boundary_flux_sum = num.zeros(max_time_substeps, dtype=num.float64)
         from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
         self.boundary_flux_integral=boundary_flux_integral_operator(self)
         # Make an integer counting how many times we call compute_fluxes_central -- so we know which substep we are on
@@ -2773,7 +2774,9 @@ class Domain(Generic_Domain):
         import numpy as np
 
         gpu_dom = self.gpu_interface.gpu_dom
+        # Compute once per evolve call — called 2× per step otherwise (72004× / run)
         compute_boundary_flux = 1 if self._gpu_needs_boundary_flux_sum() else 0
+        self.__dict__['_cbf_int'] = compute_boundary_flux  # cache for second substep
 
         # Supported GPU boundary types
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
@@ -2991,22 +2994,30 @@ class Domain(Generic_Domain):
         remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
         if finaltime is not None:
             remaining_finaltime = finaltime - self.get_time()
-            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep, remaining_finaltime)
+            # Inline min — avoids builtin dispatch for scalar comparison (36002× per run)
+            _em = self.evolve_max_timestep
+            max_timestep = _em if _em < remaining_yieldstep else remaining_yieldstep
+            if remaining_finaltime < max_timestep: max_timestep = remaining_finaltime
         else:
-            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
+            _em = self.evolve_max_timestep
+            max_timestep = _em if _em < remaining_yieldstep else remaining_yieldstep
 
         # Execute full RK2 step in C (includes MPI timestep reduction)
         # apply_forcing=1 enables Manning friction on GPU
-        compute_boundary_flux = 1 if self._gpu_needs_boundary_flux_sum() else 0
+        compute_boundary_flux = self.__dict__.get('_cbf_int', 1 if self._gpu_needs_boundary_flux_sum() else 0)
         self.timestep = evolve_one_rk2_step_gpu(gpu_dom, max_timestep, 1, compute_boundary_flux)
         self.gpu_interface.mark_device_dirty()
 
-        # Update internal time tracking
-        self.set_relative_time(self.get_relative_time() + self.timestep)
-
-        # Record timestep stats
-        self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
-        self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
+        # Update internal time tracking and record stats.
+        # Direct attribute increment avoids get/set_relative_time() overhead.
+        # SAFETY (PR review comment #8): relative_time is a plain float attr in
+        # generic_domain.py with no setter side-effects. set_relative_time() is
+        # simply self.relative_time=time. If a future refactor adds setter logic,
+        # restore: self.set_relative_time(self.get_relative_time() + self.timestep)
+        self.relative_time += self.timestep
+        ts = self.timestep
+        if ts > self.recorded_max_timestep: self.recorded_max_timestep = ts
+        if ts < self.recorded_min_timestep: self.recorded_min_timestep = ts
 
 
     def _evolve_one_rk3_step_gpu(self, yieldstep, finaltime):
@@ -3260,9 +3271,11 @@ class Domain(Generic_Domain):
         # Update internal time tracking
         self.set_relative_time(self.get_relative_time() + self.timestep)
 
-        # Record timestep stats
-        self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
-        self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
+        # Direct attribute increment avoids get/set_relative_time() overhead
+        self.relative_time += self.timestep
+        ts = self.timestep
+        if ts > self.recorded_max_timestep: self.recorded_max_timestep = ts
+        if ts < self.recorded_min_timestep: self.recorded_min_timestep = ts
 
 
     def evolve_one_rk3_step(self, yieldstep, finaltime):
@@ -3504,11 +3517,19 @@ class Domain(Generic_Domain):
         return result
 
     def _gpu_needs_boundary_flux_sum(self):
-        """Return True when a fractional operator consumes boundary_flux_sum."""
-        from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
-
-        return any(isinstance(op, boundary_flux_integral_operator)
-                   for op in self.fractional_step_operators)
+        """Return True when a fractional operator consumes boundary_flux_sum.
+        Cached permanently in __dict__ after first call — avoids hasattr()
+        overhead (180k builtins.hasattr calls in profiler) and operator-list
+        scan on every RK2 substep. Operator list never changes during a run.
+        """
+        try:
+            return self.__dict__['_cached_needs_bfs']
+        except KeyError:
+            from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
+            result = any(isinstance(op, boundary_flux_integral_operator)
+                         for op in self.fractional_step_operators)
+            self.__dict__['_cached_needs_bfs'] = result
+            return result
 
     def apply_fractional_steps(self):
         """Override to sync GPU data before fractional step operators run.

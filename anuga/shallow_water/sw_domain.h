@@ -125,6 +125,13 @@ struct domain {
     double* xmom_backup_values;
     double* ymom_backup_values;
 
+    // Active cell list for dry-region skipping optimisation.
+    // When non-NULL, compute kernels iterate only over these cell indices instead
+    // of 0..number_of_elements.  Maintained by the GPU layer each timestep.
+    // NULL means "disabled" (full loop) which is the CPU/legacy default.
+    int *active_cell_ids;   // compacted list of wet + wetting-front cells [n_active_cells]
+    int  n_active_cells;    // length of active_cell_ids (< number_of_elements when dry cells exist)
+
 };
 
 

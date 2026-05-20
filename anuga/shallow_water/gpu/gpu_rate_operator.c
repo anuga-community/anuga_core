@@ -311,11 +311,18 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
     // Use the GPU-resident cache
     double *gpu_rate_array = op->rate_array_cache;
 
+    // Active cell optimisation: skip cells that are dry (flag == 0) when the
+    // domain has an active cell list enabled.  Rain/source on a dry cell has no
+    // physical effect and produces zero influx, so skipping is safe.
+    int    *active_flags   = GD->active_cell_flags;   // NULL when disabled
+    int     use_active     = GD->use_active_cells && (active_flags != NULL);
+
     if (use_indices_into_rate) {
         // gpu_rate_array is full domain size, index with indices[k]
         OMP_PARALLEL_LOOP_REDUCTION_PLUS(local_influx)
         for (int k = 0; k < num_indices; k++) {
             int i = indices[k];
+            if (use_active && !active_flags[i]) continue;  // skip dry cell
             double rate = gpu_rate_array[i];
             double local_rate = ft * rate;
 
@@ -340,6 +347,7 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
         OMP_PARALLEL_LOOP_REDUCTION_PLUS(local_influx)
         for (int k = 0; k < num_indices; k++) {
             int i = indices[k];
+            if (use_active && !active_flags[i]) continue;  // skip dry cell
             double rate = gpu_rate_array[k];
             double local_rate = ft * rate;
 

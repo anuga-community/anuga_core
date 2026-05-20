@@ -32,34 +32,60 @@ class boundary_flux_integral_operator(Operator):
 
         Operator.__init__(self, domain, description, label, logging, verbose)
 
-        #------------------------------------------
-        # Setup a quantity to store the boundary flux integral
-        #------------------------------------------
-        self.boundary_flux_integral=num.array([0.])
+        self.boundary_flux_integral = num.array([0.])
+        self.domain = domain
 
-        # Alias for domain
-        self.domain=domain
+        # Cache the RK coefficient — timestepping_method never changes during a run.
+        _ts = domain.timestepping_method
+        if _ts == 'euler':
+            self._bfs_coeff = (1, False)
+        elif _ts == 'rk2':
+            self._bfs_coeff = (2, False)
+        elif _ts == 'rk3':
+            self._bfs_coeff = (3, True)
+        else:
+            self._bfs_coeff = None
+
+        # Cache a plain ndarray view of boundary_flux_sum ONCE at init time.
+        # Calling num.asarray() in every __call__ (36k× per run) still dispatches
+        # through MaskedArray.__array__ → _get_data → __getitem__ on every call
+        # (72k+ numpy.ma entries in profiler). Caching here gives a view that
+        # shares the underlying C buffer — GPU in-place writes are reflected
+        # automatically without going through Python on every timestep.
+        self._bfs        = num.asarray(domain.boundary_flux_sum)
+        self._bfs_source = domain.boundary_flux_sum  # staleness sentinel (PR review #7)
 
 
     def __call__(self):
-        """
-        Accumulate boundary flux for each timestep
-        """
+        """Accumulate boundary flux for each timestep."""
+        dt = self.domain.timestep
+        # Re-acquire view if boundary_flux_sum was reassigned (e.g. checkpoint restart)
+        _raw = self.domain.boundary_flux_sum
+        if _raw is not self._bfs_source:
+            self._bfs_source = _raw
+            self._bfs = num.asarray(_raw)
+        bfs = self._bfs
 
-        dt=self.domain.timestep
-        ts_method=self.domain.timestepping_method
-
-        if(ts_method=='euler'):
-            self.boundary_flux_integral = self.boundary_flux_integral + dt*self.domain.boundary_flux_sum[0]
-        elif(ts_method=='rk2'):
-            self.boundary_flux_integral = self.boundary_flux_integral + 0.5*dt*self.domain.boundary_flux_sum[0:2].sum()
-        elif(ts_method=='rk3'):
-            self.boundary_flux_integral = self.boundary_flux_integral + 1.0/6.0*dt*(self.domain.boundary_flux_sum[0] + self.domain.boundary_flux_sum[1] + 4.0*self.domain.boundary_flux_sum[2])
+        if self._bfs_coeff is not None:
+            n, rk3 = self._bfs_coeff
+            if n == 1:
+                self.boundary_flux_integral += dt * bfs[0]
+            elif n == 2:
+                self.boundary_flux_integral += 0.5 * dt * (bfs[0] + bfs[1])
+            else:  # rk3
+                self.boundary_flux_integral += (dt / 6.0) * (bfs[0] + bfs[1] + 4.0 * bfs[2])
         else:
-            raise Exception('Cannot compute boundary flux integral with this timestepping method')
+            ts_method = self.domain.timestepping_method
+            if ts_method == 'euler':
+                self.boundary_flux_integral += dt * bfs[0]
+            elif ts_method == 'rk2':
+                self.boundary_flux_integral += 0.5 * dt * (bfs[0] + bfs[1])
+            elif ts_method == 'rk3':
+                self.boundary_flux_integral += (dt / 6.0) * (bfs[0] + bfs[1] + 4.0 * bfs[2])
+            else:
+                raise Exception('Cannot compute boundary flux integral with this timestepping method')
 
-        # Zero the boundary_flux_sum
-        self.domain.boundary_flux_sum[:]=0.
+        bfs[:] = 0.0
 
     def parallel_safe(self):
         """Operator is applied independently on each parallel domain
