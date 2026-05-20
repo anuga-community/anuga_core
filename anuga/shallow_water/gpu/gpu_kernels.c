@@ -66,9 +66,15 @@ void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep) {
     // Delegate to core kernel
     core_update_conserved_quantities(&GD->D, timestep);
 
-    // Count FLOPs: 21 FLOPs per element (explicit + semi-implicit update)
+    // Count FLOPs: 21 FLOPs per element (explicit + semi-implicit update).
+    // When active-cell gating is enabled, charge only the cells actually
+    // iterated; charging number_of_elements over-reports GFLOP/s by the
+    // inverse of the wet fraction and makes Gordon Bell numbers wrong.
     if (GD->flops.enabled) {
-        GD->flops.update_flops += (uint64_t)GD->D.number_of_elements * FLOPS_UPDATE;
+        int n_charged = (GD->use_active_cells && GD->D.n_active_cells > 0)
+                        ? GD->D.n_active_cells
+                        : (int)GD->D.number_of_elements;
+        GD->flops.update_flops += (uint64_t)n_charged * FLOPS_UPDATE;
         GD->flops.update_calls++;
     }
     NVTX_POP();
@@ -119,9 +125,18 @@ double gpu_protect(struct gpu_domain *GD) {
     // Delegate to core kernel
     double mass_error = core_protect(&GD->D);
 
-    // Count FLOPs: 5 FLOPs per element (depth check, mass error)
+    // Count FLOPs: core_protect runs two passes:
+    //   Pass 1 — full-domain height_cv refresh (always n elements)
+    //   Pass 2 — momentum zeroing + mass-error (active-cell gated)
+    // Charge accordingly so the FLOP/s figure is not inflated.
     if (GD->flops.enabled) {
-        GD->flops.protect_flops += (uint64_t)GD->D.number_of_elements * FLOPS_PROTECT;
+        anuga_int n = GD->D.number_of_elements;
+        int n_pass2 = (GD->use_active_cells && GD->D.n_active_cells > 0)
+                      ? GD->D.n_active_cells
+                      : (int)n;
+        // FLOPS_PROTECT covers both passes; split evenly (1 FLOP/cell each pass)
+        // Pass 1: 1 fmax per cell = n FLOPs; Pass 2: ~4 ops per cell = n_pass2*4
+        GD->flops.protect_flops += (uint64_t)n + (uint64_t)n_pass2 * (FLOPS_PROTECT - 1);
         GD->flops.protect_calls++;
     }
 
@@ -158,9 +173,13 @@ void gpu_manning_friction(struct gpu_domain *GD) {
     // Delegate to core kernel
     core_manning_friction_flat_semi_implicit(&GD->D);
 
-    // Count FLOPs: 15 FLOPs per element (sqrt, pow, semi-implicit)
+    // Count FLOPs: 15 FLOPs per element (sqrt, cbrt, semi-implicit).
+    // Charge only active cells when gating is enabled.
     if (GD->flops.enabled) {
-        GD->flops.manning_flops += (uint64_t)GD->D.number_of_elements * FLOPS_MANNING;
+        int n_charged = (GD->use_active_cells && GD->D.n_active_cells > 0)
+                        ? GD->D.n_active_cells
+                        : (int)GD->D.number_of_elements;
+        GD->flops.manning_flops += (uint64_t)n_charged * FLOPS_MANNING;
         GD->flops.manning_calls++;
     }
     NVTX_POP();
