@@ -245,10 +245,6 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     gpu_evaluate_absorbing_wave_boundary(GD);
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
-    //if(prev_dt <= 1e-7){
-    //  printf("oh no\n");
-    //  abort();
-    //}
     if (prev_dt > 0.0) {
         // ========================================
         // Step 2: fused edge C-K predictor — shifts edges to Q^{n+1/2} in-place
@@ -273,7 +269,6 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     // ========================================
 
     local_timestep = gpu_compute_fluxes(GD);
-    //printf(" local timestep = %f \n", local_timestep);
 
     if (apply_forcing) gpu_manning_friction(GD);
 

@@ -801,11 +801,11 @@ class Domain(Generic_Domain):
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
-        self.beta_w=1.0
+        self.beta_w=0.5
         self.beta_w_dry=0.0
-        self.beta_uh=1.0
+        self.beta_uh=0.5
         self.beta_uh_dry=0.0
-        self.beta_vh=1.0
+        self.beta_vh=0.5
         self.beta_vh_dry=0.0
 
 
@@ -859,11 +859,11 @@ class Domain(Generic_Domain):
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
-        self.beta_w = 1.0
+        self.beta_w = 0.5
         self.beta_w_dry = 0.0
-        self.beta_uh = 1.0
+        self.beta_uh = 0.5
         self.beta_uh_dry = 0.0
-        self.beta_vh = 1.0
+        self.beta_vh = 0.5
         self.beta_vh_dry = 0.0
 
         self.set_store_centroids(True)
@@ -3011,6 +3011,12 @@ class Domain(Generic_Domain):
             evaluate_time_boundary_gpu,
             set_file_boundary_values_from_domain,
             evaluate_file_boundary_gpu,
+            set_absorbing_wave_value,
+            evaluate_absorbing_wave_boundary_gpu,
+            set_characteristic_wave_value,
+            evaluate_characteristic_wave_boundary_gpu,
+            set_flather_value,
+            evaluate_flather_boundary_gpu,
         )
         import numpy as np
 
@@ -3019,7 +3025,8 @@ class Domain(Generic_Domain):
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
                               'Time_boundary', 'File_boundary', 'Field_boundary',
-                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary',
+                              'Flather_boundary'}
 
         if not hasattr(self, '_gpu_boundary_info_initialized'):
             self._gpu_cpu_tags = []
@@ -3029,6 +3036,7 @@ class Domain(Generic_Domain):
             self._gpu_time_boundaries = []
             self._gpu_absorbing_wave_boundaries = []
             self._gpu_characteristic_wave_boundaries = []
+            self._gpu_flather_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -3045,6 +3053,8 @@ class Domain(Generic_Domain):
                         self._gpu_absorbing_wave_boundaries.append(B)
                     elif btype == 'Characteristic_wave_boundary':
                         self._gpu_characteristic_wave_boundaries.append(B)
+                    elif btype == 'Flather_boundary':
+                        self._gpu_flather_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
@@ -4680,7 +4690,6 @@ class Domain(Generic_Domain):
         d = stage_c - elev_c
         d_safe = num.where(num.isfinite(d), num.maximum(d, threshold_depth),
                            threshold_depth)
-        print("d safe = ", d_safe)
         speed_h = num.sqrt(uh_c * uh_c + vh_c * vh_c) / d_safe
         speed_h = num.where(num.isfinite(speed_h), speed_h, 0.0)
         speed_h = speed_h * (d > threshold_depth)
