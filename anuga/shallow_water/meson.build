@@ -68,36 +68,49 @@ try:
             os.path.join(prefix, "Library", "lib"),
             os.path.join(prefix, "lib"),
         ]
-    else:
-        candidates_inc = (cfg_incs or []) + [os.path.join(prefix, "include")]
-        candidates_lib = (cfg_libs or []) + [os.path.join(prefix, "lib")]
-    inc = next((d for d in candidates_inc if os.path.isfile(os.path.join(d, "mpi.h"))), None)
-    if inc is None:
-        print("mpi.h not found; tried: " + str(candidates_inc), file=sys.stderr)
-        sys.exit(1)
-    lib = candidates_lib[0]  # take first; linker will search anyway
-    if is_windows:
-        # No mpicc on Windows; build flags from known conda paths.
-        # Library names from mpi4py config, defaulting to msmpi (conda-forge).
+        inc = next((d for d in candidates_inc if os.path.isfile(os.path.join(d, "mpi.h"))), None)
+        if inc is None:
+            print("mpi.h not found; tried: " + str(candidates_inc), file=sys.stderr)
+            sys.exit(1)
+        lib = candidates_lib[0]
         libnames = cfg.get("libraries", ["msmpi"]) or ["msmpi"]
         cflags = ["-I" + inc]
         lflags = ["-L" + lib] + ["-l" + n for n in libnames]
     else:
-        # Unix: run mpicc -show to get the exact flags mpi4py was built with
+        # Unix: run mpicc -show first to get the exact flags mpi4py was built
+        # with, then use its -I paths to locate mpi.h.  This handles conda
+        # environments where mpi.h is not at $CONDA_PREFIX/include/mpi.h (e.g.
+        # OpenMPI puts it in include/openmpi-x86_64/ on some distros, or the
+        # conda mpicc wrapper sets a non-standard include path).
         mpicc = cfg.get("mpicc", "")
         if mpicc and not os.path.isabs(mpicc):
             mpicc = shutil.which(mpicc) or ""
         if not mpicc or not os.path.isfile(mpicc):
+            mpicc = shutil.which("mpicc") or ""
+        if not mpicc or not os.path.isfile(mpicc):
             mpicc = os.path.join(prefix, "bin", "mpicc")
-        try:
-            out = subprocess.check_output([mpicc, "-show"], text=True).strip()
-            tokens = out.split()
-            cflags = [t for t in tokens[1:] if t.startswith(("-I", "-D"))]
-            lflags = [t for t in tokens[1:] if t.startswith(("-L", "-l", "-Wl,", "-rpath"))]
-            if not cflags:
-                cflags = ["-I" + inc]
-        except Exception:
+        cflags = []
+        lflags = []
+        mpicc_inc_dirs = []
+        if os.path.isfile(mpicc):
+            try:
+                out = subprocess.check_output([mpicc, "-show"], text=True).strip()
+                tokens = out.split()
+                cflags = [t for t in tokens[1:] if t.startswith(("-I", "-D"))]
+                lflags = [t for t in tokens[1:] if t.startswith(("-L", "-l", "-Wl,", "-rpath"))]
+                mpicc_inc_dirs = [t[2:] for t in cflags if t.startswith("-I")]
+            except Exception:
+                pass
+        candidates_inc = mpicc_inc_dirs + (cfg_incs or []) + [os.path.join(prefix, "include")]
+        candidates_lib = (cfg_libs or []) + [os.path.join(prefix, "lib")]
+        inc = next((d for d in candidates_inc if os.path.isfile(os.path.join(d, "mpi.h"))), None)
+        if inc is None:
+            print("mpi.h not found; tried: " + str(candidates_inc), file=sys.stderr)
+            sys.exit(1)
+        lib = candidates_lib[0]
+        if not cflags:
             cflags = ["-I" + inc]
+        if not lflags:
             lflags = ["-L" + lib, "-lmpi"]
     print("|".join(cflags) + "##" + "|".join(lflags))
 except Exception as e:
