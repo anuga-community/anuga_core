@@ -1,16 +1,22 @@
 """
 Multi-rank GPU halo-exchange test.
 
-Verifies that multiprocessor_mode=2 (C RK2 loop, GPU internal MPI ghost
-exchange) produces results matching multiprocessor_mode=1 (Python RK2 loop,
-Python MPI ghost exchange) when run in parallel.
+Verifies that multiprocessor_mode=2 (C-level MPI ghost exchange via
+gpu_exchange_ghosts) produces results matching multiprocessor_mode=1
+(Python MPI ghost exchange) when run in parallel.
 
 This exercises the key correctness path: in mode=2 `update_ghosts()` returns
 early and lets the C-level MPI calls handle halo exchange.  Any bug there
 would cause the two modes to diverge.
 
-In CPU_ONLY_MODE the two modes are bit-for-bit identical (no floating-point
-reordering), so we use atol=1e-12.
+mode=1 uses the OpenMP C extension kernels; mode=2 uses the GPU C kernels.
+Both implement the same algorithm but with different code paths, so small
+floating-point differences (< 1e-6) are expected and acceptable.
+Ghost exchange errors produce O(1) differences and are easily caught.
+
+ATOL=1e-6 is used to allow for FP differences between the two code paths
+while still detecting ghost-exchange bugs.  All ranks vote on the result
+via MPI allreduce before raising so that no rank is left waiting.
 
 Runs as pytest (launches mpirun subprocess, auto-marked slow because it lives
 in anuga/parallel/tests/):
@@ -57,7 +63,7 @@ N = 29
 YIELDSTEP = 0.25
 FINALTIME = 1.0
 GAUGE_POINTS = [[0.4, 0.5], [0.6, 0.5], [0.8, 0.5], [0.9, 0.5]]
-ATOL = 1e-12
+ATOL = 1e-6
 
 
 def topography(x, y):
@@ -69,13 +75,13 @@ def topography(x, y):
 # ---------------------------------------------------------------------------
 
 def run_simulation(mode, verbose=False):
-    """Run a parallel DE0 simulation with the given multiprocessor_mode.
+    """Run a parallel DE0 (Euler) simulation with the given multiprocessor_mode.
 
     Parameters
     ----------
     mode : int
-        1 = Python RK2 + Python MPI ghost exchange
-        2 = C RK2 + C-level MPI ghost exchange (GPU mode)
+        1 = Python Euler loop + Python MPI ghost exchange (OpenMP kernels)
+        2 = Python Euler loop + C-level MPI ghost exchange (GPU kernels)
 
     Returns
     -------
@@ -129,17 +135,36 @@ def run_simulation(mode, verbose=False):
 # ---------------------------------------------------------------------------
 
 def compare_modes(G1, ids1, G2, ids2, label=''):
-    """Assert mode=1 and mode=2 gauge time-series match on this rank."""
+    """Assert mode=1 and mode=2 gauge time-series match across all ranks.
+
+    Uses MPI allreduce to find the global maximum difference so that all
+    ranks raise (or pass) together — prevents one rank from hanging in a
+    collective while another has already called MPI_Abort.
+    """
+    local_max_diff = 0.0
+    worst_gauge = -1
     for i, (tid1, tid2) in enumerate(zip(ids1, ids2)):
         if tid1 > -1 and tid2 > -1:
             a1 = num.array(G1[i])
             a2 = num.array(G2[i])
-            if not num.allclose(a1, a2, atol=ATOL):
-                max_diff = num.max(num.abs(a1 - a2))
-                raise AssertionError(
-                    f'[rank {myid}] {label} gauge {i}: '
-                    f'mode=1 vs mode=2 max diff = {max_diff:.2e} (atol={ATOL})'
-                )
+            diff = float(num.max(num.abs(a1 - a2)))
+            if diff > local_max_diff:
+                local_max_diff = diff
+                worst_gauge = i
+
+    # Allreduce: every rank gets the global maximum difference
+    try:
+        from mpi4py import MPI
+        global_max_diff = MPI.COMM_WORLD.allreduce(local_max_diff, op=MPI.MAX)
+    except ImportError:
+        global_max_diff = local_max_diff
+
+    if global_max_diff > ATOL:
+        raise AssertionError(
+            f'[rank {myid}] {label}: '
+            f'mode=1 vs mode=2 global max diff = {global_max_diff:.2e} '
+            f'(atol={ATOL}, local worst gauge={worst_gauge})'
+        )
 
 
 # ---------------------------------------------------------------------------
