@@ -410,6 +410,18 @@ cdef class GPUDomain:
         return self.GD.gpu_aware_mpi
 
     @property
+    def has_c_mpi(self):
+        """True if this extension was compiled with real C MPI (HAVE_MPI4PY=True).
+
+        When False the C-level exchange_ghosts() is a no-op (single-process
+        stubs).  Parallel domains must fall back to Python MPI ghost exchange.
+        """
+        IF HAVE_MPI4PY:
+            return True
+        ELSE:
+            return False
+
+    @property
     def num_neighbors(self):
         return self.GD.halo.num_neighbors
 

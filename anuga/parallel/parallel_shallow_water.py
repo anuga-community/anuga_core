@@ -161,9 +161,15 @@ class Parallel_domain(Domain):
         receive the information for the ghost cells
         """
 
-        # GPU mode handles ghost exchange internally via C-level MPI calls
-        if getattr(self, 'multiprocessor_mode', 0) == 2 and getattr(self, 'gpu_interface', None) is not None:
-            return
+        # GPU mode with C-level MPI: ghost exchange is handled inside the C
+        # evolve step (exchange_ghosts); skip Python MPI here.
+        # If the GPU extension was built without real MPI (has_c_mpi=False,
+        # i.e. single-process stubs) we fall through to Python MPI so that
+        # multi-rank runs still exchange ghosts correctly.
+        gpu_iface = getattr(self, 'gpu_interface', None)
+        if getattr(self, 'multiprocessor_mode', 0) == 2 and gpu_iface is not None:
+            if getattr(gpu_iface, 'has_c_mpi', True):
+                return
 
         #generic_comms.communicate_ghosts_asynchronous(self, quantities)
         generic_comms.communicate_ghosts_non_blocking(self, quantities)
