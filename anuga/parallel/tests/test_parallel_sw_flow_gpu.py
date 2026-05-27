@@ -14,9 +14,11 @@ Both implement the same algorithm but with different code paths, so small
 floating-point differences (< 1e-6) are expected and acceptable.
 Ghost exchange errors produce O(1) differences and are easily caught.
 
-ATOL=1e-6 is used to allow for FP differences between the two code paths
-while still detecting ghost-exchange bugs.  All ranks vote on the result
-via MPI allreduce before raising so that no rank is left waiting.
+ATOL=1e-4 is used to allow for FP differences between the two code paths
+(which use different C implementations compiled with different optimisation
+flags across platforms) while still detecting ghost-exchange bugs, which
+produce O(0.1-1.0) errors.  All ranks vote on the result via MPI allreduce
+before raising so that no rank is left waiting.
 
 Runs as pytest (launches mpirun subprocess, auto-marked slow because it lives
 in anuga/parallel/tests/):
@@ -63,7 +65,7 @@ N = 29
 YIELDSTEP = 0.25
 FINALTIME = 1.0
 GAUGE_POINTS = [[0.4, 0.5], [0.6, 0.5], [0.8, 0.5], [0.9, 0.5]]
-ATOL = 1e-6
+ATOL = 1e-4
 
 
 def topography(x, y):
