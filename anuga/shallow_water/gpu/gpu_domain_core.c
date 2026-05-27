@@ -6,11 +6,11 @@
 #include <string.h>
 #include <math.h>
 #include <omp.h>
-#include <mpi.h>
+// MPI (or single-process stubs) come in via gpu_domain.h
+#include "gpu_domain.h"
 #ifdef HAVE_MPI_EXT_H
 #include <mpi-ext.h>
 #endif
-#include "gpu_domain.h"
 #include "gpu_omp_macros.h"
 
 // Domain initialization, memory management, and sync functions

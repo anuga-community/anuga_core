@@ -17,9 +17,15 @@ from libc.string cimport memset
 import numpy as np
 cimport numpy as np
 
-# Import mpi4py's MPI_Comm type
-from mpi4py cimport MPI
-from mpi4py.libmpi cimport MPI_Comm
+# Import mpi4py's MPI_Comm type when building with MPI support; otherwise fall
+# back to a plain-int MPI_Comm matching the C single-process stubs
+# (gpu/gpu_mpi_stubs.h). HAVE_MPI4PY is a Cython compile-time env constant set by
+# meson based on whether MPI + mpi4py were found at build time.
+IF HAVE_MPI4PY:
+    from mpi4py cimport MPI
+    from mpi4py.libmpi cimport MPI_Comm
+ELSE:
+    ctypedef int MPI_Comm
 
 # External C declarations (from gpu/ subdirectory)
 cdef extern from "gpu_domain.h" nogil:
@@ -421,10 +427,15 @@ cdef MPI_Comm get_mpi_comm() noexcept:
 
     Note: noexcept is required because MPI_Comm is an int on some platforms
     (e.g., macOS), and Cython's default error return value (NULL) is incompatible.
+
+    In single-process builds (no mpi4py) this returns a stub communicator that is
+    never used: the C kernels only touch the communicator when nprocs > 1.
     """
-    import anuga.utilities.parallel_abstraction as pypar
-    cdef MPI.Comm comm = pypar.comm
-    return comm.ob_mpi
+    IF HAVE_MPI4PY:
+        import anuga.utilities.parallel_abstraction as pypar
+        return (<MPI.Comm>pypar.comm).ob_mpi
+    ELSE:
+        return <MPI_Comm>0  # MPI_COMM_WORLD stub; unused single-process
 
 
 cdef int get_mpi_rank():
