@@ -13,7 +13,11 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>
+#ifdef HAVE_MPI
 #include <mpi.h>
+#else
+#include "gpu_mpi_stubs.h"
+#endif
 #include "anuga_typedefs.h"
 #include "sw_domain.h"
 

@@ -6,7 +6,7 @@
 #include <string.h>
 #include <math.h>
 #include <omp.h>
-#include <mpi.h>
+// MPI (or single-process stubs) come in via gpu_domain.h
 #include "gpu_domain.h"
 
 // FLOP counters for Gordon Bell performance profiling

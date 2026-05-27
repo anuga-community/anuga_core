@@ -123,11 +123,19 @@ except Exception as e:
   endif
 endif
 
-if mpi_dep.found() and have_mpi4py
+# "Full MPI" means we have both the C MPI library and mpi4py. Only then do we
+# build the GPU extension with real MPI (multi-GPU domain decomposition).
+# Otherwise we still build it, but against single-process stubs (gpu_mpi_stubs.h)
+# so multiprocessor_mode=2 works on a single GPU with no MPI/mpi4py installed.
+have_full_mpi = mpi_dep.found() and have_mpi4py
+
+if have_full_mpi
   mpi4py_incdir = mpi4py_check.stdout().strip()
   gpu_inc_dir = include_directories('../utilities', incdir_numpy, mpi4py_incdir, 'gpu')
+  message('GPU extension will be built WITH MPI support (multi-GPU enabled)')
 else
   gpu_inc_dir = include_directories('../utilities', incdir_numpy, 'gpu')
+  message('GPU extension will be built WITHOUT MPI (single-process stubs)')
 endif
 
 # GPU architecture option (only used when gpu_offload=true)
@@ -199,12 +207,18 @@ if get_option('gpu_aware_mpi') and gpu_offload
   message('GPU-aware MPI enabled')
 endif
 
+# Compile real MPI code paths only when MPI + mpi4py are present; otherwise the
+# kernels fall back to the single-process stubs in gpu/gpu_mpi_stubs.h.
+if have_full_mpi
+  gpu_c_args += ['-DHAVE_MPI']
+endif
+
 # Runtime GPU-aware MPI detection via MPIX_Query_cuda_support / MPIX_Query_rocm_support.
 # These are non-standard extensions present in Open MPI and MVAPICH2 GPU builds.
 # Only probe when actually building with GPU offloading: on CPU-only builds (CI on
 # macOS/Windows) Open MPI ships MPIX_Query_cuda_support() as a zero-returning stub
 # even without CUDA, causing a false-positive detection and a misleading message.
-if mpi_dep.found() and gpu_offload
+if have_full_mpi and gpu_offload
   if cc.has_header('mpi-ext.h', dependencies: [mpi_dep])
     if cc.has_function('MPIX_Query_cuda_support',
                        prefix: '#include <mpi.h>\n#include <mpi-ext.h>',
@@ -264,59 +278,63 @@ if get_option('use_nvtx')
   endif
 endif
 
-# Only build sw_domain_gpu_ext if MPI and mpi4py are available
-if mpi_dep.found() and have_mpi4py
+# Always build sw_domain_gpu_ext. With full MPI it supports multi-GPU domain
+# decomposition; without it, the kernels use single-process stubs so a single
+# GPU still works (multiprocessor_mode=2). HAVE_MPI4PY is forwarded to Cython so
+# the .pyx skips the mpi4py cimport when mpi4py is absent.
+if have_full_mpi
   gpu_deps = openmp_deps + [mpi_dep] + nvtx_dep
-
-  # On macOS, SIP strips DYLD_LIBRARY_PATH from child processes so libmpi.dylib
-  # is not found at dlopen time even though it is present in the conda env.
-  # Embed two rpaths:
-  #   @executable_path/../lib  — resolves to $CONDA_PREFIX/lib relative to the
-  #                              Python binary; portable across any conda env path
-  #   sys.prefix/lib           — absolute fallback for non-standard layouts
-  gpu_link_args = []
-  if host_machine.system() == 'darwin'
-    _py_prefix = run_command(py3, ['-c', 'import sys; print(sys.prefix)'], check: false)
-    if _py_prefix.returncode() == 0
-      _mpi_lib_dir = _py_prefix.stdout().strip() + '/lib'
-      gpu_link_args = [
-        '-Wl,-rpath,@executable_path/../lib',
-        '-Wl,-rpath,' + _mpi_lib_dir,
-      ]
-      message('macOS: embedding rpath for libmpi.dylib: ' + _mpi_lib_dir)
-    endif
-  endif
-
-  py3.extension_module('sw_domain_gpu_ext',
-    sources: [
-      'sw_domain_gpu_ext.pyx',
-      'gpu/gpu_domain_core.c',
-      'gpu/gpu_boundaries.c',
-      'gpu/gpu_kernels.c',
-      'gpu/gpu_halo.c',
-      'gpu/gpu_rate_operator.c',
-      'gpu/gpu_inlet_operator.c',
-      'gpu/gpu_culvert_operator.c',
-      'gpu/gpu_flop.c',
-      'gpu/core_kernels.c',
-    ],
-    c_args: gpu_c_args,
-    link_args: gpu_link_args,
-    include_directories: gpu_inc_dir,
-    dependencies: gpu_deps,
-    subdir: 'anuga/shallow_water',
-    install: true,
-  )
-
-  if gpu_offload
-    message('Unified extension built with GPU target')
-  else
-    message('Unified extension built with CPU multicore target')
-  endif
+  gpu_cython_args = ['--compile-time-env', 'HAVE_MPI4PY=True']
 else
-  # Expected on Windows (MSMPI has no mpicc/pkg-config) and minimal Linux installs.
-  # GPU tests will be skipped via ImportError on those platforms.
-  message('MPI or mpi4py not found - sw_domain_gpu_ext will NOT be built (multiprocessor_mode=2 unavailable)')
+  gpu_deps = openmp_deps + nvtx_dep
+  gpu_cython_args = ['--compile-time-env', 'HAVE_MPI4PY=False']
+endif
+
+# On macOS, SIP strips DYLD_LIBRARY_PATH from child processes so libmpi.dylib
+# is not found at dlopen time even though it is present in the conda env.
+# Embed two rpaths:
+#   @executable_path/../lib  — resolves to $CONDA_PREFIX/lib relative to the
+#                              Python binary; portable across any conda env path
+#   sys.prefix/lib           — absolute fallback for non-standard layouts
+gpu_link_args = []
+if host_machine.system() == 'darwin' and have_full_mpi
+  _py_prefix = run_command(py3, ['-c', 'import sys; print(sys.prefix)'], check: false)
+  if _py_prefix.returncode() == 0
+    _mpi_lib_dir = _py_prefix.stdout().strip() + '/lib'
+    gpu_link_args = [
+      '-Wl,-rpath,@executable_path/../lib',
+      '-Wl,-rpath,' + _mpi_lib_dir,
+    ]
+    message('macOS: embedding rpath for libmpi.dylib: ' + _mpi_lib_dir)
+  endif
+endif
+
+py3.extension_module('sw_domain_gpu_ext',
+  sources: [
+    'sw_domain_gpu_ext.pyx',
+    'gpu/gpu_domain_core.c',
+    'gpu/gpu_boundaries.c',
+    'gpu/gpu_kernels.c',
+    'gpu/gpu_halo.c',
+    'gpu/gpu_rate_operator.c',
+    'gpu/gpu_inlet_operator.c',
+    'gpu/gpu_culvert_operator.c',
+    'gpu/gpu_flop.c',
+    'gpu/core_kernels.c',
+  ],
+  c_args: gpu_c_args,
+  cython_args: gpu_cython_args,
+  link_args: gpu_link_args,
+  include_directories: gpu_inc_dir,
+  dependencies: gpu_deps,
+  subdir: 'anuga/shallow_water',
+  install: true,
+)
+
+if gpu_offload
+  message('Unified GPU extension built with GPU target')
+else
+  message('Unified GPU extension built with CPU multicore target')
 endif
 
 
