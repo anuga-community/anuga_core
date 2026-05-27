@@ -9,8 +9,14 @@ The RK3 step has two intra-step ghost exchanges (after stages 1 and 2).
 The GPU path replaces these with C-level exchange_ghosts() calls; this test
 confirms they produce identical results.
 
-In CPU_ONLY_MODE the two modes are bit-for-bit identical (no floating-point
-reordering), so we use atol=1e-12.
+mode=1 uses the OpenMP C extension kernels; mode=2 uses the GPU C kernels.
+Both implement the same algorithm but with different code paths, so small
+floating-point differences (< 1e-6) are expected and acceptable.
+Ghost exchange errors produce O(1) differences and are easily caught.
+
+ATOL=1e-6 is used to allow for FP differences between the two code paths
+while still detecting ghost-exchange bugs.  All ranks vote on the result
+via MPI allreduce before raising so that no rank is left waiting.
 
 Run via pytest (auto-marked slow):
 
@@ -48,7 +54,7 @@ N = 29
 YIELDSTEP = 0.25
 FINALTIME = 1.0
 GAUGE_POINTS = [[0.4, 0.5], [0.6, 0.5], [0.8, 0.5], [0.9, 0.5]]
-ATOL = 1e-12
+ATOL = 1e-6
 
 
 def topography(x, y):
@@ -102,16 +108,34 @@ def run_simulation(mode, verbose=False):
 
 
 def compare_modes(G1, ids1, G2, ids2, label=''):
+    """Assert mode=1 and mode=2 gauge time-series match across all ranks.
+
+    Uses MPI allreduce so all ranks fail (or pass) together — prevents one
+    rank from hanging in a collective while another has called MPI_Abort.
+    """
+    local_max_diff = 0.0
+    worst_gauge = -1
     for i, (tid1, tid2) in enumerate(zip(ids1, ids2)):
         if tid1 > -1 and tid2 > -1:
             a1 = num.array(G1[i])
             a2 = num.array(G2[i])
-            if not num.allclose(a1, a2, atol=ATOL):
-                max_diff = num.max(num.abs(a1 - a2))
-                raise AssertionError(
-                    f'[rank {myid}] {label} gauge {i}: '
-                    f'mode=1 vs mode=2 max diff = {max_diff:.2e} (atol={ATOL})'
-                )
+            diff = float(num.max(num.abs(a1 - a2)))
+            if diff > local_max_diff:
+                local_max_diff = diff
+                worst_gauge = i
+
+    try:
+        from mpi4py import MPI
+        global_max_diff = MPI.COMM_WORLD.allreduce(local_max_diff, op=MPI.MAX)
+    except ImportError:
+        global_max_diff = local_max_diff
+
+    if global_max_diff > ATOL:
+        raise AssertionError(
+            f'[rank {myid}] {label}: '
+            f'mode=1 vs mode=2 global max diff = {global_max_diff:.2e} '
+            f'(atol={ATOL}, local worst gauge={worst_gauge})'
+        )
 
 
 @pytest.mark.skipif(not gpu_available(),
