@@ -410,18 +410,6 @@ cdef class GPUDomain:
         return self.GD.gpu_aware_mpi
 
     @property
-    def has_c_mpi(self):
-        """True if this extension was compiled with real C MPI (HAVE_MPI4PY=True).
-
-        When False the C-level exchange_ghosts() is a no-op (single-process
-        stubs).  Parallel domains must fall back to Python MPI ghost exchange.
-        """
-        IF HAVE_MPI4PY:
-            return True
-        ELSE:
-            return False
-
-    @property
     def num_neighbors(self):
         return self.GD.halo.num_neighbors
 
@@ -879,6 +867,22 @@ def gpu_available():
             domain.set_multiprocessor_mode(1)  # CPU OpenMP
     """
     return bool(gpu_is_available())
+
+
+def gpu_has_mpi():
+    """Return True if this extension was compiled with real C MPI support.
+
+    Returns False when built against single-process stubs (mpi.h was not
+    found at build time, HAVE_MPI4PY=False).
+
+    Multi-rank GPU halo-exchange tests must be skipped when this returns
+    False: the C-level exchange_ghosts() would be a no-op, producing
+    incorrect results in parallel runs.
+    """
+    IF HAVE_MPI4PY:
+        return True
+    ELSE:
+        return False
 
 
 def is_gpu_aware_mpi():

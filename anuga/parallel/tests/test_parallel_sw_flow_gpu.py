@@ -57,6 +57,14 @@ def gpu_available():
         return False
 
 
+def gpu_has_mpi():
+    try:
+        from anuga.shallow_water.sw_domain_gpu_ext import gpu_has_mpi as _gpu_has_mpi
+        return _gpu_has_mpi()
+    except ImportError:
+        return False
+
+
 # ---------------------------------------------------------------------------
 # Simulation parameters
 # ---------------------------------------------------------------------------
@@ -175,7 +183,9 @@ def compare_modes(G1, ids1, G2, ids2, label=''):
 # ---------------------------------------------------------------------------
 
 @pytest.mark.skipif(not gpu_available(),
-                    reason='GPU OpenMP extension not available')
+                    reason='GPU extension not available')
+@pytest.mark.skipif(not gpu_has_mpi(),
+                    reason='GPU extension built without C MPI (mpi.h not found at build time)')
 @pytest.mark.skipif('mpi4py' not in sys.modules,
                     reason='requires mpi4py')
 class Test_parallel_sw_gpu_halo(unittest.TestCase):
