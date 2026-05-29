@@ -3529,7 +3529,8 @@ class Domain(Generic_Domain):
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
                               'Time_boundary', 'File_boundary', 'Field_boundary',
-                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary',
+                              'Flather_boundary'}
 
         if not hasattr(self, '_gpu_boundary_info_initialized'):
             self._gpu_cpu_tags = []
@@ -3539,6 +3540,7 @@ class Domain(Generic_Domain):
             self._gpu_time_boundaries = []
             self._gpu_absorbing_wave_boundaries = []
             self._gpu_characteristic_wave_boundaries = []
+            self._gpu_flather_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -3555,6 +3557,8 @@ class Domain(Generic_Domain):
                         self._gpu_absorbing_wave_boundaries.append(B)
                     elif btype == 'Characteristic_wave_boundary':
                         self._gpu_characteristic_wave_boundaries.append(B)
+                    elif btype == 'Flather_boundary':
+                        self._gpu_flather_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 print("WARNING: C Euler loop requires all GPU-supported boundary types")
@@ -3652,7 +3656,8 @@ class Domain(Generic_Domain):
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
                               'Time_boundary', 'File_boundary', 'Field_boundary',
-                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary',
+                              'Flather_boundary'}
 
         # Lazy init: identify which boundaries need special handling
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3663,6 +3668,7 @@ class Domain(Generic_Domain):
             self._gpu_time_boundaries = []
             self._gpu_absorbing_wave_boundaries = []
             self._gpu_characteristic_wave_boundaries = []
+            self._gpu_flather_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -3679,6 +3685,8 @@ class Domain(Generic_Domain):
                         self._gpu_absorbing_wave_boundaries.append(B)
                     elif btype == 'Characteristic_wave_boundary':
                         self._gpu_characteristic_wave_boundaries.append(B)
+                    elif btype == 'Flather_boundary':
+                        self._gpu_flather_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 print("WARNING: C RK2 loop requires all GPU-supported boundary types")
@@ -3986,7 +3994,8 @@ class Domain(Generic_Domain):
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
                               'Time_boundary', 'File_boundary', 'Field_boundary',
-                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary',
+                              'Flather_boundary'}
 
         # Lazy init: identify which boundaries need special handling
         if not hasattr(self, '_gpu_boundary_info_initialized'):
@@ -3997,6 +4006,7 @@ class Domain(Generic_Domain):
             self._gpu_time_boundaries = []
             self._gpu_absorbing_wave_boundaries = []
             self._gpu_characteristic_wave_boundaries = []
+            self._gpu_flather_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -4013,6 +4023,8 @@ class Domain(Generic_Domain):
                         self._gpu_absorbing_wave_boundaries.append(B)
                     elif btype == 'Characteristic_wave_boundary':
                         self._gpu_characteristic_wave_boundaries.append(B)
+                    elif btype == 'Flather_boundary':
+                        self._gpu_flather_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 print("WARNING: C RK3 loop requires all GPU-supported boundary types")
