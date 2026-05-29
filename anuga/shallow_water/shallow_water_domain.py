@@ -2811,6 +2811,11 @@ class Domain(Generic_Domain):
         vertices and edges
         """
 
+        # GPU mode: dispatch to C Euler loop (eliminates Python round-trip overhead)
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            self._evolve_one_euler_step_c(yieldstep, finaltime)
+            return
+
         # From centroid values calculate edge
         self.distribute_to_vertices_and_edges(distribute_to_vertices=False)
 
@@ -2829,13 +2834,6 @@ class Domain(Generic_Domain):
 
         # Update conserved quantities
         self.update_conserved_quantities()
-
-        # Ghost exchange (MPI) - required for multi-GPU operation
-        # Note: update_ghosts() is a no-op in GPU mode, so we call exchange_ghosts directly
-        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
-            if self.ghost_layer_width < 4:
-                from anuga.shallow_water.sw_domain_gpu_ext import exchange_ghosts
-                exchange_ghosts(self.gpu_interface.gpu_dom)
 
 
     def evolve_one_rk2_step(self, yieldstep, finaltime):
@@ -3499,6 +3497,127 @@ class Domain(Generic_Domain):
 
         # RK2 averaging
         saxpy_conserved_quantities_gpu(gpu_dom, 0.5, 0.5)
+
+        # Post-step ghost exchange — update_ghosts() is a no-op in GPU mode
+        if self.ghost_layer_width < 4:
+            exchange_ghosts(gpu_dom)
+
+
+    def _evolve_one_euler_step_c(self, yieldstep, finaltime):
+        """Euler step executed entirely in C - eliminates Python round-trip overhead.
+
+        All kernel calls (extrapolation, boundaries, fluxes, forcing, update) happen
+        in C with MPI timestep reduction also in C.  Only one Python->C call per step.
+
+        Limitations:
+        - Only supports GPU-evaluated boundary types
+        - Rate_operators must be applied separately (after this call)
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            evolve_one_euler_step_gpu,
+            set_transmissive_n_zero_t_stage,
+            set_time_boundary_values,
+            set_file_boundary_values_from_domain,
+            set_absorbing_wave_value,
+            set_characteristic_wave_value,
+            set_flather_value,
+            exchange_ghosts,
+        )
+
+        gpu_dom = self.gpu_interface.gpu_dom
+
+        GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
+                              'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+                              'Time_boundary', 'File_boundary', 'Field_boundary',
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
+
+        if not hasattr(self, '_gpu_boundary_info_initialized'):
+            self._gpu_cpu_tags = []
+            self._gpu_all_on_gpu = True
+            cpu_boundary_types = []
+            self._gpu_transmissive_n_zero_t_boundaries = []
+            self._gpu_time_boundaries = []
+            self._gpu_absorbing_wave_boundaries = []
+            self._gpu_characteristic_wave_boundaries = []
+
+            for tag, B in self.boundary_map.items():
+                if B is not None:
+                    btype = B.__class__.__name__
+                    if btype not in GPU_BOUNDARY_TYPES:
+                        self._gpu_cpu_tags.append(tag)
+                        self._gpu_all_on_gpu = False
+                        cpu_boundary_types.append((tag, btype))
+                    elif btype == 'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary':
+                        self._gpu_transmissive_n_zero_t_boundaries.append(B)
+                    elif btype == 'Time_boundary':
+                        self._gpu_time_boundaries.append(B)
+                    elif btype == 'Absorbing_wave_boundary':
+                        self._gpu_absorbing_wave_boundaries.append(B)
+                    elif btype == 'Characteristic_wave_boundary':
+                        self._gpu_characteristic_wave_boundaries.append(B)
+
+            if not self._gpu_all_on_gpu:
+                print("WARNING: C Euler loop requires all GPU-supported boundary types")
+                print("  Unsupported types: " + str(cpu_boundary_types))
+
+            self._gpu_boundary_info_initialized = True
+
+        # Set time-dependent boundary values before calling C function
+        for B in self._gpu_transmissive_n_zero_t_boundaries:
+            stage_val = B.get_boundary_values()
+            try:
+                stage_val = float(stage_val)
+            except (TypeError, ValueError):
+                stage_val = float(stage_val[0])
+            set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
+
+        for B in self._gpu_time_boundaries:
+            q = B.get_boundary_values()
+            set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+
+        set_file_boundary_values_from_domain(gpu_dom, self)
+
+        for B in self._gpu_absorbing_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                wave_val = float(value)
+            except (TypeError, ValueError):
+                wave_val = float(value[0])
+            set_absorbing_wave_value(gpu_dom, wave_val)
+
+        for B in self._gpu_characteristic_wave_boundaries:
+            value = B.get_boundary_values()
+            try:
+                perturb = float(value)
+            except (TypeError, ValueError):
+                perturb = float(value[0])
+            set_characteristic_wave_value(gpu_dom, perturb)
+
+        for B in self._gpu_flather_boundaries:
+            value = B.get_boundary_values()
+            try:
+                stage_val = float(value)
+            except (TypeError, ValueError):
+                stage_val = float(value[0])
+            set_flather_value(gpu_dom, stage_val)
+
+        # Compute max allowed timestep (mirrors update_timestep() logic)
+        remaining_yieldstep = yieldstep - (self.get_relative_time() % yieldstep)
+        if finaltime is not None:
+            remaining_finaltime = finaltime - self.get_time()
+            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep, remaining_finaltime)
+        else:
+            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
+
+        # Execute full Euler step in C (includes MPI timestep reduction)
+        self.timestep = evolve_one_euler_step_gpu(gpu_dom, max_timestep, 1)
+
+        # Update internal time tracking
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+
+        # Record timestep stats
+        self.recorded_max_timestep = max(self.timestep, self.recorded_max_timestep)
+        self.recorded_min_timestep = min(self.timestep, self.recorded_min_timestep)
 
         # Post-step ghost exchange — update_ghosts() is a no-op in GPU mode
         if self.ghost_layer_width < 4:

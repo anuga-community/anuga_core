@@ -561,6 +561,9 @@ double gpu_protect(struct gpu_domain *GD);
 double gpu_compute_water_volume(struct gpu_domain *GD);
 void gpu_manning_friction(struct gpu_domain *GD);
 
+// Full Euler step on GPU
+double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
+
 // Full RK2 step on GPU (calls all the above in sequence)
 // max_timestep: Maximum allowed timestep (respecting yieldstep/finaltime constraints)
 double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);

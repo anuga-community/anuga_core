@@ -261,6 +261,9 @@ cdef extern from "gpu_domain.h" nogil:
     # Full ADER-2 step (single flux call with fused edge predictor, prev_dt from prior step)
     double gpu_evolve_one_ader2_step(gpu_domain *GD, double max_timestep, int apply_forcing, double prev_dt)
 
+    # Full Euler step
+    double gpu_evolve_one_euler_step(gpu_domain *GD, double max_timestep, int apply_forcing)
+
     # Full RK2 step
     double gpu_evolve_one_rk2_step(gpu_domain *GD, double max_timestep, int apply_forcing)
 
@@ -1599,6 +1602,27 @@ def set_flather_value(GPUDomain gpu_dom, double stage_outside):
 def evaluate_flather_boundary_gpu(GPUDomain gpu_dom):
     """Evaluate Flather_external_stage_zero_velocity_boundary on GPU."""
     gpu_evaluate_flather_boundary(&gpu_dom.GD)
+
+
+def evolve_one_euler_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
+    """
+    Execute one Euler timestep on GPU.
+
+    Parameters
+    ----------
+    gpu_dom : GPUDomain
+        The GPU domain wrapper
+    max_timestep : float
+        Maximum allowed timestep (respecting yieldstep/finaltime constraints)
+    apply_forcing : int
+        Whether to apply GPU-compatible forcing terms
+
+    Returns
+    -------
+    float
+        The timestep used
+    """
+    return gpu_evolve_one_euler_step(&gpu_dom.GD, max_timestep, apply_forcing)
 
 
 def evolve_one_rk2_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
