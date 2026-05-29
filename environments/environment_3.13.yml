@@ -16,7 +16,6 @@ dependencies:
   - meshpy
   - meson
   - meson-python=0.17
-  - mpi4py
   - netcdf4
   - ninja
   - numpy

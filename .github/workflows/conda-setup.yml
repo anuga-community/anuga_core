@@ -55,10 +55,8 @@ jobs:
         shell: bash -el {0}
         run: |
            conda install -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64
-           # msmpi: Microsoft MPI — the only MPI available for Windows on conda-forge
-           # Installing it forces conda to switch mpi4py from the nompi stub to
-           # the msmpi variant, giving us mpi.h under Library/include.
-           conda install -c conda-forge -n anuga_env msmpi "mpi4py=*=mpi_msmpi_*"
+           # impi_rt: Intel MPI runtime for Windows — provides mpi.h under Library/include
+           conda install -c conda-forge -n anuga_env impi_rt "mpi4py=*=mpi_impi_*"
 
            # conda install -c conda-forge -n anuga_env compilers
            # The compilers package on windows which uses clang. We run into
@@ -69,8 +67,8 @@ jobs:
         shell: bash -el {0}
         run: |
            conda install -c conda-forge -n anuga_env compilers
-           # mpich: available on conda-forge for macOS x86_64 and arm64
-           conda install -c conda-forge -n anuga_env mpich "mpi4py=*=mpi_mpich_*"
+           # openmpi: available on conda-forge for macOS x86_64 and arm64
+           conda install -c conda-forge -n anuga_env openmpi "mpi4py=*=mpi_openmpi_*"
 
       - name: Set macOS library path for MPI
         if: runner.os == 'macOS'
@@ -84,8 +82,8 @@ jobs:
         shell: bash -el {0}
         run: |
            conda install -c conda-forge -n anuga_env compilers libgomp
-           # mpich: available on conda-forge for Linux x86_64 and aarch64
-           conda install -c conda-forge -n anuga_env mpich "mpi4py=*=mpi_mpich_*"
+           # openmpi: available on conda-forge for Linux x86_64 and aarch64
+           conda install -c conda-forge -n anuga_env openmpi "mpi4py=*=mpi_openmpi_*"
 
       - name: Debug MPI environment
         shell: bash -el {0}
