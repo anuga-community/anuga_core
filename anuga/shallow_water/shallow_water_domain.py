@@ -859,11 +859,11 @@ class Domain(Generic_Domain):
         self.set_default_order(2)
         self.set_extrapolate_velocity()
 
-        self.beta_w = 1.0
+        self.beta_w = 0.5
         self.beta_w_dry = 0.0
-        self.beta_uh = 1.0
+        self.beta_uh = 0.5
         self.beta_uh_dry = 0.0
-        self.beta_vh = 1.0
+        self.beta_vh = 0.5
         self.beta_vh_dry = 0.0
 
         self.set_store_centroids(True)
@@ -3011,6 +3011,12 @@ class Domain(Generic_Domain):
             evaluate_time_boundary_gpu,
             set_file_boundary_values_from_domain,
             evaluate_file_boundary_gpu,
+            set_absorbing_wave_value,
+            evaluate_absorbing_wave_boundary_gpu,
+            set_characteristic_wave_value,
+            evaluate_characteristic_wave_boundary_gpu,
+            set_flather_value,
+            evaluate_flather_boundary_gpu,
         )
         import numpy as np
 
@@ -3019,7 +3025,8 @@ class Domain(Generic_Domain):
         GPU_BOUNDARY_TYPES = {'Reflective_boundary', 'Dirichlet_boundary', 'Transmissive_boundary',
                               'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
                               'Time_boundary', 'File_boundary', 'Field_boundary',
-                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary'}
+                              'Absorbing_wave_boundary', 'Characteristic_wave_boundary',
+                              'Flather_boundary'}
 
         if not hasattr(self, '_gpu_boundary_info_initialized'):
             self._gpu_cpu_tags = []
@@ -3029,6 +3036,7 @@ class Domain(Generic_Domain):
             self._gpu_time_boundaries = []
             self._gpu_absorbing_wave_boundaries = []
             self._gpu_characteristic_wave_boundaries = []
+            self._gpu_flather_boundaries = []
 
             for tag, B in self.boundary_map.items():
                 if B is not None:
@@ -3045,6 +3053,8 @@ class Domain(Generic_Domain):
                         self._gpu_absorbing_wave_boundaries.append(B)
                     elif btype == 'Characteristic_wave_boundary':
                         self._gpu_characteristic_wave_boundaries.append(B)
+                    elif btype == 'Flather_boundary':
+                        self._gpu_flather_boundaries.append(B)
 
             if not self._gpu_all_on_gpu:
                 boundary_cell_ids = np.unique(self.boundary_cells).astype(np.intc)
@@ -4602,6 +4612,168 @@ class Domain(Generic_Domain):
 
             barrier()
         return
+
+    def diagnose_timestep(self,
+                          threshold_dt: float | None = None,
+                          top_n: int = 5,
+                          threshold_depth: float | None = None,
+                          verbose: bool = True) -> dict:
+        """Diagnose CFL-limited timestep and NaN/inf in conserved quantities.
+
+        Computes the CFL-limiting dt per centroid (radius / wave_speed) and
+        reports the cells driving the global minimum. Also scans stage,
+        xmomentum and ymomentum for NaN / inf, which is the usual signature
+        of an ADER-2 (or any) timestepping blow-up. Intended to be called
+        from inside an evolve loop (e.g. each yieldstep) to localise where
+        and when the solver is about to fail.
+
+        Parameters
+        ----------
+        threshold_dt : float, optional
+            If given, a WARNING is emitted whenever the global min local-dt
+            falls below this value. Useful to catch the moment dt collapses.
+        top_n : int
+            Number of worst (smallest-dt) cells per rank to include in the
+            returned dict and printed report.
+        threshold_depth : float, optional
+            Depths below this are clamped when computing speed, to avoid
+            division-by-tiny. Defaults to self.minimum_allowed_height.
+        verbose : bool
+            If True, print a per-rank report.
+
+        Returns
+        -------
+        dict
+            Keys:
+              time              relative simulation time
+              current_timestep  self.timestep (last accepted global dt)
+              cfl               self.CFL setting
+              local_min_dt      smallest cell-local CFL dt on this rank
+              global_min_dt     smallest cell-local CFL dt across all ranks
+              local_max_speed   max wave_speed on this rank
+              global_max_speed  max wave_speed across all ranks
+              nan_counts        {'stage': n, 'xmomentum': n, 'ymomentum': n}
+              first_nan_cell    centroid xy of the first NaN/inf cell on
+                                this rank, or None
+              worst_cells       list of dicts (top_n) with keys
+                                {triangle, x, y, depth, speed, local_dt}
+        """
+        from anuga import numprocs
+        from anuga.config import g, epsilon
+
+        if threshold_depth is None:
+            threshold_depth = self.minimum_allowed_height
+
+        stage_c = self.quantities['stage'].centroid_values
+        elev_c = self.quantities['elevation'].centroid_values
+        uh_c = self.quantities['xmomentum'].centroid_values
+        vh_c = self.quantities['ymomentum'].centroid_values
+
+        bad_stage = ~num.isfinite(stage_c)
+        bad_uh = ~num.isfinite(uh_c)
+        bad_vh = ~num.isfinite(vh_c)
+        nan_counts = {
+            'stage':     int(bad_stage.sum()),
+            'xmomentum': int(bad_uh.sum()),
+            'ymomentum': int(bad_vh.sum()),
+        }
+
+        first_nan_cell = None
+        any_bad = bad_stage | bad_uh | bad_vh
+        if any_bad.any():
+            i = int(num.argmax(any_bad))
+            x = self.centroid_coordinates[i, 0] + self.geo_reference.xllcorner
+            y = self.centroid_coordinates[i, 1] + self.geo_reference.yllcorner
+            first_nan_cell = (float(x), float(y), i)
+
+        # Local CFL dt per cell. Mask NaNs out so argmin/min are meaningful.
+        d = stage_c - elev_c
+        d_safe = num.where(num.isfinite(d), num.maximum(d, threshold_depth),
+                           threshold_depth)
+        speed_h = num.sqrt(uh_c * uh_c + vh_c * vh_c) / d_safe
+        speed_h = num.where(num.isfinite(speed_h), speed_h, 0.0)
+        speed_h = speed_h * (d > threshold_depth)
+        grav_speed = num.sqrt(g * d_safe)
+        wave_speed = num.abs(speed_h) + grav_speed
+
+        local_dt = self.radii / num.maximum(wave_speed, epsilon)
+        # Don't let NaN cells dominate the argmin
+        local_dt = num.where(num.isfinite(local_dt), local_dt, num.inf)
+
+        local_min_dt = float(local_dt.min())
+        local_max_speed = float(num.nanmax(wave_speed)) if wave_speed.size else 0.0
+
+        order = num.argsort(local_dt)[:max(top_n, 1)]
+        worst_cells = []
+        for idx in order:
+            i = int(idx)
+            worst_cells.append({
+                'triangle': i,
+                'x': float(self.centroid_coordinates[i, 0]
+                           + self.geo_reference.xllcorner),
+                'y': float(self.centroid_coordinates[i, 1]
+                           + self.geo_reference.yllcorner),
+                'depth': float(d[i]),
+                'speed': float(wave_speed[i]),
+                'local_dt': float(local_dt[i]),
+            })
+
+        if numprocs > 1:
+            from mpi4py import MPI
+            comm = MPI.COMM_WORLD
+            global_min_dt = comm.allreduce(local_min_dt, op=MPI.MIN)
+            global_max_speed = comm.allreduce(local_max_speed, op=MPI.MAX)
+            global_nan = {
+                k: comm.allreduce(v, op=MPI.SUM) for k, v in nan_counts.items()
+            }
+        else:
+            global_min_dt = local_min_dt
+            global_max_speed = local_max_speed
+            global_nan = dict(nan_counts)
+
+        result = {
+            'time':             self.get_time(),
+            'current_timestep': self.timestep,
+            'cfl':              self.CFL,
+            'local_min_dt':     local_min_dt,
+            'global_min_dt':    global_min_dt,
+            'local_max_speed':  local_max_speed,
+            'global_max_speed': global_max_speed,
+            'nan_counts':       nan_counts,
+            'global_nan_counts': global_nan,
+            'first_nan_cell':   first_nan_cell,
+            'worst_cells':      worst_cells,
+        }
+
+        if verbose:
+            from anuga.parallel import myid
+            for i in range(numprocs):
+                if myid == i:
+                    print(f'  [diagnose_timestep] rank {myid} t={result["time"]:.3f}')
+                    print(f'    domain.timestep={self.timestep:.6e}  CFL={self.CFL}')
+                    print(f'    local  min cell-dt = {local_min_dt:.6e}   max wave_speed = {local_max_speed:.4f}')
+                    if numprocs > 1:
+                        print(f'    global min cell-dt = {global_min_dt:.6e}   max wave_speed = {global_max_speed:.4f}')
+                    total_bad = sum(nan_counts.values())
+                    if total_bad:
+                        print(f'    NaN/inf cells: stage={nan_counts["stage"]} '
+                              f'xmom={nan_counts["xmomentum"]} '
+                              f'ymom={nan_counts["ymomentum"]}')
+                        if first_nan_cell is not None:
+                            fx, fy, fi = first_nan_cell
+                            print(f'    first bad cell: tri={fi} at ({fx:.2f}, {fy:.2f})')
+                    for c in worst_cells:
+                        print(f'    tri {c["triangle"]:>7}  '
+                              f'xy=({c["x"]:.2f}, {c["y"]:.2f})  '
+                              f'depth={c["depth"]:.4f}  speed={c["speed"]:.4f}  '
+                              f'local_dt={c["local_dt"]:.6e}')
+                    if threshold_dt is not None and global_min_dt < threshold_dt:
+                        print(f'    WARNING: global min cell-dt {global_min_dt:.3e} '
+                              f'< threshold {threshold_dt:.3e}')
+                    sys.stdout.flush()
+                barrier()
+
+        return result
 
 # =======================================================================
 # PETE: NEW METHODS FOR FOR PARALLEL STRUCTURES. Note that we assume the

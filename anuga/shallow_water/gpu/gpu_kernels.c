@@ -245,7 +245,6 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     gpu_evaluate_absorbing_wave_boundary(GD);
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
-
     if (prev_dt > 0.0) {
         // ========================================
         // Step 2: fused edge C-K predictor — shifts edges to Q^{n+1/2} in-place
@@ -301,6 +300,7 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     // (Q^n centroids are unchanged — no restore needed)
     // ========================================
 
+    //printf("before gpu convesed \n");
     gpu_update_conserved_quantities(GD, timestep);
 
     NVTX_POP();  // gpu_evolve_one_ader2_step
