@@ -8,6 +8,8 @@ Mathematical Background
 This page outlines the mathematics underpinning ANUGA.  It is a
 web-searchable version of Chapter 16 of the
 `ANUGA User Manual <https://github.com/anuga-community/anuga_user_manual>`_.
+ANUGA has been applied to hydrodynamic modelling of coastal inundation
+[Nielsen2005]_ and many other shallow water problems.
 
 .. contents:: Contents
    :local:

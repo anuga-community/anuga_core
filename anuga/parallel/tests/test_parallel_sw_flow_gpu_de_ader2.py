@@ -5,10 +5,17 @@ Verifies that multiprocessor_mode=2 (GPU ADER-2 step, GPU internal MPI ghost
 exchange) produces results matching multiprocessor_mode=1 (CPU ADER-2 step,
 Python MPI ghost exchange) when run in parallel.
 
-Both modes use the same fused edge C-K predictor with _ader2_prev_dt from the
-previous step.  The only difference is floating-point evaluation order (C loop
-vs Python function calls), so the results agree to ~1e-10 and the test uses
-atol=1e-8.
+mode=1 uses the OpenMP C extension kernels; mode=2 uses the GPU C kernels.
+Both implement the same ADER-2 algorithm but with different code paths, so
+small floating-point differences (< 1e-6) are expected and acceptable.
+Ghost exchange errors produce O(1) differences and are easily caught.
+
+Both modes call the same core_kernels.c functions for computation; the only
+difference is ghost exchange (Python MPI vs C MPI).  After a correct build
+the results should be bit-for-bit identical, so ATOL=1e-12 is used.  Ghost
+exchange errors produce O(0.1-1.0) differences and are easily caught.
+All ranks vote on the result via MPI allreduce before raising so that no
+rank is left waiting.
 
 Run via pytest (auto-marked slow):
 
@@ -41,14 +48,20 @@ def gpu_available():
         return False
 
 
+def gpu_has_mpi():
+    try:
+        from anuga.shallow_water.sw_domain_gpu_ext import gpu_has_mpi as _gpu_has_mpi
+        return _gpu_has_mpi()
+    except ImportError:
+        return False
+
+
 M = 29
 N = 29
 YIELDSTEP = 0.25
 FINALTIME = 1.0
 GAUGE_POINTS = [[0.4, 0.5], [0.6, 0.5], [0.8, 0.5], [0.9, 0.5]]
-# Both modes use the same fused edge C-K predictor with _ader2_prev_dt, so
-# the only difference is floating-point ordering (C loop vs Python calls).
-ATOL = 1e-8
+ATOL = 1e-12
 
 
 def topography(x, y):
@@ -102,20 +115,40 @@ def run_simulation(mode, verbose=False):
 
 
 def compare_modes(G1, ids1, G2, ids2, label=''):
+    """Assert mode=1 and mode=2 gauge time-series match across all ranks.
+
+    Uses MPI allreduce so all ranks fail (or pass) together — prevents one
+    rank from hanging in a collective while another has called MPI_Abort.
+    """
+    local_max_diff = 0.0
+    worst_gauge = -1
     for i, (tid1, tid2) in enumerate(zip(ids1, ids2)):
         if tid1 > -1 and tid2 > -1:
             a1 = num.array(G1[i])
             a2 = num.array(G2[i])
-            if not num.allclose(a1, a2, atol=ATOL):
-                max_diff = num.max(num.abs(a1 - a2))
-                raise AssertionError(
-                    f'[rank {myid}] {label} gauge {i}: '
-                    f'mode=1 vs mode=2 max diff = {max_diff:.2e} (atol={ATOL})'
-                )
+            diff = float(num.max(num.abs(a1 - a2)))
+            if diff > local_max_diff:
+                local_max_diff = diff
+                worst_gauge = i
+
+    try:
+        from mpi4py import MPI
+        global_max_diff = MPI.COMM_WORLD.allreduce(local_max_diff, op=MPI.MAX)
+    except ImportError:
+        global_max_diff = local_max_diff
+
+    if global_max_diff > ATOL:
+        raise AssertionError(
+            f'[rank {myid}] {label}: '
+            f'mode=1 vs mode=2 global max diff = {global_max_diff:.2e} '
+            f'(atol={ATOL}, local worst gauge={worst_gauge})'
+        )
 
 
 @pytest.mark.skipif(not gpu_available(),
-                    reason='GPU OpenMP extension not available')
+                    reason='GPU extension not available')
+@pytest.mark.skipif(not gpu_has_mpi(),
+                    reason='GPU extension built without C MPI (mpi.h not found at build time)')
 @pytest.mark.skipif('mpi4py' not in sys.modules,
                     reason='requires mpi4py')
 class Test_parallel_sw_gpu_de_ader2(unittest.TestCase):

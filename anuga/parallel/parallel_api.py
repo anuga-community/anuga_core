@@ -14,6 +14,9 @@ from anuga.parallel.sequential_distribute import sequential_distribute_dump
 from anuga.parallel.sequential_distribute import sequential_distribute_load
 from anuga.parallel.sequential_distribute import sequential_mesh_dump
 from anuga.parallel.sequential_distribute import sequential_mesh_load
+from anuga.parallel.sequential_distribute import uniform_refine_domain
+from anuga.parallel.sequential_distribute import sequential_mesh_refine
+from anuga.parallel.sequential_distribute import create_parallel_mesh
 
 # ANUGA parallel engine (only load if pypar can)
 if pypar_available:

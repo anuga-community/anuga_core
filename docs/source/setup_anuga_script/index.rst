@@ -20,8 +20,11 @@ Script Structure
    rainfall
    riverwalls
    evolve
-   checkpointing
-   logging
+
+.. seealso::
+
+   :ref:`advanced_script`
+      Flow algorithm selection, checkpointing, and logging.
    
 .. only:: html
 

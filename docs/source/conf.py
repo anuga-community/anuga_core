@@ -64,6 +64,13 @@ def linkcode_resolve(domain, info):
 
 autodoc_default_flags = ['members']
 autosummary_generate = True
+autosectionlabel_prefix_document = True
+
+# Suppress duplicate-label warnings from autosectionlabel on autodoc-generated
+# docstring sections (e.g. "Parameters", "Returns" in multiple functions on
+# the same page).  Explicit .. _label: targets are used for all real
+# cross-references so these auto-labels are not needed.
+suppress_warnings = ['autosectionlabel']
 
 #extensions.append('sphinxcontrib.bibtex')
 #bibtex_bibfiles = ['refs.bib']

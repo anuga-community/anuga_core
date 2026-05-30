@@ -6,7 +6,7 @@
 #include <string.h>
 #include <math.h>
 #include <omp.h>
-#include <mpi.h>
+// MPI (or single-process stubs) come in via gpu_domain.h
 #include "gpu_domain.h"
 
 #include "gpu_device_helpers.h"
@@ -304,6 +304,59 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     gpu_update_conserved_quantities(GD, timestep);
 
     NVTX_POP();  // gpu_evolve_one_ader2_step
+    return timestep;
+}
+
+// ============================================================================
+// Full Euler Step - single-step C orchestration
+// ============================================================================
+
+double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int apply_forcing) {
+    NVTX_PUSH("gpu_evolve_one_euler_step");
+
+    double local_timestep, global_timestep, timestep;
+
+    gpu_protect(GD);
+    gpu_extrapolate_second_order(GD);
+
+    gpu_evaluate_reflective_boundary(GD);
+    gpu_evaluate_dirichlet_boundary(GD);
+    gpu_evaluate_transmissive_boundary(GD);
+    gpu_evaluate_transmissive_n_zero_t_boundary(GD);
+    gpu_evaluate_time_boundary(GD);
+    gpu_evaluate_file_boundary(GD);
+    gpu_evaluate_absorbing_wave_boundary(GD);
+    gpu_evaluate_characteristic_wave_boundary(GD);
+    gpu_evaluate_flather_boundary(GD);
+
+    local_timestep = gpu_compute_fluxes(GD);
+
+    static int fixed_ts_printed_euler = 0;
+    if (GD->fixed_flux_timestep > 0.0) {
+        if (GD->rank == 0 && !fixed_ts_printed_euler) {
+            printf("Using a fixed timestep! (dt = %e)\n", GD->fixed_flux_timestep);
+            fflush(stdout);
+            fixed_ts_printed_euler = 1;
+        }
+        timestep = GD->fixed_flux_timestep;
+        if (timestep > max_timestep) timestep = max_timestep;
+    } else {
+        if (GD->nprocs > 1) {
+            MPI_Allreduce(&local_timestep, &global_timestep, 1, MPI_DOUBLE, MPI_MIN, GD->comm);
+        } else {
+            global_timestep = local_timestep;
+        }
+        timestep = GD->CFL * global_timestep;
+        if (timestep > max_timestep) timestep = max_timestep;
+    }
+
+    if (apply_forcing) {
+        gpu_manning_friction(GD);
+    }
+
+    gpu_update_conserved_quantities(GD, timestep);
+
+    NVTX_POP();  // gpu_evolve_one_euler_step
     return timestep;
 }
 

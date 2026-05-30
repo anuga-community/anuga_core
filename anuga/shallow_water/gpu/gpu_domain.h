@@ -13,7 +13,11 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdbool.h>
+#ifdef HAVE_MPI
 #include <mpi.h>
+#else
+#include "gpu_mpi_stubs.h"
+#endif
 #include "anuga_typedefs.h"
 #include "sw_domain.h"
 
@@ -556,6 +560,9 @@ void gpu_saxpy3_conserved_quantities(struct gpu_domain *GD, double a, double b, 
 double gpu_protect(struct gpu_domain *GD);
 double gpu_compute_water_volume(struct gpu_domain *GD);
 void gpu_manning_friction(struct gpu_domain *GD);
+
+// Full Euler step on GPU
+double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
 
 // Full RK2 step on GPU (calls all the above in sequence)
 // max_timestep: Maximum allowed timestep (respecting yieldstep/finaltime constraints)

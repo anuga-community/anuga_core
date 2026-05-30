@@ -19,6 +19,10 @@ to install ANUGA.
 
    install_python
    install_anuga
-   install_anuga_developers
+
+.. seealso::
+
+   :doc:`install_anuga_developers`
+      Installing from source for developers and contributors.
    
 .. only:: html

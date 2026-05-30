@@ -1,33 +1,25 @@
 """
-Multi-rank GPU halo-exchange test for DE2 (RK3) flow algorithm.
+Multi-rank GPU C-loop test for DE0 (Euler) flow algorithm.
 
-Verifies that multiprocessor_mode=2 (C RK3 loop, GPU internal MPI ghost
-exchange) produces results matching multiprocessor_mode=1 (Python RK3 loop,
-Python MPI ghost exchange) when run in parallel with DE2.
-
-The RK3 step has two intra-step ghost exchanges (after stages 1 and 2).
-The GPU path replaces these with C-level exchange_ghosts() calls; this test
-confirms they produce identical results.
-
-mode=1 uses the OpenMP C extension kernels; mode=2 uses the GPU C kernels.
-Both implement the same algorithm but with different code paths, so small
-floating-point differences (< 1e-6) are expected and acceptable.
-Ghost exchange errors produce O(1) differences and are easily caught.
+Verifies that multiprocessor_mode=2 (C Euler step, C-level MPI ghost
+exchange) produces results matching multiprocessor_mode=1 (Python Euler
+step, Python MPI ghost exchange) when run in parallel with DE0.
 
 Both modes call the same core_kernels.c functions for computation; the only
-difference is ghost exchange (Python MPI vs C MPI).  After a correct build
-the results should be bit-for-bit identical, so ATOL=1e-12 is used.  Ghost
-exchange errors produce O(0.1-1.0) differences and are easily caught.
+difference is orchestration (Python vs C) and ghost exchange (Python MPI vs
+C MPI).  After a correct build the results should be bit-for-bit identical,
+so ATOL=1e-12 is used.  Ghost exchange errors produce O(0.1-1.0) differences
+and are easily caught.
 All ranks vote on the result via MPI allreduce before raising so that no
 rank is left waiting.
 
 Run via pytest (auto-marked slow):
 
-    pytest anuga/parallel/tests/test_parallel_sw_flow_gpu_de2.py
+    pytest anuga/parallel/tests/test_parallel_sw_flow_gpu_de0.py
 
 Or directly via MPI:
 
-    mpiexec -np 4 python -m mpi4py anuga/parallel/tests/test_parallel_sw_flow_gpu_de2.py
+    mpiexec -np 4 python -m mpi4py anuga/parallel/tests/test_parallel_sw_flow_gpu_de0.py
 """
 
 import os
@@ -73,13 +65,13 @@ def topography(x, y):
 
 
 def run_simulation(mode, verbose=False):
-    """Run a parallel DE2 simulation with the given multiprocessor_mode.
+    """Run a parallel DE0 simulation with the given multiprocessor_mode.
 
     Parameters
     ----------
     mode : int
-        1 = Python RK3 + Python MPI ghost exchange
-        2 = C RK3 + C-level MPI ghost exchange (GPU mode)
+        1 = Python Euler step + Python MPI ghost exchange
+        2 = C Euler step + C-level MPI ghost exchange
     """
     domain = rectangular_cross_domain(M, N)
     domain.set_quantity('elevation', topography)
@@ -88,9 +80,9 @@ def run_simulation(mode, verbose=False):
 
     domain = distribute(domain, verbose=False)
 
-    domain.set_name(f'gpu_de2_mode{mode}')
+    domain.set_name(f'gpu_de0_mode{mode}')
     domain.set_datadir(tempfile.mkdtemp())
-    domain.set_flow_algorithm('DE2')
+    domain.set_flow_algorithm('DE0')
     domain.set_quantities_to_be_stored(None)
 
     Br = Reflective_boundary(domain)
@@ -119,11 +111,7 @@ def run_simulation(mode, verbose=False):
 
 
 def compare_modes(G1, ids1, G2, ids2, label=''):
-    """Assert mode=1 and mode=2 gauge time-series match across all ranks.
-
-    Uses MPI allreduce so all ranks fail (or pass) together — prevents one
-    rank from hanging in a collective while another has called MPI_Abort.
-    """
+    """Assert mode=1 and mode=2 gauge time-series match across all ranks."""
     local_max_diff = 0.0
     worst_gauge = -1
     for i, (tid1, tid2) in enumerate(zip(ids1, ids2)):
@@ -155,15 +143,15 @@ def compare_modes(G1, ids1, G2, ids2, label=''):
                     reason='GPU extension built without C MPI (mpi.h not found at build time)')
 @pytest.mark.skipif('mpi4py' not in sys.modules,
                     reason='requires mpi4py')
-class Test_parallel_sw_gpu_de2(unittest.TestCase):
+class Test_parallel_sw_gpu_de0(unittest.TestCase):
 
-    def test_gpu_de2_2ranks(self):
-        """2-rank DE2: GPU halo exchange matches Python halo exchange."""
+    def test_gpu_de0_2ranks(self):
+        """2-rank DE0: C Euler loop matches Python Euler loop."""
         cmd = anuga.mpicmd(os.path.abspath(__file__), numprocs=2)
         assert os.system(cmd) == 0
 
-    def test_gpu_de2_4ranks(self):
-        """4-rank DE2: GPU halo exchange matches Python halo exchange."""
+    def test_gpu_de0_4ranks(self):
+        """4-rank DE0: C Euler loop matches Python Euler loop."""
         cmd = anuga.mpicmd(os.path.abspath(__file__), numprocs=4)
         assert os.system(cmd) == 0
 
@@ -177,23 +165,23 @@ if __name__ == '__main__':
     if numprocs == 1:
         runner = unittest.TextTestRunner()
         suite = unittest.TestLoader().loadTestsFromTestCase(
-            Test_parallel_sw_gpu_de2)
+            Test_parallel_sw_gpu_de0)
         runner.run(suite)
     else:
         from anuga.utilities.parallel_abstraction import global_except_hook
         sys.excepthook = global_except_hook
 
         if myid == 0:
-            print(f'\n=== GPU halo exchange test DE2: {numprocs} ranks ===')
+            print(f'\n=== GPU C Euler loop test DE0: {numprocs} ranks ===')
 
         barrier()
         if myid == 0:
-            print('  Running mode=1 (Python RK3, Python MPI) ...')
+            print('  Running mode=1 (Python Euler, Python MPI) ...')
         G1, ids1 = run_simulation(mode=1, verbose=False)
         barrier()
 
         if myid == 0:
-            print('  Running mode=2 (C RK3, GPU/C MPI) ...')
+            print('  Running mode=2 (C Euler, C MPI) ...')
         G2, ids2 = run_simulation(mode=2, verbose=False)
         barrier()
 
