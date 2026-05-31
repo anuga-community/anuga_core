@@ -1435,53 +1435,72 @@ class SWW_plotter:
 
     def _render_max_qty(self, ax, triang, max_depth, qty_data, elev, md,
                         basemap, cmap, alpha, vmin, vmax, smooth,
-                        show_elev=False, elev_levels=10, show_mesh=False):
+                        show_elev=False, elev_levels=10, show_mesh=False,
+                        xlim=None, ylim=None):
         """Shared renderer for save_max_*_frame; returns the ScalarMappable."""
         import numpy as np
         ax.set_xlim(triang.x.min(), triang.x.max())
         ax.set_ylim(triang.y.min(), triang.y.max())
-        if smooth:
+
+        wet_mask = max_depth <= md   # True = never-wet → exclude from quantity
+
+        if basemap and self.epsg:
+            # Always use imshow for basemap regardless of smooth flag.
+            # Flat tripcolor leaves blocky triangle artefacts over the map tiles;
+            # imshow + LinearTriInterpolator gives a smooth anti-aliased boundary.
+            # Resolution targets the visible (zoomed) region, matching _animated_frame.
             import matplotlib.tri as _mtri
-            wet_mask = max_depth <= md   # True = never-wet → exclude from quantity
-            if basemap and self.epsg:
-                from matplotlib.tri import LinearTriInterpolator as _LTI
-                triang_wet = _mtri.Triangulation(
-                    triang.x, triang.y, triang.triangles, mask=wet_mask)
-                v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
-                x0, x1 = float(triang.x.min()), float(triang.x.max())
-                y0, y1 = float(triang.y.min()), float(triang.y.max())
-                _span = max(x1 - x0, y1 - y0)
-                nx = max(100, int(400 * (x1 - x0) / _span))
-                ny = max(100, int(400 * (y1 - y0) / _span))
-                xi = np.linspace(x0, x1, nx)
-                yi = np.linspace(y0, y1, ny)
-                Xi, Yi = np.meshgrid(xi, yi)
-                zi = _LTI(triang_wet, v_qty)(Xi, Yi)
-                im = ax.imshow(zi, extent=[x0, x1, y0, y1], origin='lower',
-                               cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha,
-                               interpolation='bilinear', zorder=1)
-            else:
-                dry_mask = max_depth > md
-                triang_dry = _mtri.Triangulation(
-                    triang.x, triang.y, triang.triangles, mask=dry_mask)
-                v_elev = _face_to_vertex(triang, elev, face_mask=dry_mask)
-                dry_elev = np.asarray(elev)[~np.asarray(dry_mask, dtype=bool)]
-                e_vmin = float(dry_elev.min()) if dry_elev.size else 0.0
-                e_vmax = float(dry_elev.max()) if dry_elev.size else 1.0
-                if e_vmin >= e_vmax:
-                    e_vmax = e_vmin + 1.0
-                ax.tripcolor(triang_dry, v_elev, shading='gouraud', cmap='Greys_r',
-                             vmin=e_vmin, vmax=e_vmax).set_linewidths(0)
-                triang_wet = _mtri.Triangulation(
-                    triang.x, triang.y, triang.triangles, mask=wet_mask)
-                v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
-                im = ax.tripcolor(triang_wet, v_qty, shading='gouraud',
-                                  cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
-                im.set_linewidths(0)
+            from matplotlib.tri import LinearTriInterpolator as _LTI
+
+            triang_wet = _mtri.Triangulation(
+                triang.x, triang.y, triang.triangles, mask=wet_mask)
+            v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
+
+            mx0 = float(triang.x.min()); mx1 = float(triang.x.max())
+            my0 = float(triang.y.min()); my1 = float(triang.y.max())
+            x0 = max(mx0, xlim[0]) if xlim is not None else mx0
+            x1 = min(mx1, xlim[1]) if xlim is not None else mx1
+            y0 = max(my0, ylim[0]) if ylim is not None else my0
+            y1 = min(my1, ylim[1]) if ylim is not None else my1
+            if x0 >= x1:
+                x0, x1 = mx0, mx1
+            if y0 >= y1:
+                y0, y1 = my0, my1
+
+            _span = max(x1 - x0, y1 - y0)
+            nx = max(200, int(600 * (x1 - x0) / _span))
+            ny = max(200, int(600 * (y1 - y0) / _span))
+            xi = np.linspace(x0, x1, nx)
+            yi = np.linspace(y0, y1, ny)
+            Xi, Yi = np.meshgrid(xi, yi)
+            zi = _LTI(triang_wet, v_qty)(Xi, Yi)
+            im = ax.imshow(zi, extent=[x0, x1, y0, y1], origin='lower',
+                           cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha,
+                           interpolation='bilinear', zorder=1)
+
+        elif smooth:
+            import matplotlib.tri as _mtri
+            dry_mask = max_depth > md
+            triang_dry = _mtri.Triangulation(
+                triang.x, triang.y, triang.triangles, mask=dry_mask)
+            v_elev = _face_to_vertex(triang, elev, face_mask=dry_mask)
+            dry_elev = np.asarray(elev)[~np.asarray(dry_mask, dtype=bool)]
+            e_vmin = float(dry_elev.min()) if dry_elev.size else 0.0
+            e_vmax = float(dry_elev.max()) if dry_elev.size else 1.0
+            if e_vmin >= e_vmax:
+                e_vmax = e_vmin + 1.0
+            ax.tripcolor(triang_dry, v_elev, shading='gouraud', cmap='Greys_r',
+                         vmin=e_vmin, vmax=e_vmax).set_linewidths(0)
+            triang_wet = _mtri.Triangulation(
+                triang.x, triang.y, triang.triangles, mask=wet_mask)
+            v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
+            im = ax.tripcolor(triang_wet, v_qty, shading='gouraud',
+                              cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
+            im.set_linewidths(0)
+
         else:
-            if not (basemap and self.epsg):
-                triang.set_mask(max_depth > md)
-                ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
+            triang.set_mask(max_depth > md)
+            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
             triang.set_mask(max_depth <= md)
             im = ax.tripcolor(triang, facecolors=qty_data, cmap=cmap,
                               alpha=alpha, vmin=vmin, vmax=vmax)
@@ -1514,7 +1533,7 @@ class SWW_plotter:
         im = self._render_max_qty(ax, triang, max_depth, max_depth, elev, md,
                                    basemap, cmap, alpha, vmin, vmax, smooth,
                                    show_elev=show_elev, elev_levels=elev_levels,
-                                   show_mesh=show_mesh)
+                                   show_mesh=show_mesh, xlim=xlim, ylim=ylim)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
@@ -1555,7 +1574,7 @@ class SWW_plotter:
         im = self._render_max_qty(ax, triang, max_depth, max_stage, elev, md,
                                    basemap, cmap, alpha, vmin, vmax, smooth,
                                    show_elev=show_elev, elev_levels=elev_levels,
-                                   show_mesh=show_mesh)
+                                   show_mesh=show_mesh, xlim=xlim, ylim=ylim)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
@@ -1596,7 +1615,7 @@ class SWW_plotter:
         im = self._render_max_qty(ax, triang, max_depth, max_speed, elev, md,
                                    basemap, cmap, alpha, vmin, vmax, smooth,
                                    show_elev=show_elev, elev_levels=elev_levels,
-                                   show_mesh=show_mesh)
+                                   show_mesh=show_mesh, xlim=xlim, ylim=ylim)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
@@ -1638,7 +1657,7 @@ class SWW_plotter:
         im = self._render_max_qty(ax, triang, max_depth, max_speed_depth, elev, md,
                                    basemap, cmap, alpha, vmin, vmax, smooth,
                                    show_elev=show_elev, elev_levels=elev_levels,
-                                   show_mesh=show_mesh)
+                                   show_mesh=show_mesh, xlim=xlim, ylim=ylim)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
