@@ -71,12 +71,12 @@ class Collect_max_quantities_operator(Operator):
         if store_to_sww:
             for qname in ('max_stage', 'max_depth', 'max_speed', 'max_uh'):
                 Quantity(domain, name=qname, register=True, qty_type='centroid_only')
-            # flag=3: centroid-only dynamic — written each yield step, no vertex storage
+            # flag=4: centroid-only static variable overwritten each yield step
             domain.quantities_to_be_stored.update({
-                'max_stage': 3,
-                'max_depth': 3,
-                'max_speed': 3,
-                'max_uh':    3,
+                'max_stage': 4,
+                'max_depth': 4,
+                'max_speed': 4,
+                'max_uh':    4,
             })
 
     def __call__(self):
