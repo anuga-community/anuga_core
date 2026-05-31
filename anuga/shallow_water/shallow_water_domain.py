@@ -2877,6 +2877,11 @@ class Domain(Generic_Domain):
         # Update conserved quantities
         self.update_conserved_quantities()
 
+        # Advance time so fractional-step operators (apply_fractional_steps)
+        # see the post-step time, matching the GPU C-loop path which updates
+        # relative_time inside _evolve_one_euler_step_c before returning.
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+
 
     def evolve_one_rk2_step(self, yieldstep, finaltime):
         """One 2nd order RK timestep
@@ -4326,6 +4331,7 @@ class Domain(Generic_Domain):
         from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
         from anuga.structures.inlet_operator import Inlet_operator
         from anuga.structures.gpu_culvert_manager import GPUCulvertManager
+        from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
 
         # Initialize GPU culvert manager for Boyd operators if needed
         has_boyd_ops = any(GPUCulvertManager.is_boyd_operator(op)
@@ -4351,6 +4357,13 @@ class Domain(Generic_Domain):
                 continue
             elif isinstance(op, Inlet_operator):
                 # Force GPU initialization if not already done
+                if hasattr(op, '_init_gpu') and not getattr(op, '_gpu_initialized', False):
+                    op._init_gpu()
+                if hasattr(op, '_gpu_initialized') and op._gpu_initialized:
+                    continue  # GPU-accelerated, no sync needed
+            elif isinstance(op, Collect_max_quantities_operator):
+                # GPU kernel reads device-resident quantities and updates device-resident max
+                # arrays; no host centroid sync needed.
                 if hasattr(op, '_init_gpu') and not getattr(op, '_gpu_initialized', False):
                     op._init_gpu()
                 if hasattr(op, '_gpu_initialized') and op._gpu_initialized:
