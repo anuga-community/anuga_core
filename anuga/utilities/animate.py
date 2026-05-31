@@ -795,6 +795,7 @@ class SWW_plotter:
         self._speed_depth_frame_count = 0
         self._speed_frame_count = 0
         self._max_depth_frame_count = 0
+        self._max_stage_frame_count = 0
         self._max_speed_frame_count = 0
         self._max_speed_depth_frame_count = 0
         self._elev_frame_count = 0
@@ -1529,6 +1530,47 @@ class SWW_plotter:
         path = fname if self.plot_dir is None else os.path.join(self.plot_dir, fname)
         fig.savefig(path)
         self._max_depth_frame_count += 1
+        plt.close()
+        fig.clf()
+
+    def save_max_stage_frame(self, frame=None, figsize=(10, 6), dpi=160,
+                             vmin=-20.0, vmax=20.0, cmap='viridis', basemap=False,
+                             alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
+                             xlim=None, ylim=None, smooth=False,
+                             show_elev=False, elev_levels=10, show_mesh=False):
+        """Save a single frame showing the maximum stage at each triangle."""
+        import matplotlib.pyplot as plt
+
+        max_depth = self.max_depth
+        max_stage = self.max_stage
+        md = self.min_depth
+        try:
+            elev = self.elev[0, :]
+        except (IndexError, TypeError):
+            elev = self.elev
+
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+        plt.title('Max Stage')
+        im = self._render_max_qty(ax, triang, max_depth, max_stage, elev, md,
+                                   basemap, cmap, alpha, vmin, vmax, smooth,
+                                   show_elev=show_elev, elev_levels=elev_levels,
+                                   show_mesh=show_mesh)
+        triang.set_mask(None)
+        ax.set_aspect('equal')
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        if ylim is not None:
+            ax.set_ylim(ylim)
+        fig.colorbar(im, ax=ax)
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg, basemap_provider, cache=self._basemap_cache)
+        fname = '{}_max_stage_{:0>10}.png'.format(self.name, self._max_stage_frame_count)
+        path = fname if self.plot_dir is None else os.path.join(self.plot_dir, fname)
+        fig.savefig(path)
+        self._max_stage_frame_count += 1
         plt.close()
         fig.clf()
 
