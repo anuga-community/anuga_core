@@ -1505,7 +1505,7 @@ class Domain(Generic_Domain):
                                update_frequency=1,
                                collection_start_time=0.,
                                velocity_zero_height=None,
-                               store_to_sww=True) -> 'Collect_max_quantities_operator':
+                               store_to_sww=True) -> Collect_max_quantities_operator:
         """Create (or return existing) Collect_max_quantities_operator on this domain.
 
         Tracks running maxima of stage, depth, speed, and momentum magnitude
