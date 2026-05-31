@@ -1505,7 +1505,7 @@ class Domain(Generic_Domain):
                                update_frequency=1,
                                collection_start_time=0.,
                                velocity_zero_height=None,
-                               store_to_sww=False) -> 'Collect_max_quantities_operator':
+                               store_to_sww=True) -> 'Collect_max_quantities_operator':
         """Create (or return existing) Collect_max_quantities_operator on this domain.
 
         Tracks running maxima of stage, depth, speed, and momentum magnitude
@@ -1520,8 +1520,9 @@ class Domain(Generic_Domain):
         velocity_zero_height : float or None
             Zero velocity below this depth; defaults to minimum_allowed_height.
         store_to_sww : bool
-            If True, write running maxima to the SWW file every yield step as
-            centroid quantities max_stage_c, max_depth_c, max_speed_c, max_uh_c.
+            If True (default), write running maxima to the SWW file every yield
+            step as centroid quantities max_stage_c, max_depth_c, max_speed_c,
+            max_uh_c.
 
         Returns
         -------
