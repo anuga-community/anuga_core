@@ -136,6 +136,16 @@ cdef extern from "gpu_domain.h" nogil:
         int num_operators
         int capacity
 
+    struct max_quantities_info:
+        int n
+        double velocity_zero_height
+        double *max_stage
+        double *max_depth
+        double *max_speed
+        double *max_uh
+        int initialized
+        int mapped
+
     struct gpu_domain:
         domain D
         MPI_Comm comm
@@ -147,6 +157,7 @@ cdef extern from "gpu_domain.h" nogil:
         int verbose
         halo_exchange halo
         inlet_operators inlet_ops
+        max_quantities_info max_qty
         double CFL
         double evolve_max_timestep
         double fixed_flux_timestep
@@ -344,6 +355,14 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_culverts_finalize_all(gpu_domain *GD)
     void gpu_culverts_map(gpu_domain *GD)
     void gpu_culverts_apply_all(gpu_domain *GD, double timestep)
+
+    # Max-quantities operator
+    int  gpu_max_quantities_init(gpu_domain *GD, int n, double velocity_zero_height)
+    void gpu_max_quantities_update(gpu_domain *GD)
+    void gpu_max_quantities_get(gpu_domain *GD,
+                                double *out_stage, double *out_depth,
+                                double *out_speed, double *out_uh)
+    void gpu_max_quantities_finalize(gpu_domain *GD)
 
     # FLOP counters (Gordon Bell performance profiling)
     void gpu_flop_counters_init(gpu_domain *GD)
@@ -1976,6 +1995,59 @@ def apply_rate_operator_array_gpu(GPUDomain gpu_dom, int op_id,
                                          use_indices_into_rate,
                                          rate_changed,
                                          factor, timestep)
+
+
+# ============================================================================
+# Max-Quantities Operator GPU Support
+# ============================================================================
+
+def init_max_quantities_gpu(GPUDomain gpu_dom, int n, double velocity_zero_height):
+    """
+    Initialise device-resident max-quantities arrays.
+
+    Allocates four arrays of length *n* on the device (stage, depth, speed,
+    momentum magnitude), initialised to large-negative / zero as appropriate.
+    Call once before the evolve loop starts.
+
+    Returns 0 on success, -1 on allocation failure.
+    """
+    return gpu_max_quantities_init(&gpu_dom.GD, n, velocity_zero_height)
+
+
+def update_max_quantities_gpu(GPUDomain gpu_dom):
+    """
+    Run one pass of the max-quantities kernel on the GPU.
+
+    Reads stage/bed/xmom/ymom from device memory (already mapped via
+    gpu_domain_map_arrays) and updates the four device-resident max arrays.
+    No host<->device transfer is performed.
+    """
+    gpu_max_quantities_update(&gpu_dom.GD)
+
+
+def get_max_quantities_gpu(GPUDomain gpu_dom,
+                           np.ndarray[double, ndim=1, mode="c"] max_stage,
+                           np.ndarray[double, ndim=1, mode="c"] max_depth,
+                           np.ndarray[double, ndim=1, mode="c"] max_speed,
+                           np.ndarray[double, ndim=1, mode="c"] max_uh):
+    """
+    Sync max arrays from device to host and copy into the supplied numpy arrays.
+
+    The four output arrays must each have length == domain.number_of_elements.
+    This is the only call that incurs a device-to-host transfer; call it only
+    at yield steps (SWW write) or at end-of-simulation export.
+    """
+    gpu_max_quantities_get(&gpu_dom.GD,
+                           &max_stage[0], &max_depth[0],
+                           &max_speed[0], &max_uh[0])
+
+
+def finalize_max_quantities_gpu(GPUDomain gpu_dom):
+    """
+    Unmap device arrays and free host memory for the max-quantities operator.
+    Called automatically by gpu_domain_finalize; safe to call earlier.
+    """
+    gpu_max_quantities_finalize(&gpu_dom.GD)
 
 
 # ============================================================================

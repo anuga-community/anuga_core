@@ -28,6 +28,11 @@ class Collect_max_quantities_operator(Operator):
 
     Velocity is zeroed below velocity_zero_height (defaults to
     minimum_allowed_height) to suppress spurious spikes in nearly-dry cells.
+
+    When the domain is in GPU mode (MULTIPROCESSOR_GPU) the kernel runs
+    entirely on the device; a host<->device transfer for the four max arrays
+    only occurs at yield steps when store_to_sww=True, or on an explicit call
+    to export_max_quantities_to_csv().
     """
 
     def __init__(self,
@@ -79,6 +84,41 @@ class Collect_max_quantities_operator(Operator):
                 'max_uh':    4,
             })
 
+        self._gpu_initialized = False
+
+    # ------------------------------------------------------------------
+    # GPU initialisation (lazy, called on first __call__ in GPU mode)
+    # ------------------------------------------------------------------
+
+    def _init_gpu(self):
+        if self._gpu_initialized:
+            return
+
+        domain = self.domain
+        try:
+            from anuga.config import MULTIPROCESSOR_GPU
+        except ImportError:
+            return
+
+        if not hasattr(domain, 'multiprocessor_mode') or domain.multiprocessor_mode != MULTIPROCESSOR_GPU:
+            return
+        if not hasattr(domain, 'gpu_interface') or domain.gpu_interface is None:
+            return
+        gpu_interface = domain.gpu_interface
+        if not hasattr(gpu_interface, 'gpu_dom') or gpu_interface.gpu_dom is None:
+            return
+
+        from anuga.shallow_water.sw_domain_gpu_ext import init_max_quantities_gpu
+        n   = len(domain.centroid_coordinates[:, 0])
+        ret = init_max_quantities_gpu(gpu_interface.gpu_dom, n, self.velocity_zero_height)
+        if ret != 0:
+            raise RuntimeError(
+                "gpu_max_quantities_init failed — check device memory availability"
+            )
+        self._gpu_initialized = True
+
+    # ------------------------------------------------------------------
+
     def __call__(self):
         """
         Update max quantities every update_frequency timesteps once
@@ -91,6 +131,44 @@ class Collect_max_quantities_operator(Operator):
             self.counter += 1
 
             if self.counter == self.update_frequency:
+                self.counter = 0
+
+                # ---- GPU path ----------------------------------------
+                domain = self.domain
+                try:
+                    from anuga.config import MULTIPROCESSOR_GPU
+                    _gpu_mode = (
+                        hasattr(domain, 'multiprocessor_mode') and
+                        domain.multiprocessor_mode == MULTIPROCESSOR_GPU and
+                        hasattr(domain, 'gpu_interface') and
+                        domain.gpu_interface is not None
+                    )
+                except ImportError:
+                    _gpu_mode = False
+
+                if _gpu_mode:
+                    self._init_gpu()
+                    if self._gpu_initialized:
+                        from anuga.shallow_water.sw_domain_gpu_ext import (
+                            update_max_quantities_gpu, get_max_quantities_gpu)
+
+                        update_max_quantities_gpu(domain.gpu_interface.gpu_dom)
+
+                        if self.store_to_sww:
+                            # D2H sync: pull device maxima to host numpy arrays,
+                            # then push to domain quantities for the SWW writer.
+                            get_max_quantities_gpu(
+                                domain.gpu_interface.gpu_dom,
+                                self.max_stage, self.max_depth,
+                                self.max_speed, self.max_uh)
+                            d = domain
+                            d.quantities['max_stage'].centroid_values[:] = self.max_stage
+                            d.quantities['max_depth'].centroid_values[:] = self.max_depth
+                            d.quantities['max_speed'].centroid_values[:] = self.max_speed
+                            d.quantities['max_uh'].centroid_values[:]    = self.max_uh
+                        return
+
+                # ---- CPU / NumPy path --------------------------------
                 stage_c = self.stage.centroid_values
                 elev_c  = self.elev.centroid_values
                 xmom_c  = self.xmom.centroid_values
@@ -115,8 +193,6 @@ class Collect_max_quantities_operator(Operator):
                     d.quantities['max_speed'].centroid_values[:] = self.max_speed
                     d.quantities['max_uh'].centroid_values[:]    = self.max_uh
 
-                self.counter = 0
-
     def parallel_safe(self):
         """Operator is applied independently on each cell and so is parallel safe."""
         return True
@@ -130,8 +206,26 @@ class Collect_max_quantities_operator(Operator):
 
     def export_max_quantities_to_csv(self, filename_start='Max_Quantities_'):
         """Export max quantities to a CSV file."""
-        full_ids = self.domain.tri_full_flag.nonzero()[0]
-        geo = self.domain.geo_reference
+
+        # For GPU mode, ensure host arrays are up to date before export.
+        domain = self.domain
+        if self._gpu_initialized:
+            try:
+                from anuga.config import MULTIPROCESSOR_GPU
+                from anuga.shallow_water.sw_domain_gpu_ext import get_max_quantities_gpu
+                if (hasattr(domain, 'multiprocessor_mode') and
+                        domain.multiprocessor_mode == MULTIPROCESSOR_GPU and
+                        hasattr(domain, 'gpu_interface') and
+                        domain.gpu_interface is not None):
+                    get_max_quantities_gpu(
+                        domain.gpu_interface.gpu_dom,
+                        self.max_stage, self.max_depth,
+                        self.max_speed, self.max_uh)
+            except (ImportError, Exception):
+                pass
+
+        full_ids = domain.tri_full_flag.nonzero()[0]
+        geo = domain.geo_reference
         out = num.vstack([
             self.xy[full_ids, 0] + geo.xllcorner,
             self.xy[full_ids, 1] + geo.yllcorner,
