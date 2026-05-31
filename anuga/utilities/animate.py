@@ -1510,6 +1510,16 @@ class SWW_plotter:
         if show_mesh:
             ax.triplot(triang, color='black', linewidth=0.25, alpha=0.45,
                        zorder=4)
+
+        # Use offset notation on both axes (e.g. "1e6" header + short ticks)
+        # and limit tick count so large UTM values don't collide.
+        from matplotlib.ticker import ScalarFormatter, MaxNLocator
+        for _axis in (ax.xaxis, ax.yaxis):
+            _fmt = ScalarFormatter(useOffset=True, useMathText=False)
+            _fmt.set_powerlimits((-3, 4))
+            _axis.set_major_formatter(_fmt)
+            _axis.set_major_locator(MaxNLocator(nbins=5, integer=True))
+
         return im
 
     def save_max_depth_frame(self, frame=None, figsize=(10, 6), dpi=160,
