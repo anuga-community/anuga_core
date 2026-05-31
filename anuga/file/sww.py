@@ -126,7 +126,7 @@ class SWW_file(Data_format):
             msg += 'but it does not exist in domain.quantities'
             assert q in domain.quantities, msg
 
-            assert flag in [1, 2]
+            assert flag in [1, 2, 3]
             if flag == 1:
                 static_quantities.append(q)
                 if self.store_centroids:
@@ -136,6 +136,10 @@ class SWW_file(Data_format):
                 dynamic_quantities.append(q)
                 if self.store_centroids:
                     dynamic_c_quantities.append(q+'_c')
+
+            if flag == 3:
+                # centroid-only dynamic quantity: no vertex storage
+                dynamic_c_quantities.append(q+'_c')
 
         # NetCDF file definition
         fid = NetCDFFile(self.filename, mode)
@@ -406,7 +410,7 @@ class SWW_file(Data_format):
                                                        **dynamic_quantities)
 
             # Store dynamic quantities
-            if self.store_centroids:
+            if self.store_centroids or self.writer.dynamic_c_quantities:
                 self.writer.store_quantities_centroid(fid,
                                                       slice_index=slice_index,
                                                       sww_precision=self.precision,

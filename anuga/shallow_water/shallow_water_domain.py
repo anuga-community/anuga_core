@@ -328,6 +328,7 @@ class Domain(Generic_Domain):
         #-------------------------------
         self.fractional_step_operators = []
         self.kv_operator = None
+        self.max_quantities_operator = None
         self.dplotter = None
         self.gpu_culvert_manager = None  # Initialized when GPU mode + Boyd operators
 
@@ -1498,6 +1499,46 @@ class Domain(Generic_Domain):
 
 
 
+
+
+    def set_collect_max_quantities(self,
+                               update_frequency=1,
+                               collection_start_time=0.,
+                               velocity_zero_height=None,
+                               store_to_sww=False) -> 'Collect_max_quantities_operator':
+        """Create (or return existing) Collect_max_quantities_operator on this domain.
+
+        Tracks running maxima of stage, depth, speed, and momentum magnitude
+        (||(uh, vh)||) over the simulation.  Call once before domain.evolve().
+
+        Parameters
+        ----------
+        update_frequency : int
+            Update maxima every this many timesteps (default 1).
+        collection_start_time : float
+            Only collect after this simulation time (default 0).
+        velocity_zero_height : float or None
+            Zero velocity below this depth; defaults to minimum_allowed_height.
+        store_to_sww : bool
+            If True, write running maxima to the SWW file every yield step as
+            centroid quantities max_stage_c, max_depth_c, max_speed_c, max_uh_c.
+
+        Returns
+        -------
+        Collect_max_quantities_operator
+        """
+        from anuga.operators.collect_max_quantities_operator import \
+            Collect_max_quantities_operator
+
+        if self.max_quantities_operator is None:
+            self.max_quantities_operator = Collect_max_quantities_operator(
+                self,
+                update_frequency=update_frequency,
+                collection_start_time=collection_start_time,
+                velocity_zero_height=velocity_zero_height,
+                store_to_sww=store_to_sww,
+            )
+        return self.max_quantities_operator
 
 
     def set_beta(self, beta: float) -> None:
