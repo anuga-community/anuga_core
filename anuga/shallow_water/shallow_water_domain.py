@@ -3028,6 +3028,10 @@ class Domain(Generic_Domain):
         # Q^n centroids are untouched — update directly (no saxpy restore needed)
         self.update_conserved_quantities()           # Q^{n+1} = Q^n + dt*R(Q^{n+1/2})
 
+        # Advance time so fractional-step operators see the post-step time,
+        # matching the GPU C-loop path (_evolve_one_ader2_step_c).
+        self.set_relative_time(self.get_relative_time() + self.timestep)
+
     def _evolve_one_ader2_step_gpu(self, yieldstep, finaltime):
         """Python-orchestrated GPU implementation of ADER-2 step.
 

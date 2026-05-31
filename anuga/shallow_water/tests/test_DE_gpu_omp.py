@@ -1998,5 +1998,98 @@ class Test_GPU_CollectMaxQuantities(unittest.TestCase):
                                    err_msg="max_uh mode1/mode2 mismatch")
 
 
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
+class Test_TimestepTimeAdvance(unittest.TestCase):
+    """Regression tests for the time-advance bug in evolve_one_euler_step and
+    evolve_one_ader2_step (OpenMP / mode-1 path).
+
+    The bug: mode-1 did not advance relative_time before returning, so
+    apply_fractional_steps saw the pre-step time.  With
+    collection_start_time=0, the first inner timestep was silently skipped
+    (t=0 is not > 0), while mode 2 (GPU C-loop) advanced time first and
+    correctly collected from step 1 onwards.
+
+    Fix: both Euler and ADER-2 mode-1 paths now call
+    set_relative_time(get_relative_time() + timestep) before returning,
+    mirroring the GPU C-loop pattern.
+
+    Test strategy: run mode 1 and mode 2 with Collect_max_quantities_operator
+    for each flow algorithm.  If the timing bug is present, mode 1 misses the
+    first inner timestep and max values differ by O(1e-4).  With the fix,
+    both modes see the same inner-timestep state and agree to < 1e-10.
+    """
+
+    def _make_domain(self, name, algorithm):
+        d = rectangular_cross_domain(8, 8, len1=100., len2=100.)
+        d.set_flow_algorithm(algorithm)
+        d.set_low_froude(0)
+        d.set_name(name)
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', lambda x, y: -x / 50.0)
+        d.set_quantity('friction', 0.01)
+        d.set_quantity('stage', 0.0)
+        Br = Reflective_boundary(d)
+        Bd = Dirichlet_boundary([-0.5, 0., 0.])
+        d.set_boundary({'left': Bd, 'right': Br, 'top': Br, 'bottom': Br})
+        return d
+
+    def _run_modes(self, algorithm):
+        """Run mode 1 and mode 2 with Collect_max_quantities and return both ops."""
+        from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            sync_to_device, sync_from_device, get_max_quantities_gpu)
+
+        n = 256  # 8x8 rectangular_cross
+
+        d1 = self._make_domain(f'{algorithm}_mode1', algorithm)
+        op1 = Collect_max_quantities_operator(d1, store_to_sww=False)
+        d1.set_multiprocessor_mode(1)
+        for t in d1.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+
+        d2 = self._make_domain(f'{algorithm}_mode2', algorithm)
+        op2 = Collect_max_quantities_operator(d2, store_to_sww=False)
+        d2.set_multiprocessor_mode(2)
+        gpu_dom = d2.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+        for t in d2.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+        sync_from_device(gpu_dom)
+
+        ms2 = np.zeros(n); md2 = np.zeros(n)
+        msp2 = np.zeros(n); mu2 = np.zeros(n)
+        get_max_quantities_gpu(gpu_dom, ms2, md2, msp2, mu2)
+
+        return op1, ms2, md2, msp2, mu2
+
+    def _assert_modes_agree(self, algorithm):
+        op1, ms2, md2, msp2, mu2 = self._run_modes(algorithm)
+        np.testing.assert_allclose(op1.max_stage, ms2, atol=1e-10, rtol=1e-10,
+                                   err_msg=f'{algorithm}: max_stage mode1/mode2 mismatch')
+        np.testing.assert_allclose(op1.max_depth, md2, atol=1e-10, rtol=1e-10,
+                                   err_msg=f'{algorithm}: max_depth mode1/mode2 mismatch')
+        np.testing.assert_allclose(op1.max_speed, msp2, atol=1e-10, rtol=1e-10,
+                                   err_msg=f'{algorithm}: max_speed mode1/mode2 mismatch')
+        np.testing.assert_allclose(op1.max_uh, mu2, atol=1e-10, rtol=1e-10,
+                                   err_msg=f'{algorithm}: max_uh mode1/mode2 mismatch')
+
+    def test_DE0_euler(self):
+        """DE0 (Euler) — the original bug was in evolve_one_euler_step."""
+        self._assert_modes_agree('DE0')
+
+    def test_DE1_rk2(self):
+        """DE1 (RK2) — time was already advanced mid-step; verify no regression."""
+        self._assert_modes_agree('DE1')
+
+    def test_DE2_rk3(self):
+        """DE2 (RK3) — time was already advanced at end of step; verify no regression."""
+        self._assert_modes_agree('DE2')
+
+    def test_DE_ader2(self):
+        """DE_ader2 (ADER-2) — same bug as Euler; fixed in evolve_one_ader2_step."""
+        self._assert_modes_agree('DE_ader2')
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
