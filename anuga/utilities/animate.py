@@ -783,6 +783,13 @@ class SWW_plotter:
 
         self.time = p.variables['time'][:]
 
+        # Load precomputed max quantities if stored by Collect_max_quantities_operator
+        pvars = p.variables
+        self._max_depth_c      = pvars['max_depth_c'][:] if 'max_depth_c' in pvars else None
+        self._max_speed_c      = pvars['max_speed_c'][:] if 'max_speed_c' in pvars else None
+        self._max_uh_c         = pvars['max_uh_c'][:]    if 'max_uh_c'    in pvars else None
+        self._max_stage_c      = pvars['max_stage_c'][:] if 'max_stage_c' in pvars else None
+
         self._depth_frame_count = 0
         self._stage_frame_count = 0
         self._speed_depth_frame_count = 0
@@ -1291,6 +1298,42 @@ class SWW_plotter:
         return fig, ax
 
     #------------------------------------------
+    # Max-quantity accessors (precomputed or derived)
+    #------------------------------------------
+
+    @property
+    def max_depth(self):
+        """Max depth per triangle: precomputed from SWW if available, else max over time."""
+        if self._max_depth_c is not None:
+            return self._max_depth_c
+        import numpy as np
+        return np.max(self.depth, axis=0)
+
+    @property
+    def max_speed(self):
+        """Max speed per triangle: precomputed from SWW if available, else max over time."""
+        if self._max_speed_c is not None:
+            return self._max_speed_c
+        import numpy as np
+        return np.max(self.speed, axis=0)
+
+    @property
+    def max_speed_depth(self):
+        """Max momentum magnitude per triangle: precomputed (max_uh_c) or max over time."""
+        if self._max_uh_c is not None:
+            return self._max_uh_c
+        import numpy as np
+        return np.max(self.speed_depth, axis=0)
+
+    @property
+    def max_stage(self):
+        """Max stage per triangle: precomputed from SWW if available, else max over time."""
+        if self._max_stage_c is not None:
+            return self._max_stage_c
+        import numpy as np
+        return np.max(self.stage, axis=0)
+
+    #------------------------------------------
     # Elevation-change (delta) procedures
     #------------------------------------------
 
@@ -1456,9 +1499,8 @@ class SWW_plotter:
                              show_elev=False, elev_levels=10, show_mesh=False):
         """Save a single frame showing the maximum depth at each triangle."""
         import matplotlib.pyplot as plt
-        import numpy as np
 
-        max_depth = np.max(self.depth, axis=0)
+        max_depth = self.max_depth
         md = self.min_depth
         try:
             elev = self.elev[0, :]
@@ -1497,10 +1539,9 @@ class SWW_plotter:
                              show_elev=False, elev_levels=10, show_mesh=False):
         """Save a single frame showing the maximum speed at each triangle."""
         import matplotlib.pyplot as plt
-        import numpy as np
 
-        max_depth = np.max(self.depth, axis=0)
-        max_speed = np.max(self.speed, axis=0)
+        max_depth = self.max_depth
+        max_speed = self.max_speed
         md = self.min_depth
         try:
             elev = self.elev[0, :]
@@ -1540,10 +1581,9 @@ class SWW_plotter:
                                    show_mesh=False):
         """Save a single frame showing the maximum speed×depth at each triangle."""
         import matplotlib.pyplot as plt
-        import numpy as np
 
-        max_depth = np.max(self.depth, axis=0)
-        max_speed_depth = np.max(self.speed_depth, axis=0)
+        max_depth = self.max_depth
+        max_speed_depth = self.max_speed_depth
         md = self.min_depth
         try:
             elev = self.elev[0, :]

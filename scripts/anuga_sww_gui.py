@@ -69,9 +69,9 @@ _QTY_DATA_ATTR = {
     'stage':           'stage',
     'speed':           'speed',
     'speed_depth':     'speed_depth',
-    'max_depth':       'depth',
-    'max_speed':       'speed',
-    'max_speed_depth': 'speed_depth',
+    'max_depth':       'max_depth',
+    'max_speed':       'max_speed',
+    'max_speed_depth': 'max_speed_depth',
     'elev':            'elev',
     'elev_delta':      'elev_delta',
 }
@@ -1149,7 +1149,7 @@ class SWWAnimationGUI:
             import numpy as np
             # For max quantities use the actual max; others use frame 0
             if self._last_gen_qty.startswith('max_'):
-                depth = np.max(sp.depth, axis=0)
+                depth = sp.max_depth
             else:
                 depth = sp.depth[0, :]
             try:
