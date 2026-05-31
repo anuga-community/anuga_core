@@ -2877,11 +2877,6 @@ class Domain(Generic_Domain):
         # Update conserved quantities
         self.update_conserved_quantities()
 
-        # Advance time so fractional-step operators (apply_fractional_steps)
-        # see the post-step time, matching the GPU C-loop path which updates
-        # relative_time inside _evolve_one_euler_step_c before returning.
-        self.set_relative_time(self.get_relative_time() + self.timestep)
-
 
     def evolve_one_rk2_step(self, yieldstep, finaltime):
         """One 2nd order RK timestep
@@ -3027,10 +3022,6 @@ class Domain(Generic_Domain):
 
         # Q^n centroids are untouched — update directly (no saxpy restore needed)
         self.update_conserved_quantities()           # Q^{n+1} = Q^n + dt*R(Q^{n+1/2})
-
-        # Advance time so fractional-step operators see the post-step time,
-        # matching the GPU C-loop path (_evolve_one_ader2_step_c).
-        self.set_relative_time(self.get_relative_time() + self.timestep)
 
     def _evolve_one_ader2_step_gpu(self, yieldstep, finaltime):
         """Python-orchestrated GPU implementation of ADER-2 step.

@@ -127,7 +127,7 @@ class Collect_max_quantities_operator(Operator):
 
         t = self.domain.get_time()
 
-        if t > self.collection_start_time:
+        if t >= self.collection_start_time:
             self.counter += 1
 
             if self.counter == self.update_frequency:

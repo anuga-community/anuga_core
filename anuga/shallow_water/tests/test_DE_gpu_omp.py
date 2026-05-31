@@ -2000,23 +2000,26 @@ class Test_GPU_CollectMaxQuantities(unittest.TestCase):
 
 @pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_TimestepTimeAdvance(unittest.TestCase):
-    """Regression tests for the time-advance bug in evolve_one_euler_step and
-    evolve_one_ader2_step (OpenMP / mode-1 path).
+    """Regression tests for the first-step collection bug in
+    Collect_max_quantities_operator.
 
-    The bug: mode-1 did not advance relative_time before returning, so
-    apply_fractional_steps saw the pre-step time.  With
-    collection_start_time=0, the first inner timestep was silently skipped
-    (t=0 is not > 0), while mode 2 (GPU C-loop) advanced time first and
-    correctly collected from step 1 onwards.
+    The bug: mode-1 fractional-step operators see the pre-step time (the
+    generic evolve loop advances relative_time AFTER apply_fractional_steps).
+    Mode-2 C-loops advance relative_time before returning, so fractional-step
+    operators see the post-step time.  With collection_start_time=0 and the
+    old strict inequality (t > 0), mode-1 silently skipped the very first
+    inner timestep (0 > 0 is False) while mode-2 correctly collected from
+    step 1 onwards.  For transient flows the first step may carry the global
+    maximum, causing mode-1 and mode-2 to disagree by O(1e-4).
 
-    Fix: both Euler and ADER-2 mode-1 paths now call
-    set_relative_time(get_relative_time() + timestep) before returning,
-    mirroring the GPU C-loop pattern.
+    Fix: Collect_max_quantities_operator now uses >= instead of > for the
+    collection_start_time guard.  Mode-1 at t=0 satisfies 0 >= 0 and
+    correctly collects state S_1; mode-2 at t=dt_1 also satisfies the guard
+    and collects the same S_1 from device memory.
 
-    Test strategy: run mode 1 and mode 2 with Collect_max_quantities_operator
-    for each flow algorithm.  If the timing bug is present, mode 1 misses the
-    first inner timestep and max values differ by O(1e-4).  With the fix,
-    both modes see the same inner-timestep state and agree to < 1e-10.
+    Test strategy: run mode-1 and mode-2 for each flow algorithm and assert
+    the collected maxima agree to atol=1e-10.  If the >= fix is reverted
+    (back to >) mode-1 will miss S_1 and the test fails.
     """
 
     def _make_domain(self, name, algorithm):
