@@ -118,6 +118,7 @@ class SWW_file(Data_format):
         dynamic_quantities = []
         static_c_quantities = []
         dynamic_c_quantities = []
+        self._overwrite_c_quantities = []  # flag=4: static 1D vars overwritten each yield step
 
         for q in domain.quantities_to_be_stored:
             flag = domain.quantities_to_be_stored[q]
@@ -126,7 +127,7 @@ class SWW_file(Data_format):
             msg += 'but it does not exist in domain.quantities'
             assert q in domain.quantities, msg
 
-            assert flag in [1, 2]
+            assert flag in [1, 2, 3, 4]
             if flag == 1:
                 static_quantities.append(q)
                 if self.store_centroids:
@@ -136,6 +137,15 @@ class SWW_file(Data_format):
                 dynamic_quantities.append(q)
                 if self.store_centroids:
                     dynamic_c_quantities.append(q+'_c')
+
+            if flag == 3:
+                # centroid-only dynamic quantity: no vertex storage
+                dynamic_c_quantities.append(q+'_c')
+
+            if flag == 4:
+                # centroid-only static variable overwritten at each yield step
+                static_c_quantities.append(q+'_c')
+                self._overwrite_c_quantities.append(q+'_c')
 
         # NetCDF file definition
         fid = NetCDFFile(self.filename, mode)
@@ -406,11 +416,16 @@ class SWW_file(Data_format):
                                                        **dynamic_quantities)
 
             # Store dynamic quantities
-            if self.store_centroids:
+            if self.store_centroids or self.writer.dynamic_c_quantities:
                 self.writer.store_quantities_centroid(fid,
                                                       slice_index=slice_index,
                                                       sww_precision=self.precision,
                                                       **dynamic_quantities_centroid)
+
+            # Overwrite centroid-only static quantities (flag=4) each yield step
+            for name in self._overwrite_c_quantities:
+                Q = domain.quantities[name[:-2]]
+                fid.variables[name][:] = Q.centroid_values.astype(self.precision)
 
             # Update extrema if requested
             domain = self.domain

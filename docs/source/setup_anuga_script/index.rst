@@ -12,6 +12,7 @@ Script Structure
    :maxdepth: 1
 
    domain
+   flow_algorithms
    coordinate_reference
    initial_conditions
    boundaries

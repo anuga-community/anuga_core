@@ -1823,5 +1823,276 @@ class Test_GPU_DeviceMemory(unittest.TestCase):
         finalize_gpu_domain(gpu)
 
 
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
+class Test_GPU_CollectMaxQuantities(unittest.TestCase):
+    """Consistency tests for Collect_max_quantities_operator in mode 1 vs mode 2.
+
+    Three tiers of tests:
+    1. GPU self-consistency: D2H-updated arrays vs explicit get — must be bit-identical.
+    2. Mode 2 domain-quantity integration: store_to_sww path updates the right quantities.
+    3. Mode 1 vs mode 2 approximate agreement: same solver family, results within ~1e-3.
+    """
+
+    def _create_domain(self, name):
+        d = rectangular_cross_domain(8, 8, len1=100., len2=100.)
+        d.set_flow_algorithm('DE0')
+        d.set_low_froude(0)
+        d.set_name(name)
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', lambda x, y: -x / 50.0)
+        d.set_quantity('friction', 0.01)
+        d.set_quantity('stage', 0.0)
+        Br = Reflective_boundary(d)
+        Bd = Dirichlet_boundary([-0.5, 0., 0.])
+        d.set_boundary({'left': Bd, 'right': Br, 'top': Br, 'bottom': Br})
+        return d
+
+    def test_mode2_self_consistent_store_to_sww(self):
+        """GPU kernel self-consistency: D2H-updated arrays == explicit get at end.
+
+        When store_to_sww=True the operator syncs max arrays device→host every
+        update_frequency steps.  At the end, calling get_max_quantities_gpu()
+        explicitly must return the same bit-identical values — no re-computation
+        happens, both paths read the same device memory.
+        """
+        from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            sync_to_device, sync_from_device, get_max_quantities_gpu)
+
+        d = self._create_domain('test_maxqty_selfcons')
+        op = Collect_max_quantities_operator(d, store_to_sww=True)
+
+        d.set_multiprocessor_mode(2)
+        gpu_dom = d.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+        for t in d.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+        sync_from_device(gpu_dom)
+
+        # op.max_stage was kept up-to-date via D2H sync during evolve.
+        # Explicit get must return identical values (same device array, no kernel re-run).
+        check_stage = np.empty_like(op.max_stage)
+        check_depth = np.empty_like(op.max_depth)
+        check_speed = np.empty_like(op.max_speed)
+        check_uh    = np.empty_like(op.max_uh)
+        get_max_quantities_gpu(gpu_dom, check_stage, check_depth, check_speed, check_uh)
+
+        np.testing.assert_array_equal(op.max_stage, check_stage,
+                                      err_msg="D2H-updated max_stage != explicit get")
+        np.testing.assert_array_equal(op.max_depth, check_depth,
+                                      err_msg="D2H-updated max_depth != explicit get")
+        np.testing.assert_array_equal(op.max_speed, check_speed,
+                                      err_msg="D2H-updated max_speed != explicit get")
+        np.testing.assert_array_equal(op.max_uh, check_uh,
+                                      err_msg="D2H-updated max_uh != explicit get")
+
+    def test_mode2_self_consistent_update_frequency(self):
+        """Self-consistency is maintained with update_frequency > 1.
+
+        Fewer D2H syncs during evolve (every 3 steps) but the final explicit
+        get must still return identical values as the last D2H-updated snapshot.
+        """
+        from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            sync_to_device, sync_from_device, get_max_quantities_gpu)
+
+        d = self._create_domain('test_maxqty_freq')
+        op = Collect_max_quantities_operator(d, update_frequency=3, store_to_sww=True)
+
+        d.set_multiprocessor_mode(2)
+        gpu_dom = d.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+        for t in d.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+        sync_from_device(gpu_dom)
+
+        check_stage = np.empty_like(op.max_stage)
+        check_depth = np.empty_like(op.max_depth)
+        check_speed = np.empty_like(op.max_speed)
+        check_uh    = np.empty_like(op.max_uh)
+        get_max_quantities_gpu(gpu_dom, check_stage, check_depth, check_speed, check_uh)
+
+        np.testing.assert_array_equal(op.max_stage, check_stage,
+                                      err_msg="update_frequency=3: max_stage != explicit get")
+        np.testing.assert_array_equal(op.max_depth, check_depth,
+                                      err_msg="update_frequency=3: max_depth != explicit get")
+
+    def test_mode2_store_to_sww_updates_domain_quantities(self):
+        """Mode 2 with store_to_sww=True updates domain quantities each update step."""
+        from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
+
+        d = self._create_domain('test_maxqty_sww')
+        op = Collect_max_quantities_operator(d, update_frequency=2, store_to_sww=True)
+
+        d.set_multiprocessor_mode(2)
+        gpu_dom = d.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+        for t in d.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+        sync_from_device(gpu_dom)
+
+        # Domain quantities should have been updated (non-trivial values)
+        max_stage_qty = d.quantities['max_stage'].centroid_values
+        max_depth_qty = d.quantities['max_depth'].centroid_values
+
+        self.assertTrue(np.any(max_stage_qty > -1e30),
+                        "max_stage domain quantity was never updated from initial -inf")
+        self.assertTrue(np.any(max_depth_qty > 0.0),
+                        "max_depth domain quantity was never updated from zero")
+
+        # operator arrays must also be consistent with domain quantities
+        np.testing.assert_allclose(op.max_stage, max_stage_qty, rtol=1e-12, atol=1e-15)
+        np.testing.assert_allclose(op.max_depth, max_depth_qty, rtol=1e-12, atol=1e-15)
+
+    def test_mode1_mode2_approximate_match(self):
+        """Mode 1 (CPU NumPy) and mode 2 (GPU kernel) produce results within ~1e-10.
+
+        Both modes drive the same underlying C solver and should agree to near
+        machine epsilon.  A tolerance of 1e-10 catches real bugs (e.g. the GPU
+        kernel not updating, or spurious host<->device syncs perturbing the
+        mode-2 trajectory) while tolerating harmless floating-point reordering.
+        """
+        from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            sync_to_device, sync_from_device, get_max_quantities_gpu)
+
+        cpu_domain = self._create_domain('test_maxqty_approx_cpu')
+        gpu_domain = self._create_domain('test_maxqty_approx_gpu')
+
+        cpu_op = Collect_max_quantities_operator(cpu_domain, store_to_sww=False)
+        gpu_op = Collect_max_quantities_operator(gpu_domain, store_to_sww=False)
+
+        cpu_domain.set_multiprocessor_mode(1)
+        for t in cpu_domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+
+        gpu_domain.set_multiprocessor_mode(2)
+        gpu_dom = gpu_domain.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+        for t in gpu_domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+        sync_from_device(gpu_dom)
+
+        get_max_quantities_gpu(gpu_dom,
+                               gpu_op.max_stage, gpu_op.max_depth,
+                               gpu_op.max_speed, gpu_op.max_uh)
+
+        # Both should produce non-trivial, physically sensible values
+        self.assertTrue(np.all(gpu_op.max_depth >= 0.0), "GPU max_depth has negative values")
+        self.assertTrue(np.all(gpu_op.max_speed >= 0.0), "GPU max_speed has negative values")
+        self.assertTrue(np.all(gpu_op.max_uh >= 0.0),    "GPU max_uh has negative values")
+
+        np.testing.assert_allclose(cpu_op.max_stage, gpu_op.max_stage,
+                                   atol=1e-10, rtol=1e-10,
+                                   err_msg="max_stage mode1/mode2 mismatch")
+        np.testing.assert_allclose(cpu_op.max_depth, gpu_op.max_depth,
+                                   atol=1e-10, rtol=1e-10,
+                                   err_msg="max_depth mode1/mode2 mismatch")
+        np.testing.assert_allclose(cpu_op.max_speed, gpu_op.max_speed,
+                                   atol=1e-10, rtol=1e-10,
+                                   err_msg="max_speed mode1/mode2 mismatch")
+        np.testing.assert_allclose(cpu_op.max_uh, gpu_op.max_uh,
+                                   atol=1e-10, rtol=1e-10,
+                                   err_msg="max_uh mode1/mode2 mismatch")
+
+
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
+class Test_TimestepTimeAdvance(unittest.TestCase):
+    """Regression tests for the first-step collection bug in
+    Collect_max_quantities_operator.
+
+    The bug: mode-1 fractional-step operators see the pre-step time (the
+    generic evolve loop advances relative_time AFTER apply_fractional_steps).
+    Mode-2 C-loops advance relative_time before returning, so fractional-step
+    operators see the post-step time.  With collection_start_time=0 and the
+    old strict inequality (t > 0), mode-1 silently skipped the very first
+    inner timestep (0 > 0 is False) while mode-2 correctly collected from
+    step 1 onwards.  For transient flows the first step may carry the global
+    maximum, causing mode-1 and mode-2 to disagree by O(1e-4).
+
+    Fix: Collect_max_quantities_operator now uses >= instead of > for the
+    collection_start_time guard.  Mode-1 at t=0 satisfies 0 >= 0 and
+    correctly collects state S_1; mode-2 at t=dt_1 also satisfies the guard
+    and collects the same S_1 from device memory.
+
+    Test strategy: run mode-1 and mode-2 for each flow algorithm and assert
+    the collected maxima agree to atol=1e-10.  If the >= fix is reverted
+    (back to >) mode-1 will miss S_1 and the test fails.
+    """
+
+    def _make_domain(self, name, algorithm):
+        d = rectangular_cross_domain(8, 8, len1=100., len2=100.)
+        d.set_flow_algorithm(algorithm)
+        d.set_low_froude(0)
+        d.set_name(name)
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', lambda x, y: -x / 50.0)
+        d.set_quantity('friction', 0.01)
+        d.set_quantity('stage', 0.0)
+        Br = Reflective_boundary(d)
+        Bd = Dirichlet_boundary([-0.5, 0., 0.])
+        d.set_boundary({'left': Bd, 'right': Br, 'top': Br, 'bottom': Br})
+        return d
+
+    def _run_modes(self, algorithm):
+        """Run mode 1 and mode 2 with Collect_max_quantities and return both ops."""
+        from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            sync_to_device, sync_from_device, get_max_quantities_gpu)
+
+        n = 256  # 8x8 rectangular_cross
+
+        d1 = self._make_domain(f'{algorithm}_mode1', algorithm)
+        op1 = Collect_max_quantities_operator(d1, store_to_sww=False)
+        d1.set_multiprocessor_mode(1)
+        for t in d1.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+
+        d2 = self._make_domain(f'{algorithm}_mode2', algorithm)
+        op2 = Collect_max_quantities_operator(d2, store_to_sww=False)
+        d2.set_multiprocessor_mode(2)
+        gpu_dom = d2.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+        for t in d2.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+        sync_from_device(gpu_dom)
+
+        ms2 = np.zeros(n); md2 = np.zeros(n)
+        msp2 = np.zeros(n); mu2 = np.zeros(n)
+        get_max_quantities_gpu(gpu_dom, ms2, md2, msp2, mu2)
+
+        return op1, ms2, md2, msp2, mu2
+
+    def _assert_modes_agree(self, algorithm):
+        op1, ms2, md2, msp2, mu2 = self._run_modes(algorithm)
+        np.testing.assert_allclose(op1.max_stage, ms2, atol=1e-10, rtol=1e-10,
+                                   err_msg=f'{algorithm}: max_stage mode1/mode2 mismatch')
+        np.testing.assert_allclose(op1.max_depth, md2, atol=1e-10, rtol=1e-10,
+                                   err_msg=f'{algorithm}: max_depth mode1/mode2 mismatch')
+        np.testing.assert_allclose(op1.max_speed, msp2, atol=1e-10, rtol=1e-10,
+                                   err_msg=f'{algorithm}: max_speed mode1/mode2 mismatch')
+        np.testing.assert_allclose(op1.max_uh, mu2, atol=1e-10, rtol=1e-10,
+                                   err_msg=f'{algorithm}: max_uh mode1/mode2 mismatch')
+
+    def test_DE0_euler(self):
+        """DE0 (Euler) — the original bug was in evolve_one_euler_step."""
+        self._assert_modes_agree('DE0')
+
+    def test_DE1_rk2(self):
+        """DE1 (RK2) — time was already advanced mid-step; verify no regression."""
+        self._assert_modes_agree('DE1')
+
+    def test_DE2_rk3(self):
+        """DE2 (RK3) — time was already advanced at end of step; verify no regression."""
+        self._assert_modes_agree('DE2')
+
+    def test_DE_ader2(self):
+        """DE_ader2 (ADER-2) — same bug as Euler; fixed in evolve_one_ader2_step."""
+        self._assert_modes_agree('DE_ader2')
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

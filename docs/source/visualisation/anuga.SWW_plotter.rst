@@ -33,6 +33,7 @@
       ~SWW_plotter.save_max_depth_frame
       ~SWW_plotter.save_max_speed_depth_frame
       ~SWW_plotter.save_max_speed_frame
+      ~SWW_plotter.save_max_stage_frame
       ~SWW_plotter.save_speed_depth_frame
       ~SWW_plotter.save_speed_frame
       ~SWW_plotter.save_stage_frame
@@ -50,5 +51,9 @@
    .. autosummary::
    
       ~SWW_plotter.elev_delta
+      ~SWW_plotter.max_depth
+      ~SWW_plotter.max_speed
+      ~SWW_plotter.max_speed_depth
+      ~SWW_plotter.max_stage
    
    

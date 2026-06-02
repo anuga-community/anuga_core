@@ -48,7 +48,7 @@ except Exception as _e:
 # ------------------------------------------------------------------ #
 
 _QUANTITIES = ('depth', 'stage', 'speed', 'speed_depth',
-               'max_depth', 'max_speed', 'max_speed_depth',
+               'max_depth', 'max_stage', 'max_speed', 'max_speed_depth',
                'elev', 'elev_delta')
 
 _QTY_DEFAULTS = {
@@ -57,6 +57,7 @@ _QTY_DEFAULTS = {
     'speed':           dict(vmin=0.0,   vmax=10.0),
     'speed_depth':     dict(vmin=0.0,   vmax=20.0),
     'max_depth':       dict(vmin=0.0,   vmax=20.0),
+    'max_stage':       dict(vmin=-20.0, vmax=20.0),
     'max_speed':       dict(vmin=0.0,   vmax=10.0),
     'max_speed_depth': dict(vmin=0.0,   vmax=20.0),
     'elev':            dict(vmin=-20.0, vmax=100.0),
@@ -69,9 +70,10 @@ _QTY_DATA_ATTR = {
     'stage':           'stage',
     'speed':           'speed',
     'speed_depth':     'speed_depth',
-    'max_depth':       'depth',
-    'max_speed':       'speed',
-    'max_speed_depth': 'speed_depth',
+    'max_depth':       'max_depth',
+    'max_stage':       'max_stage',
+    'max_speed':       'max_speed',
+    'max_speed_depth': 'max_speed_depth',
     'elev':            'elev',
     'elev_delta':      'elev_delta',
 }
@@ -83,6 +85,7 @@ _QTY_SAVE_METHOD = {
     'speed':           'save_speed_frame',
     'speed_depth':     'save_speed_depth_frame',
     'max_depth':       'save_max_depth_frame',
+    'max_stage':       'save_max_stage_frame',
     'max_speed':       'save_max_speed_frame',
     'max_speed_depth': 'save_max_speed_depth_frame',
     'elev':            'save_elev_frame',
@@ -96,6 +99,7 @@ _QTY_CBAR_LABEL = {
     'speed':           'Speed (m/s)',
     'speed_depth':     'Flow depth (m2/s)',
     'max_depth':       'Max depth (m)',
+    'max_stage':       'Max stage (m)',
     'max_speed':       'Max speed (m/s)',
     'max_speed_depth': 'Max flow depth (m2/s)',
     'elev':            'Elevation (m)',
@@ -109,6 +113,7 @@ _QTY_TITLE = {
     'speed':           'Flow speed',
     'speed_depth':     'Flow depth',
     'max_depth':       'Maximum water depth',
+    'max_stage':       'Maximum water stage',
     'max_speed':       'Maximum flow speed',
     'max_speed_depth': 'Maximum flow depth',
     'elev':            'Bed elevation',
@@ -927,7 +932,8 @@ class SWWAnimationGUI:
         self._splotter.plot_dir = plot_dir
         for attr in ('_depth_frame_count', '_stage_frame_count',
                      '_speed_frame_count', '_speed_depth_frame_count',
-                     '_max_depth_frame_count', '_max_speed_frame_count',
+                     '_max_depth_frame_count', '_max_stage_frame_count',
+                     '_max_speed_frame_count',
                      '_max_speed_depth_frame_count', '_elev_frame_count',
                      '_elev_delta_frame_count'):
             setattr(self._splotter, attr, 0)
@@ -1149,7 +1155,7 @@ class SWWAnimationGUI:
             import numpy as np
             # For max quantities use the actual max; others use frame 0
             if self._last_gen_qty.startswith('max_'):
-                depth = np.max(sp.depth, axis=0)
+                depth = sp.max_depth
             else:
                 depth = sp.depth[0, :]
             try:

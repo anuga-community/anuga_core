@@ -386,6 +386,9 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
     // Free culvert operator structures
     gpu_culverts_finalize_all(GD);
 
+    // Free max-quantities operator arrays
+    gpu_max_quantities_finalize(GD);
+
     GD->gpu_initialized = 0;
 }
 

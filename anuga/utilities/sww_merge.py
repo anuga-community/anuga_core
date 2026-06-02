@@ -276,15 +276,14 @@ def _sww_merge_parallel_smooth(swwfiles, output, verbose=False, delete_old=False
             for q in static_quantities:
                 out_s_quantities[q] = num.zeros((number_of_global_nodes,), num.float32)
 
-            # Classify centroid-based quantities
-            candidates_c = set(['elevation_c', 'friction_c', 'stage_c', 'xmomentum_c',
-                                 'ymomentum_c', 'xvelocity_c', 'yvelocity_c', 'height_c'])
+            # Classify centroid-based quantities (any _c variable in the file)
             static_c_quantities  = []
             dynamic_c_quantities = []
-            for q in candidates_c & present:
-                if fid.variables[q].shape[0] == n_steps:
+            for q in sorted(v for v in present if v.endswith('_c')):
+                shape = fid.variables[q].shape
+                if len(shape) == 2 and shape[0] == n_steps:
                     dynamic_c_quantities.append(q)
-                else:
+                elif len(shape) == 1:
                     static_c_quantities.append(q)
 
             for q in static_c_quantities:
@@ -514,22 +513,15 @@ def _sww_merge_parallel_non_smooth(swwfiles, output, verbose=False, delete_old=F
                 out_s_quantities[quantity] = num.zeros((3*number_of_global_triangles,),num.float32)
 
             #=======================================
-            # Deal with the centroid based variables
+            # Deal with the centroid based variables (any _c variable in the file)
             #=======================================
-            quantities = set(['elevation_c', 'friction_c', 'stage_c', 'xmomentum_c',
-                              'ymomentum_c', 'xvelocity_c', 'yvelocity_c', 'height_c'])
-            variables = set(fid.variables.keys())
-
-            quantities = list(quantities & variables)
-
-            static_c_quantities = []
+            static_c_quantities  = []
             dynamic_c_quantities = []
-
-            for quantity in quantities:
-                # Test if quantity is static
-                if n_steps == fid.variables[quantity].shape[0]:
+            for quantity in sorted(v for v in fid.variables.keys() if v.endswith('_c')):
+                shape = fid.variables[quantity].shape
+                if len(shape) == 2 and shape[0] == n_steps:
                     dynamic_c_quantities.append(quantity)
-                else:
+                elif len(shape) == 1:
                     static_c_quantities.append(quantity)
 
             for quantity in static_c_quantities:

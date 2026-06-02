@@ -321,6 +321,19 @@ struct culvert_operators {
     int mapped;
 };
 
+// Max-quantities operator — device-resident running maxima of stage, depth,
+// speed, and momentum magnitude collected each timestep on the GPU.
+struct max_quantities_info {
+    int n;                       // Number of triangles
+    double velocity_zero_height; // Speed zeroed below this depth
+    double *max_stage;           // [n] device-resident running max stage
+    double *max_depth;           // [n] device-resident running max depth
+    double *max_speed;           // [n] device-resident running max speed
+    double *max_uh;              // [n] device-resident running max ||(uh,vh)||
+    int initialized;
+    int mapped;
+};
+
 // FLOP counter structure for performance profiling (Gordon Bell)
 // Counts floating-point operations per kernel for FLOPS reporting
 struct flop_counters {
@@ -398,6 +411,9 @@ struct gpu_domain {
 
     // Culvert operators (Boyd box/pipe - batched GPU gather/scatter)
     struct culvert_operators culvert_ops;
+
+    // Max-quantities operator (device-resident running maxima)
+    struct max_quantities_info max_qty;
 
     // Simulation parameters for GPU kernels
     double CFL;
@@ -546,6 +562,14 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
                                      int rate_changed,
                                      double factor, double timestep);
 
+// Max-quantities operator — GPU-resident running maxima
+int  gpu_max_quantities_init(struct gpu_domain *GD, int n, double velocity_zero_height);
+void gpu_max_quantities_update(struct gpu_domain *GD);
+void gpu_max_quantities_get(struct gpu_domain *GD,
+                            double *out_stage, double *out_depth,
+                            double *out_speed, double *out_uh);
+void gpu_max_quantities_finalize(struct gpu_domain *GD);
+
 // Ghost exchange - the key MPI function
 // Uses GPU-aware MPI if available, otherwise does D2H/H2D for small halo buffers
 void gpu_exchange_ghosts(struct gpu_domain *GD);
@@ -560,6 +584,9 @@ void gpu_saxpy3_conserved_quantities(struct gpu_domain *GD, double a, double b, 
 double gpu_protect(struct gpu_domain *GD);
 double gpu_compute_water_volume(struct gpu_domain *GD);
 void gpu_manning_friction(struct gpu_domain *GD);
+
+// Full Euler step on GPU
+double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
 
 // Full RK2 step on GPU (calls all the above in sequence)
 // max_timestep: Maximum allowed timestep (respecting yieldstep/finaltime constraints)

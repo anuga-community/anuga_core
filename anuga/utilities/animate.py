@@ -783,11 +783,19 @@ class SWW_plotter:
 
         self.time = p.variables['time'][:]
 
+        # Load precomputed max quantities if stored by Collect_max_quantities_operator
+        pvars = p.variables
+        self._max_depth_c      = pvars['max_depth_c'][:] if 'max_depth_c' in pvars else None
+        self._max_speed_c      = pvars['max_speed_c'][:] if 'max_speed_c' in pvars else None
+        self._max_uh_c         = pvars['max_uh_c'][:]    if 'max_uh_c'    in pvars else None
+        self._max_stage_c      = pvars['max_stage_c'][:] if 'max_stage_c' in pvars else None
+
         self._depth_frame_count = 0
         self._stage_frame_count = 0
         self._speed_depth_frame_count = 0
         self._speed_frame_count = 0
         self._max_depth_frame_count = 0
+        self._max_stage_frame_count = 0
         self._max_speed_frame_count = 0
         self._max_speed_depth_frame_count = 0
         self._elev_frame_count = 0
@@ -1291,6 +1299,42 @@ class SWW_plotter:
         return fig, ax
 
     #------------------------------------------
+    # Max-quantity accessors (precomputed or derived)
+    #------------------------------------------
+
+    @property
+    def max_depth(self):
+        """Max depth per triangle: precomputed from SWW if available, else max over time."""
+        if self._max_depth_c is not None:
+            return self._max_depth_c
+        import numpy as np
+        return np.max(self.depth, axis=0)
+
+    @property
+    def max_speed(self):
+        """Max speed per triangle: precomputed from SWW if available, else max over time."""
+        if self._max_speed_c is not None:
+            return self._max_speed_c
+        import numpy as np
+        return np.max(self.speed, axis=0)
+
+    @property
+    def max_speed_depth(self):
+        """Max momentum magnitude per triangle: precomputed (max_uh_c) or max over time."""
+        if self._max_uh_c is not None:
+            return self._max_uh_c
+        import numpy as np
+        return np.max(self.speed_depth, axis=0)
+
+    @property
+    def max_stage(self):
+        """Max stage per triangle: precomputed from SWW if available, else max over time."""
+        if self._max_stage_c is not None:
+            return self._max_stage_c
+        import numpy as np
+        return np.max(self.stage, axis=0)
+
+    #------------------------------------------
     # Elevation-change (delta) procedures
     #------------------------------------------
 
@@ -1391,53 +1435,72 @@ class SWW_plotter:
 
     def _render_max_qty(self, ax, triang, max_depth, qty_data, elev, md,
                         basemap, cmap, alpha, vmin, vmax, smooth,
-                        show_elev=False, elev_levels=10, show_mesh=False):
+                        show_elev=False, elev_levels=10, show_mesh=False,
+                        xlim=None, ylim=None):
         """Shared renderer for save_max_*_frame; returns the ScalarMappable."""
         import numpy as np
         ax.set_xlim(triang.x.min(), triang.x.max())
         ax.set_ylim(triang.y.min(), triang.y.max())
-        if smooth:
+
+        wet_mask = max_depth <= md   # True = never-wet → exclude from quantity
+
+        if basemap and self.epsg:
+            # Always use imshow for basemap regardless of smooth flag.
+            # Flat tripcolor leaves blocky triangle artefacts over the map tiles;
+            # imshow + LinearTriInterpolator gives a smooth anti-aliased boundary.
+            # Resolution targets the visible (zoomed) region, matching _animated_frame.
             import matplotlib.tri as _mtri
-            wet_mask = max_depth <= md   # True = never-wet → exclude from quantity
-            if basemap and self.epsg:
-                from matplotlib.tri import LinearTriInterpolator as _LTI
-                triang_wet = _mtri.Triangulation(
-                    triang.x, triang.y, triang.triangles, mask=wet_mask)
-                v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
-                x0, x1 = float(triang.x.min()), float(triang.x.max())
-                y0, y1 = float(triang.y.min()), float(triang.y.max())
-                _span = max(x1 - x0, y1 - y0)
-                nx = max(100, int(400 * (x1 - x0) / _span))
-                ny = max(100, int(400 * (y1 - y0) / _span))
-                xi = np.linspace(x0, x1, nx)
-                yi = np.linspace(y0, y1, ny)
-                Xi, Yi = np.meshgrid(xi, yi)
-                zi = _LTI(triang_wet, v_qty)(Xi, Yi)
-                im = ax.imshow(zi, extent=[x0, x1, y0, y1], origin='lower',
-                               cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha,
-                               interpolation='bilinear', zorder=1)
-            else:
-                dry_mask = max_depth > md
-                triang_dry = _mtri.Triangulation(
-                    triang.x, triang.y, triang.triangles, mask=dry_mask)
-                v_elev = _face_to_vertex(triang, elev, face_mask=dry_mask)
-                dry_elev = np.asarray(elev)[~np.asarray(dry_mask, dtype=bool)]
-                e_vmin = float(dry_elev.min()) if dry_elev.size else 0.0
-                e_vmax = float(dry_elev.max()) if dry_elev.size else 1.0
-                if e_vmin >= e_vmax:
-                    e_vmax = e_vmin + 1.0
-                ax.tripcolor(triang_dry, v_elev, shading='gouraud', cmap='Greys_r',
-                             vmin=e_vmin, vmax=e_vmax).set_linewidths(0)
-                triang_wet = _mtri.Triangulation(
-                    triang.x, triang.y, triang.triangles, mask=wet_mask)
-                v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
-                im = ax.tripcolor(triang_wet, v_qty, shading='gouraud',
-                                  cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
-                im.set_linewidths(0)
+            from matplotlib.tri import LinearTriInterpolator as _LTI
+
+            triang_wet = _mtri.Triangulation(
+                triang.x, triang.y, triang.triangles, mask=wet_mask)
+            v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
+
+            mx0 = float(triang.x.min()); mx1 = float(triang.x.max())
+            my0 = float(triang.y.min()); my1 = float(triang.y.max())
+            x0 = max(mx0, xlim[0]) if xlim is not None else mx0
+            x1 = min(mx1, xlim[1]) if xlim is not None else mx1
+            y0 = max(my0, ylim[0]) if ylim is not None else my0
+            y1 = min(my1, ylim[1]) if ylim is not None else my1
+            if x0 >= x1:
+                x0, x1 = mx0, mx1
+            if y0 >= y1:
+                y0, y1 = my0, my1
+
+            _span = max(x1 - x0, y1 - y0)
+            nx = max(200, int(600 * (x1 - x0) / _span))
+            ny = max(200, int(600 * (y1 - y0) / _span))
+            xi = np.linspace(x0, x1, nx)
+            yi = np.linspace(y0, y1, ny)
+            Xi, Yi = np.meshgrid(xi, yi)
+            zi = _LTI(triang_wet, v_qty)(Xi, Yi)
+            im = ax.imshow(zi, extent=[x0, x1, y0, y1], origin='lower',
+                           cmap=cmap, vmin=vmin, vmax=vmax, alpha=alpha,
+                           interpolation='bilinear', zorder=1)
+
+        elif smooth:
+            import matplotlib.tri as _mtri
+            dry_mask = max_depth > md
+            triang_dry = _mtri.Triangulation(
+                triang.x, triang.y, triang.triangles, mask=dry_mask)
+            v_elev = _face_to_vertex(triang, elev, face_mask=dry_mask)
+            dry_elev = np.asarray(elev)[~np.asarray(dry_mask, dtype=bool)]
+            e_vmin = float(dry_elev.min()) if dry_elev.size else 0.0
+            e_vmax = float(dry_elev.max()) if dry_elev.size else 1.0
+            if e_vmin >= e_vmax:
+                e_vmax = e_vmin + 1.0
+            ax.tripcolor(triang_dry, v_elev, shading='gouraud', cmap='Greys_r',
+                         vmin=e_vmin, vmax=e_vmax).set_linewidths(0)
+            triang_wet = _mtri.Triangulation(
+                triang.x, triang.y, triang.triangles, mask=wet_mask)
+            v_qty = _face_to_vertex(triang, qty_data, face_mask=wet_mask)
+            im = ax.tripcolor(triang_wet, v_qty, shading='gouraud',
+                              cmap=cmap, alpha=alpha, vmin=vmin, vmax=vmax)
+            im.set_linewidths(0)
+
         else:
-            if not (basemap and self.epsg):
-                triang.set_mask(max_depth > md)
-                ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
+            triang.set_mask(max_depth > md)
+            ax.tripcolor(triang, facecolors=elev, cmap='Greys_r')
             triang.set_mask(max_depth <= md)
             im = ax.tripcolor(triang, facecolors=qty_data, cmap=cmap,
                               alpha=alpha, vmin=vmin, vmax=vmax)
@@ -1447,6 +1510,16 @@ class SWW_plotter:
         if show_mesh:
             ax.triplot(triang, color='black', linewidth=0.25, alpha=0.45,
                        zorder=4)
+
+        # Use offset notation on both axes (e.g. "1e6" header + short ticks)
+        # and limit tick count so large UTM values don't collide.
+        from matplotlib.ticker import ScalarFormatter, MaxNLocator
+        for _axis in (ax.xaxis, ax.yaxis):
+            _fmt = ScalarFormatter(useOffset=True, useMathText=False)
+            _fmt.set_powerlimits((-3, 4))
+            _axis.set_major_formatter(_fmt)
+            _axis.set_major_locator(MaxNLocator(nbins=5, integer=True))
+
         return im
 
     def save_max_depth_frame(self, frame=None, figsize=(10, 6), dpi=160,
@@ -1456,9 +1529,8 @@ class SWW_plotter:
                              show_elev=False, elev_levels=10, show_mesh=False):
         """Save a single frame showing the maximum depth at each triangle."""
         import matplotlib.pyplot as plt
-        import numpy as np
 
-        max_depth = np.max(self.depth, axis=0)
+        max_depth = self.max_depth
         md = self.min_depth
         try:
             elev = self.elev[0, :]
@@ -1471,7 +1543,7 @@ class SWW_plotter:
         im = self._render_max_qty(ax, triang, max_depth, max_depth, elev, md,
                                    basemap, cmap, alpha, vmin, vmax, smooth,
                                    show_elev=show_elev, elev_levels=elev_levels,
-                                   show_mesh=show_mesh)
+                                   show_mesh=show_mesh, xlim=xlim, ylim=ylim)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
@@ -1490,6 +1562,47 @@ class SWW_plotter:
         plt.close()
         fig.clf()
 
+    def save_max_stage_frame(self, frame=None, figsize=(10, 6), dpi=160,
+                             vmin=-20.0, vmax=20.0, cmap='viridis', basemap=False,
+                             alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
+                             xlim=None, ylim=None, smooth=False,
+                             show_elev=False, elev_levels=10, show_mesh=False):
+        """Save a single frame showing the maximum stage at each triangle."""
+        import matplotlib.pyplot as plt
+
+        max_depth = self.max_depth
+        max_stage = self.max_stage
+        md = self.min_depth
+        try:
+            elev = self.elev[0, :]
+        except (IndexError, TypeError):
+            elev = self.elev
+
+        triang = self.triang_abs if (basemap and self.epsg) else self.triang
+        fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
+        plt.title('Max Stage')
+        im = self._render_max_qty(ax, triang, max_depth, max_stage, elev, md,
+                                   basemap, cmap, alpha, vmin, vmax, smooth,
+                                   show_elev=show_elev, elev_levels=elev_levels,
+                                   show_mesh=show_mesh, xlim=xlim, ylim=ylim)
+        triang.set_mask(None)
+        ax.set_aspect('equal')
+        ax.set_xlabel('Easting (m)')
+        ax.set_ylabel('Northing (m)')
+        if xlim is not None:
+            ax.set_xlim(xlim)
+        if ylim is not None:
+            ax.set_ylim(ylim)
+        fig.colorbar(im, ax=ax)
+        if basemap and self.epsg:
+            _add_basemap(ax, self.epsg, basemap_provider, cache=self._basemap_cache)
+        fname = '{}_max_stage_{:0>10}.png'.format(self.name, self._max_stage_frame_count)
+        path = fname if self.plot_dir is None else os.path.join(self.plot_dir, fname)
+        fig.savefig(path)
+        self._max_stage_frame_count += 1
+        plt.close()
+        fig.clf()
+
     def save_max_speed_frame(self, frame=None, figsize=(10, 6), dpi=160,
                              vmin=0.0, vmax=10.0, cmap='viridis', basemap=False,
                              alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
@@ -1497,10 +1610,9 @@ class SWW_plotter:
                              show_elev=False, elev_levels=10, show_mesh=False):
         """Save a single frame showing the maximum speed at each triangle."""
         import matplotlib.pyplot as plt
-        import numpy as np
 
-        max_depth = np.max(self.depth, axis=0)
-        max_speed = np.max(self.speed, axis=0)
+        max_depth = self.max_depth
+        max_speed = self.max_speed
         md = self.min_depth
         try:
             elev = self.elev[0, :]
@@ -1513,7 +1625,7 @@ class SWW_plotter:
         im = self._render_max_qty(ax, triang, max_depth, max_speed, elev, md,
                                    basemap, cmap, alpha, vmin, vmax, smooth,
                                    show_elev=show_elev, elev_levels=elev_levels,
-                                   show_mesh=show_mesh)
+                                   show_mesh=show_mesh, xlim=xlim, ylim=ylim)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
@@ -1540,10 +1652,9 @@ class SWW_plotter:
                                    show_mesh=False):
         """Save a single frame showing the maximum speed×depth at each triangle."""
         import matplotlib.pyplot as plt
-        import numpy as np
 
-        max_depth = np.max(self.depth, axis=0)
-        max_speed_depth = np.max(self.speed_depth, axis=0)
+        max_depth = self.max_depth
+        max_speed_depth = self.max_speed_depth
         md = self.min_depth
         try:
             elev = self.elev[0, :]
@@ -1556,7 +1667,7 @@ class SWW_plotter:
         im = self._render_max_qty(ax, triang, max_depth, max_speed_depth, elev, md,
                                    basemap, cmap, alpha, vmin, vmax, smooth,
                                    show_elev=show_elev, elev_levels=elev_levels,
-                                   show_mesh=show_mesh)
+                                   show_mesh=show_mesh, xlim=xlim, ylim=ylim)
         triang.set_mask(None)
         ax.set_aspect('equal')
         ax.set_xlabel('Easting (m)')
