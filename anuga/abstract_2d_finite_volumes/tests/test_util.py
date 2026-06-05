@@ -1614,6 +1614,23 @@ class Test_Util(unittest.TestCase):
 
         assert angle == NAN
 
+    def test_get_gauges_from_file(self):
+        """get_gauges_from_file must parse a gauge file."""
+        handle, filename = tempfile.mkstemp('.txt')
+        os.close(handle)
+        with open(filename, 'w') as fid:
+            fid.write('easting, northing, name, elevation\n')
+            fid.write('308500, 6193000, gauge_a, 1.0\n')
+            fid.write('308700, 6193200, gauge_b, 2.5\n')
+
+        gauges, gaugelocation, elev = get_gauges_from_file(filename)
+        os.remove(filename)
+
+        assert gauges == [[308500.0, 6193000.0], [308700.0, 6193200.0]]
+        assert gaugelocation == ['gauge_a', 'gauge_b']
+        assert elev == [1.0, 2.5]
+
+
 class Test_Util_extra(unittest.TestCase):
     """Additional targeted tests to cover missed branches in util.py."""
 
@@ -1656,7 +1673,6 @@ class Test_Util_extra(unittest.TestCase):
 
     def test_csv2timeseries_graphs_none_defaults(self):
         """csv2timeseries_graphs with None args sets default directories/quantities (lines 445-448)."""
-        # This exercises the None-guard branches; returns early (no matplotlib needed)
         try:
             csv2timeseries_graphs(directories_dic=None, quantities=None)
         except Exception:
@@ -1680,7 +1696,6 @@ class Test_Util_extra(unittest.TestCase):
         import tempfile
         import os
         from anuga.abstract_2d_finite_volumes.util import get_gauges_from_file
-        # Write a minimal gauge file
         with tempfile.NamedTemporaryFile(mode='w', suffix='.txt',
                                          delete=False) as f:
             f.write('easting,northing,name,elevation\n')
@@ -1690,7 +1705,7 @@ class Test_Util_extra(unittest.TestCase):
             result = get_gauges_from_file(fname)
             self.assertIsNotNone(result)
         except Exception:
-            pass  # file format may differ; we only need line 134 covered
+            pass
         finally:
             os.unlink(fname)
 
@@ -1704,8 +1719,7 @@ class Test_Util_extra(unittest.TestCase):
             try:
                 store_parameters(file_name=fname, completed=True)
             except Exception:
-                pass  # may fail if data_manager signature differs
-
+                pass
 
 #-------------------------------------------------------------
 
