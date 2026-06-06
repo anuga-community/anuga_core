@@ -70,20 +70,24 @@ jobs:
           export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig"
           pip wheel --no-build-isolation --no-deps -w dist-wheel .
 
-      - name: Repair wheel (Linux — make manylinux-compatible)
-        if: runner.os == 'Linux'
+      - name: Repair wheel (bundle external libs; self-contained per platform)
         shell: bash -el {0}
         run: |
           conda activate anuga_env
           pip install repairwheel
-          repairwheel -o dist dist-wheel/*.whl
-
-      - name: Stage wheel (non-Linux)
-        if: runner.os != 'Linux'
-        shell: bash -el {0}
-        run: |
-          mkdir -p dist
-          cp dist-wheel/*.whl dist/
+          # repairwheel dispatches per platform: auditwheel (Linux, manylinux),
+          # delocate (macOS), delvewheel (Windows). On macOS this copies
+          # libomp.dylib into the wheel and rewrites the @rpath so the wheel is
+          # self-contained — without it `import anuga` from the published wheel
+          # fails with "Library not loaded: @rpath/libomp.dylib" (the build links
+          # conda's libomp via an rpath into the conda env). delvewheel does the
+          # equivalent DLL bundling on Windows. Pass the conda lib dirs that
+          # exist on this OS so dependent libraries are found at repair time.
+          libdirs=()
+          for d in "$CONDA_PREFIX/lib" "$CONDA_PREFIX/Library/bin"; do
+            [ -d "$d" ] && libdirs+=(-l "$d")
+          done
+          repairwheel "${libdirs[@]}" -o dist dist-wheel/*.whl
 
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v7
