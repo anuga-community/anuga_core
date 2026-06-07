@@ -91,6 +91,66 @@ jobs:
           path: dist/*.whl
 
   # ---------------------------------------------------------------------------
+  # Build Intel macOS (osx-64) wheels. GitHub's macos-latest is Apple Silicon
+  # (arm64), so build-wheels above produces only arm64 mac wheels. Apple Silicon
+  # runs x86_64 under Rosetta 2, so we create an osx-64 conda env
+  # (CONDA_SUBDIR=osx-64; x86_64 python + compilers) on the same arm64 runner
+  # and build a native x86_64 wheel there — no scarce macos-13 Intel runners.
+  # Artifacts use the wheel-* name so the publish job picks them up.
+  # ---------------------------------------------------------------------------
+  build-wheels-osx64:
+    name: Build wheel (py${{ matrix.python-version }}, macos osx-64)
+    runs-on: macos-latest   # Apple Silicon (arm64)
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14']
+
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0  # git describe needs full history for version
+
+      - name: Ensure Rosetta 2 (to run x86_64 binaries on arm64)
+        run: sudo softwareupdate --install-rosetta --agree-to-license || true
+
+      - uses: conda-incubator/setup-miniconda@v4
+        with:
+          miniforge-version: latest
+          use-mamba: true
+          auto-update-conda: true
+          conda-remove-defaults: true
+
+      - name: Create osx-64 conda env (x86_64 packages, run under Rosetta)
+        shell: bash -el {0}
+        run: |
+          CONDA_SUBDIR=osx-64 conda create -n anuga_env -c conda-forge \
+            python=${{ matrix.python-version }} pip \
+            meson-python meson ninja cython pybind11 numpy pkg-config compilers
+          conda activate anuga_env
+          conda config --env --set subdir osx-64
+
+      - name: Build wheel
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig"
+          pip wheel --no-build-isolation --no-deps -w dist-wheel .
+
+      - name: Repair wheel (delocate, x86_64)
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          pip install repairwheel
+          repairwheel -l "$CONDA_PREFIX/lib" -o dist dist-wheel/*.whl
+
+      - name: Upload wheel artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: wheel-osx64-py${{ matrix.python-version }}
+          path: dist/*.whl
+
+  # ---------------------------------------------------------------------------
   # Build the source distribution (once, on Linux / Python 3.13).
   # ---------------------------------------------------------------------------
   build-sdist:
@@ -137,7 +197,7 @@ jobs:
   # ---------------------------------------------------------------------------
   publish:
     name: Publish to PyPI
-    needs: [build-wheels, build-sdist]
+    needs: [build-wheels, build-wheels-osx64, build-sdist]
     runs-on: ubuntu-latest
     if: github.event_name == 'release' && github.event.action == 'published'
 
