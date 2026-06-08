@@ -16,10 +16,17 @@
 // ============================================================================
 // CPU MULTICORE MODE - Regular OpenMP, no device offloading
 // ============================================================================
+//
+// simdlen(8): request 512-bit SIMD vectorisation for double-precision on
+//   Intel Cascade Lake (and later) where a ZMM register holds 8 doubles.
+//   The hint is advisory — the compiler uses the widest SIMD it can support.
+//
+// schedule(static): default for perfectly regular loops; avoids overhead of
+//   dynamic scheduling on Intel with many cores.
 
 // Parallel loops with SIMD vectorization
-#define OMP_PARALLEL_LOOP _Pragma("omp parallel for simd")
-#define OMP_PARALLEL_LOOP_SIMD _Pragma("omp parallel for simd")
+#define OMP_PARALLEL_LOOP _Pragma("omp parallel for simd simdlen(8) schedule(static)")
+#define OMP_PARALLEL_LOOP_SIMD _Pragma("omp parallel for simd simdlen(8) schedule(static)")
 
 // Reductions - use DO_PRAGMA to allow variable name expansion
 // Note: simd is omitted here; reduction loops cannot be SIMD-vectorized and

@@ -179,6 +179,104 @@ See :ref:`use_gpu_offloading` for hardware requirements, supported operators,
 slot limits, and troubleshooting.
 
 
+Intel Cascade Lake / NCI Gadi tuning
+--------------------------------------
+
+The following notes apply to **Intel Xeon Scalable 2nd-generation (Cascade Lake)**
+nodes, such as those on `NCI Gadi <https://opus.nci.org.au/display/Help/Gadi+User+Guide>`_.
+These nodes have 28 physical cores per socket (56 with Hyper-Threading), 6-channel
+DDR4-2933 (~45 GB/s per socket), and AVX-512 SIMD units.
+
+Because all ANUGA kernels are **memory-bandwidth-bound** (arithmetic intensity
+< 2 FLOP/byte), the goal is to maximise memory throughput and avoid wasting
+bandwidth on thread synchronisation.
+
+**Thread count and affinity (Intel OpenMP runtime)**
+
+.. code-block:: bash
+
+   # Single-socket run — maximise L3 cache sharing, no NUMA crossing
+   export OMP_NUM_THREADS=28
+   export KMP_AFFINITY=granularity=core,compact,1,0
+
+   # Full-node run — spread threads across both sockets for 2× memory BW
+   export OMP_NUM_THREADS=56
+   export KMP_AFFINITY=granularity=core,balanced
+
+``KMP_AFFINITY`` is an Intel OpenMP runtime variable.  The portable OpenMP 4.5
+equivalent is::
+
+   export OMP_PROC_BIND=close
+   export OMP_PLACES=cores
+
+**Spin-wait policy**
+
+Between parallel regions ANUGA performs Python-level work (I/O, boundary
+evaluation).  By default Intel OpenMP threads busy-wait, consuming CPU cycles
+during this Python gap.  Setting ``KMP_BLOCKTIME=0`` makes threads yield
+immediately; ``KMP_BLOCKTIME=1`` (1 ms) balances wake latency vs. idle cost:
+
+.. code-block:: bash
+
+   export KMP_BLOCKTIME=1     # 1 ms – good balance for most ANUGA timestep sizes
+
+**Building with AVX-512 and IPO (Intel compiler)**
+
+The ``environments/environment_<version>_intel.yml`` conda environment sets up
+Intel oneAPI (``icx`` / ``icpx``) with MKL.  Configure with:
+
+.. code-block:: bash
+
+   conda activate anuga_env_3.12_intel
+   pip install --no-build-isolation -v .
+
+This build already enables ``-xCORE-AVX512 -qopt-zmm-usage=high -ipo`` and
+``-fimf-use-svml=true`` (Intel SVML for vectorised ``cbrt``/``sqrt`` in the
+Manning friction loop), delivering up to **2–4× speedup** over the default
+SSE2 binary on Cascade Lake.
+
+To additionally tune for the exact host microarchitecture (e.g. ``-xHost``
+equivalent of ``-march=native``), add ``-Dmarch_native=true`` at configure
+time:
+
+.. code-block:: bash
+
+   pip install --no-build-isolation -v . -- -Dmarch_native=true
+
+.. warning::
+
+   Binaries built with ``-Dmarch_native=true`` or ``-xHost`` may not run on
+   CPUs older than the build node.
+
+**MKL for the CG solver**
+
+When MKL is detected at build time, the Conjugate Gradient solver used during
+mesh fitting automatically uses MKL ``cblas_ddot``, ``cblas_daxpy``, and
+``cblas_dscal`` instead of hand-rolled OpenMP loops.  These MKL routines are
+cache-tiled and AVX-512 vectorised, typically giving **2–4× speedup** for the
+fitting stage on Cascade Lake.
+
+**Example Gadi PBS job script**
+
+.. code-block:: bash
+
+   #!/bin/bash
+   #PBS -l ncpus=28
+   #PBS -l mem=192GB
+   #PBS -l walltime=02:00:00
+
+   module load intel-compiler
+   module load intel-mkl
+
+   export OMP_NUM_THREADS=28
+   export KMP_AFFINITY=granularity=core,compact,1,0
+   export KMP_BLOCKTIME=1
+   export MKL_NUM_THREADS=1       # MKL used only for CBLAS (sequential)
+
+   conda activate anuga_env_3.12_intel
+   python my_anuga_script.py
+
+
 See Also
 ---------
 

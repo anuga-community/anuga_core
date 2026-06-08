@@ -4,6 +4,17 @@
 option('use_mkl', type: 'boolean', value: false,
        description: 'Link against Intel MKL for optimised BLAS/LAPACK (auto-enabled for Intel compilers)')
 
+# Use CBLAS (from MKL or OpenBLAS) for dense vector ops in the CG solver
+# Auto-enabled when MKL is found; set explicitly to use another CBLAS library.
+option('use_lib_blas', type: 'boolean', value: false,
+       description: 'Use CBLAS for daxpy/dscal/ddot in the CG solver (auto-enabled when MKL is found)')
+
+# Tune compiled code for the host CPU microarchitecture.
+# GCC/Clang: -march=native  |  Intel icc/icx: -xHost
+# Warning: binaries built with this flag may not run on other CPUs.
+option('march_native', type: 'boolean', value: false,
+       description: 'Optimise for the host CPU microarchitecture (-march=native / -xHost)')
+
 # GPU offload - when true, targets GPU; when false, runs on CPU multicore
 option('gpu_offload', type: 'boolean', value: false,
        description: 'Target GPU (true) or CPU multicore (false)')
