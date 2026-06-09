@@ -1,12 +1,18 @@
 """Single-GPU dam break with NO ANUGA build required.
 
-Imports only meshpy + numpy + ctypes (and the libanuga_sw locator). meshpy
-generates the mesh; the C library builds all geometry and runs on one GPU. This
+Imports only numpy + ctypes (+ meshpy for the unstructured option). The mesh is
+generated in Python; the C library builds all geometry and runs on one GPU. This
 is the fully self-contained path - it never imports anuga, so nothing here needs
 the (meson) ANUGA build.
 
     export ANUGA_SW_LIB=$PWD/standalone/build_gpu/libanuga_sw.so
-    python standalone/python/run_meshpy.py            # default 100x100 box, t=2s
+
+    # structured M x N box (exact cell count) -- numpy only, no meshpy:
+    python standalone/python/run_meshpy.py 1024 1024            # 1024x1024 cells
+    python standalone/python/run_meshpy.py 1024 1024 100 2.0    # len=100, t=2s
+
+    # unstructured (meshpy/Triangle), controlled by max triangle area:
+    python standalone/python/run_meshpy.py --meshpy 0.5 100 2.0
 
 The DE0 numerical parameters below are baked-in constants (ANUGA's DE0 defaults),
 so no anuga import is needed to configure the solver.
@@ -42,6 +48,26 @@ class MeshParams(ctypes.Structure):
                  "low_froude", "optimise_dry_cells")]
 
 
+def structured_grid(m, n, len1, len2):
+    """Structured m x n rectangular mesh: (m+1)(n+1) nodes, 2*m*n CCW triangles."""
+    xs = np.linspace(0.0, len1, m + 1)
+    ys = np.linspace(0.0, len2, n + 1)
+    gx, gy = np.meshgrid(xs, ys, indexing="ij")          # node (i,j) -> i*(n+1)+j
+    nodes = np.column_stack([gx.ravel(), gy.ravel()]).astype(np.float64)
+    i, j = np.meshgrid(np.arange(m), np.arange(n), indexing="ij")
+    i, j = i.ravel(), j.ravel()
+    v00 = i * (n + 1) + j
+    v10 = (i + 1) * (n + 1) + j
+    v11 = (i + 1) * (n + 1) + (j + 1)
+    v01 = i * (n + 1) + (j + 1)
+    t1 = np.column_stack([v00, v10, v11])                # CCW
+    t2 = np.column_stack([v00, v11, v01])
+    tris = np.empty((2 * m * n, 3), dtype=np.int64)
+    tris[0::2] = t1
+    tris[1::2] = t2
+    return nodes, tris
+
+
 def meshpy_rectangle(length, max_area):
     from meshpy.triangle import MeshInfo, build
     mi = MeshInfo()
@@ -53,17 +79,25 @@ def meshpy_rectangle(length, max_area):
 
 
 def main():
-    length = 100.0
-    finaltime = float(sys.argv[1]) if len(sys.argv) > 1 else 2.0
-    max_area = float(sys.argv[2]) if len(sys.argv) > 2 else 1.0
-
-    nodes, tris = meshpy_rectangle(length, max_area)
+    args = sys.argv[1:]
+    if args and args[0] == "--meshpy":
+        max_area = float(args[1]) if len(args) > 1 else 1.0
+        length = float(args[2]) if len(args) > 2 else 100.0
+        finaltime = float(args[3]) if len(args) > 3 else 2.0
+        nodes, tris = meshpy_rectangle(length, max_area)
+    else:
+        m = int(args[0]) if len(args) > 0 else 100
+        n = int(args[1]) if len(args) > 1 else m
+        length = float(args[2]) if len(args) > 2 else 100.0
+        finaltime = float(args[3]) if len(args) > 3 else 2.0
+        nodes, tris = structured_grid(m, n, length, length)
     # centroids -> initial conditions (dam break, flat bed, no friction)
     cx = nodes[tris, 0].mean(axis=1)
     stage = np.where(cx < length / 2.0, 4.0, 1.0).astype(np.float64)
     elevation = np.zeros(tris.shape[0], np.float64)
     friction = np.zeros(tris.shape[0], np.float64)
-    print(f"meshpy: {nodes.shape[0]} nodes, {tris.shape[0]} triangles")
+    print(f"mesh: {nodes.shape[0]} nodes, {tris.shape[0]} triangles, "
+          f"length={length}, finaltime={finaltime}")
 
     lib = ctypes.CDLL(_find_library())
     lib.anuga_build_from_mesh.restype = c_void_p

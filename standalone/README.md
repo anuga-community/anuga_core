@@ -58,10 +58,14 @@ Point the Python driver at the library you built:
 export ANUGA_SW_LIB=$PWD/standalone/build_gpu/libanuga_sw.so
 ```
 
-### Single GPU, no ANUGA (meshpy → C)
+### Single GPU, no ANUGA
 ```bash
-python standalone/python/run_meshpy.py            # 100x100 box dam break, t=2s
-python standalone/python/run_meshpy.py 5.0 0.5    # finaltime=5s, mesh max triangle area=0.5
+# structured M x N box (numpy only):  args = M N [length] [finaltime]
+python standalone/python/run_meshpy.py 1024 1024          # 1024x1024 cells (~2.1M triangles)
+python standalone/python/run_meshpy.py 256 256 100 2.0    # 256x256 cells, len=100, t=2s
+
+# unstructured (meshpy/Triangle):  args = --meshpy MAXAREA [length] [finaltime]
+python standalone/python/run_meshpy.py --meshpy 0.5 100 2.0
 ```
 Confirm it really runs on the device (aborts if it can't offload):
 ```bash
