@@ -78,6 +78,31 @@ AnugaLoadedDomain *anuga_build_from_mesh(const double *nodes, long n_nodes,
                                          const double *friction_cv,
                                          const AnugaMeshParams *p);
 
+/* ---- MPI-aware partitioned build (C owns the distribution) ---- */
+#define ANUGA_GLOBAL_MAGIC   "ANUGAGM1"
+#define ANUGA_GLOBAL_VERSION 1
+
+/* Build THIS rank's sub-domain from the GLOBAL mesh + a pymetis partition vector
+ * (cell -> rank). Self-extracts owned cells + a 2-layer ghost halo, builds local
+ * geometry, and computes the MPI halo send/recv lists locally (no setup-time
+ * communication; ordered by global id so they match across ranks). Reflective on
+ * all true domain boundaries. The caller then use_comm_world + map + evolve. */
+AnugaLoadedDomain *anuga_build_from_partition(const double *nodes, long n_nodes,
+                                              const long *triangles, long n_tris,
+                                              const int *partition,
+                                              const double *stage_cv,
+                                              const double *elevation_cv,
+                                              const double *friction_cv,
+                                              int myrank, int nprocs,
+                                              const AnugaMeshParams *p);
+
+/* Read a .agm global-mesh file and build this rank's sub-domain. */
+AnugaLoadedDomain *anuga_global_load(const char *path, int myrank, int nprocs);
+
+/* Owned-cell global ids (parallel to anuga_dump_get_owned_stage), for validation.
+ * out must hold at least anuga_dump_num_elements longs. */
+long anuga_dump_get_owned_global_ids(AnugaLoadedDomain *ld, long *out);
+
 /* Read path/<name>_P<np>_<rank>.adm, allocate arrays, create the domain and set
  * up halo + static boundaries. Returns NULL on error. Does NOT set the MPI
  * communicator or map to device - the caller does that (use_comm_world, map). */

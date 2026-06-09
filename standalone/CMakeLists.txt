@@ -129,8 +129,12 @@ target_link_libraries(anuga_sw PUBLIC m)
 # launched by the system mpirun; builds without MPI too (single rank).
 add_executable(anuga_miniapp ${CMAKE_CURRENT_SOURCE_DIR}/src/miniapp_main.c)
 target_link_libraries(anuga_miniapp PRIVATE anuga_sw)
+# MPI-aware driver: reads a global .agm and self-distributes (C owns MPI)
+add_executable(anuga_miniapp_part ${CMAKE_CURRENT_SOURCE_DIR}/src/miniapp_part.c)
+target_link_libraries(anuga_miniapp_part PRIVATE anuga_sw)
 if(ANUGA_OFFLOAD AND ANUGA_OFFLOAD_FLAGS)
   target_link_options(anuga_miniapp PRIVATE ${ANUGA_OFFLOAD_FLAGS})
+  target_link_options(anuga_miniapp_part PRIVATE ${ANUGA_OFFLOAD_FLAGS})
 endif()
 
 set_target_properties(anuga_sw PROPERTIES
