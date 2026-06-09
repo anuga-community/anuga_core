@@ -71,17 +71,23 @@ target_link_libraries(anuga_sw PUBLIC OpenMP::OpenMP_C)
 if(ANUGA_OFFLOAD)
   message(STATUS "anuga_sw: OpenMP target offload ENABLED (arch ${ANUGA_GPU_ARCH})")
   set(ANUGA_OFFLOAD_FLAGS "" CACHE STRING "Override OpenMP offload compile/link flags")
+  # C-compiler OpenMP-offload flags per vendor. (The Fortran equivalents are
+  # nvfortran -mp=gpu -gpu=mem:separate / amdflang -fopenmp --offload-arch=... /
+  # ifx -fiopenmp -fopenmp-targets=spir64; do-concurrent/stdpar flags N/A in C.)
   if(NOT ANUGA_OFFLOAD_FLAGS)
     if(CMAKE_C_COMPILER_ID STREQUAL "NVHPC")
-      set(ANUGA_OFFLOAD_FLAGS -mp=gpu,multicore -gpu=${ANUGA_GPU_ARCH} -Minfo=accel)
+      # NVIDIA HPC SDK (nvc). mem:separate = explicit device memory (no managed).
+      set(ANUGA_OFFLOAD_FLAGS -mp=gpu,multicore -gpu=${ANUGA_GPU_ARCH},mem:separate -Minfo=accel)
+    elseif(CMAKE_C_COMPILER_ID STREQUAL "IntelLLVM")
+      # Intel oneAPI (icx) -> Intel GPU via Level Zero / SPIR-V
+      set(ANUGA_OFFLOAD_FLAGS -fiopenmp -fopenmp-targets=spir64)
     elseif(CMAKE_C_COMPILER_ID STREQUAL "Clang")
       if(ANUGA_GPU_ARCH MATCHES "^gfx")
-        set(ANUGA_OFFLOAD_FLAGS -fopenmp -fopenmp-targets=amdgcn-amd-amdhsa
-            -Xopenmp-target=amdgcn-amd-amdhsa -march=${ANUGA_GPU_ARCH})
+        # AMD (amdclang / clang)
+        set(ANUGA_OFFLOAD_FLAGS -fopenmp --offload-arch=${ANUGA_GPU_ARCH})
       else()
         string(SUBSTRING "${ANUGA_GPU_ARCH}" 2 -1 _sm)  # cc70 -> 70
-        set(ANUGA_OFFLOAD_FLAGS -fopenmp -fopenmp-targets=nvptx64-nvidia-cuda
-            -Xopenmp-target=nvptx64-nvidia-cuda -march=sm_${_sm})
+        set(ANUGA_OFFLOAD_FLAGS -fopenmp --offload-arch=sm_${_sm})
       endif()
     else()  # GCC nvptx
       set(ANUGA_OFFLOAD_FLAGS -fopenmp -foffload=nvptx-none)
