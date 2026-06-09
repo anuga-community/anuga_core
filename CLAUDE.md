@@ -74,9 +74,9 @@ def test_my_expensive_computation(self):
     ...
 ```
 
-Test files follow the pattern `anuga/*/tests/test_*.py`. There are ~126 test files.
+Test files follow the pattern `anuga/*/tests/test_*.py`. There are ~160 test files.
 
-Validation tests (against analytical solutions and experimental data) live in `validation_tests/` and are run separately via `run_auto_validation_tests.py`.
+Validation tests (against analytical solutions and experimental data) live in `validation_tests/` and are run separately via `validation_tests/run_auto_validation_tests.py`.
 
 ## Code Quality
 
@@ -93,8 +93,8 @@ Pre-commit hooks run `ruff check --fix` and `ruff-format` automatically on stage
 
 ```
 User script
-  → anuga.Domain (shallow_water/domain.py)
-      → Mesh (abstract_2d_finite_volumes/mesh.py)
+  → anuga.Domain (shallow_water/shallow_water_domain.py)
+      → Mesh (abstract_2d_finite_volumes/neighbour_mesh.py)
       → Quantities (abstract_2d_finite_volumes/quantity.py)
       → Operators/Structures (operators/, structures/)
   → .sww file output (NetCDF format)
@@ -102,9 +102,9 @@ User script
 
 ### Key Packages
 
-**`abstract_2d_finite_volumes/`** — The mathematical core. Contains `Domain` base class, `Mesh`, `Quantity`, and the finite volume update machinery. The shallow water domain inherits from this.
+**`abstract_2d_finite_volumes/`** — The mathematical core. Contains the `Generic_Domain` base class (`generic_domain.py`), the `Mesh` class (`neighbour_mesh.py`), `Quantity` (`quantity.py`), and the finite volume update machinery. The shallow water domain inherits from `Generic_Domain`.
 
-**`shallow_water/`** — The main solver. `Domain` here (inherits from abstract domain) implements the shallow water equations. The time-stepping and flux computations are in Cython/C extensions (`sw_domain_ext.c`, `sw_domain_openmp_ext.c`).
+**`shallow_water/`** — The main solver. `Domain` here (`shallow_water_domain.py`, `class Domain(Generic_Domain)`) implements the shallow water equations. The time-stepping and flux computations are in Cython/C extensions; the Cython sources are `sw_domain_openmp_ext.pyx` (CPU/OpenMP) and `sw_domain_gpu_ext.pyx` (GPU bridge).
 
 **`structures/`** — Culverts, weirs, inlets modeled as operators that transfer flow between mesh regions. `Structure_operator` is the base; `Boyd_box_operator`, `Boyd_pipe_operator`, `Weir_orifice_trapezoid_operator` are main implementations.
 
@@ -133,9 +133,11 @@ User script
 
 `anuga/config.py` contains physical and numerical constants used throughout:
 - `g = 9.8` (gravity)
-- `epsilon = 1.0e-6` (wet/dry threshold)
+- `epsilon = 1.0e-12` (smallest number — used for safe division)
+- `velocity_protection = 1.0e-6` (used to compute velocity from momentum)
 - `manning = 0.03` (default friction)
 - `minimum_allowed_height = 1.0e-05`
+- `MULTIPROCESSOR_OPENMP = 1`, `MULTIPROCESSOR_GPU = 2` (`Domain.set_multiprocessor_mode()`; OpenMP CPU is the default)
 
 ### C/Cython Extensions
 
@@ -143,4 +145,6 @@ Each package with performance-critical code has a `*.pyx` (Cython) or `*_ext.c` 
 
 ### GPU/Parallel Development
 
-The `develop_gpu`/`develop_cupy` and `sp26` branches explore GPU acceleration. CUDA examples are in `examples/cuda/`. The parallel module uses MPI; GPU work uses CuPy as a NumPy replacement.
+GPU acceleration is done via **OpenMP target offloading** (not CuPy/direct CUDA). The offload kernels are C sources with OpenMP `target` pragmas under `anuga/shallow_water/gpu/` (`core_kernels.c`, `gpu_domain_core.c`, `gpu_culvert_operator.c`, etc.). The Python↔C bridge is `sw_domain_gpu_ext.pyx`, exposed through the `GPU_OMP_interface` class in `sw_domain_gpu_omp.py`. A domain runs on the GPU when `multiprocessor_mode == MULTIPROCESSOR_GPU` (2).
+
+GPU work happens on feature branches such as `feat/sc26`, `feat/gpu_offload`, and `develop_gpu`. The `parallel/` module uses MPI for multi-process / multi-GPU domain decomposition.
