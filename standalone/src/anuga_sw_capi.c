@@ -13,6 +13,7 @@
  */
 #include <stdlib.h>
 #include <string.h>
+#include <omp.h>
 
 #include "gpu_domain.h"   /* production struct gpu_domain + all gpu_* prototypes */
 #include "anuga_sw.h"
@@ -20,6 +21,18 @@
 struct AnugaDomain {
     struct gpu_domain GD;
 };
+
+/* Pin this rank to its own GPU (round-robin). Must run AFTER the rank is known
+ * and BEFORE map_to_device, so all device allocations + kernels (which use both
+ * omp_get_default_device() and GD->device_id) land on the same device. Without
+ * this every rank hammers device 0. */
+static void anuga_select_device(struct gpu_domain *GD) {
+    int nd = omp_get_num_devices();
+    if (nd > 0) {
+        GD->device_id = GD->rank % nd;
+        omp_set_default_device(GD->device_id);
+    }
+}
 
 /* ------------------------------------------------------------------ build info */
 int anuga_built_with_offload(void) {
@@ -85,6 +98,22 @@ int anuga_comm_world_size(void) {
 #endif
 }
 
+double anuga_mpi_allreduce_max_double(double x) {
+#ifdef HAVE_MPI
+    double r; MPI_Allreduce(&x, &r, 1, MPI_DOUBLE, MPI_MAX, MPI_COMM_WORLD); return r;
+#else
+    return x;
+#endif
+}
+
+double anuga_mpi_allreduce_sum_double(double x) {
+#ifdef HAVE_MPI
+    double r; MPI_Allreduce(&x, &r, 1, MPI_DOUBLE, MPI_SUM, MPI_COMM_WORLD); return r;
+#else
+    return x;
+#endif
+}
+
 void anuga_domain_use_comm_world(AnugaDomain *dom) {
     if (!dom) return;
 #ifdef HAVE_MPI
@@ -95,6 +124,7 @@ void anuga_domain_use_comm_world(AnugaDomain *dom) {
     dom->GD.rank = 0;
     dom->GD.nprocs = 1;
 #endif
+    anuga_select_device(&dom->GD);   /* pin this rank to its own GPU */
 }
 
 /* ------------------------------------------------------------------ create */
@@ -213,6 +243,7 @@ void anuga_domain_set_mpi_comm_fint(AnugaDomain *dom, int comm_fint) {
         dom->GD.comm = MPI_Comm_f2c((MPI_Fint)comm_fint);
         MPI_Comm_rank(dom->GD.comm, &dom->GD.rank);
         MPI_Comm_size(dom->GD.comm, &dom->GD.nprocs);
+        anuga_select_device(&dom->GD);
     }
 #else
     (void)comm_fint;  /* single-process build: nothing to do */
@@ -235,6 +266,7 @@ void anuga_exchange_ghosts(AnugaDomain *dom) {
 
 int anuga_rank(AnugaDomain *dom)   { return dom ? dom->GD.rank : 0; }
 int anuga_nprocs(AnugaDomain *dom) { return dom ? dom->GD.nprocs : 1; }
+int anuga_device_id(AnugaDomain *dom) { return dom ? dom->GD.device_id : -1; }
 
 int anuga_domain_map_to_device(AnugaDomain *dom) {
     if (!dom) return 0;

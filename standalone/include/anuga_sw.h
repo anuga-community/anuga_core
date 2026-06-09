@@ -155,6 +155,10 @@ int  anuga_comm_world_rank(void);
 int  anuga_comm_world_size(void);
 void anuga_domain_use_comm_world(AnugaDomain *dom);
 
+/* Collective reductions over MPI_COMM_WORLD (return x unchanged in non-MPI builds). */
+double anuga_mpi_allreduce_max_double(double x);
+double anuga_mpi_allreduce_sum_double(double x);
+
 /* ============================ lifecycle ================================== */
 /* Create a serial (single-rank) domain from the descriptor. The descriptor
  * itself need not outlive the call, but every array it points to must. */
@@ -183,6 +187,8 @@ void anuga_exchange_ghosts(AnugaDomain *dom);
 /* Current rank / number of ranks as seen by the library. */
 int anuga_rank(AnugaDomain *dom);
 int anuga_nprocs(AnugaDomain *dom);
+/* GPU device this rank is pinned to (-1 if no device / CPU). */
+int anuga_device_id(AnugaDomain *dom);
 
 /* Map host arrays to the device (no-op in CPU_ONLY_MODE). Returns 1 on success,
  * 0 if device memory is insufficient. */
