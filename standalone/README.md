@@ -72,6 +72,24 @@ Confirm it really runs on the device (aborts if it can't offload):
 OMP_TARGET_OFFLOAD=MANDATORY python standalone/python/run_meshpy.py
 ```
 
+### Multi-GPU, MPI in C (meshpy + pymetis, no anuga / no mpi4py)
+Build with `-DANUGA_MPI=ON` (uses the MPI on PATH, e.g. the system HPC-X). Python
+only generates the mesh + partition; C owns MPI and self-distributes.
+```bash
+# 1. global mesh + pymetis partition -> one .agm file (numpy + pymetis only):
+python standalone/tools/global_mesh.py 4 512 512 100 2.0 /tmp/agm   # NPARTS M N len t
+
+# 2. run under the system MPI (C self-extracts owned + ghosts per rank):
+mpirun -n 4 ./standalone/build_mpi/anuga_miniapp_part /tmp/agm/dam_break.agm
+```
+Validate (vs a single-rank run of the same mesh, by global id):
+```bash
+python standalone/tools/global_mesh.py 1 512 512 100 2.0 /tmp/agm1
+mpirun -n 1 ./standalone/build_mpi/anuga_miniapp_part /tmp/agm1/dam_break.agm
+python standalone/cases/compare_part.py "/tmp/agm1/dam_break.agm.P1_*.result" \
+                                        "/tmp/agm/dam_break.agm.P4_*.result"
+```
+
 ### Optional: validate against ANUGA (dev only, needs ANUGA installed)
 ```bash
 source standalone/env_dgx.sh
