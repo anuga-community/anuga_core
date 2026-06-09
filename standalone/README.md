@@ -41,3 +41,40 @@ cmake --build standalone/build_mpi -j
 
 Offload flags are auto-derived per compiler (nvhpc / clang-nvptx / clang-amd /
 gcc-nvptx); override with `-DANUGA_OFFLOAD_FLAGS="..."` if needed.
+
+## Run
+
+Point the Python drivers at the library you built:
+```bash
+export ANUGA_SW_LIB=$PWD/standalone/build_gpu/libanuga_sw.so
+```
+
+### Single GPU (meshpy → C), validated against ANUGA
+```bash
+source standalone/env_dgx.sh                 # conda + nvc on PATH
+python standalone/cases/dam_break_mesh.py --meshpy   # meshpy mesh → C geometry → GPU
+python standalone/cases/dam_break.py                 # ctypes vs ANUGA, machine precision
+```
+Confirm it really runs on the device (aborts if it can't offload):
+```bash
+OMP_TARGET_OFFLOAD=MANDATORY python standalone/cases/dam_break.py
+```
+
+### Multi-GPU, system MPI, no conda (pure-C mini-app)
+```bash
+# 1. write per-rank partition files ONCE (needs conda + ANUGA)
+source standalone/env_dgx.sh
+python standalone/tools/partition_dump.py /tmp/anuga_adm     # np = 1,2,4
+
+# 2. run on the GPUs with the system MPI — no conda
+NVROOT=/home/jorge/install/nvhpc/26.3/Linux_x86_64/26.3
+export PATH=$NVROOT/compilers/bin:$NVROOT/comm_libs/mpi/bin:/usr/local/bin:/usr/bin:/bin
+unset CONDA_PREFIX
+export LD_LIBRARY_PATH=$PWD/standalone/build_mpi:$NVROOT/compilers/lib:$NVROOT/comm_libs/mpi/lib:$NVROOT/comm_libs/12.9/hpcx/hpcx-2.25.1/ompi/lib
+export OMPI_MCA_coll_hcoll_enable=0
+
+mpirun -n 4 ./standalone/build_mpi/anuga_miniapp /tmp/anuga_adm dam_break
+```
+`mpirun -n 1` works too; a bare `./anuga_miniapp` does not (HPC-X needs the launcher).
+Validate the results against ANUGA: `python standalone/cases/compare_dump.py /tmp/anuga_adm`.
+
