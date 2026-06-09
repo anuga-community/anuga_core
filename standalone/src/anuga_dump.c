@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h>
 
 #include "anuga_dump.h"
 
@@ -180,6 +181,173 @@ AnugaLoadedDomain *anuga_dump_load(const char *path) {
         anuga_init_transmissive(ld->dom, (int)n_transmissive, tr_bidx, tr_vol, tr_edge,
                                 (int)transmissive_use_centroid);
 
+    return ld;
+}
+
+/* ===================== build from a raw triangular mesh (single rank) ===== */
+typedef struct { long lo, hi; int tri, edge; } edge_rec;
+
+static int edge_cmp(const void *A, const void *B) {
+    const edge_rec *a = A, *b = B;
+    if (a->lo != b->lo) return a->lo < b->lo ? -1 : 1;
+    if (a->hi != b->hi) return a->hi < b->hi ? -1 : 1;
+    return 0;
+}
+
+AnugaLoadedDomain *anuga_build_from_mesh(const double *nodes, long n_nodes,
+        const long *triangles, long n_tris,
+        const double *stage_cv, const double *elevation_cv, const double *friction_cv,
+        const AnugaMeshParams *p) {
+    (void)n_nodes;
+    long n = n_tris;
+    AnugaLoadedDomain *ld = (AnugaLoadedDomain *)calloc(1, sizeof(*ld));
+    ld->n = n;
+
+    int64_t *neighbours      = xcalloc(ld, 3 * n, sizeof(int64_t));
+    int64_t *neighbour_edges = xcalloc(ld, 3 * n, sizeof(int64_t));
+    int64_t *surrogate       = xcalloc(ld, 3 * n, sizeof(int64_t));
+    int64_t *num_boundaries  = xcalloc(ld, n,     sizeof(int64_t));
+    double  *normals     = xcalloc(ld, 6 * n, sizeof(double));
+    double  *edgelengths = xcalloc(ld, 3 * n, sizeof(double));
+    double  *radii       = xcalloc(ld, n,     sizeof(double));
+    double  *areas       = xcalloc(ld, n,     sizeof(double));
+    double  *centroid    = xcalloc(ld, 2 * n, sizeof(double));
+    double  *edge_coords = xcalloc(ld, 6 * n, sizeof(double));
+
+    for (long k = 0; k < n; k++) {
+        long i0 = triangles[3 * k + 0], i1 = triangles[3 * k + 1], i2 = triangles[3 * k + 2];
+        double x0 = nodes[2 * i0], y0 = nodes[2 * i0 + 1];
+        double x1 = nodes[2 * i1], y1 = nodes[2 * i1 + 1];
+        double x2 = nodes[2 * i2], y2 = nodes[2 * i2 + 1];
+        areas[k] = -((x1 * y0 - x0 * y1) + (x2 * y1 - x1 * y2) + (x0 * y2 - x2 * y0)) / 2.0;
+        /* edge 0 = (V1,V2), edge 1 = (V2,V0), edge 2 = (V0,V1); normal = (yn,-xn) */
+        double xn0 = x2 - x1, yn0 = y2 - y1, l0 = sqrt(xn0 * xn0 + yn0 * yn0);
+        double xn1 = x0 - x2, yn1 = y0 - y2, l1 = sqrt(xn1 * xn1 + yn1 * yn1);
+        double xn2 = x1 - x0, yn2 = y1 - y0, l2 = sqrt(xn2 * xn2 + yn2 * yn2);
+        normals[6 * k + 0] =  yn0 / l0; normals[6 * k + 1] = -xn0 / l0;
+        normals[6 * k + 2] =  yn1 / l1; normals[6 * k + 3] = -xn1 / l1;
+        normals[6 * k + 4] =  yn2 / l2; normals[6 * k + 5] = -xn2 / l2;
+        edgelengths[3 * k + 0] = l0; edgelengths[3 * k + 1] = l1; edgelengths[3 * k + 2] = l2;
+        double cx = (x0 + x1 + x2) / 3.0, cy = (y0 + y1 + y2) / 3.0;
+        centroid[2 * k] = cx; centroid[2 * k + 1] = cy;
+        double xm0 = (x1 + x2) / 2, ym0 = (y1 + y2) / 2;
+        double xm1 = (x2 + x0) / 2, ym1 = (y2 + y0) / 2;
+        double xm2 = (x0 + x1) / 2, ym2 = (y0 + y1) / 2;
+        edge_coords[6 * k + 0] = xm0; edge_coords[6 * k + 1] = ym0;
+        edge_coords[6 * k + 2] = xm1; edge_coords[6 * k + 3] = ym1;
+        edge_coords[6 * k + 4] = xm2; edge_coords[6 * k + 5] = ym2;
+        double d0 = hypot(cx - xm0, cy - ym0), d1 = hypot(cx - xm1, cy - ym1),
+               d2 = hypot(cx - xm2, cy - ym2);
+        double r = d0 < d1 ? d0 : d1; radii[k] = r < d2 ? r : d2;
+        for (int i = 0; i < 3; i++) { neighbours[3 * k + i] = -1; neighbour_edges[3 * k + i] = -1; }
+    }
+
+    /* neighbour matching: edge i connects vertices (i+1)%3, (i+2)%3 */
+    edge_rec *recs = (edge_rec *)malloc((size_t)(3 * n) * sizeof(edge_rec));
+    for (long k = 0; k < n; k++)
+        for (int i = 0; i < 3; i++) {
+            long a = triangles[3 * k + (i + 1) % 3], b = triangles[3 * k + (i + 2) % 3];
+            recs[3 * k + i].lo = a < b ? a : b;
+            recs[3 * k + i].hi = a < b ? b : a;
+            recs[3 * k + i].tri = (int)k; recs[3 * k + i].edge = i;
+        }
+    qsort(recs, (size_t)(3 * n), sizeof(edge_rec), edge_cmp);
+    for (long e = 0; e < 3 * n;) {
+        if (e + 1 < 3 * n && recs[e].lo == recs[e + 1].lo && recs[e].hi == recs[e + 1].hi) {
+            int ka = recs[e].tri, ia = recs[e].edge, kb = recs[e + 1].tri, ib = recs[e + 1].edge;
+            neighbours[3 * ka + ia] = kb; neighbour_edges[3 * ka + ia] = ib;
+            neighbours[3 * kb + ib] = ka; neighbour_edges[3 * kb + ib] = ia;
+            e += 2;
+        } else {
+            e += 1;   /* boundary edge */
+        }
+    }
+    free(recs);
+
+    long nb = 0;
+    for (long k = 0; k < n; k++) {
+        int c = 0;
+        for (int i = 0; i < 3; i++) if (neighbours[3 * k + i] < 0) c++;
+        num_boundaries[k] = c; nb += c;
+    }
+    int32_t *bvol  = xcalloc(ld, nb, sizeof(int32_t));
+    int32_t *bedge = xcalloc(ld, nb, sizeof(int32_t));
+    int32_t *bidx  = xcalloc(ld, nb, sizeof(int32_t));
+    long m = 0;
+    for (long k = 0; k < n; k++)
+        for (int i = 0; i < 3; i++)
+            if (neighbours[3 * k + i] < 0) {
+                neighbours[3 * k + i] = -(m + 1);   /* encode boundary index */
+                bvol[m] = (int32_t)k; bedge[m] = (int32_t)i; bidx[m] = (int32_t)m; m++;
+            }
+    for (long k = 0; k < n; k++)
+        for (int i = 0; i < 3; i++)
+            surrogate[3 * k + i] = neighbours[3 * k + i] >= 0 ? neighbours[3 * k + i] : k;
+
+    double *stageC = xcalloc(ld, n, sizeof(double));
+    double *xmomC  = xcalloc(ld, n, sizeof(double));
+    double *ymomC  = xcalloc(ld, n, sizeof(double));
+    double *bedC   = xcalloc(ld, n, sizeof(double));
+    double *heightC = xcalloc(ld, n, sizeof(double));
+    double *fricC  = xcalloc(ld, n, sizeof(double));
+    int64_t *tff   = xcalloc(ld, n, sizeof(int64_t));
+    for (long k = 0; k < n; k++) {
+        stageC[k] = stage_cv[k]; bedC[k] = elevation_cv[k];
+        heightC[k] = stageC[k] - bedC[k];
+        fricC[k] = friction_cv ? friction_cv[k] : 0.0;
+        tff[k] = 1;
+    }
+
+    AnugaDomainDesc d;
+    memset(&d, 0, sizeof(d));
+    d.number_of_elements = n; d.boundary_length = nb;
+    d.optimise_dry_cells = p->optimise_dry_cells;
+    d.extrapolate_velocity_second_order = p->extrapolate_velocity_second_order;
+    d.low_froude = p->low_froude; d.timestep_fluxcalls = 1;
+    d.epsilon = p->epsilon; d.H0 = p->H0; d.g = p->g;
+    d.evolve_max_timestep = p->evolve_max_timestep; d.evolve_min_timestep = 0.0;
+    d.minimum_allowed_height = p->minimum_allowed_height;
+    d.maximum_allowed_speed = p->maximum_allowed_speed;
+    d.beta_w = p->beta_w; d.beta_w_dry = p->beta_w_dry;
+    d.beta_uh = p->beta_uh; d.beta_uh_dry = p->beta_uh_dry;
+    d.beta_vh = p->beta_vh; d.beta_vh_dry = p->beta_vh_dry;
+    d.CFL = p->CFL; d.fixed_flux_timestep = -1.0;
+    d.neighbours = neighbours; d.neighbour_edges = neighbour_edges;
+    d.surrogate_neighbours = surrogate; d.number_of_boundaries = num_boundaries;
+    d.tri_full_flag = tff;
+    d.normals = normals; d.edgelengths = edgelengths; d.radii = radii; d.areas = areas;
+    d.centroid_coordinates = centroid; d.edge_coordinates = edge_coords;
+    d.max_speed = xcalloc(ld, n, sizeof(double));
+    d.x_centroid_work = xcalloc(ld, n, sizeof(double));
+    d.y_centroid_work = xcalloc(ld, n, sizeof(double));
+    d.stage_centroid_values = stageC; d.stage_edge_values = xcalloc(ld, 3 * n, sizeof(double));
+    d.stage_boundary_values = xcalloc(ld, nb, sizeof(double));
+    d.stage_explicit_update = xcalloc(ld, n, sizeof(double));
+    d.stage_semi_implicit_update = xcalloc(ld, n, sizeof(double));
+    d.stage_backup_values = xcalloc(ld, n, sizeof(double));
+    d.xmom_centroid_values = xmomC; d.xmom_edge_values = xcalloc(ld, 3 * n, sizeof(double));
+    d.xmom_boundary_values = xcalloc(ld, nb, sizeof(double));
+    d.xmom_explicit_update = xcalloc(ld, n, sizeof(double));
+    d.xmom_semi_implicit_update = xcalloc(ld, n, sizeof(double));
+    d.xmom_backup_values = xcalloc(ld, n, sizeof(double));
+    d.ymom_centroid_values = ymomC; d.ymom_edge_values = xcalloc(ld, 3 * n, sizeof(double));
+    d.ymom_boundary_values = xcalloc(ld, nb, sizeof(double));
+    d.ymom_explicit_update = xcalloc(ld, n, sizeof(double));
+    d.ymom_semi_implicit_update = xcalloc(ld, n, sizeof(double));
+    d.ymom_backup_values = xcalloc(ld, n, sizeof(double));
+    d.bed_centroid_values = bedC; d.bed_edge_values = xcalloc(ld, 3 * n, sizeof(double));
+    d.bed_boundary_values = xcalloc(ld, nb, sizeof(double));
+    d.height_centroid_values = heightC; d.height_edge_values = xcalloc(ld, 3 * n, sizeof(double));
+    d.height_boundary_values = xcalloc(ld, nb, sizeof(double));
+    d.friction_centroid_values = fricC;
+
+    ld->dom = anuga_domain_create(&d);
+    if (!ld->dom) { anuga_dump_free(ld); return NULL; }
+    ld->tri_full_flag = tff; ld->stage_centroid = stageC;
+    ld->finaltime = p->finaltime; ld->method = p->timestepping_method;
+    ld->nprocs = 1; ld->rank = 0; ld->nb = nb;
+
+    if (nb > 0) anuga_init_reflective(ld->dom, (int)nb, bidx, bvol, bedge);
     return ld;
 }
 

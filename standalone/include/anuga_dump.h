@@ -50,6 +50,34 @@ extern "C" {
 /* Owns a loaded domain plus all the host arrays backing it. */
 typedef struct AnugaLoadedDomain AnugaLoadedDomain;
 
+/* Scalar parameters for building a domain from a raw mesh. */
+typedef struct {
+    double g, CFL, H0, epsilon, minimum_allowed_height, maximum_allowed_speed,
+           evolve_max_timestep, finaltime;
+    double beta_w, beta_w_dry, beta_uh, beta_uh_dry, beta_vh, beta_vh_dry;
+    int timestepping_method;   /* 0 euler, 1 rk2, 2 rk3, 3 ader2 */
+    int extrapolate_velocity_second_order;
+    int low_froude;
+    int optimise_dry_cells;
+} AnugaMeshParams;
+
+/* Build a SINGLE-rank domain directly from a triangular mesh (no MPI). Computes
+ * all geometry (neighbours, normals, areas, edgelengths, centroids, edge
+ * midpoints, boundary detection) in C - matching ANUGA's conventions - and sets
+ * every boundary edge to a reflective boundary. Initial state is given as
+ * per-cell centroid values. This is the meshpy/pymetis -> C path for single-GPU
+ * testing.
+ *   nodes      [n_nodes*2]  (x,y)
+ *   triangles  [n_tris*3]   vertex indices
+ *   stage_cv, elevation_cv, friction_cv [n_tris]  (friction_cv may be NULL -> 0)
+ * Returns NULL on error. Caller then use_comm_world (optional), map, evolve. */
+AnugaLoadedDomain *anuga_build_from_mesh(const double *nodes, long n_nodes,
+                                         const long *triangles, long n_tris,
+                                         const double *stage_cv,
+                                         const double *elevation_cv,
+                                         const double *friction_cv,
+                                         const AnugaMeshParams *p);
+
 /* Read path/<name>_P<np>_<rank>.adm, allocate arrays, create the domain and set
  * up halo + static boundaries. Returns NULL on error. Does NOT set the MPI
  * communicator or map to device - the caller does that (use_comm_world, map). */
