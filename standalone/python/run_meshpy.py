@@ -20,6 +20,7 @@ so no anuga import is needed to configure the solver.
 import ctypes
 import os
 import sys
+import time
 import numpy as np
 
 _here = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +35,7 @@ DE0 = dict(g=9.8, CFL=0.9, H0=1e-5, epsilon=1e-12,
            evolve_max_timestep=1000.0,
            beta_w=0.5, beta_w_dry=0.0, beta_uh=0.5, beta_uh_dry=0.0,
            beta_vh=0.5, beta_vh_dry=0.0,
-           timestepping_method=0, extrapolate_velocity_second_order=1,
+           timestepping_method=1, extrapolate_velocity_second_order=1,  # 1 = rk2
            low_froude=0, optimise_dry_cells=0)
 
 
@@ -116,6 +117,7 @@ def main():
         "anuga_sync_to_device": ([c_void_p], None),
         "anuga_sync_from_device": ([c_void_p], None),
         "anuga_evolve_one_euler_step": ([c_void_p, c_double, c_int], c_double),
+        "anuga_evolve_one_rk2_step": ([c_void_p, c_double, c_int], c_double),
     }.items():
         getattr(lib, nm).argtypes, getattr(lib, nm).restype = a, r
 
@@ -130,11 +132,21 @@ def main():
     print(f"offload={bool(lib.anuga_built_with_offload())} "
           f"gpu_available={bool(lib.anuga_gpu_available())}")
     dom = lib.anuga_dump_domain(ld)
+    t_map0 = time.perf_counter()
     lib.anuga_domain_map_to_device(dom)
     lib.anuga_sync_to_device(dom)
+    map_wall = time.perf_counter() - t_map0
+
+    step = (lib.anuga_evolve_one_rk2_step if DE0["timestepping_method"] == 1
+            else lib.anuga_evolve_one_euler_step)
+    method_name = "rk2" if DE0["timestepping_method"] == 1 else "euler"
     t = 0.0
+    steps = 0
+    t_evolve0 = time.perf_counter()
     while t < finaltime - 1e-12:
-        t += lib.anuga_evolve_one_euler_step(dom, finaltime - t, 1)
+        t += step(dom, finaltime - t, 1)
+        steps += 1
+    evolve_wall = time.perf_counter() - t_evolve0
     lib.anuga_sync_from_device(dom)
 
     n = lib.anuga_dump_num_elements(ld)
@@ -144,6 +156,10 @@ def main():
     lib.anuga_dump_free(ld)
     print(f"t={t:.6f}  cells={m}  stage: min={s.min():.6f} max={s.max():.6f} "
           f"mean={s.mean():.6f} sum={s.sum():.6f}")
+    throughput = (m * steps) / evolve_wall / 1e6 if evolve_wall > 0 else 0.0
+    print(f"walltime: map+H2D {map_wall:.3f}s | evolve {evolve_wall:.3f}s "
+          f"({method_name}, {steps} steps, {evolve_wall / max(steps,1) * 1e3:.2f} ms/step, "
+          f"{throughput:.1f} Mcell-steps/s)")
 
 
 if __name__ == "__main__":
