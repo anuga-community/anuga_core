@@ -143,6 +143,18 @@ int anuga_built_with_mpi(void);
 /* 1 if an offload device is actually available at runtime.                   */
 int anuga_gpu_available(void);
 
+/* ============================ C-owned MPI =============================== */
+/* For the portable runtime where MPI is owned by C (launched by the system
+ * mpirun, e.g. nvhpc HPC-X) instead of mpi4py. No-op / single-rank in builds
+ * without MPI. Call anuga_mpi_init once at program start, anuga_mpi_finalize at
+ * end, and anuga_domain_use_comm_world to bind a domain to MPI_COMM_WORLD. */
+void anuga_mpi_init(void);
+int  anuga_mpi_initialized(void);
+void anuga_mpi_finalize(void);
+int  anuga_comm_world_rank(void);
+int  anuga_comm_world_size(void);
+void anuga_domain_use_comm_world(AnugaDomain *dom);
+
 /* ============================ lifecycle ================================== */
 /* Create a serial (single-rank) domain from the descriptor. The descriptor
  * itself need not outlive the call, but every array it points to must. */

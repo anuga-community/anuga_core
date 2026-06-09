@@ -42,6 +42,61 @@ int anuga_gpu_available(void) {
     return gpu_is_available();
 }
 
+/* ------------------------------------------------------------------ C-owned MPI */
+void anuga_mpi_init(void) {
+#ifdef HAVE_MPI
+    int inited = 0;
+    MPI_Initialized(&inited);
+    if (!inited) MPI_Init(NULL, NULL);
+#endif
+}
+
+int anuga_mpi_initialized(void) {
+#ifdef HAVE_MPI
+    int inited = 0;
+    MPI_Initialized(&inited);
+    return inited;
+#else
+    return 0;
+#endif
+}
+
+void anuga_mpi_finalize(void) {
+#ifdef HAVE_MPI
+    int fin = 0;
+    MPI_Finalized(&fin);
+    if (!fin) MPI_Finalize();
+#endif
+}
+
+int anuga_comm_world_rank(void) {
+#ifdef HAVE_MPI
+    int r = 0; MPI_Comm_rank(MPI_COMM_WORLD, &r); return r;
+#else
+    return 0;
+#endif
+}
+
+int anuga_comm_world_size(void) {
+#ifdef HAVE_MPI
+    int s = 1; MPI_Comm_size(MPI_COMM_WORLD, &s); return s;
+#else
+    return 1;
+#endif
+}
+
+void anuga_domain_use_comm_world(AnugaDomain *dom) {
+    if (!dom) return;
+#ifdef HAVE_MPI
+    dom->GD.comm = MPI_COMM_WORLD;
+    MPI_Comm_rank(MPI_COMM_WORLD, &dom->GD.rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &dom->GD.nprocs);
+#else
+    dom->GD.rank = 0;
+    dom->GD.nprocs = 1;
+#endif
+}
+
 /* ------------------------------------------------------------------ create */
 static void fill_domain_from_desc(struct gpu_domain *GD, const AnugaDomainDesc *s) {
     struct domain *D = &GD->D;
