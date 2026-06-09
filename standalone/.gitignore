@@ -1,0 +1,9 @@
+# Build trees
+build/
+build_*/
+
+# Machine-specific environment helper (paths to local conda + nvhpc)
+env_dgx.sh
+
+# Working planning notes
+PLAN.md
