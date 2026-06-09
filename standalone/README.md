@@ -42,22 +42,36 @@ cmake --build standalone/build_mpi -j
 Offload flags are auto-derived per compiler (nvhpc / clang-nvptx / clang-amd /
 gcc-nvptx); override with `-DANUGA_OFFLOAD_FLAGS="..."` if needed.
 
+## Does this need ANUGA built?
+
+**No.** The library and `anuga_miniapp` compile straight from the tracked C
+sources in `anuga/shallow_water/gpu/` — nothing here uses the (meson) ANUGA
+build, Cython, or the `anuga` Python package, at build or run time. The only
+runtime deps for the standalone path are `meshpy`, `numpy`, and `ctypes`
+(all pip-installable). The `cases/*.py` scripts that compare *against* ANUGA
+are optional dev tools and are the only things that `import anuga`.
+
 ## Run
 
-Point the Python drivers at the library you built:
+Point the Python driver at the library you built:
 ```bash
 export ANUGA_SW_LIB=$PWD/standalone/build_gpu/libanuga_sw.so
 ```
 
-### Single GPU (meshpy → C), validated against ANUGA
+### Single GPU, no ANUGA (meshpy → C)
 ```bash
-source standalone/env_dgx.sh                 # conda + nvc on PATH
-python standalone/cases/dam_break_mesh.py --meshpy   # meshpy mesh → C geometry → GPU
-python standalone/cases/dam_break.py                 # ctypes vs ANUGA, machine precision
+python standalone/python/run_meshpy.py            # 100x100 box dam break, t=2s
+python standalone/python/run_meshpy.py 5.0 0.5    # finaltime=5s, mesh max triangle area=0.5
 ```
 Confirm it really runs on the device (aborts if it can't offload):
 ```bash
-OMP_TARGET_OFFLOAD=MANDATORY python standalone/cases/dam_break.py
+OMP_TARGET_OFFLOAD=MANDATORY python standalone/python/run_meshpy.py
+```
+
+### Optional: validate against ANUGA (dev only, needs ANUGA installed)
+```bash
+source standalone/env_dgx.sh
+python standalone/cases/dam_break_mesh.py --meshpy   # vs ANUGA on the same mesh
 ```
 
 ### Multi-GPU, system MPI, no conda (pure-C mini-app)
