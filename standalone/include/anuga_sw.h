@@ -148,9 +148,29 @@ int anuga_gpu_available(void);
  * itself need not outlive the call, but every array it points to must. */
 AnugaDomain *anuga_domain_create(const AnugaDomainDesc *desc);
 
-/* Phase 2: attach an MPI communicator (Fortran handle from mpi4py comm.py2f()).
- * Pass -1 for serial. No-op in single-process builds. */
+/* Attach an MPI communicator (Fortran handle from mpi4py comm.py2f()).
+ * Pass -1 for serial. No-op in single-process builds. Sets rank/nprocs from it. */
 void anuga_domain_set_mpi_comm_fint(AnugaDomain *dom, int comm_fint);
+
+/* Set up the MPI halo (ghost) exchange. Mirrors build_halo_from_dicts in the
+ * Cython bridge. Call after set_mpi_comm and BEFORE map_to_device. The flat
+ * arrays are copied by the library. Index arrays are int32.
+ *   neighbor_ranks[num_neighbors]   ranks we exchange with
+ *   send_counts/recv_counts[num_neighbors]
+ *   flat_send_indices[sum(send_counts)]   local cell ids to pack per neighbor
+ *   flat_recv_indices[sum(recv_counts)]   local ghost cell ids to unpack into  */
+void anuga_init_halo(AnugaDomain *dom, int num_neighbors,
+                     const int *neighbor_ranks,
+                     const int *send_counts, const int *recv_counts,
+                     const int *flat_send_indices, const int *flat_recv_indices);
+
+/* Exchange ghost cells between ranks (also done inside the evolve steps when
+ * nprocs > 1; exposed for explicit use/testing). No-op single-process. */
+void anuga_exchange_ghosts(AnugaDomain *dom);
+
+/* Current rank / number of ranks as seen by the library. */
+int anuga_rank(AnugaDomain *dom);
+int anuga_nprocs(AnugaDomain *dom);
 
 /* Map host arrays to the device (no-op in CPU_ONLY_MODE). Returns 1 on success,
  * 0 if device memory is insufficient. */

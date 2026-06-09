@@ -152,6 +152,10 @@ def _bind(lib):
         "anuga_gpu_available": ([], ctypes.c_int),
         "anuga_domain_create": ([P], H),
         "anuga_domain_set_mpi_comm_fint": ([H, ctypes.c_int], None),
+        "anuga_init_halo": ([H, ctypes.c_int, _c_ptr, _c_ptr, _c_ptr, _c_ptr, _c_ptr], None),
+        "anuga_exchange_ghosts": ([H], None),
+        "anuga_rank": ([H], ctypes.c_int),
+        "anuga_nprocs": ([H], ctypes.c_int),
         "anuga_domain_map_to_device": ([H], ctypes.c_int),
         "anuga_domain_destroy": ([H], None),
         "anuga_sync_to_device": ([H], None),
@@ -186,8 +190,12 @@ def _bind(lib):
 class AnugaSW:
     """Drive an ANUGA domain through libanuga_sw via ctypes."""
 
-    def __init__(self, domain, libpath=None):
+    def __init__(self, domain, libpath=None, comm=None):
+        """comm: an mpi4py communicator for multi-rank runs (None = serial).
+        When given, the MPI communicator and halo exchange are set up from the
+        partitioned domain before boundaries; call map_to_device() afterwards."""
         self.domain = domain
+        self.comm = comm
         self.lib = _bind(ctypes.CDLL(_find_library(libpath)))
         self._keep = []          # references to aliased numpy arrays (lifetime)
         self._handle = None
@@ -196,6 +204,9 @@ class AnugaSW:
         self._handle = self.lib.anuga_domain_create(ctypes.byref(self.desc))
         if not self._handle:
             raise RuntimeError("anuga_domain_create returned NULL")
+        if comm is not None:
+            self._set_mpi_comm(comm)
+            self._init_halo()
         self._init_boundaries()
 
     # ----- build info -------------------------------------------------------
@@ -377,6 +388,51 @@ class AnugaSW:
             self.lib.anuga_init_transmissive(self._handle, len(bidx),
                                              bidx.ctypes.data, vol.ctypes.data, edg.ctypes.data,
                                              use_centroid)
+
+    # ----- MPI setup (mirrors build_halo_from_dicts in the .pyx) ------------
+    def _set_mpi_comm(self, comm):
+        if not self.built_with_mpi:
+            raise RuntimeError(
+                "libanuga_sw was built without MPI (single-process stubs). "
+                "Rebuild with -DANUGA_MPI=ON to run multi-rank."
+            )
+        self.lib.anuga_domain_set_mpi_comm_fint(self._handle, int(comm.py2f()))
+
+    def _init_halo(self):
+        d = self.domain
+        comm = self.comm
+        my_rank = comm.Get_rank()
+        full_send = getattr(d, "full_send_dict", None)
+        ghost_recv = getattr(d, "ghost_recv_dict", None)
+        if not full_send:
+            return
+        neighbors = [p for p in full_send if p != my_rank]
+        if not neighbors:
+            return
+        neighbor_ranks = np.array(neighbors, dtype=np.intc)
+        send_counts = np.array([len(full_send[p][0]) for p in neighbors], dtype=np.intc)
+        recv_counts = np.array([len(ghost_recv[p][0]) for p in neighbors], dtype=np.intc)
+        flat_send = (np.concatenate([np.asarray(full_send[p][0]) for p in neighbors])
+                     .astype(np.intc) if send_counts.sum() else np.zeros(0, np.intc))
+        flat_recv = (np.concatenate([np.asarray(ghost_recv[p][0]) for p in neighbors])
+                     .astype(np.intc) if recv_counts.sum() else np.zeros(0, np.intc))
+        for a in (neighbor_ranks, send_counts, recv_counts, flat_send, flat_recv):
+            self._keep.append(a)
+        self.lib.anuga_init_halo(self._handle, len(neighbors),
+                                 neighbor_ranks.ctypes.data, send_counts.ctypes.data,
+                                 recv_counts.ctypes.data, flat_send.ctypes.data,
+                                 flat_recv.ctypes.data)
+
+    def exchange_ghosts(self):
+        self.lib.anuga_exchange_ghosts(self._handle)
+
+    @property
+    def rank(self):
+        return self.lib.anuga_rank(self._handle)
+
+    @property
+    def nprocs(self):
+        return self.lib.anuga_nprocs(self._handle)
 
     # ----- lifecycle / sync -------------------------------------------------
     def map_to_device(self):

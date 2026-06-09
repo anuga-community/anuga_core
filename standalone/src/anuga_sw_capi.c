@@ -164,6 +164,23 @@ void anuga_domain_set_mpi_comm_fint(AnugaDomain *dom, int comm_fint) {
 #endif
 }
 
+void anuga_init_halo(AnugaDomain *dom, int num_neighbors,
+                     const int *neighbor_ranks,
+                     const int *send_counts, const int *recv_counts,
+                     const int *flat_send_indices, const int *flat_recv_indices) {
+    if (!dom || num_neighbors <= 0) return;
+    gpu_halo_init(&dom->GD, num_neighbors,
+                  (int *)neighbor_ranks, (int *)send_counts, (int *)recv_counts,
+                  (int *)flat_send_indices, (int *)flat_recv_indices);
+}
+
+void anuga_exchange_ghosts(AnugaDomain *dom) {
+    if (dom) gpu_exchange_ghosts(&dom->GD);
+}
+
+int anuga_rank(AnugaDomain *dom)   { return dom ? dom->GD.rank : 0; }
+int anuga_nprocs(AnugaDomain *dom) { return dom ? dom->GD.nprocs : 1; }
+
 int anuga_domain_map_to_device(AnugaDomain *dom) {
     if (!dom) return 0;
     return gpu_domain_map_arrays(&dom->GD);

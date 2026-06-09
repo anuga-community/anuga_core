@@ -95,8 +95,19 @@ else()
 endif()
 
 # ---------------------------------------------------------------- MPI
+# CRITICAL: link the SAME MPI that mpi4py was built against, because the
+# MPI_Comm handle is passed from Python (comm.py2f) and is only valid within
+# that library. On systems with several MPIs (e.g. conda Open MPI + nvhpc HPC-X)
+# default MPI_C_COMPILER to conda's mpicc so find_package(MPI) extracts conda's
+# flags. Override with -DMPI_C_COMPILER=/path/to/mpicc if needed.
 if(ANUGA_MPI)
   message(STATUS "anuga_sw: MPI ENABLED")
+  if(NOT MPI_C_COMPILER AND DEFINED ENV{CONDA_PREFIX})
+    if(EXISTS "$ENV{CONDA_PREFIX}/bin/mpicc")
+      set(MPI_C_COMPILER "$ENV{CONDA_PREFIX}/bin/mpicc" CACHE FILEPATH "")
+      message(STATUS "anuga_sw: using conda mpicc: ${MPI_C_COMPILER}")
+    endif()
+  endif()
   find_package(MPI REQUIRED COMPONENTS C)
   target_link_libraries(anuga_sw PUBLIC MPI::MPI_C)
   target_compile_definitions(anuga_sw PRIVATE HAVE_MPI)
