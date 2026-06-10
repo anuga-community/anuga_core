@@ -75,7 +75,20 @@ autopep8 anuga/path/to/module.py
 
 ---
 
-## Recent session summaries (sessions 21–26)
+## Recent session summaries (sessions 21–35)
+
+**Session 35 (2026-06-10):** GPU build on RTX 5070 laptop (Blackwell GB206M, 8 GB,
+cc120). GCC 15 nvptx backend ICEs on `core_kernels.c` (`ompdevlow` GIMPLE pass
+segfault in `core_extrapolate_second_order_edge`) — unfixable at source level.
+Solution: NVIDIA HPC SDK 26.3 (`nvc`) installed via apt; `meson` auto-detects it
+as `nvidia_hpc`; build command: `CC=nvc pip install --no-build-isolation -e .
+-Csetup-args=-Dgpu_offload=true -Csetup-args=-Dgpu_arch=cc120`. All 56 GPU tests
+pass. New `tools/install_gpu_anuga.sh`: auto-detects nvc under
+`/opt/nvidia/hpc_sdk/Linux_x86_64/`, configurable via `PY`/`GPU_ARCH`/`NVHPC_ROOT`.
+Fixed: `pytest-regressions` missing from all 5 intel conda environment YMLs (already
+present in non-intel variants; pip-installed in existing env). `KNOWN_ISSUES.md`
+updated with full GPU build recipe. Full test suite: 2852 passed. Commits
+`6a10f5d0`, `f47967d2`.
 
 **Session 21 (2026-04-15):** Domain work-array memory reduction — ~740 MB saved
 at N=2.25M. DM1: 9 dead C work arrays removed from `_ensure_work_arrays()`;
