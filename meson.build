@@ -159,9 +159,13 @@ if openmp.found()
     openmp_c_args = ['-O3', '-fopenmp', '-g']
     add_project_link_arguments('-fopenmp', language: ['c', 'cpp'])
   else
-    # GCC and other compilers
-    openmp_c_args = ['-O3', '-fopenmp', '-g']
-    add_project_link_arguments('-fopenmp', language: ['c', 'cpp'])
+    # GCC and other compilers.
+    # -foffload=disable: installing gcc-offload-nvptx makes GCC automatically
+    # attempt nvptx offloading for all -fopenmp links; disable it here so that
+    # sw_domain_openmp_ext (CPU-only) does not trigger the nvptx mkoffload pass.
+    # The GPU extension (sw_domain_gpu_ext) sets its own -foffload=nvptx-none.
+    openmp_c_args = ['-O3', '-fopenmp', '-foffload=disable', '-g']
+    add_project_link_arguments(['-fopenmp', '-foffload=disable'], language: ['c', 'cpp'])
   endif
   openmp_deps = dependencies + [openmp]
 else
