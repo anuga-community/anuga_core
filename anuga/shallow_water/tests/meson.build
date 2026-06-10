@@ -8,6 +8,7 @@ python_sources = [
 'test_extrapolation_sw.py',
 'test_flow_algorithms.py',
 'test_flux.py',
+'test_hllc_flux.py',
 'test_physics_sw.py',
 'test_regression_snapshots.py',
 'test_data_manager.py',

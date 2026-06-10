@@ -14,6 +14,7 @@ cdef extern from "polygon.c":
     int64_t __line_intersect(double* line, double* triangles, int64_t* indices, int64_t M)
     int64_t __is_inside_triangle(double* point, double* triangle, int64_t closed, double rtol, double atol)
     int64_t __separate_points_by_polygon(int64_t M, int64_t N, double* points, double* polygon, int64_t* indices, int64_t closed, int64_t verbose)
+    int64_t __separate_points_by_polygon_parallel(int64_t M, int64_t N, double* points, double* polygon, int64_t* indices, int64_t closed, int64_t verbose)
 
 def _point_on_line(double x,\
                     double y,\
@@ -94,5 +95,55 @@ def _separate_points_by_polygon(np.ndarray[double, ndim=2, mode="c"] points not 
         print ("Got %d points and %d polygon vertices" % (M,N))
 
     count = __separate_points_by_polygon(M, N, &points[0,0], &polygon[0,0], &indices[0], closed, verbose)
+
+    return count
+
+
+def _separate_points_by_polygon_parallel(np.ndarray[double, ndim=2, mode="c"] points not None,\
+                                         np.ndarray[double, ndim=2, mode="c"] polygon not None,\
+                                         np.ndarray[int64_t, ndim=1, mode="c"] indices not None,\
+                                         int64_t closed,\
+                                         int64_t verbose):
+    """Parallel variant of _separate_points_by_polygon using prefix-sum partitioning.
+
+    Uses a two-pass OpenMP approach:
+
+    1. **Classify** (parallel): each thread determines whether each point is
+       inside or outside the polygon.
+    2. **Scatter** (parallel): indices are written to their final positions
+       using precomputed prefix-sum offsets.
+
+    This eliminates the sequential ``inside_index++`` / ``outside_index--``
+    bottleneck and is significantly faster for large point sets.
+
+    Parameters
+    ----------
+    points : ndarray, shape (M, 2)
+        Query points.
+    polygon : ndarray, shape (N, 2)
+        Polygon vertices.
+    indices : ndarray, shape (M,), dtype int64
+        Output index array (modified in-place).
+    closed : int
+        1 if boundary points count as inside, 0 otherwise.
+    verbose : int
+        Verbosity flag.
+
+    Returns
+    -------
+    int
+        Number of points inside the polygon.
+    """
+    cdef int64_t count, M, N
+
+    M = points.shape[0]
+    N = polygon.shape[0]
+
+    if verbose:
+        print("Got %d points and %d polygon vertices" % (M, N))
+
+    count = __separate_points_by_polygon_parallel(M, N, &points[0,0],
+                                                  &polygon[0,0], &indices[0],
+                                                  closed, verbose)
 
     return count

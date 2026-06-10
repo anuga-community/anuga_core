@@ -50,6 +50,10 @@ int core_gravity_wb(struct domain *D);
 // timestep_fluxcalls: total number of flux calls per timestep (for boundary flux array indexing)
 double core_compute_fluxes_central(struct domain *D, int substep_count, int timestep_fluxcalls);
 
+// Compute fluxes using HLLC Riemann solver (Toro 2001).
+// Same interface and semantics as core_compute_fluxes_central; only the
+// per-edge flux function differs.
+double core_compute_fluxes_hllc(struct domain *D, int substep_count, int timestep_fluxcalls);
 // ADER Cauchy-Kovalewski predictor: advance centroid values forward by dt.
 // Must be called after core_extrapolate_second_order_edge().
 // Recovers cell slopes from edge values, evaluates SWE time derivatives locally,
