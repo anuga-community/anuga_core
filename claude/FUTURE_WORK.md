@@ -5,6 +5,10 @@ Based on codebase investigation cross-referenced against 25 sessions of complete
 
 Items marked ~~strikethrough~~ have been invalidated (see notes).
 
+> **See also:** `claude/C_EXTENSION_AUDIT_TODOS.md` (2026-06-09) — prioritised
+> TODOs from an audit of all 20 C/Cython extensions (correctness, GPU/CPU
+> kernel unification, performance, cleanup).
+
 ---
 
 ## Priority 1 — High value, low effort (1–3 days each)

@@ -38,6 +38,10 @@ void core_manning_friction_flat_semi_implicit(struct domain *D);
 // Manning friction (sloped, semi-implicit)
 void core_manning_friction_sloped_semi_implicit(struct domain *D);
 
+// Manning friction (sloped, semi-implicit, edge-based)
+// Active per-timestep path when domain.use_sloped_mannings=True
+void core_manning_friction_sloped_semi_implicit_edge_based(struct domain *D);
+
 // Gravity term
 int core_gravity(struct domain *D);
 

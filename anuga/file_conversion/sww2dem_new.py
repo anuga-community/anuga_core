@@ -136,9 +136,9 @@ def sww2dem(name_in, name_out,
     fid = NetCDFFile(name_in)
 
     #Get extent and reference
-    x = num.array(fid.variables['x'], float)
-    y = num.array(fid.variables['y'], float)
-    volumes = num.array(fid.variables['volumes'], int)
+    x = num.array(fid.variables['x'][:], float)
+    y = num.array(fid.variables['y'][:], float)
+    volumes = num.array(fid.variables['volumes'][:], int)
     if type(reduction) is not types.BuiltinFunctionType:
         times = fid.variables['time'][reduction]
     else:

@@ -524,33 +524,45 @@ double core_protect(struct domain *D) {
 
 // ============================================================================
 // Fix negative cells
+//
+// Matches _openmp_fix_negative_cells (the tested CPU reference):
+//   - Only acts on cells where stage - bed < 0  AND  tri_full_flag > 0
+//     (ghost cells are skipped, matching the openmp & bitwise-and condition)
+//   - Zeros xmom/ymom and resets stage to bed for those cells
+//   - Returns count of cells fixed (parallel + reduction)
+//
+// NOTE: The original core version (before unification) used a different
+// threshold (minimum_allowed_height) and ignored tri_full_flag — it has
+// been updated here to match the _openmp_ reference behaviour exactly.
 // ============================================================================
 
 int core_fix_negative_cells(struct domain *D) {
     anuga_int n = D->number_of_elements;
-    double minimum_allowed_height = D->minimum_allowed_height;
 
     double * restrict stage_cv = D->stage_centroid_values;
-    double * restrict xmom_cv = D->xmom_centroid_values;
-    double * restrict ymom_cv = D->ymom_centroid_values;
-    double * restrict bed_cv = D->bed_centroid_values;
+    double * restrict xmom_cv  = D->xmom_centroid_values;
+    double * restrict ymom_cv  = D->ymom_centroid_values;
+    double * restrict bed_cv   = D->bed_centroid_values;
+    anuga_int * restrict tri_full_flag = D->tri_full_flag;
 
-    int num_fixed = 0;
+    int num_negative_cells = 0;
 
-    OMP_PARALLEL_LOOP_REDUCTION_PLUS(num_fixed)
+    OMP_PARALLEL_LOOP_REDUCTION_PLUS(num_negative_cells)
     for (anuga_int k = 0; k < n; k++) {
-        double h = stage_cv[k] - bed_cv[k];
-        if (h < minimum_allowed_height) {
-            xmom_cv[k] = 0.0;
-            ymom_cv[k] = 0.0;
-            if (h < 0.0) {
-                stage_cv[k] = bed_cv[k];
-                num_fixed++;
-            }
+        // Use & (bitwise and) matching the original _openmp_ condition.
+        // tri_full_flag is always initialised to ones(N) so the pointer is
+        // never NULL when called from Cython; the check avoids UB for the
+        // standalone / GPU build path where it could theoretically be NULL.
+        int full = (tri_full_flag == NULL) ? 1 : (tri_full_flag[k] > 0);
+        if ((stage_cv[k] - bed_cv[k] < 0.0) & full) {
+            num_negative_cells = num_negative_cells + 1;
+            stage_cv[k] = bed_cv[k];
+            xmom_cv[k]  = 0.0;
+            ymom_cv[k]  = 0.0;
         }
     }
 
-    return num_fixed;
+    return num_negative_cells;
 }
 
 // ============================================================================
@@ -651,15 +663,94 @@ void core_manning_friction_sloped_semi_implicit(struct domain *D) {
 }
 
 // ============================================================================
+// Manning friction (sloped, semi-implicit, edge-based)
+//
+// Like core_manning_friction_sloped_semi_implicit but derives the bed slope
+// from edge values (bed_edge_values) instead of vertex values.  This is the
+// active per-timestep path when domain.use_sloped_mannings=True
+// (friction.py selects manning_friction_sloped_semi_implicit_edge_based).
+// ============================================================================
+
+void core_manning_friction_sloped_semi_implicit_edge_based(struct domain *D) {
+    anuga_int n = D->number_of_elements;
+    double g   = D->g;
+    double eps = D->minimum_allowed_height;
+
+    double * restrict stage_cv   = D->stage_centroid_values;
+    double * restrict bed_ev     = D->bed_edge_values;
+    double * restrict xmom_cv    = D->xmom_centroid_values;
+    double * restrict ymom_cv    = D->ymom_centroid_values;
+    double * restrict friction_cv = D->friction_centroid_values;
+    double * restrict edge_coords = D->edge_coordinates;
+
+    double * restrict xmom_siu   = D->xmom_semi_implicit_update;
+    double * restrict ymom_siu   = D->ymom_semi_implicit_update;
+
+    const double one_third   = 1.0 / 3.0;
+    const double seven_thirds = 7.0 / 3.0;
+
+    OMP_PARALLEL_LOOP
+    for (anuga_int k = 0; k < n; k++) {
+        double S = 0.0;
+        double eta = friction_cv[k];
+
+        if (eta > 1.0e-16) {
+            anuga_int k3 = k * 3;
+            anuga_int k6 = k * 6;
+
+            // Bed values at edges
+            double z0 = bed_ev[k3 + 0];
+            double z1 = bed_ev[k3 + 1];
+            double z2 = bed_ev[k3 + 2];
+
+            // Edge midpoint coordinates
+            double x0 = edge_coords[k6 + 0];
+            double y0 = edge_coords[k6 + 1];
+            double x1 = edge_coords[k6 + 2];
+            double y1 = edge_coords[k6 + 3];
+            double x2 = edge_coords[k6 + 4];
+            double y2 = edge_coords[k6 + 5];
+
+            // Bed slope via 2x2 determinant (same as _gradient(), inlined for GPU)
+            double det = (y2 - y0) * (x1 - x0) - (y1 - y0) * (x2 - x0);
+            double zx  = ((y2 - y0) * (z1 - z0) - (y1 - y0) * (z2 - z0)) / det;
+            double zy  = ((x1 - x0) * (z2 - z0) - (x2 - x0) * (z1 - z0)) / det;
+
+            double zs = sqrt(1.0 + zx * zx + zy * zy);
+            double z  = (z0 + z1 + z2) * one_third;
+
+            double w  = stage_cv[k];
+            double h  = w - z;
+
+            if (h >= eps) {
+                double uh = xmom_cv[k];
+                double vh = ymom_cv[k];
+                S = -g * eta * eta * zs * sqrt(uh * uh + vh * vh);
+                S /= pow(h, seven_thirds);
+            }
+        }
+
+        xmom_siu[k] += S * xmom_cv[k];
+        ymom_siu[k] += S * ymom_cv[k];
+    }
+}
+
+// ============================================================================
 // Gravity term
+//
+// Computes bed-slope gravity source term: duh/dt += -g * avg_h * dz/dx
+// Uses stage_centroid - bed_centroid for avg_h (matches the original
+// _openmp_gravity which computed this directly, so height need not be
+// up-to-date when this function is called).
 // ============================================================================
 
 int core_gravity(struct domain *D) {
     anuga_int n = D->number_of_elements;
     double g = D->g;
 
-    double * restrict height_cv = D->height_centroid_values;
-    double * restrict bed_vv = D->bed_vertex_values;
+    double * restrict stage_cv = D->stage_centroid_values;
+    double * restrict bed_cv   = D->bed_centroid_values;
+    double * restrict bed_vv   = D->bed_vertex_values;
 
     double * restrict xmom_eu = D->xmom_explicit_update;
     double * restrict ymom_eu = D->ymom_explicit_update;
@@ -668,8 +759,8 @@ int core_gravity(struct domain *D) {
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
-        double h = height_cv[k];
-        if (h <= 0.0) continue;
+        // Average depth: use live stage - bed (height_cv may be stale)
+        double avg_h = stage_cv[k] - bed_cv[k];
 
         anuga_int k3 = k * 3;
         anuga_int k6 = k * 6;
@@ -685,12 +776,13 @@ int core_gravity(struct domain *D) {
         double z1 = bed_vv[k3 + 1];
         double z2 = bed_vv[k3 + 2];
 
+        // Bed gradient via 2x2 determinant (same as _gradient(), inlined for GPU)
         double det = (y2 - y0) * (x1 - x0) - (y1 - y0) * (x2 - x0);
         double dzx = ((y2 - y0) * (z1 - z0) - (y1 - y0) * (z2 - z0)) / det;
         double dzy = ((x1 - x0) * (z2 - z0) - (x2 - x0) * (z1 - z0)) / det;
 
-        xmom_eu[k] += -g * h * dzx;
-        ymom_eu[k] += -g * h * dzy;
+        xmom_eu[k] += -g * avg_h * dzx;
+        ymom_eu[k] += -g * avg_h * dzy;
     }
 
     return 0;
@@ -698,12 +790,90 @@ int core_gravity(struct domain *D) {
 
 // ============================================================================
 // Gravity term (well-balanced)
+//
+// Well-balanced formulation after Audusse et al. (2004):
+//   du/dt += -g * wx * avg_h                    (stage-gradient term)
+//   dv/dt += -g * wy * avg_h
+//   PLUS side-pressure correction:
+//     sum_i  -0.5 * g * h_i^2 * edgelength_i * n_i / area
+// where h_i = stage_edge[i] - bed_edge[i] is the depth at edge i,
+// and wx, wy is the gradient of stage (not bed), computed from vertex values.
+//
+// This formulation is exactly what _openmp_gravity_wb computed.
+// Still-water equilibrium (u=v=0, stage=const) is preserved exactly
+// because the stage-gradient term and edge-pressure terms cancel.
 // ============================================================================
 
 int core_gravity_wb(struct domain *D) {
-    // For now, same as regular gravity
-    // Well-balanced formulation can be added later
-    return core_gravity(D);
+    anuga_int n = D->number_of_elements;
+    double g = D->g;
+
+    double * restrict stage_vv  = D->stage_vertex_values;
+    double * restrict stage_cv  = D->stage_centroid_values;
+    double * restrict bed_cv    = D->bed_centroid_values;
+    double * restrict stage_ev  = D->stage_edge_values;
+    double * restrict bed_ev    = D->bed_edge_values;
+    double * restrict normals   = D->normals;
+    double * restrict edgelengths = D->edgelengths;
+    double * restrict areas     = D->areas;
+    double * restrict xmom_eu   = D->xmom_explicit_update;
+    double * restrict ymom_eu   = D->ymom_explicit_update;
+    double * restrict vertex_coords = D->vertex_coordinates;
+
+    OMP_PARALLEL_LOOP
+    for (anuga_int k = 0; k < n; k++) {
+        anuga_int k3 = k * 3;
+        anuga_int k6 = k * 6;
+
+        // --------------------------------------------------
+        // Stage-gradient term: -g * avg_h * (wx, wy)
+        // --------------------------------------------------
+
+        // Stage at vertices for gradient calculation
+        double w0 = stage_vv[k3 + 0];
+        double w1 = stage_vv[k3 + 1];
+        double w2 = stage_vv[k3 + 2];
+
+        // Vertex coordinates
+        double x0 = vertex_coords[k6 + 0];
+        double y0 = vertex_coords[k6 + 1];
+        double x1 = vertex_coords[k6 + 2];
+        double y1 = vertex_coords[k6 + 3];
+        double x2 = vertex_coords[k6 + 4];
+        double y2 = vertex_coords[k6 + 5];
+
+        // Compute stage gradient using standard 2x2 determinant formula
+        // (identical math to _gradient() in util_ext.h, inlined for GPU compat)
+        double det = (y2 - y0) * (x1 - x0) - (y1 - y0) * (x2 - x0);
+        double wx  = ((y2 - y0) * (w1 - w0) - (y1 - y0) * (w2 - w0)) / det;
+        double wy  = ((x1 - x0) * (w2 - w0) - (x2 - x0) * (w1 - w0)) / det;
+
+        // Centroid depth
+        double avg_h = stage_cv[k] - bed_cv[k];
+
+        // Apply stage-gradient term
+        xmom_eu[k] += -g * wx * avg_h;
+        ymom_eu[k] += -g * wy * avg_h;
+
+        // --------------------------------------------------
+        // Edge-pressure (side) correction:
+        //   sum_i  -0.5 * g * h_i^2 * edgelength_i * n_i / area
+        // --------------------------------------------------
+        double sidex = 0.0;
+        double sidey = 0.0;
+        for (int i = 0; i < 3; i++) {
+            double h_edge = stage_ev[k3 + i] - bed_ev[k3 + i];
+            double fact   = -0.5 * g * h_edge * h_edge * edgelengths[k3 + i];
+            sidex += fact * normals[k6 + 2 * i];
+            sidey += fact * normals[k6 + 2 * i + 1];
+        }
+
+        double inv_area = 1.0 / areas[k];
+        xmom_eu[k] += -sidex * inv_area;
+        ymom_eu[k] += -sidey * inv_area;
+    }
+
+    return 0;
 }
 
 // ============================================================================

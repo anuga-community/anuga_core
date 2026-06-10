@@ -328,7 +328,7 @@ def _sww_merge_parallel_smooth(swwfiles, output, verbose=False, delete_old=False
         # --- Static centroid quantities ---
         for q in static_c_quantities:
             out_s_c_quantities[q][ftri_l2g] = \
-                num.array(fid.variables[q]).astype(num.float32)[ftri_ids]
+                num.array(fid.variables[q][:]).astype(num.float32)[ftri_ids]
 
         fid.close()
 
@@ -554,12 +554,12 @@ def _sww_merge_parallel_non_smooth(swwfiles, output, verbose=False, delete_old=F
         # Read in static vertex quantities
         for quantity in static_quantities:
             out_s_quantities[quantity][g_vids] = \
-                num.array(fid.variables[quantity]).astype(num.float32)[l_vids]
+                num.array(fid.variables[quantity][:]).astype(num.float32)[l_vids]
 
         # Read in static centroid quantities
         for quantity in static_c_quantities:
             out_s_c_quantities[quantity][f_gids] = \
-                num.array(fid.variables[quantity]).astype(num.float32)[f_ids]
+                num.array(fid.variables[quantity][:]).astype(num.float32)[f_ids]
 
         fid.close()
 

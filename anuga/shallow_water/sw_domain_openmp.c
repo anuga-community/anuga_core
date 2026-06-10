@@ -182,74 +182,20 @@ void _openmp_manning_friction_sloped_semi_implicit(const struct domain *__restri
     core_manning_friction_sloped_semi_implicit((struct domain *)D);
 }
 
-// TODO: PORT TO core_kernels.c (MEDIUM PRIORITY)
-// Edge-based variant of sloped Manning friction
-// Currently only flat and sloped (centroid-based) semi-implicit friction are in core_kernels.c
+// Unified: calls core_manning_friction_sloped_semi_implicit_edge_based from core_kernels.c
+// Edge-based variant of sloped Manning friction — the active per-timestep path
+// when domain.use_sloped_mannings=True (friction.py:29 selects this function).
 void _openmp_manning_friction_sloped_semi_implicit_edge_based(const struct domain *__restrict D)
 {
-  anuga_int k;
-  const double one_third = 1.0 / 3.0;
-  const double seven_thirds = 7.0 / 3.0;
-
-  anuga_int N = D->number_of_elements;
-  const double  g = D->g;
-  const double  eps = D->minimum_allowed_height;
-  
-#pragma omp parallel for simd default(none) shared(D) schedule(static) \
-        firstprivate(N, eps, g, seven_thirds, one_third)
-for (k = 0; k < N; k++)
-  {
-    double S, h, z, z0, z1, z2, zs, zx, zy;
-    double x0, y0, x1, y1, x2, y2;
-    anuga_int k3, k6;
-
-    double w = D->stage_centroid_values[k];
-    double uh = D->xmom_centroid_values[k];
-    double vh = D->ymom_centroid_values[k];
-    double eta = D->friction_centroid_values[k];
-
-    S = 0.0;
-    k3 = 3 * k;
-    
-    // Get bathymetry
-    z0 = D->bed_edge_values[k3 + 0];
-    z1 = D->bed_edge_values[k3 + 1];
-    z2 = D->bed_edge_values[k3 + 2];
-
-    // Compute bed slope
-    k6 = 6 * k; // base index
-
-    
-    x0 = D->edge_coordinates[k6 + 0];
-    y0 = D->edge_coordinates[k6 + 1];
-    x1 = D->edge_coordinates[k6 + 2];
-    y1 = D->edge_coordinates[k6 + 3];
-    x2 = D->edge_coordinates[k6 + 4];
-    y2 = D->edge_coordinates[k6 + 5];
-
-    
-    if (eta > 1.0e-16)
-    {
-      _gradient(x0, y0, x1, y1, x2, y2, z0, z1, z2, &zx, &zy);
-
-      zs = sqrt(1.0 + zx * zx + zy * zy);
-      z = (z0 + z1 + z2) * one_third;
-
-      h = w - z;
-      if (h >= eps)
-      {
-        S = -g*eta*eta*zs * sqrt((uh*uh + vh*vh));
-        S /= pow(h, seven_thirds); 
-      }
-    }
-    D->xmom_semi_implicit_update[k] += S * uh;
-    D->ymom_semi_implicit_update[k] += S * vh;
-  }
+    core_manning_friction_sloped_semi_implicit_edge_based((struct domain *)D);
 }
 
-// TODO: PORT TO core_kernels.c (LOW PRIORITY)
-// Explicit (non semi-implicit) friction - rarely used, semi-implicit is preferred
-// Original function for flat friction
+// Legacy explicit (non semi-implicit) Manning friction variants.
+// These are NOT reachable from any non-test production code path:
+//   - friction.py only calls the semi-implicit variants above.
+//   - The functions below are exposed through sw_domain_openmp_ext.pyx purely
+//     for backwards compatibility and unit tests in test_friction.py.
+// Do NOT GPU-port these; keep their bodies here for test/back-compat.
 void _openmp_manning_friction_flat(const double g, const double eps, const anuga_int N,
                                    double *__restrict w, double *__restrict z_centroid,
                                    double *__restrict uh, double *__restrict vh,
@@ -282,8 +228,7 @@ void _openmp_manning_friction_flat(const double g, const double eps, const anuga
 }
 
 
-// TODO: PORT TO core_kernels.c (LOW PRIORITY)
-// Explicit (non semi-implicit) sloped friction - rarely used
+// Legacy explicit (non semi-implicit) sloped friction — see note above.
 void _openmp_manning_friction_sloped(const double g, const double eps, const anuga_int N,
                                      double *__restrict x_vertex, double *__restrict w, double *__restrict z_vertex,
                                      double *__restrict uh, double *__restrict vh,
@@ -332,8 +277,7 @@ void _openmp_manning_friction_sloped(const double g, const double eps, const anu
   }
 }
 
-// TODO: PORT TO core_kernels.c (LOW PRIORITY)
-// Explicit (non semi-implicit) sloped edge-based friction - rarely used
+// Legacy explicit (non semi-implicit) sloped edge-based friction — see note above.
 void _openmp_manning_friction_sloped_edge_based(const double g, const double eps, const anuga_int N,
                                      double *__restrict x_edge, double *__restrict w, double *__restrict z_edge,
                                      double *__restrict uh, double *__restrict vh,
@@ -383,147 +327,28 @@ void _openmp_manning_friction_sloped_edge_based(const double g, const double eps
 }
 
 
-// Computational function for flux computation
+// Unified: calls core_fix_negative_cells from core_kernels.c
+// core version matches this reference implementation exactly (same & condition,
+// same tri_full_flag guard, same reduction pattern).
 anuga_int _openmp_fix_negative_cells(const struct domain *__restrict D)
 {
-  anuga_int num_negative_cells = 0;
-
-#pragma omp parallel for schedule(static) reduction(+ : num_negative_cells)
-  for (anuga_int k = 0; k < D->number_of_elements; k++)
-  {
-    if ((D->stage_centroid_values[k] - D->bed_centroid_values[k] < 0.0) & (D->tri_full_flag[k] > 0))
-    {
-      num_negative_cells = num_negative_cells + 1;
-      D->stage_centroid_values[k] = D->bed_centroid_values[k];
-      D->xmom_centroid_values[k] = 0.0;
-      D->ymom_centroid_values[k] = 0.0;
-    }
-  }
-  return num_negative_cells;
+    return (anuga_int)core_fix_negative_cells((struct domain *)D);
 }
 
 
+// Unified: calls core_gravity from core_kernels.c
+// core_gravity computes avg_h = stage_cv - bed_cv directly (it no longer
+// reads height_cv, which could be stale when gravity is used as a forcing
+// term), matching this function's original behaviour.
 anuga_int _openmp_gravity(const struct domain *__restrict D) {
-
-    anuga_int k, N, k3, k6;
-    double g, avg_h, zx, zy;
-    double x0, y0, x1, y1, x2, y2, z0, z1, z2;
-
-    g = D->g;
-    N = D->number_of_elements;
-
-    for (k = 0; k < N; k++) {
-        k3 = 3 * k; // base index
-
-        // Get bathymetry
-        z0 = (D->bed_vertex_values)[k3 + 0];
-        z1 = (D->bed_vertex_values)[k3 + 1];
-        z2 = (D->bed_vertex_values)[k3 + 2];
-
-        //printf("z0 %g, z1 %g, z2 %g \n",z0,z1,z2);
-
-        // Get average depth from centroid values
-        avg_h = (D->stage_centroid_values)[k] - (D->bed_centroid_values)[k];
-
-        //printf("avg_h  %g \n",avg_h);
-        // Compute bed slope
-        k6 = 6 * k; // base index
-
-        x0 = (D->vertex_coordinates)[k6 + 0];
-        y0 = (D->vertex_coordinates)[k6 + 1];
-        x1 = (D->vertex_coordinates)[k6 + 2];
-        y1 = (D->vertex_coordinates)[k6 + 3];
-        x2 = (D->vertex_coordinates)[k6 + 4];
-        y2 = (D->vertex_coordinates)[k6 + 5];
-
-        //printf("x0 %g, y0 %g, x1 %g, y1 %g, x2 %g, y2 %g \n",x0,y0,x1,y1,x2,y2);
-        _gradient(x0, y0, x1, y1, x2, y2, z0, z1, z2, &zx, &zy);
-
-        //printf("zx %g, zy %g \n",zx,zy);
-
-        // Update momentum
-        (D->xmom_explicit_update)[k] += -g * zx*avg_h;
-        (D->ymom_explicit_update)[k] += -g * zy*avg_h;
-    }
-    return 0;
+    return (anuga_int)core_gravity((struct domain *)D);
 }
 
+// Unified: calls core_gravity_wb from core_kernels.c
+// The well-balanced implementation (stage-gradient + edge-pressure terms)
+// was ported there from the serial body that used to live here.
 anuga_int _openmp_gravity_wb(const struct domain *__restrict D) {
-
-    anuga_int i, k, N, k3, k6;
-    double g, avg_h, wx, wy, fact;
-    double x0, y0, x1, y1, x2, y2;
-    double hh[3];
-    double w0, w1, w2;
-    double sidex, sidey, area;
-    double n0, n1;
-
-    g = D->g;
-
-    N = D->number_of_elements;
-    for (k = 0; k < N; k++) {
-        k3 = 3 * k; // base index
-
-        //------------------------------------
-        // Calculate side terms -ghw_x term
-        //------------------------------------
-
-        // Get vertex stage values for gradient calculation
-        w0 = (D->stage_vertex_values)[k3 + 0];
-        w1 = (D->stage_vertex_values)[k3 + 1];
-        w2 = (D->stage_vertex_values)[k3 + 2];
-
-        // Compute stage slope
-        k6 = 6 * k; // base index
-
-        x0 = (D->vertex_coordinates)[k6 + 0];
-        y0 = (D->vertex_coordinates)[k6 + 1];
-        x1 = (D->vertex_coordinates)[k6 + 2];
-        y1 = (D->vertex_coordinates)[k6 + 3];
-        x2 = (D->vertex_coordinates)[k6 + 4];
-        y2 = (D->vertex_coordinates)[k6 + 5];
-
-        //printf("x0 %g, y0 %g, x1 %g, y1 %g, x2 %g, y2 %g \n",x0,y0,x1,y1,x2,y2);
-        _gradient(x0, y0, x1, y1, x2, y2, w0, w1, w2, &wx, &wy);
-
-        avg_h = (D->stage_centroid_values)[k] - (D->bed_centroid_values)[k];
-
-        // Update using -ghw_x term
-        (D->xmom_explicit_update)[k] += -g * wx*avg_h;
-        (D->ymom_explicit_update)[k] += -g * wy*avg_h;
-
-        //------------------------------------
-        // Calculate side terms \sum_i 0.5 g l_i h_i^2 n_i
-        //------------------------------------
-
-        // Getself.stage_c = self.domain.quantities['stage'].centroid_values edge depths
-        hh[0] = (D->stage_edge_values)[k3 + 0] - (D->bed_edge_values)[k3 + 0];
-        hh[1] = (D->stage_edge_values)[k3 + 1] - (D->bed_edge_values)[k3 + 1];
-        hh[2] = (D->stage_edge_values)[k3 + 2] - (D->bed_edge_values)[k3 + 2];
-
-
-        //printf("h0,1,2 %f %f %f\n",hh[0],hh[1],hh[2]);
-
-        // Calculate the side correction term
-        sidex = 0.0;
-        sidey = 0.0;
-        for (i = 0; i < 3; i++) {
-            n0 = (D->normals)[k6 + 2 * i];
-            n1 = (D->normals)[k6 + 2 * i + 1];
-
-            //printf("n0, n1 %i %g %g\n",i,n0,n1);
-            fact = -0.5 * g * hh[i] * hh[i] * (D->edgelengths)[k3 + i];
-            sidex = sidex + fact*n0;
-            sidey = sidey + fact*n1;
-        }
-
-        // Update momentum with side terms
-        area = (D->areas)[k];
-        (D->xmom_explicit_update)[k] += -sidex / area;
-        (D->ymom_explicit_update)[k] += -sidey / area;
-
-    }
-    return 0;
+    return (anuga_int)core_gravity_wb((struct domain *)D);
 }
 
 

@@ -1089,17 +1089,28 @@ def _refine_one_level(input_name, numprocs, output_name,
     else:
         import concurrent.futures
         import multiprocessing
+        import warnings
         actual_workers = min(num_workers, numprocs)
-        # mpi4py changes the default start method to 'forkserver', which
-        # re-executes __main__ in each worker and deadlocks when the caller
-        # is a top-level script.  Use 'fork' explicitly on POSIX (safe here
-        # because workers do no MPI); fall back to None (system default) on
-        # Windows where fork is unavailable.
+        # mpi4py changes the default start method to 'forkserver'.  Both
+        # 'forkserver' and 'spawn' re-execute/import __main__ in each
+        # worker, which breaks (RuntimeError or deadlock) when the caller
+        # is an unguarded top-level script — the common ANUGA usage.  So
+        # use 'fork' explicitly on POSIX (safe here because workers do no
+        # MPI); fall back to None (system default) on Windows where fork
+        # is unavailable.  Python 3.12+ warns that forking a process with
+        # live threads (OpenMP from the anuga extensions) may deadlock;
+        # the workers only call module-level numpy/netCDF code, so
+        # suppress that specific DeprecationWarning.
         mp_ctx = (multiprocessing.get_context('fork')
                   if hasattr(os, 'fork') else None)
-        with concurrent.futures.ProcessPoolExecutor(
-                max_workers=actual_workers, mp_context=mp_ctx) as executor:
-            list(executor.map(_refine_partition_worker, worker_args))
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                'ignore',
+                message=r'.*use of fork\(\) may lead to deadlocks.*',
+                category=DeprecationWarning)
+            with concurrent.futures.ProcessPoolExecutor(
+                    max_workers=actual_workers, mp_context=mp_ctx) as executor:
+                list(executor.map(_refine_partition_worker, worker_args))
 
 
 def sequential_mesh_refine(name, numprocs, levels=1, output_name=None,
