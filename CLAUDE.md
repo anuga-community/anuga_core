@@ -37,7 +37,7 @@ conda activate anuga_env
 pip install --no-build-isolation -v -e .
 ```
 
-The `--no-build-isolation` flag is required because meson-python needs the existing numpy/Cython from the conda environment.
+The `--no-build-isolation` flag is recommended (not strictly required in all environments) to ensure meson-python uses the existing numpy/Cython from the conda environment.
 
 OpenMP is enabled conditionally: Linux/macOS use gcc/clang with OpenMP; Windows requires mingw compilers.
 

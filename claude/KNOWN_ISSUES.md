@@ -7,14 +7,51 @@ or require caution when working in specific areas.
 
 ## Build
 
-### `--no-build-isolation` is mandatory
+### Building with GPU offloading (NVIDIA HPC SDK / nvc)
 
-`pip install -e .` without `--no-build-isolation` fails because meson-python
-cannot find the Cython/numpy already installed in the conda environment.
-Always use:
+ANUGA's GPU extension (`sw_domain_gpu_ext`, `multiprocessor_mode=2`) requires
+`nvc` from the NVIDIA HPC SDK — GCC 15's nvptx backend ICEs on `core_kernels.c`
+(ompdevlow GIMPLE pass segfault in `core_extrapolate_second_order_edge`).
+
+**One-time setup (Ubuntu, requires sudo):**
 ```bash
-pip install --no-build-isolation -e .
+# Add NVIDIA HPC SDK apt repo
+curl -fsSL https://developer.download.nvidia.com/hpc-sdk/ubuntu/DEB-GPG-KEY-NVIDIA-HPC-SDK \
+  | sudo gpg --dearmor -o /usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg
+echo 'deb [signed-by=/usr/share/keyrings/nvidia-hpcsdk-archive-keyring.gpg] https://developer.download.nvidia.com/hpc-sdk/ubuntu/amd64 /' \
+  | sudo tee /etc/apt/sources.list.d/nvhpc.list
+sudo apt-get update -y && sudo apt-get install -y nvhpc   # ~5 GB
 ```
+
+**GPU build (RTX 5070 = Blackwell cc120; adjust gpu_arch for other GPUs):**
+```bash
+NVC=/opt/nvidia/hpc_sdk/Linux_x86_64/26.3/compilers/bin/nvc
+conda run -n anuga_env_3.14 bash -c "CC=$NVC pip install --no-build-isolation -v -e . \
+  -Csetup-args=-Dgpu_offload=true \
+  -Csetup-args=-Dgpu_arch=cc120"
+```
+
+Meson auto-detects nvc as `nvidia_hpc`; the build uses `-mp=gpu,multicore -gpu=cc120`.
+The build dir must be clean if switching from a prior GCC build (`rm -rf build/cp314`).
+
+**Verify GPU works:**
+```bash
+conda run -n anuga_env_3.14 pytest anuga/shallow_water/tests/test_DE_gpu_omp.py -v
+```
+All 56 tests pass on the RTX 5070.
+
+**Switching back to CPU-only build:**
+```bash
+rm -rf build/cp314
+conda run -n anuga_env_3.14 pip install --no-build-isolation -e .
+```
+
+### `--no-build-isolation` is recommended
+
+`pip install --no-build-isolation -e .` is the recommended build approach.
+It is not strictly required in all environments, but is preferred because
+it ensures meson-python uses the Cython/numpy already installed in the conda
+environment rather than fetching isolated build dependencies.
 
 ### Generated C files appear as untracked in `git status`
 

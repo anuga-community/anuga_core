@@ -183,7 +183,12 @@ if gpu_offload
     endif
   else
     # GCC with nvptx offloading (NVIDIA only, AMD not well supported)
-    gpu_c_args = ['-O3', '-fopenmp', '-foffload=nvptx-none', '-g']
+    # -foffload=-fcf-protection=none: Ubuntu GCC enables cf-protection by default
+    # but nvptx target does not support it.
+    # -foffload=-O1: GCC 15 nvptx backend ICEs at -O3 on complex omp target teams loop
+    # kernels (ompdevlow GIMPLE pass segfault); -O1 avoids the problematic inlining.
+    gpu_c_args = ['-O3', '-fopenmp', '-foffload=nvptx-none',
+                  '-foffload=-fcf-protection=none', '-foffload=-O1', '-g']
   endif
   message('GPU offloading enabled')
   message('GPU architecture: ' + gpu_arch)
