@@ -81,6 +81,7 @@ maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
 # Choices are 1 (openmp/cpu) 2 (openmp/gpu offloading)
 multiprocessor_mode = args.multiprocessor_mode
+reorder_method = args.reorder  # 'none', 'hilbert', 'morton', 'metis'
 
 checkpoint_time = max(600/scale, 60)
 checkpoint_dir = 'CHECKPOINTS'
@@ -472,10 +473,15 @@ Creating domain from scratch.
                                       'stage': 2,
                                       'xmomentum': 2,
                                       'ymomentum': 2}
-    
+
+    if reorder_method != 'none':
+        if myid == 0:
+            print(f'REORDERING DOMAIN using {reorder_method}')
+        anuga.reorder_domain(domain, method=reorder_method, verbose=(myid == 0))
+
     if myid == 0:
         print('CREATING RIVERWALLS')
-    
+
     domain.create_riverwalls(riverWalls)
     
     

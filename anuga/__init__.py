@@ -136,6 +136,7 @@ from anuga.parallel.parallel_api import mpi_extra_options
 
 from anuga.parallel.parallel_api import sequential_distribute_dump
 from anuga.parallel.parallel_api import sequential_distribute_load
+from anuga.parallel.partitioning import reorder_domain
 from anuga.parallel.parallel_api import sequential_mesh_dump
 from anuga.parallel.parallel_api import sequential_mesh_load
 from anuga.parallel.parallel_api import uniform_refine_domain

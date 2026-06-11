@@ -58,6 +58,11 @@ def create_standard_parser():
                        choices=[1, 2],
                        help='multiprocessor mode: 1=CPU OpenMP, 2=GPU OpenMP offload')
 
+    parser.add_argument('-ro', '--reorder', type=str, default='none',
+                       choices=['none', 'hilbert', 'morton', 'metis'],
+                       help='reorder triangles for cache locality before evolving '
+                            '(none, hilbert, morton, metis)')
+
     return parser
 
 
