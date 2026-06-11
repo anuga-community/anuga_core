@@ -77,6 +77,17 @@ autopep8 anuga/path/to/module.py
 
 ## Recent session summaries (sessions 21–35)
 
+**Session 36 (2026-06-11):** GCC CPU build fix after `gcc-15-offload-nvptx` install:
+`-foffload=disable` added to GCC `openmp_c_args` and link args in `meson.build` so
+`sw_domain_openmp_ext` (CPU-only) doesn't trigger the nvptx mkoffload pass. `--threads`
+argument added to `scripts/anuga_benchmark_omp.py` (comma-separated OMP_NUM_THREADS
+override, e.g. `--threads 1,2,4,8,16`). Parallel GPU test hang fix: added
+`gpu_get_num_devices()` to `gpu_domain_core.c`/`gpu_domain.h`, exposed as
+`get_num_gpu_devices()` in `sw_domain_gpu_ext.pyx`; parallel GPU tests now skip per-rank
+when `real_gpu_available() and get_num_gpu_devices() < N` — CPU_ONLY_MODE builds are
+unaffected and continue to run. Towradgi benchmark data downloaded (~86 MB). Full test
+suite: 2852 passed. Commits `a96c3ca6`, `c5eb80eb`.
+
 **Session 35 (2026-06-10):** GPU build on RTX 5070 laptop (Blackwell GB206M, 8 GB,
 cc120). GCC 15 nvptx backend ICEs on `core_kernels.c` (`ompdevlow` GIMPLE pass
 segfault in `core_extrapolate_second_order_edge`) — unfixable at source level.
