@@ -75,7 +75,33 @@ autopep8 anuga/path/to/module.py
 
 ---
 
-## Recent session summaries (sessions 21–35)
+## Benchmark timings — Towradgi small (MSI laptop, RTX 5070, AMD Ryzen 9, 2026-06-11)
+
+Case: `run_small_towradgi.py -ft 200 -ys 50`, ~256k triangles, DE1 algorithm.
+
+| Mode | Config | Time (s) | Speedup |
+|------|--------|----------|---------|
+| Serial | 1 rank / 1 thread | 96.27 | 1× |
+| OpenMP | `OMP_NUM_THREADS=16`, mode=1 | 22.9 | 4.2× |
+| MPI | `mpiexec -np 16`, mode=1 | 11.56 | 8.3× |
+| GPU | mode=2 (RTX 5070, cc120) | 6.25 | **15.4×** |
+
+MPI out-scales OpenMP at 16-way due to NUMA/cache effects on unstructured meshes.
+GPU advantage expected to grow with larger meshes.
+
+---
+
+## Recent session summaries (sessions 21–36)
+
+**Session 37 (2026-06-11):** CLI improvements to `run_small_towradgi.py` and standard
+arg parser. Added `--multiprocessor_mode`/`-mpm` (choices 1/2, default 1) to standard
+parser; `run_small_towradgi.py` reads it from `args`. Added `-os`/`--outputstep` to
+standard parser (SUPPRESS default, scripts default to `yieldstep`). Wired `-ys`/`-ft`
+overrides in `run_small_towradgi.py` via `getattr(args, key, default)` — removed
+`verbose = False` hardcode that was silently swallowing `--verbose`. Fixed
+`Rate_operator` crash on empty `local_rates[fid]` array (NumPy 2.x raises `ValueError`
+on `.max()` of zero-size array; MPI ranks with no polygon triangles hit this). Towradgi
+benchmark results recorded (see table above). Commits `a51eec3d`–`7e6b8f40`.
 
 **Session 36 (2026-06-11):** GCC CPU build fix after `gcc-15-offload-nvptx` install:
 `-foffload=disable` added to GCC `openmp_c_args` and link args in `meson.build` so
