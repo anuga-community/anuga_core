@@ -27,6 +27,9 @@ def create_standard_parser():
     parser.add_argument('-ys', '--yieldstep', type=float, default=argparse.SUPPRESS,
                        help='yieldstep')
 
+    parser.add_argument('-os', '--outputstep', type=float, default=argparse.SUPPRESS,
+                       help='outputstep (defaults to yieldstep if not set)')
+
     parser.add_argument('-alg', type=str, default = default_alg,
                        help='flow algorithm')
 
@@ -51,7 +54,7 @@ def create_standard_parser():
     parser.add_argument('--checkpoint_time', type=float, default=-1.0,
                        help='checkpoint time')
 
-    parser.add_argument('--multiprocessor_mode', type=int, default=1,
+    parser.add_argument('-mpm', '--multiprocessor_mode', type=int, default=1,
                        choices=[1, 2],
                        help='multiprocessor mode: 1=CPU OpenMP, 2=GPU OpenMP offload')
 

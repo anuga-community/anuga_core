@@ -72,9 +72,9 @@ verbose = args.verbose
 # Setup parameters  (CLI flags override these defaults)
 # --------------------------------------------------------------------------
 
-yieldstep  = getattr(args, 'yieldstep',  120.)   # -ys / --yieldstep
-finaltime  = getattr(args, 'finaltime',  3600.)   # -ft / --finaltime
-outputstep = 1800. # update sww files every 1800 seconds
+yieldstep  = getattr(args, 'yieldstep',  120.)          # -ys / --yieldstep
+finaltime  = getattr(args, 'finaltime',  3600.)          # -ft / --finaltime
+outputstep = getattr(args, 'outputstep', yieldstep)      # -os / --outputstep
 
 scale = 1 # For coarse mesh set to 10 (135237 triangles), fine mesh set to 1 (256688 triangles)
 maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
