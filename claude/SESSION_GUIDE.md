@@ -88,6 +88,7 @@ Case: `run_small_towradgi.py -ft 200 -ys 50`, ~256k triangles, DE1 algorithm.
 | MPI | `mpiexec -np 16`, mode=1 | 12.31 | 7.8× |
 | GPU | mode=2 (RTX 5070, cc120) | 6.25 | **15.4×** |
 | GPU + Hilbert reorder | mode=2, `-ro hilbert` | 5.62 | **17.1×** |
+| GPU + metis_rcm reorder | mode=2, `-ro metis_rcm` | 5.79 | 16.6× |
 
 ### Reordering comparison (all `OMP_NUM_THREADS=16`, mode=1)
 
@@ -103,7 +104,12 @@ Case: `run_small_towradgi.py -ft 200 -ys 50`, ~256k triangles, DE1 algorithm.
 | Metis-RCM-24 | `-ro metis_rcm -rn 24` | 18.28 | −20% |
 | Metis-RCM-32 | `-ro metis_rcm -rn 32` | 18.50 | −19% |
 
-**Best OpenMP reorder: `metis_rcm` at default `n_procs=OMP_NUM_THREADS` (17.43 s, 5.5×).**
+**Best reorder by mode: OpenMP → `metis_rcm` (17.43 s, 5.5×); MPI → `rcm` (11.63 s); GPU → `hilbert` (5.62 s, 17.1×).**
+
+Optimal reorder differs by execution model: CPU sequential traversal benefits from RCM
+graph-bandwidth minimisation; GPU warp-parallel execution benefits from Hilbert's tight
+spatial clustering for coalesced memory access. metis_rcm (5.79s) is slightly worse than
+hilbert (5.62s) for GPU but better than no reorder (6.25s).
 
 ### MPI + reorder
 
@@ -163,10 +169,13 @@ set independently of `OMP_NUM_THREADS`. Added `metis_rcm`, `metis_hilbert`, `rcm
 per-partition Hilbert sorting). Best OpenMP result: **`-ro metis_rcm` at 17.43 s (5.5×)**
 vs 22.73 s baseline — 23% improvement. Sweet spot is `n_procs=OMP_NUM_THREADS=16`.
 MPI + RCM: 11.63 s vs 12.31 s baseline (5.5% improvement). GPU + Hilbert: 5.62 s vs
-6.25 s baseline (10% improvement, 17.1×). Hardware is single NUMA node so NUMA effects
-are absent; remaining OpenMP vs MPI gap is false sharing in flux arrays. OMP binding
-flags and numactl both harmful — constrain setup code and/or limit active threads.
-Full benchmark table in SESSION_GUIDE. Commits `b5ed2b6d`, `93670929`.
+6.25 s baseline (10% improvement, 17.1×). GPU + metis_rcm: 5.79 s (better than no
+reorder but worse than hilbert — GPU warps prefer Hilbert's spatial clustering for
+coalesced access over RCM's sequential bandwidth minimisation). Hardware is single NUMA
+node so NUMA effects are absent; remaining OpenMP vs MPI gap is false sharing in flux
+arrays. OMP binding flags and numactl both harmful. Best reorder per mode:
+OpenMP→metis_rcm, MPI→rcm, GPU→hilbert. Full benchmark table in SESSION_GUIDE.
+Commits `b5ed2b6d`, `93670929`.
 
 **Session 37 (2026-06-11):** CLI improvements to `run_small_towradgi.py` and standard
 arg parser. Added `--multiprocessor_mode`/`-mpm` (choices 1/2, default 1) to standard
