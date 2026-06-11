@@ -104,15 +104,27 @@ Case: `run_small_towradgi.py -ft 200 -ys 50`, ~256k triangles, DE1 algorithm.
 
 **Best OpenMP reorder: `metis_rcm` at default `n_procs=OMP_NUM_THREADS` (17.43 s, 5.5×).**
 
+### MPI + reorder
+
+| Mode | Config | Time (s) | vs no-reorder |
+|------|--------|----------|---------------|
+| MPI-16, no reorder | `mpiexec -np 16` | 12.31 | — |
+| MPI-16 + RCM | `mpiexec -np 16 -ro rcm` | 11.63 | −5.5% |
+
+Reordering gives a modest but real benefit for MPI too. The improvement is much smaller
+than for OpenMP (5.5% vs 23%) because `distribute()` already achieves the main spatial
+coherence benefit per rank — reordering only refines the within-rank ordering of ~16k
+triangles. Worth using for long production runs.
+
 Key findings:
 - RCM beats Hilbert/Morton because it minimises graph bandwidth (neighbour-index distance),
   directly targeting the flux kernel's `domain.neighbours[i]` access pattern.
 - Metis-RCM beats global RCM because Metis produces compact sub-graphs; local RCM wavefronts
   stay tight rather than snaking across the whole mesh.
-- Sweet spot is `n_procs = OMP_NUM_THREADS`: more partitions introduce seams within each
-  thread's working set and hurt more than they help.
-- Remaining gap to MPI-16 (~51%) is structural: NUMA locality + no false-sharing across
-  process boundaries — not recoverable from mesh reordering alone.
+- Sweet spot for OpenMP is `n_procs = OMP_NUM_THREADS`: more partitions introduce seams
+  within each thread's working set and hurt more than they help.
+- For MPI, reordering applies after distribute() to each rank's local ~16k-triangle mesh;
+  benefit is smaller but positive.
 
 ---
 
