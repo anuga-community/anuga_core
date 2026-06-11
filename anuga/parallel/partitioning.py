@@ -425,3 +425,37 @@ def hilbert_order_from_points(points, p=16):
     h = hilbert_index_2d(x, y, p)
     order = np.argsort(h, kind="mergesort")
     return order
+
+
+def reorder_domain(domain, method='hilbert', verbose=False):
+    """Reorder domain triangles using a space-filling curve for cache locality.
+
+    Computes a single-partition ordering (Hilbert, Morton, or Metis) and
+    applies it to the domain in-place.  Call after distribute() and before
+    create_riverwalls() / operator setup so those indices are built on top of
+    the reordered mesh.
+
+    Parameters
+    ----------
+    domain : Domain
+    method : str
+        'hilbert' (default), 'morton', or 'metis'
+    verbose : bool
+
+    Returns
+    -------
+    domain : the same Domain object, reordered in-place
+    """
+    if method == 'hilbert':
+        epart_order, _ = hilbert_partition(domain, 1)
+    elif method == 'morton':
+        epart_order, _ = morton_partition(domain, 1)
+    else:
+        epart_order, _ = metis_partition(domain, 1)
+
+    if verbose:
+        print(f'reorder_domain: reordering {len(epart_order)} triangles '
+              f'using {method} ordering')
+
+    domain.reorder(epart_order)
+    return domain

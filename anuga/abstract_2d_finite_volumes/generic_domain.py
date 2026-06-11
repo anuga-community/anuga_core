@@ -520,6 +520,64 @@ class Generic_Domain:
     def build_tagged_elements_dictionary(self, *args, **kwargs):
         self.mesh.build_tagged_elements_dictionary(*args, **kwargs)
 
+    def reorder(self, new_order):
+        """Reorder triangles by permutation new_order.
+
+        new_order[i] is the old triangle index that moves to position i.
+        Reorders mesh geometry and centroid_values for all quantities.
+
+        Intended use: sequential domain (numprocs=1), called after
+        distribute() and before create_riverwalls() / operator setup so
+        those indices are built on top of the reordered mesh.
+
+        WARNING: any triangle indices held outside the domain (e.g. gauge
+        point lookups, user numpy arrays keyed by triangle id) are
+        invalidated by this call.  Always call reorder_domain() before
+        computing or storing any triangle indices.
+
+        For parallel domains (numprocs > 1) distribute() already reorders
+        the mesh; this method updates tri_l2g and the ghost communication
+        dicts if they are present so that a post-distribute reorder is
+        technically possible, but is not normally needed.
+        """
+        new_order = num.asarray(new_order, dtype=int)
+        N = self.number_of_triangles
+
+        # Build inverse permutation for remapping stored local indices.
+        inv_order = num.empty(N, dtype=int)
+        inv_order[new_order] = num.arange(N, dtype=int)
+
+        # --- mesh geometry ---
+        self.mesh.reorder(new_order, in_place=True)
+
+        # --- domain flags ---
+        self.tri_full_flag = self.tri_full_flag[new_order]
+        self.number_of_full_triangles = int(num.sum(self.tri_full_flag))
+
+        # --- quantities (centroid_values only; vertex/edge values are
+        #     recomputed from centroids during extrapolation) ---
+        for q in self.quantities.values():
+            q.centroid_values[:] = q.centroid_values[new_order]
+
+        # --- (3N,) per-edge arrays: reshape to (N,3), permute rows ---
+        for attr in ('edge_flux_type', 'edge_river_wall_counter'):
+            arr = getattr(self, attr, None)
+            if arr is not None:
+                setattr(self, attr, arr.reshape(N, 3)[new_order].ravel())
+
+        # --- parallel bookkeeping (tri_l2g, communication dicts) ---
+        # tri_l2g maps local index -> global index; reorder rows.
+        tri_l2g = getattr(self, 'tri_l2g', None)
+        if tri_l2g is not None:
+            self.tri_l2g = tri_l2g[new_order]
+
+        # full_send_dict / ghost_recv_dict: {proc: [local_tri_indices, buf]}
+        # The stored local indices must be remapped via inv_order.
+        for d in (getattr(self, 'full_send_dict', {}),
+                  getattr(self, 'ghost_recv_dict', {})):
+            for proc in d:
+                d[proc][0] = inv_order[d[proc][0]]
+
     def statistics(self, *args, **kwargs):
         return self.mesh.statistics(*args, **kwargs)
 
