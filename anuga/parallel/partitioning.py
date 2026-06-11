@@ -130,25 +130,26 @@ def metis_partition(domain, n_procs):
 #==============================================================================================================
 
 def rcm_partition(domain, n_procs=1):
-    """Reverse Cuthill-McKee reordering for reduced graph bandwidth.
+    """Reverse Cuthill-McKee ordering split into n_procs equal contiguous blocks.
 
-    Builds the triangle-adjacency graph and applies scipy's RCM algorithm,
-    which minimises max(|i-j|) over all neighbouring triangle pairs.  This
-    directly targets the access pattern of the flux kernel, which reads
-    domain.neighbours[i] for every triangle i.
+    Applies scipy's RCM algorithm to the full triangle adjacency graph, then
+    divides the resulting ordering into n_procs equal-sized blocks (the same
+    split strategy as morton_partition and hilbert_partition).  For n_procs=1
+    this is a pure reordering; for n_procs>1 it can be used as the partition
+    scheme in distribute().
 
     Parameters
     ----------
     domain : Domain
     n_procs : int
-        Ignored (kept for interface compatibility with other partition functions).
+        Number of equal-sized blocks to divide the RCM ordering into.
 
     Returns
     -------
     order : ndarray of int, shape (N,)
-        Permutation that reorders triangles to minimise graph bandwidth.
-    triangles_per_proc : list
-        [N] — single-partition interface shim.
+        Permutation that reorders triangles by RCM then splits into blocks.
+    triangles_per_proc : ndarray of int, shape (n_procs,)
+        Number of triangles in each block.
     """
     from scipy.sparse import csr_matrix
     from scipy.sparse.csgraph import reverse_cuthill_mckee
@@ -162,7 +163,11 @@ def rcm_partition(domain, n_procs=1):
     A = csr_matrix((np.ones(len(rows), dtype=np.int8), (rows, cols)), shape=(N, N))
 
     order = reverse_cuthill_mckee(A, symmetric_mode=True)
-    return order, [N]
+
+    triangles_per_proc = np.full(n_procs, N // n_procs, dtype=int)
+    triangles_per_proc[:N % n_procs] += 1
+
+    return order, triangles_per_proc
 
 
 def _rcm_within_partition(part_tris, all_neighbours, N):

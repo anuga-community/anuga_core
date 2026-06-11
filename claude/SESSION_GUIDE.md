@@ -85,7 +85,8 @@ Case: `run_small_towradgi.py -ft 200 -ys 50`, ~256k triangles, DE1 algorithm.
 |------|--------|----------|---------|
 | Serial | 1 rank / 1 thread | 96.27 | 1× |
 | OpenMP (no reorder) | `OMP_NUM_THREADS=16`, mode=1 | 22.73 | 4.2× |
-| MPI | `mpiexec -np 16`, mode=1 | 12.31 | 7.8× |
+| MPI | `mpiexec -np 16`, mode=1 | 12.13 | 7.9× |
+| MPI + RCM reorder | `mpiexec -np 16 -ro rcm` | 11.08 | **8.7×** |
 | GPU | mode=2 (RTX 5070, cc120) | 6.25 | **15.4×** |
 | GPU + Hilbert reorder | mode=2, `-ro hilbert` | 5.62 | **17.1×** |
 | GPU + metis_rcm reorder | mode=2, `-ro metis_rcm` | 5.79 | 16.6× |
@@ -111,16 +112,23 @@ graph-bandwidth minimisation; GPU warp-parallel execution benefits from Hilbert'
 spatial clustering for coalesced memory access. metis_rcm (5.79s) is slightly worse than
 hilbert (5.62s) for GPU but better than no reorder (6.25s).
 
-### MPI + reorder
+### MPI partition scheme comparison + reorder
 
-| Mode | Config | Time (s) | vs no-reorder |
-|------|--------|----------|---------------|
-| MPI-16, no reorder | `mpiexec -np 16` | 12.31 | — |
-| MPI-16 + RCM | `mpiexec -np 16 -ro rcm` | 11.63 | −5.5% |
+| Config | Time (s) | vs default |
+|--------|----------|------------|
+| MPI-16, default (`-ps metis`) | 12.13 | — |
+| MPI-16, `-ps morton` | 13.29 | +10% |
+| MPI-16, `-ps hilbert` | 13.68 | +13% |
+| MPI-16, `-ps rcm` | 15.59 | +29% |
+| **MPI-16, `-ps metis -ro rcm`** | **11.08** | **−9%** |
 
-Reordering gives a modest but real benefit for MPI too (5.5%). `distribute()` already
-achieves the main spatial coherence benefit per rank; reordering refines the within-rank
-ordering of ~16k triangles. Worth using for long production runs.
+**Metis must remain as the partition scheme** — it explicitly minimises inter-rank edge
+cuts, which determines communication cost. RCM/Hilbert/Morton as partition schemes hurt
+because they optimise spatial/topological locality but ignore communication.
+
+The winning combination is orthogonal: Metis to partition (minimise communication) +
+RCM to reorder within each rank (minimise cache misses). Benefits stack: 11.08 s vs
+12.13 s baseline.
 
 ### OMP binding flags and numactl — do not use
 

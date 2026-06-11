@@ -58,6 +58,11 @@ def create_standard_parser():
                        choices=[1, 2],
                        help='multiprocessor mode: 1=CPU OpenMP, 2=GPU OpenMP offload')
 
+    parser.add_argument('-ps', '--partition_scheme', type=str, default='metis',
+                       choices=['metis', 'hilbert', 'morton', 'rcm'],
+                       help='partition scheme used by distribute() '
+                            '(metis, hilbert, morton, rcm)')
+
     parser.add_argument('-ro', '--reorder', type=str, default='none',
                        choices=['none', 'hilbert', 'morton', 'rcm', 'metis', 'metis_hilbert', 'metis_rcm'],
                        help='reorder triangles for cache locality before evolving '

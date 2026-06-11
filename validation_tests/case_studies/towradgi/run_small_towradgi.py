@@ -81,7 +81,8 @@ maximum_triangle_area = 1000 # This doesn't make much difference for this mesh
 
 # Choices are 1 (openmp/cpu) 2 (openmp/gpu offloading)
 multiprocessor_mode = args.multiprocessor_mode
-reorder_method = args.reorder  # 'none', 'hilbert', 'morton', 'metis'
+reorder_method = args.reorder            # 'none', 'hilbert', 'morton', 'metis', 'rcm', ...
+partition_scheme = args.partition_scheme  # 'metis', 'hilbert', 'morton', 'rcm'
 
 checkpoint_time = max(600/scale, 60)
 checkpoint_dir = 'CHECKPOINTS'
@@ -454,7 +455,8 @@ Creating domain from scratch.
     if myid == 0 and verbose:
         print('DISTRIBUTING DOMAIN')
     
-    domain = distribute(domain, verbose=verbose)
+    domain = distribute(domain, verbose=verbose,
+                        parameters={'partition_scheme': partition_scheme})
     
     barrier()
 

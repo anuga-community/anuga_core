@@ -215,13 +215,15 @@ def partition_mesh(domain, n_procs,
     else:
         distribute_quantities = {}
 
-    from anuga.parallel.partitioning import metis_partition, morton_partition, hilbert_partition
+    from anuga.parallel.partitioning import metis_partition, morton_partition, hilbert_partition, rcm_partition
 
     if verbose: print("partition_mesh: Computing partitioning using {}...".format(partition_scheme))
     if partition_scheme == 'morton':
         epart_order, triangles_per_proc = morton_partition(domain, n_procs)
     elif partition_scheme == 'hilbert':
         epart_order, triangles_per_proc = hilbert_partition(domain, n_procs)
+    elif partition_scheme == 'rcm':
+        epart_order, triangles_per_proc = rcm_partition(domain, n_procs)
     else:
         epart_order, triangles_per_proc = metis_partition(domain, n_procs)
 
