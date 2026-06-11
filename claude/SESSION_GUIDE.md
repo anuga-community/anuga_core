@@ -79,23 +79,57 @@ autopep8 anuga/path/to/module.py
 
 Case: `run_small_towradgi.py -ft 200 -ys 50`, ~256k triangles, DE1 algorithm.
 
+### Baseline and reference
+
 | Mode | Config | Time (s) | Speedup |
 |------|--------|----------|---------|
 | Serial | 1 rank / 1 thread | 96.27 | 1× |
-| OpenMP | `OMP_NUM_THREADS=16`, mode=1 | 22.73 | 4.2× |
-| OpenMP + Hilbert reorder | `OMP_NUM_THREADS=16`, `-ro hilbert` | 18.53 | **5.2×** |
-| OpenMP + Morton reorder | `OMP_NUM_THREADS=16`, `-ro morton` | 18.36 | **5.2×** |
+| OpenMP (no reorder) | `OMP_NUM_THREADS=16`, mode=1 | 22.73 | 4.2× |
 | MPI | `mpiexec -np 16`, mode=1 | 11.56 | 8.3× |
 | GPU | mode=2 (RTX 5070, cc120) | 6.25 | **15.4×** |
 
-Hilbert and Morton reorders give ~18% improvement over plain OpenMP (better cache locality).
-Both orderings give essentially the same benefit on this mesh.
-MPI still out-scales OpenMP+reorder (distribute() already reorders per-rank).
-GPU advantage expected to grow with larger meshes.
+### Reordering comparison (all `OMP_NUM_THREADS=16`, mode=1)
+
+| Reorder method | CLI | Time (s) | vs no-reorder |
+|----------------|-----|----------|---------------|
+| None | — | 22.73 | — |
+| Metis-16 | `-ro metis` | 19.74 | −13% |
+| Metis-Hilbert-16 | `-ro metis_hilbert` | 18.73 | −18% |
+| Hilbert | `-ro hilbert` | 18.53 | −18% |
+| Morton | `-ro morton` | 18.36 | −19% |
+| RCM (global) | `-ro rcm` | 18.24 | −20% |
+| **Metis-RCM-16** | **`-ro metis_rcm`** | **17.43** | **−23%** |
+| Metis-RCM-24 | `-ro metis_rcm -rn 24` | 18.28 | −20% |
+| Metis-RCM-32 | `-ro metis_rcm -rn 32` | 18.50 | −19% |
+
+**Best OpenMP reorder: `metis_rcm` at default `n_procs=OMP_NUM_THREADS` (17.43 s, 5.5×).**
+
+Key findings:
+- RCM beats Hilbert/Morton because it minimises graph bandwidth (neighbour-index distance),
+  directly targeting the flux kernel's `domain.neighbours[i]` access pattern.
+- Metis-RCM beats global RCM because Metis produces compact sub-graphs; local RCM wavefronts
+  stay tight rather than snaking across the whole mesh.
+- Sweet spot is `n_procs = OMP_NUM_THREADS`: more partitions introduce seams within each
+  thread's working set and hurt more than they help.
+- Remaining gap to MPI-16 (~51%) is structural: NUMA locality + no false-sharing across
+  process boundaries — not recoverable from mesh reordering alone.
 
 ---
 
-## Recent session summaries (sessions 21–36)
+## Recent session summaries (sessions 21–38)
+
+**Session 38 (2026-06-11):** Mesh reordering suite for OpenMP cache locality.
+Added `rcm_partition()` (scipy `reverse_cuthill_mckee` on triangle adjacency graph),
+`_rcm_within_partition()` helper, and `metis_rcm`/`metis_hilbert` hybrid methods to
+`anuga/parallel/partitioning.py`. `reorder_domain()` gained `n_procs` parameter
+(defaults to `OMP_NUM_THREADS`); for metis variants this controls partition count.
+Added `-rn`/`--reorder_nprocs` CLI arg to standard parser so partition count can be
+set independently of `OMP_NUM_THREADS`. Added `metis_rcm`, `metis_hilbert`, `rcm` to
+`-ro` CLI choices. `hilbert_order_from_points()` refactored to use new
+`hilbert_codes_from_points()` helper (raw codes without argsort, needed for
+per-partition Hilbert sorting). Best result: **`-ro metis_rcm` at 17.43 s (5.5×)**
+vs 22.73 s baseline — 23% improvement. Sweet spot is `n_procs=OMP_NUM_THREADS=16`;
+going to 24 or 32 partitions regresses. Full reordering benchmark in table above.
 
 **Session 37 (2026-06-11):** CLI improvements to `run_small_towradgi.py` and standard
 arg parser. Added `--multiprocessor_mode`/`-mpm` (choices 1/2, default 1) to standard

@@ -59,9 +59,13 @@ def create_standard_parser():
                        help='multiprocessor mode: 1=CPU OpenMP, 2=GPU OpenMP offload')
 
     parser.add_argument('-ro', '--reorder', type=str, default='none',
-                       choices=['none', 'hilbert', 'morton', 'metis'],
+                       choices=['none', 'hilbert', 'morton', 'rcm', 'metis', 'metis_hilbert', 'metis_rcm'],
                        help='reorder triangles for cache locality before evolving '
-                            '(none, hilbert, morton, metis)')
+                            '(none, hilbert, morton, rcm, metis, metis_hilbert, metis_rcm)')
+
+    parser.add_argument('-rn', '--reorder_nprocs', type=int, default=argparse.SUPPRESS,
+                       help='number of Metis partitions for metis/metis_hilbert/metis_rcm reordering '
+                            '(defaults to OMP_NUM_THREADS if not set)')
 
     return parser
 

@@ -475,9 +475,10 @@ Creating domain from scratch.
                                       'ymomentum': 2}
 
     if reorder_method != 'none':
+        reorder_nprocs = getattr(args, 'reorder_nprocs', None)
         if myid == 0:
             print(f'REORDERING DOMAIN using {reorder_method}')
-        anuga.reorder_domain(domain, method=reorder_method, verbose=(myid == 0))
+        anuga.reorder_domain(domain, method=reorder_method, n_procs=reorder_nprocs, verbose=(myid == 0))
 
     if myid == 0:
         print('CREATING RIVERWALLS')

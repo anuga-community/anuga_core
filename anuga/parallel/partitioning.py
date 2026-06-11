@@ -123,6 +123,97 @@ def metis_partition(domain, n_procs):
 
 
 #==============================================================================================================
+# Reverse Cuthill-McKee (RCM) reordering.
+# Minimises the bandwidth of the mesh adjacency graph so that neighbours in
+# the connectivity graph land close together in memory — directly targeting
+# the access pattern of the flux kernel.
+#==============================================================================================================
+
+def rcm_partition(domain, n_procs=1):
+    """Reverse Cuthill-McKee reordering for reduced graph bandwidth.
+
+    Builds the triangle-adjacency graph and applies scipy's RCM algorithm,
+    which minimises max(|i-j|) over all neighbouring triangle pairs.  This
+    directly targets the access pattern of the flux kernel, which reads
+    domain.neighbours[i] for every triangle i.
+
+    Parameters
+    ----------
+    domain : Domain
+    n_procs : int
+        Ignored (kept for interface compatibility with other partition functions).
+
+    Returns
+    -------
+    order : ndarray of int, shape (N,)
+        Permutation that reorders triangles to minimise graph bandwidth.
+    triangles_per_proc : list
+        [N] — single-partition interface shim.
+    """
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.csgraph import reverse_cuthill_mckee
+
+    N = domain.number_of_triangles
+    nbrs = domain.neighbours          # (N, 3), negative = boundary
+
+    mask = (nbrs >= 0).ravel()
+    rows = np.repeat(np.arange(N, dtype=np.int32), 3)[mask]
+    cols = nbrs.ravel().astype(np.int32)[mask]
+    A = csr_matrix((np.ones(len(rows), dtype=np.int8), (rows, cols)), shape=(N, N))
+
+    order = reverse_cuthill_mckee(A, symmetric_mode=True)
+    return order, [N]
+
+
+def _rcm_within_partition(part_tris, all_neighbours, N):
+    """Apply RCM to the sub-graph induced by part_tris.
+
+    Parameters
+    ----------
+    part_tris : ndarray of int
+        Global triangle indices in this partition.
+    all_neighbours : ndarray, shape (N, 3)
+        Full domain neighbour array (negative = boundary).
+    N : int
+        Total number of triangles (for sizing the lookup array).
+
+    Returns
+    -------
+    ndarray of int
+        part_tris reordered by RCM within the sub-graph.
+    """
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.csgraph import reverse_cuthill_mckee
+
+    n = len(part_tris)
+    if n <= 1:
+        return part_tris
+
+    # Map global index → local 0..n-1 (-1 means not in partition)
+    local_of = np.full(N, -1, dtype=np.int32)
+    local_of[part_tris] = np.arange(n, dtype=np.int32)
+
+    # Extract neighbour rows for this partition; keep only internal edges
+    nbrs = all_neighbours[part_tris]          # (n, 3)
+    local_i = np.repeat(np.arange(n, dtype=np.int32), 3)
+    global_j = nbrs.ravel()
+
+    valid = global_j >= 0
+    gj = global_j[valid]
+    li = local_i[valid]
+    lj = local_of[gj]
+    internal = lj >= 0
+
+    r, c = li[internal], lj[internal]
+    if len(r) == 0:
+        return part_tris
+
+    A = csr_matrix((np.ones(len(r), dtype=np.int8), (r, c)), shape=(n, n))
+    local_order = reverse_cuthill_mckee(A, symmetric_mode=True)
+    return part_tris[local_order]
+
+
+#==============================================================================================================
 # Code for computing Morton (Z-order) codes for 2D points,
 # used for spatial locality-preserving ordering of mesh elements.
 # This is based on the "Bit Twiddling Hacks" by Sean Eron Anderson:
@@ -390,6 +481,32 @@ def hilbert_index_2d(x, y, p):
     return h.ravel()
 
 
+def hilbert_codes_from_points(points, p=16):
+    """Raw Hilbert codes for 2D float points (no argsort).
+
+    Parameters
+    ----------
+    points : array_like, shape (N, 2)
+    p : int
+        Bits per axis; grid is 2**p by 2**p.
+
+    Returns
+    -------
+    h : ndarray of uint64, shape (N,)
+    """
+    pts = np.asarray(points, dtype=np.float64)
+    if pts.ndim != 2 or pts.shape[1] != 2:
+        raise ValueError("points must have shape (N, 2)")
+    mins = pts.min(axis=0)
+    maxs = pts.max(axis=0)
+    span = maxs - mins
+    span[span == 0.0] = 1.0
+    norm = (pts - mins) / span
+    max_int = (1 << p) - 1
+    ij = np.clip((norm * max_int).astype(np.uint64), 0, max_int)
+    return hilbert_index_2d(ij[:, 0], ij[:, 1], p)
+
+
 def hilbert_order_from_points(points, p=16):
     """Hilbert order for 2D float points via normalization to 2**p grid.
 
@@ -405,32 +522,14 @@ def hilbert_order_from_points(points, p=16):
     order : ndarray of int, shape (N,)
         Indices that sort points along the 2D Hilbert curve.
     """
-    pts = np.asarray(points, dtype=np.float64)
-    if pts.ndim != 2 or pts.shape[1] != 2:
-        raise ValueError("points must have shape (N, 2)")
-
-    # Normalize to [0, 1]
-    mins = pts.min(axis=0)
-    maxs = pts.max(axis=0)
-    span = maxs - mins
-    span[span == 0.0] = 1.0
-    norm = (pts - mins) / span
-
-    # Map to integer grid [0, 2**p - 1]
-    max_int = (1 << p) - 1
-    ij = np.clip((norm * max_int).astype(np.uint64), 0, max_int)
-    x = ij[:, 0]
-    y = ij[:, 1]
-
-    h = hilbert_index_2d(x, y, p)
-    order = np.argsort(h, kind="mergesort")
-    return order
+    h = hilbert_codes_from_points(points, p)
+    return np.argsort(h, kind="mergesort")
 
 
-def reorder_domain(domain, method='hilbert', verbose=False):
-    """Reorder domain triangles using a space-filling curve for cache locality.
+def reorder_domain(domain, method='hilbert', n_procs=None, verbose=False):
+    """Reorder domain triangles for cache locality.
 
-    Computes a single-partition ordering (Hilbert, Morton, or Metis) and
+    Computes an ordering using a space-filling curve or Metis partitioning and
     applies it to the domain in-place.  Call after distribute() and before
     create_riverwalls() / operator setup so those indices are built on top of
     the reordered mesh.
@@ -440,22 +539,57 @@ def reorder_domain(domain, method='hilbert', verbose=False):
     domain : Domain
     method : str
         'hilbert' (default), 'morton', or 'metis'
+    n_procs : int or None
+        Number of partitions for Metis ordering.  If None, reads
+        ``OMP_NUM_THREADS`` from the environment (defaulting to 1 when unset).
+        For Hilbert/Morton this parameter is ignored.
     verbose : bool
 
     Returns
     -------
     domain : the same Domain object, reordered in-place
     """
+    import os
+
+    if n_procs is None:
+        n_procs = int(os.environ.get('OMP_NUM_THREADS', 1))
+
     if method == 'hilbert':
         epart_order, _ = hilbert_partition(domain, 1)
     elif method == 'morton':
         epart_order, _ = morton_partition(domain, 1)
-    else:
-        epart_order, _ = metis_partition(domain, 1)
+    elif method == 'rcm':
+        epart_order, _ = rcm_partition(domain)
+    elif method == 'metis':
+        epart_order, _ = metis_partition(domain, max(1, n_procs))
+    elif method == 'metis_hilbert':
+        metis_order, triangles_per_proc = metis_partition(domain, max(1, n_procs))
+        h = hilbert_codes_from_points(domain.centroid_coordinates)
+        chunks = []
+        offset = 0
+        for count in triangles_per_proc:
+            part_tris = metis_order[offset:offset + count]
+            chunks.append(part_tris[np.argsort(h[part_tris], kind='mergesort')])
+            offset += count
+        epart_order = np.concatenate(chunks)
+    else:  # metis_rcm
+        metis_order, triangles_per_proc = metis_partition(domain, max(1, n_procs))
+        N = domain.number_of_triangles
+        chunks = []
+        offset = 0
+        for count in triangles_per_proc:
+            part_tris = metis_order[offset:offset + count]
+            chunks.append(_rcm_within_partition(part_tris, domain.neighbours, N))
+            offset += count
+        epart_order = np.concatenate(chunks)
 
     if verbose:
-        print(f'reorder_domain: reordering {len(epart_order)} triangles '
-              f'using {method} ordering')
+        if method in ('metis', 'metis_hilbert', 'metis_rcm'):
+            print(f'reorder_domain: reordering {len(epart_order)} triangles '
+                  f'using {method} ordering with {n_procs} partitions')
+        else:
+            print(f'reorder_domain: reordering {len(epart_order)} triangles '
+                  f'using {method} ordering')
 
     domain.reorder(epart_order)
     return domain
