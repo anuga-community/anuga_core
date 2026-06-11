@@ -465,15 +465,16 @@ class Rate_operator(Operator):
 
 
         try:
-            self.local_max = (local_rates[fid].max()/timestep) if timestep != 0.0 else 0.0
-            self.local_min = (local_rates[fid].min()/timestep) if timestep != 0.0 else 0.0
+            arr = local_rates[fid]
+            if isinstance(arr, num.ndarray) and arr.size == 0:
+                self.local_max = 0.0
+                self.local_min = 0.0
+            else:
+                self.local_max = arr.max()/timestep if timestep != 0.0 else 0.0
+                self.local_min = arr.min()/timestep if timestep != 0.0 else 0.0
         except (TypeError, IndexError):
             self.local_max = local_rates/timestep if timestep != 0.0 else 0.0
             self.local_min = local_rates/timestep if timestep != 0.0 else 0.0
-
-        if isinstance(self.local_max, num.ndarray) and self.local_max.size == 0:
-            self.local_max = 0.0
-            self.local_min = 0.0
 
         # print(self.local_min, self.local_max)
 
