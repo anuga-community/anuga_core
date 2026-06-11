@@ -284,6 +284,7 @@ cdef extern from "gpu_domain.h" nogil:
     void print_gpu_domain_info(gpu_domain *GD)
     int detect_gpu_aware_mpi()
     int gpu_is_available()
+    int gpu_get_num_devices()
 
     # Rate operators (rain, extraction, etc.)
     int gpu_rate_operator_init(gpu_domain *GD, int num_indices, int *indices,
@@ -889,6 +890,22 @@ def gpu_available():
             domain.set_multiprocessor_mode(1)  # CPU OpenMP
     """
     return bool(gpu_is_available())
+
+
+def get_num_gpu_devices():
+    """Return the number of OpenMP offload devices (GPUs) available.
+
+    Returns 0 in CPU_ONLY_MODE or when no GPU offload target is present.
+    Use this alongside ``gpu_available()`` to decide whether there are
+    enough GPUs for a given number of MPI ranks::
+
+        from anuga.shallow_water.sw_domain_gpu_ext import gpu_available, get_num_gpu_devices
+        n = get_num_gpu_devices()
+        # safe to run 4-rank GPU test only if 4 GPUs present
+        if gpu_available() and n < 4:
+            pytest.skip(f'need 4 GPUs, have {n}')
+    """
+    return gpu_get_num_devices()
 
 
 def gpu_has_mpi():

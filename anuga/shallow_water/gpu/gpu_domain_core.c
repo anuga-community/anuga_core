@@ -169,6 +169,14 @@ int gpu_is_available(void) {
 #endif
 }
 
+int gpu_get_num_devices(void) {
+#ifdef CPU_ONLY_MODE
+    return 0;
+#else
+    return omp_get_num_devices();
+#endif
+}
+
 void print_gpu_domain_info(struct gpu_domain *GD) {
     if (!GD->verbose) return;
     printf("\n--- GPU Domain (rank %d/%d) ---\n", GD->rank, GD->nprocs);

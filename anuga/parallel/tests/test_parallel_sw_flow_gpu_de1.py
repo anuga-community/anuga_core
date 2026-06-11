@@ -38,11 +38,30 @@ from anuga import myid, numprocs, barrier, finalize
 
 
 def gpu_available():
+    """True if sw_domain_gpu_ext can be imported (CPU or GPU mode)."""
     try:
         from anuga.shallow_water.sw_domain_gpu_ext import init_gpu_domain  # noqa: F401
         return True
     except ImportError:
         return False
+
+
+def real_gpu_available():
+    """True only when a real GPU offload target is active (not CPU_ONLY_MODE)."""
+    try:
+        from anuga.shallow_water.sw_domain_gpu_ext import gpu_available as _ga
+        return _ga()
+    except ImportError:
+        return False
+
+
+def get_num_gpu_devices():
+    """Number of OpenMP offload devices; 0 in CPU_ONLY_MODE or no GPU."""
+    try:
+        from anuga.shallow_water.sw_domain_gpu_ext import get_num_gpu_devices as _gnd
+        return _gnd()
+    except ImportError:
+        return 0
 
 
 def gpu_has_mpi():
@@ -148,11 +167,17 @@ class Test_parallel_sw_gpu_de1(unittest.TestCase):
 
     def test_gpu_de1_2ranks(self):
         """2-rank DE1: C RK2 loop matches Python RK2 loop."""
+        if real_gpu_available() and get_num_gpu_devices() < 2:
+            self.skipTest("requires at least 2 GPUs (1 per MPI rank); "
+                          f"found {get_num_gpu_devices()}")
         cmd = anuga.mpicmd(os.path.abspath(__file__), numprocs=2)
         assert os.system(cmd) == 0
 
     def test_gpu_de1_4ranks(self):
         """4-rank DE1: C RK2 loop matches Python RK2 loop."""
+        if real_gpu_available() and get_num_gpu_devices() < 4:
+            self.skipTest("requires at least 4 GPUs (1 per MPI rank); "
+                          f"found {get_num_gpu_devices()}")
         cmd = anuga.mpicmd(os.path.abspath(__file__), numprocs=4)
         assert os.system(cmd) == 0
 

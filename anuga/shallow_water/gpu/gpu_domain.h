@@ -609,6 +609,7 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
 // Utility functions
 int detect_gpu_aware_mpi(void);
 int gpu_is_available(void);
+int gpu_get_num_devices(void);
 void print_gpu_domain_info(struct gpu_domain *GD);
 
 // FLOP counter functions (Gordon Bell performance profiling)
