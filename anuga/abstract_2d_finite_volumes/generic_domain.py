@@ -548,16 +548,35 @@ class Generic_Domain:
         inv_order[new_order] = num.arange(N, dtype=int)
 
         # --- mesh geometry ---
+        # mesh.reorder() calls build_boundary_neighbours() internally, which
+        # creates NEW boundary_cells/edges/enumeration/tag_boundary_cells objects
+        # on the mesh.  The domain caches these from __init__ — rebind after.
         self.mesh.reorder(new_order, in_place=True)
+        self.boundary_enumeration = self.mesh.boundary_enumeration
+        self.boundary_cells       = self.mesh.boundary_cells
+        self.boundary_edges       = self.mesh.boundary_edges
+        self.tag_boundary_cells   = self.mesh.tag_boundary_cells
 
         # --- domain flags ---
         self.tri_full_flag = self.tri_full_flag[new_order]
         self.number_of_full_triangles = int(num.sum(self.tri_full_flag))
 
-        # --- quantities (centroid_values only; vertex/edge values are
-        #     recomputed from centroids during extrapolation) ---
+        # --- quantities ---
+        # Reorder centroid_values and any cached per-triangle arrays.
+        # vertex_values and edge_values are recomputed each timestep by
+        # extrapolation, but they are also cached from setup (set_quantity).
+        # They must be reordered here so the first evolve step reads
+        # consistent values before the first extrapolation pass.
         for q in self.quantities.values():
             q.centroid_values[:] = q.centroid_values[new_order]
+            if q._vertex_values is not None:
+                q._vertex_values = q._vertex_values[new_order]
+            if q.edge_values is not None:
+                q.edge_values = q.edge_values[new_order]
+            if q._x_gradient is not None:
+                q._x_gradient = q._x_gradient[new_order]
+            if q._y_gradient is not None:
+                q._y_gradient = q._y_gradient[new_order]
 
         # --- (3N,) per-edge arrays: reshape to (N,3), permute rows ---
         for attr in ('edge_flux_type', 'edge_river_wall_counter'):

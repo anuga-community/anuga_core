@@ -12,6 +12,7 @@ python_sources = [
   'skip_parallel_boyd_pipe_operator.py',
   'skip_parallel_distribute_mesh.py',
   'test_partitioning.py',
+  'test_reorder_domain.py',
   'test_distribute_mesh.py',
   'test_distribute_basic_mesh.py',
   'test_failure.py',
