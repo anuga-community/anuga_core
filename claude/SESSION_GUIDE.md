@@ -85,8 +85,9 @@ Case: `run_small_towradgi.py -ft 200 -ys 50`, ~256k triangles, DE1 algorithm.
 |------|--------|----------|---------|
 | Serial | 1 rank / 1 thread | 96.27 | 1× |
 | OpenMP (no reorder) | `OMP_NUM_THREADS=16`, mode=1 | 22.73 | 4.2× |
-| MPI | `mpiexec -np 16`, mode=1 | 11.56 | 8.3× |
+| MPI | `mpiexec -np 16`, mode=1 | 12.31 | 7.8× |
 | GPU | mode=2 (RTX 5070, cc120) | 6.25 | **15.4×** |
+| GPU + Hilbert reorder | mode=2, `-ro hilbert` | 5.62 | **17.1×** |
 
 ### Reordering comparison (all `OMP_NUM_THREADS=16`, mode=1)
 
@@ -111,10 +112,30 @@ Case: `run_small_towradgi.py -ft 200 -ys 50`, ~256k triangles, DE1 algorithm.
 | MPI-16, no reorder | `mpiexec -np 16` | 12.31 | — |
 | MPI-16 + RCM | `mpiexec -np 16 -ro rcm` | 11.63 | −5.5% |
 
-Reordering gives a modest but real benefit for MPI too. The improvement is much smaller
-than for OpenMP (5.5% vs 23%) because `distribute()` already achieves the main spatial
-coherence benefit per rank — reordering only refines the within-rank ordering of ~16k
-triangles. Worth using for long production runs.
+Reordering gives a modest but real benefit for MPI too (5.5%). `distribute()` already
+achieves the main spatial coherence benefit per rank; reordering refines the within-rank
+ordering of ~16k triangles. Worth using for long production runs.
+
+### OMP binding flags and numactl — do not use
+
+Thread pinning (`OMP_PROC_BIND`, `OMP_PLACES`) slows culvert/polygon setup, which uses
+scipy/numpy internally and benefits from free core migration. `numactl --interleave=all`
+caused only 2 active threads → 57 s (worse than serial); likely a GCC OpenMP
+affinity-detection quirk on single-NUMA systems.
+
+Hardware: **single NUMA node**, 32 CPUs, 30 GB — no NUMA effects to exploit.
+
+### Why MPI-16 still beats OpenMP-16+metis_rcm (~40% gap)
+
+With a single NUMA node the gap is NOT memory topology. Remaining causes:
+- **False sharing**: OpenMP thread chunk boundaries share 64-byte cache lines in the flux
+  arrays. MPI processes have separate address spaces so this cannot happen.
+- **Single-threaded operators**: culverts, rainfall, boundary conditions run serially.
+- **Reduction overhead**: global stage max, wet count, water volume require barriers.
+
+The false sharing fix requires padding flux array chunks to cache-line boundaries in the
+C kernel — beyond Python-side mesh reordering. **17.43 s with metis_rcm is the ceiling
+for Python-side OpenMP optimisation on this hardware.**
 
 Key findings:
 - RCM beats Hilbert/Morton because it minimises graph bandwidth (neighbour-index distance),
@@ -124,13 +145,13 @@ Key findings:
 - Sweet spot for OpenMP is `n_procs = OMP_NUM_THREADS`: more partitions introduce seams
   within each thread's working set and hurt more than they help.
 - For MPI, reordering applies after distribute() to each rank's local ~16k-triangle mesh;
-  benefit is smaller but positive.
+  benefit is smaller but positive (5.5%).
 
 ---
 
 ## Recent session summaries (sessions 21–38)
 
-**Session 38 (2026-06-11):** Mesh reordering suite for OpenMP cache locality.
+**Session 38 (2026-06-11):** Mesh reordering suite for OpenMP/MPI/GPU cache locality.
 Added `rcm_partition()` (scipy `reverse_cuthill_mckee` on triangle adjacency graph),
 `_rcm_within_partition()` helper, and `metis_rcm`/`metis_hilbert` hybrid methods to
 `anuga/parallel/partitioning.py`. `reorder_domain()` gained `n_procs` parameter
@@ -139,9 +160,13 @@ Added `-rn`/`--reorder_nprocs` CLI arg to standard parser so partition count can
 set independently of `OMP_NUM_THREADS`. Added `metis_rcm`, `metis_hilbert`, `rcm` to
 `-ro` CLI choices. `hilbert_order_from_points()` refactored to use new
 `hilbert_codes_from_points()` helper (raw codes without argsort, needed for
-per-partition Hilbert sorting). Best result: **`-ro metis_rcm` at 17.43 s (5.5×)**
-vs 22.73 s baseline — 23% improvement. Sweet spot is `n_procs=OMP_NUM_THREADS=16`;
-going to 24 or 32 partitions regresses. Full reordering benchmark in table above.
+per-partition Hilbert sorting). Best OpenMP result: **`-ro metis_rcm` at 17.43 s (5.5×)**
+vs 22.73 s baseline — 23% improvement. Sweet spot is `n_procs=OMP_NUM_THREADS=16`.
+MPI + RCM: 11.63 s vs 12.31 s baseline (5.5% improvement). GPU + Hilbert: 5.62 s vs
+6.25 s baseline (10% improvement, 17.1×). Hardware is single NUMA node so NUMA effects
+are absent; remaining OpenMP vs MPI gap is false sharing in flux arrays. OMP binding
+flags and numactl both harmful — constrain setup code and/or limit active threads.
+Full benchmark table in SESSION_GUIDE. Commits `b5ed2b6d`, `93670929`.
 
 **Session 37 (2026-06-11):** CLI improvements to `run_small_towradgi.py` and standard
 arg parser. Added `--multiprocessor_mode`/`-mpm` (choices 1/2, default 1) to standard
