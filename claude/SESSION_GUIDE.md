@@ -82,11 +82,13 @@ Case: `run_small_towradgi.py -ft 200 -ys 50`, ~256k triangles, DE1 algorithm.
 | Mode | Config | Time (s) | Speedup |
 |------|--------|----------|---------|
 | Serial | 1 rank / 1 thread | 96.27 | 1× |
-| OpenMP | `OMP_NUM_THREADS=16`, mode=1 | 22.9 | 4.2× |
+| OpenMP | `OMP_NUM_THREADS=16`, mode=1 | 22.73 | 4.2× |
+| OpenMP + Hilbert reorder | `OMP_NUM_THREADS=16`, `-ro hilbert` | 18.53 | **5.2×** |
 | MPI | `mpiexec -np 16`, mode=1 | 11.56 | 8.3× |
 | GPU | mode=2 (RTX 5070, cc120) | 6.25 | **15.4×** |
 
-MPI out-scales OpenMP at 16-way due to NUMA/cache effects on unstructured meshes.
+Hilbert reorder gives 18% improvement over plain OpenMP (better cache locality).
+MPI still out-scales OpenMP+reorder (distribute() already reorders per-rank).
 GPU advantage expected to grow with larger meshes.
 
 ---
