@@ -75,29 +75,53 @@ class Inlet_operator(anuga.Operator):
         self._gpu_initialized = False
 
     def _init_gpu(self):
-        """Initialize GPU inlet operator (lazy, called on first __call__ in GPU mode)."""
+        """Initialize GPU inlet operator (lazy, called on first __call__ in GPU mode).
+
+        On any failure — a missing/partial GPU interface, or the
+        ``MAX_INLET_OPERATORS`` slot limit being exceeded — leave
+        ``self._gpu_initialized`` False and return so ``__call__`` falls through
+        to the Python path rather than crashing. Mirrors the graceful-fallback
+        contract of ``Rate_operator._init_gpu``.
+        """
+        if self._gpu_initialized:
+            return
+
+        # If the GPU interface isn't ready, fall back to the Python path silently.
+        gpu_interface = getattr(self.domain, 'gpu_interface', None)
+        if gpu_interface is None or getattr(gpu_interface, 'gpu_dom', None) is None:
+            return
+
         try:
             from anuga.shallow_water import sw_domain_gpu_ext as gpu_ext
-            gpu_dom = self.domain.gpu_interface.gpu_dom
 
             tri_indices = numpy.ascontiguousarray(
                 self.inlet.triangle_indices, dtype=numpy.intc)
             areas = numpy.ascontiguousarray(
                 self.inlet.get_areas(), dtype=numpy.float64)
 
-            op_id = gpu_ext.init_inlet_operator(gpu_dom, tri_indices, areas)
-            if op_id < 0:
-                raise RuntimeError(
-                    f"Failed to register GPU inlet operator '{getattr(self, 'label', repr(self))}': "
-                    f"slot limit exceeded (MAX_INLET_OPERATORS=32). "
-                    f"Reduce the number of Inlet_operator instances or increase MAX_INLET_OPERATORS in gpu_domain.h."
-                )
-            self._gpu_op_id = op_id
-            self._gpu_initialized = True
-        except RuntimeError:
-            raise
+            op_id = gpu_ext.init_inlet_operator(gpu_interface.gpu_dom, tri_indices, areas)
         except Exception as e:
-            raise RuntimeError(f"GPU inlet operator init failed: {e}") from e
+            warnings.warn(
+                f"GPU inlet operator init failed for "
+                f"'{getattr(self, 'label', repr(self))}' ({e}); "
+                f"falling back to the Python path.",
+                stacklevel=2,
+            )
+            return
+
+        if op_id < 0:
+            warnings.warn(
+                f"Failed to register GPU inlet operator "
+                f"'{getattr(self, 'label', repr(self))}': slot limit exceeded "
+                f"(MAX_INLET_OPERATORS=32). Falling back to the Python path; "
+                f"reduce the number of Inlet_operator instances or increase "
+                f"MAX_INLET_OPERATORS in gpu_domain.h to use the GPU kernel.",
+                stacklevel=2,
+            )
+            return
+
+        self._gpu_op_id = op_id
+        self._gpu_initialized = True
 
     def _call_gpu(self):
         """GPU path for __call__ - transfers only inlet data (~6KB)."""

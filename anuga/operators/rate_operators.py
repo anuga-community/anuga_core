@@ -11,6 +11,7 @@ __date__ ="$09/03/2012 4:46:39 PM$"
 
 from anuga.config import indent
 from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
+import warnings
 import numpy as num
 import anuga.utilities.log as log
 from anuga.utilities.function_utils import evaluate_temporal_function
@@ -229,19 +230,39 @@ class Rate_operator(Operator):
         else:
             full_indices = None
 
-        from anuga.shallow_water.sw_domain_gpu_ext import init_rate_operator
-        self._gpu_op_id = init_rate_operator(
-            gpu_interface.gpu_dom,
-            indices,
-            areas.astype(num.float64),
-            full_indices
-        )
-        if self._gpu_op_id < 0:
-            raise RuntimeError(
-                f"Failed to register GPU rate operator '{getattr(self, 'label', repr(self))}': "
-                f"slot limit exceeded (MAX_RATE_OPERATORS=64). "
-                f"Reduce the number of Rate_operator instances or increase MAX_RATE_OPERATORS in gpu_domain.h."
+        # On any failure — kernel import/init error, or the MAX_RATE_OPERATORS
+        # slot limit being exceeded — leave _gpu_initialized False and return so
+        # __call__ falls through to the Python path rather than crashing.
+        try:
+            from anuga.shallow_water.sw_domain_gpu_ext import init_rate_operator
+            self._gpu_op_id = init_rate_operator(
+                gpu_interface.gpu_dom,
+                indices,
+                areas.astype(num.float64),
+                full_indices
             )
+        except Exception as e:
+            warnings.warn(
+                f"GPU rate operator init failed for "
+                f"'{getattr(self, 'label', repr(self))}' ({e}); "
+                f"falling back to the Python path.",
+                stacklevel=2,
+            )
+            self._gpu_op_id = None
+            return
+
+        if self._gpu_op_id < 0:
+            warnings.warn(
+                f"Failed to register GPU rate operator "
+                f"'{getattr(self, 'label', repr(self))}': slot limit exceeded "
+                f"(MAX_RATE_OPERATORS=64). Falling back to the Python path; "
+                f"reduce the number of Rate_operator instances or increase "
+                f"MAX_RATE_OPERATORS in gpu_domain.h to use the GPU kernel.",
+                stacklevel=2,
+            )
+            self._gpu_op_id = None
+            return
+
         self._gpu_initialized = True
 
     def __call__(self):

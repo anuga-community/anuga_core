@@ -392,8 +392,12 @@ class Test_GPU_Boundaries(unittest.TestCase):
 class Test_GPU_Initialization(unittest.TestCase):
     """Tests for GPU initialization and error handling."""
 
-    def test_boundary_before_gpu_mode(self):
-        """Test that boundaries must be set before GPU mode."""
+    def test_gpu_mode_before_boundaries_defers(self):
+        """Setting GPU mode before boundaries defers the interface build.
+
+        Selecting mode 2 before boundaries are set must NOT raise; the device
+        interface is deferred and built lazily at the first evolve() call.
+        """
         domain = rectangular_cross_domain(5, 5, len1=50., len2=50.)
         domain.set_flow_algorithm('DE0')
         domain.set_name('test_init')
@@ -403,12 +407,62 @@ class Test_GPU_Initialization(unittest.TestCase):
         domain.set_quantity('elevation', -1.0)
         domain.set_quantity('stage', 0.0)
 
-        # Do NOT set boundaries, then try to enable GPU mode
-        # This should raise RuntimeError
+        # Do NOT set boundaries, then enable GPU mode -- this is now allowed.
+        domain.set_multiprocessor_mode(2)
+
+        # Mode recorded, but interface deferred (not built yet).
+        self.assertEqual(domain.multiprocessor_mode, 2)
+        self.assertIsNone(domain.gpu_interface)
+
+    def test_evolve_without_boundaries_raises(self):
+        """Deferred build still raises if boundaries are never set before evolve."""
+        domain = rectangular_cross_domain(5, 5, len1=50., len2=50.)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('test_init_noBC')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+
+        domain.set_quantity('elevation', -1.0)
+        domain.set_quantity('stage', 0.0)
+
+        domain.set_multiprocessor_mode(2)
+
+        # No boundaries ever set -> the lazy build at evolve() must raise.
         with self.assertRaises(RuntimeError) as context:
-            domain.set_multiprocessor_mode(2)
+            for t in domain.evolve(yieldstep=0.1, finaltime=0.1):
+                pass
 
         self.assertIn("boundaries", str(context.exception).lower())
+
+    def test_deferred_gpu_mode_builds_at_evolve(self):
+        """Mode 2 set before boundaries builds lazily once boundaries exist.
+
+        This is the init-time pattern: choose the mode early, set boundaries
+        later, and have the interface materialise transparently at evolve().
+        """
+        domain = rectangular_cross_domain(5, 5, len1=50., len2=50.)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('test_init_deferred')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+
+        domain.set_quantity('elevation', -1.0)
+        domain.set_quantity('stage', 0.0)
+
+        # Mode selected BEFORE boundaries -- deferred.
+        domain.set_multiprocessor_mode(2)
+        self.assertIsNone(domain.gpu_interface)
+
+        # Boundaries set afterwards.
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+        # First evolve() builds the interface lazily and runs.
+        for t in domain.evolve(yieldstep=0.1, finaltime=0.1):
+            pass
+
+        self.assertIsNotNone(domain.gpu_interface)
+        self.assertTrue(domain.gpu_interface.initialized)
 
     def test_correct_initialization_order(self):
         """Test that correct initialization order works."""
