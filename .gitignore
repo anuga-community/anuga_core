@@ -240,3 +240,6 @@ benchmarks/results/
 claude/.coverage
 claude/coverage.xml
 claude/CDAC_EXECUTIVE_SUMMARY.md
+
+# Profiling artifacts
+*.prof

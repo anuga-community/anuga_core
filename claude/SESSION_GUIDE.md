@@ -107,6 +107,36 @@ Case: `run_small_towradgi.py -ft 200 -ys 50`, ~256k triangles, DE1 algorithm.
 
 **Best reorder by mode: OpenMP → `metis_rcm` (17.43 s, 5.5×); MPI → `rcm` (11.63 s); GPU → `hilbert` (5.62 s, 17.1×).**
 
+### CPU multicore via the unified gpu_ext C kernels (mode=2, gpu_offload=false)
+
+The operators (rainfall/culverts/inlet) run as **serial Python** in mode=1 — profiling showed
+they cost ~8.5 s of a 21 s run (~40%), and do NOT scale with OMP threads. This is the main
+reason MPI beats OpenMP: MPI splits operators across ranks.
+
+The `shallow_water/gpu/` C kernels (`gpu_rate_operator.c`, `gpu_culvert_operator.c`,
+`gpu_inlet_operator.c`) implement these operators with `OMP_PARALLEL_LOOP_*` macros
+(`gpu_omp_macros.h`) that compile to `#pragma omp parallel for` when built with
+`gpu_offload=false` (`-DCPU_ONLY_MODE`). They are dispatched only when `multiprocessor_mode=2`.
+So a `gpu_offload=false` build + `-mpm 2` runs the *entire* step — solver AND operators —
+as multicore CPU OpenMP.
+
+Build: `CC=gcc pip install --no-build-isolation -e . -Csetup-args=-Dgpu_offload=false`
+
+| Config | Time (s) | Notes |
+|--------|----------|-------|
+| mode=1 (Python ops) + metis_rcm | 18.64 | previous best OpenMP |
+| mode=2 (C ops) + no reorder | 17.03 | C operators alone |
+| **mode=2 (C ops) + metis_rcm** | **12.27** | **both — nearly matches MPI** |
+| MPI-16 + rcm (reference) | 11.08 | — |
+
+The two optimisations are **super-additive**: C operators alone save ~1.6 s, reorder alone
+~4 s, but together ~6.4 s — because in mode=2 the gpu_ext *solver* kernels are also strongly
+cache-sensitive (17.03→12.27 s with reorder) while the operators become parallel C.
+This closes the OpenMP→MPI gap to within ~11%.
+
+**Note:** `gpu_offload=false` overwrites the GPU build. Rebuild with
+`-Dgpu_offload=true -Dgpu_arch=cc120` (and `CC=nvc`) to restore GPU mode.
+
 Optimal reorder differs by execution model: CPU sequential traversal benefits from RCM
 graph-bandwidth minimisation; GPU warp-parallel execution benefits from Hilbert's tight
 spatial clustering for coalesced memory access. metis_rcm (5.79s) is slightly worse than
