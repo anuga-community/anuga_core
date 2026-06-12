@@ -2739,6 +2739,13 @@ class Domain(Generic_Domain):
         msg = 'Attribute self.beta_w must be in the interval [0, 2]'
         assert 0 <= self.beta_w <= 2.0, msg
 
+        # Lazily build the GPU/offload interface if mode 2 was selected but the
+        # interface was deferred (e.g. mode set at construction, before
+        # boundaries / distribute() / reorder()).  By now the mesh, quantities
+        # and boundaries are finalised, so it is safe to map arrays to device.
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is None:
+            self.set_gpu_interface()
+
         # Initial update of vertex and edge values before any STORAGE
         # and or visualisation.
         # This is done again in the initialisation of the Generic_Domain
@@ -4996,6 +5003,14 @@ class Domain(Generic_Domain):
         Set multiprocessor mode
          1. openmp - Python RK loop (use_c_rk_loop=False)
          2. gpu/mpi - C RK loop (use_c_rk_loop=True, keeps data on device)
+
+        The choice of mode is recorded immediately, but the device/offload
+        interface (mode 2) is only built when the mesh and boundaries are
+        finalised.  If boundaries are already set, the interface is built
+        eagerly here (the historical behaviour).  Otherwise it is built
+        lazily at the start of the first ``evolve()`` call -- this allows the
+        mode to be selected at domain construction, before boundaries,
+        ``distribute()`` or ``reorder()`` have been applied.
         """
 
         if multiprocessor_mode not in [MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU]:
@@ -5007,7 +5022,8 @@ class Domain(Generic_Domain):
         # Mode 2: C RK loop (faster, data stays on GPU device)
         self.use_c_rk_loop = (multiprocessor_mode == MULTIPROCESSOR_GPU)
 
-        if self.multiprocessor_mode == MULTIPROCESSOR_GPU:
+        # Eager build only when boundaries are ready; otherwise defer to evolve().
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self._boundaries_ready():
             self.set_gpu_interface()
 
     @property
@@ -5082,6 +5098,20 @@ class Domain(Generic_Domain):
             )
         return self.gpu_interface
 
+    def _boundaries_ready(self) -> bool:
+        """Return True if boundaries are set well enough to build the GPU interface.
+
+        After ``distribute()`` the ``boundary_map`` may be
+        ``{'exterior': None, 'ghost': None}`` -- not None but with no actual
+        boundary objects -- which is not enough to initialise the device
+        boundaries.  Used to decide whether the GPU interface can be built
+        eagerly in ``set_multiprocessor_mode`` or must be deferred to
+        ``evolve()``.
+        """
+        if self.boundary_map is None:
+            return False
+        return any(b is not None for b in self.boundary_map.values())
+
     def set_gpu_interface(self):
 
         if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is None:
@@ -5089,18 +5119,14 @@ class Domain(Generic_Domain):
             # Check that boundaries are properly set before GPU initialization
             # After distribute(), boundary_map may be {'exterior': None, 'ghost': None}
             # which is not None but has no actual boundary objects - this causes silent failures
-            if self.boundary_map is None:
+            if not self._boundaries_ready():
                 raise RuntimeError(
-                    "GPU mode requires boundaries to be set before calling set_multiprocessor_mode(2).\n"
-                    "Please call domain.set_boundary({...}) BEFORE domain.set_multiprocessor_mode(2)."
-                )
-
-            has_real_boundary = any(b is not None for b in self.boundary_map.values())
-            if not has_real_boundary:
-                raise RuntimeError(
-                    "GPU mode requires boundaries to be set before calling set_multiprocessor_mode(2).\n"
-                    "Please call domain.set_boundary({...}) BEFORE domain.set_multiprocessor_mode(2).\n"
-                    f"Current boundary_map has no boundary objects: {list(self.boundary_map.keys())}"
+                    "GPU mode requires boundaries to be set before evolving.\n"
+                    "Please call domain.set_boundary({...}) before the first evolve() call "
+                    "(or before calling set_multiprocessor_mode(2) if you rely on the "
+                    "interface being built immediately).\n"
+                    f"Current boundary_map: "
+                    f"{None if self.boundary_map is None else list(self.boundary_map.keys())}"
                 )
 
             # Try OpenMP target offloading interface first
