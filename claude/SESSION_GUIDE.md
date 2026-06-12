@@ -137,6 +137,10 @@ This closes the OpenMP→MPI gap to within ~11%.
 **Note:** `gpu_offload=false` overwrites the GPU build. Rebuild with
 `-Dgpu_offload=true -Dgpu_arch=cc120` (and `CC=nvc`) to restore GPU mode.
 
+**Migration plan:** making `mode=2 + gpu_offload=false` the standard distribution
+default is tracked in `claude/PLAN_default_mode2_cpu.md`. Step 1 (deferred interface
+build) is in review as PR #144; step 2 (audit operator fall-back) is next.
+
 Optimal reorder differs by execution model: CPU sequential traversal benefits from RCM
 graph-bandwidth minimisation; GPU warp-parallel execution benefits from Hilbert's tight
 spatial clustering for coalesced memory access. metis_rcm (5.79s) is slightly worse than

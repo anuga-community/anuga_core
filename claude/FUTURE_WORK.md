@@ -8,6 +8,11 @@ Items marked ~~strikethrough~~ have been invalidated (see notes).
 > **See also:** `claude/C_EXTENSION_AUDIT_TODOS.md` (2026-06-09) — prioritised
 > TODOs from an audit of all 20 C/Cython extensions (correctness, GPU/CPU
 > kernel unification, performance, cleanup).
+>
+> **Active multi-step plan:** `claude/PLAN_default_mode2_cpu.md` (2026-06-12) —
+> migrate the standard distribution to `multiprocessor_mode=2` + `gpu_offload=false`
+> (CPU-multicore C operators by default). Step 1 in review as PR #144; **step 2
+> (audit operator fall-back) is the next action.**
 
 ---
 
