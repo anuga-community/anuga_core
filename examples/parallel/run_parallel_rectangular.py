@@ -88,7 +88,7 @@ parser.add_argument('-v', '--verbose', action='store_true', help='turn on verbos
 parser.add_argument('-ve', '--evolve_verbose', action='store_true', help='turn on evolve verbosity')
 
 parser.add_argument('-ps', '--partition_scheme', type=str, default='metis',
-                    help='set partition scheme in [metis, morton, hilbert]')
+                    help='set partition scheme in [metis, morton, hilbert, rcm, bfs]')
 
 parser.add_argument('-ro', '--reorder', type=str, default='none',
                     choices=['none', 'hilbert', 'morton', 'rcm', 'metis', 'metis_hilbert', 'metis_rcm'],

@@ -121,7 +121,7 @@ def reorder_quantities(quantities, epart_order):
 def partition_mesh(domain, n_procs,
                    parameters=None,
                    verbose=False):
-    """Partition a mesh across multiple processors using METIS, Morton, or Hilbert partitioning.
+    """Partition a mesh across multiple processors using METIS, Morton, Hilbert, RCM, or BFS partitioning.
 
     This function takes a serial mesh and distributes it across multiple processors
     by reordering triangles according to a partitioning scheme. It generates
@@ -138,7 +138,7 @@ def partition_mesh(domain, n_procs,
         Additional parameters for the partitioning algorithm. Supported keys:
 
         - 'partition_scheme' : str, default 'metis'
-            Partitioning scheme ('metis', 'morton', or 'hilbert')
+            Partitioning scheme ('metis', 'morton', 'hilbert', 'rcm', or 'bfs')
         - 'distribute_quantity_names' : list, default DEFAULT_DISTRIBUTE_QUANTITY_NAMES
             Names of quantities to distribute
         - 'in_place' : bool, default False
@@ -167,7 +167,7 @@ def partition_mesh(domain, n_procs,
 
     Notes
     -----
-    The function uses METIS, Morton, or Hilbert partitioning to distribute triangles
+    The function uses METIS, Morton, Hilbert, RCM, or BFS partitioning to distribute triangles
     across processors. Set `in_place=True` in parameters if the original sequential
     domain will not be used again to save memory.
 
@@ -215,7 +215,9 @@ def partition_mesh(domain, n_procs,
     else:
         distribute_quantities = {}
 
-    from anuga.parallel.partitioning import metis_partition, morton_partition, hilbert_partition, rcm_partition
+    from anuga.parallel.partitioning import (
+        metis_partition, morton_partition, hilbert_partition, rcm_partition,
+        bfs_partition)
 
     if verbose: print("partition_mesh: Computing partitioning using {}...".format(partition_scheme))
     if partition_scheme == 'morton':
@@ -224,6 +226,8 @@ def partition_mesh(domain, n_procs,
         epart_order, triangles_per_proc = hilbert_partition(domain, n_procs)
     elif partition_scheme == 'rcm':
         epart_order, triangles_per_proc = rcm_partition(domain, n_procs)
+    elif partition_scheme == 'bfs':
+        epart_order, triangles_per_proc = bfs_partition(domain, n_procs)
     else:
         epart_order, triangles_per_proc = metis_partition(domain, n_procs)
 

@@ -3,8 +3,23 @@
 import numpy as np
 
 #==============================================================================================================
-# Code for partitioning meshes using METIS, Morton codes, and Hilbert codes.
+# Code for partitioning meshes using METIS, Morton codes, Hilbert codes, and
+# adjacency BFS ordering.
 #==============================================================================================================
+
+
+def _balanced_triangles_per_proc(n_tri, n_procs):
+    """Return a near-even triangle count for each processor."""
+    if n_procs > n_tri:
+        raise ValueError("Number of processors must be less than or equal to the number of triangles")
+
+    triangles_per_proc = np.full(n_procs, n_tri // n_procs, dtype=int)
+    remainder = n_tri % n_procs
+    if remainder > 0:
+        triangles_per_proc[:remainder] += 1
+
+    assert triangles_per_proc.sum() == n_tri, "Total number of triangles must match after partitioning"
+    return triangles_per_proc
 
 
 #==============================================================================================================
@@ -261,22 +276,13 @@ def morton_partition(domain, n_procs):
 
     n_tri = domain.number_of_triangles
 
-    if n_procs > n_tri:
-        raise ValueError("Number of processors must be less than or equal to the number of triangles")
-
+    triangles_per_proc = _balanced_triangles_per_proc(n_tri, n_procs)
 
     points = domain.centroid_coordinates
     order = morton_order_from_points(points)
 
     # Now we have an ordering of the triangles based on their centroids' Morton codes.
     # We can divide this ordering into contiguous blocks for each processor.
-
-    triangles_per_proc = np.full(n_procs, n_tri // n_procs, dtype=int)
-    remainder = n_tri % n_procs
-    if remainder > 0:
-        triangles_per_proc[:remainder] += 1
-
-    assert triangles_per_proc.sum() == n_tri, "Total number of triangles must match after partitioning"
 
     return order, triangles_per_proc
 
@@ -435,22 +441,13 @@ def hilbert_partition(domain, n_procs):
 
     n_tri = domain.number_of_triangles
 
-    if n_procs > n_tri:
-        raise ValueError("Number of processors must be less than or equal to the number of triangles")
-
+    triangles_per_proc = _balanced_triangles_per_proc(n_tri, n_procs)
 
     points = domain.centroid_coordinates
     order = hilbert_order_from_points(points)
 
     # Now we have an ordering of the triangles based on their centroids' Hilbert codes.
     # We can divide this ordering into contiguous blocks for each processor.
-
-    triangles_per_proc = np.full(n_procs, n_tri // n_procs, dtype=int)
-    remainder = n_tri % n_procs
-    if remainder > 0:
-        triangles_per_proc[:remainder] += 1
-
-    assert triangles_per_proc.sum() == n_tri, "Total number of triangles must match after partitioning"
 
     return order, triangles_per_proc
 
@@ -531,23 +528,148 @@ def hilbert_order_from_points(points, p=16):
     return np.argsort(h, kind="mergesort")
 
 
+#==============================================================================================================
+# Code for adjacency BFS ordering.
+#
+# This keeps mesh-neighbour traversal local while using a spatial seed order to
+# make component starts and per-node neighbour ties deterministic.
+#==============================================================================================================
+
+def bfs_partition(domain, n_procs):
+    """
+    Partition a mesh using adjacency BFS ordering.
+
+    This function builds a deterministic breadth-first traversal over the
+    triangle-neighbour graph.  The traversal is seeded and tie-broken by Morton
+    order of triangle centroids so disconnected components and equal-depth
+    neighbours still follow a spatially local order.
+
+    Parameters
+    ----------
+    domain : object
+        Domain object containing ``number_of_triangles``, ``neighbours``, and
+        ``centroid_coordinates``.
+    n_procs : int
+        Number of processors to partition the mesh across.
+
+    Returns
+    -------
+    epart_order : ndarray
+        Integer array of triangle indices in BFS-locality order.
+    triangles_per_proc : ndarray
+        Integer array of length n_procs where triangles_per_proc[i] is the
+        number of triangles assigned to processor i.
+
+    Raises
+    ------
+    ValueError
+        If n_procs is greater than the number of triangles in the domain.
+    """
+    n_tri = domain.number_of_triangles
+    seed_order = morton_order_from_points(domain.centroid_coordinates)
+    order = bfs_order_from_neighbours(domain.neighbours, seed_order=seed_order)
+    triangles_per_proc = _balanced_triangles_per_proc(n_tri, n_procs)
+    return order, triangles_per_proc
+
+
+def bfs_order_from_neighbours(neighbours, seed_order=None):
+    """
+    Return a deterministic BFS ordering from a triangle-neighbour array.
+
+    Parameters
+    ----------
+    neighbours : ndarray, shape (N, K)
+        Neighbour triangle ids.  Negative values are treated as boundaries.
+    seed_order : array_like of int, optional
+        Permutation of ``0..N-1`` controlling which unvisited component is
+        traversed next and how same-depth neighbours are ordered.  If omitted,
+        triangle ids are used.
+
+    Returns
+    -------
+    order : ndarray of int, shape (N,)
+        Triangle ids in BFS-locality order.
+    """
+    from scipy.sparse import csr_matrix
+    from scipy.sparse.csgraph import breadth_first_order
+
+    neighbours = np.asarray(neighbours, dtype=np.int64)
+    if neighbours.ndim != 2:
+        raise ValueError("neighbours must be a 2D array")
+
+    n_tri = neighbours.shape[0]
+    if seed_order is None:
+        seed_order = np.arange(n_tri, dtype=int)
+    else:
+        seed_order = np.asarray(seed_order, dtype=int)
+
+    if seed_order.shape != (n_tri,):
+        raise ValueError("seed_order must have length equal to number of triangles")
+    if not np.array_equal(np.sort(seed_order), np.arange(n_tri, dtype=int)):
+        raise ValueError("seed_order must be a permutation of triangle ids")
+
+    seed_rank = np.empty(n_tri, dtype=int)
+    seed_rank[seed_order] = np.arange(n_tri, dtype=int)
+
+    rows = np.repeat(np.arange(n_tri, dtype=np.int64), neighbours.shape[1])
+    cols = neighbours.ravel()
+    valid = (cols >= 0) & (cols < n_tri) & (cols != rows)
+    rows = rows[valid]
+    cols = cols[valid]
+
+    # csr_matrix preserves the input order within each row.  Sorting neighbour
+    # ids by seed_rank keeps SciPy's BFS deterministic and equivalent to the
+    # original Python queue implementation.
+    perm = np.lexsort((seed_rank[cols], rows))
+    rows = rows[perm]
+    cols = cols[perm]
+
+    counts = np.bincount(rows, minlength=n_tri).astype(np.int32)
+    indptr = np.empty(n_tri + 1, dtype=np.int32)
+    indptr[0] = 0
+    np.cumsum(counts, out=indptr[1:])
+    graph = csr_matrix(
+        (np.ones(len(cols), dtype=np.int8), cols.astype(np.int32), indptr),
+        shape=(n_tri, n_tri))
+
+    visited = np.zeros(n_tri, dtype=bool)
+    chunks = []
+
+    for seed in seed_order:
+        seed = int(seed)
+        if visited[seed]:
+            continue
+
+        component = breadth_first_order(
+            graph, seed, directed=False, return_predecessors=False)
+        component = component[~visited[component]]
+        if len(component):
+            visited[component] = True
+            chunks.append(component.astype(int, copy=False))
+
+    if chunks:
+        return np.concatenate(chunks)
+    return np.empty(0, dtype=int)
+
+
 def reorder_domain(domain, method='hilbert', n_procs=None, verbose=False):
     """Reorder domain triangles for cache locality.
 
-    Computes an ordering using a space-filling curve or Metis partitioning and
-    applies it to the domain in-place.  Call after distribute() and before
-    create_riverwalls() / operator setup so those indices are built on top of
-    the reordered mesh.
+    Computes an ordering using a space-filling curve, graph ordering, or Metis
+    partitioning and applies it to the domain in-place.  Call after distribute()
+    and before create_riverwalls() / operator setup so those indices are built
+    on top of the reordered mesh.
 
     Parameters
     ----------
     domain : Domain
     method : str
-        'hilbert' (default), 'morton', or 'metis'
+        'hilbert' (default), 'morton', 'rcm', 'bfs', 'metis',
+        'metis_hilbert', or 'metis_rcm'.
     n_procs : int or None
         Number of partitions for Metis ordering.  If None, reads
         ``OMP_NUM_THREADS`` from the environment (defaulting to 1 when unset).
-        For Hilbert/Morton this parameter is ignored.
+        For Hilbert/Morton/RCM/BFS this parameter is ignored.
     verbose : bool
 
     Returns
@@ -565,6 +687,8 @@ def reorder_domain(domain, method='hilbert', n_procs=None, verbose=False):
         epart_order, _ = morton_partition(domain, 1)
     elif method == 'rcm':
         epart_order, _ = rcm_partition(domain)
+    elif method == 'bfs':
+        epart_order, _ = bfs_partition(domain, 1)
     elif method == 'metis':
         epart_order, _ = metis_partition(domain, max(1, n_procs))
     elif method == 'metis_hilbert':

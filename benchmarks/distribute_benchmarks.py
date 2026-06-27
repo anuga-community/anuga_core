@@ -19,7 +19,7 @@ Options
 -------
 --size M       Grid size M: produces 4*M*M triangles (default 500)
 --reps R       Repetitions for median timing (default 1)
---scheme S     Partition scheme: metis | morton | hilbert (default metis)
+--scheme S     Partition scheme: metis | morton | hilbert | rcm | bfs (default metis)
 --interval T   Memory ticker sample interval in seconds (default 1.0)
 --no-evolve    Skip the correctness evolve check after timing
 """
@@ -440,7 +440,7 @@ def parse_args():
     p.add_argument('--size',      type=int,   default=500)
     p.add_argument('--reps',      type=int,   default=1)
     p.add_argument('--scheme',    type=str,   default='metis',
-                   choices=['metis', 'morton', 'hilbert'])
+                   choices=['metis', 'morton', 'hilbert', 'rcm', 'bfs'])
     p.add_argument('--interval',  type=float, default=1.0)
     p.add_argument('--no-evolve', action='store_true')
     return p.parse_args()

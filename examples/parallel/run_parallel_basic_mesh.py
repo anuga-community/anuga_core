@@ -45,7 +45,7 @@ parser.add_argument('-sn', '--sqrtN', type=int, default=sqrtN,
 parser.add_argument('-gl', '--ghost_layer', type=int, default=2,
                     help='ghost layer width')
 parser.add_argument('-ps', '--partition_scheme', type=str, default='metis',
-                    help='partition scheme: metis, morton, or hilbert')
+                    help='partition scheme: metis, morton, hilbert, rcm, or bfs')
 parser.add_argument('-sww', '--store_sww', action='store_true',
                     help='write SWW output files')
 parser.add_argument('-v', '--verbose', action='store_true',

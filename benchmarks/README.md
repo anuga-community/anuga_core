@@ -86,6 +86,10 @@ mpirun -np 8 python benchmarks/distribute_benchmarks.py --size 500
 
 # Morton scheme, 3 repetitions for stable medians
 mpirun -np 8 python benchmarks/distribute_benchmarks.py --size 500 --scheme morton --reps 3
+
+# RCM and BFS locality schemes, useful for graph-ordering comparisons
+mpirun -np 8 python benchmarks/distribute_benchmarks.py --size 500 --scheme rcm --reps 3
+mpirun -np 8 python benchmarks/distribute_benchmarks.py --size 500 --scheme bfs --reps 3
 ```
 
 | Method | Description |
@@ -101,8 +105,8 @@ mpirun -np 8 python benchmarks/distribute_benchmarks.py --size 500 --scheme mort
 # Run the full np=[10,20,30] × scheme=[metis,morton,hilbert] grid
 python benchmarks/run_benchmark_grid.py --size 1000
 
-# Custom grid
-python benchmarks/run_benchmark_grid.py --size 500 --np 4,8,16 --schemes metis,morton
+# Custom grid including graph-ordering schemes
+python benchmarks/run_benchmark_grid.py --size 500 --np 4,8,16 --schemes metis,morton,hilbert,rcm,bfs
 
 # Dry run (print commands without executing)
 python benchmarks/run_benchmark_grid.py --dry-run

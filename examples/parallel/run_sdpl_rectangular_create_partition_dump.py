@@ -84,7 +84,7 @@ parser.add_argument('-ve', '--evolve_verbose', action='store_true', help='turn o
 parser.add_argument('-sww', '--store_sww', action='store_true', help='turn on storing sww file')
 
 parser.add_argument('-ps', '--partition_scheme', type=str, default='metis',
-                    help='set partition scheme in [metis, morton, hilbert]')
+                    help='set partition scheme in [metis, morton, hilbert, rcm, bfs]')
 
 args = parser.parse_args()
 

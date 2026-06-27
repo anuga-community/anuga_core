@@ -375,7 +375,7 @@ def parse_args():
     p.add_argument('--interval', type=float, default=1.0,
                    help='Memory ticker sample interval in seconds (default: 1.0)')
     p.add_argument('--scheme',   type=str,   default='metis',
-                   choices=['metis', 'morton', 'hilbert'],
+                   choices=['metis', 'morton', 'hilbert', 'rcm', 'bfs'],
                    help='Partitioning scheme (default: metis)')
     return p.parse_args()
 
