@@ -215,7 +215,10 @@ else
   elif effective_compiler_id == 'intel' or effective_compiler_id == 'intel-cl'
     gpu_c_args = ['-O3', '-qopenmp', '-g']
   elif effective_compiler_id == 'intel-llvm' or effective_compiler_id == 'icx'
-    gpu_c_args = ['-O3', '-fiopenmp', '-g']
+    # -xHost: match openmp_c_args (root meson.build) so both mode-1 and mode-2
+    # compile core_kernels.c with the same ISA — required for the 1e-12
+    # mode-agreement tests in test_DE_gpu_omp.py to stay green.
+    gpu_c_args = ['-O3', '-fiopenmp', '-xHost', '-g']
   elif effective_compiler_id == 'clang'
     # Clang with libomp (LLVM, Homebrew macOS, or AOMP)
     gpu_c_args = ['-O3', '-fopenmp', '-g']

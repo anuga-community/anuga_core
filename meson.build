@@ -167,7 +167,10 @@ if openmp.found()
     openmp_c_args = ['-O3', '-qopenmp', '-g']
     add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
   elif effective_compiler_id in ['intel-llvm', 'icx']
-    openmp_c_args = ['-O3', '-fiopenmp', '-g']
+    # -xHost: target native CPU ISA (enables AVX-512/AVX2 SVML for math functions
+    # like cbrt/sqrt inside simd loops; without it ICX defaults to a generic ISA
+    # and scalar math fallback hurts kernels with transcendentals).
+    openmp_c_args = ['-O3', '-fiopenmp', '-xHost', '-g']
     add_project_link_arguments('-fiopenmp', language: ['c', 'cpp'])
   elif effective_compiler_id == 'nvidia_hpc'
     # Mode 1 always uses CPU-only multicore OpenMP (no GPU)
