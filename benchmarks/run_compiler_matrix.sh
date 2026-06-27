@@ -22,7 +22,9 @@
 #       benchmarks/results/kernels_matrix_gcc_*.json \
 #       benchmarks/results/kernels_matrix_icx_*.json
 
-set -euo pipefail
+# -u (nounset) is intentionally omitted: Intel setvars.sh and conda reference
+# unbound variables in clean subshells, which -u would turn into fatal errors.
+set -eo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
@@ -56,9 +58,14 @@ build_gcc() {
     log "=== GCC build ==="
     module load gcc/11.2.0 2>/dev/null || log "gcc module not available, using PATH gcc"
     source ~/miniforge3/etc/profile.d/conda.sh && conda activate anuga_phase0_gcc
-    CC=gcc pip install --no-build-isolation -q -e "${REPO_ROOT}" \
-        -Cbuild-dir=build/cp313 >/dev/null 2>&1
-    log "GCC build done"
+    # GCC 11 has OpenMP 4.5 only; gpu_culvert_operator.c requires OpenMP 5.0
+    # (#pragma omp target teams loop).  Building only sw_domain_openmp_ext via
+    # ninja avoids triggering the gpu_ext target.  The build dir must already
+    # be configured (from a prior pip-install / Phase 0 setup).
+    ninja -C "${REPO_ROOT}/build/cp313" \
+        anuga/shallow_water/sw_domain_openmp_ext.cpython-313-x86_64-linux-gnu.so \
+        || { log "ERROR: GCC ninja build failed"; exit 1; }
+    log "GCC build done (openmp_ext only; gpu_ext skipped — GCC 11 lacks OMP 5.0)"
 }
 
 run_gcc() {
@@ -77,25 +84,27 @@ run_gcc() {
 
 build_icx() {
     log "=== ICX build ==="
-    # Source Intel oneAPI environment (adjusts PATH/LD_LIBRARY_PATH for icx)
     SETVARS="${HOME}/intel/oneapi/setvars.sh"
     if [[ -f "${SETVARS}" ]]; then
         # shellcheck disable=SC1090
-        source "${SETVARS}" --force >/dev/null 2>&1
+        source "${SETVARS}" --force >/dev/null 2>&1 || true
     else
         log "WARNING: ${SETVARS} not found — relying on icx already in PATH"
     fi
     source ~/miniforge3/etc/profile.d/conda.sh && conda activate anuga_phase0_icx
-    CC=icx pip install --no-build-isolation -q -e "${REPO_ROOT}" \
-        -Cbuild-dir=build/cp313-icx >/dev/null 2>&1
+    # Build via ninja — pip install -Cbuild-dir= can fail on older pip versions.
+    # ICX can compile all targets (no OMP-version restriction like GCC 11).
+    ninja -C "${REPO_ROOT}/build/cp313-icx" \
+        || { log "ERROR: ICX ninja build failed"; exit 1; }
     log "ICX build done"
 }
 
 run_icx() {
     log "=== ICX benchmarks ==="
     SETVARS="${HOME}/intel/oneapi/setvars.sh"
-    [[ -f "${SETVARS}" ]] && source "${SETVARS}" --force >/dev/null 2>&1
+    [[ -f "${SETVARS}" ]] && source "${SETVARS}" --force >/dev/null 2>&1 || true
     source ~/miniforge3/etc/profile.d/conda.sh && conda activate anuga_phase0_icx
+    export CC=icx  # ensure benchmark output is tagged with the right compiler
     OUT="${RESULTS_DIR}/kernels_matrix_icx_${COMMIT}_${TS}.json"
     OMP_NUM_THREADS=4 python "${REPO_ROOT}/benchmarks/run_kernel_benchmarks.py" \
         ${KERNEL_ARGS} --output "${OUT}"
@@ -107,19 +116,31 @@ run_icx() {
     fi
 }
 
+_gcc_loader() {
+    # Path to the anuga_phase0_gcc editable-install loader file.
+    source ~/miniforge3/etc/profile.d/conda.sh && conda activate anuga_phase0_gcc
+    python -c "import site; print(site.getsitepackages()[0])"
+}
+
 build_nvhpc() {
     log "=== NVHPC-CPU build ==="
     module load hpc_sdk/nvhpc/24.11 2>/dev/null || log "nvhpc module not available"
     source ~/miniforge3/etc/profile.d/conda.sh && conda activate anuga_phase0_gcc
-    CC=nvc pip install --no-build-isolation -q -e "${REPO_ROOT}" \
-        -Cbuild-dir=build/cp313-nvc-cpu >/dev/null 2>&1
-    log "NVHPC build done"
+    # Build via ninja (pip install -Cbuild-dir= can be unreliable on older pip).
+    # NVHPC can compile all targets (no OMP-version restriction).
+    ninja -C "${REPO_ROOT}/build/cp313-nvc-cpu" \
+        || { log "ERROR: NVHPC ninja build failed"; exit 1; }
+    # Switch anuga_phase0_gcc editable pointer from build/cp313 (gcc) to the nvc dir.
+    _loader="$(_gcc_loader)/_anuga_editable_loader.py"
+    sed -i "s|/build/cp313'|/build/cp313-nvc-cpu'|g" "${_loader}"
+    log "NVHPC build done; editable loader → build/cp313-nvc-cpu"
 }
 
 run_nvhpc() {
     log "=== NVHPC-CPU benchmarks ==="
     module load hpc_sdk/nvhpc/24.11 2>/dev/null || true
     source ~/miniforge3/etc/profile.d/conda.sh && conda activate anuga_phase0_gcc
+    export CC=nvc  # ensure benchmark output is tagged with the right compiler
     OUT="${RESULTS_DIR}/kernels_matrix_nvhpc_cpu_${COMMIT}_${TS}.json"
     OMP_NUM_THREADS=4 python "${REPO_ROOT}/benchmarks/run_kernel_benchmarks.py" \
         ${KERNEL_ARGS} --output "${OUT}"
@@ -129,6 +150,10 @@ run_nvhpc() {
         pytest --pyargs anuga --run-fast -q 2>&1 | tail -5 | tee "${TESTOUT}"
         log "Fast-suite: ${TESTOUT}"
     fi
+    # Restore anuga_phase0_gcc editable pointer back to the gcc build dir.
+    _loader="$(_gcc_loader)/_anuga_editable_loader.py"
+    sed -i "s|/build/cp313-nvc-cpu'|/build/cp313'|g" "${_loader}"
+    log "Editable loader restored → build/cp313"
 }
 
 # ---------------------------------------------------------------------------
