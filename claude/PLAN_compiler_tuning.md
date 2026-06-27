@@ -1,8 +1,8 @@
 # Plan — multi-compiler support (GCC / Intel ICX / NVHPC) with per-kernel performance parity
 
-Created: 2026-06-23. Status: **Phase 0, Phase 1, and Phase 3 first target done.** Phase 2
-script written (not yet run end-to-end). Phase 3 second target (NVHPC re-benchmark after
-cbrt change) pending. See `claude/KNOWN_ISSUES.md` for full per-phase findings.
+Created: 2026-06-23. Status: **Phase 0, Phase 1, and Phase 3 fully done.** Phase 2
+script written (not yet run end-to-end). See `claude/KNOWN_ISSUES.md` for full per-phase
+findings.
 
 ## Goal
 
@@ -141,12 +141,22 @@ scatter/gather loops (not the `shared(D)` struct-dereference hypothesis from Pha
 
 GCC and ICX: 2667 passed, 214 skipped, 0 failed.
 
-### Second target: NVHPC-CPU re-benchmark after cbrt change — ⏳ pending
+### Second target: NVHPC-CPU re-benchmark after cbrt change — ✅ DONE 2026-06-27
 
-NVHPC had no regression in Phase 1. The `cbrt` change in `core_kernels.c` also affects
-NVHPC; re-run `benchmarks/run_kernel_benchmarks.py` on the NVHPC build to confirm no
-regression and update `benchmarks/results/kernels_nvhpc_cpu_<tag>.json`. Expected to be
-fine (NVHPC already vectorised `pow` well in Phase 1) but not confirmed.
+NVHPC improved on every kernel vs the Phase 1 baseline — no regressions (result saved as
+`benchmarks/results/kernels_nvhpc_cpu_phase3.json`):
+
+| Kernel | mode | Phase 1 | Phase 3 | Delta |
+|--------|------|------:|------:|------:|
+| compute_fluxes | 1 | 2206 us | 1884 us | -14.6% |
+| distribute | 1 | 2472 us | 1835 us | -25.8% |
+| extrapolate_edge_only | 1 | 2431 us | 1522 us | -37.4% |
+| manning_friction_flat | 1 | 42.0 us | 28.45 us | -32.3% |
+| protect | 1 | 26.8 us | 20.43 us | -23.7% |
+
+The cbrt + OMP_PARALLEL_LOOP_SIMD changes benefited NVHPC's vectoriser just as they did
+for GCC/ICX. NVHPC is faster than GCC on every kernel (40–57% on hot kernels).
+Tests: 2667/214/0.
 
 ### Notes on structural gaps
 

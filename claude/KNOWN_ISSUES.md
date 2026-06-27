@@ -150,10 +150,20 @@ ICX 2667/214/0 — no correctness divergence.
 - `ImportError: undefined symbol: GPU_TINY` — see change 2 above.
 - 3 mode-agreement test failures after adding `-xHost` to mode-1 only — see change 5 above.
 
-**NVHPC-CPU re-benchmark still pending** (the `cbrt` change also affects NVHPC).
-NVHPC had no regression in Phase 1 and `-xHost` is ICX-only, so a regression is unlikely
-but not confirmed. Re-run `benchmarks/run_kernel_benchmarks.py` with the NVHPC build when
-convenient to update `benchmarks/results/kernels_nvhpc_cpu_<tag>.json`.
+**NVHPC-CPU re-benchmark** (`benchmarks/results/kernels_nvhpc_cpu_phase3.json`,
+`OMP_NUM_THREADS=4`, `develop @ e0672897`): no regressions — every kernel improved vs the
+Phase 1 baseline. The `cbrt` + `OMP_PARALLEL_LOOP_SIMD` changes also benefited NVHPC's
+vectoriser:
+
+| Kernel | mode | Phase 1 | Phase 3 | Delta |
+|--------|------|------:|------:|------:|
+| compute_fluxes | 1 | 2206 us | 1884 us | -14.6% |
+| distribute | 1 | 2472 us | 1835 us | -25.8% |
+| extrapolate_edge_only | 1 | 2431 us | 1522 us | -37.4% |
+| manning_friction_flat | 1 | 42.0 us | 28.45 us | -32.3% |
+| protect | 1 | 26.8 us | 20.43 us | -23.7% |
+
+NVHPC is now 40–57% faster than GCC on hot kernels. Tests: 2667/214/0.
 
 ### Building with GPU offloading (NVIDIA HPC SDK / nvc)
 
