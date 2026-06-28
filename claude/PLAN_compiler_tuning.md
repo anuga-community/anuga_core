@@ -40,7 +40,7 @@ axis, evaluated against itself across driver/SDK versions, not against the CPU b
 |----------|----------|-------|
 | GCC | `module load gcc/11.2.0` (also system `/usr/bin/gcc`) | baseline |
 | Intel ICX | `~/intel/oneapi/compiler/2025.1/bin/icx` (oneAPI, sourced manually) | 2025.1.0; old `hpc/compiler/intel/2018,2019` modules are classic icc, not relevant |
-| NVHPC | `module load hpc_sdk/nvhpc/24.11` (also `nvhpc-byo-compiler`, `-hpcx`, `-nompi` variants) | matches the `nvc` documented in `claude/KNOWN_ISSUES.md`; this is a different host than where that doc's RTX 5070 GPU build was done — **check `nvidia-smi`/`nvaccelinfo` before assuming a GPU is present here**; if not, only the CPU-multicore (`gpu_offload=false`) NVHPC path is testable on this host |
+| NVHPC | `source ~/source/samir/spack/share/spack/setup-env.sh && spack load nvhpc /4jo2stp` → nvhpc@26.3 | managed via spack (spack hash `4jo2stp`); `run_compiler_matrix.sh` uses `SPACK_SETUP`/`NVHPC_SPACK_HASH` variables for this — **no GPU on this host**; only CPU-multicore (`gpu_offload=false`) path tested here |
 | Conda | `module load miniconda` or `~/miniconda3`/`~/miniforge3` | use to create per-compiler env from `environments/environment_3.14*.yml` |
 
 ---

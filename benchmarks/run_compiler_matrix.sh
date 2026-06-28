@@ -8,8 +8,9 @@
 # Prerequisites (HPC/NCI environment):
 #   conda envs:  anuga_phase0_gcc   (Python 3.13, deps; CC overridden per run)
 #                anuga_phase0_icx   (Python 3.13, Intel deps + MKL)
-#   Modules available: gcc/11.2.0, hpc_sdk/nvhpc/24.11
+#   Modules available: gcc/11.2.0
 #   ICX:  ~/intel/oneapi/compiler/2025.1/bin/icx  (source setvars.sh first)
+#   NVHPC: loaded via spack (see SPACK_SETUP / NVHPC_SPACK_HASH below)
 #
 # Outputs (benchmarks/results/):
 #   kernels_matrix_gcc_<commit>_<ts>.json
@@ -30,6 +31,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 RESULTS_DIR="${REPO_ROOT}/benchmarks/results"
 mkdir -p "${RESULTS_DIR}"
+
+SPACK_SETUP="${HOME}/source/samir/spack/share/spack/setup-env.sh"
+NVHPC_SPACK_HASH="4jo2stp"  # nvhpc@26.3
 
 COMPILERS="gcc,icx,nvhpc"
 SKIP_BUILD=0
@@ -122,10 +126,38 @@ _gcc_loader() {
     python -c "import site; print(site.getsitepackages()[0])"
 }
 
+_load_spack_nvhpc() {
+    if [[ -f "${SPACK_SETUP}" ]]; then
+        # shellcheck disable=SC1090
+        source "${SPACK_SETUP}"
+        spack load nvhpc /"${NVHPC_SPACK_HASH}" 2>/dev/null || {
+            log "WARNING: spack load nvhpc /${NVHPC_SPACK_HASH} failed — relying on nvc already in PATH"
+        }
+    else
+        log "WARNING: ${SPACK_SETUP} not found — relying on nvc already in PATH"
+    fi
+}
+
 build_nvhpc() {
-    log "=== NVHPC-CPU build ==="
-    module load hpc_sdk/nvhpc/24.11 2>/dev/null || log "nvhpc module not available"
+    log "=== NVHPC-CPU build (spack nvhpc@26.3 / ${NVHPC_SPACK_HASH}) ==="
+    _load_spack_nvhpc
     source ~/miniforge3/etc/profile.d/conda.sh && conda activate anuga_phase0_gcc
+    # If the build dir was configured with a different nvc version, reconfigure it so
+    # the new compiler's flags and version string are recorded in build.ninja.
+    _cfg_ver=$(python3 -c "
+import json, sys
+try:
+    d = json.load(open('${REPO_ROOT}/build/cp313-nvc-cpu/meson-info/intro-compilers.json'))
+    print(d['host']['c']['version'])
+except Exception: print('')
+" 2>/dev/null)
+    _cur_ver=$(nvc --version 2>&1 | grep -oP '\d+\.\d+-\d+' | head -1)
+    if [[ -d "${REPO_ROOT}/build/cp313-nvc-cpu" && -n "${_cfg_ver}" && "${_cfg_ver}" != "${_cur_ver}" ]]; then
+        log "nvc version changed (${_cfg_ver} → ${_cur_ver}): reconfiguring build dir..."
+        CC=nvc meson setup --reconfigure "${REPO_ROOT}/build/cp313-nvc-cpu" \
+            -Dgpu_offload=false \
+            || { log "ERROR: NVHPC meson reconfigure failed"; exit 1; }
+    fi
     # Build via ninja (pip install -Cbuild-dir= can be unreliable on older pip).
     # NVHPC can compile all targets (no OMP-version restriction).
     ninja -C "${REPO_ROOT}/build/cp313-nvc-cpu" \
@@ -133,12 +165,12 @@ build_nvhpc() {
     # Switch anuga_phase0_gcc editable pointer from build/cp313 (gcc) to the nvc dir.
     _loader="$(_gcc_loader)/_anuga_editable_loader.py"
     sed -i "s|/build/cp313'|/build/cp313-nvc-cpu'|g" "${_loader}"
-    log "NVHPC build done; editable loader → build/cp313-nvc-cpu"
+    log "NVHPC build done (nvc ${_cur_ver}); editable loader → build/cp313-nvc-cpu"
 }
 
 run_nvhpc() {
     log "=== NVHPC-CPU benchmarks ==="
-    module load hpc_sdk/nvhpc/24.11 2>/dev/null || true
+    _load_spack_nvhpc
     source ~/miniforge3/etc/profile.d/conda.sh && conda activate anuga_phase0_gcc
     export CC=nvc  # ensure benchmark output is tagged with the right compiler
     OUT="${RESULTS_DIR}/kernels_matrix_nvhpc_cpu_${COMMIT}_${TS}.json"
