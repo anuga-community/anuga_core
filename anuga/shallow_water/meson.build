@@ -223,8 +223,10 @@ else
     # Clang with libomp (LLVM, Homebrew macOS, or AOMP)
     gpu_c_args = ['-O3', '-fopenmp', '-g']
   else
-    # GCC and others
-    gpu_c_args = ['-O3', '-fopenmp', '-g']
+    # GCC and others: -march=native matches openmp_c_args (root meson.build) so
+    # both mode-1 and mode-2 compile with the same ISA (AVX-512 on Cascadelake)
+    # and libmvec engages for vectorised math in SIMD loops.
+    gpu_c_args = ['-O3', '-fopenmp', '-march=native', '-g']
   endif
   # Define macro so code knows it's CPU-only mode
   gpu_c_args += ['-DCPU_ONLY_MODE']

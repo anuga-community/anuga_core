@@ -186,7 +186,9 @@ if openmp.found()
     # attempt nvptx offloading for all -fopenmp links; disable it here so that
     # sw_domain_openmp_ext (CPU-only) does not trigger the nvptx mkoffload pass.
     # The GPU extension (sw_domain_gpu_ext) sets its own -foffload=nvptx-none.
-    openmp_c_args = ['-O3', '-fopenmp', '-foffload=disable', '-g']
+    # -march=native: enable native ISA (AVX-512 on Cascadelake) and libmvec for
+    # vectorised math (cbrt, sqrt) inside SIMD loops — equivalent to ICX's -xHost.
+    openmp_c_args = ['-O3', '-fopenmp', '-foffload=disable', '-march=native', '-g']
     add_project_link_arguments(['-fopenmp', '-foffload=disable'], language: ['c', 'cpp'])
   endif
   openmp_deps = dependencies + [openmp]

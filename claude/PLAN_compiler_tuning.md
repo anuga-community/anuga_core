@@ -1,8 +1,7 @@
 # Plan — multi-compiler support (GCC / Intel ICX / NVHPC) with per-kernel performance parity
 
-Created: 2026-06-23. Status: **Phase 0, Phase 1, and Phase 3 fully done.** Phase 2
-script written (not yet run end-to-end). See `claude/KNOWN_ISSUES.md` for full per-phase
-findings.
+Created: 2026-06-23. Status: **Phase 0, Phase 1, Phase 2, and Phase 3 fully done.**
+See `claude/KNOWN_ISSUES.md` for full per-phase findings.
 
 ## Goal
 
@@ -102,15 +101,16 @@ with `CC=gcc` if a clean GCC env is needed again) and `anuga_phase0_icx`.
    regression — confirms this is ICX-specific + kernel-specific, not a generic
    "non-GCC is slower" story. This is Phase 3's first concrete target.
 
-## Phase 2 — Build matrix automation — script written, not yet run end-to-end
+## Phase 2 — Build matrix automation — ✅ DONE 2026-06-28
 
 1. ✅ Script written: `benchmarks/run_compiler_matrix.sh` — builds GCC / ICX / NVHPC
    (CPU-multicore) into separate build dirs, runs Phase 1's per-kernel harness + fast
    test suite per compiler, tags output files by compiler. Flags: `--compilers gcc,icx,nvhpc`,
    `--skip-build`, `--skip-tests`. Sources `~/intel/oneapi/setvars.sh` for ICX; uses
-   `module load` for GCC/NVHPC.
-2. ⏳ Not yet run end-to-end (Phase 3 work was done with manual per-compiler builds and
-   benchmark runs). Run once to validate the automation and produce a tagged result set.
+   spack (`SPACK_SETUP` / `NVHPC_SPACK_HASH=4jo2stp` → nvhpc@26.3) for NVHPC.
+2. ✅ Run end-to-end at `67c6c6c0`: all three compilers 2667/214/0. Script also detects
+   nvhpc version changes and auto-reconfigures the build dir (triggered on first run:
+   24.11-0 → 26.3-0).
 
 ## Phase 3 — Tuning loop (the actual "no performance deviation" work)
 
@@ -141,7 +141,7 @@ scatter/gather loops (not the `shared(D)` struct-dereference hypothesis from Pha
 
 GCC and ICX: 2667 passed, 214 skipped, 0 failed.
 
-### Second target: NVHPC-CPU re-benchmark after cbrt change — ✅ DONE 2026-06-27
+### Second target: NVHPC-CPU re-benchmark after cbrt change — ✅ DONE 2026-06-27 (re-benchmarked with nvc 26.3 on 2026-06-28)
 
 NVHPC improved on every kernel vs the Phase 1 baseline — no regressions (result saved as
 `benchmarks/results/kernels_nvhpc_cpu_phase3.json`):
@@ -158,12 +158,37 @@ The cbrt + OMP_PARALLEL_LOOP_SIMD changes benefited NVHPC's vectoriser just as t
 for GCC/ICX. NVHPC is faster than GCC on every kernel (40–57% on hot kernels).
 Tests: 2667/214/0.
 
+### Third target: GCC `-march=native` — ✅ DONE 2026-06-28
+
+GCC was the only compiler without a native-ISA flag (ICX has `-xHost`, NVHPC auto-targets
+native). Added `-march=native` to GCC's `openmp_c_args` (root `meson.build`) and
+`gpu_c_args` (`anuga/shallow_water/meson.build`).
+
+Results (medium mesh, OMP_NUM_THREADS=4, `develop @ 67c6c6c0`):
+
+| Kernel | GCC no flag | GCC `-march=native` | Δ |
+|--------|------------|---------------------|---|
+| compute_fluxes | 3141 us | 2952 us | −6% |
+| distribute | 3891 us | 3596 us | −8% |
+| extrapolate_edge_only | 3369 us | 3278 us | −3% |
+| manning_friction_flat | 46 us | 47 us | flat |
+| protect (m1) | 28 us | 22 us | **−19%** |
+
+Tests: 2667/214/0. Modest gains across the board; `protect` is the clearest win at −19%.
+The large ICX–GCC gap (44–63% on hot kernels) persists — GCC 11's auto-vectoriser does not
+generate SIMD for stride-3 loops or vectorise `cbrt` via libmvec. Further GCC tuning
+would require explicit intrinsics or loop restructuring. See `claude/KNOWN_ISSUES.md` for
+the full table and analysis.
+
 ### Notes on structural gaps
 
 - NVHPC host fallback (`-mp=gpu,multicore` with no GPU) is single-threaded by design —
   documented as a known NVHPC limitation in `claude/KNOWN_ISSUES.md`. No fix pursued.
 - The `-fopenmp`/`-fiopenmp` cosmetic ICX warning from meson's `dependency('openmp')`
   (found in Phase 0) is still present and still harmless — not yet fixed.
+- GCC 11 libmvec lacks vectorised `cbrt` (or doesn't engage it for this loop shape);
+  `manning_friction_flat` shows no improvement from `-march=native`. A newer GCC (12+)
+  may improve this — not yet tested.
 
 ## Phase 4 — CI / process integration
 

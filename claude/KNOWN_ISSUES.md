@@ -165,6 +165,45 @@ vectoriser:
 
 NVHPC is now 40–57% faster than GCC on hot kernels. Tests: 2667/214/0.
 
+### GCC `-march=native` tuning — modest gains, large gap to ICX remains (2026-06-28)
+
+After Phase 3 closed the ICX regression, GCC was the only compiler without a native-ISA
+flag. ICX uses `-xHost`; NVHPC auto-targets native. GCC was compiled with only `-O3
+-fopenmp` — no AVX-512, no libmvec. Adding `-march=native` to both meson.build files
+(root `openmp_c_args` for mode-1, `shallow_water/meson.build` `gpu_c_args` for mode-2)
+gave modest but real improvements on `develop @ 67c6c6c0` (medium mesh, OMP_NUM_THREADS=4):
+
+| Kernel | GCC no `-march` | GCC `-march=native` | Δ |
+|--------|----------------|---------------------|---|
+| compute_fluxes (m1) | 3141 us | 2952 us | −6% |
+| compute_fluxes (m2) | 3111 us | 2942 us | −5% |
+| distribute (m1) | 3891 us | 3596 us | −8% |
+| distribute (m2) | 3616 us | 3599 us | −0.5% (noise) |
+| extrapolate_edge_only | 3369 us | 3278 us | −3% |
+| manning_friction_flat | 46 us | 47 us | +1% (noise) |
+| protect (m1) | 28 us | 22 us | **−19%** |
+| protect (m2) | 72 us | 71 us | −1% (noise) |
+
+Tests: 2667/214/0 — no regressions.
+
+**Remaining gap to ICX after `-march=native`:**
+
+| Kernel | GCC+native | ICX | Gap |
+|--------|-----------|-----|-----|
+| compute_fluxes | 2952 us | 1645 us | −44% |
+| distribute | 3596 us | 1551 us | −57% |
+| extrapolate_edge_only | 3278 us | 1226 us | −63% |
+| manning_friction_flat | 47 us | 19 us | −59% |
+| protect (m1) | 22 us | 15 us | −34% |
+
+**Why the gap persists:** GCC 11's auto-vectoriser does not generate SIMD code for the
+stride-3 scatter/gather loops (`distribute`, `extrapolate`) or transcendental-heavy friction
+loops (`manning_friction_flat`) even with AVX-512 enabled. The `cbrt` case is
+particularly illustrative: ICX with `-xHost` drops from 47 µs to 19 µs by using vectorised
+SVML `cbrt`; GCC 11 with `-march=native` stays at 47 µs — GCC 11's libmvec either lacks a
+vectorised `cbrt` or doesn't engage it for this loop shape. Further GCC tuning would require
+explicit SIMD intrinsics or loop restructuring, not compiler flags.
+
 ### Building with GPU offloading (NVIDIA HPC SDK / nvc)
 
 ANUGA's GPU extension (`sw_domain_gpu_ext`, `multiprocessor_mode=2`) requires
