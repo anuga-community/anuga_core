@@ -33,7 +33,8 @@ RESULTS_DIR="${REPO_ROOT}/benchmarks/results"
 mkdir -p "${RESULTS_DIR}"
 
 SPACK_SETUP="${HOME}/source/samir/spack/share/spack/setup-env.sh"
-NVHPC_SPACK_HASH="4jo2stp"  # nvhpc@26.3
+NVHPC_SPACK_HASH="4jo2stp"   # nvhpc@26.3
+GCC15_SPACK_HASH="di5tvfm"   # gcc@15.1.0
 
 COMPILERS="gcc,icx,nvhpc"
 SKIP_BUILD=0
@@ -84,6 +85,55 @@ run_gcc() {
         pytest --pyargs anuga --run-fast -q 2>&1 | tail -5 | tee "${TESTOUT}"
         log "Fast-suite: ${TESTOUT}"
     fi
+}
+
+_load_spack_gcc15() {
+    if [[ -f "${SPACK_SETUP}" ]]; then
+        # shellcheck disable=SC1090
+        source "${SPACK_SETUP}"
+        spack load gcc /"${GCC15_SPACK_HASH}" 2>/dev/null || {
+            log "WARNING: spack load gcc /${GCC15_SPACK_HASH} failed — relying on gcc already in PATH"
+        }
+    else
+        log "WARNING: ${SPACK_SETUP} not found — relying on gcc already in PATH"
+    fi
+}
+
+build_gcc15() {
+    log "=== GCC 15 build (spack gcc@15.1.0 / ${GCC15_SPACK_HASH}) ==="
+    _load_spack_gcc15
+    source ~/miniforge3/etc/profile.d/conda.sh && conda activate anuga_phase0_gcc
+    # GCC 15 supports OpenMP 5.0+, so all targets can be built (unlike GCC 11).
+    # build/cp313-gcc15 must be pre-configured:
+    #   CC=$(spack location -i gcc@15.1.0)/bin/gcc \
+    #   meson setup build/cp313-gcc15 --native-file=build/cp313/meson-python-native-file.ini \
+    #   -Dbuildtype=release -Db_ndebug=if-release -Dgpu_offload=false
+    ninja -C "${REPO_ROOT}/build/cp313-gcc15" \
+        || { log "ERROR: GCC 15 ninja build failed"; exit 1; }
+    # Switch editable loader to the gcc15 build dir.
+    _loader="$(_gcc_loader)/_anuga_editable_loader.py"
+    sed -i "s|/build/cp313'|/build/cp313-gcc15'|g" "${_loader}"
+    log "GCC 15 build done; editable loader → build/cp313-gcc15"
+}
+
+run_gcc15() {
+    log "=== GCC 15 benchmarks ==="
+    _load_spack_gcc15
+    source ~/miniforge3/etc/profile.d/conda.sh && conda activate anuga_phase0_gcc
+    export CC=gcc15  # tag output distinctly from GCC 11
+    OUT="${RESULTS_DIR}/kernels_matrix_gcc15_${COMMIT}_${TS}.json"
+    OMP_NUM_THREADS=4 python "${REPO_ROOT}/benchmarks/run_kernel_benchmarks.py" \
+        ${KERNEL_ARGS} --output "${OUT}"
+    log "Kernel results: ${OUT}"
+    if [[ "${SKIP_TESTS}" -eq 0 ]]; then
+        TESTOUT="${RESULTS_DIR}/fastsuite_gcc15_${COMMIT}_${TS}.txt"
+        pytest --pyargs anuga --run-fast -q 2>&1 | tail -5 | tee "${TESTOUT}"
+        log "Fast-suite: ${TESTOUT}"
+    fi
+    # Restore editable loader back to gcc11 build dir.
+    _loader="$(_gcc_loader)/_anuga_editable_loader.py"
+    sed -i "s|/build/cp313-gcc15'|/build/cp313'|g" "${_loader}"
+    log "Editable loader restored → build/cp313"
 }
 
 build_icx() {
@@ -200,6 +250,10 @@ for compiler in "${COMPILER_LIST[@]}"; do
             [[ "${SKIP_BUILD}" -eq 0 ]] && build_gcc
             run_gcc
             ;;
+        gcc15)
+            [[ "${SKIP_BUILD}" -eq 0 ]] && build_gcc15
+            run_gcc15
+            ;;
         icx)
             [[ "${SKIP_BUILD}" -eq 0 ]] && build_icx
             run_icx
@@ -209,7 +263,7 @@ for compiler in "${COMPILER_LIST[@]}"; do
             run_nvhpc
             ;;
         *)
-            log "Unknown compiler: ${compiler} (choices: gcc, icx, nvhpc)"
+            log "Unknown compiler: ${compiler} (choices: gcc, gcc15, icx, nvhpc)"
             exit 1
             ;;
     esac
