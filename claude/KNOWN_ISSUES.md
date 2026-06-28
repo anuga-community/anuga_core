@@ -204,6 +204,69 @@ SVML `cbrt`; GCC 11 with `-march=native` stays at 47 µs — GCC 11's libmvec ei
 vectorised `cbrt` or doesn't engage it for this loop shape. Further GCC tuning would require
 explicit SIMD intrinsics or loop restructuring, not compiler flags.
 
+### GCC 15 / NVHPC 26.3 / ICX cross-compiler flag tuning — parity achieved on hot kernels (2026-06-28)
+
+Following the `-march=native` result (GCC 11, modest gains only), a second pass explored
+GCC 15.1.0 (spack `di5tvfm`) and additional flags for all three compilers.
+
+**GCC 15 baseline vs GCC 15 with tuning flags:**
+
+GCC 15 with only `-march=native` was essentially identical to GCC 11 on hot kernels and
+had a +28% regression on `protect` mode-1. Adding the full math+vectorisation flag set
+(`-fno-math-errno -fno-trapping-math -ffinite-math-only -fassociative-math
+-fvect-cost-model=unlimited -funroll-loops`) halved compute_fluxes/distribute/extrapolate
+but left `protect` mode-1 still regressed. Switching the mode-1 cost model to
+`-fvect-cost-model=cheap` partially recovered protect (−2% vs previous, still +28% vs
+GCC 11) while keeping most of the hot-kernel gains.
+
+**Flags that were tried and reverted:**
+
+- **ICX `-Ofast`** (adds `-no-prec-div` / `fp-model=fast=2`): `manning_friction_flat`
+  regressed +13% — the faster-but-less-accurate cbrt path is slower in this loop shape.
+  Reverted to `-O3 -fiopenmp -xHost`.
+- **NVHPC `-Mvect=simd` in mode-1**: `protect` mode-1 regressed +15% (force-vectorising
+  the short branch-heavy loop hurts). Kept `-Mvect=simd` only for mode-2 (no regression
+  there); mode-1 uses `-Mfprelaxed -Munroll` only.
+
+**Final flags committed (`797ad4c8`, `develop @ 2d6e7c07`):**
+
+| Compiler | Mode-1 (`openmp_c_args`) | Mode-2 (`gpu_c_args`) |
+|----------|--------------------------|-----------------------|
+| GCC ≥12 | `-O3 -fopenmp -foffload=disable -march=native -fno-math-errno -fno-trapping-math -ffinite-math-only -fassociative-math -fvect-cost-model=cheap -funroll-loops` | same but `fvect-cost-model=unlimited` |
+| NVHPC | `-O3 -mp=gpu,multicore -Mfprelaxed -Munroll` | `-O3 -mp=multicore -Mfprelaxed -Mvect=simd -Munroll` |
+| ICX | `-O3 -fiopenmp -xHost` (unchanged) | same |
+
+**Final benchmark results (medium mesh, OMP_NUM_THREADS=4, GCC 11 as reference):**
+
+| Kernel | m | GCC 11 | GCC 15 tuned | NVHPC 26.3 | ICX 2025.1 | spread (3 tuned) |
+|--------|---|--------|-------------|------------|-----------|-----------------|
+| compute_fluxes | 1 | 2952 µs | 1563 µs | 1627 µs | 1658 µs | +6% |
+| compute_fluxes | 2 | 2942 µs | 1544 µs | 1590 µs | 1656 µs | +7% |
+| distribute | 1 | 3596 µs | 1486 µs | 1482 µs | 1556 µs | +5% |
+| distribute | 2 | 3599 µs | 1460 µs | 1459 µs | 1566 µs | +7% |
+| extrapolate_edge_only | 1 | 3278 µs | 1159 µs | 1166 µs | 1228 µs | +6% |
+| manning_friction_flat | 1 | 47 µs | 27 µs | 29 µs | **19 µs** | +51% |
+| protect | 1 | 22 µs | 28 µs | 24 µs | **15 µs** | +84% |
+| protect | 2 | 71 µs | 38 µs | 31 µs | **23 µs** | +66% |
+
+Tests: all three compilers 2667/214/0.
+
+**Hot kernels (compute_fluxes, distribute, extrapolate): all three tuned compilers within
+5–7% of each other — the cross-compiler parity goal is met for these kernels.**
+
+**Remaining gaps on `manning` and `protect`:** ICX is structurally faster here because:
+- `manning_friction_flat`: ICX uses vectorised SVML `cbrt` via `-xHost`; GCC 15 libmvec
+  cbrt path is slower; NVHPC's vectorised cbrt similarly limited.
+- `protect`: ICX's branch predictor and SIMD handling of the wet/dry threshold loop
+  outperform GCC 15 and NVHPC. The loop is short and branch-heavy; wider SIMD hurts
+  both (GCC 15 regression with `unlimited`, NVHPC with `-Mvect=simd`).
+  Closing these gaps requires loop restructuring or explicit SIMD intrinsics, not flags.
+
+**GCC 11 vs GCC 15 tuned overall:** GCC 15 with tuning is 45–62% faster than GCC 11 on
+hot kernels, and its `protect` mode-1 regression (+28% vs GCC 11) is a GCC 15 codegen
+issue unrelated to the tuning flags — present both with `unlimited` and `cheap` cost model.
+GCC 11 remains preferable for `protect` mode-1 if that kernel is critical.
+
 ### Building with GPU offloading (NVIDIA HPC SDK / nvc)
 
 ANUGA's GPU extension (`sw_domain_gpu_ext`, `multiprocessor_mode=2`) requires

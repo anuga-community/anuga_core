@@ -1,7 +1,8 @@
 # Plan — multi-compiler support (GCC / Intel ICX / NVHPC) with per-kernel performance parity
 
-Created: 2026-06-23. Status: **Phase 0, Phase 1, Phase 2, and Phase 3 fully done.**
-See `claude/KNOWN_ISSUES.md` for full per-phase findings.
+Created: 2026-06-23. Status: **Phases 0–3 fully done. Cross-compiler parity achieved on
+hot kernels (≤7% spread across GCC 15 / NVHPC 26.3 / ICX 2025.1).**
+See `claude/KNOWN_ISSUES.md` for full per-phase findings and flag-trial history.
 
 ## Goal
 
@@ -37,7 +38,8 @@ axis, evaluated against itself across driver/SDK versions, not against the CPU b
 
 | Compiler | Location | Notes |
 |----------|----------|-------|
-| GCC | `module load gcc/11.2.0` (also system `/usr/bin/gcc`) | baseline |
+| GCC 11 | `module load gcc/11.2.0` (also system `/usr/bin/gcc`) | baseline; only OMP 4.5 so mode-2 GPU ext cannot be built |
+| GCC 15 | `source ~/source/samir/spack/share/spack/setup-env.sh && spack load gcc /di5tvfm` → gcc@15.1.0 | full OMP 5.0; build dir `build/cp313-gcc15` |
 | Intel ICX | `~/intel/oneapi/compiler/2025.1/bin/icx` (oneAPI, sourced manually) | 2025.1.0; old `hpc/compiler/intel/2018,2019` modules are classic icc, not relevant |
 | NVHPC | `source ~/source/samir/spack/share/spack/setup-env.sh && spack load nvhpc /4jo2stp` → nvhpc@26.3 | managed via spack (spack hash `4jo2stp`); `run_compiler_matrix.sh` uses `SPACK_SETUP`/`NVHPC_SPACK_HASH` variables for this — **no GPU on this host**; only CPU-multicore (`gpu_offload=false`) path tested here |
 | Conda | `module load miniconda` or `~/miniconda3`/`~/miniforge3` | use to create per-compiler env from `environments/environment_3.14*.yml` |
@@ -180,15 +182,52 @@ generate SIMD for stride-3 loops or vectorise `cbrt` via libmvec. Further GCC tu
 would require explicit intrinsics or loop restructuring. See `claude/KNOWN_ISSUES.md` for
 the full table and analysis.
 
+### Fourth target: cross-compiler flag tuning (GCC 15 / NVHPC 26.3 / ICX) — ✅ DONE 2026-06-28
+
+Goal: all three compilers within 10% of each other on hot kernels.
+
+**GCC 15.1.0** (spack `di5tvfm`, build dir `build/cp313-gcc15`):
+- Added math+vectorisation flags for GCC ≥12 in both meson.build files.
+- Mode-1: `-fvect-cost-model=cheap` (not `unlimited` — `unlimited` caused +28% protect
+  regression in GCC 15).
+- Mode-2: `-fvect-cost-model=unlimited` (no protect regression there).
+- Result: 45–62% faster than GCC 11 on hot kernels.
+
+**NVHPC 26.3** (spack `4jo2stp`, auto-reconfigures from 24.11 on version mismatch):
+- Mode-1: added `-Mfprelaxed -Munroll` (omitted `-Mvect=simd` — regressed protect +15%).
+- Mode-2: added `-Mfprelaxed -Mvect=simd -Munroll`.
+- Result: 18–19% improvement on compute_fluxes/distribute/extrapolate.
+
+**ICX 2025.1**: flags unchanged (`-O3 -fiopenmp -xHost`). `-Ofast` was tried and reverted
+(`manning_friction_flat` regressed +13% — faster cbrt path slower in this loop shape).
+
+**Final spread on hot kernels (commit `797ad4c8`):**
+
+| Kernel | GCC 15 | NVHPC 26.3 | ICX | Spread |
+|--------|--------|-----------|-----|--------|
+| compute_fluxes | 1563/1544 µs | 1627/1590 µs | 1658/1656 µs | ≤7% |
+| distribute | 1486/1460 µs | 1482/1459 µs | 1556/1566 µs | ≤7% |
+| extrapolate_edge_only | 1159 µs | 1166 µs | 1228 µs | +6% |
+
+**Parity goal met on hot kernels.** Remaining gaps on `manning` (+51%) and `protect`
+(+66–84%) require loop restructuring or explicit SIMD intrinsics — not a flag-level fix.
+See `claude/KNOWN_ISSUES.md` → "GCC 15 / NVHPC 26.3 / ICX cross-compiler flag tuning"
+for the full trial history including reverted flags.
+
 ### Notes on structural gaps
 
 - NVHPC host fallback (`-mp=gpu,multicore` with no GPU) is single-threaded by design —
   documented as a known NVHPC limitation in `claude/KNOWN_ISSUES.md`. No fix pursued.
 - The `-fopenmp`/`-fiopenmp` cosmetic ICX warning from meson's `dependency('openmp')`
   (found in Phase 0) is still present and still harmless — not yet fixed.
-- GCC 11 libmvec lacks vectorised `cbrt` (or doesn't engage it for this loop shape);
-  `manning_friction_flat` shows no improvement from `-march=native`. A newer GCC (12+)
-  may improve this — not yet tested.
+- `manning_friction_flat` and `protect`: ICX structurally faster (SVML cbrt + branch
+  predictor). GCC 15 and NVHPC cannot match via flags alone. `protect` mode-1 also has
+  a GCC 15 codegen regression vs GCC 11 (+28%) present regardless of cost-model flag.
+- GCC 15 build dir `build/cp313-gcc15` must be pre-configured manually (meson-python
+  cannot be driven with `pip install -Cbuild-dir=` for a non-default dir reliably):
+  `CC=$(spack location -i gcc@15.1.0)/bin/gcc meson setup build/cp313-gcc15 \
+    --native-file=build/cp313/meson-python-native-file.ini \
+    -Dbuildtype=release -Db_ndebug=if-release -Dgpu_offload=false`
 
 ## Phase 4 — CI / process integration
 
