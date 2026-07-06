@@ -2695,13 +2695,7 @@ class Domain(Generic_Domain):
         #       recorded_min_timesteps simply because of we have to yield at a
         #       given time
 
-        # Ensure that final time is not exceeded
-        if self.relative_finaltime is not None and self.relative_time + timestep > self.relative_finaltime:
-            timestep = self.relative_finaltime - self.relative_time
-
-        # Ensure that model time is aligned with yieldsteps
-        if self.relative_time + timestep > self.relative_yieldtime:
-            timestep = self.relative_yieldtime - self.relative_time
+        timestep = self._clip_timestep_to_output_times(timestep, yieldstep, finaltime)
 
         self.timestep = timestep
 
@@ -3579,21 +3573,7 @@ class Domain(Generic_Domain):
                 stage_val = float(value[0])
             set_flather_value(gpu_dom, stage_val)
 
-        # Time remaining to the next yield boundary. Use the explicitly tracked
-        # relative_yieldtime (set and incremented by the evolve loop), NOT
-        # (relative_time % yieldstep): the modulo is floating-point fragile, e.g.
-        # 0.3 % 0.1 == 0.0999... gives remaining ~1e-17 -> max_timestep ~0 ->
-        # the step never advances and evolve() spins. Mirrors update_timestep().
-        relative_yieldtime = getattr(self, 'relative_yieldtime', None)
-        if relative_yieldtime is not None:
-            remaining_yieldstep = relative_yieldtime - self.get_relative_time()
-        else:
-            remaining_yieldstep = yieldstep
-        if finaltime is not None:
-            remaining_finaltime = finaltime - self.get_time()
-            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep, remaining_finaltime)
-        else:
-            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
+        max_timestep = self._get_max_timestep_to_output_times(yieldstep, finaltime)
 
         if not hasattr(self, '_ader2_prev_dt'):
             self._ader2_prev_dt = 0.0
@@ -4103,22 +4083,7 @@ class Domain(Generic_Domain):
                 stage_val = float(value[0])
             set_flather_value(gpu_dom, stage_val)
 
-        # Compute max allowed timestep (mirrors update_timestep() logic)
-        # Time remaining to the next yield boundary. Use the explicitly tracked
-        # relative_yieldtime (set and incremented by the evolve loop), NOT
-        # (relative_time % yieldstep): the modulo is floating-point fragile, e.g.
-        # 0.3 % 0.1 == 0.0999... gives remaining ~1e-17 -> max_timestep ~0 ->
-        # the step never advances and evolve() spins. Mirrors update_timestep().
-        relative_yieldtime = getattr(self, 'relative_yieldtime', None)
-        if relative_yieldtime is not None:
-            remaining_yieldstep = relative_yieldtime - self.get_relative_time()
-        else:
-            remaining_yieldstep = yieldstep
-        if finaltime is not None:
-            remaining_finaltime = finaltime - self.get_time()
-            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep, remaining_finaltime)
-        else:
-            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
+        max_timestep = self._get_max_timestep_to_output_times(yieldstep, finaltime)
 
         # Execute full Euler step in C (includes MPI timestep reduction)
         self.timestep = evolve_one_euler_step_gpu(gpu_dom, max_timestep, 1)
@@ -4251,23 +4216,7 @@ class Domain(Generic_Domain):
                 stage_val = float(value[0])
             set_flather_value(gpu_dom, stage_val)
 
-        # Compute max allowed timestep (respecting yieldstep and finaltime)
-        # This mirrors the logic in update_timestep()
-        # Time remaining to the next yield boundary. Use the explicitly tracked
-        # relative_yieldtime (set and incremented by the evolve loop), NOT
-        # (relative_time % yieldstep): the modulo is floating-point fragile, e.g.
-        # 0.3 % 0.1 == 0.0999... gives remaining ~1e-17 -> max_timestep ~0 ->
-        # the step never advances and evolve() spins. Mirrors update_timestep().
-        relative_yieldtime = getattr(self, 'relative_yieldtime', None)
-        if relative_yieldtime is not None:
-            remaining_yieldstep = relative_yieldtime - self.get_relative_time()
-        else:
-            remaining_yieldstep = yieldstep
-        if finaltime is not None:
-            remaining_finaltime = finaltime - self.get_time()
-            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep, remaining_finaltime)
-        else:
-            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
+        max_timestep = self._get_max_timestep_to_output_times(yieldstep, finaltime)
 
         # Execute full RK2 step in C (includes MPI timestep reduction)
         # apply_forcing=1 enables Manning friction on GPU
@@ -4599,22 +4548,7 @@ class Domain(Generic_Domain):
                 stage_val = float(value[0])
             set_flather_value(gpu_dom, stage_val)
 
-        # Compute max allowed timestep (respecting yieldstep and finaltime)
-        # Time remaining to the next yield boundary. Use the explicitly tracked
-        # relative_yieldtime (set and incremented by the evolve loop), NOT
-        # (relative_time % yieldstep): the modulo is floating-point fragile, e.g.
-        # 0.3 % 0.1 == 0.0999... gives remaining ~1e-17 -> max_timestep ~0 ->
-        # the step never advances and evolve() spins. Mirrors update_timestep().
-        relative_yieldtime = getattr(self, 'relative_yieldtime', None)
-        if relative_yieldtime is not None:
-            remaining_yieldstep = relative_yieldtime - self.get_relative_time()
-        else:
-            remaining_yieldstep = yieldstep
-        if finaltime is not None:
-            remaining_finaltime = finaltime - self.get_time()
-            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep, remaining_finaltime)
-        else:
-            max_timestep = min(self.evolve_max_timestep, remaining_yieldstep)
+        max_timestep = self._get_max_timestep_to_output_times(yieldstep, finaltime)
 
         # Execute full RK3 step in C (includes MPI timestep reduction)
         # apply_forcing=1 enables Manning friction on GPU

@@ -264,7 +264,171 @@ Key findings:
 
 ---
 
-## Recent session summaries (sessions 21–40)
+## Weak-scaling benchmark — rectangular, constant timestep (MSI laptop, RTX 5070, AMD Ryzen 9 32C/30GB, 2026-06-26)
+
+Case: `examples/parallel/run_parallel_rectangular_weak_scaling.py` — the extent grows with
+the grid (`length = cell_size * sqrtN`, `cell_size=0.002`) so the triangle size, and hence
+the explicit CFL timestep, stays ~constant as the triangle count grows (true weak scaling).
+Each `-sn` doubling is ×4 triangles. DE0, `finaltime=0.015` (~276–318 steps), no reorder.
+`dt` drifts only `4.72→5.44e-5` across the range (the fixed central bump is a smaller
+fraction of larger domains). `-mp 2` offloads to the GPU; `-sn 1900` (14.44M, ~6.7 GB) is
+the largest that fits the 8 GB RTX 5070 — `-sn 2000` (16M) OOMs the GPU.
+
+16 cores where applicable: MPI = `mpiexec -np 16` × 1 thread/rank; OpenMP = serial `-mp 1`,
+`OMP_NUM_THREADS=16`; GPU = `-mp 2`, np=1.
+
+### Evolve time (s)
+
+| triangles | MPI-16 | OpenMP-16 | GPU |
+|-----------|-------:|----------:|----:|
+| 0.90M (sn 475)  | 5.01  | 5.75  | 2.25 |
+| 3.61M (sn 950)  | 22.03 | 22.56 | 8.03 |
+| 14.44M (sn 1900)| 92.52 | 96.84 | 31.21 |
+
+### Cost per (million-triangles · step) — flat = ideal weak scaling
+
+| triangles | MPI-16 | OpenMP-16 | GPU |
+|-----------|-------:|----------:|----:|
+| 0.90M  | 17.5 ms | 20.1 ms | 7.86 ms |
+| 3.61M  | 21.5 ms | 22.0 ms | 7.83 ms |
+| 14.44M | 23.2 ms | 24.3 ms | 7.84 ms |
+| **weak-scaling eff.** | 100→75% | 100→83% | 100→**~100%** |
+
+### GPU evolve speedup
+
+| triangles | vs MPI-16 | vs OpenMP-16 |
+|-----------|----------:|-------------:|
+| 0.90M  | 2.23× | 2.55× |
+| 3.61M  | 2.74× | 2.81× |
+| 14.44M | **2.96×** | **3.10×** |
+
+Findings:
+- **GPU weak-scales near-perfectly** (~7.84 ms/(Mtri·step), <0.5% spread over 16× size),
+  2.2–3.1× faster than 16 CPU cores, lead widening with size.
+- **MPI-16 evolve is only ~2–13% faster than OpenMP-16** here — this is a *pure-solver* case;
+  the larger MPI>OpenMP gap on Towradgi came from serial operators (culverts/rainfall) that
+  this rectangle has none of. Both are memory-bandwidth bound and degrade with size.
+- **MPI setup overhead is large and grows**: `distribute` 1.3 → 5.8 → **29.9 s** plus rank-0
+  `creation` 0.4 → 1.9 → 9.6 s. End-to-end at 14.44M: MPI 132.1 s vs OpenMP 104.4 s vs GPU
+  38.7 s — for these short (~276-step) runs MPI's faster evolve does NOT repay its ~30 s
+  distribute; on production-length runs the one-time setup amortizes and MPI's evolve edge wins.
+
+---
+
+## Recent session summaries (sessions 21–45)
+
+**Session 45 (2026-07-02 – 07-05):** Geodata CI breakage (libjxl), NumPy-2.5
+warnings, PR triage, and a `tools/` cleanup.
+- **Geodata CI failure.** A red CI on PR #150 (SeanWong's timestep clamp) turned
+  out to be unrelated: conda-forge omits `libjxl` on Linux/macOS for py3.11–3.14,
+  so `libgdal-core 3.12.3` can't load (`libjxl.so.0.11: cannot open shared object
+  file`) and the whole geodata stack (fiona/rasterio/shapely) is down. Fixes,
+  merged to `develop`: (1) skip-guard the one un-guarded geodata test
+  (`test_rain_with_polygon_csv`) — **PR #151**; (2) a `spatialInputUtil`
+  diagnostic that surfaces the real import error instead of the blind
+  `except ImportError` (this is what revealed `libjxl`); (3) pin `libjxl <0.12`
+  in `environment_3.10..3.14.yml` to force the `0.11` soname — **PR #152**.
+  Restored ~20 geodata tests (upstream CI: 2667 passed, **0** `requires rasterio`
+  skips). Confirmed transient-vs-persistent by re-running CI and by a fresh
+  `conda env create` locally (imports clean — the same versions work; CI's solve
+  was the outlier).
+- **NumPy 2.5 `arr.shape=` deprecations.** Surfaced once the geodata tests
+  un-skipped. Converted ANUGA's own 14 sites to `arr.reshape(...)`; suppressed
+  the remaining one (rasterio ≤1.5.0 doing it internally in `raster.read()`) via
+  a `filterwarnings` ignore, removable after a rasterio update.
+- **PR triage.** Reviewed **#147** (BFS locality partitioning — recommended
+  *not* merging: functionally equivalent to existing RCM but 3–4× slower, per the
+  author's own benchmarks). Reviewed **#150** (timestep clamp at yield/final
+  boundaries — a good dedup + real negative-timestep fix; LGTM with minor notes;
+  merged).
+- **`tools/` cleanup.** Renamed `install_gpu_anuga.sh` → `install_anuga_nvc.sh`
+  (it's the nvc GPU build); removed 12 obsolete scripts (Travis/AppVeyor, Python
+  3.8 era, Ubuntu 20.04, Travis-era conda, dead `old_div` helper); added
+  `tools/README.md` naming the canonical path (`install_miniforge*` +
+  `pip install -e .`) and `environments/*.yml`/`CLAUDE.md` as authoritative.
+  `tools/` went 22 → 11 files (commits `dac3d8a5`, `2cf16e91`, `8bce344a`,
+  `a02fe190`).
+
+**Session 44 (2026-06-29 – 07-01):** SWW writer crash fix, laptop-guide
+reconciliation, and GPU install-script fixes.
+- **SWW crash on `main`.** `Write_sww.store_quantities()` raised `IndexError:
+  index 0 is out of bounds for axis 0 with size 0` deep into a long run
+  (t≈6960 s). The checkpoint/overwrite path locates the existing time slot with
+  an *absolute* `1e-14` tolerance — below the float64 ULP (~9e-13) for any t
+  beyond a few tens of seconds — so `numpy.where` returns empty and `check[0][0]`
+  throws, killing the run at the write. Scaled the tolerance to the time
+  magnitude (`1e-9*max(1,|t|)`) and append-with-warning when nothing matches;
+  reproduced at t≈6960 and verified (commit `d04fa3ef`). Cherry-picked to `main`
+  as **PR #149**.
+- **Laptop guide.** Reconciled `cdac_script/ANUGA_Laptop_Guide.docx`
+  benchmarking claims against this file and fixed the docx: the "dual-CCD NUMA
+  limits OpenMP" claim contradicted the measured **single-NUMA-node** finding
+  (the OpenMP-vs-MPI gap is false sharing in the flux arrays + serial operators);
+  corrected "~3x"→"~4–5x" on 16 cores; added GPU/MPI speedup figures; repaired a
+  garbled `<12 GB VRAM` bullet (commit `4fc2f134`).
+- **GPU install script (`tools/install_anuga_nvc.sh`).** (1) Run
+  `scripts/anuga_run_isolated_tests.py` instead of `pytest test_DE_gpu_omp.py`,
+  which auto-skips on a GPU build so the test step ran nothing (commit
+  `99bbc29f`). (2) `rm -rf build/cp*` before the nvc build — meson-python reads
+  `CC` only on the *first* configure of a build dir, so a leftover
+  gcc-configured `build/cp314` kept gcc and failed the `gpu_offload=true` guard
+  (commit `ec079cd7`). Verified end to end: fresh nvc build succeeds, isolated
+  runner reports **65/65 GPU tests pass**. Documented the compiler-switch gotcha
+  in `KNOWN_ISSUES.md` (commit `89624513`).
+- Gitignored the generated `validation_tests/case_studies/towradgi/MODEL_OUTPUTS/`
+  artifacts (commit `6cfb4e62`).
+
+**Session 43 (2026-06-26):** GPU test skip visibility + weak-scaling benchmark.
+`test_DE_gpu_omp.py`'s module-level skip (on a GPU-offload build, to dodge the
+NVHPC mode-2 abort) now also emits a `UserWarning` with the reason, so a plain
+`pytest` shows *why* it skipped in the warnings summary without `-rs` (commit
+`e37c0e76`). New `examples/parallel/run_parallel_rectangular_weak_scaling.py`
+(based on `run_parallel_rectangular.py`): grows the extent with the grid
+(`length = cell_size*sqrtN`) **and** normalises the sloped bed by the extent, so
+triangle size, water depth, and hence the explicit CFL timestep all stay constant
+as the triangle count grows — true weak scaling (commit `490cc00a`). Ran a
+constant-`dt` sweep (sn 475/950/1900 → 0.9M/3.6M/14.4M triangles) comparing
+**MPI-16 vs OpenMP-16 vs GPU** (full table above, "Weak-scaling benchmark"): GPU
+weak-scales near-perfectly (~7.84 ms/(Mtri·step), 2.2–3.1× faster than 16 CPU
+cores); MPI≈OpenMP for this pure-solver case (the Towradgi MPI>OpenMP gap was
+serial operators, absent here); MPI's growing `distribute` overhead (→30 s at
+14.4M) isn't repaid on these short runs.
+
+**Session 42 (2026-06-25):** Test robustness, PR #144 conflict resolution, and an
+MPI build gotcha. Made the run_toml end-to-end test directory-independent: locate
+the checkout via `cwd` (not just `__file__`, which lives in site-packages for an
+installed pkg), then self-contained — prefer the installed `anuga_run_toml`
+console command + inline-generated inputs, so it runs from any directory and
+skips only when no runner exists (commits `316620e5`, `e9400c6d`). Resolved the
+conflicts on **PR #144** ("Defer GPU/offload interface build to first evolve"):
+develop's compute-mode refactor (`set_compute_mode`/`_ensure_gpu_interface`/
+`_boundaries_ready`, commit `289bd5c7`) had independently *superseded* the PR's
+mechanism, so both conflicted files were resolved to develop's version; the PR's
+only remaining net contribution is the operator-audit (graceful GPU-init fallback
+in `rate_operators.py`/`inlet_operator.py`); merge pushed to the PR branch
+(`e73adbfa`). Diagnosed why `gpu_has_mpi()` was False on the gcc CPU build (the
+four `test_parallel_sw_flow_gpu_*` skipping): `sw_domain_gpu_ext` was built
+against the single-process MPI stubs because a **reused meson build dir** never
+re-ran MPI detection; fixed by rebuilding into a fresh `-Cbuild-dir` (mpi4py
+fallback then finds `mpicc`/`mpi.h`), documented in `KNOWN_ISSUES.md` (commit
+`a07216dd`). Those four tests then pass (8/8).
+
+**Session 41 (2026-06-23):** `anuga_run_toml` TOML scenario runner — examples,
+georeferencing, and an end-to-end test. Added `examples/run_toml/` with
+self-contained `simple/` (dam break) and `complex/` (floodplain) scenarios + per-
+scenario READMEs (commits `0c3c9546`, `d2f85ad4`). Added `"EPSG:<code>"`
+projection support to the TOML parser and made the runner resolve the scenario
+CRS to an EPSG code and call `domain.set_epsg()`, so zone/hemisphere/EPSG
+propagate into the SWW (commits `ca0eedd4`, `43010ab9`, `c4ef89f5`; cairns uses
+`EPSG:32755`, simple `-56`→zone 56/EPSG:32756). Consolidated the real-DEM Cairns
+scenario as a third TOML example `examples/run_toml/cairns/` (TOML-only; the
+~9 MB DEM moved to the shared `examples/data/cairns/`; `cairns_toml_excel/` kept
+as the legacy Excel front-end) and added the runner smoke test
+`anuga/scenario/tests/test_run_toml_end_to_end.py` (commit `036cb484`). Fixes: a
+parallel race opening the run log before its dir exists (`acc826f5`), `Make_Geotif`
+misreading a MaskedArray as a filename (`7fe595b0`); plus `-ro/-rn` reorder args
+on `run_parallel_rectangular` (`39f4ccc6`) and GUI font scaling (`c0b599b3`,
+`f0c7418d`).
 
 **Session 40 (2026-06-17):** Mode-2 ('unified') triage on the **GPU build** + the
 isolated runner became a first-class installed tool. Running
@@ -354,7 +518,7 @@ segfault in `core_extrapolate_second_order_edge`) — unfixable at source level.
 Solution: NVIDIA HPC SDK 26.3 (`nvc`) installed via apt; `meson` auto-detects it
 as `nvidia_hpc`; build command: `CC=nvc pip install --no-build-isolation -e .
 -Csetup-args=-Dgpu_offload=true -Csetup-args=-Dgpu_arch=cc120`. All 56 GPU tests
-pass. New `tools/install_gpu_anuga.sh`: auto-detects nvc under
+pass. New `tools/install_anuga_nvc.sh`: auto-detects nvc under
 `/opt/nvidia/hpc_sdk/Linux_x86_64/`, configurable via `PY`/`GPU_ARCH`/`NVHPC_ROOT`.
 Fixed: `pytest-regressions` missing from all 5 intel conda environment YMLs (already
 present in non-intel variants; pip-installed in existing env). `KNOWN_ISSUES.md`

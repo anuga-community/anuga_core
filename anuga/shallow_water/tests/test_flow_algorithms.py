@@ -1,6 +1,7 @@
 """Tests for shallow_water_domain flow algorithm setters."""
 import unittest
 import anuga
+import numpy as num
 
 
 def _make_domain():
@@ -52,6 +53,33 @@ class Test_set_flow_algorithm(unittest.TestCase):
         domain = _make_domain()
         domain.set_flow_algorithm('DE1.7')
         self.assertEqual(domain.get_flow_algorithm(), 'DE1_7')
+
+
+class Test_timestep_output_limits(unittest.TestCase):
+
+    def test_update_timestep_clamps_stale_yield_deadline_to_zero(self):
+        domain = _make_domain()
+        domain.relative_time = 1000.0
+        domain.relative_yieldtime = num.nextafter(domain.relative_time, -num.inf)
+        domain.relative_finaltime = None
+        domain.flux_timestep = 10.0
+
+        domain.update_timestep(yieldstep=1.0, finaltime=None)
+
+        self.assertEqual(domain.timestep, 0.0)
+        self.assertEqual(domain._get_max_timestep_to_output_times(1.0, None), 0.0)
+
+    def test_update_timestep_clamps_stale_final_deadline_to_zero(self):
+        domain = _make_domain()
+        domain.relative_time = 1000.0
+        domain.relative_yieldtime = domain.relative_time + 10.0
+        domain.relative_finaltime = num.nextafter(domain.relative_time, -num.inf)
+        domain.flux_timestep = 10.0
+
+        domain.update_timestep(yieldstep=10.0, finaltime=domain.relative_finaltime)
+
+        self.assertEqual(domain.timestep, 0.0)
+        self.assertEqual(domain._get_max_timestep_to_output_times(10.0, domain.relative_finaltime), 0.0)
 
 
 class Test_DE0_defaults(unittest.TestCase):

@@ -1221,7 +1221,7 @@ def Make_Geotif(swwFile=None,
             if(verbose):
                 print('Making raster ...')
 
-            gridq.shape = (len(desiredY),len(desiredX))
+            gridq = gridq.reshape(len(desiredY),len(desiredX))
             make_grid(numpy.flipud(gridq), desiredY, desiredX, output_name, EPSG_CODE=EPSG_CODE,
                       proj4string=proj4string, creation_options=creation_options)
 

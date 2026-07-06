@@ -104,7 +104,7 @@ def plotCentroidError(domain, control_data, rthr = 1E-7, athr = 1E-12,
         for i in range(0,size()):
             n = int(len(fx[i])//3)
             triang = num.array(list(range(0,3*n)))
-            triang.shape = (n, 3)
+            triang = triang.reshape(n, 3)
 
             if len(fx[i]) > 0:
                 plt.triplot(fx[i], fy[i], triang, 'g-')
@@ -114,7 +114,7 @@ def plotCentroidError(domain, control_data, rthr = 1E-7, athr = 1E-12,
             n = int(len(gx[i])//3)
 
             triang = num.array(list(range(0,3*n)))
-            triang.shape = (n, 3)
+            triang = triang.reshape(n, 3)
 
             if len(gx[i]) > 0:
                 plt.triplot(gx[i], gy[i], triang, 'b--')

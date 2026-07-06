@@ -425,7 +425,7 @@ class Parallel_domain(Domain):
                 n = int(len(fx[i])//3)
 
                 triang = num.array(list(range(0,3*n)))
-                triang.shape = (n, 3)
+                triang = triang.reshape(n, 3)
                 plt.triplot(fx[i], fy[i], triang, 'g-', linewidth = 0.5)
 
             # Plot ghost triangles
@@ -433,7 +433,7 @@ class Parallel_domain(Domain):
                 n = int(len(gx[i])//3)
                 if n > 0:
                     triang = num.array(list(range(0,3*n)))
-                    triang.shape = (n, 3)
+                    triang = triang.reshape(n, 3)
                     plt.triplot(gx[i], gy[i], triang, 'b--', linewidth = 0.5)
 
             # Save triangulation to location pointed by filename
@@ -481,14 +481,14 @@ class Parallel_domain(Domain):
         # Plot full triangles
         n = int(len(fx)/3)
         triang = num.array(list(range(0,3*n)))
-        triang.shape = (n, 3)
+        triang = triang.reshape(n, 3)
         plt.triplot(fx, fy, triang, 'g-', linewidth = 0.5)
 
         # Plot ghost triangles
         n = int(len(gx)/3)
         if n > 0:
             triang = num.array(list(range(0,3*n)))
-            triang.shape = (n, 3)
+            triang = triang.reshape(n, 3)
             plt.triplot(gx, gy, triang, 'b--', linewidth = 0.5)
 
         # Save triangulation to location pointed by filename

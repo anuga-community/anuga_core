@@ -340,7 +340,7 @@ class Erosion_operator(Operator, Region):
         ## Plot full triangles
         n = int(len(fx1) / 3)
         triang = num.array(list(range(0, 3*n)))
-        triang.shape = (n, 3)
+        triang = triang.reshape(n, 3)
         print(triang)
         plt.triplot(fx1, fy1, triang, 'go-')
 
@@ -364,7 +364,7 @@ class Erosion_operator(Operator, Region):
         ## Plot full triangles
         n = int(len(fx0) / 3)
         triang = num.array(list(range(0,3*n)))
-        triang.shape = (n, 3)
+        triang = triang.reshape(n, 3)
         print(triang)
         plt.triplot(fx0, fy0, triang, 'bo-')
 
@@ -385,7 +385,7 @@ class Erosion_operator(Operator, Region):
         ## Plot full triangles
         n = int(len(fx0) / 3)
         triang = num.array(list(range(0,3*n)))
-        triang.shape = (n, 3)
+        triang = triang.reshape(n, 3)
         print(triang)
         plt.triplot(fx0, fy0, triang, 'bo-')
 

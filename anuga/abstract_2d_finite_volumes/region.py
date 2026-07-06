@@ -194,14 +194,14 @@ class Region:
         # Plot mesh
         n = len(fx) // 3
         triang = num.array(list(range(0,3*n)))
-        triang.shape = (n, 3)
+        triang = triang.reshape(n, 3)
         plt.triplot(fx, fy, triang, 'b-')
 
         # Plot region
         n = len(gx) // 3
         if n > 0:
             triang = num.array(list(range(0,3*n)))
-            triang.shape = (n, 3)
+            triang = triang.reshape(n, 3)
             plt.triplot(gx, gy, triang, 'r-')
 
         # Save triangulation to location pointed by filename

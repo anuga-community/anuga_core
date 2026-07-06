@@ -60,8 +60,22 @@ try:
     from shapely.geometry import (MultiPoint, LineString, Polygon, Point,
                                    mapping, shape)
     spatial_available = True
-except ImportError:
+    spatial_import_error = None
+except ImportError as _e:
+    # Geodata features degrade to a clear ImportError (see the stubs below),
+    # but do NOT swallow the cause silently: record it and warn. A broken
+    # geodata install (e.g. a fiona/rasterio/GDAL ABI mismatch, as seen in CI
+    # during a conda-forge GDAL migration) then shows the real error instead of
+    # only the generic "not installed" message.
     spatial_available = False
+    spatial_import_error = _e
+    import warnings as _warnings
+    _warnings.warn(
+        'anuga.utilities.spatialInputUtil: geodata interface unavailable -- '
+        '%s: %s. fiona/rasterio/shapely could not be imported; geodata '
+        'features (shapefiles, rasters, polygon CSVs) will raise ImportError.'
+        % (type(_e).__name__, _e),
+        stacklevel=2)
 
 
 #####################################
@@ -1232,6 +1246,9 @@ if spatial_available:
 else: # spatial_available == False
     msg='Failed to import fiona rasterio or shapely --'\
         + 'perhaps geodata python interface is not installed.'
+    if spatial_import_error is not None:
+        msg += ' (root cause: %s: %s)' % (
+            type(spatial_import_error).__name__, spatial_import_error)
 
 
 

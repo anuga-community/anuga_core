@@ -4,7 +4,7 @@
 #
 # Run this script as follows:
 #
-#   bash /path/to/anuga_core/tools/install_gpu_anuga.sh
+#   bash /path/to/anuga_core/tools/install_anuga_nvc.sh
 #
 # The script locates nvc in the NVIDIA HPC SDK, activates the conda
 # environment, and builds the GPU-enabled anuga package.
@@ -19,7 +19,7 @@
 #
 # Example — build for an A100 with Python 3.13:
 #
-#   PY=3.13 GPU_ARCH=cc80 bash /path/to/anuga_core/tools/install_gpu_anuga.sh
+#   PY=3.13 GPU_ARCH=cc80 bash /path/to/anuga_core/tools/install_anuga_nvc.sh
 #
 # Prerequisites:
 #   - NVIDIA HPC SDK installed (see KNOWN_ISSUES.md for apt install recipe)
@@ -37,7 +37,7 @@ SCRIPTPATH=$(dirname "$SCRIPT")
 ANUGA_CORE_PATH=$(realpath "$SCRIPTPATH/..")
 
 echo "#============================================================"
-echo "# ANUGA GPU build  (PY=${PY}  GPU_ARCH=${GPU_ARCH})"
+echo "# ANUGA NVC GPU build  (PY=${PY}  GPU_ARCH=${GPU_ARCH})"
 echo "#============================================================"
 echo " "
 
@@ -116,6 +116,16 @@ echo " "
 
 cd "${ANUGA_CORE_PATH}"
 
+# meson-python reuses the build/cp<ver> directory and only honours CC on the
+# FIRST configure of a dir — a subsequent build just runs `meson setup
+# --reconfigure`, which keeps the originally detected compiler. A leftover dir
+# configured with gcc (e.g. a prior CPU build) therefore stays on gcc and the
+# gpu_offload=true guard in meson.build rejects it ("not supported with gcc").
+# Remove any stale build dir so CC=nvc takes effect on a clean configure.
+echo "# Removing any stale meson build directory (build/cp*) for a clean nvc configure"
+rm -rf "${ANUGA_CORE_PATH}"/build/cp*
+echo " "
+
 "$CONDA_BIN/conda" run -n "${ENV_NAME}" bash -c \
     "CC='$NVC' pip install --no-build-isolation -v -e . \
      -Csetup-args=-Dgpu_offload=true \
@@ -123,12 +133,20 @@ cd "${ANUGA_CORE_PATH}"
 
 echo " "
 echo "#============================================================"
-echo "# Running GPU test suite"
+echo "# Running GPU test suite (isolated runner)"
+echo "#   One fresh process per test.  A plain 'pytest' on this file"
+echo "#   auto-skips on a GPU build: the NVHPC OpenMP-target runtime"
+echo "#   aborts once many mode-2 GPU domains are created in a single"
+echo "#   process, so the tests must each run in their own process."
+echo "#   scripts/anuga_run_isolated_tests.py defaults to test_DE_gpu_omp.py"
+echo "#   and opts in via ANUGA_GPU_TESTS_ISOLATED=1.  Run the script"
+echo "#   directly (not the installed console command, which an editable"
+echo "#   'pip install -e .' does not place on PATH)."
 echo "#============================================================"
 echo " "
 
 "$CONDA_BIN/conda" run -n "${ENV_NAME}" \
-    pytest anuga/shallow_water/tests/test_DE_gpu_omp.py -v
+    python "${ANUGA_CORE_PATH}/scripts/anuga_run_isolated_tests.py"
 
 echo " "
 echo "#=================================================================="

@@ -25,6 +25,19 @@ except ImportError as _e:
     HAS_MODULE = False
     SKIP_REASON = str(_e)
 
+# Reading a polygon CSV pulls in the geodata interface (fiona/rasterio/shapely)
+# via spatialInputUtil. When that stack is not installed, tests that touch it
+# must skip rather than fail — matching every other geodata test in the suite
+# (see test_tif2.py, test_spatialInputUtil.py). Without this the polygon test
+# turns a missing optional dependency into a hard ImportError that reds CI.
+try:
+    import fiona  # noqa: F401
+    import rasterio  # noqa: F401
+    import shapely  # noqa: F401
+    HAS_GEODATA = True
+except ImportError:
+    HAS_GEODATA = False
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -152,6 +165,9 @@ class TestSetupRainfall(unittest.TestCase):
 
     # --- Polygon-restricted rainfall ---
 
+    @unittest.skipUnless(
+        HAS_GEODATA,
+        'requires geodata interface (fiona, rasterio, shapely)')
     def test_rain_with_polygon_csv(self):
         rain_csv = self._rain_path('rain.csv')
         poly_csv = self._rain_path('poly.csv')

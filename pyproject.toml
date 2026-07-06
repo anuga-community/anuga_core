@@ -147,5 +147,11 @@ filterwarnings = [
     "ignore:Barometric_pressure is deprecated:DeprecationWarning",
     "ignore:Culvert_flow_general.*is deprecated:DeprecationWarning",
     "ignore:anuga.culvert_flows is deprecated:DeprecationWarning",
+    # rasterio (<=1.5.0) still does `arr.shape = ...` internally, which NumPy 2.5
+    # deprecates; the warning is attributed to ANUGA's raster.read() call sites
+    # via stacklevel.  Not fixable in ANUGA — remove once rasterio ships a
+    # NumPy-2.5-compatible release.  (ANUGA's own .shape= assignments were
+    # converted to .reshape().)
+    "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning",
 ]
 

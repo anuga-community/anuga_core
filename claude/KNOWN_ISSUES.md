@@ -319,6 +319,73 @@ environment rather than fetching isolated build dependencies.
 `.gitignore` but still show up as untracked. This is expected — they are
 build artifacts.
 
+### A reused meson build dir does NOT re-detect MPI (2026-06-25)
+
+`sw_domain_gpu_ext` is built with real C MPI (`HAVE_MPI4PY=True`, multi-rank
+GPU halo exchange) only when meson finds MPI **at configure time**. Detection is
+two-stage: `dependency('mpi', language: 'c')` first, then — because meson's
+`mpi` dependency does **not** match conda's `mpich` pkg-config name — an
+**mpi4py fallback** that parses `mpicc -show` to locate `mpi.h`
+(`anuga/shallow_water/meson.build`). The fallback runs via `run_command`, which
+is evaluated only on a **fresh configure**.
+
+Gotcha: if you `pip install -e .` *before* MPI/mpi4py is in the env, the gpu
+extension is compiled against the single-process stubs (`gpu_mpi_stubs.h`),
+`gpu_has_mpi()` returns False, and the four
+`anuga/parallel/tests/test_parallel_sw_flow_gpu_*` tests **skip**
+("GPU extension built without C MPI"). Installing MPI afterwards and re-running
+plain `pip install -e .` does **not** fix it — meson-python reuses the cached
+build dir and just relinks the no-MPI `.so` (it never re-runs the fallback).
+This is independent of `gpu_offload`: it bites the standard gcc CPU-only build,
+where these tests otherwise run mode-2 on the host.
+
+Fix — force a fresh configure by pointing at a new build dir (or deleting the
+cached one):
+
+```bash
+CC=gcc pip install --no-build-isolation -e . \
+  -Csetup-args=-Dgpu_offload=false \
+  -Cbuild-dir=build/cp314-mpi -v
+```
+
+Verify (any one is sufficient):
+- meson logs `GPU extension will be built WITH MPI support (multi-GPU enabled)`
+  (visible with `-v`);
+- `readelf -d <sw_domain_gpu_ext...so> | grep NEEDED` lists `libmpi.so.*`;
+- `python -c "from anuga.shallow_water import sw_domain_gpu_ext as e; print(e.gpu_has_mpi())"` → `True`.
+
+Then the `test_parallel_sw_flow_gpu_*` files run (`real_gpu_available()` stays
+False on a CPU build, so the per-test "needs N GPUs" guards do not fire either).
+
+### A reused meson build dir keeps the old compiler — switching gcc↔nvc needs `rm -rf build/cp*` (2026-07-01)
+
+Same root cause as the MPI note above, but for the **compiler**. meson-python
+reuses `build/cp<ver>` and only reads `CC` on the **first** configure of a dir;
+a later build just runs `meson setup --reconfigure`, which keeps the originally
+detected compiler. So building for GPU (`CC=nvc pip install -e . -Dgpu_offload=true`)
+in a tree that already has a gcc-configured `build/cp314` **stays on gcc**, and
+`anuga/shallow_water/meson.build`'s guard aborts:
+
+```
+C compiler for the host machine: cc (gcc 15.2.0)
+ERROR: gpu_offload=true is not supported with gcc ... rm -rf build/cp314 required when switching compiler
+```
+
+The reverse bites too (an nvc-configured dir stays on nvc for a later gcc CPU
+build). **Fix: remove the build dir before switching compiler** so `CC` is read
+on a clean configure:
+
+```bash
+rm -rf build/cp*                     # force a fresh meson configure
+CC=$(which nvc) pip install --no-build-isolation -e . \
+    -Csetup-args=-Dgpu_offload=true -Csetup-args=-Dgpu_arch=cc120
+```
+
+`tools/install_anuga_nvc.sh` now does this `rm -rf build/cp*` automatically
+before the nvc build. Verified end to end: fresh nvc build succeeds and the
+isolated GPU runner reports 65/65 passed. See also `SESSION_GUIDE.md` → "CPU and
+GPU are separate builds".
+
 ---
 
 ## Testing

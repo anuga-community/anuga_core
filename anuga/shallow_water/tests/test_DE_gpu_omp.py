@@ -8,6 +8,7 @@ import os
 import tempfile
 import unittest
 import sys
+import warnings
 import numpy as np
 import pytest
 
@@ -54,12 +55,16 @@ def _gpu_skip_reason():
 # table, so the file runs fine in one process and is NOT skipped.
 if (gpu_available() and anuga.gpu_offload_supported()
         and not os.environ.get('ANUGA_GPU_TESTS_ISOLATED')):
-    pytest.skip(
+    _skip_reason = (
         "GPU-offload build: run this file via "
         "anuga/shallow_water/tests/run_gpu_tests_isolated.sh (one fresh process "
         "per class) — running it in one process aborts the NVHPC OpenMP-target "
-        "runtime. Set ANUGA_GPU_TESTS_ISOLATED=1 to force in-process collection.",
-        allow_module_level=True)
+        "runtime. Set ANUGA_GPU_TESTS_ISOLATED=1 to force in-process collection.")
+    # Also emit a warning so the reason is visible in pytest's warnings summary
+    # without needing -rs (a bare module-level skip otherwise just shows "1
+    # skipped" with no explanation).
+    warnings.warn(_skip_reason, stacklevel=1)
+    pytest.skip(_skip_reason, allow_module_level=True)
 
 
 @pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())

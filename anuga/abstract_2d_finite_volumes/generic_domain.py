@@ -1808,14 +1808,14 @@ class Generic_Domain:
         n = int(len(fx) // 3)  # FIXME (Ole): No need to cast as int()
 
         triang = num.array(list(range(0, 3 * n)))
-        triang.shape = (n, 3)
+        triang = triang.reshape(n, 3)
         plt.triplot(fx, fy, triang, 'g-')
 
         # Plot ghost triangles
         n = int(len(gx) // 3)  # FIXME (Ole): No need to cast as int()
         if n > 0:
             triang = num.array(list(range(0, 3 * n)))
-            triang.shape = (n, 3)
+            triang = triang.reshape(n, 3)
             plt.triplot(gx, gy, triang, 'b--')
 
         # Save triangulation to location pointed by filename
@@ -2570,15 +2570,51 @@ class Generic_Domain:
         #       recorded_min_timesteps simply because of we have to yield at a
         #       given time
 
-        # Ensure that final time is not exceeded
-        if self.relative_finaltime is not None and self.relative_time + timestep > self.relative_finaltime:
-            timestep = self.relative_finaltime - self.relative_time
-
-        # Ensure that model time is aligned with yieldsteps
-        if self.relative_time + timestep > self.relative_yieldtime:
-            timestep = self.relative_yieldtime - self.relative_time
+        timestep = self._clip_timestep_to_output_times(timestep, yieldstep, finaltime)
 
         self.timestep = timestep
+
+    def _time_remaining_until(self, target_time):
+        """Return non-negative relative time remaining until target_time."""
+
+        if target_time is None:
+            return None
+
+        return max(target_time - self.relative_time, 0.0)
+
+    def _clip_timestep_to_output_times(self, timestep, yieldstep, finaltime):
+        """Limit timestep so evolve lands on yield/final boundaries.
+
+        A small roundoff overshoot can make ``target - relative_time`` negative
+        even though the evolve loop is about to yield.  Clamp those stale
+        deadlines to zero instead of returning a negative timestep.
+
+        Use the explicitly tracked ``relative_yieldtime`` when available.
+        Computing the next yield boundary with ``relative_time % yieldstep`` is
+        floating-point fragile and can leave a tiny remainder that drives the
+        maximum timestep toward zero.
+        """
+
+        remaining_finaltime = self._time_remaining_until(self.relative_finaltime)
+        if remaining_finaltime is None and finaltime is not None:
+            remaining_finaltime = max(finaltime - self.get_time(), 0.0)
+        if remaining_finaltime is not None and timestep > remaining_finaltime:
+            timestep = remaining_finaltime
+
+        remaining_yieldstep = self._time_remaining_until(getattr(self, 'relative_yieldtime', None))
+        if remaining_yieldstep is None and yieldstep is not None:
+            remaining_yieldstep = max(float(yieldstep), 0.0)
+        if remaining_yieldstep is not None and timestep > remaining_yieldstep:
+            timestep = remaining_yieldstep
+
+        return timestep
+
+    def _get_max_timestep_to_output_times(self, yieldstep, finaltime):
+        """Return max step allowed before the next evolve output boundary."""
+
+        return self._clip_timestep_to_output_times(self.evolve_max_timestep,
+                                                   yieldstep,
+                                                   finaltime)
 
     def compute_forcing_terms(self):
         """If there are any forcing functions driving the system
