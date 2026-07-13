@@ -55,7 +55,7 @@ int gpu_max_quantities_init(struct gpu_domain *GD, int n, double velocity_zero_h
         double *md  = MQ->max_depth;
         double *msp = MQ->max_speed;
         double *mu  = MQ->max_uh;
-        #pragma omp target enter data map(to: ms[0:ni], md[0:ni], msp[0:ni], mu[0:ni])
+        OMP_TARGET_ENTER_DATA_MAP_TO(ms[0:ni], md[0:ni], msp[0:ni], mu[0:ni])
         MQ->mapped = 1;
     }
 
@@ -118,7 +118,7 @@ void gpu_max_quantities_get(struct gpu_domain *GD,
         double *md  = MQ->max_depth;
         double *msp = MQ->max_speed;
         double *mu  = MQ->max_uh;
-        #pragma omp target update from(ms[0:n], md[0:n], msp[0:n], mu[0:n])
+        OMP_TARGET_UPDATE_FROM(ms[0:n], md[0:n], msp[0:n], mu[0:n])
     }
 
     memcpy(out_stage, MQ->max_stage, n * sizeof(double));
@@ -139,7 +139,7 @@ void gpu_max_quantities_finalize(struct gpu_domain *GD)
         double *md  = MQ->max_depth;
         double *msp = MQ->max_speed;
         double *mu  = MQ->max_uh;
-        #pragma omp target exit data map(delete: ms[0:n], md[0:n], msp[0:n], mu[0:n])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(ms[0:n], md[0:n], msp[0:n], mu[0:n])
         MQ->mapped = 0;
     }
 

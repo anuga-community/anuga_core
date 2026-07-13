@@ -55,7 +55,7 @@ void gpu_reflective_finalize(struct gpu_domain *GD) {
         int *e_ids = R->edge_ids;
         int ne = R->num_edges;
 
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
     }
 
     if (R->boundary_indices) free(R->boundary_indices);
@@ -190,7 +190,7 @@ void gpu_dirichlet_finalize(struct gpu_domain *GD) {
         double *s_val = D->stage_values;
         double *x_val = D->xmom_values;
         double *y_val = D->ymom_values;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne],
                                                  s_val[0:ne], x_val[0:ne], y_val[0:ne])
     }
 
@@ -297,7 +297,7 @@ void gpu_transmissive_finalize(struct gpu_domain *GD) {
         int *b_idx = T->boundary_indices;
         int *v_ids = T->vol_ids;
         int *e_ids = T->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
     }
 
     if (T->boundary_indices) free(T->boundary_indices);
@@ -411,7 +411,7 @@ void gpu_transmissive_n_zero_t_finalize(struct gpu_domain *GD) {
         int *b_idx = B->boundary_indices;
         int *v_ids = B->vol_ids;
         int *e_ids = B->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
     }
 
     if (B->boundary_indices) free(B->boundary_indices);
@@ -542,7 +542,7 @@ void gpu_file_boundary_finalize(struct gpu_domain *GD) {
         double *stage_v = B->stage_values;
         double *xmom_v  = B->xmom_values;
         double *ymom_v  = B->ymom_values;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne],
                                                  stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
     }
 
@@ -579,7 +579,7 @@ void gpu_file_boundary_set_values(struct gpu_domain *GD,
         double *stage_v = B->stage_values;
         double *xmom_v  = B->xmom_values;
         double *ymom_v  = B->ymom_values;
-        #pragma omp target update to(stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
+        OMP_TARGET_UPDATE_TO(stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
     }
 }
 
@@ -668,7 +668,7 @@ void gpu_time_boundary_finalize(struct gpu_domain *GD) {
         int *b_idx = B->boundary_indices;
         int *v_ids = B->vol_ids;
         int *e_ids = B->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
     }
 
     if (B->boundary_indices) free(B->boundary_indices);
@@ -773,7 +773,7 @@ void gpu_absorbing_wave_finalize(struct gpu_domain *GD) {
         int *b_idx = B->boundary_indices;
         int *v_ids = B->vol_ids;
         int *e_ids = B->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
     }
 
     if (B->boundary_indices) free(B->boundary_indices);
@@ -903,7 +903,7 @@ void gpu_characteristic_wave_finalize(struct gpu_domain *GD) {
         int *b_idx = B->boundary_indices;
         int *v_ids = B->vol_ids;
         int *e_ids = B->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
     }
 
     if (B->boundary_indices) free(B->boundary_indices);
@@ -1047,7 +1047,7 @@ void gpu_flather_finalize(struct gpu_domain *GD) {
         int *b_idx = B->boundary_indices;
         int *v_ids = B->vol_ids;
         int *e_ids = B->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
     }
 
     if (B->boundary_indices) free(B->boundary_indices);

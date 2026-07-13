@@ -8,6 +8,13 @@ option('use_mkl', type: 'boolean', value: false,
 option('gpu_offload', type: 'boolean', value: false,
        description: 'Target GPU (true) or CPU multicore (false)')
 
+# GPU programming model used for the offload kernels (only relevant when
+# gpu_offload=true). 'openmp' uses OpenMP target (nvc -mp=gpu); 'openacc' uses
+# OpenACC (nvc -acc=gpu). The CPU multicore build (gpu_offload=false) always
+# uses OpenMP regardless of this setting. Currently requires the NVIDIA HPC SDK.
+option('gpu_backend', type: 'combo', choices: ['openmp', 'openacc'], value: 'openmp',
+       description: 'GPU offload programming model: openmp (OpenMP target) or openacc (OpenACC)')
+
 # GPU-aware MPI for direct device-to-device communication
 option('gpu_aware_mpi', type: 'boolean', value: false,
        description: 'Enable GPU-aware MPI for direct device communication (requires GPU-aware MPI library)')

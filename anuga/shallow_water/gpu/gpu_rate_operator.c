@@ -101,7 +101,7 @@ int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
         int ni = op->num_indices;
         int *idx = op->indices;
         double *ar = op->areas;
-        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
+        OMP_TARGET_ENTER_DATA_MAP_TO(idx[0:ni], ar[0:ni])
         op->mapped = 1;
     }
 
@@ -126,14 +126,14 @@ void gpu_rate_operator_finalize(struct gpu_domain *GD, int op_id) {
         int ni = op->num_indices;
         int *idx = op->indices;
         double *ar = op->areas;
-        #pragma omp target exit data map(delete: idx[0:ni], ar[0:ni])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(idx[0:ni], ar[0:ni])
     }
 
     // Clean up rate array cache
     if (op->rate_array_mapped && op->rate_array_cache != NULL) {
         double *rac = op->rate_array_cache;
         int ras = op->rate_array_size;
-        #pragma omp target exit data map(delete: rac[0:ras])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(rac[0:ras])
     }
     if (op->rate_array_cache) free(op->rate_array_cache);
 
@@ -179,7 +179,7 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
         int ni = op->num_indices;
         int *idx = op->indices;
         double *ar = op->areas;
-        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
+        OMP_TARGET_ENTER_DATA_MAP_TO(idx[0:ni], ar[0:ni])
         op->mapped = 1;
     }
 
@@ -258,7 +258,7 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
         int ni = op->num_indices;
         int *idx = op->indices;
         double *ar = op->areas;
-        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
+        OMP_TARGET_ENTER_DATA_MAP_TO(idx[0:ni], ar[0:ni])
         op->mapped = 1;
     }
 
@@ -282,7 +282,7 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
         if (op->rate_array_mapped && op->rate_array_cache != NULL) {
             double *old_rac = op->rate_array_cache;
             int old_size = op->rate_array_size;
-            #pragma omp target exit data map(delete: old_rac[0:old_size])
+            OMP_TARGET_EXIT_DATA_MAP_DELETE(old_rac[0:old_size])
         }
         if (op->rate_array_cache) free(op->rate_array_cache);
 
@@ -301,10 +301,10 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
         double *rac = op->rate_array_cache;
         int ras = rate_array_size;
         if (!op->rate_array_mapped) {
-            #pragma omp target enter data map(to: rac[0:ras])
+            OMP_TARGET_ENTER_DATA_MAP_TO(rac[0:ras])
             op->rate_array_mapped = 1;
         } else {
-            #pragma omp target update to(rac[0:ras])
+            OMP_TARGET_UPDATE_TO(rac[0:ras])
         }
     }
 

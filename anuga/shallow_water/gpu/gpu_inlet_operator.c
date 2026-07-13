@@ -113,8 +113,8 @@ int gpu_inlet_operator_init(struct gpu_domain *GD, int num_indices,
         double *sx = op->scratch_xmom;
         double *sy = op->scratch_ymom;
         double *sd = op->scratch_depths;
-        #pragma omp target enter data map(to: idx[0:ni], ar[0:ni]) \
-            map(alloc: ss[0:ni], sb[0:ni], sx[0:ni], sy[0:ni], sd[0:ni])
+        OMP_TARGET_ENTER_DATA_MAP_TO(idx[0:ni], ar[0:ni])
+        OMP_TARGET_ENTER_DATA_MAP_ALLOC(ss[0:ni], sb[0:ni], sx[0:ni], sy[0:ni], sd[0:ni])
         op->mapped = 1;
 
         // Verify mapping succeeded (skip check in host fallback mode)
@@ -174,7 +174,7 @@ void gpu_inlet_operator_finalize(struct gpu_domain *GD, int op_id) {
         double *sx = op->scratch_xmom;
         double *sy = op->scratch_ymom;
         double *sd = op->scratch_depths;
-        #pragma omp target exit data map(delete: idx[0:ni], ar[0:ni], \
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(idx[0:ni], ar[0:ni],
             ss[0:ni], sb[0:ni], sx[0:ni], sy[0:ni], sd[0:ni])
     }
 
@@ -298,7 +298,7 @@ void gpu_inlet_get_velocities(struct gpu_domain *GD, int op_id,
     }
 
     // Small D2H: transfer scratch buffers to host
-    #pragma omp target update from(s_depths[0:n], s_xmom[0:n], s_ymom[0:n])
+    OMP_TARGET_UPDATE_FROM(s_depths[0:n], s_xmom[0:n], s_ymom[0:n])
 
     // CPU computation on small arrays (matching inlet.py get_velocities)
     for (int k = 0; k < n; k++) {
@@ -377,7 +377,7 @@ void gpu_inlet_set_xmoms_array(struct gpu_domain *GD, int op_id,
     // Small H2D: copy values to scratch, update on GPU
     double *scratch = op->scratch_xmom;
     memcpy(scratch, values, n * sizeof(double));
-    #pragma omp target update to(scratch[0:n])
+    OMP_TARGET_UPDATE_TO(scratch[0:n])
 
     OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
@@ -397,7 +397,7 @@ void gpu_inlet_set_ymoms_array(struct gpu_domain *GD, int op_id,
 
     double *scratch = op->scratch_ymom;
     memcpy(scratch, values, n * sizeof(double));
-    #pragma omp target update to(scratch[0:n])
+    OMP_TARGET_UPDATE_TO(scratch[0:n])
 
     OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
@@ -433,7 +433,7 @@ void gpu_inlet_set_stages_evenly(struct gpu_domain *GD, int op_id, double volume
         bed[k] = bed_c[i];
     }
     // Transfer to host
-    #pragma omp target update from(stages[0:n], bed[0:n])
+    OMP_TARGET_UPDATE_FROM(stages[0:n], bed[0:n])
 
     // Areas: use the host copy (op->areas host allocation is still valid)
     double *areas_local = op->areas;
@@ -487,7 +487,7 @@ void gpu_inlet_set_stages_evenly(struct gpu_domain *GD, int op_id, double volume
     }
 
     // Small H2D: update stages scratch buffer on GPU, then scatter to domain array
-    #pragma omp target update to(stages[0:n])
+    OMP_TARGET_UPDATE_TO(stages[0:n])
 
     OMP_PARALLEL_LOOP
     for (int k = 0; k < n; k++) {
@@ -536,7 +536,7 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
             int i = indices[k];
             s_depths[k] = stage_c[i] - bed_c[i];
         }
-        #pragma omp target update from(s_depths[0:n])
+        OMP_TARGET_UPDATE_FROM(s_depths[0:n])
 
         if (zero_velocity) {
             gpu_inlet_set_xmoms(GD, op_id, 0.0);
@@ -575,7 +575,7 @@ double gpu_inlet_apply(struct gpu_domain *GD, int op_id, double volume,
             int i = indices[k];
             s_depths[k] = stage_c[i] - bed_c[i];
         }
-        #pragma omp target update from(s_depths[0:n])
+        OMP_TARGET_UPDATE_FROM(s_depths[0:n])
 
         if (zero_velocity) {
             gpu_inlet_set_xmoms(GD, op_id, 0.0);

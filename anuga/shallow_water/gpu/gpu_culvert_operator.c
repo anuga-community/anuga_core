@@ -626,16 +626,16 @@ void gpu_culverts_finalize_all(struct gpu_domain *GD) {
         int *scn = CO->scratch_slot_count;
 
         if (ne > 0) {
-            #pragma omp target exit data map(delete: eid[0:ne], sst[0:ne], scn[0:ne], \
-                ss[0:ne], sx[0:ne], sy[0:ne], se[0:ne], \
-                as[0:ne], ad[0:ne], ax[0:ne], ay[0:ne], \
+            OMP_TARGET_EXIT_DATA_MAP_DELETE(eid[0:ne], sst[0:ne], scn[0:ne],
+                ss[0:ne], sx[0:ne], sy[0:ne], se[0:ne],
+                as[0:ne], ad[0:ne], ax[0:ne], ay[0:ne],
                 nd[0:ne], nx[0:ne], ny[0:ne])
         }
 
         if (nt > 0) {
             int *si = CO->scratch_inlet_indices;
             double *sa = CO->scratch_inlet_areas;
-            #pragma omp target exit data map(delete: si[0:nt], sa[0:nt])
+            OMP_TARGET_EXIT_DATA_MAP_DELETE(si[0:nt], sa[0:nt])
         }
         CO->mapped = 0;
     }
@@ -756,15 +756,15 @@ void gpu_culverts_map(struct gpu_domain *GD) {
     double *ny = CO->scratch_slot_ymom;
     int *sst = CO->scratch_slot_start;
     int *scn = CO->scratch_slot_count;
-    #pragma omp target enter data map(to: eid[0:ne], sst[0:ne], scn[0:ne]) \
-        map(alloc: ss[0:ne], sx[0:ne], sy[0:ne], se[0:ne], \
-                   as[0:ne], ad[0:ne], ax[0:ne], ay[0:ne], \
+    OMP_TARGET_ENTER_DATA_MAP_TO(eid[0:ne], sst[0:ne], scn[0:ne])
+    OMP_TARGET_ENTER_DATA_MAP_ALLOC(ss[0:ne], sx[0:ne], sy[0:ne], se[0:ne],
+                   as[0:ne], ad[0:ne], ax[0:ne], ay[0:ne],
                    nd[0:ne], nx[0:ne], ny[0:ne])
 
     if (nt > 0) {
         int *si = CO->scratch_inlet_indices;
         double *sa = CO->scratch_inlet_areas;
-        #pragma omp target enter data map(to: si[0:nt], sa[0:nt])
+        OMP_TARGET_ENTER_DATA_MAP_TO(si[0:nt], sa[0:nt])
     }
 
     CO->mapped = 1;
@@ -807,7 +807,7 @@ static void gpu_culvert_gather_enquiry(struct gpu_domain *GD,
     }
 
     // Single D2H transfer (~1KB for 20 culverts)
-    #pragma omp target update from(ss[0:ne], sx[0:ne], sy[0:ne], se[0:ne])
+    OMP_TARGET_UPDATE_FROM(ss[0:ne], sx[0:ne], sy[0:ne], se[0:ne])
 
     // Unpack into per-culvert inlet_data structs
     for (int c = 0; c < nc; c++) {
@@ -852,7 +852,7 @@ static void gpu_culvert_gather_inlets(struct gpu_domain *GD,
     // summation order matches the old host loop exactly. Only the per-inlet
     // sums (2*nc doubles ×4 ≈ a few KB) travel back to the host — not every
     // triangle value.
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int s = 0; s < ne; s++) {
         double sum_stage = 0.0, sum_depth = 0.0, sum_xmom = 0.0, sum_ymom = 0.0;
         int start = sst[s];
@@ -875,7 +875,7 @@ static void gpu_culvert_gather_inlets(struct gpu_domain *GD,
     }
 
     // Single D2H transfer of the per-inlet sums.
-    #pragma omp target update from(as[0:ne], ad[0:ne], ax[0:ne], ay[0:ne])
+    OMP_TARGET_UPDATE_FROM(as[0:ne], ad[0:ne], ax[0:ne], ay[0:ne])
 
     // Divide by (constant, host-side) inlet area to get averages. An inlet
     // with zero local area (e.g. a cross-boundary inlet this rank doesn't own)
@@ -946,7 +946,7 @@ static void gpu_culvert_scatter(struct gpu_domain *GD,
     }
 
     // Single H2D transfer of the per-inlet values (2*nc doubles ×3).
-    #pragma omp target update to(nd[0:ne], nx[0:ne], ny[0:ne])
+    OMP_TARGET_UPDATE_TO(nd[0:ne], nx[0:ne], ny[0:ne])
 
     // On-device scatter: one team per inlet writes its contiguous triangle
     // range, reading bed elevation straight from the domain array so stage =
@@ -959,7 +959,7 @@ static void gpu_culvert_scatter(struct gpu_domain *GD,
     double * restrict ymom_c = GD->D.ymom_centroid_values;
     double * restrict bed_c = GD->D.bed_centroid_values;
 
-    #pragma omp target teams distribute parallel for
+    OMP_PARALLEL_LOOP
     for (int s = 0; s < ne; s++) {
         double depth = nd[s];
         double new_xmom = nx[s];
@@ -1233,7 +1233,7 @@ static void scatter_single_inlet(struct gpu_domain *GD,
     // Single fused device kernel: read bed, write stage/xmom/ymom. No host
     // loop, no stack staging arrays.
     int *idx = tri_indices;
-    #pragma omp target teams distribute parallel for map(to: idx[0:ntri])
+    OMP_PARALLEL_LOOP_MAP_TO(idx[0:ntri])
     for (int k = 0; k < ntri; k++) {
         int i = idx[k];
         stage_c[i] = bed_c[i] + new_depth;
