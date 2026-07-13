@@ -460,6 +460,25 @@ partitions** — ~88% of the job; the dump routines wrote files in a serial loop
   the user's log).
   **Triage tip:** `Cannot import 'mesonpy'` from this script is never an nvc
   problem — it is a missing build backend in the target env.
+- **Test isolation: `Test_File_Conversion` (issue #186, closed).**
+  `test_ferret2sww3` passed in isolation but ERRORed in a full run. `setUp` and
+  several tests in the class create files with **bare relative names**
+  (`most_small_*.nc`, `test_*.nc`, `test.sww`, `*.tms`, `*.asc`/`.dem`) in the
+  **CWD**, and clean them up *inline at the end of each test body* — so a test
+  that fails or is interrupted leaves stale files behind and the **next** run dies
+  overwriting them with `NetCDFFile(..., 'w')` (triggered by a stale `tmp/` left by
+  a previously failed `install_anuga.py`). Fixed by giving each test its **own
+  temp working directory** (`setUp`: `mkdtemp` + `chdir`; `tearDown`: `chdir` back
+  + `rmtree`), so cleanup is **unconditional** even on failure. Chose the temp-CWD
+  approach over patching ferret3 alone because it fixes *every* CWD-writer in the
+  class at once and stops the suite polluting the directory it runs from; safe
+  because the class reads no fixture files by relative path (it creates everything
+  it reads). Verified it still passes with **corrupt + read-only** leftovers
+  planted in the CWD (the exact failure mode), leaving them untouched.
+  **Pattern for similar failures:** "passes alone, fails in a full run" + files
+  written to the CWD ⇒ isolate the whole TestCase in a temp CWD rather than
+  chasing individual `os.remove` calls. (An earlier fix, `55d91479`, had used
+  per-file `mkstemp` for `test_sww_extent` but never touched the ferret tests.)
 
 **Session 47 (2026-07-07/08):** Documentation overhaul — restructure, API
 cross-linking, meta-pages, and a warning-free Read the Docs build.
