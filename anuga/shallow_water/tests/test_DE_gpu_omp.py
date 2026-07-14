@@ -2449,6 +2449,173 @@ class Test_GPU_NonGPUBoundaryFallback(unittest.TestCase):
         self._assert_modes_agree('DE_ader2')
 
 
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
+class Test_GPU_SetQuantityReachesDevice(unittest.TestCase):
+    """set_quantity() after the GPU interface exists must reach the device.
+
+    Regression guard. In mode 2 ('unified') the *device* holds the authoritative
+    centroid state once the GPU interface is built. set_quantity() used to update
+    only the host arrays, so any set_quantity() made *after* something built the
+    interface was silently ignored: the device kept evolving the stale/default
+    values, and the results — and the stored SWW — were wrong.
+
+    The interface gets built early by anything that calls _ensure_gpu_interface(),
+    notably distribute_to_vertices_and_edges() and set_boundary(), so this was
+    reachable from ordinary scripts (set_boundary() before set_quantity(), or any
+    mid-run set_quantity()), not just from tests.
+    """
+
+    def _run(self, mode, force_interface):
+        domain = rectangular_cross_domain(10, 10)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('setq')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_multiprocessor_mode(mode)
+
+        domain.set_quantity('elevation', -10.0)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+        if force_interface:
+            # Build the mode-2 device interface *before* stage is set.
+            domain.distribute_to_vertices_and_edges()
+
+        # Quiescent flat water well above the bed: stage must stay at 2.0.
+        domain.set_quantity('stage', 2.0)
+
+        for _ in domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+        return domain.quantities['stage'].centroid_values.copy()
+
+    def test_set_quantity_after_interface_built(self):
+        """stage set after the interface is built must be the stage that evolves."""
+        cpu = self._run(1, force_interface=True)
+        gpu = self._run(2, force_interface=True)
+
+        # The bug produced stage == 0 (device default) or the stale pre-set value.
+        np.testing.assert_allclose(
+            gpu, cpu, rtol=0, atol=1e-8,
+            err_msg='mode-2 ignored set_quantity() made after the GPU interface '
+                    'was built (device kept the stale values)')
+        self.assertAlmostEqual(float(gpu.min()), 2.0, places=6)
+        self.assertAlmostEqual(float(gpu.max()), 2.0, places=6)
+
+    def test_set_quantity_before_interface_built(self):
+        """The ordinary ordering must keep working (no interface yet)."""
+        cpu = self._run(1, force_interface=False)
+        gpu = self._run(2, force_interface=False)
+        np.testing.assert_allclose(gpu, cpu, rtol=0, atol=1e-8)
+        self.assertAlmostEqual(float(gpu.min()), 2.0, places=6)
+
+    def _run_direct(self, mode):
+        """As _run(), but write the quantity through the Quantity object itself."""
+        domain = rectangular_cross_domain(10, 10)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('setq_direct')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_multiprocessor_mode(mode)
+
+        domain.set_quantity('elevation', -10.0)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        domain.distribute_to_vertices_and_edges()   # builds the device interface
+
+        # Bypass Domain.set_quantity() entirely — the sync must hang off the
+        # Quantity, not off the Domain wrapper.
+        domain.quantities['stage'].set_values(2.0)
+
+        for _ in domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+        return domain.quantities['stage'].centroid_values.copy()
+
+    def test_direct_quantity_set_values_reaches_device(self):
+        """Quantity.set_values() bypassing Domain.set_quantity() must still sync."""
+        cpu = self._run_direct(1)
+        gpu = self._run_direct(2)
+
+        np.testing.assert_allclose(
+            gpu, cpu, rtol=0, atol=1e-8,
+            err_msg='mode-2 ignored a direct Quantity.set_values() made after the '
+                    'GPU interface was built (device kept the stale values)')
+        self.assertAlmostEqual(float(gpu.min()), 2.0, places=6)
+        self.assertAlmostEqual(float(gpu.max()), 2.0, places=6)
+
+
+class Test_GPU_RateOperatorGhostInflux(unittest.TestCase):
+    """Rate_operator mass tracking must exclude ghost cells in mode 2 (issue #191).
+
+    Under MPI a rainfall polygon straddling a partition boundary appears on several
+    ranks; only the rank that OWNS a triangle may count it toward the reported influx.
+    The CPU path masks its sum with ``full_indices``; the mode-2 kernel used to sum
+    over every index, so parallel runs over-reported rainfall influx (and hence
+    ``domain.fractional_step_volume_integral``) by the ghost-cell contribution. The
+    stage update itself was — and stays — applied to ghosts on both paths, since the
+    halo exchange overwrites them.
+
+    This is a serial test of a parallel bug: it fakes the partition by clearing
+    ``tri_full_flag``, which is the only thing ``set_full_indices()`` reads. That keeps
+    the regression catchable in the ordinary (non-MPI) suite.
+    """
+
+    RATE = 1.0e-3
+    TIMESTEP = 2.0
+
+    def _influx(self, mode):
+        from anuga import Rate_operator
+
+        domain = rectangular_cross_domain(10, 10)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('rate_ghost')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_multiprocessor_mode(mode)
+
+        domain.set_quantity('elevation', -10.0)
+        domain.set_quantity('stage', 1.0)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        domain.distribute_to_vertices_and_edges()   # builds the mode-2 device interface
+
+        # Pretend an MPI partition owns only 2/3 of the triangles. Must happen before
+        # the operator is constructed — set_full_indices() reads tri_full_flag in
+        # Rate_operator.__init__.
+        domain.tri_full_flag[::3] = 0
+
+        op = Rate_operator(domain, rate=self.RATE, factor=1.0)
+
+        domain.timestep = self.TIMESTEP
+        op()
+
+        owned_area = domain.areas[domain.tri_full_flag == 1].sum()
+        all_area = domain.areas.sum()
+        return op.local_influx, owned_area, all_area
+
+    def test_influx_excludes_ghost_cells(self):
+        """Mode 2 must count only owned triangles — and agree with mode 1 and theory."""
+        cpu, owned_area, all_area = self._influx(1)
+        gpu, _, _ = self._influx(2)
+
+        # Exact expected value: rate * factor * timestep * (area of OWNED triangles).
+        expected = self.RATE * self.TIMESTEP * owned_area
+        # What the bug produced: the same sum over EVERY triangle, ghosts included.
+        buggy = self.RATE * self.TIMESTEP * all_area
+
+        # Guard the guard: the two must be far apart, or this test proves nothing.
+        self.assertGreater(abs(buggy - expected), 0.1 * abs(expected))
+
+        self.assertAlmostEqual(
+            cpu, expected, places=10,
+            msg='mode-1 reference influx does not match the analytic value')
+        self.assertAlmostEqual(
+            gpu, expected, places=10,
+            msg='mode-2 counted ghost cells in the rate-operator influx (issue #191)')
+        self.assertAlmostEqual(
+            gpu, cpu, places=10,
+            msg='mode-1 and mode-2 disagree on rate-operator influx')
+
+
 class Test_GPU_ForcingOperators(unittest.TestCase):
     """Wind_stress / Barometric_pressure / Rate OPERATORS must give identical
     results in mode 1 (legacy) and mode 2 (unified).

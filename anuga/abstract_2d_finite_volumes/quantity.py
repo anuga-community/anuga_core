@@ -1009,6 +1009,15 @@ class Quantity:
         msg = 'Indices must be a list, array or None'
         assert isinstance(indices, (type(None), list, num.ndarray)), msg
 
+        # A mode-2 (GPU 'unified') domain keeps the authoritative centroid state on
+        # the device, so it needs the host arrays refreshed before this write and
+        # pushed back after it.  Duck-typed: domains with no device state (and any
+        # non-device-resident quantity) supply no hook and pay nothing.
+        # See Domain._notify_before_host_quantity_write() in shallow_water_domain.
+        notify_before = getattr(self.domain, '_notify_before_host_quantity_write', None)
+        if notify_before is not None:
+            notify_before(self.name)
+
         # Determine which 'set_values_from_...' to use
         if numeric is not None:
             if isinstance(numeric, (list, num.ndarray)):
@@ -1083,6 +1092,10 @@ class Quantity:
         if location == 'centroids':
             # Extrapolate 1st order - to capture notion of area being specified
             self.extrapolate_first_order()
+
+        notify_after = getattr(self.domain, '_notify_after_host_quantity_write', None)
+        if notify_after is not None:
+            notify_after(self.name)
 
     ############################################################################
     # Specific internal functions for setting values based on type

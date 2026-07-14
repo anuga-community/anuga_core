@@ -133,6 +133,13 @@ from anuga.utilities.parallel_abstraction import finalize, send, receive
 from anuga.utilities.parallel_abstraction import pypar_available, barrier
 
 
+# The centroid arrays the GPU interface round-trips between host and device —
+# see gpu_domain_sync_to_device()/_from_device() in gpu/gpu_domain_core.c.  A host
+# write to any other quantity (elevation, friction, a user tracer) is not
+# device-resident state and so needs no sync.  Keep this in step with the C.
+GPU_SYNCED_QUANTITIES = frozenset(('stage', 'xmomentum', 'ymomentum', 'height'))
+
+
 #-----------------------------------------------------
 # Code for profiling cuda version
 #-----------------------------------------------------
@@ -1286,6 +1293,12 @@ class Domain(Generic_Domain):
 
         We have to do something special for 'elevation'
         otherwise pass through to generic set_quantity
+
+        Mode-2 ('unified'): the device holds the authoritative centroid state once
+        the GPU interface exists, so a host-only write has to be mirrored to it.
+        That is handled one level down, in Quantity.set_values(), via the
+        _notify_*_host_quantity_write() hooks below — which also covers callers
+        that reach a Quantity directly and bypass this method.
         """
 
 #        if name == 'elevation':
@@ -1298,6 +1311,53 @@ class Domain(Generic_Domain):
 #            Generic_Domain.set_quantity(self, name, *args, **kwargs)
 
         Generic_Domain.set_quantity(self, name, *args, **kwargs)
+
+    # ------------------------------------------------------------------
+    # Mode-2 host->device coherency for quantity writes
+    #
+    # Once the GPU interface exists the *device* holds the authoritative centroid
+    # state.  A write that touches only the host arrays is then silently ignored —
+    # the next step reads the stale device values, so the simulation runs with the
+    # wrong data.  This bites whenever something builds the interface *before* the
+    # quantities are set (distribute_to_vertices_and_edges() and set_boundary()
+    # both call _ensure_gpu_interface()), and for any mid-run write.
+    #
+    # Quantity.set_values() is the single choke point for host-side quantity
+    # writes, so the sync hangs off there rather than off Domain.set_quantity() —
+    # that way a caller holding a Quantity directly is covered too.
+    # ------------------------------------------------------------------
+
+    # Set while apply_fractional_steps() already brackets its operators with a
+    # sync_from_device()/sync_to_device() pair, so operator writes inside that
+    # region don't re-sync once per call.
+    _gpu_host_writes_suppressed = False
+
+    def _gpu_syncs_host_quantity_write(self, name: str) -> bool:
+        """True if a host write to quantity `name` has to be mirrored to the device."""
+
+        return (not self._gpu_host_writes_suppressed
+                and name in GPU_SYNCED_QUANTITIES
+                and self.multiprocessor_mode == MULTIPROCESSOR_GPU
+                and getattr(self, 'gpu_interface', None) is not None)
+
+    def _notify_before_host_quantity_write(self, name: str) -> None:
+        """Refresh the host centroids from the device, ahead of a host-side write.
+
+        Without this the push in _notify_after_host_quantity_write() would send
+        stale host values for the *other* quantities over the device's current ones.
+        """
+
+        if self._gpu_syncs_host_quantity_write(name):
+            try:
+                self.gpu_interface.sync_from_device()
+            except Exception:
+                pass
+
+    def _notify_after_host_quantity_write(self, name: str) -> None:
+        """Push a host-side quantity write out to the device."""
+
+        if self._gpu_syncs_host_quantity_write(name):
+            self.gpu_interface.sync_to_device()
 
 
     def set_timezone(self, tz: str | ZoneInfoType | None = None) -> None:
@@ -4896,11 +4956,19 @@ class Domain(Generic_Domain):
             if gpu_culverts_active:
                 self.gpu_culvert_manager.apply_all()
 
-        # Run remaining operators (skip Boyd operators handled by GPU manager)
-        for operator in self.fractional_step_operators:
-            if gpu_culverts_active and operator in self.gpu_culvert_manager.operators:
-                continue  # Already handled by GPUCulvertManager
-            operator()
+        # The host copy is already in sync here and gets pushed back below, so an
+        # operator that writes a quantity must not trigger its own round-trip per
+        # call — that would be one full host<->device transfer pair per operator
+        # per timestep.
+        self._gpu_host_writes_suppressed = (gpu_mode and needs_cpu_sync)
+        try:
+            # Run remaining operators (skip Boyd operators handled by GPU manager)
+            for operator in self.fractional_step_operators:
+                if gpu_culverts_active and operator in self.gpu_culvert_manager.operators:
+                    continue  # Already handled by GPUCulvertManager
+                operator()
+        finally:
+            self._gpu_host_writes_suppressed = False
 
         if gpu_mode and needs_cpu_sync:
             self.gpu_interface.sync_to_device()

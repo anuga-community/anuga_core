@@ -191,9 +191,14 @@ struct boundary_edge_sync {
 struct rate_operator_info {
     int num_indices;             // Number of triangles this operator applies to
     int *indices;                // Triangle indices [num_indices] - mapped to GPU
-    double *areas;               // Triangle areas for mass tracking [num_indices]
-    int *full_indices;           // Indices that are "full" (not ghost) for mass tracking
-    int num_full;                // Number of full indices
+    // Triangle area used for mass tracking [num_indices], with the ghost-cell mask
+    // ALREADY BAKED IN: mass_areas[k] is 0.0 for a ghost triangle, so ghosts add
+    // nothing to the influx reduction. Under MPI a rainfall polygon straddling a
+    // partition boundary appears on several ranks; only the rank that OWNS a
+    // triangle may count it, or the reported influx is inflated. (The *stage*
+    // update is still applied to ghosts, as on the CPU path — the halo exchange
+    // overwrites them.) Mirrors Rate_operator.full_indices on the Python side.
+    double *mass_areas;
     int active;                  // Whether this operator slot is in use
     int mapped;                  // Whether arrays are mapped to GPU
     // Rate array caching (avoids H2D transfer every call)
