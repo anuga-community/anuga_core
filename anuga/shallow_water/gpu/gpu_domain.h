@@ -659,6 +659,7 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
 int detect_gpu_aware_mpi(void);
 int gpu_is_available(void);
 int gpu_get_num_devices(void);
+const char *gpu_backend_name(void);
 int gpu_get_initial_device(void);
 int gpu_get_default_device(void);
 void gpu_set_default_device(int device_id);

@@ -24,6 +24,15 @@ py3.extension_module('sw_domain_openmp_ext',
 # Can target GPU (gpu_offload=true) or CPU multicore (gpu_offload=false)
 gpu_offload = get_option('gpu_offload')
 
+# GPU programming model: 'openmp' (OpenMP target) or 'openacc' (OpenACC).
+# Only meaningful when gpu_offload=true; the CPU multicore build always uses OpenMP.
+gpu_backend = get_option('gpu_backend')
+if gpu_backend == 'openacc' and not gpu_offload
+  error('gpu_backend=openacc requires gpu_offload=true (OpenACC is a GPU-offload back end).\n' +
+        '  Build for CPU multicore with the default OpenMP back end, or add\n' +
+        '  -Csetup-args=-Dgpu_offload=true to offload with OpenACC.')
+endif
+
 # MPI is optional - if not found, sw_domain_gpu_ext won't be built
 mpi_dep = dependency('mpi', language: 'c', required: false)
 if mpi_dep.found()
@@ -166,9 +175,28 @@ is_amd_gpu = gpu_arch.startswith('gfx')
 # Uses effective_compiler_id to handle Cray wrappers correctly
 if gpu_offload
   # GPU offloading enabled
+  # OpenACC offload is currently only wired for the NVIDIA HPC SDK (nvc).
+  if gpu_backend == 'openacc' and effective_compiler_id != 'nvidia_hpc'
+    error(
+      'gpu_backend=openacc is only supported with the NVIDIA HPC SDK (nvc), ' +
+      'found ' + effective_compiler_id + '.\n' +
+      '  Rebuild with CC=$(which nvc), or use the default -Dgpu_backend=openmp.')
+  endif
   if effective_compiler_id == 'nvidia_hpc'
     # NVIDIA HPC SDK - best GPU support for NVIDIA GPUs
-    gpu_c_args = ['-O3', '-mp=gpu,multicore', '-Minfo=accel', '-g', '-gpu=' + gpu_arch]
+    if gpu_backend == 'openacc'
+      # OpenACC GPU offload (kernels use `acc parallel loop` / `acc *data`).
+      # Keep OpenMP for the CPU multicore host path (-mp=multicore); OpenACC
+      # owns the GPU (-acc=gpu). ACC_OFFLOAD_MODE selects the OpenACC macro
+      # branch in gpu/gpu_omp_macros.h.
+      gpu_c_args = ['-O3', '-acc=gpu', '-mp=multicore', '-Minfo=accel', '-g',
+                    '-gpu=' + gpu_arch, '-DACC_OFFLOAD_MODE']
+      message('GPU backend: OpenACC (nvc -acc=gpu)')
+    else
+      # OpenMP target offload (kernels use `omp target teams loop` / `omp target *data`)
+      gpu_c_args = ['-O3', '-mp=gpu', '-Minfo=accel,mp', '-g', '-gpu=' + gpu_arch]
+      message('GPU backend: OpenMP target (nvc -mp=gpu)')
+    endif
   elif effective_compiler_id == 'clang'
     if is_amd_gpu
       # Clang/AOMP for AMD GPUs
@@ -340,6 +368,13 @@ if host_machine.system() == 'darwin' and have_full_mpi
     ]
     message('macOS: embedding rpath for libmpi.dylib: ' + _mpi_lib_dir)
   endif
+endif
+
+# nvc assembles OpenMP-target device code at link automatically, but the OpenACC
+# device binary needs -acc=gpu present at link time too so the OpenACC runtime and
+# the generated device image are pulled in. (Harmless if it were also implicit.)
+if gpu_offload and gpu_backend == 'openacc' and effective_compiler_id == 'nvidia_hpc'
+  gpu_link_args += ['-acc=gpu', '-gpu=' + gpu_arch]
 endif
 
 py3.extension_module('sw_domain_gpu_ext',

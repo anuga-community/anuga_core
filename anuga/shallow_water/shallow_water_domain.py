@@ -5806,14 +5806,22 @@ class Domain(Generic_Domain):
                 self.gpu_offload_active = gpu_offload_enabled()
                 if myid == 0:
                     device_id = self.gpu_interface.gpu_dom.device_id
+                    # Back end this gpu_ext was compiled with ("OpenACC" /
+                    # "OpenMP target" / "OpenMP multicore"), reported so the banner
+                    # reflects the actual build rather than a hard-coded name.
+                    try:
+                        from anuga.shallow_water.sw_domain_gpu_ext import get_gpu_backend_name
+                        backend = get_gpu_backend_name()
+                    except Exception:
+                        backend = 'OpenMP target'
                     print('+==============================================================================+')
                     if not self.gpu_offload_active:
                         print("| ANUGA compute mode: 'unified' CPU multicore (gpu_ext kernels, no offload)   |")
                         print(f'| OMP_NUM_THREADS={omp_num_threads}')
                     elif device_id < 0:
-                        print('| WARNING: No GPU devices found, running on CPU via OpenMP target offloading  |')
+                        print(f'| WARNING: No GPU devices found, running on CPU via {backend} offloading')
                     else:
-                        print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
+                        print(f'| GPU interface initialized: {numprocs} GPU(s) using {backend} offloading')
                     print('+==============================================================================+')
                 return
             except Exception as e:

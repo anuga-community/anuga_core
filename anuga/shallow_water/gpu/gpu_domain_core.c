@@ -177,6 +177,18 @@ int gpu_get_num_devices(void) {
 #endif
 }
 
+// Name of the parallel back end this extension was compiled with, so the Python
+// layer can report it (e.g. in the startup banner) without guessing.
+const char *gpu_backend_name(void) {
+#if defined(CPU_ONLY_MODE)
+    return "OpenMP multicore";
+#elif defined(ACC_OFFLOAD_MODE)
+    return "OpenACC";
+#else
+    return "OpenMP target";
+#endif
+}
+
 // Default offload device control. The kernels use `#pragma omp target` with no
 // device() clause, so they run on the OpenMP default device — redirecting it is
 // a robust, runtime way to force a GPU build onto the host (CPU) and back.
@@ -526,23 +538,22 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
     anuga_int *tri_full_flag = GD->D.tri_full_flag;
 
     // Map all domain arrays to GPU - persistent for entire simulation
-    #pragma omp target enter data map(to: \
-        stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], \
-        bed_cv[0:n], height_cv[0:n], friction_cv[0:n], \
-        stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n], \
-        bed_ev[0:3*n], height_ev[0:3*n], \
-        stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n], \
-        stage_siu[0:n], xmom_siu[0:n], ymom_siu[0:n], \
-        neighbours[0:3*n], neighbour_edges[0:3*n], \
-        surrogate_neighbours[0:3*n], number_of_boundaries[0:n], \
-        x_centroid_work[0:n], y_centroid_work[0:n], \
-        normals[0:6*n], edgelengths[0:3*n], \
-        areas[0:n], radii[0:n], max_speed[0:n], \
+    OMP_TARGET_ENTER_DATA_MAP_TO(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n],
+        bed_cv[0:n], height_cv[0:n], friction_cv[0:n],
+        stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n],
+        bed_ev[0:3*n], height_ev[0:3*n],
+        stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n],
+        stage_siu[0:n], xmom_siu[0:n], ymom_siu[0:n],
+        neighbours[0:3*n], neighbour_edges[0:3*n],
+        surrogate_neighbours[0:3*n], number_of_boundaries[0:n],
+        x_centroid_work[0:n], y_centroid_work[0:n],
+        normals[0:6*n], edgelengths[0:3*n],
+        areas[0:n], radii[0:n], max_speed[0:n],
         centroid_coords[0:2*n], edge_coords[0:6*n])
 
     // Map tri_full_flag only when present (parallel domains only)
     if (tri_full_flag != NULL) {
-        #pragma omp target enter data map(to: tri_full_flag[0:n])
+        OMP_TARGET_ENTER_DATA_MAP_TO(tri_full_flag[0:n])
     }
 
     // Map boundary values if present (including bed and height for reflective boundary)
@@ -552,8 +563,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         double *ymom_bv = GD->D.ymom_boundary_values;
         double *bed_bv = GD->D.bed_boundary_values;
         double *height_bv = GD->D.height_boundary_values;
-        #pragma omp target enter data map(to: \
-            stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
+        OMP_TARGET_ENTER_DATA_MAP_TO(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb],
             bed_bv[0:nb], height_bv[0:nb])
     }
 
@@ -564,7 +574,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         int *v_ids = R->vol_ids;
         int *e_ids = R->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         R->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -584,7 +594,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         double *x_val = Dir->xmom_values;
         double *y_val = Dir->ymom_values;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne],
                                               s_val[0:ne], x_val[0:ne], y_val[0:ne])
         Dir->mapped = 1;
 
@@ -602,7 +612,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         int *v_ids = T->vol_ids;
         int *e_ids = T->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         T->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -619,7 +629,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         int *v_ids = Tnzt->vol_ids;
         int *e_ids = Tnzt->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Tnzt->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -636,7 +646,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         int *v_ids = TB->vol_ids;
         int *e_ids = TB->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -656,7 +666,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         double *xmom_v  = FB->xmom_values;
         double *ymom_v  = FB->ymom_values;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne],
                                               stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
         FB->mapped = 1;
 
@@ -674,7 +684,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         int *v_ids = AW->vol_ids;
         int *e_ids = AW->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         AW->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -691,7 +701,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         int *v_ids = CW->vol_ids;
         int *e_ids = CW->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         CW->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -708,7 +718,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         int *v_ids = FL->vol_ids;
         int *e_ids = FL->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         FL->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -721,7 +731,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
     // edge_flux_type is always mapped (size 3*n); other arrays only if riverwalls exist
     anuga_int *edge_flux_type = GD->D.edge_flux_type;
     if (edge_flux_type != NULL) {
-        #pragma omp target enter data map(to: edge_flux_type[0:3*n])
+        OMP_TARGET_ENTER_DATA_MAP_TO(edge_flux_type[0:3*n])
     }
 
     anuga_int n_rw_edges = GD->D.number_of_riverwall_edges;
@@ -735,19 +745,19 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
 
         // edge_river_wall_counter has same size as edge_flux_type (3*n)
         if (edge_river_wall_counter != NULL) {
-            #pragma omp target enter data map(to: edge_river_wall_counter[0:3*n])
+            OMP_TARGET_ENTER_DATA_MAP_TO(edge_river_wall_counter[0:3*n])
         }
         // riverwall_elevation and riverwall_rowIndex have size n_rw_edges
         if (riverwall_elevation != NULL) {
-            #pragma omp target enter data map(to: riverwall_elevation[0:n_rw_edges])
+            OMP_TARGET_ENTER_DATA_MAP_TO(riverwall_elevation[0:n_rw_edges])
         }
         if (riverwall_rowIndex != NULL) {
-            #pragma omp target enter data map(to: riverwall_rowIndex[0:n_rw_edges])
+            OMP_TARGET_ENTER_DATA_MAP_TO(riverwall_rowIndex[0:n_rw_edges])
         }
         // riverwall_hydraulic_properties is (nrow_hp x ncol_hp)
         // nrow_hp = number of unique riverwall segments
         if (riverwall_hydraulic_properties != NULL && ncol_hp > 0 && nrow_hp > 0) {
-            #pragma omp target enter data map(to: riverwall_hydraulic_properties[0:nrow_hp*ncol_hp])
+            OMP_TARGET_ENTER_DATA_MAP_TO(riverwall_hydraulic_properties[0:nrow_hp*ncol_hp])
         }
 
         if (GD->rank == 0 && GD->verbose) {
@@ -761,8 +771,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         double *stage_backup = GD->D.stage_backup_values;
         double *xmom_backup = GD->D.xmom_backup_values;
         double *ymom_backup = GD->D.ymom_backup_values;
-        #pragma omp target enter data map(to: \
-            stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
+        OMP_TARGET_ENTER_DATA_MAP_TO(stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
         GD->backup_arrays_mapped = 1;
     }
 
@@ -775,8 +784,8 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         double *send_buf = H->send_buffer;
         double *recv_buf = H->recv_buffer;
 
-        #pragma omp target enter data map(to: flat_send[0:send_size], flat_recv[0:recv_size]) \
-            map(alloc: send_buf[0:3*send_size], recv_buf[0:3*recv_size])
+        OMP_TARGET_ENTER_DATA_MAP_TO(flat_send[0:send_size], flat_recv[0:recv_size])
+        OMP_TARGET_ENTER_DATA_MAP_ALLOC(send_buf[0:3*send_size], recv_buf[0:3*recv_size])
     }
 
     GD->gpu_initialized = 1;
@@ -800,7 +809,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         int *v_ids = R->vol_ids;
         int *e_ids = R->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         R->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -817,7 +826,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         int *v_ids = Dir->vol_ids;
         int *e_ids = Dir->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Dir->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -834,7 +843,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         int *v_ids = T->vol_ids;
         int *e_ids = T->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         T->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -851,7 +860,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         int *v_ids = Tnzt->vol_ids;
         int *e_ids = Tnzt->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Tnzt->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -868,7 +877,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         int *v_ids = TB->vol_ids;
         int *e_ids = TB->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -885,7 +894,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         int *v_ids = AW->vol_ids;
         int *e_ids = AW->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         AW->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -902,7 +911,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         int *v_ids = CW->vol_ids;
         int *e_ids = CW->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         CW->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -919,7 +928,7 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         int *v_ids = FL->vol_ids;
         int *e_ids = FL->edge_ids;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_ENTER_DATA_MAP_TO(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         FL->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -976,23 +985,22 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     anuga_int *tri_full_flag = GD->D.tri_full_flag;
 
     // Unmap domain arrays
-    #pragma omp target exit data map(delete: \
-        stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], \
-        bed_cv[0:n], height_cv[0:n], friction_cv[0:n], \
-        stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n], \
-        bed_ev[0:3*n], height_ev[0:3*n], \
-        stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n], \
-        stage_siu[0:n], xmom_siu[0:n], ymom_siu[0:n], \
-        neighbours[0:3*n], neighbour_edges[0:3*n], \
-        surrogate_neighbours[0:3*n], number_of_boundaries[0:n], \
-        x_centroid_work[0:n], y_centroid_work[0:n], \
-        normals[0:6*n], edgelengths[0:3*n], \
-        areas[0:n], radii[0:n], max_speed[0:n], \
+    OMP_TARGET_EXIT_DATA_MAP_DELETE(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n],
+        bed_cv[0:n], height_cv[0:n], friction_cv[0:n],
+        stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n],
+        bed_ev[0:3*n], height_ev[0:3*n],
+        stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n],
+        stage_siu[0:n], xmom_siu[0:n], ymom_siu[0:n],
+        neighbours[0:3*n], neighbour_edges[0:3*n],
+        surrogate_neighbours[0:3*n], number_of_boundaries[0:n],
+        x_centroid_work[0:n], y_centroid_work[0:n],
+        normals[0:6*n], edgelengths[0:3*n],
+        areas[0:n], radii[0:n], max_speed[0:n],
         centroid_coords[0:2*n], edge_coords[0:6*n])
 
     // Unmap tri_full_flag only when it was mapped (parallel domains only)
     if (tri_full_flag != NULL) {
-        #pragma omp target exit data map(delete: tri_full_flag[0:n])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(tri_full_flag[0:n])
     }
 
     if (nb > 0) {
@@ -1001,8 +1009,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         double *ymom_bv = GD->D.ymom_boundary_values;
         double *bed_bv = GD->D.bed_boundary_values;
         double *height_bv = GD->D.height_boundary_values;
-        #pragma omp target exit data map(delete: \
-            stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb],
             bed_bv[0:nb], height_bv[0:nb])
     }
 
@@ -1013,7 +1020,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *b_idx = R->boundary_indices;
         int *v_ids = R->vol_ids;
         int *e_ids = R->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         R->mapped = 0;
     }
 
@@ -1024,7 +1031,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *b_idx = Dir->boundary_indices;
         int *v_ids = Dir->vol_ids;
         int *e_ids = Dir->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Dir->mapped = 0;
     }
 
@@ -1035,7 +1042,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *b_idx = T->boundary_indices;
         int *v_ids = T->vol_ids;
         int *e_ids = T->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         T->mapped = 0;
     }
 
@@ -1046,7 +1053,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *b_idx = Tnzt->boundary_indices;
         int *v_ids = Tnzt->vol_ids;
         int *e_ids = Tnzt->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         Tnzt->mapped = 0;
     }
 
@@ -1057,7 +1064,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *b_idx = TB->boundary_indices;
         int *v_ids = TB->vol_ids;
         int *e_ids = TB->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         TB->mapped = 0;
     }
 
@@ -1071,7 +1078,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         double *stage_v = FB->stage_values;
         double *xmom_v  = FB->xmom_values;
         double *ymom_v  = FB->ymom_values;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne],
                                                  stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
         FB->mapped = 0;
     }
@@ -1083,7 +1090,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *b_idx = AW->boundary_indices;
         int *v_ids = AW->vol_ids;
         int *e_ids = AW->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         AW->mapped = 0;
     }
 
@@ -1094,7 +1101,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *b_idx = CW->boundary_indices;
         int *v_ids = CW->vol_ids;
         int *e_ids = CW->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         CW->mapped = 0;
     }
 
@@ -1105,14 +1112,14 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *b_idx = FL->boundary_indices;
         int *v_ids = FL->vol_ids;
         int *e_ids = FL->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         FL->mapped = 0;
     }
 
     // Unmap riverwall arrays
     anuga_int *edge_flux_type = GD->D.edge_flux_type;
     if (edge_flux_type != NULL) {
-        #pragma omp target exit data map(delete: edge_flux_type[0:3*n])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(edge_flux_type[0:3*n])
     }
 
     anuga_int n_rw_edges = GD->D.number_of_riverwall_edges;
@@ -1125,16 +1132,16 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         anuga_int nrow_hp = GD->D.nrow_riverwall_hydraulic_properties;
 
         if (edge_river_wall_counter != NULL) {
-            #pragma omp target exit data map(delete: edge_river_wall_counter[0:3*n])
+            OMP_TARGET_EXIT_DATA_MAP_DELETE(edge_river_wall_counter[0:3*n])
         }
         if (riverwall_elevation != NULL) {
-            #pragma omp target exit data map(delete: riverwall_elevation[0:n_rw_edges])
+            OMP_TARGET_EXIT_DATA_MAP_DELETE(riverwall_elevation[0:n_rw_edges])
         }
         if (riverwall_rowIndex != NULL) {
-            #pragma omp target exit data map(delete: riverwall_rowIndex[0:n_rw_edges])
+            OMP_TARGET_EXIT_DATA_MAP_DELETE(riverwall_rowIndex[0:n_rw_edges])
         }
         if (riverwall_hydraulic_properties != NULL && ncol_hp > 0 && nrow_hp > 0) {
-            #pragma omp target exit data map(delete: riverwall_hydraulic_properties[0:nrow_hp*ncol_hp])
+            OMP_TARGET_EXIT_DATA_MAP_DELETE(riverwall_hydraulic_properties[0:nrow_hp*ncol_hp])
         }
     }
 
@@ -1142,8 +1149,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         double *stage_backup = GD->D.stage_backup_values;
         double *xmom_backup = GD->D.xmom_backup_values;
         double *ymom_backup = GD->D.ymom_backup_values;
-        #pragma omp target exit data map(delete: \
-            stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
     }
 
     // Unmap halo arrays
@@ -1155,8 +1161,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         double *send_buf = H->send_buffer;
         double *recv_buf = H->recv_buffer;
 
-        #pragma omp target exit data map(delete: \
-            flat_send[0:send_size], flat_recv[0:recv_size], \
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(flat_send[0:send_size], flat_recv[0:recv_size],
             send_buf[0:3*send_size], recv_buf[0:3*recv_size])
     }
 
@@ -1173,7 +1178,7 @@ void gpu_domain_sync_to_device(struct gpu_domain *GD) {
     double *ymom_cv = GD->D.ymom_centroid_values;
     double *height_cv = GD->D.height_centroid_values;
 
-    #pragma omp target update to(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+    OMP_TARGET_UPDATE_TO(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
 }
 
 void gpu_domain_sync_from_device(struct gpu_domain *GD) {
@@ -1186,7 +1191,7 @@ void gpu_domain_sync_from_device(struct gpu_domain *GD) {
     double *ymom_cv = GD->D.ymom_centroid_values;
     double *height_cv = GD->D.height_centroid_values;
 
-    #pragma omp target update from(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+    OMP_TARGET_UPDATE_FROM(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
 }
 
 void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
@@ -1218,14 +1223,14 @@ void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
     double *ymom_siu = GD->D.ymom_semi_implicit_update;
 
     // Sync centroid values
-    #pragma omp target update from(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+    OMP_TARGET_UPDATE_FROM(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
 
     // Sync edge values
-    #pragma omp target update from(stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n], \
+    OMP_TARGET_UPDATE_FROM(stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n],
                                    height_ev[0:3*n], bed_ev[0:3*n])
 
     // Sync explicit and semi-implicit updates
-    #pragma omp target update from(stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n], \
+    OMP_TARGET_UPDATE_FROM(stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n],
                                    stage_siu[0:n], xmom_siu[0:n], ymom_siu[0:n])
 
     // Sync boundary values if present
@@ -1236,7 +1241,7 @@ void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
         double *height_bv = GD->D.height_boundary_values;
         double *bed_bv = GD->D.bed_boundary_values;
 
-        #pragma omp target update from(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
+        OMP_TARGET_UPDATE_FROM(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb],
                                        height_bv[0:nb], bed_bv[0:nb])
     }
 
@@ -1245,7 +1250,7 @@ void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
         double *stage_backup = GD->D.stage_backup_values;
         double *xmom_backup = GD->D.xmom_backup_values;
         double *ymom_backup = GD->D.ymom_backup_values;
-        #pragma omp target update from(stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
+        OMP_TARGET_UPDATE_FROM(stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
     }
 }
 
@@ -1262,7 +1267,7 @@ void gpu_sync_boundary_values(struct gpu_domain *GD) {
     double *bed_bv = GD->D.bed_boundary_values;
     double *height_bv = GD->D.height_boundary_values;
 
-    #pragma omp target update to(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
+    OMP_TARGET_UPDATE_TO(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb],
                                  bed_bv[0:nb], height_bv[0:nb])
 }
 
@@ -1278,7 +1283,7 @@ void gpu_sync_edge_values_from_device(struct gpu_domain *GD) {
     double *bed_ev = GD->D.bed_edge_values;
     double *height_ev = GD->D.height_edge_values;
 
-    #pragma omp target update from(stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n], \
+    OMP_TARGET_UPDATE_FROM(stage_ev[0:3*n], xmom_ev[0:3*n], ymom_ev[0:3*n],
                                    bed_ev[0:3*n], height_ev[0:3*n])
 }
 
@@ -1324,8 +1329,8 @@ int gpu_boundary_edge_sync_init(struct gpu_domain *GD,
     double *bed_buf = S->bed_buf;
     double *height_buf = S->height_buf;
 
-    #pragma omp target enter data map(to: cell_ids_ptr[0:nc]) \
-        map(alloc: stage_buf[0:bs], xmom_buf[0:bs], ymom_buf[0:bs], \
+    OMP_TARGET_ENTER_DATA_MAP_TO(cell_ids_ptr[0:nc])
+    OMP_TARGET_ENTER_DATA_MAP_ALLOC(stage_buf[0:bs], xmom_buf[0:bs], ymom_buf[0:bs],
                    bed_buf[0:bs], height_buf[0:bs])
 
     S->initialized = 1;
@@ -1355,8 +1360,8 @@ void gpu_boundary_edge_sync_finalize(struct gpu_domain *GD) {
         double *bed_buf = S->bed_buf;
         double *height_buf = S->height_buf;
 
-        #pragma omp target exit data map(delete: cell_ids_ptr[0:nc], \
-            stage_buf[0:bs], xmom_buf[0:bs], ymom_buf[0:bs], \
+        OMP_TARGET_EXIT_DATA_MAP_DELETE(cell_ids_ptr[0:nc],
+            stage_buf[0:bs], xmom_buf[0:bs], ymom_buf[0:bs],
             bed_buf[0:bs], height_buf[0:bs])
 
         // Free host memory
@@ -1416,7 +1421,7 @@ void gpu_boundary_edge_sync(struct gpu_domain *GD) {
     }
 
     // Sync staging buffers from GPU to host
-    #pragma omp target update from(stage_buf[0:bs], xmom_buf[0:bs], ymom_buf[0:bs], \
+    OMP_TARGET_UPDATE_FROM(stage_buf[0:bs], xmom_buf[0:bs], ymom_buf[0:bs],
                                    bed_buf[0:bs], height_buf[0:bs])
 
     // Scatter on CPU to the actual edge value arrays (host copies)

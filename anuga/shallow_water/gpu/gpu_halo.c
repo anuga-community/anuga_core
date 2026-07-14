@@ -173,7 +173,7 @@ void gpu_exchange_ghosts(struct gpu_domain *GD) {
     // Pack send buffer on GPU
 #ifdef GPU_AWARE_MPI
     // send_buf/recv_buf are omp_target_alloc'd device pointers — use is_device_ptr
-    #pragma omp target teams distribute parallel for is_device_ptr(send_buf)
+    OMP_PARALLEL_LOOP_IS_DEVICE_PTR(send_buf)
 #else
     OMP_PARALLEL_LOOP
 #endif
@@ -195,7 +195,11 @@ void gpu_exchange_ghosts(struct gpu_domain *GD) {
         double *host_send = H->host_send_buffer;
         double *host_recv = H->host_recv_buffer;
 
-        // Copy packed send buffer from device to host staging buffer
+        // Copy packed send buffer from device to host staging buffer.
+        // The pack loop above is enqueued async on the OpenACC back end, so drain
+        // the queue first - the D2H copy reads send_buf on the host and must not
+        // race the pack kernel. No-op for OpenMP-target/CPU (synchronous kernels).
+        OMP_TARGET_WAIT
         int host = omp_get_initial_device();
         int dev  = omp_get_default_device();
         omp_target_memcpy(host_send, send_buf,
@@ -237,7 +241,7 @@ void gpu_exchange_ghosts(struct gpu_domain *GD) {
     // This is still efficient because halo is much smaller than full domain
 
     // Copy packed send buffer from GPU to host
-    #pragma omp target update from(send_buf[0:3*send_size])
+    OMP_TARGET_UPDATE_FROM(send_buf[0:3*send_size])
 
     // MPI communication on host
     int req_count = 0;
@@ -265,12 +269,12 @@ void gpu_exchange_ghosts(struct gpu_domain *GD) {
     MPI_Waitall(req_count, H->requests, MPI_STATUSES_IGNORE);
 
     // Copy received halo data from host to GPU
-    #pragma omp target update to(recv_buf[0:3*recv_size])
+    OMP_TARGET_UPDATE_TO(recv_buf[0:3*recv_size])
 #endif
 
     // Unpack receive buffer on GPU
 #ifdef GPU_AWARE_MPI
-    #pragma omp target teams distribute parallel for is_device_ptr(recv_buf)
+    OMP_PARALLEL_LOOP_IS_DEVICE_PTR(recv_buf)
 #else
     OMP_PARALLEL_LOOP
 #endif

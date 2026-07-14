@@ -243,3 +243,6 @@ claude/CDAC_EXECUTIVE_SUMMARY.md
 
 # Profiling artifacts
 *.prof
+
+# Local scratch/compile-probe artifacts (session work)
+tmp_artifacts/

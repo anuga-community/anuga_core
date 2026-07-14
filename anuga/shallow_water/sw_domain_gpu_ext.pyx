@@ -290,6 +290,7 @@ cdef extern from "gpu_domain.h" nogil:
     int detect_gpu_aware_mpi()
     int gpu_is_available()
     int gpu_get_num_devices()
+    const char *gpu_backend_name()
     int gpu_get_initial_device()
     int gpu_get_default_device()
     void gpu_set_default_device(int device_id)
@@ -932,6 +933,17 @@ def get_num_gpu_devices():
             pytest.skip(f'need 4 GPUs, have {n}')
     """
     return gpu_get_num_devices()
+
+
+def get_gpu_backend_name():
+    """Return the parallel back end this extension was compiled with.
+
+    One of ``"OpenACC"``, ``"OpenMP target"`` or ``"OpenMP multicore"``
+    (CPU_ONLY_MODE). Selected at build time via the meson ``gpu_backend`` /
+    ``gpu_offload`` options; use it to report the active back end, e.g. in the
+    GPU startup banner.
+    """
+    return gpu_backend_name().decode("ascii")
 
 
 def get_initial_device():

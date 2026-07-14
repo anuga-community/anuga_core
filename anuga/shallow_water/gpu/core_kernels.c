@@ -928,11 +928,7 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
     double boundary_flux_sum_substep = 0.0;
 
     // Main flux computation loop with reductions
-    #ifdef CPU_ONLY_MODE
-    #pragma omp parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
-    #else
-    #pragma omp target teams distribute parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
-    #endif
+    OMP_PARALLEL_LOOP_REDUCTION_MIN_PLUS(local_timestep, boundary_flux_sum_substep)
     for (anuga_int k = 0; k < n; k++) {
         double edgeflux[3];
         double ql[3], qr[3];
