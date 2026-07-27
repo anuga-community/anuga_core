@@ -67,6 +67,17 @@ jobs:
         run: |
           conda activate anuga_env
           export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig"
+          # Published wheels must run on any x86-64 CPU. The conda-forge compiler
+          # activation injects -march=native, which bakes the build runner's ISA
+          # (e.g. AVX-512 on a Sapphire Rapids runner) into the extension modules
+          # and crashes at `import anuga` on CPUs without it (this broke the 3.3.8
+          # wheels). Force a portable baseline on the x86-64 builds (Linux and
+          # Windows); skip the arm64 macos-latest runner where an x86 -march is
+          # invalid.
+          if [ "$RUNNER_OS" != "macOS" ]; then
+            export CFLAGS="$(printf '%s' "${CFLAGS:-}" | sed -E 's/-march=[^ ]+//g') -march=x86-64 -mtune=generic"
+            export CXXFLAGS="$(printf '%s' "${CXXFLAGS:-}" | sed -E 's/-march=[^ ]+//g') -march=x86-64 -mtune=generic"
+          fi
           pip wheel --no-build-isolation --no-deps -w dist-wheel .
 
       - name: Repair wheel (bundle external libs; self-contained per platform)
@@ -139,6 +150,11 @@ jobs:
         run: |
           conda activate anuga_env
           export PKG_CONFIG_PATH="$CONDA_PREFIX/lib/pkgconfig:$CONDA_PREFIX/share/pkgconfig"
+          # Portable x86-64 baseline (see build-wheels job): strip the injected
+          # -march=native so the runner's ISA is not baked into the wheel. This
+          # job always targets x86-64, so apply it unconditionally.
+          export CFLAGS="$(printf '%s' "${CFLAGS:-}" | sed -E 's/-march=[^ ]+//g') -march=x86-64 -mtune=generic"
+          export CXXFLAGS="$(printf '%s' "${CXXFLAGS:-}" | sed -E 's/-march=[^ ]+//g') -march=x86-64 -mtune=generic"
           pip wheel --no-build-isolation --no-deps -w dist-wheel .
 
       - name: Repair wheel (delocate, x86_64)
