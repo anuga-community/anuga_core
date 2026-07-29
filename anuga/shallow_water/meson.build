@@ -211,17 +211,33 @@ else
   # CPU multicore execution (no GPU offloading)
   # #pragma omp target teams loop becomes regular OpenMP parallel
   if effective_compiler_id == 'nvidia_hpc'
-    gpu_c_args = ['-O3', '-mp=multicore', '-Minfo=accel', '-g']
+    # -Mfprelaxed/-Munroll: match openmp_c_args (root meson.build) so mode-2
+    # core_kernels.c uses the same fast SIMD math paths as mode-1.
+    # -Mvect=simd kept for mode-2 (no protect regression observed there).
+    gpu_c_args = ['-O3', '-mp=multicore', '-Minfo=accel', '-Mfprelaxed', '-Mvect=simd', '-Munroll', '-g']
   elif effective_compiler_id == 'intel' or effective_compiler_id == 'intel-cl'
     gpu_c_args = ['-O3', '-qopenmp', '-g']
   elif effective_compiler_id == 'intel-llvm' or effective_compiler_id == 'icx'
-    gpu_c_args = ['-O3', '-fiopenmp', '-g']
+    # -xHost: match openmp_c_args (root meson.build) so both mode-1 and mode-2
+    # compile core_kernels.c with the same ISA — required for the 1e-12
+    # mode-agreement tests in test_DE_gpu_omp.py to stay green.
+    # Note: -Ofast reverted — regressed manning_friction_flat +13% on mode-1.
+    gpu_c_args = ['-O3', '-fiopenmp', '-xHost', '-g']
   elif effective_compiler_id == 'clang'
     # Clang with libomp (LLVM, Homebrew macOS, or AOMP)
     gpu_c_args = ['-O3', '-fopenmp', '-g']
   else
-    # GCC and others
-    gpu_c_args = ['-O3', '-fopenmp', '-g']
+    # GCC and others: -march=native matches openmp_c_args (root meson.build) so
+    # both mode-1 and mode-2 compile with the same ISA (AVX-512 on Cascadelake)
+    # and libmvec engages for vectorised math in SIMD loops.
+    gpu_c_args = ['-O3', '-fopenmp', '-march=native', '-g']
+    if cc.version().version_compare('>=12')
+      # Mirror the GCC 12+ tuning flags from root meson.build (see comment there).
+      gpu_c_args += [
+        '-fno-math-errno', '-fno-trapping-math', '-ffinite-math-only',
+        '-fassociative-math', '-fvect-cost-model=unlimited', '-funroll-loops',
+      ]
+    endif
   endif
   # Define macro so code knows it's CPU-only mode
   gpu_c_args += ['-DCPU_ONLY_MODE']

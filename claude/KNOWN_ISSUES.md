@@ -7,6 +7,266 @@ or require caution when working in specific areas.
 
 ## Build
 
+### Multi-compiler build verification (2026-06-23, Phase 0 of `claude/PLAN_compiler_tuning.md`)
+
+Verified on a shared HPC node (no GPU present — `nvidia-smi` not found; NVHPC tested
+CPU-multicore only here): `git rev-parse HEAD` = `905cb1f2` (`develop`). All three builds
+used `-Dgpu_offload=false`, isolated build dirs (`-Cbuild-dir=build/cp313-<tag>`, required
+because same-Python-version envs share the default `build/cp<abi>` dir and would clobber
+each other), `OMP_NUM_THREADS=4`, `pytest --pyargs anuga --run-fast`:
+
+| Compiler | Version | Build | Fast suite | Wall |
+|----------|---------|-------|-------------|------|
+| GCC | 11.2.0 (`module load gcc/11.2.0`) | clean | 2667 passed, 214 skipped, 0 failed | 56.11 s |
+| Intel ICX | 2025.1.0 (`~/intel/oneapi`) | clean | 2667 passed, 214 skipped, 0 failed | 45.39 s |
+| NVHPC (nvc) | 24.11 (`module load hpc_sdk/nvhpc/24.11`) | clean | 2667 passed, 214 skipped, 0 failed | 42.20 s |
+
+Identical pass/skip counts across all three — no correctness divergence found. Wall times
+are fast-suite smoke timings on a shared/possibly-noisy node, **not** the controlled
+per-kernel benchmarks Phase 1 of the plan will add; do not read anything into the ranking
+yet.
+
+**Finding — cosmetic ICX warning, not a failure:** every icx compile of an OpenMP-bearing
+file emits `icx: warning: use of '-qopenmp' recommended over '-fopenmp'
+[-Wrecommended-option]`, even though both `meson.build` (`openmp_c_args`) and
+`anuga/shallow_water/meson.build` (`gpu_c_args`) correctly branch `effective_compiler_id
+in ['intel-llvm', 'icx']` to `-fiopenmp` (confirmed via `-fiopenmp` never appearing and
+`-fopenmp` appearing on *every* OpenMP file in the build log). The extra `-fopenmp` comes
+from meson's own `dependency('openmp', required: false)` object, whose compile_args are
+appended unconditionally via `openmp_deps`/`gpu_deps` regardless of which manual
+`-fiopenmp`/`-qopenmp` flag was also added — meson's built-in OpenMP detection treats icx
+as clang-family and defaults to `-fopenmp`. Harmless (icx accepts the flag, build and
+tests pass) but worth fixing during Phase 3 tuning: either suppress the warning
+specifically for intel-llvm, or stop relying on `dependency('openmp')`'s own flags for
+that branch and pass `required: false` purely for its `-l`/link bits while keeping
+compile flags fully manual.
+
+Conclusion: GCC, ICX, and NVHPC-CPU all build and pass cleanly on this checkout. Phase 0
+is done.
+
+### Phase 1 — per-kernel benchmark harness, and a real ICX performance finding (2026-06-23)
+
+Added `benchmarks/run_kernel_benchmarks.py` (times `compute_fluxes`,
+`protect_against_infinitesimal_and_negative_heights`, `distribute_to_vertices_and_edges`,
+`extrapolate_second_order_edge_sw`, `manning_friction_semi_implicit` individually on a
+primed, fixed domain state — no evolve loop in the timed region) and
+`benchmarks/compare_kernel_benchmarks.py` (delta table keyed by kernel+mode). Implements
+the `C_EXTENSION_AUDIT_TODOS.md` P3 "Per-kernel microbenchmarks" TODO.
+
+Baseline run (medium mesh, 90 000 tris, `OMP_NUM_THREADS=4`, 50 reps, `develop`@`905cb1f2`,
+results saved as `benchmarks/results/kernels_{gcc,icx,nvhpc_cpu}.json`):
+
+| Kernel | mode | GCC 11.2.0 | ICX 2025.1.0 | NVHPC 24.11 (CPU) |
+|---|---|---:|---:|---:|
+| compute_fluxes | 1 | 3081 us | 2692 us (**-13%**) | 2206 us (**-28%**) |
+| compute_fluxes | 2 | 3210 us | 2718 us (**-15%**) | 2464 us (**-23%**) |
+| protect | 1 | 29.6 us | 21.7 us (**-27%**) | 26.8 us (-10%) |
+| protect | 2 | 88.4 us | 33.0 us (**-63%**) | 35.1 us (**-60%**) |
+| distribute | 1 | 3760 us | **11321 us (+201%)** | 2472 us (-34%) |
+| distribute | 2 | 3861 us | **11068 us (+187%)** | 2160 us (-44%) |
+| extrapolate_edge_only | 1 | 3819 us | **10719 us (+181%)** | 2431 us (-36%) |
+| manning_friction_flat | 1 | 58.2 us | **116.5 us (+100%)** | 42.0 us (-28%) |
+
+**Finding: ICX is 2–3x *slower* than GCC on `distribute`, `extrapolate_edge_only`, and
+`manning_friction_flat` specifically**, while being faster than GCC on `compute_fluxes`
+and `protect`. NVHPC is faster than GCC on every kernel with no such regression — so
+this is not "non-GCC compilers are slower," it is specific to ICX and to this subset of
+kernels. All three regressing functions live in `sw_domain_openmp_ext.pyx` /
+`sw_domain_openmp.c` and are exactly the "older OpenMP loops" already flagged in
+`C_EXTENSION_AUDIT_TODOS.md` P3 ("False sharing / shared(D) in older OpenMP loops ...
+dereference the domain struct inside the loop" — `extrapolate`/`protect`/friction are in
+that older code, `compute_fluxes` and the unified-kernel `protect`/`distribute` mode-2
+paths go through the newer `core_kernels.c` pattern that hoists `restrict` pointers).
+**Working hypothesis for Phase 3:** ICX's vectorizer/inliner handles the
+`shared(D)`-with-struct-dereference-in-loop pattern far worse than gcc's and nvc's; the
+fix is likely the same one already planned for that TODO (hoist hot pointers to locals)
+rather than a new ICX-specific flag — re-run this benchmark after that refactor to confirm
+it closes the gap on all three compilers, not just ICX.
+
+Not yet investigated (per original Phase 1 hypothesis): `-qopt-report=2` vectorization
+report for icx on these three files. The root cause turned out to be the combined
+`parallel for simd` directive on stride-3 scatter / branch-heavy loops, not struct
+dereferencing as originally hypothesised — fixed in Phase 3 without needing the report.
+
+### Phase 3 — ICX regression fixed; ICX now faster than GCC on all hot kernels (2026-06-27)
+
+**Root cause:** ICX generates inefficient SIMD code for `#pragma omp parallel for simd`
+(`OMP_PARALLEL_LOOP` macro) on stride-3 scatter loops (`distribute`), complex
+gather+branch loops (`extrapolate`), and math-heavy loops (`manning_friction`). The
+combined directive forces a SIMD trip count that ICX can't vectorise well on those loop
+shapes, causing the 2–3x regression found in Phase 1.
+
+**Five code changes** to eliminate all ICX regressions (all files already existed — no
+new files):
+
+1. **`anuga/shallow_water/gpu/gpu_omp_macros.h`** — ICX now gets plain
+   `#pragma omp parallel for` (no simd) from `OMP_PARALLEL_LOOP` via
+   `#ifdef __INTEL_LLVM_COMPILER`. ICX's own auto-vectoriser then applies per-loop and
+   produces faster code on the scatter/gather patterns. GCC/NVHPC are unchanged.
+
+2. **`anuga/shallow_water/gpu/gpu_device_helpers.h`** — Changed `GPU_TINY` from
+   `static const double GPU_TINY = 1.0e-100` to `#define GPU_TINY 1.0e-100`. GCC's
+   OpenMP SIMD vectoriser inside `#pragma omp declare target` generated an external
+   symbol reference (`U GPU_TINY`) for the constant, causing `ImportError: undefined
+   symbol: GPU_TINY` at import after the `core_kernels.c` changes below activated more
+   SIMD loops. Using `#define` inlines the literal everywhere.
+
+3. **`anuga/shallow_water/gpu/core_kernels.c`** — Three Manning friction functions
+   (`core_manning_friction_flat_semi_implicit`, `core_manning_friction_sloped_semi_implicit`,
+   `core_manning_friction_sloped_semi_implicit_edge_based`) changed from `OMP_PARALLEL_LOOP`
+   to `OMP_PARALLEL_LOOP_SIMD` (always-simd, defined unconditionally) and from
+   `pow(h, 7.0/3.0)` to `h * h * cbrt(h)`. The `simd` hint forces ICX into its SVML
+   cbrt path; `cbrt` is vectorisable while `pow` with a runtime-generic exponent is not.
+   `seven_thirds` constants removed. **Side-effect: GCC manning improved too**
+   (58 us → 47 us) since GCC also vectorises cbrt better.
+
+4. **`meson.build` (root)** — Added `-xHost` to ICX `openmp_c_args`
+   (`['-O3', '-fiopenmp', '-xHost', '-g']`). Without `-xHost`, ICX targets a generic ISA
+   and falls back to scalar `cbrt()` even with the `simd` hint — AVX-512/AVX-2 SVML is
+   only engaged when the target ISA is explicitly native.
+
+5. **`anuga/shallow_water/meson.build`** — Added `-xHost` to ICX `gpu_c_args`
+   (`['-O3', '-fiopenmp', '-xHost', '-g']`). Mode-2 (`sw_domain_gpu_ext`) also compiles
+   `core_kernels.c` with its own flags; without matching `-xHost`, mode-1 and mode-2 get
+   different ISA for `cbrt`, breaking the `atol=1e-12` mode-agreement tests in
+   `test_DE_gpu_omp.py::Test_GPU_NonGPUBoundaryFallback` (3 failures). Matching `-xHost`
+   in both modes keeps results bit-identical under AVX-512.
+
+**Final benchmark results** (medium mesh ~90k tris, `OMP_NUM_THREADS=4`, `develop` @
+post-phase-3, `kernels_icx_phase3_done.json` vs `kernels_gcc_final.json`):
+
+| Kernel | mode | GCC 11.2.0 | ICX 2025.1.0 | Delta |
+|--------|------|--------:|--------:|------:|
+| compute_fluxes | 1 | 3147 us | 1679 us | **ICX -46.6%** |
+| distribute | 1 | 3648 us | 1587 us | **ICX -56.5%** (was +201%) |
+| extrapolate_edge_only | 1 | 3377 us | 1223 us | **ICX -63.8%** (was +181%) |
+| manning_friction_flat | 1 | 46.86 us | 23.23 us | **ICX -50.4%** (was +100%) |
+| protect | 1 | 27.63 us | 13.86 us | **ICX -49.8%** (was -27%) |
+
+ICX is now faster than GCC on every benchmarked kernel. Test suites: GCC 2667/214/0,
+ICX 2667/214/0 — no correctness divergence.
+
+**Two failure patterns hit during Phase 3 (both fixed):**
+- `ImportError: undefined symbol: GPU_TINY` — see change 2 above.
+- 3 mode-agreement test failures after adding `-xHost` to mode-1 only — see change 5 above.
+
+**NVHPC-CPU re-benchmark** (`benchmarks/results/kernels_nvhpc_cpu_phase3.json`,
+`OMP_NUM_THREADS=4`, `develop @ e0672897`): no regressions — every kernel improved vs the
+Phase 1 baseline. The `cbrt` + `OMP_PARALLEL_LOOP_SIMD` changes also benefited NVHPC's
+vectoriser:
+
+| Kernel | mode | Phase 1 | Phase 3 | Delta |
+|--------|------|------:|------:|------:|
+| compute_fluxes | 1 | 2206 us | 1884 us | -14.6% |
+| distribute | 1 | 2472 us | 1835 us | -25.8% |
+| extrapolate_edge_only | 1 | 2431 us | 1522 us | -37.4% |
+| manning_friction_flat | 1 | 42.0 us | 28.45 us | -32.3% |
+| protect | 1 | 26.8 us | 20.43 us | -23.7% |
+
+NVHPC is now 40–57% faster than GCC on hot kernels. Tests: 2667/214/0.
+
+### GCC `-march=native` tuning — modest gains, large gap to ICX remains (2026-06-28)
+
+After Phase 3 closed the ICX regression, GCC was the only compiler without a native-ISA
+flag. ICX uses `-xHost`; NVHPC auto-targets native. GCC was compiled with only `-O3
+-fopenmp` — no AVX-512, no libmvec. Adding `-march=native` to both meson.build files
+(root `openmp_c_args` for mode-1, `shallow_water/meson.build` `gpu_c_args` for mode-2)
+gave modest but real improvements on `develop @ 67c6c6c0` (medium mesh, OMP_NUM_THREADS=4):
+
+| Kernel | GCC no `-march` | GCC `-march=native` | Δ |
+|--------|----------------|---------------------|---|
+| compute_fluxes (m1) | 3141 us | 2952 us | −6% |
+| compute_fluxes (m2) | 3111 us | 2942 us | −5% |
+| distribute (m1) | 3891 us | 3596 us | −8% |
+| distribute (m2) | 3616 us | 3599 us | −0.5% (noise) |
+| extrapolate_edge_only | 3369 us | 3278 us | −3% |
+| manning_friction_flat | 46 us | 47 us | +1% (noise) |
+| protect (m1) | 28 us | 22 us | **−19%** |
+| protect (m2) | 72 us | 71 us | −1% (noise) |
+
+Tests: 2667/214/0 — no regressions.
+
+**Remaining gap to ICX after `-march=native`:**
+
+| Kernel | GCC+native | ICX | Gap |
+|--------|-----------|-----|-----|
+| compute_fluxes | 2952 us | 1645 us | −44% |
+| distribute | 3596 us | 1551 us | −57% |
+| extrapolate_edge_only | 3278 us | 1226 us | −63% |
+| manning_friction_flat | 47 us | 19 us | −59% |
+| protect (m1) | 22 us | 15 us | −34% |
+
+**Why the gap persists:** GCC 11's auto-vectoriser does not generate SIMD code for the
+stride-3 scatter/gather loops (`distribute`, `extrapolate`) or transcendental-heavy friction
+loops (`manning_friction_flat`) even with AVX-512 enabled. The `cbrt` case is
+particularly illustrative: ICX with `-xHost` drops from 47 µs to 19 µs by using vectorised
+SVML `cbrt`; GCC 11 with `-march=native` stays at 47 µs — GCC 11's libmvec either lacks a
+vectorised `cbrt` or doesn't engage it for this loop shape. Further GCC tuning would require
+explicit SIMD intrinsics or loop restructuring, not compiler flags.
+
+### GCC 15 / NVHPC 26.3 / ICX cross-compiler flag tuning — parity achieved on hot kernels (2026-06-28)
+
+Following the `-march=native` result (GCC 11, modest gains only), a second pass explored
+GCC 15.1.0 (spack `di5tvfm`) and additional flags for all three compilers.
+
+**GCC 15 baseline vs GCC 15 with tuning flags:**
+
+GCC 15 with only `-march=native` was essentially identical to GCC 11 on hot kernels and
+had a +28% regression on `protect` mode-1. Adding the full math+vectorisation flag set
+(`-fno-math-errno -fno-trapping-math -ffinite-math-only -fassociative-math
+-fvect-cost-model=unlimited -funroll-loops`) halved compute_fluxes/distribute/extrapolate
+but left `protect` mode-1 still regressed. Switching the mode-1 cost model to
+`-fvect-cost-model=cheap` partially recovered protect (−2% vs previous, still +28% vs
+GCC 11) while keeping most of the hot-kernel gains.
+
+**Flags that were tried and reverted:**
+
+- **ICX `-Ofast`** (adds `-no-prec-div` / `fp-model=fast=2`): `manning_friction_flat`
+  regressed +13% — the faster-but-less-accurate cbrt path is slower in this loop shape.
+  Reverted to `-O3 -fiopenmp -xHost`.
+- **NVHPC `-Mvect=simd` in mode-1**: `protect` mode-1 regressed +15% (force-vectorising
+  the short branch-heavy loop hurts). Kept `-Mvect=simd` only for mode-2 (no regression
+  there); mode-1 uses `-Mfprelaxed -Munroll` only.
+
+**Final flags committed (`797ad4c8`, `develop @ 2d6e7c07`):**
+
+| Compiler | Mode-1 (`openmp_c_args`) | Mode-2 (`gpu_c_args`) |
+|----------|--------------------------|-----------------------|
+| GCC ≥12 | `-O3 -fopenmp -foffload=disable -march=native -fno-math-errno -fno-trapping-math -ffinite-math-only -fassociative-math -fvect-cost-model=cheap -funroll-loops` | same but `fvect-cost-model=unlimited` |
+| NVHPC | `-O3 -mp=gpu,multicore -Mfprelaxed -Munroll` | `-O3 -mp=multicore -Mfprelaxed -Mvect=simd -Munroll` |
+| ICX | `-O3 -fiopenmp -xHost` (unchanged) | same |
+
+**Final benchmark results (medium mesh, OMP_NUM_THREADS=4, GCC 11 as reference):**
+
+| Kernel | m | GCC 11 | GCC 15 tuned | NVHPC 26.3 | ICX 2025.1 | spread (3 tuned) |
+|--------|---|--------|-------------|------------|-----------|-----------------|
+| compute_fluxes | 1 | 2952 µs | 1563 µs | 1627 µs | 1658 µs | +6% |
+| compute_fluxes | 2 | 2942 µs | 1544 µs | 1590 µs | 1656 µs | +7% |
+| distribute | 1 | 3596 µs | 1486 µs | 1482 µs | 1556 µs | +5% |
+| distribute | 2 | 3599 µs | 1460 µs | 1459 µs | 1566 µs | +7% |
+| extrapolate_edge_only | 1 | 3278 µs | 1159 µs | 1166 µs | 1228 µs | +6% |
+| manning_friction_flat | 1 | 47 µs | 27 µs | 29 µs | **19 µs** | +51% |
+| protect | 1 | 22 µs | 28 µs | 24 µs | **15 µs** | +84% |
+| protect | 2 | 71 µs | 38 µs | 31 µs | **23 µs** | +66% |
+
+Tests: all three compilers 2667/214/0.
+
+**Hot kernels (compute_fluxes, distribute, extrapolate): all three tuned compilers within
+5–7% of each other — the cross-compiler parity goal is met for these kernels.**
+
+**Remaining gaps on `manning` and `protect`:** ICX is structurally faster here because:
+- `manning_friction_flat`: ICX uses vectorised SVML `cbrt` via `-xHost`; GCC 15 libmvec
+  cbrt path is slower; NVHPC's vectorised cbrt similarly limited.
+- `protect`: ICX's branch predictor and SIMD handling of the wet/dry threshold loop
+  outperform GCC 15 and NVHPC. The loop is short and branch-heavy; wider SIMD hurts
+  both (GCC 15 regression with `unlimited`, NVHPC with `-Mvect=simd`).
+  Closing these gaps requires loop restructuring or explicit SIMD intrinsics, not flags.
+
+**GCC 11 vs GCC 15 tuned overall:** GCC 15 with tuning is 45–62% faster than GCC 11 on
+hot kernels, and its `protect` mode-1 regression (+28% vs GCC 11) is a GCC 15 codegen
+issue unrelated to the tuning flags — present both with `unlimited` and `cheap` cost model.
+GCC 11 remains preferable for `protect` mode-1 if that kernel is critical.
+
 ### Building with GPU offloading (NVIDIA HPC SDK / nvc)
 
 ANUGA's GPU extension (`sw_domain_gpu_ext`, `multiprocessor_mode=2`) requires
