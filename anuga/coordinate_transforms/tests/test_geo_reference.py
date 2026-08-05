@@ -840,6 +840,28 @@ class geo_referenceTestCase(unittest.TestCase):
         self.assertEqual(g.zone, DEFAULT_ZONE)
         self.assertEqual(g.hemisphere, DEFAULT_HEMISPHERE)
 
+    def test_epsg_infers_zone_hemisphere_gda2020_mga(self):
+        """GDA2020 MGA (EPSG 78xx) is UTM on another datum: infer zone/hemisphere."""
+        g = Geo_reference(epsg=7856)  # GDA2020 / MGA zone 56 (southern)
+        self.assertEqual(g.zone, 56)
+        self.assertEqual(g.hemisphere, 'southern')
+        self.assertEqual(g.epsg, 7856)
+        self.assertEqual(g.false_northing, 10000000)
+
+    def test_epsg_infers_zone_hemisphere_gda94_mga(self):
+        """GDA94 MGA (EPSG 283xx) also infers zone/hemisphere."""
+        g = Geo_reference(epsg=28356)  # GDA94 / MGA zone 56 (southern)
+        self.assertEqual(g.zone, 56)
+        self.assertEqual(g.hemisphere, 'southern')
+        self.assertEqual(g.epsg, 28356)
+
+    def test_epsg_non_utm_projected_stays_unlocated(self):
+        """A projected non-UTM grid (British National Grid) infers no zone."""
+        g = Geo_reference(epsg=27700)
+        self.assertEqual(g.epsg, 27700)
+        self.assertEqual(g.zone, DEFAULT_ZONE)
+        self.assertEqual(g.hemisphere, DEFAULT_HEMISPHERE)
+
     def test_epsg_setter(self):
         """epsg property setter updates value and infers zone/hemisphere."""
         g = Geo_reference()
