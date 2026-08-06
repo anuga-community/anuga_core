@@ -36,6 +36,17 @@ def setup_rainfall(domain, project):
         else:
             multiplier = 1.0
 
+        # ANUGA timeseries files (.tms) hold a 'rate' quantity that is read with
+        # anuga.file_function rather than parsed as CSV. In this case the
+        # multiplier is applied as the Rate_operator unit factor (e.g. 1e-3 for
+        # mm-based .tms), matching the classic gauge-rainfall workflow.
+        if str(timeseries_file).lower().endswith('.tms'):
+            rate_fun = anuga.file_function(timeseries_file, quantities='rate')
+            anuga.operators.rate_operators.Rate_operator(
+                domain, rate=rate_fun, factor=multiplier, polygon=polygon,
+                default_rate=0.0, label=timeseries_file)
+            continue
+
         rain_timeseries = numpy.genfromtxt(
             timeseries_file, delimiter=',', skip_header=1)
 

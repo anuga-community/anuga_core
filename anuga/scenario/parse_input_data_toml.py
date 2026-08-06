@@ -149,6 +149,28 @@ def _glob_files(patterns):
     return files
 
 
+def _parse_losses(raw, sec, _v):
+    """Normalise a culvert/weir ``losses`` value.
+
+    Accepts a scalar, a list (Boyd operators sum the entries), or a dict of
+    named components (e.g. ``{inlet, outlet, bend, grate, pier, other}``) — all
+    forms that Boyd_box_operator / Boyd_pipe_operator accept directly. Every
+    value is validated non-negative.
+    """
+    if isinstance(raw, dict):
+        losses = {str(k): float(v) for k, v in raw.items()}
+        for k, v in losses.items():
+            _v.non_negative(v, f'losses[{k!r}]', sec)
+    elif isinstance(raw, (list, tuple)):
+        losses = [float(v) for v in raw]
+        for j, v in enumerate(losses):
+            _v.non_negative(v, f'losses[{j}]', sec)
+    else:
+        losses = float(raw)
+        _v.non_negative(losses, 'losses', sec)
+    return losses
+
+
 def _parse_quantity_entries(entries, print_info):
     """Convert a list of TOML table entries for one quantity into the
     (data, clip_range) tuple that composite_quantity_setting_function expects.
@@ -304,9 +326,25 @@ class ProjectDataTOML:
         else:
             self.omp_num_threads = None
 
-        # Multiprocessor mode: 1 = OpenMP (default), 2 = CuPy/GPU
-        self.multiprocessor_mode = int(p.get('multiprocessor_mode', 1))
-        _v.one_of(self.multiprocessor_mode, (1, 2), 'multiprocessor_mode', 'project')
+        # Compute path:
+        #   "legacy"  — the historical CPU OpenMP kernels (multiprocessor_mode 1)
+        #   "unified" — the shared CPU/GPU (mode-2) kernels
+        # The older integer `multiprocessor_mode` (1/2) is still accepted for
+        # backward compatibility and mapped to the corresponding string.
+        _INT_TO_MODE = {1: 'legacy', 2: 'unified'}
+        _MODE_TO_INT = {'legacy': 1, 'unified': 2}
+        if 'compute_mode' in p:
+            self.compute_mode = str(p['compute_mode']).lower()
+            _v.one_of(self.compute_mode, ('legacy', 'unified'),
+                      'compute_mode', 'project')
+        elif 'multiprocessor_mode' in p:
+            mpm = int(p['multiprocessor_mode'])
+            _v.one_of(mpm, (1, 2), 'multiprocessor_mode', 'project')
+            self.compute_mode = _INT_TO_MODE.get(mpm, 'legacy')
+        else:
+            self.compute_mode = 'legacy'
+        # Keep the integer form for any legacy consumers.
+        self.multiprocessor_mode = _MODE_TO_INT.get(self.compute_mode, 1)
 
         # SWW output interval [seconds]; None means write every yieldstep.
         # Must be an integer multiple of yieldstep.
@@ -374,14 +412,16 @@ class ProjectDataTOML:
                     f'region_areas_type must be "area" or "length", '
                     f'got {areas_type!r}')
 
-        use_ir = bool(self.interior_regions_data)
-        use_bl = (bool(self.breakline_files) or
-                  bool(self.riverwall_csv_files) or
-                  self.pt_areas is not None)
-        if use_ir and use_bl:
+        # interior_regions and region_areas_file are two *alternative* ways to
+        # specify mesh resolution, so they are mutually exclusive. Breaklines
+        # and riverwalls are NOT — setup_mesh passes them to
+        # create_pmesh_from_regions alongside interior_regions (e.g. a
+        # catchment-refined model that also has riverwalls, as in the Towradgi
+        # study), so they may be combined freely with either.
+        if bool(self.interior_regions_data) and self.pt_areas is not None:
             raise ValueError(
-                'Cannot specify both interior_regions and '
-                'breaklines / riverwall_csv_files / region_areas_file')
+                'Cannot specify both interior_regions and region_areas_file '
+                '(they are alternative resolution-control methods)')
 
     # -----------------------------------------------------------------------
     # Initial conditions
@@ -416,10 +456,19 @@ class ProjectDataTOML:
         self.boundary_tags_attribute_name = str(
             bc.get('boundary_tags_attribute_name', 'bnd_tag'))
 
+        # Also accept the explicit ANUGA boundary class names (with or without
+        # the trailing '_boundary') as aliases for the short type keywords.
+        _BC_ALIASES = {
+            'Transmissive_n_momentum_zero_t_momentum_set_stage':          'Stage',
+            'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary': 'Stage',
+            'Flather_external_stage_zero_velocity':                        'Flather_Stage',
+            'Flather_external_stage_zero_velocity_boundary':               'Flather_Stage',
+        }
         self.boundary_data = []
         for b in bc.get('boundaries', []):
             tag   = str(b['tag'])
-            btype = str(b['type'])
+            raw   = str(b['type'])
+            btype = _BC_ALIASES.get(raw, raw)
             if btype in ('Stage', 'Flather_Stage'):
                 fpath = _normpath(str(b['file']))
                 if not os.path.exists(fpath):
@@ -430,8 +479,10 @@ class ProjectDataTOML:
                 row = [tag, btype]
             else:
                 raise ValueError(
-                    f'Unknown boundary type {btype!r} for tag {tag!r}. '
-                    f'Valid types: "Reflective", "Stage", "Flather_Stage"')
+                    f'Unknown boundary type {raw!r} for tag {tag!r}. Valid types: '
+                    f'"Reflective", "Stage" (alias '
+                    f'Transmissive_n_momentum_zero_t_momentum_set_stage), '
+                    f'"Flather_Stage" (alias Flather_external_stage_zero_velocity)')
             self.boundary_data.append(row)
 
     # -----------------------------------------------------------------------
@@ -583,7 +634,7 @@ class ProjectDataTOML:
 
             label   = str(c['label'])
             sec     = f'culverts[{label!r}]'
-            losses  = float(c.get('losses', 0.0))
+            losses  = _parse_losses(c.get('losses', 0.0), sec, _v)
             barrels = float(c.get('barrels', 1.0))
             blockage= float(c.get('blockage', 0.0))
             manning = float(c.get('manning', 0.013))
@@ -593,7 +644,6 @@ class ProjectDataTOML:
 
             _v.positive(barrels,  'barrels',  sec)
             _v.positive(manning,  'manning',  sec)
-            _v.non_negative(losses,   'losses',   sec)
             _v.non_negative(eq_gap,   'enquiry_gap', sec)
             _v.non_negative(apron,    'apron',    sec)
             _v.non_negative(smoothing,'smoothing_timescale', sec)
@@ -675,7 +725,7 @@ class ProjectDataTOML:
             sec      = f'weirs[{label!r}]'
             width    = float(w['width'])
             height   = float(w['height']) if 'height' in w else None
-            losses   = float(w.get('losses', 0.0))
+            losses   = _parse_losses(w.get('losses', 0.0), sec, _v)
             barrels  = float(w.get('barrels', 1.0))
             blockage = float(w.get('blockage', 0.0))
             manning  = float(w.get('manning', 0.013))
@@ -686,7 +736,6 @@ class ProjectDataTOML:
             _v.positive(width,   'width',   sec)
             _v.positive(barrels, 'barrels', sec)
             _v.positive(manning, 'manning', sec)
-            _v.non_negative(losses,    'losses',   sec)
             _v.non_negative(eq_gap,    'enquiry_gap', sec)
             _v.non_negative(apron,     'apron',    sec)
             _v.non_negative(smoothing, 'smoothing_timescale', sec)

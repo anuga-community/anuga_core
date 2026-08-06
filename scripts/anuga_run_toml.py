@@ -161,7 +161,10 @@ max_quantities = Collect_max_quantities_operator(
 # Evolve
 # ---------------------------------------------------------------------------
 
-domain.set_multiprocessor_mode(project.multiprocessor_mode)
+if hasattr(project, 'compute_mode'):
+    domain.set_compute_mode(project.compute_mode)   # 'legacy' or 'unified'
+else:
+    domain.set_multiprocessor_mode(project.multiprocessor_mode)  # Excel back-compat
 domain.set_omp_num_threads(project.omp_num_threads)
 
 progress('Evolving')
