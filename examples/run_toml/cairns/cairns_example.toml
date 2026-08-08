@@ -75,10 +75,8 @@ report_operator_statistics               = false
 # Omit (or set to 1) to use a single thread; reads OMP_NUM_THREADS env var if present.
 # omp_num_threads = 4
 
-# Multiprocessor mode:
-#   1 = OpenMP (default)
-#   2 = CuPy / GPU
-multiprocessor_mode = 1
+# Compute path: "legacy" (CPU OpenMP, default) or "unified" (shared CPU/GPU kernels)
+compute_mode = "legacy"
 
 
 
@@ -121,6 +119,24 @@ bounding_polygon = "cairns_mesh/cairnsextent.shp"
 # [[mesh.boundary_tags]]
 # tag   = "onshore"
 # edges = [3]
+
+
+# [[mesh.interior_holes]] -- polygons cut OUT of the mesh entirely, leaving a
+# void rather than a refined region. Use for anything water should neither
+# enter nor flow through: building footprints, tank pads, solid structures.
+#
+# Different from interior_regions above, which keeps the triangles and only
+# changes their size -- so no resolution is given here.
+#
+# 'tag' is optional and names the hole's edges so a boundary condition can be
+# bound to them. If you set it, you MUST add a matching
+# [[boundary_conditions.boundaries]] entry, or the run fails with
+# 'Tag "..." has not been bound to a boundary object'. Omit it and the mesh
+# generator applies its own 'interior' default instead.
+#
+# [[mesh.interior_holes]]
+# polygon = "cairns_mesh/buildings.csv"
+# tag     = "building"
 
 
 # Default maximum triangle area [m²] across the whole domain
@@ -289,6 +305,38 @@ clip_max = inf
 # value    = -2.0
 # clip_min = -inf
 # clip_max = inf
+
+
+# =============================================================================
+# Erosion / scour operators
+# =============================================================================
+# Each entry attaches a scour operator to a region of the domain.
+#
+# type      simple     | bed_shear | flat_slice | flat_fill | sand_dune
+# region    either polygon = "file.csv", OR center = [x, y] with radius = 50.0
+#           (raw triangle indices are deliberately not supported here — they
+#           cannot survive a re-mesh, so they have no stable meaning in a config)
+# threshold bed shear below which no scour occurs (default 0.0 = scour at once)
+# base      minimum bed RL; scour does not cut below this (default 0.0)
+# label     optional; names this operator's log file when logging = true
+#
+# Type-specific — supplying one on the wrong type is an error, not ignored:
+#   shear_factor   bed_shear only    (default 75000.0; higher = slower breach)
+#   elevation      flat_slice / flat_fill only
+#   Ra             sand_dune only    (default 34.0; angle of repose, degrees)
+#
+# NOTE: erosion changes elevation as the run proceeds, but ANUGA stores
+# elevation once at t=0 by default — so the eroded bed will not appear in the
+# .sww or any raster derived from it. Set store_elevation_every_timestep = true
+# in [project]; a warning is issued if you define erosion without it.
+#
+# [[erosion]]
+# type         = "bed_shear"
+# polygon      = "erosion/breach.csv"
+# threshold    = 0.0
+# base         = -5.0
+# shear_factor = 75000.0
+# label        = "breach"
 
 
 # =============================================================================

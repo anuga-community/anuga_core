@@ -7,8 +7,10 @@ via its public constructor.
 """
 import math
 import os
+import shutil
 import tempfile
 import textwrap
+import warnings
 import unittest
 from unittest.mock import patch, MagicMock
 
@@ -319,6 +321,7 @@ class TestProjectSection(unittest.TestCase):
         self.assertFalse(p.report_smallest_edge_timestep_statistics)
         self.assertFalse(p.report_operator_statistics)
         self.assertIsNone(p.omp_num_threads)
+        self.assertEqual(p.compute_mode, 'legacy')
         self.assertEqual(p.multiprocessor_mode, 1)
         self.assertIsNone(p.outputstep)
 
@@ -340,6 +343,34 @@ class TestProjectSection(unittest.TestCase):
         self.assertEqual(p.omp_num_threads, 4)
         self.assertEqual(p.multiprocessor_mode, 2)
         self.assertAlmostEqual(p.outputstep, 120.0)
+
+    def test_compute_mode_unified(self):
+        p = self._make(project_extra='compute_mode = "unified"')
+        self.assertEqual(p.compute_mode, 'unified')
+        self.assertEqual(p.multiprocessor_mode, 2)   # kept in sync
+
+    def test_compute_mode_legacy(self):
+        p = self._make(project_extra='compute_mode = "legacy"')
+        self.assertEqual(p.compute_mode, 'legacy')
+        self.assertEqual(p.multiprocessor_mode, 1)
+
+    def test_compute_mode_invalid_raises(self):
+        with self.assertRaises(ValueError):
+            self._make(project_extra='compute_mode = "turbo"')
+
+    def test_multiprocessor_mode_back_compat_maps_to_compute_mode(self):
+        """The legacy integer key still works and maps to compute_mode."""
+        p = self._make(project_extra='multiprocessor_mode = 2')
+        self.assertEqual(p.compute_mode, 'unified')
+        self.assertEqual(p.multiprocessor_mode, 2)
+
+    def test_compute_mode_takes_precedence_over_multiprocessor_mode(self):
+        p = self._make(project_extra=textwrap.dedent("""\
+            compute_mode = "legacy"
+            multiprocessor_mode = 2
+        """))
+        self.assertEqual(p.compute_mode, 'legacy')
+        self.assertEqual(p.multiprocessor_mode, 1)
 
     def test_collection_starttime_exceeds_finaltime_raises(self):
         extra = 'max_quantity_collection_starttime = 7200.0'
@@ -392,6 +423,7 @@ class TestMeshSection(unittest.TestCase):
         self.assertEqual(p.bounding_polygon_and_tags_file, 'extent.shp')
         self.assertAlmostEqual(p.default_res, 500000.0)
         self.assertEqual(p.interior_regions_data, [])
+        self.assertEqual(p.interior_holes_data, [])
         self.assertIsNone(p.bounding_polygon_explicit_tags)
         self.assertEqual(p.breakline_files, [])
         self.assertEqual(p.riverwall_csv_files, [])
@@ -412,6 +444,35 @@ class TestMeshSection(unittest.TestCase):
         self.assertEqual(p.interior_regions_data[0], ['region_a.shp', 10000.0])
         self.assertEqual(p.interior_regions_data[1], ['region_b.shp', 5000.0])
 
+    def test_interior_holes_parsed(self):
+        extra = textwrap.dedent("""\
+            [[mesh.interior_holes]]
+            polygon = "building_a.csv"
+            tag = "building"
+            [[mesh.interior_holes]]
+            polygon = "building_b.csv"
+        """)
+        p = self._make(mesh_extra=extra)
+        self.assertEqual(len(p.interior_holes_data), 2)
+        # tag is optional; absent means None, which pmesh renders as its own
+        # 'interior' default rather than a named tag.
+        self.assertEqual(p.interior_holes_data[0], ['building_a.csv', 'building'])
+        self.assertEqual(p.interior_holes_data[1], ['building_b.csv', None])
+
+    def test_interior_holes_coexist_with_interior_regions(self):
+        # Holes and regions are independent: a hole removes triangles, a region
+        # only resizes them, so a mesh may legitimately carry both.
+        extra = textwrap.dedent("""\
+            [[mesh.interior_regions]]
+            polygon = "region_a.shp"
+            resolution = 10000.0
+            [[mesh.interior_holes]]
+            polygon = "building_a.csv"
+        """)
+        p = self._make(mesh_extra=extra)
+        self.assertEqual(len(p.interior_regions_data), 1)
+        self.assertEqual(len(p.interior_holes_data), 1)
+
     def test_boundary_tags_parsed(self):
         extra = textwrap.dedent("""\
             [[mesh.boundary_tags]]
@@ -431,12 +492,32 @@ class TestMeshSection(unittest.TestCase):
         p = self._make('breakline_intersection_threshold = 0.5')
         self.assertAlmostEqual(p.break_line_intersect_point_movement_threshold, 0.5)
 
-    def test_interior_regions_and_breaklines_conflict_raises(self):
-        """Cannot have both interior_regions and breakline_files."""
+    def test_interior_regions_and_breaklines_coexist(self):
+        """interior_regions may be combined with breaklines/riverwalls.
+
+        setup_mesh passes interior_regions AND breaklines (riverwalls) to
+        create_pmesh_from_regions together, so this is a valid combination
+        (e.g. a catchment-refined model that also has riverwalls).
+        """
         bl = os.path.join(self.tmpdir, 'line.csv')
         _touch(bl)
         extra = textwrap.dedent(f"""\
             breakline_files = ["{_tp(bl)}"]
+            [[mesh.interior_regions]]
+            polygon = "reg.shp"
+            resolution = 1000.0
+        """)
+        p = self._make(mesh_extra=extra)   # must not raise
+        self.assertEqual(len(p.interior_regions_data), 1)
+        self.assertEqual(len(p.breakline_files), 1)
+
+    def test_interior_regions_and_region_areas_file_conflict_raises(self):
+        """interior_regions and region_areas_file are alternative resolution
+        methods and cannot be combined."""
+        ra = os.path.join(self.tmpdir, 'areas.csv')
+        _touch(ra)
+        extra = textwrap.dedent(f"""\
+            region_areas_file = "{_tp(ra)}"
             [[mesh.interior_regions]]
             polygon = "reg.shp"
             resolution = 1000.0
@@ -652,6 +733,22 @@ class TestBoundaryConditions(unittest.TestCase):
         self.assertEqual(row[1], 'Stage')
         self.assertEqual(row[2], tfile)
         self.assertAlmostEqual(row[3], 100.0)
+
+    def test_stage_boundary_full_class_name_alias(self):
+        """The explicit ANUGA class name is accepted as an alias for "Stage"."""
+        tfile = os.path.join(self.tmpdir, 'tide.csv')
+        _touch(tfile)
+        for type_name in ('Transmissive_n_momentum_zero_t_momentum_set_stage',
+                          'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary'):
+            bc = textwrap.dedent(f"""\
+                [boundary_conditions]
+                [[boundary_conditions.boundaries]]
+                tag = "east"
+                type = "{type_name}"
+                file = "{_tp(tfile)}"
+            """)
+            p = self._make(bc_section=bc)
+            self.assertEqual(p.boundary_data[0][1], 'Stage')  # normalised
 
     def test_flather_stage_boundary(self):
         tfile = os.path.join(self.tmpdir, 'wave.csv')
@@ -1214,6 +1311,47 @@ class TestCulverts(unittest.TestCase):
         """
         p = self._parse(body)
         self.assertEqual(p.culvert_data, [])
+
+    def test_losses_dict_preserved(self):
+        """losses may be a named-component dict (Boyd operators accept it)."""
+        body = """
+            [[culverts]]
+            type    = "boyd_box"
+            label   = "box1"
+            width   = 0.9
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+            losses  = {inlet = 0.5, outlet = 1.0, pier = 0.0}
+        """
+        cd = self._parse(body).culvert_data[0]
+        self.assertEqual(cd['losses'], {'inlet': 0.5, 'outlet': 1.0, 'pier': 0.0})
+
+    def test_losses_list_preserved(self):
+        """losses may be a list (Boyd operators sum the entries)."""
+        body = """
+            [[culverts]]
+            type    = "boyd_box"
+            label   = "box1"
+            width   = 0.9
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+            losses  = [0.5, 1.0]
+        """
+        cd = self._parse(body).culvert_data[0]
+        self.assertEqual(cd['losses'], [0.5, 1.0])
+
+    def test_losses_negative_component_raises(self):
+        body = """
+            [[culverts]]
+            type    = "boyd_box"
+            label   = "box1"
+            width   = 0.9
+            exchange_line_0 = "up.csv"
+            exchange_line_1 = "down.csv"
+            losses  = {inlet = -0.5}
+        """
+        with self.assertRaises(ValueError):
+            self._parse(body)
 
     def test_boyd_box_defaults(self):
         body = """
@@ -1795,3 +1933,126 @@ class TestValidation(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class TestErosion(unittest.TestCase):
+    """[[erosion]] — five behaviours over seven operator classes."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.toml_path = os.path.join(self.tmp, 'cfg.toml')
+
+    def tearDown(self):
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _make(self, erosion_toml=''):
+        content = textwrap.dedent("""\
+            [project]
+            scenario = "test_scenario"
+            output_base_directory = "OUTPUT/"
+            yieldstep = 60.0
+            finaltime = 3600.0
+            projection_information = -55
+            flow_algorithm = "DE0"
+
+            [mesh]
+            bounding_polygon = "extent.shp"
+            default_res = 1000000.0
+        """) + textwrap.dedent(erosion_toml)
+        _write_toml(self.toml_path, content)
+        return ProjectDataTOML(self.toml_path)
+
+    def test_absent_by_default(self):
+        p = self._make()
+        self.assertEqual(p.erosion_data, [])
+
+    def test_polygon_form_parsed(self):
+        p = self._make("""
+            [[erosion]]
+            type = "simple"
+            polygon = "scour.csv"
+            threshold = 1.5
+            base = -2.0
+        """)
+        self.assertEqual(len(p.erosion_data), 1)
+        e = p.erosion_data[0]
+        self.assertEqual(e['type'], 'simple')
+        self.assertEqual(e['polygon'], 'scour.csv')
+        self.assertAlmostEqual(e['threshold'], 1.5)
+        self.assertAlmostEqual(e['base'], -2.0)
+        self.assertIsNone(e['center'])
+
+    def test_circle_form_parsed(self):
+        p = self._make("""
+            [[erosion]]
+            type = "simple"
+            center = [10.0, 20.0]
+            radius = 5.0
+        """)
+        e = p.erosion_data[0]
+        self.assertEqual(e['center'], [10.0, 20.0])
+        self.assertAlmostEqual(e['radius'], 5.0)
+        self.assertIsNone(e['polygon'])
+
+    def test_type_specific_params_kept(self):
+        p = self._make("""
+            [[erosion]]
+            type = "bed_shear"
+            polygon = "a.csv"
+            shear_factor = 1234.0
+        """)
+        self.assertAlmostEqual(p.erosion_data[0]['shear_factor'], 1234.0)
+
+    def test_type_specific_param_on_wrong_type_rejected(self):
+        # Silently ignoring it would let a user believe they had configured
+        # something they had not.
+        with self.assertRaises(ValueError) as cm:
+            self._make("""
+                [[erosion]]
+                type = "flat_slice"
+                polygon = "a.csv"
+                shear_factor = 1234.0
+            """)
+        self.assertIn('shear_factor', str(cm.exception))
+
+    def test_unknown_type_rejected(self):
+        with self.assertRaises(ValueError) as cm:
+            self._make("""
+                [[erosion]]
+                type = "landslide"
+                polygon = "a.csv"
+            """)
+        self.assertIn('landslide', str(cm.exception))
+
+    def test_region_required(self):
+        with self.assertRaises(ValueError) as cm:
+            self._make("""
+                [[erosion]]
+                type = "simple"
+            """)
+        self.assertIn('region', str(cm.exception))
+
+    def test_both_region_forms_rejected(self):
+        with self.assertRaises(ValueError) as cm:
+            self._make("""
+                [[erosion]]
+                type = "simple"
+                polygon = "a.csv"
+                center = [1.0, 2.0]
+                radius = 3.0
+            """)
+        self.assertIn('not both', str(cm.exception))
+
+    def test_warns_when_elevation_not_stored_per_timestep(self):
+        # Erosion changes elevation, but ANUGA stores it statically by default,
+        # so the .sww would show the initial terrain forever.
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            self._make("""
+                [[erosion]]
+                type = "simple"
+                polygon = "a.csv"
+            """)
+        msgs = ' '.join(str(x.message) for x in w)
+        self.assertIn('store_elevation_every_timestep', msgs)
+

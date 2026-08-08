@@ -83,6 +83,10 @@ Copy it, adjust the file paths, and add extra sections as needed.
    # polygon    = "mesh/fine_zone.csv"
    # resolution = 10000.0   # finer triangles inside this polygon [m²]
 
+   # [[mesh.interior_holes]]
+   # polygon = "mesh/buildings.csv"   # cut OUT of the mesh entirely
+   # tag     = "building"             # optional; needs a matching boundary condition
+
    # ── Boundary conditions ───────────────────────────────────────────────────
    [boundary_conditions]
    boundary_tags_attribute_name = "Boundary"   # shapefile attribute holding tag names
@@ -294,6 +298,23 @@ Mesh geometry and resolution.
    # Point-based resolution file — CSV with columns x, y, resolution.
    # Mutually exclusive with [[mesh.interior_regions]].
    region_areas_file = ""
+
+   # [[mesh.interior_holes]] — polygons cut OUT of the mesh entirely, leaving a
+   # void rather than a refined region. Use for anything water should neither
+   # enter nor flow through: building footprints, tank pads, solid structures.
+   #
+   # Unlike [[mesh.interior_regions]], which keeps the triangles and only changes
+   # their size, so no resolution is given.
+   #
+   # 'tag' is optional and names the hole's edges so a boundary condition can be
+   # bound to them. If set, a matching [[boundary_conditions.boundaries]] entry is
+   # REQUIRED, or the run stops with
+   #   Tag "..." has not been bound to a boundary object
+   # Omit it and the mesh generator applies its own 'interior' default.
+   #
+   # [[mesh.interior_holes]]
+   # polygon = "mesh/buildings.csv"
+   # tag     = "building"
 
    # Interpretation of the resolution column in region_areas_file.
    #   "area"   — maximum triangle area [m²]
@@ -630,6 +651,8 @@ Multiple ``[[weirs]]`` entries are supported.
 Pump operator transferring water between a wet-well basin and a discharge
 point.  Set ``enabled = false`` to disable without removing the definition.
 
+
+
 .. code-block:: toml
 
    [[pumping_stations]]
@@ -648,6 +671,58 @@ point.  Set ``enabled = false`` to disable without removing the definition.
 
 Multiple ``[[pumping_stations]]`` entries are supported.
 
+
+[[erosion]]
+~~~~~~~~~~~
+
+Bed erosion / scour operators. Multiple ``[[erosion]]`` entries are supported.
+
+.. code-block:: toml
+
+   [[erosion]]
+
+   # Which erosion behaviour to apply. One of:
+   #   simple      — base erosion operator
+   #   bed_shear   — scour driven by bed shear stress (dam-breach style)
+   #   flat_slice  — erode down to a flat surface at a given elevation
+   #   flat_fill   — as flat_slice, filling rather than only cutting
+   #   sand_dune   — sand-dune erosion, limited by an angle of repose
+   type = "bed_shear"
+
+   # Region the operator acts on — give EITHER a polygon OR center + radius.
+   # (Raw triangle indices are not supported here: they cannot survive a
+   # re-mesh, so they have no stable meaning in a configuration file.)
+   polygon = "erosion/breach.csv"
+   # center = [382000.0, 6354000.0]
+   # radius = 50.0
+
+   # Bed shear below which no scour occurs. 0.0 means scour begins immediately.
+   # default: 0.0
+   threshold = 0.0
+
+   # Minimum bed level [m]; scour does not cut below this.
+   # default: 0.0
+   base = -5.0
+
+   # Optional label naming this operator's log file when logging = true
+   label   = "breach"
+   logging = false
+
+   # ── Type-specific parameters ──────────────────────────────────────────────
+   # Supplying one on the wrong type is an ERROR, not silently ignored.
+   #
+   #   shear_factor   bed_shear only   — higher slows the breach (default 75000.0)
+   #   elevation      flat_slice / flat_fill only — target surface level [m]
+   #   Ra             sand_dune only   — angle of repose [degrees] (default 34.0)
+   shear_factor = 75000.0
+
+.. warning::
+
+   Erosion changes bed elevation as the run proceeds, but ANUGA stores elevation
+   **once at t=0** by default — so the eroded bed will not appear in the ``.sww``
+   file or in any raster derived from it. Set ``store_elevation_every_timestep =
+   true`` in ``[project]`` when using erosion operators. A warning is issued if
+   ``[[erosion]]`` is present without it.
 
 Input Validation
 -----------------

@@ -9,6 +9,7 @@ python_sources = [
     'setup_boundary_conditions.py',
     'setup_bridges.py',
     'setup_culverts.py',
+    'setup_erosion.py',
     'setup_initial_conditions.py',
     'setup_inlets.py',
     'setup_mesh.py',

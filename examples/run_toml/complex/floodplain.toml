@@ -44,7 +44,7 @@ report_peak_velocity_statistics     = true
 report_operator_statistics          = true
 
 # Threads / device.  Omit omp_num_threads to honour $OMP_NUM_THREADS.
-# multiprocessor_mode = 1   # 1 = OpenMP (default), 2 = unified GPU/CPU kernels
+# compute_mode = "legacy"   # "legacy" (CPU OpenMP, default) or "unified" (CPU/GPU)
 # omp_num_threads     = 4
 
 

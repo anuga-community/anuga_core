@@ -47,6 +47,12 @@ def build_mesh(project):
             maximum_triangle_area=project.default_res,
             filename=project.meshname,
             interior_regions=project.interior_regions,
+            # Polygons meshed as voids rather than refined regions — see
+            # [[mesh.interior_holes]]. getattr keeps this working with a
+            # PrepareData built by the older parser, which has no such
+            # attribute; None is create_pmesh_from_regions' own default.
+            interior_holes=getattr(project, 'interior_holes', None) or None,
+            hole_tags=getattr(project, 'hole_tags', None),
             use_cache=False,
             verbose=True,
             breaklines=mesh_breaklines,

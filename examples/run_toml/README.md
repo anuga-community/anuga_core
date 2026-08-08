@@ -2,9 +2,10 @@
 
 `anuga_run_toml` runs a complete ANUGA simulation from a single plain-text
 [TOML](https://toml.io) configuration file — no Python scripting required.
-You describe the mesh, initial conditions, boundaries, rainfall, inlets and
-hydraulic structures declaratively, and the runner builds the domain, evolves
-it, and writes the SWW output (plus GeoTIFFs of the peak quantities).
+You describe the mesh (including voids for buildings and other obstructions),
+initial conditions, boundaries, rainfall, inlets, hydraulic structures and bed
+erosion declaratively, and the runner builds the domain, evolves it, and writes
+the SWW output (plus GeoTIFFs of the peak quantities).
 
 This directory has three scenarios, smallest first:
 

@@ -59,6 +59,7 @@ from anuga.scenario import (
     setup_mesh,
     setup_initial_conditions,
     setup_riverwalls,
+    setup_erosion,
     raster_outputs,
 )
 from anuga.scenario.prepare_data import PrepareData
@@ -140,6 +141,12 @@ setup_bridges.setup_bridges(domain, project)
 progress('Making pumping stations')
 setup_pumping_stations.setup_pumping_stations(domain, project)
 
+# Erosion operators change elevation as the run proceeds. Added after the
+# forcing terms and before boundary conditions, matching the ordering of the
+# other operator setups.
+progress('Making erosion operators')
+setup_erosion.setup_erosion(domain, project)
+
 # ---------------------------------------------------------------------------
 # Boundary conditions
 # ---------------------------------------------------------------------------
@@ -161,7 +168,10 @@ max_quantities = Collect_max_quantities_operator(
 # Evolve
 # ---------------------------------------------------------------------------
 
-domain.set_multiprocessor_mode(project.multiprocessor_mode)
+if hasattr(project, 'compute_mode'):
+    domain.set_compute_mode(project.compute_mode)   # 'legacy' or 'unified'
+else:
+    domain.set_multiprocessor_mode(project.multiprocessor_mode)  # Excel back-compat
 domain.set_omp_num_threads(project.omp_num_threads)
 
 progress('Evolving')
