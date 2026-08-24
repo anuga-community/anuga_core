@@ -68,6 +68,12 @@ static void usage(const char *argv0) {
 "                      each selects its ANUGA preset (DE1 / DE_ader2 / DE0 /\n"
 "                      DE2): flux calls per step, limiter betas, CFL\n"
 "    --betas V         override the limiter betas (beta_w/uh/vh; dry stay 0)\n"
+"    --flux NAME       cell | edge | scatter -- flux kernel  (default cell)\n"
+"                        edge solves each unique edge's Riemann problem ONCE\n"
+"                        (cell solves interior edges twice) and fuses the\n"
+"                        flux gather into the update; same discretization,\n"
+"                        exactly antisymmetric flux exchange, results differ\n"
+"                        from cell-based only at floating-point roundoff\n"
 "\n"
 "  run\n"
 "    --steps N         timed RK2 steps                  (default 100)\n"
@@ -149,12 +155,12 @@ static double rk2_step_timed(struct gpu_domain *GD, double max_timestep, int app
 
     // ---- first Euler stage
     // prepare = fused RK2 backup + protect + extrapolate centroid pass
-    TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 1));
+    TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 1, gpu_prepare_should_zero_eu(GD)));
     TIME_PHASE(PH_EXTRAPOLATE, gpu_extrapolate_edges(GD));
     TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
 
     double local_timestep;
-    TIME_PHASE(PH_FLUXES, local_timestep = gpu_compute_fluxes(GD, 0, 2));
+    TIME_PHASE(PH_FLUXES, local_timestep = gpu_flux_phase(GD, 0, 2));
 
     timestep = GD->CFL * local_timestep;
     GD->recorded_flux_timestep =
@@ -162,16 +168,16 @@ static double rk2_step_timed(struct gpu_domain *GD, double max_timestep, int app
     if (timestep > max_timestep) timestep = max_timestep;
 
     TIME_PHASE(PH_FORCING_UPDATE,
-               gpu_forcing_and_update(GD, timestep, apply_forcing, 0, 0.0, 0.0));
+               gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0));
 
     // ---- second Euler stage
-    TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 0));
+    TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD)));
     TIME_PHASE(PH_EXTRAPOLATE, gpu_extrapolate_edges(GD));
     TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
-    TIME_PHASE(PH_FLUXES,      gpu_compute_fluxes(GD, 1, 2));
+    TIME_PHASE(PH_FLUXES,      gpu_flux_phase(GD, 1, 2));
 
     TIME_PHASE(PH_FORCING_UPDATE,
-               gpu_forcing_and_update(GD, timestep, apply_forcing, 1, 0.5, 0.5));
+               gpu_apply_phase(GD, timestep, apply_forcing, 1, 0.5, 0.5, 1));
 
     return timestep;
 }
@@ -192,7 +198,7 @@ static size_t peak_host_rss(void) {
 // predictor shifts edge values to Q^{n+1/2}).  Keep in sync like rk2 above.
 static double ader2_step_timed(struct gpu_domain *GD, double max_timestep,
                                int apply_forcing, double prev_dt) {
-    TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 0));
+    TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD)));
     TIME_PHASE(PH_EXTRAPOLATE, gpu_extrapolate_edges(GD));
     TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
 
@@ -202,7 +208,7 @@ static double ader2_step_timed(struct gpu_domain *GD, double max_timestep,
     }
 
     double local_timestep;
-    TIME_PHASE(PH_FLUXES, local_timestep = gpu_compute_fluxes(GD, 0, 1));
+    TIME_PHASE(PH_FLUXES, local_timestep = gpu_flux_phase(GD, 0, 1));
 
     double timestep = GD->CFL * local_timestep;
     GD->recorded_flux_timestep =
@@ -210,7 +216,7 @@ static double ader2_step_timed(struct gpu_domain *GD, double max_timestep,
     if (timestep > max_timestep) timestep = max_timestep;
 
     TIME_PHASE(PH_FORCING_UPDATE,
-               gpu_forcing_and_update(GD, timestep, apply_forcing, 0, 0.0, 0.0));
+               gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0));
     return timestep;
 }
 
@@ -244,6 +250,13 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--dam"))        P.dam_height = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--cfl"))        { P.cfl = arg_d(argc, argv, &i, a); cfl_set = 1; }
         else if (!strcmp(a, "--betas"))      { betas_override = arg_d(argc, argv, &i, a); }
+        else if (!strcmp(a, "--flux")) {
+            const char *fx = arg_s(argc, argv, &i, a);
+            if      (!strcmp(fx, "cell"))    P.flux_mode = 0;
+            else if (!strcmp(fx, "edge"))    P.flux_mode = 1;
+            else if (!strcmp(fx, "scatter")) P.flux_mode = 2;
+            else { fprintf(stderr, "bench: unknown flux mode '%s'\n", fx); return 2; }
+        }
         else if (!strcmp(a, "--scheme")) {
             const char *sc = arg_s(argc, argv, &i, a);
             if      (!strcmp(sc, "rk2"))   P.scheme = BENCH_SCHEME_RK2;
@@ -326,7 +339,9 @@ int main(int argc, char **argv) {
                        : P.scheme == BENCH_SCHEME_EULER ? "euler (DE0)"
                        : P.scheme == BENCH_SCHEME_RK3   ? "rk3 (DE2)"
                        : "rk2 (DE1)";
-        printf("  scheme    : %s, CFL %.3g, betas %.3g\n", sn, P.cfl, P.beta_w);
+        printf("  scheme    : %s, CFL %.3g, betas %.3g, %s-based fluxes\n",
+               sn, P.cfl, P.beta_w,
+               P.flux_mode == 1 ? "edge" : P.flux_mode == 2 ? "scatter" : "cell");
     }
     printf("  ordering  : %s\n",
            O.morton ? "morton (Z-order curve)" : "row-major (ANUGA rectangular_cross)");

@@ -148,6 +148,7 @@ void bench_params_defaults(bench_params *P) {
     P->use_sloped_mannings    = 0;
 
     P->scheme      = BENCH_SCHEME_RK2;
+    P->flux_mode   = 0;
     P->which_case  = BENCH_CASE_DAM;
     P->length_x    = 1000.0;
     P->length_y    = 1000.0;
@@ -220,6 +221,15 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
     // (bit-identical to bed_ev, ~6 fewer scattered loads per cell).  ANUGA
     // leaves this 0 because tests call compute_fluxes directly.
     D->reconstruct_edge_bed               = 1;
+
+    // Experimental flux paths (the kernels select purely on these pointers):
+    //   slot    -- edge-based pair; per-slot records [F0,F1,F2,pf,zh,s] x 3n
+    //   scatter -- single-solve atomic scatter; neigh_work takes the per-slot
+    //              wave speeds (3n)
+    if (P->flux_mode == 1)
+        D->edge_flux_work = DALLOC(B, 6 * 3 * n);
+    else if (P->flux_mode == 2)
+        D->neigh_work = DALLOC(B, 3 * n);
 
     // --- mesh geometry ----------------------------------------------------
     D->vertex_coordinates   = DALLOC(B, 6 * n);
@@ -490,6 +500,17 @@ void bench_domain_to_device(bench_domain *B, const bench_params *P, int verbose)
         exit(1);
     }
 
+    // Experimental flux-path work arrays (device-produced/consumed: alloc only)
+    if (B->GD.D.edge_flux_work != NULL) {
+        double *slots = B->GD.D.edge_flux_work;
+        const anuga_int nslots = 6 * 3 * B->GD.D.number_of_elements;
+        #pragma omp target enter data map(alloc: slots[0:nslots])
+    }
+    if (B->GD.D.neigh_work != NULL) {
+        double *speeds = B->GD.D.neigh_work;
+        const anuga_int ns = 3 * B->GD.D.number_of_elements;
+        #pragma omp target enter data map(alloc: speeds[0:ns])
+    }
 }
 
 void bench_domain_free(bench_domain *B) {

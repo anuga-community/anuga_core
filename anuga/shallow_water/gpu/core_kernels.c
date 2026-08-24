@@ -484,6 +484,84 @@ void core_update_conserved_quantities(struct domain *D, double timestep) {
     }
 }
 
+#pragma omp declare target
+// One cell's Manning friction + conserved-quantity update + optional RK2
+// average, entirely in registers.  Shared by core_forcing_and_update (which
+// reads the explicit updates from the eu arrays) and by the edge-based
+// core_flux_apply_and_update (which computes them in registers and never
+// touches the eu arrays at all).  eu_* are the explicit-update values for
+// this cell; the semi-implicit arrays are read, consumed and reset here.
+static inline void gpu_cell_forcing_update(
+    anuga_int k, double timestep, int apply_manning, int do_saxpy,
+    double a, double b, double g, double minimum_allowed_height,
+    double seven_thirds,
+    double eu_stage, double eu_xmom, double eu_ymom,
+    double * restrict stage_cv, double * restrict xmom_cv,
+    double * restrict ymom_cv, double * restrict bed_cv,
+    double * restrict height_cv, double * restrict friction_cv,
+    double * restrict stage_siu, double * restrict xmom_siu,
+    double * restrict ymom_siu,
+    double * restrict stage_bk, double * restrict xmom_bk,
+    double * restrict ymom_bk) {
+
+    double stage_c = stage_cv[k];
+    double xmom_c = xmom_cv[k];
+    double ymom_c = ymom_cv[k];
+
+    double s_siu = stage_siu[k];
+    double x_siu = xmom_siu[k];
+    double y_siu = ymom_siu[k];
+
+    if (apply_manning) {
+        double S = 0.0;
+        double eta = friction_cv[k];
+        double abs_mom = sqrt(xmom_c * xmom_c + ymom_c * ymom_c);
+
+        if (eta > 1.0e-15) {  // ETA_SMALL
+            double h = stage_c - bed_cv[k];
+            if (h >= minimum_allowed_height) {
+                S = -g * eta * eta * abs_mom;
+                S /= pow(h, seven_thirds);
+            }
+        }
+        x_siu += S * xmom_c;
+        y_siu += S * ymom_c;
+    }
+
+    // Explicit + semi-implicit update (single-division form; see
+    // core_update_conserved_quantities for the derivation)
+    double stage_new = stage_c + timestep * eu_stage;
+    double xmom_new  = xmom_c  + timestep * eu_xmom;
+    double ymom_new  = ymom_c  + timestep * eu_ymom;
+
+    double num;
+
+    num = stage_c - timestep * s_siu;
+    if (stage_c != 0.0 && num * stage_c > 0.0) stage_new = stage_new * stage_c / num;
+
+    num = xmom_c - timestep * x_siu;
+    if (xmom_c != 0.0 && num * xmom_c > 0.0) xmom_new = xmom_new * xmom_c / num;
+
+    num = ymom_c - timestep * y_siu;
+    if (ymom_c != 0.0 && num * ymom_c > 0.0) ymom_new = ymom_new * ymom_c / num;
+
+    stage_siu[k] = 0.0;
+    xmom_siu[k] = 0.0;
+    ymom_siu[k] = 0.0;
+
+    if (do_saxpy) {
+        stage_new = a * stage_new + b * stage_bk[k];
+        xmom_new  = a * xmom_new  + b * xmom_bk[k];
+        ymom_new  = a * ymom_new  + b * ymom_bk[k];
+        height_cv[k] = fmax(stage_new - bed_cv[k], 0.0);
+    }
+
+    stage_cv[k] = stage_new;
+    xmom_cv[k] = xmom_new;
+    ymom_cv[k] = ymom_new;
+}
+#pragma omp end declare target
+
 // ============================================================================
 // Fused forcing + update (+ optional RK2 average)
 //
@@ -539,67 +617,12 @@ void core_forcing_and_update(struct domain *D, double timestep,
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
-        double stage_c = stage_cv[k];
-        double xmom_c = xmom_cv[k];
-        double ymom_c = ymom_cv[k];
-
-        // ---- Manning friction, flat semi-implicit variant.
-        // Read whatever is already in the semi-implicit arrays (operators may
-        // have contributed) and add the friction term in registers, exactly as
-        // core_manning_friction_flat_semi_implicit does in memory.
-        double s_siu = stage_siu[k];
-        double x_siu = xmom_siu[k];
-        double y_siu = ymom_siu[k];
-
-        if (apply_manning) {
-            double S = 0.0;
-            double eta = friction_cv[k];
-            double abs_mom = sqrt(xmom_c * xmom_c + ymom_c * ymom_c);
-
-            if (eta > 1.0e-15) {  // ETA_SMALL
-                double h = stage_c - bed_cv[k];
-                if (h >= minimum_allowed_height) {
-                    S = -g * eta * eta * abs_mom;
-                    S /= pow(h, seven_thirds);
-                }
-            }
-            x_siu += S * xmom_c;
-            y_siu += S * ymom_c;
-        }
-
-        // ---- Conserved-quantity update (see core_update_conserved_quantities
-        // for why the semi-implicit term is written as one division).
-        double stage_new = stage_c + timestep * stage_eu[k];
-        double xmom_new  = xmom_c  + timestep * xmom_eu[k];
-        double ymom_new  = ymom_c  + timestep * ymom_eu[k];
-
-        double num;
-
-        num = stage_c - timestep * s_siu;
-        if (stage_c != 0.0 && num * stage_c > 0.0) stage_new = stage_new * stage_c / num;
-
-        num = xmom_c - timestep * x_siu;
-        if (xmom_c != 0.0 && num * xmom_c > 0.0) xmom_new = xmom_new * xmom_c / num;
-
-        num = ymom_c - timestep * y_siu;
-        if (ymom_c != 0.0 && num * ymom_c > 0.0) ymom_new = ymom_new * ymom_c / num;
-
-        // Reset semi-implicit updates for the next timestep
-        stage_siu[k] = 0.0;
-        xmom_siu[k] = 0.0;
-        ymom_siu[k] = 0.0;
-
-        // ---- RK2 average, and the height refresh that follows it
-        if (do_saxpy) {
-            stage_new = a * stage_new + b * stage_bk[k];
-            xmom_new  = a * xmom_new  + b * xmom_bk[k];
-            ymom_new  = a * ymom_new  + b * ymom_bk[k];
-            height_cv[k] = fmax(stage_new - bed_cv[k], 0.0);
-        }
-
-        stage_cv[k] = stage_new;
-        xmom_cv[k] = xmom_new;
-        ymom_cv[k] = ymom_new;
+        gpu_cell_forcing_update(k, timestep, apply_manning, do_saxpy, a, b,
+                                g, minimum_allowed_height, seven_thirds,
+                                stage_eu[k], xmom_eu[k], ymom_eu[k],
+                                stage_cv, xmom_cv, ymom_cv, bed_cv, height_cv,
+                                friction_cv, stage_siu, xmom_siu, ymom_siu,
+                                stage_bk, xmom_bk, ymom_bk);
     }
 }
 
@@ -716,7 +739,7 @@ double core_protect(struct domain *D) {
 // Returns the protect mass error (same reduction core_protect performs).
 // ============================================================================
 
-double core_prepare_step(struct domain *D, int do_backup) {
+double core_prepare_step(struct domain *D, int do_backup, int zero_eu) {
     anuga_int n = D->number_of_elements;
     double minimum_allowed_height = D->minimum_allowed_height;
     anuga_int extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
@@ -734,6 +757,13 @@ double core_prepare_step(struct domain *D, int do_backup) {
     double * restrict xmom_bk = D->xmom_backup_values;
     double * restrict ymom_bk = D->ymom_backup_values;
 
+    // Scatter-mode fluxes accumulate into the explicit updates with atomics,
+    // so they must start the step at zero; the cell-based flux kernel
+    // initializes them itself and passes zero_eu = 0.
+    double * restrict stage_eu = D->stage_explicit_update;
+    double * restrict xmom_eu = D->xmom_explicit_update;
+    double * restrict ymom_eu = D->ymom_explicit_update;
+
     double mass_error = 0.0;
 
     OMP_PARALLEL_LOOP_REDUCTION_PLUS(mass_error)
@@ -742,6 +772,12 @@ double core_prepare_step(struct domain *D, int do_backup) {
         double bed = bed_cv[k];
         double xmom = xmom_cv[k];
         double ymom = ymom_cv[k];
+
+        if (zero_eu) {
+            stage_eu[k] = 0.0;
+            xmom_eu[k] = 0.0;
+            ymom_eu[k] = 0.0;
+        }
 
         // RK2 backup of the raw (pre-protect) state
         if (do_backup) {
@@ -1439,6 +1475,465 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
     }
 
     // Return timestep (only meaningful on first substep)
+    return local_timestep;
+}
+
+// ============================================================================
+// Edge-based flux computation (opt-in, two kernels)
+//
+// The cell-based kernel above solves every interior edge's Riemann problem
+// TWICE -- once from each side, with swapped inputs and a flipped normal.
+// The central-upwind flux is antisymmetric under that swap and its shared
+// scalars (pressure_flux, max wave speed, z_half) are swap-invariant, so a
+// single owner-side evaluation serves both cells: the same discretization,
+// half the Riemann solves, and an EXACTLY antisymmetric flux exchange (the
+// dual evaluation is only antisymmetric to floating-point roundoff).
+//
+// Kernel A (core_compute_fluxes_edge_based) runs one thread per cell-edge
+// slot and computes only the slots it owns (boundary edges, or the side
+// whose cell index is larger), storing per-slot
+//     [F0, F1, F2, pf_len, z_half, speed]      (stride EDGE_SLOT_STRIDE)
+// in D->edge_flux_work, where F* = -length * edgeflux (owner's sign) and
+// pf_len = length * pressure_flux.  It also performs the min-dt and
+// boundary-flux reductions the cell-based kernel does.
+//
+// Kernel B (core_flux_apply_and_update) is CELL-LOCAL: it gathers the three
+// slot records (own sign for owned slots, negated for the neighbour's),
+// assembles the one-sided pressure-gradient terms, normalizes by area, and
+// -- because it is cell-local -- finishes the whole step in the same launch
+// via gpu_cell_forcing_update (Manning + update + optional RK2 average).
+// The explicit-update arrays are never written on this path: the values
+// live and die in registers.
+//
+// Opt-in and restrictions: active only when the driver allocates
+// D->edge_flux_work (EDGE_SLOT_STRIDE * 3n doubles; ANUGA leaves it NULL) --
+// and, like reconstruct_edge_bed, it assumes fluxes follow an extrapolate,
+// reconstructing bed values as stage - height.  Riverwalls are NOT
+// supported (their weir corrections are one-sided); callers must fall back
+// to the cell-based kernel when riverwall edges exist.
+// ============================================================================
+
+#define EDGE_SLOT_STRIDE 6
+
+double core_compute_fluxes_edge_based(struct domain *D, int substep_count,
+                                      int timestep_fluxcalls) {
+    anuga_int n = D->number_of_elements;
+    double g = D->g;
+    double epsilon = D->epsilon;
+    anuga_int low_froude = D->low_froude;
+
+    double * restrict stage_ev = D->stage_edge_values;
+    double * restrict xmom_ev = D->xmom_edge_values;
+    double * restrict ymom_ev = D->ymom_edge_values;
+    double * restrict height_ev = D->height_edge_values;
+
+    double * restrict stage_bv = D->stage_boundary_values;
+    double * restrict xmom_bv = D->xmom_boundary_values;
+    double * restrict ymom_bv = D->ymom_boundary_values;
+
+    anuga_int * restrict neighbours = D->neighbours;
+    anuga_int * restrict neighbour_edges = D->neighbour_edges;
+    double * restrict normals = D->normals;
+    double * restrict edgelengths = D->edgelengths;
+    double * restrict radii = D->radii;
+    anuga_int * restrict tri_full_flag = D->tri_full_flag;
+
+    double * restrict slots = D->edge_flux_work;
+
+    double local_timestep = 1.0e+100;
+    double boundary_flux_sum_substep = 0.0;
+
+    const anuga_int nslots = 3 * n;
+
+    #ifdef CPU_ONLY_MODE
+    #pragma omp parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
+    #else
+    #pragma omp target teams distribute parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
+    #endif
+    for (anuga_int p = 0; p < nslots; p++) {
+        const anuga_int k = p / 3;
+        const anuga_int nbr = neighbours[p];
+        const int is_boundary = (nbr < 0);
+
+        // Owner side only: boundary slots, or the side with the larger index
+        if (!is_boundary && nbr < k) continue;
+
+        double ql[3], qr[3], edgeflux[3];
+
+        ql[0] = stage_ev[p];
+        ql[1] = xmom_ev[p];
+        ql[2] = ymom_ev[p];
+        double hle = height_ev[p];
+        double zl = ql[0] - hle;          // == bed_ev (post-extrapolate contract)
+
+        double length = edgelengths[p];
+        // Normals are read from the owner's slot; the neighbour's copy of the
+        // same physical edge is the exact negation.
+        double n1 = normals[2 * p];
+        double n2 = normals[2 * p + 1];
+
+        double zr, hre;
+        if (is_boundary) {
+            const anuga_int m = -nbr - 1;
+            qr[0] = stage_bv[m];
+            qr[1] = xmom_bv[m];
+            qr[2] = ymom_bv[m];
+            zr = zl;
+            hre = fmax(qr[0] - zr, 0.0);
+        } else {
+            const anuga_int nm = 3 * nbr + neighbour_edges[p];
+            qr[0] = stage_ev[nm];
+            qr[1] = xmom_ev[nm];
+            qr[2] = ymom_ev[nm];
+            hre = height_ev[nm];
+            zr = qr[0] - hre;
+        }
+
+        const double z_half = fmax(zl, zr);
+        const double h_left = fmax(hle + zl - z_half, 0.0);
+        const double h_right = fmax(hre + zr - z_half, 0.0);
+
+        double max_speed_local = 0.0;
+        double pressure_flux = 0.0;
+
+        if (h_left == 0.0 && h_right == 0.0) {
+            edgeflux[0] = 0.0;
+            edgeflux[1] = 0.0;
+            edgeflux[2] = 0.0;
+        } else {
+            gpu_flux_function_central(ql, qr, h_left, h_right, hle, hre,
+                                      n1, n2, epsilon, z_half, g,
+                                      edgeflux, &max_speed_local, &pressure_flux,
+                                      low_froude);
+        }
+
+        const anuga_int base = EDGE_SLOT_STRIDE * p;
+        slots[base + 0] = -length * edgeflux[0];
+        slots[base + 1] = -length * edgeflux[1];
+        slots[base + 2] = -length * edgeflux[2];
+        slots[base + 3] = length * pressure_flux;
+        slots[base + 4] = z_half;
+        slots[base + 5] = max_speed_local;
+
+        // Timestep reduction: min over (cell, edge) pairs of radii/speed --
+        // identical to the cell-based min over cells of radii/max(speed),
+        // since both evaluate radii/s at the cell's largest edge speed.
+        if (substep_count == 0 && max_speed_local > epsilon) {
+            if (tri_full_flag == NULL || tri_full_flag[k] == 1)
+                local_timestep = fmin(local_timestep, radii[k] / max_speed_local);
+            if (!is_boundary && (tri_full_flag == NULL || tri_full_flag[nbr] == 1))
+                local_timestep = fmin(local_timestep, radii[nbr] / max_speed_local);
+        }
+
+        // Boundary flux integral: the full cell's own-side mass flux across
+        // domain-boundary and full<->ghost edges (matches the cell-based sum)
+        if (tri_full_flag != NULL) {
+            const int k_full = (tri_full_flag[k] == 1);
+            if (is_boundary) {
+                if (k_full) boundary_flux_sum_substep += slots[base + 0];
+            } else {
+                const int n_full = (tri_full_flag[nbr] == 1);
+                if (k_full && !n_full) boundary_flux_sum_substep += slots[base + 0];
+                else if (!k_full && n_full) boundary_flux_sum_substep -= slots[base + 0];
+            }
+        }
+    }
+
+    if (D->boundary_flux_sum != NULL && substep_count < timestep_fluxcalls) {
+        D->boundary_flux_sum[substep_count] = boundary_flux_sum_substep;
+    }
+
+    return local_timestep;
+}
+
+void core_flux_apply_and_update(struct domain *D, double timestep,
+                                int apply_manning, int do_saxpy,
+                                double a, double b, int substep_count) {
+    anuga_int n = D->number_of_elements;
+    double g = D->g;
+    double minimum_allowed_height = D->minimum_allowed_height;
+    double seven_thirds = 7.0 / 3.0;
+
+    double * restrict stage_cv = D->stage_centroid_values;
+    double * restrict xmom_cv = D->xmom_centroid_values;
+    double * restrict ymom_cv = D->ymom_centroid_values;
+    double * restrict bed_cv = D->bed_centroid_values;
+    double * restrict height_cv = D->height_centroid_values;
+    double * restrict friction_cv = D->friction_centroid_values;
+
+    double * restrict stage_ev = D->stage_edge_values;
+    double * restrict height_ev = D->height_edge_values;
+
+    double * restrict stage_siu = D->stage_semi_implicit_update;
+    double * restrict xmom_siu = D->xmom_semi_implicit_update;
+    double * restrict ymom_siu = D->ymom_semi_implicit_update;
+
+    double * restrict stage_bk = D->stage_backup_values;
+    double * restrict xmom_bk = D->xmom_backup_values;
+    double * restrict ymom_bk = D->ymom_backup_values;
+
+    anuga_int * restrict neighbours = D->neighbours;
+    anuga_int * restrict neighbour_edges = D->neighbour_edges;
+    double * restrict normals = D->normals;
+    double * restrict edgelengths = D->edgelengths;
+    double * restrict areas = D->areas;
+    double * restrict max_speed_array = D->max_speed;
+
+    double * restrict slots = D->edge_flux_work;
+
+    OMP_PARALLEL_LOOP
+    for (anuga_int k = 0; k < n; k++) {
+        double eu_stage = 0.0, eu_xmom = 0.0, eu_ymom = 0.0;
+        double speed_max_last = 0.0;
+
+        const double hc = height_cv[k];
+        const double zc = bed_cv[k];
+
+        for (int i = 0; i < 3; i++) {
+            const anuga_int p = 3 * k + i;
+            const anuga_int nbr = neighbours[p];
+            const int owner = (nbr < 0 || nbr > k);
+            const anuga_int slot = owner ? p : 3 * nbr + neighbour_edges[p];
+            const anuga_int base = EDGE_SLOT_STRIDE * slot;
+            const double sgn = owner ? 1.0 : -1.0;
+
+            eu_stage += sgn * slots[base + 0];
+            eu_xmom  += sgn * slots[base + 1];
+            eu_ymom  += sgn * slots[base + 2];
+
+            const double pf_len = slots[base + 3];
+            const double z_half = slots[base + 4];
+            speed_max_last = fmax(speed_max_last, slots[base + 5]);
+
+            // One-sided pressure-gradient term, from this cell's own edge
+            // values -- the same expression the cell-based kernel evaluates.
+            // (pf_len uses the owner's edge length; both sides of a physical
+            // edge share endpoints, so the lengths are bit-identical.)
+            const double hle = height_ev[p];
+            const double zl = stage_ev[p] - hle;
+            const double length = edgelengths[p];
+            const double h_side = fmax(hle + zl - z_half, 0.0);
+
+            const double pg = pf_len
+                - length * g * 0.5 * (h_side * h_side - hle * hle
+                                      - (hle + hc) * (zl - zc));
+            eu_xmom -= normals[2 * p] * pg;
+            eu_ymom -= normals[2 * p + 1] * pg;
+        }
+
+        const double inv_area = 1.0 / areas[k];
+        eu_stage *= inv_area;
+        eu_xmom  *= inv_area;
+        eu_ymom  *= inv_area;
+
+        if (substep_count == 0) max_speed_array[k] = speed_max_last;
+
+        gpu_cell_forcing_update(k, timestep, apply_manning, do_saxpy, a, b,
+                                g, minimum_allowed_height, seven_thirds,
+                                eu_stage, eu_xmom, eu_ymom,
+                                stage_cv, xmom_cv, ymom_cv, bed_cv, height_cv,
+                                friction_cv, stage_siu, xmom_siu, ymom_siu,
+                                stage_bk, xmom_bk, ymom_bk);
+    }
+}
+
+// ============================================================================
+// Scatter-mode flux computation (opt-in, single kernel + atomics)
+//
+// Same single-Riemann-solve-per-edge idea as the slot-based pair above, but
+// with NO intermediate storage: the owner thread computes the flux once and
+// scatters both sides' full contributions -- flux exchange AND each side's
+// one-sided pressure-gradient term, already area-normalized -- directly into
+// the explicit-update arrays with `omp atomic update` (portable OpenMP; each
+// eu entry receives at most 3 concurrent adds, so contention is negligible).
+// The slot-based variant measured SLOWER than the cell-based kernel because
+// the 144 B/cell of slot records cost more to move than the duplicate
+// Riemann solves saved; this variant keeps the saved solves and moves
+// nothing.
+//
+// Requirements (same contract as the slot variant): the explicit updates
+// must be ZERO on entry (core_prepare_step's zero_eu flag), no riverwalls,
+// and fluxes follow an extrapolate (bed reconstructed as stage - height).
+// max_speed_array is NOT maintained on this path (per-cell max would need
+// an atomic max); D->neigh_work receives the per-slot wave speeds (both
+// sides written by the owner -- unique writer per slot, no race) should a
+// consumer want to rebuild it.
+// ============================================================================
+
+double core_compute_fluxes_scatter(struct domain *D, int substep_count,
+                                   int timestep_fluxcalls) {
+    anuga_int n = D->number_of_elements;
+    double g = D->g;
+    double epsilon = D->epsilon;
+    anuga_int low_froude = D->low_froude;
+
+    double * restrict stage_ev = D->stage_edge_values;
+    double * restrict xmom_ev = D->xmom_edge_values;
+    double * restrict ymom_ev = D->ymom_edge_values;
+    double * restrict height_ev = D->height_edge_values;
+
+    double * restrict stage_bv = D->stage_boundary_values;
+    double * restrict xmom_bv = D->xmom_boundary_values;
+    double * restrict ymom_bv = D->ymom_boundary_values;
+
+    double * restrict stage_eu = D->stage_explicit_update;
+    double * restrict xmom_eu = D->xmom_explicit_update;
+    double * restrict ymom_eu = D->ymom_explicit_update;
+
+    double * restrict height_cv = D->height_centroid_values;
+    double * restrict bed_cv = D->bed_centroid_values;
+
+    anuga_int * restrict neighbours = D->neighbours;
+    anuga_int * restrict neighbour_edges = D->neighbour_edges;
+    double * restrict normals = D->normals;
+    double * restrict edgelengths = D->edgelengths;
+    double * restrict radii = D->radii;
+    double * restrict areas = D->areas;
+    anuga_int * restrict tri_full_flag = D->tri_full_flag;
+
+    double * restrict slot_speeds = D->neigh_work;   // [3n], may be NULL
+
+    double local_timestep = 1.0e+100;
+    double boundary_flux_sum_substep = 0.0;
+
+    const anuga_int nslots = 3 * n;
+
+    #ifdef CPU_ONLY_MODE
+    #pragma omp parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
+    #else
+    #pragma omp target teams distribute parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
+    #endif
+    for (anuga_int p = 0; p < nslots; p++) {
+        const anuga_int k = p / 3;
+        const anuga_int nbr = neighbours[p];
+        const int is_boundary = (nbr < 0);
+
+        if (!is_boundary && nbr < k) continue;      // owner side only
+
+        double ql[3], qr[3], edgeflux[3];
+
+        ql[0] = stage_ev[p];
+        ql[1] = xmom_ev[p];
+        ql[2] = ymom_ev[p];
+        double hle = height_ev[p];
+        double zl = ql[0] - hle;
+
+        double length = edgelengths[p];
+        double n1 = normals[2 * p];
+        double n2 = normals[2 * p + 1];
+
+        double zr, hre;
+        anuga_int nm = 0;
+        if (is_boundary) {
+            const anuga_int m = -nbr - 1;
+            qr[0] = stage_bv[m];
+            qr[1] = xmom_bv[m];
+            qr[2] = ymom_bv[m];
+            zr = zl;
+            hre = fmax(qr[0] - zr, 0.0);
+        } else {
+            nm = 3 * nbr + neighbour_edges[p];
+            qr[0] = stage_ev[nm];
+            qr[1] = xmom_ev[nm];
+            qr[2] = ymom_ev[nm];
+            hre = height_ev[nm];
+            zr = qr[0] - hre;
+        }
+
+        const double z_half = fmax(zl, zr);
+        const double h_left = fmax(hle + zl - z_half, 0.0);
+        const double h_right = fmax(hre + zr - z_half, 0.0);
+
+        double max_speed_local = 0.0;
+        double pressure_flux = 0.0;
+
+        if (h_left == 0.0 && h_right == 0.0) {
+            edgeflux[0] = 0.0;
+            edgeflux[1] = 0.0;
+            edgeflux[2] = 0.0;
+        } else {
+            gpu_flux_function_central(ql, qr, h_left, h_right, hle, hre,
+                                      n1, n2, epsilon, z_half, g,
+                                      edgeflux, &max_speed_local, &pressure_flux,
+                                      low_froude);
+        }
+
+        const double F0 = -length * edgeflux[0];
+        const double F1 = -length * edgeflux[1];
+        const double F2 = -length * edgeflux[2];
+        const double pf_len = length * pressure_flux;
+
+        // ---- owner side: flux + its one-sided pressure gradient, scaled
+        {
+            const double hc = height_cv[k];
+            const double zc = bed_cv[k];
+            const double pg = pf_len
+                - length * g * 0.5 * (h_left * h_left - hle * hle
+                                      - (hle + hc) * (zl - zc));
+            const double ia = 1.0 / areas[k];
+            const double ds = F0 * ia;
+            const double dx = (F1 - n1 * pg) * ia;
+            const double dy = (F2 - n2 * pg) * ia;
+
+            #pragma omp atomic update
+            stage_eu[k] += ds;
+            #pragma omp atomic update
+            xmom_eu[k] += dx;
+            #pragma omp atomic update
+            ymom_eu[k] += dy;
+        }
+
+        // ---- neighbour side: negated flux, its own pressure gradient.
+        // The neighbour's stored normal for this physical edge is the exact
+        // FP negation of the owner's (same endpoints, opposite subtraction),
+        // so (-n1, -n2) reproduces its cell-based expression bit-for-bit.
+        if (!is_boundary) {
+            const double hc_n = height_cv[nbr];
+            const double zc_n = bed_cv[nbr];
+            const double pg = pf_len
+                - length * g * 0.5 * (h_right * h_right - hre * hre
+                                      - (hre + hc_n) * (zr - zc_n));
+            const double ia = 1.0 / areas[nbr];
+            const double ds = -F0 * ia;
+            const double dx = (-F1 - (-n1) * pg) * ia;
+            const double dy = (-F2 - (-n2) * pg) * ia;
+
+            #pragma omp atomic update
+            stage_eu[nbr] += ds;
+            #pragma omp atomic update
+            xmom_eu[nbr] += dx;
+            #pragma omp atomic update
+            ymom_eu[nbr] += dy;
+        }
+
+        if (slot_speeds != NULL) {
+            slot_speeds[p] = max_speed_local;
+            if (!is_boundary) slot_speeds[nm] = max_speed_local;
+        }
+
+        if (substep_count == 0 && max_speed_local > epsilon) {
+            if (tri_full_flag == NULL || tri_full_flag[k] == 1)
+                local_timestep = fmin(local_timestep, radii[k] / max_speed_local);
+            if (!is_boundary && (tri_full_flag == NULL || tri_full_flag[nbr] == 1))
+                local_timestep = fmin(local_timestep, radii[nbr] / max_speed_local);
+        }
+
+        if (tri_full_flag != NULL) {
+            const int k_full = (tri_full_flag[k] == 1);
+            if (is_boundary) {
+                if (k_full) boundary_flux_sum_substep += F0;
+            } else {
+                const int n_full = (tri_full_flag[nbr] == 1);
+                if (k_full && !n_full) boundary_flux_sum_substep += F0;
+                else if (!k_full && n_full) boundary_flux_sum_substep -= F0;
+            }
+        }
+    }
+
+    if (D->boundary_flux_sum != NULL && substep_count < timestep_fluxcalls) {
+        D->boundary_flux_sum[substep_count] = boundary_flux_sum_substep;
+    }
+
     return local_timestep;
 }
 

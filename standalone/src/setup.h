@@ -51,6 +51,7 @@ typedef struct {
     double     manning;
     double     water_level;     // still-water stage for LAKE / downstream depth
     double     dam_height;      // upstream stage for the dam-break cases
+    int        flux_mode;       // 0 = cell, 1 = slot (edge pair), 2 = atomic scatter
 } bench_params;
 
 typedef struct {

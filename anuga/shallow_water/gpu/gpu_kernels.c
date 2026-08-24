@@ -38,9 +38,9 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
 // Fused RK2-backup + protect + extrapolate centroid pass: one launch for the
 // three cell-local step-opening kernels (and it retires protect's separate
 // height-refresh launch, which the centroid pass subsumes).
-double gpu_prepare_step(struct gpu_domain *GD, int do_backup) {
+double gpu_prepare_step(struct gpu_domain *GD, int do_backup, int zero_eu) {
     NVTX_PUSH("gpu_prepare_step");
-    double mass_error = core_prepare_step(&GD->D, do_backup);
+    double mass_error = core_prepare_step(&GD->D, do_backup, zero_eu);
 
     if (GD->flops.enabled) {
         anuga_int n = GD->D.number_of_elements;
@@ -266,6 +266,84 @@ void gpu_forcing_and_update(struct gpu_domain *GD, double timestep,
     NVTX_POP();
 }
 
+// ----------------------------------------------------------------------------
+// Flux + apply phases with automatic edge-based/cell-based selection.
+//
+// Edge-based (core_compute_fluxes_edge_based + core_flux_apply_and_update)
+// runs when the driver has allocated D->edge_flux_work and there are no
+// riverwalls (the weir corrections are one-sided and not supported there).
+// Otherwise the classic cell-based flux kernel runs, followed by the fused
+// forcing+update.  Both paths implement the same discretization; edge-based
+// halves the Riemann solves and never materializes the explicit updates.
+// ----------------------------------------------------------------------------
+
+// Flux path selection (all phases of a step must agree):
+//   FLUX_CELL    -- classic cell-based kernel (always valid)
+//   FLUX_SLOT    -- edge-based pair via slot records (D->edge_flux_work set)
+//   FLUX_SCATTER -- single-solve atomic scatter (D->neigh_work set, no slots)
+// Riverwalls and sloped Manning force the cell-based path: the weir
+// corrections are one-sided, and sloped Manning needs the separate kernels
+// that consume array-resident explicit updates.
+enum { FLUX_CELL = 0, FLUX_SLOT, FLUX_SCATTER };
+
+static int gpu_flux_mode(struct gpu_domain *GD) {
+    if (GD->D.number_of_riverwall_edges != 0 || GD->use_sloped_mannings)
+        return FLUX_CELL;
+    if (GD->D.edge_flux_work != NULL) return FLUX_SLOT;
+    if (GD->D.neigh_work != NULL) return FLUX_SCATTER;
+    return FLUX_CELL;
+}
+
+// Scatter mode needs the explicit updates zeroed before the flux kernel;
+// the step's prepare launch does it for free.
+int gpu_prepare_should_zero_eu(struct gpu_domain *GD) {
+    return gpu_flux_mode(GD) == FLUX_SCATTER;
+}
+
+double gpu_flux_phase(struct gpu_domain *GD, int substep_count, int timestep_fluxcalls) {
+    const int mode = gpu_flux_mode(GD);
+    if (mode == FLUX_CELL)
+        return gpu_compute_fluxes(GD, substep_count, timestep_fluxcalls);
+
+    NVTX_PUSH(mode == FLUX_SLOT ? "gpu_flux_edge_based" : "gpu_flux_scatter");
+    double local_timestep = (mode == FLUX_SLOT)
+        ? core_compute_fluxes_edge_based(&GD->D, substep_count, timestep_fluxcalls)
+        : core_compute_fluxes_scatter(&GD->D, substep_count, timestep_fluxcalls);
+    if (GD->flops.enabled) {
+        // Half the Riemann solves of the cell-based kernel (owner side only)
+        GD->flops.compute_fluxes_flops +=
+            (uint64_t)GD->D.number_of_elements * FLOPS_COMPUTE_FLUXES / 2;
+        GD->flops.compute_fluxes_calls++;
+    }
+    NVTX_POP();
+    return local_timestep;
+}
+
+void gpu_apply_phase(struct gpu_domain *GD, double timestep, int apply_forcing,
+                     int do_saxpy, double a, double b, int substep_count) {
+    if (gpu_flux_mode(GD) == FLUX_SLOT) {
+        NVTX_PUSH("gpu_flux_apply_and_update");
+        core_flux_apply_and_update(&GD->D, timestep, apply_forcing, do_saxpy,
+                                   a, b, substep_count);
+        if (GD->flops.enabled) {
+            anuga_int n = GD->D.number_of_elements;
+            if (apply_forcing) {
+                GD->flops.manning_flops += (uint64_t)n * FLOPS_MANNING;
+                GD->flops.manning_calls++;
+            }
+            GD->flops.update_flops += (uint64_t)n * FLOPS_UPDATE;
+            GD->flops.update_calls++;
+            if (do_saxpy) {
+                GD->flops.saxpy_flops += (uint64_t)n * FLOPS_SAXPY;
+                GD->flops.saxpy_calls++;
+            }
+        }
+        NVTX_POP();
+        return;
+    }
+    gpu_forcing_and_update(GD, timestep, apply_forcing, do_saxpy, a, b);
+}
+
 void gpu_ader_ck_predictor(struct gpu_domain *GD, double dt) {
     NVTX_PUSH("gpu_ader_ck_predictor");
     core_ader_ck_predictor(&GD->D, dt);
@@ -311,7 +389,7 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     // Fused protect + extrapolate centroid pass (no RK2 backup needed:
     // the C-K predictor shifts edge values in place, centroids stay at Q^n),
     // then the edge pass -- same launch structure as the fused RK2 step.
-    gpu_prepare_step(GD, 0);
+    gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD));
     gpu_extrapolate_edges(GD);
 
     gpu_evaluate_reflective_boundary(GD);
@@ -346,7 +424,7 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     // Step 3: single flux call from Q^{n+1/2} edges (or Q^n on bootstrap step)
     // ========================================
 
-    local_timestep = gpu_compute_fluxes(GD, 0, 1);
+    local_timestep = gpu_flux_phase(GD, 0, 1);
 
     // ========================================
     // Step 4: Allreduce for global min CFL timestep + clip to max_timestep
@@ -384,7 +462,7 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     // so evaluating it here, after the reduction, is bit-identical to the old
     // pre-reduction call -- it only accumulates into the semi-implicit terms
     // that the update consumes).
-    gpu_forcing_and_update(GD, timestep, apply_forcing, 0, 0.0, 0.0);
+    gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0);
 
     NVTX_POP();  // gpu_evolve_one_ader2_step
     return timestep;
@@ -399,8 +477,10 @@ double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int
 
     double local_timestep, global_timestep, timestep;
 
-    gpu_protect(GD);
-    gpu_extrapolate_second_order(GD);
+    // Fused protect + extrapolate centroid pass, then the edge pass --
+    // same launch structure as the fused RK2/ADER2 steps.
+    gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD));
+    gpu_extrapolate_edges(GD);
 
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
@@ -412,7 +492,7 @@ double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
 
-    local_timestep = gpu_compute_fluxes(GD, 0, 1);
+    local_timestep = gpu_flux_phase(GD, 0, 1);
 
     static int fixed_ts_printed_euler = 0;
     if (GD->fixed_flux_timestep > 0.0) {
@@ -437,11 +517,8 @@ double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int
         if (timestep > max_timestep) timestep = max_timestep;
     }
 
-    if (apply_forcing) {
-        gpu_manning_friction(GD);
-    }
-
-    gpu_update_conserved_quantities(GD, timestep);
+    // Manning + update fused (edge-based modes: also the flux gather)
+    gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0);
 
     NVTX_POP();  // gpu_evolve_one_euler_step
     return timestep;
@@ -478,7 +555,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // RK2 backup + protect + extrapolate centroid pass, fused into one
     // cell-local launch; the edge pass (which reads neighbour centroids)
     // follows as its own launch.
-    gpu_prepare_step(GD, 1);
+    gpu_prepare_step(GD, 1, gpu_prepare_should_zero_eu(GD));
     gpu_extrapolate_edges(GD);
 
     // Evaluate all GPU-supported boundary conditions
@@ -493,7 +570,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_flather_boundary(GD);
 
     // Compute fluxes - returns local minimum timestep
-    local_timestep = gpu_compute_fluxes(GD, 0, 2);
+    local_timestep = gpu_flux_phase(GD, 0, 2);
 
     // Compute global timestep
     static int fixed_ts_printed = 0;
@@ -527,8 +604,9 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
         }
     }
 
-    // Forcing + update, fused into one launch
-    gpu_forcing_and_update(GD, timestep, apply_forcing, 0, 0.0, 0.0);
+    // Forcing + update, fused into one launch (edge-based: also the flux
+    // gather itself -- see gpu_apply_phase)
+    gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0);
 
     // Ghost exchange (MPI) - sync ghost cells between processes
     if (GD->nprocs > 1) {
@@ -539,7 +617,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // Second Euler step
     // ========================================
 
-    gpu_prepare_step(GD, 0);   // no backup on the second substep
+    gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD));   // no backup on the second substep
     gpu_extrapolate_edges(GD);
 
     // Evaluate boundary conditions (same as first step)
@@ -554,12 +632,12 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_flather_boundary(GD);
 
     // Compute fluxes (ignore timestep from second step)
-    gpu_compute_fluxes(GD, 1, 2);
+    gpu_flux_phase(GD, 1, 2);
 
     // Forcing + update + the RK2 average (Q_final = 0.5*Q_backup + 0.5*Q),
     // all three fused into one launch.  The timestep is the one the first
     // substep already computed, so nothing here waits on a reduction.
-    gpu_forcing_and_update(GD, timestep, apply_forcing, 1, 0.5, 0.5);
+    gpu_apply_phase(GD, timestep, apply_forcing, 1, 0.5, 0.5, 1);
 
     NVTX_POP();  // gpu_evolve_one_rk2_step
     return timestep;

@@ -205,6 +205,53 @@ a stencil kernel — it reads `height_cv[neighbour]`, `bed_cv[neighbour]`,
 or edge value from inside it races against another team still reading that
 value, and `omp target teams loop` has no device-wide barrier to order them.
 
+### Timestepping schemes (`--scheme`)
+
+`rk2 | ader2 | euler | rk3`, each selecting its ANUGA preset (DE1 / DE_ader2 /
+DE0 / DE2). The honest cross-scheme metric is the printed **sim rate**
+(simulated seconds per wall second), since ms/step ignores dt. Measured at 16M
+triangles: **ADER2 delivers 1.64x the sim rate of RK2** — same CFL timestep
+(dt 0.00734 vs 0.00732), same formal order, one flux call per step instead of
+two, with the C-K predictor costing ~7 ms against the ~35 ms flux+extrapolate
+round it replaces.
+
+### Flux kernel structure (`--flux`)
+
+The cell-based production kernel solves every interior edge's Riemann problem
+twice — once per side. The central-upwind flux is antisymmetric under the
+side swap and its shared scalars (pressure_flux, wave speed, z_half) are
+swap-invariant, so one owner-side solve serves both cells. Two opt-in
+restructurings (kernels select purely on the dead work-array pointers, so
+ANUGA's default path is untouched):
+
+- `--flux scatter` — **the winner**: single solve per edge, both sides'
+  area-scaled contributions accumulated straight into the explicit updates
+  with `omp atomic` (portable OpenMP; each entry sees at most 3 adds).
+  RK2 57.6 → 51.1 ms/step at 16M (−11%); **ADER2 + scatter: 32.2 ms/step,
+  497 Mcell-steps/s** — 2.1x the sim rate of the original baseline.
+- `--flux edge` — the same single-solve idea via materialized per-edge slot
+  records and a gather kernel: **measured 15% SLOWER** than cell-based.
+  The 144 B/cell of slot records cost more to move than the duplicate
+  Riemann solves saved. Kept as the deterministic-order variant and as
+  documentation of why scatter is shaped the way it is.
+
+Neither is bit-exact against cell-based (the neighbour side receives the
+negated owner flux instead of its own evaluation — roundoff-level
+difference). Validation: mass conservation and lake-at-rest hold at machine
+precision; friction-free field comparisons agree with cell-based at ~4e-14
+over 16 steps (CPU vs GPU likewise); riverwalls and sloped Manning force the
+cell-based path automatically.
+
+**Trajectory-divergence caveat** (applies to comparing ANY two roundoff-
+different runs of this scheme, not just these variants): the semi-implicit
+update guard `num * Q > 0` is discontinuous where a momentum component
+crosses zero. In problems whose exact solution has a zero momentum component
+(the dam cases: ymom ≡ 0, so the field is pure roundoff), two trajectories
+seeded 1e-14 apart straddle zero-crossings, flip the guard, and diverge to
+~1e-6 within a few steps once friction populates the semi-implicit terms.
+Compare such runs with loose tolerances (`--rtol 1e-4`) or with
+`--no-friction`, where agreement returns to ~1e-14.
+
 ### Measured dead ends (kept out, documented so nobody re-tries them blind)
 
 - **Morton element ordering** (`--order morton`, still available): −12%. The

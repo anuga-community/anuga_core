@@ -24,7 +24,7 @@ void core_extrapolate_edge_pass(struct domain *D);
 // Fused RK2-backup (optional) + protect + extrapolate centroid pass in one
 // launch.  Returns the protect mass error.  Follow with
 // core_extrapolate_edge_pass() to complete the reconstruction.
-double core_prepare_step(struct domain *D, int do_backup);
+double core_prepare_step(struct domain *D, int do_backup, int zero_eu);
 
 // Distribute edge values to vertices
 void core_distribute_edges_to_vertices(struct domain *D);
@@ -74,6 +74,26 @@ void core_forcing_and_update(struct domain *D, double timestep,
 // substep_count: which substep of RK timestepping (0 = first, only update timestep on first)
 // timestep_fluxcalls: total number of flux calls per timestep (for boundary flux array indexing)
 double core_compute_fluxes_central(struct domain *D, int substep_count, int timestep_fluxcalls);
+
+// Edge-based flux computation (opt-in; active when the driver allocates
+// D->edge_flux_work with 6*3n doubles).  Kernel A solves each unique edge's
+// Riemann problem once (half the solves of the cell-based kernel, exactly
+// antisymmetric exchange) and performs the dt / boundary-flux reductions;
+// kernel B is cell-local and finishes the entire step in one launch: flux
+// gather + pressure gradients + Manning + update (+ optional RK2 average).
+// Not valid with riverwalls; assumes fluxes follow an extrapolate.
+double core_compute_fluxes_edge_based(struct domain *D, int substep_count,
+                                      int timestep_fluxcalls);
+void core_flux_apply_and_update(struct domain *D, double timestep,
+                                int apply_manning, int do_saxpy,
+                                double a, double b, int substep_count);
+
+// Scatter-mode fluxes: single Riemann solve per edge, both sides' scaled
+// contributions accumulated straight into the (pre-zeroed) explicit updates
+// with omp atomics -- no intermediate storage.  Same restrictions as the
+// slot variant; max_speed_array is not maintained.
+double core_compute_fluxes_scatter(struct domain *D, int substep_count,
+                                   int timestep_fluxcalls);
 
 // ADER Cauchy-Kovalewski predictor: advance centroid values forward by dt.
 // Must be called after core_extrapolate_second_order_edge().
