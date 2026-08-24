@@ -328,6 +328,22 @@ programming model.
 
 ### H200 (gpuhopper) results
 
+**Memory wall, measured**: 293.8M triangles runs (nx 8570, 139.6 of 143 GiB);
+295.8M fails -- the 512 B/triangle model predicted 294M, correct to 0.7% on
+its second card (the V100 was its first). The OOM allocation that fails is
+the owned-edge list, the last array mapped.
+
+**The large-mesh "fade" is an alignment artifact, not a capacity effect.**
+nx = 6400 and nx = 8000 (the two swept sizes with ny divisible by 64) hold
+~2830-2843 Mcell-steps/s -- full peak -- at 164M and 256M triangles, while
+every non-aligned neighbour size sits ~10% lower (reproduced 3/3 repeats;
+nx 6400 = 2828/2831/2814 vs 6300 = 2582/2567/2558). With ny % 64 == 0 the
+regular cross-mesh's i-neighbour stride lands page-aligned and the card
+sustains peak throughput to within 15% of the memory wall. Real unstructured
+meshes have no such regular stride, so quote the aligned numbers as the
+kernel ceiling and the unaligned ones as the pessimistic bound.
+
+
 `tools/h100_campaign.pbs` runs the whole campaign on the batch queue
 (build for the node's arch, correctness gates, both sweeps, kernel balance).
 On an H200 (143 GB, cc90): **ADER2 + scatter peaks at 2837 Mcell-steps/s**
