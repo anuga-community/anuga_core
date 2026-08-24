@@ -17,6 +17,63 @@
 
 #include "gpu_domain.h"
 #include "mesh.h"
+
+// CUDA experiment: hand-written reconstruction kernel in a pure-nvcc shared
+// library (build/gpu/cuextrap.so), dlopen()ed to keep the CUDA runtime out of
+// the OpenMP-target link (which it breaks).  We resolve the device pointers
+// for the OpenMP-mapped arrays here and hand them across; both runtimes use
+// the CUDA primary context, so the pointers are valid on the other side.
+#include <dlfcn.h>
+#include "cuda_extrap.h"
+static int g_cuda_extrap_tpb = 0;
+static cuda_extrap_fn g_cuda_extrap_launch = NULL;
+
+static void *dev_ptr(const void *host) {
+    void *p = omp_get_mapped_ptr(host, omp_get_default_device());
+    if (!p) { fprintf(stderr, "bench: %p not device-mapped\n", host); exit(1); }
+    return p;
+}
+
+static void cuda_extrap_load(void) {
+    void *h = dlopen("./build/gpu/cuextrap.so", RTLD_NOW);
+    if (!h) { fprintf(stderr, "bench: %s\n", dlerror()); exit(1); }
+    g_cuda_extrap_launch = (cuda_extrap_fn)dlsym(h, "cuda_extrapolate_launch");
+    if (!g_cuda_extrap_launch) { fprintf(stderr, "bench: %s\n", dlerror()); exit(1); }
+}
+
+static void extrapolate_phase(struct gpu_domain *GD, double predictor_dt) {
+    if (g_cuda_extrap_tpb <= 0) {
+        gpu_extrapolate_edges(GD, predictor_dt);
+        return;
+    }
+    struct domain *D = &GD->D;
+    struct extrap_args a;
+    a.n = D->number_of_elements;
+    a.minimum_allowed_height = D->minimum_allowed_height;
+    a.extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
+    a.g = D->g;
+    a.beta_w = D->beta_w;    a.beta_w_dry = D->beta_w_dry;
+    a.beta_uh = D->beta_uh;  a.beta_uh_dry = D->beta_uh_dry;
+    a.beta_vh = D->beta_vh;  a.beta_vh_dry = D->beta_vh_dry;
+    a.predictor_dt = predictor_dt;
+    a.stage_cv  = dev_ptr(D->stage_centroid_values);
+    a.xmom_cv   = dev_ptr(D->xmom_centroid_values);
+    a.ymom_cv   = dev_ptr(D->ymom_centroid_values);
+    a.bed_cv    = dev_ptr(D->bed_centroid_values);
+    a.height_cv = dev_ptr(D->height_centroid_values);
+    a.stage_ev  = dev_ptr(D->stage_edge_values);
+    a.xmom_ev   = dev_ptr(D->xmom_edge_values);
+    a.ymom_ev   = dev_ptr(D->ymom_edge_values);
+    a.bed_ev    = dev_ptr(D->bed_edge_values);
+    a.height_ev = dev_ptr(D->height_edge_values);
+    a.centroid_coords = dev_ptr(D->centroid_coordinates);
+    a.edge_coords     = dev_ptr(D->edge_coordinates);
+    a.surrogate_neighbours = dev_ptr(D->surrogate_neighbours);
+    a.number_of_boundaries = dev_ptr(D->number_of_boundaries);
+    a.x_centroid_work = dev_ptr(D->x_centroid_work);
+    a.y_centroid_work = dev_ptr(D->y_centroid_work);
+    if (g_cuda_extrap_launch(a, g_cuda_extrap_tpb) != 0) exit(1);
+}
 #include "setup.h"
 #include "snapshot.h"
 
@@ -69,6 +126,8 @@ static void usage(const char *argv0) {
 "                      DE2): flux calls per step, limiter betas, CFL\n"
 "    --betas V         override the limiter betas (beta_w/uh/vh; dry stay 0)\n"
 "    --flux NAME       cell | edge | scatter -- flux kernel  (default cell)\n"
+"    --cuda-extrap N   use the hand-written CUDA reconstruction kernel with\n"
+"                      N threads/block (experiment; forces stepped loops)\n"
 "                        edge solves each unique edge's Riemann problem ONCE\n"
 "                        (cell solves interior edges twice) and fuses the\n"
 "                        flux gather into the update; same discretization,\n"
@@ -156,7 +215,7 @@ static double rk2_step_timed(struct gpu_domain *GD, double max_timestep, int app
     // ---- first Euler stage
     // prepare = fused RK2 backup + protect + extrapolate centroid pass
     TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 1, gpu_prepare_should_zero_eu(GD)));
-    TIME_PHASE(PH_EXTRAPOLATE, gpu_extrapolate_edges(GD, 0.0));
+    TIME_PHASE(PH_EXTRAPOLATE, extrapolate_phase(GD, 0.0));
     TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
 
     double local_timestep;
@@ -172,7 +231,7 @@ static double rk2_step_timed(struct gpu_domain *GD, double max_timestep, int app
 
     // ---- second Euler stage
     TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD)));
-    TIME_PHASE(PH_EXTRAPOLATE, gpu_extrapolate_edges(GD, 0.0));
+    TIME_PHASE(PH_EXTRAPOLATE, extrapolate_phase(GD, 0.0));
     TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
     TIME_PHASE(PH_FLUXES,      gpu_flux_phase(GD, 1, 2));
 
@@ -201,7 +260,7 @@ static double ader2_step_timed(struct gpu_domain *GD, double max_timestep,
     TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD)));
     // reconstruction + C-K predictor fused into one launch (0.0 = bootstrap)
     TIME_PHASE(PH_EXTRAPOLATE,
-               gpu_extrapolate_edges(GD, prev_dt > 0.0 ? prev_dt * 0.5 : 0.0));
+               extrapolate_phase(GD, prev_dt > 0.0 ? prev_dt * 0.5 : 0.0));
     TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
 
     double local_timestep;
@@ -271,6 +330,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--phases"))     O.phases = 1;
         else if (!strcmp(a, "--verbose"))    O.verbose = 1;
         else if (!strcmp(a, "--no-friction")) O.apply_forcing = 0;
+        else if (!strcmp(a, "--cuda-extrap")) g_cuda_extrap_tpb = (int)arg_i(argc, argv, &i, a);
         else if (!strcmp(a, "--order")) {
             const char *o = arg_s(argc, argv, &i, a);
             if      (!strcmp(o, "row"))    O.morton = 0;
@@ -357,6 +417,11 @@ int main(int argc, char **argv) {
     fflush(stdout);
 
     const double volume0 = gpu_compute_water_volume(GD);
+
+    if (g_cuda_extrap_tpb > 0) {
+        O.phases = 1;                          // route through the stepped loops
+        cuda_extrap_load();
+    }
 
     // ---- warmup ----------------------------------------------------------
     // ADER2 carries the previous step's dt into the C-K predictor (0.0 on the

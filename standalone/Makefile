@@ -55,6 +55,13 @@ ifeq ($(CONFIG),gpu)
   CC          := nvc
   CFLAGS      := -O3 -g -mp=gpu,multicore -gpu=$(GPU_ARCH) -Minfo=accel
   LDFLAGS     := -mp=gpu,multicore -gpu=$(GPU_ARCH)
+  # The CUDA experiment is a PURE nvcc shared library, dlopen()ed at runtime:
+  # every way of linking CUDA objects into this binary broke nvomp's offload
+  # registration or ICEd the compiler.  See src/cuda_extrapolate.cu.
+  SM_ARCH     := sm_$(patsubst cc%,%,$(GPU_ARCH))
+  NVCC        ?= nvcc
+  CUDA_SO     = $(OBJDIR)/cuextrap.so
+  LDLIBS_EXTRA:= -ldl
 endif
 ifeq ($(CONFIG),ompcpu)
   CC          := nvc
@@ -71,7 +78,7 @@ endif
 
 CFLAGS        += $(EXTRA_CFLAGS)
 LDFLAGS       += $(EXTRA_LDFLAGS)
-LDLIBS        := -lm
+LDLIBS        := -lm $(LDLIBS_EXTRA)
 
 # ---------------------------------------------------------------- sources
 KERNEL_SRC := \
@@ -103,14 +110,17 @@ cpu ompcpu gpu clanggpu:
 build: $(BIN)
 	@echo "built $(BIN)  [$(CC) $(CFLAGS)]"
 
-$(BIN): $(OBJ) | bin
-	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+$(BIN): $(OBJ) $(CUDA_SO) | bin
+	$(CC) $(LDFLAGS) -o $@ $(OBJ) $(LDLIBS)
 
 $(OBJDIR)/%.o: $(GPUDIR)/%.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP -c $< -o $@
 
 $(OBJDIR)/%.o: src/%.c | $(OBJDIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP -c $< -o $@
+
+$(OBJDIR)/cuextrap.so: src/cuda_extrapolate.cu src/cuda_extrap.h | $(OBJDIR)
+	$(NVCC) -O3 -arch=$(SM_ARCH) -shared -Xcompiler -fPIC $(INCLUDES) -o $@ $<
 
 $(OBJDIR) bin:
 	@mkdir -p $@

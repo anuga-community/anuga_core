@@ -1,0 +1,90 @@
+#!/bin/bash
+#PBS -N anuga_h100
+#PBS -l ncpus=12
+#PBS -l ngpus=1
+#PBS -l mem=256GB
+#PBS -l jobfs=200GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=02:00:00
+#PBS -l wd
+#PBS -j oe
+#PBS -o /scratch/bm55/jlv900/dev/anuga_core/standalone/build/h100/pbs.log
+
+# H100 campaign for the ANUGA shallow-water miniapp:
+#   1. build for the node's GPU (autodetected -> cc90)
+#   2. correctness gates (lake well-balance, volume, CPU<->GPU cross-check)
+#   3. scaling sweeps to the memory ceiling: original-style RK2 cell-based
+#      and the fast configuration (ADER2 + scatter fluxes)
+#   4. kernel-balance breakdowns for comparison against the V100
+# Everything lands in standalone/build/h100/.
+
+set -x
+ROOT=/scratch/bm55/jlv900/dev/anuga_core/standalone
+OUT=$ROOT/build/h100
+mkdir -p "$OUT"
+cd "$ROOT"
+
+source ./env.sh
+nvidia-smi | head -12 > "$OUT/gpu.txt"
+nvidia-smi --query-gpu=name,compute_cap,memory.total --format=csv | tee -a "$OUT/gpu.txt"
+
+# ---- 1. fresh builds for this architecture --------------------------------
+rm -rf build/gpu build/cpu bin/bench_gpu bin/bench_cpu
+make gpu 2>&1 | tail -2
+make cpu 2>&1 | tail -2
+
+# ---- 2. correctness gates -------------------------------------------------
+{
+  echo "== lake well-balance (rk2 cell / ader2 scatter): expect ~1e-14 =="
+  ./bin/bench_gpu --nx 300 --ny 300 --steps 40 --case lake \
+      | grep -E "scheme|volume|momentum"
+  ./bin/bench_gpu --nx 300 --ny 300 --steps 40 --case lake --scheme ader2 --flux scatter \
+      | grep -E "scheme|volume|momentum"
+
+  echo "== CPU vs GPU, friction-free ader2+scatter: expect ~1e-14 =="
+  OMP_NUM_THREADS=12 ./bin/bench_cpu --nx 200 --ny 200 --steps 20 --warmup 0 \
+      --case dam --scheme ader2 --no-friction --flux scatter --save "$OUT/cpu_ref.bin" >/dev/null
+  ./bin/bench_gpu --nx 200 --ny 200 --steps 20 --warmup 0 \
+      --case dam --scheme ader2 --no-friction --flux scatter --check "$OUT/cpu_ref.bin" \
+      | sed -n '/verification/,$p'
+
+  echo "== same-node cell-vs-scatter, friction-free: expect ~1e-13 =="
+  ./bin/bench_gpu --nx 300 --ny 300 --steps 20 --warmup 0 --case dambumps \
+      --scheme ader2 --no-friction --save "$OUT/cell_ref.bin" >/dev/null
+  ./bin/bench_gpu --nx 300 --ny 300 --steps 20 --warmup 0 --case dambumps \
+      --scheme ader2 --no-friction --flux scatter --check "$OUT/cell_ref.bin" \
+      | sed -n '/verification/,$p'
+} > "$OUT/correctness.txt" 2>&1
+
+# ---- 3. scaling sweeps ----------------------------------------------------
+# 80 GB H100: ceiling ~ (79.6 GiB - 0.3) / 512 B ~ 166M triangles (nx ~ 6450).
+SIZES="500 1000 2000 3200 4000 5000 5600 6000 6200 6300 6400 6450 6500"
+
+./tools/scaling_sweep.sh --steps 20 --csv "$OUT/scaling_rk2_cell.csv" $SIZES \
+    > "$OUT/sweep_rk2_cell.txt" 2>&1
+
+./tools/scaling_sweep.sh --steps 20 --csv "$OUT/scaling_ader2_scatter.csv" $SIZES \
+    -- --scheme ader2 --flux scatter \
+    > "$OUT/sweep_ader2_scatter.txt" 2>&1
+
+# ---- 4. kernel balance at a mid size --------------------------------------
+{
+  echo "== rk2 cell =="
+  ./bin/bench_gpu --nx 4000 --ny 4000 --steps 15 --warmup 3 --phases \
+      | sed -n '/timed/,/^$/p;/breakdown/,/^$/p'
+  echo "== ader2 scatter =="
+  ./bin/bench_gpu --nx 4000 --ny 4000 --steps 15 --warmup 3 \
+      --scheme ader2 --flux scatter --phases \
+      | sed -n '/timed/,/^$/p;/breakdown/,/^$/p'
+} > "$OUT/phases_64M.txt" 2>&1
+
+# ---- 5. occupancy snapshot of the reconstruction kernel (best effort) -----
+timeout 600 ncu --launch-count 2 --kernel-name "regex:extrapolate" \
+    --section Occupancy --section SpeedOfLight \
+    ./bin/bench_gpu --nx 1000 --ny 1000 --steps 2 --warmup 1 \
+    --scheme ader2 --flux scatter \
+    > "$OUT/ncu_extrapolate.txt" 2>&1 || true
+
+echo "H100 campaign complete" | tee "$OUT/DONE"

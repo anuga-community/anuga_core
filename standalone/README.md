@@ -304,6 +304,40 @@ seeded 1e-14 apart straddle zero-crossings, flip the guard, and diverge to
 Compare such runs with loose tolerances (`--rtol 1e-4`) or with
 `--no-friction`, where agreement returns to ~1e-14.
 
+### The CUDA control experiment (`--cuda-extrap N`)
+
+To find out whether OpenMP itself was costing anything, the fused
+reconstruction kernel was transcribed line-for-line into CUDA
+(`src/cuda_extrapolate.cu`, built as a pure-nvcc shared library and
+dlopen()ed -- every way of *linking* CUDA objects into the OpenMP-target
+binary broke nvomp's offload registration or ICEd nvc; the two runtimes meet
+only through the shared CUDA primary context, with device pointers resolved
+via `omp_get_mapped_ptr`). Result, V100 @16M, same arithmetic, goldens green:
+
+| variant | ms |
+|---|---|
+| OpenMP (`nvc -mp=gpu`) | **11.6** |
+| CUDA, best threads/block, default regs | 12.3 |
+| CUDA, `-maxrregcount=96` | 12.3 |
+| CUDA, `-maxrregcount=64` | 21.7 (spills) |
+
+Hand-written CUDA with explicit launch control **loses ~5%** to nvc's OpenMP
+codegen. There is no portability tax on this kernel; it is at its
+algorithmic floor, and further speed means changing the math, not the
+programming model.
+
+### H200 (gpuhopper) results
+
+`tools/h100_campaign.pbs` runs the whole campaign on the batch queue
+(build for the node's arch, correctness gates, both sweeps, kernel balance).
+On an H200 (143 GB, cc90): **ADER2 + scatter peaks at 2837 Mcell-steps/s**
+(4.3x the V100), RK2 cell at 1535 (5.5x -- pure bandwidth scaling); all
+gates hold at 1e-14; 169M triangles ran in 80.5 of 143 GiB (the 512 B/cell
+model predicts a ~294M ceiling, unswept). The kernel balance FLIPS on
+Hopper: flux 44% vs reconstruction 39% (per-cell, reconstruction scaled
+5.3x with bandwidth while the atomic scatter scaled only 3.1x) -- so the
+next kernel worth attacking depends on the target architecture.
+
 ### Measured dead ends (kept out, documented so nobody re-tries them blind)
 
 - **Morton element ordering** (`--order morton`, still available): −12%. The
