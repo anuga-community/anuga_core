@@ -505,13 +505,13 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
     double *ymom_siu = GD->D.ymom_semi_implicit_update;
     anuga_int *neighbours = GD->D.neighbours;
     anuga_int *neighbour_edges = GD->D.neighbour_edges;
-    double *normals = GD->D.normals;
-    double *edgelengths = GD->D.edgelengths;
-    double *areas = GD->D.areas;
-    double *radii = GD->D.radii;
+    anuga_geom_t *normals = GD->D.normals;
+    anuga_geom_t *edgelengths = GD->D.edgelengths;
+    anuga_geom_t *areas = GD->D.areas;
+    anuga_geom_t *radii = GD->D.radii;
     double *max_speed = GD->D.max_speed;
-    double *centroid_coords = GD->D.centroid_coordinates;
-    double *edge_coords = GD->D.edge_coordinates;
+    anuga_geom_t *centroid_coords = GD->D.centroid_coordinates;
+    anuga_geom_t *edge_coords = GD->D.edge_coordinates;
 
     // Additional arrays for extrapolation
     anuga_int *surrogate_neighbours = GD->D.surrogate_neighbours;
@@ -963,13 +963,13 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     double *ymom_siu = GD->D.ymom_semi_implicit_update;
     anuga_int *neighbours = GD->D.neighbours;
     anuga_int *neighbour_edges = GD->D.neighbour_edges;
-    double *normals = GD->D.normals;
-    double *edgelengths = GD->D.edgelengths;
-    double *areas = GD->D.areas;
-    double *radii = GD->D.radii;
+    anuga_geom_t *normals = GD->D.normals;
+    anuga_geom_t *edgelengths = GD->D.edgelengths;
+    anuga_geom_t *areas = GD->D.areas;
+    anuga_geom_t *radii = GD->D.radii;
     double *max_speed = GD->D.max_speed;
-    double *centroid_coords = GD->D.centroid_coordinates;
-    double *edge_coords = GD->D.edge_coordinates;
+    anuga_geom_t *centroid_coords = GD->D.centroid_coordinates;
+    anuga_geom_t *edge_coords = GD->D.edge_coordinates;
 
     // Additional arrays for extrapolation
     anuga_int *surrogate_neighbours = GD->D.surrogate_neighbours;

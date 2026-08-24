@@ -445,6 +445,18 @@ next kernel worth attacking depends on the target architecture.
 
 ### Measured dead ends (kept out, documented so nobody re-tries them blind)
 
+- **FP32 geometry** (`make gpu GEOM=fp32`, via the `anuga_geom_t` typedef in
+  sw_domain.h -- the fp64 default stays bit-exact and ANUGA never defines the
+  flag): **+2%**. Mass conservation survives perfectly, but lake-at-rest
+  degrades from 1e-14 to ~1e-5 momentum on the real basin (float epsilon
+  leaking through the well-balance cancellation), and the payoff is tiny
+  because the geometry gathers are already L2-resident -- halving bytes that
+  rarely touch DRAM buys nothing. FP32 *state* is not even an experiment:
+  stage - bed has ~mm significance against ~100 m magnitudes and does not
+  survive single precision. Verdict: no case for mixed precision here, and
+  therefore no case for a C++/template migration to support it -- the whole
+  question was answerable with one C typedef and an afternoon.
+
 - **Morton element ordering** (`--order morton`, still available): −12%. The
   cross mesh in row-major order already has 2 of 3 neighbours inside the same
   cell and the ±j neighbour adjacent; Z-ordering fixes the ±i stride but

@@ -200,7 +200,7 @@ double gpu_compute_water_volume(struct gpu_domain *GD) {
 
     double * restrict stage_cv = GD->D.stage_centroid_values;
     double * restrict bed_cv = GD->D.bed_centroid_values;
-    double * restrict areas = GD->D.areas;
+    anuga_geom_t * restrict areas = GD->D.areas;
 
     OMP_PARALLEL_LOOP_REDUCTION_PLUS(volume)
     for (anuga_int k = 0; k < n; k++) {

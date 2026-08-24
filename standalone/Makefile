@@ -94,8 +94,16 @@ KERNEL_SRC := \
 
 BENCH_SRC  := src/bench.c src/mesh.c src/setup.c src/snapshot.c src/gcc_offload_shim.c
 
-OBJDIR     := build/$(CONFIG)
-BIN        := bin/bench_$(CONFIG)
+# GEOM=fp32 builds the static-geometry arrays in single precision (an
+# experiment: ~halves geometry traffic; NOT bit-compatible with fp64).
+GEOM       ?= fp64
+ifeq ($(GEOM),fp32)
+  CFLAGS   += -DANUGA_GEOM_FP32
+  GEOMSFX  := _fp32
+endif
+
+OBJDIR     := build/$(CONFIG)$(GEOMSFX)
+BIN        := bin/bench_$(CONFIG)$(GEOMSFX)
 
 # Objects depend on a stamp of the exact compile flags, so changing CFLAGS
 # (or GPU_ARCH) forces a rebuild instead of silently mixing objects -- mixed

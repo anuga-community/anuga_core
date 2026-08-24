@@ -25,6 +25,7 @@ static void *breg(bench_domain *B, size_t count, size_t elem) {
 }
 
 #define DALLOC(B, n) ((double  *)breg((B), (size_t)(n), sizeof(double)))
+#define GALLOC(B, n) ((anuga_geom_t*)breg((B), (size_t)(n), sizeof(anuga_geom_t)))
 #define IALLOC(B, n) ((anuga_int*)breg((B), (size_t)(n), sizeof(anuga_int)))
 
 // ---------------------------------------------------------------------------
@@ -225,13 +226,13 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
 
 
     // --- mesh geometry ----------------------------------------------------
-    D->vertex_coordinates   = DALLOC(B, 6 * n);
-    D->edge_coordinates     = DALLOC(B, 6 * n);
-    D->centroid_coordinates = DALLOC(B, 2 * n);
-    D->normals              = DALLOC(B, 6 * n);
-    D->edgelengths          = DALLOC(B, 3 * n);
-    D->areas                = DALLOC(B, n);
-    D->radii                = DALLOC(B, n);
+    D->vertex_coordinates   = GALLOC(B, 6 * n);
+    D->edge_coordinates     = GALLOC(B, 6 * n);
+    D->centroid_coordinates = GALLOC(B, 2 * n);
+    D->normals              = GALLOC(B, 6 * n);
+    D->edgelengths          = GALLOC(B, 3 * n);
+    D->areas                = GALLOC(B, n);
+    D->radii                = GALLOC(B, n);
 
     for (int64_t k = 0; k < n; k++) {
         const int64_t i0 = M->triangles[3 * k + 0];

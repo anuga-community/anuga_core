@@ -517,7 +517,13 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--phases"))     O.phases = 1;
         else if (!strcmp(a, "--verbose"))    O.verbose = 1;
         else if (!strcmp(a, "--no-friction")) O.apply_forcing = 0;
-        else if (!strcmp(a, "--cuda-extrap")) g_cuda_extrap_tpb = (int)arg_i(argc, argv, &i, a);
+        else if (!strcmp(a, "--cuda-extrap")) {
+            g_cuda_extrap_tpb = (int)arg_i(argc, argv, &i, a);
+#ifdef ANUGA_GEOM_FP32
+            fprintf(stderr, "bench: --cuda-extrap is fp64-geometry only\n");
+            return 2;
+#endif
+        }
         else if (!strcmp(a, "--active-set"))  g_active_set = 1;
         else if (!strcmp(a, "--rain"))        g_rain_mmhr = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--rain-every"))  g_rain_every = arg_d(argc, argv, &i, a);

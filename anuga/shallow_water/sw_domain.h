@@ -14,6 +14,22 @@
 #include <inttypes.h>
 #include "anuga_typedefs.h"
 
+// Precision of the STATIC GEOMETRY arrays (normals, edgelengths, radii,
+// areas, centroid/edge/vertex coordinates).  Default double: bit-compatible
+// with every existing consumer (ANUGA never defines the macro).  Building
+// with -DANUGA_GEOM_FP32 halves the geometry traffic of the memory-bound
+// kernels -- an EXPERIMENT: geometry enters the scheme multiplicatively so
+// relative 1e-7 perturbations are benign for convergence, but results are
+// not bit-compatible with the double build and the well-balance gate must be
+// re-verified.  State (stage/bed/momenta) stays double unconditionally: the
+// stage - bed cancellation that well-balancing rests on has ~mm significance
+// against ~100 m magnitudes and does not survive FP32.
+#ifdef ANUGA_GEOM_FP32
+typedef float anuga_geom_t;
+#else
+typedef double anuga_geom_t;
+#endif
+
 // structures
 struct domain {
     // Changing these don't change the data in python object
@@ -64,10 +80,10 @@ struct domain {
     anuga_int*   neighbours;
     anuga_int*   neighbour_edges;
     anuga_int*   surrogate_neighbours;
-    double*    normals;
-    double*    edgelengths;
-    double*    radii;
-    double*    areas;
+    anuga_geom_t* normals;
+    anuga_geom_t* edgelengths;
+    anuga_geom_t* radii;
+    anuga_geom_t* areas;
 
     anuga_int*   edge_flux_type;
 
@@ -75,9 +91,9 @@ struct domain {
     anuga_int*   already_computed_flux;
     double*    max_speed;
 
-    double* vertex_coordinates;
-    double* edge_coordinates;
-    double* centroid_coordinates;
+    anuga_geom_t* vertex_coordinates;
+    anuga_geom_t* edge_coordinates;
+    anuga_geom_t* centroid_coordinates;
 
     anuga_int* number_of_boundaries;
     double* stage_edge_values;

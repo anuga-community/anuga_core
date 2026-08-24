@@ -53,8 +53,8 @@ void core_extrapolate_centroid_pass(struct domain *D) {
     double * restrict bed_ev = D->bed_edge_values;
     double * restrict height_ev = D->height_edge_values;
 
-    double * restrict centroid_coords = D->centroid_coordinates;
-    double * restrict edge_coords = D->edge_coordinates;
+    anuga_geom_t * restrict centroid_coords = D->centroid_coordinates;
+    anuga_geom_t * restrict edge_coords = D->edge_coordinates;
 
     anuga_int * restrict surrogate_neighbours = D->surrogate_neighbours;
     anuga_int * restrict number_of_boundaries = D->number_of_boundaries;
@@ -143,8 +143,8 @@ void core_extrapolate_edge_pass_on(struct domain *D, double predictor_dt,
     double * restrict bed_ev = D->bed_edge_values;
     double * restrict height_ev = D->height_edge_values;
 
-    double * restrict centroid_coords = D->centroid_coordinates;
-    double * restrict edge_coords = D->edge_coordinates;
+    anuga_geom_t * restrict centroid_coords = D->centroid_coordinates;
+    anuga_geom_t * restrict edge_coords = D->edge_coordinates;
 
     anuga_int * restrict surrogate_neighbours = D->surrogate_neighbours;
     anuga_int * restrict number_of_boundaries = D->number_of_boundaries;
@@ -793,7 +793,7 @@ double core_protect(struct domain *D) {
     double * restrict xmom_cv = D->xmom_centroid_values;
     double * restrict ymom_cv = D->ymom_centroid_values;
     double * restrict bed_cv = D->bed_centroid_values;
-    double * restrict areas = D->areas;
+    anuga_geom_t * restrict areas = D->areas;
 
     double mass_error = 0.0;
 
@@ -845,7 +845,7 @@ double core_prepare_step_on(struct domain *D, int do_backup, int zero_eu,
     double * restrict ymom_cv = D->ymom_centroid_values;
     double * restrict bed_cv = D->bed_centroid_values;
     double * restrict height_cv = D->height_centroid_values;
-    double * restrict areas = D->areas;
+    anuga_geom_t * restrict areas = D->areas;
     double * restrict x_centroid_work = D->x_centroid_work;
     double * restrict y_centroid_work = D->y_centroid_work;
 
@@ -981,7 +981,7 @@ double core_negative_cells_volume(struct domain *D) {
 
     double * restrict stage_cv = D->stage_centroid_values;
     double * restrict bed_cv   = D->bed_centroid_values;
-    double * restrict areas    = D->areas;
+    anuga_geom_t * restrict areas    = D->areas;
     anuga_int * restrict tri_full_flag = D->tri_full_flag;
 
     double volume = 0.0;
@@ -1051,7 +1051,7 @@ void core_manning_friction_sloped_semi_implicit(struct domain *D) {
     double * restrict ymom_cv = D->ymom_centroid_values;
     double * restrict friction_cv = D->friction_centroid_values;
     double * restrict bed_vv = D->bed_vertex_values;
-    double * restrict vertex_coords = D->vertex_coordinates;
+    anuga_geom_t * restrict vertex_coords = D->vertex_coordinates;
 
     double * restrict xmom_siu = D->xmom_semi_implicit_update;
     double * restrict ymom_siu = D->ymom_semi_implicit_update;
@@ -1114,7 +1114,7 @@ void core_manning_friction_sloped_semi_implicit_edge_based(struct domain *D) {
     double * restrict xmom_cv    = D->xmom_centroid_values;
     double * restrict ymom_cv    = D->ymom_centroid_values;
     double * restrict friction_cv = D->friction_centroid_values;
-    double * restrict edge_coords = D->edge_coordinates;
+    anuga_geom_t * restrict edge_coords = D->edge_coordinates;
 
     double * restrict xmom_siu   = D->xmom_semi_implicit_update;
     double * restrict ymom_siu   = D->ymom_semi_implicit_update;
@@ -1188,7 +1188,7 @@ int core_gravity(struct domain *D) {
     double * restrict xmom_eu = D->xmom_explicit_update;
     double * restrict ymom_eu = D->ymom_explicit_update;
 
-    double * restrict vertex_coords = D->vertex_coordinates;
+    anuga_geom_t * restrict vertex_coords = D->vertex_coordinates;
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
@@ -1246,12 +1246,12 @@ int core_gravity_wb(struct domain *D) {
     double * restrict bed_cv    = D->bed_centroid_values;
     double * restrict stage_ev  = D->stage_edge_values;
     double * restrict bed_ev    = D->bed_edge_values;
-    double * restrict normals   = D->normals;
-    double * restrict edgelengths = D->edgelengths;
-    double * restrict areas     = D->areas;
+    anuga_geom_t * restrict normals   = D->normals;
+    anuga_geom_t * restrict edgelengths = D->edgelengths;
+    anuga_geom_t * restrict areas     = D->areas;
     double * restrict xmom_eu   = D->xmom_explicit_update;
     double * restrict ymom_eu   = D->ymom_explicit_update;
-    double * restrict vertex_coords = D->vertex_coordinates;
+    anuga_geom_t * restrict vertex_coords = D->vertex_coordinates;
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
@@ -1351,10 +1351,10 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
 
     anuga_int * restrict neighbours = D->neighbours;
     anuga_int * restrict neighbour_edges = D->neighbour_edges;
-    double * restrict normals = D->normals;
-    double * restrict edgelengths = D->edgelengths;
-    double * restrict radii = D->radii;
-    double * restrict areas = D->areas;
+    anuga_geom_t * restrict normals = D->normals;
+    anuga_geom_t * restrict edgelengths = D->edgelengths;
+    anuga_geom_t * restrict radii = D->radii;
+    anuga_geom_t * restrict areas = D->areas;
     double * restrict max_speed_array = D->max_speed;
     anuga_int * restrict tri_full_flag = D->tri_full_flag;
 
@@ -1635,9 +1635,9 @@ double core_compute_fluxes_edge_based(struct domain *D, int substep_count,
 
     anuga_int * restrict neighbours = D->neighbours;
     anuga_int * restrict neighbour_edges = D->neighbour_edges;
-    double * restrict normals = D->normals;
-    double * restrict edgelengths = D->edgelengths;
-    double * restrict radii = D->radii;
+    anuga_geom_t * restrict normals = D->normals;
+    anuga_geom_t * restrict edgelengths = D->edgelengths;
+    anuga_geom_t * restrict radii = D->radii;
     anuga_int * restrict tri_full_flag = D->tri_full_flag;
 
     double * restrict slots = D->edge_flux_work;
@@ -1776,9 +1776,9 @@ void core_flux_apply_and_update(struct domain *D, double timestep,
 
     anuga_int * restrict neighbours = D->neighbours;
     anuga_int * restrict neighbour_edges = D->neighbour_edges;
-    double * restrict normals = D->normals;
-    double * restrict edgelengths = D->edgelengths;
-    double * restrict areas = D->areas;
+    anuga_geom_t * restrict normals = D->normals;
+    anuga_geom_t * restrict edgelengths = D->edgelengths;
+    anuga_geom_t * restrict areas = D->areas;
     double * restrict max_speed_array = D->max_speed;
 
     double * restrict slots = D->edge_flux_work;
@@ -2003,10 +2003,10 @@ double core_compute_fluxes_scatter_on(struct domain *D, int substep_count,
 
     anuga_int * restrict neighbours = D->neighbours;
     anuga_int * restrict neighbour_edges = D->neighbour_edges;
-    double * restrict normals = D->normals;
-    double * restrict edgelengths = D->edgelengths;
-    double * restrict radii = D->radii;
-    double * restrict areas = D->areas;
+    anuga_geom_t * restrict normals = D->normals;
+    anuga_geom_t * restrict edgelengths = D->edgelengths;
+    anuga_geom_t * restrict radii = D->radii;
+    anuga_geom_t * restrict areas = D->areas;
     anuga_int * restrict tri_full_flag = D->tri_full_flag;
 
     double local_timestep = 1.0e+100;
@@ -2180,8 +2180,8 @@ void core_ader_ck_predictor(struct domain *D, double dt) {
     double * restrict ymom_ev   = D->ymom_edge_values;
     double * restrict height_ev = D->height_edge_values;
 
-    double * restrict edge_coords     = D->edge_coordinates;
-    double * restrict centroid_coords = D->centroid_coordinates;
+    anuga_geom_t * restrict edge_coords     = D->edge_coordinates;
+    anuga_geom_t * restrict centroid_coords = D->centroid_coordinates;
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
@@ -2303,8 +2303,8 @@ void core_ader_ck_predictor_edge(struct domain *D, double dt) {
     double * restrict ymom_ev   = D->ymom_edge_values;
     double * restrict height_ev = D->height_edge_values;
 
-    double * restrict edge_coords     = D->edge_coordinates;
-    double * restrict centroid_coords = D->centroid_coordinates;
+    anuga_geom_t * restrict edge_coords     = D->edge_coordinates;
+    anuga_geom_t * restrict centroid_coords = D->centroid_coordinates;
 
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
