@@ -63,6 +63,12 @@ static void usage(const char *argv0) {
 "                        both grid directions' neighbours stay cache-near;\n"
 "                        snapshots stay in canonical order either way\n"
 "\n"
+"  scheme\n"
+"    --scheme NAME     rk2 | ader2 | euler | rk3          (default rk2)\n"
+"                      each selects its ANUGA preset (DE1 / DE_ader2 / DE0 /\n"
+"                      DE2): flux calls per step, limiter betas, CFL\n"
+"    --betas V         override the limiter betas (beta_w/uh/vh; dry stay 0)\n"
+"\n"
 "  run\n"
 "    --steps N         timed RK2 steps                  (default 100)\n"
 "    --warmup N        untimed RK2 steps first          (default 5)\n"
@@ -107,12 +113,12 @@ static const char *arg_s(int argc, char **argv, int *i, const char *name) {
 // ---------------------------------------------------------------------------
 
 enum {
-    PH_PREPARE = 0, PH_EXTRAPOLATE, PH_BOUNDARY,
+    PH_PREPARE = 0, PH_EXTRAPOLATE, PH_BOUNDARY, PH_PREDICTOR,
     PH_FLUXES, PH_FORCING_UPDATE, PH_NPHASES
 };
 
 static const char *phase_names[PH_NPHASES] = {
-    "prepare", "extrapolate", "boundary",
+    "prepare", "extrapolate", "boundary", "ck_predictor",
     "compute_fluxes", "forcing+update"
 };
 
@@ -182,6 +188,32 @@ static size_t peak_host_rss(void) {
     return kb * 1024;
 }
 
+// Mirrors gpu_evolve_one_ader2_step() (single flux call; fused edge C-K
+// predictor shifts edge values to Q^{n+1/2}).  Keep in sync like rk2 above.
+static double ader2_step_timed(struct gpu_domain *GD, double max_timestep,
+                               int apply_forcing, double prev_dt) {
+    TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 0));
+    TIME_PHASE(PH_EXTRAPOLATE, gpu_extrapolate_edges(GD));
+    TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
+
+    if (prev_dt > 0.0) {
+        TIME_PHASE(PH_PREDICTOR, gpu_ader_ck_predictor_edge(GD, prev_dt * 0.5));
+        TIME_PHASE(PH_BOUNDARY,  evaluate_boundaries(GD));
+    }
+
+    double local_timestep;
+    TIME_PHASE(PH_FLUXES, local_timestep = gpu_compute_fluxes(GD, 0, 1));
+
+    double timestep = GD->CFL * local_timestep;
+    GD->recorded_flux_timestep =
+        (timestep < GD->evolve_max_timestep) ? timestep : GD->evolve_max_timestep;
+    if (timestep > max_timestep) timestep = max_timestep;
+
+    TIME_PHASE(PH_FORCING_UPDATE,
+               gpu_forcing_and_update(GD, timestep, apply_forcing, 0, 0.0, 0.0));
+    return timestep;
+}
+
 // ---------------------------------------------------------------------------
 
 int main(int argc, char **argv) {
@@ -195,6 +227,8 @@ int main(int argc, char **argv) {
 
     bench_params P;
     bench_params_defaults(&P);
+    int scheme_set = 0, cfl_set = 0;
+    double betas_override = -1.0;
 
     for (int i = 1; i < argc; i++) {
         const char *a = argv[i];
@@ -208,7 +242,17 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--manning"))    P.manning = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--water"))      P.water_level = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--dam"))        P.dam_height = arg_d(argc, argv, &i, a);
-        else if (!strcmp(a, "--cfl"))        P.cfl = arg_d(argc, argv, &i, a);
+        else if (!strcmp(a, "--cfl"))        { P.cfl = arg_d(argc, argv, &i, a); cfl_set = 1; }
+        else if (!strcmp(a, "--betas"))      { betas_override = arg_d(argc, argv, &i, a); }
+        else if (!strcmp(a, "--scheme")) {
+            const char *sc = arg_s(argc, argv, &i, a);
+            if      (!strcmp(sc, "rk2"))   P.scheme = BENCH_SCHEME_RK2;
+            else if (!strcmp(sc, "ader2")) P.scheme = BENCH_SCHEME_ADER2;
+            else if (!strcmp(sc, "euler")) P.scheme = BENCH_SCHEME_EULER;
+            else if (!strcmp(sc, "rk3"))   P.scheme = BENCH_SCHEME_RK3;
+            else { fprintf(stderr, "bench: unknown scheme '%s'\n", sc); return 2; }
+            scheme_set = 1;
+        }
         else if (!strcmp(a, "--atol"))       O.atol = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--rtol"))       O.rtol = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--save"))       O.save_path = arg_s(argc, argv, &i, a);
@@ -232,6 +276,16 @@ int main(int argc, char **argv) {
         }
         else if (!strcmp(a, "--help") || !strcmp(a, "-h")) { usage(argv[0]); return 0; }
         else { fprintf(stderr, "bench: unknown option '%s' (try --help)\n", a); return 2; }
+    }
+
+    if (scheme_set) {
+        const double user_cfl = P.cfl;
+        bench_params_apply_scheme(&P);
+        if (cfl_set) P.cfl = user_cfl;          // explicit --cfl beats the preset
+    }
+    if (betas_override >= 0.0) {
+        P.beta_w = P.beta_uh = P.beta_vh = betas_override;
+        P.beta_w_dry = P.beta_uh_dry = P.beta_vh_dry = 0.0;
     }
 
     // ---- build -----------------------------------------------------------
@@ -267,7 +321,13 @@ int main(int argc, char **argv) {
     printf("  case      : %s, %.0f x %.0f m, manning %.4g%s\n",
            case_name, P.length_x, P.length_y, P.manning,
            O.apply_forcing ? "" : " (friction off)");
-    printf("  scheme    : rk2, CFL %.3g, DE1 limiter betas\n", P.cfl);
+    {
+        const char *sn = P.scheme == BENCH_SCHEME_ADER2 ? "ader2 (DE_ader2)"
+                       : P.scheme == BENCH_SCHEME_EULER ? "euler (DE0)"
+                       : P.scheme == BENCH_SCHEME_RK3   ? "rk3 (DE2)"
+                       : "rk2 (DE1)";
+        printf("  scheme    : %s, CFL %.3g, betas %.3g\n", sn, P.cfl, P.beta_w);
+    }
     printf("  ordering  : %s\n",
            O.morton ? "morton (Z-order curve)" : "row-major (ANUGA rectangular_cross)");
     printf("  devices   : %d visible, using %d\n", omp_get_num_devices(), GD->device_id);
@@ -287,9 +347,26 @@ int main(int argc, char **argv) {
     const double volume0 = gpu_compute_water_volume(GD);
 
     // ---- warmup ----------------------------------------------------------
+    // ADER2 carries the previous step's dt into the C-K predictor (0.0 on the
+    // very first call = plain Euler bootstrap), so it threads through warmup
+    // and the timed loop alike.
     double t_sim = 0.0, dt = 0.0;
-    for (int64_t s = 0; s < O.warmup; s++)
-        t_sim += (dt = gpu_evolve_one_rk2_step(GD, P.evolve_max_timestep, O.apply_forcing));
+    for (int64_t s = 0; s < O.warmup; s++) {
+        switch (P.scheme) {
+            case BENCH_SCHEME_ADER2:
+                dt = gpu_evolve_one_ader2_step(GD, P.evolve_max_timestep, O.apply_forcing, dt);
+                break;
+            case BENCH_SCHEME_EULER:
+                dt = gpu_evolve_one_euler_step(GD, P.evolve_max_timestep, O.apply_forcing);
+                break;
+            case BENCH_SCHEME_RK3:
+                dt = gpu_evolve_one_rk3_step(GD, P.evolve_max_timestep, O.apply_forcing);
+                break;
+            default:
+                dt = gpu_evolve_one_rk2_step(GD, P.evolve_max_timestep, O.apply_forcing);
+        }
+        t_sim += dt;
+    }
 
     // ---- timed loop ------------------------------------------------------
     double best = 1.0e300, total_all = 0.0;
@@ -302,10 +379,22 @@ int main(int argc, char **argv) {
 
         const double t0 = omp_get_wtime();
         for (int64_t s = 0; s < O.steps; s++) {
-            if (O.phases)
-                t_sim += (dt = rk2_step_timed(GD, P.evolve_max_timestep, O.apply_forcing));
-            else
-                t_sim += (dt = gpu_evolve_one_rk2_step(GD, P.evolve_max_timestep, O.apply_forcing));
+            switch (P.scheme) {
+                case BENCH_SCHEME_ADER2:
+                    dt = O.phases ? ader2_step_timed(GD, P.evolve_max_timestep, O.apply_forcing, dt)
+                                  : gpu_evolve_one_ader2_step(GD, P.evolve_max_timestep, O.apply_forcing, dt);
+                    break;
+                case BENCH_SCHEME_EULER:
+                    dt = gpu_evolve_one_euler_step(GD, P.evolve_max_timestep, O.apply_forcing);
+                    break;
+                case BENCH_SCHEME_RK3:
+                    dt = gpu_evolve_one_rk3_step(GD, P.evolve_max_timestep, O.apply_forcing);
+                    break;
+                default:
+                    dt = O.phases ? rk2_step_timed(GD, P.evolve_max_timestep, O.apply_forcing)
+                                  : gpu_evolve_one_rk2_step(GD, P.evolve_max_timestep, O.apply_forcing);
+            }
+            t_sim += dt;
         }
         const double elapsed = omp_get_wtime() - t0;
 
@@ -327,6 +416,8 @@ int main(int argc, char **argv) {
     printf("              %.4f ms/step, %.3f Mcell-steps/s\n",
            1.0e3 * per_step, 1.0e-6 * cellsteps_per_s);
     printf("              t = %.9g s, last dt = %.6g s\n", t_sim, dt);
+    printf("              sim rate: %.3f simulated s per wall s (this loop)\n",
+           (double)O.steps * dt / best);
     if (flops_total > 0)
         printf("  flops     : %.3f GFLOP over the timed loop, %.2f GFLOP/s\n",
                1.0e-9 * (double)flops_total, 1.0e-9 * (double)flops_total / best);

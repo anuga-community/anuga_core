@@ -147,12 +147,31 @@ void bench_params_defaults(bench_params *P) {
     P->extrapolate_velocity_second_order = 1;
     P->use_sloped_mannings    = 0;
 
+    P->scheme      = BENCH_SCHEME_RK2;
     P->which_case  = BENCH_CASE_DAM;
     P->length_x    = 1000.0;
     P->length_y    = 1000.0;
     P->manning     = 0.03;
     P->water_level = 5.0;
     P->dam_height  = 10.0;
+}
+
+void bench_params_apply_scheme(bench_params *P) {
+    // Mirrors _set_DE1_defaults / _set_DE_ader2_defaults / _set_DE0_defaults /
+    // _set_DE2_defaults in shallow_water_domain.py: the per-scheme limiter
+    // betas and CFL, so a scheme comparison here matches what an ANUGA user
+    // actually gets when switching flow algorithms.
+    double beta;
+    switch (P->scheme) {
+        case BENCH_SCHEME_ADER2: beta = 0.5; P->cfl = 1.0; break;   // DE_ader2
+        case BENCH_SCHEME_EULER: beta = 0.5; P->cfl = 0.9; break;   // DE0
+        case BENCH_SCHEME_RK3:   beta = 1.0; P->cfl = 1.0; break;   // DE2
+        case BENCH_SCHEME_RK2:
+        default:                 beta = 1.0; P->cfl = 1.0; break;   // DE1
+    }
+    P->beta_w  = beta;  P->beta_w_dry  = 0.0;
+    P->beta_uh = beta;  P->beta_uh_dry = 0.0;
+    P->beta_vh = beta;  P->beta_vh_dry = 0.0;
 }
 
 void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params *P) {
@@ -173,7 +192,8 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
     D->optimise_dry_cells   = 0;
     D->low_froude           = P->low_froude;
     D->extrapolate_velocity_second_order = P->extrapolate_velocity_second_order;
-    D->timestep_fluxcalls   = 2;   // rk2
+    D->timestep_fluxcalls   = (P->scheme == BENCH_SCHEME_RK2) ? 2
+                            : (P->scheme == BENCH_SCHEME_RK3) ? 3 : 1;
     D->beta_w      = P->beta_w;
     D->beta_w_dry  = P->beta_w_dry;
     D->beta_uh     = P->beta_uh;

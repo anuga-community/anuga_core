@@ -308,8 +308,11 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     // Step 1: protect + extrapolate Q^n → edges + evaluate boundaries
     // ========================================
 
-    gpu_protect(GD);
-    gpu_extrapolate_second_order(GD);
+    // Fused protect + extrapolate centroid pass (no RK2 backup needed:
+    // the C-K predictor shifts edge values in place, centroids stay at Q^n),
+    // then the edge pass -- same launch structure as the fused RK2 step.
+    gpu_prepare_step(GD, 0);
+    gpu_extrapolate_edges(GD);
 
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
@@ -345,8 +348,6 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
 
     local_timestep = gpu_compute_fluxes(GD, 0, 1);
 
-    if (apply_forcing) gpu_manning_friction(GD);
-
     // ========================================
     // Step 4: Allreduce for global min CFL timestep + clip to max_timestep
     // ========================================
@@ -379,8 +380,11 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     // (Q^n centroids are unchanged — no restore needed)
     // ========================================
 
-    //printf("before gpu convesed \n");
-    gpu_update_conserved_quantities(GD, timestep);
+    // Manning + update fused into one launch (Manning has no dt dependence,
+    // so evaluating it here, after the reduction, is bit-identical to the old
+    // pre-reduction call -- it only accumulates into the semi-implicit terms
+    // that the update consumes).
+    gpu_forcing_and_update(GD, timestep, apply_forcing, 0, 0.0, 0.0);
 
     NVTX_POP();  // gpu_evolve_one_ader2_step
     return timestep;

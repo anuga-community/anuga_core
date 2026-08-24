@@ -18,6 +18,18 @@ typedef enum {
     BENCH_CASE_LAKE          // bumpy bed, water at rest -- well-balancedness
 } bench_case;
 
+// Timestepping schemes, matching ANUGA's flow-algorithm presets:
+//   rk2   <-> DE1      (2 flux calls/step, betas 1.0, CFL 1.0)
+//   ader2 <-> DE_ader2 (1 flux call/step,  betas 0.5, CFL 1.0)
+//   euler <-> DE0      (1 flux call/step,  betas 0.5, CFL 0.9)
+//   rk3   <-> DE2      (3 flux calls/step, betas 1.0, CFL 1.0)
+typedef enum {
+    BENCH_SCHEME_RK2 = 0,
+    BENCH_SCHEME_ADER2,
+    BENCH_SCHEME_EULER,
+    BENCH_SCHEME_RK3
+} bench_scheme;
+
 typedef struct {
     // Physics / algorithm parameters (defaults follow ANUGA's DE1 preset).
     double cfl;
@@ -33,6 +45,7 @@ typedef struct {
     int    use_sloped_mannings;
 
     // Problem setup.
+    bench_scheme scheme;
     bench_case which_case;
     double     length_x, length_y;
     double     manning;
@@ -49,6 +62,10 @@ typedef struct {
 } bench_domain;
 
 void bench_params_defaults(bench_params *P);
+
+// Apply the ANUGA preset for P->scheme (betas, CFL, flux calls per step).
+// Called by bench_params_defaults for rk2; call again after changing scheme.
+void bench_params_apply_scheme(bench_params *P);
 
 // Allocate + fill everything.  Does not touch the device.
 void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params *P);
