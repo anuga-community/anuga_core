@@ -47,7 +47,81 @@ static double g_rain_every = 0.0;     // pulse period in sim seconds (0 = always
 static double g_rain_for = 0.0;       // pulse duration
 static double g_rain_x0 = -1.0, g_rain_x1 = -1.0;   // optional x-band (fraction)
 
+// Gridded rain replay ("ANUGARN1", from tools/rain_csv_to_grid.py): a
+// piecewise-constant-in-time raster of rates (mm/hr) covering the domain,
+// sampled per cell via a precomputed centroid -> grid-cell index.  This is
+// the shape real model-driven rainfall arrives in (forecast / design-storm
+// CSVs); production ANUGA feeds the same data through its per-cell-rate
+// operator (gpu_rate_operator_apply_array).
+static int64_t g_rg_nx, g_rg_ny, g_rg_nt;
+static double *g_rg_times;      // [nt] sim seconds, sorted
+static float  *g_rg_rates;      // [nt * ny * nx] mm/hr
+static anuga_int *g_rg_cellidx; // [n] centroid -> raster index
+static const char *g_rain_grid_path = NULL;
+
+static void rain_grid_load(struct gpu_domain *GD) {
+    FILE *fp = fopen(g_rain_grid_path, "rb");
+    if (!fp) { perror(g_rain_grid_path); exit(1); }
+    char magic[8];
+    double x0, y0, dx, dy;
+    if (fread(magic, 1, 8, fp) != 8 || memcmp(magic, "ANUGARN1", 8) != 0 ||
+        fread(&g_rg_nx, 8, 1, fp) != 1 || fread(&g_rg_ny, 8, 1, fp) != 1 ||
+        fread(&x0, 8, 1, fp) != 1 || fread(&y0, 8, 1, fp) != 1 ||
+        fread(&dx, 8, 1, fp) != 1 || fread(&dy, 8, 1, fp) != 1 ||
+        fread(&g_rg_nt, 8, 1, fp) != 1) {
+        fprintf(stderr, "bench: %s is not ANUGARN1\n", g_rain_grid_path);
+        exit(1);
+    }
+    const size_t cells = (size_t)g_rg_nx * (size_t)g_rg_ny;
+    g_rg_times = (double *)malloc((size_t)g_rg_nt * sizeof(double));
+    g_rg_rates = (float *)malloc((size_t)g_rg_nt * cells * sizeof(float));
+    if (fread(g_rg_times, 8, (size_t)g_rg_nt, fp) != (size_t)g_rg_nt ||
+        fread(g_rg_rates, 4, (size_t)g_rg_nt * cells, fp) != (size_t)g_rg_nt * cells) {
+        fprintf(stderr, "bench: truncated %s\n", g_rain_grid_path);
+        exit(1);
+    }
+    fclose(fp);
+
+    struct domain *D = &GD->D;
+    const anuga_int nel = D->number_of_elements;
+    g_rg_cellidx = (anuga_int *)malloc((size_t)nel * sizeof(anuga_int));
+    for (anuga_int k = 0; k < nel; k++) {
+        int64_t gi = (int64_t)((D->centroid_coordinates[2 * k] - x0) / dx);
+        int64_t gj = (int64_t)((D->centroid_coordinates[2 * k + 1] - y0) / dy);
+        if (gi < 0) gi = 0; if (gi >= g_rg_nx) gi = g_rg_nx - 1;
+        if (gj < 0) gj = 0; if (gj >= g_rg_ny) gj = g_rg_ny - 1;
+        g_rg_cellidx[k] = gj * g_rg_nx + gi;
+    }
+    {
+        float *r = g_rg_rates; anuga_int *ci = g_rg_cellidx;
+        const size_t rn = (size_t)g_rg_nt * cells;
+        #pragma omp target enter data map(to: r[0:rn], ci[0:nel])
+    }
+    printf("  rain grid : %s (%lldx%lld, %lld intervals, t %.0f..%.0f s)\n",
+           g_rain_grid_path, (long long)g_rg_nx, (long long)g_rg_ny,
+           (long long)g_rg_nt, g_rg_times[0], g_rg_times[g_rg_nt - 1]);
+}
+
+static void apply_rain_grid(struct gpu_domain *GD, double t_sim, double dt) {
+    if (t_sim < g_rg_times[0]) return;
+    int64_t lo = 0, hi = g_rg_nt - 1;
+    while (lo < hi) { int64_t mid = (lo + hi + 1) / 2;
+        if (g_rg_times[mid] <= t_sim) lo = mid; else hi = mid - 1; }
+    const size_t base = (size_t)lo * (size_t)g_rg_nx * (size_t)g_rg_ny;
+    const double conv = dt / 1000.0 / 3600.0;
+    struct domain *D = &GD->D;
+    const anuga_int nel = D->number_of_elements;
+    double * restrict stage_cv = D->stage_centroid_values;
+    float * restrict rates = g_rg_rates;
+    anuga_int * restrict ci = g_rg_cellidx;
+    #pragma omp target teams loop
+    for (anuga_int k = 0; k < nel; k++) {
+        stage_cv[k] += conv * (double)rates[base + ci[k]];
+    }
+}
+
 static void apply_rain(struct gpu_domain *GD, double t_sim, double dt) {
+    if (g_rain_grid_path) { apply_rain_grid(GD, t_sim, dt); return; }
     if (g_rain_mmhr <= 0.0) return;
     if (g_rain_every > 0.0) {
         const double phase = fmod(t_sim, g_rain_every);
@@ -209,6 +283,8 @@ static void usage(const char *argv0) {
 "    --rain MMHR       uniform rainfall (mm/hr) applied after every step\n"
 "    --rain-every S    pulse period in sim-seconds (with --rain-for S)\n"
 "    --rain-band A B   rain only where A <= x <= B (metres)\n"
+"    --rain-grid FILE  replay a gridded rain timeseries (ANUGARN1, from\n"
+"                      tools/rain_csv_to_grid.py) -- model-driven rainfall\n"
 "    --active-set      skip dry-with-dry-neighbourhood cells (flood domains;\n"
 "                      needs --flux scatter; first step runs full; bit-exact)\n"
 "    --cuda-extrap N   use the hand-written CUDA reconstruction kernel with\n"
@@ -448,6 +524,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--rain-for"))    g_rain_for = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--rain-band")) { g_rain_x0 = arg_d(argc, argv, &i, a);
                                               g_rain_x1 = arg_d(argc, argv, &i, a); }
+        else if (!strcmp(a, "--rain-grid"))   g_rain_grid_path = arg_s(argc, argv, &i, a);
         else if (!strcmp(a, "--order")) {
             const char *o = arg_s(argc, argv, &i, a);
             if      (!strcmp(o, "row"))    O.morton = 0;
@@ -553,6 +630,7 @@ int main(int argc, char **argv) {
         O.phases = 1;                          // route through the stepped loops
         cuda_extrap_load();
     }
+    if (g_rain_grid_path) rain_grid_load(GD);
     if (g_active_set) {
         if (P.flux_mode != 2) {
             fprintf(stderr, "bench: --active-set requires --flux scatter\n");
