@@ -1,0 +1,51 @@
+#!/bin/bash
+#PBS -N anuga_longrun
+#PBS -l ncpus=48
+#PBS -l ngpus=4
+#PBS -l mem=512GB
+#PBS -l jobfs=200GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=02:00:00
+#PBS -l wd
+#PBS -j oe
+#PBS -o /scratch/bm55/jlv900/dev/anuga_core/standalone/build/longrun/pbs.log
+
+# LONG spec-evolution run: 4 GPUs, one experiment each, ~110 min of stepping
+# on the 168M-triangle 11,000 km^2 basin.  Progress lines stream every 2000
+# steps (t, dt, ms/step, active fraction), so the evolution survives even a
+# walltime kill.
+#   gpu0: morton, full          (baseline + dt drift)
+#   gpu1: morton, active-set    (the production candidate)
+#   gpu2: morton, active + spec-scale storm rain grid
+#   gpu3: row,    active-set    (ordering sensitivity at scale)
+set -x
+ROOT=/scratch/bm55/jlv900/dev/anuga_core/standalone
+OUT=$ROOT/build/longrun
+mkdir -p "$OUT"
+cd "$ROOT"
+source ./env.sh
+nvidia-smi --query-gpu=index,name,memory.total --format=csv | tee "$OUT/gpu.txt"
+
+BENCH=$PBS_JOBFS/bench_gpu
+make --no-print-directory CONFIG=gpu OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
+
+COMMON="--mesh build/basin_spec11k.msh --steps 100000000 --warmup 0 \
+        --scheme ader2 --flux scatter --report 2000 --max-wall 6300"
+
+CUDA_VISIBLE_DEVICES=0 "$BENCH" $COMMON --order morton \
+    > "$OUT/g0_morton_full.txt" 2>&1 &
+CUDA_VISIBLE_DEVICES=1 "$BENCH" $COMMON --order morton --active-set \
+    > "$OUT/g1_morton_active.txt" 2>&1 &
+CUDA_VISIBLE_DEVICES=2 "$BENCH" $COMMON --order morton --active-set \
+    --rain-grid build/spec_storm.grid \
+    > "$OUT/g2_morton_active_rain.txt" 2>&1 &
+CUDA_VISIBLE_DEVICES=3 "$BENCH" $COMMON --order row --active-set \
+    > "$OUT/g3_row_active.txt" 2>&1 &
+wait
+
+for f in "$OUT"/g*.txt; do
+  echo "== $f"; grep -E "sim rate|active    :|t = " "$f" | tail -3
+done | tee "$OUT/SUMMARY.txt"
+echo done | tee "$OUT/DONE"

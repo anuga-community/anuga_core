@@ -235,6 +235,8 @@ typedef struct {
     int64_t nx, ny;
     int64_t steps;
     int64_t warmup;
+    int64_t report_every;
+    double  max_wall;
     int     repeat;
     int     phases;
     int     verbose;
@@ -485,6 +487,8 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--steps"))      O.steps = arg_i(argc, argv, &i, a);
         else if (!strcmp(a, "--warmup"))     O.warmup = arg_i(argc, argv, &i, a);
         else if (!strcmp(a, "--repeat"))     O.repeat = (int)arg_i(argc, argv, &i, a);
+        else if (!strcmp(a, "--report"))     O.report_every = arg_i(argc, argv, &i, a);
+        else if (!strcmp(a, "--max-wall"))   O.max_wall = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--lenx"))       P.length_x = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--leny"))       P.length_y = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--manning"))    P.manning = arg_d(argc, argv, &i, a);
@@ -687,6 +691,9 @@ int main(int argc, char **argv) {
         gpu_flop_counters_enable(GD, 1);
 
         const double t0 = omp_get_wtime();
+        double win_t0 = t0;
+        int64_t win_s0 = 0;
+        int64_t steps_done = 0;
         for (int64_t s = 0; s < O.steps; s++) {
             switch (P.scheme) {
                 case BENCH_SCHEME_ADER2:
@@ -705,8 +712,23 @@ int main(int argc, char **argv) {
             }
             apply_rain(GD, t_sim, dt);
             t_sim += dt;
+            steps_done = s + 1;
+
+            if (O.report_every > 0 && (s + 1) % O.report_every == 0) {
+                const double now = omp_get_wtime();
+                const double win_ms = 1.0e3 * (now - win_t0) / (double)(s + 1 - win_s0);
+                printf("  @step %8lld  t=%10.2f s  dt=%.5f  %8.3f ms/step  active=%6.2f%%  simrate=%.3f\n",
+                       (long long)(s + 1), t_sim, dt, win_ms,
+                       g_as_samples > 0 ? 100.0 * g_as_cellfrac_sum / (double)g_as_samples : 100.0,
+                       dt / (win_ms / 1.0e3));
+                fflush(stdout);
+                win_t0 = now; win_s0 = s + 1;
+                g_as_cellfrac_sum = 0.0; g_as_samples = 0;   // window-local stats
+            }
+            if (O.max_wall > 0.0 && omp_get_wtime() - t0 > O.max_wall) break;
         }
         const double elapsed = omp_get_wtime() - t0;
+        if (steps_done < O.steps) O.steps = steps_done;   // honest averages below
 
         gpu_flop_counters_enable(GD, 0);
         flops_total = gpu_flop_counters_get_total(GD);
