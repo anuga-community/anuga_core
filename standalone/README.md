@@ -443,6 +443,37 @@ Hopper: flux 44% vs reconstruction 39% (per-cell, reconstruction scaled
 5.3x with bandwidth while the atomic scatter scaled only 3.1x) -- so the
 next kernel worth attacking depends on the target architecture.
 
+### Cross-architecture results (V100 / A100-80 / H200)
+
+The 512 B/triangle ceiling model is verified on three architectures, each to
+sub-1%: V100 65.6M measured (65.6M predicted), A100-80 166.4M ok / 169M OOM
+(166.3M predicted), H200 293.8M ok / 295.8M OOM (294M predicted).  The
+168.2M spec mesh OOMs on the A100-80 exactly in the predicted 2M gap.
+Physics gates hold identically everywhere (lake-at-rest 1e-13..1e-14).
+ADER2 + scatter plateaus: V100 656, A100-80 ~1500, H200 2837 Mcell-steps/s
+-- 80-90%% of pure bandwidth ratios.  The Morton reorder gain on real basins
+replicates: +12%% on both A100 and H200 at 24M triangles.
+
+### The 11,000 km^2 spec run (168.2M triangles <= 100 m^2, one H200)
+
+Measured hours of wall time per simulated day, early-event (60 steps,
+0.62%% wet):
+
+| configuration | 1 GPU | /4 GPUs (linear) |
+|---|---|---|
+| as-meshed, full stepping | 33.9 h | 8.5 h |
+| + Morton | 24.8 h | 6.2 h |
+| + Morton + active-set | **3.7 h** | **0.92 h** |
+
+The active configuration runs at 20.9 Gcell-steps/s effective on one card.
+Caveats for the full-day claim: the active fraction grows as the flood
+spreads (smaller basins equilibrate near 10%%, where the active factor is
+~3.2x, still ~9.8 Gc/s effective at 24M), and dt was 0.052 s early-event
+(Triangle's small-triangle tail; a mesh-quality minimum-area floor is an
+unpulled 2-3x dt lever).  Honest full-day band: 4-8 h on one H200, 1-2 h on
+four -- under the hour early-event, near it sustained, before rain or
+local-time-stepping enter.
+
 ### Measured dead ends (kept out, documented so nobody re-tries them blind)
 
 - **FP32 geometry** (`make gpu GEOM=fp32`, via the `anuga_geom_t` typedef in
