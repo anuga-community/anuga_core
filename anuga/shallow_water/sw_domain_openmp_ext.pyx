@@ -24,6 +24,8 @@ cdef extern from "sw_domain_openmp.c" nogil:
 		anuga_int low_froude
 		anuga_int timestep_fluxcalls
 		anuga_int reconstruct_edge_bed
+		anuga_int num_owned_edges
+		anuga_int* owned_edges
 		anuga_int ncol_riverwall_hydraulic_properties
 		anuga_int nrow_riverwall_hydraulic_properties
 
@@ -161,6 +163,8 @@ cdef inline get_python_domain_parameters(domain *D, object domain_py_object):
 	# set here.  Bed-edge reconstruction in compute_fluxes stays OFF on this
 	# path -- tests call compute_fluxes directly with independent bed_ev.
 	D.reconstruct_edge_bed = 0
+	D.num_owned_edges = 0
+	D.owned_edges = NULL
 
 	D.ncol_riverwall_hydraulic_properties = riverwallData.ncol_hydraulic_properties
 	try:

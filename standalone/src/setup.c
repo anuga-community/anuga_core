@@ -222,14 +222,6 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
     // leaves this 0 because tests call compute_fluxes directly.
     D->reconstruct_edge_bed               = 1;
 
-    // Experimental flux paths (the kernels select purely on these pointers):
-    //   slot    -- edge-based pair; per-slot records [F0,F1,F2,pf,zh,s] x 3n
-    //   scatter -- single-solve atomic scatter; neigh_work takes the per-slot
-    //              wave speeds (3n)
-    if (P->flux_mode == 1)
-        D->edge_flux_work = DALLOC(B, 6 * 3 * n);
-    else if (P->flux_mode == 2)
-        D->neigh_work = DALLOC(B, 3 * n);
 
     // --- mesh geometry ----------------------------------------------------
     D->vertex_coordinates   = DALLOC(B, 6 * n);
@@ -306,7 +298,11 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
     D->neighbour_edges      = IALLOC(B, 3 * n);
     D->surrogate_neighbours = IALLOC(B, 3 * n);
     D->number_of_boundaries = IALLOC(B, n);
-    D->tri_full_flag        = IALLOC(B, n);
+    // Serial benchmark: no ghost cells, so leave tri_full_flag NULL.  The
+    // kernels then skip the per-edge ownership gathers in the dt guard and
+    // the boundary-flux integral entirely (the integral is a parallel-run
+    // diagnostic nothing here consumes).
+    D->tri_full_flag        = NULL;
 
     edgemap H;
     edgemap_init(&H, 3 * n);
@@ -337,7 +333,6 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
                 D->neighbour_edges[3 * k + i] = -1;
             }
         }
-        D->tri_full_flag[k] = 1;   // serial: every triangle is owned
     }
     edgemap_free(&H);
 
@@ -370,6 +365,27 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
         for (int i = 0; i < 3; i++)
             D->surrogate_neighbours[3 * k + i] =
                 (D->neighbours[3 * k + i] < 0) ? k : D->neighbours[3 * k + i];
+
+    // Experimental flux paths (needs the connectivity built just above):
+    //   slot    -- edge-based pair; per-slot records [F0,F1,F2,pf,zh,s] x 3n
+    //              (selected by the edge_flux_work pointer being set)
+    //   scatter -- single-solve atomic scatter; NO auxiliary work arrays
+    //              (selected by reconstruct_edge_bed = 2 + owned_edges)
+    if (P->flux_mode == 1) {
+        D->edge_flux_work = DALLOC(B, 6 * 3 * n);
+    } else if (P->flux_mode == 2) {
+        D->reconstruct_edge_bed = 2;
+        // Compacted owned-slot list: every boundary slot + the larger-index
+        // side of each interior edge.  One scatter thread per physical edge.
+        anuga_int *owned = IALLOC(B, 3 * n);
+        anuga_int ne = 0;
+        for (int64_t p2 = 0; p2 < 3 * n; p2++) {
+            const anuga_int nbr2 = D->neighbours[p2];
+            if (nbr2 < 0 || nbr2 > p2 / 3) owned[ne++] = p2;
+        }
+        D->owned_edges = owned;
+        D->num_owned_edges = ne;
+    }
 
     // --- quantities -------------------------------------------------------
     D->stage_centroid_values    = DALLOC(B, n);
@@ -506,10 +522,11 @@ void bench_domain_to_device(bench_domain *B, const bench_params *P, int verbose)
         const anuga_int nslots = 6 * 3 * B->GD.D.number_of_elements;
         #pragma omp target enter data map(alloc: slots[0:nslots])
     }
-    if (B->GD.D.neigh_work != NULL) {
-        double *speeds = B->GD.D.neigh_work;
-        const anuga_int ns = 3 * B->GD.D.number_of_elements;
-        #pragma omp target enter data map(alloc: speeds[0:ns])
+    // Owned-edge list for the scatter kernel (host-built, read-only on device)
+    if (B->GD.D.owned_edges != NULL) {
+        anuga_int *owned = B->GD.D.owned_edges;
+        const anuga_int ne = B->GD.D.num_owned_edges;
+        #pragma omp target enter data map(to: owned[0:ne])
     }
 }
 

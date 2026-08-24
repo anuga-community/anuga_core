@@ -99,10 +99,21 @@ void core_extrapolate_centroid_pass(struct domain *D) {
 // neighbours' centroid values (via surrogate_neighbours), so it MUST be a
 // separate kernel launch from anything that writes centroid values -- there is
 // no device-wide barrier inside an `omp target teams loop`.
-void core_extrapolate_edge_pass(struct domain *D) {
+//
+// predictor_dt: 0.0 for a plain reconstruction (RK2 and the ADER-2 bootstrap
+// step).  Non-zero fuses the ADER-2 Cauchy-Kovalewski edge predictor into the
+// tail of the cell body: the just-reconstructed edge values are shifted to
+// Q^{n + predictor_dt} in the same launch, reusing the dxv/dyv edge offsets
+// already in registers.  The standalone core_ader_ck_predictor_edge() kernel
+// computes the same arithmetic from arrays; fusing it here removes that
+// kernel's full read+write sweep over the edge arrays (~200 B/cell), and --
+// because the predictor never reads boundary_values -- lets the ADER-2 step
+// evaluate boundaries ONCE, after the shift, instead of before and after.
+void core_extrapolate_edge_pass(struct domain *D, double predictor_dt) {
     anuga_int n = D->number_of_elements;
     double minimum_allowed_height = D->minimum_allowed_height;
     anuga_int extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
+    double g_pred = D->g;                       // used by the predictor tail only
 
     // Parameters for hfactor computation (wet-dry limiting)
     double a_tmp = 0.3;
@@ -363,6 +374,74 @@ void core_extrapolate_edge_pass(struct domain *D) {
             bed_ev[k3 + i] = stage_ev[k3 + i] - height_ev[k3 + i];
         }
 
+        // ---- fused ADER-2 C-K edge predictor (see the function comment).
+        // Identical arithmetic to core_ader_ck_predictor_edge(), with the
+        // edge-offset vectors dxv0/dyv0/dxv1/dyv1 reused from the limiter
+        // geometry above and the just-written edge values re-read from this
+        // thread's own stores (register/L1-resident, never a remote gather).
+        if (predictor_dt != 0.0) {
+            double det_p = dxv0 * dyv1 - dxv1 * dyv0;
+            if (fabs(det_p) >= 1.0e-20) {
+                double inv_det = 1.0 / det_p;
+
+                double w_c  = stage_cv[k];
+                double h_c  = fmax(w_c - bed_cv[k], 0.0);
+                double uh_c = xmom_cv[k];
+                double vh_c = ymom_cv[k];
+
+                double inv_h_c = (h_c > minimum_allowed_height) ? 1.0 / h_c : 0.0;
+                double u_c = uh_c * inv_h_c;
+                double v_c = vh_c * inv_h_c;
+
+                double dw0 = stage_ev[k3 + 0] - w_c;
+                double dw1 = stage_ev[k3 + 1] - w_c;
+                double wx  = inv_det * (dyv1 * dw0 - dyv0 * dw1);
+                double wy  = inv_det * (dxv0 * dw1 - dxv1 * dw0);
+
+                double dh0 = height_ev[k3 + 0] - h_c;
+                double dh1 = height_ev[k3 + 1] - h_c;
+                double hx  = inv_det * (dyv1 * dh0 - dyv0 * dh1);
+                double hy  = inv_det * (dxv0 * dh1 - dxv1 * dh0);
+
+                double h_e0     = height_ev[k3 + 0];
+                double h_e1     = height_ev[k3 + 1];
+                double inv_h_e0 = (h_e0 > minimum_allowed_height) ? 1.0 / h_e0 : 0.0;
+                double inv_h_e1 = (h_e1 > minimum_allowed_height) ? 1.0 / h_e1 : 0.0;
+                double u_e0 = xmom_ev[k3 + 0] * inv_h_e0;
+                double u_e1 = xmom_ev[k3 + 1] * inv_h_e1;
+                double v_e0 = ymom_ev[k3 + 0] * inv_h_e0;
+                double v_e1 = ymom_ev[k3 + 1] * inv_h_e1;
+
+                double du0 = u_e0 - u_c;
+                double du1 = u_e1 - u_c;
+                double dv0 = v_e0 - v_c;
+                double dv1 = v_e1 - v_c;
+                double ux  = inv_det * (dyv1 * du0 - dyv0 * du1);
+                double uy  = inv_det * (dxv0 * du1 - dxv1 * du0);
+                double vx  = inv_det * (dyv1 * dv0 - dyv0 * dv1);
+                double vy  = inv_det * (dxv0 * dv1 - dxv1 * dv0);
+
+                double g_h = g_pred * h_c;
+                double dw_dt  = -(u_c * hx + h_c * ux + v_c * hy + h_c * vy);
+                double duh_dt = -(2.0*u_c*h_c*ux + u_c*u_c*hx + u_c*v_c*hy
+                                 + v_c*h_c*uy + u_c*h_c*vy + g_h * wx);
+                double dvh_dt = -(v_c*h_c*ux + u_c*h_c*vx + u_c*v_c*hx
+                                 + 2.0*v_c*h_c*vy + v_c*v_c*hy + g_h * wy);
+
+                // NOTE: bed_ev is NOT refreshed after the shift, exactly like
+                // the standalone predictor: stage and height shift by the same
+                // dw_dt, so stage - height still equals the true bed everywhere
+                // except clamped near-dry edges -- and the pre-shift bed_ev
+                // (the true bed) is what the boundary kernels should read.
+                for (int i = 0; i < 3; i++) {
+                    stage_ev[k3 + i] += predictor_dt * dw_dt;
+                    xmom_ev[k3 + i] += predictor_dt * duh_dt;
+                    ymom_ev[k3 + i] += predictor_dt * dvh_dt;
+                    height_ev[k3 + i] = fmax(height_ev[k3 + i] + predictor_dt * dw_dt, 0.0);
+                }
+            }
+        }
+
     }
 
 }
@@ -371,7 +450,7 @@ void core_extrapolate_second_order_edge(struct domain *D) {
     // Kept as the two passes below so callers that can fuse the (cell-local)
     // centroid pass into a neighbouring kernel may call the edge pass alone.
     core_extrapolate_centroid_pass(D);
-    core_extrapolate_edge_pass(D);
+    core_extrapolate_edge_pass(D, 0.0);
 }
 
 // ============================================================================
@@ -1754,10 +1833,10 @@ void core_flux_apply_and_update(struct domain *D, double timestep,
 // Requirements (same contract as the slot variant): the explicit updates
 // must be ZERO on entry (core_prepare_step's zero_eu flag), no riverwalls,
 // and fluxes follow an extrapolate (bed reconstructed as stage - height).
-// max_speed_array is NOT maintained on this path (per-cell max would need
-// an atomic max); D->neigh_work receives the per-slot wave speeds (both
-// sides written by the owner -- unique writer per slot, no race) should a
-// consumer want to rebuild it.
+// max_speed_array is NOT maintained on this path (per-cell max would need an
+// atomic max); the wave speeds live and die in registers, so this mode needs
+// NO auxiliary arrays at all -- drivers select it with
+// D->reconstruct_edge_bed = 2 and pay zero extra device memory.
 // ============================================================================
 
 double core_compute_fluxes_scatter(struct domain *D, int substep_count,
@@ -1791,24 +1870,24 @@ double core_compute_fluxes_scatter(struct domain *D, int substep_count,
     double * restrict areas = D->areas;
     anuga_int * restrict tri_full_flag = D->tri_full_flag;
 
-    double * restrict slot_speeds = D->neigh_work;   // [3n], may be NULL
+    // One thread per PHYSICAL edge via the driver-built compacted slot list --
+    // no idle non-owner threads, no divergence on the ownership test.
+    anuga_int * restrict owned = D->owned_edges;
+    const anuga_int nowned = D->num_owned_edges;
 
     double local_timestep = 1.0e+100;
     double boundary_flux_sum_substep = 0.0;
-
-    const anuga_int nslots = 3 * n;
 
     #ifdef CPU_ONLY_MODE
     #pragma omp parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
     #else
     #pragma omp target teams distribute parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
     #endif
-    for (anuga_int p = 0; p < nslots; p++) {
+    for (anuga_int q = 0; q < nowned; q++) {
+        const anuga_int p = owned[q];
         const anuga_int k = p / 3;
         const anuga_int nbr = neighbours[p];
         const int is_boundary = (nbr < 0);
-
-        if (!is_boundary && nbr < k) continue;      // owner side only
 
         double ql[3], qr[3], edgeflux[3];
 
@@ -1904,11 +1983,6 @@ double core_compute_fluxes_scatter(struct domain *D, int substep_count,
             xmom_eu[nbr] += dx;
             #pragma omp atomic update
             ymom_eu[nbr] += dy;
-        }
-
-        if (slot_speeds != NULL) {
-            slot_speeds[p] = max_speed_local;
-            if (!is_boundary) slot_speeds[nm] = max_speed_local;
         }
 
         if (substep_count == 0 && max_speed_local > epsilon) {

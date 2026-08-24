@@ -657,7 +657,7 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD);
 // Fused RK2-backup (optional) + protect + extrapolate centroid pass in one
 // launch; returns the protect mass error.  Pair with gpu_extrapolate_edges.
 double gpu_prepare_step(struct gpu_domain *GD, int do_backup, int zero_eu);
-void gpu_extrapolate_edges(struct gpu_domain *GD);
+void gpu_extrapolate_edges(struct gpu_domain *GD, double predictor_dt);
 double gpu_compute_fluxes(struct gpu_domain *GD, int substep_count, int timestep_fluxcalls);
 void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep);
 void gpu_backup_conserved_quantities(struct gpu_domain *GD);

@@ -119,12 +119,12 @@ static const char *arg_s(int argc, char **argv, int *i, const char *name) {
 // ---------------------------------------------------------------------------
 
 enum {
-    PH_PREPARE = 0, PH_EXTRAPOLATE, PH_BOUNDARY, PH_PREDICTOR,
+    PH_PREPARE = 0, PH_EXTRAPOLATE, PH_BOUNDARY,
     PH_FLUXES, PH_FORCING_UPDATE, PH_NPHASES
 };
 
 static const char *phase_names[PH_NPHASES] = {
-    "prepare", "extrapolate", "boundary", "ck_predictor",
+    "prepare", "extrapolate+ck", "boundary",
     "compute_fluxes", "forcing+update"
 };
 
@@ -156,7 +156,7 @@ static double rk2_step_timed(struct gpu_domain *GD, double max_timestep, int app
     // ---- first Euler stage
     // prepare = fused RK2 backup + protect + extrapolate centroid pass
     TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 1, gpu_prepare_should_zero_eu(GD)));
-    TIME_PHASE(PH_EXTRAPOLATE, gpu_extrapolate_edges(GD));
+    TIME_PHASE(PH_EXTRAPOLATE, gpu_extrapolate_edges(GD, 0.0));
     TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
 
     double local_timestep;
@@ -172,7 +172,7 @@ static double rk2_step_timed(struct gpu_domain *GD, double max_timestep, int app
 
     // ---- second Euler stage
     TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD)));
-    TIME_PHASE(PH_EXTRAPOLATE, gpu_extrapolate_edges(GD));
+    TIME_PHASE(PH_EXTRAPOLATE, gpu_extrapolate_edges(GD, 0.0));
     TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
     TIME_PHASE(PH_FLUXES,      gpu_flux_phase(GD, 1, 2));
 
@@ -199,13 +199,10 @@ static size_t peak_host_rss(void) {
 static double ader2_step_timed(struct gpu_domain *GD, double max_timestep,
                                int apply_forcing, double prev_dt) {
     TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD)));
-    TIME_PHASE(PH_EXTRAPOLATE, gpu_extrapolate_edges(GD));
+    // reconstruction + C-K predictor fused into one launch (0.0 = bootstrap)
+    TIME_PHASE(PH_EXTRAPOLATE,
+               gpu_extrapolate_edges(GD, prev_dt > 0.0 ? prev_dt * 0.5 : 0.0));
     TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
-
-    if (prev_dt > 0.0) {
-        TIME_PHASE(PH_PREDICTOR, gpu_ader_ck_predictor_edge(GD, prev_dt * 0.5));
-        TIME_PHASE(PH_BOUNDARY,  evaluate_boundaries(GD));
-    }
 
     double local_timestep;
     TIME_PHASE(PH_FLUXES, local_timestep = gpu_flux_phase(GD, 0, 1));

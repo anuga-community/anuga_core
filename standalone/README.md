@@ -173,25 +173,25 @@ saturates at about 1M triangles; below that the step is launch-latency bound
 and not worth optimising against.
 
 The same sweep for the fastest configuration, **ADER2 + scatter fluxes**
-(`tools/scaling_sweep.sh ... -- --scheme ader2 --flux scatter`):
+(`tools/scaling_sweep.sh ... -- --scheme ader2 --flux scatter`), after the
+second optimisation round (fused C-K predictor, compacted owned-edge list,
+no auxiliary arrays):
 
 | triangles | ms/step | Mcell-steps/s | device |
 |-----------|---------|---------------|--------|
-| 40 K      | 0.23    | 174           | 0.15 GiB |
-| 1 M       | 2.25    | 446           | 0.96 GiB |
-| 4 M       | 8.10    | 494           | 2.45 GiB |
-| 10.2 M    | 20.44   | **501**       | 5.54 GiB |
-| 16 M      | 32.29   | 496           | 8.38 GiB |
-| 41 M      | 84.93   | 482           | 20.63 GiB |
-| 51.8 M    | 116.65  | 444           | 25.96 GiB |
-| 63.4 M    | 145.67  | 435           | 31.64 GiB |
-| 64 M      | —       | —             | **out of memory** |
+| 40 K      | 0.18    | 218           | 0.15 GiB |
+| 1 M       | 1.67    | 598           | 0.94 GiB |
+| 4 M       | 6.16    | 649           | 2.37 GiB |
+| 16 M      | 24.39   | **656**       | 8.08 GiB |
+| 41 M      | 63.12   | 649           | 19.86 GiB |
+| 51.8 M    | 87.27   | 594           | 25.00 GiB |
+| 65.6 M    | 111.75  | 587           | 31.52 GiB |
 
-Same shape: saturation at ~1M triangles, ~10% fade toward the wall. The
-ceiling drops from 65.6M to **63.4M** — scatter's per-slot wave-speed array
-costs 24 B/triangle (536 total), and the 64M run dies allocating exactly that
-1.54 GB array. Throughput in the plateau is 2.0–2.1x the original baseline
-across every size.
+Same shape as ever: saturation at ~1M triangles, mild fade toward the wall —
+and the ceiling is back to the full **65.6M** (the owned-edge list costs
+12 B/triangle where the retired speeds array cost 24). At the maximum mesh
+size this is 2.8x the original baseline; at 16M it is 2.8x as well
+(67.8 -> 24.4 ms of RK2-equivalent work per dt).
 
 ## Kernel optimisations
 
@@ -235,6 +235,30 @@ triangles: **ADER2 delivers 1.64x the sim rate of RK2** — same CFL timestep
 (dt 0.00734 vs 0.00732), same formal order, one flux call per step instead of
 two, with the C-K predictor costing ~7 ms against the ~35 ms flux+extrapolate
 round it replaces.
+
+### ADER2 second round
+
+Three further changes took ADER2 + scatter from 32.2 to 24.4 ms/step at 16M:
+
+- **C-K predictor fused into the extrapolation edge pass**
+  (`core_extrapolate_edge_pass(D, predictor_dt)`): the predictor is strictly
+  cell-local and reuses the dxv/dyv edge offsets the limiter already holds in
+  registers, so the shift to Q^{n+1/2} costs 2.7 ms fused vs 6.85 standalone
+  -- and since it never reads boundary values, the step's first boundary
+  evaluation (whose outputs the second always overwrote) is gone. Bit-exact
+  against the unfused sequence; RK2 passes predictor_dt = 0 and is untouched.
+- **Scatter mode needs no auxiliary arrays**: selected by
+  `reconstruct_edge_bed = 2` plus a driver-built compacted owned-edge list
+  (`owned_edges`, ~1.5 slots/cell), which also gives the kernel one thread
+  per physical edge instead of one per slot with half idle -- flux kernel
+  11.2 -> 7.8 ms. The serial benchmark also passes tri_full_flag = NULL,
+  skipping the ghost-ownership gathers.
+- ncu shows the fused reconstruction kernel register-limited at 24%%
+  occupancy (~128 regs/thread); global `-gpu=maxregcount` capping traded
+  spills for occupancy at net zero. The documented next lever is splitting
+  that kernel by quantity. **Do NOT reach for `OMP_TEAMS_THREAD_LIMIT`**: it
+  produces up to 1.6x "speedups" with silently corrupt physics (see
+  `claude/KNOWN_ISSUES.md`).
 
 ### Flux kernel structure (`--flux`)
 

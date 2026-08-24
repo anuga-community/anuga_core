@@ -56,10 +56,11 @@ double gpu_prepare_step(struct gpu_domain *GD, int do_backup, int zero_eu) {
 }
 
 // The extrapolation edge pass alone -- pairs with gpu_prepare_step(), which
-// already ran the centroid pass.
-void gpu_extrapolate_edges(struct gpu_domain *GD) {
+// already ran the centroid pass.  predictor_dt != 0 fuses the ADER-2 C-K
+// edge predictor into the same launch (pass 0.0 everywhere else).
+void gpu_extrapolate_edges(struct gpu_domain *GD, double predictor_dt) {
     NVTX_PUSH("gpu_extrapolate_edges");
-    core_extrapolate_edge_pass(&GD->D);
+    core_extrapolate_edge_pass(&GD->D, predictor_dt);
 
     if (GD->flops.enabled) {
         GD->flops.extrapolate_flops += (uint64_t)GD->D.number_of_elements * FLOPS_EXTRAPOLATE;
@@ -290,7 +291,8 @@ static int gpu_flux_mode(struct gpu_domain *GD) {
     if (GD->D.number_of_riverwall_edges != 0 || GD->use_sloped_mannings)
         return FLUX_CELL;
     if (GD->D.edge_flux_work != NULL) return FLUX_SLOT;
-    if (GD->D.neigh_work != NULL) return FLUX_SCATTER;
+    if (GD->D.reconstruct_edge_bed == 2 && GD->D.owned_edges != NULL)
+        return FLUX_SCATTER;
     return FLUX_CELL;
 }
 
@@ -302,6 +304,15 @@ int gpu_prepare_should_zero_eu(struct gpu_domain *GD) {
 
 double gpu_flux_phase(struct gpu_domain *GD, int substep_count, int timestep_fluxcalls) {
     const int mode = gpu_flux_mode(GD);
+    if (GD->verbose) {
+        static int printed = 0;
+        if (!printed) {
+            printf("  flux path : %s\n",
+                   mode == FLUX_SLOT ? "slot" : mode == FLUX_SCATTER ? "scatter" : "cell");
+            fflush(stdout);
+            printed = 1;
+        }
+    }
     if (mode == FLUX_CELL)
         return gpu_compute_fluxes(GD, substep_count, timestep_fluxcalls);
 
@@ -386,11 +397,17 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     // Step 1: protect + extrapolate Q^n → edges + evaluate boundaries
     // ========================================
 
-    // Fused protect + extrapolate centroid pass (no RK2 backup needed:
-    // the C-K predictor shifts edge values in place, centroids stay at Q^n),
-    // then the edge pass -- same launch structure as the fused RK2 step.
+    // Fused protect + extrapolate centroid pass (no RK2 backup needed: the
+    // C-K predictor shifts edge values in place, centroids stay at Q^n).  The
+    // edge pass carries the C-K predictor in its tail (predictor_dt = half the
+    // previous step's dt; 0.0 on the bootstrap step = plain Euler), so the
+    // reconstruction and the shift to Q^{n+1/2} are ONE launch -- and the
+    // boundaries are evaluated ONCE, from the shifted edges.  The old
+    // sequence's first boundary evaluation (before the standalone predictor
+    // kernel) was provably dead: the predictor never reads boundary values,
+    // and the second evaluation overwrote every value the first produced.
     gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD));
-    gpu_extrapolate_edges(GD);
+    gpu_extrapolate_edges(GD, prev_dt > 0.0 ? prev_dt * 0.5 : 0.0);
 
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
@@ -401,24 +418,6 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     gpu_evaluate_absorbing_wave_boundary(GD);
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
-    if (prev_dt > 0.0) {
-        // ========================================
-        // Step 2: fused edge C-K predictor — shifts edges to Q^{n+1/2} in-place
-        // ========================================
-
-        gpu_ader_ck_predictor_edge(GD, prev_dt * 0.5);
-
-        // Re-apply boundary conditions to boundary edges
-        gpu_evaluate_reflective_boundary(GD);
-        gpu_evaluate_dirichlet_boundary(GD);
-        gpu_evaluate_transmissive_boundary(GD);
-        gpu_evaluate_transmissive_n_zero_t_boundary(GD);
-        gpu_evaluate_time_boundary(GD);
-        gpu_evaluate_file_boundary(GD);
-        gpu_evaluate_absorbing_wave_boundary(GD);
-        gpu_evaluate_characteristic_wave_boundary(GD);
-        gpu_evaluate_flather_boundary(GD);
-    }
 
     // ========================================
     // Step 3: single flux call from Q^{n+1/2} edges (or Q^n on bootstrap step)
@@ -480,7 +479,7 @@ double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int
     // Fused protect + extrapolate centroid pass, then the edge pass --
     // same launch structure as the fused RK2/ADER2 steps.
     gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD));
-    gpu_extrapolate_edges(GD);
+    gpu_extrapolate_edges(GD, 0.0);
 
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
@@ -556,7 +555,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // cell-local launch; the edge pass (which reads neighbour centroids)
     // follows as its own launch.
     gpu_prepare_step(GD, 1, gpu_prepare_should_zero_eu(GD));
-    gpu_extrapolate_edges(GD);
+    gpu_extrapolate_edges(GD, 0.0);
 
     // Evaluate all GPU-supported boundary conditions
     gpu_evaluate_reflective_boundary(GD);
@@ -618,7 +617,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // ========================================
 
     gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD));   // no backup on the second substep
-    gpu_extrapolate_edges(GD);
+    gpu_extrapolate_edges(GD, 0.0);
 
     // Evaluate boundary conditions (same as first step)
     gpu_evaluate_reflective_boundary(GD);

@@ -19,7 +19,9 @@ void core_extrapolate_second_order_edge(struct domain *D);
 // neighbouring cell-local kernels); the edge pass reads neighbour centroids
 // and must be its own launch.
 void core_extrapolate_centroid_pass(struct domain *D);
-void core_extrapolate_edge_pass(struct domain *D);
+// predictor_dt != 0 fuses the ADER-2 C-K edge predictor into the tail
+// (identical arithmetic to core_ader_ck_predictor_edge, one launch fewer).
+void core_extrapolate_edge_pass(struct domain *D, double predictor_dt);
 
 // Fused RK2-backup (optional) + protect + extrapolate centroid pass in one
 // launch.  Returns the protect mass error.  Follow with

@@ -711,3 +711,14 @@ map time, silent `exit(1)` during mode-2 init, and test failures that migrate
 as you touch unrelated files. If a change touches any shared struct header,
 run `ninja -t clean && ninja` (74 targets, ~1 min) before trusting any test
 result — an afternoon was lost bisecting phantom bugs that were stale objects.
+
+## OMP_TEAMS_THREAD_LIMIT silently corrupts nvc `target teams loop` kernels
+
+(2026-08-25, GPU build, nvhpc 25.9) Setting `OMP_TEAMS_THREAD_LIMIT` (32/64/96)
+on the unified GPU kernels produced spectacular "speedups" (up to 1.6x) with
+SILENTLY WRONG results — the lake-at-rest well-balance check exploded from
+1e-14 to O(10) momentum, and at 48 the kernels appear not to run at all
+(exact 0.0 outputs). nvc's `omp target teams loop` codegen evidently bakes in
+blocking assumptions the runtime override violates. Never benchmark this knob
+without a physics gate; `OMP_NUM_TEAMS` / `OMP_THREAD_LIMIT` were separately
+measured as safe-but-useless (nvc defaults are already right).
