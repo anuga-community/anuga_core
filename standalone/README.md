@@ -466,13 +466,19 @@ Measured hours of wall time per simulated day, early-event (60 steps,
 | + Morton + active-set | **3.7 h** | **0.92 h** |
 
 The active configuration runs at 20.9 Gcell-steps/s effective on one card.
-Caveats for the full-day claim: the active fraction grows as the flood
-spreads (smaller basins equilibrate near 10%%, where the active factor is
-~3.2x, still ~9.8 Gc/s effective at 24M), and dt was 0.052 s early-event
-(Triangle's small-triangle tail; a mesh-quality minimum-area floor is an
-unpulled 2-3x dt lever).  Honest full-day band: 4-8 h on one H200, 1-2 h on
-four -- under the hour early-event, near it sustained, before rain or
-local-time-stepping enter.
+**Measured over half a simulated day** (tools/h200_longrun.pbs, 4 GPUs x
+~105 min, one config each): Morton + active-set sustained **2.98 h of wall
+time per simulated day on ONE H200** across 12.25 simulated hours of flood
+development -- ~45 min on 4 GPUs at linear scaling.  The evolution curves:
+active fraction grows only 0.66% -> ~3% by t = 12 h (the flood channels,
+it does not sheet), dt IMPROVES from 0.053 to 0.077 s as the release
+smooths, and Morton is worth 47% under active-set (8.07 vs 5.50 sim-s/s
+against row order -- scattered active-cell iteration amplifies locality).
+Full stepping measured 23.4 h/sim-day on the same event: active-set is
+7.9x sustained.  Under the spec-scale synthetic storm (22% raining, no
+losses) activity climbs monotonically to ~39% and the rate settles near
+2.3 -> ~10.5 h/sim-day single-GPU; real rain with infiltration sits
+between the two curves.
 
 ### Measured dead ends (kept out, documented so nobody re-tries them blind)
 
