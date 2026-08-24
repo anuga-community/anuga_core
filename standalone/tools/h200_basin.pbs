@@ -45,6 +45,10 @@ for msh in basin_2m basin_8m basin_20m; do
       "$BENCH" --mesh "$f" --steps 30 --warmup 5 \
           --scheme ader2 --flux scatter --order $o | grep "ms/step"
     done
+    printf "morton+active         "
+    "$BENCH" --mesh "$f" --steps 30 --warmup 5 \
+        --scheme ader2 --flux scatter --order morton --active-set \
+        | grep -E "ms/step|active    :" | tr '\n' ' '; echo
     printf "row      rk2 cell      "
     "$BENCH" --mesh "$f" --steps 30 --warmup 5 | grep "ms/step"
     echo "-- phases (ader2+scatter, morton) --"

@@ -287,6 +287,34 @@ optimal: a one-time centroid-Morton renumbering at domain construction is
 worth ~12% on real meshes and nothing on structured ones -- the strongest
 argument yet for wiring the reorder into production mode 2.
 
+### Active-set stepping (`--active-set`) and what rain does to it
+
+A dry cell with an all-dry neighbourhood provably cannot change, so the step
+kernels can skip it exactly: each step rebuilds active cells (wet, 2-ring
+halo -- the MPI ghost-layer rule, since RK2's two flux calls advance water up
+to two rings per rebuild) and active edges (either side in ring 1).  The
+first step runs full; classification uses stage - bed (operators such as
+rain modify stage directly, and a height-based test misses them) with a
+1e-12 m wetness threshold (a strict > 0 suffers roundoff creep: ~1e-15 m
+films from update-sum cancellation would activate the mesh ring by ring;
+films below 1e-12 m flux at ~1e-21 relative, beneath double precision, so
+skipping them stays bit-exact).  All measured on the 2.43M basin, V100,
+ADER2 + scatter, every case bit-exact against full-run goldens:
+
+| scenario | active | speedup |
+|---|---|---|
+| dam-break flood, no rain | 11.4% | **2.75x** |
+| basin-wide rain (`--rain 20`) | 100% | 0.8x (rebuild overhead only) |
+| localized storm (`--rain-band`) | 36% | 1.57x |
+
+Distributed rain-on-grid defeats the optimisation (everything wets and,
+with no infiltration, never un-wets); localized forcing keeps a real win;
+models with losses/infiltration (cells re-drying between pulses) sit in
+between.  The worst case is bounded: ~10-20%% rebuild overhead, still
+bit-exact.  For event-driven floods (dam break, levee breach, surge -- and
+the 11,000 km^2 spec basin, which starts 99.5%% dry) this is the largest
+single lever measured in this project.
+
 ### Timestepping schemes (`--scheme`)
 
 `rk2 | ader2 | euler | rk3`, each selecting its ANUGA preset (DE1 / DE_ader2 /

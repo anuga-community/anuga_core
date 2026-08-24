@@ -39,6 +39,35 @@ static anuga_int *g_as_wet, *g_as_ring1, *g_as_cells, *g_as_edges;
 static anuga_int g_as_counts[2];
 static double g_as_cellfrac_sum; static long g_as_samples;
 
+// Uniform rain forcing (fractional-step style, applied after each step with
+// that step's dt, over ALL cells -- deliberately including inactive ones,
+// which is exactly what stresses the active-set classification).
+static double g_rain_mmhr = 0.0;      // rate while raining
+static double g_rain_every = 0.0;     // pulse period in sim seconds (0 = always)
+static double g_rain_for = 0.0;       // pulse duration
+static double g_rain_x0 = -1.0, g_rain_x1 = -1.0;   // optional x-band (fraction)
+
+static void apply_rain(struct gpu_domain *GD, double t_sim, double dt) {
+    if (g_rain_mmhr <= 0.0) return;
+    if (g_rain_every > 0.0) {
+        const double phase = fmod(t_sim, g_rain_every);
+        if (phase >= g_rain_for) return;
+    }
+    const double dstage = g_rain_mmhr / 1000.0 / 3600.0 * dt;
+    struct domain *D = &GD->D;
+    const anuga_int n = D->number_of_elements;
+    double * restrict stage_cv = D->stage_centroid_values;
+    double * restrict cc = D->centroid_coordinates;
+    const double x0 = g_rain_x0, x1 = g_rain_x1;
+    const int banded = (x0 >= 0.0);
+    #pragma omp target teams loop
+    for (anuga_int k = 0; k < n; k++) {
+        if (!banded || (cc[2 * k] >= x0 && cc[2 * k] <= x1))
+            stage_cv[k] += dstage;
+    }
+}
+
+
 static cuda_extrap_fn g_cuda_extrap_launch = NULL;
 
 static void *dev_ptr(const void *host) {
@@ -177,6 +206,9 @@ static void usage(const char *argv0) {
 "                      DE2): flux calls per step, limiter betas, CFL\n"
 "    --betas V         override the limiter betas (beta_w/uh/vh; dry stay 0)\n"
 "    --flux NAME       cell | edge | scatter -- flux kernel  (default cell)\n"
+"    --rain MMHR       uniform rainfall (mm/hr) applied after every step\n"
+"    --rain-every S    pulse period in sim-seconds (with --rain-for S)\n"
+"    --rain-band A B   rain only where A <= x <= B (metres)\n"
 "    --active-set      skip dry-with-dry-neighbourhood cells (flood domains;\n"
 "                      needs --flux scatter; first step runs full; bit-exact)\n"
 "    --cuda-extrap N   use the hand-written CUDA reconstruction kernel with\n"
@@ -411,6 +443,11 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--no-friction")) O.apply_forcing = 0;
         else if (!strcmp(a, "--cuda-extrap")) g_cuda_extrap_tpb = (int)arg_i(argc, argv, &i, a);
         else if (!strcmp(a, "--active-set"))  g_active_set = 1;
+        else if (!strcmp(a, "--rain"))        g_rain_mmhr = arg_d(argc, argv, &i, a);
+        else if (!strcmp(a, "--rain-every"))  g_rain_every = arg_d(argc, argv, &i, a);
+        else if (!strcmp(a, "--rain-for"))    g_rain_for = arg_d(argc, argv, &i, a);
+        else if (!strcmp(a, "--rain-band")) { g_rain_x0 = arg_d(argc, argv, &i, a);
+                                              g_rain_x1 = arg_d(argc, argv, &i, a); }
         else if (!strcmp(a, "--order")) {
             const char *o = arg_s(argc, argv, &i, a);
             if      (!strcmp(o, "row"))    O.morton = 0;
@@ -552,6 +589,7 @@ int main(int argc, char **argv) {
             default:
                 dt = gpu_evolve_one_rk2_step(GD, P.evolve_max_timestep, O.apply_forcing);
         }
+        apply_rain(GD, t_sim, dt);
         t_sim += dt;
     }
 
@@ -581,6 +619,7 @@ int main(int argc, char **argv) {
                     dt = O.phases ? rk2_step_timed(GD, P.evolve_max_timestep, O.apply_forcing)
                                   : gpu_evolve_one_rk2_step(GD, P.evolve_max_timestep, O.apply_forcing);
             }
+            apply_rain(GD, t_sim, dt);
             t_sim += dt;
         }
         const double elapsed = omp_get_wtime() - t0;

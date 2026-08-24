@@ -1860,7 +1860,14 @@ void core_flux_apply_and_update(struct domain *D, double timestep,
 // counts_out[0] = active cells, counts_out[1] = active edges.
 // ============================================================================
 
-#define ACTIVE_WET_EPS 0.0   /* any water at all counts */
+// Wetness threshold for classification: above pure-roundoff films, far
+// below physics.  A strict > 0 test suffers roundoff creep -- update-sum
+// cancellation deposits ~1e-15 m "films" on shoreline-adjacent dry cells,
+// which then activate their neighbours ring by ring until the whole mesh is
+// active.  Films below 1e-12 m produce fluxes ~1e-21 relative -- beneath
+// double precision of the stored state -- so skipping them remains
+// bit-exact (verified against full-run goldens).
+#define ACTIVE_WET_EPS 1.0e-12
 
 void core_build_active_sets(struct domain *D,
                             anuga_int * restrict wet_flag,
@@ -1871,13 +1878,18 @@ void core_build_active_sets(struct domain *D,
                             anuga_int num_owned_edges,
                             anuga_int *counts_out) {
     anuga_int n = D->number_of_elements;
-    double * restrict height_cv = D->height_centroid_values;
+    double * restrict stage_cv = D->stage_centroid_values;
+    double * restrict bed_cv = D->bed_centroid_values;
     anuga_int * restrict neighbours = D->neighbours;
 
-    // Pass 1: wetness (no gathers)
+    // Pass 1: wetness (no gathers).  Classified from stage - bed rather than
+    // height_cv: operators (rain, inflows, culverts) modify STAGE directly,
+    // and height_cv is only refreshed by prepare -- which visits listed cells
+    // only.  Classifying on height would let rain accumulate invisibly on
+    // inactive cells, never flowing; stage - bed is always current.
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
-        wet_flag[k] = (height_cv[k] > ACTIVE_WET_EPS) ? 1 : 0;
+        wet_flag[k] = (stage_cv[k] - bed_cv[k] > ACTIVE_WET_EPS) ? 1 : 0;
     }
 
     // Pass 2: ring-1 = wet, neighbour-of-wet, or boundary-adjacent.

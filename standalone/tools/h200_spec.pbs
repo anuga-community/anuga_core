@@ -29,13 +29,20 @@ BENCH=$PBS_JOBFS/bench_gpu
 make --no-print-directory CONFIG=gpu OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
 
 for o in row morton; do
-  {
-    "$BENCH" --mesh build/basin_spec11k.msh --steps 60 --warmup 8 \
-        --scheme ader2 --flux scatter --order $o --phases
-  } > "$OUT/spec_$o.txt" 2>&1
+  for as in "" "--active-set"; do
+    tag=$o${as:+_active}
+    {
+      "$BENCH" --mesh build/basin_spec11k.msh --steps 60 --warmup 8 \
+          --scheme ader2 --flux scatter --order $o $as --phases
+    } > "$OUT/spec_$tag.txt" 2>&1
+  done
   # headline: hours of wall time per simulated day
-  rate=$(grep "sim rate" "$OUT/spec_$o.txt" | grep -o "[0-9.]*" | head -1)
-  echo "$o: sim rate $rate sim-s/wall-s -> $(echo "scale=2; 24/$rate/1" | bc) h per sim-day (1 GPU); /4 GPUs linear: $(echo "scale=2; 6/$rate/1" | bc) h" \
-      | tee -a "$OUT/HEADLINE.txt"
+  for as in "" "_active"; do
+    tag=$o$as
+    rate=$(grep "sim rate" "$OUT/spec_$tag.txt" | grep -o "[0-9.]*" | head -1)
+    act=$(grep "active    :" "$OUT/spec_$tag.txt" | head -1)
+    echo "$tag: sim rate $rate -> $(echo "scale=2; 24/$rate/1" | bc) h/sim-day (1 GPU); /4 linear: $(echo "scale=2; 6/$rate/1" | bc) h  $act" \
+        | tee -a "$OUT/HEADLINE.txt"
+  done
 done
 echo done | tee "$OUT/DONE"
