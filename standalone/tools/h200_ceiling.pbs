@@ -1,0 +1,41 @@
+#!/bin/bash
+#PBS -N anuga_h200_ceil
+#PBS -l ncpus=12
+#PBS -l ngpus=1
+#PBS -l mem=256GB
+#PBS -l jobfs=200GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=02:00:00
+#PBS -l wd
+#PBS -j oe
+#PBS -o /scratch/bm55/jlv900/dev/anuga_core/standalone/build/h200ceil/pbs.log
+
+# Find the H200 memory wall (512 B/triangle model predicts ~294M triangles,
+# nx ~ 8570) and pin down the >100M throughput fade + the nx=6400 anomaly.
+set -x
+ROOT=/scratch/bm55/jlv900/dev/anuga_core/standalone
+OUT=$ROOT/build/h200ceil
+mkdir -p "$OUT"
+cd "$ROOT"
+source ./env.sh
+nvidia-smi --query-gpu=name,memory.total --format=csv | tee "$OUT/gpu.txt"
+
+rm -rf build/gpu bin/bench_gpu
+make gpu 2>&1 | tail -1
+
+# Ceiling hunt + fade characterization (ader2+scatter, the fast config).
+# 8500=289M should fit, 8570=293.8M is the predicted edge, 8600=295.8M beyond.
+./tools/scaling_sweep.sh --steps 12 --warmup 3 --csv "$OUT/ceiling.csv" \
+    7000 7500 8000 8300 8500 8550 8570 8600 \
+    -- --scheme ader2 --flux scatter > "$OUT/ceiling.txt" 2>&1
+
+# nx=6400 anomaly: repeat it and its neighbours 3x each to see if it is real
+for r in 1 2 3; do
+  ./tools/scaling_sweep.sh --steps 12 --warmup 3 --csv "$OUT/anomaly_$r.csv" \
+      6300 6400 6500 -- --scheme ader2 --flux scatter \
+      > "$OUT/anomaly_$r.txt" 2>&1
+done
+
+echo done | tee "$OUT/DONE"

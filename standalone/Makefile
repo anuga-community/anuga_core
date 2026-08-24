@@ -61,7 +61,6 @@ ifeq ($(CONFIG),gpu)
   SM_ARCH     := sm_$(patsubst cc%,%,$(GPU_ARCH))
   NVCC        ?= nvcc
   CUDA_SO     = $(OBJDIR)/cuextrap.so
-  LDLIBS_EXTRA:= -ldl
 endif
 ifeq ($(CONFIG),ompcpu)
   CC          := nvc
@@ -78,7 +77,7 @@ endif
 
 CFLAGS        += $(EXTRA_CFLAGS)
 LDFLAGS       += $(EXTRA_LDFLAGS)
-LDLIBS        := -lm $(LDLIBS_EXTRA)
+LDLIBS        := -lm -ldl
 
 # ---------------------------------------------------------------- sources
 KERNEL_SRC := \
@@ -97,11 +96,19 @@ BENCH_SRC  := src/bench.c src/mesh.c src/setup.c src/snapshot.c src/gcc_offload_
 
 OBJDIR     := build/$(CONFIG)
 BIN        := bin/bench_$(CONFIG)
+
+# Objects depend on a stamp of the exact compile flags, so changing CFLAGS
+# (or GPU_ARCH) forces a rebuild instead of silently mixing objects -- mixed
+# flag sets have produced corrupted offload registries twice now.
+FLAGSTAMP  := $(OBJDIR)/.flags.$(firstword $(shell echo '$(CC) $(CFLAGS)' | md5sum))
+$(FLAGSTAMP): | $(OBJDIR)
+	@rm -f $(OBJDIR)/.flags.* $(OBJDIR)/*.o $(OBJDIR)/*.d
+	@touch $@
 OBJ        := $(addprefix $(OBJDIR)/,$(notdir $(KERNEL_SRC:.c=.o)) $(notdir $(BENCH_SRC:.c=.o)))
 DEP        := $(OBJ:.o=.d)
 
 # ---------------------------------------------------------------- targets
-.PHONY: all cpu gpu ompcpu clanggpu build clean verify run
+.PHONY: all cpu gpu ompcpu clanggpu build clean verify run dist
 all: cpu gpu
 
 cpu ompcpu gpu clanggpu:
@@ -113,10 +120,10 @@ build: $(BIN)
 $(BIN): $(OBJ) $(CUDA_SO) | bin
 	$(CC) $(LDFLAGS) -o $@ $(OBJ) $(LDLIBS)
 
-$(OBJDIR)/%.o: $(GPUDIR)/%.c | $(OBJDIR)
+$(OBJDIR)/%.o: $(GPUDIR)/%.c $(FLAGSTAMP) | $(OBJDIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP -c $< -o $@
 
-$(OBJDIR)/%.o: src/%.c | $(OBJDIR)
+$(OBJDIR)/%.o: src/%.c $(FLAGSTAMP) | $(OBJDIR)
 	$(CC) $(CFLAGS) $(INCLUDES) -MMD -MP -c $< -o $@
 
 $(OBJDIR)/cuextrap.so: src/cuda_extrapolate.cu src/cuda_extrap.h | $(OBJDIR)
@@ -137,7 +144,31 @@ verify: cpu gpu
 run: $(BIN)
 	./$(BIN) --nx $(NX) --ny $(NY) --steps $(STEPS) --case $(CASE) --phases
 
+# Self-contained snapshot: everything needed to build and run the benchmark
+# with nothing but make + a compiler -- the kernel sources are COPIED in, so
+# the tarball is frozen at today's code (the in-tree build always compiles
+# the live sources; prefer it whenever you have the repo).
+DISTDIR := anuga-sw-miniapp
+dist:
+	rm -rf $(DISTDIR) $(DISTDIR).tar.gz
+	mkdir -p $(DISTDIR)/kernels/gpu $(DISTDIR)/src $(DISTDIR)/tools
+	cp $(GPUDIR)/*.c $(GPUDIR)/*.h $(DISTDIR)/kernels/gpu/
+	cp $(SW)/sw_domain.h $(SW)/sw_domain_math.h $(DISTDIR)/kernels/
+	cp $(UTIL)/anuga_typedefs.h $(DISTDIR)/kernels/
+	cp src/*.c src/*.h src/*.cu $(DISTDIR)/src/
+	cp tools/scaling_sweep.sh $(DISTDIR)/tools/
+	cp README.md env.sh $(DISTDIR)/
+	sed -e 's|^ANUGA_ROOT .*|ANUGA_ROOT := $$(abspath .)|' \
+	    -e 's|$$(ANUGA_ROOT)/anuga/shallow_water/gpu|$$(ANUGA_ROOT)/kernels/gpu|' \
+	    -e 's|$$(ANUGA_ROOT)/anuga/shallow_water|$$(ANUGA_ROOT)/kernels|' \
+	    -e 's|$$(ANUGA_ROOT)/anuga/utilities|$$(ANUGA_ROOT)/kernels|' \
+	    Makefile > $(DISTDIR)/Makefile
+	git -C $(ANUGA_ROOT) rev-parse HEAD > $(DISTDIR)/KERNEL_COMMIT 2>/dev/null || true
+	tar czf $(DISTDIR).tar.gz $(DISTDIR)
+	rm -rf $(DISTDIR)
+	@echo "wrote $(DISTDIR).tar.gz (kernels frozen at KERNEL_COMMIT)"
+
 clean:
-	rm -rf build bin
+	rm -rf build bin $(DISTDIR) $(DISTDIR).tar.gz
 
 -include $(DEP)

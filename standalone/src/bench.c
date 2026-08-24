@@ -18,6 +18,7 @@
 #include "gpu_domain.h"
 #include "mesh.h"
 
+#ifndef CPU_ONLY_MODE
 // CUDA experiment: hand-written reconstruction kernel in a pure-nvcc shared
 // library (build/gpu/cuextrap.so), dlopen()ed to keep the CUDA runtime out of
 // the OpenMP-target link (which it breaks).  We resolve the device pointers
@@ -74,6 +75,18 @@ static void extrapolate_phase(struct gpu_domain *GD, double predictor_dt) {
     a.y_centroid_work = dev_ptr(D->y_centroid_work);
     if (g_cuda_extrap_launch(a, g_cuda_extrap_tpb) != 0) exit(1);
 }
+#else
+// CPU builds (gcc/libgomp) have no omp_get_mapped_ptr and no CUDA: the
+// experiment is GPU-only.  Keep the flag so the CLI parses uniformly.
+static int g_cuda_extrap_tpb = 0;
+static void cuda_extrap_load(void) {
+    fprintf(stderr, "bench: --cuda-extrap needs the GPU build\n");
+    exit(2);
+}
+static void extrapolate_phase(struct gpu_domain *GD, double predictor_dt) {
+    gpu_extrapolate_edges(GD, predictor_dt);
+}
+#endif  // CPU_ONLY_MODE
 #include "setup.h"
 #include "snapshot.h"
 
