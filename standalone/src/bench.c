@@ -16,6 +16,7 @@
 #include <string.h>
 
 #include "gpu_domain.h"
+#include "core_kernels.h"
 #include "mesh.h"
 
 #ifndef CPU_ONLY_MODE
@@ -27,6 +28,17 @@
 #include <dlfcn.h>
 #include "cuda_extrap.h"
 static int g_cuda_extrap_tpb = 0;
+
+// Active-set mode: skip cells/edges that provably cannot change (dry with an
+// all-dry neighbourhood).  Rebuilt every step with a 2-ring cell halo; the
+// first step always runs full so every cell's edge values and protect clamps
+// exist once.  Requires scatter fluxes.  Bit-exact (verified via goldens).
+static int g_active_set = 0;
+static int g_active_ready = 0;            // 0 until the first full step ran
+static anuga_int *g_as_wet, *g_as_ring1, *g_as_cells, *g_as_edges;
+static anuga_int g_as_counts[2];
+static double g_as_cellfrac_sum; static long g_as_samples;
+
 static cuda_extrap_fn g_cuda_extrap_launch = NULL;
 
 static void *dev_ptr(const void *host) {
@@ -42,9 +54,29 @@ static void cuda_extrap_load(void) {
     if (!g_cuda_extrap_launch) { fprintf(stderr, "bench: %s\n", dlerror()); exit(1); }
 }
 
-static void extrapolate_phase(struct gpu_domain *GD, double predictor_dt) {
+// Rebuild the active sets for this step (or select the full domain when the
+// mode is off / warming up).  Fills iter-lists for cells and edges.
+static void active_step_lists(struct gpu_domain *GD,
+                              const anuga_int **cells, anuga_int *ncells,
+                              const anuga_int **edges, anuga_int *nedges) {
+    if (!g_active_set || !g_active_ready) {
+        *cells = NULL; *ncells = 0;
+        *edges = GD->D.owned_edges; *nedges = GD->D.num_owned_edges;
+        return;
+    }
+    core_build_active_sets(&GD->D, g_as_wet, g_as_ring1, g_as_cells, g_as_edges,
+                           GD->D.owned_edges, GD->D.num_owned_edges, g_as_counts);
+    *cells = g_as_cells; *ncells = g_as_counts[0];
+    *edges = g_as_edges; *nedges = g_as_counts[1];
+    g_as_cellfrac_sum += (double)g_as_counts[0] / (double)GD->D.number_of_elements;
+    g_as_samples++;
+}
+
+static void extrapolate_phase(struct gpu_domain *GD, double predictor_dt,
+                              const anuga_int *iter, anuga_int iter_n) {
     if (g_cuda_extrap_tpb <= 0) {
-        gpu_extrapolate_edges(GD, predictor_dt);
+        if (iter) core_extrapolate_edge_pass_on(&GD->D, predictor_dt, iter, iter_n);
+        else      gpu_extrapolate_edges(GD, predictor_dt);
         return;
     }
     struct domain *D = &GD->D;
@@ -83,8 +115,10 @@ static void cuda_extrap_load(void) {
     fprintf(stderr, "bench: --cuda-extrap needs the GPU build\n");
     exit(2);
 }
-static void extrapolate_phase(struct gpu_domain *GD, double predictor_dt) {
-    gpu_extrapolate_edges(GD, predictor_dt);
+static void extrapolate_phase(struct gpu_domain *GD, double predictor_dt,
+                              const anuga_int *iter, anuga_int iter_n) {
+    if (iter) core_extrapolate_edge_pass_on(&GD->D, predictor_dt, iter, iter_n);
+    else      gpu_extrapolate_edges(GD, predictor_dt);
 }
 #endif  // CPU_ONLY_MODE
 #include "setup.h"
@@ -143,6 +177,8 @@ static void usage(const char *argv0) {
 "                      DE2): flux calls per step, limiter betas, CFL\n"
 "    --betas V         override the limiter betas (beta_w/uh/vh; dry stay 0)\n"
 "    --flux NAME       cell | edge | scatter -- flux kernel  (default cell)\n"
+"    --active-set      skip dry-with-dry-neighbourhood cells (flood domains;\n"
+"                      needs --flux scatter; first step runs full; bit-exact)\n"
 "    --cuda-extrap N   use the hand-written CUDA reconstruction kernel with\n"
 "                      N threads/block (experiment; forces stepped loops)\n"
 "                        edge solves each unique edge's Riemann problem ONCE\n"
@@ -195,12 +231,12 @@ static const char *arg_s(int argc, char **argv, int *i, const char *name) {
 // ---------------------------------------------------------------------------
 
 enum {
-    PH_PREPARE = 0, PH_EXTRAPOLATE, PH_BOUNDARY,
+    PH_ACTIVE = 0, PH_PREPARE, PH_EXTRAPOLATE, PH_BOUNDARY,
     PH_FLUXES, PH_FORCING_UPDATE, PH_NPHASES
 };
 
 static const char *phase_names[PH_NPHASES] = {
-    "prepare", "extrapolate+ck", "boundary",
+    "active_sets", "prepare", "extrapolate+ck", "boundary",
     "compute_fluxes", "forcing+update"
 };
 
@@ -229,14 +265,22 @@ static void evaluate_boundaries(struct gpu_domain *GD) {
 static double rk2_step_timed(struct gpu_domain *GD, double max_timestep, int apply_forcing) {
     double timestep;
 
+    const anuga_int *ac, *ae; anuga_int nac, nae;
+    TIME_PHASE(PH_ACTIVE, active_step_lists(GD, &ac, &nac, &ae, &nae));
+    const int zeu = gpu_prepare_should_zero_eu(GD);
+
     // ---- first Euler stage
     // prepare = fused RK2 backup + protect + extrapolate centroid pass
-    TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 1, gpu_prepare_should_zero_eu(GD)));
-    TIME_PHASE(PH_EXTRAPOLATE, extrapolate_phase(GD, 0.0));
+    TIME_PHASE(PH_PREPARE,
+               ac ? (void)core_prepare_step_on(&GD->D, 1, zeu, ac, nac)
+                  : (void)gpu_prepare_step(GD, 1, zeu));
+    TIME_PHASE(PH_EXTRAPOLATE, extrapolate_phase(GD, 0.0, ac, nac));
     TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
 
     double local_timestep;
-    TIME_PHASE(PH_FLUXES, local_timestep = gpu_flux_phase(GD, 0, 2));
+    TIME_PHASE(PH_FLUXES, local_timestep =
+               ac ? core_compute_fluxes_scatter_on(&GD->D, 0, 2, ae, nae)
+                  : gpu_flux_phase(GD, 0, 2));
 
     timestep = GD->CFL * local_timestep;
     GD->recorded_flux_timestep =
@@ -244,17 +288,24 @@ static double rk2_step_timed(struct gpu_domain *GD, double max_timestep, int app
     if (timestep > max_timestep) timestep = max_timestep;
 
     TIME_PHASE(PH_FORCING_UPDATE,
-               gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0));
+               ac ? core_forcing_and_update_on(&GD->D, timestep, apply_forcing, 0, 0.0, 0.0, ac, nac)
+                  : gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0));
 
     // ---- second Euler stage
-    TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD)));
-    TIME_PHASE(PH_EXTRAPOLATE, extrapolate_phase(GD, 0.0));
+    TIME_PHASE(PH_PREPARE,
+               ac ? (void)core_prepare_step_on(&GD->D, 0, zeu, ac, nac)
+                  : (void)gpu_prepare_step(GD, 0, zeu));
+    TIME_PHASE(PH_EXTRAPOLATE, extrapolate_phase(GD, 0.0, ac, nac));
     TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
-    TIME_PHASE(PH_FLUXES,      gpu_flux_phase(GD, 1, 2));
+    TIME_PHASE(PH_FLUXES,
+               ac ? core_compute_fluxes_scatter_on(&GD->D, 1, 2, ae, nae)
+                  : gpu_flux_phase(GD, 1, 2));
 
     TIME_PHASE(PH_FORCING_UPDATE,
-               gpu_apply_phase(GD, timestep, apply_forcing, 1, 0.5, 0.5, 1));
+               ac ? core_forcing_and_update_on(&GD->D, timestep, apply_forcing, 1, 0.5, 0.5, ac, nac)
+                  : gpu_apply_phase(GD, timestep, apply_forcing, 1, 0.5, 0.5, 1));
 
+    g_active_ready = 1;
     return timestep;
 }
 
@@ -274,14 +325,22 @@ static size_t peak_host_rss(void) {
 // predictor shifts edge values to Q^{n+1/2}).  Keep in sync like rk2 above.
 static double ader2_step_timed(struct gpu_domain *GD, double max_timestep,
                                int apply_forcing, double prev_dt) {
-    TIME_PHASE(PH_PREPARE,     gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD)));
+    const anuga_int *ac, *ae; anuga_int nac, nae;
+    TIME_PHASE(PH_ACTIVE, active_step_lists(GD, &ac, &nac, &ae, &nae));
+    const int zeu = gpu_prepare_should_zero_eu(GD);
+
+    TIME_PHASE(PH_PREPARE,
+               ac ? (void)core_prepare_step_on(&GD->D, 0, zeu, ac, nac)
+                  : (void)gpu_prepare_step(GD, 0, zeu));
     // reconstruction + C-K predictor fused into one launch (0.0 = bootstrap)
     TIME_PHASE(PH_EXTRAPOLATE,
-               extrapolate_phase(GD, prev_dt > 0.0 ? prev_dt * 0.5 : 0.0));
+               extrapolate_phase(GD, prev_dt > 0.0 ? prev_dt * 0.5 : 0.0, ac, nac));
     TIME_PHASE(PH_BOUNDARY,    evaluate_boundaries(GD));
 
     double local_timestep;
-    TIME_PHASE(PH_FLUXES, local_timestep = gpu_flux_phase(GD, 0, 1));
+    TIME_PHASE(PH_FLUXES, local_timestep =
+               ac ? core_compute_fluxes_scatter_on(&GD->D, 0, 1, ae, nae)
+                  : gpu_flux_phase(GD, 0, 1));
 
     double timestep = GD->CFL * local_timestep;
     GD->recorded_flux_timestep =
@@ -289,7 +348,9 @@ static double ader2_step_timed(struct gpu_domain *GD, double max_timestep,
     if (timestep > max_timestep) timestep = max_timestep;
 
     TIME_PHASE(PH_FORCING_UPDATE,
-               gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0));
+               ac ? core_forcing_and_update_on(&GD->D, timestep, apply_forcing, 0, 0.0, 0.0, ac, nac)
+                  : gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0));
+    g_active_ready = 1;
     return timestep;
 }
 
@@ -349,6 +410,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--verbose"))    O.verbose = 1;
         else if (!strcmp(a, "--no-friction")) O.apply_forcing = 0;
         else if (!strcmp(a, "--cuda-extrap")) g_cuda_extrap_tpb = (int)arg_i(argc, argv, &i, a);
+        else if (!strcmp(a, "--active-set"))  g_active_set = 1;
         else if (!strcmp(a, "--order")) {
             const char *o = arg_s(argc, argv, &i, a);
             if      (!strcmp(o, "row"))    O.morton = 0;
@@ -454,6 +516,22 @@ int main(int argc, char **argv) {
         O.phases = 1;                          // route through the stepped loops
         cuda_extrap_load();
     }
+    if (g_active_set) {
+        if (P.flux_mode != 2) {
+            fprintf(stderr, "bench: --active-set requires --flux scatter\n");
+            return 2;
+        }
+        O.phases = 1;                          // route through the stepped loops
+        g_as_wet   = (anuga_int *)calloc((size_t)n, sizeof(anuga_int));
+        g_as_ring1 = (anuga_int *)calloc((size_t)n, sizeof(anuga_int));
+        g_as_cells = (anuga_int *)calloc((size_t)n, sizeof(anuga_int));
+        g_as_edges = (anuga_int *)calloc((size_t)GD->D.num_owned_edges, sizeof(anuga_int));
+        {
+            anuga_int *w = g_as_wet, *r1 = g_as_ring1, *c = g_as_cells, *e = g_as_edges;
+            const anuga_int ne = GD->D.num_owned_edges;
+            #pragma omp target enter data map(alloc: w[0:n], r1[0:n], c[0:n], e[0:ne])
+        }
+    }
 
     // ---- warmup ----------------------------------------------------------
     // ADER2 carries the previous step's dt into the C-K predictor (0.0 on the
@@ -545,6 +623,10 @@ int main(int argc, char **argv) {
         printf("    %-16s %9.4f ms   (%.1f%% of wall time accounted for)\n",
                "sum", 1.0e3 * summed / (double)O.steps, 100.0 * summed / total_all);
     }
+
+    if (g_active_set && g_as_samples > 0)
+        printf("  active    : %.2f%% of cells on average (%ld rebuilds)\n",
+               100.0 * g_as_cellfrac_sum / (double)g_as_samples, g_as_samples);
 
     // ---- diagnostics -----------------------------------------------------
     const double volume1 = gpu_compute_water_volume(GD);

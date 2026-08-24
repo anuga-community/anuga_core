@@ -22,11 +22,17 @@ void core_extrapolate_centroid_pass(struct domain *D);
 // predictor_dt != 0 fuses the ADER-2 C-K edge predictor into the tail
 // (identical arithmetic to core_ader_ck_predictor_edge, one launch fewer).
 void core_extrapolate_edge_pass(struct domain *D, double predictor_dt);
+void core_extrapolate_edge_pass_on(struct domain *D, double predictor_dt,
+                                   const anuga_int *iter, anuga_int iter_n);
 
 // Fused RK2-backup (optional) + protect + extrapolate centroid pass in one
 // launch.  Returns the protect mass error.  Follow with
 // core_extrapolate_edge_pass() to complete the reconstruction.
 double core_prepare_step(struct domain *D, int do_backup, int zero_eu);
+// _on variants iterate an explicit cell/edge list (NULL = all) -- the
+// active-set fast path for wet/dry flood domains; see core_build_active_sets.
+double core_prepare_step_on(struct domain *D, int do_backup, int zero_eu,
+                            const anuga_int *iter, anuga_int iter_n);
 
 // Distribute edge values to vertices
 void core_distribute_edges_to_vertices(struct domain *D);
@@ -70,6 +76,10 @@ int core_gravity_wb(struct domain *D);
 void core_forcing_and_update(struct domain *D, double timestep,
                              int apply_manning, int do_saxpy,
                              double a, double b);
+void core_forcing_and_update_on(struct domain *D, double timestep,
+                                int apply_manning, int do_saxpy,
+                                double a, double b,
+                                const anuga_int *iter, anuga_int iter_n);
 
 // Compute fluxes using central upwind scheme
 // Returns minimum timestep, stores boundary flux sum in boundary_flux_sum[substep_count]
@@ -96,6 +106,20 @@ void core_flux_apply_and_update(struct domain *D, double timestep,
 // slot variant; max_speed_array is not maintained.
 double core_compute_fluxes_scatter(struct domain *D, int substep_count,
                                    int timestep_fluxcalls);
+double core_compute_fluxes_scatter_on(struct domain *D, int substep_count,
+                                      int timestep_fluxcalls,
+                                      const anuga_int *edges, anuga_int nedges);
+
+// Active-set construction for the _on variants (opt-in; see the .c comment
+// for the exactness argument and the driver's obligations).
+void core_build_active_sets(struct domain *D,
+                            anuga_int *wet_flag,
+                            anuga_int *ring1_flag,
+                            anuga_int *active_cells,
+                            anuga_int *active_edges,
+                            const anuga_int *owned_edges,
+                            anuga_int num_owned_edges,
+                            anuga_int *counts_out);
 
 // ADER Cauchy-Kovalewski predictor: advance centroid values forward by dt.
 // Must be called after core_extrapolate_second_order_edge().

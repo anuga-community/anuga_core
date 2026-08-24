@@ -1,0 +1,57 @@
+#!/bin/bash
+#PBS -N anuga_h200_basin
+#PBS -l ncpus=12
+#PBS -l ngpus=1
+#PBS -l mem=256GB
+#PBS -l jobfs=200GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=01:30:00
+#PBS -l wd
+#PBS -j oe
+#PBS -o /scratch/bm55/jlv900/dev/anuga_core/standalone/build/h200basin/pbs.log
+
+# Realistic-basin campaign on the H200: ANUGA-meshed flood event, per mesh
+# size: as-meshed vs Morton vs random ordering (ADER2 + scatter), an RK2
+# as-meshed reference, the lake-at-rest gate on the real mesh, and a phase
+# breakdown.  Meshes are pre-generated files; no Python on the node.
+set -x
+ROOT=/scratch/bm55/jlv900/dev/anuga_core/standalone
+OUT=$ROOT/build/h200basin
+mkdir -p "$OUT"
+cd "$ROOT"
+source ./env.sh
+nvidia-smi --query-gpu=name,memory.total --format=csv | tee "$OUT/gpu.txt"
+
+# Build on node-local jobfs: concurrent jobs on different GPU archs must
+# never share a binary or object dir on the global filesystem.
+BENCH=$PBS_JOBFS/bench_gpu
+make --no-print-directory CONFIG=gpu OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
+
+{
+  echo "== lake-at-rest on the real mesh (expect ~1e-13) =="
+  "$BENCH" --mesh build/basin_still.msh --steps 40 --scheme ader2 --flux scatter \
+      | grep -E "volume|momentum"
+} > "$OUT/gates.txt" 2>&1
+
+for msh in basin_2m basin_8m basin_20m; do
+  f=build/$msh.msh
+  [ -f "$f" ] || continue
+  {
+    echo "===== $msh ====="
+    for o in row morton random; do
+      printf "%-8s ader2+scatter " $o
+      "$BENCH" --mesh "$f" --steps 30 --warmup 5 \
+          --scheme ader2 --flux scatter --order $o | grep "ms/step"
+    done
+    printf "row      rk2 cell      "
+    "$BENCH" --mesh "$f" --steps 30 --warmup 5 | grep "ms/step"
+    echo "-- phases (ader2+scatter, morton) --"
+    "$BENCH" --mesh "$f" --steps 20 --warmup 4 \
+        --scheme ader2 --flux scatter --order morton --phases \
+        | sed -n '/breakdown/,/^$/p'
+  } > "$OUT/$msh.txt" 2>&1
+done
+
+echo done | tee "$OUT/DONE"

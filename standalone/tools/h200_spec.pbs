@@ -1,0 +1,41 @@
+#!/bin/bash
+#PBS -N anuga_spec11k
+#PBS -l ncpus=12
+#PBS -l ngpus=1
+#PBS -l mem=256GB
+#PBS -l jobfs=200GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=01:30:00
+#PBS -l wd
+#PBS -j oe
+#PBS -o /scratch/bm55/jlv900/dev/anuga_core/standalone/build/spec11k/pbs.log
+
+# THE SPEC RUN: 11,000 km^2 river basin, every triangle <= 100 m^2, one H200.
+# Measures hours of wall time per simulated day (target: < 1 on 4 GPUs given
+# ANUGA's linear multi-GPU scaling => < 4 needed here).
+set -x
+ROOT=/scratch/bm55/jlv900/dev/anuga_core/standalone
+OUT=$ROOT/build/spec11k
+mkdir -p "$OUT"
+cd "$ROOT"
+source ./env.sh
+nvidia-smi --query-gpu=name,memory.total --format=csv | tee "$OUT/gpu.txt"
+
+# Build on node-local jobfs: concurrent jobs on different GPU archs must
+# never share a binary or object dir on the global filesystem.
+BENCH=$PBS_JOBFS/bench_gpu
+make --no-print-directory CONFIG=gpu OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
+
+for o in row morton; do
+  {
+    "$BENCH" --mesh build/basin_spec11k.msh --steps 60 --warmup 8 \
+        --scheme ader2 --flux scatter --order $o --phases
+  } > "$OUT/spec_$o.txt" 2>&1
+  # headline: hours of wall time per simulated day
+  rate=$(grep "sim rate" "$OUT/spec_$o.txt" | grep -o "[0-9.]*" | head -1)
+  echo "$o: sim rate $rate sim-s/wall-s -> $(echo "scale=2; 24/$rate/1" | bc) h per sim-day (1 GPU); /4 GPUs linear: $(echo "scale=2; 6/$rate/1" | bc) h" \
+      | tee -a "$OUT/HEADLINE.txt"
+done
+echo done | tee "$OUT/DONE"

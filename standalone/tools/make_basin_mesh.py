@@ -29,10 +29,11 @@ VERSION = 1
 # magic, version, pad, n_nodes, n_tris, n_bdry
 HDR = "<8sii3q"
 
-LEN_X = 20000.0   # m, downstream
+LEN_X = 20000.0   # m, downstream (override with --lenx-km/--leny-km)
 LEN_Y = 10000.0
 
 # Channel centreline: y_c(x) = LEN_Y/2 + A sin(2 pi x / LAMBDA)
+# (amplitude/wavelength/reservoir scale with the domain in main())
 MEANDER_A = 1500.0
 MEANDER_L = 8000.0
 CHANNEL_W = 220.0      # carved width
@@ -76,14 +77,25 @@ def main(argv=None):
     ap.add_argument("--target", type=int, default=2_000_000,
                     help="approximate triangle count (default 2M)")
     ap.add_argument("--channel-refine", type=float, default=8.0,
-                    help="floodplain/channel triangle-area ratio (default 8)")
+                    help="floodplain/channel triangle-area ratio (default 8; "
+                         "1 = uniform resolution, no interior region)")
+    ap.add_argument("--lenx-km", type=float, default=20.0)
+    ap.add_argument("--leny-km", type=float, default=10.0)
     ap.add_argument("--still", type=float, default=None, metavar="LEVEL",
                     help="ignore the flood IC; still water at constant stage "
                          "LEVEL (well-balance testing on the real mesh)")
     ap.add_argument("--out", default="build/basin.msh")
     args = ap.parse_args(argv)
 
-    import anuga
+    # Scale the basin geometry to the requested footprint
+    global LEN_X, LEN_Y, MEANDER_A, MEANDER_L, RESERVOIR_X, RESERVOIR_R
+    LEN_X = args.lenx_km * 1000.0
+    LEN_Y = args.leny_km * 1000.0
+    MEANDER_A = 0.15 * LEN_Y
+    MEANDER_L = 0.40 * LEN_X
+    RESERVOIR_X = 0.09 * LEN_X
+    RESERVOIR_R = 0.06 * LEN_X
+
 
     # Split the area budget: channel band gets triangles channel-refine x
     # smaller than the floodplain.
@@ -104,19 +116,27 @@ def main(argv=None):
 
     print(f"meshing: coarse area {coarse:.1f} m^2, channel area {fine:.1f} m^2",
           flush=True)
-    domain = anuga.create_domain_from_regions(
-        bounding, boundary_tags=tags,
-        maximum_triangle_area=coarse,
-        interior_regions=[(channel_poly, fine)],
-        verbose=False)
 
-    nodes = np.ascontiguousarray(domain.get_nodes(absolute=True), dtype=np.float64)
-    tris = np.ascontiguousarray(domain.triangles, dtype=np.int64)
+    # Light path: mesh only, never a Domain (a full ANUGA Domain at 100M+
+    # triangles costs ~100 GB of quantity arrays we don't need).
+    from anuga.pmesh.mesh_interface import create_mesh_from_regions
+    interior = None if args.channel_refine == 1.0 else [(channel_poly, fine)]
+    m = create_mesh_from_regions(bounding, boundary_tags=tags,
+                                 maximum_triangle_area=coarse,
+                                 interior_regions=interior, verbose=False)
+    m.generate_mesh(maximum_triangle_area=coarse, verbose=False)
+    tm = m.tri_mesh
+
+    nodes = np.ascontiguousarray(tm.vertices, dtype=np.float64)
+    tris = np.ascontiguousarray(tm.triangles, dtype=np.int64)
     n_nodes, n_tris = len(nodes), len(tris)
 
-    bdry = sorted(domain.boundary.keys())     # [(vol, edge)] in ANUGA's order
-    bt = np.array([v for v, e in bdry], dtype=np.int64)
-    be = np.array([e for v, e in bdry], dtype=np.int64)
+    # Boundary (tri, edge) pairs straight from the triangulation: edge i of
+    # triangle k is a boundary edge iff it has no neighbour.  All reflective.
+    nbrs = np.asarray(tm.triangle_neighbors, dtype=np.int64)
+    bt, be = np.nonzero(nbrs < 0)
+    bt = bt.astype(np.int64)
+    be = be.astype(np.int64)
 
     zb = bed(nodes[:, 0], nodes[:, 1]).astype(np.float64)
     if args.still is not None:

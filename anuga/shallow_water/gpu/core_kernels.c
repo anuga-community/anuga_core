@@ -109,7 +109,8 @@ void core_extrapolate_centroid_pass(struct domain *D) {
 // kernel's full read+write sweep over the edge arrays (~200 B/cell), and --
 // because the predictor never reads boundary_values -- lets the ADER-2 step
 // evaluate boundaries ONCE, after the shift, instead of before and after.
-void core_extrapolate_edge_pass(struct domain *D, double predictor_dt) {
+void core_extrapolate_edge_pass_on(struct domain *D, double predictor_dt,
+                                   const anuga_int * restrict iter, anuga_int iter_n) {
     anuga_int n = D->number_of_elements;
     double minimum_allowed_height = D->minimum_allowed_height;
     anuga_int extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
@@ -151,8 +152,10 @@ void core_extrapolate_edge_pass(struct domain *D, double predictor_dt) {
     double * restrict y_centroid_work = D->y_centroid_work;
 
     // Step 2: Main extrapolation loop
+    const anuga_int loop_n = iter ? iter_n : n;
     OMP_PARALLEL_LOOP
-    for (anuga_int k = 0; k < n; k++) {
+    for (anuga_int q = 0; q < loop_n; q++) {
+        const anuga_int k = iter ? iter[q] : q;
         anuga_int k2 = k * 2;
         anuga_int k3 = k * 3;
         anuga_int k6 = k * 6;
@@ -446,6 +449,10 @@ void core_extrapolate_edge_pass(struct domain *D, double predictor_dt) {
 
 }
 
+void core_extrapolate_edge_pass(struct domain *D, double predictor_dt) {
+    core_extrapolate_edge_pass_on(D, predictor_dt, NULL, 0);
+}
+
 void core_extrapolate_second_order_edge(struct domain *D) {
     // Kept as the two passes below so callers that can fuse the (cell-local)
     // centroid pass into a neighbouring kernel may call the edge pass alone.
@@ -667,9 +674,10 @@ static inline void gpu_cell_forcing_update(
 //   do_saxpy     1 => finish with Q = a*Q + b*Q_backup and refresh height_cv
 // ============================================================================
 
-void core_forcing_and_update(struct domain *D, double timestep,
-                             int apply_manning, int do_saxpy,
-                             double a, double b) {
+void core_forcing_and_update_on(struct domain *D, double timestep,
+                                int apply_manning, int do_saxpy,
+                                double a, double b,
+                                const anuga_int * restrict iter, anuga_int iter_n) {
     anuga_int n = D->number_of_elements;
     double g = D->g;
     double minimum_allowed_height = D->minimum_allowed_height;
@@ -694,8 +702,10 @@ void core_forcing_and_update(struct domain *D, double timestep,
     double * restrict xmom_bk = D->xmom_backup_values;
     double * restrict ymom_bk = D->ymom_backup_values;
 
+    const anuga_int loop_n = iter ? iter_n : n;
     OMP_PARALLEL_LOOP
-    for (anuga_int k = 0; k < n; k++) {
+    for (anuga_int q = 0; q < loop_n; q++) {
+        const anuga_int k = iter ? iter[q] : q;
         gpu_cell_forcing_update(k, timestep, apply_manning, do_saxpy, a, b,
                                 g, minimum_allowed_height, seven_thirds,
                                 stage_eu[k], xmom_eu[k], ymom_eu[k],
@@ -703,6 +713,12 @@ void core_forcing_and_update(struct domain *D, double timestep,
                                 friction_cv, stage_siu, xmom_siu, ymom_siu,
                                 stage_bk, xmom_bk, ymom_bk);
     }
+}
+
+void core_forcing_and_update(struct domain *D, double timestep,
+                             int apply_manning, int do_saxpy,
+                             double a, double b) {
+    core_forcing_and_update_on(D, timestep, apply_manning, do_saxpy, a, b, NULL, 0);
 }
 
 // ============================================================================
@@ -818,7 +834,8 @@ double core_protect(struct domain *D) {
 // Returns the protect mass error (same reduction core_protect performs).
 // ============================================================================
 
-double core_prepare_step(struct domain *D, int do_backup, int zero_eu) {
+double core_prepare_step_on(struct domain *D, int do_backup, int zero_eu,
+                            const anuga_int * restrict iter, anuga_int iter_n) {
     anuga_int n = D->number_of_elements;
     double minimum_allowed_height = D->minimum_allowed_height;
     anuga_int extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
@@ -844,9 +861,11 @@ double core_prepare_step(struct domain *D, int do_backup, int zero_eu) {
     double * restrict ymom_eu = D->ymom_explicit_update;
 
     double mass_error = 0.0;
+    const anuga_int loop_n = iter ? iter_n : n;
 
     OMP_PARALLEL_LOOP_REDUCTION_PLUS(mass_error)
-    for (anuga_int k = 0; k < n; k++) {
+    for (anuga_int q = 0; q < loop_n; q++) {
+        const anuga_int k = iter ? iter[q] : q;
         double stage = stage_cv[k];
         double bed = bed_cv[k];
         double xmom = xmom_cv[k];
@@ -897,6 +916,10 @@ double core_prepare_step(struct domain *D, int do_backup, int zero_eu) {
     }
 
     return mass_error;
+}
+
+double core_prepare_step(struct domain *D, int do_backup, int zero_eu) {
+    return core_prepare_step_on(D, do_backup, zero_eu, NULL, 0);
 }
 
 // ============================================================================
@@ -1817,6 +1840,108 @@ void core_flux_apply_and_update(struct domain *D, double timestep,
 }
 
 // ============================================================================
+// Active-set construction (opt-in, for wet/dry flood domains)
+//
+// A dry cell whose three neighbours are also dry cannot change: its fluxes
+// are zero and every forcing term is gated on depth.  On flood domains that
+// is most of the mesh most of the time (the 11,000 km^2 spec basin starts
+// 99.5% dry), so the step kernels accept an optional iteration list and the
+// driver rebuilds, each step:
+//   active cells = wet cells  U  neighbours of wet cells  U  boundary cells
+//   active edges = owned edges with either side active
+// Skipping the rest is BIT-EXACT under two provisos the driver must honour:
+// the first step runs full (so every cell's edge values and protect clamps
+// are populated once), and boundary-adjacent cells stay in the set (their
+// edge values feed the boundary-value kernels; also open boundaries may wet
+// them from outside).  A skipped cell's stale edge values are only ever read
+// by fluxes on edges whose BOTH sides are inactive -- and those edges have
+// zero height on both sides, which the flux kernel already short-circuits.
+//
+// counts_out[0] = active cells, counts_out[1] = active edges.
+// ============================================================================
+
+#define ACTIVE_WET_EPS 0.0   /* any water at all counts */
+
+void core_build_active_sets(struct domain *D,
+                            anuga_int * restrict wet_flag,
+                            anuga_int * restrict ring1_flag,
+                            anuga_int * restrict active_cells,
+                            anuga_int * restrict active_edges,
+                            const anuga_int * restrict owned_edges,
+                            anuga_int num_owned_edges,
+                            anuga_int *counts_out) {
+    anuga_int n = D->number_of_elements;
+    double * restrict height_cv = D->height_centroid_values;
+    anuga_int * restrict neighbours = D->neighbours;
+
+    // Pass 1: wetness (no gathers)
+    OMP_PARALLEL_LOOP
+    for (anuga_int k = 0; k < n; k++) {
+        wet_flag[k] = (height_cv[k] > ACTIVE_WET_EPS) ? 1 : 0;
+    }
+
+    // Pass 2: ring-1 = wet, neighbour-of-wet, or boundary-adjacent.
+    // Ring-1 cells are the ones whose edges can carry flux this step.
+    OMP_PARALLEL_LOOP
+    for (anuga_int k = 0; k < n; k++) {
+        int act = wet_flag[k];
+        for (int i = 0; i < 3 && !act; i++) {
+            const anuga_int nbr = neighbours[3 * k + i];
+            if (nbr < 0 || wet_flag[nbr]) act = 1;
+        }
+        ring1_flag[k] = act;
+    }
+
+    // Pass 3: the CELL list is ring-2 (ring-1 plus its neighbours).  Water
+    // advances at most one ring per flux call, and a rebuild covers a whole
+    // step (two flux calls under RK2), so the update must reach one ring
+    // beyond the cells the fluxes can wet -- exactly the MPI ghost-layer
+    // width rule.  With a 1-ring cell list, substep 2 could scatter flux
+    // into a cell the update never visits: silent mass loss.
+    anuga_int n_cells = 0;
+    #ifdef CPU_ONLY_MODE
+    #pragma omp parallel for
+    #else
+    #pragma omp target teams distribute parallel for map(tofrom: n_cells)
+    #endif
+    for (anuga_int k = 0; k < n; k++) {
+        int act = ring1_flag[k];
+        for (int i = 0; i < 3 && !act; i++) {
+            const anuga_int nbr = neighbours[3 * k + i];
+            if (nbr >= 0 && ring1_flag[nbr]) act = 1;
+        }
+        if (act) {
+            anuga_int idx;
+            #pragma omp atomic capture
+            idx = n_cells++;
+            active_cells[idx] = k;
+        }
+    }
+
+    // Pass 4: active owned edges = either side in ring-1
+    anuga_int n_edges = 0;
+    #ifdef CPU_ONLY_MODE
+    #pragma omp parallel for
+    #else
+    #pragma omp target teams distribute parallel for map(tofrom: n_edges)
+    #endif
+    for (anuga_int q = 0; q < num_owned_edges; q++) {
+        const anuga_int p = owned_edges[q];
+        const anuga_int k = p / 3;
+        const anuga_int nbr = neighbours[p];
+        if (ring1_flag[k] || (nbr >= 0 && ring1_flag[nbr])) {
+            anuga_int idx;
+            #pragma omp atomic capture
+            idx = n_edges++;
+            active_edges[idx] = p;
+        }
+    }
+
+    counts_out[0] = n_cells;
+    counts_out[1] = n_edges;
+}
+
+// ============================================================================
 // Scatter-mode flux computation (opt-in, single kernel + atomics)
 //
 // Same single-Riemann-solve-per-edge idea as the slot-based pair above, but
@@ -1839,8 +1964,10 @@ void core_flux_apply_and_update(struct domain *D, double timestep,
 // D->reconstruct_edge_bed = 2 and pay zero extra device memory.
 // ============================================================================
 
-double core_compute_fluxes_scatter(struct domain *D, int substep_count,
-                                   int timestep_fluxcalls) {
+double core_compute_fluxes_scatter_on(struct domain *D, int substep_count,
+                                      int timestep_fluxcalls,
+                                      const anuga_int * restrict edges,
+                                      anuga_int nedges) {
     anuga_int n = D->number_of_elements;
     double g = D->g;
     double epsilon = D->epsilon;
@@ -1870,11 +1997,6 @@ double core_compute_fluxes_scatter(struct domain *D, int substep_count,
     double * restrict areas = D->areas;
     anuga_int * restrict tri_full_flag = D->tri_full_flag;
 
-    // One thread per PHYSICAL edge via the driver-built compacted slot list --
-    // no idle non-owner threads, no divergence on the ownership test.
-    anuga_int * restrict owned = D->owned_edges;
-    const anuga_int nowned = D->num_owned_edges;
-
     double local_timestep = 1.0e+100;
     double boundary_flux_sum_substep = 0.0;
 
@@ -1883,8 +2005,8 @@ double core_compute_fluxes_scatter(struct domain *D, int substep_count,
     #else
     #pragma omp target teams distribute parallel for reduction(min:local_timestep) reduction(+:boundary_flux_sum_substep)
     #endif
-    for (anuga_int q = 0; q < nowned; q++) {
-        const anuga_int p = owned[q];
+    for (anuga_int q = 0; q < nedges; q++) {
+        const anuga_int p = edges[q];
         const anuga_int k = p / 3;
         const anuga_int nbr = neighbours[p];
         const int is_boundary = (nbr < 0);
@@ -2009,6 +2131,13 @@ double core_compute_fluxes_scatter(struct domain *D, int substep_count,
     }
 
     return local_timestep;
+}
+
+double core_compute_fluxes_scatter(struct domain *D, int substep_count,
+                                   int timestep_fluxcalls) {
+    // One thread per PHYSICAL edge via the driver-built compacted slot list
+    return core_compute_fluxes_scatter_on(D, substep_count, timestep_fluxcalls,
+                                          D->owned_edges, D->num_owned_edges);
 }
 
 // ============================================================================
