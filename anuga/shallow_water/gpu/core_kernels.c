@@ -21,7 +21,7 @@
 // Extrapolation: centroid values -> edge values (second-order reconstruction)
 // ============================================================================
 
-void core_extrapolate_second_order_edge(struct domain *D) {
+void core_extrapolate_centroid_pass(struct domain *D) {
     anuga_int n = D->number_of_elements;
     double minimum_allowed_height = D->minimum_allowed_height;
     anuga_int extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
@@ -62,6 +62,12 @@ void core_extrapolate_second_order_edge(struct domain *D) {
     double * restrict y_centroid_work = D->y_centroid_work;
 
     // Step 1: Update centroid values
+    //
+    // x/y_centroid_work carry the *velocity* the limiter reconstructs from;
+    // xmom/ymom_cv keep the momentum, so no restore pass is needed afterwards.
+    // (Historically this was the other way round -- the work arrays saved the
+    // momentum while _cv held the velocity -- which cost a third kernel launch
+    // over every cell just to swap them back. See the note above Step 3.)
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
         double stage = stage_cv[k];
@@ -80,12 +86,58 @@ void core_extrapolate_second_order_edge(struct domain *D) {
 
         double inv_dk = extrapolate ? (1.0 / dk) : 1.0;
 
-        x_centroid_work[k] = extrapolate ? xmom_out : 0.0;
-        y_centroid_work[k] = extrapolate ? ymom_out : 0.0;
+        x_centroid_work[k] = xmom_out * inv_dk;
+        y_centroid_work[k] = ymom_out * inv_dk;
 
-        xmom_cv[k] = xmom_out * inv_dk;
-        ymom_cv[k] = ymom_out * inv_dk;
+        xmom_cv[k] = xmom_out;
+        ymom_cv[k] = ymom_out;
     }
+
+}
+
+// The edge pass: the second-order reconstruction proper.  Reads the
+// neighbours' centroid values (via surrogate_neighbours), so it MUST be a
+// separate kernel launch from anything that writes centroid values -- there is
+// no device-wide barrier inside an `omp target teams loop`.
+void core_extrapolate_edge_pass(struct domain *D) {
+    anuga_int n = D->number_of_elements;
+    double minimum_allowed_height = D->minimum_allowed_height;
+    anuga_int extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
+
+    // Parameters for hfactor computation (wet-dry limiting)
+    double a_tmp = 0.3;
+    double b_tmp = 0.1;
+    double c_tmp = 1.0 / (a_tmp - b_tmp);
+    double d_tmp = 1.0 - (c_tmp * a_tmp);
+
+    // Beta values for gradient limiting
+    double beta_w = D->beta_w;
+    double beta_w_dry = D->beta_w_dry;
+    double beta_uh = D->beta_uh;
+    double beta_uh_dry = D->beta_uh_dry;
+    double beta_vh = D->beta_vh;
+    double beta_vh_dry = D->beta_vh_dry;
+
+    // Extract array pointers
+    double * restrict stage_cv = D->stage_centroid_values;
+    double * restrict xmom_cv = D->xmom_centroid_values;
+    double * restrict ymom_cv = D->ymom_centroid_values;
+    double * restrict bed_cv = D->bed_centroid_values;
+    double * restrict height_cv = D->height_centroid_values;
+
+    double * restrict stage_ev = D->stage_edge_values;
+    double * restrict xmom_ev = D->xmom_edge_values;
+    double * restrict ymom_ev = D->ymom_edge_values;
+    double * restrict bed_ev = D->bed_edge_values;
+    double * restrict height_ev = D->height_edge_values;
+
+    double * restrict centroid_coords = D->centroid_coordinates;
+    double * restrict edge_coords = D->edge_coordinates;
+
+    anuga_int * restrict surrogate_neighbours = D->surrogate_neighbours;
+    anuga_int * restrict number_of_boundaries = D->number_of_boundaries;
+    double * restrict x_centroid_work = D->x_centroid_work;
+    double * restrict y_centroid_work = D->y_centroid_work;
 
     // Step 2: Main extrapolation loop
     OMP_PARALLEL_LOOP
@@ -144,8 +196,8 @@ void core_extrapolate_second_order_edge(struct domain *D) {
 
         if (num_boundaries == 3) {
             double stage_c = stage_cv[k];
-            double xmom_c = xmom_cv[k];
-            double ymom_c = ymom_cv[k];
+            double xmom_c = x_centroid_work[k];
+            double ymom_c = y_centroid_work[k];
             double height_c = height_cv[k];
             double bed_c = bed_cv[k];
 
@@ -207,11 +259,11 @@ void core_extrapolate_second_order_edge(struct domain *D) {
             double beta_xmom = beta_uh_dry + (beta_uh - beta_uh_dry) * hfactor;
             if (beta_xmom > 0.0) {
                 gpu_calc_edge_values_with_gradient(
-                    xmom_cv[k], xmom_cv[k0], xmom_cv[k1], xmom_cv[sn2],
+                    x_centroid_work[k], x_centroid_work[k0], x_centroid_work[k1], x_centroid_work[sn2],
                     dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
                     dx1, dx2, dy1, dy2, inv_area2, beta_xmom, edge_vals);
             } else {
-                gpu_set_constant_edge_values(xmom_cv[k], edge_vals);
+                gpu_set_constant_edge_values(x_centroid_work[k], edge_vals);
             }
             xmom_ev[k3 + 0] = edge_vals[0];
             xmom_ev[k3 + 1] = edge_vals[1];
@@ -221,11 +273,11 @@ void core_extrapolate_second_order_edge(struct domain *D) {
             double beta_ymom = beta_vh_dry + (beta_vh - beta_vh_dry) * hfactor;
             if (beta_ymom > 0.0) {
                 gpu_calc_edge_values_with_gradient(
-                    ymom_cv[k], ymom_cv[k0], ymom_cv[k1], ymom_cv[sn2],
+                    y_centroid_work[k], y_centroid_work[k0], y_centroid_work[k1], y_centroid_work[sn2],
                     dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
                     dx1, dx2, dy1, dy2, inv_area2, beta_ymom, edge_vals);
             } else {
-                gpu_set_constant_edge_values(ymom_cv[k], edge_vals);
+                gpu_set_constant_edge_values(y_centroid_work[k], edge_vals);
             }
             ymom_ev[k3 + 0] = edge_vals[0];
             ymom_ev[k3 + 1] = edge_vals[1];
@@ -277,24 +329,24 @@ void core_extrapolate_second_order_edge(struct domain *D) {
             height_ev[k3 + 2] = height_cv[k] + dqv[2];
 
             // X-momentum
-            dq1 = xmom_cv[kn] - xmom_cv[k];
+            dq1 = x_centroid_work[kn] - x_centroid_work[k];
             gpu_compute_dqv_from_gradient(dq1, grad_dx2, grad_dy2,
                                           dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dqv);
             gpu_compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
             gpu_limit_gradient(dqv, qmin, qmax, beta_w);
-            xmom_ev[k3 + 0] = xmom_cv[k] + dqv[0];
-            xmom_ev[k3 + 1] = xmom_cv[k] + dqv[1];
-            xmom_ev[k3 + 2] = xmom_cv[k] + dqv[2];
+            xmom_ev[k3 + 0] = x_centroid_work[k] + dqv[0];
+            xmom_ev[k3 + 1] = x_centroid_work[k] + dqv[1];
+            xmom_ev[k3 + 2] = x_centroid_work[k] + dqv[2];
 
             // Y-momentum
-            dq1 = ymom_cv[kn] - ymom_cv[k];
+            dq1 = y_centroid_work[kn] - y_centroid_work[k];
             gpu_compute_dqv_from_gradient(dq1, grad_dx2, grad_dy2,
                                           dxv0, dxv1, dxv2, dyv0, dyv1, dyv2, dqv);
             gpu_compute_qmin_qmax_from_dq1(dq1, &qmin, &qmax);
             gpu_limit_gradient(dqv, qmin, qmax, beta_w);
-            ymom_ev[k3 + 0] = ymom_cv[k] + dqv[0];
-            ymom_ev[k3 + 1] = ymom_cv[k] + dqv[1];
-            ymom_ev[k3 + 2] = ymom_cv[k] + dqv[2];
+            ymom_ev[k3 + 0] = y_centroid_work[k] + dqv[0];
+            ymom_ev[k3 + 1] = y_centroid_work[k] + dqv[1];
+            ymom_ev[k3 + 2] = y_centroid_work[k] + dqv[2];
         }
 
         // Convert velocity edge values back to momentum if needed
@@ -310,16 +362,16 @@ void core_extrapolate_second_order_edge(struct domain *D) {
         for (int i = 0; i < 3; i++) {
             bed_ev[k3 + i] = stage_ev[k3 + i] - height_ev[k3 + i];
         }
+
     }
 
-    // Step 3: Restore centroid momentum values if we converted to velocity
-    if (extrapolate_velocity_second_order) {
-        OMP_PARALLEL_LOOP
-        for (anuga_int k = 0; k < n; k++) {
-            xmom_cv[k] = x_centroid_work[k];
-            ymom_cv[k] = y_centroid_work[k];
-        }
-    }
+}
+
+void core_extrapolate_second_order_edge(struct domain *D) {
+    // Kept as the two passes below so callers that can fuse the (cell-local)
+    // centroid pass into a neighbouring kernel may call the edge pass alone.
+    core_extrapolate_centroid_pass(D);
+    core_extrapolate_edge_pass(D);
 }
 
 // ============================================================================
@@ -433,6 +485,125 @@ void core_update_conserved_quantities(struct domain *D, double timestep) {
 }
 
 // ============================================================================
+// Fused forcing + update (+ optional RK2 average)
+//
+// Manning friction, the conserved-quantity update and the RK2 average are all
+// strictly cell-local: each reads and writes only index k.  Running them as
+// three separate kernels means three launches and three round trips through
+// the semi-implicit and centroid arrays, so they are fused here into one.
+//
+// This is as far as fusion goes in the DE step.  compute_fluxes cannot join
+// them: it is a stencil kernel -- it reads height_cv[neighbour],
+// bed_cv[neighbour], stage_cv[neighbour] and the neighbours' edge values -- so
+// writing any centroid value from inside it would race against another team
+// still reading that value, and an `omp target teams loop` has no device-wide
+// barrier to order them.  The same argument rules out fusing extrapolate into
+// compute_fluxes.
+//
+// Only the FLAT Manning variant is inlined here.  Callers with
+// use_sloped_mannings must keep calling the sloped kernel separately (it reads
+// vertex values, which the GPU path does not map).
+//
+//   timestep     dt to apply (must already be known -- fine for RK2 substep 2,
+//                which reuses substep 1's dt)
+//   apply_manning  1 => add the flat Manning friction term
+//   do_saxpy     1 => finish with Q = a*Q + b*Q_backup and refresh height_cv
+// ============================================================================
+
+void core_forcing_and_update(struct domain *D, double timestep,
+                             int apply_manning, int do_saxpy,
+                             double a, double b) {
+    anuga_int n = D->number_of_elements;
+    double g = D->g;
+    double minimum_allowed_height = D->minimum_allowed_height;
+    double seven_thirds = 7.0 / 3.0;
+
+    double * restrict stage_cv = D->stage_centroid_values;
+    double * restrict xmom_cv = D->xmom_centroid_values;
+    double * restrict ymom_cv = D->ymom_centroid_values;
+    double * restrict bed_cv = D->bed_centroid_values;
+    double * restrict height_cv = D->height_centroid_values;
+    double * restrict friction_cv = D->friction_centroid_values;
+
+    double * restrict stage_eu = D->stage_explicit_update;
+    double * restrict xmom_eu = D->xmom_explicit_update;
+    double * restrict ymom_eu = D->ymom_explicit_update;
+
+    double * restrict stage_siu = D->stage_semi_implicit_update;
+    double * restrict xmom_siu = D->xmom_semi_implicit_update;
+    double * restrict ymom_siu = D->ymom_semi_implicit_update;
+
+    double * restrict stage_bk = D->stage_backup_values;
+    double * restrict xmom_bk = D->xmom_backup_values;
+    double * restrict ymom_bk = D->ymom_backup_values;
+
+    OMP_PARALLEL_LOOP
+    for (anuga_int k = 0; k < n; k++) {
+        double stage_c = stage_cv[k];
+        double xmom_c = xmom_cv[k];
+        double ymom_c = ymom_cv[k];
+
+        // ---- Manning friction, flat semi-implicit variant.
+        // Read whatever is already in the semi-implicit arrays (operators may
+        // have contributed) and add the friction term in registers, exactly as
+        // core_manning_friction_flat_semi_implicit does in memory.
+        double s_siu = stage_siu[k];
+        double x_siu = xmom_siu[k];
+        double y_siu = ymom_siu[k];
+
+        if (apply_manning) {
+            double S = 0.0;
+            double eta = friction_cv[k];
+            double abs_mom = sqrt(xmom_c * xmom_c + ymom_c * ymom_c);
+
+            if (eta > 1.0e-15) {  // ETA_SMALL
+                double h = stage_c - bed_cv[k];
+                if (h >= minimum_allowed_height) {
+                    S = -g * eta * eta * abs_mom;
+                    S /= pow(h, seven_thirds);
+                }
+            }
+            x_siu += S * xmom_c;
+            y_siu += S * ymom_c;
+        }
+
+        // ---- Conserved-quantity update (see core_update_conserved_quantities
+        // for why the semi-implicit term is written as one division).
+        double stage_new = stage_c + timestep * stage_eu[k];
+        double xmom_new  = xmom_c  + timestep * xmom_eu[k];
+        double ymom_new  = ymom_c  + timestep * ymom_eu[k];
+
+        double num;
+
+        num = stage_c - timestep * s_siu;
+        if (stage_c != 0.0 && num * stage_c > 0.0) stage_new = stage_new * stage_c / num;
+
+        num = xmom_c - timestep * x_siu;
+        if (xmom_c != 0.0 && num * xmom_c > 0.0) xmom_new = xmom_new * xmom_c / num;
+
+        num = ymom_c - timestep * y_siu;
+        if (ymom_c != 0.0 && num * ymom_c > 0.0) ymom_new = ymom_new * ymom_c / num;
+
+        // Reset semi-implicit updates for the next timestep
+        stage_siu[k] = 0.0;
+        xmom_siu[k] = 0.0;
+        ymom_siu[k] = 0.0;
+
+        // ---- RK2 average, and the height refresh that follows it
+        if (do_saxpy) {
+            stage_new = a * stage_new + b * stage_bk[k];
+            xmom_new  = a * xmom_new  + b * xmom_bk[k];
+            ymom_new  = a * ymom_new  + b * ymom_bk[k];
+            height_cv[k] = fmax(stage_new - bed_cv[k], 0.0);
+        }
+
+        stage_cv[k] = stage_new;
+        xmom_cv[k] = xmom_new;
+        ymom_cv[k] = ymom_new;
+    }
+}
+
+// ============================================================================
 // Backup conserved quantities for RK2
 // ============================================================================
 
@@ -523,6 +694,91 @@ double core_protect(struct domain *D) {
             mass_error += (-h) * areas[k];
             stage_cv[k] = bed_cv[k];
         }
+    }
+
+    return mass_error;
+}
+
+// ============================================================================
+// Fused step preparation: RK2 backup + protect + extrapolate centroid pass.
+//
+// All three touch only index k, so they run as ONE kernel: the centroid values
+// are read once into registers, backed up, protected, and converted for the
+// edge pass without three separate trips through memory.  This also retires
+// the standalone protect's follow-up height refresh -- the centroid pass
+// recomputes height_cv from the protected stage anyway.
+//
+// The sequencing inside the loop body reproduces the original kernel order
+// (backup BEFORE protect -- the RK2 average must combine with the unprotected
+// state, exactly as gpu_backup_conserved_quantities did) so results are
+// bit-identical to the unfused sequence.
+//
+// Returns the protect mass error (same reduction core_protect performs).
+// ============================================================================
+
+double core_prepare_step(struct domain *D, int do_backup) {
+    anuga_int n = D->number_of_elements;
+    double minimum_allowed_height = D->minimum_allowed_height;
+    anuga_int extrapolate_velocity_second_order = D->extrapolate_velocity_second_order;
+
+    double * restrict stage_cv = D->stage_centroid_values;
+    double * restrict xmom_cv = D->xmom_centroid_values;
+    double * restrict ymom_cv = D->ymom_centroid_values;
+    double * restrict bed_cv = D->bed_centroid_values;
+    double * restrict height_cv = D->height_centroid_values;
+    double * restrict areas = D->areas;
+    double * restrict x_centroid_work = D->x_centroid_work;
+    double * restrict y_centroid_work = D->y_centroid_work;
+
+    double * restrict stage_bk = D->stage_backup_values;
+    double * restrict xmom_bk = D->xmom_backup_values;
+    double * restrict ymom_bk = D->ymom_backup_values;
+
+    double mass_error = 0.0;
+
+    OMP_PARALLEL_LOOP_REDUCTION_PLUS(mass_error)
+    for (anuga_int k = 0; k < n; k++) {
+        double stage = stage_cv[k];
+        double bed = bed_cv[k];
+        double xmom = xmom_cv[k];
+        double ymom = ymom_cv[k];
+
+        // RK2 backup of the raw (pre-protect) state
+        if (do_backup) {
+            stage_bk[k] = stage;
+            xmom_bk[k] = xmom;
+            ymom_bk[k] = ymom;
+        }
+
+        // Protect (core_protect's logic, in registers)
+        double h = stage - bed;
+        if (h < minimum_allowed_height) {
+            xmom = 0.0;
+            ymom = 0.0;
+        }
+        if (h < 0.0) {
+            mass_error += (-h) * areas[k];
+            stage = bed;
+        }
+        stage_cv[k] = stage;
+
+        // Extrapolate centroid pass (velocity into the work arrays)
+        double dk = fmax(stage - bed, 0.0);
+        height_cv[k] = dk;
+
+        int is_dry = (dk <= minimum_allowed_height);
+        int extrapolate = (extrapolate_velocity_second_order == 1) && (dk > minimum_allowed_height);
+
+        double xmom_out = is_dry ? 0.0 : xmom;
+        double ymom_out = is_dry ? 0.0 : ymom;
+
+        double inv_dk = extrapolate ? (1.0 / dk) : 1.0;
+
+        x_centroid_work[k] = xmom_out * inv_dk;
+        y_centroid_work[k] = ymom_out * inv_dk;
+
+        xmom_cv[k] = xmom_out;
+        ymom_cv[k] = ymom_out;
     }
 
     return mass_error;
@@ -933,8 +1189,19 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
     double * restrict stage_ev = D->stage_edge_values;
     double * restrict xmom_ev = D->xmom_edge_values;
     double * restrict ymom_ev = D->ymom_edge_values;
-    double * restrict bed_ev = D->bed_edge_values;
     double * restrict height_ev = D->height_edge_values;
+    double * restrict bed_ev    = D->bed_edge_values;
+
+    // Opt-in: reconstruct edge bed values as stage - height instead of loading
+    // bed_ev.  core_extrapolate_edge_pass computes bed_ev with EXACTLY that
+    // expression from exactly these arrays, so whenever fluxes follow an
+    // extrapolate (every evolve step) the reconstruction is bit-identical and
+    // this memory-bound kernel drops one gather per edge -- on both sides,
+    // 6 scattered loads per cell.  It is wrong for callers that set edge
+    // values independently and invoke fluxes directly (test_flux does), so it
+    // stays off unless the driver guarantees the extrapolate-first contract
+    // (D->reconstruct_edge_bed = 1; ANUGA leaves it 0).
+    const int reconstruct_z = (D->reconstruct_edge_bed != 0);
 
     double * restrict stage_bv = D->stage_boundary_values;
     double * restrict xmom_bv = D->xmom_boundary_values;
@@ -991,12 +1258,12 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
             int ki = 3 * k + i;
             int ki2 = 2 * ki;
 
-            // Left state (this element's edge values)
+            // Left state (this element's edge values); see reconstruct_z above
             ql[0] = stage_ev[ki];
             ql[1] = xmom_ev[ki];
             ql[2] = ymom_ev[ki];
-            double zl = bed_ev[ki];
             double hle = height_ev[ki];
+            double zl = reconstruct_z ? (ql[0] - hle) : bed_ev[ki];
 
             // Edge geometry
             double length = edgelengths[ki];
@@ -1026,8 +1293,8 @@ double core_compute_fluxes_central(struct domain *D, int substep_count, int time
                 qr[0] = stage_ev[nm];
                 qr[1] = xmom_ev[nm];
                 qr[2] = ymom_ev[nm];
-                zr = bed_ev[nm];
                 hre = height_ev[nm];
+                zr = reconstruct_z ? (qr[0] - hre) : bed_ev[nm];
                 hc_n = height_cv[neighbour];
                 zc_n = bed_cv[neighbour];
             }

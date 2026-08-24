@@ -686,3 +686,28 @@ References:
 - "OpenMP Offload Features and Strategies for High Performance across Architectures and
   Compilers", IPDPSW 2023 — https://swapp.cs.iastate.edu/files/inline-files/OpenMP_Offload_Features_and_Strategies_for_High_Performance_across_Architectures_and_Compilers-ipdpsw-may-2023.pdf
 - OMP_TARGET_OFFLOAD, OpenMP 5.0 spec — https://www.openmp.org/spec-html/5.0/openmpse65.html
+
+## `struct domain` fields must be explicitly initialised in sw_domain_openmp_ext
+
+(2026-08-24) `Domain_C_struct.__cinit__` allocates the C struct with
+`PyMem_Malloc` — **uninitialized memory** — and fills every field explicitly in
+`get_python_domain_parameters` / `get_python_domain_pointers`. Adding a field
+to `struct domain` (sw_domain.h) without also setting it there leaves garbage
+in the legacy path. Symptom when it happened (`reconstruct_edge_bed`): the
+flux kernel read a garbage flag, well-balance broke, and
+`test_ader2::test_still_water_flat_bed` spun forever in its evolve loop at
+100% CPU (timestep collapse — not a hang in any one kernel). The GPU-path
+`GPUDomain` is a cdef-class member and IS zero-initialised, which makes the
+asymmetry easy to miss. Both pyx files also redeclare the struct member list,
+so a new field must be added there before Cython can assign it.
+
+## ninja does not reliably re-track `sw_domain.h` — clean-rebuild after struct changes
+
+(2026-08-24) After editing `struct domain` (sw_domain.h), incremental `ninja`
+in `build/cp313` rebuilt only a subset of objects (and once reported "no work
+to do" straight after a header revert). The resulting mixed-layout objects
+produce baffling failures: OpenMP "partially present on the device" fatals at
+map time, silent `exit(1)` during mode-2 init, and test failures that migrate
+as you touch unrelated files. If a change touches any shared struct header,
+run `ninja -t clean && ninja` (74 targets, ~1 min) before trusting any test
+result — an afternoon was lost bisecting phantom bugs that were stale objects.

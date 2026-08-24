@@ -24,6 +24,12 @@ struct domain {
     anuga_int extrapolate_velocity_second_order;
     anuga_int low_froude;
     anuga_int timestep_fluxcalls;
+    // Opt-in for core_compute_fluxes_central: reconstruct edge bed values as
+    // stage - height (bit-identical to bed_ev whenever an extrapolate ran
+    // first, i.e. every evolve step) instead of gathering the bed_ev array.
+    // Leave 0 unless the driver guarantees fluxes always follow extrapolate;
+    // direct compute_fluxes callers (test_flux) rely on independent bed_ev.
+    anuga_int reconstruct_edge_bed;
     anuga_int ncol_riverwall_hydraulic_properties;
     anuga_int nrow_riverwall_hydraulic_properties;
 

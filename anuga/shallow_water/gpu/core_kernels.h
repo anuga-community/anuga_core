@@ -11,8 +11,20 @@
 
 #include "sw_domain.h"
 
-// Extrapolate centroid values to edge values (second-order reconstruction)
+// Extrapolate centroid values to edge values (second-order reconstruction).
+// Runs the two passes below in sequence.
 void core_extrapolate_second_order_edge(struct domain *D);
+
+// The two passes individually: the centroid pass is cell-local (fusable into
+// neighbouring cell-local kernels); the edge pass reads neighbour centroids
+// and must be its own launch.
+void core_extrapolate_centroid_pass(struct domain *D);
+void core_extrapolate_edge_pass(struct domain *D);
+
+// Fused RK2-backup (optional) + protect + extrapolate centroid pass in one
+// launch.  Returns the protect mass error.  Follow with
+// core_extrapolate_edge_pass() to complete the reconstruction.
+double core_prepare_step(struct domain *D, int do_backup);
 
 // Distribute edge values to vertices
 void core_distribute_edges_to_vertices(struct domain *D);
@@ -48,6 +60,14 @@ int core_gravity(struct domain *D);
 
 // Gravity term (well-balanced)
 int core_gravity_wb(struct domain *D);
+
+// Fused Manning friction + conserved-quantity update + optional RK2 average.
+// All three are cell-local, so they run in a single kernel launch.  Only the
+// flat Manning variant is inlined; sloped callers must not use this.
+// timestep must already be known (RK2 substep 2 reuses substep 1's dt).
+void core_forcing_and_update(struct domain *D, double timestep,
+                             int apply_manning, int do_saxpy,
+                             double a, double b);
 
 // Compute fluxes using central upwind scheme
 // Returns minimum timestep, stores boundary flux sum in boundary_flux_sum[substep_count]

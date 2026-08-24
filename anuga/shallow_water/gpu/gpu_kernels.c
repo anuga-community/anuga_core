@@ -35,6 +35,39 @@ void gpu_extrapolate_second_order(struct gpu_domain *GD) {
     NVTX_POP();
 }
 
+// Fused RK2-backup + protect + extrapolate centroid pass: one launch for the
+// three cell-local step-opening kernels (and it retires protect's separate
+// height-refresh launch, which the centroid pass subsumes).
+double gpu_prepare_step(struct gpu_domain *GD, int do_backup) {
+    NVTX_PUSH("gpu_prepare_step");
+    double mass_error = core_prepare_step(&GD->D, do_backup);
+
+    if (GD->flops.enabled) {
+        anuga_int n = GD->D.number_of_elements;
+        GD->flops.protect_flops += (uint64_t)n * FLOPS_PROTECT;
+        GD->flops.protect_calls++;
+        if (do_backup) {
+            GD->flops.backup_flops += (uint64_t)n * FLOPS_BACKUP;
+            GD->flops.backup_calls++;
+        }
+    }
+    NVTX_POP();
+    return mass_error;
+}
+
+// The extrapolation edge pass alone -- pairs with gpu_prepare_step(), which
+// already ran the centroid pass.
+void gpu_extrapolate_edges(struct gpu_domain *GD) {
+    NVTX_PUSH("gpu_extrapolate_edges");
+    core_extrapolate_edge_pass(&GD->D);
+
+    if (GD->flops.enabled) {
+        GD->flops.extrapolate_flops += (uint64_t)GD->D.number_of_elements * FLOPS_EXTRAPOLATE;
+        GD->flops.extrapolate_calls++;
+    }
+    NVTX_POP();
+}
+
 double gpu_compute_fluxes(struct gpu_domain *GD, int substep_count, int timestep_fluxcalls) {
     NVTX_PUSH("gpu_compute_fluxes");
     // Unified: calls core_compute_fluxes_central from core_kernels.c.
@@ -193,6 +226,42 @@ void gpu_manning_friction(struct gpu_domain *GD) {
     if (GD->flops.enabled) {
         GD->flops.manning_flops += (uint64_t)GD->D.number_of_elements * FLOPS_MANNING;
         GD->flops.manning_calls++;
+    }
+    NVTX_POP();
+}
+
+// Fused Manning friction + conserved-quantity update + optional RK2 average:
+// one kernel launch instead of two or three.  All three are cell-local, which
+// is what makes the fusion legal -- see the note above core_forcing_and_update()
+// for why compute_fluxes and extrapolate cannot join them.
+//
+// Falls back to the separate kernels when sloped Manning is selected, since
+// that variant reads vertex values and is not inlined in the fused kernel.
+void gpu_forcing_and_update(struct gpu_domain *GD, double timestep,
+                            int apply_forcing, int do_saxpy,
+                            double a, double b) {
+    if (apply_forcing && GD->use_sloped_mannings) {
+        gpu_manning_friction(GD);
+        gpu_update_conserved_quantities(GD, timestep);
+        if (do_saxpy) gpu_saxpy_conserved_quantities(GD, a, b);
+        return;
+    }
+
+    NVTX_PUSH("gpu_forcing_and_update");
+    core_forcing_and_update(&GD->D, timestep, apply_forcing, do_saxpy, a, b);
+
+    if (GD->flops.enabled) {
+        anuga_int n = GD->D.number_of_elements;
+        if (apply_forcing) {
+            GD->flops.manning_flops += (uint64_t)n * FLOPS_MANNING;
+            GD->flops.manning_calls++;
+        }
+        GD->flops.update_flops += (uint64_t)n * FLOPS_UPDATE;
+        GD->flops.update_calls++;
+        if (do_saxpy) {
+            GD->flops.saxpy_flops += (uint64_t)n * FLOPS_SAXPY;
+            GD->flops.saxpy_calls++;
+        }
     }
     NVTX_POP();
 }
@@ -398,15 +467,15 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
 
     double local_timestep, global_timestep, timestep;
 
-    // Backup conserved quantities for RK2
-    gpu_backup_conserved_quantities(GD);
-
     // ========================================
     // First Euler step
     // ========================================
 
-    gpu_protect(GD);
-    gpu_extrapolate_second_order(GD);
+    // RK2 backup + protect + extrapolate centroid pass, fused into one
+    // cell-local launch; the edge pass (which reads neighbour centroids)
+    // follows as its own launch.
+    gpu_prepare_step(GD, 1);
+    gpu_extrapolate_edges(GD);
 
     // Evaluate all GPU-supported boundary conditions
     gpu_evaluate_reflective_boundary(GD);
@@ -454,13 +523,8 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
         }
     }
 
-    // Apply forcing terms (Manning friction on GPU)
-    if (apply_forcing) {
-        gpu_manning_friction(GD);
-    }
-
-    // Update conserved quantities with computed timestep
-    gpu_update_conserved_quantities(GD, timestep);
+    // Forcing + update, fused into one launch
+    gpu_forcing_and_update(GD, timestep, apply_forcing, 0, 0.0, 0.0);
 
     // Ghost exchange (MPI) - sync ghost cells between processes
     if (GD->nprocs > 1) {
@@ -471,8 +535,8 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // Second Euler step
     // ========================================
 
-    gpu_protect(GD);
-    gpu_extrapolate_second_order(GD);
+    gpu_prepare_step(GD, 0);   // no backup on the second substep
+    gpu_extrapolate_edges(GD);
 
     // Evaluate boundary conditions (same as first step)
     gpu_evaluate_reflective_boundary(GD);
@@ -488,16 +552,10 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // Compute fluxes (ignore timestep from second step)
     gpu_compute_fluxes(GD, 1, 2);
 
-    // Apply forcing terms (Manning friction on GPU)
-    if (apply_forcing) {
-        gpu_manning_friction(GD);
-    }
-
-    // Update conserved quantities (same timestep as first step)
-    gpu_update_conserved_quantities(GD, timestep);
-
-    // RK2 averaging: Q_final = 0.5 * Q_backup + 0.5 * Q_current
-    gpu_saxpy_conserved_quantities(GD, 0.5, 0.5);
+    // Forcing + update + the RK2 average (Q_final = 0.5*Q_backup + 0.5*Q),
+    // all three fused into one launch.  The timestep is the one the first
+    // substep already computed, so nothing here waits on a reduction.
+    gpu_forcing_and_update(GD, timestep, apply_forcing, 1, 0.5, 0.5);
 
     NVTX_POP();  // gpu_evolve_one_rk2_step
     return timestep;
