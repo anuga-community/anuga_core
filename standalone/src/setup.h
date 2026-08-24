@@ -69,7 +69,10 @@ void bench_params_defaults(bench_params *P);
 void bench_params_apply_scheme(bench_params *P);
 
 // Allocate + fill everything.  Does not touch the device.
-void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params *P);
+// bed_node/stage_node: per-node values from a loaded mesh (NULL = evaluate
+// the analytic case functions, as the generated meshes always do).
+void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params *P,
+                        const double *bed_node, const double *stage_node);
 
 // gpu_domain_init + reflective boundary + gpu_domain_map_arrays.
 void bench_domain_to_device(bench_domain *B, const bench_params *P, int verbose);

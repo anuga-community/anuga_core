@@ -102,6 +102,7 @@ typedef struct {
     int     phases;
     int     verbose;
     int     apply_forcing;
+    const char *mesh_path;
     const char *save_path;
     const char *check_path;
     const char *csv_path;
@@ -119,6 +120,9 @@ static void usage(const char *argv0) {
 "                      the mesh is a rectangular cross: 4*nx*ny triangles\n"
 "    --lenx L          domain width  in metres          (default 1000)\n"
 "    --leny L          domain height in metres          (default 1000)\n"
+"    --mesh FILE       load an ANUGAMSH mesh (tools/make_basin_mesh.py)\n"
+"                      instead of generating the rectangular cross; brings\n"
+"                      its own terrain and initial stage\n"
 "    --case NAME       dam | dambumps | lake            (default dam)\n"
 "                        dam       flat bed, wet dam break (every cell wet)\n"
 "                        dambumps  bumpy bed dam break (wet/dry branches)\n"
@@ -337,6 +341,7 @@ int main(int argc, char **argv) {
         }
         else if (!strcmp(a, "--atol"))       O.atol = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--rtol"))       O.rtol = arg_d(argc, argv, &i, a);
+        else if (!strcmp(a, "--mesh"))       O.mesh_path = arg_s(argc, argv, &i, a);
         else if (!strcmp(a, "--save"))       O.save_path = arg_s(argc, argv, &i, a);
         else if (!strcmp(a, "--check"))      O.check_path = arg_s(argc, argv, &i, a);
         else if (!strcmp(a, "--csv"))        O.csv_path = arg_s(argc, argv, &i, a);
@@ -374,15 +379,20 @@ int main(int argc, char **argv) {
 
     // ---- build -----------------------------------------------------------
     bench_mesh M;
-    bench_mesh_rectangular_cross(O.nx, O.ny, P.length_x, P.length_y, 0.0, 0.0, &M);
-    if (O.morton == 1)
-        bench_mesh_reorder_morton(&M, O.nx, O.ny);
-    else if (O.morton == 2)
-        bench_mesh_reorder_random(&M, O.nx, O.ny);
+    double *bed_node = NULL, *stage_node = NULL;
+    if (O.mesh_path) {
+        bench_mesh_load(O.mesh_path, &M, &bed_node, &stage_node);
+        if (O.morton == 1)      bench_mesh_reorder_tris_morton(&M);
+        else if (O.morton == 2) bench_mesh_reorder_tris_random(&M);
+    } else {
+        bench_mesh_rectangular_cross(O.nx, O.ny, P.length_x, P.length_y, 0.0, 0.0, &M);
+        if (O.morton == 1)      bench_mesh_reorder_morton(&M, O.nx, O.ny);
+        else if (O.morton == 2) bench_mesh_reorder_random(&M, O.nx, O.ny);
+    }
 
     bench_domain B;
     const double t_build0 = omp_get_wtime();
-    bench_domain_build(&B, &M, &P);
+    bench_domain_build(&B, &M, &P, bed_node, stage_node);
     const double t_build = omp_get_wtime() - t_build0;
 
 
@@ -402,10 +412,14 @@ int main(int argc, char **argv) {
 #endif
 
     printf("ANUGA shallow-water miniapp -- %s\n", build_kind);
-    printf("  mesh      : %lld x %lld cross -> %lld triangles, %lld boundary edges\n",
-           (long long)O.nx, (long long)O.ny, (long long)n, (long long)GD->D.boundary_length);
-    printf("  case      : %s, %.0f x %.0f m, manning %.4g%s\n",
-           case_name, P.length_x, P.length_y, P.manning,
+    if (O.mesh_path)
+        printf("  mesh      : %s -> %lld triangles, %lld boundary edges\n",
+               O.mesh_path, (long long)n, (long long)GD->D.boundary_length);
+    else
+        printf("  mesh      : %lld x %lld cross -> %lld triangles, %lld boundary edges\n",
+               (long long)O.nx, (long long)O.ny, (long long)n, (long long)GD->D.boundary_length);
+    printf("  case      : %s, manning %.4g%s\n",
+           O.mesh_path ? "from mesh file" : case_name, P.manning,
            O.apply_forcing ? "" : " (friction off)");
     {
         const char *sn = P.scheme == BENCH_SCHEME_ADER2 ? "ader2 (DE_ader2)"
@@ -593,5 +607,7 @@ int main(int argc, char **argv) {
 
     bench_domain_free(&B);
     bench_mesh_free(&M);
+    free(bed_node);
+    free(stage_node);
     return rc;
 }

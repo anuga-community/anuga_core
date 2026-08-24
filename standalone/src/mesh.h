@@ -52,6 +52,18 @@ void bench_mesh_reorder_morton(bench_mesh *M, int64_t m, int64_t n);
 // sits between row-major (the optimistic bound) and this.
 void bench_mesh_reorder_random(bench_mesh *M, int64_t m, int64_t n);
 
+// Load a mesh dumped by tools/make_basin_mesh.py ("ANUGAMSH" v1): nodes,
+// triangles, boundary (all tags treated as reflective), and per-NODE bed and
+// initial-stage values (malloc'd here; caller frees).  orig_id starts NULL.
+void bench_mesh_load(const char *path, bench_mesh *M,
+                     double **bed_node, double **stage_node);
+
+// Triangle-granularity reorderings for loaded (non-grid) meshes: Morton on
+// quantized centroids, or a fixed-seed random shuffle.  Both maintain
+// orig_id so snapshots stay canonical.
+void bench_mesh_reorder_tris_morton(bench_mesh *M);
+void bench_mesh_reorder_tris_random(bench_mesh *M);
+
 void bench_mesh_free(bench_mesh *M);
 
 #endif // ANUGA_BENCH_MESH_H

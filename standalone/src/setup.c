@@ -175,7 +175,8 @@ void bench_params_apply_scheme(bench_params *P) {
     P->beta_vh = beta;  P->beta_vh_dry = 0.0;
 }
 
-void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params *P) {
+void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params *P,
+                        const double *bed_node, const double *stage_node) {
     memset(B, 0, sizeof(*B));
     B->mesh = *M;
 
@@ -433,41 +434,58 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
     D->y_centroid_work  = DALLOC(B, n);
     D->boundary_flux_sum = DALLOC(B, 3);   // one slot per RK substep
 
-    // Elevation is set per vertex and averaged down, exactly as
-    // Quantity.set_values(f, location='vertices') + interpolate() does.
+    // Elevation and stage per vertex, averaged down exactly as ANUGA's
+    // Quantity.set_values(location='vertices') + interpolate() does.  Loaded
+    // meshes supply per-node values; generated meshes evaluate the analytic
+    // case functions at the vertex coordinates.
     for (int64_t k = 0; k < n; k++) {
-        double zv[3];
-        for (int i = 0; i < 3; i++)
-            zv[i] = bed_value(P, D->vertex_coordinates[6 * k + 2 * i],
-                                 D->vertex_coordinates[6 * k + 2 * i + 1]);
+        double zv[3], wv[3];
+        for (int i = 0; i < 3; i++) {
+            if (bed_node != NULL) {
+                const int64_t node = M->triangles[3 * k + i];
+                zv[i] = bed_node[node];
+                wv[i] = stage_node[node];
+            } else {
+                zv[i] = bed_value(P, D->vertex_coordinates[6 * k + 2 * i],
+                                     D->vertex_coordinates[6 * k + 2 * i + 1]);
+                wv[i] = 0.0;   // filled from the centroid rule below
+            }
+        }
 
         for (int i = 0; i < 3; i++) {
             D->bed_vertex_values[3 * k + i] = zv[i];
             D->bed_edge_values[3 * k + i]   = 0.5 * (zv[(i + 1) % 3] + zv[(i + 2) % 3]);
         }
         D->bed_centroid_values[k] = (zv[0] + zv[1] + zv[2]) / 3.0;
-    }
 
-    // Conserved quantities start from centroid values; the first extrapolate
-    // of every step rebuilds the edge values, so only the centroids matter.
-    for (int64_t k = 0; k < n; k++) {
-        const double cxk = D->centroid_coordinates[2 * k + 0];
-        const double cyk = D->centroid_coordinates[2 * k + 1];
-        const double zc  = D->bed_centroid_values[k];
-        const double w   = stage_value(P, cxk, cyk, zc);
+        const double zc = D->bed_centroid_values[k];
+        double w;
+        if (bed_node != NULL) {
+            w = (wv[0] + wv[1] + wv[2]) / 3.0;
+            for (int i = 0; i < 3; i++) {
+                const double we = 0.5 * (wv[(i + 1) % 3] + wv[(i + 2) % 3]);
+                D->stage_edge_values[3 * k + i]    = we;
+                D->stage_vertex_values[3 * k + i]  = wv[i];
+                D->height_edge_values[3 * k + i]   = fmax(we - D->bed_edge_values[3 * k + i], 0.0);
+                D->height_vertex_values[3 * k + i] = fmax(wv[i] - zv[i], 0.0);
+            }
+        } else {
+            const double cxk = D->centroid_coordinates[2 * k + 0];
+            const double cyk = D->centroid_coordinates[2 * k + 1];
+            w = stage_value(P, cxk, cyk, zc);
+            for (int i = 0; i < 3; i++) {
+                D->stage_edge_values[3 * k + i]    = w;
+                D->stage_vertex_values[3 * k + i]  = w;
+                D->height_edge_values[3 * k + i]   = fmax(w - D->bed_edge_values[3 * k + i], 0.0);
+                D->height_vertex_values[3 * k + i] = fmax(w - zv[i], 0.0);
+            }
+        }
 
         D->stage_centroid_values[k]  = w;
         D->xmom_centroid_values[k]   = 0.0;
         D->ymom_centroid_values[k]   = 0.0;
         D->height_centroid_values[k] = fmax(w - zc, 0.0);
         D->friction_centroid_values[k] = P->manning;
-
-        for (int i = 0; i < 3; i++) {
-            D->stage_edge_values[3 * k + i]    = w;
-            D->stage_vertex_values[3 * k + i]  = w;
-            D->height_edge_values[3 * k + i]   = fmax(w - D->bed_edge_values[3 * k + i], 0.0);
-            D->height_vertex_values[3 * k + i] = fmax(w - D->bed_vertex_values[3 * k + i], 0.0);
-        }
     }
 
     // --- reflective boundary description (all four sides) -----------------

@@ -251,6 +251,42 @@ result-identical) likely the single biggest performance lever for
 production ANUGA on real meshes. ANUGA already has reordering machinery
 in `neighbour_mesh.py`.
 
+### A realistic basin (`--mesh`, tools/make_basin_mesh.py)
+
+`tools/make_basin_mesh.py` builds what production actually runs: a synthetic
+river basin (20 x 10 km sloped valley, meandering channel carved down the
+middle, 8x finer triangles along the channel than the floodplain) meshed by
+ANUGA's own Triangle wrapper -- so the element order is exactly what ANUGA
+emits -- with terrain and a flood IC (full headwater reservoir released over
+a baseflow-wetted channel) frozen into one binary file:
+
+```bash
+python tools/make_basin_mesh.py --target 2000000 --out build/basin_2m.msh
+./bin/bench_gpu --mesh build/basin_2m.msh --steps 100 --scheme ader2 --flux scatter
+```
+
+The benchmark stays Python-free at run time. `--still LEVEL` emits a flat
+constant-stage variant for the lake-at-rest gate on the real mesh (note:
+the at-rest IC must be a constant plane; a per-node `max(bed, L)` tilts the
+free surface inside shoreline cells and that water legitimately flows --
+all flux variants agreed bit-for-bit on that motion, which is how the gate
+proved the solvers innocent). Gates on the basin: volume drift 2e-16,
+lake-at-rest 5e-13, CPU vs GPU 1.6e-13.
+
+**The ordering result that matters** (2.43M-triangle basin, V100,
+ADER2 + scatter):
+
+| ordering | Mcell-steps/s | |
+|---|---|---|
+| as-meshed (ANUGA's Triangle output) | 567 | what production gets today |
+| + Morton reorder (`--order morton`) | **634** | **+12%, free, result-identical** |
+| random | 170 | pessimistic bound |
+
+ANUGA's mesher order is decent (87% of the structured-grid figure) but not
+optimal: a one-time centroid-Morton renumbering at domain construction is
+worth ~12% on real meshes and nothing on structured ones -- the strongest
+argument yet for wiring the reorder into production mode 2.
+
 ### Timestepping schemes (`--scheme`)
 
 `rk2 | ader2 | euler | rk3`, each selecting its ANUGA preset (DE1 / DE_ader2 /
