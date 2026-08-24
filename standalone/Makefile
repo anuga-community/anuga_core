@@ -67,6 +67,25 @@ ifeq ($(CONFIG),ompcpu)
   CFLAGS      := -O3 -g -mp=multicore -DCPU_ONLY_MODE
   LDFLAGS     := -mp=multicore
 endif
+# --- experimental targets for the AMD/Intel portability test (untested on
+# --- real hardware yet; expect flag fixes on first contact) ---------------
+ifeq ($(CONFIG),amdgpu)
+  # ROCm: amdclang or mainline clang with AMDGPU offload.
+  # AMD_ARCH: gfx90a (MI210/250), gfx942 (MI300); autodetected when possible.
+  CC          ?= amdclang
+  AMD_ARCH    ?= $(shell rocm_agent_enumerator 2>/dev/null | grep -v gfx000 | head -1)
+  ifeq ($(strip $(AMD_ARCH)),)
+    AMD_ARCH  := gfx90a
+  endif
+  CFLAGS      := -O3 -g -fopenmp --offload-arch=$(AMD_ARCH) $(WARN)
+  LDFLAGS     := -fopenmp --offload-arch=$(AMD_ARCH)
+endif
+ifeq ($(CONFIG),intelgpu)
+  # oneAPI: icx with SPIR-V offload (JIT for the present device).
+  CC          := icx
+  CFLAGS      := -O3 -g -fiopenmp -fopenmp-targets=spir64 $(WARN)
+  LDFLAGS     := -fiopenmp -fopenmp-targets=spir64
+endif
 ifeq ($(CONFIG),clanggpu)
   CC          := clang
   SM_ARCH     := sm_$(patsubst cc%,%,$(GPU_ARCH))
@@ -116,10 +135,10 @@ OBJ        := $(addprefix $(OBJDIR)/,$(notdir $(KERNEL_SRC:.c=.o)) $(notdir $(BE
 DEP        := $(OBJ:.o=.d)
 
 # ---------------------------------------------------------------- targets
-.PHONY: all cpu gpu ompcpu clanggpu build clean verify run dist
+.PHONY: all cpu gpu ompcpu clanggpu amdgpu intelgpu build clean verify run dist
 all: cpu gpu
 
-cpu ompcpu gpu clanggpu:
+cpu ompcpu gpu clanggpu amdgpu intelgpu:
 	@$(MAKE) --no-print-directory CONFIG=$@ build
 
 build: $(BIN)

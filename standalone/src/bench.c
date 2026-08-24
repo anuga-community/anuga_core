@@ -17,9 +17,11 @@
 
 #include "gpu_domain.h"
 #include "core_kernels.h"
+#include "gpu_omp_macros.h"
 #include "mesh.h"
 
-#ifndef CPU_ONLY_MODE
+// ---- CUDA experiment machinery: NVIDIA toolchain only ------------------
+#if !defined(CPU_ONLY_MODE) && defined(__NVCOMPILER)
 // CUDA experiment: hand-written reconstruction kernel in a pure-nvcc shared
 // library (build/gpu/cuextrap.so), dlopen()ed to keep the CUDA runtime out of
 // the OpenMP-target link (which it breaks).  We resolve the device pointers
@@ -29,6 +31,32 @@
 #include "cuda_extrap.h"
 static int g_cuda_extrap_tpb = 0;
 
+static cuda_extrap_fn g_cuda_extrap_launch = NULL;
+
+static void *dev_ptr(const void *host) {
+    void *p = omp_get_mapped_ptr(host, omp_get_default_device());
+    if (!p) { fprintf(stderr, "bench: %p not device-mapped\n", host); exit(1); }
+    return p;
+}
+
+static void cuda_extrap_load(void) {
+    void *h = dlopen("./build/gpu/cuextrap.so", RTLD_NOW);
+    if (!h) { fprintf(stderr, "bench: %s\n", dlerror()); exit(1); }
+    g_cuda_extrap_launch = (cuda_extrap_fn)dlsym(h, "cuda_extrapolate_launch");
+    if (!g_cuda_extrap_launch) { fprintf(stderr, "bench: %s\n", dlerror()); exit(1); }
+}
+
+#else
+// CPU builds (gcc/libgomp lacks omp_get_mapped_ptr) and non-NVIDIA
+// offload toolchains (AMD/Intel: no CUDA) compile the experiment out.
+static int g_cuda_extrap_tpb = 0;
+static void cuda_extrap_load(void) {
+    fprintf(stderr, "bench: --cuda-extrap needs the NVIDIA GPU build\n");
+    exit(2);
+}
+#endif
+
+// ---- portable machinery (all toolchains) --------------------------------
 // Active-set mode: skip cells/edges that provably cannot change (dry with an
 // all-dry neighbourhood).  Rebuilt every step with a 2-ring cell halo; the
 // first step always runs full so every cell's edge values and protect clamps
@@ -58,7 +86,6 @@ static double *g_rg_times;      // [nt] sim seconds, sorted
 static float  *g_rg_rates;      // [nt * ny * nx] mm/hr
 static anuga_int *g_rg_cellidx; // [n] centroid -> raster index
 static const char *g_rain_grid_path = NULL;
-
 static void rain_grid_load(struct gpu_domain *GD) {
     FILE *fp = fopen(g_rain_grid_path, "rb");
     if (!fp) { perror(g_rain_grid_path); exit(1); }
@@ -114,7 +141,7 @@ static void apply_rain_grid(struct gpu_domain *GD, double t_sim, double dt) {
     double * restrict stage_cv = D->stage_centroid_values;
     float * restrict rates = g_rg_rates;
     anuga_int * restrict ci = g_rg_cellidx;
-    #pragma omp target teams loop
+    OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < nel; k++) {
         stage_cv[k] += conv * (double)rates[base + ci[k]];
     }
@@ -134,31 +161,13 @@ static void apply_rain(struct gpu_domain *GD, double t_sim, double dt) {
     double * restrict cc = D->centroid_coordinates;
     const double x0 = g_rain_x0, x1 = g_rain_x1;
     const int banded = (x0 >= 0.0);
-    #pragma omp target teams loop
+    OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
         if (!banded || (cc[2 * k] >= x0 && cc[2 * k] <= x1))
             stage_cv[k] += dstage;
     }
 }
 
-
-static cuda_extrap_fn g_cuda_extrap_launch = NULL;
-
-static void *dev_ptr(const void *host) {
-    void *p = omp_get_mapped_ptr(host, omp_get_default_device());
-    if (!p) { fprintf(stderr, "bench: %p not device-mapped\n", host); exit(1); }
-    return p;
-}
-
-static void cuda_extrap_load(void) {
-    void *h = dlopen("./build/gpu/cuextrap.so", RTLD_NOW);
-    if (!h) { fprintf(stderr, "bench: %s\n", dlerror()); exit(1); }
-    g_cuda_extrap_launch = (cuda_extrap_fn)dlsym(h, "cuda_extrapolate_launch");
-    if (!g_cuda_extrap_launch) { fprintf(stderr, "bench: %s\n", dlerror()); exit(1); }
-}
-
-// Rebuild the active sets for this step (or select the full domain when the
-// mode is off / warming up).  Fills iter-lists for cells and edges.
 static void active_step_lists(struct gpu_domain *GD,
                               const anuga_int **cells, anuga_int *ncells,
                               const anuga_int **edges, anuga_int *nedges) {
@@ -177,6 +186,7 @@ static void active_step_lists(struct gpu_domain *GD,
 
 static void extrapolate_phase(struct gpu_domain *GD, double predictor_dt,
                               const anuga_int *iter, anuga_int iter_n) {
+#if !defined(CPU_ONLY_MODE) && defined(__NVCOMPILER)
     if (g_cuda_extrap_tpb <= 0) {
         if (iter) core_extrapolate_edge_pass_on(&GD->D, predictor_dt, iter, iter_n);
         else      gpu_extrapolate_edges(GD, predictor_dt);
@@ -209,21 +219,13 @@ static void extrapolate_phase(struct gpu_domain *GD, double predictor_dt,
     a.x_centroid_work = dev_ptr(D->x_centroid_work);
     a.y_centroid_work = dev_ptr(D->y_centroid_work);
     if (g_cuda_extrap_launch(a, g_cuda_extrap_tpb) != 0) exit(1);
-}
 #else
-// CPU builds (gcc/libgomp) have no omp_get_mapped_ptr and no CUDA: the
-// experiment is GPU-only.  Keep the flag so the CLI parses uniformly.
-static int g_cuda_extrap_tpb = 0;
-static void cuda_extrap_load(void) {
-    fprintf(stderr, "bench: --cuda-extrap needs the GPU build\n");
-    exit(2);
-}
-static void extrapolate_phase(struct gpu_domain *GD, double predictor_dt,
-                              const anuga_int *iter, anuga_int iter_n) {
+    (void)GD; (void)predictor_dt;
     if (iter) core_extrapolate_edge_pass_on(&GD->D, predictor_dt, iter, iter_n);
     else      gpu_extrapolate_edges(GD, predictor_dt);
+#endif
 }
-#endif  // CPU_ONLY_MODE
+
 #include "setup.h"
 #include "snapshot.h"
 
