@@ -3,7 +3,10 @@
 # record throughput plus the real device footprint at each size.
 #
 #   tools/scaling_sweep.sh [--bin bin/bench_gpu] [--steps 20] [--case dam]
-#                          [--csv build/scaling.csv] [nx1 nx2 ...]
+#                          [--csv build/scaling.csv] [nx1 nx2 ...] [-- extra...]
+#
+# Everything after `--` is passed to the benchmark verbatim, e.g.
+#   tools/scaling_sweep.sh 1000 2000 -- --scheme ader2 --flux scatter
 #
 # Device memory is sampled from nvidia-smi while each run is in flight, because
 # ANUGA's own gpu_query_device_memory() only reports real numbers when the
@@ -16,6 +19,7 @@ WARMUP=5
 CASE=dam
 CSV=build/scaling.csv
 SIZES=()
+EXTRA=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -24,7 +28,8 @@ while [[ $# -gt 0 ]]; do
         --warmup) WARMUP=$2; shift 2 ;;
         --case)   CASE=$2;   shift 2 ;;
         --csv)    CSV=$2;    shift 2 ;;
-        -h|--help) sed -n '2,12p' "$0"; exit 0 ;;
+        -h|--help) sed -n '2,16p' "$0"; exit 0 ;;
+        --)       shift; EXTRA=("$@"); break ;;
         *)        SIZES+=("$1"); shift ;;
     esac
 done
@@ -56,7 +61,7 @@ for nx in "${SIZES[@]}"; do
     poller=$!
 
     out=$("$BIN" --nx "$nx" --ny "$nx" --steps "$STEPS" --warmup "$WARMUP" \
-                 --case "$CASE" --csv "$CSV" 2>&1)
+                 --case "$CASE" --csv "$CSV" "${EXTRA[@]}" 2>&1)
     rc=$?
 
     kill "$poller" 2>/dev/null; wait "$poller" 2>/dev/null

@@ -172,6 +172,27 @@ optimisations, which remove launches and loads, not arrays. Throughput
 saturates at about 1M triangles; below that the step is launch-latency bound
 and not worth optimising against.
 
+The same sweep for the fastest configuration, **ADER2 + scatter fluxes**
+(`tools/scaling_sweep.sh ... -- --scheme ader2 --flux scatter`):
+
+| triangles | ms/step | Mcell-steps/s | device |
+|-----------|---------|---------------|--------|
+| 40 K      | 0.23    | 174           | 0.15 GiB |
+| 1 M       | 2.25    | 446           | 0.96 GiB |
+| 4 M       | 8.10    | 494           | 2.45 GiB |
+| 10.2 M    | 20.44   | **501**       | 5.54 GiB |
+| 16 M      | 32.29   | 496           | 8.38 GiB |
+| 41 M      | 84.93   | 482           | 20.63 GiB |
+| 51.8 M    | 116.65  | 444           | 25.96 GiB |
+| 63.4 M    | 145.67  | 435           | 31.64 GiB |
+| 64 M      | —       | —             | **out of memory** |
+
+Same shape: saturation at ~1M triangles, ~10% fade toward the wall. The
+ceiling drops from 65.6M to **63.4M** — scatter's per-slot wave-speed array
+costs 24 B/triangle (536 total), and the 64M run dies allocating exactly that
+1.54 GB array. Throughput in the plateau is 2.0–2.1x the original baseline
+across every size.
+
 ## Kernel optimisations
 
 Changes to `anuga/shallow_water/gpu/`, every one bit-exact against the
