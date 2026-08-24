@@ -253,12 +253,19 @@ Three further changes took ADER2 + scatter from 32.2 to 24.4 ms/step at 16M:
   per physical edge instead of one per slot with half idle -- flux kernel
   11.2 -> 7.8 ms. The serial benchmark also passes tri_full_flag = NULL,
   skipping the ghost-ownership gathers.
-- ncu shows the fused reconstruction kernel register-limited at 24%%
-  occupancy (~128 regs/thread); global `-gpu=maxregcount` capping traded
-  spills for occupancy at net zero. The documented next lever is splitting
-  that kernel by quantity. **Do NOT reach for `OMP_TEAMS_THREAD_LIMIT`**: it
-  produces up to 1.6x "speedups" with silently corrupt physics (see
-  `claude/KNOWN_ISSUES.md`).
+- The fused reconstruction kernel (~48% of the step) has now resisted three
+  structural attacks, all measured: ncu shows it register-limited at 24%
+  occupancy (~128 regs/thread), but global `-gpu=maxregcount` capping trades
+  spills for occupancy at net zero; **splitting it by quantity** (stage+height
+  kernel, then velocity+momentum+predictor kernel -- bit-exact, and it even
+  fixes the dry-zero visibility race) costs +33% because the re-read geometry
+  and edge values outweigh the doubled occupancy; and the interleaved-gather
+  pack measured -40% in its branchy form, with the branch-free variant
+  predicted marginal since row-major locality already keeps the gathers
+  L2-warm (the Morton result). At 55-60% DRAM utilisation with its access
+  pattern the kernel is near its structural floor for portable OpenMP.
+  **Do NOT reach for `OMP_TEAMS_THREAD_LIMIT`**: it produces up to 1.6x
+  "speedups" with silently corrupt physics (see `claude/KNOWN_ISSUES.md`).
 
 ### Flux kernel structure (`--flux`)
 
