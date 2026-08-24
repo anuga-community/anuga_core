@@ -166,6 +166,51 @@ void bench_mesh_reorder_morton(bench_mesh *M, int64_t m, int64_t n) {
     M->orig_id = orig_id;
 }
 
+// Apply an arbitrary cell permutation: perm[new_cell] = old_cell.
+static void apply_cell_permutation(bench_mesh *M, const int64_t *perm, int64_t ncells) {
+    const int64_t ntris = M->num_triangles;
+
+    int64_t *new_of_old = (int64_t *)xmalloc((size_t)ntris * sizeof(int64_t));
+    int64_t *orig_id    = (int64_t *)xmalloc((size_t)ntris * sizeof(int64_t));
+    for (int64_t c = 0; c < ncells; c++)
+        for (int t = 0; t < 4; t++) {
+            const int64_t old_id = 4 * perm[c] + t;
+            const int64_t new_id = 4 * c + t;
+            new_of_old[old_id] = new_id;
+            orig_id[new_id]    = old_id;
+        }
+
+    int64_t *tris = (int64_t *)xmalloc((size_t)3 * ntris * sizeof(int64_t));
+    for (int64_t k = 0; k < ntris; k++)
+        for (int v = 0; v < 3; v++)
+            tris[3 * k + v] = M->triangles[3 * orig_id[k] + v];
+    free(M->triangles);
+    M->triangles = tris;
+
+    for (int64_t b = 0; b < M->num_boundary; b++)
+        M->boundary_tri[b] = new_of_old[M->boundary_tri[b]];
+
+    free(new_of_old);
+    free(M->orig_id);
+    M->orig_id = orig_id;
+}
+
+void bench_mesh_reorder_random(bench_mesh *M, int64_t m, int64_t n) {
+    const int64_t ncells = m * n;
+    int64_t *perm = (int64_t *)xmalloc((size_t)ncells * sizeof(int64_t));
+    for (int64_t c = 0; c < ncells; c++) perm[c] = c;
+
+    // Deterministic 64-bit LCG Fisher-Yates (fixed seed: runs reproduce)
+    unsigned long long state = 0x9E3779B97F4A7C15ull;
+    for (int64_t c = ncells - 1; c > 0; c--) {
+        state = state * 6364136223846793005ull + 1442695040888963407ull;
+        const int64_t j = (int64_t)((state >> 17) % (unsigned long long)(c + 1));
+        int64_t tmp = perm[c]; perm[c] = perm[j]; perm[j] = tmp;
+    }
+    apply_cell_permutation(M, perm, ncells);
+    free(perm);
+}
+
 void bench_mesh_free(bench_mesh *M) {
     free(M->nodes);
     free(M->triangles);

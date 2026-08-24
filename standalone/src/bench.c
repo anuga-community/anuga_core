@@ -127,7 +127,7 @@ static void usage(const char *argv0) {
 "    --water V         still-water / downstream stage   (default 5)\n"
 "    --dam V           upstream stage                   (default 10)\n"
 "    --no-friction     skip the Manning forcing term\n"
-"    --order NAME      row | morton -- element numbering  (default row)\n"
+"    --order NAME      row | morton | random -- element numbering (default row)\n"
 
 "                        morton renumbers triangles along a Z-order curve so\n"
 "                        both grid directions' neighbours stay cache-near;\n"
@@ -348,6 +348,7 @@ int main(int argc, char **argv) {
             const char *o = arg_s(argc, argv, &i, a);
             if      (!strcmp(o, "row"))    O.morton = 0;
             else if (!strcmp(o, "morton")) O.morton = 1;
+            else if (!strcmp(o, "random")) O.morton = 2;
             else { fprintf(stderr, "bench: unknown order '%s'\n", o); return 2; }
         }
         else if (!strcmp(a, "--case")) {
@@ -374,8 +375,10 @@ int main(int argc, char **argv) {
     // ---- build -----------------------------------------------------------
     bench_mesh M;
     bench_mesh_rectangular_cross(O.nx, O.ny, P.length_x, P.length_y, 0.0, 0.0, &M);
-    if (O.morton)
+    if (O.morton == 1)
         bench_mesh_reorder_morton(&M, O.nx, O.ny);
+    else if (O.morton == 2)
+        bench_mesh_reorder_random(&M, O.nx, O.ny);
 
     bench_domain B;
     const double t_build0 = omp_get_wtime();
@@ -414,7 +417,9 @@ int main(int argc, char **argv) {
                P.flux_mode == 1 ? "edge" : P.flux_mode == 2 ? "scatter" : "cell");
     }
     printf("  ordering  : %s\n",
-           O.morton ? "morton (Z-order curve)" : "row-major (ANUGA rectangular_cross)");
+           O.morton == 1 ? "morton (Z-order curve)"
+         : O.morton == 2 ? "random (pessimistic locality bound)"
+         : "row-major (ANUGA rectangular_cross)");
     printf("  devices   : %d visible, using %d\n", omp_get_num_devices(), GD->device_id);
     printf("  setup     : %.3f s build, %.3f s map-to-device\n", t_build, t_map);
 

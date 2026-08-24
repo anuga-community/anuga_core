@@ -46,6 +46,12 @@ void bench_mesh_rectangular_cross(int64_t m, int64_t n,
 // neighbour gather in the flux and extrapolation kernels.
 void bench_mesh_reorder_morton(bench_mesh *M, int64_t m, int64_t n);
 
+// Renumber the CELLS randomly (deterministic LCG shuffle, fixed seed), still
+// keeping each cell's 4 triangles together.  This is the pessimistic locality
+// bound: a real unstructured flood mesh (mesher-ordered, variable resolution)
+// sits between row-major (the optimistic bound) and this.
+void bench_mesh_reorder_random(bench_mesh *M, int64_t m, int64_t n);
+
 void bench_mesh_free(bench_mesh *M);
 
 #endif // ANUGA_BENCH_MESH_H

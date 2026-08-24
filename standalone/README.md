@@ -226,6 +226,31 @@ a stencil kernel — it reads `height_cv[neighbour]`, `bed_cv[neighbour]`,
 or edge value from inside it races against another team still reading that
 value, and `omp target teams loop` has no device-wide barrier to order them.
 
+### Mesh, and how structured it really is (`--order`)
+
+The generator replicates ANUGA's `rectangular_cross` node-for-node: an
+nx x ny grid of cells, each split into 4 triangles around a centre node.
+The kernels treat it as FULLY unstructured (all access goes through the
+general connectivity arrays), so the code paths are representative of any
+triangulation -- but the grid-ordered numbering makes the gathers
+unrealistically cache-friendly, so the throughput numbers are the
+optimistic bound. `--order` quantifies the spread (ADER2 + scatter, 16M
+triangles, V100; all three bit-exact against the same goldens via
+canonical-order snapshots):
+
+| ordering | Mcell-steps/s | |
+|---|---|---|
+| `row` (ANUGA rectangular_cross) | 652 | optimistic bound |
+| `morton` (Z-order curve) | 658 | (a slight WIN on the optimized kernels; the -12% measured earlier was against the old cell-based RK2) |
+| `random` (fixed-seed shuffle) | 275 | pessimistic bound: **2.4x slower** |
+
+A real flood mesh (mesher-ordered, variable resolution) sits between the
+bounds -- which makes element renumbering (Morton/RCM on centroids, a
+one-time preprocessing permutation that these experiments prove is
+result-identical) likely the single biggest performance lever for
+production ANUGA on real meshes. ANUGA already has reordering machinery
+in `neighbour_mesh.py`.
+
 ### Timestepping schemes (`--scheme`)
 
 `rk2 | ader2 | euler | rk3`, each selecting its ANUGA preset (DE1 / DE_ader2 /
