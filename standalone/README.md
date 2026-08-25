@@ -466,12 +466,22 @@ ADER2 + scatter, 4M triangles, row order, one device:
 | PVC (1 of 6) | 1542 | flux-heavy 46%% -- Hopper-like |
 | H200 | 2837 | flux 44%% / reconstruction 39%% |
 
-PVC lands at A100-class untuned.  The MI250X's 62%% reconstruction share
-makes that register-heavy kernel the one target for AMD tuning.  Both
-MI250X GCDs and PVC stacks enumerate as separate OpenMP devices, so a
-node is ~8x / ~6x the single-device figure under MPI: one MI250X node
-(8 GCDs x 412 = 3.3 Gc/s) edges out one H200.  4M triangles may not
-saturate either part -- the NVIDIA plateaus sit at 8-16M.
+Full scaling sweeps (19 sizes, 40k -> 134.56M triangles, 61.2 GiB
+mapped, build/mi250x_scaling.csv + build/pvc_scaling.csv): the MI250X
+GCD is the flattest device measured -- ~385 Mc/s held from 2M to 134.6M
+with no large-mesh fade at all (peak 419 at 2M).  PVC peaks at 1552
+(10M, A100-class) and fades ~30%% to ~1050-1080 above 90M -- the same
+large-mesh shape as the V100.  Neither hit its memory ceiling at
+nx=5800; the 488 B/tri footprint puts 64-GiB walls near nx~5900.
+Cross-vendor determinism is total: AMD and Intel print identical
+max-momentum digits at every one of the 19 sizes, volume drift <=1e-16,
+zero NaNs.  The MI250X's 62%% reconstruction share makes that
+register-heavy kernel the one target for AMD tuning.  Both MI250X GCDs
+and PVC stacks enumerate as separate OpenMP devices, so a node is
+~8x / ~6x the single-device figure under MPI: one MI250X node (8 GCDs
+x ~385 = 3.1 Gc/s sustained) edges out one H200.  Five-device chart:
+tmp_artifacts/anuga_v100_scaling.html's cross-vendor successor lives at
+the "One Source, Five GPUs" artifact.
 
 ### Cross-architecture results (V100 / A100-80 / H200)
 
