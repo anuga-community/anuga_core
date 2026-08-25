@@ -93,7 +93,7 @@ void gpu_evaluate_reflective_boundary(struct gpu_domain *GD) {
     double *height_ev = GD->D.height_edge_values;
     double *xmom_ev = GD->D.xmom_edge_values;
     double *ymom_ev = GD->D.ymom_edge_values;
-    double *normals = GD->D.normals;
+    anuga_geom_t *normals = GD->D.normals;
 
     // Boundary values (write)
     double *stage_bv = GD->D.stage_boundary_values;
@@ -447,7 +447,7 @@ void gpu_evaluate_transmissive_n_zero_t_boundary(struct gpu_domain *GD) {
     double *ymom_ev = GD->D.ymom_edge_values;
     double *bed_ev = GD->D.bed_edge_values;
     double *height_ev = GD->D.height_edge_values;
-    double *normals = GD->D.normals;
+    anuga_geom_t *normals = GD->D.normals;
 
     // Boundary values (write)
     double *stage_bv = GD->D.stage_boundary_values;
@@ -836,7 +836,7 @@ void gpu_evaluate_absorbing_wave_boundary(struct gpu_domain *GD) {
     double *height_ev = GD->D.height_edge_values;
     double *xmom_ev   = GD->D.xmom_edge_values;
     double *ymom_ev   = GD->D.ymom_edge_values;
-    double *normals   = GD->D.normals;
+    anuga_geom_t *normals   = GD->D.normals;
 
     double *stage_bv  = GD->D.stage_boundary_values;
     double *bed_bv    = GD->D.bed_boundary_values;
@@ -969,7 +969,7 @@ void gpu_evaluate_characteristic_wave_boundary(struct gpu_domain *GD) {
     double *height_ev = GD->D.height_edge_values;
     double *xmom_ev   = GD->D.xmom_edge_values;
     double *ymom_ev   = GD->D.ymom_edge_values;
-    double *normals   = GD->D.normals;
+    anuga_geom_t *normals   = GD->D.normals;
 
     double *stage_bv  = GD->D.stage_boundary_values;
     double *bed_bv    = GD->D.bed_boundary_values;
@@ -1111,7 +1111,7 @@ void gpu_evaluate_flather_boundary(struct gpu_domain *GD) {
     double *height_ev = GD->D.height_edge_values;
     double *xmom_ev   = GD->D.xmom_edge_values;
     double *ymom_ev   = GD->D.ymom_edge_values;
-    double *normals   = GD->D.normals;
+    anuga_geom_t *normals   = GD->D.normals;
 
     double *stage_bv  = GD->D.stage_boundary_values;
     double *bed_bv    = GD->D.bed_boundary_values;
