@@ -57,6 +57,101 @@ MESH_SIZE = 900  # <-- CHANGE THIS for different mesh sizes
 This is why it is nice to call things `${resolution}sqm.msh` so that I can just change that name and boom. 
 
 
+## run_prod_cached.py / rain_cache.py — preloaded rainfall (fixes the I/O bottleneck)
+
+**Use this instead of `run_prod.py` / `run_model_3*.py` for production runs at scale.**
+
+### The problem
+
+Every Mahanadi script re-reads the rainfall CSV *inside* the evolve loop. At each
+3-hourly yieldstep, on **every MPI rank**, it does:
+
+```python
+for tri_index in range(len(domain)):                 # ~2.4M triangles
+    global_vertices = domain.node_l2g[domain.get_triangles(tri_index)]
+    linecache.getline(rain_file, global_vertices[0] + 1)   # x3 per triangle
+    ...
+domain.set_quantity('Rain', numeric=..., location='vertices', alpha=0.1)   # full fit
+rain_operator.set_rate(rate=Q)
+```
+
+That is ~7M `linecache` lookups per rank per yieldstep, all ranks hammering the
+same file on Lustre, followed by a `set_quantity` fit. Profiling showed the run
+spends more time here than in the solver. It is equally bad on CPU and GPU — on
+GPU it additionally forces a device sync + re-upload of the rate array.
+
+### The fix
+
+`rain_cache.py` moves all of it to **before** `evolve`:
+
+1. **Schedule** — replays the original if/elif priority chain
+   (`imd_pt_bhub → imd_rain25 → imd_wrf → imd_gfs → gpm → gfs → zero`) over
+   every yieldstep, including the "daily file is kept until the next
+   `daily_time`, 3-hourly files are re-evaluated every yieldstep" behaviour.
+2. **Read once** — rank 0 reads each *unique* file with `np.loadtxt`, applies
+   the unit factor, and `MPI.bcast`s the global node vector.
+3. **Localise** — each rank gathers its nodes via `domain.node_l2g[domain.triangles]`
+   and averages the three vertices to a centroid rate (identical result to the
+   old `set_quantity(location='vertices')` path).
+4. **Stack** — everything lands in one `(n_slices, N_local)` float64 array.
+
+In the loop the only work is an array copy when the slice changes:
+
+```python
+from rain_cache import CachedRain
+
+cached_rain = CachedRain(domain, yieldstep, finaltime, daily_time, rain_sources)
+
+for t in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
+    cached_rain.apply(t, Q, rain_operator)     # no I/O, no set_quantity fit
+```
+
+`apply()` sets `Q.centroid_values`, calls `rain_operator.set_rate(Q)` (keeps
+`rate_type='quantity'` → GPU array kernel), and flips
+`_gpu_rate_array_cache = None` / `_gpu_rate_changed = True` so the GPU path
+re-uploads only when the rain actually changes. On CPU those flags are inert.
+
+### Configuring sources
+
+`rain_sources` in `run_prod_cached.py` is an ordered list of
+`(name, path_template, skiprows, factor, is_daily)`:
+
+```python
+rain_sources = [
+    ('imd_pt_bhub', _p('imd/daily/pt_data_bhubaneshwar', 'imd'), 0, imd_rainfall_factor_pt_bhub,      True),
+    ('imd_rain25',  _p('imd/daily/rgdata_rain_25',       'imd'), 2, imd_rainfall_factor_rgdata_rain25, True),
+    ('imd_wrf',     _p('imd/wrf',                        'imd'), 0, imd_rainfall_factor_wrf,           False),
+    ('imd_gfs',     _p('imd/gfs',                        'imd'), 0, imd_rainfall_factor_gfs,           False),
+    ('gpm',         _p('gpm',                            'gpm'), 0, gpm_rainfall_factor,               False),
+    ('gfs',         _p('gfs',                            'gfs'), 0, gfs_rainfall_factor,               False),
+]
+```
+
+- `skiprows` replaces the old `vertices[i] + 1` / `+ 3` line offsets (0 and 2).
+- `is_daily=True` → once found, kept until the next entry in `daily_time`.
+- Order matters: first existing file wins, exactly like the old `elif` chain.
+- To add a product: append a tuple. To drop one: delete its line.
+
+### Verification
+
+Checked bit-exact against the original per-vertex `linecache` + `set_quantity`
+path on a synthetic mesh (real file, missing-file → zero, and "keep previous"
+steps all give `max |diff| == 0.0`).
+
+### Caveats
+
+- **Files are discovered at startup.** The old loop re-checked `os.path.exists`
+  every 3 h, so a file dropped in mid-run would be picked up; the cached version
+  will not see it. Make sure the rainfall pipeline has finished writing
+  `rainfall_data/**/<date>/` before launching.
+- Memory is `n_slices × N_local × 8 B` per rank — a 5-day run at 3 h on the
+  2.4M mesh over 64 ranks is ~12 MB/rank.
+- Startup log prints one line per file read plus a summary
+  (`[rain_cache] 41 yieldsteps, 38 files preloaded, 3 zero-rain steps, ...`);
+  if the file count is 0, your paths/date are wrong.
+- The elevation load at startup still uses per-vertex `linecache` (rank 0
+  only, one-off). Same technique applies if startup time becomes an issue.
+
 ## Building ANUGA GPU
 
 Requirements:
@@ -292,6 +387,8 @@ If GPU mode produces different results than CPU mode:
 4. **Consolidate Rate_operators into a single Quantity** (see below).
 
 ### Rate_operator Optimization (CRITICAL for GPU)
+
+> For the Mahanadi per-vertex rainfall CSVs, see **run_prod_cached.py / rain_cache.py** above — same principle (preload once, array lookup in the loop), already wired into the production script.
 
 **The Problem**: Many scripts create multiple Rate_operators for rainfall, one per polygon:
 
