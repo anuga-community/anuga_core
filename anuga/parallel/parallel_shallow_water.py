@@ -175,7 +175,8 @@ class Parallel_domain(Domain):
 
 
 
-    def sww_merge(self, verbose=False, delete_old=False, chunk_size=None):
+    def sww_merge(self, verbose=False, delete_old=False, chunk_size=None,
+                  workers=None):
         """Merge all the sub domain sww files into a global sww file
 
         :param bool verbose: Flag to produce more output
@@ -187,6 +188,11 @@ class Parallel_domain(Domain):
             bound peak memory use when the full merged time series does not
             fit in RAM.
         :type chunk_size: int or None
+        :param workers: Number of processes used to assemble the merged
+            dynamic quantities (only rank 0 merges).  ``None``/``1`` keeps
+            the serial merge; N > 1 reads and scatters in parallel with
+            identical output.  Needs the 'fork' start method (Linux/macOS).
+        :type workers: int or None
 
         """
 
@@ -201,7 +207,8 @@ class Parallel_domain(Domain):
             global_name = join(self.get_datadir(),self.get_global_name())
 
             merge.sww_merge_parallel(global_name, self.numproc, verbose,
-                                     delete_old, chunk_size=chunk_size)
+                                     delete_old, chunk_size=chunk_size,
+                                     workers=workers)
 
         # make sure all the merge completes on processor 0 before other
         # processors complete (like when finalize is forgotten in main script)

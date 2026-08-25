@@ -10,6 +10,196 @@ from anuga.config import netcdf_mode_r, netcdf_mode_w, netcdf_mode_a
 from anuga.config import netcdf_float, netcdf_float32, netcdf_int
 from anuga.file.sww import SWW_file, Write_sww
 
+
+# ----------------------------------------------------------------------
+# Parallel dynamic-quantity pass
+#
+# The dynamic (time-varying) part of a merge decomposes into independent
+# (quantity, timestep-chunk) tasks: read that chunk from every per-rank
+# file and scatter it into a global array.  Only the final NetCDF write
+# must be serial (netCDF3 has a single writer).  With workers > 1 the
+# tasks run in a fork-based process pool -- the per-file index arrays are
+# inherited copy-on-write, so nothing large is pickled -- and each result
+# comes back through a reusable shared-memory buffer that the parent
+# writes into the output file in submission order.  Peak extra memory is
+# bounded by (workers + 2) buffers of chunk_size x max(n_global) floats.
+# ----------------------------------------------------------------------
+
+_MERGE_WORKER_STATE = {}
+
+
+def _merge_worker_task(args):
+    """Fill one shared-memory buffer with one (quantity, chunk) scatter.
+
+    Runs in a forked worker.  Reads ``quantity[t_start:t_end]`` from every
+    per-rank file and scatters it into the global-node layout using the
+    index arrays inherited from the parent.  Returns (min, max) of the
+    assembled chunk.
+    """
+    quantity, kind, t_start, t_end, shm_name, n_global = args
+    from multiprocessing import shared_memory
+
+    state = _MERGE_WORKER_STATE
+    shms = state.setdefault('shms', {})
+    if shm_name not in shms:
+        shms[shm_name] = shared_memory.SharedMemory(name=shm_name)
+    handles = state.setdefault('handles', {})
+
+    n_chunk = t_end - t_start
+    buf = num.ndarray((n_chunk, n_global), dtype=num.float32,
+                      buffer=shms[shm_name].buf)
+    buf[:] = 0.0
+    for filename in state['files']:
+        src, dst = state['index'][filename][kind]
+        fid = handles.get(filename)
+        if fid is None:
+            fid = handles[filename] = NetCDFFile(filename, netcdf_mode_r)
+        q_data = num.array(fid.variables[quantity][t_start:t_end],
+                           dtype=num.float32)
+        buf[:, dst] = q_data[:, src]
+    return float(buf.min()), float(buf.max())
+
+
+def _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
+                              n_steps, chunk_size, workers=None,
+                              verbose=False):
+    """Assemble and write all dynamic quantities of a merged sww file.
+
+    Parameters
+    ----------
+    scatter_index : {filename: {kind: (src_idx, dst_idx)}}
+        Per-file index arrays such that the global chunk is assembled by
+        ``chunk[:, dst_idx] = file_data[:, src_idx]``.
+    qspecs : list of (name, kind, n_global, track_range)
+        One entry per dynamic quantity.  ``kind`` selects the index pair
+        ('vertex' or 'centroid'); ``track_range`` updates the quantity's
+        _range variable from the assembled data.
+    workers : int or None
+        Number of worker processes.  None or <= 1 runs the existing
+        serial path.  Values > 1 require the 'fork' start method
+        (Linux/macOS); anywhere it is unavailable the serial path runs.
+    """
+    workers = 1 if workers is None else int(workers)
+    ctx = None
+    if workers > 1:
+        try:
+            import multiprocessing
+            ctx = multiprocessing.get_context('fork')
+        except (ImportError, ValueError):
+            workers = 1
+
+    max_n_global = max(spec[2] for spec in qspecs) if qspecs else 0
+
+    if workers > 1 and chunk_size is None:
+        # Auto-chunk: ~256 MB buffers, and at least ~2 tasks per worker
+        # so the pool actually fills.
+        chunk = max(1, min(n_steps, int(256e6 // (4 * max_n_global)) or 1))
+        while chunk > 1 and                 sum(-(-n_steps // chunk) for _ in qspecs) < 2 * workers:
+            chunk = max(1, chunk // 2)
+    else:
+        chunk = n_steps if chunk_size is None else int(chunk_size)
+
+    tasks = []
+    for quantity, kind, n_global, track_range in qspecs:
+        for t_start in range(0, n_steps, chunk):
+            t_end = min(t_start + chunk, n_steps)
+            tasks.append((quantity, kind, t_start, t_end, n_global,
+                          track_range))
+
+    ranges = {spec[0]: [num.inf, -num.inf] for spec in qspecs if spec[3]}
+
+    if workers <= 1:
+        for quantity, kind, t_start, t_end, n_global, track_range in tasks:
+            if verbose and t_start == 0:
+                print('  Writing quantity: ', quantity)
+            n_chunk = t_end - t_start
+            q_chunk = num.zeros((n_chunk, n_global), num.float32)
+            for filename in swwfiles:
+                src, dst = scatter_index[filename][kind]
+                fid = NetCDFFile(filename, netcdf_mode_r)
+                q_data = num.array(fid.variables[quantity][t_start:t_end],
+                                   dtype=num.float32)
+                fid.close()
+                q_chunk[:, dst] = q_data[:, src]
+            fido.variables[quantity][t_start:t_end] = q_chunk
+            if track_range:
+                r = ranges[quantity]
+                r[0] = min(r[0], float(num.min(q_chunk)))
+                r[1] = max(r[1], float(num.max(q_chunk)))
+    else:
+        from multiprocessing import shared_memory
+        from collections import deque
+
+        # Workers inherit these by fork -- nothing large is pickled.
+        _MERGE_WORKER_STATE['files'] = list(swwfiles)
+        _MERGE_WORKER_STATE['index'] = scatter_index
+
+        # Flush the output file before forking: the workers inherit its
+        # fd but must never flush a stale copy-on-write buffer over it
+        # (they exit via os._exit, so destructors do not run -- the sync
+        # is belt-and-braces).
+        fido.sync()
+
+        n_buffers = workers + 2
+        buf_bytes = 4 * chunk * max_n_global
+        shm_pool = [shared_memory.SharedMemory(create=True, size=buf_bytes)
+                    for _ in range(n_buffers)]
+        free_bufs = [shm.name for shm in shm_pool]
+        shm_by_name = {shm.name: shm for shm in shm_pool}
+
+        pool = ctx.Pool(workers)
+        try:
+            pending = deque()
+            task_iter = iter(tasks)
+
+            def submit_next():
+                task = next(task_iter, None)
+                if task is None:
+                    return False
+                quantity, kind, t_start, t_end, n_global, track_range = task
+                shm_name = free_bufs.pop()
+                async_result = pool.apply_async(
+                    _merge_worker_task,
+                    ((quantity, kind, t_start, t_end, shm_name, n_global),))
+                pending.append((task, shm_name, async_result))
+                return True
+
+            for _ in range(n_buffers):
+                if not submit_next():
+                    break
+
+            while pending:
+                task, shm_name, async_result = pending.popleft()
+                quantity, kind, t_start, t_end, n_global, track_range = task
+                q_min, q_max = async_result.get()
+                if verbose and t_start == 0:
+                    print('  Writing quantity: ', quantity)
+                n_chunk = t_end - t_start
+                buf = num.ndarray((n_chunk, n_global), dtype=num.float32,
+                                  buffer=shm_by_name[shm_name].buf)
+                fido.variables[quantity][t_start:t_end] = buf
+                if track_range:
+                    r = ranges[quantity]
+                    r[0] = min(r[0], q_min)
+                    r[1] = max(r[1], q_max)
+                free_bufs.append(shm_name)
+                submit_next()
+        finally:
+            pool.close()
+            pool.join()
+            for shm in shm_pool:
+                shm.close()
+                shm.unlink()
+            _MERGE_WORKER_STATE.clear()
+
+    for quantity, r in ranges.items():
+        q_range = fido.variables[quantity + Write_sww.RANGE][:]
+        if r[0] < q_range[0]:
+            fido.variables[quantity + Write_sww.RANGE][0] = r[0]
+        if r[1] > q_range[1]:
+            fido.variables[quantity + Write_sww.RANGE][1] = r[1]
+
+
 def sww_merge(domain_global_name, np, verbose=False):
 
     output = domain_global_name+".sww"
@@ -19,7 +209,7 @@ def sww_merge(domain_global_name, np, verbose=False):
 
 
 def sww_merge_parallel(domain_global_name, np, verbose=False, delete_old=False,
-                       chunk_size=None):
+                       chunk_size=None, workers=None):
     """Merge parallel SWW files produced by an MPI run into a single file.
 
     Parameters
@@ -45,6 +235,15 @@ def sww_merge_parallel(domain_global_name, np, verbose=False, delete_old=False,
           ``chunk_size × n_global_nodes × 4 bytes`` per dynamic quantity).
 
         For example, ``chunk_size=100`` processes 100 timesteps at a time.
+    workers : int or None, optional
+        Number of processes used to assemble the dynamic quantities.
+        ``None`` or ``1`` (default) keeps the serial path.  With N > 1 the
+        (quantity, chunk) tasks are read and scattered by a pool of N
+        forked workers while this process writes the output file -- the
+        output is identical to a serial merge.  Requires the 'fork' start
+        method (Linux/macOS); where unavailable the merge silently runs
+        serially.  With ``chunk_size=None`` a chunk size is chosen
+        automatically so the pool stays busy with ~256 MB buffers.
     """
 
     output = domain_global_name+".sww"
@@ -63,10 +262,10 @@ def sww_merge_parallel(domain_global_name, np, verbose=False, delete_old=False,
 
     if 3*number_of_volumes == number_of_points:
         _sww_merge_parallel_non_smooth(swwfiles, output, verbose, delete_old,
-                                       chunk_size=chunk_size)
+                                       chunk_size=chunk_size, workers=workers)
     else:
         _sww_merge_parallel_smooth(swwfiles, output, verbose, delete_old,
-                                   chunk_size=chunk_size)
+                                   chunk_size=chunk_size, workers=workers)
 
 
 def _sww_merge(swwfiles, output, verbose=False):
@@ -206,7 +405,7 @@ def _sww_merge(swwfiles, output, verbose=False):
 
 
 def _sww_merge_parallel_smooth(swwfiles, output, verbose=False, delete_old=False,
-                               chunk_size=None):
+                               chunk_size=None, workers=None):
     """
     Merge a list of sww files into a single file.
 
@@ -363,54 +562,23 @@ def _sww_merge_parallel_smooth(swwfiles, output, verbose=False, delete_old=False
     fido.variables['time'][:] = times
 
     # ---------------------------------------------------------------
-    # Chunked dynamic pass: process at most chunk_size timesteps at
-    # a time so peak RAM is bounded regardless of n_steps.
+    # Dynamic pass: independent (quantity, timestep-chunk) tasks,
+    # chunked so peak RAM is bounded and parallel when workers > 1.
     # ---------------------------------------------------------------
 
-    _chunk = n_steps if chunk_size is None else int(chunk_size)
+    scatter_index = {}
+    for filename in swwfiles:
+        fl_nodes, f_node_l2g, ftri_ids, ftri_l2g = file_index_cache[filename]
+        scatter_index[filename] = {'vertex':   (fl_nodes, f_node_l2g),
+                                   'centroid': (ftri_ids[0], ftri_l2g)}
+    qspecs = [(q, 'vertex', number_of_global_nodes, True)
+              for q in dynamic_quantities] + \
+             [(q, 'centroid', number_of_global_triangles, False)
+              for q in dynamic_c_quantities]
 
-    # --- Dynamic vertex quantities ---
-    for q in dynamic_quantities:
-        if verbose:
-            print('  Writing quantity: ', q)
-        q_min =  num.inf
-        q_max = -num.inf
-        for t_start in range(0, n_steps, _chunk):
-            t_end   = min(t_start + _chunk, n_steps)
-            n_chunk = t_end - t_start
-            q_chunk = num.zeros((n_chunk, number_of_global_nodes), num.float32)
-            for filename in swwfiles:
-                fl_nodes, f_node_l2g, _, _ = file_index_cache[filename]
-                fid    = NetCDFFile(filename, netcdf_mode_r)
-                q_data = num.array(fid.variables[q][t_start:t_end], dtype=num.float32)
-                fid.close()
-                q_chunk[:, f_node_l2g] = q_data[:, fl_nodes]
-            fido.variables[q][t_start:t_end] = q_chunk
-            q_min = min(q_min, float(num.min(q_chunk)))
-            q_max = max(q_max, float(num.max(q_chunk)))
-
-        # Update _range values
-        q_range = fido.variables[q + Write_sww.RANGE][:]
-        if q_min < q_range[0]:
-            fido.variables[q + Write_sww.RANGE][0] = q_min
-        if q_max > q_range[1]:
-            fido.variables[q + Write_sww.RANGE][1] = q_max
-
-    # --- Dynamic centroid quantities ---
-    for q in dynamic_c_quantities:
-        if verbose:
-            print('  Writing quantity: ', q)
-        for t_start in range(0, n_steps, _chunk):
-            t_end   = min(t_start + _chunk, n_steps)
-            n_chunk = t_end - t_start
-            q_chunk = num.zeros((n_chunk, number_of_global_triangles), num.float32)
-            for filename in swwfiles:
-                _, _, ftri_ids, ftri_l2g = file_index_cache[filename]
-                fid    = NetCDFFile(filename, netcdf_mode_r)
-                q_data = num.array(fid.variables[q][t_start:t_end], dtype=num.float32)
-                fid.close()
-                q_chunk[:, ftri_l2g] = q_data[:, ftri_ids[0]]
-            fido.variables[q][t_start:t_end] = q_chunk
+    _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
+                              n_steps, chunk_size, workers=workers,
+                              verbose=verbose)
 
     fido.close()
 
@@ -423,7 +591,7 @@ def _sww_merge_parallel_smooth(swwfiles, output, verbose=False, delete_old=False
 
 
 def _sww_merge_parallel_non_smooth(swwfiles, output, verbose=False, delete_old=False,
-                                   chunk_size=None):
+                                   chunk_size=None, workers=None):
     """
     Merge a list of sww files into a single file.
 
@@ -595,54 +763,23 @@ def _sww_merge_parallel_non_smooth(swwfiles, output, verbose=False, delete_old=F
     fido.variables['time'][:] = times
 
     # ---------------------------------------------------------------
-    # Chunked dynamic pass: process at most chunk_size timesteps at
-    # a time so peak RAM is bounded regardless of n_steps.
+    # Dynamic pass: independent (quantity, timestep-chunk) tasks,
+    # chunked so peak RAM is bounded and parallel when workers > 1.
     # ---------------------------------------------------------------
 
-    _chunk = n_steps if chunk_size is None else int(chunk_size)
+    scatter_index = {}
+    for filename in swwfiles:
+        f_ids, f_gids, g_vids, l_vids = file_index_cache[filename]
+        scatter_index[filename] = {'vertex':   (l_vids, g_vids),
+                                   'centroid': (f_ids, f_gids)}
+    qspecs = [(q, 'vertex', 3 * number_of_global_triangles, True)
+              for q in dynamic_quantities] + \
+             [(q, 'centroid', number_of_global_triangles, False)
+              for q in dynamic_c_quantities]
 
-    for q in (dynamic_quantities + dynamic_c_quantities):
-        if verbose:
-            print('  Writing quantity: ', q)
-
-        is_vertex_q = q in dynamic_quantities
-        n_global_pts = (3 * number_of_global_triangles if is_vertex_q
-                        else number_of_global_triangles)
-
-        q_min =  num.inf
-        q_max = -num.inf
-
-        for t_start in range(0, n_steps, _chunk):
-            t_end   = min(t_start + _chunk, n_steps)
-            n_chunk = t_end - t_start
-            q_chunk = num.zeros((n_chunk, n_global_pts), num.float32)
-
-            # Read each file using cached index arrays; slice only the
-            # current chunk of timesteps.
-            for filename in swwfiles:
-                f_ids, f_gids, g_vids, l_vids = file_index_cache[filename]
-                fid    = NetCDFFile(filename, netcdf_mode_r)
-                q_data = num.array(fid.variables[q][t_start:t_end], dtype=num.float32)
-                fid.close()
-
-                if is_vertex_q:
-                    q_chunk[:, g_vids] = q_data[:, l_vids]
-                else:
-                    q_chunk[:, f_gids] = q_data[:, f_ids]
-
-            fido.variables[q][t_start:t_end] = q_chunk
-
-            if is_vertex_q:
-                q_min = min(q_min, float(num.min(q_chunk)))
-                q_max = max(q_max, float(num.max(q_chunk)))
-
-        if is_vertex_q:
-            # Update _range values (accumulated across all chunks)
-            q_range = fido.variables[q + Write_sww.RANGE][:]
-            if q_min < q_range[0]:
-                fido.variables[q + Write_sww.RANGE][0] = q_min
-            if q_max > q_range[1]:
-                fido.variables[q + Write_sww.RANGE][1] = q_max
+    _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
+                              n_steps, chunk_size, workers=workers,
+                              verbose=verbose)
 
     fido.close()
 
