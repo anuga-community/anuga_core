@@ -40,6 +40,9 @@ cdef extern from "gpu_domain.h" nogil:
         double maximum_allowed_speed
         double evolve_max_timestep
         int64_t low_froude
+        int64_t reconstruct_edge_bed
+        int64_t num_owned_edges
+        int64_t* owned_edges
         int64_t extrapolate_velocity_second_order
         # Beta values for gradient limiting
         double beta_w
@@ -641,6 +644,11 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     GD.fixed_flux_timestep = fft if fft is not None else -1.0
     GD.use_sloped_mannings = 1 if getattr(domain_object, 'use_sloped_mannings', False) else 0
     D.low_froude = domain_object.low_froude
+    # Explicit even though GPUDomain's memory is zero-initialized: bed-edge
+    # reconstruction in compute_fluxes is opt-in and stays off for ANUGA.
+    D.reconstruct_edge_bed = 0
+    D.num_owned_edges = 0
+    D.owned_edges = NULL
     D.extrapolate_velocity_second_order = domain_object.extrapolate_velocity_second_order
 
     # Beta values for gradient limiting

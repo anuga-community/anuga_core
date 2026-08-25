@@ -14,6 +14,22 @@
 #include <inttypes.h>
 #include "anuga_typedefs.h"
 
+// Precision of the STATIC GEOMETRY arrays (normals, edgelengths, radii,
+// areas, centroid/edge/vertex coordinates).  Default double: bit-compatible
+// with every existing consumer (ANUGA never defines the macro).  Building
+// with -DANUGA_GEOM_FP32 halves the geometry traffic of the memory-bound
+// kernels -- an EXPERIMENT: geometry enters the scheme multiplicatively so
+// relative 1e-7 perturbations are benign for convergence, but results are
+// not bit-compatible with the double build and the well-balance gate must be
+// re-verified.  State (stage/bed/momenta) stays double unconditionally: the
+// stage - bed cancellation that well-balancing rests on has ~mm significance
+// against ~100 m magnitudes and does not survive FP32.
+#ifdef ANUGA_GEOM_FP32
+typedef float anuga_geom_t;
+#else
+typedef double anuga_geom_t;
+#endif
+
 // structures
 struct domain {
     // Changing these don't change the data in python object
@@ -24,6 +40,23 @@ struct domain {
     anuga_int extrapolate_velocity_second_order;
     anuga_int low_froude;
     anuga_int timestep_fluxcalls;
+    // Flux-path opt-ins (0 unless the driver guarantees that fluxes always
+    // follow an extrapolate; direct compute_fluxes callers such as test_flux
+    // rely on an independently set bed_ev):
+    //   1 -- cell-based kernel reconstructs edge bed values as stage - height
+    //        (bit-identical to bed_ev after any extrapolate, one less gather)
+    //   2 -- additionally selects the scatter flux kernel (single Riemann
+    //        solve per edge, atomic accumulation; not valid with riverwalls
+    //        or sloped Manning).  Scatter also requires owned_edges below.
+    anuga_int reconstruct_edge_bed;
+    // Compacted list of the cell-edge slots the scatter flux kernel computes:
+    // every boundary slot, plus the side of each interior edge whose
+    // neighbour index is larger.  Built once by the driver from `neighbours`
+    // (about 1.5 elements per cell + boundary).  Lets the kernel run one
+    // thread per PHYSICAL edge instead of one per slot with half of them
+    // exiting immediately.  NULL + 0 when scatter mode is unused.
+    anuga_int  num_owned_edges;
+    anuga_int* owned_edges;
     anuga_int ncol_riverwall_hydraulic_properties;
     anuga_int nrow_riverwall_hydraulic_properties;
 
@@ -47,10 +80,10 @@ struct domain {
     anuga_int*   neighbours;
     anuga_int*   neighbour_edges;
     anuga_int*   surrogate_neighbours;
-    double*    normals;
-    double*    edgelengths;
-    double*    radii;
-    double*    areas;
+    anuga_geom_t* normals;
+    anuga_geom_t* edgelengths;
+    anuga_geom_t* radii;
+    anuga_geom_t* areas;
 
     anuga_int*   edge_flux_type;
 
@@ -58,9 +91,9 @@ struct domain {
     anuga_int*   already_computed_flux;
     double*    max_speed;
 
-    double* vertex_coordinates;
-    double* edge_coordinates;
-    double* centroid_coordinates;
+    anuga_geom_t* vertex_coordinates;
+    anuga_geom_t* edge_coordinates;
+    anuga_geom_t* centroid_coordinates;
 
     anuga_int* number_of_boundaries;
     double* stage_edge_values;
