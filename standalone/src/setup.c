@@ -91,8 +91,35 @@ static int64_t edgemap_get(const edgemap *H, int64_t key) {
 // Bed / initial stage profiles
 // ---------------------------------------------------------------------------
 
+// River-valley geometry (BENCH_CASE_RIVER): a longitudinal drop of 4 m, a
+// parabolic channel of half-width 6% of the domain carved 1.5 m into the
+// valley floor, and floodplain banks rising 8 m from the channel edge to the
+// domain sides.  The scale factors are relative to length_x/length_y so the
+// case works at any --nx/--lenx.
+#define RIVER_DROP        4.0    // m, upstream-to-downstream bed drop
+#define RIVER_CH_DEPTH    1.5    // m, channel depth below the valley floor
+#define RIVER_CH_HALFW    0.06   // fraction of length_y
+#define RIVER_BANK_RISE   8.0    // m, floodplain rise from channel edge to side
+#define RIVER_DAM_X       0.15   // fraction of length_x: reservoir extent
+#define RIVER_FLOW_DEPTH  0.5    // m, initial river depth in the channel
+
+static double river_bed(const bench_params *P, double x, double y) {
+    const double u  = x / P->length_x;
+    const double dy = fabs(y - 0.5 * P->length_y);
+    const double W  = RIVER_CH_HALFW * P->length_y;
+    double z = RIVER_DROP * (1.0 - u);                    // downstream slope
+    if (dy < W) {
+        const double r = dy / W;
+        z -= RIVER_CH_DEPTH * (1.0 - r * r);              // parabolic channel
+    } else {
+        z += RIVER_BANK_RISE * (dy - W) / (0.5 * P->length_y - W);
+    }
+    return z;
+}
+
 static double bed_value(const bench_params *P, double x, double y) {
     if (P->which_case == BENCH_CASE_DAM) return 0.0;
+    if (P->which_case == BENCH_CASE_RIVER) return river_bed(P, x, y);
 
     // Five Gaussian humps on a gentle downstream slope.  Deterministic, smooth,
     // and tall enough that parts of the domain go dry.
@@ -119,6 +146,16 @@ static double stage_value(const bench_params *P, double x, double y, double z) {
             return (x < 0.5 * P->length_x) ? P->dam_height : P->water_level;
         case BENCH_CASE_DAMBUMPS:
             return fmax(z, (x < 0.5 * P->length_x) ? P->dam_height : P->water_level);
+        case BENCH_CASE_RIVER: {
+            if (x < RIVER_DAM_X * P->length_x)
+                return fmax(z, P->dam_height);             // full reservoir
+            // Thin river: water surface follows the channel bottom downslope,
+            // RIVER_FLOW_DEPTH deep at the centerline; banks stay dry.
+            const double u = x / P->length_x;
+            const double surf = RIVER_DROP * (1.0 - u) - RIVER_CH_DEPTH
+                                + RIVER_FLOW_DEPTH;
+            return fmax(z, surf);
+        }
         case BENCH_CASE_LAKE:
         default:
             return fmax(z, P->water_level);

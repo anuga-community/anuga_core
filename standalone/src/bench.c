@@ -264,10 +264,12 @@ static void usage(const char *argv0) {
 "    --mesh FILE       load an ANUGAMSH mesh (tools/make_basin_mesh.py)\n"
 "                      instead of generating the rectangular cross; brings\n"
 "                      its own terrain and initial stage\n"
-"    --case NAME       dam | dambumps | lake            (default dam)\n"
+"    --case NAME       dam | dambumps | lake | river    (default dam)\n"
 "                        dam       flat bed, wet dam break (every cell wet)\n"
 "                        dambumps  bumpy bed dam break (wet/dry branches)\n"
 "                        lake      water at rest over bumps (well-balanced)\n"
+"                        river     reservoir breaks into a thin river in a\n"
+"                                  carved channel; floodplain banks start dry\n"
 "    --manning V       Manning n                        (default 0.03)\n"
 "    --water V         still-water / downstream stage   (default 5)\n"
 "    --dam V           upstream stage                   (default 10)\n"
@@ -549,6 +551,7 @@ int main(int argc, char **argv) {
             if      (!strcmp(c, "dam"))      P.which_case = BENCH_CASE_DAM;
             else if (!strcmp(c, "dambumps")) P.which_case = BENCH_CASE_DAMBUMPS;
             else if (!strcmp(c, "lake"))     P.which_case = BENCH_CASE_LAKE;
+            else if (!strcmp(c, "river"))    P.which_case = BENCH_CASE_RIVER;
             else { fprintf(stderr, "bench: unknown case '%s'\n", c); return 2; }
         }
         else if (!strcmp(a, "--help") || !strcmp(a, "-h")) { usage(argv[0]); return 0; }
@@ -592,7 +595,8 @@ int main(int argc, char **argv) {
     const int64_t n = GD->D.number_of_elements;
 
     const char *case_name = P.which_case == BENCH_CASE_DAM      ? "dam"
-                          : P.which_case == BENCH_CASE_DAMBUMPS ? "dambumps" : "lake";
+                          : P.which_case == BENCH_CASE_DAMBUMPS ? "dambumps"
+                          : P.which_case == BENCH_CASE_RIVER    ? "river" : "lake";
 #ifdef CPU_ONLY_MODE
     const char *build_kind = "host OpenMP (CPU_ONLY_MODE)";
 #else
