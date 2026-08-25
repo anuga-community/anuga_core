@@ -92,19 +92,28 @@ def _merge_worker_task(args):
         shms[shm_name] = shared_memory.SharedMemory(name=shm_name)
     handles = state.setdefault('handles', {})
 
+    import time as _time
     n_chunk = t_end - t_start
     buf = num.ndarray((n_chunk, n_global), dtype=num.float32,
                       buffer=shms[shm_name].buf)
     buf[:] = 0.0
+    read_s = scatter_s = 0.0
+    read_bytes = 0
     for filename in state['files']:
         src, dst = state['index'][filename][kind]
         fid = handles.get(filename)
         if fid is None:
             fid = handles[filename] = NetCDFFile(filename, netcdf_mode_r)
+        t0 = _time.time()
         q_data = num.array(fid.variables[quantity][t_start:t_end],
                            dtype=num.float32)
+        read_s += _time.time() - t0
+        read_bytes += q_data.nbytes
+        t0 = _time.time()
         buf[:, dst] = q_data[:, src]
-    return float(buf.min()), float(buf.max())
+        scatter_s += _time.time() - t0
+    return (float(buf.min()), float(buf.max()),
+            read_s, scatter_s, read_bytes)
 
 
 def _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
@@ -161,6 +170,9 @@ def _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
 
     ranges = {spec[0]: [num.inf, -num.inf] for spec in qspecs if spec[3]}
     progress = _MergeProgress(len(tasks), enabled=verbose)
+    import time as _time
+    diag = {'read_s': 0.0, 'scatter_s': 0.0, 'write_s': 0.0, 'wait_s': 0.0,
+            'read_bytes': 0, 'write_bytes': 0, 't0': _time.time()}
 
     if workers <= 1:
         for quantity, kind, t_start, t_end, n_global, track_range in tasks:
@@ -170,12 +182,20 @@ def _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
             q_chunk = num.zeros((n_chunk, n_global), num.float32)
             for filename in swwfiles:
                 src, dst = scatter_index[filename][kind]
+                t0 = _time.time()
                 fid = NetCDFFile(filename, netcdf_mode_r)
                 q_data = num.array(fid.variables[quantity][t_start:t_end],
                                    dtype=num.float32)
                 fid.close()
+                diag['read_s'] += _time.time() - t0
+                diag['read_bytes'] += q_data.nbytes
+                t0 = _time.time()
                 q_chunk[:, dst] = q_data[:, src]
+                diag['scatter_s'] += _time.time() - t0
+            t0 = _time.time()
             fido.variables[quantity][t_start:t_end] = q_chunk
+            diag['write_s'] += _time.time() - t0
+            diag['write_bytes'] += q_chunk.nbytes
             if track_range:
                 r = ranges[quantity]
                 r[0] = min(r[0], float(num.min(q_chunk)))
@@ -226,13 +246,22 @@ def _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
             while pending:
                 task, shm_name, async_result = pending.popleft()
                 quantity, kind, t_start, t_end, n_global, track_range = task
-                q_min, q_max = async_result.get()
+                t0 = _time.time()
+                (q_min, q_max, read_s, scatter_s,
+                 read_bytes) = async_result.get()
+                diag['wait_s'] += _time.time() - t0
+                diag['read_s'] += read_s
+                diag['scatter_s'] += scatter_s
+                diag['read_bytes'] += read_bytes
                 if verbose and t_start == 0 and not progress.tty:
                     print('  Writing quantity: ', quantity)
                 n_chunk = t_end - t_start
                 buf = num.ndarray((n_chunk, n_global), dtype=num.float32,
                                   buffer=shm_by_name[shm_name].buf)
+                t0 = _time.time()
                 fido.variables[quantity][t_start:t_end] = buf
+                diag['write_s'] += _time.time() - t0
+                diag['write_bytes'] += buf.nbytes
                 if track_range:
                     r = ranges[quantity]
                     r[0] = min(r[0], q_min)
@@ -249,6 +278,34 @@ def _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
             _MERGE_WORKER_STATE.clear()
 
     progress.finish()
+
+    if verbose:
+        import os as _os
+        import resource as _resource
+        total_s = _time.time() - diag['t0']
+        rd_gb = diag['read_bytes'] / 1e9
+        wr_gb = diag['write_bytes'] / 1e9
+        peak_gb = _resource.getrusage(
+            _resource.RUSAGE_SELF).ru_maxrss / 1e6
+        agg = '  (aggregate across workers)' if workers > 1 else ''
+        print('  merge diagnostics (dynamic pass): %.1f s total, '
+              'workers=%d, chunk=%d timesteps, %d tasks'
+              % (total_s, workers, chunk, len(tasks)))
+        print('    read    %8.1f s  %7.2f GB  %7.0f MB/s%s'
+              % (diag['read_s'], rd_gb,
+                 rd_gb * 1e3 / max(diag['read_s'], 1e-9), agg))
+        print('    scatter %8.1f s%s' % (diag['scatter_s'], agg))
+        print('    write   %8.1f s  %7.2f GB  %7.0f MB/s  (parent, serial)'
+              % (diag['write_s'], wr_gb,
+                 wr_gb * 1e3 / max(diag['write_s'], 1e-9)))
+        if workers > 1:
+            print('    parent waited on workers %.1f s, wrote %.1f s '
+                  '-- %s-bound'
+                  % (diag['wait_s'], diag['write_s'],
+                     'read/scatter' if diag['wait_s'] > diag['write_s']
+                     else 'write'))
+        print('    parent peak RSS %.1f GB, host %s, cpus %s'
+              % (peak_gb, _os.uname().nodename, _os.cpu_count()))
 
     for quantity, r in ranges.items():
         q_range = fido.variables[quantity + Write_sww.RANGE][:]
