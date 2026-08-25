@@ -25,6 +25,53 @@ from anuga.file.sww import SWW_file, Write_sww
 # bounded by (workers + 2) buffers of chunk_size x max(n_global) floats.
 # ----------------------------------------------------------------------
 
+class _MergeProgress:
+    """Textual progress for the dynamic pass.
+
+    On a terminal renders an in-place bar with an ETA; in a batch log
+    (stdout not a tty) prints one line per ~10% so job files stay small.
+    """
+
+    def __init__(self, total, enabled):
+        import sys, time
+        self.total = max(1, total)
+        self.enabled = enabled and total > 1
+        self.tty = self.enabled and sys.stdout.isatty()
+        self.t0 = time.time()
+        self.done_count = 0
+        self.last_decile = -1
+
+    def update(self, label=''):
+        if not self.enabled:
+            return
+        import sys, time
+        self.done_count += 1
+        frac = self.done_count / self.total
+        elapsed = time.time() - self.t0
+        eta = elapsed * (1.0 - frac) / frac if frac > 0 else 0.0
+        if self.tty:
+            width = 28
+            filled = int(width * frac)
+            sys.stdout.write('\r  [%s%s] %3d%%  %d/%d  %.0fs elapsed, eta %.0fs  %s   '
+                             % ('#' * filled, '-' * (width - filled),
+                                int(100 * frac), self.done_count, self.total,
+                                elapsed, eta, label))
+            sys.stdout.flush()
+        else:
+            decile = int(10 * frac)
+            if decile > self.last_decile:
+                self.last_decile = decile
+                print('  merge %3d%% (%d/%d chunks, %.0fs elapsed, eta %.0fs)'
+                      % (int(100 * frac), self.done_count, self.total,
+                         elapsed, eta))
+
+    def finish(self):
+        if self.tty:
+            import sys
+            sys.stdout.write('\n')
+            sys.stdout.flush()
+
+
 _MERGE_WORKER_STATE = {}
 
 
@@ -113,10 +160,11 @@ def _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
                           track_range))
 
     ranges = {spec[0]: [num.inf, -num.inf] for spec in qspecs if spec[3]}
+    progress = _MergeProgress(len(tasks), enabled=verbose)
 
     if workers <= 1:
         for quantity, kind, t_start, t_end, n_global, track_range in tasks:
-            if verbose and t_start == 0:
+            if verbose and t_start == 0 and not progress.tty:
                 print('  Writing quantity: ', quantity)
             n_chunk = t_end - t_start
             q_chunk = num.zeros((n_chunk, n_global), num.float32)
@@ -132,6 +180,7 @@ def _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
                 r = ranges[quantity]
                 r[0] = min(r[0], float(num.min(q_chunk)))
                 r[1] = max(r[1], float(num.max(q_chunk)))
+            progress.update('%s [%d:%d]' % (quantity, t_start, t_end))
     else:
         from multiprocessing import shared_memory
         from collections import deque
@@ -178,7 +227,7 @@ def _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
                 task, shm_name, async_result = pending.popleft()
                 quantity, kind, t_start, t_end, n_global, track_range = task
                 q_min, q_max = async_result.get()
-                if verbose and t_start == 0:
+                if verbose and t_start == 0 and not progress.tty:
                     print('  Writing quantity: ', quantity)
                 n_chunk = t_end - t_start
                 buf = num.ndarray((n_chunk, n_global), dtype=num.float32,
@@ -188,6 +237,7 @@ def _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
                     r = ranges[quantity]
                     r[0] = min(r[0], q_min)
                     r[1] = max(r[1], q_max)
+                progress.update('%s [%d:%d]' % (quantity, t_start, t_end))
                 free_bufs.append(shm_name)
                 submit_next()
         finally:
@@ -197,6 +247,8 @@ def _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
                 shm.close()
                 shm.unlink()
             _MERGE_WORKER_STATE.clear()
+
+    progress.finish()
 
     for quantity, r in ranges.items():
         q_range = fido.variables[quantity + Write_sww.RANGE][:]
