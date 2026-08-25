@@ -8,10 +8,25 @@
 # Everything after `--` is passed to the benchmark verbatim, e.g.
 #   tools/scaling_sweep.sh 1000 2000 -- --scheme ader2 --flux scatter
 #
-# Device memory is sampled from nvidia-smi while each run is in flight, because
-# ANUGA's own gpu_query_device_memory() only reports real numbers when the
-# kernels are built with -DUSE_CUDA, and no ANUGA build sets it.
+# Device memory is sampled from the vendor smi tool while each run is in
+# flight, because ANUGA's own gpu_query_device_memory() only reports real
+# numbers when the kernels are built with -DUSE_CUDA, and no ANUGA build sets
+# it.  nvidia-smi and rocm-smi are autodetected; anything else can be plugged
+# in with SMI_CMD='cmd that prints one MiB-used number per line'.  Without a
+# working sampler the devGiB column reads 0.00 and everything else still runs.
 set -u
+
+# ---- vendor-neutral device-memory sampler: prints MiB-used, one per device
+if [[ -n "${SMI_CMD:-}" ]]; then
+    sample_devmem() { eval "$SMI_CMD" 2>/dev/null; }
+elif command -v nvidia-smi >/dev/null 2>&1; then
+    sample_devmem() { nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null; }
+elif command -v rocm-smi >/dev/null 2>&1; then
+    # "GPU[0] : VRAM Total Used Memory (B): 1234567" -> MiB
+    sample_devmem() { rocm-smi --showmeminfo vram 2>/dev/null | awk '/Used Memory/ {printf "%d\n", $NF/1048576}'; }
+else
+    sample_devmem() { :; }
+fi
 
 BIN=bin/bench_gpu
 STEPS=20
@@ -54,8 +69,7 @@ for nx in "${SIZES[@]}"; do
     # Sample device memory every 200 ms for the duration of the run.
     : > "$PEAKFILE"
     ( while :; do
-          nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits 2>/dev/null \
-              >> "$PEAKFILE"
+          sample_devmem >> "$PEAKFILE"
           sleep 0.05
       done ) &
     poller=$!
