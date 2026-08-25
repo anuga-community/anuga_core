@@ -1749,6 +1749,63 @@ class Domain(Generic_Domain):
             self.use_sloped_mannings = False
 
 
+
+    def set_use_active_set(self, flag: bool = True) -> None:
+        """Enable active-set stepping: skip cells that are provably
+        unchangeable this step (dry, with an all-dry 2-ring neighbourhood).
+
+        Only the GPU/unified compute path honours the flag (rk2/DE1,
+        ader2/DE_ader2 and euler/DE0 stepping; DE2/rk3 runs full steps with a
+        notice).  It also switches the flux kernel to single-solve scatter
+        mode, whose results differ from the default cell-based kernel only at
+        floating-point roundoff.  Serial domains only for now -- under MPI
+        the flag is ignored with a warning.
+
+        On mostly-dry flood domains (dam break, levee breach, storm surge)
+        this is the largest single speedup measured for the GPU path.  Water
+        added by rate operators (rainfall) is never lost -- newly wetted
+        cells activate on the next step -- but widespread rain activates the
+        whole mesh and the speedup degrades toward zero, hence the warning
+        when both are in play.
+        """
+        self.use_active_set = bool(flag)
+        gi = getattr(self, 'gpu_interface', None)
+        if gi is not None and getattr(gi, 'gpu_dom', None) is not None:
+            try:
+                from anuga.shallow_water.sw_domain_gpu_ext import set_use_active_set_gpu
+                set_use_active_set_gpu(gi.gpu_dom, 1 if flag else 0)
+            except ImportError:
+                pass
+        if flag:
+            rate_like = [type(op).__name__ for op in
+                         getattr(self, 'fractional_step_operators', [])
+                         if 'rate' in type(op).__name__.lower()]
+            if rate_like:
+                log.warning('active-set stepping enabled with rate operators '
+                            'attached (%s): results stay correct, but rained '
+                            'regions activate and the speedup degrades under '
+                            'widespread rain.' % ', '.join(rate_like))
+
+    def get_use_active_set(self) -> bool:
+        """Whether active-set stepping is requested (see set_use_active_set)."""
+        return bool(getattr(self, 'use_active_set', False))
+
+    def get_active_set_stats(self):
+        """Return (mean_active_fraction, n_rebuilds) once evolution has run.
+
+        mean_active_fraction is 1.0 whenever the active set never engaged
+        (flag off, non-GPU compute mode, MPI fallback, or before the first
+        rebuild).
+        """
+        gi = getattr(self, 'gpu_interface', None)
+        if gi is not None and getattr(gi, 'gpu_dom', None) is not None:
+            try:
+                from anuga.shallow_water.sw_domain_gpu_ext import active_set_stats_gpu
+                return active_set_stats_gpu(gi.gpu_dom)
+            except (ImportError, AttributeError):
+                pass
+        return (1.0, 0)
+
     def set_compute_fluxes_method(self, flag: str = 'original') -> None:
         """Set method for computing fluxes.
 
