@@ -99,10 +99,16 @@ def _write_dynamic_quantities(fido, swwfiles, scatter_index, qspecs,
     else:
         chunk = n_steps if chunk_size is None else int(chunk_size)
 
+    # Chunk-major task order (time-window outer, quantity inner): netCDF3
+    # interleaves all record variables by timestep, so writing quantity by
+    # quantity makes strided passes over the output file.  Walking the time
+    # windows in order and writing every quantity's records within each
+    # window keeps the writes in file-layout order -- one sequential sweep,
+    # which is what shared filesystems (Lustre) need.
     tasks = []
-    for quantity, kind, n_global, track_range in qspecs:
-        for t_start in range(0, n_steps, chunk):
-            t_end = min(t_start + chunk, n_steps)
+    for t_start in range(0, n_steps, chunk):
+        t_end = min(t_start + chunk, n_steps)
+        for quantity, kind, n_global, track_range in qspecs:
             tasks.append((quantity, kind, t_start, t_end, n_global,
                           track_range))
 
