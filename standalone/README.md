@@ -55,6 +55,8 @@ ANUGA shallow-water miniapp -- OpenMP target offload
 | `make gpu`      | nvc      | `-mp=gpu -gpu=<arch>`, `omp target teams loop`        |
 | `make ompcpu`   | nvc      | `-mp=multicore`, host-only (A/B against the gpu build)|
 | `make clanggpu` | clang    | LLVM nvptx offload                                    |
+| `make amdgpu`   | amdclang | `-fopenmp --offload-arch=<gfx>` (autodetected), CDNA  |
+| `make intelgpu` | icx      | `-fiopenmp -fopenmp-targets=spir64`, PVC              |
 
 `GPU_ARCH` is autodetected from `nvidia-smi` (`cc70` on a V100, `cc90` on an
 H100); override with `make gpu GPU_ARCH=cc80`. Each config has its own object
@@ -442,6 +444,34 @@ model predicts a ~294M ceiling, unswept). The kernel balance FLIPS on
 Hopper: flux 44% vs reconstruction 39% (per-cell, reconstruction scaled
 5.3x with bandwidth while the atomic scatter scaled only 3.1x) -- so the
 next kernel worth attacking depends on the target architecture.
+
+### Cross-vendor portability: AMD MI250X and Intel PVC (2026-08-25)
+
+First contact with non-NVIDIA hardware, same source, no code changes:
+`make amdgpu` (amdclang, CDNA2) and `make intelgpu` (icx, spir64).  Both
+targets pass the full correctness ladder: lake-at-rest at roundoff, the
+CPU-reference golden, scatter-vs-cell at roundoff tolerance, and the
+active-set run **bit-exact** against full stepping (the `omp atomic
+capture` paths).  Stronger still: the dam-break physics report (final t,
+dt, stage range, max |momentum|) agrees with the x86 gcc reference to
+every printed digit on both vendors.
+
+ADER2 + scatter, 4M triangles, row order, one device:
+
+| device | Mcell-steps/s | balance |
+|---|---|---|
+| MI250X (1 GCD of 8) | 412 | extrapolate-heavy: 62%% reconstruction |
+| V100 | ~650 | reconstruction ~48%% |
+| A100-80 | ~1500 | |
+| PVC (1 of 6) | 1542 | flux-heavy 46%% -- Hopper-like |
+| H200 | 2837 | flux 44%% / reconstruction 39%% |
+
+PVC lands at A100-class untuned.  The MI250X's 62%% reconstruction share
+makes that register-heavy kernel the one target for AMD tuning.  Both
+MI250X GCDs and PVC stacks enumerate as separate OpenMP devices, so a
+node is ~8x / ~6x the single-device figure under MPI: one MI250X node
+(8 GCDs x 412 = 3.3 Gc/s) edges out one H200.  4M triangles may not
+saturate either part -- the NVIDIA plateaus sit at 8-16M.
 
 ### Cross-architecture results (V100 / A100-80 / H200)
 
