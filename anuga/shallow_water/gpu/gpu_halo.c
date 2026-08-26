@@ -93,6 +93,18 @@ int gpu_halo_init(struct gpu_domain *GD,
     H->host_recv_buffer = NULL;
 #endif
 
+#ifdef GPU_AWARE_MPI
+    // The pack/unpack kernels dereference the flat index arrays on the
+    // device; map them.  (Without this the first exchange faults inside the
+    // pack kernel -- found on the first true multi-GPU run of this path.)
+    {
+        int *fsi = H->flat_send_indices;
+        int *fri = H->flat_recv_indices;
+        int ts = H->total_send_size, tr = H->total_recv_size;
+        #pragma omp target enter data map(to: fsi[0:ts], fri[0:tr])
+    }
+#endif
+
     // Allocate MPI request array
     H->requests = (MPI_Request *)malloc(2 * num_neighbors * sizeof(MPI_Request));
 
@@ -108,6 +120,15 @@ int gpu_halo_init(struct gpu_domain *GD,
 
 void gpu_halo_finalize(struct gpu_domain *GD) {
     struct halo_exchange *H = &GD->halo;
+
+#ifdef GPU_AWARE_MPI
+    if (H->flat_send_indices && H->total_send_size > 0) {
+        int *fsi = H->flat_send_indices;
+        int *fri = H->flat_recv_indices;
+        int ts = H->total_send_size, tr = H->total_recv_size;
+        #pragma omp target exit data map(delete: fsi[0:ts], fri[0:tr])
+    }
+#endif
 
     if (H->neighbor_ranks) free(H->neighbor_ranks);
     if (H->send_counts) free(H->send_counts);

@@ -1,0 +1,76 @@
+#!/bin/bash
+#PBS -N anuga_mpi_scale
+#PBS -l ncpus=48
+#PBS -l ngpus=4
+#PBS -l mem=512GB
+#PBS -l jobfs=200GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=01:00:00
+#PBS -l wd
+#PBS -j oe
+#PBS -o /scratch/bm55/jlv900/dev/mesh_exp/standalone/build/mpiscale/pbs.log
+
+# MPI scaling of the GPU miniapp across 4 H200s -- no mpi4py anywhere.
+# 1) Correctness on GPUs: np=1 golden vs np=2/np=4 at atol 0.
+# 2) Strong scaling: fixed 64M and 144M dam breaks on 1/2/4 GPUs.
+# 3) Weak scaling: 36M per GPU (nx grows with np).
+set -x
+ROOT=/scratch/bm55/jlv900/dev/mesh_exp/standalone
+OUT=$ROOT/build/mpiscale
+mkdir -p "$OUT"
+cd "$ROOT"
+source ./my_claude_env.sh
+nvidia-smi --query-gpu=name,memory.total --format=csv | tee "$OUT/gpu.txt"
+
+BENCH=$PBS_JOBFS/bench_gpumpi
+make --no-print-directory CONFIG=gpumpi OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
+
+export OMP_NUM_THREADS=4
+MPIRUN="mpirun --bind-to none"
+
+# ---- 1. GPU correctness gate --------------------------------------------
+"$BENCH" --nx 400 --ny 400 --steps 60 --case dam --save "$PBS_JOBFS/g_gpu.bin" \
+    > "$OUT/gate_np1.txt" 2>&1
+for np in 2 4; do
+  $MPIRUN -np $np "$BENCH" --nx 400 --ny 400 --steps 60 --case dam \
+      --check "$PBS_JOBFS/g_gpu.bin" --atol 0 --rtol 0 \
+      > "$OUT/gate_np$np.txt" 2>&1
+done
+grep -H "tolerance" "$OUT"/gate_np*.txt | tee "$OUT/GATES.txt"
+
+# ---- 2. Strong scaling ---------------------------------------------------
+for nx in 4000 6000; do
+  for np in 1 2 4; do
+    $MPIRUN -np $np "$BENCH" --nx $nx --ny $nx --steps 100 --warmup 10 \
+        --case dam --csv "$OUT/strong.csv" \
+        > "$OUT/strong_nx${nx}_np${np}.txt" 2>&1
+  done
+done
+
+# ---- 3. Weak scaling: ~36M triangles per GPU ----------------------------
+# slab is along x: global nx = 3000*np keeps per-rank size constant.
+for np in 1 2 4; do
+  nx=$((3000 * np))
+  $MPIRUN -np $np "$BENCH" --nx $nx --ny 3000 --steps 100 --warmup 10 \
+      --case dam --csv "$OUT/weak.csv" \
+      > "$OUT/weak_np${np}.txt" 2>&1
+done
+
+# ---- summary -------------------------------------------------------------
+{
+  echo "=== correctness gates (must all be OK) ==="
+  cat "$OUT/GATES.txt"
+  echo; echo "=== strong scaling (Mcell-steps/s from per-run reports) ==="
+  for nx in 4000 6000; do for np in 1 2 4; do
+    r=$(grep "Mcell-steps/s" "$OUT/strong_nx${nx}_np${np}.txt" | awk '{print $1" ms/step  "$3" Mc/s"}')
+    echo "nx=$nx np=$np : $r"
+  done; done
+  echo; echo "=== weak scaling (36M/GPU; ms/step should stay flat) ==="
+  for np in 1 2 4; do
+    r=$(grep "Mcell-steps/s" "$OUT/weak_np${np}.txt" | awk '{print $1" ms/step  "$3" Mc/s"}')
+    echo "np=$np : $r"
+  done
+} | tee "$OUT/SUMMARY.txt"
+touch "$OUT/DONE"
