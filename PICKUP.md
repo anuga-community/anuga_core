@@ -23,7 +23,13 @@ miniapp — no mpi4py anywhere.
 - v1 restrictions (enforced in bench.c): generated mesh, `--order row`,
   cell fluxes, no --active-set/--phases/--cuda-extrap under MPI.
 
-**IN FLIGHT: PBS job `177503337`** (gpuhopper, 4×H200, 1 h wall) —
+**First GPU attempt (job 177503337) found a REAL BUG in production
+gpu_halo.c**: the GPU_AWARE_MPI pack/unpack kernels dereference the flat
+index arrays on device but gpu_halo_init never mapped them -> the first
+exchange aborted (cuStreamSynchronize).  The path had never run on a GPU
+before.  Fixed + committed; CPU bit-exactness re-verified.
+
+**IN FLIGHT: PBS job `177517465`** (resubmit; gpuhopper, 4×H200, 1 h wall) —
 `standalone/tools/h200_mpi_scaling.pbs`.  Results land in
 `standalone/build/mpiscale/`:
 - `GATES.txt` — np=1 vs 2/4 zero-tolerance ON GPUs; must all say OK.
