@@ -44,6 +44,26 @@ void bench_mesh_rectangular_cross(int64_t m, int64_t n,
 // in BOTH grid directions, instead of the row-major ordering's ~4*n stride to
 // the +/-i neighbours -- which at large n is a guaranteed cache miss on every
 // neighbour gather in the flux and extrapolation kernels.
+// MPI slab partition of the m x n rectangular cross along the FIRST grid
+// axis (cell id = i*n + j, so an i-range is a contiguous triangle-id range).
+// Rank r owns columns [i0, i1); one ghost column is generated on each
+// interior side (gl/gh = 1 when a lower/upper neighbour rank exists).
+// Fills S with everything the driver needs: local extents, tri_full_flag
+// (0 on ghost-column triangles) and orig_id = GLOBAL canonical triangle ids
+// (also stored in M->orig_id, so snapshots gather into global order).
+typedef struct {
+    int64_t i0, i1;        // owned global column range [i0, i1)
+    int64_t gl, gh;        // ghost columns below / above (0 or 1)
+    int64_t m_local;       // local columns = (i1-i0) + gl + gh
+    int64_t n_full;        // owned triangles = 4*(i1-i0)*n
+    int64_t *tri_full_flag;  // [4*m_local*n]
+} bench_slab;
+
+void bench_mesh_rectangular_cross_slab(int64_t m, int64_t n,
+                                       double len1, double len2,
+                                       int rank, int nprocs,
+                                       bench_mesh *M, bench_slab *S);
+
 void bench_mesh_reorder_morton(bench_mesh *M, int64_t m, int64_t n);
 
 // Renumber the CELLS randomly (deterministic LCG shuffle, fixed seed), still

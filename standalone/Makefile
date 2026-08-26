@@ -86,6 +86,26 @@ ifeq ($(CONFIG),intelgpu)
   CFLAGS      := -O3 -g -fiopenmp -fopenmp-targets=spir64 $(WARN)
   LDFLAGS     := -fiopenmp -fopenmp-targets=spir64
 endif
+# --- MPI configs: same code, real MPI via bench_mpi.h + the gpu kernels'
+# --- own HAVE_MPI paths.  Flags come from the mpicc wrapper so any MPI works
+# --- (gadi: module load openmpi/5.0.5).  gpumpi adds GPU_AWARE_MPI: halo
+# --- pack/unpack on device, MPI through host staging (see gpu_halo.c).
+ifeq ($(CONFIG),cpumpi)
+  # mpicc drives the underlying compiler (OMPI_CC); the gadi wrapper injects
+  # include/lib paths through its own environment, so --showme is incomplete.
+  CC          := mpicc
+  export OMPI_CC := gcc
+  CFLAGS      := -O3 -g -march=native -fopenmp -DCPU_ONLY_MODE -DHAVE_MPI \
+                 -foffload=disable $(WARN)
+  LDFLAGS     := -fopenmp -foffload=disable
+endif
+ifeq ($(CONFIG),gpumpi)
+  CC          := mpicc
+  export OMPI_CC := nvc
+  CFLAGS      := -O3 -g -mp=gpu,multicore -gpu=$(GPU_ARCH) -DHAVE_MPI \
+                 -DGPU_AWARE_MPI
+  LDFLAGS     := -mp=gpu,multicore -gpu=$(GPU_ARCH)
+endif
 ifeq ($(CONFIG),clanggpu)
   CC          := clang
   SM_ARCH     := sm_$(patsubst cc%,%,$(GPU_ARCH))
@@ -135,10 +155,10 @@ OBJ        := $(addprefix $(OBJDIR)/,$(notdir $(KERNEL_SRC:.c=.o)) $(notdir $(BE
 DEP        := $(OBJ:.o=.d)
 
 # ---------------------------------------------------------------- targets
-.PHONY: all cpu gpu ompcpu clanggpu amdgpu intelgpu build clean verify run dist
+.PHONY: all cpu gpu ompcpu clanggpu amdgpu intelgpu cpumpi gpumpi build clean verify run dist
 all: cpu gpu
 
-cpu ompcpu gpu clanggpu amdgpu intelgpu:
+cpu ompcpu gpu clanggpu amdgpu intelgpu cpumpi gpumpi:
 	@$(MAKE) --no-print-directory CONFIG=$@ build
 
 build: $(BIN)

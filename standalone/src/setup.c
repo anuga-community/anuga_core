@@ -547,14 +547,15 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
     }
 }
 
-void bench_domain_to_device(bench_domain *B, const bench_params *P, int verbose) {
+void bench_domain_to_device(bench_domain *B, const bench_params *P, int verbose,
+                            int rank, int nprocs) {
     // Keep the scratch boundary description; gpu_domain_init clears the slots.
     int  ne   = B->GD.reflective.num_edges;
     int *bidx = B->GD.reflective.boundary_indices;
     int *vids = B->GD.reflective.vol_ids;
     int *eids = B->GD.reflective.edge_ids;
 
-    gpu_domain_init(&B->GD, MPI_COMM_WORLD, 0, 1);
+    gpu_domain_init(&B->GD, MPI_COMM_WORLD, rank, nprocs);
 
     B->GD.verbose             = verbose;
     B->GD.CFL                 = P->cfl;

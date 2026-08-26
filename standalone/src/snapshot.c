@@ -131,3 +131,97 @@ int snapshot_check(const char *path, const struct gpu_domain *GD,
            atol, rtol, failed ? "MISMATCH" : "OK");
     return failed;
 }
+
+
+int snapshot_save_canon(const char *path, int64_t n_global, int64_t nb_global,
+                        int64_t nx, int64_t ny, int which_case,
+                        int64_t total_steps, double t, double last_dt,
+                        double *const fields[SNAP_NFIELDS]) {
+    FILE *fp = fopen(path, "wb");
+    if (!fp) { perror(path); return 1; }
+
+    snap_header h;
+    memset(&h, 0, sizeof(h));
+    memcpy(h.magic, SNAP_MAGIC, 8);
+    h.version     = SNAP_VERSION;
+    h.which_case  = which_case;
+    h.n           = n_global;
+    h.nb          = nb_global;
+    h.nx          = nx;
+    h.ny          = ny;
+    h.total_steps = total_steps;
+    h.t           = t;
+    h.last_dt     = last_dt;
+
+    if (fwrite(&h, sizeof(h), 1, fp) != 1) { perror(path); fclose(fp); return 1; }
+    for (int f = 0; f < SNAP_NFIELDS; f++) {
+        if (fwrite(fields[f], sizeof(double), (size_t)n_global, fp)
+                != (size_t)n_global) {
+            perror(path); fclose(fp); return 1;
+        }
+    }
+    fclose(fp);
+    printf("saved snapshot -> %s  (%lld triangles, %lld steps, t = %.9g)\n",
+           path, (long long)n_global, (long long)total_steps, t);
+    return 0;
+}
+
+int snapshot_check_canon(const char *path, int64_t n_global,
+                         double *const fields[SNAP_NFIELDS],
+                         double rtol, double atol) {
+    FILE *fp = fopen(path, "rb");
+    if (!fp) { perror(path); return 1; }
+
+    snap_header h;
+    if (fread(&h, sizeof(h), 1, fp) != 1) { perror(path); fclose(fp); return 1; }
+    if (memcmp(h.magic, SNAP_MAGIC, 8) != 0 || h.version != SNAP_VERSION) {
+        fprintf(stderr, "bench: %s is not a v%d snapshot\n", path, SNAP_VERSION);
+        fclose(fp); return 1;
+    }
+    if (h.n != n_global) {
+        fprintf(stderr, "bench: snapshot has %lld triangles, this run has %lld\n",
+                (long long)h.n, (long long)n_global);
+        fclose(fp); return 1;
+    }
+
+    double *ref = (double *)malloc((size_t)h.n * sizeof(double));
+    if (!ref) { fclose(fp); return 1; }
+
+    printf("\nverification against %s (%lld steps, t = %.9g)\n",
+           path, (long long)h.total_steps, h.t);
+    printf("  %-10s %14s %14s %14s\n", "field", "max abs diff", "rel to scale", "rms diff");
+
+    int failed = 0;
+    for (int f = 0; f < SNAP_NFIELDS; f++) {
+        if (fread(ref, sizeof(double), (size_t)h.n, fp) != (size_t)h.n) {
+            perror(path); free(ref); fclose(fp); return 1;
+        }
+        const double *cur = fields[f];
+        double max_abs = 0.0, sumsq = 0.0, field_scale = 0.0;
+        int64_t worst = -1;
+        int bad = 0;
+        for (int64_t k = 0; k < h.n; k++) {
+            const double d = fabs(cur[k] - ref[k]);
+            const double scale = fabs(ref[k]);
+            sumsq += d * d;
+            if (d > max_abs) { max_abs = d; worst = k; }
+            if (scale > field_scale) field_scale = scale;
+            if (d > atol + rtol * scale) bad = 1;
+        }
+        const double rms = sqrt(sumsq / (double)h.n);
+        const double max_rel = field_scale > 0.0 ? max_abs / field_scale : 0.0;
+        printf("  %-10s %14.6e %14.6e %14.6e%s\n",
+               field_names[f], max_abs, max_rel, rms, bad ? "   FAIL" : "");
+        if (bad) {
+            failed = 1;
+            if (worst >= 0)
+                printf("             worst at canonical triangle %lld: got %.17g, expected %.17g\n",
+                       (long long)worst, cur[worst], ref[worst]);
+        }
+    }
+    free(ref);
+    fclose(fp);
+    printf("  tolerance: atol %g, rtol %g  ->  %s\n\n",
+           atol, rtol, failed ? "MISMATCH" : "OK");
+    return failed;
+}

@@ -109,6 +109,39 @@ void bench_mesh_rectangular_cross(int64_t m, int64_t n,
     }
 }
 
+void bench_mesh_rectangular_cross_slab(int64_t m, int64_t n,
+                                       double len1, double len2,
+                                       int rank, int nprocs,
+                                       bench_mesh *M, bench_slab *S) {
+    const double delta1 = len1 / (double)m;
+
+    S->i0 = m * (int64_t)rank / nprocs;
+    S->i1 = m * (int64_t)(rank + 1) / nprocs;
+    S->gl = (rank > 0) ? 1 : 0;
+    S->gh = (rank < nprocs - 1) ? 1 : 0;
+    S->m_local = (S->i1 - S->i0) + S->gl + S->gh;
+    S->n_full  = 4 * (S->i1 - S->i0) * n;
+
+    const double x0_local = delta1 * (double)(S->i0 - S->gl);
+    bench_mesh_rectangular_cross(S->m_local, n,
+                                 delta1 * (double)S->m_local, len2,
+                                 x0_local, 0.0, M);
+
+    const int64_t ntris = M->num_triangles;
+    S->tri_full_flag = (int64_t *)xmalloc((size_t)ntris * sizeof(int64_t));
+    M->orig_id       = (int64_t *)xmalloc((size_t)ntris * sizeof(int64_t));
+    for (int64_t k = 0; k < ntris; k++) {
+        const int64_t cell    = k / 4;
+        const int64_t t       = k % 4;
+        const int64_t i_local = cell / n;
+        const int64_t j       = cell % n;
+        const int64_t i_glob  = i_local + (S->i0 - S->gl);
+        S->tri_full_flag[k] = (i_local >= S->gl &&
+                               i_local <  S->gl + (S->i1 - S->i0)) ? 1 : 0;
+        M->orig_id[k] = 4 * (i_glob * n + j) + t;
+    }
+}
+
 // Interleave the low 32 bits of i and j -> 64-bit Morton key.
 static uint64_t morton2(uint64_t i, uint64_t j) {
     uint64_t out = 0;

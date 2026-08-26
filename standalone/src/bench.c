@@ -228,6 +228,7 @@ static void extrapolate_phase(struct gpu_domain *GD, double predictor_dt,
 
 #include "setup.h"
 #include "snapshot.h"
+#include "bench_mpi.h"
 
 // ---------------------------------------------------------------------------
 // Options
@@ -470,7 +471,117 @@ static double ader2_step_timed(struct gpu_domain *GD, double max_timestep,
 
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// MPI support (np > 1): slab decomposition, gathered snapshots, global stats.
+// All MPI traffic in the driver goes through bench_mpi.h; the gpu kernels
+// use their own MPI (dt allreduce, halo exchange) via gpu_domain.
+// ---------------------------------------------------------------------------
+
+static const double *snap_field_ptr(const struct gpu_domain *GD, int f) {
+    switch (f) {
+        case SNAP_STAGE:  return GD->D.stage_centroid_values;
+        case SNAP_XMOM:   return GD->D.xmom_centroid_values;
+        case SNAP_YMOM:   return GD->D.ymom_centroid_values;
+        case SNAP_HEIGHT: return GD->D.height_centroid_values;
+        default:          return GD->D.bed_centroid_values;
+    }
+}
+
+// Water volume over OWNED cells only, from host arrays (ghosts excluded --
+// gpu_compute_water_volume() counts every local cell and would double-count
+// the ghost columns across ranks).
+static double host_water_volume(const struct gpu_domain *GD,
+                                const int64_t *full_flag) {
+    const anuga_int n = GD->D.number_of_elements;
+    const double *stage = GD->D.stage_centroid_values;
+    const double *bed   = GD->D.bed_centroid_values;
+    const anuga_geom_t *areas = GD->D.areas;
+    double v = 0.0;
+    for (anuga_int k = 0; k < n; k++) {
+        if (full_flag && !full_flag[k]) continue;
+        const double h = stage[k] - bed[k];
+        if (h > 0.0) v += h * (double)areas[k];
+    }
+    return v;
+}
+
+// Gather every rank's owned triangles into canonical global order on rank 0,
+// then save or check through the canon snapshot API.  Collective.
+static int mpi_snapshot(const char *save_path, const char *check_path,
+                        const struct gpu_domain *GD, const bench_mesh *M,
+                        const int64_t *full_flag, int64_t n_full,
+                        int64_t nx, int64_t ny, int which_case,
+                        int64_t total_steps, double t, double last_dt,
+                        double rtol, double atol) {
+    const anuga_int n_local = GD->D.number_of_elements;
+    const int64_t n_global = 4 * nx * ny;
+    const int np = bmpi_size(), rank = bmpi_rank();
+    const int cnt = (int)n_full;
+
+    int64_t *ids = (int64_t *)malloc((size_t)cnt * sizeof(int64_t));
+    double  *val = (double  *)malloc((size_t)cnt * sizeof(double));
+    int *rcounts = (int *)malloc((size_t)np * sizeof(int));
+    int *displs  = (int *)malloc((size_t)np * sizeof(int));
+
+    int64_t *rids = NULL;
+    double *canon[SNAP_NFIELDS] = {0};
+    double *rval = NULL;
+    if (rank == 0) {
+        rids = (int64_t *)malloc((size_t)n_global * sizeof(int64_t));
+        rval = (double *)malloc((size_t)n_global * sizeof(double));
+        for (int f = 0; f < SNAP_NFIELDS; f++)
+            canon[f] = (double *)malloc((size_t)n_global * sizeof(double));
+    }
+
+    int c = 0;
+    for (anuga_int k = 0; k < n_local; k++)
+        if (!full_flag || full_flag[k]) ids[c++] = M->orig_id ? M->orig_id[k] : k;
+    bmpi_gatherv_i64(ids, cnt, rids, rcounts, displs);
+
+    for (int f = 0; f < SNAP_NFIELDS; f++) {
+        const double *src = snap_field_ptr(GD, f);
+        c = 0;
+        for (anuga_int k = 0; k < n_local; k++)
+            if (!full_flag || full_flag[k]) val[c++] = src[k];
+        const int64_t got = bmpi_gatherv_d(val, cnt, rval, rcounts, displs);
+        if (rank == 0) {
+            if (got != n_global) {
+                fprintf(stderr, "bench: gathered %lld of %lld triangles\n",
+                        (long long)got, (long long)n_global);
+            }
+            for (int64_t e = 0; e < got; e++) canon[f][rids[e]] = rval[e];
+        }
+    }
+
+    int rc = 0;
+    if (rank == 0) {
+        const int64_t nb_global = 2 * (nx + ny);
+        if (save_path)
+            rc |= snapshot_save_canon(save_path, n_global, nb_global, nx, ny,
+                                      which_case, total_steps, t, last_dt, canon);
+        if (check_path)
+            rc |= snapshot_check_canon(check_path, n_global, canon, rtol, atol);
+    }
+    bmpi_bcast_i(&rc);
+
+    free(ids); free(val); free(rcounts); free(displs);
+    if (rank == 0) {
+        free(rids); free(rval);
+        for (int f = 0; f < SNAP_NFIELDS; f++) free(canon[f]);
+    }
+    return rc;
+}
+
 int main(int argc, char **argv) {
+    bmpi_init(&argc, &argv);
+    atexit(bmpi_finalize);
+    const int g_rank = bmpi_rank();
+    const int g_np   = bmpi_size();
+    if (g_rank != 0) {
+        // One reporting stream: silence stdout on non-root ranks (stderr stays).
+        FILE *devnull = freopen("/dev/null", "w", stdout);
+        (void)devnull;
+    }
     bench_opts O;
     memset(&O, 0, sizeof(O));
     O.nx = 200; O.ny = 200;
@@ -570,8 +681,22 @@ int main(int argc, char **argv) {
 
     // ---- build -----------------------------------------------------------
     bench_mesh M;
+    bench_slab S = {0};
     double *bed_node = NULL, *stage_node = NULL;
-    if (O.mesh_path) {
+    if (g_np > 1) {
+        // v1 MPI restrictions: generated rectangular-cross mesh, row order,
+        // cell-based fluxes, library step functions.
+        if (O.mesh_path || O.morton != 0 || P.flux_mode != 0 ||
+            g_active_set || O.phases || g_cuda_extrap_tpb > 0) {
+            if (g_rank == 0)
+                fprintf(stderr, "bench: MPI runs support the generated mesh with "
+                        "--order row, cell fluxes, no --active-set/--phases/"
+                        "--cuda-extrap (for now)\n");
+            return 2;
+        }
+        bench_mesh_rectangular_cross_slab(O.nx, O.ny, P.length_x, P.length_y,
+                                          g_rank, g_np, &M, &S);
+    } else if (O.mesh_path) {
         bench_mesh_load(O.mesh_path, &M, &bed_node, &stage_node);
         if (O.morton == 1)      bench_mesh_reorder_tris_morton(&M);
         else if (O.morton == 2) bench_mesh_reorder_tris_random(&M);
@@ -584,15 +709,54 @@ int main(int argc, char **argv) {
     bench_domain B;
     const double t_build0 = omp_get_wtime();
     bench_domain_build(&B, &M, &P, bed_node, stage_node);
+    if (g_np > 1) B.GD.D.tri_full_flag = S.tri_full_flag;   // before mapping
     const double t_build = omp_get_wtime() - t_build0;
 
 
     const double t_map0 = omp_get_wtime();
-    bench_domain_to_device(&B, &P, O.verbose);
+    bench_domain_to_device(&B, &P, O.verbose, g_rank, g_np);
     const double t_map = omp_get_wtime() - t_map0;
+
+    // Halo exchange setup: with the slab cut along the first grid axis and
+    // cell id = i*n + j, each column's 4*ny triangles are one contiguous id
+    // range, so every send/recv list is a simple run of indices.
+    if (g_np > 1) {
+        int nb_ranks[2], scnt[2], rcnt[2], nnb = 0;
+        const int per_col = (int)(4 * O.ny);
+        int *fs = (int *)malloc(2 * (size_t)per_col * sizeof(int));
+        int *fr = (int *)malloc(2 * (size_t)per_col * sizeof(int));
+        int so = 0, ro = 0;
+        if (S.gl) {   // lower neighbour: send first owned column, recv ghost col 0
+            nb_ranks[nnb] = g_rank - 1; scnt[nnb] = rcnt[nnb] = per_col;
+            for (int e = 0; e < per_col; e++) {
+                fs[so + e] = (int)(4 * S.gl * O.ny) + e;
+                fr[ro + e] = e;
+            }
+            so += per_col; ro += per_col; nnb++;
+        }
+        if (S.gh) {   // upper neighbour: send last owned column, recv last col
+            nb_ranks[nnb] = g_rank + 1; scnt[nnb] = rcnt[nnb] = per_col;
+            const int send_base = (int)(4 * (S.gl + (S.i1 - S.i0) - 1) * O.ny);
+            const int recv_base = (int)(4 * (S.m_local - 1) * O.ny);
+            for (int e = 0; e < per_col; e++) {
+                fs[so + e] = send_base + e;
+                fr[ro + e] = recv_base + e;
+            }
+            so += per_col; ro += per_col; nnb++;
+        }
+        if (gpu_halo_init(&B.GD, nnb, nb_ranks, scnt, rcnt, fs, fr) != 0) {
+            fprintf(stderr, "bench: gpu_halo_init failed on rank %d\n", g_rank);
+            return 2;
+        }
+        free(fs); free(fr);
+        // Ghost columns start identical on both owners (same generator), but
+        // exchange once so any roundoff asymmetry is settled before stepping.
+        gpu_exchange_ghosts(&B.GD);
+    }
 
     struct gpu_domain *GD = &B.GD;
     const int64_t n = GD->D.number_of_elements;
+    const int64_t n_report = (g_np > 1) ? 4 * O.nx * O.ny : n;
 
     const char *case_name = P.which_case == BENCH_CASE_DAM      ? "dam"
                           : P.which_case == BENCH_CASE_DAMBUMPS ? "dambumps"
@@ -609,7 +773,13 @@ int main(int argc, char **argv) {
                O.mesh_path, (long long)n, (long long)GD->D.boundary_length);
     else
         printf("  mesh      : %lld x %lld cross -> %lld triangles, %lld boundary edges\n",
-               (long long)O.nx, (long long)O.ny, (long long)n, (long long)GD->D.boundary_length);
+               (long long)O.nx, (long long)O.ny, (long long)n_report,
+               (long long)(g_np > 1 ? 2 * (O.nx + O.ny) : GD->D.boundary_length));
+    if (g_np > 1)
+        printf("  mpi       : %d ranks, slab cut along x; this rank owns columns "
+               "[%lld, %lld) + %lld ghost col(s), %lld local triangles\n",
+               g_np, (long long)S.i0, (long long)S.i1,
+               (long long)(S.gl + S.gh), (long long)n);
     printf("  case      : %s, manning %.4g%s\n",
            O.mesh_path ? "from mesh file" : case_name, P.manning,
            O.apply_forcing ? "" : " (friction off)");
@@ -640,7 +810,9 @@ int main(int argc, char **argv) {
                dev_need / 1073741824.0);
     fflush(stdout);
 
-    const double volume0 = gpu_compute_water_volume(GD);
+    const double volume0 = (g_np > 1)
+        ? bmpi_sum_d(host_water_volume(GD, S.tri_full_flag))
+        : gpu_compute_water_volume(GD);
 
     if (g_cuda_extrap_tpb > 0) {
         O.phases = 1;                          // route through the stepped loops
@@ -684,6 +856,7 @@ int main(int argc, char **argv) {
                 dt = gpu_evolve_one_rk2_step(GD, P.evolve_max_timestep, O.apply_forcing);
         }
         apply_rain(GD, t_sim, dt);
+        if (g_np > 1) gpu_exchange_ghosts(GD);   // end-of-step ghost sync
         t_sim += dt;
     }
 
@@ -717,6 +890,7 @@ int main(int argc, char **argv) {
                                   : gpu_evolve_one_rk2_step(GD, P.evolve_max_timestep, O.apply_forcing);
             }
             apply_rain(GD, t_sim, dt);
+            if (g_np > 1) gpu_exchange_ghosts(GD);   // end-of-step ghost sync
             t_sim += dt;
             steps_done = s + 1;
 
@@ -745,8 +919,9 @@ int main(int argc, char **argv) {
                    r + 1, O.repeat, elapsed, 1.0e3 * elapsed / (double)O.steps);
     }
 
+    best = bmpi_max_d(best);          // slowest rank is the honest wall time
     const double per_step = best / (double)O.steps;
-    const double cellsteps_per_s = (double)n * (double)O.steps / best;
+    const double cellsteps_per_s = (double)n_report * (double)O.steps / best;
 
     printf("\n  timed     : %lld steps (+%lld warmup) in %.4f s%s\n",
            (long long)O.steps, (long long)O.warmup, best,
@@ -780,11 +955,12 @@ int main(int argc, char **argv) {
                100.0 * g_as_cellfrac_sum / (double)g_as_samples, g_as_samples);
 
     // ---- diagnostics -----------------------------------------------------
-    const double volume1 = gpu_compute_water_volume(GD);
+    gpu_domain_sync_from_device(GD);
+    const double volume1 = (g_np > 1)
+        ? bmpi_sum_d(host_water_volume(GD, S.tri_full_flag))
+        : gpu_compute_water_volume(GD);
     printf("\n  volume    : %.12g -> %.12g m^3 (drift %.3e relative)\n",
            volume0, volume1, volume0 != 0.0 ? (volume1 - volume0) / volume0 : 0.0);
-
-    gpu_domain_sync_from_device(GD);
 
     double max_speed_sq = 0.0, max_stage = -1.0e300, min_stage = 1.0e300;
     int nan_count = 0;
@@ -798,6 +974,12 @@ int main(int argc, char **argv) {
         const double m2 = uh * uh + vh * vh;
         if (m2 > max_speed_sq) max_speed_sq = m2;
     }
+    if (g_np > 1) {
+        max_stage    = bmpi_max_d(max_stage);
+        min_stage    = -bmpi_max_d(-min_stage);
+        max_speed_sq = bmpi_max_d(max_speed_sq);
+        nan_count    = bmpi_max_i(nan_count);
+    }
     printf("  state     : stage in [%.6g, %.6g], max |momentum| %.6e%s\n",
            min_stage, max_stage, sqrt(max_speed_sq),
            nan_count ? "  *** NaNs present ***" : "");
@@ -807,11 +989,19 @@ int main(int argc, char **argv) {
     int rc = nan_count ? 1 : 0;
     const int64_t total_steps = O.warmup + O.steps * O.repeat;
 
-    if (O.save_path)
-        rc |= snapshot_save(O.save_path, GD, M.orig_id, O.nx, O.ny, (int)P.which_case,
-                            total_steps, t_sim, dt);
-    if (O.check_path)
-        rc |= snapshot_check(O.check_path, GD, M.orig_id, O.rtol, O.atol);
+    if (g_np > 1) {
+        if (O.save_path || O.check_path)
+            rc |= mpi_snapshot(O.save_path, O.check_path, GD, &M,
+                               S.tri_full_flag, S.n_full,
+                               O.nx, O.ny, (int)P.which_case,
+                               total_steps, t_sim, dt, O.rtol, O.atol);
+    } else {
+        if (O.save_path)
+            rc |= snapshot_save(O.save_path, GD, M.orig_id, O.nx, O.ny, (int)P.which_case,
+                                total_steps, t_sim, dt);
+        if (O.check_path)
+            rc |= snapshot_check(O.check_path, GD, M.orig_id, O.rtol, O.atol);
+    }
 
     if (O.csv_path) {
         FILE *fp = fopen(O.csv_path, "r");
@@ -828,7 +1018,7 @@ int main(int argc, char **argv) {
                             "volume_drift,max_momentum,nans\n");
             fprintf(fp, "%lld,%lld,%lld,%s,%lld,%.6f,%.4f,%.4f,%.4f,%.4f,"
                         "%zu,%zu,%.6e,%.6e,%d\n",
-                    (long long)O.nx, (long long)O.ny, (long long)n, case_name,
+                    (long long)O.nx, (long long)O.ny, (long long)n_report, case_name,
                     (long long)O.steps, 1.0e3 * per_step, 1.0e-6 * cellsteps_per_s,
                     1.0e-9 * (double)flops_total / best, t_build, t_map,
                     dev_need, peak_host_rss(),

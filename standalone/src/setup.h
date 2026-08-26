@@ -77,7 +77,8 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
                         const double *bed_node, const double *stage_node);
 
 // gpu_domain_init + reflective boundary + gpu_domain_map_arrays.
-void bench_domain_to_device(bench_domain *B, const bench_params *P, int verbose);
+void bench_domain_to_device(bench_domain *B, const bench_params *P, int verbose,
+                            int rank, int nprocs);
 
 void bench_domain_free(bench_domain *B);
 

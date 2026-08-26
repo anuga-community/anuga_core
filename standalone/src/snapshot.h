@@ -42,4 +42,15 @@ int snapshot_check(const char *path, const struct gpu_domain *GD,
                    const int64_t *orig_id,
                    double rtol, double atol);
 
+// Canonical-array variants for MPI runs: the driver gathers every rank's
+// owned triangles into canonical (global row-major) order on rank 0 and
+// passes the assembled fields here.  Same file format as above.
+int snapshot_save_canon(const char *path, int64_t n_global, int64_t nb_global,
+                        int64_t nx, int64_t ny, int which_case,
+                        int64_t total_steps, double t, double last_dt,
+                        double *const fields[SNAP_NFIELDS]);
+int snapshot_check_canon(const char *path, int64_t n_global,
+                         double *const fields[SNAP_NFIELDS],
+                         double rtol, double atol);
+
 #endif // ANUGA_BENCH_SNAPSHOT_H
