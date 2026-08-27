@@ -35,6 +35,11 @@ done | grep json | xargs -P "$NPROCS" -I{} sh -c \
   'python mesh_tile.py "$1" --area '"$AREA"' --outdir '"$MT"' > '"$MT"'/$(basename "$1" .json).log 2>&1 || echo "FAILED $1"' _ {}
 echo "   $(ls "$MT"/*.log | wc -l) new tiles meshed, $(ls "$MT"/*.msh | wc -l) total"
 
-echo "== 3/4 merge -> $OUT"
-python merge_tiles.py "$MT" "$OUT"
+NTRI=$(python -c "import json; print(int(2*sum(t['area_m2'] for t in json.load(open('$TILES/index.json'))['tiles'])/$AREA))")
+if [ "$NTRI" -gt 500000000 ]; then
+  echo "== 3/4 merge SKIPPED (~$NTRI triangles); tiles are in $MT/"
+else
+  echo "== 3/4 merge -> $OUT"
+  python merge_tiles.py "$MT" "$OUT"
+fi
 echo "== 4/4 done; convert with: python ../standalone/tools/tiles_to_bmesh.py --tiles $MT --out ... / --merged $OUT --out ..."
