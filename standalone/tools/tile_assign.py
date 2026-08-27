@@ -12,10 +12,13 @@ from being free.  Without a stats file every tile gets active_fraction = 1
 (pure triangle-count balance).
 
 Methods:
-  lpt     greedy longest-processing-time bin packing (best balance, ranks
-          may be spatially scattered -> more halo neighbours)
   contig  contiguous split in tile order (row-major grid: compact ranks,
-          balance limited by the heaviest tile)
+          balance limited by the heaviest tile).  DEFAULT: on 4 H200s it
+          matched lpt's kernel balance (9%) with 4x fewer ghosts and was
+          1.6x faster on wall time.
+  lpt     greedy longest-processing-time bin packing: same kernel balance,
+          but scattered tiles quadruple the halo and the exchange cost eats
+          the gain.  Kept for reference.
 
 Usage:
     python tools/tile_assign.py build/tiles10k/index.txt --stats stats.txt \
@@ -31,7 +34,7 @@ def main():
     ap.add_argument('--stats', help='bench --tile-stats output')
     ap.add_argument('--nprocs', type=int, required=True)
     ap.add_argument('--out', required=True)
-    ap.add_argument('--method', choices=['lpt', 'contig'], default='lpt')
+    ap.add_argument('--method', choices=['lpt', 'contig'], default='contig')
     ap.add_argument('--floor', type=float, default=0.035)
     ap.add_argument('--split-threshold', type=float, default=0.5, help='flag tiles heavier than this fraction of a rank share')
     ap.add_argument('--split-out', help='write the tile ids above half a share (for split_delta.py --refine-file)')

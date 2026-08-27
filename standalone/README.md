@@ -618,8 +618,32 @@ Triangle-balanced active-set run: 1.79 ms/step for 58M triangles
 (the merged mesh on one GPU: 3.74), rank 0 holding 539k of 584k active
 cells against a 51% kernel-time spread.  That run calibrates the H200 cost
 model: 0.073 ns per local cell of never-skipped work vs 1.0 ns per active
-cell, i.e. `--floor 0.073`.  (The weighted runs of that job died on gadi's
-missing `python` alias; `tools/h200_tiles_balance.pbs` reruns them.)
+cell, i.e. `--floor 0.073`.
+
+**Weighted assignment on 4 H200s** (`tools/h200_tiles_balance.pbs`, job
+177625536, same 58M mesh, 200 timed steps, results in
+`build/tilesbal/tiles300/`; tiled np=4 and np=7 bit-exact vs the merged
+mesh first):
+
+| assignment (4 GPUs)             | active cells/step per rank       | kernel ms/step spread | wall ms/step | ghosts per rank |
+|---------------------------------|----------------------------------|-----------------------|--------------|-----------------|
+| triangle-balanced (default)     | 539k / 19k / 14k / 11k           | 1.05 .. 1.58 (50%)    | 1.80         | 10k .. 24k      |
+| wetness-weighted, contig        | 345k / 206k / 23k / 11k          | 1.14 .. 1.25 (9%)     | **1.71**     | 8k .. 23k       |
+| wetness-weighted, lpt           | 343k / 208k / 18k / 16k          | 1.17 .. 1.28 (9%)     | 2.72         | 67k .. 98k      |
+| lpt re-weighted from own stats  | same                             | 1.17 .. 1.27 (9%)     | 2.78         | 67k .. 98k      |
+
+Two lessons.  The cost model holds on the GPU: with the measured floor the
+weighted assignments land within 9% on kernel time, from 50%.  And
+**contiguity is not optional**: lpt reaches the same kernel balance but
+scatters each rank's tiles over the basin, so the halo grows 4x and the
+per-step exchange (host-staged pack/MPI/unpack, ~13 ns per ghost cell per
+step here) costs more than the imbalance it removed -- wall time 2.72 vs
+1.71 ms.  `tile_assign.py --method contig` is therefore the default choice;
+its residual comes from the heaviest tile (0.30 of a share, tile 30), which
+is what the refinement step addresses.  The remaining gap between kernel
+max (1.25) and wall (1.71) is the per-step exchange + dt allreduce, ~0.45
+ms at 8-23k ghosts -- proportionally large only because a 99%-dry 58M mesh
+steps in 1.2 ms.
 
 ### Cross-vendor portability: AMD MI250X and Intel PVC (2026-08-25)
 
