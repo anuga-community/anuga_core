@@ -79,10 +79,15 @@ measured exactly.  All banked in standalone/README.md.  No jobs in flight.
 triangles, 391 GB compact v2 on /g/data/bm55/jlv900/tiles1sqm (index.txt).
 scratch/bm55 quota is nearly full (706/1024 GiB) -- keep big outputs on gdata.
 
-**IN FLIGHT: job `177636235`** -- `tools/h200_1sqm_rehearsal.pbs`: 16 real
-1 sqm tiles (~220M tris) around the synthetic lake on 4xH200: np=1 golden,
-np=2/4 atol-0 gates, active-set timing tri-balanced vs weighted contig.
-Results `standalone/build/rehearsal/` (SUMMARY.txt, runs.csv, DONE).
+**DONE: job 177636235 (1 sqm rehearsal, 9 tiles / 89.5M)**: np=2/4
+bit-exact vs np=1 on real tiles; 488 B/tri device, 543 B/tri host, 0.45
+us/tri build.  Block was 100% wet -> balance not measurable; 97% imbalance
+= granularity (9 tiles / 4 ranks).  Banked in README.
+
+**IN FLIGHT: job `177636649`** -- `tools/h200_1sqm_2node.pbs`: 26 tiles /
+301M tris on 2 nodes (8 H200s), first inter-node GPU-aware MPI: np=4
+golden vs np=8 atol 0; active-set tri vs contig; full mesh.  Results
+`standalone/build/rehearsal2/` (SUMMARY.txt, DONE; pbs.log on failure).
 
 **Next steps:**
 1. Read rehearsal results; then scale the subset up (more tiles / 8 GPUs)
