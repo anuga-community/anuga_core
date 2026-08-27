@@ -57,6 +57,8 @@ ANUGA shallow-water miniapp -- OpenMP target offload
 | `make clanggpu` | clang    | LLVM nvptx offload                                    |
 | `make amdgpu`   | amdclang | `-fopenmp --offload-arch=<gfx>` (autodetected), CDNA  |
 | `make intelgpu` | icx      | `-fiopenmp -fopenmp-targets=spir64`, PVC              |
+| `make cpumpi`   | mpicc/gcc| the cpu build with `-DHAVE_MPI` (slab decomposition)  |
+| `make gpumpi`   | mpicc/nvc| the gpu build with `-DHAVE_MPI`, one GPU per rank     |
 
 `GPU_ARCH` is autodetected from `nvidia-smi` (`cc70` on a V100, `cc90` on an
 H100); override with `make gpu GPU_ARCH=cc80`. Each config has its own object
@@ -445,6 +447,37 @@ Hopper: flux 44% vs reconstruction 39% (per-cell, reconstruction scaled
 5.3x with bandwidth while the atomic scatter scaled only 3.1x) -- so the
 next kernel worth attacking depends on the target architecture.
 
+### Multi-GPU with MPI (`make gpumpi`, 4x H200, 2026-08-26)
+
+A C-only MPI layer (`src/bench_mpi.h`, no mpi4py anywhere) slab-decomposes
+the generated mesh along x -- cell id `i*n+j` gives each rank a contiguous
+id range -- with one ghost column per interior side, exchanged through the
+production gpu layer's own `gpu_exchange_ghosts` each substep. The
+decomposition is **bit-exact**: np=2 and np=4 match the np=1 run at
+`--atol 0 --rtol 0` on CPU (18 checks, dam/dambumps/river x rk2/ader2/euler)
+and on the H200s (`tools/h200_mpi_scaling.pbs`, job 177517465, results in
+`build/mpiscale/`). Bringing the path up on real GPUs found a production bug
+in `gpu_halo.c`: the GPU-aware pack/unpack kernels read flat index arrays
+that `gpu_halo_init` never mapped to the device (fixed here).
+
+RK2 cell fluxes, dam case, 100 timed steps, ms/step and Mcell-steps/s:
+
+| mesh            | np=1         | np=2         | np=4         | eff. @4 |
+|-----------------|--------------|--------------|--------------|---------|
+| 64M (nx 4000)   | 41.89 / 1528 | 22.50 / 2844 | 11.92 / 5367 | 88%     |
+| 144M (nx 6000)  | 97.15 / 1482 | 51.21 / 2812 | 26.38 / 5458 | 92%     |
+
+Weak scaling at 36M triangles per GPU: 24.0 / 25.4 / 25.7 ms/step on
+1 / 2 / 4 GPUs (5.6 Gcell-steps/s aggregate, 93% efficiency). Strong
+efficiency rises with problem size (88% -> 92%), i.e. the residual is the
+fixed per-step exchange cost, and the per-rank work simply has to be large
+enough to hide it -- the "linear given enough work" claim, now measured.
+
+v1 restrictions (enforced in `bench.c`): generated mesh, `--order row`,
+cell-based fluxes; no `--active-set`, `--phases` or `--cuda-extrap` under
+MPI. Extending the halo rule to scatter fluxes and the 2-ring active set is
+the next step.
+
 ### Cross-vendor portability: AMD MI250X and Intel PVC (2026-08-25)
 
 First contact with non-NVIDIA hardware, same source, no code changes:
@@ -597,8 +630,10 @@ tools/anuga_reference.py  same case through the full ANUGA stack
 
 ## Notes and limits
 
-- Serial only: MPI is stubbed out via `gpu_mpi_stubs.h` (`nprocs == 1`, no halo
-  exchange). Multi-GPU decomposition is out of scope here.
+- Without `-DHAVE_MPI` the build is serial: MPI is stubbed out via
+  `gpu_mpi_stubs.h` (`nprocs == 1`, no halo exchange). The `*mpi` targets add
+  a slab decomposition with the v1 restrictions listed under "Multi-GPU with
+  MPI".
 - Reflective boundaries only. The other boundary evaluators are still called
   each step (with zero edges) so the timing matches the production step.
 - No riverwalls, no operators (rate/inlet/culvert). Those sources are compiled
