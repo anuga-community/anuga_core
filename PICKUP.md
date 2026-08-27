@@ -63,14 +63,19 @@ coarse loop: 131% imbalance -> 13% weighted -> tiles 30/31 split, refined
 mesh bit-exact vs merged at np=4/7.  Two real 1 sqm tiles (10, 11; 13.8M
 each) np=2 bit-exact vs stitched np=1 (build/pair1sqm).
 
-**IN FLIGHT: PBS job `177612520`** (gpuhopper, 4xH200) --
-`standalone/tools/h200_mpi_tiles.pbs`: tiled gates on GPU at 300 sqm (58M
-tris, 158 tiles) + load balance (triangle-balanced vs lpt vs contig from
---tile-stats).  Results `standalone/build/mpitiles/` (GATES.txt,
-SUMMARY.txt, DONE; failures -> pbs.log).
+**DONE: GPU jobs 177612520 / 177625536 / 177626077** (build/mpitiles,
+build/tilesbal/tiles300{,_r1}): all tiled gates OK at 58M on 4xH200;
+wetness-weighted contig assignment 50% -> 9% kernel imbalance; lpt same
+balance but 4x ghosts -> 1.6x slower wall (contiguity mandatory; contig is
+now the tile_assign default, Morton order of tile centres).  H200 cost
+model floor 0.073.  Refined set (tiles 30/31 split): gates OK; balance
+residual is model error not granularity at 1% wet.
+
+**IN FLIGHT: job `177630729`** -- refined set with Morton contig
+(build/tilesbal/tiles300_r1/SUMMARY.txt); expect ~9-14%.
 
 **Next steps:**
-1. Read mpitiles results, bank in standalone/README.md, commit.
+1. Read job 177630729, bank in README, commit.
 2. 1 sqm launch rehearsal: convert all 1404 tiles (tile-parallel PBS job,
    ~15 min on 104 cores), assign to N GPU ranks, run a few steps on 4-8
    H200s from a subset of tiles (e.g. the lake region) -- needs a wet

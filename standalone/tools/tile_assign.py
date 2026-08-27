@@ -12,7 +12,7 @@ from being free.  Without a stats file every tile gets active_fraction = 1
 (pure triangle-count balance).
 
 Methods:
-  contig  contiguous split in tile order (row-major grid: compact ranks,
+  contig  contiguous split in Morton order of tile centres (compact ranks,
           balance limited by the heaviest tile).  DEFAULT: on 4 H200s it
           matched lpt's kernel balance (9%) with 4x fewer ghosts and was
           1.6x faster on wall time.
@@ -45,6 +45,21 @@ def main():
         rows = [ln.split() for ln in f if ln.strip()]
     ids = [int(r[0]) for r in rows]
     ntris = {int(r[0]): int(r[1]) for r in rows}
+    # bbox centre per tile -> Morton order for the contiguous split, so a
+    # rank is a compact 2-D patch (sub-tiles from a refinement carry ids
+    # >= 10000 and would otherwise all sit at the end of the id order).
+    cx = {int(r[0]): (float(r[4]) + float(r[6])) / 2 for r in rows}
+    cy = {int(r[0]): (float(r[5]) + float(r[7])) / 2 for r in rows}
+    x0, y0 = min(cx.values()), min(cy.values())
+    span = max(max(cx.values()) - x0, max(cy.values()) - y0) or 1.0
+
+    def morton(t):
+        ix = int((cx[t] - x0) / span * 65535); iy = int((cy[t] - y0) / span * 65535)
+        code = 0
+        for b in range(16):
+            code |= ((ix >> b) & 1) << (2 * b) | ((iy >> b) & 1) << (2 * b + 1)
+        return code
+    order = sorted(ids, key=morton)
     frac = {t: 1.0 for t in ids}
     if a.stats:
         meas = {}
@@ -69,7 +84,7 @@ def main():
             load[r] += w[t]
     else:
         acc, r = 0.0, 0
-        for t in ids:
+        for t in order:
             if r < a.nprocs - 1 and acc + w[t] / 2 > (r + 1) * total / a.nprocs:
                 r += 1
             assign[t] = r
