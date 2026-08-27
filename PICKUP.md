@@ -90,12 +90,17 @@ active-set weighted contig 27.3 ms vs 44.8 tri-balanced (1.64x); residual
 74% = wet-tile granularity; 13 tiles flagged for split
 (build/rehearsal2/split.txt).  No jobs in flight.
 
+**DONE: 13 flagged 1 sqm tiles refined** -> 50 sub-tiles, 1441 tiles /
+17.445G tris; gdata tile set + index.txt updated in place (parents removed);
+lake block now 63 tiles, predicted contig balance 1.05 (was 1.22).
+
+**IN FLIGHT: job `177650566`** -- h200_1sqm_2node.pbs on the refined set
+(build/rehearsal2/, DONE marker; previous results overwritten -- the
+pre-refinement numbers are banked in README).
+
 **Next steps:**
-1. Refine the 13 flagged 1 sqm tiles (split_delta --refine-file at
-   tile 3000 / spacing 1.2 -> 1500/1.2 exact; mesh sub-tiles; convert with
-   --compact --tile into /g/data/bm55/jlv900/tiles1sqm, drop parent rows,
-   --assemble), rerun h200_1sqm_2node.pbs.  refine_tiles.sh must skip the
-   merge at 1 sqm.  Then per-rank output (max depth, stage at yieldsteps).  Elevation: replace the analytic
+1. Read job 177650566, bank.  Then per-rank output (max depth, stage at
+   yieldsteps) and the full-basin coarse->assign pass for all 1441 tiles.  Elevation: replace the analytic
    bed in tools/tiles_to_bmesh.py by raster sampling once the user provides
    a path on their side (their data cannot be shared with Claude).
 2. Memory: neighbour tiles are read whole then discarded -- fine at 300
