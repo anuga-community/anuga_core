@@ -645,6 +645,22 @@ max (1.25) and wall (1.71) is the per-step exchange + dt allreduce, ~0.45
 ms at 8-23k ghosts -- proportionally large only because a 99%-dry 58M mesh
 steps in 1.2 ms.
 
+**Refined set** (tiles 30 and 31 split, 164 tiles; jobs 177626077 and
+177630729, `build/tilesbal/tiles300_r1/`): bit-exact vs its merged mesh at
+np=4/7.  The first contig run went to 14% because sub-tiles carry ids
+>= 10000 and an id-ordered split bunched all six wet ones on one rank;
+`tile_assign.py` now orders tiles by the Morton code of their centres.
+With that: contig 1.16 .. 1.28 ms (10%), **wall 1.66 ms/step -- the best
+of every run**, and its per-rank active counts 374k / 179k / 15k / 17k are
+exactly what the model predicted offline (373k / 178k / 15k / 17k).  lpt
+re-weighted from its own stats reaches 2% kernel balance yet 2.46 ms wall
+-- the halo again.  Two conclusions for the 1 m^2 run: the weight model is
+predictive enough to assign from a coarse run, and at ~1% wet the
+never-skipped base work dominates, so the optimum deliberately gives the
+wet ranks fewer triangles rather than equal active counts; splitting the
+heaviest tile matters only once a single tile's *weight* approaches a
+rank's share (it was 0.30 here, 0.09 after the split).
+
 ### Cross-vendor portability: AMD MI250X and Intel PVC (2026-08-25)
 
 First contact with non-NVIDIA hardware, same source, no code changes:

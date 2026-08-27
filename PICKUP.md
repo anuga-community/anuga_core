@@ -71,21 +71,21 @@ now the tile_assign default, Morton order of tile centres).  H200 cost
 model floor 0.073.  Refined set (tiles 30/31 split): gates OK; balance
 residual is model error not granularity at 1% wet.
 
-**IN FLIGHT: job `177630729`** -- refined set with Morton contig
-(build/tilesbal/tiles300_r1/SUMMARY.txt); expect ~9-14%.
+**DONE: job 177630729** -- refined set, Morton contig: 10% kernel
+imbalance, wall 1.66 ms/step (best run); predicted per-rank actives matched
+measured exactly.  All banked in standalone/README.md.  No jobs in flight.
 
 **Next steps:**
-1. Read job 177630729, bank in README, commit.
-2. 1 sqm launch rehearsal: convert all 1404 tiles (tile-parallel PBS job,
+1. 1 sqm launch rehearsal: convert all 1404 tiles (tile-parallel PBS job,
    ~15 min on 104 cores), assign to N GPU ranks, run a few steps on 4-8
    H200s from a subset of tiles (e.g. the lake region) -- needs a wet
    synthetic case placed on chosen tiles.  Elevation: replace the analytic
    bed in tools/tiles_to_bmesh.py by raster sampling once the user provides
    a path on their side (their data cannot be shared with Claude).
-3. Memory: neighbour tiles are read whole then discarded -- fine at 300
+2. Memory: neighbour tiles are read whole then discarded -- fine at 300
    sqm, ~20 GB transient/rank at 1 sqm; extract boundary strips at
    conversion time if that bites.
-4. Same C-only layer under full ANUGA (drop mpi4py); remaining miniapp MPI
+3. Same C-only layer under full ANUGA (drop mpi4py); remaining miniapp MPI
    restrictions: --order row generated mesh only, no --flux edge/--cuda-extrap.
 
 ## 2. This worktree vs the main repo
