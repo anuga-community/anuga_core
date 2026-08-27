@@ -1029,6 +1029,11 @@ int main(int argc, char **argv) {
         if (g_np > 1) {
             // Kernel time excludes the halo/allreduce waits, so its spread
             // across ranks is the load imbalance (wall time is the max).
+            // One stderr line per rank with what the cost model needs.
+            fprintf(stderr, "rank %d: %lld owned, %lld ghost, %.0f active cells/step, %.4f ms/step kernels\n",
+                    g_rank, (long long)n_full, (long long)(n - n_full),
+                    g_as_samples > 0 ? g_as_cellfrac_sum / (double)g_as_samples * (double)n : (double)n,
+                    1.0e3 * summed / (double)O.steps);
             const double smax = bmpi_max_d(summed), smin = -bmpi_max_d(-summed);
             printf("    per-rank kernel time %.4f .. %.4f ms/step  (imbalance %.1f%%)\n",
                    1.0e3 * smin / (double)O.steps, 1.0e3 * smax / (double)O.steps,

@@ -32,7 +32,9 @@ def main():
     ap.add_argument('--nprocs', type=int, required=True)
     ap.add_argument('--out', required=True)
     ap.add_argument('--method', choices=['lpt', 'contig'], default='lpt')
-    ap.add_argument('--floor', type=float, default=0.05)
+    ap.add_argument('--floor', type=float, default=0.035)
+    ap.add_argument('--split-threshold', type=float, default=0.5, help='flag tiles heavier than this fraction of a rank share')
+    ap.add_argument('--split-out', help='write the tile ids above half a share (for split_delta.py --refine-file)')
     a = ap.parse_args()
 
     with open(a.index) as f:
@@ -42,12 +44,17 @@ def main():
     ntris = {int(r[0]): int(r[1]) for r in rows}
     frac = {t: 1.0 for t in ids}
     if a.stats:
+        meas = {}
         with open(a.stats) as f:
             for ln in f:
                 if ln.startswith('#') or not ln.strip():
                     continue
                 t, _, fr, _ = ln.split()
-                frac[int(t)] = float(fr)
+                meas[int(t)] = float(fr)
+        for t in ids:
+            # sub-tiles (id = 10000 + 4*parent + q, split_delta.py --refine)
+            # inherit the parent's fraction when only the parent was measured
+            frac[t] = meas.get(t, meas.get((t - 10000) // 4 if t >= 10000 else -1, 1.0))
     w = {t: ntris[t] * (frac[t] + a.floor) for t in ids}
     total = sum(w.values())
     assign = {}
@@ -80,10 +87,14 @@ def main():
     # rank below the heaviest tile.  Tiles heavier than half a rank's share
     # are the ones to split (cdac_script/split_delta.py at half the tile
     # size keeps the outer lattice, so neighbours still conform).
-    heavy = sorted((t for t in ids if w[t] > 0.5 * mean), key=lambda t: -w[t])
+    heavy = sorted((t for t in ids if w[t] > a.split_threshold * mean), key=lambda t: -w[t])
     print(f'heaviest tile = {max(w.values())/mean:.2f} x mean rank share '
-          f'(lower bound on max/mean); {len(heavy)} tile(s) above half a share'
+          f'(lower bound on max/mean); {len(heavy)} tile(s) above {a.split_threshold} share'
           + (f': {heavy[:20]}{"..." if len(heavy) > 20 else ""}' if heavy else ''))
+    if a.split_out:
+        with open(a.split_out, 'w') as f:
+            f.write('\n'.join(str(t) for t in heavy) + ('\n' if heavy else ''))
+        print(f'wrote {a.split_out} ({len(heavy)} tiles to refine)')
     print(f'wrote {a.out}')
 
 

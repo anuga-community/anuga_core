@@ -1894,12 +1894,21 @@ void core_build_active_sets(struct domain *D,
 
     // Pass 2: ring-1 = wet, neighbour-of-wet, or boundary-adjacent.
     // Ring-1 cells are the ones whose edges can carry flux this step.
+    // Under MPI only OWNED cells count as boundary-adjacent: a ghost cell's
+    // neighbour-less edges are the artificial rim of the halo strip, not a
+    // domain boundary, and seeding from them would keep every rank's whole
+    // perimeter (rim + two rings) active forever.  Exactness is unaffected:
+    // a ghost's edge values are only read by an owned cell's flux, which is
+    // computed only if either side is ring-1 -- then the ghost is in the
+    // ring-2 cell list and gets extrapolated anyway.
+    anuga_int * restrict full = D->tri_full_flag;
     OMP_PARALLEL_LOOP
     for (anuga_int k = 0; k < n; k++) {
         int act = wet_flag[k];
+        const int owned = (full == NULL || full[k] == 1);
         for (int i = 0; i < 3 && !act; i++) {
             const anuga_int nbr = neighbours[3 * k + i];
-            if (nbr < 0 || wet_flag[nbr]) act = 1;
+            if ((nbr < 0 && owned) || (nbr >= 0 && wet_flag[nbr])) act = 1;
         }
         ring1_flag[k] = act;
     }

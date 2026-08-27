@@ -575,6 +575,32 @@ the tiles above half a share: those are the ones to re-split (half-size
 sub-tiles keep the outer lattice, so neighbours still conform).  That is
 the coarse-run -> weight -> retile -> assign loop for the 1 m^2 mesh.
 
+**The loop, closed on the coarse delta (4 ranks, CPU).**  Two changes
+made it work: (1) `core_build_active_sets` no longer seeds ring-1 from the
+neighbour-less edges of *ghost* cells -- those are the artificial rim of
+the halo strip, and seeding from them kept every rank's whole perimeter
+active (103k vs 33k active cells/step under a scattered assignment; the
+change is exact, 96/96 gates); (2) `cdac_script/split_delta.py --refine-file`
+cuts listed tiles into 4 half-size sub-tiles (ids 10000 + 4*parent + q)
+whose new cut lines carry the same global lattice, and
+`cdac_script/refine_tiles.sh` re-meshes only those and re-merges (the
+half-tile must be an exact multiple of the spacing -- pass 5000/58 as
+86.20689655172414, not 86.2069, or the corner misses the lattice by 0.2 mm).
+
+| assignment (4 ranks)                    | active cells/step, per rank | kernel ms/step spread | wall ms/step |
+|-----------------------------------------|-----------------------------|-----------------------|--------------|
+| triangle-balanced (default)             | 21.5k / 4.7k / 3.4k / 2.7k  | 4.43 .. 10.22 (131%)  | 10.34        |
+| wetness-weighted (lpt, floor 0.035)     | 12.0k / 9.6k / 6.3k / 5.0k  | 6.16 .. 6.95 (13%)    | 7.71         |
+| + tiles 30, 31 split (164 tiles), re-weighted | 9.1k / 8.6k / 8.2k / 8.1k | 7.22 .. 8.35 (16%) | 9.15      |
+
+The refined tiled mesh is bit-exact against its own merged mesh at np=4
+and np=7 (cell fluxes, atol 0) -- the split conforms.  After the split the
+heaviest tile is 0.14 of a rank share and the active cells are within 6%
+across ranks; the remaining kernel-time spread on this shared CPU node is
+noise and base-cost variation, not granularity.  (Wall time did not drop
+further here because 4 x 4 threads share 20 loaded cores; the GPU run is
+the real measurement.)
+
 GPU validation + balance at 300 m^2 (58M triangles): `tools/h200_mpi_tiles.pbs`.
 
 ### Cross-vendor portability: AMD MI250X and Intel PVC (2026-08-25)
