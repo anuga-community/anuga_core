@@ -1,0 +1,53 @@
+#!/bin/bash
+#PBS -N anuga_1sqm_2node
+#PBS -l ncpus=96
+#PBS -l ngpus=8
+#PBS -l mem=1000GB
+#PBS -l jobfs=400GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=01:00:00
+#PBS -l wd
+#PBS -j oe
+
+
+# 1 m^2 rehearsal on TWO gpuhopper nodes (8 H200s): 48 real tiles (6 x 8,
+# x 81-99 km, y 28-52 km) spanning lake interior, shoreline and dry land,
+# ~660M triangles.  First inter-node GPU-aware MPI run.
+#  1) np=4 (one node) golden, np=8 (two nodes) checked at atol 0.
+#  2) np=8 active-set: triangle-balanced (+stats) vs weighted contig; full mesh.
+set -x
+ROOT=/scratch/bm55/jlv900/dev/mesh_exp/standalone
+OUT=$ROOT/build/rehearsal2
+TD=/g/data/bm55/jlv900/tiles1sqm
+IDX=$TD/index_lake48.txt
+mkdir -p "$OUT"; cd "$ROOT"; source ./my_claude_env.sh
+cat $PBS_NODEFILE | sort -u | tee "$OUT/nodes.txt"
+python3 tools/tile_subset.py $TD/index.txt --box 81000 28000 99000 52000 --out $IDX | tee "$OUT/subset.txt"
+BENCH=$PBS_JOBFS/bench_gpumpi
+make --no-print-directory CONFIG=gpumpi OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
+# the binary lives in jobfs, which is per node: copy it to the second node
+cp "$BENCH" "$ROOT/build/rehearsal2/bench_gpumpi"; BENCH=$ROOT/build/rehearsal2/bench_gpumpi
+export OMP_NUM_THREADS=8
+MPI4="mpirun --bind-to none -np 4 --map-by ppr:4:node"
+MPI8="mpirun --bind-to none -np 8 --map-by ppr:4:node"
+
+$MPI4 "$BENCH" --tiles $IDX --steps 20 --warmup 0 --save "$OUT/g.bin" --csv "$OUT/runs.csv" > "$OUT/np4_golden.txt" 2>&1
+$MPI8 "$BENCH" --tiles $IDX --steps 20 --warmup 0 --check "$OUT/g.bin" --atol 0 --rtol 0 --csv "$OUT/runs.csv" > "$OUT/gate_np8.txt" 2>&1
+grep -H tolerance "$OUT"/gate_np8.txt | tee "$OUT/GATES.txt"
+
+RUN="--steps 100 --warmup 10 --flux scatter --active-set --csv $OUT/runs.csv"
+$MPI8 "$BENCH" --tiles $IDX $RUN --tile-stats "$OUT/stats_tri.txt" > "$OUT/bal_tri.txt" 2>&1
+python3 tools/tile_assign.py $IDX --stats "$OUT/stats_tri.txt" --nprocs 8 --floor 0.073 --out "$OUT/assign_contig.txt" --split-out "$OUT/split.txt" --split-threshold 0.25 | tee "$OUT/assign.log"
+$MPI8 "$BENCH" --tiles $IDX --assign "$OUT/assign_contig.txt" $RUN > "$OUT/bal_contig.txt" 2>&1
+$MPI8 "$BENCH" --tiles $IDX --steps 100 --warmup 10 --flux scatter --csv "$OUT/runs.csv" > "$OUT/full_np8.txt" 2>&1
+rm -f "$OUT/g.bin"
+{
+  echo "=== 1 sqm 2-node rehearsal: $(cat "$OUT/subset.txt") on $(wc -l < "$OUT/nodes.txt") nodes ==="
+  cat "$OUT/GATES.txt"
+  for t in np4_golden gate_np8 full_np8 bal_tri bal_contig; do f="$OUT/$t.txt"
+    echo; echo "--- $t"; grep -E "mesh  |setup|memory|ms/step,|per-rank kernel|active    :|^rank |state" "$f"
+  done
+} | tee "$OUT/SUMMARY.txt"
+touch "$OUT/DONE"

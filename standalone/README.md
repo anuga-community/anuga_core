@@ -619,6 +619,22 @@ on `/g/data/bm55/jlv900/tiles1sqm/`, 18 min wall, 439 GB peak node RAM
 `tools/tile_subset.py` cuts a sub-index (e.g. the 16-tile lake block for
 `tools/h200_1sqm_rehearsal.pbs`).
 
+**First real 1 m^2 tiles on GPUs** (`tools/h200_1sqm_rehearsal.pbs`, job
+177636235, `build/rehearsal/`): 9 tiles / 89.5M triangles at the lake.
+np=2 and np=4 tiled runs are bit-exact against the np=1 run on one H200.
+Costs at the real tile size: 488 B/triangle device, 543 B/triangle host,
+build 0.45 us/triangle (40 s serial, 10.7 s per rank at np=4), 6 s map.
+np=4 full mesh 25 ms/step = 3.6 Gcell-steps/s, bounded by the rank holding
+two tiles (27.6M) while another holds one (13.8M): with 9 tiles over 4
+ranks the 97% kernel-time imbalance is pure granularity -- the reason the
+full run needs ~14 tiles per rank (or refinement) and not 2.  The block is
+entirely inside the synthetic lake (100% active), so no wetness balance
+was measurable here; the 2-node 48-tile run covers shoreline and dry land.
+
+Extrapolation for the full 17.45G mesh from these numbers: 8.5 TB device
+(62 H200s at 137 GB usable, minimum), 9.5 TB host (fits 25 gpuhopper nodes
+at ~95-135 GB per rank), ~90 s per-rank build.
+
 **4x H200 at 300 m^2** (`tools/h200_mpi_tiles.pbs`, job 177612520, 58.2M
 triangles, 158 tiles, results in `build/mpitiles/`): all 12 tiled gates
 OK -- cell and `--phases` at atol 0 for np = 1, 2, 4 against the merged
