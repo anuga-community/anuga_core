@@ -631,6 +631,25 @@ full run needs ~14 tiles per rank (or refinement) and not 2.  The block is
 entirely inside the synthetic lake (100% active), so no wetness balance
 was measurable here; the 2-node 48-tile run covers shoreline and dry land.
 
+**Two nodes, 8 H200s, 26 real tiles / 301M triangles** spanning lake,
+shoreline and dry land (`tools/h200_1sqm_2node.pbs`, job 177636649,
+`build/rehearsal2/`) -- the first run across a node boundary with the
+GPU-aware halo exchange:
+
+| run (8 GPUs unless noted)               | ms/step | note |
+|-----------------------------------------|---------|------|
+| np=4, one node, full mesh (golden)      | 76.0    | 37 GiB/GPU |
+| np=8, two nodes, full mesh              | 42.6    | **bit-exact vs np=4**; 89% efficiency across the node boundary, 7.1 Gcell-steps/s |
+| np=8 active-set, triangle-balanced      | 44.8    | kernel 1.9 .. 44.1 ms (2251%): rank 1 has 41M active cells, rank 6 has 10k -- no gain at all over the full mesh |
+| np=8 active-set, wetness-weighted contig| **27.3**| kernel 14.7 .. 25.5 ms (74%); 1.64x the triangle-balanced run |
+
+The remaining 74% is granularity on real tiles: the wet tiles are 13.8M
+triangles each (heaviest = 0.70 of a rank share) and 26 tiles over 8
+ranks leaves one rank with one wet tile and another with two.
+`tile_assign.py` flagged 13 tiles for the half-size split.  At full scale
+(1404 tiles, ~14 per rank) the same weighting lands within ~10% without
+splitting, as the 300 m^2 runs showed.
+
 Extrapolation for the full 17.45G mesh from these numbers: 8.5 TB device
 (62 H200s at 137 GB usable, minimum), 9.5 TB host (fits 25 gpuhopper nodes
 at ~95-135 GB per rank), ~90 s per-rank build.

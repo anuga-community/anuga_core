@@ -84,14 +84,18 @@ bit-exact vs np=1 on real tiles; 488 B/tri device, 543 B/tri host, 0.45
 us/tri build.  Block was 100% wet -> balance not measurable; 97% imbalance
 = granularity (9 tiles / 4 ranks).  Banked in README.
 
-**IN FLIGHT: job `177636649`** -- `tools/h200_1sqm_2node.pbs`: 26 tiles /
-301M tris on 2 nodes (8 H200s), first inter-node GPU-aware MPI: np=4
-golden vs np=8 atol 0; active-set tri vs contig; full mesh.  Results
-`standalone/build/rehearsal2/` (SUMMARY.txt, DONE; pbs.log on failure).
+**DONE: job 177636649 (2 nodes, 8 H200, 26 tiles / 301M real 1 sqm)**:
+np=8 bit-exact vs np=4 across nodes; full mesh 89% efficient 4->8 GPUs;
+active-set weighted contig 27.3 ms vs 44.8 tri-balanced (1.64x); residual
+74% = wet-tile granularity; 13 tiles flagged for split
+(build/rehearsal2/split.txt).  No jobs in flight.
 
 **Next steps:**
-1. Read rehearsal results; then scale the subset up (more tiles / 8 GPUs)
-   and add per-rank output (max depth, stage at yieldsteps).  Elevation: replace the analytic
+1. Refine the 13 flagged 1 sqm tiles (split_delta --refine-file at
+   tile 3000 / spacing 1.2 -> 1500/1.2 exact; mesh sub-tiles; convert with
+   --compact --tile into /g/data/bm55/jlv900/tiles1sqm, drop parent rows,
+   --assemble), rerun h200_1sqm_2node.pbs.  refine_tiles.sh must skip the
+   merge at 1 sqm.  Then per-rank output (max depth, stage at yieldsteps).  Elevation: replace the analytic
    bed in tools/tiles_to_bmesh.py by raster sampling once the user provides
    a path on their side (their data cannot be shared with Claude).
 2. Memory: neighbour tiles are read whole then discarded -- fine at 300
