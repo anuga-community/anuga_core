@@ -337,7 +337,7 @@ void bench_mesh_load(const char *path, bench_mesh *M,
     int32_t version, pad;
     int64_t n_nodes, n_tris, n_bdry;
     if (fread(magic, 1, 8, fp) != 8 || memcmp(magic, "ANUGAMSH", 8) != 0 ||
-        fread(&version, 4, 1, fp) != 1 || version != 1 ||
+        fread(&version, 4, 1, fp) != 1 || (version != 1 && version != 2) ||
         fread(&pad, 4, 1, fp) != 1 ||
         fread(&n_nodes, 8, 1, fp) != 1 ||
         fread(&n_tris, 8, 1, fp) != 1 ||
@@ -359,11 +359,29 @@ void bench_mesh_load(const char *path, bench_mesh *M,
     *stage_node = (double *)xmalloc((size_t)n_nodes * sizeof(double));
 
     int64_t (*be)[2] = (int64_t (*)[2])xmalloc((size_t)n_bdry * 2 * sizeof(int64_t));
-    if (fread(M->nodes, sizeof(double), (size_t)2 * n_nodes, fp) != (size_t)2 * n_nodes ||
-        fread(M->triangles, sizeof(int64_t), (size_t)3 * n_tris, fp) != (size_t)3 * n_tris ||
-        fread(be, sizeof(int64_t), (size_t)2 * n_bdry, fp) != (size_t)2 * n_bdry ||
-        fread(*bed_node, sizeof(double), (size_t)n_nodes, fp) != (size_t)n_nodes ||
-        fread(*stage_node, sizeof(double), (size_t)n_nodes, fp) != (size_t)n_nodes) {
+    int ok = fread(M->nodes, sizeof(double), (size_t)2 * n_nodes, fp) == (size_t)2 * n_nodes;
+    if (version == 1) {
+        ok = ok &&
+            fread(M->triangles, sizeof(int64_t), (size_t)3 * n_tris, fp) == (size_t)3 * n_tris &&
+            fread(be, sizeof(int64_t), (size_t)2 * n_bdry, fp) == (size_t)2 * n_bdry &&
+            fread(*bed_node, sizeof(double), (size_t)n_nodes, fp) == (size_t)n_nodes &&
+            fread(*stage_node, sizeof(double), (size_t)n_nodes, fp) == (size_t)n_nodes;
+    } else {
+        // v2 (compact): int32 indices, float32 bed/stage -- widened on read
+        int32_t *t32 = (int32_t *)xmalloc((size_t)3 * n_tris * sizeof(int32_t));
+        int32_t *b32 = (int32_t *)xmalloc((size_t)(2 * n_bdry ? 2 * n_bdry : 1) * sizeof(int32_t));
+        float *f32 = (float *)xmalloc((size_t)n_nodes * sizeof(float));
+        ok = ok && fread(t32, sizeof(int32_t), (size_t)3 * n_tris, fp) == (size_t)3 * n_tris;
+        for (int64_t i = 0; i < 3 * n_tris; i++) M->triangles[i] = t32[i];
+        ok = ok && fread(b32, sizeof(int32_t), (size_t)2 * n_bdry, fp) == (size_t)2 * n_bdry;
+        for (int64_t i = 0; i < 2 * n_bdry; i++) ((int64_t *)be)[i] = b32[i];
+        ok = ok && fread(f32, sizeof(float), (size_t)n_nodes, fp) == (size_t)n_nodes;
+        for (int64_t i = 0; i < n_nodes; i++) (*bed_node)[i] = f32[i];
+        ok = ok && fread(f32, sizeof(float), (size_t)n_nodes, fp) == (size_t)n_nodes;
+        for (int64_t i = 0; i < n_nodes; i++) (*stage_node)[i] = f32[i];
+        free(t32); free(b32); free(f32);
+    }
+    if (!ok) {
         fprintf(stderr, "bench: truncated mesh file %s\n", path);
         exit(1);
     }

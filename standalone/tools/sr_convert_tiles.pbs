@@ -1,0 +1,33 @@
+#!/bin/bash
+#PBS -N anuga_convert_1sqm
+#PBS -l ncpus=104
+#PBS -l mem=500GB
+#PBS -l jobfs=100GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q normalsr
+#PBS -P tf05
+#PBS -l walltime=03:00:00
+#PBS -l wd
+#PBS -j oe
+#PBS -o /g/data/bm55/jlv900/tiles1sqm/pbs.log
+
+# Convert all 1404 one-square-metre delta tiles (cdac_script/mesh_tiles_1sqm,
+# NetCDF .msh, 13.8M triangles each) to the miniapp's binary tile format with
+# the synthetic bed/stage of tools/tiles_to_bmesh.py, one process per core,
+# then assemble index.txt.  ~130 s and ~2.4 GB per tile pair measured on the
+# login node -> ~15-20 min here; output ~0.33 GB/tile (v2 compact), ~465 GB total, on gdata (scratch quota is full).
+set -x
+ROOT=/scratch/bm55/jlv900/dev/mesh_exp/standalone
+OUT=/g/data/bm55/jlv900/tiles1sqm
+SRC=/scratch/bm55/jlv900/dev/mesh_exp/cdac_script/mesh_tiles_1sqm
+mkdir -p "$OUT"; cd "$ROOT"
+eval "$(/g/data/bm55/jlv900/install/miniconda3/bin/conda shell.bash hook)"
+conda activate anuga_env_3.13
+export OMP_NUM_THREADS=1
+ls "$SRC"/tile_*.msh | xargs -P "$PBS_NCPUS" -I{} sh -c \
+  'python tools/tiles_to_bmesh.py --compact --tile "$1" --out '"$OUT"' > '"$OUT"'/$(basename "$1" .msh).log 2>&1 || echo "FAILED $1"' _ {}
+NFAIL=$(grep -L "^wrote" "$OUT"/tile_*.log | wc -l)
+echo "$NFAIL failed tiles"
+python tools/tiles_to_bmesh.py --assemble --out "$OUT"
+head -1 "$OUT/index.txt"; du -sh "$OUT"
+[ "$NFAIL" -eq 0 ] && touch "$OUT/DONE"
