@@ -45,20 +45,36 @@ CPU checks: cell/--phases bit-exact, scatter/active-set at atol 1e-6
 cells vs the 18% average.  Measured proof that active-set load must be
 partitioned by wetness, not triangle count.  Banked in standalone/README.md.
 
+**DONE (`dfc3aa60`, 2026-08-27): tiled distributed mesh (`--tiles`).**
+The launcher for the 1 sqm delta: ranks load their tiles + bbox-touching
+neighbour tiles, stitch on exact vertices, ghosts = vertex-ring of owned,
+halo lists derived symmetrically.  Bit-exact vs merged mesh (np 1/2/4/7,
+cell/phases); scatter to --ftol 1e-7.  --tile-stats + tools/tile_assign.py
+= the wetness-weighted assignment; the heaviest-tile bound says which
+tiles to re-split.  Coarse synthetic delta data: cdac_script/
+{tiles,mesh_tiles}_{10000,300}sqm + mesh_file/{10000,300}sqm.msh (built
+here, NOT the user's provenance-restricted 300 sqm data; bed/stage are
+analytic in tools/tiles_to_bmesh.py), converted to standalone/build/
+tiles10k, delta10k.bmesh, tiles300, delta300.bmesh.  mpi_verify.sh: 96/96.
+
+**IN FLIGHT: PBS job `177612520`** (gpuhopper, 4xH200) --
+`standalone/tools/h200_mpi_tiles.pbs`: tiled gates on GPU at 300 sqm (58M
+tris, 158 tiles) + load balance (triangle-balanced vs lpt vs contig from
+--tile-stats).  Results `standalone/build/mpitiles/` (GATES.txt,
+SUMMARY.txt, DONE; failures -> pbs.log).
+
 **Next steps:**
-1. Same C-only layer under full ANUGA ("compile and use all of ANUGA
-   without mpi4py") -- gpu ext already takes (comm, rank, nprocs); needs a
-   C MPI_Init entry + partition/halo-list builder to replace pymetis path.
-   For the 1 sqm delta (17.45G triangles in 1404 conforming 3 km tiles,
-   cdac_script/mesh_tiles_1sqm, 521 GB) the plan discussed 2026-08-27:
-   tiles ARE the partition -- weight tiles by wetness from the 300 sqm run,
-   bin-pack tiles to ranks, each rank loads its .msh tiles, stitches locally
-   and builds halos from the shared lattice edges (gpu_halo_init already
-   takes arbitrary lists); elevation sampled per tile from the raster; never
-   build the global mesh/CSV/sww.  Python Domain (~1 KB/tri) cannot hold a
-   rank's share -> the C path (miniapp --mesh + MPI) is the launcher.
-2. Remaining miniapp MPI restrictions: generated row-order mesh only, no
-   --flux edge, no --cuda-extrap.
+1. Read mpitiles results, bank in standalone/README.md, commit.
+2. Retile: split the tiles tile_assign.py flags (heavier than half a rank
+   share) into half-size sub-tiles with a lattice-consistent cut (sub-size
+   must be a multiple of the spacing: 1500 m / 1.2 m ok at 1 sqm), re-mesh
+   only those with mesh_tile.py, re-index, re-assign.  Needs a quadtree
+   variant of cdac_script/split_delta.py.
+3. Memory: neighbour tiles are read whole then discarded -- fine at 300
+   sqm, ~20 GB transient/rank at 1 sqm; extract boundary strips at
+   conversion time if that bites.
+4. Same C-only layer under full ANUGA (drop mpi4py); remaining miniapp MPI
+   restrictions: --order row generated mesh only, no --flux edge/--cuda-extrap.
 
 ## 2. This worktree vs the main repo
 
