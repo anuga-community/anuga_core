@@ -601,6 +601,15 @@ noise and base-cost variation, not granularity.  (Wall time did not drop
 further here because 4 x 4 threads share 20 loaded cores; the GPU run is
 the real measurement.)
 
+**At the real tile size.**  Two adjacent 1 m^2 delta tiles (ids 10 and 11,
+13.8M triangles each, 440 MB `.msh`) through the same path: np=2 with one
+tile per rank (5001 ghost cells -- the halo is 0.04% of a tile) is
+bit-exact against the np=1 stitched pair; 8.8 s to build a rank's domain,
+129 s and 2.4 GB to convert the pair (so all 1404 tiles convert in ~15 min
+on 104 cores, tile-parallel like the meshing).  The synthetic lake is far
+from these tiles, so this checks the mechanics at scale; flow across
+interfaces is covered by the coarse dam-break gates above.
+
 GPU validation + balance at 300 m^2 (58M triangles): `tools/h200_mpi_tiles.pbs`.
 
 ### Cross-vendor portability: AMD MI250X and Intel PVC (2026-08-25)

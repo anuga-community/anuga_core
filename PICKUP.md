@@ -57,6 +57,12 @@ here, NOT the user's provenance-restricted 300 sqm data; bed/stage are
 analytic in tools/tiles_to_bmesh.py), converted to standalone/build/
 tiles10k, delta10k.bmesh, tiles300, delta300.bmesh.  mpi_verify.sh: 96/96.
 
+**DONE (`c04a3bc8`): ghost rims no longer seed the active set (exact,
+96/96); quadtree retile (split_delta.py --refine-file + refine_tiles.sh);
+coarse loop: 131% imbalance -> 13% weighted -> tiles 30/31 split, refined
+mesh bit-exact vs merged at np=4/7.  Two real 1 sqm tiles (10, 11; 13.8M
+each) np=2 bit-exact vs stitched np=1 (build/pair1sqm).
+
 **IN FLIGHT: PBS job `177612520`** (gpuhopper, 4xH200) --
 `standalone/tools/h200_mpi_tiles.pbs`: tiled gates on GPU at 300 sqm (58M
 tris, 158 tiles) + load balance (triangle-balanced vs lpt vs contig from
@@ -65,11 +71,12 @@ SUMMARY.txt, DONE; failures -> pbs.log).
 
 **Next steps:**
 1. Read mpitiles results, bank in standalone/README.md, commit.
-2. Retile: split the tiles tile_assign.py flags (heavier than half a rank
-   share) into half-size sub-tiles with a lattice-consistent cut (sub-size
-   must be a multiple of the spacing: 1500 m / 1.2 m ok at 1 sqm), re-mesh
-   only those with mesh_tile.py, re-index, re-assign.  Needs a quadtree
-   variant of cdac_script/split_delta.py.
+2. 1 sqm launch rehearsal: convert all 1404 tiles (tile-parallel PBS job,
+   ~15 min on 104 cores), assign to N GPU ranks, run a few steps on 4-8
+   H200s from a subset of tiles (e.g. the lake region) -- needs a wet
+   synthetic case placed on chosen tiles.  Elevation: replace the analytic
+   bed in tools/tiles_to_bmesh.py by raster sampling once the user provides
+   a path on their side (their data cannot be shared with Claude).
 3. Memory: neighbour tiles are read whole then discarded -- fine at 300
    sqm, ~20 GB transient/rank at 1 sqm; extract boundary strips at
    conversion time if that bites.
