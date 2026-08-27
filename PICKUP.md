@@ -1,4 +1,4 @@
-# PICKUP — session handoff (2026-08-26)
+# PICKUP — session handoff (updated 2026-08-27)
 
 Written because the interactive node hosting the Claude session was about to
 expire.  State of everything in flight, how to check it, what's next.
@@ -29,24 +29,30 @@ index arrays on device but gpu_halo_init never mapped them -> the first
 exchange aborted (cuStreamSynchronize).  The path had never run on a GPU
 before.  Fixed + committed; CPU bit-exactness re-verified.
 
-**IN FLIGHT: PBS job `177517465`** (resubmit; gpuhopper, 4×H200, 1 h wall) —
-`standalone/tools/h200_mpi_scaling.pbs`.  Results land in
-`standalone/build/mpiscale/`:
-- `GATES.txt` — np=1 vs 2/4 zero-tolerance ON GPUs; must all say OK.
-- `strong.csv` / `strong_nx*_np*.txt` — 64M & 144M dam on 1/2/4 GPUs.
-- `weak.csv` / `weak_np*.txt` — 36M per GPU; ms/step should stay flat.
-- `SUMMARY.txt` + `DONE` marker when finished.
-Check with `qstat 177503337`; if it died, `build/mpiscale/pbs.log`.
-Success = gates OK + strong-scaling efficiency ≳90% at np=4 → the user's
-"linear given enough work" claim gets its measured MPI data point.
+**DONE: job 177517465 (4xH200 scaling)** -- gates OK, strong 88%/92% at
+np=4 (64M/144M), weak 93%.  Banked in standalone/README.md (`26c6d7fc`).
 
-**Next steps (agreed direction):**
-1. Read mpiscale results, bank in standalone/README.md, commit.
-2. Extend MPI path to scatter fluxes + active-set (2-ring must respect
-   ghost columns; owned_edges build needs a ghost-aware ownership rule).
-3. Same C-only layer under full ANUGA ("compile and use all of ANUGA
-   without mpi4py") — gpu ext already takes (comm, rank, nprocs); needs a
+**DONE (`271236f2`, 2026-08-27): scatter fluxes, --phases and --active-set
+under MPI.**  Ghost-aware owned_edges in setup.c; stepped loops do the dt
+allreduce + mid-step exchange; slab generator roundoff bug fixed (non-square
+meshes were off by 1e-12 even in cell mode).  `tools/mpi_verify.sh` = 64
+CPU checks: cell/--phases bit-exact, scatter/active-set at atol 1e-6
+(atomic summation order -- same ~1e-9 as serial 1- vs 4-thread scatter).
+
+**IN FLIGHT: PBS job `177579044`** (gpuhopper, 4xH200, 1 h) --
+`standalone/tools/h200_mpi_active.pbs`.  Results in
+`standalone/build/mpiactive/`: `GATES.txt` (cell/phases atol 0, scatter/
+active atol 1e-6 -- all must say OK), `strong.csv` /
+`strong_{dam,river}_{cell,scatter,active}_np{1,2,4}.txt` (144M),
+`SUMMARY.txt` + `DONE`.  `qstat -x 177579044`; failures -> `pbs.log`.
+
+**Next steps:**
+1. Read mpiactive results, bank in standalone/README.md, commit.
+2. Same C-only layer under full ANUGA ("compile and use all of ANUGA
+   without mpi4py") -- gpu ext already takes (comm, rank, nprocs); needs a
    C MPI_Init entry + partition/halo-list builder to replace pymetis path.
+3. Remaining miniapp MPI restrictions: generated row-order mesh only, no
+   --flux edge, no --cuda-extrap.
 
 ## 2. This worktree vs the main repo
 
