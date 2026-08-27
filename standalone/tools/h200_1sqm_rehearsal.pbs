@@ -1,0 +1,55 @@
+#!/bin/bash
+#PBS -N anuga_1sqm_rehearsal
+#PBS -l ncpus=48
+#PBS -l ngpus=4
+#PBS -l mem=512GB
+#PBS -l jobfs=200GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=01:00:00
+#PBS -l wd
+#PBS -j oe
+
+# 1 m^2 launch rehearsal on 4 H200s: a 4x4 block of real 1 m^2 delta tiles
+# (~220M triangles) around the synthetic lake.
+#  1) np=1 golden on one GPU (the block fits: ~113 GB at 512 B/tri), then
+#     np=2 and np=4 tiled runs checked at atol 0.
+#  2) active-set timing at np=4: triangle-balanced (+ --tile-stats), then
+#     weighted contig from those stats.  Build time, host RSS and device
+#     memory come from the per-run reports / --csv.
+set -x
+ROOT=/scratch/bm55/jlv900/dev/mesh_exp/standalone
+OUT=$ROOT/build/rehearsal
+TD=/g/data/bm55/jlv900/tiles1sqm
+IDX=$TD/index_lake16.txt
+mkdir -p "$OUT"; cd "$ROOT"; source ./my_claude_env.sh
+nvidia-smi --query-gpu=name,memory.total --format=csv | tee "$OUT/gpu.txt"
+python3 tools/tile_subset.py $TD/index.txt --box 84000 34000 96000 46000 --out $IDX | tee "$OUT/subset.txt"
+BENCH=$PBS_JOBFS/bench_gpumpi
+make --no-print-directory CONFIG=gpumpi OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
+export OMP_NUM_THREADS=8; MPIRUN="mpirun --bind-to none"
+
+# ---- 1. gates ------------------------------------------------------------
+"$BENCH" --tiles $IDX --steps 20 --warmup 0 --save "$PBS_JOBFS/g.bin" --csv "$OUT/runs.csv" > "$OUT/np1_golden.txt" 2>&1
+for np in 2 4; do
+  $MPIRUN -np $np "$BENCH" --tiles $IDX --steps 20 --warmup 0 --check "$PBS_JOBFS/g.bin" --atol 0 --rtol 0 --csv "$OUT/runs.csv" > "$OUT/gate_np$np.txt" 2>&1
+done
+grep -H tolerance "$OUT"/gate_np*.txt | tee "$OUT/GATES.txt"
+
+# ---- 2. active-set timing, np=4 ---------------------------------------------
+RUN="--steps 100 --warmup 10 --flux scatter --active-set --csv $OUT/runs.csv"
+$MPIRUN -np 4 "$BENCH" --tiles $IDX $RUN --tile-stats "$OUT/stats_tri.txt" > "$OUT/bal_tri.txt" 2>&1
+python3 tools/tile_assign.py $IDX --stats "$OUT/stats_tri.txt" --nprocs 4 --floor 0.073 --out "$OUT/assign_contig.txt" --split-out "$OUT/split.txt" --split-threshold 0.25 | tee "$OUT/assign.log"
+$MPIRUN -np 4 "$BENCH" --tiles $IDX --assign "$OUT/assign_contig.txt" $RUN > "$OUT/bal_contig.txt" 2>&1
+# full-mesh reference (no active set), np=4
+$MPIRUN -np 4 "$BENCH" --tiles $IDX --steps 100 --warmup 10 --flux scatter --csv "$OUT/runs.csv" > "$OUT/full_np4.txt" 2>&1
+
+{
+  echo "=== 1 sqm rehearsal: $(cat "$OUT/subset.txt") ==="
+  cat "$OUT/GATES.txt"
+  for t in np1_golden gate_np4 full_np4 bal_tri bal_contig; do f="$OUT/$t.txt"
+    echo; echo "--- $t"; grep -E "mesh  |setup|memory|ms/step,|per-rank kernel|active    :|^rank |state" "$f"
+  done
+} | tee "$OUT/SUMMARY.txt"
+touch "$OUT/DONE"
