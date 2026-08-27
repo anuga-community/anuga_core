@@ -1,0 +1,54 @@
+#!/bin/bash
+#PBS -N anuga_tiles_bal
+#PBS -l ncpus=48
+#PBS -l ngpus=4
+#PBS -l mem=512GB
+#PBS -l jobfs=200GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=01:00:00
+#PBS -l wd
+#PBS -j oe
+
+# Load balance of a tiled mesh on 4 H200s.  Parametrised:
+#   qsub -v TS=tiles300,MG=delta300.bmesh tools/h200_tiles_balance.pbs
+#   qsub -v TS=tiles300_r1,MG=delta300_r1.bmesh,ST=build/mpitiles/stats_tri.txt ...
+# TS: tile set under build/, MG: merged bmesh under build/ (gate golden),
+# ST: optional prior --tile-stats to seed the first weighted assignment.
+# Runs: gate np=4 vs merged; triangle-balanced (+stats); lpt and contig
+# weighted from those stats (floor 0.073 = H200 base/active cost ratio).
+set -x
+ROOT=/scratch/bm55/jlv900/dev/mesh_exp/standalone
+OUT=$ROOT/build/tilesbal/$TS
+TILES=$ROOT/build/$TS/index.txt
+MERGED=$ROOT/build/$MG
+mkdir -p "$OUT"; cd "$ROOT"; source ./my_claude_env.sh
+BENCH=$PBS_JOBFS/bench_gpumpi
+make --no-print-directory CONFIG=gpumpi OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
+export OMP_NUM_THREADS=4; MPIRUN="mpirun --bind-to none"
+
+"$BENCH" --mesh $MERGED --steps 60 --save "$PBS_JOBFS/gc.bin" > "$OUT/gate_merged.txt" 2>&1
+for np in 4 7; do
+  $MPIRUN -np $np "$BENCH" --tiles $TILES --steps 60 --check "$PBS_JOBFS/gc.bin" --atol 0 --rtol 0 > "$OUT/gate_np$np.txt" 2>&1
+done
+RUN="--steps 200 --warmup 10 --flux scatter --active-set"
+$MPIRUN -np 4 "$BENCH" --tiles $TILES $RUN --tile-stats "$OUT/stats_tri.txt" > "$OUT/bal_tri.txt" 2>&1
+SEED=${ST:-$OUT/stats_tri.txt}
+for m in lpt contig; do
+  python3 tools/tile_assign.py $TILES --stats "$SEED" --nprocs 4 --floor 0.073 --method $m \
+      --out "$OUT/assign_$m.txt" --split-out "$OUT/split_$m.txt" --split-threshold 0.25 | tee "$OUT/assign_$m.log"
+  $MPIRUN -np 4 "$BENCH" --tiles $TILES --assign "$OUT/assign_$m.txt" $RUN --tile-stats "$OUT/stats_$m.txt" > "$OUT/bal_$m.txt" 2>&1
+done
+# second iteration: re-weight lpt from its own measured stats
+python3 tools/tile_assign.py $TILES --stats "$OUT/stats_lpt.txt" --nprocs 4 --floor 0.073 --method lpt --out "$OUT/assign_lpt2.txt" | tee "$OUT/assign_lpt2.log"
+$MPIRUN -np 4 "$BENCH" --tiles $TILES --assign "$OUT/assign_lpt2.txt" $RUN > "$OUT/bal_lpt2.txt" 2>&1
+{
+  echo "=== $TS: gates np=4/7 vs $MG ==="; grep -H tolerance "$OUT"/gate_np*.txt
+  echo; echo "=== balance (4 H200, ms/step; per-rank kernel spread; active) ==="
+  for t in tri lpt contig lpt2; do f="$OUT/bal_$t.txt"
+    echo "$t: $(grep 'ms/step,' "$f" | awk '{print $1" ms/step"}')  $(grep 'per-rank kernel' "$f" | sed 's/^ *//')  $(grep 'active    :' "$f" | sed 's/^ *//')"
+    grep '^rank ' "$f" | sort
+  done
+} | tee "$OUT/SUMMARY.txt"
+touch "$OUT/DONE"

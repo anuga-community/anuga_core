@@ -610,7 +610,16 @@ on 104 cores, tile-parallel like the meshing).  The synthetic lake is far
 from these tiles, so this checks the mechanics at scale; flow across
 interfaces is covered by the coarse dam-break gates above.
 
-GPU validation + balance at 300 m^2 (58M triangles): `tools/h200_mpi_tiles.pbs`.
+**4x H200 at 300 m^2** (`tools/h200_mpi_tiles.pbs`, job 177612520, 58.2M
+triangles, 158 tiles, results in `build/mpitiles/`): all 12 tiled gates
+OK -- cell and `--phases` at atol 0 for np = 1, 2, 4 against the merged
+mesh on one GPU, scatter and scatter+active-set at max relative 1e-15.
+Triangle-balanced active-set run: 1.79 ms/step for 58M triangles
+(the merged mesh on one GPU: 3.74), rank 0 holding 539k of 584k active
+cells against a 51% kernel-time spread.  That run calibrates the H200 cost
+model: 0.073 ns per local cell of never-skipped work vs 1.0 ns per active
+cell, i.e. `--floor 0.073`.  (The weighted runs of that job died on gadi's
+missing `python` alias; `tools/h200_tiles_balance.pbs` reruns them.)
 
 ### Cross-vendor portability: AMD MI250X and Intel PVC (2026-08-25)
 

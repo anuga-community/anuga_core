@@ -62,7 +62,7 @@ cat "$OUT/GATES.txt"
 $MPIRUN -np 4 "$BENCH" --tiles $TILES --steps 200 --warmup 10 --flux scatter --active-set \
     --tile-stats "$OUT/stats_tri.txt" > "$OUT/bal_tri.txt" 2>&1
 for m in lpt contig; do
-  python tools/tile_assign.py $TILES --stats "$OUT/stats_tri.txt" --nprocs 4 --floor 0.07 --method $m \
+  python3 tools/tile_assign.py $TILES --stats "$OUT/stats_tri.txt" --nprocs 4 --floor 0.07 --method $m \
       --out "$OUT/assign_$m.txt" | tee "$OUT/assign_$m.log"
   $MPIRUN -np 4 "$BENCH" --tiles $TILES --assign "$OUT/assign_$m.txt" --steps 200 --warmup 10 \
       --flux scatter --active-set > "$OUT/bal_$m.txt" 2>&1
