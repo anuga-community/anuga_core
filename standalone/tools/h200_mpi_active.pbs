@@ -1,0 +1,83 @@
+#!/bin/bash
+#PBS -N anuga_mpi_active
+#PBS -l ncpus=48
+#PBS -l ngpus=4
+#PBS -l mem=512GB
+#PBS -l jobfs=200GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=01:00:00
+#PBS -l wd
+#PBS -j oe
+#PBS -o /scratch/bm55/jlv900/dev/mesh_exp/standalone/build/mpiactive/pbs.log
+
+# MPI x GPU, second round: scatter fluxes, --phases and the active set
+# under the slab decomposition on 4 H200s.
+# 1) Gates on GPUs vs the np=1 run: cell/--phases at atol 0; scatter and
+#    scatter+active-set at atol 1e-6 (atomic summation order, see
+#    tools/mpi_verify.sh).
+# 2) Strong scaling, 144M triangles: dam (all wet) and river (dry banks --
+#    where the active set pays) x {cell, scatter, scatter+active-set} x np 1/2/4.
+set -x
+ROOT=/scratch/bm55/jlv900/dev/mesh_exp/standalone
+OUT=$ROOT/build/mpiactive
+mkdir -p "$OUT"
+cd "$ROOT"
+source ./my_claude_env.sh
+nvidia-smi --query-gpu=name,memory.total --format=csv | tee "$OUT/gpu.txt"
+
+BENCH=$PBS_JOBFS/bench_gpumpi
+make --no-print-directory CONFIG=gpumpi OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
+
+export OMP_NUM_THREADS=4
+MPIRUN="mpirun --bind-to none"
+
+# ---- 1. GPU correctness gates -------------------------------------------
+: > "$OUT/GATES.txt"
+for c in dam river; do
+  G="--nx 400 --ny 300 --steps 60 --case $c"
+  "$BENCH" $G --save "$PBS_JOBFS/gc_$c.bin" > "$OUT/gate_${c}_np1_cell.txt" 2>&1
+  "$BENCH" $G --flux scatter --save "$PBS_JOBFS/gs_$c.bin" > "$OUT/gate_${c}_np1_scatter.txt" 2>&1
+  for np in 2 4; do
+    for mode in "cell:--flux cell" "phases:--phases"; do
+      tag=${mode%%:*}; flags=${mode#*:}
+      $MPIRUN -np $np "$BENCH" $G $flags --check "$PBS_JOBFS/gc_$c.bin" --atol 0 --rtol 0 \
+          > "$OUT/gate_${c}_np${np}_$tag.txt" 2>&1
+      echo "$c np=$np $tag (atol 0): $(grep tolerance "$OUT/gate_${c}_np${np}_$tag.txt" | awk '{print $NF}')" >> "$OUT/GATES.txt"
+    done
+    for mode in "scatter:--flux scatter" "active:--flux scatter --active-set"; do
+      tag=${mode%%:*}; flags=${mode#*:}
+      $MPIRUN -np $np "$BENCH" $G $flags --check "$PBS_JOBFS/gs_$c.bin" --atol 1e-6 --rtol 0 \
+          > "$OUT/gate_${c}_np${np}_$tag.txt" 2>&1
+      echo "$c np=$np $tag (atol 1e-6): $(grep tolerance "$OUT/gate_${c}_np${np}_$tag.txt" | awk '{print $NF}')  max rel $(grep -E '^\s+stage ' "$OUT/gate_${c}_np${np}_$tag.txt" | awk '{print $3}')" >> "$OUT/GATES.txt"
+    done
+  done
+done
+cat "$OUT/GATES.txt"
+
+# ---- 2. Strong scaling, 144M triangles -----------------------------------
+NX=6000
+for c in dam river; do
+  for mode in "cell:--flux cell" "scatter:--flux scatter" "active:--flux scatter --active-set"; do
+    tag=${mode%%:*}; flags=${mode#*:}
+    for np in 1 2 4; do
+      $MPIRUN -np $np "$BENCH" --nx $NX --ny $NX --steps 100 --warmup 10 --case $c $flags \
+          --csv "$OUT/strong.csv" > "$OUT/strong_${c}_${tag}_np${np}.txt" 2>&1
+    done
+  done
+done
+
+# ---- summary -------------------------------------------------------------
+{
+  echo "=== correctness gates (must all be OK) ==="
+  cat "$OUT/GATES.txt"
+  echo; echo "=== strong scaling, ${NX}x${NX} (144M): ms/step  Mcell-steps/s  [active %] ==="
+  for c in dam river; do for tag in cell scatter active; do for np in 1 2 4; do
+    f="$OUT/strong_${c}_${tag}_np${np}.txt"
+    r=$(grep "Mcell-steps/s" "$f" | awk '{print $1" ms/step  "$3" Mc/s"}')
+    a=$(grep "active    :" "$f" | awk '{print "  [active "$3"]"}')
+    echo "$c $tag np=$np : $r$a"
+  done; done; done
+} | tee "$OUT/SUMMARY.txt"
+touch "$OUT/DONE"

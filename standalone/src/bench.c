@@ -340,8 +340,9 @@ static const char *arg_s(int argc, char **argv, int *i, const char *name) {
 // ---------------------------------------------------------------------------
 // Timed RK2 step
 //
-// Mirrors gpu_evolve_one_rk2_step() in gpu_kernels.c exactly (single process,
-// no fixed timestep), with a timer around each kernel.  Keep the two in sync:
+// Mirrors gpu_evolve_one_rk2_step() in gpu_kernels.c exactly (no fixed
+// timestep; dt allreduce + mid-step halo exchange under MPI), with a timer
+// around each kernel.  Keep the two in sync:
 // --phases and the plain loop must produce identical state.
 // ---------------------------------------------------------------------------
 
@@ -397,7 +398,7 @@ static double rk2_step_timed(struct gpu_domain *GD, double max_timestep, int app
                ac ? core_compute_fluxes_scatter_on(&GD->D, 0, 2, ae, nae)
                   : gpu_flux_phase(GD, 0, 2));
 
-    timestep = GD->CFL * local_timestep;
+    timestep = GD->CFL * bmpi_min_d(local_timestep);   // global CFL min under MPI
     GD->recorded_flux_timestep =
         (timestep < GD->evolve_max_timestep) ? timestep : GD->evolve_max_timestep;
     if (timestep > max_timestep) timestep = max_timestep;
@@ -405,6 +406,12 @@ static double rk2_step_timed(struct gpu_domain *GD, double max_timestep, int app
     TIME_PHASE(PH_FORCING_UPDATE,
                ac ? core_forcing_and_update_on(&GD->D, timestep, apply_forcing, 0, 0.0, 0.0, ac, nac)
                   : gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0));
+    // Mid-step halo exchange, exactly where gpu_evolve_one_rk2_step does it.
+    // The active-set lists were built from the ghost columns as they stood at
+    // the start of the step, which is what the serial 2-ring sees too: a
+    // ghost cell's own update is garbage (it only saw its owned-side edges)
+    // and is replaced here before the second stage reads it.
+    if (GD->nprocs > 1) gpu_exchange_ghosts(GD);
 
     // ---- second Euler stage
     TIME_PHASE(PH_PREPARE,
@@ -457,7 +464,7 @@ static double ader2_step_timed(struct gpu_domain *GD, double max_timestep,
                ac ? core_compute_fluxes_scatter_on(&GD->D, 0, 1, ae, nae)
                   : gpu_flux_phase(GD, 0, 1));
 
-    double timestep = GD->CFL * local_timestep;
+    double timestep = GD->CFL * bmpi_min_d(local_timestep);   // global CFL min
     GD->recorded_flux_timestep =
         (timestep < GD->evolve_max_timestep) ? timestep : GD->evolve_max_timestep;
     if (timestep > max_timestep) timestep = max_timestep;
@@ -684,14 +691,15 @@ int main(int argc, char **argv) {
     bench_slab S = {0};
     double *bed_node = NULL, *stage_node = NULL;
     if (g_np > 1) {
-        // v1 MPI restrictions: generated rectangular-cross mesh, row order,
-        // cell-based fluxes, library step functions.
-        if (O.mesh_path || O.morton != 0 || P.flux_mode != 0 ||
-            g_active_set || O.phases || g_cuda_extrap_tpb > 0) {
+        // MPI restrictions: generated rectangular-cross mesh in row order (the
+        // slab cut relies on cell id = i*n + j), no --cuda-extrap.  Cell and
+        // scatter fluxes, --phases and --active-set all work (see
+        // rk2_step_timed for where the halo exchange and dt reduction go).
+        if (O.mesh_path || O.morton != 0 || P.flux_mode == 1 ||
+            g_cuda_extrap_tpb > 0) {
             if (g_rank == 0)
                 fprintf(stderr, "bench: MPI runs support the generated mesh with "
-                        "--order row, cell fluxes, no --active-set/--phases/"
-                        "--cuda-extrap (for now)\n");
+                        "--order row, --flux cell|scatter, no --cuda-extrap\n");
             return 2;
         }
         bench_mesh_rectangular_cross_slab(O.nx, O.ny, P.length_x, P.length_y,
@@ -708,8 +716,8 @@ int main(int argc, char **argv) {
 
     bench_domain B;
     const double t_build0 = omp_get_wtime();
-    bench_domain_build(&B, &M, &P, bed_node, stage_node);
-    if (g_np > 1) B.GD.D.tri_full_flag = S.tri_full_flag;   // before mapping
+    bench_domain_build(&B, &M, &P, bed_node, stage_node,
+                       g_np > 1 ? (const anuga_int *)S.tri_full_flag : NULL);
     const double t_build = omp_get_wtime() - t_build0;
 
 
@@ -950,9 +958,12 @@ int main(int argc, char **argv) {
                "sum", 1.0e3 * summed / (double)O.steps, 100.0 * summed / total_all);
     }
 
-    if (g_active_set && g_as_samples > 0)
+    if (g_active_set && g_as_samples > 0) {
+        // Rank-averaged under MPI (each rank's fraction is over its local cells)
+        const double frac = bmpi_sum_d(g_as_cellfrac_sum / (double)g_as_samples) / g_np;
         printf("  active    : %.2f%% of cells on average (%ld rebuilds)\n",
-               100.0 * g_as_cellfrac_sum / (double)g_as_samples, g_as_samples);
+               100.0 * frac, g_as_samples);
+    }
 
     // ---- diagnostics -----------------------------------------------------
     gpu_domain_sync_from_device(GD);

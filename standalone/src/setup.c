@@ -214,7 +214,8 @@ void bench_params_apply_scheme(bench_params *P) {
 }
 
 void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params *P,
-                        const double *bed_node, const double *stage_node) {
+                        const double *bed_node, const double *stage_node,
+                        const anuga_int *tri_full_flag) {
     memset(B, 0, sizeof(*B));
     B->mesh = *M;
 
@@ -337,11 +338,12 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
     D->neighbour_edges      = IALLOC(B, 3 * n);
     D->surrogate_neighbours = IALLOC(B, 3 * n);
     D->number_of_boundaries = IALLOC(B, n);
-    // Serial benchmark: no ghost cells, so leave tri_full_flag NULL.  The
+    // Serial benchmark: no ghost cells, so tri_full_flag stays NULL.  The
     // kernels then skip the per-edge ownership gathers in the dt guard and
     // the boundary-flux integral entirely (the integral is a parallel-run
-    // diagnostic nothing here consumes).
-    D->tri_full_flag        = NULL;
+    // diagnostic nothing here consumes).  Under MPI the driver's slab
+    // partition supplies it (1 = owned, 0 = ghost column).
+    D->tri_full_flag        = (anuga_int *)tri_full_flag;
 
     edgemap H;
     edgemap_init(&H, 3 * n);
@@ -416,11 +418,25 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
         D->reconstruct_edge_bed = 2;
         // Compacted owned-slot list: every boundary slot + the larger-index
         // side of each interior edge.  One scatter thread per physical edge.
+        //
+        // Under MPI the rule is ghost-aware: a slot is taken only from an
+        // OWNED cell k, and an interface edge (k owned, nbr ghost) is taken
+        // from k regardless of index order -- the ghost's own slot is never
+        // listed (both-ghost edges too), so each rank scatters every edge
+        // that touches one of its owned cells exactly once.  Which side
+        // "owns" the physical edge does not affect the result: the scatter
+        // kernel reproduces the cell-based expression bit-for-bit from
+        // either side (see core_compute_fluxes_scatter_on), and the ghost
+        // side's accumulated update is overwritten by the halo exchange.
+        const anuga_int *full = tri_full_flag;
         anuga_int *owned = IALLOC(B, 3 * n);
         anuga_int ne = 0;
         for (int64_t p2 = 0; p2 < 3 * n; p2++) {
+            const anuga_int k2 = p2 / 3;
             const anuga_int nbr2 = D->neighbours[p2];
-            if (nbr2 < 0 || nbr2 > p2 / 3) owned[ne++] = p2;
+            if (full != NULL && full[k2] != 1) continue;          // ghost side: skip
+            if (nbr2 < 0 || nbr2 > k2 ||
+                (full != NULL && full[nbr2] != 1)) owned[ne++] = p2;
         }
         D->owned_edges = owned;
         D->num_owned_edges = ne;

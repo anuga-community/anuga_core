@@ -13,12 +13,15 @@ static void *xmalloc(size_t bytes) {
     return p;
 }
 
-void bench_mesh_rectangular_cross(int64_t m, int64_t n,
-                                  double len1, double len2,
-                                  double x0, double y0,
-                                  bench_mesh *M) {
-    const double delta1 = len1 / (double)m;
-    const double delta2 = len2 / (double)n;
+// Core generator: explicit cell spacing and an integer column offset, so a
+// slab of a larger mesh reproduces the global node coordinates BIT-FOR-BIT
+// (delta1 * (double)(i + i_off) is exactly what the full mesh computes;
+// a local origin offset added afterwards is not, whenever delta1 is not
+// exactly representable -- e.g. 1000/120).
+static void rectangular_cross_core(int64_t m, int64_t n,
+                                   double delta1, double delta2,
+                                   int64_t i_off, double x0, double y0,
+                                   bench_mesh *M) {
 
     // (m+1)*(n+1) grid nodes, then one centre node per cell -- appended in the
     // same (i, j) loop order the Python factory uses.
@@ -41,7 +44,7 @@ void bench_mesh_rectangular_cross(int64_t m, int64_t n,
     for (int64_t i = 0; i <= m; i++) {
         for (int64_t j = 0; j <= n; j++) {
             int64_t v = i * (n + 1) + j;
-            M->nodes[2 * v + 0] = delta1 * (double)i + x0;
+            M->nodes[2 * v + 0] = delta1 * (double)(i + i_off) + x0;
             M->nodes[2 * v + 1] = delta2 * (double)j + y0;
         }
     }
@@ -109,6 +112,13 @@ void bench_mesh_rectangular_cross(int64_t m, int64_t n,
     }
 }
 
+void bench_mesh_rectangular_cross(int64_t m, int64_t n,
+                                  double len1, double len2,
+                                  double x0, double y0,
+                                  bench_mesh *M) {
+    rectangular_cross_core(m, n, len1 / (double)m, len2 / (double)n, 0, x0, y0, M);
+}
+
 void bench_mesh_rectangular_cross_slab(int64_t m, int64_t n,
                                        double len1, double len2,
                                        int rank, int nprocs,
@@ -122,10 +132,10 @@ void bench_mesh_rectangular_cross_slab(int64_t m, int64_t n,
     S->m_local = (S->i1 - S->i0) + S->gl + S->gh;
     S->n_full  = 4 * (S->i1 - S->i0) * n;
 
-    const double x0_local = delta1 * (double)(S->i0 - S->gl);
-    bench_mesh_rectangular_cross(S->m_local, n,
-                                 delta1 * (double)S->m_local, len2,
-                                 x0_local, 0.0, M);
+    // Same spacing and global column index as the full mesh -> identical
+    // node coordinates on every rank (see rectangular_cross_core).
+    rectangular_cross_core(S->m_local, n, delta1, len2 / (double)n,
+                           S->i0 - S->gl, 0.0, 0.0, M);
 
     const int64_t ntris = M->num_triangles;
     S->tri_full_flag = (int64_t *)xmalloc((size_t)ntris * sizeof(int64_t));

@@ -73,8 +73,12 @@ void bench_params_apply_scheme(bench_params *P);
 // Allocate + fill everything.  Does not touch the device.
 // bed_node/stage_node: per-node values from a loaded mesh (NULL = evaluate
 // the analytic case functions, as the generated meshes always do).
+// tri_full_flag: per-triangle ownership under MPI (1 = owned, 0 = ghost),
+// NULL for a serial run.  Stored on the domain and used to build a
+// ghost-aware owned-edge list for the scatter flux kernel.
 void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params *P,
-                        const double *bed_node, const double *stage_node);
+                        const double *bed_node, const double *stage_node,
+                        const anuga_int *tri_full_flag);
 
 // gpu_domain_init + reflective boundary + gpu_domain_map_arrays.
 void bench_domain_to_device(bench_domain *B, const bench_params *P, int verbose,

@@ -473,10 +473,34 @@ efficiency rises with problem size (88% -> 92%), i.e. the residual is the
 fixed per-step exchange cost, and the per-rank work simply has to be large
 enough to hide it -- the "linear given enough work" claim, now measured.
 
-v1 restrictions (enforced in `bench.c`): generated mesh, `--order row`,
-cell-based fluxes; no `--active-set`, `--phases` or `--cuda-extrap` under
-MPI. Extending the halo rule to scatter fluxes and the 2-ring active set is
-the next step.
+**Scatter fluxes, `--phases` and the active set under MPI (2026-08-27).**
+The scatter kernel's owned-edge list is built ghost-aware in `setup.c`: a
+slot is taken only from an owned cell, and an interface edge is taken from
+the owned side regardless of index order, so each rank scatters every edge
+touching one of its cells exactly once (the ghost side's accumulated update
+is garbage and is overwritten by the halo exchange). The miniapp's own
+stepped loops (`rk2_step_timed` / `ader2_step_timed`) gained the dt
+allreduce and the mid-step exchange the library step does. The 2-ring active
+set needs no change: one ghost column is four triangle hops wide, so every
+cell within two hops of an owned cell is local and the rings come out
+identical to the serial build.
+
+`tools/mpi_verify.sh` is the CPU regression gate (64 checks, np=2/4 vs the
+serial run, 120x100 and 100x100 x dam/river x rk2/ader2): cell fluxes and
+`--phases` are **bit-exact** (`--atol 0 --rtol 0`); scatter and
+scatter+active-set are checked at `--atol 1e-6` because scatter accumulates
+the three edge contributions per cell with atomics and is therefore only
+ever exact to summation order -- a *serial* 1-thread vs 4-thread scatter run
+differs by the same ~1e-9 (dam, ader2) the MPI runs show, and typical MPI
+residuals are 1e-14. Building the slab this way also exposed and fixed a
+generator roundoff bug: node x-coordinates were `x0_local + i_local*dx`,
+which differs from the full mesh's `i*dx` whenever `dx` is inexact (any
+non-square case, e.g. 1000/120) -- now the slab uses the global column index.
+
+Remaining MPI restrictions (enforced in `bench.c`): generated mesh in
+`--order row`, no `--flux edge`, no `--cuda-extrap`. GPU gates + scatter /
+active-set strong scaling on 4 H200s: `tools/h200_mpi_active.pbs`
+(results in `build/mpiactive/`).
 
 ### Cross-vendor portability: AMD MI250X and Intel PVC (2026-08-25)
 
