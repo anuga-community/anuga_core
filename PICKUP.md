@@ -39,19 +39,25 @@ meshes were off by 1e-12 even in cell mode).  `tools/mpi_verify.sh` = 64
 CPU checks: cell/--phases bit-exact, scatter/active-set at atol 1e-6
 (atomic summation order -- same ~1e-9 as serial 1- vs 4-thread scatter).
 
-**IN FLIGHT: PBS job `177579044`** (gpuhopper, 4xH200, 1 h) --
-`standalone/tools/h200_mpi_active.pbs`.  Results in
-`standalone/build/mpiactive/`: `GATES.txt` (cell/phases atol 0, scatter/
-active atol 1e-6 -- all must say OK), `strong.csv` /
-`strong_{dam,river}_{cell,scatter,active}_np{1,2,4}.txt` (144M),
-`SUMMARY.txt` + `DONE`.  `qstat -x 177579044`; failures -> `pbs.log`.
+**DONE: job 177579044 (4xH200, scatter/phases/active under MPI)** -- all
+16 GPU gates OK; strong scaling 87-92% for everything except river+active
+(38%): the x-slab gives rank 0 the whole reservoir, so it holds ~53% active
+cells vs the 18% average.  Measured proof that active-set load must be
+partitioned by wetness, not triangle count.  Banked in standalone/README.md.
 
 **Next steps:**
-1. Read mpiactive results, bank in standalone/README.md, commit.
-2. Same C-only layer under full ANUGA ("compile and use all of ANUGA
+1. Same C-only layer under full ANUGA ("compile and use all of ANUGA
    without mpi4py") -- gpu ext already takes (comm, rank, nprocs); needs a
    C MPI_Init entry + partition/halo-list builder to replace pymetis path.
-3. Remaining miniapp MPI restrictions: generated row-order mesh only, no
+   For the 1 sqm delta (17.45G triangles in 1404 conforming 3 km tiles,
+   cdac_script/mesh_tiles_1sqm, 521 GB) the plan discussed 2026-08-27:
+   tiles ARE the partition -- weight tiles by wetness from the 300 sqm run,
+   bin-pack tiles to ranks, each rank loads its .msh tiles, stitches locally
+   and builds halos from the shared lattice edges (gpu_halo_init already
+   takes arbitrary lists); elevation sampled per tile from the raster; never
+   build the global mesh/CSV/sww.  Python Domain (~1 KB/tri) cannot hold a
+   rank's share -> the C path (miniapp --mesh + MPI) is the launcher.
+2. Remaining miniapp MPI restrictions: generated row-order mesh only, no
    --flux edge, no --cuda-extrap.
 
 ## 2. This worktree vs the main repo

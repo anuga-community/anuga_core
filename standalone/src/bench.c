@@ -959,10 +959,17 @@ int main(int argc, char **argv) {
     }
 
     if (g_active_set && g_as_samples > 0) {
-        // Rank-averaged under MPI (each rank's fraction is over its local cells)
-        const double frac = bmpi_sum_d(g_as_cellfrac_sum / (double)g_as_samples) / g_np;
-        printf("  active    : %.2f%% of cells on average (%ld rebuilds)\n",
+        // Each rank's fraction is over its local cells; under MPI report the
+        // rank average and the spread -- the slowest rank is the one with the
+        // most active cells, so max/min is the load imbalance in one number.
+        const double mine = g_as_cellfrac_sum / (double)g_as_samples;
+        const double frac = bmpi_sum_d(mine) / g_np;
+        printf("  active    : %.2f%% of cells on average (%ld rebuilds)",
                100.0 * frac, g_as_samples);
+        if (g_np > 1)
+            printf(", per rank %.2f%% .. %.2f%%",
+                   100.0 * -bmpi_max_d(-mine), 100.0 * bmpi_max_d(mine));
+        printf("\n");
     }
 
     // ---- diagnostics -----------------------------------------------------

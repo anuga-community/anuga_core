@@ -498,9 +498,34 @@ which differs from the full mesh's `i*dx` whenever `dx` is inexact (any
 non-square case, e.g. 1000/120) -- now the slab uses the global column index.
 
 Remaining MPI restrictions (enforced in `bench.c`): generated mesh in
-`--order row`, no `--flux edge`, no `--cuda-extrap`. GPU gates + scatter /
-active-set strong scaling on 4 H200s: `tools/h200_mpi_active.pbs`
-(results in `build/mpiactive/`).
+`--order row`, no `--flux edge`, no `--cuda-extrap`.
+
+**4x H200 results** (`tools/h200_mpi_active.pbs`, job 177579044, results in
+`build/mpiactive/`). All 16 GPU gates OK -- cell and `--phases` at atol 0,
+scatter and scatter+active-set at atol 1e-6 with measured max relative
+differences of 7e-16 (dam) and 1.5e-15 (river). Strong scaling at 144M
+triangles (6000x6000, RK2, 100 timed steps), ms/step and Mcell-steps/s:
+
+| case / flux          | np=1          | np=2          | np=4          | eff. @4 |
+|----------------------|---------------|---------------|---------------|---------|
+| dam, cell            | 97.2 / 1482   | 51.1 / 2818   | 26.4 / 5447   | 92%     |
+| dam, scatter         | 102.5 / 1406  | 54.8 / 2628   | 28.1 / 5119   | 91%     |
+| dam, scatter+active  | 123.4 / 1167  | 65.7 / 2193   | 33.4 / 4310   | 92%     |
+| river, cell          | 85.4 / 1687   | 45.9 / 3137   | 24.0 / 5990   | 89%     |
+| river, scatter       | 88.7 / 1624   | 48.0 / 3001   | 25.4 / 5667   | 87%     |
+| river, scatter+active| 28.6 / 5039   | 22.6 / 6381   | 18.9 / 7601   | **38%** |
+
+The dam rows scale like the cell path (the active set is 100% there, so
+it only adds the rebuild cost). The river row is the interesting one: the
+active set makes the serial run 3x faster (18% of cells active), but the
+x-slab partition hands rank 0 the whole reservoir (x < 0.15 L lies in its
+columns [0, 1500)), so rank 0 carries ~53% of its cells active against the
+18% average and its kernel phases alone sum to 18.6 of the 18.9 ms step.
+**A geometric partition balances triangles; the active set makes the load
+proportional to wet cells.** Partitioning a mostly-dry basin therefore has
+to be weighted by (expected) wetness -- e.g. from a coarse run -- which is
+the plan for the tiled 1 m^2 delta mesh. The report line now prints the
+per-rank min..max active fraction so this imbalance is visible directly.
 
 ### Cross-vendor portability: AMD MI250X and Intel PVC (2026-08-25)
 
