@@ -610,6 +610,15 @@ on 104 cores, tile-parallel like the meshing).  The synthetic lake is far
 from these tiles, so this checks the mechanics at scale; flow across
 interfaces is covered by the coarse dam-break gates above.
 
+**All 1404 one-square-metre tiles converted** (`tools/sr_convert_tiles.pbs`,
+job 177634970, normalsr 104 cores): 17,445,343,465 triangles, 391 GB in the
+compact v2 format (int32 indices, float32 bed/stage, float64 coordinates)
+on `/g/data/bm55/jlv900/tiles1sqm/`, 18 min wall, 439 GB peak node RAM
+(the NetCDF import is what costs memory).  The v1 format would have been
+~780 GB, and scratch/bm55 had 300 GB left -- hence v2 and gdata.
+`tools/tile_subset.py` cuts a sub-index (e.g. the 16-tile lake block for
+`tools/h200_1sqm_rehearsal.pbs`).
+
 **4x H200 at 300 m^2** (`tools/h200_mpi_tiles.pbs`, job 177612520, 58.2M
 triangles, 158 tiles, results in `build/mpitiles/`): all 12 tiled gates
 OK -- cell and `--phases` at atol 0 for np = 1, 2, 4 against the merged

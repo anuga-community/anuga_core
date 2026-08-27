@@ -10,6 +10,7 @@
 #PBS -l walltime=01:00:00
 #PBS -l wd
 #PBS -j oe
+#PBS -o /scratch/bm55/jlv900/dev/mesh_exp/standalone/build/tilesbal/
 
 # Load balance of a tiled mesh on 4 H200s.  Parametrised:
 #   qsub -v TS=tiles300,MG=delta300.bmesh tools/h200_tiles_balance.pbs

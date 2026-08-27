@@ -75,11 +75,18 @@ residual is model error not granularity at 1% wet.
 imbalance, wall 1.66 ms/step (best run); predicted per-rank actives matched
 measured exactly.  All banked in standalone/README.md.  No jobs in flight.
 
+**DONE: all 1404 1 sqm tiles converted** (job 177634970, bm55): 17.45G
+triangles, 391 GB compact v2 on /g/data/bm55/jlv900/tiles1sqm (index.txt).
+scratch/bm55 quota is nearly full (706/1024 GiB) -- keep big outputs on gdata.
+
+**IN FLIGHT: job `177636235`** -- `tools/h200_1sqm_rehearsal.pbs`: 16 real
+1 sqm tiles (~220M tris) around the synthetic lake on 4xH200: np=1 golden,
+np=2/4 atol-0 gates, active-set timing tri-balanced vs weighted contig.
+Results `standalone/build/rehearsal/` (SUMMARY.txt, runs.csv, DONE).
+
 **Next steps:**
-1. 1 sqm launch rehearsal: convert all 1404 tiles (tile-parallel PBS job,
-   ~15 min on 104 cores), assign to N GPU ranks, run a few steps on 4-8
-   H200s from a subset of tiles (e.g. the lake region) -- needs a wet
-   synthetic case placed on chosen tiles.  Elevation: replace the analytic
+1. Read rehearsal results; then scale the subset up (more tiles / 8 GPUs)
+   and add per-rank output (max depth, stage at yieldsteps).  Elevation: replace the analytic
    bed in tools/tiles_to_bmesh.py by raster sampling once the user provides
    a path on their side (their data cannot be shared with Claude).
 2. Memory: neighbour tiles are read whole then discarded -- fine at 300
