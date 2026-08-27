@@ -1,0 +1,82 @@
+#!/bin/bash
+#PBS -N anuga_mpi_tiles
+#PBS -l ncpus=48
+#PBS -l ngpus=4
+#PBS -l mem=512GB
+#PBS -l jobfs=200GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=01:00:00
+#PBS -l wd
+#PBS -j oe
+#PBS -o /scratch/bm55/jlv900/dev/mesh_exp/standalone/build/mpitiles/pbs.log
+
+# Tiled distributed mesh on 4 H200s: the synthetic Delta case at 300 m^2
+# (~60M triangles, 158 conforming 10 km tiles from cdac_script/) --
+# no global mesh on any rank.
+# 1) Gates vs the merged-mesh np=1 run: cell/--phases atol 0; scatter and
+#    scatter+active-set ftol 1e-7 (summation-order roundoff, see
+#    tools/mpi_verify.sh).
+# 2) Load balance: triangle-balanced assignment with --tile-stats, then
+#    tools/tile_assign.py (lpt, contig) from those stats; per-rank kernel
+#    time spread is the imbalance.
+set -x
+ROOT=/scratch/bm55/jlv900/dev/mesh_exp/standalone
+OUT=$ROOT/build/mpitiles
+TILES=$ROOT/build/tiles300/index.txt
+MERGED=$ROOT/build/delta300.bmesh
+mkdir -p "$OUT"
+cd "$ROOT"
+source ./my_claude_env.sh
+nvidia-smi --query-gpu=name,memory.total --format=csv | tee "$OUT/gpu.txt"
+
+BENCH=$PBS_JOBFS/bench_gpumpi
+make --no-print-directory CONFIG=gpumpi OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
+
+export OMP_NUM_THREADS=4
+MPIRUN="mpirun --bind-to none"
+STEPS=60
+
+# ---- 1. gates: tiled np=1/2/4 vs merged serial -------------------------
+: > "$OUT/GATES.txt"
+"$BENCH" --mesh $MERGED --steps $STEPS --save "$PBS_JOBFS/gc.bin" > "$OUT/gate_merged_cell.txt" 2>&1
+"$BENCH" --mesh $MERGED --steps $STEPS --flux scatter --save "$PBS_JOBFS/gs.bin" > "$OUT/gate_merged_scatter.txt" 2>&1
+for np in 1 2 4; do
+  for mode in "cell:--flux cell" "phases:--phases"; do
+    tag=${mode%%:*}; flags=${mode#*:}
+    $MPIRUN -np $np "$BENCH" --tiles $TILES --steps $STEPS $flags --check "$PBS_JOBFS/gc.bin" --atol 0 --rtol 0 \
+        > "$OUT/gate_np${np}_$tag.txt" 2>&1
+    echo "tiles np=$np $tag (atol 0): $(grep tolerance "$OUT/gate_np${np}_$tag.txt" | awk '{print $NF}')" >> "$OUT/GATES.txt"
+  done
+  for mode in "scatter:--flux scatter" "active:--flux scatter --active-set"; do
+    tag=${mode%%:*}; flags=${mode#*:}
+    $MPIRUN -np $np "$BENCH" --tiles $TILES --steps $STEPS $flags --check "$PBS_JOBFS/gs.bin" --atol 0 --ftol 1e-7 \
+        > "$OUT/gate_np${np}_$tag.txt" 2>&1
+    echo "tiles np=$np $tag (ftol 1e-7): $(grep tolerance "$OUT/gate_np${np}_$tag.txt" | awk '{print $NF}')  max rel $(grep -E '^\s+stage ' "$OUT/gate_np${np}_$tag.txt" | awk '{print $3}')" >> "$OUT/GATES.txt"
+  done
+done
+cat "$OUT/GATES.txt"
+
+# ---- 2. load balance, 4 GPUs, active set ---------------------------------
+$MPIRUN -np 4 "$BENCH" --tiles $TILES --steps 200 --warmup 10 --flux scatter --active-set \
+    --tile-stats "$OUT/stats_tri.txt" > "$OUT/bal_tri.txt" 2>&1
+for m in lpt contig; do
+  python tools/tile_assign.py $TILES --stats "$OUT/stats_tri.txt" --nprocs 4 --floor 0.07 --method $m \
+      --out "$OUT/assign_$m.txt" | tee "$OUT/assign_$m.log"
+  $MPIRUN -np 4 "$BENCH" --tiles $TILES --assign "$OUT/assign_$m.txt" --steps 200 --warmup 10 \
+      --flux scatter --active-set > "$OUT/bal_$m.txt" 2>&1
+done
+# reference: no active set, triangle-balanced; and the merged mesh on one GPU
+$MPIRUN -np 4 "$BENCH" --tiles $TILES --steps 200 --warmup 10 --flux scatter > "$OUT/bal_full.txt" 2>&1
+"$BENCH" --mesh $MERGED --steps 200 --warmup 10 --flux scatter --active-set --phases > "$OUT/bal_np1.txt" 2>&1
+
+{
+  echo "=== gates (must all be OK) ==="; cat "$OUT/GATES.txt"
+  echo; echo "=== load balance, 4 H200, 300 m^2 Delta (ms/step; per-rank kernel time spread) ==="
+  for t in np1 full tri lpt contig; do
+    f="$OUT/bal_$t.txt"
+    echo "$t: $(grep 'ms/step,' "$f" | awk '{print $1" ms/step"}')  $(grep 'per-rank kernel' "$f" | sed 's/^ *//')  $(grep 'active    :' "$f" | sed 's/^ *//')"
+  done
+} | tee "$OUT/SUMMARY.txt"
+touch "$OUT/DONE"

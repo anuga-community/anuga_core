@@ -106,8 +106,13 @@ int snapshot_check(const char *path, const struct gpu_domain *GD,
             sumsq += d * d;
             if (d > max_abs) { max_abs = d; worst = k; }
             if (scale > field_scale) field_scale = scale;
-            if (d > atol + rtol * scale) bad = 1;
+            if (rtol >= 0.0 && d > atol + rtol * scale) bad = 1;
         }
+        // rtol < 0 selects the field-scale criterion (--ftol): the largest
+        // difference against the largest reference value in the field.  The
+        // right gate for summation-order roundoff amplified by a chaotic
+        // flow, where pointwise relative error near zero is meaningless.
+        if (rtol < 0.0 && max_abs > atol + (-rtol) * field_scale) bad = 1;
         const double rms = sqrt(sumsq / (double)h.n);
         // Pointwise relative error is meaningless where the reference is ~0
         // (momentum in still water), so report the error against the largest
@@ -127,8 +132,12 @@ int snapshot_check(const char *path, const struct gpu_domain *GD,
 
     free(ref);
     fclose(fp);
-    printf("  tolerance: atol %g, rtol %g  ->  %s\n\n",
-           atol, rtol, failed ? "MISMATCH" : "OK");
+    if (rtol < 0.0)
+        printf("  tolerance: atol %g, ftol %g (x field scale)  ->  %s\n\n",
+               atol, -rtol, failed ? "MISMATCH" : "OK");
+    else
+        printf("  tolerance: atol %g, rtol %g  ->  %s\n\n",
+               atol, rtol, failed ? "MISMATCH" : "OK");
     return failed;
 }
 
@@ -206,8 +215,13 @@ int snapshot_check_canon(const char *path, int64_t n_global,
             sumsq += d * d;
             if (d > max_abs) { max_abs = d; worst = k; }
             if (scale > field_scale) field_scale = scale;
-            if (d > atol + rtol * scale) bad = 1;
+            if (rtol >= 0.0 && d > atol + rtol * scale) bad = 1;
         }
+        // rtol < 0 selects the field-scale criterion (--ftol): the largest
+        // difference against the largest reference value in the field.  The
+        // right gate for summation-order roundoff amplified by a chaotic
+        // flow, where pointwise relative error near zero is meaningless.
+        if (rtol < 0.0 && max_abs > atol + (-rtol) * field_scale) bad = 1;
         const double rms = sqrt(sumsq / (double)h.n);
         const double max_rel = field_scale > 0.0 ? max_abs / field_scale : 0.0;
         printf("  %-10s %14.6e %14.6e %14.6e%s\n",
@@ -221,7 +235,11 @@ int snapshot_check_canon(const char *path, int64_t n_global,
     }
     free(ref);
     fclose(fp);
-    printf("  tolerance: atol %g, rtol %g  ->  %s\n\n",
-           atol, rtol, failed ? "MISMATCH" : "OK");
+    if (rtol < 0.0)
+        printf("  tolerance: atol %g, ftol %g (x field scale)  ->  %s\n\n",
+               atol, -rtol, failed ? "MISMATCH" : "OK");
+    else
+        printf("  tolerance: atol %g, rtol %g  ->  %s\n\n",
+               atol, rtol, failed ? "MISMATCH" : "OK");
     return failed;
 }

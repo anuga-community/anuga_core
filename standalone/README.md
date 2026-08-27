@@ -527,6 +527,56 @@ to be weighted by (expected) wetness -- e.g. from a coarse run -- which is
 the plan for the tiled 1 m^2 delta mesh. The report line now prints the
 per-rank min..max active fraction so this imbalance is visible directly.
 
+### Tiled distributed mesh (`--tiles`): no rank ever sees the global mesh
+
+The 1 m^2 challenge mesh of the 11,372 km^2 delta is 17.45 G triangles in
+1404 conforming 3 km tiles (`cdac_script/split_delta.py` + `mesh_tile.py`,
+26 min on 104 cores, 521 GB of `.msh`).  A merged mesh would be ~1 TB of
+connectivity, a Python `Domain` ~17 TB, and pymetis on it is out of the
+question -- so the tiles themselves are the partition:
+
+- `tools/tiles_to_bmesh.py` converts each tile (and, for validation, the
+  merged mesh) to the miniapp's binary format with a synthetic analytic bed
+  and initial stage evaluated at the node coordinates -- the per-tile
+  initialisation step, embarrassingly parallel, never global.  Vertices are
+  rounded to 6 decimals exactly as `merge_tiles.py` does, so tiles and the
+  merged mesh carry bit-identical geometry.
+- `src/tiles.c` (`--tiles index.txt [--assign FILE]`): each rank reads its
+  own tiles plus every tile whose bounding box touches them, stitches on
+  exact vertex coordinates, keeps as ghosts the foreign triangles that
+  share a vertex with an owned one (a superset of the 2-edge-hop ring RK2
+  needs), and builds the `gpu_halo_init` lists from that.  Both ranks of a
+  pair derive the same sets from the same tile data in the same (tile,
+  local index) order, so the lists agree without communication (a count
+  handshake asserts it).  Canonical ids are tile offset + local index, the
+  order `merge_tiles.py` concatenates in, so snapshots check against the
+  merged run.
+- Gates (`tools/mpi_verify.sh`: 10,000 m^2 coarse delta, 1.77M
+  triangles, 158 tiles): cell fluxes and `--phases` are **bit-exact**
+  against the merged-mesh serial run at np = 1, 2, 4 and 7 (odd splits),
+  rk2 and ader2.  Scatter and scatter+active-set match to `--ftol 1e-7`
+  (max diff relative to the field's largest value): the interface edges
+  change which side accumulates first, and the seed grows 0 -> 0 -> 7e-15
+  -> 4e-14 -> 7e-13 over steps 1/2/5/10/20 -- a missed or doubled flux
+  would show at step 1 at ~1e-3.
+
+**Load balance by wetness, and its limit.**  `--tile-stats FILE` counts,
+on the device, how many rebuilds each cell spent in the active set and
+writes the mean active fraction per owned tile; `tools/tile_assign.py`
+turns that into a `--assign` map balancing `ntris * (fraction + floor)`
+(the floor is the never-skipped per-cell work: rebuild passes vs. full
+step, ~0.035 on this CPU, ~0.07 on an H200).  On the coarse delta with
+the lake released in two tiles, the triangle-balanced assignment has a
+114% spread in per-rank kernel time (rank 0: 21k of 26k active cells);
+the weighted one balances the predicted work exactly, but no assignment
+of whole tiles can beat the heaviest tile -- tile 30 alone is 40% of the
+active cells against a 25% share.  `tile_assign.py` prints that bound and
+the tiles above half a share: those are the ones to re-split (half-size
+sub-tiles keep the outer lattice, so neighbours still conform).  That is
+the coarse-run -> weight -> retile -> assign loop for the 1 m^2 mesh.
+
+GPU validation + balance at 300 m^2 (58M triangles): `tools/h200_mpi_tiles.pbs`.
+
 ### Cross-vendor portability: AMD MI250X and Intel PVC (2026-08-25)
 
 First contact with non-NVIDIA hardware, same source, no code changes:

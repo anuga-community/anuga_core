@@ -66,6 +66,10 @@ static int g_active_ready = 0;            // 0 until the first full step ran
 static anuga_int *g_as_wet, *g_as_ring1, *g_as_cells, *g_as_edges;
 static anuga_int g_as_counts[2];
 static double g_as_cellfrac_sum; static long g_as_samples;
+// --tile-stats: per-cell count of steps in the active set (device-resident
+// in a GPU build), reduced per owned tile at the end -> the wetness weights
+// tools/tile_assign.py balances the next run with.
+static int *g_act_count = NULL;
 
 // Uniform rain forcing (fractional-step style, applied after each step with
 // that step's dt, over ALL cells -- deliberately including inactive ones,
@@ -178,6 +182,13 @@ static void active_step_lists(struct gpu_domain *GD,
     }
     core_build_active_sets(&GD->D, g_as_wet, g_as_ring1, g_as_cells, g_as_edges,
                            GD->D.owned_edges, GD->D.num_owned_edges, g_as_counts);
+    if (g_act_count) {
+        int * restrict cnt = g_act_count;
+        const anuga_int * restrict ac = g_as_cells;
+        const anuga_int nac = g_as_counts[0];
+        OMP_PARALLEL_LOOP
+        for (anuga_int q = 0; q < nac; q++) cnt[ac[q]]++;   // each cell listed once
+    }
     *cells = g_as_cells; *ncells = g_as_counts[0];
     *edges = g_as_edges; *nedges = g_as_counts[1];
     g_as_cellfrac_sum += (double)g_as_counts[0] / (double)GD->D.number_of_elements;
@@ -229,6 +240,7 @@ static void extrapolate_phase(struct gpu_domain *GD, double predictor_dt,
 #include "setup.h"
 #include "snapshot.h"
 #include "bench_mpi.h"
+#include "tiles.h"
 
 // ---------------------------------------------------------------------------
 // Options
@@ -245,9 +257,12 @@ typedef struct {
     int     verbose;
     int     apply_forcing;
     const char *mesh_path;
+    const char *tiles_path;    // tiled distributed mesh (index.txt)
+    const char *assign_path;   // tile -> rank, one int per tile
     const char *save_path;
     const char *check_path;
     const char *csv_path;
+    const char *tile_stats_path;   // per-tile active fraction (needs --tiles --active-set)
     int     morton;
     double  rtol, atol;
 } bench_opts;
@@ -263,6 +278,10 @@ static void usage(const char *argv0) {
 "    --lenx L          domain width  in metres          (default 1000)\n"
 "    --leny L          domain height in metres          (default 1000)\n"
 "    --mesh FILE       load an ANUGAMSH mesh (tools/make_basin_mesh.py)\n"
+"    --tiles INDEX     tiled mesh: each rank loads its tiles + neighbour strips\n"
+"                      (tools/tiles_to_bmesh.py index.txt); works serially too\n"
+"    --assign FILE     tile -> rank map for --tiles (default: contiguous, balanced\n"
+"                      by triangle count)\n"
 "                      instead of generating the rectangular cross; brings\n"
 "                      its own terrain and initial stage\n"
 "    --case NAME       dam | dambumps | lake | river    (default dam)\n"
@@ -315,9 +334,13 @@ static void usage(const char *argv0) {
 "    --check FILE      compare the final centroid state against FILE\n"
 "    --atol V          absolute tolerance for --check    (default 1e-10)\n"
 "    --rtol V          relative tolerance for --check    (default 1e-8)\n"
+"    --ftol V          instead of rtol: max diff <= atol + V * max|reference|\n"
+"                      per field (the roundoff gate for scatter/MPI runs)\n"
 "\n"
 "  reporting\n"
 "    --csv FILE        append one machine-readable result row to FILE\n"
+"    --tile-stats FILE write per-tile mean active fraction (with --tiles --active-set)\n"
+"                      -> tools/tile_assign.py turns it into a balanced --assign\n"
 "                      (writes the header if FILE does not exist yet)\n"
 "\n", argv0);
 }
@@ -516,12 +539,11 @@ static double host_water_volume(const struct gpu_domain *GD,
 // then save or check through the canon snapshot API.  Collective.
 static int mpi_snapshot(const char *save_path, const char *check_path,
                         const struct gpu_domain *GD, const bench_mesh *M,
-                        const int64_t *full_flag, int64_t n_full,
+                        const int64_t *full_flag, int64_t n_full, int64_t n_global,
                         int64_t nx, int64_t ny, int which_case,
                         int64_t total_steps, double t, double last_dt,
                         double rtol, double atol) {
     const anuga_int n_local = GD->D.number_of_elements;
-    const int64_t n_global = 4 * nx * ny;
     const int np = bmpi_size(), rank = bmpi_rank();
     const int cnt = (int)n_full;
 
@@ -562,7 +584,7 @@ static int mpi_snapshot(const char *save_path, const char *check_path,
 
     int rc = 0;
     if (rank == 0) {
-        const int64_t nb_global = 2 * (nx + ny);
+        const int64_t nb_global = 2 * (nx + ny);   // header metadata only
         if (save_path)
             rc |= snapshot_save_canon(save_path, n_global, nb_global, nx, ny,
                                       which_case, total_steps, t, last_dt, canon);
@@ -636,10 +658,14 @@ int main(int argc, char **argv) {
         }
         else if (!strcmp(a, "--atol"))       O.atol = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--rtol"))       O.rtol = arg_d(argc, argv, &i, a);
+        else if (!strcmp(a, "--ftol"))       O.rtol = -arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--mesh"))       O.mesh_path = arg_s(argc, argv, &i, a);
+        else if (!strcmp(a, "--tiles"))      O.tiles_path = arg_s(argc, argv, &i, a);
+        else if (!strcmp(a, "--assign"))     O.assign_path = arg_s(argc, argv, &i, a);
         else if (!strcmp(a, "--save"))       O.save_path = arg_s(argc, argv, &i, a);
         else if (!strcmp(a, "--check"))      O.check_path = arg_s(argc, argv, &i, a);
         else if (!strcmp(a, "--csv"))        O.csv_path = arg_s(argc, argv, &i, a);
+        else if (!strcmp(a, "--tile-stats")) O.tile_stats_path = arg_s(argc, argv, &i, a);
         else if (!strcmp(a, "--phases"))     O.phases = 1;
         else if (!strcmp(a, "--verbose"))    O.verbose = 1;
         else if (!strcmp(a, "--no-friction")) O.apply_forcing = 0;
@@ -689,8 +715,24 @@ int main(int argc, char **argv) {
     // ---- build -----------------------------------------------------------
     bench_mesh M;
     bench_slab S = {0};
+    bench_tiles T = {0};
+    const int64_t *full_flag = NULL;   // ownership under MPI (NULL = no ghosts)
+    int64_t n_full = 0, n_global = 0;
     double *bed_node = NULL, *stage_node = NULL;
-    if (g_np > 1) {
+    if (O.tiles_path) {
+        // Tiled distributed mesh: works for any np (np=1 is the stitching
+        // check against the merged mesh).  Same kernel restrictions as the
+        // slab path.
+        if (O.mesh_path || O.morton != 0 || P.flux_mode == 1 || g_cuda_extrap_tpb > 0) {
+            if (g_rank == 0)
+                fprintf(stderr, "bench: --tiles excludes --mesh/--order/--flux edge/--cuda-extrap\n");
+            return 2;
+        }
+        bench_mesh_load_tiles(O.tiles_path, O.assign_path, g_rank, g_np,
+                              &M, &bed_node, &stage_node, &T);
+        if (g_np > 1) full_flag = T.tri_full_flag;
+        n_full = T.n_own; n_global = T.n_global;
+    } else if (g_np > 1) {
         // MPI restrictions: generated rectangular-cross mesh in row order (the
         // slab cut relies on cell id = i*n + j), no --cuda-extrap.  Cell and
         // scatter fluxes, --phases and --active-set all work (see
@@ -704,6 +746,7 @@ int main(int argc, char **argv) {
         }
         bench_mesh_rectangular_cross_slab(O.nx, O.ny, P.length_x, P.length_y,
                                           g_rank, g_np, &M, &S);
+        full_flag = S.tri_full_flag; n_full = S.n_full; n_global = 4 * O.nx * O.ny;
     } else if (O.mesh_path) {
         bench_mesh_load(O.mesh_path, &M, &bed_node, &stage_node);
         if (O.morton == 1)      bench_mesh_reorder_tris_morton(&M);
@@ -716,8 +759,7 @@ int main(int argc, char **argv) {
 
     bench_domain B;
     const double t_build0 = omp_get_wtime();
-    bench_domain_build(&B, &M, &P, bed_node, stage_node,
-                       g_np > 1 ? (const anuga_int *)S.tri_full_flag : NULL);
+    bench_domain_build(&B, &M, &P, bed_node, stage_node, (const anuga_int *)full_flag);
     const double t_build = omp_get_wtime() - t_build0;
 
 
@@ -728,7 +770,15 @@ int main(int argc, char **argv) {
     // Halo exchange setup: with the slab cut along the first grid axis and
     // cell id = i*n + j, each column's 4*ny triangles are one contiguous id
     // range, so every send/recv list is a simple run of indices.
-    if (g_np > 1) {
+    if (g_np > 1 && O.tiles_path) {
+        // Lists from the tile stitching; a rank with no foreign neighbour
+        // tile simply has no halo (exchange is then a no-op).
+        if (gpu_halo_init(&B.GD, T.nnb, T.nb_ranks, T.scnt, T.rcnt, T.fsend, T.frecv) != 0) {
+            fprintf(stderr, "bench: gpu_halo_init failed on rank %d\n", g_rank);
+            return 2;
+        }
+        gpu_exchange_ghosts(&B.GD);
+    } else if (g_np > 1) {
         int nb_ranks[2], scnt[2], rcnt[2], nnb = 0;
         const int per_col = (int)(4 * O.ny);
         int *fs = (int *)malloc(2 * (size_t)per_col * sizeof(int));
@@ -764,7 +814,7 @@ int main(int argc, char **argv) {
 
     struct gpu_domain *GD = &B.GD;
     const int64_t n = GD->D.number_of_elements;
-    const int64_t n_report = (g_np > 1) ? 4 * O.nx * O.ny : n;
+    const int64_t n_report = (g_np > 1 || O.tiles_path) ? n_global : n;
 
     const char *case_name = P.which_case == BENCH_CASE_DAM      ? "dam"
                           : P.which_case == BENCH_CASE_DAMBUMPS ? "dambumps"
@@ -776,20 +826,28 @@ int main(int argc, char **argv) {
 #endif
 
     printf("ANUGA shallow-water miniapp -- %s\n", build_kind);
-    if (O.mesh_path)
+    if (O.tiles_path)
+        printf("  mesh      : %s -> %d tiles, %lld triangles (this rank: %d tiles, "
+               "%lld owned + %lld ghost, %d neighbour rank(s))\n",
+               O.tiles_path, T.ntiles, (long long)n_global, T.ntiles_own,
+               (long long)T.n_own, (long long)(n - T.n_own), T.nnb);
+    else if (O.mesh_path)
         printf("  mesh      : %s -> %lld triangles, %lld boundary edges\n",
                O.mesh_path, (long long)n, (long long)GD->D.boundary_length);
     else
         printf("  mesh      : %lld x %lld cross -> %lld triangles, %lld boundary edges\n",
                (long long)O.nx, (long long)O.ny, (long long)n_report,
                (long long)(g_np > 1 ? 2 * (O.nx + O.ny) : GD->D.boundary_length));
-    if (g_np > 1)
+    if (g_np > 1 && O.tiles_path)
+        printf("  mpi       : %d ranks, tile assignment%s\n", g_np,
+               O.assign_path ? O.assign_path : " (contiguous, balanced by triangle count)");
+    else if (g_np > 1)
         printf("  mpi       : %d ranks, slab cut along x; this rank owns columns "
                "[%lld, %lld) + %lld ghost col(s), %lld local triangles\n",
                g_np, (long long)S.i0, (long long)S.i1,
                (long long)(S.gl + S.gh), (long long)n);
     printf("  case      : %s, manning %.4g%s\n",
-           O.mesh_path ? "from mesh file" : case_name, P.manning,
+           (O.mesh_path || O.tiles_path) ? "from mesh file" : case_name, P.manning,
            O.apply_forcing ? "" : " (friction off)");
     {
         const char *sn = P.scheme == BENCH_SCHEME_ADER2 ? "ader2 (DE_ader2)"
@@ -819,7 +877,7 @@ int main(int argc, char **argv) {
     fflush(stdout);
 
     const double volume0 = (g_np > 1)
-        ? bmpi_sum_d(host_water_volume(GD, S.tri_full_flag))
+        ? bmpi_sum_d(host_water_volume(GD, full_flag))
         : gpu_compute_water_volume(GD);
 
     if (g_cuda_extrap_tpb > 0) {
@@ -842,6 +900,18 @@ int main(int argc, char **argv) {
             const anuga_int ne = GD->D.num_owned_edges;
             #pragma omp target enter data map(alloc: w[0:n], r1[0:n], c[0:n], e[0:ne])
         }
+        if (O.tile_stats_path) {
+            if (!O.tiles_path) {
+                fprintf(stderr, "bench: --tile-stats needs --tiles\n");
+                return 2;
+            }
+            g_act_count = (int *)calloc((size_t)n, sizeof(int));
+            int *cnt = g_act_count;
+            #pragma omp target enter data map(to: cnt[0:n])
+        }
+    } else if (O.tile_stats_path) {
+        fprintf(stderr, "bench: --tile-stats needs --active-set\n");
+        return 2;
     }
 
     // ---- warmup ----------------------------------------------------------
@@ -956,8 +1026,38 @@ int main(int argc, char **argv) {
         }
         printf("    %-16s %9.4f ms   (%.1f%% of wall time accounted for)\n",
                "sum", 1.0e3 * summed / (double)O.steps, 100.0 * summed / total_all);
+        if (g_np > 1) {
+            // Kernel time excludes the halo/allreduce waits, so its spread
+            // across ranks is the load imbalance (wall time is the max).
+            const double smax = bmpi_max_d(summed), smin = -bmpi_max_d(-summed);
+            printf("    per-rank kernel time %.4f .. %.4f ms/step  (imbalance %.1f%%)\n",
+                   1.0e3 * smin / (double)O.steps, 1.0e3 * smax / (double)O.steps,
+                   100.0 * (smax / smin - 1.0));
+        }
     }
 
+    if (g_act_count && g_as_samples > 0) {
+        // Per owned tile: mean active fraction over the rebuilds.  Ranks write
+        // in turn so one file holds every tile (index order within a rank).
+        int *cnt = g_act_count;
+        #pragma omp target update from(cnt[0:n])
+        for (int r = 0; r < g_np; r++) {
+            if (r == g_rank) {
+                FILE *fp = fopen(O.tile_stats_path, r == 0 ? "w" : "a");
+                if (!fp) { perror(O.tile_stats_path); return 2; }
+                if (r == 0) fprintf(fp, "# tile ntris active_fraction rank  (%ld rebuilds)\n", g_as_samples);
+                for (int t = 0; t < T.ntiles_own; t++) {
+                    double sum = 0.0;
+                    for (int64_t k = T.own_tile_start[t]; k < T.own_tile_start[t + 1]; k++) sum += cnt[k];
+                    const int64_t nt = T.own_tile_start[t + 1] - T.own_tile_start[t];
+                    fprintf(fp, "%d %lld %.6f %d\n", T.own_tile_id[t], (long long)nt,
+                            nt > 0 ? sum / ((double)nt * (double)g_as_samples) : 0.0, r);
+                }
+                fclose(fp);
+            }
+            bmpi_barrier();
+        }
+    }
     if (g_active_set && g_as_samples > 0) {
         // Each rank's fraction is over its local cells; under MPI report the
         // rank average and the spread -- the slowest rank is the one with the
@@ -975,7 +1075,7 @@ int main(int argc, char **argv) {
     // ---- diagnostics -----------------------------------------------------
     gpu_domain_sync_from_device(GD);
     const double volume1 = (g_np > 1)
-        ? bmpi_sum_d(host_water_volume(GD, S.tri_full_flag))
+        ? bmpi_sum_d(host_water_volume(GD, full_flag))
         : gpu_compute_water_volume(GD);
     printf("\n  volume    : %.12g -> %.12g m^3 (drift %.3e relative)\n",
            volume0, volume1, volume0 != 0.0 ? (volume1 - volume0) / volume0 : 0.0);
@@ -1010,7 +1110,7 @@ int main(int argc, char **argv) {
     if (g_np > 1) {
         if (O.save_path || O.check_path)
             rc |= mpi_snapshot(O.save_path, O.check_path, GD, &M,
-                               S.tri_full_flag, S.n_full,
+                               full_flag, n_full, n_global,
                                O.nx, O.ny, (int)P.which_case,
                                total_steps, t_sim, dt, O.rtol, O.atol);
     } else {
@@ -1048,6 +1148,7 @@ int main(int argc, char **argv) {
 
     bench_domain_free(&B);
     bench_mesh_free(&M);
+    if (O.tiles_path) bench_tiles_free(&T);
     free(bed_node);
     free(stage_node);
     return rc;

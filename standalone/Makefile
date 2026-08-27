@@ -131,7 +131,7 @@ KERNEL_SRC := \
   $(GPUDIR)/gpu_culvert_operator.c \
   $(GPUDIR)/gpu_max_quantities_operator.c
 
-BENCH_SRC  := src/bench.c src/mesh.c src/setup.c src/snapshot.c src/gcc_offload_shim.c
+BENCH_SRC  := src/bench.c src/mesh.c src/tiles.c src/setup.c src/snapshot.c src/gcc_offload_shim.c
 
 # GEOM=fp32 builds the static-geometry arrays in single precision (an
 # experiment: ~halves geometry traffic; NOT bit-compatible with fp64).

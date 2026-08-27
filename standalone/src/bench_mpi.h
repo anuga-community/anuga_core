@@ -23,6 +23,7 @@ static inline double bmpi_max_d(double v) { double o; MPI_Allreduce(&v, &o, 1, M
 static inline double bmpi_min_d(double v) { double o; MPI_Allreduce(&v, &o, 1, MPI_DOUBLE, MPI_MIN, MPI_COMM_WORLD); return o; }
 static inline int    bmpi_max_i(int v)    { int o;    MPI_Allreduce(&v, &o, 1, MPI_INT, MPI_MAX, MPI_COMM_WORLD); return o; }
 static inline void bmpi_bcast_i(int *v)   { MPI_Bcast(v, 1, MPI_INT, 0, MPI_COMM_WORLD); }
+static inline int  bmpi_sendrecv_i(int v, int to, int from) { int o; MPI_Sendrecv(&v, 1, MPI_INT, to, 7, &o, 1, MPI_INT, from, 7, MPI_COMM_WORLD, MPI_STATUS_IGNORE); return o; }
 
 // Gather variable-length per-rank blocks to rank 0.  recvbuf/rcounts/displs
 // are only used on rank 0 (displs computed here from gathered counts).
@@ -62,6 +63,7 @@ static inline double bmpi_max_d(double v) { return v; }
 static inline double bmpi_min_d(double v) { return v; }
 static inline int    bmpi_max_i(int v)    { return v; }
 static inline void bmpi_bcast_i(int *v)   { (void)v; }
+static inline int  bmpi_sendrecv_i(int v, int to, int from) { (void)to; (void)from; return v; }
 static inline int64_t bmpi_gatherv_d(const double *send, int count,
                                      double *recv, int *rcounts, int *displs) {
     rcounts[0] = count; displs[0] = 0;
