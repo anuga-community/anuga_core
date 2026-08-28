@@ -601,6 +601,39 @@ noise and base-cost variation, not granularity.  (Wall time did not drop
 further here because 4 x 4 threads share 20 loaded cores; the GPU run is
 the real measurement.)
 
+**Multi-scale tiles (2026-08-28).**  Resolution can vary per tile on the
+same grid: `split_delta.py --areas FILE --area-default A` gives each tile a
+max triangle area from a map (tile id -> m^2; areas must be `A * 4^k` so
+lattice spacings nest as `s * 2^k`), and a shared cut line carries the
+*finer* of its two tiles' lattices -- both sides compute the same points,
+so the tiles still conform and Triangle grades from the fine edge into the
+coarse interior.  Exterior outline segments are densified per tile at that
+tile's own spacing (they are never shared).  Delta test with 1024 m^2
+background, 256 on the fringe and 64 m^2 on the lake tiles (from the coarse
+run's wetness): 20.35M triangles against ~355M for uniform 64 m^2; the
+merge stitches every internal edge (boundary edges = exterior segments
+exactly) and the tiled run is bit-exact vs the merged mesh at np=4 and 7.
+`build/figures/fig9_multiscale_transition.png` shows a 16:1 transition.
+For a basin the mix is what matters: at the delta's density every 1% of
+area at 1 m^2 is ~30 G triangles.
+
+**The time step is set by corners, and that is fixable.**  Sizing the
+triangles of that mesh: the class medians are 2.7 / 5.4 / 10.8 m inradius,
+but the smallest were 0.47 / 0.29 / 0.009 m -- needles from (a) raw outline
+vertices centimetres from the outline/grid-line intersection point and
+(b) lattice or densification points landing within a metre or two of a
+segment endpoint, where Triangle's 28-degree minimum angle forces tiny
+triangles.  ANUGA's dt is the minimum of inradius / speed, so a corner on
+the wet lake edge with a 1 m inradius and a 30 m/s front set dt = 0.032 s
+against ~0.09 s for a median triangle.  `split_delta.py` now drops outline
+vertices closer than `MARGIN * s` to the previous kept one (never a point
+on a grid line) and keeps inserted points at least `MARGIN * s` from
+segment endpoints (symmetric on both sides of a cut line, so conformity
+holds).  Sweep on the same mesh: MARGIN 0.3 -> dt 0.0322 s, 0.5 -> 0.0445,
+0.7 -> 0.0445 (the corner is no longer the limiter).  **1.38x on dt for
+free**; the default is 0.5.  Minimum inradius after the fix: 0.78 / 0.53 /
+0.05 m by class.
+
 **At the real tile size.**  Two adjacent 1 m^2 delta tiles (ids 10 and 11,
 13.8M triangles each, 440 MB `.msh`) through the same path: np=2 with one
 tile per rank (5001 ghost cells -- the halo is 0.04% of a tile) is

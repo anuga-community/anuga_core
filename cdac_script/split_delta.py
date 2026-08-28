@@ -56,7 +56,7 @@ def on_grid_line(a, b, x0, y0, tile, tol=1e-6):
     return None
 
 
-MARGIN = 0.3   # keep inserted points >= MARGIN * s away from segment endpoints
+MARGIN = 0.5   # keep inserted points >= MARGIN * s from segment endpoints (0.3 left 1 m-inradius corner triangles that set dt; 0.5 and 0.7 give the same dt)
 
 
 def lattice_between(lo, hi, origin, s):

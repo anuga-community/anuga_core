@@ -100,8 +100,19 @@ np=8 bit-exact vs np=4; weighted contig 24.6 ms/step vs 41.9 tri-balanced
 coarse->assign->split->assign loop is proven on real 1 sqm tiles.  Banked
 in README.  No jobs in flight.
 
+**DONE (2026-08-28): multi-scale tiling** (`split_delta.py --areas`,
+nested 4^k areas, finer-of-two lattice on cut lines): delta at 1024/256/64
+-> 20.35M tris, conforming, tiled bit-exact vs merged.  **dt is set by
+outline/cut-line corner triangles**: needle fix + MARGIN 0.5 -> dt 0.032 ->
+0.0445 s (1.38x).  Figures fig9 (transition), fig10 (portability), fig11
+(corner).  Deck: posters_and_slides/anuga_1sqm_tiles (18+ frames).
+Ganges framing: ~2M km^2 = ~3T tris uniform 1 m^2; multi-scale ~185G.
+
 **Next steps:**
-1. Per-rank output (max depth, stage at
+1. Regenerate the 1 sqm tiles with the corner fix (MARGIN 0.5) when the
+   real resolution map exists -- 1.38x dt; smooth the area map to one
+   level per neighbour (16:1 jumps make an elongated first layer).
+2. Per-rank output (max depth, stage at
    yieldsteps) and the full-basin coarse->assign pass for all 1441 tiles.  Elevation: replace the analytic
    bed in tools/tiles_to_bmesh.py by raster sampling once the user provides
    a path on their side (their data cannot be shared with Claude).
