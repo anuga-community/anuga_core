@@ -1,0 +1,21 @@
+#!/bin/bash
+# Triangulate all tiles in parallel on one node (one Triangle process per core).
+#   qsub -v AREA=1,TILES=tiles,OUT=mesh_tiles mesh_tiles.pbs
+# For >1 node, submit as an array (-J) and slice tiles/index.json by $PBS_ARRAY_INDEX.
+#PBS -q normalsr
+#PBS -l ncpus=104
+#PBS -l mem=500GB
+#PBS -l walltime=10:00:00
+#PBS -l storage=scratch/bm55
+#PBS -l wd
+#PBS -N mesh_tiles
+#PBS -j oe
+
+set -euo pipefail
+AREA=${AREA:-1}
+TILES=${TILES:-tiles}
+OUT=${OUT:-mesh_tiles}
+export OMP_NUM_THREADS=1
+
+ls "$TILES"/tile_*.json | xargs -P "${PBS_NCPUS:-$(nproc)}" -I{} \
+    sh -c 'python mesh_tile.py "$1" --area '"$AREA"' --outdir '"$OUT"' > '"$OUT"'/$(basename "$1" .json).log 2>&1' _ {}

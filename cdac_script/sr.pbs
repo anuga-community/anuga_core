@@ -1,0 +1,14 @@
+#!/bin/bash
+#PBS -l ncpus=104
+#PBS -l mem=512GB
+#PBS -l jobfs=200GB
+#PBS -l storage=gdata/bm55+scratch/bm55+gdata/ma77
+##PBS -l storage=gdata/bm55+scratch/tf05
+#PBS -q normalsr
+#PBS -P tf05
+##PBS -P bm55
+#PBS -l walltime=08:00:00
+#PBS -l wd
+eval "$(/g/data/bm55/jlv900/install/miniconda3/bin/conda shell.bash hook)"
+conda activate anuga_env_3.13
+./make_tiled_mesh.sh 1 104 3000 1.2 |& tee my_mesh.log 
