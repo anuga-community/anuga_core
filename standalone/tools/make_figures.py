@@ -151,19 +151,29 @@ ax.set_title('58M synthetic delta, 4 H200s: balance the work, keep ranks contigu
 style(ax, ygrid=False); ax.grid(axis='x', color=GRID); fig.tight_layout(); fig.savefig(f'{OUT}/fig6_300sqm_contig_vs_lpt.png'); plt.close(fig)
 
 # ---------------------------------------------------------------- 7. pipeline
-fig, ax = plt.subplots(figsize=(12, 3.2)); ax.axis('off')
-steps = [('1404 tiles\n(.msh, 521 GB)', 'split_delta + mesh_tile\n26 min / 104 cores'),
-         ('per-tile init\n(391 GB)', 'tiles_to_bmesh --compact\nbed, stage per vertex\n18 min / 104 cores'),
-         ('coarse run\n--tile-stats', 'wet fraction per tile\n(300 m$^2$ tiles, 4 GPUs)'),
-         ('assign + split\nheavy tiles', 'tile_assign (contig, Morton)\nrefine_tiles: 13 -> 50, minutes'),
-         ('launch: --tiles\n--assign', 'each rank reads its tiles +\nneighbour strips; halos from\nshared lattice edges')]
-for i, (top, sub) in enumerate(steps):
-    x = 0.02 + i * 0.198
-    ax.add_patch(FancyBboxPatch((x, 0.35), 0.16, 0.5, boxstyle='round,pad=0.01', fc='#e9eef7', ec=C1, lw=1.5, transform=ax.transAxes))
-    ax.text(x + 0.08, 0.6, top, ha='center', va='center', fontsize=10.5, transform=ax.transAxes, fontweight='bold')
-    ax.text(x + 0.08, 0.16, sub, ha='center', va='center', fontsize=8.5, color=INK2, transform=ax.transAxes)
-    if i < 4:
-        ax.add_patch(FancyArrowPatch((x + 0.165, 0.6), (x + 0.195, 0.6), transform=ax.transAxes, arrowstyle='-|>', mutation_scale=14, color=INK2))
-ax.text(0.0, 0.98, 'No rank ever sees the global mesh: tiles are the partition', fontsize=12, va='top', transform=ax.transAxes)
+fig, ax = plt.subplots(figsize=(12, 4.6)); ax.axis('off')
+def box(x, y, top, sub, col, w=0.17, h=0.30):
+    ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle='round,pad=0.01', fc='#e9eef7' if col == C1 else '#fdeee6', ec=col, lw=1.5, transform=ax.transAxes))
+    ax.text(x + w / 2, y + h * 0.62, top, ha='center', va='center', fontsize=10.5, transform=ax.transAxes, fontweight='bold')
+    ax.text(x + w / 2, y + h * 0.22, sub, ha='center', va='center', fontsize=8.2, color=INK2, transform=ax.transAxes)
+def arrow(x0, y0, x1, y1):
+    ax.add_patch(FancyArrowPatch((x0, y0), (x1, y1), transform=ax.transAxes, arrowstyle='-|>', mutation_scale=14, color=INK2, lw=1.2))
+yc, yf = 0.60, 0.12
+ax.text(0.0, yc + 0.33, 'coarse set: 300 m$^2$, 158 tiles, 58M triangles  --  only its wetness is kept', fontsize=10, color=C2, transform=ax.transAxes)
+box(0.00, yc, 'tile + mesh', 'split_delta, mesh_tile\n15 min / 18 cores', C2)
+box(0.21, yc, 'per-tile init', 'bed, stage, friction\nsampled per tile', C2)
+box(0.42, yc, 'coarse run', '--active-set --tile-stats\n4 GPUs, minutes', C2)
+box(0.63, yc, 'weights', 'active fraction\nper tile', C2)
+ax.text(0.0, yf + 0.33, 'fine set: 1 m$^2$, 1441 tiles, 17.45 G triangles  --  same 3 km grid, same origin', fontsize=10, color=C1, transform=ax.transAxes)
+box(0.00, yf, 'tile + mesh', 'split_delta, mesh_tile\n26 min / 104 cores', C1)
+box(0.21, yf, 'per-tile init', 'tiles_to_bmesh --compact\n18 min / 104 cores, 391 GB', C1)
+box(0.42, yf, 'assign + split', 'tile_assign (contig, Morton)\nrefine_tiles: 13 -> 50, minutes', C1)
+box(0.63, yf, 'launch', '--tiles --assign\nranks read own tiles + strips', C1)
+for x in (0.175, 0.385, 0.595):
+    arrow(x, yc + 0.15, x + 0.033, yc + 0.15); arrow(x, yf + 0.15, x + 0.033, yf + 0.15)
+arrow(0.715, yc - 0.005, 0.54, yf + 0.31)
+ax.text(0.66, 0.47, 'weights cross over:\ncoarse tile -> the fine tiles it covers', fontsize=8.5, color=INK2, transform=ax.transAxes, ha='center')
+ax.text(0.0, 1.0, 'No rank ever sees the global mesh: tiles are the partition', fontsize=12, va='top', transform=ax.transAxes)
 fig.savefig(f'{OUT}/fig7_pipeline.png', bbox_inches='tight'); plt.close(fig)
+
 print('\n'.join(sorted(glob.glob(f'{OUT}/*.png'))))
