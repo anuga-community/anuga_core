@@ -63,8 +63,13 @@ def lattice_between(lo, hi, origin, s):
     return [origin + k * s for k in range(k0, k1 + 1)]
 
 
-def build_tile(poly, x0, y0, tile, s):
-    """Rebuild a clipped tile polygon with conforming points + segment tags."""
+def build_tile(poly, x0, y0, tile, s, line_spacing=None):
+    """Rebuild a clipped tile polygon with conforming points + segment tags.
+
+    line_spacing(axis, coord) -> spacing to use on that internal cut line
+    (multi-scale meshes: the finer of the two tiles sharing the line, so both
+    sides produce the same lattice points).  Exterior segments are densified
+    to this tile's own spacing s -- they are never shared."""
     ring = list(poly.exterior.coords)[:-1]  # drop closing point
     pts, tags = [], []
     n = len(ring)
@@ -74,12 +79,18 @@ def build_tile(poly, x0, y0, tile, s):
         g = on_grid_line(a, b, x0, y0, tile)
         if g is None:
             tags.append('exterior')
+            L = np.linalg.norm(b - a)
+            k = int(np.ceil(L / s))
+            for j in range(1, k):
+                pts.append((a + (b - a) * j / k).tolist())
+                tags.append('exterior')
             continue
         # internal cut: insert lattice points between a and b
         axis = 1 if g[0] == 'x' else 0
         origin = y0 if g[0] == 'x' else x0
         lo, hi = sorted([a[axis], b[axis]])
-        lat = lattice_between(lo, hi, origin, s)
+        s_line = line_spacing(g[0], g[1]) if line_spacing else s
+        lat = lattice_between(lo, hi, origin, s_line)
         if a[axis] > b[axis]:
             lat = lat[::-1]
         tags.append('internal')
@@ -109,7 +120,31 @@ def main():
                          '--tile/--spacing) to cut into 4 half-size sub-tiles; sub-tile id = '
                          '10000 + 4*parent + quadrant, unsplit tiles keep their ids')
     ap.add_argument('--refine-file', help='file with tile ids to refine, one per line')
+    ap.add_argument('--areas', help='multi-scale: file of "tile_id max_area_m2" (ids from a previous '
+                                    'split on the same grid); other tiles get --area-default')
+    ap.add_argument('--area-default', type=float, help='max triangle area (m^2) that --spacing belongs to')
     args = ap.parse_args()
+    areas = {}
+    if args.areas:
+        if args.area_default is None:
+            raise SystemExit('--areas needs --area-default (the area --spacing corresponds to)')
+        for ln in open(args.areas):
+            if ln.strip() and not ln.startswith('#'):
+                t, a = ln.split()[:2]
+                areas[int(t)] = float(a)
+        # spacings must nest: area ratios of 4^k give spacing ratios of 2^k,
+        # so the finer lattice contains the coarser one on a shared line
+        for t, a in areas.items():
+            r = np.log(a / args.area_default) / np.log(4.0)
+            if abs(r - round(r)) > 1e-6:
+                raise SystemExit(f'tile {t}: area {a} is not area_default * 4^k')
+    if areas and (args.refine or args.refine_file):
+        raise SystemExit('--areas and --refine cannot be combined (yet)')
+
+    def spacing_for(area):
+        if area is None or args.area_default is None:
+            return args.spacing
+        return args.spacing * 2.0 ** round(np.log(area / args.area_default) / np.log(4.0))
     refine = set(int(t) for t in args.refine.split(',') if t.strip())
     if args.refine_file:
         refine |= set(int(l.split()[0]) for l in open(args.refine_file) if l.strip() and not l.startswith('#'))
@@ -127,7 +162,8 @@ def main():
 
     # common origin for ALL tiles: lower-left corner of the polygon, snapped
     x0, y0 = np.floor(raw.min(axis=0))
-    dense = densify(raw, args.spacing)
+    s_coarsest = max([args.spacing] + [spacing_for(a) for a in areas.values()])
+    dense = densify(raw, s_coarsest)
     full = Polygon(dense)
     if not full.is_valid:
         full = full.buffer(0)
@@ -143,11 +179,26 @@ def main():
     tid = 0
     nsub = 0
 
+    cell_s = {}      # (i, j) -> spacing of that tile (multi-scale)
+    cell_area = {}   # (i, j) -> max triangle area
+
     def emit(part, i, j, this_id, size, parent=None):
-        pts, tags = build_tile(part, x0, y0, size, args.spacing)
+        s_tile = cell_s.get((i, j), args.spacing)
+
+        def line_spacing(axis, coord):
+            # neighbour across this cut line: the cell on the other side
+            if axis == 'x':
+                gi = int(round((coord - x0) / size)); ni, nj = (gi if gi > i else i - 1), j
+            else:
+                gj = int(round((coord - y0) / size)); ni, nj = i, (gj if gj > j else j - 1)
+            return min(s_tile, cell_s.get((ni, nj), s_tile))
+        pts, tags = build_tile(part, x0, y0, size, s_tile, line_spacing if cell_s else None)
         rec = {'id': this_id, 'ij': [i, j], 'area_m2': part.area,
                'origin': [float(x0), float(y0)],
                'points': pts, 'segment_tags': tags}
+        if (i, j) in cell_area:
+            rec['max_area'] = cell_area[(i, j)]
+            rec['spacing'] = s_tile
         if parent is not None:
             rec['parent'] = parent
         fn = os.path.join(args.outdir, f'tile_{this_id:05d}.json')
@@ -156,6 +207,8 @@ def main():
         index.append({'id': this_id, 'file': fn, 'area_m2': part.area,
                       'n_points': len(pts)})
 
+    # pass 1: which cells exist and what id they get (same order as before)
+    cells = []
     for j in range(ny):
         for i in range(nx):
             cell = box(x0 + i * args.tile, y0 + j * args.tile,
@@ -167,6 +220,15 @@ def main():
             for part in parts:
                 if part.area < args.min_area:
                     continue
+                cells.append((i, j, part))
+    if areas:
+        for k, (i, j, part) in enumerate(cells):
+            a = areas.get(k, args.area_default)
+            cell_area[(i, j)] = a
+            cell_s[(i, j)] = spacing_for(a)
+    # pass 2: build
+    for (i, j, part) in cells:
+            if True:
                 if part.interiors:
                     raise RuntimeError(f'tile ({i},{j}) has holes; not handled')
                 if tid in refine:

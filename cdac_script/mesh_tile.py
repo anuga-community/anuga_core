@@ -49,8 +49,9 @@ def main():
     segs = np.column_stack([np.arange(n), (np.arange(n) + 1) % n]).astype(np.int32)
     segatts = [TAG_ID[t] for t in rec['segment_tags']]  # list: mesh_engine does 'segatts == []'
 
-    mode = f"{'' if args.verbose else 'Q'}pznq{args.min_angle}Ya{args.area:.20f}"
-    est = 2 * rec['area_m2'] / args.area
+    area = float(rec.get('max_area', args.area))   # multi-scale: per-tile target
+    mode = f"{'' if args.verbose else 'Q'}pznq{args.min_angle}Ya{area:.20f}"
+    est = 2 * rec['area_m2'] / area
     print(f"tile {rec['id']}: {n} boundary pts, {rec['area_m2']/1e6:.2f} km^2, "
           f"~{est:.1e} triangles, mode {mode}")
 
