@@ -94,12 +94,14 @@ active-set weighted contig 27.3 ms vs 44.8 tri-balanced (1.64x); residual
 17.445G tris; gdata tile set + index.txt updated in place (parents removed);
 lake block now 63 tiles, predicted contig balance 1.05 (was 1.22).
 
-**IN FLIGHT: job `177650566`** -- h200_1sqm_2node.pbs on the refined set
-(build/rehearsal2/, DONE marker; previous results overwritten -- the
-pre-refinement numbers are banked in README).
+**DONE: job 177650566 (refined block, 63 tiles, 8 H200 / 2 nodes)**:
+np=8 bit-exact vs np=4; weighted contig 24.6 ms/step vs 41.9 tri-balanced
+(1.71x), kernel imbalance 13.9% (74% before the split).  The whole
+coarse->assign->split->assign loop is proven on real 1 sqm tiles.  Banked
+in README.  No jobs in flight.
 
 **Next steps:**
-1. Read job 177650566, bank.  Then per-rank output (max depth, stage at
+1. Per-rank output (max depth, stage at
    yieldsteps) and the full-basin coarse->assign pass for all 1441 tiles.  Elevation: replace the analytic
    bed in tools/tiles_to_bmesh.py by raster sampling once the user provides
    a path on their side (their data cannot be shared with Claude).

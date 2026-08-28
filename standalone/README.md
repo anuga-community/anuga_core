@@ -650,6 +650,24 @@ ranks leaves one rank with one wet tile and another with two.
 (1404 tiles, ~14 per rank) the same weighting lands within ~10% without
 splitting, as the 300 m^2 runs showed.
 
+**After the split** (`cdac_script/refine_tiles.sh` on the 13 flagged tiles
+-> 50 sub-tiles, 1441 tiles in the set; converted in place into the gdata
+tile dir; job 177650566, same block, now 63 tiles / 301.3M triangles):
+
+| run (8 GPUs, refined block)             | ms/step | note |
+|-----------------------------------------|---------|------|
+| np=4 full mesh (golden)                 | 71.2    | |
+| np=8 full mesh                          | 35.1    | bit-exact vs np=4 |
+| np=8 active-set, triangle-balanced      | 41.9    | kernel 2.7 .. 41.4 ms (1422%) |
+| np=8 active-set, weighted contig        | **24.6**| kernel 19.2 .. 21.9 ms (**13.9%**, was 74% before the split); 1.71x triangle-balanced |
+
+The complete loop -- coarse stats, weighted contiguous assignment, split
+the tiles the tool flags, re-mesh only those, re-assign -- works on the
+real 1 m^2 tiles with exactness held at every step (np=8 across two nodes
+bit-exact against np=4 before and after the split).  The ranks holding
+100M dry triangles (rank 7) and 19M wet ones (rank 1) finish within 8% of
+each other, which is the cost model doing its job.
+
 Extrapolation for the full 17.45G mesh from these numbers: 8.5 TB device
 (62 H200s at 137 GB usable, minimum), 9.5 TB host (fits 25 gpuhopper nodes
 at ~95-135 GB per rank), ~90 s per-rank build.
