@@ -56,11 +56,20 @@ def on_grid_line(a, b, x0, y0, tile, tol=1e-6):
     return None
 
 
+MARGIN = 0.3   # keep inserted points >= MARGIN * s away from segment endpoints
+
+
 def lattice_between(lo, hi, origin, s):
-    """Lattice points origin + k*s strictly between lo and hi (ascending)."""
+    """Lattice points origin + k*s strictly between lo and hi (ascending),
+    excluding those within MARGIN*s of either end: a point almost on top of
+    a segment endpoint (the corner where a cut line meets the outline) forces
+    a needle triangle whose inradius sets the global time step.  Both tiles
+    sharing the line see the same endpoints, so the exclusion is symmetric
+    and the edge still conforms."""
     k0 = int(np.floor((lo - origin) / s)) + 1
     k1 = int(np.ceil((hi - origin) / s)) - 1
-    return [origin + k * s for k in range(k0, k1 + 1)]
+    return [origin + k * s for k in range(k0, k1 + 1)
+            if origin + k * s - lo >= MARGIN * s and hi - (origin + k * s) >= MARGIN * s]
 
 
 def build_tile(poly, x0, y0, tile, s, line_spacing=None):
@@ -71,6 +80,21 @@ def build_tile(poly, x0, y0, tile, s, line_spacing=None):
     sides produce the same lattice points).  Exterior segments are densified
     to this tile's own spacing s -- they are never shared."""
     ring = list(poly.exterior.coords)[:-1]  # drop closing point
+    # Drop outline vertices closer than MARGIN*s to the previous kept one
+    # (shapely puts the outline/grid-line intersection millimetres from an
+    # existing outline vertex -> needle triangles).  Points on a grid line are
+    # shared with the neighbour tile and are never dropped.
+    def on_grid(p):
+        return (abs((p[0] - x0) / tile - round((p[0] - x0) / tile)) * tile < 1e-6 or
+                abs((p[1] - y0) / tile - round((p[1] - y0) / tile)) * tile < 1e-6)
+    kept = []
+    for q in ring:
+        if kept and not on_grid(q) and np.linalg.norm(np.asarray(q) - np.asarray(kept[-1])) < MARGIN * s:
+            continue
+        kept.append(q)
+    if len(kept) > 3 and not on_grid(kept[-1]) and np.linalg.norm(np.asarray(kept[-1]) - np.asarray(kept[0])) < MARGIN * s:
+        kept.pop()
+    ring = kept
     pts, tags = [], []
     n = len(ring)
     for i in range(n):
@@ -80,8 +104,8 @@ def build_tile(poly, x0, y0, tile, s, line_spacing=None):
         if g is None:
             tags.append('exterior')
             L = np.linalg.norm(b - a)
-            k = int(np.ceil(L / s))
-            for j in range(1, k):
+            k = int(np.ceil(L / s))           # k-1 evenly spaced points: none
+            for j in range(1, k):             # closer than L/k >= s/2 to an end
                 pts.append((a + (b - a) * j / k).tolist())
                 tags.append('exterior')
             continue
@@ -159,6 +183,18 @@ def main():
     raw = np.loadtxt(args.csv, delimiter=',')
     if np.allclose(raw[0], raw[-1]):
         raw = raw[:-1]
+    # Drop outline vertices closer than MARGIN * (finest spacing) to the
+    # previous kept one: the raw outline has vertices centimetres apart, and
+    # each such pair becomes a needle triangle (9 mm inradius seen).
+    s_finest = min([args.spacing] + [spacing_for(a) for a in areas.values()]) if areas else args.spacing
+    keep = [raw[0]]
+    for q in raw[1:]:
+        if np.linalg.norm(q - keep[-1]) >= MARGIN * s_finest:
+            keep.append(q)
+    if np.linalg.norm(keep[0] - keep[-1]) < MARGIN * s_finest:
+        keep.pop()
+    print(f'outline: {len(raw)} -> {len(keep)} vertices after dropping gaps < {MARGIN * s_finest:.2f} m')
+    raw = np.asarray(keep)
 
     # common origin for ALL tiles: lower-left corner of the polygon, snapped
     x0, y0 = np.floor(raw.min(axis=0))
