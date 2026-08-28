@@ -104,8 +104,10 @@ in README.  No jobs in flight.
 nested 4^k areas, finer-of-two lattice on cut lines): delta at 1024/256/64
 -> 20.35M tris, conforming, tiled bit-exact vs merged.  **dt is set by
 outline/cut-line corner triangles**: needle fix + MARGIN 0.5 -> dt 0.032 ->
-0.0445 s (1.38x).  Figures fig9 (transition), fig10 (portability), fig11
-(corner).  Deck: posters_and_slides/anuga_1sqm_tiles (18+ frames).
+0.0445 s (1.38x).  Small-triangle PoC (README table): margin 0.5 = the lever (1.38x dt), -q32
+useless, per-tile vertex dropping breaks conformity (rejected), global
+outline simplify(s/4) is safe and removes notches; tile_quality.py is the
+gate.  Figures fig9 (transition), fig10 (portability), fig11 (corner).  Deck: posters_and_slides/anuga_1sqm_tiles (18+ frames).
 Ganges framing: ~2M km^2 = ~3T tris uniform 1 m^2; multi-scale ~185G.
 
 **Next steps:**

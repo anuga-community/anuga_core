@@ -203,6 +203,16 @@ def main():
     full = Polygon(dense)
     if not full.is_valid:
         full = full.buffer(0)
+    # Remove notches narrower than a quarter of the finest spacing from the
+    # GLOBAL outline before any tile sees it: an outline crossing a grid line
+    # twice within centimetres leaves two corner points that no lattice rule
+    # can separate (needle triangles, 9 mm inradius seen), and it does so
+    # identically for both tiles sharing the line.
+    n_before = len(full.exterior.coords)
+    full = full.simplify(0.25 * s_finest, preserve_topology=True)
+    if not full.is_valid:
+        full = full.buffer(0)
+    print(f'outline simplified at {0.25 * s_finest:.3f} m: {n_before} -> {len(full.exterior.coords)} vertices')
     print(f'Polygon: {len(raw)} -> {len(dense)} boundary points, '
           f'{full.area/1e6:.1f} km^2, origin ({x0:.0f}, {y0:.0f})')
 

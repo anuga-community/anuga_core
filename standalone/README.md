@@ -634,6 +634,35 @@ holds).  Sweep on the same mesh: MARGIN 0.3 -> dt 0.0322 s, 0.5 -> 0.0445,
 free**; the default is 0.5.  Minimum inradius after the fix: 0.78 / 0.53 /
 0.05 m by class.
 
+**Proof of concept on the small-triangle question (2026-08-28).**  Five
+variants of the same multi-scale delta mesh, each re-split, re-meshed,
+merged (conformity = boundary edges equal exterior segments), gated with
+`cdac_script/tile_quality.py` (per tile: min inradius vs median, min angle)
+and timed for dt:
+
+| variant                                   | stitched | tiles flagged | worst min/median | dt (s) |
+|-------------------------------------------|----------|---------------|------------------|--------|
+| endpoint margin 0.3 s                     | yes      | --            | 0.001 (9 mm)     | 0.0322 |
+| margin 0.5 s                              | yes      | 84 / 158      | 0.00 (notch)     | 0.0445 |
+| margin 0.5 s + Triangle `-q32`            | yes      | 79            | 0.00             | 0.0431 |
+| margin 0.5 s + drop outline vertices at acute corners | **no** (4 edges) | 72 | 0.20   | 0.0398 |
+| margin 0.5 s + global outline `simplify(s/4)` | yes   | 60            | 0.11             | 0.0433 |
+
+Conclusions.  (1) The endpoint margin is the lever: it removed the corner
+wedges that set dt on the wet edge, 1.38x.  (2) Triangle's minimum-angle
+flag does not move dt (+6% triangles for nothing).  (3) Any rule that
+drops outline vertices per tile can change the domain -- where the outline
+hugs a cut line within s, dropping the hugging vertex turned an exterior
+sliver into a cut-line segment the neighbour does not own: 4 unstitched
+edges.  Rejected.  (4) Simplifying the GLOBAL outline before intersection
+(tolerance s/4) is the symmetric way to remove notches -- both tiles see
+the same polygon -- and it takes the worst needle from 9 mm to 0.11 of the
+median; it does not change dt because the remaining flagged tiles are dry.
+The 60 still flagged are dry coastline tiles with corner triangles at
+0.1-0.5 of their median; if one of those ever wets, `tile_quality.py`
+names it and the fix is local (a coarser tile there, or a refined split
+moving the cut line).  Default now: margin 0.5, simplify s/4, q28.
+
 **At the real tile size.**  Two adjacent 1 m^2 delta tiles (ids 10 and 11,
 13.8M triangles each, 440 MB `.msh`) through the same path: np=2 with one
 tile per rank (5001 ghost cells -- the halo is 0.04% of a tile) is
