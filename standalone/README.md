@@ -734,6 +734,98 @@ Extrapolation for the full 17.45G mesh from these numbers: 8.5 TB device
 (62 H200s at 137 GB usable, minimum), 9.5 TB host (fits 25 gpuhopper nodes
 at ~95-135 GB per rank), ~90 s per-rank build.
 
+### Scale rehearsal: 60 H200s, 12.39 G triangles (job 177741904)
+
+`tools/h200_1sqm_15node.pbs`, 15 gpuhopper nodes (the queue cap), 60 GPUs,
+28 min wall, 2532 SU, exit 0.  The western 1035 tiles of the delta,
+`x < 126 km`, **12,392,554,994 triangles** -- 71% of the full 1 m^2 mesh
+and 41x the largest previous run.  Synthetic bed/stage (no real elevation
+yet).  Results in `build/scale15/`.
+
+*Exactness.*  No smaller-np golden fits in memory, so the gates are the
+solver's own invariants: volume conserved to `-6.9e-14` relative (cell) and
+`6.4e-15` (scatter) over 12.4 G cells, and the `state` line is
+character-identical across all four runs -- full-mesh scatter, active-set
+triangle-balanced and active-set weighted contig all report
+`stage in [-16.9361, 78.1486], max |momentum| 2.511298e+02`, the same
+max-momentum digits as the 8-GPU rehearsal.  The active set changes what is
+computed, not what comes out.
+
+*Costs at scale.*  488 B/triangle device, confirmed to three digits at two
+different rank sizes (205.1M owned -> 93.24 GiB, 241.7M -> 109.89 GiB).
+Host 7.34 TB for the job = 489 GB per node.  Build 104-130 s per rank
+(0.5-0.6 us/triangle, a little above the 0.45 measured at 90M), 16-20 s
+map-to-device.
+
+| run (60 GPUs)                      | ms/step | note |
+|------------------------------------|---------|------|
+| full mesh, cell fluxes             | 185.9   | 66.7 Gcell-steps/s |
+| full mesh, scatter                 | 173.5   | 71.4 Gcell-steps/s (1.19 G per GPU) |
+| active-set, triangle-balanced      | 154.0   | kernel 11.6 .. 151.7 ms; rank 59 holds 135.7M of the 153M active cells |
+| active-set, weighted contig        | **25.1**| kernel 13.5 .. 19.2 ms (42% max/min); **6.9x the full mesh** |
+
+Global wetness is 1.24% (153.2M active of 12.39 G) and is identical under
+both assignments, as it must be.  Note the printed `active : N% of cells
+on average` line is a *mean of per-rank ratios*, not the global ratio: it
+reads 1.22% when the wet cells sit on 200M-cell ranks and 11.13% when the
+assignment concentrates them on 16M-cell ranks.  Same physics, different
+denominator -- read the per-rank counts, not that percentage.
+
+*The cost model is exact, its constant was not.*  Least squares on the 60
+measured per-rank kernel times gives
+
+    kernel ms = 0.0582 ns/cell x owned  +  1.0058 ns/cell x active
+
+which reproduces the measured spread to 0.3% (predicted 13.47 .. 19.23 ms
+against measured 13.51 .. 19.23).  The model form `tile_assign.py` uses is
+right; the floor calibrated at 300 m^2 (`0.073`) is 26% high at this scale.
+Re-scoring the same tiles with `--floor 0.058` predicts max kernel
+19.23 -> 16.90 ms, **1.14x, free**.  Use `--floor 0.058` at 1 m^2.
+
+*The floor now dominates.*  Per-kernel breakdown of the weighted run:
+
+    active_sets     12.1409 ms   85.8%
+    compute_fluxes   0.9384 ms    6.6%
+    extrapolate+ck   0.6301 ms    4.5%
+    forcing+update   0.2055 ms    1.5%
+    prepare          0.2008 ms    1.4%
+    boundary         0.0311 ms    0.2%
+
+At 1.24% wetness the active-set *rebuild* -- an O(owned) scan run every
+step (99 rebuilds in 100 steps) -- is 86% of the kernel time, and the
+useful flux work is 6.6%.  A rank with 248M dry triangles and **zero**
+active cells still costs 14.4 ms/step.  Perfect balance cannot go below
+~12 ms/step of pure floor, against 2.6 ms/step of real work.  Balance
+tuning is finished; the floor is the target.  The obvious lever: rebuild
+every k steps against a ring-k dilated set (information moves one cell per
+step under CFL, so ring-k preserves exactness) -- worth ~3-4x, far more
+than anything left in the assignment.  Kernels are also only 58% of wall
+(14.1 of 25.1 ms): the remaining 11 ms is the halo exchange and the
+per-substep dt allreduce over 60 ranks, which becomes the next bottleneck
+once the floor is cut.
+
+*The time step is the blocker, and it is a mesh defect.*  The run achieved
+**dt = 6.55e-4 s** (sim rate 0.026 simulated s per wall s = 38 wall-days
+per simulated day).  Scanning the 47 wet tiles with `cdac_script/
+tile_quality.py`: median inradius 0.633 m, and **68 triangles out of
+136.7 M wet ones** sit below half that median.  The governing triangle is a
+**0.64 mm needle** in tile 11096 -- 0.001 of the median, which is exactly
+the `margin 0.3` signature in the small-triangle PoC table above.  These
+tiles predate the corner fix.  Regenerating with the current defaults
+(`MARGIN 0.5` + global `simplify(s/4)`, worst/median 0.11 in the PoC) moves
+the governing inradius from 0.001 to 0.11 of the median: **~110x on dt**,
+purely geometric and independent of the flow.  68 triangles are costing
+two orders of magnitude on the whole simulation.
+
+*Does the full mesh fit 15 nodes?*  No.  At the measured 488 B/triangle,
+17.45 G needs 290.8M per GPU = 132 GiB, above the 109.89 GiB proven here
+and above what the card holds with runtime overhead.  Taking ~120 GiB as
+the safe ceiling (264M triangles per GPU): **15 nodes hold 15.8 G, 91% of
+the delta; the full mesh needs 17 nodes (67 GPUs).**  Multi-scale tiling,
+which cut the test delta 355M -> 20M, is the way to make it fit rather than
+more nodes.
+
+
 **4x H200 at 300 m^2** (`tools/h200_mpi_tiles.pbs`, job 177612520, 58.2M
 triangles, 158 tiles, results in `build/mpitiles/`): all 12 tiled gates
 OK -- cell and `--phases` at atol 0 for np = 1, 2, 4 against the merged

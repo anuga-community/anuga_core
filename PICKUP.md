@@ -110,17 +110,46 @@ outline simplify(s/4) is safe and removes notches; tile_quality.py is the
 gate.  Figures fig9 (transition), fig10 (portability), fig11 (corner).  Deck: posters_and_slides/anuga_1sqm_tiles (18+ frames).
 Ganges framing: ~2M km^2 = ~3T tris uniform 1 m^2; multi-scale ~185G.
 
-**IN FLIGHT: job 177741904 (2026-08-29, 15 nodes / 60 H200, bm55)** --
-`standalone/tools/h200_1sqm_15node.pbs`: western 1035 tiles / 12.39 G tris
-(x < 126 km, 207M/GPU = 94 GiB) -- the full 17.45 G needs 132 GiB/GPU and
-does not fit 60 cards.  Full-mesh cell (gate = volume drift/state) +
-scatter, then active-set triangle-balanced -> tile_assign -> weighted
-contig at np=60.  Output `standalone/build/scale15/SUMMARY.txt`.
+**DONE: job 177741904 (2026-08-30, 15 nodes / 60 H200, 12.39 G tris)** --
+the largest run so far, 41x the previous one.  Western 1035 tiles
+(x < 126 km), 28 min, 2532 SU, exit 0, `standalone/build/scale15/`.
+Volume drift 6.9e-14 / 6.4e-15; state line character-identical across
+full-mesh and both active-set runs.  488 B/tri device confirmed exactly at
+two rank sizes.  Full mesh 173.5 ms/step (71.4 Gcell-steps/s); active-set
+weighted contig **25.1 ms/step, 6.9x** the full mesh; 1.24% wet.
+Three findings, all banked in README:
+
+1. **68 triangles set dt for the whole simulation.**  dt = 6.55e-4 s = 38
+   wall-days per simulated day.  tile_quality.py over the 47 wet tiles:
+   median inradius 0.633 m, governing triangle a **0.64 mm needle** (tile
+   11096) -- 0.001 of median, the `margin 0.3` signature.  These tiles
+   predate the corner fix; regenerating at the current defaults
+   (MARGIN 0.5 + simplify s/4, worst/median 0.11) is **~110x on dt**.
+   This is now the top priority, not a nicety.
+2. **The active-set rebuild is 85.8% of kernel time** (12.14 of 14.15 ms);
+   a rank with 248M dry triangles and 0 active cells still costs 14.4
+   ms/step.  Balance work is finished (the floor bounds it at ~12 ms);
+   the lever is rebuilding every k steps against a ring-k dilated set
+   (CFL makes ring-k exact), worth ~3-4x.  Kernels are 58% of wall -- the
+   other 11 ms is halo + per-substep dt allreduce over 60 ranks.
+3. **Cost model form validated, constant recalibrated.**  Fit on 60 ranks:
+   0.0582 ns/cell floor + 1.0058 ns/active cell, reproducing the measured
+   spread to 0.3%.  `tile_assign.py --floor 0.073` is 26% high at 1 m^2;
+   `--floor 0.058` predicts max kernel 19.23 -> 16.90 ms (1.14x, free).
+
+**Full mesh does not fit 15 nodes**: 17.45 G at 488 B/tri = 132 GiB/GPU vs
+109.89 proven.  At ~120 GiB/GPU, 15 nodes hold 15.8 G (91% of the delta);
+the full mesh needs 17 nodes.  Multi-scale tiling is the way in, not nodes.
 
 **Next steps:**
-1. Regenerate the 1 sqm tiles with the corner fix (MARGIN 0.5) when the
-   real resolution map exists -- 1.38x dt; smooth the area map to one
-   level per neighbour (16:1 jumps make an elongated first layer).
+1. **Regenerate the 1 sqm tiles with the corner fix (MARGIN 0.5 +
+   simplify s/4) -- now measured at ~110x on dt, not 1.38x.**  The 1.38x
+   was the coarse multi-scale PoC; at 1 m^2 the pre-fix needles are 0.001
+   of the median inradius and 68 of them set dt for 12.4 G triangles.  Do
+   not wait for the real resolution map -- a uniform 1 m^2 regeneration
+   with the current defaults already buys the two orders of magnitude.
+   Then smooth the area map to one level per neighbour (16:1 jumps make an
+   elongated first layer).
 2. Per-rank output (max depth, stage at
    yieldsteps) and the full-basin coarse->assign pass for all 1441 tiles.  Elevation: replace the analytic
    bed in tools/tiles_to_bmesh.py by raster sampling once the user provides
