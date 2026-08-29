@@ -110,6 +110,13 @@ outline simplify(s/4) is safe and removes notches; tile_quality.py is the
 gate.  Figures fig9 (transition), fig10 (portability), fig11 (corner).  Deck: posters_and_slides/anuga_1sqm_tiles (18+ frames).
 Ganges framing: ~2M km^2 = ~3T tris uniform 1 m^2; multi-scale ~185G.
 
+**IN FLIGHT: job 177741904 (2026-08-29, 15 nodes / 60 H200, bm55)** --
+`standalone/tools/h200_1sqm_15node.pbs`: western 1035 tiles / 12.39 G tris
+(x < 126 km, 207M/GPU = 94 GiB) -- the full 17.45 G needs 132 GiB/GPU and
+does not fit 60 cards.  Full-mesh cell (gate = volume drift/state) +
+scatter, then active-set triangle-balanced -> tile_assign -> weighted
+contig at np=60.  Output `standalone/build/scale15/SUMMARY.txt`.
+
 **Next steps:**
 1. Regenerate the 1 sqm tiles with the corner fix (MARGIN 0.5) when the
    real resolution map exists -- 1.38x dt; smooth the area map to one

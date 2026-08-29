@@ -1,0 +1,60 @@
+#!/bin/bash
+#PBS -N anuga_1sqm_15node
+#PBS -l ncpus=720
+#PBS -l ngpus=60
+#PBS -l mem=14250GB
+#PBS -l jobfs=200GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=01:30:00
+#PBS -l wd
+#PBS -j oe
+
+# 1 m^2 scale rehearsal on FIFTEEN gpuhopper nodes (60 H200s), the queue
+# maximum.  The full 17.45 G-triangle set needs 132 GiB/GPU at 488 B/tri
+# and does not fit on 60 cards, so this runs the western 1035 tiles
+# (x < 126 km): 12.39 G triangles, 207 M per GPU = 94 GiB (72% of the card).
+# Synthetic bed/stage (PoC, no real elevation yet).  Purpose: prove load,
+# stitch, halo exchange and the coarse->weight->assign loop at 60 ranks.
+# No bit-exact golden is possible (no smaller np fits); the gates are the
+# solver's own volume-drift / NaN state lines and the per-rank memory report.
+#  1) full mesh, cell fluxes, 20 steps      (load + exchange smoke test)
+#  2) full mesh, scatter, 100 steps          (throughput baseline)
+#  3) active-set triangle-balanced + --tile-stats, 100 steps
+#  4) tile_assign.py weighted contig (60 ranks) -> active-set, 100 steps
+set -x
+ROOT=/scratch/bm55/jlv900/dev/mesh_exp/standalone
+OUT=$ROOT/build/scale15
+TD=/g/data/bm55/jlv900/tiles1sqm
+IDX=$TD/index_west1035.txt
+NP=60
+mkdir -p "$OUT"; cd "$ROOT"; source ./my_claude_env.sh
+cat $PBS_NODEFILE | sort -u | tee "$OUT/nodes.txt"
+python3 tools/tile_subset.py $TD/index.txt --box 0 0 126000 200000 --out $IDX | tee "$OUT/subset.txt"
+# build once on the head node; binary on scratch so every node sees it
+BENCH=$OUT/bench_gpumpi
+make --no-print-directory CONFIG=gpumpi OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
+export OMP_NUM_THREADS=8
+MPI="mpirun --bind-to none -np $NP --map-by ppr:4:node"
+CSV="--csv $OUT/runs.csv"
+
+$MPI "$BENCH" --tiles $IDX --steps 20 --warmup 0 $CSV > "$OUT/full_cell20.txt" 2>&1
+grep -H -E "volume    :|state     :|nan" "$OUT/full_cell20.txt" | tee "$OUT/GATES.txt"
+
+$MPI "$BENCH" --tiles $IDX --steps 100 --warmup 10 --flux scatter $CSV > "$OUT/full_scatter.txt" 2>&1
+
+RUN="--steps 100 --warmup 10 --flux scatter --active-set $CSV"
+$MPI "$BENCH" --tiles $IDX $RUN --tile-stats "$OUT/stats_tri.txt" > "$OUT/bal_tri.txt" 2>&1
+python3 tools/tile_assign.py $IDX --stats "$OUT/stats_tri.txt" --nprocs $NP --floor 0.073 \
+    --out "$OUT/assign_contig.txt" --split-out "$OUT/split.txt" --split-threshold 0.25 | tee "$OUT/assign.log"
+$MPI "$BENCH" --tiles $IDX --assign "$OUT/assign_contig.txt" $RUN > "$OUT/bal_contig.txt" 2>&1
+
+{
+  echo "=== 1 sqm 15-node rehearsal: $(cat "$OUT/subset.txt") on $(wc -l < "$OUT/nodes.txt") nodes, np=$NP ==="
+  cat "$OUT/GATES.txt"
+  for t in full_cell20 full_scatter bal_tri bal_contig; do f="$OUT/$t.txt"
+    echo; echo "--- $t"; grep -E "mesh  |setup|memory|ms/step,|per-rank kernel|active    :|^rank |state" "$f"
+  done
+} | tee "$OUT/SUMMARY.txt"
+touch "$OUT/DONE"
