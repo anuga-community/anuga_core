@@ -11,6 +11,19 @@ passes, prepare/update over listed cells' rings) and keeps fully dry tiles
 from being free.  Without a stats file every tile gets active_fraction = 1
 (pure triangle-count balance).
 
+Measured floors on the H200 (fit of per-rank kernel time against owned and
+active counts).  The floor is per-cell work, so it falls as the per-rank
+mesh grows and the rebuild scan streams better -- use the value for the
+scale you are running:
+
+    --floor 0.073   58M triangles over 4 GPUs   (300 m^2, job 177612520)
+    --floor 0.058   12.4G over 60 GPUs          (1 m^2, job 177741904;
+                    0.0582 ns/cell floor vs 1.0058 ns/cell active,
+                    reproducing the measured 60-rank spread to 0.3%)
+
+Using 0.073 at 1 m^2 over-charges dry tiles by 26%: the dry ranks then
+finish 30% early and the max kernel is 1.14x what --floor 0.058 gives.
+
 Methods:
   contig  contiguous split in Morton order of tile centres (compact ranks,
           balance limited by the heaviest tile).  DEFAULT: on 4 H200s it
@@ -22,7 +35,7 @@ Methods:
 
 Usage:
     python tools/tile_assign.py build/tiles10k/index.txt --stats stats.txt \
-        --nprocs 8 --out assign8.txt [--method lpt] [--floor 0.05]
+        --nprocs 8 --out assign8.txt [--method lpt] [--floor 0.058]
 """
 import argparse
 import sys
