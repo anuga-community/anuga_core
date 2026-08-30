@@ -807,15 +807,49 @@ once the floor is cut.
 *The time step is the blocker, and it is a mesh defect.*  The run achieved
 **dt = 6.55e-4 s** (sim rate 0.026 simulated s per wall s = 38 wall-days
 per simulated day).  Scanning the 47 wet tiles with `cdac_script/
-tile_quality.py`: median inradius 0.633 m, and **68 triangles out of
-136.7 M wet ones** sit below half that median.  The governing triangle is a
-**0.64 mm needle** in tile 11096 -- 0.001 of the median, which is exactly
-the `margin 0.3` signature in the small-triangle PoC table above.  These
-tiles predate the corner fix.  Regenerating with the current defaults
-(`MARGIN 0.5` + global `simplify(s/4)`, worst/median 0.11 in the PoC) moves
-the governing inradius from 0.001 to 0.11 of the median: **~110x on dt**,
-purely geometric and independent of the flow.  68 triangles are costing
-two orders of magnitude on the whole simulation.
+tile_quality.py` (inradius, the quantity dt actually depends on): median
+inradius 0.338 m, and **48 triangles out of 136.7 M wet ones** sit below
+half that median.  The governing triangle is a **0.870 mm needle** in tile
+1171 -- 0.0026 of the median, and tile 1171 is a 25-triangle coastal
+fragment.  Twenty-five triangles in an 11,372 km^2 domain were setting the
+time step for 12.4 G of them.  (Caution when reading `tile_quality.quality`:
+it returns `(area, inradius, angle, centroid)` -- the *second* element is
+the one that matters here.)
+
+*Measured, not argued: what the corner fix does to those tiles.*  The 1 m^2
+tiles predate `MARGIN 0.5` and the global `simplify(s/4)`.  Re-running
+`split_delta.py` twice over the same polygon -- once at the shipped
+settings (`MARGIN 0.3`, no simplify, taken from git at `74cd2175`) and once
+at today's defaults -- then meshing the identical sub-tiles at `--area 1.0`
+gives a controlled A/B.  The control reproduces the shipped mesh to four
+significant figures (tile 11096: 9.973 mm regenerated vs 9.9727 mm in the
+bmesh on gdata), so the comparison is sound:
+
+| wet tile | min inradius, MARGIN 0.3 | min inradius, current | gain |
+|----------|--------------------------|-----------------------|------|
+| 1171  (governs dt) |   0.870 mm | **152.473 mm** | 175x |
+| 10966 |   4.767 mm | 193.974 mm | 40.7x |
+| 11096 |   9.973 mm | 195.744 mm | 19.6x |
+| 10846 |  26.539 mm | 195.830 mm |  7.4x |
+| 10844 |  39.229 mm | 195.145 mm |  5.0x |
+| 10964 |  41.154 mm | 154.436 mm |  3.8x |
+| 10847 |  66.743 mm | 194.032 mm |  2.9x |
+| 212   |  76.089 mm | 136.786 mm |  1.8x |
+
+Every one clears the `tile_quality.py` gate afterwards (min/median 0.41 to
+0.58 against a 0.5 threshold), and the minimum angle goes to Triangle's
+`-q28` target on the large tiles -- there is no sliver left, not a smaller
+one.  Triangle counts are unchanged to within 0.07% (tile 212:
+916,531 -> 917,146; tile 11096: 3,264,777 -> 3,264,480), so **the fix is
+free**: same mesh size, same cost per step.
+
+Taking the worst of the eight as the new limiter, the governing wet
+inradius goes 0.870 mm -> 136.786 mm: **dt 6.55e-4 s -> ~0.10 s, 157x**,
+purely geometric and independent of the flow.  That turns 38 wall-days per
+simulated day into **~5.8 hours**.  (The other 39 wet tiles were all above
+76 mm before the fix and were not re-measured; one of them could become the
+new limiter, which is what `tile_quality.py` over the regenerated set is
+for.)
 
 *Does the full mesh fit 15 nodes?*  No.  At the measured 488 B/triangle,
 17.45 G needs 290.8M per GPU = 132 GiB, above the 109.89 GiB proven here

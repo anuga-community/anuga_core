@@ -119,13 +119,23 @@ two rank sizes.  Full mesh 173.5 ms/step (71.4 Gcell-steps/s); active-set
 weighted contig **25.1 ms/step, 6.9x** the full mesh; 1.24% wet.
 Three findings, all banked in README:
 
-1. **68 triangles set dt for the whole simulation.**  dt = 6.55e-4 s = 38
-   wall-days per simulated day.  tile_quality.py over the 47 wet tiles:
-   median inradius 0.633 m, governing triangle a **0.64 mm needle** (tile
-   11096) -- 0.001 of median, the `margin 0.3` signature.  These tiles
-   predate the corner fix; regenerating at the current defaults
-   (MARGIN 0.5 + simplify s/4, worst/median 0.11) is **~110x on dt**.
-   This is now the top priority, not a nicety.
+1. **48 triangles set dt for the whole simulation, and the fix is now
+   measured.**  dt = 6.55e-4 s = 38 wall-days per simulated day.
+   tile_quality.py over the 47 wet tiles (inradius -- note `quality()`
+   returns `(area, inradius, angle, centroid)`, use [1]): median inradius
+   0.338 m, governing triangle a **0.870 mm needle in tile 1171**, a
+   25-triangle coastal fragment, 0.0026 of median.
+   **Controlled A/B done (2026-08-30):** split_delta re-run over the same
+   polygon at the shipped settings (MARGIN 0.3, from git 74cd2175) and at
+   today's defaults, identical sub-tiles meshed at --area 1.0.  Control
+   reproduces the shipped bmesh to 4 sig figs (11096: 9.973 vs 9.9727 mm).
+   Result on the 8 worst wet tiles: 1171 0.870 -> 152.473 mm (175x),
+   10966 4.767 -> 193.974, 11096 9.973 -> 195.744, 212 76.089 -> 136.786.
+   All clear the 0.5 gate; triangle count unchanged to 0.07% -- **the fix
+   is free**.  Governing inradius 0.870 -> 136.786 mm = **dt 157x ->
+   ~0.10 s, i.e. 38 wall-days per simulated day becomes ~5.8 hours**.
+   Artifacts: cdac_script/tiles_{1sqm_fix,ctrl_r1,fix_r1,fix_r2}/,
+   tmp_local_artifacts/measure.py.  This is the top priority.
 2. **The active-set rebuild is 85.8% of kernel time** (12.14 of 14.15 ms);
    a rank with 248M dry triangles and 0 active cells still costs 14.4
    ms/step.  Balance work is finished (the floor bounds it at ~12 ms);
@@ -143,11 +153,16 @@ the full mesh needs 17 nodes.  Multi-scale tiling is the way in, not nodes.
 
 **Next steps:**
 1. **Regenerate the 1 sqm tiles with the corner fix (MARGIN 0.5 +
-   simplify s/4) -- now measured at ~110x on dt, not 1.38x.**  The 1.38x
-   was the coarse multi-scale PoC; at 1 m^2 the pre-fix needles are 0.001
-   of the median inradius and 68 of them set dt for 12.4 G triangles.  Do
-   not wait for the real resolution map -- a uniform 1 m^2 regeneration
-   with the current defaults already buys the two orders of magnitude.
+   simplify s/4) -- measured at 157x on dt, not 1.38x.**  The 1.38x was
+   the coarse multi-scale PoC; at 1 m^2 the pre-fix needles are 0.0026 of
+   the median inradius and 48 of them set dt for 12.4 G triangles.  Do not
+   wait for the real resolution map -- a uniform 1 m^2 regeneration with
+   the current defaults already buys the two orders of magnitude, and the
+   split for it is already done (`cdac_script/tiles_1sqm_fix/`, 1404
+   tiles).  Remaining: mesh the 1404 tiles (26 min on 104 cores), convert
+   to bmesh (18 min), gate with tile_quality.py over the whole set to
+   confirm no untested tile becomes the new limiter.  Needs ~400 GB free
+   on gdata (currently 622/1024 GiB used) -- the old set must go first.
    Then smooth the area map to one level per neighbour (16:1 jumps make an
    elongated first layer).
 2. Per-rank output (max depth, stage at
