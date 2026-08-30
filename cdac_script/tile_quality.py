@@ -12,6 +12,7 @@ if any tile fails: min inradius < frac * that tile's median, or min angle
 below --min-angle.
 """
 import argparse, glob, os, struct, sys
+from multiprocessing import Pool
 import numpy as np
 
 
@@ -41,12 +42,31 @@ def quality(nodes, tris):
     return a, inr, ang, P.mean(1)
 
 
+_SCAN_ARGS = [0.5, 25.0]        # [min_inradius_frac, min_angle], set by main()
+
+
+def _scan_one(item):
+    """One tile -> its quality row, or None if it is too small to judge."""
+    tid, f, loader = item
+    nodes, tris = loader(f)
+    if len(tris) < 10:
+        return None
+    area, inr, ang, c = quality(nodes, tris)
+    med = float(np.median(inr)); k = int(np.argmin(inr))
+    frac, min_ang = _SCAN_ARGS
+    bad = bool(inr[k] < frac * med or ang.min() < min_ang)
+    return (tid, len(tris), med, float(np.percentile(inr, 1)), float(inr[k]),
+            float(ang.min()), bad, float(c[k][0]), float(c[k][1]))
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('tiles')
     ap.add_argument('--min-inradius-frac', type=float, default=0.5)
     ap.add_argument('--min-angle', type=float, default=25.0)
     ap.add_argument('--verbose', action='store_true')
+    ap.add_argument('--jobs', type=int, default=1,
+                    help='worker processes (the 1 m^2 set is 17.4G triangles; use $PBS_NCPUS)')
     a = ap.parse_args()
     if os.path.isfile(os.path.join(a.tiles, 'index.txt')):
         rows = [l.split() for l in open(os.path.join(a.tiles, 'index.txt')).read().splitlines()[1:] if l.strip()]
@@ -55,19 +75,21 @@ def main():
         files = [(int(os.path.basename(f)[5:10]), f, load_msh) for f in sorted(glob.glob(os.path.join(a.tiles, 'tile_*.msh')))]
     fails, tot, worst = 0, 0, (1e9, None, None)
     print(f'{"tile":>6} {"tris":>10} {"med inr":>8} {"p1":>7} {"min":>7} {"min ang":>8}  flag')
-    for tid, f, loader in files:
-        nodes, tris = loader(f)
-        if len(tris) < 10:
-            continue
-        area, inr, ang, c = quality(nodes, tris)
-        med = np.median(inr); k = int(np.argmin(inr)); tot += len(tris)
-        bad = inr[k] < a.min_inradius_frac * med or ang.min() < a.min_angle
+    _SCAN_ARGS[:] = [a.min_inradius_frac, a.min_angle]
+    if a.jobs > 1:
+        with Pool(a.jobs) as pool:
+            results = pool.imap(_scan_one, files, chunksize=1)
+            rows = [r for r in results if r is not None]
+    else:
+        rows = [r for r in map(_scan_one, files) if r is not None]
+    for tid, ntri, med, p1, mn, mnang, bad, cx, cy in rows:
+        tot += ntri
         fails += bad
-        if inr[k] / med < worst[0]:
-            worst = (inr[k] / med, tid, c[k])
+        if mn / med < worst[0]:
+            worst = (mn / med, tid, (cx, cy))
         if bad or a.verbose:
-            print(f'{tid:>6} {len(tris):>10} {med:8.2f} {np.percentile(inr, 1):7.2f} {inr[k]:7.3f} {ang.min():8.1f}  '
-                  f'{"FAIL" if bad else "ok"}  smallest at ({c[k][0]:.0f}, {c[k][1]:.0f})')
+            print(f'{tid:>6} {ntri:>10} {med:8.2f} {p1:7.2f} {mn:7.3f} {mnang:8.1f}  '
+                  f'{"FAIL" if bad else "ok"}  smallest at ({cx:.0f}, {cy:.0f})')
     print(f'{len(files)} tiles, {tot} triangles: {fails} tile(s) fail; worst min/median inradius {worst[0]:.2f} '
           f'in tile {worst[1]} at ({worst[2][0]:.0f}, {worst[2][1]:.0f})')
     sys.exit(1 if fails else 0)

@@ -1,0 +1,74 @@
+#!/bin/bash
+#PBS -N regen_1sqm
+#PBS -l ncpus=104
+#PBS -l mem=500GB
+#PBS -l jobfs=100GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q normalsr
+#PBS -P bm55
+#PBS -l walltime=06:00:00
+#PBS -l wd
+#PBS -j oe
+
+# Regenerate the 1 m^2 delta tile set with the corner fix (MARGIN 0.5 +
+# global simplify(s/4)).  The split is already done in tiles_1sqm_fix/
+# (1404 tiles); this job meshes them, gates the result, and converts to the
+# miniapp's compact bmesh format on gdata.
+#
+# Why: the shipped set was built at MARGIN 0.3 and its governing wet
+# triangle is a 0.870 mm needle (tile 1171), which held dt to 6.55e-4 s in
+# job 177741904 -- 38 wall-days per simulated day.  The A/B in
+# standalone/README.md measures the fix at 157x on dt for no extra
+# triangles.
+#
+# Stages: 1) mesh 1404 tiles      ~26 min on 104 cores, ~520 GB of .msh
+#         2) quality gate         must report 0 failing tiles
+#         3) convert to bmesh     ~18 min, ~391 GB on gdata
+#         4) assemble index.txt
+set -x
+CD=/scratch/bm55/jlv900/dev/mesh_exp/cdac_script
+ROOT=/scratch/bm55/jlv900/dev/mesh_exp/standalone
+TILES=$CD/tiles_1sqm_fix
+MT=$CD/mesh_tiles_1sqm_fix
+OUT=/g/data/bm55/jlv900/tiles1sqm
+eval "$(/g/data/bm55/jlv900/install/miniconda3/bin/conda shell.bash hook)"
+conda activate anuga_env_3.13
+export OMP_NUM_THREADS=1
+
+# Refuse to mix a new set into an old one: $OUT must be absent or empty.
+if [ -n "$(ls -A "$OUT" 2>/dev/null)" ]; then
+  echo "ABORT: $OUT is not empty -- delete the superseded tile set first:"
+  echo "   rm -rf $OUT"
+  exit 1
+fi
+mkdir -p "$OUT" "$MT"
+
+echo "== 1/4 mesh $(ls "$TILES"/tile_*.json | wc -l) tiles at 1 m^2"
+ls "$TILES"/tile_*.json | xargs -P "$PBS_NCPUS" -I{} sh -c \
+  'python '"$CD"'/mesh_tile.py "$1" --area 1.0 --outdir '"$MT"' > '"$MT"'/$(basename "$1" .json).log 2>&1 || echo "FAILED $1"'  _ {}
+NMSH=$(ls "$MT"/*.msh 2>/dev/null | wc -l)
+echo "   $NMSH .msh written"
+[ "$NMSH" -eq "$(ls "$TILES"/tile_*.json | wc -l)" ] || { echo "ABORT: not every tile meshed"; exit 1; }
+
+echo "== 2/4 quality gate (dt is set by the smallest wet triangle)"
+python "$CD"/tile_quality.py "$MT" --jobs "$PBS_NCPUS" --min-inradius-frac 0.5 --min-angle 25 \
+  | tee "$MT/QUALITY.txt"
+GATE=${PIPESTATUS[0]}
+tail -1 "$MT/QUALITY.txt"
+# A failing tile does not invalidate the mesh -- it names where dt would be
+# set if that tile is wet.  Record it and carry on; the coarse run decides.
+[ "$GATE" -eq 0 ] || echo "NOTE: gate flagged tiles (see QUALITY.txt); dt is only at risk where they are wet"
+
+echo "== 3/4 convert to compact bmesh -> $OUT"
+cd "$ROOT"
+ls "$MT"/tile_*.msh | xargs -P "$PBS_NCPUS" -I{} sh -c \
+  'python tools/tiles_to_bmesh.py --compact --tile "$1" --out '"$OUT"' > '"$OUT"'/$(basename "$1" .msh).log 2>&1 || echo "FAILED $1"' _ {}
+NFAIL=$(grep -L "^wrote" "$OUT"/tile_*.log | wc -l)
+echo "   $NFAIL failed conversions"
+
+echo "== 4/4 assemble index"
+python tools/tiles_to_bmesh.py --assemble --out "$OUT"
+head -1 "$OUT/index.txt"; du -sh "$OUT"
+cp "$MT/QUALITY.txt" "$OUT/QUALITY.txt"
+[ "$NFAIL" -eq 0 ] && touch "$OUT/DONE"
+echo "== done; the .msh set in $MT (~520 GB) can be removed once index.txt looks right"

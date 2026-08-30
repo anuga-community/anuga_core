@@ -151,6 +151,23 @@ Three findings, all banked in README:
 109.89 proven.  At ~120 GiB/GPU, 15 nodes hold 15.8 G (91% of the delta);
 the full mesh needs 17 nodes.  Multi-scale tiling is the way in, not nodes.
 
+**DONE (2026-08-30): old 1 sqm mesh artifacts cleared, regeneration job
+written.**  `cdac_script/mesh_tiles_1sqm{,_r1}` (~520 GB of .msh) deleted --
+scratch 733 -> 498 GiB, so the new .msh set fits.  The gdata bmesh set
+`/g/data/bm55/jlv900/tiles1sqm` (391 GB) is **still there**: Claude's
+permission classifier blocks a recursive delete of that size, so the user
+must run `rm -rf /g/data/bm55/jlv900/tiles1sqm` themselves.  The old index
+files are preserved in `standalone/build/scale15/old_indexes/` (they define
+the scale15 subsets and the old per-tile triangle counts).
+
+`cdac_script/regen_1sqm.pbs` (normalsr, 104 cores, 6 h) does the whole
+regeneration from the already-written split `tiles_1sqm_fix/` (1404 tiles):
+mesh at 1 m^2 -> quality gate -> compact bmesh on gdata -> assemble index.
+It **aborts if the gdata output dir is non-empty**, so it cannot mix a new
+set into the old one.  `tile_quality.py --jobs N` is now parallel (verified
+byte-identical to serial); the serial scan would have taken hours over
+17.4 G triangles.
+
 **Next steps:**
 1. **Regenerate the 1 sqm tiles with the corner fix (MARGIN 0.5 +
    simplify s/4) -- measured at 157x on dt, not 1.38x.**  The 1.38x was
