@@ -653,6 +653,11 @@ void gpu_exchange_ghosts(struct gpu_domain *GD);
 
 // GPU kernels (stubs - will be implemented in sw_domain_gpu.c)
 void gpu_extrapolate_second_order(struct gpu_domain *GD);
+
+// Fused RK2-backup (optional) + protect + extrapolate centroid pass in one
+// launch; returns the protect mass error.  Pair with gpu_extrapolate_edges.
+double gpu_prepare_step(struct gpu_domain *GD, int do_backup, int zero_eu);
+void gpu_extrapolate_edges(struct gpu_domain *GD, double predictor_dt);
 double gpu_compute_fluxes(struct gpu_domain *GD, int substep_count, int timestep_fluxcalls);
 void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep);
 void gpu_backup_conserved_quantities(struct gpu_domain *GD);
@@ -661,6 +666,20 @@ void gpu_saxpy3_conserved_quantities(struct gpu_domain *GD, double a, double b, 
 double gpu_protect(struct gpu_domain *GD);
 double gpu_compute_water_volume(struct gpu_domain *GD);
 void gpu_manning_friction(struct gpu_domain *GD);
+
+// Fused Manning + update (+ RK2 average when do_saxpy) in a single launch.
+// timestep must already be known. Falls back to the separate kernels under
+// sloped Manning.
+void gpu_forcing_and_update(struct gpu_domain *GD, double timestep,
+                            int apply_forcing, int do_saxpy,
+                            double a, double b);
+
+// Flux + apply phases: select the edge-based kernel pair automatically when
+// D->edge_flux_work is allocated (and no riverwalls); cell-based otherwise.
+double gpu_flux_phase(struct gpu_domain *GD, int substep_count, int timestep_fluxcalls);
+int gpu_prepare_should_zero_eu(struct gpu_domain *GD);
+void gpu_apply_phase(struct gpu_domain *GD, double timestep, int apply_forcing,
+                     int do_saxpy, double a, double b, int substep_count);
 
 // Full Euler step on GPU
 double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
