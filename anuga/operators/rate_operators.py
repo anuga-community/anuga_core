@@ -95,6 +95,11 @@ class Rate_operator(Operator):
                 'numpy array; got %s' % type(rate).__name__)
 
         Operator.__init__(self, domain, description, label, logging, verbose)
+        if getattr(domain, 'use_active_set', False):
+            log.warning('Rate operator attached while active-set stepping is '
+                        'enabled: results stay correct (wetted cells activate '
+                        'on the next step), but widespread rain activates the '
+                        'whole mesh and the active-set speedup degrades.')
 
         #-----------------------------------------------------
         # Make sure region is actually an instance of a region

@@ -379,6 +379,90 @@ void gpu_ader_ck_predictor_edge(struct gpu_domain *GD, double dt) {
 // Full ADER-2 Step
 // ============================================================================
 
+// ============================================================================
+// Active-set stepping (opt-in wet/dry fast path)
+// ============================================================================
+
+void gpu_active_set_prepare(struct gpu_domain *GD) {
+    if (!GD->use_active_set || GD->as_prepared) return;
+    struct domain *D = &GD->D;
+
+    if (GD->nprocs > 1) {
+        if (GD->rank == 0) {
+            fprintf(stderr, "gpu: active-set stepping is serial-only for now; "
+                            "disabled under MPI (np=%d)\n", GD->nprocs);
+        }
+        GD->use_active_set = 0;
+        GD->as_prepared = 1;
+        return;
+    }
+
+    const anuga_int n = D->number_of_elements;
+
+    // Compacted owned-slot list: every boundary slot + the larger-index side
+    // of each interior edge -- one scatter thread per physical edge.  Also
+    // switches the flux kernel to scatter mode (reconstruct_edge_bed = 2),
+    // which the full-set steps use too, so active and full stepping share one
+    // discretization.
+    if (D->owned_edges == NULL) {
+        anuga_int *owned = (anuga_int *)malloc((size_t)(3 * n) * sizeof(anuga_int));
+        anuga_int ne = 0;
+        for (anuga_int p2 = 0; p2 < 3 * n; p2++) {
+            const anuga_int nbr = D->neighbours[p2];
+            if (nbr < 0 || nbr > p2 / 3) owned[ne++] = p2;
+        }
+        D->owned_edges = owned;
+        D->num_owned_edges = ne;
+        #pragma omp target enter data map(to: owned[0:ne])
+    }
+    D->reconstruct_edge_bed = 2;
+
+    GD->as_wet   = (anuga_int *)calloc((size_t)n, sizeof(anuga_int));
+    GD->as_ring1 = (anuga_int *)calloc((size_t)n, sizeof(anuga_int));
+    GD->as_cells = (anuga_int *)calloc((size_t)n, sizeof(anuga_int));
+    GD->as_edges = (anuga_int *)calloc((size_t)D->num_owned_edges, sizeof(anuga_int));
+    {
+        anuga_int *w = GD->as_wet, *r1 = GD->as_ring1;
+        anuga_int *c = GD->as_cells, *e = GD->as_edges;
+        const anuga_int ne = D->num_owned_edges;
+        #pragma omp target enter data map(alloc: w[0:n], r1[0:n], c[0:n], e[0:ne])
+    }
+    GD->as_ready = 0;      // first step runs the full set
+    GD->as_prepared = 1;
+    if (GD->verbose) {
+        printf("gpu: active-set stepping enabled (%lld cells, %lld owned edges)\n",
+               (long long)n, (long long)D->num_owned_edges);
+    }
+}
+
+// Per-step (re)build.  Returns full-set iteration (NULL lists) until the
+// first full step has run -- classification reads centroid stage, which is
+// only well-defined device-side after a complete step in every compute path.
+static void gpu_active_lists(struct gpu_domain *GD,
+                             const anuga_int **cells, anuga_int *ncells,
+                             const anuga_int **edges, anuga_int *nedges) {
+    gpu_active_set_prepare(GD);
+    if (!GD->use_active_set || !GD->as_ready) {
+        *cells = NULL; *ncells = 0;
+        *edges = GD->D.owned_edges; *nedges = GD->D.num_owned_edges;
+        return;
+    }
+    core_build_active_sets(&GD->D, GD->as_wet, GD->as_ring1,
+                           GD->as_cells, GD->as_edges,
+                           GD->D.owned_edges, GD->D.num_owned_edges,
+                           GD->as_counts);
+    *cells = GD->as_cells; *ncells = GD->as_counts[0];
+    *edges = GD->as_edges; *nedges = GD->as_counts[1];
+    GD->as_cellfrac_sum +=
+        (double)GD->as_counts[0] / (double)GD->D.number_of_elements;
+    GD->as_samples++;
+}
+
+double gpu_active_set_mean_fraction(struct gpu_domain *GD) {
+    if (GD->as_samples == 0) return 1.0;
+    return GD->as_cellfrac_sum / (double)GD->as_samples;
+}
+
 double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int apply_forcing, double prev_dt) {
     NVTX_PUSH("gpu_evolve_one_ader2_step");
     // ADER-2 step: extrapolate Q^n → fused edge C-K predictor(prev_dt/2) →
@@ -393,6 +477,9 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
 
     double local_timestep, global_timestep, timestep;
 
+    const anuga_int *as_c, *as_e; anuga_int as_nc, as_ne;
+    gpu_active_lists(GD, &as_c, &as_nc, &as_e, &as_ne);
+
     // ========================================
     // Step 1: protect + extrapolate Q^n → edges + evaluate boundaries
     // ========================================
@@ -406,8 +493,14 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     // sequence's first boundary evaluation (before the standalone predictor
     // kernel) was provably dead: the predictor never reads boundary values,
     // and the second evaluation overwrote every value the first produced.
-    gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD));
-    gpu_extrapolate_edges(GD, prev_dt > 0.0 ? prev_dt * 0.5 : 0.0);
+    if (as_c) {
+        const double pdt = prev_dt > 0.0 ? prev_dt * 0.5 : 0.0;
+        core_prepare_step_on(&GD->D, 0, gpu_prepare_should_zero_eu(GD), as_c, as_nc);
+        core_extrapolate_edge_pass_on(&GD->D, pdt, as_c, as_nc);
+    } else {
+        gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD));
+        gpu_extrapolate_edges(GD, prev_dt > 0.0 ? prev_dt * 0.5 : 0.0);
+    }
 
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
@@ -423,7 +516,8 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     // Step 3: single flux call from Q^{n+1/2} edges (or Q^n on bootstrap step)
     // ========================================
 
-    local_timestep = gpu_flux_phase(GD, 0, 1);
+    local_timestep = as_c ? core_compute_fluxes_scatter_on(&GD->D, 0, 1, as_e, as_ne)
+                          : gpu_flux_phase(GD, 0, 1);
 
     // ========================================
     // Step 4: Allreduce for global min CFL timestep + clip to max_timestep
@@ -461,7 +555,9 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     // so evaluating it here, after the reduction, is bit-identical to the old
     // pre-reduction call -- it only accumulates into the semi-implicit terms
     // that the update consumes).
-    gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0);
+    if (as_c) core_forcing_and_update_on(&GD->D, timestep, apply_forcing, 0, 0.0, 0.0, as_c, as_nc);
+    else      gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0);
+    GD->as_ready = 1;
 
     NVTX_POP();  // gpu_evolve_one_ader2_step
     return timestep;
@@ -476,10 +572,18 @@ double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int
 
     double local_timestep, global_timestep, timestep;
 
+    const anuga_int *as_c, *as_e; anuga_int as_nc, as_ne;
+    gpu_active_lists(GD, &as_c, &as_nc, &as_e, &as_ne);
+
     // Fused protect + extrapolate centroid pass, then the edge pass --
     // same launch structure as the fused RK2/ADER2 steps.
-    gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD));
-    gpu_extrapolate_edges(GD, 0.0);
+    if (as_c) {
+        core_prepare_step_on(&GD->D, 0, gpu_prepare_should_zero_eu(GD), as_c, as_nc);
+        core_extrapolate_edge_pass_on(&GD->D, 0.0, as_c, as_nc);
+    } else {
+        gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD));
+        gpu_extrapolate_edges(GD, 0.0);
+    }
 
     gpu_evaluate_reflective_boundary(GD);
     gpu_evaluate_dirichlet_boundary(GD);
@@ -491,7 +595,8 @@ double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
 
-    local_timestep = gpu_flux_phase(GD, 0, 1);
+    local_timestep = as_c ? core_compute_fluxes_scatter_on(&GD->D, 0, 1, as_e, as_ne)
+                          : gpu_flux_phase(GD, 0, 1);
 
     static int fixed_ts_printed_euler = 0;
     if (GD->fixed_flux_timestep > 0.0) {
@@ -517,7 +622,9 @@ double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int
     }
 
     // Manning + update fused (edge-based modes: also the flux gather)
-    gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0);
+    if (as_c) core_forcing_and_update_on(&GD->D, timestep, apply_forcing, 0, 0.0, 0.0, as_c, as_nc);
+    else      gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0);
+    GD->as_ready = 1;
 
     NVTX_POP();  // gpu_evolve_one_euler_step
     return timestep;
@@ -547,6 +654,9 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
 
     double local_timestep, global_timestep, timestep;
 
+    const anuga_int *as_c, *as_e; anuga_int as_nc, as_ne;
+    gpu_active_lists(GD, &as_c, &as_nc, &as_e, &as_ne);
+
     // ========================================
     // First Euler step
     // ========================================
@@ -554,8 +664,13 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // RK2 backup + protect + extrapolate centroid pass, fused into one
     // cell-local launch; the edge pass (which reads neighbour centroids)
     // follows as its own launch.
-    gpu_prepare_step(GD, 1, gpu_prepare_should_zero_eu(GD));
-    gpu_extrapolate_edges(GD, 0.0);
+    if (as_c) {
+        core_prepare_step_on(&GD->D, 1, gpu_prepare_should_zero_eu(GD), as_c, as_nc);
+        core_extrapolate_edge_pass_on(&GD->D, 0.0, as_c, as_nc);
+    } else {
+        gpu_prepare_step(GD, 1, gpu_prepare_should_zero_eu(GD));
+        gpu_extrapolate_edges(GD, 0.0);
+    }
 
     // Evaluate all GPU-supported boundary conditions
     gpu_evaluate_reflective_boundary(GD);
@@ -569,7 +684,8 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_flather_boundary(GD);
 
     // Compute fluxes - returns local minimum timestep
-    local_timestep = gpu_flux_phase(GD, 0, 2);
+    local_timestep = as_c ? core_compute_fluxes_scatter_on(&GD->D, 0, 2, as_e, as_ne)
+                          : gpu_flux_phase(GD, 0, 2);
 
     // Compute global timestep
     static int fixed_ts_printed = 0;
@@ -605,7 +721,8 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
 
     // Forcing + update, fused into one launch (edge-based: also the flux
     // gather itself -- see gpu_apply_phase)
-    gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0);
+    if (as_c) core_forcing_and_update_on(&GD->D, timestep, apply_forcing, 0, 0.0, 0.0, as_c, as_nc);
+    else      gpu_apply_phase(GD, timestep, apply_forcing, 0, 0.0, 0.0, 0);
 
     // Ghost exchange (MPI) - sync ghost cells between processes
     if (GD->nprocs > 1) {
@@ -616,8 +733,13 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     // Second Euler step
     // ========================================
 
-    gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD));   // no backup on the second substep
-    gpu_extrapolate_edges(GD, 0.0);
+    if (as_c) {   // no backup on the second substep
+        core_prepare_step_on(&GD->D, 0, gpu_prepare_should_zero_eu(GD), as_c, as_nc);
+        core_extrapolate_edge_pass_on(&GD->D, 0.0, as_c, as_nc);
+    } else {
+        gpu_prepare_step(GD, 0, gpu_prepare_should_zero_eu(GD));
+        gpu_extrapolate_edges(GD, 0.0);
+    }
 
     // Evaluate boundary conditions (same as first step)
     gpu_evaluate_reflective_boundary(GD);
@@ -631,12 +753,15 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_flather_boundary(GD);
 
     // Compute fluxes (ignore timestep from second step)
-    gpu_flux_phase(GD, 1, 2);
+    if (as_c) core_compute_fluxes_scatter_on(&GD->D, 1, 2, as_e, as_ne);
+    else      gpu_flux_phase(GD, 1, 2);
 
     // Forcing + update + the RK2 average (Q_final = 0.5*Q_backup + 0.5*Q),
     // all three fused into one launch.  The timestep is the one the first
     // substep already computed, so nothing here waits on a reduction.
-    gpu_apply_phase(GD, timestep, apply_forcing, 1, 0.5, 0.5, 1);
+    if (as_c) core_forcing_and_update_on(&GD->D, timestep, apply_forcing, 1, 0.5, 0.5, as_c, as_nc);
+    else      gpu_apply_phase(GD, timestep, apply_forcing, 1, 0.5, 0.5, 1);
+    GD->as_ready = 1;
 
     NVTX_POP();  // gpu_evolve_one_rk2_step
     return timestep;
@@ -648,6 +773,14 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
 
 double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int apply_forcing) {
     NVTX_PUSH("gpu_evolve_one_rk3_step");
+    if (GD->use_active_set) {
+        static int rk3_as_notice = 0;
+        if (!rk3_as_notice) {
+            fprintf(stderr, "gpu: active-set stepping is not implemented for "
+                            "rk3 (DE2); running full steps\n");
+            rk3_as_notice = 1;
+        }
+    }
     // Full SSP-RK3 step orchestrated entirely in C.
     //
     // Algorithm (Shu-Osher, 3rd-order strong-stability-preserving):

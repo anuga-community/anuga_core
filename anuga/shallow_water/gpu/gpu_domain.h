@@ -450,6 +450,23 @@ struct gpu_domain {
     int gpu_aware_mpi;           // Runtime flag: 1 if GPU-aware MPI available
     int verbose;                 // 0 = silent (default), 1 = print init/mapping messages
 
+    // Active-set stepping: opt-in wet/dry fast path (domain.set_use_active_set()).
+    // Prepared lazily on the first evolve step: builds the compacted
+    // owned-edge list, switches the flux kernel to scatter mode, and maps the
+    // classification scratch.  Serial (nprocs == 1) only -- silently disabled
+    // with a warning under MPI.  See core_build_active_sets() for the
+    // 2-ring-halo exactness argument.
+    int use_active_set;          // requested from Python
+    int as_prepared;             // lazy init has run
+    int as_ready;                // >=1 full step since mapping (first step runs full)
+    anuga_int *as_wet;           // scratch: wet flags         [n]
+    anuga_int *as_ring1;         // scratch: 1-ring flags      [n]
+    anuga_int *as_cells;         // compacted active cells     [n]
+    anuga_int *as_edges;         // compacted active edges     [num_owned_edges]
+    anuga_int as_counts[2];      // {n_active_cells, n_active_edges} per rebuild
+    double as_cellfrac_sum;      // stats: sum of active fractions
+    long   as_samples;           // stats: number of rebuilds
+
     // Halo exchange info
     struct halo_exchange halo;
 
@@ -507,6 +524,11 @@ struct gpu_domain {
 
 // Initialization and cleanup
 int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs);
+// Lazy first-step setup for active-set stepping (no-op unless
+// GD->use_active_set); safe to call every step.
+void gpu_active_set_prepare(struct gpu_domain *GD);
+// Mean active cell fraction since mapping (1.0 if never engaged).
+double gpu_active_set_mean_fraction(struct gpu_domain *GD);
 void gpu_domain_finalize(struct gpu_domain *GD);
 
 // Halo exchange setup - called once after Python domain is partitioned

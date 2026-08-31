@@ -169,6 +169,8 @@ cdef extern from "gpu_domain.h" nogil:
         double fixed_flux_timestep
         double recorded_flux_timestep
         int use_sloped_mannings
+        int use_active_set
+        long as_samples
 
     # Function declarations - initialization and cleanup
     int gpu_domain_init(gpu_domain *GD, MPI_Comm comm, int rank, int nprocs)
@@ -270,6 +272,7 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_saxpy3_conserved_quantities(gpu_domain *GD, double a, double b, double c)
     double gpu_protect(gpu_domain *GD)
     double gpu_compute_water_volume(gpu_domain *GD)
+    double gpu_active_set_mean_fraction(gpu_domain *GD)
     void gpu_manning_friction(gpu_domain *GD)
 
     # ADER-2 Cauchy-Kovalewski predictor — centroid variant
@@ -643,6 +646,7 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     fft = getattr(domain_object, 'fixed_flux_timestep', None)
     GD.fixed_flux_timestep = fft if fft is not None else -1.0
     GD.use_sloped_mannings = 1 if getattr(domain_object, 'use_sloped_mannings', False) else 0
+    GD.use_active_set = 1 if getattr(domain_object, 'use_active_set', False) else 0
     D.low_froude = domain_object.low_froude
     # Explicit even though GPUDomain's memory is zero-initialized: bed-edge
     # reconstruction in compute_fluxes is opt-in and stays off for ANUGA.
@@ -2081,6 +2085,21 @@ def compute_water_volume_gpu(GPUDomain gpu_dom):
         Local water volume (m^3)
     """
     return gpu_compute_water_volume(&gpu_dom.GD)
+
+
+def set_use_active_set_gpu(GPUDomain gpu_dom, int flag):
+    """Push the active-set flag into an already-initialized GPU domain."""
+    gpu_dom.GD.use_active_set = flag
+
+
+def active_set_stats_gpu(GPUDomain gpu_dom):
+    """Return (mean_active_fraction, n_rebuilds) for active-set stepping.
+
+    mean_active_fraction is 1.0 when the active set never engaged (disabled,
+    MPI fallback, or no rebuild has run yet).
+    """
+    return (gpu_active_set_mean_fraction(&gpu_dom.GD),
+            int(gpu_dom.GD.as_samples))
 
 
 def manning_friction_gpu(GPUDomain gpu_dom):
