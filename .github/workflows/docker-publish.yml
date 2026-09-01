@@ -45,8 +45,8 @@ on:
         description: 'nvcr.io/nvidia/nvhpc devel tag for the GPU image'
         default: '25.9-devel-cuda_multi-ubuntu24.04'
       gpu_arch:
-        description: 'nvc -gpu arch list for the GPU image'
-        default: 'cc75,cc80,cc86,cc89,cc90,cc120'
+        description: 'nvc -gpu arch list. Empty = whatever the Dockerfile defaults to, which is the right answer unless you are deliberately narrowing it for a fast test build.'
+        default: ''
 
 permissions:
   contents: read
@@ -158,6 +158,16 @@ jobs:
             type=raw,value=${{ inputs.image_tag }},enable=${{ inputs.image_tag != '' }}
             type=raw,value=latest,enable=${{ inputs.mark_latest }}
 
+      - name: Report the GPU arch list actually being used
+        run: |
+          want=$(grep -m1 '^ARG GPU_ARCH=' "${{ inputs.gpu_dockerfile || 'docker/Dockerfile.gpu.mpi' }}" | sed 's/^ARG GPU_ARCH=//')
+          got='${{ inputs.gpu_arch }}'
+          if [ -z "$got" ]; then
+            echo "GPU_ARCH not overridden; Dockerfile default applies: $want"
+          else
+            echo "::warning::GPU_ARCH overridden to '$got'; the Dockerfile default is '$want'. A published image should normally use the Dockerfile default -- docker/README.md tells users the image spans cc70-cc120."
+          fi
+
       - name: Build & push GPU image
         id: build
         uses: docker/build-push-action@v7
@@ -165,9 +175,12 @@ jobs:
           context: .
           file: ${{ inputs.gpu_dockerfile || 'docker/Dockerfile.gpu.mpi' }}
           push: true
+          # GPU_ARCH is passed only when the input is non-empty: an empty
+          # build-arg would override the Dockerfile's ARG default with an empty
+          # string rather than falling back to it.
           build-args: |
             NVHPC_TAG=${{ inputs.nvhpc_tag }}
-            GPU_ARCH=${{ inputs.gpu_arch }}
+            ${{ inputs.gpu_arch != '' && format('GPU_ARCH={0}', inputs.gpu_arch) || '' }}
             ANUGA_VERSION=${{ steps.ver.outputs.v }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

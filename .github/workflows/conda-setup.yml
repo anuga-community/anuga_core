@@ -100,7 +100,22 @@ jobs:
            # build 11 is broken outright. Only gcc 2 + sysroot 10 + libwinpthread
            # 10 is self-consistent. Remove the block once admin-requests#2297 lands:
            #   conda-forge/m2w64-sysroot-feedstock#23
-           conda install -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64 \
+           # libpython is deliberately NOT installed here -- see #255.
+           #
+           # It arrived on 2025-03-19 (6c136ada "try mingw compilers") paired
+           # with m2w64-toolchain. That toolchain was replaced by
+           # gcc_win-64/gxx_win-64, whose dependencies are gcc_impl_win-64,
+           # binutils_win-64, m2w64-sysroot_win-64 and gendef -- no libpython --
+           # but the package was carried along.
+           #
+           # Unpinned it resolved to a _cp314 build in EVERY environment, 3.10
+           # through 3.13 included; only py3.14 matched by luck. Build _103 of
+           # that mismatched package segfaults an ABI3 extension on load
+           # (exit 139, "Windows fatal exception: access violation"), which is
+           # what broke 3.11-3.13 from 2026-08-31. Reproduced in anuga-ci-lab:
+           # two identical environments differing only in libpython _103 vs
+           # _104 fail and pass respectively.
+           conda install -c conda-forge -n anuga_env gcc_win-64 gxx_win-64 \
                "gcc_impl_win-64=16.1.0=h0942c35_2" \
                "gxx_impl_win-64=16.1.0=he3d2c83_2" \
                "m2w64-sysroot_win-64=*=*_10" \
@@ -112,23 +127,6 @@ jobs:
            # msmpi: Microsoft MPI — standard Windows MPI on conda-forge; provides
            # mpi.h under Library/include and is picked up by meson.build automatically.
            conda install -c conda-forge -n anuga_env msmpi mpi4py
-           # PIN (#255): hold netcdf4 at the _104 build series on Windows.
-           #
-           # conda-forge stopped building py312/py313 variants of netcdf4 1.7.4
-           # after _104 -- the _105.._109 series exists only for py311 and py314.
-           # The solver therefore resolves the **py311** build into py312/py313
-           # environments, and loading that _netCDF4.pyd segfaults the
-           # interpreter: `python -c "import netCDF4"` alone dies with exit 139,
-           # no ANUGA and no pytest involved.
-           #
-           # _104 has a matching build for every Python we test, and pulls the
-           # coherent older stack (hdf5 1.14.6 / libnetcdf 4.10.0) that Python
-           # 3.10 has been passing on throughout.
-           #
-           # TEMPORARY. Remove once conda-forge publishes py312/py313 builds of
-           # the current series, or fixes the constraints so a mismatched build
-           # cannot be selected.
-           conda install -c conda-forge -n anuga_env "netcdf4=1.7.4=*_104"
 
            # conda install -c conda-forge -n anuga_env compilers
            # The compilers package on windows which uses clang. We run into

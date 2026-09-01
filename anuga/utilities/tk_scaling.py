@@ -16,8 +16,34 @@ changes, so this is safe to call unconditionally at startup.
 import os
 import re
 import subprocess
-import tkinter as tk
-import tkinter.font as tkfont
+
+# Tk is imported defensively so this module stays importable without it.
+#
+# conda-forge's `tk` does not depend on `xorg-libx11`; it expects libX11.so.6
+# from outside the prefix, so whether `_tkinter` imports depends on whether
+# something else in the environment happened to pull libX11 in. That made the
+# 4.0.0 conda-forge build fail on linux_64/py3.10 only, while the other four
+# Python versions passed by luck of the solve (#266). Any headless or minimal
+# Linux image hits the same thing.
+#
+# Nothing here needs a display: detect_dpi/detect_scale read Xft.dpi and xrandr
+# and fall back to arithmetic, so they are worth keeping testable and callable
+# where Tk will never exist. Only apply_hidpi_scaling touches Tk objects, and it
+# already requires a live root passed in by the caller.
+try:
+    import tkinter as tk
+    import tkinter.font as tkfont
+    TclError = tk.TclError
+except ImportError:  # no Tk, or Tk present but its C extension cannot load
+    tk = None
+    tkfont = None
+
+    class TclError(Exception):
+        """Placeholder so ``except TclError`` parses when Tk is absent.
+
+        Unreachable in that case: the calls that raise it need a Tk root, which
+        cannot exist without Tk.
+        """
 
 
 # Named fonts every Tk/ttk widget references by default; resizing these resizes
@@ -58,11 +84,11 @@ def detect_dpi(root):
         px = root.winfo_screenwidth()
         mm = root.winfo_screenmmwidth()
         tk_dpi = (px * 25.4 / mm) if mm and mm > 0 else 96.0
-    except tk.TclError:
+    except TclError:
         tk_dpi = 96.0
     try:
         tk_dpi = max(tk_dpi, root.winfo_fpixels('1i'))
-    except tk.TclError:
+    except TclError:
         pass
     return tk_dpi
 
@@ -142,7 +168,7 @@ def apply_hidpi_scaling(root, lo=1.0, hi=3.0):
     for name in _NAMED_FONTS:
         try:
             f = tkfont.nametofont(name)
-        except tk.TclError:
+        except TclError:
             continue
         size = f.cget('size')
         if not size:        # 0 == "unspecified"; leave it to Tk
@@ -157,7 +183,7 @@ def apply_hidpi_scaling(root, lo=1.0, hi=3.0):
     # told otherwise.  That is why scaled fonts alone still look cramped.
     try:
         root.tk.call('tk', 'scaling', (96.0 * scale) / 72.0)
-    except tk.TclError:
+    except TclError:
         pass
 
     return scale

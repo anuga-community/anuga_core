@@ -108,7 +108,12 @@ jobs:
           # 10 is self-consistent. Remove the block once admin-requests#2297 lands:
         #   conda-forge/m2w64-sysroot-feedstock#23
         run: |
-          conda install -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64 \
+          # libpython deliberately omitted -- see #255 and the note in
+          # conda-setup.yml. It was a leftover from the m2w64-toolchain era,
+          # gcc_win-64 does not depend on it, and unpinned it resolved to a
+          # _cp314 build in every environment. This is the workflow that builds
+          # the released Windows wheels, so it matters here too.
+          conda install -c conda-forge -n anuga_env gcc_win-64 gxx_win-64 \
               "gcc_impl_win-64=16.1.0=h0942c35_2" \
               "gxx_impl_win-64=16.1.0=he3d2c83_2" \
               "m2w64-sysroot_win-64=*=*_10" \

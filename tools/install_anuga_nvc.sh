@@ -121,6 +121,31 @@ fi
 
 echo "# nvc found: $NVC"
 "$NVC" --version
+
+# The C++ compiler must come from the same SDK as the C one.
+#
+# meson.build declares 'cpp' as a project language, so meson always probes for
+# a C++ compiler -- and with only CC set it picks the system g++. That is
+# harmless today because no C++ source is compiled, but meson.build adds
+# '-mp=gpu,multicore' as a LINK argument for language 'cpp' as well as 'c'
+# (the nvidia_hpc branch), and g++ does not understand that flag. The first C++
+# source added to the tree would therefore fail to link, with an error pointing
+# at a flag nobody set by hand.
+#
+# nvc++ lives beside nvc in every SDK layout, including the module wrappers.
+if [ -z "$CXX" ]; then
+    NVCXX="$(dirname "$NVC")/nvc++"
+    if [ -x "$NVCXX" ]; then
+        export CXX="$NVCXX"
+        echo "# nvc++ found: $CXX"
+    else
+        echo "# WARNING: nvc++ not found beside nvc; meson will fall back to the"
+        echo "#          system C++ compiler. Harmless while the tree has no C++"
+        echo "#          sources, but see the note above if that changes."
+    fi
+else
+    echo "# CXX already set, leaving it alone: $CXX"
+fi
 echo " "
 
 # ------------------------------------------------------------------
@@ -359,6 +384,7 @@ echo " "
 echo "#============================================================"
 echo "# Building ANUGA with GPU offloading"
 echo "#   CC=$NVC"
+echo "#   CXX=${CXX:-<system default; no C++ sources today>}"
 echo "#   gpu_offload=true  gpu_arch=${GPU_ARCH}  gpu_aware_mpi=${GPU_AWARE_MPI:-0}"
 echo "#============================================================"
 echo " "
@@ -407,8 +433,11 @@ if [ "${GPU_AWARE_MPI:-0}" = "1" ]; then
     echo " "
 fi
 
+CXX_ARG=""
+[ -n "$CXX" ] && CXX_ARG="CXX='$CXX'"
+
 $CONDA_RUN bash -c \
-    "CC='$NVC' pip install --no-build-isolation -v ${PIP_TARGET_ARGS} \
+    "CC='$NVC' ${CXX_ARG} pip install --no-build-isolation -v ${PIP_TARGET_ARGS} \
      -Csetup-args=-Dgpu_offload=true \
      -Csetup-args=-Dgpu_arch=${GPU_ARCH} \
      ${GPU_AWARE_MPI_ARG}"
