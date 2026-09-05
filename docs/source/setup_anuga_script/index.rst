@@ -20,6 +20,7 @@ Writing an ANUGA script
    operators
    rainfall
    riverwalls
+   tracers
    evolve
 
 .. seealso::
