@@ -183,6 +183,31 @@ def _dam_break_domain(nxy=20, names=('c',), beta=1.0, algorithm='DE0'):
     return d
 
 
+def _host_kernel_domain(*args, **kwargs):
+    """A dam-break domain pinned to legacy, for the direct-kernel tests below.
+
+    The tests that use this call the mode-1 flux kernel themselves --
+    compute_fluxes_ext_central -- and then assert on the host arrays. Under
+    ANUGA_DEFAULT_COMPUTE_MODE=unified that is not a meaningful thing to do:
+    the domain evolves on the DEVICE, so the host centroids still hold the
+    initial condition, and distribute_to_vertices_and_edges() never fills the
+    host tracer EDGE values. The host kernel then computes a real stage flux
+    from real stage edges and a ZERO tracer flux from zero tracer edges, and
+    the identities below fail -- or worse, hold vacuously.
+
+    They are mode-1 statements about the flux kernel's algebra, so they are
+    pinned rather than made mode-aware. Mode 2 is covered by
+    test_tracers_gpu.py, which compares the two modes end to end.
+
+    Only the direct-kernel tests use this. The tests that merely evolve a
+    domain and check the result keep the unpinned fixture, so they still
+    exercise whichever mode the suite is run in.
+    """
+    d = _dam_break_domain(*args, **kwargs)
+    d.set_compute_mode('legacy')
+    return d
+
+
 def _prime(d, finaltime=2.0):
     """Advance far enough that there is real flow through interior edges.
 
@@ -217,7 +242,7 @@ def _seed_uniform(d, value, slot=0):
 
 def test_flux_consistency_c_equal_one_reproduces_the_stage_tendency():
     """With c = 1 everywhere, m = h, so dm/dt must equal dh/dt exactly."""
-    d = _prime(_dam_break_domain())
+    d = _prime(_host_kernel_domain())
     _seed_uniform(d, 1.0)
     stage_eu, tracer_eu = _fluxes(d)
     scale = max(np.abs(stage_eu).max(), 1e-30)
@@ -225,7 +250,7 @@ def test_flux_consistency_c_equal_one_reproduces_the_stage_tendency():
 
 
 def test_flux_is_linear_in_concentration():
-    d = _prime(_dam_break_domain())
+    d = _prime(_host_kernel_domain())
     K = 0.375
     _seed_uniform(d, K)
     stage_eu, tracer_eu = _fluxes(d)
@@ -235,7 +260,7 @@ def test_flux_is_linear_in_concentration():
 
 def test_flux_is_conservative_on_a_closed_domain():
     """Reflective everywhere, so the area-weighted tendency must sum to zero."""
-    d = _prime(_dam_break_domain())
+    d = _prime(_host_kernel_domain())
     rng = np.random.default_rng(42)
     _seed_uniform(d, 0.0)
     h = (d.quantities['stage'].centroid_values
@@ -252,7 +277,7 @@ def test_flux_is_conservative_on_a_closed_domain():
 
 def test_transport_is_upwinded():
     """Cold cells ahead of the front stay cold; cells at the front gain."""
-    d = _prime(_dam_break_domain())
+    d = _prime(_host_kernel_domain())
     xc = d.centroid_coordinates[:, 0]
     h = (d.quantities['stage'].centroid_values
          - d.quantities['elevation'].centroid_values)
@@ -271,7 +296,7 @@ def test_transport_is_upwinded():
 
 def test_two_tracers_are_indexed_and_do_not_alias():
     """The tracer-major (ns, ...) layout is indexed as s*n / s*3n."""
-    d = _prime(_dam_break_domain(names=('a', 'b')))
+    d = _prime(_host_kernel_domain(names=('a', 'b')))
     _seed_uniform(d, 1.0, slot=0)
     _seed_uniform(d, 0.375, slot=1)
     stage_eu, tracer_eu = _fluxes(d)
