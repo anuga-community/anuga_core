@@ -75,6 +75,29 @@ the repo. Copy important baselines elsewhere if you want to keep them.
 
 ---
 
+## Per-kernel benchmarks
+
+`run_benchmarks.py` above measures whole-evolve throughput only, so a regression in one
+kernel hides inside an aggregate cells/s figure. `run_kernel_benchmarks.py` times
+individual hot kernels (`compute_fluxes`, `protect`, `distribute`, `extrapolate_edge_only`,
+`manning_friction_flat`) in isolation on a primed, fixed domain state:
+
+```bash
+# Default: modes 1 and 2, medium mesh, 50 reps per kernel
+python benchmarks/run_kernel_benchmarks.py
+
+# Compare two compilers (or before/after a tuning change)
+python benchmarks/run_kernel_benchmarks.py --output benchmarks/results/kernels_gcc.json
+python benchmarks/run_kernel_benchmarks.py --output benchmarks/results/kernels_icx.json
+python benchmarks/compare_kernel_benchmarks.py benchmarks/results/kernels_gcc.json \
+                                               benchmarks/results/kernels_icx.json
+```
+
+This is part of `claude/PLAN_compiler_tuning.md` (cross-compiler kernel tuning) — see
+`claude/KNOWN_ISSUES.md` for the current baseline findings across GCC/ICX/NVHPC.
+
+---
+
 ## Parallel distribution benchmarks (MPI)
 
 `distribute_benchmarks.py` compares four approaches for distributing a mesh
