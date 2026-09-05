@@ -239,6 +239,7 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_domain_sync_all_from_device(gpu_domain *GD)
     void gpu_sync_boundary_values(gpu_domain *GD)
     void gpu_sync_riverwall_to_device(gpu_domain *GD)
+    void gpu_sync_tracer_source_to_device(gpu_domain *GD)
     void gpu_sync_edge_values_from_device(gpu_domain *GD)
     int gpu_boundary_edge_sync_init(gpu_domain *GD, int num_boundary_cells, int *boundary_cell_ids)
     void gpu_boundary_edge_sync_finalize(gpu_domain *GD)
@@ -1433,6 +1434,16 @@ def sync_riverwall_to_device(GPUDomain gpu_dom):
     riverwalls.
     """
     gpu_sync_riverwall_to_device(&gpu_dom.GD)
+
+
+def sync_tracer_source_to_device(GPUDomain gpu_dom):
+    """Push the tracer external source to the device.
+
+    set_tracer_source writes the host array; a time-varying source rewrites it
+    every step, so the device copy has to be refreshed or it goes stale. One
+    array, not the whole state. #288
+    """
+    gpu_sync_tracer_source_to_device(&gpu_dom.GD)
 
 
 def sync_edge_values_from_device(GPUDomain gpu_dom):

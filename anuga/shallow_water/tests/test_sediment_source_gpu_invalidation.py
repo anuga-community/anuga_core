@@ -69,24 +69,73 @@ def test_it_does_not_crash_when_the_interface_is_invalidated(mode):
     assert op.calls > 0, 'the operator never ran, so nothing was exercised'
 
 
-def test_the_source_reaches_the_solver_in_legacy_mode():
-    """Mode 1 only, deliberately.
-
-    In mode 2 the source currently does NOT take effect, and this test does
-    not paper over it: Sediment_operator picks its path with
-
-        on_gpu = (multiprocessor_mode == 2 and gpu_interface is not None)
-
-    so an operator that nulls the interface earlier in the same
-    fractional-step pass -- which set_tracer_source does on its first call
-    -- pushes the sediment source onto the CPU path while the conserved
-    state is on the device. On a CPU build both paths share host memory and
-    it is harmless; on a GPU build the update is simply lost. Tracked
-    separately; the fix belongs with set_tracer_source, which should not
-    tear the interface down mid-run.
-    """
-    d, _ = _domain(1)
+@pytest.mark.parametrize('mode', [1, 2])
+def test_the_source_reaches_the_solver(mode):
+    """It used to reach it in mode 1 only (#288)."""
+    d, _ = _domain(mode)
     for _ in d.evolve(yieldstep=0.5, finaltime=2.0):
         pass
     assert d.get_tracer('mms').max() > 0.0, \
         'the tracer source never took effect'
+
+
+def test_the_two_modes_agree_on_the_source():
+    """The oracle: mode 2 gave exactly 0.0 while mode 1 gave 1.5e-4.
+
+    Three things had to be true at once, and each was a separate defect:
+    the source array had to stop being reallocated mid-run (it is now a
+    first-class tracer array); it had to be mapped to the device at all;
+    and Sediment_operator had to stop running on the device inside
+    apply_fractional_steps' host-coherent window, where the trailing
+    sync_to_device overwrites whatever the device computed.
+    """
+    d1, _ = _domain(1)
+    for _ in d1.evolve(yieldstep=0.5, finaltime=2.0):
+        pass
+    d2, _ = _domain(2)
+    for _ in d2.evolve(yieldstep=0.5, finaltime=2.0):
+        pass
+
+    a = d1.get_tracer('mms')
+    b = d2.get_tracer('mms')
+    assert a.max() > 0.0, 'the source did nothing even in legacy mode'
+    # 1e-8 is the tolerance test_sediment_gpu.py uses for the same
+    # mode-1-vs-mode-2 concentration comparison. A one-step staleness would
+    # show up as a fraction of the total, i.e. around 1e-5 here, so this is
+    # tight enough to catch the failure it exists for.
+    assert num.abs(a - b).max() < 1e-8, \
+        'the modes disagree by %g' % num.abs(a - b).max()
+
+
+def test_a_time_varying_source_is_not_stale_on_the_device():
+    """set_tracer_source writes the HOST array; the device copy needs pushing.
+
+    A constant source would pass even if the push were missing, since the
+    mapped values would happen to be right.
+    """
+    class _Ramp(_ResetsTheInterface):
+        def __call__(self):
+            self.calls += 1
+            n = len(self.domain)
+            self.domain.set_tracer_source('mms',
+                                          num.full(n, 1.0e-4 * self.calls))
+
+    out = []
+    for mode in (1, 2):
+        d = anuga.rectangular_cross_domain(6, 6, len1=60.0, len2=60.0)
+        d.set_quantity('elevation', 0.0)
+        d.set_quantity('stage', 1.0)
+        b = anuga.Reflective_boundary(d)
+        d.set_boundary({'left': b, 'right': b, 'top': b, 'bottom': b})
+        d.add_sediment_class('mms', diameter=1.0e-4, initial_concentration=0.0)
+        d.store = False
+        _Ramp(d)
+        d.set_multiprocessor_mode(mode)
+        for _ in d.evolve(yieldstep=0.5, finaltime=2.0):
+            pass
+        out.append(d.get_tracer('mms'))
+
+    assert out[0].max() > 0.0
+    assert num.abs(out[0] - out[1]).max() < 1e-8, \
+        'a ramping source diverges between the modes by %g -- the device copy ' \
+        'is stale' % num.abs(out[0] - out[1]).max()

@@ -684,6 +684,8 @@ class Domain(Generic_Domain):
         self.tracer_conserved_values = None     # m = h*c      (ns, N)
         self.tracer_backup_values = None        # m backup     (ns, N)
         self.tracer_external_source = None      # S_ms [G-3]   (ns, N) [m/s]
+                                                # allocated by add_tracer, with
+                                                # the other tracer blocks
 
         #-------------------------------
         # Phase 3: suspended sediment. A sediment class IS a tracer -- class s
@@ -944,6 +946,15 @@ class Domain(Generic_Domain):
         'tracer_conserved_values': 'cell',
         'tracer_backup_values':    'cell',
         'tracer_boundary_flux':    'cell',
+        # The external source S_ms [G-3]. Allocated with the rest rather than
+        # on first use: a lazily allocated array has to change the C struct and
+        # the device mapping when it appears, and set_tracer_source did that by
+        # discarding the GPU interface -- mid-run, from inside a fractional
+        # step. Sediment_operator then saw gpu_interface is None, took the CPU
+        # path while the state was on the device, and the source contributed
+        # exactly nothing on a GPU build (#288). Being here also means reorder()
+        # permutes it, which it previously did not.
+        'tracer_external_source':  'cell',
     }
     _TRACER_ARRAYS = tuple(_TRACER_ARRAY_KINDS)
 
@@ -2318,14 +2329,10 @@ class Domain(Generic_Domain):
         also make a manufactured solution impossible to impose exactly.
         """
         s = self.get_tracer_index(name)
-        if self.tracer_external_source is None:
-            self.tracer_external_source = num.zeros(
-                (self.number_of_tracers, self.number_of_elements),
-                dtype=num.float64)
-            self._Domain_C_struct = None
-            self.gpu_interface = None
-            if hasattr(self, '_gpu_boundary_info_initialized'):
-                del self._gpu_boundary_info_initialized
+        # Writes only. The array is allocated by add_tracer, so the pointer the
+        # C struct and the device hold stays valid and this is safe to call
+        # from inside a fractional step -- which a manufactured source, or any
+        # time-varying supply, does on every timestep. See #288.
         v = num.asarray(values, dtype=num.float64)
         if v.ndim == 0:
             self.tracer_external_source[s] = float(v)
@@ -2334,6 +2341,15 @@ class Domain(Generic_Domain):
         else:
             raise ValueError('tracer %r: expected a scalar or %d values, got %r'
                              % (name, self.number_of_elements, v.shape))
+
+        # In mode 2 the kernel reads the DEVICE copy, so a host write has to be
+        # pushed or the source goes stale -- silently, and stale is worse than
+        # absent. One array, so a per-step source costs one small transfer.
+        if (self.multiprocessor_mode == MULTIPROCESSOR_GPU
+                and self.gpu_interface is not None):
+            from anuga.shallow_water.sw_domain_gpu_ext import (
+                sync_tracer_source_to_device)
+            sync_tracer_source_to_device(self.gpu_interface.gpu_dom)
 
     def get_tracer_names(self):
         """Return the registered tracer names, in index order."""

@@ -794,15 +794,13 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
             tr_eu[0:ns*n], tr_qv[0:ns*n], tr_bk[0:ns*n], \
             tr_bf[0:ns*n])
 
-        // The external source [G-3] is OPTIONAL -- the array is allocated only
-        // when set_tracer_source is first called -- so it is mapped on its own
-        // rather than with the block above, which is always present. It is read
-        // by the source kernel, so leaving it unmapped is an unmapped host
-        // address on the device: the source then contributes exactly nothing
-        // and the answer is silently short of it. (set_tracer_source discards
-        // the interface when it allocates, so the rebuild passes through here.)
-        if (GD->D.tracer_external_source != NULL) {
-            double *tr_es = GD->D.tracer_external_source;
+        // The external source [G-3]. Allocated with the rest of the block by
+        // add_tracer, so it is always present when n_tracers > 0 and is mapped
+        // unconditionally like the others. It is read by the source kernel, so
+        // an unmapped one is an unmapped host address on the device and the
+        // source silently contributes nothing (#288).
+        double *tr_es = GD->D.tracer_external_source;
+        if (tr_es != NULL) {
             #pragma omp target enter data map(to: tr_es[0:ns*n])
         }
 
@@ -1259,8 +1257,8 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
             tr_cv[0:ns*n], tr_ev[0:ns*3*n], \
             tr_eu[0:ns*n], tr_qv[0:ns*n], tr_bk[0:ns*n], \
             tr_bf[0:ns*n])
-        if (GD->D.tracer_external_source != NULL) {
-            double *tr_es = GD->D.tracer_external_source;
+        double *tr_es = GD->D.tracer_external_source;
+        if (tr_es != NULL) {
             #pragma omp target exit data map(delete: tr_es[0:ns*n])
         }
         if (nb > 0) {
@@ -1343,6 +1341,27 @@ void gpu_domain_sync_to_device(struct gpu_domain *GD) {
             #pragma omp target update to(tr_bv[0:ns*nb])
         }
     }
+}
+
+// Push the external source [G-3] to the device on its own.
+//
+// set_tracer_source writes it on the HOST, and a time-varying supply -- a
+// manufactured solution, a tributary hydrograph -- rewrites it every step. The
+// device copy would otherwise hold whatever it had when the arrays were mapped
+// and the source would be silently stale rather than absent, which is worse.
+// Separate from gpu_sync_to_device so a per-step push costs one array, not all
+// of them. #288
+void gpu_sync_tracer_source_to_device(struct gpu_domain *GD)
+{
+    if (!GD->gpu_initialized) return;
+    if (GD->D.number_of_tracers <= 0) return;
+
+    double *tr_es = GD->D.tracer_external_source;
+    if (tr_es == NULL) return;
+
+    anuga_int n = GD->D.number_of_elements;
+    anuga_int ns = GD->D.number_of_tracers;
+    #pragma omp target update to(tr_es[0:ns*n])
 }
 
 void gpu_domain_sync_from_device(struct gpu_domain *GD) {

@@ -62,8 +62,17 @@ class Sediment_operator(Operator):
 
         domain = self.domain
         suspended = getattr(domain, '_sediment_suspended_enabled', True)
+        # _gpu_host_writes_suppressed marks a HOST-COHERENT window: because a
+        # CPU-only operator is registered, apply_fractional_steps has already
+        # pulled the device state to the host and will push the host state back
+        # when the loop finishes. Running on the device inside that window is
+        # not merely redundant -- the trailing push overwrites whatever the
+        # device computed with the host copy, so the work is silently lost.
+        # That is what made an external source contribute nothing in mode 2
+        # whenever any CPU-only operator was present (#288).
         on_gpu = (domain.multiprocessor_mode == 2
-                  and domain.gpu_interface is not None)
+                  and domain.gpu_interface is not None
+                  and not getattr(domain, '_gpu_host_writes_suppressed', False))
 
         if on_gpu:
             from anuga.shallow_water.sw_domain_gpu_ext import (
