@@ -20,6 +20,8 @@ Writing an ANUGA script
    operators
    rainfall
    riverwalls
+   tracers
+   sediment
    evolve
 
 .. seealso::

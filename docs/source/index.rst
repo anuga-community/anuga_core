@@ -52,6 +52,7 @@ It is now developed and maintained by a community of volunteers.
    Installing for GPU <appendices/install_gpu>
    appendices/advanced_script
    parallel/advanced
+   Sediment physics: choosing the laws <appendices/sediment_physics>
    Compute modes: legacy vs unified <appendices/compute_modes>
    appendices/profiling_gpu
    mathematical_background

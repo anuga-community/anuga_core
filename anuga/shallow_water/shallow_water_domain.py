@@ -1380,7 +1380,7 @@ class Domain(Generic_Domain):
         layer of known depth over rock.
 
         The base is a per-CENTROID elevation, not a scalar, because bedrock is
-        a surface. Give it either way round:
+        a surface. Give it either way round::
 
             domain.set_erodible_base(elevation=z_rock)  # absolute [m]
             domain.set_erodible_base(depth=0.5)         # 0.5 m below the
@@ -1460,7 +1460,7 @@ class Domain(Generic_Domain):
         """Restrict erosion to part of the domain (or lock part of it).
 
         The bed is erodible everywhere by default. Give a region to say
-        otherwise:
+        otherwise::
 
             domain.set_erodible_region(polygon=breach)     # ONLY here erodes
             domain.set_erodible_region(polygon=apron,      # everywhere BUT here
