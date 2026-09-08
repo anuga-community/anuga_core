@@ -168,8 +168,38 @@ set into the old one.  `tile_quality.py --jobs N` is now parallel (verified
 byte-identical to serial); the serial scan would have taken hours over
 17.4 G triangles.
 
+**DONE (2026-09-08): the active-set rebuild is amortized -- 2.6x
+(`94125578`, `--active-every K`).**  Finding 2 above is closed.  Rebuilding
+every K steps only pays if the extra rings are DILATED ON A LIST
+(`core_active_dilate_rings`, breadth-first over the frontier); done with a
+sweep per ring it caps at 1.56x, which is why the 3-4x estimate needed
+rework.  The candidate = ring-2 set + 2K+2 rings is a provable superset for
+K steps, the per-step rebuild runs over it and yields the SAME SETS.  Two
+ordering effects, both measured, neither visible to a correctness test: the
+BFS list order cost 22% on the step kernels (fixed by re-emitting the
+candidate in index order), and deriving edges from the cell list cost 2.2x
+on scatter (fixed by narrowing the edge ARRAY instead).  V100, 58.2M real
+delta tris, 1.00% active, 200 steps: rebuild 12.50 -> 1.57 ms (8x), step
+16.58 -> 6.36 ms (**2.61x**) at K=32; K=16-32 flat optimum.  Sparse-regime
+only (at 19.8% active there is nothing to win).  `--active-verify` compares
+every restricted rebuild against a full scan: zero mismatches on CPU, GPU
+and MPI np=2/4.  Primitives are in the shared `gpu/core_kernels.c`;
+`feature/gpu-active-set` still rebuilds every step and can adopt them.
+
+**IN FLIGHT: job 178439403 (regen_1sqm, normalsr 104c, 6 h, started
+2026-09-08).**  The old 391 GB gdata set was deleted by the user, so the
+guard passed.  Meshes `cdac_script/tiles_1sqm_fix/` (1404 tiles) at 1 m^2 ->
+quality gate -> compact bmesh on `/g/data/bm55/jlv900/tiles1sqm` -> index.
+Writes `DONE` on success.  Check `QUALITY.txt` for the governing inradius:
+the A/B predicts 0.870 -> ~137 mm, i.e. dt 157x.
+
 **Next steps:**
-1. **Regenerate the 1 sqm tiles with the corner fix (MARGIN 0.5 +
+1. ~~Regenerate the 1 sqm tiles~~ (job 178439403 in flight, above).  When it
+   lands: confirm the gate, then re-run the 15-node rehearsal with
+   `--active-every 32` to get both the dt fix and the 2.6x together.  Then
+   smooth the area map to one level per neighbour (16:1 jumps make an
+   elongated first layer).
+1b. **Old step 1, kept for reference: regenerate the 1 sqm tiles with the corner fix (MARGIN 0.5 +
    simplify s/4) -- measured at 157x on dt, not 1.38x.**  The 1.38x was
    the coarse multi-scale PoC; at 1 m^2 the pre-fix needles are 0.0026 of
    the median inradius and 48 of them set dt for 12.4 G triangles.  Do not
