@@ -112,6 +112,27 @@ double core_compute_fluxes_scatter_on(struct domain *D, int substep_count,
 
 // Active-set construction for the _on variants (opt-in; see the .c comment
 // for the exactness argument and the driver's obligations).
+// List-restricted rebuild + the work-list dilation that keeps the candidate
+// superset it iterates valid; see the notes in core_kernels.c.
+void core_build_active_sets_on(struct domain *D,
+                            anuga_int *wet_flag,
+                            anuga_int *ring1_flag,
+                            anuga_int *active_cells,
+                            anuga_int *active_edges,
+                            const anuga_int *owned_edges,
+                            anuga_int num_owned_edges,
+                            anuga_int *counts_out,
+                            const anuga_int *iter,
+                            anuga_int iter_n);
+anuga_int core_active_dilate_rings(struct domain *D, anuga_int *flag,
+                                   anuga_int *list, anuga_int n_list,
+                                   int rings);
+anuga_int core_active_compact_flag(struct domain *D, const anuga_int *flag,
+                                   anuga_int *list);
+anuga_int core_active_edges_of(struct domain *D, const anuga_int *cell_flag,
+                               const anuga_int *owned_edges,
+                               anuga_int num_owned_edges,
+                               anuga_int *out_edges);
 void core_build_active_sets(struct domain *D,
                             anuga_int *wet_flag,
                             anuga_int *ring1_flag,

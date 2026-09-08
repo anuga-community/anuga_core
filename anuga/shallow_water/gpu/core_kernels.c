@@ -1869,15 +1869,32 @@ void core_flux_apply_and_update(struct domain *D, double timestep,
 // bit-exact (verified against full-run goldens).
 #define ACTIVE_WET_EPS 1.0e-12
 
-void core_build_active_sets(struct domain *D,
+// _on variant: when `iter` is non-NULL only the listed cells are classified,
+// and the edge list is derived from those cells rather than from the whole
+// owned-edge array.  The caller must guarantee that `iter` contains every
+// cell whose wetness can differ from the last full build -- see
+// core_active_dilate_rings() for how that superset is maintained.  Cells
+// outside it keep their flags from the last full build, which stay correct
+// precisely because those cells are provably unchanged; a neighbour lookup
+// that reaches outside the list therefore reads a correct (dry) flag.
+//
+// The resulting SETS are identical to the full scan's; only the ORDER of the
+// two compacted lists differs (both are built with atomic capture, so neither
+// is ordered even run to run).  Order reaches the physics solely through the
+// summation order of the scatter atomics -- the same ~1e-9 the scatter kernel
+// already carries against the cell kernel.
+void core_build_active_sets_on(struct domain *D,
                             anuga_int * restrict wet_flag,
                             anuga_int * restrict ring1_flag,
                             anuga_int * restrict active_cells,
                             anuga_int * restrict active_edges,
                             const anuga_int * restrict owned_edges,
                             anuga_int num_owned_edges,
-                            anuga_int *counts_out) {
+                            anuga_int *counts_out,
+                            const anuga_int * restrict iter,
+                            anuga_int iter_n) {
     anuga_int n = D->number_of_elements;
+    const anuga_int loop_n = iter ? iter_n : n;
     double * restrict stage_cv = D->stage_centroid_values;
     double * restrict bed_cv = D->bed_centroid_values;
     anuga_int * restrict neighbours = D->neighbours;
@@ -1888,7 +1905,8 @@ void core_build_active_sets(struct domain *D,
     // only.  Classifying on height would let rain accumulate invisibly on
     // inactive cells, never flowing; stage - bed is always current.
     OMP_PARALLEL_LOOP
-    for (anuga_int k = 0; k < n; k++) {
+    for (anuga_int q = 0; q < loop_n; q++) {
+        const anuga_int k = iter ? iter[q] : q;
         wet_flag[k] = (stage_cv[k] - bed_cv[k] > ACTIVE_WET_EPS) ? 1 : 0;
     }
 
@@ -1903,7 +1921,8 @@ void core_build_active_sets(struct domain *D,
     // ring-2 cell list and gets extrapolated anyway.
     anuga_int * restrict full = D->tri_full_flag;
     OMP_PARALLEL_LOOP
-    for (anuga_int k = 0; k < n; k++) {
+    for (anuga_int q = 0; q < loop_n; q++) {
+        const anuga_int k = iter ? iter[q] : q;
         int act = wet_flag[k];
         const int owned = (full == NULL || full[k] == 1);
         for (int i = 0; i < 3 && !act; i++) {
@@ -1925,7 +1944,8 @@ void core_build_active_sets(struct domain *D,
     #else
     #pragma omp target teams distribute parallel for map(tofrom: n_cells)
     #endif
-    for (anuga_int k = 0; k < n; k++) {
+    for (anuga_int q = 0; q < loop_n; q++) {
+        const anuga_int k = iter ? iter[q] : q;
         int act = ring1_flag[k];
         for (int i = 0; i < 3 && !act; i++) {
             const anuga_int nbr = neighbours[3 * k + i];
@@ -1939,7 +1959,14 @@ void core_build_active_sets(struct domain *D,
         }
     }
 
-    // Pass 4: active owned edges = either side in ring-1
+    // Pass 4: active owned edges = either side in ring-1.
+    //
+    // Unchanged by the restriction: the caller passes a NARROWED owned-edge
+    // array (the candidate's own slots, still ascending) instead of the whole
+    // mesh's, so this stays one coalesced filter and the list it emits stays
+    // in slot order.  That ordering is load-bearing -- deriving the edges from
+    // the cell list instead emits them in three strided blocks and cost 2.2x
+    // in the scatter kernel on a V100, more than the rebuild saves.
     anuga_int n_edges = 0;
     #ifdef CPU_ONLY_MODE
     #pragma omp parallel for
@@ -1960,6 +1987,132 @@ void core_build_active_sets(struct domain *D,
 
     counts_out[0] = n_cells;
     counts_out[1] = n_edges;
+}
+
+void core_build_active_sets(struct domain *D,
+                            anuga_int * restrict wet_flag,
+                            anuga_int * restrict ring1_flag,
+                            anuga_int * restrict active_cells,
+                            anuga_int * restrict active_edges,
+                            const anuga_int * restrict owned_edges,
+                            anuga_int num_owned_edges,
+                            anuga_int *counts_out) {
+    core_build_active_sets_on(D, wet_flag, ring1_flag, active_cells,
+                              active_edges, owned_edges, num_owned_edges,
+                              counts_out, NULL, 0);
+}
+
+// ============================================================================
+// Work-list dilation, the primitive behind the candidate set
+// ============================================================================
+//
+// Grows a compacted cell list by `rings` neighbour rings, touching only the
+// list and its frontier -- O(list), never O(mesh).  That is the whole point:
+// dilating with a full sweep per ring costs as much as the rebuild it is
+// meant to amortize, so a rebuild period only pays if the extra rings are
+// walked, not scanned.
+//
+// `flag` must be 1 exactly on the cells already in `list` and 0 elsewhere;
+// on return it marks the dilated set, and the caller clears it by walking
+// the returned list.  `list` must have room for the whole mesh in the worst
+// case.  Returns the new length.
+//
+// Frontier form (BFS): ring r only visits cells appended by ring r-1, so a
+// cell's neighbours are examined once no matter how many rings are asked for.
+anuga_int core_active_dilate_rings(struct domain *D,
+                                   anuga_int * restrict flag,
+                                   anuga_int * restrict list,
+                                   anuga_int n_list,
+                                   int rings) {
+    anuga_int * restrict neighbours = D->neighbours;
+    anuga_int lo = 0, hi = n_list;
+
+    for (int r = 0; r < rings && hi > lo; r++) {
+        anuga_int cur = hi;
+        #ifdef CPU_ONLY_MODE
+        #pragma omp parallel for
+        #else
+        #pragma omp target teams distribute parallel for map(tofrom: cur)
+        #endif
+        for (anuga_int q = lo; q < hi; q++) {
+            const anuga_int k = list[q];
+            for (int i = 0; i < 3; i++) {
+                const anuga_int nbr = neighbours[3 * k + i];
+                if (nbr < 0) continue;
+                anuga_int was;
+                #pragma omp atomic capture
+                { was = flag[nbr]; flag[nbr] = 1; }
+                if (!was) {
+                    anuga_int idx;
+                    #pragma omp atomic capture
+                    idx = cur++;
+                    list[idx] = nbr;
+                }
+            }
+        }
+        lo = hi;
+        hi = cur;
+    }
+    return hi;
+}
+
+// The owned-edge slots with at least one side in a flagged cell set, in the
+// order they appear in `owned_edges` (ascending).  Built once per full
+// rebuild so the per-step pass 4 filters this instead of the whole mesh.
+anuga_int core_active_edges_of(struct domain *D,
+                               const anuga_int * restrict cell_flag,
+                               const anuga_int * restrict owned_edges,
+                               anuga_int num_owned_edges,
+                               anuga_int * restrict out_edges) {
+    anuga_int * restrict neighbours = D->neighbours;
+    anuga_int cnt = 0;
+    #ifdef CPU_ONLY_MODE
+    #pragma omp parallel for
+    #else
+    #pragma omp target teams distribute parallel for map(tofrom: cnt)
+    #endif
+    for (anuga_int q = 0; q < num_owned_edges; q++) {
+        const anuga_int p = owned_edges[q];
+        const anuga_int nbr = neighbours[p];
+        if (cell_flag[p / 3] || (nbr >= 0 && cell_flag[nbr])) {
+            anuga_int idx;
+            #pragma omp atomic capture
+            idx = cnt++;
+            out_edges[idx] = p;
+        }
+    }
+    return cnt;
+}
+
+// Re-emit a flagged set as a list in (approximately) ascending index order.
+//
+// This is not cosmetic.  The dilation above appends in breadth-first order,
+// so its list is spatially scattered; every kernel that later iterates it
+// gathers, and the step kernels lose the locality the ordered full scan gives
+// them for free -- measured at 22% slower steps on a V100 before this pass
+// existed, which swamped everything the amortized rebuild saved.  One
+// coalesced sweep over the flags restores the ordering the full scan has (the
+// same atomic-capture-over-a-sequential-loop, so the same quality), and it
+// runs only on rebuild steps.
+anuga_int core_active_compact_flag(struct domain *D,
+                                   const anuga_int * restrict flag,
+                                   anuga_int * restrict list) {
+    const anuga_int n = D->number_of_elements;
+    anuga_int cnt = 0;
+    #ifdef CPU_ONLY_MODE
+    #pragma omp parallel for
+    #else
+    #pragma omp target teams distribute parallel for map(tofrom: cnt)
+    #endif
+    for (anuga_int k = 0; k < n; k++) {
+        if (flag[k]) {
+            anuga_int idx;
+            #pragma omp atomic capture
+            idx = cnt++;
+            list[idx] = k;
+        }
+    }
+    return cnt;
 }
 
 // ============================================================================

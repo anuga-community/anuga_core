@@ -319,6 +319,11 @@ bit-exact.  For event-driven floods (dam break, levee breach, surge -- and
 the 11,000 km^2 spec basin, which starts 99.5%% dry) this is the largest
 single lever measured in this project.
 
+The rebuild itself then becomes the cost -- 61-86% of kernel time once the
+mesh is big and mostly dry, because all four passes sweep it.  See
+`--active-every` below, which amortizes them against a dilated candidate set
+and takes the rebuild down 6.7x.
+
 ### Timestepping schemes (`--scheme`)
 
 `rk2 | ader2 | euler | rk3`, each selecting its ANUGA preset (DE1 / DE_ader2 /
@@ -1077,6 +1082,96 @@ tools/anuga_reference.py  same case through the full ANUGA stack
   identical state today; `--check` will catch it if they diverge.
 - `--repeat` does not reset the state between runs; later repeats start from a
   more-evolved field. Fine for timing, not for `--save`.
+
+### Amortized active-set rebuild: `--active-every K` (2026-09-08)
+
+The 60-GPU rehearsal left the active-set fast path with one dominant cost:
+**the rebuild was 85.8% of kernel time** (12.14 of 14.15 ms), and a rank
+holding 248M dry triangles and zero active cells still paid 14.4 ms/step.
+The reason is that all four classification passes sweep the whole mesh --
+wet flags, ring-1, ring-2 with compaction, and the owned-edge filter, about
+200 B/cell in total, which at 206M cells is 41 GB per rebuild and lands
+exactly on the measured time.
+
+Rebuilding every K steps does **not** by itself fix that.  Wetness advances at
+most 2 rings per RK2 step, so a set that stays valid for K steps has to be
+dilated by 2K more rings, and a dilation done the way the passes above are
+done is another full sweep each: `24 + 128K` bytes per cell per K steps, i.e.
+128 B/cell/step against 200 as K grows.  A 1.56x ceiling, not the 3-4x the
+handoff estimated.
+
+What makes it pay is dilating **on the list**:
+
+* every K steps, one full rebuild, then `core_active_dilate_rings()` grows its
+  cell list by 2K+2 rings breadth-first, touching only the frontier -- O(list),
+  never O(mesh).  That is the **candidate**: a provable superset of everything
+  that can change for the next K steps (2K for wetness, +1 because the update
+  reaches a ring beyond the fluxes, +1 so the neighbour flags the restricted
+  passes read are still correct).
+* every step, `core_build_active_sets_on()` runs the ordinary classification
+  over the candidate instead of the mesh.  Cells outside it keep their flags
+  from the last full build, which stay correct precisely because those cells
+  are provably unchanged -- so a neighbour lookup reaching outside the list
+  reads a correct (dry) flag.
+
+The per-step lists come out as the **same sets** the full scan produces, so
+the existing exactness argument carries over untouched; `--active-verify`
+checks that directly by running both every step and comparing sorted lists.
+
+**Two ordering effects, both measured, both load-bearing.**  The dilation
+appends breadth-first, so its list is spatially scattered; iterating that
+directly cost **22% on the step kernels** (2.35 -> 2.87 ms), swamping the
+saving.  One coalesced sweep over the flags (`core_active_compact_flag`,
+rebuild steps only) restores the ordering the full scan gives for free.  And
+deriving the edge list from the cell list emits it in three strided blocks --
+**2.2x on the scatter kernel** (0.57 -> 1.26 ms).  Fixed by narrowing the
+*edge array* instead: the rebuild filters `owned_edges` down to the
+candidate's own slots once, still ascending, and the per-step pass filters
+that.  Neither effect is visible in a correctness test; both dominate.
+
+V100, 58.2M real delta triangles (`build/tiles300`), 1.00% active, 40 steps:
+
+| K | ms/step | rebuild | candidate | vs K=1 |
+|---:|--------:|--------:|----------:|-------:|
+|  1 |  19.90  | 12.25 (61.6%) |    --   | 1.00x |
+|  2 |  16.52  |  8.48 (51.3%) |  1.33%  | 1.20x |
+|  4 |  12.72  |  4.49 (35.3%) |  1.57%  | 1.56x |
+|  8 |  10.83  |  2.57 (23.7%) |  2.03%  | 1.84x |
+| 16 |  10.25  |  1.93 (18.8%) |  2.94%  | 1.94x |
+| 32 |  10.17  |  1.84 (18.1%) |  4.72%  | 1.96x |
+| 64 |  10.29  |  1.93 (18.7%) |  8.16%  | 1.93x |
+
+Over 200 steps, where the amortization is properly sampled (13 and 7 full
+rebuilds rather than 3 and 2), the same set gives:
+
+| K | ms/step | rebuild | candidate | vs K=1 |
+|---:|--------:|--------:|----------:|-------:|
+|  1 |  16.58  | 12.50 (75.4%) |    --   | 1.00x |
+| 16 |   6.50  |  1.77 (27.2%) |  2.94%  | **2.55x** |
+| 32 |   6.36  |  1.57 (24.6%) |  4.73%  | **2.61x** |
+
+**K = 16-32 is the flat optimum: the rebuild drops 8x and the step 2.6x.**
+Past that the candidate itself grows faster than the amortization saves.  The optimum tracks the wet fraction, so it is a knob, not a constant:
+at 19.8% active (`--case river`) the candidate reaches 32% of the mesh by
+K=8 and nothing is gained -- this pays in the sparse regime the flood runs
+actually live in, and the 1.24% of the hero run is sparser still than the
+1.00% measured here.
+
+Gates: `--check` against a K=1 golden passes on dam/dambumps/lake/river and
+on the tiled delta at every K tried (diffs ~3e-14, scatter atomic order);
+`--active-verify` reports zero set mismatches on the CPU build, the GPU build
+and under MPI at np=2/4; the MPI tiled gate passes against the serial golden
+at K=1/4/8.  Ghosts are seeded into the candidate and dilated with it, so a
+front crossing a rank boundary is inside the superset before it arrives.
+
+Costs two extra `anuga_int` arrays (16 B/tri, ~3% on top of 488) plus one
+owned-edge array.  Incompatible with rain, which wets cells no superset can
+predict -- and widespread rain activates the whole mesh anyway, so there is
+nothing to win; the driver refuses the combination.
+
+The primitives are in `gpu/core_kernels.c` (shared with production); only the
+miniapp drives them so far, so `feature/gpu-active-set` still rebuilds every
+step.
 
 ### Device-side initialisation: `--device-init` (2026-09-03)
 

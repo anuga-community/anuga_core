@@ -65,6 +65,22 @@ static int g_active_set = 0;
 static int g_active_ready = 0;            // 0 until the first full step ran
 static anuga_int *g_as_wet, *g_as_ring1, *g_as_cells, *g_as_edges;
 static anuga_int g_as_counts[2];
+// --active-every K: rebuild the full classification only every K steps and
+// run the per-step rebuild over a CANDIDATE superset instead of the mesh.
+// The candidate is the ring-2 cell list dilated by 2K+2 further rings (plus
+// every ghost, and the ring-2 around them, so a front arriving from another
+// rank is never missed): CFL lets wetness advance at most 2 rings per RK2
+// step, the update reaches one ring beyond that, and one more ring keeps the
+// neighbour flags the restricted passes read correct.  Cells outside are
+// provably unchanged for the next K steps, so the per-step lists are the
+// same sets the full scan would produce.
+static int g_active_every = 1;
+static int g_active_verify = 0;
+static anuga_int *g_cand = NULL, *g_cand_flag = NULL, *g_cand_edges = NULL;
+static anuga_int g_cand_n = 0, g_cand_ne = 0;
+static long g_cand_rebuilds = 0;
+static double g_cand_frac_sum = 0.0;
+static int g_as_phase = 0;                // steps since the last full rebuild
 static double g_as_cellfrac_sum; static long g_as_samples;
 // --tile-stats: per-cell count of steps in the active set (device-resident
 // in a GPU build), reduced per owned tile at the end -> the wetness weights
@@ -172,6 +188,144 @@ static void apply_rain(struct gpu_domain *GD, double t_sim, double dt) {
     }
 }
 
+// Full rebuild, then grow the candidate superset the next K-1 steps iterate.
+static void rebuild_candidate(struct gpu_domain *GD) {
+    struct domain *D = &GD->D;
+    const anuga_int n = D->number_of_elements;
+
+    // Clear only what the previous candidate marked -- O(candidate), not O(n).
+    if (g_cand_n > 0) {
+        anuga_int * restrict fl = g_cand_flag;
+        const anuga_int * restrict cd = g_cand;
+        const anuga_int nc = g_cand_n;
+        OMP_PARALLEL_LOOP
+        for (anuga_int q = 0; q < nc; q++) fl[cd[q]] = 0;
+    }
+
+    core_build_active_sets(D, g_as_wet, g_as_ring1, g_as_cells, g_as_edges,
+                           D->owned_edges, D->num_owned_edges, g_as_counts);
+
+    // Seed: this step's cell list, plus every ghost.  A ghost's stage is
+    // rewritten by the halo exchange rather than by the kernels, so its
+    // wetness can change with nothing on this rank predicting it; seeding
+    // all of them (a perimeter-sized set) and dilating means a front
+    // crossing a rank boundary is inside the candidate before it arrives.
+    anuga_int m = g_as_counts[0];
+    {
+        anuga_int * restrict cd = g_cand;
+        anuga_int * restrict fl = g_cand_flag;
+        const anuga_int * restrict ac = g_as_cells;
+        OMP_PARALLEL_LOOP
+        for (anuga_int q = 0; q < m; q++) { cd[q] = ac[q]; fl[ac[q]] = 1; }
+    }
+    if (D->tri_full_flag != NULL) {
+        anuga_int * restrict cd = g_cand;
+        anuga_int * restrict fl = g_cand_flag;
+        const anuga_int * restrict full = D->tri_full_flag;
+        anuga_int cur = m;
+        #ifdef CPU_ONLY_MODE
+        #pragma omp parallel for
+        #else
+        #pragma omp target teams distribute parallel for map(tofrom: cur)
+        #endif
+        for (anuga_int k = 0; k < n; k++) {
+            if (full[k] == 1) continue;
+            anuga_int was;
+            #pragma omp atomic capture
+            { was = fl[k]; fl[k] = 1; }
+            if (!was) {
+                anuga_int idx;
+                #pragma omp atomic capture
+                idx = cur++;
+                cd[idx] = k;
+            }
+        }
+        m = cur;
+    }
+
+    core_active_dilate_rings(D, g_cand_flag, g_cand, m,
+                             2 * g_active_every + 2);
+    // Ascending order, so the lists the restricted rebuild emits keep the
+    // locality the step kernels get from the ordered full scan.
+    g_cand_n = core_active_compact_flag(D, g_cand_flag, g_cand);
+    // The candidate's own owned-edge slots, still in slot order: what the
+    // per-step pass 4 filters in place of the whole mesh's.
+    g_cand_ne = core_active_edges_of(D, g_cand_flag, D->owned_edges,
+                                     D->num_owned_edges, g_cand_edges);
+    g_cand_rebuilds++;
+    g_cand_frac_sum += (double)g_cand_n / (double)n;
+}
+
+// --active-verify: the restricted rebuild must produce the SAME SETS as a
+// full scan.  Compares sorted copies of both lists every step; the physics
+// gate then covers everything downstream of them.
+static int cmp_ai(const void *a, const void *b) {
+    const anuga_int x = *(const anuga_int *)a, y = *(const anuga_int *)b;
+    return (x > y) - (x < y);
+}
+static void verify_active_sets(struct gpu_domain *GD) {
+    struct domain *D = &GD->D;
+    const anuga_int n = D->number_of_elements;
+    static anuga_int *w2, *r2, *c2, *e2, *mine_c, *mine_e;
+    static long nfail = 0;
+    anuga_int cnt2[2];
+    if (!w2) {
+        w2 = (anuga_int *)malloc((size_t)n * sizeof(anuga_int));
+        r2 = (anuga_int *)malloc((size_t)n * sizeof(anuga_int));
+        c2 = (anuga_int *)malloc((size_t)n * sizeof(anuga_int));
+        e2 = (anuga_int *)malloc((size_t)D->num_owned_edges * sizeof(anuga_int));
+        mine_c = (anuga_int *)malloc((size_t)n * sizeof(anuga_int));
+        mine_e = (anuga_int *)malloc((size_t)D->num_owned_edges * sizeof(anuga_int));
+        const anuga_int ne = D->num_owned_edges;
+        #pragma omp target enter data map(alloc: w2[0:n], r2[0:n], c2[0:n], e2[0:ne])
+    }
+    // Snapshot the restricted result before the full scan overwrites the flags.
+    const anuga_int nc = g_as_counts[0], nee = g_as_counts[1];
+    {
+        anuga_int *src_c = g_as_cells, *src_e = g_as_edges;
+        (void)src_c; (void)src_e;
+        #ifndef CPU_ONLY_MODE
+        #pragma omp target update from(src_c[0:nc], src_e[0:nee])
+        #endif
+        memcpy(mine_c, g_as_cells, (size_t)nc * sizeof(anuga_int));
+        memcpy(mine_e, g_as_edges, (size_t)nee * sizeof(anuga_int));
+    }
+    core_build_active_sets(D, w2, r2, c2, e2, D->owned_edges,
+                           D->num_owned_edges, cnt2);
+    {
+        anuga_int *rc = c2, *re = e2;
+        const anuga_int a = cnt2[0], b = cnt2[1];
+        (void)rc; (void)re; (void)a; (void)b;
+        #ifndef CPU_ONLY_MODE
+        #pragma omp target update from(rc[0:a], re[0:b])
+        #endif
+    }
+    int bad = (cnt2[0] != nc) || (cnt2[1] != nee);
+    if (!bad) {
+        qsort(mine_c, (size_t)nc, sizeof(anuga_int), cmp_ai);
+        qsort(mine_e, (size_t)nee, sizeof(anuga_int), cmp_ai);
+        qsort(c2, (size_t)nc, sizeof(anuga_int), cmp_ai);
+        qsort(e2, (size_t)nee, sizeof(anuga_int), cmp_ai);
+        bad = memcmp(mine_c, c2, (size_t)nc * sizeof(anuga_int)) != 0
+           || memcmp(mine_e, e2, (size_t)nee * sizeof(anuga_int)) != 0;
+    }
+    if (bad && nfail++ < 5)
+        fprintf(stderr, "active-verify MISMATCH: cells %lld vs %lld, edges "
+                        "%lld vs %lld\n", (long long)nc, (long long)cnt2[0],
+                        (long long)nee, (long long)cnt2[1]);
+    // Restore the restricted result: the step runs on the lists it built.
+    memcpy(g_as_cells, mine_c, (size_t)nc * sizeof(anuga_int));
+    memcpy(g_as_edges, mine_e, (size_t)nee * sizeof(anuga_int));
+    {
+        anuga_int *dc = g_as_cells, *de = g_as_edges;
+        (void)dc; (void)de;
+        #ifndef CPU_ONLY_MODE
+        #pragma omp target update to(dc[0:nc], de[0:nee])
+        #endif
+    }
+    g_as_counts[0] = nc; g_as_counts[1] = nee;
+}
+
 static void active_step_lists(struct gpu_domain *GD,
                               const anuga_int **cells, anuga_int *ncells,
                               const anuga_int **edges, anuga_int *nedges) {
@@ -180,8 +334,19 @@ static void active_step_lists(struct gpu_domain *GD,
         *edges = GD->D.owned_edges; *nedges = GD->D.num_owned_edges;
         return;
     }
-    core_build_active_sets(&GD->D, g_as_wet, g_as_ring1, g_as_cells, g_as_edges,
-                           GD->D.owned_edges, GD->D.num_owned_edges, g_as_counts);
+    if (g_active_every <= 1) {
+        core_build_active_sets(&GD->D, g_as_wet, g_as_ring1, g_as_cells,
+                               g_as_edges, GD->D.owned_edges,
+                               GD->D.num_owned_edges, g_as_counts);
+    } else {
+        if (g_as_phase == 0) rebuild_candidate(GD);
+        else
+            core_build_active_sets_on(&GD->D, g_as_wet, g_as_ring1, g_as_cells,
+                                      g_as_edges, g_cand_edges, g_cand_ne,
+                                      g_as_counts, g_cand, g_cand_n);
+        if (++g_as_phase >= g_active_every) g_as_phase = 0;
+        if (g_active_verify) verify_active_sets(GD);
+    }
     if (g_act_count) {
         int * restrict cnt = g_act_count;
         const anuga_int * restrict ac = g_as_cells;
@@ -343,6 +508,10 @@ static void usage(const char *argv0) {
 "\n"
 "  reporting\n"
 "    --csv FILE        append one machine-readable result row to FILE\n"
+"    --active-every K  rebuild the full classification every K steps only; the\n"
+"                      other steps reclassify a candidate superset (ring 2K+2)\n"
+"                      instead of the mesh.  Same sets, O(active) not O(n).\n"
+"    --active-verify   check every restricted rebuild against a full scan\n"
 "    --tile-stats FILE write per-tile mean active fraction (with --tiles --active-set)\n"
 "                      -> tools/tile_assign.py turns it into a balanced --assign\n"
 "                      (writes the header if FILE does not exist yet)\n"
@@ -682,6 +851,8 @@ int main(int argc, char **argv) {
 #endif
         }
         else if (!strcmp(a, "--active-set"))  g_active_set = 1;
+        else if (!strcmp(a, "--active-every")) g_active_every = (int)arg_d(argc, argv, &i, a);
+        else if (!strcmp(a, "--active-verify")) g_active_verify = 1;
         else if (!strcmp(a, "--rain"))        g_rain_mmhr = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--rain-every"))  g_rain_every = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--rain-for"))    g_rain_for = arg_d(argc, argv, &i, a);
@@ -921,6 +1092,24 @@ int main(int argc, char **argv) {
             const anuga_int ne = GD->D.num_owned_edges;
             #pragma omp target enter data map(alloc: w[0:n], r1[0:n], c[0:n], e[0:ne])
         }
+        if (g_active_every > 1) {
+            if (g_rain_mmhr > 0.0 || g_rain_grid_path) {
+                // Rain wets cells the candidate cannot predict: it adds stage
+                // wherever it likes, so a rained cell outside the superset
+                // would go unnoticed for up to K steps.  (Widespread rain
+                // also activates the whole mesh, so there is nothing to win.)
+                fprintf(stderr, "bench: --active-every > 1 is incompatible with rain\n");
+                return 2;
+            }
+            g_cand      = (anuga_int *)calloc((size_t)n, sizeof(anuga_int));
+            g_cand_flag = (anuga_int *)calloc((size_t)n, sizeof(anuga_int));
+            g_cand_edges = (anuga_int *)calloc((size_t)GD->D.num_owned_edges,
+                                               sizeof(anuga_int));
+            anuga_int *cd = g_cand, *cf = g_cand_flag, *ce = g_cand_edges;
+            const anuga_int noe = GD->D.num_owned_edges;
+            #pragma omp target enter data map(alloc: cd[0:n], cf[0:n], ce[0:noe])
+            #pragma omp target update to(cf[0:n])
+        }
         if (O.tile_stats_path) {
             if (!O.tiles_path) {
                 fprintf(stderr, "bench: --tile-stats needs --tiles\n");
@@ -1090,6 +1279,10 @@ int main(int argc, char **argv) {
         // most active cells, so max/min is the load imbalance in one number.
         const double mine = g_as_cellfrac_sum / (double)g_as_samples;
         const double frac = bmpi_sum_d(mine) / g_np;
+        if (g_cand_rebuilds > 0)
+            printf("  candidate : %.2f%% of cells, every %d steps (%ld full rebuilds)\n",
+                   100.0 * g_cand_frac_sum / (double)g_cand_rebuilds,
+                   g_active_every, g_cand_rebuilds);
         printf("  active    : %.2f%% of cells on average (%ld rebuilds)",
                100.0 * frac, g_as_samples);
         if (g_np > 1)
