@@ -147,7 +147,35 @@ Three findings, all banked in README:
    spread to 0.3%.  `tile_assign.py --floor 0.073` is 26% high at 1 m^2;
    `--floor 0.058` predicts max kernel 19.23 -> 16.90 ms (1.14x, free).
 
-**Full mesh does not fit 15 nodes**: 17.45 G at 488 B/tri = 132 GiB/GPU vs
+**HOW MANY NODES (recomputed 2026-09-08 from the MEASURED per-GPU load, not
+the 488 B/tri model).**  Device bytes per triangle: 488 (model) + 24 (RK2
+backup) + 16 (active-set candidate) = **528**.  The 60-GPU run put 241.8M
+tri on its busiest GPU (~115 GiB actual) and ran, so 120 GiB/GPU is the safe
+ceiling against the H200's 133 GiB.
+
+| B/tri | tri/GPU @120 GiB | 60 GPUs (15 nodes) hold | full 17.445 G needs |
+|---|---|---|---|
+| 528 (today)          | 244.0 M | 14.64 G | 72 GPUs = **18 nodes** |
+| 504 (no backup, ADER2) | 255.7 M | 15.34 G | 68 GPUs = 17 nodes |
+| 428 (+ GEOM=fp32)    | 301.0 M | **18.06 G** | 58 GPUs = **15 nodes** |
+
+**The gpuhopper standing limit is 15 nodes**, so the full uniform mesh needs
+either an exception (18 nodes, no code change --
+`tools/h200_1sqm_fullmesh.pbs`, written and sized, NOT submitted) or 100
+B/tri of memory work:
+- ADER2 passes do_backup=0 and never touches the backup arrays, but bench.c
+  still allocates them and gpu_domain_map_arrays still maps them (guarded on
+  `stage_backup_values != NULL`, so simply not allocating is enough): -24.
+- `make GEOM=fp32` (-DANUGA_GEOM_FP32) halves the static geometry, 19
+  doubles/tri: -76.  Measured as a SPEED dead end (+2%), which is why it
+  survives as a typedef -- the payoff was always going to be memory.  Not
+  bit-compatible with fp64, so the well-balance gate must be re-verified.
+
+Either road reaches ~4-5 wall-hours per simulated day (projection).
+Multi-scale tiling remains the third road and cuts the triangle count at
+source rather than the bytes per triangle.
+
+**Superseded (used the 488 model): full mesh does not fit 15 nodes**: 17.45 G at 488 B/tri = 132 GiB/GPU vs
 109.89 proven.  At ~120 GiB/GPU, 15 nodes hold 15.8 G (91% of the delta);
 the full mesh needs 17 nodes.  Multi-scale tiling is the way in, not nodes.
 
