@@ -512,6 +512,8 @@ static void usage(const char *argv0) {
 "                      other steps reclassify a candidate superset (ring 2K+2)\n"
 "                      instead of the mesh.  Same sets, O(active) not O(n).\n"
 "    --active-verify   check every restricted rebuild against a full scan\n"
+"    --phases-sync     with --phases: barrier before the dt allreduce, so the\n"
+"                      wait for the slowest rank is timed apart from MPI cost\n"
 "    --tile-stats FILE write per-tile mean active fraction (with --tiles --active-set)\n"
 "                      -> tools/tile_assign.py turns it into a balanced --assign\n"
 "                      (writes the header if FILE does not exist yet)\n"
@@ -544,15 +546,24 @@ static const char *arg_s(int argc, char **argv, int *i, const char *name) {
 
 enum {
     PH_ACTIVE = 0, PH_PREPARE, PH_EXTRAPOLATE, PH_BOUNDARY,
-    PH_FLUXES, PH_FORCING_UPDATE, PH_NPHASES
+    PH_FLUXES, PH_FORCING_UPDATE, PH_WAIT, PH_DTREDUCE, PH_HALO, PH_NPHASES
 };
 
+// The last three are the MPI cost the kernel breakdown used to leave as an
+// unexplained gap between the phase sum and the wall clock -- 42% of it at 60
+// ranks, and the largest single item once the active-set rebuild is
+// amortized.  wait/dt_allreduce are separated by an OPTIONAL barrier
+// (--phases-sync): a collective absorbs the wait for the slowest rank, so
+// without the barrier dt_allreduce reports imbalance and MPI cost together
+// and would send tuning after the wrong one.
 static const char *phase_names[PH_NPHASES] = {
     "active_sets", "prepare", "extrapolate+ck", "boundary",
-    "compute_fluxes", "forcing+update"
+    "compute_fluxes", "forcing+update", "mpi_wait(imbal)", "mpi_dt_allreduce",
+    "mpi_halo"
 };
 
 static double phase_time[PH_NPHASES];
+static int g_phases_sync = 0;
 
 #define TIME_PHASE(id, call) do {                 \
         const double _t0 = omp_get_wtime();       \
@@ -594,7 +605,10 @@ static double rk2_step_timed(struct gpu_domain *GD, double max_timestep, int app
                ac ? core_compute_fluxes_scatter_on(&GD->D, 0, 2, ae, nae)
                   : gpu_flux_phase(GD, 0, 2));
 
-    timestep = GD->CFL * bmpi_min_d(local_timestep);   // global CFL min under MPI
+    if (g_phases_sync) TIME_PHASE(PH_WAIT, bmpi_barrier());
+    double global_dt;
+    TIME_PHASE(PH_DTREDUCE, global_dt = bmpi_min_d(local_timestep));
+    timestep = GD->CFL * global_dt;                    // global CFL min under MPI
     GD->recorded_flux_timestep =
         (timestep < GD->evolve_max_timestep) ? timestep : GD->evolve_max_timestep;
     if (timestep > max_timestep) timestep = max_timestep;
@@ -607,7 +621,7 @@ static double rk2_step_timed(struct gpu_domain *GD, double max_timestep, int app
     // the start of the step, which is what the serial 2-ring sees too: a
     // ghost cell's own update is garbage (it only saw its owned-side edges)
     // and is replaced here before the second stage reads it.
-    if (GD->nprocs > 1) gpu_exchange_ghosts(GD);
+    if (GD->nprocs > 1) TIME_PHASE(PH_HALO, gpu_exchange_ghosts(GD));
 
     // ---- second Euler stage
     TIME_PHASE(PH_PREPARE,
@@ -660,7 +674,10 @@ static double ader2_step_timed(struct gpu_domain *GD, double max_timestep,
                ac ? core_compute_fluxes_scatter_on(&GD->D, 0, 1, ae, nae)
                   : gpu_flux_phase(GD, 0, 1));
 
-    double timestep = GD->CFL * bmpi_min_d(local_timestep);   // global CFL min
+    if (g_phases_sync) TIME_PHASE(PH_WAIT, bmpi_barrier());
+    double global_dt;
+    TIME_PHASE(PH_DTREDUCE, global_dt = bmpi_min_d(local_timestep));
+    double timestep = GD->CFL * global_dt;                    // global CFL min
     GD->recorded_flux_timestep =
         (timestep < GD->evolve_max_timestep) ? timestep : GD->evolve_max_timestep;
     if (timestep > max_timestep) timestep = max_timestep;
@@ -853,6 +870,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--active-set"))  g_active_set = 1;
         else if (!strcmp(a, "--active-every")) g_active_every = (int)arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--active-verify")) g_active_verify = 1;
+        else if (!strcmp(a, "--phases-sync")) g_phases_sync = 1;
         else if (!strcmp(a, "--rain"))        g_rain_mmhr = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--rain-every"))  g_rain_every = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--rain-for"))    g_rain_for = arg_d(argc, argv, &i, a);
@@ -1178,7 +1196,10 @@ int main(int argc, char **argv) {
                                   : gpu_evolve_one_rk2_step(GD, P.evolve_max_timestep, O.apply_forcing);
             }
             apply_rain(GD, t_sim, dt);
-            if (g_np > 1) gpu_exchange_ghosts(GD);   // end-of-step ghost sync
+            if (g_np > 1) {                          // end-of-step ghost sync
+                if (O.phases) TIME_PHASE(PH_HALO, gpu_exchange_ghosts(GD));
+                else          gpu_exchange_ghosts(GD);
+            }
             t_sim += dt;
             steps_done = s + 1;
 

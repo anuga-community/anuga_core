@@ -231,6 +231,27 @@ quality gate -> compact bmesh on `/g/data/bm55/jlv900/tiles1sqm` -> index.
 Writes `DONE` on success.  Check `QUALITY.txt` for the governing inradius:
 the A/B predicts 0.870 -> ~137 mm, i.e. dt 157x.
 
+**DONE (2026-09-08): ADER2 composes with the amortized rebuild** -- rk2 K=1
+1.083 -> rk2 K=32 2.835 -> **ader2 K=32 4.486** simulated s per wall s on the
+58M delta tiles (V100), gated at K=8/32.  The 15-node run used the default
+rk2, so this is free and unexploited there.
+
+**DONE (2026-09-08): the MPI cost is now measured, not inferred.**  bench.c
+times `mpi_halo` and `mpi_dt_allreduce`; `--phases-sync` bills the wait for
+the slowest rank to `mpi_wait` separately, because a collective absorbs
+imbalance and would otherwise be blamed for it.  The breakdown closes to
+100% under MPI.  First reading (2 ranks / 1 V100): **halo 24.6%, allreduce
+0.0%** -- the halo dominates, so do NOT go amortize the allreduce.
+
+**IN FLIGHT: job 178473399 (`tools/h200_mpi_phases.pbs`, 2 nodes / 8 H200,
+90 min).**  The same question at rank scale: regenerated 1 sqm lake block
+(26 tiles, 301M tris), {rk2, ader2} x {K=1, K=32}, wetness-balanced,
+--phases --phases-sync, with np=4-vs-np=8 and K-vs-K=1 gates and
+--active-verify.  Output `standalone/build/mpiphases/SUMMARY.txt`, `DONE`
+marker.  It answers: what is the halo actually worth at scale, and does
+ADER2 halve it (one flux call per step = half the exchanges AND half the
+allreduces).
+
 **Next steps:**
 1. ~~Regenerate the 1 sqm tiles~~ (job 178439403 in flight, above).  When it
    lands: confirm the gate, then re-run the 15-node rehearsal with

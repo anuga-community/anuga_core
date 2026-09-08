@@ -1,0 +1,105 @@
+#!/bin/bash
+#PBS -N anuga_mpi_phases
+#PBS -l ncpus=96
+#PBS -l ngpus=8
+#PBS -l mem=1000GB
+#PBS -l jobfs=400GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -q gpuhopper
+#PBS -P bm55
+#PBS -l walltime=01:30:00
+#PBS -l wd
+#PBS -j oe
+#
+# What the MPI cost actually is, at rank scale, on the regenerated 1 sqm set.
+#
+# Once the active-set rebuild is amortized (--active-every) the kernels are a
+# minority of the step: at 60 ranks 42% of the wall was neither kernel nor
+# accounted for anywhere, and it was never measured -- only inferred as
+# wall-minus-kernels.  bench.c now times the two MPI calls that gap is made
+# of (mpi_halo, mpi_dt_allreduce) and, with --phases-sync, separates the wait
+# for the slowest rank (mpi_wait) from real MPI cost -- a collective absorbs
+# imbalance, so without the barrier the two are indistinguishable and tuning
+# goes after the wrong one.
+#
+# 2 ranks on one V100 already say halo >> allreduce; this asks the question
+# where it matters: 8 H200s across 2 NODES, so the exchange crosses the
+# network, on the wet lake block of the regenerated tiles.
+#
+# Matrix: {rk2, ader2} x {rebuild every step, every 32}, all balanced by
+# wetness.  ADER2 halves the flux calls per step and therefore also the halo
+# exchanges and the dt allreduces -- if the MPI cost is what dominates after
+# the rebuild is amortized, ADER2 is worth more at scale than the 1.58x it
+# measures on one GPU, and this run is what says so.
+set -x
+ROOT=/scratch/bm55/jlv900/dev/mesh_exp/standalone
+OUT=$ROOT/build/mpiphases
+TD=/g/data/bm55/jlv900/tiles1sqm
+IDX=$TD/index_phases.txt
+mkdir -p "$OUT"; cd "$ROOT"; source ./my_claude_env.sh
+cat $PBS_NODEFILE | sort -u | tee "$OUT/nodes.txt"
+
+# The lake block: the same box the 2-node rehearsal used, so the wet fraction
+# is comparable -- but cut from the REGENERATED (corner-fixed, unrefined,
+# 1404-tile) set, whose tile boundaries differ from the old refined one.
+python3 tools/tile_subset.py $TD/index.txt --box 81000 28000 99000 52000 \
+    --out $IDX | tee "$OUT/subset.txt"
+
+BENCH=$PBS_JOBFS/bench_gpumpi
+make --no-print-directory CONFIG=gpumpi OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
+cp "$BENCH" "$OUT/bench_gpumpi"; BENCH=$OUT/bench_gpumpi
+export OMP_NUM_THREADS=8
+MPI4="mpirun --bind-to none -np 4 --map-by ppr:4:node"
+MPI8="mpirun --bind-to none -np 8 --map-by ppr:4:node"
+
+# ---- gate first: np=8 must reproduce np=4 exactly on the cell path, and the
+# amortized rebuild must reproduce rebuilding every step.
+$MPI4 "$BENCH" --tiles $IDX --steps 20 --warmup 0 --save "$OUT/g.bin" \
+    --csv "$OUT/runs.csv" > "$OUT/np4_golden.txt" 2>&1
+$MPI8 "$BENCH" --tiles $IDX --steps 20 --warmup 0 --check "$OUT/g.bin" \
+    --atol 0 --rtol 0 --csv "$OUT/runs.csv" > "$OUT/gate_np8.txt" 2>&1
+$MPI8 "$BENCH" --tiles $IDX --steps 20 --warmup 0 --flux scatter --active-set \
+    --save "$OUT/ga.bin" --csv "$OUT/runs.csv" > "$OUT/gate_as_k1.txt" 2>&1
+for K in 8 32; do
+  $MPI8 "$BENCH" --tiles $IDX --steps 20 --warmup 0 --flux scatter --active-set \
+      --active-every $K --check "$OUT/ga.bin" --atol 1e-6 --rtol 1e-6 \
+      --csv "$OUT/runs.csv" > "$OUT/gate_as_k$K.txt" 2>&1
+done
+# and the sets themselves, which is the stronger statement
+$MPI8 "$BENCH" --tiles $IDX --steps 20 --warmup 0 --flux scatter --active-set \
+    --active-every 32 --active-verify > "$OUT/verify.txt" 2>&1
+grep -H tolerance "$OUT"/gate_*.txt | tee "$OUT/GATES.txt"
+grep -c MISMATCH "$OUT/verify.txt" | tee -a "$OUT/GATES.txt"
+
+# ---- balance by wetness (the cost-model floor recalibrated at 1 m^2)
+$MPI8 "$BENCH" --tiles $IDX --steps 60 --warmup 10 --flux scatter --active-set \
+    --tile-stats "$OUT/stats.txt" --csv "$OUT/runs.csv" > "$OUT/bal_tri.txt" 2>&1
+python3 tools/tile_assign.py $IDX --stats "$OUT/stats.txt" --nprocs 8 \
+    --floor 0.058 --out "$OUT/assign.txt" --split-out "$OUT/split.txt" \
+    --split-threshold 0.25 | tee "$OUT/assign.log"
+
+# ---- the matrix.  --phases-sync so imbalance is not billed to MPI.
+for SCH in rk2 ader2; do
+  for K in 1 32; do
+    $MPI8 "$BENCH" --tiles $IDX --assign "$OUT/assign.txt" --scheme $SCH \
+        --steps 100 --warmup 10 --flux scatter --active-set --active-every $K \
+        --phases --phases-sync --csv "$OUT/runs.csv" \
+        > "$OUT/${SCH}_k${K}.txt" 2>&1
+  done
+done
+# full mesh, for the scale-representative halo/volume ratio regardless of wetness
+$MPI8 "$BENCH" --tiles $IDX --assign "$OUT/assign.txt" --steps 60 --warmup 10 \
+    --flux scatter --phases --phases-sync --csv "$OUT/runs.csv" \
+    > "$OUT/full_mesh.txt" 2>&1
+rm -f "$OUT/g.bin" "$OUT/ga.bin"
+
+{
+  echo "=== MPI phase split: $(cat "$OUT/subset.txt") on $(wc -l < "$OUT/nodes.txt") nodes, np=8 ==="
+  cat "$OUT/GATES.txt"
+  for t in rk2_k1 rk2_k32 ader2_k1 ader2_k32 full_mesh; do
+    f="$OUT/$t.txt"; echo; echo "--- $t"
+    grep -E "ms/step,|sim rate|mpi_|active_sets|sum  |candidate |active    :" "$f"
+  done
+} | tee "$OUT/SUMMARY.txt"
+touch "$OUT/DONE"
+echo "== done"

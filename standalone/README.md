@@ -1191,6 +1191,38 @@ The primitives are in `gpu/core_kernels.c` (shared with production); only the
 miniapp drives them so far, so `feature/gpu-active-set` still rebuilds every
 step.
 
+### Where the step actually goes: MPI phases (`--phases-sync`, 2026-09-08)
+
+Amortizing the rebuild moved the bottleneck.  At 60 ranks the step was 25.1
+ms with 14.15 ms of kernels; with the rebuild 8x cheaper the kernels are
+~3.5 ms, so **~11 ms -- three quarters of the step -- is neither kernel nor
+measured**.  It had only ever been inferred as wall-minus-kernels.
+
+`--phases` now times the two MPI calls that gap is made of, `mpi_halo` (the
+mid-step and end-of-step ghost exchanges) and `mpi_dt_allreduce` (the global
+CFL min, once per substep), and the breakdown closes to 100% under MPI
+instead of leaving a hole.
+
+`--phases-sync` adds a barrier immediately before the dt allreduce and bills
+its time to `mpi_wait(imbal)`.  This matters: **a collective absorbs the wait
+for the slowest rank**, so without the barrier an imbalanced run reports its
+imbalance as MPI cost and sends tuning after the wrong thing -- and the
+15-node run had 1206% kernel imbalance on the triangle-balanced assignment.
+
+First reading, 2 ranks on one V100, 1.77M triangles (small, so the halo is a
+large share -- indicative of the ordering, not the magnitude):
+
+    mpi_halo           1.1719 ms   24.6%
+    mpi_wait(imbal)    0.0619 ms    1.3%
+    mpi_dt_allreduce   0.0021 ms    0.0%
+
+**The halo dominates and the allreduce is free** -- the opposite of the guess
+that motivated the instrumentation, and worth knowing before anyone
+amortizes an allreduce that costs 2 microseconds.  `tools/h200_mpi_phases.pbs`
+asks it where it matters: 8 H200s across 2 nodes on the regenerated 1 sqm
+lake block (26 tiles, 301M triangles), {rk2, ader2} x {rebuild every step,
+every 32}, wetness-balanced.
+
 ### Device-side initialisation: `--device-init` (2026-09-03)
 
 For serial generated meshes in row order, `--device-init` builds the domain
