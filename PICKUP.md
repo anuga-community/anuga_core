@@ -243,7 +243,26 @@ imbalance and would otherwise be blamed for it.  The breakdown closes to
 100% under MPI.  First reading (2 ranks / 1 V100): **halo 24.6%, allreduce
 0.0%** -- the halo dominates, so do NOT go amortize the allreduce.
 
-**IN FLIGHT: job 178473399 (`tools/h200_mpi_phases.pbs`, 2 nodes / 8 H200,
+**DONE: job 178473399 -- the MPI split at rank scale.**  8 H200 / 2 nodes,
+301M tris, 77%-wet lake block; all gates OK (np8 bit-exact vs np4, K=8/32 OK,
+0 verify mismatches).  ms/step rk2 31.26 -> **ader2 17.62 (1.77x)**.
+- halo: 4.15 ms (13%) under rk2 -> **0.34 ms (1.9%) under ader2**, 12x, since
+  rk2 also exchanges mid-step and that exchange absorbs imbalance.
+- **dt allreduce 0.008-0.024 ms (0.0-0.1%): the amortize-the-allreduce idea
+  is dead.**  Do not spend time on it.
+- **mpi_wait (imbalance) is now the largest MPI item**: 16% rk2, 25% ader2.
+  The partitioner, not the network -- wetness balancing gave 13.6M..124M
+  triangles/rank and the rebuild's per-cell floor bills the triangle-heavy
+  rank for its dry cells.
+- The block is 77% wet so the candidate hits 99.67% and --active-every gains
+  nothing: the control confirming it is a sparse-regime lever.  It should
+  also SHRINK the imbalance on the sparse hero domain, since the floor term
+  is what drives it.
+Next: re-run this matrix on a SPARSE subset (the western block, 1.24% wet)
+with a floor recalibrated for the amortized rebuild, then the hero run on
+ader2 + --active-every 32.
+
+**Superseded: job 178473399 (`tools/h200_mpi_phases.pbs`, 2 nodes / 8 H200,
 90 min).**  The same question at rank scale: regenerated 1 sqm lake block
 (26 tiles, 301M tris), {rk2, ader2} x {K=1, K=32}, wetness-balanced,
 --phases --phases-sync, with np=4-vs-np=8 and K-vs-K=1 gates and

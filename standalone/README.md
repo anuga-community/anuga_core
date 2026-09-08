@@ -1223,6 +1223,42 @@ asks it where it matters: 8 H200s across 2 nodes on the regenerated 1 sqm
 lake block (26 tiles, 301M triangles), {rk2, ader2} x {rebuild every step,
 every 32}, wetness-balanced.
 
+#### What it said at rank scale (job 178473399, 8 H200 / 2 nodes)
+
+26 tiles, 301M triangles of the regenerated 1 sqm lake block, wetness-
+balanced.  Gates first: np=8 bit-exact against np=4 (`--atol 0 --rtol 0`),
+K=8 and K=32 OK against the K=1 golden, zero `--active-verify` mismatches.
+
+| | rk2 K=1 | rk2 K=32 | ader2 K=1 | ader2 K=32 | full mesh |
+|---|---:|---:|---:|---:|---:|
+| ms/step          | 31.26 | 31.85 | **17.62** | 18.81 | 90.25 |
+| mpi_wait (imbal) |  4.93 |  4.16 |  4.35 |  3.93 | 65.28 |
+| mpi_halo         |  4.15 |  3.35 |  **0.34** |  0.28 |  6.57 |
+| mpi_dt_allreduce | 0.008 | 0.024 | 0.010 | 0.010 | 0.019 |
+
+Three answers, one of them the opposite of the question that prompted the run:
+
+1. **ADER2 is worth 1.77x at rank scale**, more than the 1.58x it gives on one
+   GPU, and it very nearly deletes the halo: 4.15 -> 0.34 ms, **12x**, not the
+   2x that one-flux-call-instead-of-two would suggest.  RK2 exchanges ghosts
+   mid-step as well as at the end, and that mid-step exchange is a
+   synchronisation point that absorbs the second substep's imbalance too.
+2. **The dt allreduce is free** -- 8 to 24 MICROseconds, 0.0-0.1% -- so the
+   plan to amortize it the way the rebuild was amortized is dead.  It is one
+   double per substep; there was never anything there.
+3. **The wait for the slowest rank is now the largest MPI item** (16% under
+   rk2, 25% under ader2).  Not the network: the partitioner.  Balancing by
+   wetness gave ranks 13.6M .. 124M triangles (9x), and with the rebuild's
+   per-cell floor the triangle-heavy rank pays for its dry cells anyway
+   (`max/mean weight 1.416` predicted, ~16% measured).
+
+Note the block is **77% wet**, so the candidate reaches 99.67% and
+`--active-every` correctly gains nothing here -- it is the sparse-regime
+lever, and this run is the control that says so.  The hero domain is 1.24%
+wet, where it was worth 2.6x.  Which also means finding 3 should shrink
+there: the floor term that drives the imbalance is exactly what the
+amortized rebuild removes.
+
 ### Device-side initialisation: `--device-init` (2026-09-03)
 
 For serial generated meshes in row order, `--device-init` builds the domain
