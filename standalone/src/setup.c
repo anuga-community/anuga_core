@@ -1,4 +1,5 @@
 #include "setup.h"
+#include "setup_cases.h"
 
 #include <math.h>
 #include <stdio.h>
@@ -91,76 +92,8 @@ static int64_t edgemap_get(const edgemap *H, int64_t key) {
 // Bed / initial stage profiles
 // ---------------------------------------------------------------------------
 
-// River-valley geometry (BENCH_CASE_RIVER): a longitudinal drop of 4 m, a
-// parabolic channel of half-width 6% of the domain carved 1.5 m into the
-// valley floor, and floodplain banks rising 8 m from the channel edge to the
-// domain sides.  The scale factors are relative to length_x/length_y so the
-// case works at any --nx/--lenx.
-#define RIVER_DROP        4.0    // m, upstream-to-downstream bed drop
-#define RIVER_CH_DEPTH    1.5    // m, channel depth below the valley floor
-#define RIVER_CH_HALFW    0.06   // fraction of length_y
-#define RIVER_BANK_RISE   8.0    // m, floodplain rise from channel edge to side
-#define RIVER_DAM_X       0.15   // fraction of length_x: reservoir extent
-#define RIVER_FLOW_DEPTH  0.5    // m, initial river depth in the channel
-
-static double river_bed(const bench_params *P, double x, double y) {
-    const double u  = x / P->length_x;
-    const double dy = fabs(y - 0.5 * P->length_y);
-    const double W  = RIVER_CH_HALFW * P->length_y;
-    double z = RIVER_DROP * (1.0 - u);                    // downstream slope
-    if (dy < W) {
-        const double r = dy / W;
-        z -= RIVER_CH_DEPTH * (1.0 - r * r);              // parabolic channel
-    } else {
-        z += RIVER_BANK_RISE * (dy - W) / (0.5 * P->length_y - W);
-    }
-    return z;
-}
-
-static double bed_value(const bench_params *P, double x, double y) {
-    if (P->which_case == BENCH_CASE_DAM) return 0.0;
-    if (P->which_case == BENCH_CASE_RIVER) return river_bed(P, x, y);
-
-    // Five Gaussian humps on a gentle downstream slope.  Deterministic, smooth,
-    // and tall enough that parts of the domain go dry.
-    static const double cx[5]  = {0.30, 0.55, 0.70, 0.45, 0.85};
-    static const double cy[5]  = {0.35, 0.65, 0.25, 0.85, 0.55};
-    static const double amp[5] = {6.0,  4.0,  5.0,  3.0,  7.0};
-    static const double rad[5] = {0.08, 0.06, 0.05, 0.07, 0.05};
-
-    const double u = x / P->length_x;
-    const double v = y / P->length_y;
-
-    double z = 2.0 * u;   // slope
-    for (int i = 0; i < 5; i++) {
-        const double du = u - cx[i];
-        const double dv = v - cy[i];
-        z += amp[i] * exp(-(du * du + dv * dv) / (2.0 * rad[i] * rad[i]));
-    }
-    return z;
-}
-
-static double stage_value(const bench_params *P, double x, double y, double z) {
-    switch (P->which_case) {
-        case BENCH_CASE_DAM:
-            return (x < 0.5 * P->length_x) ? P->dam_height : P->water_level;
-        case BENCH_CASE_DAMBUMPS:
-            return fmax(z, (x < 0.5 * P->length_x) ? P->dam_height : P->water_level);
-        case BENCH_CASE_RIVER: {
-            if (x < RIVER_DAM_X * P->length_x)
-                return fmax(z, P->dam_height);             // full reservoir
-            // Thin river: water surface follows the channel bottom downslope,
-            // RIVER_FLOW_DEPTH deep at the centerline; banks stay dry.
-            const double u = x / P->length_x;
-            const double surf = RIVER_DROP * (1.0 - u) - RIVER_CH_DEPTH
-                                + RIVER_FLOW_DEPTH;
-            return fmax(z, surf);
-        }
-        case BENCH_CASE_LAKE:
-        default:
-            return fmax(z, P->water_level);
-    }
-}
+// These live in setup_cases.h, shared with the device-side initialiser
+// (setup_device.c) so both paths evaluate identical expressions.
 
 // ---------------------------------------------------------------------------
 
@@ -215,7 +148,7 @@ void bench_params_apply_scheme(bench_params *P) {
 
 void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params *P,
                         const double *bed_node, const double *stage_node,
-                        const anuga_int *tri_full_flag) {
+                        const anuga_int *tri_full_flag, int fill) {
     memset(B, 0, sizeof(*B));
     B->mesh = *M;
 
@@ -272,7 +205,7 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
     D->areas                = GALLOC(B, n);
     D->radii                = GALLOC(B, n);
 
-    for (int64_t k = 0; k < n; k++) {
+    if (fill) for (int64_t k = 0; k < n; k++) {
         const int64_t i0 = M->triangles[3 * k + 0];
         const int64_t i1 = M->triangles[3 * k + 1];
         const int64_t i2 = M->triangles[3 * k + 2];
@@ -345,6 +278,7 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
     // partition supplies it (1 = owned, 0 = ghost column).
     D->tri_full_flag        = (anuga_int *)tri_full_flag;
 
+    if (fill) {
     edgemap H;
     edgemap_init(&H, 3 * n);
     const int64_t nn = M->num_nodes;
@@ -376,19 +310,26 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
         }
     }
     edgemap_free(&H);
+    }
 
     // Boundary enumeration: ANUGA sorts the (volume, edge) keys and numbers
     // them from 0, writing neighbours[k,i] = -(index+1).
+    // Without fill, the count comes from the mesh (the generated cross always
+    // tags exactly 2(m+n) rim edges) and the numbering happens on the device.
     int64_t nb = 0;
-    for (int64_t k = 0; k < n; k++)
-        for (int i = 0; i < 3; i++)
-            if (D->neighbours[3 * k + i] < 0) nb++;
+    if (fill) {
+        for (int64_t k = 0; k < n; k++)
+            for (int i = 0; i < 3; i++)
+                if (D->neighbours[3 * k + i] < 0) nb++;
+    } else {
+        nb = M->num_boundary;
+    }
 
     D->boundary_length = nb;
 
     anuga_int *bcells = IALLOC(B, nb);
     anuga_int *bedges = IALLOC(B, nb);
-    {
+    if (fill) {
         int64_t j = 0;
         for (int64_t k = 0; k < n; k++) {
             for (int i = 0; i < 3; i++) {
@@ -402,7 +343,7 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
         }
     }
 
-    for (int64_t k = 0; k < n; k++)
+    if (fill) for (int64_t k = 0; k < n; k++)
         for (int i = 0; i < 3; i++)
             D->surrogate_neighbours[3 * k + i] =
                 (D->neighbours[3 * k + i] < 0) ? k : D->neighbours[3 * k + i];
@@ -431,7 +372,7 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
         const anuga_int *full = tri_full_flag;
         anuga_int *owned = IALLOC(B, 3 * n);
         anuga_int ne = 0;
-        for (int64_t p2 = 0; p2 < 3 * n; p2++) {
+        if (fill) for (int64_t p2 = 0; p2 < 3 * n; p2++) {
             const anuga_int k2 = p2 / 3;
             const anuga_int nbr2 = D->neighbours[p2];
             if (full != NULL && full[k2] != 1) continue;          // ghost side: skip
@@ -492,7 +433,7 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
     // Quantity.set_values(location='vertices') + interpolate() does.  Loaded
     // meshes supply per-node values; generated meshes evaluate the analytic
     // case functions at the vertex coordinates.
-    for (int64_t k = 0; k < n; k++) {
+    if (fill) for (int64_t k = 0; k < n; k++) {
         double zv[3], wv[3];
         for (int i = 0; i < 3; i++) {
             if (bed_node != NULL) {
@@ -500,7 +441,7 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
                 zv[i] = bed_node[node];
                 wv[i] = stage_node[node];
             } else {
-                zv[i] = bed_value(P, D->vertex_coordinates[6 * k + 2 * i],
+                zv[i] = bench_bed_value(P, D->vertex_coordinates[6 * k + 2 * i],
                                      D->vertex_coordinates[6 * k + 2 * i + 1]);
                 wv[i] = 0.0;   // filled from the centroid rule below
             }
@@ -526,7 +467,7 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
         } else {
             const double cxk = D->centroid_coordinates[2 * k + 0];
             const double cyk = D->centroid_coordinates[2 * k + 1];
-            w = stage_value(P, cxk, cyk, zc);
+            w = bench_stage_value(P, cxk, cyk, zc);
             for (int i = 0; i < 3; i++) {
                 D->stage_edge_values[3 * k + i]    = w;
                 D->stage_vertex_values[3 * k + i]  = w;
@@ -546,7 +487,7 @@ void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params
     // Stored on the bench_domain so bench_domain_to_device can hand it to
     // gpu_reflective_init, which takes its own copy.
     B->GD.reflective.num_edges = 0;   // filled in below via the scratch arrays
-    {
+    if (fill) {
         int *bidx = (int *)breg(B, (size_t)nb, sizeof(int));
         int *vids = (int *)breg(B, (size_t)nb, sizeof(int));
         int *eids = (int *)breg(B, (size_t)nb, sizeof(int));

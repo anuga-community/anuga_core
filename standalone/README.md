@@ -1077,3 +1077,43 @@ tools/anuga_reference.py  same case through the full ANUGA stack
   identical state today; `--check` will catch it if they diverge.
 - `--repeat` does not reset the state between runs; later repeats start from a
   more-evolved field. Fine for timing, not for `--save`.
+
+### Device-side initialisation: `--device-init` (2026-09-03)
+
+For serial generated meshes in row order, `--device-init` builds the domain
+ON the device instead of building on the host and shipping it: every big
+array is mapped `alloc` and filled by target kernels that are the closed-form
+twin of the host build (same expressions, shared case functions in
+`src/setup_cases.h`, connectivity from the closed form of the cross pattern,
+boundary numbering and the scatter owned-edge list via deterministic block
+prefix scans).  No production source changed: the premap makes
+`gpu_domain_map_arrays`'s `map(to:)` clauses refcount no-ops, and setting
+`gpu_initialized` skips it (and its free-memory check, which would
+double-count) entirely.
+
+Correctness, V100 (nvc 25.9) against pre-change host-init goldens, 30 steps:
+**dam and river are bit-exact**; dambumps and lake differ by exactly 1 ulp in
+elevation -- device `exp()` vs glibc `exp()` -- and pass at the default
+`--check` tolerances.  On the CPU build (gcc, same libm both paths) all cases
+are bit-exact.  Lake-at-rest holds at 2.1e-14, scatter==cell at ftol 1e-6,
+and active-set-vs-full shows diffs identical to the host-init pair to every
+printed digit (the difference is scatter atomic order, not the init; on this
+V100 scatter is not run-to-run bitwise even unmodified, ~5e-13 after 30
+steps).
+
+Cost, V100, dambumps + scatter (`build/di_measure.csv`):
+
+|  triangles | host build+map | host peak | device init | host peak |
+|-----------:|---------------:|----------:|------------:|----------:|
+|         4M |        2.83 s  | 2.06 GiB  |  0.174 s    | 0.41 GiB  |
+|        16M |       11.36 s  | 7.83 GiB  |  0.250 s    | 1.21 GiB  |
+|        64M |     (~45 s est)| (~33 GiB) |  0.545 s    |    --     |
+
+The 64M run (29.1 GiB mapped, near the V100 wall) initialises in half a
+second and steps at full speed (607 Mc/s).  Remaining host bytes are the
+`bench_mesh` node/triangle arrays (~32 B/tri, removable by generating mesh
+metadata only) plus one deliberate `update from(bed_centroid_values)`
+(8 B/tri) so `--save`/`--check` snapshots see the elevation.
+
+Not yet covered (host path unchanged): `--order morton|random`, `--mesh`,
+`--tiles`, MPI.  See `DEVICE_INIT_PLAN.md` for the phases and the follow-ups.

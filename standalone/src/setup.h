@@ -76,13 +76,26 @@ void bench_params_apply_scheme(bench_params *P);
 // tri_full_flag: per-triangle ownership under MPI (1 = owned, 0 = ghost),
 // NULL for a serial run.  Stored on the domain and used to build a
 // ghost-aware owned-edge list for the scatter flux kernel.
+// fill = 1: the normal host-side build.  fill = 0: scalars and (calloc)
+// allocations only -- every O(n) fill loop is skipped, leaving the arrays as
+// untouched virtual pages for bench_device_to_device to populate on the GPU.
 void bench_domain_build(bench_domain *B, const bench_mesh *M, const bench_params *P,
                         const double *bed_node, const double *stage_node,
-                        const anuga_int *tri_full_flag);
+                        const anuga_int *tri_full_flag, int fill);
 
 // gpu_domain_init + reflective boundary + gpu_domain_map_arrays.
 void bench_domain_to_device(bench_domain *B, const bench_params *P, int verbose,
                             int rank, int nprocs);
+
+// Device-side initialisation (setup_device.c): replaces BOTH the host fill
+// loops and bench_domain_to_device for serial generated rectangular-cross
+// meshes in row order.  Call after bench_domain_build(..., fill = 0).
+// mx x my cells over [0,length_x] x [0,length_y]; maps every domain array
+// with map(alloc:) and fills it with target kernels -- the closed-form twin
+// of the host build.  Returns 0 on success.
+int bench_device_to_device(bench_domain *B, const bench_params *P,
+                           int64_t mx, int64_t my,
+                           int verbose, int rank, int nprocs);
 
 void bench_domain_free(bench_domain *B);
 

@@ -264,6 +264,7 @@ typedef struct {
     const char *csv_path;
     const char *tile_stats_path;   // per-tile active fraction (needs --tiles --active-set)
     int     morton;
+    int     device_init;   // build the domain on the device (generated mesh, serial, row order)
     double  rtol, atol;
 } bench_opts;
 
@@ -327,6 +328,9 @@ static void usage(const char *argv0) {
 "    --repeat N        repeat the timed loop N times, report the best\n"
 "    --cfl V           CFL number                       (default 1.0)\n"
 "    --phases          per-kernel timing breakdown\n"
+"    --device-init     build the domain ON the device (generated mesh, serial,\n"
+"                      row order): map(alloc) + fill kernels instead of a host\n"
+"                      build + transfer; the host never holds the big arrays\n"
 "    --verbose         let the kernels print their own setup messages\n"
 "\n"
 "  correctness\n"
@@ -668,6 +672,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--tile-stats")) O.tile_stats_path = arg_s(argc, argv, &i, a);
         else if (!strcmp(a, "--phases"))     O.phases = 1;
         else if (!strcmp(a, "--verbose"))    O.verbose = 1;
+        else if (!strcmp(a, "--device-init")) O.device_init = 1;
         else if (!strcmp(a, "--no-friction")) O.apply_forcing = 0;
         else if (!strcmp(a, "--cuda-extrap")) {
             g_cuda_extrap_tpb = (int)arg_i(argc, argv, &i, a);
@@ -757,14 +762,30 @@ int main(int argc, char **argv) {
         else if (O.morton == 2) bench_mesh_reorder_random(&M, O.nx, O.ny);
     }
 
+    if (O.device_init &&
+        (O.mesh_path || O.tiles_path || g_np > 1 || O.morton != 0 ||
+         g_cuda_extrap_tpb > 0)) {
+        if (g_rank == 0)
+            fprintf(stderr, "bench: --device-init supports the serial generated "
+                    "mesh in row order only (no --mesh/--tiles/MPI/--order/"
+                    "--cuda-extrap yet)\n");
+        return 2;
+    }
+
     bench_domain B;
     const double t_build0 = omp_get_wtime();
-    bench_domain_build(&B, &M, &P, bed_node, stage_node, (const anuga_int *)full_flag);
+    bench_domain_build(&B, &M, &P, bed_node, stage_node,
+                       (const anuga_int *)full_flag, !O.device_init);
     const double t_build = omp_get_wtime() - t_build0;
 
 
     const double t_map0 = omp_get_wtime();
-    bench_domain_to_device(&B, &P, O.verbose, g_rank, g_np);
+    if (O.device_init) {
+        if (bench_device_to_device(&B, &P, O.nx, O.ny, O.verbose, g_rank, g_np) != 0)
+            return 2;
+    } else {
+        bench_domain_to_device(&B, &P, O.verbose, g_rank, g_np);
+    }
     const double t_map = omp_get_wtime() - t_map0;
 
     // Halo exchange setup: with the slab cut along the first grid axis and
