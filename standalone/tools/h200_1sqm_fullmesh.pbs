@@ -1,0 +1,90 @@
+#!/bin/bash
+#PBS -N anuga_1sqm_full
+#PBS -l ncpus=1056
+#PBS -l ngpus=88
+#PBS -l mem=11000GB
+#PBS -l jobfs=400GB
+#PBS -l storage=gdata/bm55+scratch/bm55+gdata/tf05
+#PBS -q gpuhopper
+#PBS -P tf05
+#PBS -l walltime=01:30:00
+#PBS -l wd
+#PBS -j oe
+#
+# THE WHOLE DELTA AT 1 m^2: all 1404 regenerated tiles, 17.445 G triangles,
+# on 22 nodes / 88 H200.  Two questions, in this order.
+#
+# 1. DOES IT FIT?  The 60-GPU rehearsal held 206.5M triangles per GPU in
+#    109.89 GiB.  17.445 G over 88 GPUs is 198.2M each, ~105 GiB before the
+#    candidate arrays (+16 B/tri) take it to ~108 -- inside the 133 GiB card
+#    but not by much, and it has never been tried.  22 nodes is the smallest
+#    count that fits at the proven density; the previous estimate of 17 came
+#    from the 488 B/tri model rather than the measured per-GPU figure.
+#    Step 1 below is a short load that answers this before anything else
+#    spends time.
+#
+# 2. HOW LONG IS A SIMULATED DAY?  Everything since the last scale run --
+#    the corner fix (dt 71x), ADER2 (1.77x at rank scale), the amortized
+#    active-set rebuild (2.6x at ~1% wet) -- has been measured separately and
+#    never composed at scale.  The projection is 4-5 wall-hours per simulated
+#    day; this replaces it with a number.  The least certain term is the wait
+#    for the slowest rank, the largest MPI item at 8 ranks, which is why
+#    every timed run here carries --phases --phases-sync.
+#
+# Charged to tf05 (bm55 is nearly spent); the tile set stays on bm55 gdata.
+set -x
+ROOT=/scratch/bm55/jlv900/dev/mesh_exp/standalone
+OUT=$ROOT/build/fullmesh
+TD=/g/data/bm55/jlv900/tiles1sqm
+IDX=$TD/index.txt
+NP=88
+mkdir -p "$OUT"; cd "$ROOT"; source ./my_claude_env.sh
+cat $PBS_NODEFILE | sort -u | tee "$OUT/nodes.txt"
+CSV="--csv $OUT/runs.csv"
+
+BENCH=$PBS_JOBFS/bench_gpumpi
+make --no-print-directory CONFIG=gpumpi OBJDIR=$PBS_JOBFS/obj BIN=$BENCH build 2>&1 | tail -1
+cp "$BENCH" "$OUT/bench_gpumpi"; BENCH=$OUT/bench_gpumpi
+export OMP_NUM_THREADS=8
+MPI="mpirun --bind-to none -np $NP --map-by ppr:4:node"
+
+# ---- 1. does it fit, and is it still the same physics
+# Short, unbalanced, cell fluxes: the reference state line and the memory
+# figure.  If this dies on device memory, that is the headline and the rest
+# of the job is moot.
+$MPI "$BENCH" --tiles $IDX --steps 20 --warmup 0 $CSV > "$OUT/fit20.txt" 2>&1
+grep -E "memory|ms/step,|state|volume" "$OUT/fit20.txt" | tee "$OUT/FIT.txt"
+
+# ---- 2. wetness, then the assignment that balances it
+$MPI "$BENCH" --tiles $IDX --steps 60 --warmup 10 --flux scatter --active-set \
+    --scheme ader2 --active-every 32 --tile-stats "$OUT/stats.txt" \
+    --phases --phases-sync $CSV > "$OUT/bal_tri.txt" 2>&1
+python3 tools/tile_assign.py $IDX --stats "$OUT/stats.txt" --nprocs $NP \
+    --floor 0.058 --out "$OUT/assign.txt" --split-out "$OUT/split.txt" \
+    --split-threshold 0.25 | tee "$OUT/assign.log"
+
+# ---- 3. the production configuration, balanced.  This is the number.
+$MPI "$BENCH" --tiles $IDX --assign "$OUT/assign.txt" --steps 100 --warmup 10 \
+    --flux scatter --active-set --scheme ader2 --active-every 32 \
+    --phases --phases-sync $CSV > "$OUT/prod.txt" 2>&1
+
+# ---- 4. what each lever is worth ON THIS DOMAIN, rather than carried over
+for V in "--scheme rk2 --active-every 32:rk2_k32" \
+         "--scheme ader2 --active-every 1:ader2_k1"; do
+  FLAGS=${V%%:*}; NAME=${V##*:}
+  $MPI "$BENCH" --tiles $IDX --assign "$OUT/assign.txt" --steps 100 --warmup 10 \
+      --flux scatter --active-set $FLAGS --phases --phases-sync $CSV \
+      > "$OUT/$NAME.txt" 2>&1
+done
+
+{
+  echo "=== FULL 1 sqm delta: $(head -1 $IDX) on $(wc -l < "$OUT/nodes.txt") nodes, np=$NP ==="
+  echo "--- does it fit"; cat "$OUT/FIT.txt"
+  for t in prod rk2_k32 ader2_k1 bal_tri; do
+    f="$OUT/$t.txt"; echo; echo "--- $t"
+    grep -E "memory|ms/step,|sim rate|last dt|mpi_|active_sets|sum  |candidate |active    :|per-rank kernel|volume|state" "$f"
+  done
+  echo; echo "--- assignment"; cat "$OUT/assign.log"
+} | tee "$OUT/SUMMARY.txt"
+touch "$OUT/DONE"
+echo "== done"

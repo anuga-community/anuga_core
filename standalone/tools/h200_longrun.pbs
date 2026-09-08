@@ -6,7 +6,7 @@
 #PBS -l jobfs=200GB
 #PBS -l storage=gdata/bm55+scratch/bm55
 #PBS -q gpuhopper
-#PBS -P bm55
+#PBS -P tf05
 #PBS -l walltime=02:00:00
 #PBS -l wd
 #PBS -j oe

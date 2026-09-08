@@ -5,7 +5,7 @@
 #PBS -l jobfs=100GB
 #PBS -l storage=gdata/bm55+scratch/bm55
 #PBS -q normalsr
-#PBS -P bm55
+#PBS -P tf05
 #PBS -l walltime=06:00:00
 #PBS -l wd
 #PBS -j oe
