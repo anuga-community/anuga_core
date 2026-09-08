@@ -326,6 +326,14 @@ and takes the rebuild down 6.7x.
 
 ### Timestepping schemes (`--scheme`)
 
+**ADER2 is the production scheme.**  `tools/h200_1sqm_{15node,2node}.pbs` set
+`--scheme ader2 --active-every 32`; the 15-node script also runs an rk2
+reference of the same configuration so the choice keeps being measured on the
+domain it is used on rather than carried over.  It is gated under MPI by
+`tools/mpi_verify.sh` (120/120, both schemes x cell/phases/scatter/active-set/
+active-every, np up to 7, generated and tiled meshes).
+
+
 `rk2 | ader2 | euler | rk3`, each selecting its ANUGA preset (DE1 / DE_ader2 /
 DE0 / DE2). The honest cross-scheme metric is the printed **sim rate**
 (simulated seconds per wall second), since ms/step ignores dt. Measured at 16M

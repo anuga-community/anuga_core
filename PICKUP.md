@@ -258,6 +258,12 @@ imbalance and would otherwise be blamed for it.  The breakdown closes to
   nothing: the control confirming it is a sparse-regime lever.  It should
   also SHRINK the imbalance on the sparse hero domain, since the floor term
   is what drives it.
+**DONE: ADER2 is now the production scheme** -- `--scheme ader2
+--active-every 32` baked into `tools/h200_1sqm_{15node,2node}.pbs`, with an
+rk2 reference run kept in the 15-node script so the choice stays measured on
+the real domain.  `mpi_verify.sh` gained the `--active-every` mode and is
+**120/120** (was 96/96).
+
 Next: re-run this matrix on a SPARSE subset (the western block, 1.24% wet)
 with a floor recalibrated for the amortized rebuild, then the hero run on
 ader2 + --active-every 32.

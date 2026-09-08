@@ -43,12 +43,26 @@ $MPI "$BENCH" --tiles $IDX --steps 20 --warmup 0 $CSV > "$OUT/full_cell20.txt" 2
 grep -H -E "volume    :|state     :|nan" "$OUT/full_cell20.txt" | tee "$OUT/GATES.txt"
 
 $MPI "$BENCH" --tiles $IDX --steps 100 --warmup 10 --flux scatter $CSV > "$OUT/full_scatter.txt" 2>&1
+# rk2 reference for the same active-set configuration, so the scheme's value
+# on THIS domain is measured rather than carried over from the 301M block.
+$MPI "$BENCH" --tiles $IDX --steps 100 --warmup 10 --flux scatter --active-set \
+    --scheme rk2 --phases --phases-sync $CSV > "$OUT/rk2_reference.txt" 2>&1
 
-RUN="--steps 100 --warmup 10 --flux scatter --active-set $CSV"
+# PRODUCTION CONFIGURATION.  ADER2 is not an option here, it is the scheme:
+# same CFL dt and same formal order as rk2 for one flux call per step instead
+# of two, measured 1.77x at rank scale (job 178473399) -- and it nearly
+# deletes the ghost exchange (4.15 -> 0.34 ms, 12x) because rk2's extra
+# mid-step exchange is also a synchronisation point.  --active-every 32
+# amortizes the classification rebuild, worth 2.6x at the ~1% wet fraction
+# this domain runs at (and correctly nothing on a wet block; see the README).
+# Both are gated under MPI by tools/mpi_verify.sh, 120/120.
+SCHEME="--scheme ader2 --active-every 32"
+RUN="--steps 100 --warmup 10 --flux scatter --active-set $SCHEME $CSV"
 $MPI "$BENCH" --tiles $IDX $RUN --tile-stats "$OUT/stats_tri.txt" > "$OUT/bal_tri.txt" 2>&1
 python3 tools/tile_assign.py $IDX --stats "$OUT/stats_tri.txt" --nprocs $NP --floor 0.073 \
     --out "$OUT/assign_contig.txt" --split-out "$OUT/split.txt" --split-threshold 0.25 | tee "$OUT/assign.log"
-$MPI "$BENCH" --tiles $IDX --assign "$OUT/assign_contig.txt" $RUN > "$OUT/bal_contig.txt" 2>&1
+$MPI "$BENCH" --tiles $IDX --assign "$OUT/assign_contig.txt" $RUN \
+    --phases --phases-sync > "$OUT/bal_contig.txt" 2>&1
 
 {
   echo "=== 1 sqm 15-node rehearsal: $(cat "$OUT/subset.txt") on $(wc -l < "$OUT/nodes.txt") nodes, np=$NP ==="

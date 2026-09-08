@@ -13,7 +13,7 @@
 set -u
 BIN=${1:-bin/bench_cpumpi}
 MPIRUN=${2:-"mpirun --bind-to none"}
-TMP=${TMPDIR:-/tmp}/mpi_verify.$$
+TMP=${TMPDIR:-$(dirname "$0")/../build}/mpi_verify.$$
 mkdir -p "$TMP"; trap 'rm -rf "$TMP"' EXIT
 export OMP_NUM_THREADS=${OMP_NUM_THREADS:-4}
 fail=0; n=0
@@ -28,7 +28,8 @@ for c in dam river; do for sc in rk2 ader2; do
       printf '%-8s %-6s %-6s np=%d %-28s %s\n' "$1x$2" $c $sc $np "$mode" "$r"; n=$((n+1))
       [ "$r" = OK ] || fail=$((fail+1))
     done
-    for mode in "--flux scatter" "--flux scatter --active-set"; do
+    for mode in "--flux scatter" "--flux scatter --active-set" \
+               "--flux scatter --active-set --active-every 8"; do
       r=$($MPIRUN -np $np "$BIN" $ARGS --case $c --scheme $sc $mode \
             --check "$TMP/gs.bin" --atol 1e-6 --rtol 0 2>&1 | grep tolerance | awk '{print $NF}')
       printf '%-8s %-6s %-6s np=%d %-28s %s\n' "$1x$2" $c $sc $np "$mode" "$r"; n=$((n+1))
@@ -52,7 +53,8 @@ if [ -f "$TILES" ] && [ -f "$MERGED" ]; then
         printf '%-8s %-6s %-6s np=%d %-28s %s\n' tiles10k delta $sc $np "$mode" "$r"; n=$((n+1))
         [ "$r" = OK ] || fail=$((fail+1))
       done
-      for mode in "--flux scatter" "--flux scatter --active-set"; do
+      for mode in "--flux scatter" "--flux scatter --active-set" \
+                 "--flux scatter --active-set --active-every 8"; do
         r=$($MPIRUN -np $np "$BIN" --tiles "$TILES" $ARGS --scheme $sc $mode \
               --check "$TMP/ms.bin" --atol 0 --ftol 1e-7 2>&1 | grep tolerance | awk '{print $NF}')
         printf '%-8s %-6s %-6s np=%d %-28s %s\n' tiles10k delta $sc $np "$mode" "$r"; n=$((n+1))

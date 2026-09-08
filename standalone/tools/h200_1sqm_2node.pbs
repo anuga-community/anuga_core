@@ -37,7 +37,8 @@ $MPI4 "$BENCH" --tiles $IDX --steps 20 --warmup 0 --save "$OUT/g.bin" --csv "$OU
 $MPI8 "$BENCH" --tiles $IDX --steps 20 --warmup 0 --check "$OUT/g.bin" --atol 0 --rtol 0 --csv "$OUT/runs.csv" > "$OUT/gate_np8.txt" 2>&1
 grep -H tolerance "$OUT"/gate_np8.txt | tee "$OUT/GATES.txt"
 
-RUN="--steps 100 --warmup 10 --flux scatter --active-set --csv $OUT/runs.csv"
+# Production scheme: see the note in h200_1sqm_15node.pbs.
+RUN="--steps 100 --warmup 10 --flux scatter --active-set --scheme ader2 --active-every 32 --csv $OUT/runs.csv"
 $MPI8 "$BENCH" --tiles $IDX $RUN --tile-stats "$OUT/stats_tri.txt" > "$OUT/bal_tri.txt" 2>&1
 python3 tools/tile_assign.py $IDX --stats "$OUT/stats_tri.txt" --nprocs 8 --floor 0.073 --out "$OUT/assign_contig.txt" --split-out "$OUT/split.txt" --split-threshold 0.25 | tee "$OUT/assign.log"
 $MPI8 "$BENCH" --tiles $IDX --assign "$OUT/assign_contig.txt" $RUN > "$OUT/bal_contig.txt" 2>&1
