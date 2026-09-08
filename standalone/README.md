@@ -1164,6 +1164,24 @@ and under MPI at np=2/4; the MPI tiled gate passes against the serial golden
 at K=1/4/8.  Ghosts are seeded into the candidate and dilated with it, so a
 front crossing a rank boundary is inside the superset before it arrives.
 
+**It composes with ADER2**, and the two together are the whole picture on
+this set (58.2M real delta triangles, V100, 200 steps, sim rate = simulated
+seconds per wall second, the only honest cross-scheme metric since ms/step
+ignores dt):
+
+| scheme | K | sim rate | vs baseline |
+|---|---:|---:|---:|
+| rk2   |  1 | 1.083 | 1.00x |
+| rk2   | 32 | 2.835 | 2.62x |
+| ader2 | 32 | 4.486 | **4.14x** |
+
+ADER2 gates clean with the amortized rebuild (`--check` against an ADER2
+K=1 golden, K=8 and K=32, OK).  At rank scale it should be worth more than
+the 1.58x it adds here: one flux call per step instead of two also halves the
+halo exchanges and the per-substep dt allreduces, which are 42% of the wall
+at 60 ranks and untouched by any kernel work.  The 15-node rehearsal ran the
+default rk2, so this is unexploited there.
+
 Costs two extra `anuga_int` arrays (16 B/tri, ~3% on top of 488) plus one
 owned-edge array.  Incompatible with rain, which wets cells no superset can
 predict -- and widespread rain activates the whole mesh anyway, so there is
