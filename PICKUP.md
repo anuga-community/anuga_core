@@ -186,7 +186,45 @@ every restricted rebuild against a full scan: zero mismatches on CPU, GPU
 and MPI np=2/4.  Primitives are in the shared `gpu/core_kernels.c`;
 `feature/gpu-active-set` still rebuilds every step and can adopt them.
 
-**IN FLIGHT: job 178439403 (regen_1sqm, normalsr 104c, 6 h, started
+**DONE: job 178439403 (regen_1sqm, 2026-09-08) -- the 1 sqm set is
+regenerated with the corner fix.**  1404 tiles, **17.445 G triangles**, 391
+GB on `/g/data/bm55/jlv900/tiles1sqm`, 0 failed conversions, `DONE` written.
+Smoke-tested on the V100 (4-tile subset, 14.95M tris: loads, stitches, steps).
+
+*The A/B is confirmed exactly and the headline is 71x, not 157x.*  Tile 1171
+(the old governor, a 25-triangle coastal fragment, 76% active) went
+**0.870 mm -> 152 mm**, against the A/B's predicted 152.473.  But the
+whole-set gate -- which the 8-tile A/B could not do -- finds smaller needles
+in OTHER wet tiles:
+
+| tile | old-run active | new min inradius |
+|---|---|---|
+| 1167 |  1.09% | **0.062 m**  <- the new governor |
+| 665  |  0.25% |   0.064 m |
+| 1248 |  (not in the 15-node subset) | 0.065 m |
+| 1383 |  (not in the subset) | 0.077 m |
+| 243  | **100%** |   0.094 m |
+| 1171 | 76%    |   0.152 m |
+
+So dt goes 6.55e-4 -> ~0.047 s, **71x** (62 mm / 0.870 mm), or 108x if
+tile 1167's 1% wet part misses its own worst triangle and tile 243 governs.
+**38 wall-days per simulated day becomes ~13 hours**; with the ring-k
+amortization on top (~1.7x end-to-end at 60 ranks, since 42% of that wall is
+halo + allreduce that does not shrink) **~7.6 hours**.
+
+35 tiles fail the gate, median inradius 0.34 m throughout: another targeted
+corner-fix pass on the wet ones is worth up to a further ~3.6x on dt (0.094
+-> 0.34 m), and is the obvious next lever if more is wanted.
+
+**Two things this set does NOT carry:**
+1. The 13-tile load-balance refinement (the old 1441-tile index) is NOT in
+   it -- this is the 1404-tile original split re-meshed.  The
+   coarse->assign->split->assign loop has to be re-run on the new set before
+   the hero run (it was worth 1.71x, imbalance 74% -> 13.9%).
+2. `cdac_script/mesh_tiles_1sqm_fix` holds **521 GB of .msh** intermediates;
+   scratch is at 730/1024 GiB.  Removable now that index.txt checks out.
+
+**Superseded: job 178439403 (regen_1sqm, normalsr 104c, 6 h, started
 2026-09-08).**  The old 391 GB gdata set was deleted by the user, so the
 guard passed.  Meshes `cdac_script/tiles_1sqm_fix/` (1404 tiles) at 1 m^2 ->
 quality gate -> compact bmesh on `/g/data/bm55/jlv900/tiles1sqm` -> index.
