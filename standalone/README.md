@@ -962,6 +962,42 @@ x ~385 = 3.1 Gc/s sustained) edges out one H200.  Five-device chart:
 tmp_artifacts/anuga_v100_scaling.html's cross-vendor successor lives at
 the "One Source, Five GPUs" artifact.
 
+### Porting the run to Perlmutter (`tools/perlmutter_1sqm_fullmesh.sl`)
+
+gadi's gpuhopper allows 15 nodes, and the full 1 m^2 delta needs 18 at the
+measured 528 B/triangle -- so the machine, not the code, is what stops it.
+Perlmutter has no such cap, and the A100-80 is the one card whose ceiling is
+verified exactly (166.4M triangles fit, 169M OOM, 166.3M predicted).
+
+| card | tri/GPU @528 B, 10% margin | GPUs for 17.445 G | nodes |
+|---|---:|---:|---:|
+| A100-80 (`-C gpu&hbm80g`) | 145 M | 120 | **30** |
+| A100-40 (`-C gpu`)        |  72 M | 242 | 61 |
+| A100-80 + the 428 B/tri memory levers | 179 M | 97 | 25 |
+
+**Not slower than the H200 plan**: ADER2 + scatter plateaus at ~1500
+Mcell-steps/s on the A100-80 against 2837 on an H200, so per GPU the A100 is
+1.89x slower -- but 120 of them aggregate 180 Tcell-steps/s against 60 H200s'
+170.  Perlmutter wins on node count, not per-card speed.
+
+Two portability points the port needed:
+
+* `CC := $(MPICC)`, defaulting to `mpicc`.  Cray drives the underlying
+  compiler through `cc` with PrgEnv-nvidia loaded and ignores `OMPI_CC`
+  entirely, so the wrapper had to stop being hard-coded:
+  `make CONFIG=gpumpi MPICC=cc GPU_ARCH=cc80`.  Verified by re-running
+  `mpi_verify.sh` on gadi afterwards, 120/120.
+* Device selection is already portable -- `rank % omp_get_num_devices()` --
+  so 4 ranks per node land on 4 distinct GPUs under `srun --gpus-per-node=4`
+  exactly as they do under `mpirun --map-by ppr:4:node`.
+* `MPICH_GPU_SUPPORT_ENABLED=1` is what makes the halo's device pointers
+  legal on Cray MPICH; it is the analogue of the GPU_AWARE_MPI path already
+  compiled in.
+
+The 391 GB tile set has to be moved (Globus, gadi `/g/data/bm55/jlv900/
+tiles1sqm` -> `$SCRATCH`).  `index.txt` stores basenames, so the directory
+can land anywhere as long as the index travels with it.
+
 ### Cross-architecture results (V100 / A100-80 / H200)
 
 The 512 B/triangle ceiling model is verified on three architectures, each to

@@ -147,7 +147,19 @@ Three findings, all banked in README:
    spread to 0.3%.  `tile_assign.py --floor 0.073` is 26% high at 1 m^2;
    `--floor 0.058` predicts max kernel 19.23 -> 16.90 ms (1.14x, free).
 
-**HOW MANY NODES (recomputed 2026-09-08 from the MEASURED per-GPU load, not
+**2026-09-09: THE RUN IS GOING TO PERLMUTTER**, because gadi's 15-node cap is
+what blocks the full mesh, not the code.  `tools/perlmutter_1sqm_fullmesh.sl`
+(Slurm, 30 nodes / 120 A100-80) is written and syntax-checked but NOT
+submitted -- it needs the NERSC repo filled in at `#SBATCH -A __REPO__` and
+the 391 GB tile set moved by Globus to `$SCRATCH` (index.txt stores
+basenames, so the directory can land anywhere).  Sizing: the A100-80 ceiling
+is verified exactly (166.4M fit / 169M OOM), giving 145M tri/GPU at a 10%
+margin and 120 GPUs; 61 nodes on the 40 GB cards; 25 nodes with the memory
+levers.  Aggregate throughput at 30 nodes slightly EXCEEDS 60 H200s, so the
+4-5 wall-hours per simulated day projection carries over.  Makefile now takes
+`MPICC` (Cray `cc`; OMPI_CC is ignored there) -- re-gated on gadi, 120/120.
+
+**HOW MANY NODES ON GADI (recomputed 2026-09-08 from the MEASURED per-GPU load, not
 the 488 B/tri model).**  Device bytes per triangle: 488 (model) + 24 (RK2
 backup) + 16 (active-set candidate) = **528**.  The 60-GPU run put 241.8M
 tri on its busiest GPU (~115 GiB actual) and ran, so 120 GiB/GPU is the safe

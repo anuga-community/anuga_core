@@ -36,6 +36,12 @@ endif
 WARN          := -Wall -Wno-unused-variable -Wno-unused-but-set-variable -Wno-unused-function
 
 # ---------------------------------------------------------------- per-config
+# MPI compiler wrapper for the cpumpi/gpumpi configs.  Overridable for
+# non-OpenMPI sites: Cray systems (Perlmutter) drive the underlying compiler
+# through `cc` with PrgEnv-nvidia loaded, where OMPI_CC is simply ignored.
+#   make CONFIG=gpumpi MPICC=cc GPU_ARCH=cc80
+MPICC      ?= mpicc
+
 ifeq ($(CONFIG),cpu)
   # make predefines CC, and the nvhpc module exports CC=nvc, so ?= would never
   # fire.  Only an explicit `make cpu CC=...` should win here.
@@ -93,14 +99,14 @@ endif
 ifeq ($(CONFIG),cpumpi)
   # mpicc drives the underlying compiler (OMPI_CC); the gadi wrapper injects
   # include/lib paths through its own environment, so --showme is incomplete.
-  CC          := mpicc
+  CC          := $(MPICC)
   export OMPI_CC := gcc
   CFLAGS      := -O3 -g -march=native -fopenmp -DCPU_ONLY_MODE -DHAVE_MPI \
                  -foffload=disable $(WARN)
   LDFLAGS     := -fopenmp -foffload=disable
 endif
 ifeq ($(CONFIG),gpumpi)
-  CC          := mpicc
+  CC          := $(MPICC)
   export OMPI_CC := nvc
   CFLAGS      := -O3 -g -mp=gpu,multicore -gpu=$(GPU_ARCH) -DHAVE_MPI \
                  -DGPU_AWARE_MPI
