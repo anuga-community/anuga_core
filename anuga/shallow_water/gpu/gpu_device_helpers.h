@@ -33,8 +33,10 @@
 
 #pragma omp declare target
 
-// Small constant for avoiding division by zero
-static const double GPU_TINY = 1.0e-100;
+// Small constant for avoiding division by zero.
+// #define (not static const) so GCC's OpenMP SIMD vectorizer inlines the
+// literal rather than generating an external symbol reference.
+#define GPU_TINY 1.0e-100
 
 // ============================================================================
 // Extrapolation Helper Functions (device code)

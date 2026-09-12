@@ -173,11 +173,24 @@ if openmp.found()
     openmp_c_args = ['-O3', '-qopenmp', '-g']
     add_project_link_arguments('-qopenmp', language: ['c', 'cpp'])
   elif effective_compiler_id in ['intel-llvm', 'icx']
-    openmp_c_args = ['-O3', '-fiopenmp', '-g']
+    # -xHost: target native CPU ISA (enables AVX-512/AVX2 SVML for math functions
+    # like cbrt/sqrt inside simd loops; without it ICX defaults to a generic ISA
+    # and scalar math fallback hurts kernels with transcendentals).
+    # -xHost: target native CPU ISA (enables AVX-512/AVX2 SVML for math functions
+    # like cbrt/sqrt inside simd loops; without it ICX defaults to a generic ISA
+    # and scalar math fallback hurts kernels with transcendentals).
+    # Note: -Ofast tested but reverted — it regressed manning_friction_flat +13%
+    # (faster-but-less-accurate cbrt path is slower in this loop shape).
+    openmp_c_args = ['-O3', '-fiopenmp', '-xHost', '-g']
     add_project_link_arguments('-fiopenmp', language: ['c', 'cpp'])
   elif effective_compiler_id == 'nvidia_hpc'
-    # Mode 1 always uses CPU-only multicore OpenMP (no GPU)
-    openmp_c_args = ['-O3', '-mp=gpu,multicore', '-g']
+    # Mode 1 always uses CPU-only multicore OpenMP (no GPU).
+    # -Mfprelaxed: allow FP reassociation and use SIMD math routines (nvc
+    #   equivalent of -ffast-math); required for vectorised cbrt/sqrt paths.
+    # -Munroll: loop unrolling; pairs well with SIMD on the hot OpenMP loops.
+    # Note: -Mvect=simd omitted for mode-1 — it regressed protect m1 +15%
+    # (force-vectorising the short branch-heavy protect loop hurts throughput).
+    openmp_c_args = ['-O3', '-mp=gpu,multicore', '-Mfprelaxed', '-Munroll', '-g']
     add_project_link_arguments(['-mp=gpu,multicore'], language: ['c', 'cpp'])
   elif effective_compiler_id == 'clang'
     # Clang with libomp (e.g., from LLVM, Homebrew on macOS, or AOMP)
@@ -189,7 +202,29 @@ if openmp.found()
     # attempt nvptx offloading for all -fopenmp links; disable it here so that
     # sw_domain_openmp_ext (CPU-only) does not trigger the nvptx mkoffload pass.
     # The GPU extension (sw_domain_gpu_ext) sets its own -foffload=nvptx-none.
-    openmp_c_args = ['-O3', '-fopenmp', '-foffload=disable', '-g']
+    # -march=native: enable native ISA (AVX-512 on Cascadelake) and libmvec for
+    # vectorised math (cbrt, sqrt) inside SIMD loops — equivalent to ICX's -xHost.
+    openmp_c_args = ['-O3', '-fopenmp', '-foffload=disable', '-march=native', '-g']
+    if cc.version().version_compare('>=12')
+      # GCC 12+ has full libmvec coverage (vectorised cbrt, sqrt, etc.).
+      # These flags match ICX's default behaviour at -O3:
+      #   -fno-math-errno/-fno-trapping-math: drop per-call errno/exception overhead,
+      #     allowing the vectoriser to use libmvec instead of scalar fallbacks.
+      #   -ffinite-math-only: assume no NaN/Inf inputs (required for libmvec cbrt path).
+      #   -fassociative-math: permit FP reordering across iterations (enables reduction SIMD).
+      #   -fvect-cost-model=unlimited: prevent cost-model from blocking profitable SIMD
+      #     on stride-3 gather/scatter loops (distribute, extrapolate).
+      #   -funroll-loops: unroll inner loops; pairs well with SIMD on short trip-count loops.
+      # -fvect-cost-model=cheap (not unlimited): lets the cost model veto
+      # vectorisation when it is genuinely counter-productive (e.g. the
+      # protect loop in mode-1 regressed +28% with 'unlimited' in GCC 15).
+      # 'cheap' still allows SIMD on compute_fluxes/distribute/extrapolate
+      # but blocks force-vectorised paths that hurt short branch-heavy loops.
+      openmp_c_args += [
+        '-fno-math-errno', '-fno-trapping-math', '-ffinite-math-only',
+        '-fassociative-math', '-fvect-cost-model=cheap', '-funroll-loops',
+      ]
+    endif
     add_project_link_arguments(['-fopenmp', '-foffload=disable'], language: ['c', 'cpp'])
   endif
   openmp_deps = dependencies + [openmp]

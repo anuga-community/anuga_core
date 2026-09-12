@@ -17,8 +17,19 @@
 // CPU MULTICORE MODE - Regular OpenMP, no device offloading
 // ============================================================================
 
-// Parallel loops with SIMD vectorization
-#define OMP_PARALLEL_LOOP _Pragma("omp parallel for simd")
+// Parallel loops with SIMD vectorization.
+//
+// ICX (Intel LLVM) generates slower code with the combined "parallel for simd"
+// directive on stride-3 scatter loops (distribute), branch-heavy loops
+// (manning friction), and large gather loops (extrapolate) — 2-3x regression
+// vs GCC measured in Phase 1 benchmarks.  The plain "parallel for" lets ICX's
+// own auto-vectorizer apply per-loop, which eliminates the regression.
+// GCC and NVHPC use the full "parallel for simd" as before.
+#ifdef __INTEL_LLVM_COMPILER
+  #define OMP_PARALLEL_LOOP _Pragma("omp parallel for")
+#else
+  #define OMP_PARALLEL_LOOP _Pragma("omp parallel for simd")
+#endif
 #define OMP_PARALLEL_LOOP_SIMD _Pragma("omp parallel for simd")
 
 // Reductions - use DO_PRAGMA to allow variable name expansion
