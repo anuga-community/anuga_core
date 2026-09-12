@@ -3879,6 +3879,62 @@ friction  \n \
         domain.get_extent()
 
 
+class Test_OMP_Num_Threads(unittest.TestCase):
+    """OpenMP thread count is process-wide, so anuga.set_omp_num_threads(n)
+    must be reflected by every domain in the session, including ones already
+    constructed (the notebook use-case)."""
+
+    def setUp(self):
+        from anuga.shallow_water.shallow_water_domain import get_omp_num_threads
+        self._saved = get_omp_num_threads()
+        self._saved_env = os.environ.get('OMP_NUM_THREADS')
+
+    def tearDown(self):
+        from anuga.shallow_water.shallow_water_domain import set_omp_num_threads
+        set_omp_num_threads(self._saved, verbose=False)
+        if self._saved_env is None:
+            os.environ.pop('OMP_NUM_THREADS', None)
+        else:
+            os.environ['OMP_NUM_THREADS'] = self._saved_env
+
+    def _make_domain(self):
+        points, vertices, boundary = rectangular_cross(4, 4)
+        return Domain(points, vertices, boundary)
+
+    def test_module_level_propagates_to_existing_and_new_domains(self):
+        from anuga.shallow_water.shallow_water_domain import (
+            set_omp_num_threads, get_omp_num_threads)
+
+        set_omp_num_threads(1, verbose=False)
+        d1 = self._make_domain()
+        self.assertEqual(d1.omp_num_threads, 1)
+
+        # Bump the session count AFTER d1 already exists.
+        set_omp_num_threads(3, verbose=False)
+        self.assertEqual(get_omp_num_threads(), 3)
+        self.assertEqual(d1.omp_num_threads, 3)          # existing domain updates
+        self.assertEqual(os.environ['OMP_NUM_THREADS'], '3')
+
+        d2 = self._make_domain()
+        self.assertEqual(d2.omp_num_threads, 3)          # new domain inherits it
+
+    def test_backward_compatible_setters_are_process_wide(self):
+        from anuga.shallow_water.shallow_water_domain import set_omp_num_threads
+
+        set_omp_num_threads(1, verbose=False)
+        d1 = self._make_domain()
+        d2 = self._make_domain()
+
+        # Legacy attribute assignment still works and is process-wide.
+        d1.omp_num_threads = 2
+        self.assertEqual(d1.omp_num_threads, 2)
+        self.assertEqual(d2.omp_num_threads, 2)
+
+        # Legacy Domain.set_omp_num_threads() method still works and is process-wide.
+        d2.set_omp_num_threads(4, verbose=False)
+        self.assertEqual(d1.omp_num_threads, 4)
+        self.assertEqual(d2.omp_num_threads, 4)
+
 
 #################################################################################
 

@@ -140,9 +140,9 @@ class Parallel_Structure_operator(anuga.Operator):
             self.description = description
 
         if label is None:
-            self.label = "structure_%g" % Parallel_Structure_operator.counter + "_P" + str(self.myid)
+            self.label = "structure_%g" % Parallel_Structure_operator.counter
         else:
-            self.label = label + '_%g' % Parallel_Structure_operator.counter + "_P" + str(self.myid)
+            self.label = label + '_%g' % Parallel_Structure_operator.counter
 
         if structure_type is None:
             self.structure_type = 'generic structure'
@@ -151,9 +151,13 @@ class Parallel_Structure_operator(anuga.Operator):
 
         self.verbose = verbose
 
-        # Keep count of structures
-        if self.myid == master_proc:
-            Parallel_Structure_operator.counter += 1
+        # Keep count of structures. Advance on every participating proc (not
+        # just the master) so this rank's counter stays in lockstep with the
+        # ranks that own no part of the structure — those advance it in the
+        # factory's ``return None`` branch. Because the factory is entered
+        # collectively by all ranks in the same order, every operator ends up
+        # with a unique, rank-consistent number matching the sequential label.
+        Parallel_Structure_operator.counter += 1
 
         # Slots for recording current statistics
         self.accumulated_flow = 0.0
@@ -255,6 +259,12 @@ class Parallel_Structure_operator(anuga.Operator):
         self.set_parallel_logging(logging)
 
     def __call__(self):
+
+        from anuga.structures.structure_operator import (
+            _can_use_c_culvert, _call_c_culvert)
+        if _can_use_c_culvert(self):
+            _call_c_culvert(self)
+            return
 
         timestep = self.domain.get_timestep()
 
@@ -364,9 +374,15 @@ class Parallel_Structure_operator(anuga.Operator):
 
         # Inflow inlet procs sets new attributes
         if self.myid in self.inlet_procs[self.inflow_index]:
-            self.inlets[self.inflow_index].set_depths(new_inflow_depth)
-            self.inlets[self.inflow_index].set_xmoms(new_inflow_xmom)
-            self.inlets[self.inflow_index].set_ymoms(new_inflow_ymom)
+            # old_inflow_depth is the GLOBAL average over the whole inlet (every
+            # inflow-inlet rank computed it collectively above), which is what
+            # new_inflow_depth was derived from. Each rank levels its own share
+            # of the inlet by that per-area change — see
+            # Parallel_Inlet.set_average_depth.
+            self.inlets[self.inflow_index].set_average_depth(
+                new_inflow_depth, old_inflow_depth)
+            self.inlets[self.inflow_index].set_average_momenta(
+                new_inflow_xmom, new_inflow_ymom)
 
         # Get outflow inlet attributes, all processors associated with outflow inlet must call
         if self.myid in self.inlet_procs[self.outflow_index]:
@@ -464,9 +480,10 @@ class Parallel_Structure_operator(anuga.Operator):
 
         # outflow inlet procs sets new outflow attributes
         if self.myid in self.inlet_procs[self.outflow_index]:
-            self.inlets[self.outflow_index].set_depths(new_outflow_depth)
-            self.inlets[self.outflow_index].set_xmoms(new_outflow_xmom)
-            self.inlets[self.outflow_index].set_ymoms(new_outflow_ymom)
+            self.inlets[self.outflow_index].set_average_depth(
+                new_outflow_depth, outflow_average_depth)
+            self.inlets[self.outflow_index].set_average_momenta(
+                new_outflow_xmom, new_outflow_ymom)
 
     def __process_non_skew_culvert(self):
         """Create lines at the end of a culvert inlet and outlet.
@@ -768,7 +785,7 @@ class Parallel_Structure_operator(anuga.Operator):
         if self.logging and self.myid == self.master_proc:
             self.log_filename = self.domain.get_datadir() + '/' + self.label + '.log'
             log_to_file(self.log_filename, stats, mode='w')
-            log_to_file(self.log_filename, 'time,discharge_instantaneous,discharge_abs_timemean,velocity_instantaneous,driving_energy_instantaneous,delta_total_energy_instantaneous')
+            log_to_file(self.log_filename, 'time, discharge_instantaneous, discharge_abs_timemean, velocity, accumulated_flow, driving_energy_instantaneous, delta_total_energy_instantaneous')
 
             #log_to_file(self.log_filename, self.culvert_type)
 
@@ -794,6 +811,7 @@ class Parallel_Structure_operator(anuga.Operator):
         message += '%.5f, ' % self.discharge
         message += '%.5f, ' % self.discharge_abs_timemean
         message += '%.5f, ' % self.velocity
+        message += '%.5f, ' % self.accumulated_flow
         message += '%.5f, ' % self.driving_energy
         message += '%.5f' % self.delta_total_energy
 

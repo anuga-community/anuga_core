@@ -344,6 +344,7 @@ class Draw(AppShell.AppShell):
         for cut in range(num_of_cuts):
              cuts.append(cut*factor)
 
+        v_old = v_first = None      # seeded by the radius == 0.0 branch on the first pass
         for radius in cuts:
             x = x_origin + r * math.cos(radius)
             y = y_origin + r * math.sin(radius)
@@ -1292,7 +1293,7 @@ class Draw(AppShell.AppShell):
 
         fd.close()
         log.critical('returning m')
-        return oadtestmesh(ofile)
+        return m
 
 class  AddVertexDialog(Dialog):
     """

@@ -1376,6 +1376,13 @@ class Test_Urs2Sts(Test_Mux):
                                  verbose=False)
 
         domain_fbound = Domain(meshname)
+        # Pinned to legacy: these tests assert on quantity.boundary_values, a host
+        # array that mode-2 ('unified') never populates -- it evaluates boundaries on
+        # the device (evaluate_file_boundary_gpu etc.) and only syncs centroid values
+        # back. The physics IS mode-2-correct (the fbound-vs-Dirichlet comparisons in
+        # these same tests pass under unified); only this white-box host-state check
+        # does not apply. See claude/CONVENTIONS.md, "Compute mode in tests".
+        domain_fbound.set_compute_mode('legacy')
         domain_fbound.set_quantity('stage', tide)
         Bf = File_boundary(sts_file+'.sts',
                            domain_fbound,
@@ -1420,6 +1427,7 @@ class Test_Urs2Sts(Test_Mux):
 
 
         domain_drchlt = Domain(meshname)
+        domain_drchlt.set_compute_mode('legacy')
         domain_drchlt.set_starttime(2.0)
         domain_drchlt.set_quantity('stage', tide)
         Br = Reflective_boundary(domain_drchlt)
@@ -1516,6 +1524,13 @@ class Test_Urs2Sts(Test_Mux):
                                  verbose=False)
 
         domain_fbound = Domain(meshname)
+        # Pinned to legacy: these tests assert on quantity.boundary_values, a host
+        # array that mode-2 ('unified') never populates -- it evaluates boundaries on
+        # the device (evaluate_file_boundary_gpu etc.) and only syncs centroid values
+        # back. The physics IS mode-2-correct (the fbound-vs-Dirichlet comparisons in
+        # these same tests pass under unified); only this white-box host-state check
+        # does not apply. See claude/CONVENTIONS.md, "Compute mode in tests".
+        domain_fbound.set_compute_mode('legacy')
         domain_fbound.set_quantity('stage', tide)
 
         Br = Reflective_boundary(domain_fbound)
@@ -1564,6 +1579,7 @@ class Test_Urs2Sts(Test_Mux):
 
 
         domain_drchlt = Domain(meshname)
+        domain_drchlt.set_compute_mode('legacy')
         domain_drchlt.set_starttime(2.0)
         domain_drchlt.set_quantity('stage', tide)
         Br = Reflective_boundary(domain_drchlt)
@@ -1658,6 +1674,13 @@ class Test_Urs2Sts(Test_Mux):
                                  verbose=False)
 
         domain_fbound = Domain(meshname)
+        # Pinned to legacy: these tests assert on quantity.boundary_values, a host
+        # array that mode-2 ('unified') never populates -- it evaluates boundaries on
+        # the device (evaluate_file_boundary_gpu etc.) and only syncs centroid values
+        # back. The physics IS mode-2-correct (the fbound-vs-Dirichlet comparisons in
+        # these same tests pass under unified); only this white-box host-state check
+        # does not apply. See claude/CONVENTIONS.md, "Compute mode in tests".
+        domain_fbound.set_compute_mode('legacy')
         domain_fbound.set_quantity('stage', tide)
 
         Br = Reflective_boundary(domain_fbound)

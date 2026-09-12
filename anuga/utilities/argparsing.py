@@ -72,6 +72,13 @@ def create_standard_parser():
     parser.add_argument('-v', '--verbose', nargs='?', type=bool, const=True, default=False,
                    help='turn on verbosity')
 
+    parser.add_argument('-d', '--debug', nargs='?', type=bool, const=True, default=False,
+                   help='turn on debug-level reporting (e.g. mesh generation internals)')
+
+    parser.add_argument('-l', '--long', nargs='?', type=bool, const=True, default=False,
+                   help='include long-running validation tests (the HEC-RAS bridge/weir '
+                        'behaviour cases) that run_auto_validation_tests.py skips by default')
+
     parser.add_argument('-cp', '--checkpointing', nargs='?', type=bool, const=True, default=False,
                    help='turn on checkpointing')
 
@@ -87,9 +94,11 @@ def create_standard_parser():
     parser.add_argument('--checkpoint_time', type=float, default=-1.0,
                        help='checkpoint time')
 
-    parser.add_argument('-mpm', '--multiprocessor_mode', type=int, default=1,
+    parser.add_argument('-mpm', '--multiprocessor_mode', type=int, default=argparse.SUPPRESS,
                        choices=[1, 2],
-                       help='multiprocessor mode: 1=legacy CPU OpenMP, 2=unified gpu_ext kernels')
+                       help='multiprocessor mode: 1=legacy CPU OpenMP, 2=unified gpu_ext '
+                            'kernels. If unset, the domain keeps its default compute mode '
+                            '(ANUGA_DEFAULT_COMPUTE_MODE, else legacy)')
 
     parser.add_argument('-nt', '--omp_num_threads', type=int, default=argparse.SUPPRESS,
                        help='number of OpenMP threads (process-wide). '

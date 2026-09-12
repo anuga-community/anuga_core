@@ -941,9 +941,8 @@ class Quantity:
 
 
 
-        Exactly one of the arguments
-          numeric, quantity, function, filename
-        must be present.
+        Exactly one of the arguments ``numeric``, ``quantity``, ``function`` or
+        ``filename`` must be present.
         """
 
         from anuga.geospatial_data.geospatial_data import Geospatial_data
@@ -1009,6 +1008,15 @@ class Quantity:
 
         msg = 'Indices must be a list, array or None'
         assert isinstance(indices, (type(None), list, num.ndarray)), msg
+
+        # A mode-2 (GPU 'unified') domain keeps the authoritative centroid state on
+        # the device, so it needs the host arrays refreshed before this write and
+        # pushed back after it.  Duck-typed: domains with no device state (and any
+        # non-device-resident quantity) supply no hook and pay nothing.
+        # See Domain._notify_before_host_quantity_write() in shallow_water_domain.
+        notify_before = getattr(self.domain, '_notify_before_host_quantity_write', None)
+        if notify_before is not None:
+            notify_before(self.name)
 
         # Determine which 'set_values_from_...' to use
         if numeric is not None:
@@ -1084,6 +1092,10 @@ class Quantity:
         if location == 'centroids':
             # Extrapolate 1st order - to capture notion of area being specified
             self.extrapolate_first_order()
+
+        notify_after = getattr(self.domain, '_notify_after_host_quantity_write', None)
+        if notify_after is not None:
+            notify_after(self.name)
 
     ############################################################################
     # Specific internal functions for setting values based on type
@@ -1249,15 +1261,16 @@ class Quantity:
                                  indices=None,
                                  use_cache=False,
                                  verbose=False):
-        """Set values for quantity using specified function
+        """Set values for quantity using specified function.
 
-        Input
-        f: x, y -> z Function where x, y and z are arrays
-        location: Where values are to be stored.
-                  Permissible options are: vertices, centroid,
-                  unique vertices
-                  Default is "vertices"
-        indices:
+        Input::
+
+            f: x, y -> z Function where x, y and z are arrays
+            location: Where values are to be stored.
+                      Permissible options are: vertices, centroid,
+                      unique vertices
+                      Default is "vertices"
+            indices:
         """
 
         # FIXME: Should check that function returns something sensible and
@@ -2287,11 +2300,12 @@ class Quantity:
         vertices 2.  This corresponds to the node coordinates obtained from the
         method general_mesh.get_vertex_coordinates()
 
-        Calling convention
-        if xy is True:
-           X, Y, A, V = get_vertex_values
-        else:
-           A, V = get_vertex_values
+        Calling convention::
+
+            if xy is True:
+                X, Y, A, V = get_vertex_values()
+            else:
+                A, V = get_vertex_values()
         """
 
         if smooth is None:

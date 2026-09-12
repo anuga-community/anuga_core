@@ -101,7 +101,7 @@ if myid == 0:
 #------------------------------
 
 for t in domain.evolve(yieldstep=5.0,finaltime=350.0):
-	if myid == 0: print(domain.timestepping_statistics())
+	if myid == 0 and verbose: print(domain.timestepping_statistics())
     #uh=domain.quantities['xmomentum'].centroid_values
     #vh=domain.quantities['ymomentum'].centroid_values
     #depth=domain.quantities['stage'].centroid_values - domain.quantities['elevation'].centroid_values

@@ -516,6 +516,26 @@ class Parallel_Inlet(Inlet):
         stages = self.get_stages()
         stages_order = stages.argsort()
 
+    def set_average_depth(self, new_average_depth, old_average_depth=None):
+        """Level this rank's share of the inlet (see Inlet.set_average_depth).
+
+        `old_average_depth` must be the GLOBAL average over the whole inlet: the
+        caller derived `new_average_depth` from it, and the difference is the
+        per-area volume change every rank must apply. Each rank then applies
+        that change to its own cells (its local average moves by the same
+        amount), leveling locally. Volume is exact; the level found on one rank
+        can differ from its neighbour's where an inlet straddles a partition,
+        which is the same order of seam the old uniform-depth write had on a
+        sloping bed.
+        """
+
+        if old_average_depth is None:
+            old_average_depth = self.get_global_average_depth()
+
+        delta = new_average_depth - old_average_depth
+        local_average = self.get_average_depth()
+        Inlet.set_average_depth(self, local_average + delta, local_average)
+
     def set_depths_evenly(self,volume):
         """ Distribute volume over all exchange
         cells with equal depth of water

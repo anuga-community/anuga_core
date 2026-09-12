@@ -71,7 +71,7 @@ class vAbstract:
         pass
 
     def __add__(self, other):
-        return VMesh([self,other])
+        return vMesh([self,other])
 
     def __repr__(self):
         return str(self.__class__)

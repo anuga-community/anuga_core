@@ -201,6 +201,95 @@ class TestSequentialMeshDump(unittest.TestCase):
         domain.set_boundary(boundary_map)
         return domain
 
+    @pytest.mark.skipif(not hasattr(os, 'fork'),
+                        reason='parallel dump uses a fork process pool (POSIX only)')
+    def test_parallel_dump_matches_serial(self):
+        """num_workers>1 (fork pool) produces the same NetCDF files as serial."""
+        import netCDF4
+
+        def dump(nw):
+            d = tempfile.mkdtemp()
+            anuga.sequential_mesh_dump(_make_domain(8, 6), numprocs=5,
+                                       partition_dir=d, num_workers=nw)
+            return d
+
+        serial_dir = dump(1)
+        parallel_dir = dump(4)
+
+        ncs = sorted(f for f in os.listdir(serial_dir) if f.endswith('.nc'))
+        self.assertEqual(ncs, sorted(f for f in os.listdir(parallel_dir)
+                                     if f.endswith('.nc')))
+        self.assertEqual(len(ncs), 5)
+        for f in ncs:
+            with netCDF4.Dataset(os.path.join(serial_dir, f)) as a, \
+                 netCDF4.Dataset(os.path.join(parallel_dir, f)) as b:
+                self.assertEqual(set(a.variables), set(b.variables))
+                for v in a.variables:
+                    num.testing.assert_array_equal(
+                        num.asarray(a.variables[v][:]),
+                        num.asarray(b.variables[v][:]),
+                        err_msg=f'{f}:{v} differs between serial and parallel dump')
+
+    @pytest.mark.skipif(not hasattr(os, 'fork'),
+                        reason='parallel dump uses a fork process pool (POSIX only)')
+    def test_parallel_dump_domain_matches_serial(self):
+        """sequential_distribute_dump: num_workers>1 reproduces the serial dump.
+
+        Single-file (default) partitions embed no paths, so the pickle files are
+        byte-identical between the serial and parallel writers -- and there are
+        no separate .npy files.
+        """
+        import filecmp
+        from anuga.parallel.sequential_distribute import sequential_distribute_dump
+
+        def dump(nw):
+            d = tempfile.mkdtemp()
+            sequential_distribute_dump(_make_domain(8, 6), numprocs=5,
+                                       partition_dir=d, num_workers=nw)
+            return d
+
+        s = dump(1)
+        p = dump(4)
+
+        files = sorted(os.listdir(s))
+        self.assertEqual(files, sorted(os.listdir(p)))
+        self.assertEqual(len([f for f in files if f.endswith('.pickle')]), 5)
+        self.assertFalse([f for f in files if f.endswith('.npy')],
+                         'single-file dump should not write .npy files')
+        match, mismatch, errors = filecmp.cmpfiles(s, p, files, shallow=False)
+        self.assertEqual((mismatch, errors), ([], []),
+                         f'serial vs parallel differ: {mismatch} {errors}')
+
+    def test_domain_dump_single_file_equals_legacy(self):
+        """single_file=True stores the same partition data as the legacy
+        multi-file layout (and the parallel writer works for both)."""
+        import pickle
+        from anuga.parallel.sequential_distribute import sequential_distribute_dump
+
+        sa = tempfile.mkdtemp()  # single-file (default), parallel writer
+        sb = tempfile.mkdtemp()  # legacy multi-file, serial writer
+        sequential_distribute_dump(_make_domain(8, 6), numprocs=4,
+                                   partition_dir=sa, num_workers=3)
+        sequential_distribute_dump(_make_domain(8, 6), numprocs=4,
+                                   partition_dir=sb, single_file=False)
+
+        # single-file: one pickle, no .npy;  legacy: 3 + N_quant .npy per rank
+        self.assertFalse([f for f in os.listdir(sa) if f.endswith('.npy')])
+        self.assertEqual(len([f for f in os.listdir(sa) if f.endswith('.pickle')]), 4)
+        self.assertTrue([f for f in os.listdir(sb) if f.endswith('.npy')])
+
+        for p in range(4):
+            fn = f'test_mesh_P4_{p}.pickle'
+            with open(os.path.join(sa, fn), 'rb') as f:
+                A = list(pickle.load(f))          # arrays inline
+            with open(os.path.join(sb, fn), 'rb') as f:
+                B = list(pickle.load(f))          # points/vertices/quantities are paths
+            num.testing.assert_array_equal(A[1], num.load(B[1]))   # points
+            num.testing.assert_array_equal(A[2], num.load(B[2]))   # vertices
+            self.assertEqual(set(A[4]), set(B[4]))                 # quantity names
+            for k in A[4]:
+                num.testing.assert_array_equal(A[4][k], num.load(B[4][k]))
+
     def test_roundtrip_node_count(self):
         """Loaded domain has correct full-triangle and full-node counts."""
         import netCDF4

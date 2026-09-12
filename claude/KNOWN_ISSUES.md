@@ -5,6 +5,36 @@ or require caution when working in specific areas.
 
 ---
 
+## Structures
+
+### A culvert in still water amplifies roundoff (not a mode-1 vs mode-2 problem)
+
+A Boyd structure whose inlets sit in near-still water is an unstable configuration: the
+operator reads the enquiry cells and writes the inlet cells, and the two are close enough
+to close a feedback loop. With no head across the structure the discharge is decided by
+roundoff, and the perturbation grows exponentially — from 1 ULP to ~1e-2 m of stage in a
+few seconds on a 200 m x 50 m test domain.
+
+**It is not a GPU port problem.** Perturbing a single enquiry cell by 1e-15 in mode 1
+diverges from unperturbed mode 1 exactly as fast as mode 2 does (measured: 5.4e-06 at
+t=0.25 s, 5.3e-03 at t=1 s — the same as |mode1 - mode2| over the same run). A CPU/GPU
+comparison over such a configuration measures the instability, not the port.
+
+Consequences when writing tests:
+
+* A GPU-vs-CPU culvert test needs a **genuine driving head**, so the discharge is
+  deterministic and dominant. `Test_GPU_LargeInlet` in `test_DE_gpu_omp.py` does this
+  (ponded upstream, low downstream) and then agrees to ~1e-14. An earlier version of it
+  used still water and was hostage to this effect.
+* A well-balancedness test (issue #229) must be kept **short** (~1 s) or use enquiry
+  points well clear of the inlets, or the instability grows into the measurement.
+
+With the #229 fix (stage leveling) the old uniform-depth perturbation is gone, so this
+effect is no longer masked — it is now the dominant behaviour of a structure in still
+water, and the constraints above apply to any test touching one.
+
+---
+
 ## Build
 
 ### Multi-compiler build verification (2026-06-23, Phase 0 of `claude/PLAN_compiler_tuning.md`)
@@ -532,6 +562,14 @@ host state are now pinned to `legacy` (`domain.set_compute_mode('legacy')`):
   `test_sww_interrogate.py::test_get_maximum_inundation_de0`). The two
   regression-snapshot domain helpers are pinned so that whole file stays
   deterministic under any `ANUGA_DEFAULT_COMPUTE_MODE`.
+- (Session 52) `test_negative_cells_warning.py` — its `make_domain()` helper calls
+  `domain.update_conserved_quantities()` **directly, outside `evolve()`** and reads host
+  `centroid_values`; pinned to `legacy`. Under the unified default this had failed with
+  `AttributeError: 'NoneType' object has no attribute 'update_conserved_quantities_kernel'`
+  because `gpu_interface` is only built during `evolve` (commit `641db3bd`). The method
+  itself was also hardened: it now calls `_ensure_gpu_interface()` first, like every other
+  mode-2 entry point, so any direct call builds the interface (or falls back to legacy)
+  rather than crashing on a `None` (commit `c80bc457`).
 
 These are test-harness artifacts, not solver bugs; the pins are no-ops for the
 distribution-default legacy path. Mode-2 numerical fidelity remains covered by the
@@ -584,6 +622,25 @@ writing new flux/operator code.
 
 Cells below this height are treated as dry. Negative depths are clipped.
 
+### mode-1 vs mode-2 differ by ~1 ULP at the wet/dry margin (2026-07-20)
+
+Both modes are **stage-primary** (`height == stage - bed` exactly in each) — there
+is *no* stage-vs-height representation flip. The residual is a **1-ULP difference
+in the core's near-dry stage value itself**: for a cell sitting essentially *at*
+the bed that gets lifted a hair off it (e.g. rain on dry ground, terrain ~343 m +
+~1e-5 m of rainfall), mode-2's stage going into the fractional step is already ~1
+ULP off from mode-1, and it is **masked by the dry-cell bed-clamp** (`protect` sets
+`stage = bed` exactly in both) until the lift exposes it. Only in the just-wetted
+cells, zero in momentum; chaos-amplifies to mm over hours. Ruled out along the way:
+the rate operator's arithmetic (rate inputs are bit-identical; rain on a *fully
+wet* domain is bit-identical) and the device sync (a plain memcpy). This is why
+**towradgi's mode-1/mode-2 divergence is rain-on-dry-cells** — remove rain and the
+whole run is bit-identical. Same family as the #200 dry-cell gap; benign (both
+modes valid). The exact operation was not isolated (it needs instrumenting the C
+RK loop's device state mid-step). The session-51 in-process double-precision
+localization harness (build two domains from the same setup, restartable lockstep
+evolve, diff `centroid_values` in double precision) is the tool if it's ever chased.
+
 ---
 
 ## API
@@ -621,6 +678,39 @@ by default.
 
 `test_kinematic_viscosity_operator.py` runs 4 tests that take 2–5 seconds each.
 These are marked `@pytest.mark.slow` at module level.
+
+---
+
+## Meshes
+
+### A couple of sliver triangles can pin the global timestep (towradgi, 2026-08-11)
+
+`run_small_towradgi.py` at the default `scale=1` (256688 triangles) reports a
+`delta t` that looks suspiciously frozen — `delta t in [0.10136885, 0.10136885]`,
+identical to 8 decimal places across 1184 steps, drifting only in the 6th decimal
+between yieldsteps. It is **not** a fixed timestep, a stale reduction, or a GPU
+artifact (the same numbers come out on cc75/cc89/cc120 and on the CPU build).
+
+Reconstructing the per-cell CFL limit from the SWW centroid values identifies the
+culprit: **cell 72200, the smallest triangle in the mesh** (area 1.457 m²,
+inradius 0.425 m vs a 1.99 m median), sitting in a **static pond** — h = 0.923 m,
+|v| = 0.000 m/s, unchanged from t=0 to t=600. It binds `min(r/(|v|+√(gh)))` at
+every step, so the global minimum barely moves while the flood evolves elsewhere.
+The tightest dozen cells are all slivers clustered in a ~50 m patch around easting
+307664–307713, northing 6193697–6193735, where `Model/Creeks/creeks.csv` and
+`Model/Bdy/CreekBanks.csv` nearly coincide.
+
+The cost is real: relaxing the worst 5 cells would raise `dt` from 0.141 to 0.231
+in the reconstruction (~1.6× fewer steps for the whole run).
+
+Confirmed by refinement — at `-sc 0.1` (1636238 triangles) those regions are
+regenerated without the pathological slivers and `dt` **rises** to ~0.1176 (the
+opposite of what resolution alone does) and becomes genuinely adaptive again
+(`delta t in [0.11755643, 0.11783941]`, min ≠ max).
+
+**Lesson:** a `delta t` that is constant to many decimal places is a signal to go
+looking for a mesh artifact, not evidence of a well-behaved solver. A handful of
+slivers in still water can tax every timestep of a run.
 
 ---
 
@@ -664,6 +754,74 @@ Transmissive_momentum_set_stage boundary).
 correct if the active step path falls back to host evaluation. All four DE
 algorithms now do. If you add a new evolve path, replicate the
 `if not self._gpu_all_on_gpu: return self._evolve_one_*_step_gpu(...)` fallback.
+
+### RESOLVED (2026-07-26): mode-2 shared one global `Time_boundary` value across all time-boundary edges
+
+**Symptom (now fixed):** `validation_tests/analytical_exact/avalanche_wet`
+diverged catastrophically under `ANUGA_DEFAULT_COMPUTE_MODE=unified` (xvelocity
+L¹ error 0.93 vs legacy 0.006; momentum ran to ~230 vs ~62). `avalanche_dry`,
+with the *same* physics, passed — the tell was that dry uses a **single**
+`Time_boundary` (the other end is Transmissive) while wet uses **two** (left and
+right), and on the sloped bed their absolute stages differ by ~10 m.
+
+**Root cause.** The GPU time boundary stored a **single global** `(stage, xmom,
+ymom)` (`struct time_boundary` in `gpu/gpu_domain.h`) applied to *every*
+time-boundary edge. `init_time_boundary` (`sw_domain_gpu_ext.pyx`) lumps the
+edges of all `Time_boundary` tags into one list, and the evolve loop did
+`for B in self._gpu_time_boundaries: set_time_boundary_values(gpu_dom, q0, q1,
+q2)` — each call **overwrote** the global, so the last boundary won and
+`gpu_evaluate_time_boundary` wrote that one value to all edges. With two
+differing boundaries the other one was corrupted. Ablation confirmed it:
+`Reflective + slope` was bit-identical (1e-13), only `Time_boundary + slope`
+diverged.
+
+**Fix.** Per-edge value arrays, mirroring `file_boundary`: `time_boundary` now
+holds `stage_values/xmom_values/ymom_values[num_edges]` (mapped to device, pushed
+each step via `omp target update`). New helper
+`Domain._push_gpu_time_boundary_values()` builds the per-edge array by evaluating
+**each** `Time_boundary` over its own edges in `boundary_map` order (matching
+`init_time_boundary`), replacing the 10 clobbering loops. After the fix,
+avalanche_wet mode-1 vs mode-2 is bit-identical. Files: `gpu/gpu_domain.h`,
+`gpu/gpu_boundaries.c`, `gpu/gpu_domain_core.c`, `sw_domain_gpu_ext.pyx`,
+`shallow_water_domain.py`. **Requires a C/Cython rebuild.** Regression:
+`test_DE_gpu_omp.py::Test_GPU_TimeBoundary` (two differing Time_boundaries on a
+slope, mode 1 == mode 2). **General lesson:** any GPU boundary/operator that
+holds a per-edge quantity must store it per-edge, not as one scalar shared across
+tags — the existing single-substep `Test_GPU_TimeBoundarySubstep` used a single
+boundary and so missed this.
+
+### RESOLVED (2026-07-26): mode-2 GPU fractional operators clobbered by the CPU-sync bracket
+
+**Symptom (now fixed):** `validation_tests/behaviour_only/bridge_hecras2` drained
+to the bed under `unified` (peak_max_stage −0.0067 vs baseline 1.19; HEC-RAS
+correlation −0.39 vs 0.997), while `bridge_hecras` passed. Ablation localized it:
+removing the bridge made the modes match, and the largest stage divergence was at
+the **inflow** (y≈11), not the bridge (y≈480–520) or the outflow.
+
+**Root cause.** GPU-accelerated fractional operators (`Inlet_operator` /
+`Parallel_Inlet_operator`, `Rate_operator`) apply their update straight to the
+**device** arrays in mode 2. When a **CPU-only** fractional operator is also
+present (here the `Internal_boundary_operator` bridge),
+`apply_fractional_steps()` brackets the operator loop with
+`sync_from_device()` … `sync_to_device()`. The trailing host→device sync then
+**overwrote the GPU operator's device write** with host data that never received
+it — silently dropping the inflow (~600 m³/step here). On a CPU-only build
+(host == device) the sync is a no-op so this stays hidden; it bites only on a
+real GPU-offload build (device ≠ host).
+
+**Fix.** In `__call__`, skip the device fast-path while
+`domain._gpu_host_writes_suppressed` is set (that flag marks the sync-bracketed
+region), falling through to the host path so the batch `sync_to_device()` carries
+the change. `bridge_hecras2` uses the *parallel* factory, so the guard is needed
+in `Parallel_Inlet_operator.__call__` (`anuga/parallel/parallel_inlet_operator.py`)
+as well as the base `Inlet_operator` (`anuga/structures/inlet_operator.py`) and
+`Rate_operator` (`anuga/operators/rate_operators.py`). Python-only, no rebuild.
+Regression: `test_DE_gpu_omp.py::Test_GPU_InletWithCpuOnlyOperator` (inlet +
+a no-op CPU-only operator, mode 1 == mode 2, inflow retained). **General
+lesson:** a GPU-path operator that writes conserved quantities on-device must
+route through the host path whenever `_gpu_host_writes_suppressed` is set, or the
+batch host→device sync will discard its work. `collect_max` is exempt — it writes
+only the separate `max_*` arrays, not synced conserved quantities.
 
 ---
 
@@ -788,3 +946,39 @@ References:
 - "OpenMP Offload Features and Strategies for High Performance across Architectures and
   Compilers", IPDPSW 2023 — https://swapp.cs.iastate.edu/files/inline-files/OpenMP_Offload_Features_and_Strategies_for_High_Performance_across_Architectures_and_Compilers-ipdpsw-may-2023.pdf
 - OMP_TARGET_OFFLOAD, OpenMP 5.0 spec — https://www.openmp.org/spec-html/5.0/openmpse65.html
+
+## `struct domain` fields must be explicitly initialised in sw_domain_openmp_ext
+
+(2026-08-24) `Domain_C_struct.__cinit__` allocates the C struct with
+`PyMem_Malloc` — **uninitialized memory** — and fills every field explicitly in
+`get_python_domain_parameters` / `get_python_domain_pointers`. Adding a field
+to `struct domain` (sw_domain.h) without also setting it there leaves garbage
+in the legacy path. Symptom when it happened (`reconstruct_edge_bed`): the
+flux kernel read a garbage flag, well-balance broke, and
+`test_ader2::test_still_water_flat_bed` spun forever in its evolve loop at
+100% CPU (timestep collapse — not a hang in any one kernel). The GPU-path
+`GPUDomain` is a cdef-class member and IS zero-initialised, which makes the
+asymmetry easy to miss. Both pyx files also redeclare the struct member list,
+so a new field must be added there before Cython can assign it.
+
+## ninja does not reliably re-track `sw_domain.h` — clean-rebuild after struct changes
+
+(2026-08-24) After editing `struct domain` (sw_domain.h), incremental `ninja`
+in `build/cp313` rebuilt only a subset of objects (and once reported "no work
+to do" straight after a header revert). The resulting mixed-layout objects
+produce baffling failures: OpenMP "partially present on the device" fatals at
+map time, silent `exit(1)` during mode-2 init, and test failures that migrate
+as you touch unrelated files. If a change touches any shared struct header,
+run `ninja -t clean && ninja` (74 targets, ~1 min) before trusting any test
+result — an afternoon was lost bisecting phantom bugs that were stale objects.
+
+## OMP_TEAMS_THREAD_LIMIT silently corrupts nvc `target teams loop` kernels
+
+(2026-08-25, GPU build, nvhpc 25.9) Setting `OMP_TEAMS_THREAD_LIMIT` (32/64/96)
+on the unified GPU kernels produced spectacular "speedups" (up to 1.6x) with
+SILENTLY WRONG results — the lake-at-rest well-balance check exploded from
+1e-14 to O(10) momentum, and at 48 the kernels appear not to run at all
+(exact 0.0 outputs). nvc's `omp target teams loop` codegen evidently bakes in
+blocking assumptions the runtime override violates. Never benchmark this knob
+without a physics gate; `OMP_NUM_TEAMS` / `OMP_THREAD_LIMIT` were separately
+measured as safe-but-useless (nvc defaults are already right).

@@ -252,6 +252,7 @@ class Geo_reference:
             EPSG code to store.
         """
         self._epsg = epsg
+        used_pyproj = False
 
         if _WGS84_UTM_NORTH_BASE < epsg <= _WGS84_UTM_NORTH_BASE + 60:
             inferred_zone = epsg - _WGS84_UTM_NORTH_BASE
@@ -260,11 +261,17 @@ class Geo_reference:
             inferred_zone = epsg - _WGS84_UTM_SOUTH_BASE
             inferred_hemisphere = 'southern'
         else:
-            # Non-UTM EPSG (e.g. EPSG:28992 Netherlands RD New,
-            # EPSG:27700 British National Grid).  No zone or hemisphere to infer.
-            # Populate datum and projection from pyproj if available so that
-            # the SWW file metadata accurately describes the CRS.
+            # Not a WGS84 UTM code. Populate datum/projection/false easting-
+            # northing from pyproj, and — for any UTM-based CRS on another datum
+            # (e.g. GDA2020/GDA94 MGA EPSG 78xx/283xx, or NAD83 UTM) — infer the
+            # UTM zone and hemisphere too. Genuinely non-UTM grids (British
+            # National Grid 27700, RD New 28992, Albers 3577, geographic 4326)
+            # yield (None, None) and keep zone/hemisphere unset.
             self._populate_from_pyproj(epsg)
+            used_pyproj = True
+            inferred_zone, inferred_hemisphere = self._utm_from_pyproj(epsg)
+
+        if inferred_zone is None:
             return
 
         if self.zone == DEFAULT_ZONE:
@@ -275,10 +282,48 @@ class Geo_reference:
 
         if self.hemisphere == DEFAULT_HEMISPHERE:
             self.set_hemisphere(inferred_hemisphere)
-            self.set_false_easting_northing()
+            # The pyproj path already set false easting/northing precisely from
+            # the CRS; only synthesise them for the WGS84 fast path.
+            if not used_pyproj:
+                self.set_false_easting_northing()
         elif self.hemisphere != inferred_hemisphere:
             log.warning(f'EPSG {epsg} implies {inferred_hemisphere} hemisphere but '
                         f'{self.hemisphere} is already set; hemisphere unchanged.')
+
+    def _utm_from_pyproj(self, epsg):
+        """Infer ``(zone, hemisphere)`` from a UTM-based EPSG code via pyproj.
+
+        Recognises any UTM projection regardless of datum — WGS84 UTM, GDA2020/
+        GDA94 MGA (EPSG 78xx / 283xx), NAD83 UTM, etc. — which the WGS84-only
+        32601–32760 fast path in :meth:`_set_epsg` does not cover. PROJ reports
+        these all as ``proj=utm`` with a ``zone``; the hemisphere is taken from
+        the false northing (southern UTM uses 10 000 000 m), since the PROJ
+        ``south`` flag is unreliable across the round-trip.
+
+        Returns ``(None, None)`` for non-UTM CRS or when pyproj is unavailable.
+        """
+        try:
+            from pyproj import CRS
+            crs = CRS.from_epsg(epsg)
+            d = crs.to_dict()
+        except Exception:
+            return None, None
+
+        if d.get('proj') != 'utm' or d.get('zone') is None:
+            return None, None
+        try:
+            zone = int(d['zone'])
+        except (TypeError, ValueError):
+            return None, None
+
+        south = d.get('south')
+        if south is None:
+            try:
+                fn = crs.to_cf().get('false_northing')
+                south = fn is not None and float(fn) > 0
+            except Exception:
+                south = False
+        return zone, ('southern' if south else 'northern')
 
     def _populate_from_pyproj(self, epsg):
         """Use pyproj to set CRS metadata from an EPSG code.

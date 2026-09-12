@@ -1,5 +1,5 @@
 # =============================================================================
-# A "Cairns-like" anuga_run_toml scenario, scaled down to run anywhere.
+# A "Cairns-like" anuga_toml_run scenario, scaled down to run anywhere.
 # =============================================================================
 #
 # A 400 m x 200 m plain that slopes from 3 m in the west down to 0 m at the
@@ -18,10 +18,10 @@
 #     python make_inputs.py
 #
 # Run it (serial):
-#     anuga_run_toml floodplain.toml
+#     anuga_toml_run floodplain.toml
 #
 # Run it (parallel, 4 processes):
-#     mpiexec -np 4 anuga_run_toml floodplain.toml
+#     mpiexec -np 4 anuga_toml_run floodplain.toml
 #
 # For a full real-world dataset (DEM raster, boundary shapefile, structures),
 # see ../../cairns_toml_excel/cairns_example.toml.
@@ -44,7 +44,7 @@ report_peak_velocity_statistics     = true
 report_operator_statistics          = true
 
 # Threads / device.  Omit omp_num_threads to honour $OMP_NUM_THREADS.
-# multiprocessor_mode = 1   # 1 = OpenMP (default), 2 = unified GPU/CPU kernels
+# compute_mode = "legacy"   # "legacy" (CPU OpenMP, default) or "unified" (CPU/GPU)
 # omp_num_threads     = 4
 
 

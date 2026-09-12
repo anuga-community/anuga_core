@@ -56,7 +56,6 @@ int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
     struct rate_operator_info *op = &RO->ops[op_id];
 
     op->num_indices = num_indices;
-    op->num_full = num_full;
     op->active = 1;
     op->mapped = 0;
     // Initialize rate array cache
@@ -66,51 +65,59 @@ int gpu_rate_operator_init(struct gpu_domain *GD, int num_indices, int *indices,
 
     if (num_indices == 0) {
         op->indices = NULL;
-        op->areas = NULL;
-        op->full_indices = NULL;
+        op->mass_areas = NULL;
         RO->num_operators++;
         return op_id;
     }
 
     // Allocate and copy arrays
     op->indices = (int*)malloc(num_indices * sizeof(int));
-    op->areas = (double*)malloc(num_indices * sizeof(double));
+    op->mass_areas = (double*)malloc(num_indices * sizeof(double));
 
-    if (!op->indices || !op->areas) {
+    if (!op->indices || !op->mass_areas) {
         fprintf(stderr, "Failed to allocate rate_operator arrays\n");
         if (op->indices) free(op->indices);
-        if (op->areas) free(op->areas);
+        if (op->mass_areas) free(op->mass_areas);
         op->active = 0;
         return -1;
     }
 
     memcpy(op->indices, indices, num_indices * sizeof(int));
-    memcpy(op->areas, areas, num_indices * sizeof(double));
 
-    if (num_full > 0 && full_indices != NULL) {
-        op->full_indices = (int*)malloc(num_full * sizeof(int));
-        if (op->full_indices) {
-            memcpy(op->full_indices, full_indices, num_full * sizeof(int));
+    // Bake the ghost mask into the mass-tracking areas: start at zero and fill in
+    // only the triangles this rank OWNS. `full_indices` holds positions WITHIN
+    // `indices` (see Rate_operator.set_full_indices), not domain triangle ids.
+    //
+    // NOTE the deliberate default: full_indices == NULL / num_full == 0 means this
+    // rank owns NONE of the operator's triangles, so every mass_area stays 0.0 and
+    // the rank contributes no influx. That is correct — the ranks that do own those
+    // triangles count them. In serial, full_indices covers every index, so
+    // mass_areas == areas and nothing changes.
+    memset(op->mass_areas, 0, num_indices * sizeof(double));
+    if (full_indices != NULL) {
+        for (int f = 0; f < num_full; f++) {
+            int k = full_indices[f];
+            if (k >= 0 && k < num_indices) {
+                op->mass_areas[k] = areas[k];
+            }
         }
-    } else {
-        op->full_indices = NULL;
     }
 
     // Map to GPU immediately if GPU is already initialized
     if (GD->gpu_initialized) {
         int ni = op->num_indices;
         int *idx = op->indices;
-        double *ar = op->areas;
+        double *ar = op->mass_areas;
         #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
         op->mapped = 1;
     }
 
     RO->num_operators++;
 
-    //printf("[Rank %d] Rate_operator %d initialized: %d indices, %d full (GPU mapped: %d) "
-    //       "indices=%p areas=%p\n",
+    //printf("[Rank %d] Rate_operator %d initialized: %d indices, %d owned (GPU mapped: %d) "
+    //       "indices=%p mass_areas=%p\n",
     //       GD->rank, op_id, num_indices, num_full, op->mapped,
-    //       (void*)op->indices, (void*)op->areas);
+    //       (void*)op->indices, (void*)op->mass_areas);
     //fflush(stdout);
 
     return op_id;
@@ -125,7 +132,7 @@ void gpu_rate_operator_finalize(struct gpu_domain *GD, int op_id) {
     if (op->mapped && op->num_indices > 0) {
         int ni = op->num_indices;
         int *idx = op->indices;
-        double *ar = op->areas;
+        double *ar = op->mass_areas;
         #pragma omp target exit data map(delete: idx[0:ni], ar[0:ni])
     }
 
@@ -138,15 +145,12 @@ void gpu_rate_operator_finalize(struct gpu_domain *GD, int op_id) {
     if (op->rate_array_cache) free(op->rate_array_cache);
 
     if (op->indices) free(op->indices);
-    if (op->areas) free(op->areas);
-    if (op->full_indices) free(op->full_indices);
+    if (op->mass_areas) free(op->mass_areas);
 
     op->indices = NULL;
-    op->areas = NULL;
-    op->full_indices = NULL;
+    op->mass_areas = NULL;
     op->rate_array_cache = NULL;
     op->num_indices = 0;
-    op->num_full = 0;
     op->rate_array_size = 0;
     op->active = 0;
     op->mapped = 0;
@@ -178,14 +182,16 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
     if (!op->mapped) {
         int ni = op->num_indices;
         int *idx = op->indices;
-        double *ar = op->areas;
+        double *ar = op->mass_areas;
         #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
         op->mapped = 1;
     }
 
     int num_indices = op->num_indices;
     int * restrict indices = op->indices;
-    double * restrict areas = op->areas;
+    // Ghost-masked areas: 0.0 for triangles this rank does not own, so they add
+    // nothing to the influx reduction below. See struct rate_operator_info.
+    double * restrict mass_areas = op->mass_areas;
 
     // Domain arrays (restrict enables better optimization)
     double * restrict stage_c = GD->D.stage_centroid_values;
@@ -203,7 +209,7 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
         for (int k = 0; k < num_indices; k++) {
             int i = indices[k];
             stage_c[i] += local_rate;
-            local_influx += local_rate * areas[k];
+            local_influx += local_rate * mass_areas[k];
         }
     } else {
         // Negative rate (extraction) - need to limit and scale momentum
@@ -230,7 +236,7 @@ double gpu_rate_operator_apply(struct gpu_domain *GD, int op_id,
             xmom_c[i] *= scale_factor;
             ymom_c[i] *= scale_factor;
 
-            local_influx += actual_rate * areas[k];
+            local_influx += actual_rate * mass_areas[k];
         }
     }
 
@@ -257,14 +263,16 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
     if (!op->mapped) {
         int ni = op->num_indices;
         int *idx = op->indices;
-        double *ar = op->areas;
+        double *ar = op->mass_areas;
         #pragma omp target enter data map(to: idx[0:ni], ar[0:ni])
         op->mapped = 1;
     }
 
     int num_indices = op->num_indices;
     int * restrict indices = op->indices;
-    double * restrict areas = op->areas;
+    // Ghost-masked areas: 0.0 for triangles this rank does not own, so they add
+    // nothing to the influx reduction below. See struct rate_operator_info.
+    double * restrict mass_areas = op->mass_areas;
 
     // Domain arrays (restrict enables better optimization)
     double * restrict stage_c = GD->D.stage_centroid_values;
@@ -321,7 +329,7 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
 
             if (rate >= 0.0) {
                 stage_c[i] += local_rate;
-                local_influx += local_rate * areas[k];
+                local_influx += local_rate * mass_areas[k];
             } else {
                 // Negative rate - limit and scale momentum
                 double height = stage_c[i] - bed_c[i];
@@ -332,7 +340,7 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
                 stage_c[i] += actual_rate;
                 xmom_c[i] *= scale_factor;
                 ymom_c[i] *= scale_factor;
-                local_influx += actual_rate * areas[k];
+                local_influx += actual_rate * mass_areas[k];
             }
         }
     } else {
@@ -345,7 +353,7 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
 
             if (rate >= 0.0) {
                 stage_c[i] += local_rate;
-                local_influx += local_rate * areas[k];
+                local_influx += local_rate * mass_areas[k];
             } else {
                 // Negative rate - limit and scale momentum
                 double height = stage_c[i] - bed_c[i];
@@ -356,7 +364,7 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
                 stage_c[i] += actual_rate;
                 xmom_c[i] *= scale_factor;
                 ymom_c[i] *= scale_factor;
-                local_influx += actual_rate * areas[k];
+                local_influx += actual_rate * mass_areas[k];
             }
         }
     }

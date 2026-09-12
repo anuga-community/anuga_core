@@ -8,6 +8,9 @@
 # Any errors here are mine, as the code below changed the code found above.
 ######
 
+import os
+
+
 def terminal_width():
     """Get the current terminal width.
 

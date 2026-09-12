@@ -336,6 +336,15 @@ anuga_int _openmp_fix_negative_cells(const struct domain *__restrict D)
 }
 
 
+// Read-only: volume that _openmp_fix_negative_cells would add by clamping
+// negative-depth cells to zero depth. Call after the flux update but before
+// _openmp_fix_negative_cells.
+double _openmp_negative_cells_volume(const struct domain *__restrict D)
+{
+    return core_negative_cells_volume((struct domain *)D);
+}
+
+
 // Unified: calls core_gravity from core_kernels.c
 // core_gravity computes avg_h = stage_cv - bed_cv directly (it no longer
 // reads height_cv, which could be stale when gravity is used as a forcing

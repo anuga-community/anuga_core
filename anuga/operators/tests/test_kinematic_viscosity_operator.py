@@ -1394,6 +1394,6 @@ class Test_kinematic_viscosity(unittest.TestCase):
 ################################################################################
 
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(Test_kinematic_viscocity)
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_kinematic_viscosity)
     runner = unittest.TextTestRunner()
     runner.run(suite)

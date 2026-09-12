@@ -104,6 +104,12 @@ from numpy.typing import ArrayLike
 if TYPE_CHECKING:
     from datetime import datetime as DateTime
     from zoneinfo import ZoneInfo as ZoneInfoType
+    # Only for set_collect_max_quantities()'s return annotation. The real import is
+    # done inside that method, because operators import this module — a module-level
+    # import here would be circular.
+    from anuga.operators.collect_max_quantities_operator import (
+        Collect_max_quantities_operator,
+    )
 
 
 try:
@@ -131,6 +137,20 @@ import anuga.utilities.log as log
 from anuga.utilities.parallel_abstraction import size, rank, get_processor_name
 from anuga.utilities.parallel_abstraction import finalize, send, receive
 from anuga.utilities.parallel_abstraction import pypar_available, barrier
+
+
+# The centroid arrays the GPU interface round-trips between host and device —
+# see gpu_domain_sync_to_device()/_from_device() in gpu/gpu_domain_core.c.  A host
+# write to any other quantity (elevation, friction, a user tracer) is not
+# device-resident state and so needs no sync.  Keep this in step with the C.
+GPU_SYNCED_QUANTITIES = frozenset(('stage', 'xmomentum', 'ymomentum', 'height'))
+
+# Absolute lower bound (m^3) on the volume added by clamping negative-depth cells
+# below which the "possible loss of conservation" warning is never raised. This
+# rejects pure floating-point noise (femto/pico-litre deficits in a nearly-dry
+# domain) that can otherwise be a large *fraction* of an essentially-zero total
+# volume. Any physically meaningful conservation loss is many orders larger.
+_negative_volume_noise_floor = 1.0e-9
 
 
 #-----------------------------------------------------
@@ -195,6 +215,80 @@ def gpu_offload_enabled() -> bool:
         return False
     ge = _gpu_ext_or_none()
     return bool(ge.get_offload_enabled()) if ge is not None else False
+
+
+def gpu_startup_banner(numprocs: int,
+                       num_devices: int,
+                       device_id: int,
+                       offload_active: bool,
+                       omp_num_threads: str = '1') -> list:
+    """Build the mode-2 ('unified') startup banner as a list of lines.
+
+    Pure function of its arguments so the rank/device mismatch warning can be tested
+    without an actual multi-GPU machine.
+
+    `numprocs` is the MPI rank count and `num_devices` the number of GPUs the runtime
+    can actually see.  These are DIFFERENT NUMBERS, and the banner used to print the
+    rank count labelled as "GPU(s)" — so a 4-rank run on a 1-GPU box cheerfully
+    reported "4 GPU(s)".  That mattered because ranks are assigned to devices
+    round-robin (``device_id = rank % num_devices``), so an oversubscribed run silently
+    puts several ranks on one device.  The banner was the natural place to notice that,
+    and instead it concealed it.  See issue #194.
+
+    Why the warning is worded the way it is.  Measured on one RTX 5070, a 160k-triangle
+    mode-2 evolve, ranks all sharing the single device:
+
+        ranks   no MPS     with MPS
+          1      3.80 s     3.51 s
+          2      7.13 s     3.48 s
+          4     11.21 s     3.72 s
+
+    So the *reliable* cost of oversubscribing is speed: without MPS the ranks time-slice
+    the device and it is ~3x slower.  NVIDIA MPS lets their kernels run concurrently and
+    restores parity — but never beats one rank per GPU, because a single rank with the
+    whole mesh already saturates the device; splitting it creates no new parallelism.
+    So MPS is a way to stop losing, not a way to go faster.
+
+    Hangs and garbled results have been reported in this configuration on real hardware,
+    but did NOT reproduce in the runs above (every rank count gave a bit-identical
+    checksum).  The warning therefore leads with the measured slowdown and reports the
+    hangs as a possibility, rather than promising a failure that may not arrive — an
+    oversubscribed run that quietly works but is 3x slow is the likelier outcome, and is
+    exactly the one a user would otherwise never notice.
+    """
+
+    bar = '+==============================================================================+'
+    lines = [bar]
+
+    if not offload_active:
+        lines.append("| ANUGA compute mode: 'unified' CPU multicore (gpu_ext kernels, no offload)   |")
+        lines.append(f'| OMP_NUM_THREADS={omp_num_threads}')
+    elif device_id < 0:
+        lines.append('| WARNING: No GPU devices found, running on CPU via OpenMP target offloading  |')
+    elif num_devices <= 0:
+        # Device count unavailable (query failed). Say so rather than inventing one —
+        # printing numprocs here is exactly the bug this function exists to remove.
+        lines.append(f'| GPU interface initialized: {numprocs} MPI rank(s), device count unknown, '
+                     f'OpenMP target offloading')
+    else:
+        lines.append(f'| GPU interface initialized: {numprocs} MPI rank(s) on {num_devices} GPU(s), '
+                     f'OpenMP target offloading')
+
+        if numprocs > num_devices:
+            lines.append(f'| WARNING: {numprocs} MPI ranks but only {num_devices} GPU(s). Ranks map round-robin')
+            lines.append(f'|          (rank % {num_devices}), so several ranks share one device. Mode-2 MPI')
+            lines.append('|          expects ONE RANK PER GPU. Measured: up to ~3x SLOWER than one')
+            lines.append('|          rank per GPU (the ranks time-slice the device); hangs and wrong')
+            lines.append('|          results have also been reported in this configuration.')
+            lines.append(f'|          Re-run with -np {num_devices}. NVIDIA MPS removes the slowdown')
+            lines.append('|          but never beats one rank per GPU, so it is not a way to go faster.')
+        elif numprocs < num_devices:
+            idle = num_devices - numprocs
+            lines.append(f'| NOTE: {idle} GPU(s) idle — {numprocs} rank(s) for {num_devices} device(s). '
+                         f'Use -np {num_devices} to use them all.')
+
+    lines.append(bar)
+    return lines
 
 
 def set_gpu_offload(enable: bool = True, verbose: bool = True) -> bool:
@@ -285,13 +379,32 @@ def set_gpu_offload(enable: bool = True, verbose: bool = True) -> bool:
     return state
 
 
+# Process-wide OpenMP thread count for ANUGA kernels. This is the single source
+# of truth read back by ``Domain.omp_num_threads`` (a property), so that setting
+# it once via ``anuga.set_omp_num_threads(n)`` is reflected by every domain in
+# the session — including ones already constructed (important in notebooks).
+# Initialised from OMP_NUM_THREADS so introspection is sane before the first
+# call / domain construction.
+try:
+    _omp_num_threads = int(os.environ.get('OMP_NUM_THREADS', 1))
+except (ValueError, TypeError):
+    _omp_num_threads = 1
+
+
+def get_omp_num_threads() -> int:
+    """Return the current process-wide OpenMP thread count for ANUGA kernels."""
+    return _omp_num_threads
+
+
 def set_omp_num_threads(omp_num_threads: int | None = None, verbose: bool = True) -> int:
     """Set the OpenMP thread count for ANUGA kernels (process-wide).
 
     ``OMP_NUM_THREADS`` / ``omp_set_num_threads`` controls the whole process, so
     this is a module-level setting, not per-domain — it affects every domain's
     OpenMP regions (both the legacy ``sw_domain_openmp_ext`` solver and the
-    unified ``gpu_ext`` kernels). ``Domain.set_omp_num_threads`` delegates here.
+    unified ``gpu_ext`` kernels), and is reflected by the ``omp_num_threads``
+    property of every existing domain. ``Domain.set_omp_num_threads`` delegates
+    here.
 
     Parameters
     ----------
@@ -327,6 +440,10 @@ def set_omp_num_threads(omp_num_threads: int | None = None, verbose: bool = True
     # Keep the env var consistent so banners / introspection / any subprocess
     # report the same count (the runtime ICV is already set above).
     os.environ['OMP_NUM_THREADS'] = str(omp_num_threads)
+    # Record the process-wide count so every domain's omp_num_threads property
+    # reflects this call (including domains constructed before it).
+    global _omp_num_threads
+    _omp_num_threads = omp_num_threads
 
     if verbose:
         print(f'Setting omp_num_threads to {omp_num_threads}')
@@ -548,6 +665,127 @@ class Domain(Generic_Domain):
         self._Domain_C_struct = None
 
         #-------------------------------
+        # Generic passive tracers (see add_tracer).
+        #
+        # Ns = 0 is the default and costs nothing: the kernels read
+        # number_of_tracers and skip the tracer work entirely, and the six
+        # arrays below are passed to the C struct as NULL.
+        #-------------------------------
+        self.number_of_tracers = 0
+        self.beta_tracer = 1.0
+        self._tracer_names = []
+        # (tracer index, boundary tag) -> callable, for time-varying
+        # inflow concentrations. See set_tracer_boundary().
+        self._tracer_boundary_functions = {}
+        self.tracer_centroid_values = None      # c            (ns, N)
+        self.tracer_edge_values = None          # c at edges   (ns, 3N)
+        self.tracer_boundary_values = None      # c at bdry    (ns, boundary_length)
+        self.tracer_explicit_update = None      # dm/dt        (ns, N)
+        self.tracer_conserved_values = None     # m = h*c      (ns, N)
+        self.tracer_backup_values = None        # m backup     (ns, N)
+        self.tracer_external_source = None      # S_ms [G-3]   (ns, N) [m/s]
+                                                # allocated by add_tracer, with
+                                                # the other tracer blocks
+
+        #-------------------------------
+        # Phase 3: suspended sediment. A sediment class IS a tracer -- class s
+        # occupies tracer slot s -- with per-class settling parameters. Zero
+        # classes costs nothing: the source kernel returns on one test.
+        #-------------------------------
+        self.n_sediment_classes = 0
+        self.sediment_c_max = 0.30              # [L-2]; FG21 0.30, aS16 0.20
+        self._sediment_names = []
+        # rho_s and the settling kwargs are kept per grain size so that
+        # R and v_s can be recomputed if the domain-wide rho_w changes
+        # after registration -- otherwise they would silently go stale.
+        self._sediment_rho_s = []
+        self._sediment_settling_kwargs = []
+        self.sediment_gamma0 = 0.0024           # [E-1] empirical, FG21
+        # Erosion route, spec 4.1.1 -- see set_bed_material().
+        self.sediment_erosion_mode = 0          # 0 non-cohesive, 1 cohesive
+        self.sediment_tau_crit = 0.088          # [Pa], aS16's value
+        self.sediment_K_e = 0.2e-6 / 0.088**0.5  # [E-5]
+        self.sediment_rho_w = 1000.0
+        self.sediment_K_partheniades = 1.0e-4   # [E-4] kg m-2 s-1 (RDy26)
+        self.sediment_deposition_mode = 0       # 0 = [D-1], 1 = [D-2]
+        self.sediment_tau_d = 0.0               # [D-2] critical depo stress [Pa]
+        # Bed shear closure, spec 3.1/3.4 (divergence D1). 0 = [T-1] quadratic
+        # drag (default); 1 = [T-7] depth-slope, for reproducing anugaSed.
+        self.sediment_shear_closure = 0
+        self.sediment_settling_velocity = None  # v_s        (ncl,)
+        self.sediment_d_star = None             # d*(Z)      (ncl,)
+        self.sediment_diameter = None           # d_g   [m]  (ncl,)
+        self.sediment_R = None                  # R          (ncl,)
+        self.sediment_tau_c_star = None         # tau_c*     (ncl,)
+        self.sediment_reference_height = None   # a     [m]  (ncl,)
+        self.sediment_d_star_mode = 0           # 0 constant, 1 Rouse [S-4]
+        # van Rijn-style floor a >= sediment_a_h_floor * h, applied when
+        # sediment_d_star_mode = 1. Standard practice, on by default. Set to 0
+        # to reach anugaSed's regime (they use no floor); the d* fit covers
+        # a/h down to 1e-3. This is the largest single divergence from
+        # anugaSed -- roughly 8x less deposition at h = 1 m. See spec 12, D4b.
+        self.sediment_a_h_floor = 0.01
+        # [L-4] maximum packing fraction bounding the near-bed concentration
+        # c_b = d* c. Without it the equilibrium Rouse d* makes the deposition
+        # rate diverge as shear vanishes. Same constant that bounds E* in
+        # [E-1]. Inactive when d* = 1, since c <= c_max = 0.3 < 0.65.
+        self.sediment_c_pack = 0.65
+        # [G-4] bed porosity lambda: the sediment VOLUME leaving suspension is
+        # (1-lambda) dz, the remainder being pore space filled from the water
+        # column. LM15 Example 2 uses 0.28.
+        self.sediment_porosity = 0.30
+        # Coupling stage, spec 2.4. True = evolving bed via [G-4] (Phase 4);
+        # False = FIXED bed (Phase 3), which is RDy26 v1.0's configuration and
+        # what the analytic constant-depth deposition solutions assume. Both are
+        # published configurations, not a debug switch.
+        self.sediment_bed_evolution = True
+        # Bedload, spec 6. Off by default; see set_bedload().
+        self.sediment_bedload_mode = 0
+        self.sediment_bedload_K = 3.97
+        self.sediment_bedload_m = 1.5
+        self.sediment_bedload_tau_c_star = 0.0495
+        self.sediment_qbx = None
+        self.sediment_qby = None
+        # [L-5] non-erodible base, spec 4.5. Off by default: with no base the
+        # bed is bottomless, which is what every published test case in the
+        # spec assumes. See set_erodible_base().
+        self.sediment_z_base = None
+        self.sediment_has_z_base = 0
+        # The two user intents behind sediment_z_base, kept apart so they
+        # compose: a base is a DEPTH limit, a region is a WHERE limit, and
+        # setting one must not silently discard the other. Both are folded
+        # into the single field the kernel reads by _rebuild_sediment_base().
+        self._sediment_user_base = None      # (n,) from set_erodible_base
+        self._sediment_erodible_mask = None  # (n,) bool from set_erodible_region
+        # Spec 7, angle-of-repose relaxation. Off by default: it is a numerical
+        # heuristic, not physics, and it suppresses knickpoint retreat that may
+        # be real. See set_angle_of_repose().
+        self.sediment_repose_tan = 0.0
+        self.sediment_repose_relax = 1.0
+        self.sediment_repose_max_sweeps = 50
+        self.sediment_repose_dz = None
+        self.sediment_bed_exhausted = None
+        # Scratch for the source kernel, (ncl, n). Allocated with the classes.
+        self.sediment_source_limited = None
+        # Friction closure for the sediment kernel (spec 3.3). 'constant' is
+        # the right default for ordinary flood work; see set_sediment_friction.
+        self.sediment_friction_mode = 0
+        self.sediment_manning_ll = 0.065
+        self.sediment_wilson_bed = 0
+        self.sediment_wilson_D = 1.0e-3
+        self.tracer_boundary_flux = None        # d(mass)/dt across the
+                                                # domain boundary, per cell,
+                                                # accumulated by the kernel (ns, N)
+        # Per-substep totals of the above, (max_time_substeps * ns), mirroring
+        # boundary_flux_sum for water; and the running time integral, which
+        # tracer_flux_integral_operator advances with the timestepping method's
+        # own weights. _tracer_initial_mass is the baseline a conservation
+        # check is measured against.
+        self.tracer_boundary_flux_sum = None
+        self._tracer_flux_integral = None
+        self._tracer_initial_mass = None
+
+        #-------------------------------
         # If environment variable OMP_NUM_THREADS is not set,
         # then set to default (1 thread). If a value is given to
         # the method, then it will override the default.
@@ -689,6 +927,1699 @@ class Domain(Generic_Domain):
         self._Domain_C_struct = None
         # Force the mode-2 device interface to be rebuilt on demand.
         self.gpu_interface = None
+
+    #------------------------------------------------
+    # Generic passive tracers
+    #------------------------------------------------
+    # Every tracer block, and how it is INDEXED -- which is what fixes both its
+    # shape and the way reorder() has to permute it:
+    #
+    #   'cell'      one value per triangle       -> (ns, N)
+    #   'edge'      three values per triangle    -> (ns, 3N)
+    #   'boundary'  one value per boundary edge  -> (ns, boundary_length)
+    #
+    # Single source of truth on purpose: add_tracer sizes the arrays from this
+    # and _reorder_tracer_arrays permutes from it, so a new block cannot be
+    # added without declaring how it is indexed. Tracers are deliberately not
+    # Quantity objects (#276), which means anything walking domain.quantities
+    # misses them -- #277 was exactly that omission, in reorder().
+    _TRACER_ARRAY_KINDS = {
+        'tracer_centroid_values':  'cell',
+        'tracer_edge_values':      'edge',
+        'tracer_boundary_values':  'boundary',
+        'tracer_explicit_update':  'cell',
+        'tracer_conserved_values': 'cell',
+        'tracer_backup_values':    'cell',
+        'tracer_boundary_flux':    'cell',
+        # The external source S_ms [G-3]. Allocated with the rest rather than
+        # on first use: a lazily allocated array has to change the C struct and
+        # the device mapping when it appears, and set_tracer_source did that by
+        # discarding the GPU interface -- mid-run, from inside a fractional
+        # step. Sediment_transport_operator then saw gpu_interface is None, took the CPU
+        # path while the state was on the device, and the source contributed
+        # exactly nothing on a GPU build (#288). Being here also means reorder()
+        # permutes it, which it previously did not.
+        'tracer_external_source':  'cell',
+    }
+    _TRACER_ARRAYS = tuple(_TRACER_ARRAY_KINDS)
+
+    def add_tracer(self, name, beta=None, initial_value=0.0):
+        """Register a passive tracer named `name` and return its index.
+
+        A tracer is a depth-averaged concentration `c` advected with the water
+        flux.  The conserved variable is `m = h*c`; `c` is derived from it each
+        substep, exactly as height is derived from stage.
+
+        Parameters
+        ----------
+        name : str
+            Identifier for the tracer.  Must be unique on this domain.
+        beta : float, optional
+            Edge-reconstruction limiter coefficient.  0 selects first order,
+            > 0 a limited second-order reconstruction.  **This is a single
+            value shared by every tracer** (the C struct carries one
+            `beta_tracer` scalar), so passing a value that disagrees with an
+            already-registered tracer is an error rather than a silent
+            last-writer-wins.  Defaults to leaving the current value alone.
+        initial_value : float or array-like, optional
+            Initial concentration `c`.  A scalar fills the domain; an array
+            must have one value per cell.  `m = h*c` is seeded consistently.
+
+        Returns
+        -------
+        int
+            The tracer's index, i.e. its row in the `(ns, ...)` arrays.
+
+        Notes
+        -----
+        Registering a tracer **reallocates** every tracer array, so any
+        reference held to one of them beforehand becomes stale.  Add every
+        tracer before seeding values, or re-fetch via `get_tracer`.
+        """
+        if not isinstance(name, str) or not name:
+            raise ValueError('tracer name must be a non-empty string')
+        if name in self._tracer_names:
+            raise ValueError(
+                'a tracer named %r is already registered (index %d)'
+                % (name, self._tracer_names.index(name)))
+        # A tracer is written to the sww as <name>_c, which is exactly the
+        # variable a quantity's centroid values go to. A tracer named 'stage'
+        # would therefore OVERWRITE the stage in the output -- no error, and a
+        # file whose stage is silently something else. Reserve the names.
+        if name in self.quantities:
+            raise ValueError(
+                'a tracer cannot be named %r: that is a quantity on this '
+                'domain, and both are written to the sww as %s_c, so the '
+                'tracer would overwrite it' % (name, name))
+        if name.startswith('max_'):
+            raise ValueError(
+                "a tracer cannot be named %r: names beginning 'max_' are "
+                'reserved for the running maxima that '
+                'Collect_max_quantities_operator writes' % name)
+
+        if beta is not None:
+            beta = float(beta)
+            if beta < 0.0:
+                raise ValueError('beta must be >= 0, got %g' % beta)
+            # One scalar serves all tracers, so a second, different value would
+            # silently change the reconstruction of the tracers already added.
+            if self.number_of_tracers > 0 and beta != self.beta_tracer:
+                raise ValueError(
+                    'beta_tracer is shared by all tracers on a domain: cannot '
+                    'add %r with beta=%g while existing tracers use beta=%g'
+                    % (name, beta, self.beta_tracer))
+            self.beta_tracer = beta
+
+        N = self.number_of_elements
+        ns = self.number_of_tracers
+        widths = {'cell': N, 'edge': 3 * N, 'boundary': self.boundary_length}
+        shapes = {attr: (ns + 1, widths[kind])
+                  for attr, kind in self._TRACER_ARRAY_KINDS.items()}
+
+        # Grow each array by one row, preserving the tracers already there.
+        # The kernels index these as centroid[s*N + k] etc., so they must stay
+        # C-contiguous float64 -- num.zeros gives both.
+        # The per-substep totals and the running integral are sized by tracer
+        # count, not by cells, so they are rebuilt here rather than in the loop
+        # below. The integral and the baseline mass are PRESERVED across a
+        # later add_tracer: a tracer registered mid-setup must not silently
+        # reset another tracer's accounting.
+        max_substeps = len(self.boundary_flux_sum)
+        new_sum = num.zeros((ns + 1) * max_substeps, dtype=num.float64)
+        new_int = num.zeros(ns + 1, dtype=num.float64)
+        new_m0 = num.zeros(ns + 1, dtype=num.float64)
+        if ns > 0 and self._tracer_flux_integral is not None:
+            new_int[:ns] = self._tracer_flux_integral
+            new_m0[:ns] = self._tracer_initial_mass
+        self.tracer_boundary_flux_sum = new_sum
+        self._tracer_flux_integral = new_int
+        self._tracer_initial_mass = new_m0
+
+        for attr in self._TRACER_ARRAYS:
+            new = num.zeros(shapes[attr], dtype=num.float64)
+            if ns > 0:
+                old = getattr(self, attr)
+                new[:ns] = old
+            setattr(self, attr, new)
+
+        index = ns
+        self._tracer_names.append(name)
+        self.number_of_tracers = ns + 1
+
+        # THE TRAP: the C struct is built once and cached, and evolve() never
+        # passes update_domain_c_struct=True. Without this line a tracer
+        # registered after the struct exists is invisible to the kernels --
+        # no error, the tracer simply never moves. It also now holds pointers
+        # into the arrays we just replaced. Invalidate so the next call
+        # rebuilds it against the new arrays.
+        self._Domain_C_struct = None
+
+        # Same argument on the device side: the GPU interface has the OLD
+        # tracer arrays mapped (or none at all, if it was built at Ns=0), and
+        # the arrays it points at have just been freed. Tear it down so it is
+        # rebuilt and re-mapped against the new ones. _ensure_gpu_interface()
+        # recreates it on demand.
+        self.gpu_interface = None
+        # NB: this flag is tested with hasattr, not for truthiness (see
+        # update_boundary), so it must be DELETED, not set False -- setting it
+        # False would skip the re-initialisation that defines _gpu_all_on_gpu.
+        if hasattr(self, '_gpu_boundary_info_initialized'):
+            del self._gpu_boundary_info_initialized
+
+        if initial_value is not None:
+            self.set_tracer(name, initial_value)
+
+        # The operator that turns the kernel's per-substep boundary totals into
+        # a time integral. Registered here rather than left to the user: without
+        # it get_tracer_boundary_flux_integral() would silently read zero, which
+        # is exactly the failure a conservation check exists to catch.
+        from anuga.operators.tracer_flux_integral_operator import (
+            tracer_flux_integral_operator)
+        if not any(isinstance(op, tracer_flux_integral_operator)
+                   for op in self.fractional_step_operators):
+            tracer_flux_integral_operator(self)
+
+        # Baseline for check_tracer_conservation, taken AFTER the initial value
+        # is seeded so it is the mass actually present at t = 0.
+        self._tracer_initial_mass[index] = self._local_tracer_mass(index)
+
+        return index
+
+    def settling_velocity(self, diameter, rho_s=2650.0, rho_w=1000.0,
+                          nu=1.0e-6, C1=18.0, C2=0.4):
+        """Settling velocity `v_s` from Ferguson & Church (2004), spec `[S-1]`.
+
+            v_s = R g d^2 / ( C1 nu + sqrt(0.75 C2 R g d^3) )
+
+        Smooth across the Stokes/turbulent transition and branch-free, which is
+        why the spec prefers it over the Dietrich (1982) polynomial fit.
+
+        `C1 = 18, C2 = 0.4` are the smooth-sphere constants; use `1.0, 1.1` for
+        natural irregular grains. `R = rho_s/rho_w - 1` is submerged specific
+        gravity.
+
+        Verified against the spec: d = 4.5e-5 m quartz gives 1.75e-3 m/s,
+        the value P13 report for Ferguson & Church.
+        """
+        import math
+        from anuga.config import g as _g
+        R = rho_s / rho_w - 1.0
+        d = float(diameter)
+        if d <= 0.0:
+            raise ValueError('grain diameter must be > 0, got %g' % d)
+        return (R * _g * d * d) / (C1 * nu + math.sqrt(0.75 * C2 * R * _g * d**3))
+
+    def _register_sediment_fraction(self, name, diameter, d_star=1.0, beta=None,
+                                    initial_concentration=0.0, rho_s=2650.0,
+                                    tau_c_star=0.04,
+                                    reference_height=None,
+                                    **settling_kwargs):
+        """Register one suspended sediment grain size and return its index.
+
+        Private: the public entry point is
+        :class:`~anuga.operators.sediment_operator.Sediment_transport_operator`,
+        which calls this. Kept here because the bookkeeping it does -- growing
+        the per-fraction parameter arrays and invalidating the C struct and the
+        device mapping -- belongs with the rest of the domain's array
+        management.
+
+A grain size is a tracer -- so it is transported by the machinery of
+        Phases 1-2 -- plus the settling parameters the source term needs. The
+        tracer is registered first, so grain size `s` always occupies tracer
+        slot `s`; `add_tracer` and `add_grain_size` must not be interleaved on
+        the same domain if you rely on that.
+
+        Parameters
+        ----------
+        name : str
+            Class identifier, e.g. 'sand'. Also the tracer name.
+        diameter : float
+            Grain diameter `d_g` in metres. Settling velocity is computed once
+            here via `settling_velocity` (`[S-1]`) rather than per cell.
+        d_star : float, optional
+            Ratio of near-bed to depth-averaged concentration in `[D-1]`.
+            Default 1.0, the well-mixed limit. The Rouse profile of spec 4.3
+            replaces this constant later.
+        rho_s, rho_w : float, optional
+            Sediment and water densities. Only their ratio matters: the
+            submerged specific gravity `R = rho_s/rho_w - 1` is what enters the
+            Shields stress, where water density cancels.
+        tau_c_star : float, optional
+            Critical Shields stress for entrainment `[E-1]`. Default 0.04,
+            FG21's choice for suspension. Setting it to 0 disables entrainment
+            for this class, leaving deposition only.
+        reference_height : float, optional
+            `a` in `[S-4]`, the near-bed reference height at which `c_b` is
+            evaluated, in metres. Only used when `sediment_d_star_mode = 1`.
+            Defaults to `2*diameter`. **This is a first-order choice, not a
+            detail**: `d*` varies by up to 13x across plausible `a/h` at high
+            Rouse number. aSM16 requires `a` but never states it, so the default
+            here is `2*diameter`, which the D4b audit of `anugaSed` independently
+            corroborates as their convention too. The kernel additionally applies
+            the floor `a >= domain.sediment_a_h_floor * h` (default 0.01); set
+            that to 0 to match `anugaSed`, which applies no floor.
+        initial_concentration : float or array-like, optional
+            Initial `c_s`; seeds `m = h*c` consistently.
+
+        Notes
+        -----
+        Phase 3 is the FIXED-BED stage (spec 2.4): the bed does not evolve, and
+        there is no bed->flow or sediment->momentum feedback. Entrainment draws
+        from an inexhaustible bed and deposited mass leaves the system; the
+        Exner bookkeeping of `[G-4]` is Phase 4.
+
+        Entrainment uses the NON-COHESIVE Shields route `[E-1]`/`[E-2]`, which
+        is a statement about the bed material (sand/gravel), not a numerical
+        preference -- see spec 4.1.1. The cohesive Hanson & Simon route
+        `[E-3]` is for silt and clay and is not implemented here.
+        """
+        if self.number_of_tracers != self.n_sediment_classes:
+            raise ValueError(
+                'add_grain_size requires grain size s to occupy tracer '
+                'slot s, but this domain already has %d tracers and %d grain '
+                'sizes. Do not mix add_tracer() and add_grain_size().'
+                % (self.number_of_tracers, self.n_sediment_classes))
+
+        if tau_c_star < 0.0:
+            raise ValueError('tau_c_star must be >= 0, got %g' % tau_c_star)
+        # rho_w is a property of the fluid, so it is domain-wide: see
+        # set_sediment_parameters. Only rho_s varies per grain size.
+        rho_w = self.sediment_rho_w
+        v_s = self.settling_velocity(diameter, rho_s=rho_s, rho_w=rho_w,
+                                     **settling_kwargs)
+        index = self.add_tracer(name, beta=beta,
+                                initial_value=initial_concentration)
+
+        ncl = self.n_sediment_classes + 1
+        for attr, value in (('sediment_settling_velocity', v_s),
+                            ('sediment_d_star', float(d_star)),
+                            ('sediment_diameter', float(diameter)),
+                            ('sediment_R', rho_s / rho_w - 1.0),
+                            ('sediment_tau_c_star', float(tau_c_star)),
+                            ('sediment_reference_height',
+                             float(reference_height) if reference_height
+                             is not None else 2.0 * float(diameter))):
+            new = num.zeros(ncl, dtype=num.float64)
+            if self.n_sediment_classes > 0:
+                new[:self.n_sediment_classes] = getattr(self, attr)
+            new[index] = value
+            setattr(self, attr, new)
+
+        if self.sediment_qbx is None:
+            self.sediment_qbx = num.zeros(self.number_of_elements,
+                                          dtype=num.float64)
+            self.sediment_qby = num.zeros(self.number_of_elements,
+                                          dtype=num.float64)
+            # [L-5] snapshot, int64 to match anuga_int.
+            self.sediment_bed_exhausted = num.zeros(self.number_of_elements,
+                                                    dtype=num.int64)
+            # Spec 7 Jacobi scratch.
+            self.sediment_repose_dz = num.zeros(self.number_of_elements,
+                                                dtype=num.float64)
+
+        # Scratch for the source kernel: every class's bed exchange is held
+        # here until [L-5] has limited them together. Sized (ncl, n) and
+        # REALLOCATED as classes are added -- the kernel dereferences it
+        # whenever n_sediment_classes > 0, so it must never be short.
+        self.sediment_source_limited = num.zeros(
+            (ncl, self.number_of_elements), dtype=num.float64)
+
+        self._sediment_names.append(name)
+        self._sediment_rho_s.append(float(rho_s))
+        self._sediment_settling_kwargs.append(dict(settling_kwargs))
+        self.n_sediment_classes = ncl
+
+        # add_tracer already invalidated both caches, but it did so BEFORE the
+        # arrays above existed. Invalidate again so the rebuilt struct sees them.
+        self._Domain_C_struct = None
+        self.gpu_interface = None
+        if hasattr(self, '_gpu_boundary_info_initialized'):
+            del self._gpu_boundary_info_initialized
+
+        # The bed can now move, so elevation must be stored per timestep.
+        self._sync_elevation_storage()
+
+        return index
+
+    def _sync_elevation_storage(self):
+        """Store elevation per timestep once the bed can move.
+
+        The bedload and bed-exchange kernels write the bed in place --
+        `bed_centroid_values` and `bed_edge_values` ARE the `elevation`
+        Quantity's arrays (see sw_domain_openmp_ext.pyx) -- so an evolving bed
+        is a time-varying quantity. But `quantities_to_be_stored` defaults to
+        `'elevation': 1`, and flag 1 means write it ONCE (sww.py sorts flag 1
+        into `static_quantities`). The sww then records the initial bed and
+        silently omits every change to it.
+
+        That is worse than an obviously missing variable: the output looks
+        complete, and the bed in it is plausible but wrong. So upgrade to
+        flag 2 as soon as a domain has both sediment classes and an evolving
+        bed.
+
+        Only the default is upgraded. Flags 3 and 4 are deliberate choices
+        (centroid-only, and overwrite-each-yieldstep), so they are left alone
+        rather than silently rewritten. The flag is never downgraded either:
+        turning bed evolution back off leaves elevation stored dynamically,
+        which costs space but cannot mislead.
+        """
+        if self.n_sediment_classes <= 0 or not self.sediment_bed_evolution:
+            return
+        if self.quantities_to_be_stored.get('elevation') == 1:
+            self.quantities_to_be_stored['elevation'] = 2
+
+    def set_angle_of_repose(self, angle=None, relax=1.0, max_sweeps=50):
+        """Relax bed slopes steeper than `angle` by moving material downslope.
+
+        Spec 7, from FG21 §2.2.4. Where the centroid-to-centroid bed slope
+        exceeds the critical angle, material is diffused downslope until it
+        does not.
+
+            domain.set_angle_of_repose(35.0)     # degrees; FG21 use 35
+            domain.set_angle_of_repose(None)     # off again (the default)
+
+        Parameters
+        ----------
+        angle : float
+            Critical angle in DEGREES, in (0, 90). `None` or 0 disables it.
+        relax : float
+            Relaxation in (0, 1], default 1.0. The kernel already divides by
+            the edge count for stability, so 1.0 is the fastest STABLE setting
+            rather than an aggressive one -- measured 793 sweeps to converge an
+            over-steep cone against 2400+ at 0.3. Lower it only if you see
+            something pathological.
+        max_sweeps : int
+            Hard cap on sweeps per timestep, default 50. Reaching it is
+            reported, because it means the bed may still be over-steep.
+
+        Notes
+        -----
+        FG21 are explicit that this is **a numerical heuristic, not physics**:
+        real bed slope failures are advective. It exists to stop the rest of
+        the model breaking on over-steep slopes. It has a side effect worth
+        knowing before you switch it on -- it limits the steepness of canyon
+        walls and knickpoints, and so suppresses knickpoint retreat that may be
+        real. That is why it is off by default.
+
+        Mass is conserved: material removed from an over-steep cell is
+        deposited on its neighbour, never discarded. This is the one place this
+        module differs sharply from `sanddune_erosion_operator`, which lowers
+        an over-steep cell and lets the material vanish.
+
+        Respects `[L-5]`: a cell cannot slump away material it is not allowed
+        to lose, so a locked cell or one at its base stays put and its
+        neighbours relax around it.
+
+        **On the sweep count.** This is an explicit diffusion solve, so
+        convergence from a badly over-steep bed is slow: an over-steep cone
+        needed 793 sweeps to reach the critical angle from cold. That is not
+        what the per-timestep cap is sized for. In a running model the bed is
+        already near-relaxed and each step needs a handful of sweeps; the cap
+        is there for the pathological case, and hitting it is not fatal --
+        progress carries over, so the bed keeps relaxing on subsequent steps.
+        It is reported so that you know relaxation is lagging rather than
+        finished.
+
+        If you START from a bed steeper than the critical angle, expect the
+        cap to be hit on the first steps. Either accept that it settles over
+        the first few, or raise `max_sweeps` for that run.
+        """
+        if angle is None or angle == 0.0:
+            self.sediment_repose_tan = 0.0
+        else:
+            if not 0.0 < angle < 90.0:
+                raise ValueError(
+                    'angle of repose must be in (0, 90) degrees, got %g'
+                    % angle)
+            self.sediment_repose_tan = float(num.tan(num.radians(angle)))
+
+        if not 0.0 < relax <= 1.0:
+            raise ValueError('relax must be in (0, 1], got %g' % relax)
+        if max_sweeps < 1:
+            raise ValueError('max_sweeps must be >= 1, got %d' % max_sweeps)
+        self.sediment_repose_relax = float(relax)
+        self.sediment_repose_max_sweeps = int(max_sweeps)
+
+        if (self.sediment_repose_tan > 0.0
+                and self.sediment_repose_dz is None):
+            self.sediment_repose_dz = num.zeros(self.number_of_elements,
+                                                dtype=num.float64)
+
+        self._Domain_C_struct = None
+        self.gpu_interface = None
+        if hasattr(self, '_gpu_boundary_info_initialized'):
+            del self._gpu_boundary_info_initialized
+
+    def set_erodible_base(self, elevation=None, depth=None):
+        """Set the non-erodible base -- bedrock -- below which no erosion acts.
+
+        `[L-5]`. Without this the bed is bottomless: erosion lowers it for as
+        long as the flow has the strength to, which is the right default for
+        an alluvial channel and wrong wherever the erodible layer is finite --
+        a scoured reach over an outcrop, a lined culvert, a dam apron, a soil
+        layer of known depth over rock.
+
+        The base is a per-CENTROID elevation, not a scalar, because bedrock is
+        a surface. Give it either way round::
+
+            domain.set_erodible_base(elevation=z_rock)  # absolute [m]
+            domain.set_erodible_base(depth=0.5)         # 0.5 m below the
+                                                        # elevation set so far
+            domain.set_erodible_base()                  # remove the base
+
+        Parameters
+        ----------
+        elevation : float or array (n,)
+            Base elevation, in the same datum as the domain's elevation
+            quantity. Scalar broadcasts.
+        depth : float or array (n,)
+            Erodible thickness below the CURRENT bed. The base is recorded as
+            an elevation at the moment of the call, so later changes to the
+            elevation quantity do not move it. Scalar broadcasts.
+
+        Give exactly one. With neither, the base is removed and the bed is
+        bottomless again.
+
+        Notes
+        -----
+        The limiter acts on the SOURCE, never by clamping elevation. Erosion
+        is scaled back to what the remaining thickness can supply, and the
+        sediment that is not eroded never enters the water column, so the
+        budget still closes exactly. Clamping z afterwards would leave
+        suspended sediment that came from nowhere.
+
+        Where several classes compete for the last of the material, they are
+        scaled by a shared proportional factor rather than served in order:
+        the bed carries no per-class stratigraphy, so no class has a better
+        claim, and registration order must not change the answer. Deposition
+        is never scaled -- it is what replenishes the bed.
+
+        Bedload is limited too, and stays exactly conservative while it is:
+        the limit applies to the transport vector and to whole edges, both of
+        which the two cells sharing an edge see identically.
+        """
+        if elevation is not None and depth is not None:
+            raise ValueError('give elevation or depth, not both')
+
+        if elevation is None and depth is None:
+            self._sediment_user_base = None
+        else:
+            n = self.number_of_elements
+            z = self.quantities['elevation'].centroid_values
+            if depth is not None:
+                d = num.asarray(depth, dtype=num.float64)
+                if num.any(d < 0.0):
+                    raise ValueError('erodible depth must be >= 0')
+                base = z - d
+            else:
+                base = num.asarray(elevation, dtype=num.float64)
+
+            base = num.ascontiguousarray(
+                num.broadcast_to(base, (n,)), dtype=num.float64).copy()
+
+            # A base above the bed is not a configuration, it is a mistake:
+            # the cell starts with negative erodible thickness and the
+            # limiter would simply hold it there, silently.
+            over = base - z
+            if num.any(over > 0.0):
+                worst = int(num.argmax(over))
+                raise ValueError(
+                    'erodible base is ABOVE the bed in %d of %d cells '
+                    '(worst: cell %d, base %g > elevation %g). The base is '
+                    'the floor of erosion, so it must lie at or below the '
+                    'initial bed everywhere.'
+                    % (int(num.sum(over > 0.0)), n, worst,
+                       base[worst], z[worst]))
+
+            self._sediment_user_base = base
+
+        self._rebuild_sediment_base()
+
+    def set_erodible_region(self, region=None, polygon=None, center=None,
+                            radius=None, indices=None, erodible=True):
+        """Restrict erosion to part of the domain (or lock part of it).
+
+        The bed is erodible everywhere by default. Give a region to say
+        otherwise::
+
+            domain.set_erodible_region(polygon=breach)     # ONLY here erodes
+            domain.set_erodible_region(polygon=apron,      # everywhere BUT here
+                                       erodible=False)
+            domain.set_erodible_region(my_region)          # a Region object
+            domain.set_erodible_region()                   # remove the restriction
+
+        Parameters
+        ----------
+        region : Region
+            An already-built `anuga.abstract_2d_finite_volumes.region.Region`.
+            This is the general form: `Region` also understands `line=`,
+            `poly=` and `expand_polygon=`, which have no keyword here, so
+            build one and pass it when you need them. It must belong to THIS
+            domain -- its indices mean nothing on another mesh, and one built
+            elsewhere is rejected rather than quietly mis-selecting.
+        polygon : list of [x, y]
+            Region boundary, as for the region-based operators.
+        center, radius : [x, y], float
+            A circular region instead.
+        indices : array of int
+            Triangle ids directly. Overrides the geometric arguments.
+        erodible : bool
+            `True` (default): the region named is the ONLY erodible part.
+            `False`: the region named is the only LOCKED part.
+
+        The keyword arguments are the same ones `Erosion_operator` and the
+        other region-based operators take, and are resolved by the same
+        `Region` class, so a polygon that selects a set of cells there selects
+        the same set here.
+
+        Notes
+        -----
+        A locked cell is held at the elevation it has WHEN THIS IS CALLED, by
+        giving it zero erodible thickness -- the region restriction is
+        `[L-5]` with the layer set to nothing, not a separate mechanism. So
+        call it after the elevation is set.
+
+        Locked means it cannot be SCOURED. Sediment may still settle onto it,
+        which is what a concrete apron or a rock bar does in the field, and
+        that new material is erodible again -- it is above the base. If you
+        want a cell that neither erodes nor accretes, that is not this.
+
+        Composes with `set_erodible_base()`: the base sets how DEEP erosion
+        may go, the region sets WHERE it may happen, and setting one leaves
+        the other in place. Where they disagree the stricter wins.
+        """
+        from anuga.abstract_2d_finite_volumes.region import Region
+
+        if (region is None and polygon is None and center is None
+                and radius is None and indices is None):
+            self._sediment_erodible_mask = None
+            self._rebuild_sediment_base()
+            return
+
+        if region is not None:
+            if any(a is not None
+                   for a in (polygon, center, radius, indices)):
+                raise ValueError(
+                    'give a Region or the arguments to build one, not both')
+            if not isinstance(region, Region):
+                # A list of points is the likely mistake, and it is a silent
+                # one: Region would not be consulted and every cell would look
+                # selected.
+                raise TypeError(
+                    'region must be a Region object; to pass a list of points '
+                    'use set_erodible_region(polygon=...)')
+            if getattr(region, 'domain', None) is not self:
+                raise ValueError(
+                    'that Region belongs to a different domain; its triangle '
+                    'indices do not refer to this mesh')
+        else:
+            region = Region(self, indices=indices, polygon=polygon,
+                            center=center, radius=radius)
+        idx = region.indices
+
+        n = self.number_of_elements
+        if idx is None:
+            # Region resolved to "everywhere".
+            sel = num.ones(n, dtype=bool)
+        else:
+            idx = num.asarray(idx, dtype=num.int64)
+            if idx.size == 0:
+                # Almost always a coordinate mistake -- a polygon in the wrong
+                # units or the wrong datum selects nothing, and the run then
+                # quietly does no erosion at all (or, with erodible=False, is
+                # unrestricted). Neither is what anyone meant.
+                raise ValueError(
+                    'the region selects no cells; check the polygon or centre '
+                    'is in the same coordinates as the mesh')
+            sel = num.zeros(n, dtype=bool)
+            sel[idx] = True
+
+        # erodible=True: the region is the erodible part. Otherwise it is the
+        # locked part and everything else erodes.
+        self._sediment_erodible_mask = sel if erodible else ~sel
+        self._rebuild_sediment_base()
+
+    # Depth used for "no limit" in the combined base field. The cap it implies
+    # (thickness (1-lambda)/dt) is then so far above any physical erosion rate
+    # that it never binds, which is what an absent base means.
+    _SEDIMENT_UNLIMITED_DEPTH = 1.0e6
+
+    def _rebuild_sediment_base(self):
+        """Fold the base and the region into the one field the kernel reads."""
+        base = self._sediment_user_base
+        mask = self._sediment_erodible_mask
+
+        if base is None and mask is None:
+            self.sediment_z_base = None
+            self.sediment_has_z_base = 0
+        else:
+            n = self.number_of_elements
+            z = self.quantities['elevation'].centroid_values
+            if base is None:
+                combined = z - self._SEDIMENT_UNLIMITED_DEPTH
+            else:
+                combined = base.copy()
+            if mask is not None:
+                # Locked cells get zero thickness: the base IS the bed.
+                combined[~mask] = z[~mask]
+            self.sediment_z_base = num.ascontiguousarray(combined,
+                                                         dtype=num.float64)
+            self.sediment_has_z_base = 1
+            if self.sediment_bed_exhausted is None:
+                self.sediment_bed_exhausted = num.zeros(n, dtype=num.int64)
+
+        self._Domain_C_struct = None
+        self.gpu_interface = None
+        if hasattr(self, '_gpu_boundary_info_initialized'):
+            del self._gpu_boundary_info_initialized
+
+    def erodible_thickness(self):
+        """Remaining erodible thickness per centroid [m], or None if no base.
+
+        `elevation - sediment_z_base`, clipped at zero. Zero means the cell
+        has reached bedrock and will not erode further.
+        """
+        if not self.sediment_has_z_base:
+            return None
+        z = self.quantities['elevation'].centroid_values
+        return num.maximum(z - self.sediment_z_base, 0.0)
+
+    def set_deposition(self, law='d_star', tau_d=0.0, near_bed='constant',
+                       reference_height_floor=0.01):
+        """Select the deposition law and its near-bed treatment (spec 4.4).
+
+        Parameters
+        ----------
+        law : {'d_star', 'threshold'}
+            `'d_star'` (default) -- `[D-1]`, `D = d*(Z) c v_s`.
+            `'threshold'` -- `[D-2]`, `D = v_s c (1 - tau_b/tau_d)` for
+            `tau_b < tau_d`, else zero; RDycore-sediment's form.
+        tau_d : float
+            Critical deposition stress in **pascals**, for `'threshold'`.
+            `tau_d = 0` disables deposition entirely -- the hook RDycore's
+            passive-transport benchmarks rely on.
+        near_bed : {'constant', 'rouse'}
+            How `d*` in `[D-1]` is obtained. `'constant'` uses the
+            per-grain-size value given to `add_grain_size` (default 1.0, the well-mixed
+            limit of P14/P13). `'rouse'` evaluates the fitted `[S-4]` profile
+            per cell from the local Rouse number.
+        reference_height_floor : float
+            The van Rijn-style floor `a >= floor * h`, used only by
+            `'rouse'`. Default 0.01. Set to 0 to reach anugaSed's regime,
+            which applies no floor -- see spec 12, D4b, where this is the
+            largest single divergence from them.
+        """
+        laws = {'d_star': 0, 'threshold': 1}
+        if law not in laws:
+            raise ValueError('unknown deposition law %r; expected one of %r'
+                             % (law, sorted(laws)))
+        modes = {'constant': 0, 'rouse': 1}
+        if near_bed not in modes:
+            raise ValueError('unknown near_bed %r; expected one of %r'
+                             % (near_bed, sorted(modes)))
+        if tau_d < 0.0:
+            raise ValueError('tau_d must be >= 0 Pa, got %g' % tau_d)
+        self.sediment_deposition_mode = laws[law]
+        self.sediment_tau_d = float(tau_d)
+        self.sediment_d_star_mode = modes[near_bed]
+        self.sediment_a_h_floor = float(reference_height_floor)
+        self._Domain_C_struct = None
+        self.gpu_interface = None
+        if hasattr(self, '_gpu_boundary_info_initialized'):
+            del self._gpu_boundary_info_initialized
+
+    def set_shear_closure(self, closure='quadratic_drag'):
+        """Select how bed shear stress is obtained (spec 3.1 / 3.4).
+
+        `'quadratic_drag'` (default) -- `[T-1]`, `tau_b = rho f_c |v|^2`. Makes
+        no equilibrium assumption.
+
+        `'depth_slope'` -- `[T-7]`, `tau_b = rho g h S` with `S` the bed slope
+        magnitude, as `aSM16` Eqs 6-7 and hence anugaSed. This is the steady
+        uniform (normal) flow approximation: it assumes the energy slope equals
+        the **bed** slope and the flow is locally in equilibrium.
+
+        Notes
+        -----
+        Spec 3.4 recommends `[T-1]` and keeps `[T-7]` only for reproducing
+        published anugaSed results, for three reasons: normal-flow equilibrium
+        is exactly what fails in the dam-breach and outburst floods this work
+        targets; `S` should be the energy slope, not the bed slope (substituting
+        the energy slope into `[T-7]` recovers `[T-1]` identically); and the
+        domain-global slope clamp anugaSed applies has no counterpart in their
+        own manual.
+
+        **This does not reproduce anugaSed exactly.** Their code additionally
+        divides the elevation gradient by a domain-mean cell size and applies
+        `S <- min(S, mean(S)/2)`. Neither is in `aSM16`; the first is
+        dimensionally inconsistent and the second is the undocumented clamp of
+        divergence D1a. `[T-7]` here follows the manual, not the code.
+        """
+        closures = {'quadratic_drag': 0, 'depth_slope': 1}
+        if closure not in closures:
+            raise ValueError('unknown shear closure %r; expected one of %r'
+                             % (closure, sorted(closures)))
+        self.sediment_shear_closure = closures[closure]
+        self._Domain_C_struct = None
+        self.gpu_interface = None
+        if hasattr(self, '_gpu_boundary_info_initialized'):
+            del self._gpu_boundary_info_initialized
+
+    def initialize_sediment_operator(self, porosity=None, c_max=None,
+                                     c_pack=None, bed_evolution=None,
+                                     rho_w=None, description=None, label=None,
+                                     logging=False, verbose=False):
+        """Switch sediment transport on, and return the operator.
+
+        This is the entry point for sediment transport. It takes the
+        DOMAIN-WIDE parameters -- the ones that describe the run as a whole
+        rather than any one grain size -- and creates the single
+        :class:`~anuga.operators.sediment_operator.Sediment_transport_operator`
+        that carries the bed exchange.
+
+        Grain sizes are added separately, with :meth:`add_grain_size`:
+
+        .. code-block:: python
+
+            domain.initialize_sediment_operator(porosity=0.28, rho_w=1000.0)
+            domain.add_grain_size('sand', diameter=2.0e-4)
+            domain.add_grain_size('silt', diameter=2.0e-5)
+
+        The split is the point. A parameter belongs to exactly one of the two
+        calls, so there is never a question of which call wins: `porosity` and
+        `rho_w` are properties of the run, `diameter` and `rho_s` are properties
+        of a grain size.
+
+        ONE OPERATOR PER DOMAIN. Calling this twice returns the same operator,
+        applying any parameters given the second time -- the kernel makes a
+        single pass over every registered grain size, so a second operator in
+        the fractional-step list would apply the bed exchange twice per step.
+
+        Calling it is optional in the simplest case: :meth:`add_grain_size` will
+        create the operator with default domain-wide parameters if none exists.
+        The two may be called in either order.
+
+        The closure choices -- which shear, erosion, deposition and bedload laws
+        to use -- have their own setters, because each carries its own
+        parameters and validation: :meth:`set_shear_closure`,
+        :meth:`set_sediment_friction`, :meth:`set_bed_material`,
+        :meth:`set_deposition` and :meth:`set_bedload`.
+
+        Parameters
+        ----------
+        porosity : float, optional
+            Bed porosity `lambda` in `[G-4]`. Default 0.30.
+        c_max : float, optional
+            `[L-2]`, the ceiling on depth-averaged concentration. Default 0.30.
+        c_pack : float, optional
+            `[L-4]`, maximum packing bounding near-bed concentration.
+        bed_evolution : bool, optional
+            `True` (default) evolves the bed; `False` is the fixed-bed stage.
+        rho_w : float, optional
+            Water density, kg/m3. Default 1000.
+        description, label, logging, verbose
+            Passed to the operator; see
+            :class:`~anuga.operators.base_operator.Operator`.
+
+        Returns
+        -------
+        Sediment_transport_operator
+            The domain's sediment operator.
+
+        See Also
+        --------
+        add_grain_size : register one grain size.
+        set_sediment_parameters : change the domain-wide parameters later.
+        sediment_summary : print the complete active configuration.
+        """
+        from anuga.operators.sediment_operator import (
+            Sediment_transport_operator)
+
+        if (porosity is not None or c_max is not None or c_pack is not None
+                or bed_evolution is not None or rho_w is not None):
+            self.set_sediment_parameters(porosity=porosity, c_max=c_max,
+                                         c_pack=c_pack,
+                                         bed_evolution=bed_evolution,
+                                         rho_w=rho_w)
+
+        return Sediment_transport_operator(
+            self, description=description, label=label, logging=logging,
+            verbose=verbose)
+
+    def add_grain_size(self, name, diameter, rho_s=2650.0, tau_c_star=0.04,
+                       d_star=1.0, beta=None, initial_concentration=0.0,
+                       reference_height=None, **settling_kwargs):
+        """Register one suspended sediment grain size and return its index.
+
+        Everything here is a property of THIS grain size. The domain-wide
+        parameters live on :meth:`initialize_sediment_operator`; in particular
+        there is no `rho_w` here, because there is one fluid.
+
+        .. code-block:: python
+
+            domain.add_grain_size('sand', diameter=2.0e-4)
+            domain.add_grain_size('silt', diameter=2.0e-5, tau_c_star=0.11)
+
+        A grain size is a tracer with settling parameters attached, so it
+        inherits the transport, boundary and conservation machinery described
+        under :ref:`tracers`, and takes the tracer slot of the same index. Do
+        not interleave :meth:`add_tracer` and `add_grain_size` on the same
+        domain if you rely on that correspondence.
+
+        If the domain has no sediment operator yet, one is created with the
+        default domain-wide parameters.
+
+        Parameters
+        ----------
+        name : str
+            Identifier for this grain size, e.g. 'sand'. Also its tracer name.
+        diameter : float
+            Grain diameter in metres.
+        rho_s : float, optional
+            Sediment particle density, kg/m3. Default 2650 (quartz). Enters as
+            the submerged specific gravity `R = rho_s/rho_w - 1`.
+        tau_c_star : float, optional
+            Critical Shields stress for entrainment `[E-1]`. Default 0.04.
+            Setting it to 0 disables entrainment for this grain size, leaving
+            deposition only.
+        d_star : float, optional
+            Ratio of near-bed to depth-averaged concentration in `[D-1]`.
+            Default 1.0, the well-mixed limit. Ignored when the domain's
+            `near_bed` mode is `'rouse'`, which computes it per cell.
+        beta : float, optional
+            Edge reconstruction limiter for this grain size's tracer.
+        initial_concentration : float or array-like, optional
+            Initial `c_s`; seeds `m = h*c` consistently.
+        reference_height : float, optional
+            `a` in `[S-4]`, in metres. Defaults to `2*diameter`.
+        **settling_kwargs
+            Passed to :meth:`settling_velocity` -- e.g. `shape='natural'`.
+
+        Returns
+        -------
+        int
+            The index of this grain size, which is also its tracer index.
+
+        See Also
+        --------
+        initialize_sediment_operator : the domain-wide parameters.
+        """
+        # A domain-wide parameter here would otherwise fall into
+        # settling_kwargs and surface as a TypeError from settling_velocity,
+        # which says nothing about what the caller did wrong.
+        domain_wide = sorted(set(settling_kwargs) &
+                             {'porosity', 'c_max', 'c_pack', 'bed_evolution',
+                              'rho_w'})
+        if domain_wide:
+            raise TypeError(
+                'add_grain_size() got %s, which %s of the run rather than '
+                'of one grain size; pass %s to initialize_sediment_operator() '
+                'or set_sediment_parameters()'
+                % (', '.join(domain_wide),
+                   'are properties' if len(domain_wide) > 1 else 'is a property',
+                   'them' if len(domain_wide) > 1 else 'it'))
+
+        if not any(isinstance(op, self._sediment_operator_class())
+                   for op in getattr(self, 'fractional_step_operators', ())):
+            self.initialize_sediment_operator()
+
+        return self._register_sediment_fraction(
+            name, diameter, rho_s=rho_s, tau_c_star=tau_c_star,
+            d_star=d_star, beta=beta,
+            initial_concentration=initial_concentration,
+            reference_height=reference_height, **settling_kwargs)
+
+    @staticmethod
+    def _sediment_operator_class():
+        from anuga.operators.sediment_operator import (
+            Sediment_transport_operator)
+        return Sediment_transport_operator
+
+    def _set_sediment_rho_w(self, rho_w):
+        """Set the domain-wide water density and refresh what derives from it.
+
+        `rho_w` is a property of the fluid, so there is one per domain rather
+        than one per grain size. Two quantities are computed from it at
+        registration time -- the submerged specific gravity `R = rho_s/rho_w - 1`
+        and the settling velocity `v_s` `[S-1]` -- so changing it afterwards has
+        to recompute them, or already-registered grain sizes keep values from
+        the old density and nothing says so.
+        """
+        if rho_w <= 0.0:
+            raise ValueError('rho_w must be > 0, got %g' % rho_w)
+        self.sediment_rho_w = float(rho_w)
+        for i in range(self.n_sediment_classes):
+            rho_s = self._sediment_rho_s[i]
+            self.sediment_R[i] = rho_s / self.sediment_rho_w - 1.0
+            self.sediment_settling_velocity[i] = self.settling_velocity(
+                self.sediment_diameter[i], rho_s=rho_s,
+                rho_w=self.sediment_rho_w,
+                **self._sediment_settling_kwargs[i])
+
+    def set_sediment_parameters(self, porosity=None, c_max=None, c_pack=None,
+                                bed_evolution=None, rho_w=None):
+        """Set the scalar sediment parameters, with validation.
+
+        Everything here is a physical property of the run, not a numerical
+        knob. All are optional; only what you pass is changed.
+
+        Parameters
+        ----------
+        porosity : float
+            Bed porosity `lambda` in `[G-4]`. The sediment VOLUME leaving
+            suspension is `(1-lambda) dz`, the rest being pore space filled
+            from the water column. Default 0.30; LM15 use 0.28.
+        c_max : float
+            `[L-2]`, the ceiling on depth-averaged volumetric concentration.
+            Default 0.30 (FG21); aS16 use 0.20.
+        c_pack : float
+            `[L-4]`, maximum packing bounding the NEAR-BED concentration
+            `c_b = d* c`. Default 0.65, the same constant that bounds `E*` in
+            `[E-1]`. Only bites when `d* != 1`.
+        bed_evolution : bool
+            Spec 2.4's coupling stage. `True` (default) evolves the bed via
+            `[G-4]`/`[G-5]`; `False` is the FIXED BED of Phase 3, which is
+            RDycore v1.0's configuration and what the analytic
+            constant-depth deposition solutions assume.
+        rho_w : float
+            Water density, used to form the dimensional bed shear stress.
+        """
+        if porosity is not None:
+            if not 0.0 <= porosity < 1.0:
+                raise ValueError('porosity must be in [0, 1), got %g' % porosity)
+            self.sediment_porosity = float(porosity)
+        if c_max is not None:
+            if c_max <= 0.0:
+                raise ValueError('c_max must be > 0, got %g' % c_max)
+            self.sediment_c_max = float(c_max)
+        if c_pack is not None:
+            if c_pack <= 0.0:
+                raise ValueError('c_pack must be > 0, got %g' % c_pack)
+            self.sediment_c_pack = float(c_pack)
+        if bed_evolution is not None:
+            self.sediment_bed_evolution = bool(bed_evolution)
+            # May have just been turned on after the classes were registered.
+            self._sync_elevation_storage()
+        if rho_w is not None:
+            self._set_sediment_rho_w(rho_w)
+        self._Domain_C_struct = None
+        self.gpu_interface = None
+        if hasattr(self, '_gpu_boundary_info_initialized'):
+            del self._gpu_boundary_info_initialized
+
+    def sediment_summary(self):
+        """Return the complete active sediment configuration as text.
+
+        Every choice that affects the answer, with its units and the spec
+        label it implements. Worth printing at the top of any run: the module
+        has enough switches that "which erosion law was that?" is a real
+        question six months later, and several of the choices are physics
+        statements rather than tuning (spec 4.1.1).
+        """
+        if self.n_sediment_classes == 0:
+            return 'sediment: no grain sizes registered'
+
+        ero = {0: "Shields / Smith-McLean, non-cohesive (sand, gravel)   [E-1]",
+               1: "Hanson & Simon, cohesive (silt, clay)   [E-3]",
+               2: "Partheniades (RDycore)   [E-4]"}[self.sediment_erosion_mode]
+        dep = {0: "D = d* c v_s   [D-1]", 1: "D = v_s c (1 - tau_b/tau_d)   [D-2]"
+               }[self.sediment_deposition_mode]
+        dstar = {0: "constant, per grain size", 1: "Rouse profile   [S-4]"
+                 }[self.sediment_d_star_mode]
+        shear = {0: "quadratic drag, tau_b = rho f_c |v|^2   [T-1]",
+                 1: "depth-slope, tau_b = rho g h S (aSM16; legacy)   [T-7]"
+                 }[self.sediment_shear_closure]
+        fric = {0: "constant n, from the domain friction quantity",
+                1: "larsen_lamb, n = %.5f   [T-13..15]" % self.sediment_manning_ll,
+                2: "wilson, bed=%s, D=%.4g m   [T-8..10]"
+                   % (['sand', 'gravel', 'boulder'][self.sediment_wilson_bed],
+                      self.sediment_wilson_D)}[self.sediment_friction_mode]
+        bl = ("off" if self.sediment_bedload_mode == 0 else
+              ("Engelund-Hansen, TOTAL LOAD (suspended source disabled)   [K-5]"
+               if self.sediment_bedload_mode == 2 else
+               "power law, K=%.4g m=%.4g tau_c*=%.4g   [K-1]"
+               % (self.sediment_bedload_K, self.sediment_bedload_m,
+                  self.sediment_bedload_tau_c_star)))
+
+        L = ['sediment configuration',
+             # The name is free text, so it is usually a material ('sand')
+             # rather than a size. Carry the diameter alongside it, or the
+             # line labels as a grain size something that is not one.
+             '  grain sizes        : %d  --  %s'
+             % (self.n_sediment_classes,
+                ', '.join('%s (d=%.4g m)' % (nm, self.sediment_diameter[i])
+                          for i, nm in
+                          enumerate(self.get_sediment_names()))),
+             '  erosion            : %s' % ero,
+             '  deposition         : %s' % dep,
+             '  near-bed d*        : %s' % dstar,
+             '  shear closure      : %s' % shear,
+             '  friction closure   : %s' % fric,
+             '  bedload            : %s' % bl,
+             '  bed evolution      : %s  (spec 2.4 %s)'
+             % (self.sediment_bed_evolution,
+                'Phase 4, evolving' if self.sediment_bed_evolution
+                else 'Phase 3, FIXED bed'),
+             '  porosity lambda    : %.4g' % self.sediment_porosity,
+             '  c_max      [L-2]   : %.4g' % self.sediment_c_max,
+             '  c_pack     [L-4]   : %.4g' % self.sediment_c_pack,
+             '  rho_w              : %.4g kg/m3' % self.sediment_rho_w]
+        if self.sediment_erosion_mode in (1, 2):
+            L.append('  tau_crit           : %.4g Pa' % self.sediment_tau_crit)
+        if self.sediment_erosion_mode == 1:
+            L.append('  K_e        [E-5]   : %.4e m3/N/s' % self.sediment_K_e)
+        if self.sediment_erosion_mode == 2:
+            L.append('  K_p        [E-4]   : %.4e kg/m2/s'
+                     % self.sediment_K_partheniades)
+        if self.sediment_deposition_mode == 1:
+            L.append('  tau_d      [D-2]   : %.4g Pa' % self.sediment_tau_d)
+        if self.sediment_d_star_mode == 1:
+            L.append('  a/h floor          : %.4g' % self.sediment_a_h_floor)
+        mask = self._sediment_erodible_mask
+        if self._sediment_user_base is not None:
+            t = self.erodible_thickness()
+            # Report only where erosion is actually permitted; locked cells
+            # carry zero thickness and would drag the minimum to 0 whatever
+            # the layer is.
+            tt = t if mask is None else t[mask]
+            if len(tt):
+                L.append('  erodible base [L-5]: thickness %.4g to %.4g m, '
+                         '%d of %d erodible cells at bedrock'
+                         % (tt.min(), tt.max(), int((tt <= 0.0).sum()), len(tt)))
+            else:
+                L.append('  erodible base [L-5]: set, but no cell is erodible')
+        else:
+            L.append('  erodible base [L-5]: none (unlimited depth)')
+        if self.sediment_repose_tan > 0.0:
+            L.append('  angle of repose    : %.1f degrees (spec 7), relax %.2g, '
+                     'max %d sweeps'
+                     % (num.degrees(num.arctan(self.sediment_repose_tan)),
+                        self.sediment_repose_relax,
+                        self.sediment_repose_max_sweeps))
+        else:
+            L.append('  angle of repose    : off (spec 7)')
+        if mask is None:
+            L.append('  erodible region    : whole domain')
+        else:
+            L.append('  erodible region    : %d of %d cells erodible '
+                     '(%d locked at their current bed)'
+                     % (int(mask.sum()), len(mask), int((~mask).sum())))
+        L.append('  ([E-1] and the like are cross-references to the term in '
+                 'the physics;')
+        L.append('   see the Sediment physics appendix -- the description '
+                 'before each')
+        L.append('   label is the whole story.)')
+        L.append('  per grain size:')
+        for i, nm in enumerate(self.get_sediment_names()):
+            L.append('    %-10s d=%.4g m  v_s=%.4e m/s  R=%.4g  tau_c*=%.4g'
+                     % (nm, self.sediment_diameter[i],
+                        self.sediment_settling_velocity[i],
+                        self.sediment_R[i], self.sediment_tau_c_star[i]))
+        return '\n'.join(L)
+
+    def set_bed_material(self, material='noncohesive', tau_crit=0.088,
+                         K_e=None):
+        """Select the erosion law by naming the BED MATERIAL (spec 4.1.1).
+
+        `'noncohesive'` (default) -- sand, gravel, boulders. Shields
+        entrainment via Smith & McLean / Parker, `[E-1]`/`[E-2]`, with a
+        critical Shields stress per grain size (`tau_c_star` on
+        `add_grain_size`).
+
+        `'partheniades'` -- `[E-4]`, `E = K_p (tau_b - tau_c)/tau_c`, the form
+        RDycore-sediment uses. `K_e` here is the Partheniades coefficient as a
+        **mass** flux in kg m-2 s-1 (RDy26 use 1e-4), a different quantity from
+        `[E-5]`'s erodibility, and is divided internally by the class density.
+
+        `'cohesive'` -- silt, clay, cohesive bank material. Excess DIMENSIONAL
+        shear via Hanson & Simon `[E-3]`, `E = K_e (tau_b - tau_c)`, with the
+        jet-test erodibility `[E-5]` `K_e = 0.2e-6 / sqrt(tau_c)` unless `K_e`
+        is given explicitly. `tau_crit` is in **pascals**, not Shields units;
+        aS16 use 0.088.
+
+        Notes
+        -----
+        `[E-1]` and `[E-3]` are **not competing formulations of the same
+        physics** -- they describe different sediment, calibrated from different
+        experiments. Spec 4.1.1 puts it plainly: choosing between them is a
+        statement about the bed, and getting it wrong is a physics error, not a
+        tuning error. That is why this method is named for the material rather
+        than for the equation.
+        """
+        materials = {'noncohesive': 0, 'cohesive': 1, 'partheniades': 2}
+        if material not in materials:
+            raise ValueError('unknown bed material %r; expected one of %r'
+                             % (material, sorted(materials)))
+        if tau_crit <= 0.0:
+            raise ValueError('tau_crit must be > 0 Pa, got %g' % tau_crit)
+
+        self.sediment_erosion_mode = materials[material]
+        self.sediment_tau_crit = float(tau_crit)
+        if material == 'partheniades' and K_e is not None:
+            # [E-4]'s coefficient is a MASS flux in kg m-2 s-1, not [E-5]'s
+            # m3 N-1 s-1. Different quantity, so it lands in its own field.
+            self.sediment_K_partheniades = float(K_e)
+        # [E-5] Hanson & Simon jet-test erodibility, k_d = 0.2 tau_c^-0.5 in
+        # cm3 N-1 s-1; the 1e-6 converts to m3 N-1 s-1.
+        self.sediment_K_e = (float(K_e) if K_e is not None
+                             else 0.2e-6 / self.sediment_tau_crit**0.5)
+
+        self._Domain_C_struct = None
+        self.gpu_interface = None
+        if hasattr(self, '_gpu_boundary_info_initialized'):
+            del self._gpu_boundary_info_initialized
+
+    def set_sediment_friction(self, mode='constant', k_s=None, r_d=2.0,
+                              r_br=2.0, sigma_br=None, bed='sand',
+                              grain_size=None):
+        """Select the friction closure used by the sediment kernel (spec 3.3).
+
+        This affects only `tau_b` in the sediment source term; the
+        hydrodynamic friction operator is untouched.
+
+        `mode='constant'` (default)
+            `f_c = g n^2 h^(-1/3)` `[T-6]` with `n` from the domain's own
+            friction quantity.
+
+        `mode='larsen_lamb'`
+            Manning-Strickler `[T-13]`-`[T-15]`: `k_s = r_d r_br sigma_br` and
+            `n = k_s^(1/6) / (8.1 sqrt(g))`, uniform in space and time. Pass
+            either `k_s` directly or `sigma_br` (one standard deviation of
+            bedrock elevation). LL16 measured `sigma_br ~ 5 m` at Moses Coulee,
+            giving `k_s = 20 m` and `n = 0.065` -- a **site-measured** quantity,
+            not a universal default.
+
+        `mode='wilson'`
+            `f_c` from bed type and relative submergence `[T-8]`-`[T-10]`.
+            `bed` is 'sand' (uses D50), 'gravel' or 'boulder' (both use D84);
+            pass the percentile as `grain_size`.
+
+        Notes
+        -----
+        **`larsen_lamb` and `wilson` are megaflood/planetary parameterisations,
+        not general-purpose flood closures.** W04 is a *Mars outflow channel*
+        study under Martian gravity; LL16 is the Channeled Scablands. Neither is
+        calibrated for ordinary river or urban flood modelling, which is ANUGA's
+        main use. For standard flood work keep `constant` with an `n` from
+        conventional tables.
+        """
+        import math
+        from anuga.config import g as _g
+
+        modes = {'constant': 0, 'larsen_lamb': 1, 'wilson': 2}
+        if mode not in modes:
+            raise ValueError('unknown friction mode %r; expected one of %r'
+                             % (mode, sorted(modes)))
+        self.sediment_friction_mode = modes[mode]
+
+        if mode == 'larsen_lamb':
+            if k_s is None:
+                if sigma_br is None:
+                    raise ValueError(
+                        "larsen_lamb needs either k_s or sigma_br; sigma_br is "
+                        "site-measured (LL16 report ~5 m at Moses Coulee) and "
+                        "has no universal default")
+                k_s = r_d * r_br * sigma_br            # [T-15]
+            if k_s <= 0.0:
+                raise ValueError('k_s must be > 0, got %g' % k_s)
+            self.sediment_manning_ll = k_s**(1.0 / 6.0) / (8.1 * math.sqrt(_g))
+
+        elif mode == 'wilson':
+            beds = {'sand': 0, 'gravel': 1, 'boulder': 2}
+            if bed not in beds:
+                raise ValueError('unknown bed type %r; expected one of %r'
+                                 % (bed, sorted(beds)))
+            if grain_size is None or grain_size <= 0.0:
+                raise ValueError(
+                    "wilson needs grain_size > 0 (D50 for sand, D84 for "
+                    "gravel/boulder)")
+            self.sediment_wilson_bed = beds[bed]
+            self.sediment_wilson_D = float(grain_size)
+
+        self._Domain_C_struct = None
+        self.gpu_interface = None
+        if hasattr(self, '_gpu_boundary_info_initialized'):
+            del self._gpu_boundary_info_initialized
+
+    #: Bedload parameter sets for `[K-1]`, keyed by name.
+    #: Which of the two Wong & Parker relations FG21 used is still open, so
+    #: both are provided and neither is privileged beyond the default.
+    BEDLOAD_PARAMETER_SETS = {
+        'wong_parker_eq24': (3.97, 1.5, 0.0495),
+        'wong_parker_eq23': (4.93, 1.60, 0.0470),
+    }
+
+    def set_bedload(self, formula='wong_parker_eq24', K=None, m=None,
+                    tau_c_star=None):
+        """Enable bedload transport `[K-1]`-`[K-4]` and its bed evolution `[G-5]`.
+
+        Parameters
+        ----------
+        formula : str
+            `'wong_parker_eq24'` (default; `K`=3.97, `m`=1.5, `tau_c*`=0.0495),
+            `'wong_parker_eq23'` (4.93, 1.60, 0.0470), `'engelund_hansen'`, or
+            `'off'`.
+        K, m, tau_c_star : float, optional
+            Override the chosen set's values individually.
+
+        Notes
+        -----
+        **Engelund & Hansen is a TOTAL LOAD relation** `[K-5]`: suspension is
+        already inside it, so running the suspended source alongside it double
+        counts. Spec 6 calls this out as a critical usage rule, and this method
+        enforces it rather than warning -- selecting `'engelund_hansen'` turns
+        the suspended exchange off, and it has no threshold by construction.
+
+        Which Wong & Parker relation FG21 used, their Eq 23 or Eq 24, is an open
+        item. The two differ enough to matter, so the parameters are exposed:
+        resolving it is a change of default, not an edit.
+        """
+        if formula == 'off':
+            self.sediment_bedload_mode = 0
+        elif formula == 'engelund_hansen':
+            self.sediment_bedload_mode = 2
+            # [K-5] has no threshold; subtracting one would be a different
+            # model. And it already contains suspension:
+            self.sediment_bedload_tau_c_star = 0.0
+            self._sediment_suspended_enabled = False
+        elif formula in self.BEDLOAD_PARAMETER_SETS:
+            self.sediment_bedload_mode = 1
+            (self.sediment_bedload_K, self.sediment_bedload_m,
+             self.sediment_bedload_tau_c_star) = \
+                self.BEDLOAD_PARAMETER_SETS[formula]
+        else:
+            raise ValueError(
+                'unknown bedload formula %r; expected one of %r'
+                % (formula, sorted(self.BEDLOAD_PARAMETER_SETS) +
+                   ['engelund_hansen', 'off']))
+
+        if formula != 'engelund_hansen':
+            if K is not None:
+                self.sediment_bedload_K = float(K)
+            if m is not None:
+                self.sediment_bedload_m = float(m)
+            if tau_c_star is not None:
+                self.sediment_bedload_tau_c_star = float(tau_c_star)
+
+        self._Domain_C_struct = None
+        self.gpu_interface = None
+        if hasattr(self, '_gpu_boundary_info_initialized'):
+            del self._gpu_boundary_info_initialized
+
+    def get_sediment_names(self):
+        """Return the registered sediment class names, in index order."""
+        return list(self._sediment_names)
+    def set_tracer_boundary(self, name, tag, value):
+        """Concentration that tracer `name` brings in across boundary `tag`.
+
+        Only used where water FLOWS IN. The flux kernel picks the upwind value
+        edge by edge from the sign of the water flux:
+
+            inflow  (n.U into the domain)   ->  this boundary value
+            outflow (n.U out of the domain) ->  the interior edge value
+
+        so there is nothing to set for an outflow, and nothing that can be set:
+        prescribing a concentration on an outflow would over-determine the
+        advection, and the kernel would ignore it anyway. A boundary that only
+        ever lets water out therefore needs no call at all, and one that
+        alternates gets Dirichlet-on-inflow / transmissive-on-outflow
+        automatically -- the characteristic condition, without a switch.
+
+        Parameters
+        ----------
+        name : str
+            A registered tracer.
+        tag : str
+            A boundary tag, as used by `set_boundary`. On a distributed
+            sub-domain a tag this rank owns no part of is silently ignored,
+            so the same call works on every rank; in serial an unknown tag
+            is an error.
+        value : float, array-like, or callable
+            A scalar applies to every edge carrying `tag`. An array must have
+            one value per edge of that tag, ordered as
+            `domain.tag_boundary_cells[tag]`. A callable is evaluated as
+            `value(t)` at each timestep and must return a scalar or such an
+            array, for a time-varying inflow.
+
+        Notes
+        -----
+        UNSET BOUNDARIES BRING c = 0. The array is zero-filled at
+        `add_tracer`, so with no call here an inflow carries clean water. That
+        is a modelling assumption, not a neutral default: for salinity or
+        suspended sediment it is usually wrong, and it is invisible in the
+        output. It is preserved because changing it would silently alter
+        existing results, but set it explicitly wherever water enters.
+        """
+        s = self.get_tracer_index(name)
+
+        if tag not in self.tag_boundary_cells:
+            if self._is_subdomain():
+                # After distribute() a tag lives only on the ranks that own a
+                # piece of it, so 'not here' is the normal case, not an error.
+                # Same convention as set_boundary, which ignores a tag the
+                # domain does not use. In SERIAL there is no such excuse, so a
+                # missing tag is still reported -- it can only be a typo.
+                return
+            raise ValueError(
+                'no boundary tagged %r on this domain; known tags: %s'
+                % (tag, sorted(self.tag_boundary_cells)))
+
+        idx = num.asarray(self.tag_boundary_cells[tag], dtype=num.intp)
+
+        if callable(value):
+            # Re-evaluated each timestep by update_tracer_boundary_values().
+            self._tracer_boundary_functions[(s, tag)] = value
+            self._apply_tracer_boundary(s, idx, value(self.get_time()), tag)
+        else:
+            self._tracer_boundary_functions.pop((s, tag), None)
+            self._apply_tracer_boundary(s, idx, value, tag)
+        self._push_tracer_boundary_to_device()
+
+    def _push_tracer_boundary_to_device(self):
+        """Mirror the host tracer boundary array to the device, if there is one.
+
+        The device copy is made once when the arrays are mapped, and the
+        per-step boundary push carries only the hydrodynamic values, so every
+        host write to tracer_boundary_values has to be followed by this or the
+        flux kernel keeps reading the mapped copy. Same reasoning as the
+        external source in set_tracer_source. A no-op off the GPU path.
+        """
+        if (self.multiprocessor_mode == MULTIPROCESSOR_GPU
+                and self.gpu_interface is not None):
+            from anuga.shallow_water.sw_domain_gpu_ext import (
+                sync_tracer_boundary_to_device)
+            sync_tracer_boundary_to_device(self.gpu_interface.gpu_dom)
+
+    def _apply_tracer_boundary(self, s, idx, value, tag):
+        """Write one tracer's boundary values for the edges of one tag."""
+        v = num.asarray(value, dtype=num.float64)
+        if v.ndim == 0:
+            self.tracer_boundary_values[s, idx] = float(v)
+        elif v.shape == idx.shape:
+            self.tracer_boundary_values[s, idx] = v
+        else:
+            raise ValueError(
+                'tracer boundary %r on tag %r: expected a scalar or %d values '
+                '(one per edge of that tag), got shape %r'
+                % (self._tracer_names[s], tag, idx.size, v.shape))
+
+    def update_tracer_boundary_values(self):
+        """Re-evaluate any callable tracer boundary values for this time.
+
+        Called from the evolve loop alongside update_boundary(). A no-op unless
+        set_tracer_boundary() was given a callable, so a domain with constant
+        boundary concentrations pays nothing.
+        """
+        if not self._tracer_boundary_functions:
+            return
+        t = self.get_time()
+        for (s, tag), f in self._tracer_boundary_functions.items():
+            idx = num.asarray(self.tag_boundary_cells[tag], dtype=num.intp)
+            self._apply_tracer_boundary(s, idx, f(t), tag)
+        self._push_tracer_boundary_to_device()
+
+    def get_tracer_boundary(self, name, tag):
+        """Return the boundary concentrations of `name` on `tag`."""
+        s = self.get_tracer_index(name)
+        if tag not in self.tag_boundary_cells:
+            if self._is_subdomain():
+                # This rank owns none of that boundary; it has no values for
+                # it, which is not the same thing as the tag being wrong.
+                return num.zeros(0, dtype=num.float64)
+            raise ValueError('no boundary tagged %r on this domain' % tag)
+        idx = num.asarray(self.tag_boundary_cells[tag], dtype=num.intp)
+        return self.tracer_boundary_values[s, idx]
+
+    def _is_subdomain(self):
+        """True if this domain is one rank's piece of a distributed domain."""
+        return getattr(self, 'numproc', 1) > 1
+
+    def _local_tracer_mass(self, s):
+        """This rank's share of tracer `s`: owned cells only, NO reduction.
+
+        Deliberately collective-free. The conservation baseline is captured
+        during setup, inside add_tracer and set_tracer -- and on a parallel run
+        that happens on rank 0 alone, before distribute() has handed the domain
+        out. A collective there would block forever waiting for ranks that are
+        not in that code at all.
+
+        Ghost cells are excluded, so summing this across ranks gives the
+        whole-domain figure exactly once.
+        """
+        m = self.tracer_conserved_values[s]           # m = h*c per cell
+        areas = self.areas
+        if self.tri_full_flag is not None:
+            return float(num.sum(m * areas * (self.tri_full_flag == 1)))
+        return float(num.sum(m * areas))
+
+    def _reduce_over_ranks(self, value):
+        """Sum a per-rank scalar over the communicator. Collective."""
+        from anuga import numprocs
+        if numprocs == 1:
+            return value
+        from mpi4py import MPI
+        return MPI.COMM_WORLD.allreduce(value, op=MPI.SUM)
+
+    def get_tracer_mass(self, name):
+        """Total mass of tracer `name` in the domain: the integral of m = h*c.
+
+        The tracer analogue of `get_water_volume`. Summed over owned cells only
+        and reduced across ranks, so it is the whole-domain figure in parallel
+        as well as in serial.
+
+        COLLECTIVE in parallel, like `get_water_volume`: every rank must call
+        it, or the ones that do will block.
+        """
+        s = self.get_tracer_index(name)
+        return self._reduce_over_ranks(self._local_tracer_mass(s))
+
+    def get_tracer_boundary_flux_integral(self, name):
+        """Net tracer mass that has crossed the domain boundary, since t=0.
+
+        Positive is INTO the domain, matching the sign of the water balance.
+        The tracer analogue of `get_boundary_flux_integral`, and the other half
+        of a mass budget:
+
+            mass(t) - mass(0) == boundary_flux_integral(t)
+
+        to within the timestepping error, for a domain with no source terms.
+        `check_tracer_conservation` does exactly that comparison.
+
+        The kernel accumulates the per-edge boundary flux into a per-cell array
+        each substep; `tracer_flux_integral_operator` applies the timestepping
+        method's own weights and zeroes it, exactly as
+        `boundary_flux_integral_operator` does for water.
+
+        Reduced across ranks, matching `get_boundary_flux_integral` for water:
+        each rank counts only the boundary edges of the cells it owns, so the
+        per-rank integrals sum to the whole-domain figure. COLLECTIVE.
+        """
+        s = self.get_tracer_index(name)
+        return self._reduce_over_ranks(float(self._tracer_flux_integral[s]))
+
+    def check_tracer_conservation(self, name):
+        """Return (change_in_mass, boundary_flux_integral, discrepancy).
+
+        For a domain with no tracer source terms the first two should agree, so
+        the discrepancy is the conservation error. On a CLOSED domain the flux
+        integral is zero and this reduces to "did the mass stay constant".
+
+        Returns absolute quantities, not a relative error: for a tracer that is
+        zero almost everywhere a relative measure is meaningless, and the caller
+        knows the scale that matters.
+
+        COLLECTIVE in parallel: every rank must call it.
+        """
+        s = self.get_tracer_index(name)
+        # The baseline is a per-rank number (see _local_tracer_mass), so the
+        # difference is formed locally and reduced once. Reducing the two
+        # separately would be wrong after a distribute(), where each rank's
+        # baseline covers only its own cells.
+        change = self._reduce_over_ranks(
+            self._local_tracer_mass(s) - self._tracer_initial_mass[s])
+        flux = self.get_tracer_boundary_flux_integral(name)
+        return change, flux, change - flux
+
+    def _reorder_tracer_arrays(self, new_order, inv_order,
+                               old_boundary_enumeration):
+        """Permute the tracer blocks onto a reordered mesh (issue #277).
+
+        Called by `Generic_Domain.reorder` after the mesh has been renumbered
+        but while `inv_order` and the pre-reorder boundary enumeration are
+        still available. A no-op on a domain with no tracers.
+
+        Permutes IN PLACE. The C domain struct holds raw pointers into these
+        buffers, so rebinding the attributes would leave the struct addressing
+        the old memory.
+        """
+        ns = self.number_of_tracers
+        if ns == 0:
+            return
+
+        N = self.number_of_elements
+        new_order = num.asarray(new_order, dtype=int)
+
+        # Belt and braces: a block added to _TRACER_ARRAYS without a kind would
+        # otherwise be skipped here and silently keep the old ordering, which
+        # is the exact failure #277 was.
+        unclassified = [a for a in self._TRACER_ARRAYS
+                        if a not in self._TRACER_ARRAY_KINDS]
+        if unclassified:
+            raise NotImplementedError(
+                'tracer array(s) %s have no entry in _TRACER_ARRAY_KINDS, so '
+                'reorder() does not know how to permute them; classify them '
+                'as cell/edge/boundary' % ', '.join(sorted(unclassified)))
+
+        bperm = None
+
+        for attr in self._TRACER_ARRAYS:
+            arr = getattr(self, attr, None)
+            if arr is None:
+                continue
+            kind = self._TRACER_ARRAY_KINDS[attr]
+
+            if kind == 'cell':
+                # new[:, i] = old[:, new_order[i]], matching the convention the
+                # quantities use. Fancy indexing copies before the assignment,
+                # so this does not alias.
+                arr[:] = arr[:, new_order]
+            elif kind == 'edge':
+                # (ns, 3N) -> (ns, N, 3), permute triangles, flatten back. The
+                # same reshape-permute-ravel the (3N,) arrays get in reorder().
+                arr[:] = arr.reshape(ns, N, 3)[:, new_order, :].reshape(ns, 3 * N)
+            elif kind == 'boundary':
+                if bperm is None:
+                    bperm = self._boundary_permutation(old_boundary_enumeration,
+                                                       inv_order)
+                arr[:] = arr[:, bperm]
+            else:
+                raise NotImplementedError(
+                    'unknown tracer array kind %r for %r' % (kind, attr))
+
+    def _boundary_permutation(self, old_boundary_enumeration, inv_order):
+        """Map each NEW boundary index to the old index of the same edge.
+
+        `build_boundary_neighbours` numbers boundary edges by their position in
+        the sorted (triangle, edge) order, so renumbering triangles renumbers
+        the boundary as well. Quantities do not care -- `update_boundary`
+        refills their boundary values from the Boundary objects every timestep
+        -- but `tracer_boundary_values` is written once by
+        `set_tracer_boundary` and then just read, so it has to be carried
+        across by hand.
+
+        Returns an index array `bperm` with `bperm[new_j] = old_j`, so that
+        `new_values = old_values[bperm]`.
+        """
+        new_boundary_enumeration = self.mesh.boundary_enumeration
+        M = len(new_boundary_enumeration)
+        if len(old_boundary_enumeration) != M:
+            raise RuntimeError(
+                'boundary edge count changed during reorder (%d -> %d); the '
+                'tracer boundary values cannot be carried across'
+                % (len(old_boundary_enumeration), M))
+
+        bperm = num.empty(M, dtype=int)
+        for (old_id, edge), old_j in old_boundary_enumeration.items():
+            # The same physical edge, addressed by the triangle's new number.
+            new_j = new_boundary_enumeration[int(inv_order[old_id]), edge]
+            bperm[new_j] = old_j
+        return bperm
+
+    def get_tracer_index(self, name):
+        """Return the row index of tracer `name`."""
+        try:
+            return self._tracer_names.index(name)
+        except ValueError:
+            raise ValueError('no tracer named %r; registered tracers are %r'
+                             % (name, list(self._tracer_names)))
+
+    def set_tracer_source(self, name, values):
+        """Prescribe an external source `S_ms` for tracer `name`, in m/s.
+
+        `[G-3]`'s optional external supply: hillslope yield, tributary load,
+        rainfall washoff. Same units as `E` and `D`.
+
+        Applied **after** the `[L-1]`/`[L-2]` limiters. Those bound the bed
+        exchange by what the bed and water column can supply; an external
+        source is neither, so clipping it there would be wrong -- and would
+        also make a manufactured solution impossible to impose exactly.
+        """
+        s = self.get_tracer_index(name)
+        # Writes only. The array is allocated by add_tracer, so the pointer the
+        # C struct and the device hold stays valid and this is safe to call
+        # from inside a fractional step -- which a manufactured source, or any
+        # time-varying supply, does on every timestep. See #288.
+        v = num.asarray(values, dtype=num.float64)
+        if v.ndim == 0:
+            self.tracer_external_source[s] = float(v)
+        elif v.shape == (self.number_of_elements,):
+            self.tracer_external_source[s] = v
+        else:
+            raise ValueError('tracer %r: expected a scalar or %d values, got %r'
+                             % (name, self.number_of_elements, v.shape))
+
+        # In mode 2 the kernel reads the DEVICE copy, so a host write has to be
+        # pushed or the source goes stale -- silently, and stale is worse than
+        # absent. One array, so a per-step source costs one small transfer.
+        if (self.multiprocessor_mode == MULTIPROCESSOR_GPU
+                and self.gpu_interface is not None):
+            from anuga.shallow_water.sw_domain_gpu_ext import (
+                sync_tracer_source_to_device)
+            sync_tracer_source_to_device(self.gpu_interface.gpu_dom)
+
+    def get_tracer_names(self):
+        """Return the registered tracer names, in index order."""
+        return list(self._tracer_names)
+
+    def _tracer_depth(self):
+        """Cell depth h = stage - elevation, floored at zero."""
+        h = (self.quantities['stage'].centroid_values
+             - self.quantities['elevation'].centroid_values)
+        return num.maximum(h, 0.0)
+
+    def get_tracer(self, name):
+        """Return the concentration `c` of tracer `name`, one value per cell."""
+        return self.tracer_centroid_values[self.get_tracer_index(name)]
+
+    def set_tracer(self, name, values):
+        """Set the concentration `c` of tracer `name`.
+
+        Seeds both `c` and the conserved `m = h*c`, which must agree: setting
+        `c` alone leaves the conserved variable stale and the first substep
+        overwrites `c` from it.
+
+        Because `m = h*c`, this reads the CURRENT depth: set `stage` and
+        `elevation` before the tracer, not after.
+
+        Called before the run starts, this also rebases the conservation
+        baseline (see `check_tracer_conservation`); called mid-run it does not.
+        """
+        s = self.get_tracer_index(name)
+        # asarray, not ascontiguousarray: the latter promotes a 0-d scalar to
+        # shape (1,), which would defeat the scalar branch below.
+        c = num.asarray(values, dtype=num.float64)
+        if c.ndim == 0:
+            c = num.full(self.number_of_elements, float(c))
+        elif c.shape != (self.number_of_elements,):
+            raise ValueError(
+                'tracer %r: expected a scalar or %d values, got shape %r'
+                % (name, self.number_of_elements, c.shape))
+        self.tracer_centroid_values[s] = c
+        self.tracer_conserved_values[s] = self._tracer_depth() * c
+
+        # Setting the field before the run starts IS the initial condition, so
+        # rebase the conservation baseline on it. Without this, the common
+        # add_tracer(name) / set_tracer(name, field) pairing would leave the
+        # baseline at the mass add_tracer seeded and check_tracer_conservation
+        # would report the difference as a conservation error.
+        #
+        # Mid-run a set_tracer is a genuine intervention that really does break
+        # the budget, so leave the baseline alone there and let it show up as a
+        # discrepancy rather than silently absorbing it.
+        if (self._tracer_initial_mass is not None
+                and s < len(self._tracer_initial_mass)
+                and self.relative_time == self.evolve_starttime):
+            self._tracer_initial_mass[s] = self._local_tracer_mass(s)
 
     def update_domain_c_struct(self):
         """Update the C domain structure from the Python Domain object.
@@ -855,6 +2786,9 @@ class Domain(Generic_Domain):
 
         self.set_minimum_allowed_height(minimum_allowed_height)
         self.maximum_allowed_speed = maximum_allowed_speed
+
+        from anuga.config import negative_volume_warning_fraction
+        self.negative_volume_warning_fraction = negative_volume_warning_fraction
 
         self.minimum_storable_height = minimum_storable_height
 
@@ -1286,6 +3220,12 @@ class Domain(Generic_Domain):
 
         We have to do something special for 'elevation'
         otherwise pass through to generic set_quantity
+
+        Mode-2 ('unified'): the device holds the authoritative centroid state once
+        the GPU interface exists, so a host-only write has to be mirrored to it.
+        That is handled one level down, in Quantity.set_values(), via the
+        _notify_*_host_quantity_write() hooks below — which also covers callers
+        that reach a Quantity directly and bypass this method.
         """
 
 #        if name == 'elevation':
@@ -1299,6 +3239,82 @@ class Domain(Generic_Domain):
 
         Generic_Domain.set_quantity(self, name, *args, **kwargs)
 
+    # ------------------------------------------------------------------
+    # Mode-2 host->device coherency for quantity writes
+    #
+    # Once the GPU interface exists the *device* holds the authoritative centroid
+    # state.  A write that touches only the host arrays is then silently ignored —
+    # the next step reads the stale device values, so the simulation runs with the
+    # wrong data.  This bites whenever something builds the interface *before* the
+    # quantities are set (distribute_to_vertices_and_edges() and set_boundary()
+    # both call _ensure_gpu_interface()), and for any mid-run write.
+    #
+    # Quantity.set_values() is the single choke point for host-side quantity
+    # writes, so the sync hangs off there rather than off Domain.set_quantity() —
+    # that way a caller holding a Quantity directly is covered too.
+    # ------------------------------------------------------------------
+
+    # Set while apply_fractional_steps() already brackets its operators with a
+    # sync_from_device()/sync_to_device() pair, so operator writes inside that
+    # region don't re-sync once per call.
+    _gpu_host_writes_suppressed = False
+
+    def _gpu_syncs_host_quantity_write(self, name: str) -> bool:
+        """True if a host write to quantity `name` has to be mirrored to the device."""
+
+        return (not self._gpu_host_writes_suppressed
+                and name in GPU_SYNCED_QUANTITIES
+                and self.multiprocessor_mode == MULTIPROCESSOR_GPU
+                and getattr(self, 'gpu_interface', None) is not None)
+
+    def _notify_before_host_quantity_write(self, name: str) -> None:
+        """Refresh the host centroids from the device, ahead of a host-side write.
+
+        Without this the push in _notify_after_host_quantity_write() would send
+        stale host values for the *other* quantities over the device's current ones.
+        """
+
+        if self._gpu_syncs_host_quantity_write(name):
+            try:
+                self.gpu_interface.sync_from_device()
+            except Exception:
+                pass
+
+    def _notify_after_host_quantity_write(self, name: str) -> None:
+        """Push a host-side quantity write out to the device."""
+
+        if self._gpu_syncs_host_quantity_write(name):
+            self.gpu_interface.sync_to_device()
+
+
+    def _sync_riverwall_to_device(self) -> None:
+        """Push pending host-side riverwall changes out to the device (mode 2).
+
+        The riverwall crest elevations and hydraulic properties are mapped to the
+        device once, when the mode-2 interface is built, and are never written
+        there. A host-side change — RiverWall.set_elevation() to operate a gate,
+        say — therefore has no effect on the device until it is pushed across,
+        which is what this does.
+
+        Called by evolve() at yieldstep boundaries only: that is where a script
+        can make such a change (in the body of the evolve loop) and where the
+        host and device are already in step, so the crest never changes part-way
+        through a timestep or between RK substeps.
+        """
+
+        riverwall_data = getattr(self, 'riverwallData', None)
+        if riverwall_data is None:
+            return
+        if not getattr(riverwall_data, 'device_data_dirty', False):
+            return
+
+        if (self.multiprocessor_mode == MULTIPROCESSOR_GPU
+                and getattr(self, 'gpu_interface', None) is not None):
+            self.gpu_interface.sync_riverwall_to_device()
+
+        # Cleared unconditionally: on the CPU paths the kernels read the host
+        # arrays directly, and a later mode-2 setup maps their current values.
+        riverwall_data.device_data_dirty = False
 
     def set_timezone(self, tz: str | ZoneInfoType | None = None) -> None:
         """Set timezone for domain
@@ -1854,6 +3870,24 @@ class Domain(Generic_Domain):
 
         return self.minimum_allowed_height
 
+    def set_negative_volume_warning_fraction(self, fraction: float) -> None:
+        """Set the fraction of the total domain water volume that must be added by
+        clamping negative-depth cells to zero depth in a single timestep before
+        update_conserved_quantities() emits a "possible loss of conservation"
+        warning.
+
+        Clamping a few cells by a near-zero depth is normal in wetting/drying and
+        involves negligible volume, so the default (see
+        anuga.config.negative_volume_warning_fraction) avoids warning on almost
+        every step. Set to 0.0 to warn whenever any volume is added.
+        """
+
+        self.negative_volume_warning_fraction = fraction
+
+    def get_negative_volume_warning_fraction(self) -> float:
+
+        return self.negative_volume_warning_fraction
+
     def set_maximum_allowed_speed(self, maximum_allowed_speed: float) -> None:
         """Set the maximum particle speed that is allowed in water shallower
         than minimum_allowed_height.
@@ -2334,6 +4368,12 @@ class Domain(Generic_Domain):
 
         nvtxRangePush('update_boundary')
 
+        # Time-varying tracer inflow concentrations, if any. Hooked here rather
+        # than at update_boundary()'s eight call sites in generic_domain, and a
+        # no-op unless set_tracer_boundary() was given a callable.
+        if self.number_of_tracers > 0:
+            self.update_tracer_boundary_values()
+
         # GPU mode - use GPU boundary functions if all boundaries are GPU-supported
         if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
             from anuga.shallow_water.sw_domain_gpu_ext import (
@@ -2342,7 +4382,6 @@ class Domain(Generic_Domain):
                 evaluate_transmissive_boundary_gpu,
                 set_transmissive_n_zero_t_stage,
                 evaluate_transmissive_n_zero_t_boundary_gpu,
-                set_time_boundary_values,
                 evaluate_time_boundary_gpu,
                 set_file_boundary_values_from_domain,
                 evaluate_file_boundary_gpu,
@@ -2416,9 +4455,7 @@ class Domain(Generic_Domain):
                 evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
 
                 # Handle Time_boundary (need Python function call for values)
-                for B in self._gpu_time_boundaries:
-                    q = B.get_boundary_values()
-                    set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+                self._push_gpu_time_boundary_values(gpu_dom)
                 evaluate_time_boundary_gpu(gpu_dom)
 
                 # Handle File_boundary / Field_boundary (per-edge values from SWW interpolation)
@@ -2534,6 +4571,39 @@ class Domain(Generic_Domain):
                 "operators instead — Rate_operator.rainfall()/inflow(), "
                 "Wind_stress_operator, Barometric_pressure_operator.",
                 stacklevel=2)
+
+    def _warn_mode2_degenerate_protection(self):
+        """Warn (once) that mode 2 does not run the degenerate-timestep protection.
+
+        `apply_protection_against_isolated_degenerate_timesteps()` damps the
+        momentum of triangles whose timestep is anomalously small. It is reached
+        only from `update_timestep()`, and mode 2 ('unified') never gets there:
+        the C step loops return before it, and the Python-orchestrated GPU loops
+        that do call it find a host `max_speed` that the device never syncs back
+        (the flux kernel writes the device copy), so the routine's own
+        `max(max_speed) < 10` guard returns immediately.
+
+        The feature is default-off (`config.protect_against_isolated_degenerate_timesteps`),
+        so the sharp edge is a user who turns it on under GPU offload and gets no
+        protection AND no warning. This makes it visible, as mode 2 already does
+        for unsupported forcing terms.
+        """
+        if getattr(self, '_warned_mode2_degenerate_protection', False):
+            return
+        if not self.protect_against_isolated_degenerate_timesteps:
+            return
+        if self.multiprocessor_mode != MULTIPROCESSOR_GPU:
+            return
+
+        self._warned_mode2_degenerate_protection = True
+        import warnings
+        warnings.warn(
+            "protect_against_isolated_degenerate_timesteps is True, but "
+            "multiprocessor_mode=2 ('unified') does not implement it: no "
+            "isolated-degenerate-triangle damping will be applied. Use "
+            "domain.set_multiprocessor_mode(1) ('legacy') if you need this "
+            "protection.",
+            stacklevel=2)
 
     def set_boundary(self, boundary_map):
         """Associate boundary objects with tagged segments (see base class).
@@ -2731,6 +4801,15 @@ class Domain(Generic_Domain):
         if self.protect_against_isolated_degenerate_timesteps is False:
             return
 
+        # Not implemented in mode 2: max_speed is computed on the device and
+        # never synced back, so the histogram below would be built from a stale
+        # host array. Say so and skip, rather than silently damping nothing (or
+        # damping on the strength of stale values) — see
+        # _warn_mode2_degenerate_protection().
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU:
+            self._warn_mode2_degenerate_protection()
+            return
+
         # FIXME (Ole): Make this configurable
         if num.max(self.max_speed) < 10.0:
             return
@@ -2774,6 +4853,11 @@ class Domain(Generic_Domain):
         # Update height based on discontinuous elevation
         assert self.get_using_discontinuous_elevation()
 
+        # Build (or defer to legacy) the mode-2 device interface, matching the
+        # other mode-2 entry points. A direct call outside evolve() on a
+        # default-'unified' domain would otherwise hit a None gpu_interface.
+        self._ensure_gpu_interface()
+
         if self.multiprocessor_mode == MULTIPROCESSOR_OPENMP:
             from .sw_domain_openmp_ext import update_conserved_quantities
         elif self.multiprocessor_mode == MULTIPROCESSOR_GPU:
@@ -2781,14 +4865,44 @@ class Domain(Generic_Domain):
         else:
             raise Exception('Not implemented')
 
-        num_negative_ids = update_conserved_quantities(self, timestep)
+        num_negative_ids, negative_volume = update_conserved_quantities(self, timestep)
 
-        if num_negative_ids > 0:
-            # FIXME: This only warns the first time -- maybe we should warn whenever loss occurs?
-            import warnings
-            msg = f'{num_negative_ids} negative cells being set to zero depth, possible loss of conservation. \n' +\
-            'Consider using domain.report_water_volume_statistics() to check the extent of the problem'
-            warnings.warn(msg)
+        # Clamping negative-depth cells to zero depth adds water (a conservation
+        # error). A few cells clamped by a near-zero depth is normal in
+        # wetting/drying and involves negligible volume, so warn on the *volume*
+        # added rather than the cell count: only when it is a large enough fraction
+        # of the total water volume (threshold via
+        # set_negative_volume_warning_fraction; 0.0 warns on any added volume).
+        # The absolute floor rejects pure floating-point noise.
+        #
+        # SERIAL ONLY. "Loss of conservation" is a GLOBAL property, so the ratio
+        # must use the whole-domain volume. In parallel this rank sees only its
+        # partition: a nearly-dry sub-domain holds femtolitre-scale noise, so a
+        # local ratio warns spuriously. Getting the global volume would need a
+        # per-substep collective inside this hot function, which is not viable —
+        # update_conserved_quantities is not called in guaranteed lock-step
+        # across ranks (structure operators, euler vs rk2, small/empty
+        # partitions), so any collective here deadlocks (two separate hangs were
+        # traced to exactly this). In parallel, use the periodic global
+        # report_water_volume_statistics() (e.g. the TOML runner's per-yieldstep
+        # water balance) to check conservation instead.
+        from anuga import numprocs
+        if numprocs == 1 and num_negative_ids > 0 \
+                and negative_volume > _negative_volume_noise_floor:
+            total_volume = self.get_water_volume()
+            if total_volume > 0.0 and \
+                    negative_volume > self.negative_volume_warning_fraction * total_volume:
+                import warnings
+                fraction = negative_volume / total_volume
+                msg = (
+                    f'{num_negative_ids} negative cells set to zero depth, adding '
+                    f'{negative_volume:.3g} m^3 ({100.0 * fraction:.3g}% of the '
+                    f'{total_volume:.3g} m^3 in the domain): possible loss of '
+                    'conservation. \nConsider using '
+                    'domain.report_water_volume_statistics() to check the extent '
+                    'of the problem'
+                )
+                warnings.warn(msg)
 
         nvtxRangePop()
 
@@ -3031,6 +5145,11 @@ class Domain(Generic_Domain):
         if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
             self._has_cpu_only_fractional_operators()
             self._warn_unsupported_mode2_forcing()
+            self._warn_mode2_degenerate_protection()
+
+        # Any riverwall change made before evolve() (or between two evolve()
+        # calls) reaches the device here, before the first step.
+        self._sync_riverwall_to_device()
 
         #nvtx marker
         nvtxRangePush('_evolve_base')
@@ -3077,6 +5196,11 @@ class Domain(Generic_Domain):
             # Pass control on to outer loop for more specific actions
             yield(t)
 
+            # The outer loop may have operated a riverwall (set_elevation() and
+            # friends). In mode 2 the device copy is stale until pushed; do it
+            # here so the change takes effect from the next timestep on.
+            self._sync_riverwall_to_device()
+
             self.yieldstep_counter += 1
 
         #nvtx marker
@@ -3089,6 +5213,22 @@ class Domain(Generic_Domain):
         """
 
         nvtxRangePush('SWW_file')
+
+        # Erosion operators promote elevation to time-varying storage when they
+        # are created. If it has since been reset to static (flag != 2), the
+        # eroded bed will not be recorded — warn. Skip when the user
+        # deliberately chose static (they were already told; e.g. the TOML
+        # scenario warns at parse time).
+        if getattr(self, '_erosion_present', False) \
+                and self.quantities_to_be_stored.get('elevation') != 2 \
+                and not getattr(self, '_elevation_static_by_user', False):
+            import warnings
+            warnings.warn(
+                'An erosion operator is active but elevation is stored '
+                'statically, so the eroded bed will not appear in the SWW '
+                "output. Set domain.quantities_to_be_stored['elevation'] = 2 "
+                'to store it time-varying.',
+                stacklevel=2)
 
         # Initialise writer
         self.writer = SWW_file(self)
@@ -3126,6 +5266,70 @@ class Domain(Generic_Domain):
         pass
 
 
+    # Boundary types whose values are produced by a Python callback each step
+    # (Time/File/Field, transmissive-set-stage, and the wave/Flather boundaries).
+    # The single-call C RK loop (_evolve_one_rk*_step_c) sets these on the device
+    # once per step, so with a multi-substep method (RK2/RK3) they are NOT
+    # refreshed between substeps — unlike the legacy (mode-1) solver, which calls
+    # update_boundary() before every substep. For time-varying boundaries this
+    # gives an O(dt) boundary-forcing error (see issue #170). Until the
+    # C RK loop evaluates them per substep, domains using such boundaries are
+    # routed through the Python-orchestrated GPU loop, which refreshes them each
+    # substep and so bit-matches mode-1 (at negligible GPU cost, ~<=4%).
+    _PYTHON_EVALUATED_GPU_BOUNDARY_TYPES = frozenset((
+        'Time_boundary', 'File_boundary', 'Field_boundary',
+        'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary',
+        'Absorbing_wave_boundary', 'Characteristic_wave_boundary',
+        'Flather_external_stage_zero_velocity_boundary',
+    ))
+
+    def _has_python_evaluated_gpu_boundaries(self):
+        """True if any boundary's value is set from a Python callback each step.
+
+        Single-substep methods (Euler, ADER2) are unaffected — they impose the
+        boundary once per step in both paths — so this is only consulted by the
+        multi-substep RK2/RK3 dispatch.
+        """
+        bmap = getattr(self, 'boundary_map', None) or {}
+        return any(
+            B is not None
+            and B.__class__.__name__ in self._PYTHON_EVALUATED_GPU_BOUNDARY_TYPES
+            for B in bmap.values()
+        )
+
+
+
+    def _push_gpu_time_boundary_values(self, gpu_dom):
+        """Push per-edge Time_boundary values to the device (mode 2).
+
+        Each Time_boundary object carries one spatially-uniform [stage, xmom,
+        ymom] from its time function. The edges of all Time_boundary tags are
+        concatenated in boundary_map order (matching init_time_boundary in the
+        GPU extension), so a single per-edge array addresses every time-boundary
+        edge and multiple Time_boundary objects with different values no longer
+        clobber one another (previously a single global scalar was shared).
+        """
+        import numpy as num
+        from anuga.shallow_water.sw_domain_gpu_ext import set_time_boundary_values
+        stage_vals = []
+        xmom_vals = []
+        ymom_vals = []
+        for tag, B in self.boundary_map.items():
+            if B is not None and B.__class__.__name__ == 'Time_boundary':
+                edges = self.tag_boundary_cells.get(tag, None)
+                if edges is None or len(edges) == 0:
+                    continue
+                ne = len(edges)
+                q = B.get_boundary_values()
+                stage_vals.extend([float(q[0])] * ne)
+                xmom_vals.extend([float(q[1])] * ne)
+                ymom_vals.extend([float(q[2])] * ne)
+        if stage_vals:
+            set_time_boundary_values(
+                gpu_dom,
+                num.ascontiguousarray(stage_vals, dtype=float),
+                num.ascontiguousarray(xmom_vals, dtype=float),
+                num.ascontiguousarray(ymom_vals, dtype=float))
     def evolve_one_euler_step(self, yieldstep, finaltime):
         """One Euler Time Step
         Q^{n+1} = E(h) Q^n
@@ -3167,13 +5371,24 @@ class Domain(Generic_Domain):
         vertices and edges
         """
 
-        # GPU mode: use C RK loop (faster) or Python-orchestrated GPU loop
+        # GPU mode: use C RK loop (faster) or Python-orchestrated GPU loop.
+        # Fall back to the Python-orchestrated loop when a Python-evaluated
+        # (possibly time-varying) boundary is present, so it is refreshed every
+        # substep and matches mode-1 (the C RK loop only sets it once per step).
         if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
-            if self.use_c_rk_loop:
+            if self.use_c_rk_loop and not self._has_python_evaluated_gpu_boundaries():
                 self._evolve_one_rk2_step_c(yieldstep, finaltime)
             else:
                 self._evolve_one_rk2_step_gpu(yieldstep, finaltime)
             return
+
+        # Fractional-step operators (applied by the evolve loop *after* this step,
+        # before it advances relative_time to t+dt) must see the pre-step time t —
+        # consistent with DE0/DE2/DE_ader2 and the mode-2 GPU loops. The mid-step
+        # set_relative_time() below advances time to t+dt for the substep-2
+        # boundary evaluation, so capture t here and restore it at the end;
+        # otherwise time-varying operators evaluate forcing "one step too far".
+        initial_relative_time = self.get_relative_time()
 
         # Save initial initial conserved quantities values
         self.backup_conserved_quantities() # has C, ported to GPU
@@ -3242,6 +5457,13 @@ class Domain(Generic_Domain):
 
         # Combine steps
         self.saxpy_conserved_quantities(0.5, 0.5) # has C, not ported
+
+        # Restore the pre-step time so fractional-step operators evaluate forcing
+        # at t (not t+dt); the evolve loop advances relative_time to t+dt after
+        # apply_fractional_steps(). Fixes an operator-timing mismatch where DE1
+        # evaluated time-varying operators one step too far, unlike DE0/DE2 and
+        # the mode-2 GPU loops.
+        self.set_relative_time(initial_relative_time)
 
     def evolve_one_ader2_step(self, yieldstep, finaltime):
         """One ADER-2 timestep using the local Cauchy-Kovalewski predictor.
@@ -3328,7 +5550,6 @@ class Domain(Generic_Domain):
             evaluate_transmissive_boundary_gpu,
             set_transmissive_n_zero_t_stage,
             evaluate_transmissive_n_zero_t_boundary_gpu,
-            set_time_boundary_values,
             evaluate_time_boundary_gpu,
             set_file_boundary_values_from_domain,
             evaluate_file_boundary_gpu,
@@ -3403,9 +5624,7 @@ class Domain(Generic_Domain):
                         stage_val = float(stage_val[0])
                     set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
                 evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
-                for B in self._gpu_time_boundaries:
-                    q = B.get_boundary_values()
-                    set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+                self._push_gpu_time_boundary_values(gpu_dom)
                 evaluate_time_boundary_gpu(gpu_dom)
                 set_file_boundary_values_from_domain(gpu_dom, self)
                 evaluate_file_boundary_gpu(gpu_dom)
@@ -3486,7 +5705,6 @@ class Domain(Generic_Domain):
         from anuga.shallow_water.sw_domain_gpu_ext import (
             evolve_one_ader2_step_gpu,
             set_transmissive_n_zero_t_stage,
-            set_time_boundary_values,
             set_file_boundary_values_from_domain,
             set_absorbing_wave_value,
             set_characteristic_wave_value,
@@ -3543,9 +5761,7 @@ class Domain(Generic_Domain):
                 stage_val = float(stage_val[0])
             set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
 
-        for B in self._gpu_time_boundaries:
-            q = B.get_boundary_values()
-            set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+        self._push_gpu_time_boundary_values(gpu_dom)
 
         set_file_boundary_values_from_domain(gpu_dom, self)
 
@@ -3573,7 +5789,17 @@ class Domain(Generic_Domain):
                 stage_val = float(value[0])
             set_flather_value(gpu_dom, stage_val)
 
+        # Time-varying tracer inflow concentrations. The C step evaluates the
+        # hydrodynamic boundaries on the device and never calls
+        # update_boundary(), so without this a callable given to
+        # set_tracer_boundary() is only re-evaluated at yield points and the
+        # inflow carries a concentration up to a whole yieldstep stale.
+        # A no-op without callables (the common case).
+        if self.number_of_tracers > 0 and self._tracer_boundary_functions:
+            self.update_tracer_boundary_values()
+
         max_timestep = self._get_max_timestep_to_output_times(yieldstep, finaltime)
+
 
         if not hasattr(self, '_ader2_prev_dt'):
             self._ader2_prev_dt = 0.0
@@ -3616,7 +5842,6 @@ class Domain(Generic_Domain):
             evaluate_transmissive_boundary_gpu,
             set_transmissive_n_zero_t_stage,
             evaluate_transmissive_n_zero_t_boundary_gpu,
-            set_time_boundary_values,
             evaluate_time_boundary_gpu,
             set_file_boundary_values_from_domain,
             evaluate_file_boundary_gpu,
@@ -3694,9 +5919,7 @@ class Domain(Generic_Domain):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
-            for B in self._gpu_time_boundaries:
-                q = B.get_boundary_values()
-                set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+            self._push_gpu_time_boundary_values(gpu_dom)
             evaluate_time_boundary_gpu(gpu_dom)
             set_file_boundary_values_from_domain(gpu_dom, self)
             evaluate_file_boundary_gpu(gpu_dom)
@@ -3734,7 +5957,7 @@ class Domain(Generic_Domain):
             sync_boundary_values(gpu_dom)
 
         # Compute fluxes
-        self.flux_timestep = compute_fluxes_gpu(gpu_dom)
+        self.flux_timestep = compute_fluxes_gpu(gpu_dom, 0, 2)
 
         # Forcing terms
         self.compute_forcing_terms()
@@ -3772,9 +5995,7 @@ class Domain(Generic_Domain):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
-            for B in self._gpu_time_boundaries:
-                q = B.get_boundary_values()
-                set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+            self._push_gpu_time_boundary_values(gpu_dom)
             evaluate_time_boundary_gpu(gpu_dom)
             set_file_boundary_values_from_domain(gpu_dom, self)
             evaluate_file_boundary_gpu(gpu_dom)
@@ -3812,7 +6033,7 @@ class Domain(Generic_Domain):
             sync_boundary_values(gpu_dom)
 
         # Compute fluxes (ignore timestep from second step)
-        compute_fluxes_gpu(gpu_dom)
+        compute_fluxes_gpu(gpu_dom, 1, 2)
 
         # Forcing terms
         self.compute_forcing_terms()
@@ -3854,7 +6075,6 @@ class Domain(Generic_Domain):
             evaluate_transmissive_boundary_gpu,
             set_transmissive_n_zero_t_stage,
             evaluate_transmissive_n_zero_t_boundary_gpu,
-            set_time_boundary_values,
             evaluate_time_boundary_gpu,
             set_file_boundary_values_from_domain,
             evaluate_file_boundary_gpu,
@@ -3918,9 +6138,7 @@ class Domain(Generic_Domain):
                     stage_val = float(stage_val[0])
                 set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
             evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
-            for B in self._gpu_time_boundaries:
-                q = B.get_boundary_values()
-                set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+            self._push_gpu_time_boundary_values(gpu_dom)
             evaluate_time_boundary_gpu(gpu_dom)
             set_file_boundary_values_from_domain(gpu_dom, self)
             evaluate_file_boundary_gpu(gpu_dom)
@@ -3985,7 +6203,6 @@ class Domain(Generic_Domain):
         from anuga.shallow_water.sw_domain_gpu_ext import (
             evolve_one_euler_step_gpu,
             set_transmissive_n_zero_t_stage,
-            set_time_boundary_values,
             set_file_boundary_values_from_domain,
             set_absorbing_wave_value,
             set_characteristic_wave_value,
@@ -4053,9 +6270,7 @@ class Domain(Generic_Domain):
                 stage_val = float(stage_val[0])
             set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
 
-        for B in self._gpu_time_boundaries:
-            q = B.get_boundary_values()
-            set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+        self._push_gpu_time_boundary_values(gpu_dom)
 
         set_file_boundary_values_from_domain(gpu_dom, self)
 
@@ -4083,7 +6298,17 @@ class Domain(Generic_Domain):
                 stage_val = float(value[0])
             set_flather_value(gpu_dom, stage_val)
 
+        # Time-varying tracer inflow concentrations. The C step evaluates the
+        # hydrodynamic boundaries on the device and never calls
+        # update_boundary(), so without this a callable given to
+        # set_tracer_boundary() is only re-evaluated at yield points and the
+        # inflow carries a concentration up to a whole yieldstep stale.
+        # A no-op without callables (the common case).
+        if self.number_of_tracers > 0 and self._tracer_boundary_functions:
+            self.update_tracer_boundary_values()
+
         max_timestep = self._get_max_timestep_to_output_times(yieldstep, finaltime)
+
 
         # Execute full Euler step in C (includes MPI timestep reduction)
         self.timestep = evolve_one_euler_step_gpu(gpu_dom, max_timestep, 1)
@@ -4120,7 +6345,6 @@ class Domain(Generic_Domain):
         from anuga.shallow_water.sw_domain_gpu_ext import (
             evolve_one_rk2_step_gpu,
             set_transmissive_n_zero_t_stage,
-            set_time_boundary_values,
             set_file_boundary_values_from_domain,
             set_absorbing_wave_value,
             set_characteristic_wave_value,
@@ -4186,9 +6410,7 @@ class Domain(Generic_Domain):
                 stage_val = float(stage_val[0])
             set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
 
-        for B in self._gpu_time_boundaries:
-            q = B.get_boundary_values()
-            set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+        self._push_gpu_time_boundary_values(gpu_dom)
 
         set_file_boundary_values_from_domain(gpu_dom, self)
 
@@ -4216,7 +6438,17 @@ class Domain(Generic_Domain):
                 stage_val = float(value[0])
             set_flather_value(gpu_dom, stage_val)
 
+        # Time-varying tracer inflow concentrations. The C step evaluates the
+        # hydrodynamic boundaries on the device and never calls
+        # update_boundary(), so without this a callable given to
+        # set_tracer_boundary() is only re-evaluated at yield points and the
+        # inflow carries a concentration up to a whole yieldstep stale.
+        # A no-op without callables (the common case).
+        if self.number_of_tracers > 0 and self._tracer_boundary_functions:
+            self.update_tracer_boundary_values()
+
         max_timestep = self._get_max_timestep_to_output_times(yieldstep, finaltime)
+
 
         # Execute full RK2 step in C (includes MPI timestep reduction)
         # apply_forcing=1 enables Manning friction on GPU
@@ -4260,7 +6492,6 @@ class Domain(Generic_Domain):
             evaluate_transmissive_boundary_gpu,
             set_transmissive_n_zero_t_stage,
             evaluate_transmissive_n_zero_t_boundary_gpu,
-            set_time_boundary_values,
             evaluate_time_boundary_gpu,
             set_file_boundary_values_from_domain,
             evaluate_file_boundary_gpu,
@@ -4329,9 +6560,7 @@ class Domain(Generic_Domain):
                         stage_val = float(stage_val[0])
                     set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
                 evaluate_transmissive_n_zero_t_boundary_gpu(gpu_dom)
-                for B in self._gpu_time_boundaries:
-                    q = B.get_boundary_values()
-                    set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+                self._push_gpu_time_boundary_values(gpu_dom)
                 evaluate_time_boundary_gpu(gpu_dom)
                 set_file_boundary_values_from_domain(gpu_dom, self)
                 evaluate_file_boundary_gpu(gpu_dom)
@@ -4381,7 +6610,7 @@ class Domain(Generic_Domain):
         extrapolate_second_order_gpu(gpu_dom)
         _eval_boundaries()
 
-        self.flux_timestep = compute_fluxes_gpu(gpu_dom)
+        self.flux_timestep = compute_fluxes_gpu(gpu_dom, 0, 3)
 
         # Forcing terms
         self.compute_forcing_terms()
@@ -4404,7 +6633,7 @@ class Domain(Generic_Domain):
         extrapolate_second_order_gpu(gpu_dom)
         _eval_boundaries()
 
-        compute_fluxes_gpu(gpu_dom)
+        compute_fluxes_gpu(gpu_dom, 1, 3)
         self.compute_forcing_terms()
         update_conserved_quantities_gpu(gpu_dom, self.timestep)
 
@@ -4424,14 +6653,17 @@ class Domain(Generic_Domain):
         extrapolate_second_order_gpu(gpu_dom)
         _eval_boundaries()
 
-        compute_fluxes_gpu(gpu_dom)
+        compute_fluxes_gpu(gpu_dom, 2, 3)
         self.compute_forcing_terms()
         update_conserved_quantities_gpu(gpu_dom, self.timestep)
 
         # Final: Q^{n+1} = (2*Q^(3) + Q^n) / 3
         saxpy3_conserved_quantities_gpu(gpu_dom, 2.0, 1.0, 3.0)
 
-        self.set_relative_time(initial_relative_time + self.timestep)
+        # Restore the pre-step time so fractional-step operators evaluate forcing
+        # at t (not t+dt); see evolve_one_rk3_step. The evolve loop advances
+        # relative_time to t+dt after apply_fractional_steps().
+        self.set_relative_time(initial_relative_time)
 
         # Post-step ghost exchange — update_ghosts() is a no-op in GPU mode
         if self.ghost_layer_width < 4:
@@ -4453,7 +6685,6 @@ class Domain(Generic_Domain):
         from anuga.shallow_water.sw_domain_gpu_ext import (
             evolve_one_rk3_step_gpu,
             set_transmissive_n_zero_t_stage,
-            set_time_boundary_values,
             set_file_boundary_values_from_domain,
             set_absorbing_wave_value,
             set_characteristic_wave_value,
@@ -4518,9 +6749,7 @@ class Domain(Generic_Domain):
                 stage_val = float(stage_val[0])
             set_transmissive_n_zero_t_stage(gpu_dom, stage_val)
 
-        for B in self._gpu_time_boundaries:
-            q = B.get_boundary_values()
-            set_time_boundary_values(gpu_dom, float(q[0]), float(q[1]), float(q[2]))
+        self._push_gpu_time_boundary_values(gpu_dom)
 
         set_file_boundary_values_from_domain(gpu_dom, self)
 
@@ -4548,14 +6777,25 @@ class Domain(Generic_Domain):
                 stage_val = float(value[0])
             set_flather_value(gpu_dom, stage_val)
 
+        # Time-varying tracer inflow concentrations. The C step evaluates the
+        # hydrodynamic boundaries on the device and never calls
+        # update_boundary(), so without this a callable given to
+        # set_tracer_boundary() is only re-evaluated at yield points and the
+        # inflow carries a concentration up to a whole yieldstep stale.
+        # A no-op without callables (the common case).
+        if self.number_of_tracers > 0 and self._tracer_boundary_functions:
+            self.update_tracer_boundary_values()
+
         max_timestep = self._get_max_timestep_to_output_times(yieldstep, finaltime)
+
 
         # Execute full RK3 step in C (includes MPI timestep reduction)
         # apply_forcing=1 enables Manning friction on GPU
         self.timestep = evolve_one_rk3_step_gpu(gpu_dom, max_timestep, 1)
 
-        # Update internal time tracking
-        self.set_relative_time(self.get_relative_time() + self.timestep)
+        # Do NOT advance relative_time here — the evolve loop advances it to t+dt
+        # after apply_fractional_steps(), so fractional-step operators evaluate
+        # forcing at the pre-step time t (matching the rk2 C loop, DE0, DE_ader2).
 
         # Record the CFL-constrained step (pre yield/final cap), matching legacy
         # update_timestep(), rather than the yield-limited step actually taken.
@@ -4578,9 +6818,12 @@ class Domain(Generic_Domain):
         vertices and edges
         """
 
-        # GPU mode: use C RK loop (faster) or Python-orchestrated GPU loop
+        # GPU mode: use C RK loop (faster) or Python-orchestrated GPU loop.
+        # Fall back to the Python-orchestrated loop when a Python-evaluated
+        # (possibly time-varying) boundary is present, so it is refreshed every
+        # substep and matches mode-1 (the C RK loop only sets it once per step).
         if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
-            if self.use_c_rk_loop:
+            if self.use_c_rk_loop and not self._has_python_evaluated_gpu_boundaries():
                 self._evolve_one_rk3_step_c(yieldstep, finaltime)
             else:
                 self._evolve_one_rk3_step_gpu(yieldstep, finaltime)
@@ -4696,8 +6939,13 @@ class Domain(Generic_Domain):
         # So do this instead!
         self.saxpy_conserved_quantities(2.0, 1.0, 3.0)
 
-        # Set new time
-        self.set_relative_time(initial_relative_time + self.timestep)
+        # Restore the pre-step time so fractional-step operators (applied by the
+        # evolve loop before it advances relative_time to t+dt) evaluate forcing
+        # at t, not t+dt — consistent with rk2 (DE1), DE0 and DE_ader2. The
+        # mid-step set_relative_time() calls above advance time for the substep
+        # boundary evaluations; the evolve loop sets the final t+dt after
+        # apply_fractional_steps().
+        self.set_relative_time(initial_relative_time)
 
 
     def backup_conserved_quantities(self):
@@ -4739,6 +6987,7 @@ class Domain(Generic_Domain):
 
         Rate_operators with GPU support don't need CPU sync.
         boundary_flux_integral_operator is GPU-safe (only reads boundary_flux_sum).
+        Sediment_transport_operator is GPU-safe (device-resident kernel, updates in place).
         Boyd_box_operator/Boyd_pipe_operator are GPU-safe via GPUCulvertManager.
         Inlet_operator with GPU support doesn't need CPU sync.
 
@@ -4750,9 +6999,12 @@ class Domain(Generic_Domain):
 
         from anuga.operators.rate_operators import Rate_operator
         from anuga.operators.boundary_flux_integral_operator import boundary_flux_integral_operator
+        from anuga.operators.tracer_flux_integral_operator import (
+            tracer_flux_integral_operator)
         from anuga.structures.inlet_operator import Inlet_operator
         from anuga.structures.gpu_culvert_manager import GPUCulvertManager
         from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
+        from anuga.operators.sediment_operator import Sediment_transport_operator
 
         # Initialize GPU culvert manager for Boyd operators if needed
         has_boyd_ops = any(GPUCulvertManager.is_boyd_operator(op)
@@ -4776,6 +7028,13 @@ class Domain(Generic_Domain):
                 # boundary_flux_integral_operator only reads boundary_flux_sum (small array)
                 # and accumulates a scalar - doesn't need full centroid sync
                 continue
+            elif isinstance(op, tracer_flux_integral_operator):
+                # Same shape as the water one: reads the small per-substep
+                # tracer_boundary_flux_sum, which the kernel writes on the HOST,
+                # and accumulates into a per-tracer scalar. The per-cell scratch
+                # it totals lives and is zeroed on the device, so no centroid
+                # sync is needed here either.
+                continue
             elif isinstance(op, Inlet_operator):
                 # Force GPU initialization if not already done
                 if hasattr(op, '_init_gpu') and not getattr(op, '_gpu_initialized', False):
@@ -4789,6 +7048,10 @@ class Domain(Generic_Domain):
                     op._init_gpu()
                 if hasattr(op, '_gpu_initialized') and op._gpu_initialized:
                     continue  # GPU-accelerated, no sync needed
+            elif isinstance(op, Sediment_transport_operator):
+                # The sediment kernel runs on the device in mode 2 and updates
+                # the tracer and bed arrays in place, so no host sync is needed.
+                continue
             elif GPUCulvertManager.is_boyd_operator(op):
                 # Handled by GPUCulvertManager (local + cross-boundary via MPI in C)
                 if (self.gpu_culvert_manager is not None
@@ -4817,8 +7080,25 @@ class Domain(Generic_Domain):
     def apply_fractional_steps(self):
         """Override to sync GPU data before fractional step operators run.
 
-        Boyd culvert operators are handled via GPUCulvertManager (batched,
-        only 2 GPU sync points) instead of the per-operator Python loop.
+        Boyd culvert operators are handled via GPUCulvertManager (batched, only 2 GPU
+        sync points) instead of the per-operator Python loop.
+
+        Operator ORDER matters: fractional-step operators mutate `stage` in sequence, so
+        running them in a different order gives different answers.  Mode 1 runs them in
+        registration order.  Mode 2 must too, or the same script silently disagrees with
+        itself across compute modes — and mode-1-vs-mode-2 agreement is the oracle we use
+        to validate GPU work, so it must not depend on the order a user happened to
+        construct their operators in.
+
+        The batch is therefore fired **at the position of the first culvert in the list**,
+        not before the loop.  When the culverts are registered together — which is what
+        every real script does (towradgi registers 22 in a row) — that is *exactly*
+        registration order, and the batching is untouched, so this costs nothing.
+
+        If culverts are interleaved with other operators, the later ones are still pulled
+        forward to the first culvert's slot (the C batches all registered culverts in one
+        gather/compute/scatter cycle, and there is no unbatched mode-2 culvert path).  We
+        warn in that case rather than diverge silently.  See issue #192.
         """
         gpu_mode = (self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None)
         gpu_culverts_active = (gpu_mode and self.gpu_culvert_manager is not None
@@ -4830,18 +7110,78 @@ class Domain(Generic_Domain):
             if needs_cpu_sync:
                 self.gpu_interface.sync_from_device()
 
-            # Execute all Boyd culverts in one batched GPU cycle
             if gpu_culverts_active:
-                self.gpu_culvert_manager.apply_all()
+                self._warn_if_culverts_interleaved()
 
-        # Run remaining operators (skip Boyd operators handled by GPU manager)
-        for operator in self.fractional_step_operators:
-            if gpu_culverts_active and operator in self.gpu_culvert_manager.operators:
-                continue  # Already handled by GPUCulvertManager
-            operator()
+        # The host copy is already in sync here and gets pushed back below, so an
+        # operator that writes a quantity must not trigger its own round-trip per
+        # call — that would be one full host<->device transfer pair per operator
+        # per timestep.
+        self._gpu_host_writes_suppressed = (gpu_mode and needs_cpu_sync)
+        culverts_done = False
+        try:
+            for operator in self.fractional_step_operators:
+                if gpu_culverts_active and operator in self.gpu_culvert_manager.operators:
+                    # Fire the whole batched culvert cycle in the slot of the FIRST
+                    # culvert, then skip the rest — they were handled by that batch.
+                    if not culverts_done:
+                        self.gpu_culvert_manager.apply_all()
+                        culverts_done = True
+                    continue
+                operator()
+        finally:
+            self._gpu_host_writes_suppressed = False
 
-        if gpu_mode and needs_cpu_sync:
+        # Push the host-side work of any CPU-only operator back to the device. Mode-2
+        # correctness depends on this: without it a CPU-only operator (wind stress,
+        # say) writes only the host arrays and the device never sees it.
+        # Re-check the interface: gpu_mode was decided BEFORE the operators ran,
+        # and an operator is allowed to invalidate it mid-loop. set_tracer_source
+        # does exactly that -- it rebinds the source array, so the C struct and
+        # the device mapping have to be rebuilt -- and an operator that calls it
+        # every step (a manufactured source, say) leaves nothing here to sync to.
+        # Skipping is correct rather than merely safe: a rebuilt interface is
+        # populated from the host arrays, so the host-side writes are picked up
+        # anyway.
+        if gpu_mode and needs_cpu_sync and self.gpu_interface is not None:
             self.gpu_interface.sync_to_device()
+
+    def _warn_if_culverts_interleaved(self):
+        """Warn once if the Boyd culverts are not contiguous in the operator list.
+
+        The mode-2 culvert batch is a single gather/compute/scatter cycle over every
+        registered culvert, so it can only be fired at one point in the sequence. We fire
+        it where the first culvert sits, which reproduces registration order exactly when
+        the culverts are contiguous. When they are not, the later ones get pulled forward
+        and mode 2 will disagree with mode 1 — say so instead of diverging in silence.
+        """
+
+        if getattr(self, '_culvert_order_checked', False):
+            return
+        self._culvert_order_checked = True
+
+        culvert_ops = self.gpu_culvert_manager.operators
+        positions = [i for i, op in enumerate(self.fractional_step_operators)
+                     if op in culvert_ops]
+        if not positions:
+            return
+
+        contiguous = (positions[-1] - positions[0] + 1) == len(positions)
+        if contiguous:
+            return
+
+        interleaved = [self.fractional_step_operators[i].__class__.__name__
+                       for i in range(positions[0], positions[-1] + 1)
+                       if self.fractional_step_operators[i] not in culvert_ops]
+        import warnings
+        warnings.warn(
+            'mode 2: Boyd culvert operators are not registered contiguously — '
+            f'{sorted(set(interleaved))} sit between them. The GPU applies all culverts '
+            'in one batch at the position of the first, so those operators will run AFTER '
+            'the culverts here but BEFORE some of them in mode 1 (legacy), and the two '
+            'compute modes will not agree. Register the culverts together to avoid this. '
+            '(issue #192)',
+            UserWarning, stacklevel=3)
 
     def update_ghosts(self, quantities=None):
         """Override to use GPU ghost exchange when in GPU mode."""
@@ -5251,7 +7591,8 @@ class Domain(Generic_Domain):
         Returns
         -------
         dict
-            Keys:
+            Keys::
+
               time              relative simulation time
               current_timestep  self.timestep (last accepted global dt)
               cfl               self.CFL setting
@@ -5445,13 +7786,14 @@ class Domain(Generic_Domain):
     def compute_capabilities(self) -> dict:
         """Report which compute backends this build/run supports.
 
-        Returns a dict with:
-            'gpu_offload'     : bool — process can offload mode-2 to a GPU device
+        Returns a dict with::
+
+            'gpu_offload'     : bool - process can offload mode-2 to a GPU device
                                        (build supports it, device present, offload
-                                       not disabled); see :func:`set_gpu_offload`
-            'num_gpu_devices' : int  — number of offload devices visible
-            'mpi'             : bool — gpu_ext built with C MPI ('unified' parallel ok)
-            'modes'           : list — per-domain modes available ('unified' only
+                                       not disabled); see set_gpu_offload()
+            'num_gpu_devices' : int  - number of offload devices visible
+            'mpi'             : bool - gpu_ext built with C MPI ('unified' parallel ok)
+            'modes'           : list - per-domain modes available ('unified' only
                                        when the gpu_ext extension is importable)
         """
         try:
@@ -5468,16 +7810,6 @@ class Domain(Generic_Domain):
     def set_compute_mode(self, mode: str = 'unified', verbose: bool = False) -> None:
         """Select this domain's compute mode (per-domain).
 
-        Parameters
-        ----------
-        mode : {'legacy', 'unified'}
-            - ``'legacy'`` — mode 1: the ``sw_domain_openmp_ext`` solver with
-              serial-Python fractional-step operators.
-            - ``'unified'`` — mode 2: the unified ``sw_domain_gpu_ext`` C kernels
-              (solver and operators). Runs CPU-multicore by default; offloads to
-              a GPU only when GPU offload is enabled process-wide via
-              :func:`anuga.set_gpu_offload` on a GPU-capable build.
-
         This is a per-domain setting — different domains in one script may use
         different modes. Whether 'unified' uses a GPU is a separate, process-wide
         decision (see :func:`set_gpu_offload`), because OpenMP target offload is
@@ -5488,6 +7820,16 @@ class Domain(Generic_Domain):
         with a rank-0 warning. The active mode is recorded in
         ``self.compute_mode``; the original request in
         ``self.requested_compute_mode``.
+
+        Parameters
+        ----------
+        mode : {'legacy', 'unified'}
+            - ``'legacy'`` — mode 1: the ``sw_domain_openmp_ext`` solver with
+              serial-Python fractional-step operators.
+            - ``'unified'`` — mode 2: the unified ``sw_domain_gpu_ext`` C kernels
+              (solver and operators). Runs CPU-multicore by default; offloads to
+              a GPU only when GPU offload is enabled process-wide via
+              :func:`anuga.set_gpu_offload` on a GPU-capable build.
         """
         import warnings
 
@@ -5614,15 +7956,31 @@ class Domain(Generic_Domain):
         """
         return self.multiprocessor_mode
 
+    @property
+    def omp_num_threads(self) -> int:
+        """The process-wide OpenMP thread count (read-only view).
+
+        OpenMP thread count is a process-level setting, not per-domain, so this
+        reflects the live value set by :func:`anuga.set_omp_num_threads` for
+        *every* domain in the session — including domains constructed before the
+        call. Assigning to it (``domain.omp_num_threads = n``) is kept for
+        backward compatibility and sets the count process-wide.
+        """
+        return get_omp_num_threads()
+
+    @omp_num_threads.setter
+    def omp_num_threads(self, value: int) -> None:
+        set_omp_num_threads(value, verbose=False)
+
     def set_omp_num_threads(self, omp_num_threads: int | None = None, verbose: bool = True) -> None:
         """Set the OpenMP thread count (process-wide).
 
         OpenMP thread count is a process-level setting, not per-domain. This is a
         thin wrapper that delegates to the module-level
         :func:`anuga.set_omp_num_threads`; prefer that in new code. Kept for
-        backward compatibility, and records ``self.omp_num_threads``.
+        backward compatibility.
         """
-        self.omp_num_threads = set_omp_num_threads(omp_num_threads, verbose=verbose)
+        set_omp_num_threads(omp_num_threads, verbose=verbose)
 
 
     @property
@@ -5660,6 +8018,22 @@ class Domain(Generic_Domain):
                     f"Current boundary_map has no boundary objects: {list(self.boundary_map.keys())}"
                 )
 
+            # Reconcile deeply-dry cells (stage < bed) to stage = bed before the initial
+            # state is synced to the device. A dry cell should carry stage = bed
+            # (depth 0); mode 1 reaches that via its per-step protect on the very first
+            # step, but the mode-2 device path only converges to it gradually (halving
+            # the deficit each step, ~a dozen steps to close a large stage<<bed gap).
+            # While it converges, any forcing applied to those cells — an Inlet_operator,
+            # rainfall — is absorbed into raising the sub-bed stage rather than making
+            # water depth, and is lost, leaving a permanent startup mass deficit
+            # (issue #200). Clamping stage up to bed here is mass-neutral (depth stays 0)
+            # and a no-op for wet cells, and makes mode 2 start already reconciled.
+            stage_c = self.quantities['stage'].centroid_values
+            bed_c = self.quantities['elevation'].centroid_values
+            if (stage_c < bed_c).any():
+                self.set_quantity('stage', num.maximum(stage_c, bed_c),
+                                  location='centroids')
+
             # Try OpenMP target offloading interface first
             try:
                 from .sw_domain_gpu_omp import GPU_OMP_interface
@@ -5674,15 +8048,17 @@ class Domain(Generic_Domain):
                 self.gpu_offload_active = gpu_offload_enabled()
                 if myid == 0:
                     device_id = self.gpu_interface.gpu_dom.device_id
-                    print('+==============================================================================+')
-                    if not self.gpu_offload_active:
-                        print("| ANUGA compute mode: 'unified' CPU multicore (gpu_ext kernels, no offload)   |")
-                        print(f'| OMP_NUM_THREADS={omp_num_threads}')
-                    elif device_id < 0:
-                        print('| WARNING: No GPU devices found, running on CPU via OpenMP target offloading  |')
-                    else:
-                        print(f'| GPU interface initialized: {numprocs} GPU(s) using OpenMP target offloading')
-                    print('+==============================================================================+')
+
+                    # The number of GPUs the runtime can actually see — NOT numprocs.
+                    try:
+                        from anuga.shallow_water.sw_domain_gpu_ext import get_num_gpu_devices
+                        num_devices = get_num_gpu_devices()
+                    except Exception:
+                        num_devices = -1
+
+                    for line in gpu_startup_banner(numprocs, num_devices, device_id,
+                                                   self.gpu_offload_active, omp_num_threads):
+                        print(line)
                 return
             except Exception as e:
                 print(f'OpenMP GPU interface not available: {e}')

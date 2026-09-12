@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""Optional evolve-loop hooks for the complex anuga_run_toml example.
+"""Optional evolve-loop hooks for the complex anuga_toml_run example.
 
-anuga_run_toml imports a ``user_functions`` module from the scenario directory
+anuga_toml_run imports a ``user_functions`` module from the scenario directory
 (if present) and calls these hooks each yieldstep when the matching
 ``report_*`` flag is set in the TOML [project] section:
 

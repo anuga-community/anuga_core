@@ -19,10 +19,64 @@ cdef extern from "sw_domain_openmp.c" nogil:
 		anuga_int number_of_elements
 		anuga_int boundary_length
 		anuga_int number_of_riverwall_edges
+		anuga_int number_of_tracers
+		double beta_tracer
+		anuga_int n_sediment_classes
+		double* sediment_settling_velocity
+		double* sediment_d_star
+		double sediment_c_max
+		double* sediment_diameter
+		double* sediment_R
+		double* sediment_tau_c_star
+		double sediment_gamma0
+		anuga_int sediment_erosion_mode
+		double sediment_K_partheniades
+		anuga_int sediment_deposition_mode
+		double sediment_tau_d
+		double sediment_tau_crit
+		double sediment_K_e
+		double sediment_rho_w
+		anuga_int sediment_shear_closure
+		double* tracer_external_source
+		anuga_int sediment_d_star_mode
+		double* sediment_reference_height
+		double sediment_a_h_floor
+		double sediment_porosity
+		anuga_int sediment_bed_evolution
+		anuga_int sediment_bedload_mode
+		double sediment_bedload_K
+		double sediment_bedload_m
+		double sediment_bedload_tau_c_star
+		double* sediment_z_base
+		anuga_int sediment_has_z_base
+		double* sediment_repose_dz
+		double sediment_repose_tan
+		double sediment_repose_relax
+		anuga_int sediment_repose_max_sweeps
+		double* sediment_source_limited
+		anuga_int* sediment_bed_exhausted
+		double* sediment_qbx
+		double* sediment_qby
+		double sediment_c_pack
+		anuga_int sediment_friction_mode
+		double sediment_manning_ll
+		anuga_int sediment_wilson_bed
+		double sediment_wilson_D
+		double* tracer_centroid_values
+		double* tracer_edge_values
+		double* tracer_boundary_values
+		double* tracer_explicit_update
+		double* tracer_conserved_values
+		double* tracer_backup_values
+		double* tracer_boundary_flux
+		double* tracer_boundary_flux_sum
 		anuga_int optimise_dry_cells
 		anuga_int extrapolate_velocity_second_order
 		anuga_int low_froude
 		anuga_int timestep_fluxcalls
+		anuga_int reconstruct_edge_bed
+		anuga_int num_owned_edges
+		anuga_int* owned_edges
 		anuga_int ncol_riverwall_hydraulic_properties
 		anuga_int nrow_riverwall_hydraulic_properties
 
@@ -115,6 +169,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	double _openmp_protect(domain* D)
 	void _openmp_extrapolate_second_order_edge_sw(domain* D)
 	anuga_int _openmp_fix_negative_cells(domain* D)
+	double _openmp_negative_cells_volume(domain* D)
 	anuga_int _openmp_gravity(domain *D)
 	anuga_int _openmp_gravity_wb(domain *D) 
 	anuga_int _openmp_update_conserved_quantities(domain* D, double timestep)
@@ -151,10 +206,58 @@ cdef inline get_python_domain_parameters(domain *D, object domain_py_object):
 	D.number_of_elements = domain_py_object.number_of_elements
 	D.boundary_length = domain_py_object.boundary_length
 	D.number_of_riverwall_edges = domain_py_object.number_of_riverwall_edges
+	# Generic tracers. The struct is PyMem_Malloc'd (not zeroed), so this
+	# MUST be set on every fill or the flux kernel guard reads garbage.
+	# Sediment: MUST be set explicitly in BOTH pyx files. struct domain is
+	# PyMem_Malloc'd and never zeroed, and a garbage n_sediment_classes makes
+	# the source kernel walk unmapped pointers (HANDOVER.md 2.4).
+	D.n_sediment_classes = getattr(domain_py_object, 'n_sediment_classes', 0)
+	D.sediment_c_max = getattr(domain_py_object, 'sediment_c_max', 0.3)
+	D.sediment_gamma0 = getattr(domain_py_object, 'sediment_gamma0', 0.0024)
+	D.sediment_erosion_mode = getattr(domain_py_object, 'sediment_erosion_mode', 0)
+	D.sediment_K_partheniades = getattr(domain_py_object, 'sediment_K_partheniades', 1.0e-4)
+	D.sediment_deposition_mode = getattr(domain_py_object, 'sediment_deposition_mode', 0)
+	D.sediment_tau_d = getattr(domain_py_object, 'sediment_tau_d', 0.0)
+	D.sediment_tau_crit = getattr(domain_py_object, 'sediment_tau_crit', 0.088)
+	D.sediment_K_e = getattr(domain_py_object, 'sediment_K_e', 0.2e-6/0.088**0.5)
+	D.sediment_rho_w = getattr(domain_py_object, 'sediment_rho_w', 1000.0)
+	D.sediment_shear_closure = getattr(domain_py_object, 'sediment_shear_closure', 0)
+	D.sediment_d_star_mode = getattr(domain_py_object, 'sediment_d_star_mode', 0)
+	D.sediment_a_h_floor = getattr(domain_py_object, 'sediment_a_h_floor', 0.01)
+	D.sediment_c_pack = getattr(domain_py_object, 'sediment_c_pack', 0.65)
+	D.sediment_porosity = getattr(domain_py_object, 'sediment_porosity', 0.3)
+	D.sediment_bed_evolution = 1 if getattr(domain_py_object, 'sediment_bed_evolution', True) else 0
+	D.sediment_bedload_mode = getattr(domain_py_object, 'sediment_bedload_mode', 0)
+	# [L-5]. Set UNCONDITIONALLY, outside the n_sediment_classes guard
+	# below: the kernels test this flag before dereferencing
+	# sediment_z_base, so leaving it uninitialised makes a NULL
+	# pointer look like a configured base.
+	D.sediment_has_z_base = getattr(domain_py_object, 'sediment_has_z_base', 0)
+	# spec 7 repose. Scalars again set unconditionally -- the kernel
+	# tests sediment_repose_tan before touching sediment_repose_dz.
+	D.sediment_repose_tan = getattr(domain_py_object, 'sediment_repose_tan', 0.0)
+	D.sediment_repose_relax = getattr(domain_py_object, 'sediment_repose_relax', 1.0)
+	D.sediment_repose_max_sweeps = getattr(domain_py_object, 'sediment_repose_max_sweeps', 0)
+	D.sediment_bedload_K = getattr(domain_py_object, 'sediment_bedload_K', 3.97)
+	D.sediment_bedload_m = getattr(domain_py_object, 'sediment_bedload_m', 1.5)
+	D.sediment_bedload_tau_c_star = getattr(domain_py_object, 'sediment_bedload_tau_c_star', 0.0495)
+	D.sediment_friction_mode = getattr(domain_py_object, 'sediment_friction_mode', 0)
+	D.sediment_manning_ll = getattr(domain_py_object, 'sediment_manning_ll', 0.065)
+	D.sediment_wilson_bed = getattr(domain_py_object, 'sediment_wilson_bed', 0)
+	D.sediment_wilson_D = getattr(domain_py_object, 'sediment_wilson_D', 1.0e-3)
+	D.number_of_tracers = getattr(domain_py_object, 'number_of_tracers', 0)
+	# 0.0 => first order; >0 => limited second order (see sw_domain.h)
+	D.beta_tracer = getattr(domain_py_object, 'beta_tracer', 1.0)
 	D.optimise_dry_cells = domain_py_object.optimise_dry_cells
 	D.extrapolate_velocity_second_order = domain_py_object.extrapolate_velocity_second_order
 	D.low_froude = domain_py_object.low_froude
 	D.timestep_fluxcalls = domain_py_object.timestep_fluxcalls
+	# The C struct comes from PyMem_Malloc (uninitialized): every field must be
+	# set here.  Bed-edge reconstruction in compute_fluxes stays OFF on this
+	# path -- tests call compute_fluxes directly with independent bed_ev.
+	D.reconstruct_edge_bed = 0
+	D.num_owned_edges = 0
+	D.owned_edges = NULL
 
 	D.ncol_riverwall_hydraulic_properties = riverwallData.ncol_hydraulic_properties
 	try:
@@ -306,6 +409,102 @@ cdef inline get_python_domain_pointers(domain *D, object domain_py_object):
 	#------------------------------------------------------
 	# Quantity structures
 	#------------------------------------------------------
+	# Generic tracer arrays. Owned by the Python Domain as C-contiguous
+	# (ns, ...) float64 arrays; NULL when no tracers are registered.
+	cdef double[:, ::1] tr2
+	cdef double[::1] sed1
+	cdef double[:,::1] sed2
+	cdef anuga_int[::1] sedi
+	cdef double[::1] tr1
+	if getattr(domain_py_object, 'number_of_tracers', 0) > 0:
+		tr2 = domain_py_object.tracer_centroid_values
+		D.tracer_centroid_values = &tr2[0, 0]
+		tr2 = domain_py_object.tracer_edge_values
+		D.tracer_edge_values = &tr2[0, 0]
+		tr2 = domain_py_object.tracer_boundary_values
+		D.tracer_boundary_values = &tr2[0, 0]
+		tr2 = domain_py_object.tracer_explicit_update
+		D.tracer_explicit_update = &tr2[0, 0]
+		tr2 = domain_py_object.tracer_conserved_values
+		D.tracer_conserved_values = &tr2[0, 0]
+		tr2 = domain_py_object.tracer_backup_values
+		D.tracer_backup_values = &tr2[0, 0]
+		if domain_py_object.tracer_external_source is not None:
+			tr2 = domain_py_object.tracer_external_source
+			D.tracer_external_source = &tr2[0, 0]
+		else:
+			D.tracer_external_source = NULL
+		if D.n_sediment_classes > 0:
+			sed1 = domain_py_object.sediment_settling_velocity
+			D.sediment_settling_velocity = &sed1[0]
+			sed1 = domain_py_object.sediment_d_star
+			D.sediment_d_star = &sed1[0]
+			sed1 = domain_py_object.sediment_diameter
+			D.sediment_diameter = &sed1[0]
+			sed1 = domain_py_object.sediment_R
+			D.sediment_R = &sed1[0]
+			sed1 = domain_py_object.sediment_tau_c_star
+			D.sediment_tau_c_star = &sed1[0]
+			sed1 = domain_py_object.sediment_reference_height
+			D.sediment_reference_height = &sed1[0]
+			sed1 = domain_py_object.sediment_qbx
+			D.sediment_qbx = &sed1[0]
+			sed1 = domain_py_object.sediment_qby
+			D.sediment_qby = &sed1[0]
+			# [L-5]. sediment_source_limited is dereferenced by the source
+			# kernel whenever there is a class, so it is bound unconditionally
+			# alongside them; z_base only when a base was actually set.
+			sed2 = domain_py_object.sediment_source_limited
+			D.sediment_source_limited = &sed2[0,0]
+			sedi = domain_py_object.sediment_bed_exhausted
+			D.sediment_bed_exhausted = &sedi[0]
+			sed1 = domain_py_object.sediment_repose_dz
+			D.sediment_repose_dz = &sed1[0]
+			if domain_py_object.sediment_has_z_base:
+				sed1 = domain_py_object.sediment_z_base
+				D.sediment_z_base = &sed1[0]
+			else:
+				D.sediment_z_base = NULL
+		else:
+			D.sediment_settling_velocity = NULL
+			D.sediment_d_star = NULL
+			D.sediment_diameter = NULL
+			D.sediment_R = NULL
+			D.sediment_tau_c_star = NULL
+			D.sediment_reference_height = NULL
+			D.sediment_qbx = NULL
+			D.sediment_qby = NULL
+			D.sediment_z_base = NULL
+			D.sediment_source_limited = NULL
+			D.sediment_bed_exhausted = NULL
+			D.sediment_repose_dz = NULL
+		tr2 = domain_py_object.tracer_boundary_flux
+		D.tracer_boundary_flux = &tr2[0, 0]
+		tr1 = domain_py_object.tracer_boundary_flux_sum
+		D.tracer_boundary_flux_sum = &tr1[0]
+	else:
+		D.sediment_settling_velocity = NULL
+		D.sediment_d_star = NULL
+		D.sediment_diameter = NULL
+		D.sediment_R = NULL
+		D.sediment_tau_c_star = NULL
+		D.sediment_reference_height = NULL
+		D.sediment_qbx = NULL
+		D.sediment_qby = NULL
+		D.sediment_z_base = NULL
+		D.sediment_source_limited = NULL
+		D.sediment_bed_exhausted = NULL
+		D.sediment_repose_dz = NULL
+		D.tracer_centroid_values = NULL
+		D.tracer_edge_values = NULL
+		D.tracer_boundary_values = NULL
+		D.tracer_explicit_update = NULL
+		D.tracer_conserved_values = NULL
+		D.tracer_backup_values = NULL
+		D.tracer_external_source = NULL
+		D.tracer_boundary_flux = NULL
+		D.tracer_boundary_flux_sum = NULL
+
 	quantities = domain_py_object.quantities
 	stage = quantities["stage"]
 	xmomentum = quantities["xmomentum"]
@@ -995,6 +1194,48 @@ def extrapolate_second_order_edge_sw(object domain_py_object,
 			_openmp_distribute_edges_to_vertices(D)
 
 
+cdef extern from "gpu/core_kernels.h" nogil:
+	void core_apply_sediment_source(domain* D, double timestep)
+	void core_apply_bedload(domain* D, double timestep)
+	anuga_int core_apply_repose(domain* D)
+
+
+def apply_sediment_source(object domain_py_object, double timestep,
+                          update_domain_c_struct=False):
+	"""Fractional step: apply E-D to m and the resulting bed change to z."""
+
+	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
+
+	with nogil:
+		core_apply_sediment_source(D, timestep)
+
+
+def apply_bedload(object domain_py_object, double timestep,
+                  update_domain_c_struct=False):
+	"""Fractional step: bedload divergence [G-5] applied to the bed."""
+
+	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
+
+	with nogil:
+		core_apply_bedload(D, timestep)
+
+
+def apply_repose(object domain_py_object, update_domain_c_struct=False):
+	"""Fractional step: angle-of-repose relaxation (spec 7).
+
+	Returns the number of sweeps used. Equal to the configured cap means the
+	cap was hit and the bed may still be over-steep.
+	"""
+
+	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
+	cdef anuga_int sweeps
+
+	with nogil:
+		sweeps = core_apply_repose(D)
+
+	return sweeps
+
+
 def protect_new(object domain_py_object, update_domain_c_struct=False):
 
 	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
@@ -1091,13 +1332,16 @@ def update_conserved_quantities(object domain_py_object,
                                 update_domain_c_struct=False):
 
 	cdef anuga_int num_negative_cells
+	cdef double negative_volume
 	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
 
 	with nogil:
 		_openmp_update_conserved_quantities(D, timestep)
+		# Measure the deficit volume BEFORE the clamp erases it (stage->bed).
+		negative_volume = _openmp_negative_cells_volume(D)
 		num_negative_cells = _openmp_fix_negative_cells(D)
 
-	return num_negative_cells
+	return num_negative_cells, negative_volume
 
 def saxpy_conserved_quantities(object domain_py_object, 
                                double a, double b, double c,

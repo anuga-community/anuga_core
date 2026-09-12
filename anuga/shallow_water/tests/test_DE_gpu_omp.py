@@ -626,9 +626,11 @@ class Test_GPU_InletOperator(unittest.TestCase):
         self.assertAlmostEqual(cpu_volume, gpu_volume, delta=1e-6,
                                msg=f"Water volumes differ: CPU={cpu_volume}, GPU={gpu_volume}")
 
-        # Compare stage values
+        # Compare stage values. mode=1 and mode=2 apply the inlet with the same
+        # level-fill, so they agree to machine precision (~7e-17 on a GPU build,
+        # bit-identical on CPU); the bound catches any mode-1/mode-2 regression.
         stage_diff = np.abs(cpu_stage - gpu_stage)
-        self.assertLess(stage_diff.max(), 1e-8,
+        self.assertLess(stage_diff.max(), 1e-10,
                         f"Stage difference too large: max={stage_diff.max():.2e}")
 
     def test_inlet_operator_time_varying_Q(self):
@@ -694,9 +696,10 @@ class Test_GPU_InletOperator(unittest.TestCase):
         sync_from_device(gpu_dom)
         gpu_xmom = gpu_domain.quantities['xmomentum'].centroid_values.copy()
 
-        # Compare momentum
+        # Compare momentum. Inlet applied identically in mode=1 and mode=2, so
+        # agreement is to machine precision (~5e-16 on a GPU build).
         xmom_diff = np.abs(cpu_xmom - gpu_xmom)
-        self.assertLess(xmom_diff.max(), 1e-8,
+        self.assertLess(xmom_diff.max(), 1e-10,
                         f"Xmomentum difference too large: max={xmom_diff.max():.2e}")
 
 
@@ -949,10 +952,10 @@ class Test_GPU_EndToEnd(unittest.TestCase):
     show up here before it can affect real GPU runs.
     """
 
-    def _create_tidal_domain(self, name):
+    def _create_tidal_domain(self, name, algorithm='DE0'):
         """20×10 domain with a sloping bed and a tidal left boundary."""
         domain = rectangular_cross_domain(20, 10, len1=200., len2=100.)
-        domain.set_flow_algorithm('DE0')
+        domain.set_flow_algorithm(algorithm)
         domain.set_low_froude(0)
         domain.set_name(name)
         domain.set_datadir(tempfile.mkdtemp())
@@ -1040,6 +1043,43 @@ class Test_GPU_EndToEnd(unittest.TestCase):
                 gpu_q[qname], cpu_q[qname],
                 rtol=0, atol=1e-12,
                 err_msg=f'10s dam break: {qname} mismatch between mode=1 and mode=2')
+
+    def test_boundary_flux_integral_de1_mode1_vs_mode2(self):
+        """Regression: boundary_flux_integral must match mode=1 vs mode=2 for a
+        multi-substep scheme (DE1/RK2) with a Python-evaluated GPU boundary.
+
+        The Python-orchestrated unified RK loop once called compute_fluxes_gpu
+        with a fixed substep index (0, 1), so every substep overwrote
+        boundary_flux_sum[0] and the 2nd RK substep's boundary flux was dropped
+        — halving the integral. Physics (volume) was unaffected; this guards the
+        diagnostic. The tidal domain uses the transmissive-set-stage boundary
+        that forces the Python-orchestrated path.
+        """
+        from anuga.shallow_water.sw_domain_gpu_ext import (
+            sync_to_device, sync_from_device)
+
+        cpu = self._create_tidal_domain('bfi_cpu', algorithm='DE1')
+        gpu = self._create_tidal_domain('bfi_gpu', algorithm='DE1')
+
+        cpu.set_multiprocessor_mode(1)
+        for _ in cpu.evolve(yieldstep=2.0, finaltime=10.0):
+            pass
+
+        gpu.set_multiprocessor_mode(2)
+        sync_to_device(gpu.gpu_interface.gpu_dom)
+        for _ in gpu.evolve(yieldstep=2.0, finaltime=10.0):
+            pass
+        sync_from_device(gpu.gpu_interface.gpu_dom)
+
+        bf_cpu = cpu.get_boundary_flux_integral()
+        bf_gpu = gpu.get_boundary_flux_integral()
+        # Guard the test itself: the tidal boundary must move real water.
+        self.assertGreater(abs(bf_cpu), 1.0,
+                           'test setup: expected a non-trivial boundary flux')
+        np.testing.assert_allclose(
+            bf_gpu, bf_cpu, rtol=1e-9, atol=1e-9,
+            err_msg=f'DE1 boundary_flux_integral mismatch: '
+                    f'mode1={bf_cpu}, mode2={bf_gpu}')
 
     def test_volume_conservation_mode2(self):
         """Water volume is conserved over 10 s in GPU mode (closed boundaries)."""
@@ -1240,19 +1280,20 @@ class Test_GPU_Culvert(unittest.TestCase):
         gpu_stage = gpu_domain.quantities['stage'].centroid_values.copy()
         gpu_xmom = gpu_domain.quantities['xmomentum'].centroid_values.copy()
 
-        # mode=1 calls Python boyd_box_function (boyd_box_operator.py); mode=2
-        # calls the C boyd_box_discharge translation.  Tiny FP-order differences
-        # in pow()/sqrt() at step 1 (~1e-7) get amplified by the depth↔Q feedback
-        # to ~3% by t=5.  Volume is conserved (test_culvert_volume_conservation
-        # is the rigorous physical check); these atol bounds catch catastrophic
-        # failures (wrong flow direction, culvert not firing) without flagging
-        # normal amplified-FP drift.  Momentum is more sensitive than stage
-        # because momentum = depth * velocity compounds the depth error.
+        # mode=1 and mode=2 now share the single C culvert kernel
+        # (culvert_compute_one + culvert_gather_inlet_host), so they agree to
+        # machine precision: measured ~3e-16 (stage) / ~2e-15 (xmom) at t=5 on a
+        # GPU-offload build, and bit-identical on a CPU build.  (Previously mode=1
+        # called Python boyd_box_function and mode=2 the C translation, whose
+        # pow()/sqrt() FP-order differences amplified to ~3% by t=5 — hence the
+        # old atol=0.02/0.05.)  The tight bounds below catch any regression that
+        # reintroduces a mode-1/mode-2 divergence, with generous headroom over the
+        # measured ~1e-15.
         np.testing.assert_allclose(
-            gpu_stage, cpu_stage, rtol=0, atol=0.02,
+            gpu_stage, cpu_stage, rtol=0, atol=1e-10,
             err_msg='Culvert 5s: stage mismatch between mode=1 and mode=2')
         np.testing.assert_allclose(
-            gpu_xmom, cpu_xmom, rtol=0, atol=0.05,
+            gpu_xmom, cpu_xmom, rtol=0, atol=1e-9,
             err_msg='Culvert 5s: xmomentum mismatch between mode=1 and mode=2')
 
     def test_culvert_volume_conservation(self):
@@ -1299,16 +1340,82 @@ class Test_GPU_Culvert(unittest.TestCase):
             stage[right_mask].mean(), -1.0,
             'Right side should have gained water through the culvert')
 
+    def _create_pipe_domain(self, name):
+        """Two-compartment domain connected by a Boyd *pipe* culvert.
+
+        Same layout as _create_culvert_domain but with a circular pipe, which
+        exercises boyd_pipe_discharge (a different critical-depth / flow-area
+        path than the box). Returns (domain, operator).
+        """
+        from anuga.structures.boyd_pipe_operator import Boyd_pipe_operator
+        domain = rectangular_cross_domain(20, 10, len1=200., len2=100.)
+        domain.set_flow_algorithm('DE0')
+        domain.set_low_froude(0)
+        domain.set_name(name)
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+
+        domain.set_quantity('elevation', -1.0)
+        domain.set_quantity('friction', 0.013)
+        domain.set_quantity('stage', lambda x, y: np.where(x < 100., 0.5, -1.0))
+
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+        op = Boyd_pipe_operator(domain,
+                                end_points=[[90., 50.], [110., 50.]],
+                                diameter=0.5,
+                                apron=5., manning=0.013,
+                                enquiry_gap=5., verbose=False)
+        return domain, op
+
+    def test_pipe_culvert_cpu_gpu_velocity_match(self):
+        """Boyd *pipe* culvert: reported discharge and barrel velocity agree
+        between mode=1 and mode=2.
+
+        Regression guard for a critical-depth translation bug in
+        boyd_pipe_discharge: it divided by ``(bf*diameter)**2.5`` where the
+        Python reference multiplies, leaving the GPU flow_area — and hence the
+        reported barrel velocity — ~8% off mode=1, while the (inlet-controlled)
+        discharge still matched. Comparing the operator velocity catches it; a
+        stage-only comparison (test_culvert_cpu_gpu_match, box only) does not.
+        Also covers the GPUCulvertManager stats write-back onto the Python op.
+        """
+        cpu_domain, cpu_op = self._create_pipe_domain('pipe_cpu')
+        cpu_domain.set_multiprocessor_mode(1)
+        for _ in cpu_domain.evolve(yieldstep=1.0, finaltime=3.0):
+            pass
+
+        gpu_domain, gpu_op = self._create_pipe_domain('pipe_gpu')
+        gpu_domain.set_multiprocessor_mode(2)
+        for _ in gpu_domain.evolve(yieldstep=1.0, finaltime=3.0):
+            pass
+
+        # Culvert must actually be flowing for the comparison to mean anything
+        self.assertGreater(cpu_op.velocity, 0.05,
+                           'pipe culvert should be flowing in the test window')
+        # Barrel velocity was the ~8%-off quantity; discharge stayed matched.
+        self.assertAlmostEqual(
+            gpu_op.velocity, cpu_op.velocity,
+            delta=0.02 * cpu_op.velocity,
+            msg='pipe barrel velocity: mode=1 vs mode=2')
+        self.assertAlmostEqual(
+            gpu_op.discharge, cpu_op.discharge,
+            delta=0.02 * abs(cpu_op.discharge) + 1e-6,
+            msg='pipe discharge: mode=1 vs mode=2')
+
 
 @pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
 class Test_GPU_WeirTrapezoid(unittest.TestCase):
     """Tests for Weir_orifice_trapezoid_operator in GPU mode."""
 
-    def _create_weir_domain(self, name, z1=0.0, z2=0.0):
+    def _create_weir_domain(self, name, z1=0.0, z2=0.0, height=0.8):
         """Two-compartment domain connected by a trapezoidal weir/orifice culvert.
 
-        Water starts on the left (x < 100 m). The culvert (1.0 m wide × 0.8 m high,
-        side slopes z1/z2) provides the only flow path.
+        Water starts on the left (x < 100 m). The culvert (1.0 m wide, `height`
+        high, side slopes z1/z2) provides the only flow path. A tall `height`
+        keeps the culvert flowing partly full (open-channel critical depth) so
+        the flow_area is set by the critical-depth solve.
         """
         from anuga.structures.weir_orifice_trapezoid_operator import Weir_orifice_trapezoid_operator
         domain = rectangular_cross_domain(20, 10, len1=200., len2=100.)
@@ -1327,7 +1434,7 @@ class Test_GPU_WeirTrapezoid(unittest.TestCase):
 
         Weir_orifice_trapezoid_operator(domain,
                                         end_points=[[90., 50.], [110., 50.]],
-                                        height=0.8, width=1.0,
+                                        height=height, width=1.0,
                                         z1=z1, z2=z2,
                                         apron=5., manning=0.013,
                                         enquiry_gap=5., verbose=False)
@@ -1352,11 +1459,60 @@ class Test_GPU_WeirTrapezoid(unittest.TestCase):
         sync_from_device(gpu_domain.gpu_interface.gpu_dom)
         gpu_stage = gpu_domain.quantities['stage'].centroid_values.copy()
 
-        # atol=0.02: physically reasonable tolerance for real GPU vs CPU FP divergence
-        # after 5 s.  Tight enough to catch wrong-direction or zero-flow failures.
+        # mode=1 and mode=2 share the single C weir/culvert kernel, so they agree
+        # to machine precision: ~4e-16 at t=5 on a GPU-offload build, bit-identical
+        # on a CPU build.  (Old atol=0.02 predated the shared kernel.)  Tight enough
+        # to catch any regression that reintroduces a mode-1/mode-2 divergence.
         np.testing.assert_allclose(
-            gpu_stage, cpu_stage, rtol=0, atol=0.02,
+            gpu_stage, cpu_stage, rtol=0, atol=1e-10,
             err_msg='Weir trapezoid 5s: stage mismatch between mode=1 and mode=2')
+
+    def test_weir_trapezoid_cpu_gpu_velocity_match(self):
+        """Weir/orifice trapezoid: reported barrel velocity agrees between
+        mode=1 and mode=2.
+
+        Regression guard for a gravity-constant mismatch in the trapezoid
+        critical-depth Newton solve: the Python reference used to hardcode 9.81
+        there (inconsistent with the domain g of 9.8 used by the mode-2 C
+        kernel), leaving the mode-2 flow_area ~0.034% high and the reported
+        velocity ~0.034% low -- a small constant offset the coarse stage check
+        (test_weir_trapezoid_cpu_gpu_match) does not catch. Both paths now derive
+        g from domain.g. A trapezoidal section (z1=z2=1) exercises the Newton
+        solve.
+        """
+        from anuga.structures.weir_orifice_trapezoid_operator import Weir_orifice_trapezoid_operator
+
+        def weir_op(domain):
+            return next(o for o in domain.fractional_step_operators
+                        if isinstance(o, Weir_orifice_trapezoid_operator))
+
+        # Tall culvert (height=3.0) so it flows partly full: the flow_area is
+        # then set by the critical-depth solve, which is where the g mismatch
+        # bites. A short/full culvert would use the full section and hide it.
+        cpu_domain = self._create_weir_domain('wtv_cpu', z1=1.0, z2=1.0, height=3.0)
+        cpu_domain.set_multiprocessor_mode(1)
+        for _ in cpu_domain.evolve(yieldstep=1.0, finaltime=3.0):
+            pass
+        cpu_op = weir_op(cpu_domain)
+
+        gpu_domain = self._create_weir_domain('wtv_gpu', z1=1.0, z2=1.0, height=3.0)
+        gpu_domain.set_multiprocessor_mode(2)
+        for _ in gpu_domain.evolve(yieldstep=1.0, finaltime=3.0):
+            pass
+        gpu_op = weir_op(gpu_domain)
+
+        self.assertGreater(cpu_op.velocity, 0.05,
+                           'weir should be flowing in the test window')
+        # The g-mismatch bug is a ~0.034% constant velocity offset; keep the
+        # tolerance well below that yet far above the ~1e-5 fixed residual.
+        self.assertAlmostEqual(
+            gpu_op.velocity, cpu_op.velocity,
+            delta=1e-4 * cpu_op.velocity,
+            msg='weir barrel velocity: mode=1 vs mode=2')
+        self.assertAlmostEqual(
+            gpu_op.discharge, cpu_op.discharge,
+            delta=1e-4 * abs(cpu_op.discharge) + 1e-9,
+            msg='weir discharge: mode=1 vs mode=2')
 
     def test_weir_trapezoid_volume_conservation(self):
         """Weir trapezoid: total water volume is conserved in GPU mode."""
@@ -2131,6 +2287,140 @@ class Test_TimestepTimeAdvance(unittest.TestCase):
         self._assert_modes_agree('DE_ader2')
 
 
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
+class Test_GPU_TimeBoundarySubstep(unittest.TestCase):
+    """Mode-2 with a time-varying boundary must match mode-1 for multi-substep
+    algorithms (DE1/DE2).
+
+    The single-call C RK loop (_evolve_one_rk*_step_c) sets Python-evaluated
+    boundaries (Time/File/wave/Flather) on the device once per step, so it would
+    reuse that step-start value across every RK substep — whereas mode-1 calls
+    update_boundary() before each substep. For a time-varying boundary that is an
+    O(dt) boundary-forcing error on RK2/RK3 (~4e-3 m in a rising-tide test).
+
+    Fix (option B): a domain with any Python-evaluated boundary is routed to the
+    Python-orchestrated GPU loop, which refreshes the boundary per substep and so
+    bit-matches mode-1. This test guards that routing; reverting it makes DE1/DE2
+    disagree by O(1e-3).
+    """
+
+    def _make_domain(self, name, algorithm):
+        import math
+        d = rectangular_cross_domain(12, 8, len1=150., len2=100.)
+        d.set_flow_algorithm(algorithm)
+        d.set_low_froude(0)
+        d.set_name(name)
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', lambda x, y: (x / 150.0) * 2.0 - 1.0)
+        d.set_quantity('friction', 0.03)
+        d.set_quantity('stage', 1.5)                       # fully wet (isolates the boundary)
+
+        def tide(t):
+            return [0.4 * math.sin(0.3 * t), 0.0, 0.0]     # time-varying stage
+
+        Br = Reflective_boundary(d)
+        d.set_boundary({'left': anuga.Time_boundary(domain=d, function=tide),
+                        'right': Br, 'top': Br, 'bottom': Br})
+        return d
+
+    def _run(self, algorithm, mode):
+        d = self._make_domain(f'{algorithm}_m{mode}', algorithm)
+        d.set_multiprocessor_mode(mode)
+        for t in d.evolve(yieldstep=1.0, finaltime=6.0):
+            pass
+        return d.quantities['stage'].centroid_values.copy()
+
+    def _assert_agree(self, algorithm):
+        s1 = self._run(algorithm, 1)
+        s2 = self._run(algorithm, 2)
+        np.testing.assert_allclose(
+            s2, s1, atol=1e-6, rtol=0.0,
+            err_msg=f'{algorithm}: mode-2 Time_boundary diverges from mode-1 '
+                    f'(max diff {np.abs(s2 - s1).max():.3e})')
+
+    def test_DE1_rk2_time_boundary(self):
+        self._assert_agree('DE1')
+
+    def test_DE2_rk3_time_boundary(self):
+        self._assert_agree('DE2')
+
+    def test_routing_time_boundary_off_c_loop(self):
+        """A Time_boundary must be flagged so the multi-substep dispatch avoids
+        the single-call C RK loop."""
+        d = self._make_domain('route_time', 'DE1')
+        d.set_multiprocessor_mode(2)
+        self.assertTrue(d._has_python_evaluated_gpu_boundaries())
+
+    def test_routing_reflective_keeps_c_loop(self):
+        """Reflective-only domains keep the fast C RK loop."""
+        d = rectangular_cross_domain(8, 8, len1=100., len2=100.)
+        d.set_flow_algorithm('DE1')
+        d.set_name('route_refl')
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', 0.0)
+        d.set_quantity('stage', 1.0)
+        d.set_boundary({b: Reflective_boundary(d) for b in d.get_boundary_tags()})
+        d.set_multiprocessor_mode(2)
+        self.assertFalse(d._has_python_evaluated_gpu_boundaries())
+
+
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
+class Test_GPU_OperatorTimeAlignment(unittest.TestCase):
+    """A time-varying fractional-step operator must be evaluated at the same
+    time in mode-1 and mode-2, for every flow algorithm.
+
+    Fractional-step operators run in the evolve loop *before* it advances
+    relative_time to t+dt, so they should see the pre-step time t. DE0, DE2 and
+    DE_ader2 (and the mode-2 GPU loops) do; legacy mode-1 **rk2 (DE1)** advanced
+    relative_time mid-step (for the substep-2 boundary) and never restored it, so
+    its operators evaluated forcing at t+dt — "one step too far" — diverging from
+    mode-2 by ~4e-4 for a time-varying rate. The mode-1 rk2 body now restores the
+    pre-step time; this test asserts mode-1 == mode-2 for all algorithms (revert
+    the fix and DE1 fails). Note: no prior test exercised a time-varying operator.
+    """
+
+    def _run(self, algorithm, mode):
+        import math
+        d = rectangular_cross_domain(24, 16, len1=100., len2=100.)
+        d.set_flow_algorithm(algorithm)
+        d.set_low_froude(0)
+        d.set_name(f'op_{algorithm}_m{mode}')
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', 0.0)
+        d.set_quantity('friction', 0.03)
+        d.set_quantity('stage', 0.2)
+        anuga.Rate_operator(d, rate=lambda t: 0.001 * (1.0 + 0.9 * math.sin(0.6 * t)))
+        Br = Reflective_boundary(d)
+        d.set_boundary({b: Br for b in d.get_boundary_tags()})
+        d.set_multiprocessor_mode(mode)
+        for t in d.evolve(yieldstep=0.5, finaltime=3.0):
+            pass
+        return d.quantities['stage'].centroid_values.copy()
+
+    def _assert_agree(self, algorithm):
+        s1 = self._run(algorithm, 1)
+        s2 = self._run(algorithm, 2)
+        np.testing.assert_allclose(
+            s2, s1, atol=1e-8, rtol=0.0,
+            err_msg=f'{algorithm}: time-varying operator mode-1/mode-2 mismatch '
+                    f'(max {np.abs(s2 - s1).max():.3e})')
+
+    def test_DE0(self):
+        self._assert_agree('DE0')
+
+    def test_DE1(self):
+        self._assert_agree('DE1')
+
+    def test_DE2(self):
+        self._assert_agree('DE2')
+
+    def test_DE_ader2(self):
+        self._assert_agree('DE_ader2')
+
+
 class Test_GPU_NonGPUBoundaryFallback(unittest.TestCase):
     """Mode 2 must fall back to host boundary evaluation for boundary types the
     C loop cannot evaluate on the device — for EVERY flow algorithm, including
@@ -2202,6 +2492,442 @@ class Test_GPU_NonGPUBoundaryFallback(unittest.TestCase):
         self._assert_modes_agree('DE_ader2')
 
 
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
+class Test_GPU_SetQuantityReachesDevice(unittest.TestCase):
+    """set_quantity() after the GPU interface exists must reach the device.
+
+    Regression guard. In mode 2 ('unified') the *device* holds the authoritative
+    centroid state once the GPU interface is built. set_quantity() used to update
+    only the host arrays, so any set_quantity() made *after* something built the
+    interface was silently ignored: the device kept evolving the stale/default
+    values, and the results — and the stored SWW — were wrong.
+
+    The interface gets built early by anything that calls _ensure_gpu_interface(),
+    notably distribute_to_vertices_and_edges() and set_boundary(), so this was
+    reachable from ordinary scripts (set_boundary() before set_quantity(), or any
+    mid-run set_quantity()), not just from tests.
+    """
+
+    def _run(self, mode, force_interface):
+        domain = rectangular_cross_domain(10, 10)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('setq')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_multiprocessor_mode(mode)
+
+        domain.set_quantity('elevation', -10.0)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+        if force_interface:
+            # Build the mode-2 device interface *before* stage is set.
+            domain.distribute_to_vertices_and_edges()
+
+        # Quiescent flat water well above the bed: stage must stay at 2.0.
+        domain.set_quantity('stage', 2.0)
+
+        for _ in domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+        return domain.quantities['stage'].centroid_values.copy()
+
+    def test_set_quantity_after_interface_built(self):
+        """stage set after the interface is built must be the stage that evolves."""
+        cpu = self._run(1, force_interface=True)
+        gpu = self._run(2, force_interface=True)
+
+        # The bug produced stage == 0 (device default) or the stale pre-set value.
+        np.testing.assert_allclose(
+            gpu, cpu, rtol=0, atol=1e-8,
+            err_msg='mode-2 ignored set_quantity() made after the GPU interface '
+                    'was built (device kept the stale values)')
+        self.assertAlmostEqual(float(gpu.min()), 2.0, places=6)
+        self.assertAlmostEqual(float(gpu.max()), 2.0, places=6)
+
+    def test_set_quantity_before_interface_built(self):
+        """The ordinary ordering must keep working (no interface yet)."""
+        cpu = self._run(1, force_interface=False)
+        gpu = self._run(2, force_interface=False)
+        np.testing.assert_allclose(gpu, cpu, rtol=0, atol=1e-8)
+        self.assertAlmostEqual(float(gpu.min()), 2.0, places=6)
+
+    def _run_direct(self, mode):
+        """As _run(), but write the quantity through the Quantity object itself."""
+        domain = rectangular_cross_domain(10, 10)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('setq_direct')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_multiprocessor_mode(mode)
+
+        domain.set_quantity('elevation', -10.0)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        domain.distribute_to_vertices_and_edges()   # builds the device interface
+
+        # Bypass Domain.set_quantity() entirely — the sync must hang off the
+        # Quantity, not off the Domain wrapper.
+        domain.quantities['stage'].set_values(2.0)
+
+        for _ in domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+        return domain.quantities['stage'].centroid_values.copy()
+
+    def test_direct_quantity_set_values_reaches_device(self):
+        """Quantity.set_values() bypassing Domain.set_quantity() must still sync."""
+        cpu = self._run_direct(1)
+        gpu = self._run_direct(2)
+
+        np.testing.assert_allclose(
+            gpu, cpu, rtol=0, atol=1e-8,
+            err_msg='mode-2 ignored a direct Quantity.set_values() made after the '
+                    'GPU interface was built (device kept the stale values)')
+        self.assertAlmostEqual(float(gpu.min()), 2.0, places=6)
+        self.assertAlmostEqual(float(gpu.max()), 2.0, places=6)
+
+
+class Test_GPU_FractionalStepOperatorOrder(unittest.TestCase):
+    """Mode 2 must apply fractional-step operators in REGISTRATION ORDER (issue #192).
+
+    Fractional-step operators mutate `stage` in sequence, so their order changes the
+    answer. Mode 1 runs them in registration order; mode 2 used to hoist every Boyd
+    culvert to the FRONT (batched via GPUCulvertManager), discarding that order. The fix
+    fires the batch at the position of the FIRST culvert, so registration order is honored.
+
+    DETERMINISTIC BY CONSTRUCTION — read before changing. An earlier version of this test
+    measured the order effect in a symmetric setup (flat bed, equal-depth inlets) where the
+    culvert is effectively a no-op, so operator order had NO genuine effect and the observed
+    difference was pure chaotic amplification of roundoff. That is numerics-dependent and bit
+    this test three times (a build-dependent ratio, then the amplification vanishing under an
+    unrelated kernel change). This version instead builds a setup where order genuinely
+    matters by a large, deterministic margin:
+
+      * a sloped bed (`elevation = -x/10`) so the two culvert ends sit at different levels
+        and the culvert actually TRANSFERS water, and
+      * a strong Rate_operator confined by polygon to the UPSTREAM inlet, so applying it
+        before vs after the culvert changes the head the culvert reads.
+
+    Over a short evolve (no time for chaos), this gives, measured directly:
+
+        with the fix   mode-1 order effect ~7e-3;  mode-2(rate-first) == mode-1(rate-first) to ~1e-15
+        with the bug   mode-1 order effect ~7e-3;  mode-2(rate-first)  = mode-1(CULVERT-first)  (~7e-3 away)
+
+    i.e. the fix/bug signal is a 12-order-of-magnitude separation, not a chaotic magnitude.
+    Assert on that, never on a chaotic-divergence value.
+    """
+
+    FT = 2.0        # short evolve: the order effect is deterministic, chaos has no time to grow
+    ORDER_EFFECT_FLOOR = 1e-4   # mode-1 order effect must clear this for the setup to be valid
+
+    def _run(self, mode, order):
+        from anuga import Boyd_box_operator, Rate_operator
+
+        domain = rectangular_cross_domain(20, 20, len1=50.0, len2=50.0)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('op_order')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_multiprocessor_mode(mode)
+
+        # Sloped bed -> the culvert ends are at different levels -> it actually transfers.
+        domain.set_quantity('elevation', lambda x, y: -x / 10.0)
+        domain.set_quantity('stage', 2.0)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+        def add_rate():
+            # Confined to a polygon around the upstream (x~10) inlet, so the rate changes
+            # exactly the head the culvert reads there.
+            Rate_operator(domain, rate=0.5, factor=1.0,
+                          polygon=[[5, 20], [15, 20], [15, 30], [5, 30]])
+
+        def add_culvert():
+            Boyd_box_operator(domain,
+                              end_points=[[10.0, 25.0], [40.0, 25.0]],
+                              losses=1.5, width=2.0, height=2.0, apron=0.0,
+                              use_momentum_jet=False, use_velocity_head=False,
+                              manning=0.013, verbose=False)
+
+        if order == 'rate_first':
+            add_rate()
+            add_culvert()
+        else:
+            add_culvert()
+            add_rate()
+
+        for _ in domain.evolve(yieldstep=self.FT, finaltime=self.FT):
+            pass
+        return domain.quantities['stage'].centroid_values.copy()
+
+    def _maxdiff(self, a, b):
+        return float(np.abs(a - b).max())
+
+    def test_mode2_does_not_ignore_operator_order(self):
+        """Mode 2 must produce different answers for the two registration orders.
+
+        With the bug (culverts hoisted to the front) mode 2 runs the same sequence either
+        way, so this is EXACTLY 0.0.
+        """
+        gpu = self._maxdiff(self._run(2, 'rate_first'), self._run(2, 'culvert_first'))
+        self.assertGreater(
+            gpu, self.ORDER_EFFECT_FLOOR,
+            msg='mode-2 gave the same answer for rate-before-culvert and '
+                'culvert-before-rate — it is ignoring fractional-step operator '
+                'registration order (issue #192)')
+
+    def test_mode2_applies_same_order_as_mode1(self):
+        """Mode 2 with a given registration order must match mode 1 with THAT order.
+
+        The discriminating measurement (deterministic, no chaos): for `[rate, culvert]`,
+        mode-2 must track mode-1's rate-first result far more closely than the order effect
+        itself. With the bug mode-2 instead matches mode-1's CULVERT-first result, i.e. it
+        is a full order-effect away.
+        """
+        m1_rate_first = self._run(1, 'rate_first')
+        m1_culvert_first = self._run(1, 'culvert_first')
+        m2_rate_first = self._run(2, 'rate_first')
+
+        order_effect = self._maxdiff(m1_rate_first, m1_culvert_first)
+        self.assertGreater(
+            order_effect, self.ORDER_EFFECT_FLOOR,
+            msg='the test setup no longer makes operator order matter in mode 1 '
+                '(order effect %.3e) — it can no longer detect the bug' % order_effect)
+
+        mismatch = self._maxdiff(m2_rate_first, m1_rate_first)
+        self.assertLess(
+            mismatch, 0.01 * order_effect,
+            msg='mode-2 [rate, culvert] does not match mode-1 [rate, culvert]: mismatch '
+                '%.3e vs order effect %.3e. Mode 2 is applying a different operator order '
+                'than mode 1 (issue #192 — culverts hoisted to the front).'
+                % (mismatch, order_effect))
+
+
+class Test_GPU_StartupBanner(unittest.TestCase):
+    """The mode-2 banner must report the GPU count, not the rank count (issue #194).
+
+    It used to print `numprocs` labelled as "GPU(s)", so a 4-rank run on a 1-GPU box
+    reported "4 GPU(s)". That concealed the one thing the banner was best placed to
+    catch: mode-2 MPI assigns ranks to devices round-robin (rank % num_devices), so
+    running more ranks than GPUs silently puts several ranks on one device, which may
+    hang or return wrong results.
+
+    gpu_startup_banner() is a pure function precisely so this matrix is testable
+    without a multi-GPU machine.
+    """
+
+    def _banner(self, numprocs, num_devices, device_id=0, offload_active=True):
+        from anuga.shallow_water.shallow_water_domain import gpu_startup_banner
+        return '\n'.join(gpu_startup_banner(numprocs, num_devices, device_id,
+                                            offload_active))
+
+    def test_reports_device_count_not_rank_count(self):
+        """4 ranks on 1 GPU must not claim 4 GPUs."""
+        text = self._banner(numprocs=4, num_devices=1)
+        self.assertIn('4 MPI rank(s) on 1 GPU(s)', text)
+        self.assertNotIn('4 GPU(s)', text)
+
+    def test_warns_when_ranks_exceed_gpus(self):
+        """Oversubscription must warn, and lead with the cost we actually measured.
+
+        Measured on one RTX 5070 (160k-tri mode-2 evolve, all ranks on the one device):
+        without MPS, np=1/2/4 took 3.80/7.13/11.21 s — so the dependable consequence is
+        a ~3x slowdown, not a crash. Results were bit-identical at every rank count, so
+        the banner must not promise a failure that may never arrive; a run that quietly
+        works but is 3x slow is the likelier outcome and the one users would miss.
+        """
+        text = self._banner(numprocs=4, num_devices=1)
+        self.assertIn('WARNING', text)
+        self.assertIn('ONE RANK PER GPU', text)
+        self.assertIn('SLOWER', text)          # the measured, reliable consequence
+        self.assertIn('MPS', text)             # and the mitigation, if they must do it
+
+    def test_no_warning_when_ranks_match_gpus(self):
+        """The supported configuration must stay quiet."""
+        text = self._banner(numprocs=4, num_devices=4)
+        self.assertIn('4 MPI rank(s) on 4 GPU(s)', text)
+        self.assertNotIn('WARNING', text)
+        self.assertNotIn('NOTE', text)
+
+    def test_notes_idle_gpus(self):
+        """Fewer ranks than GPUs is safe (distinct devices) — a note, not a warning."""
+        text = self._banner(numprocs=1, num_devices=4)
+        self.assertNotIn('WARNING', text)
+        self.assertIn('3 GPU(s) idle', text)
+
+    def test_serial_on_one_gpu_is_quiet(self):
+        """The overwhelmingly common case must not nag."""
+        text = self._banner(numprocs=1, num_devices=1)
+        self.assertNotIn('WARNING', text)
+        self.assertNotIn('NOTE', text)
+
+    def test_unknown_device_count_does_not_invent_one(self):
+        """If the device query fails, say so — do NOT fall back to printing numprocs."""
+        text = self._banner(numprocs=4, num_devices=-1)
+        self.assertIn('device count unknown', text)
+        self.assertNotIn('4 GPU(s)', text)
+        self.assertNotIn('WARNING', text)
+
+    def test_no_offload_and_no_device_paths(self):
+        """The CPU-multicore and no-device banners must not claim any GPU count."""
+        cpu = self._banner(numprocs=4, num_devices=0, offload_active=False)
+        self.assertIn('CPU multicore', cpu)
+        self.assertNotIn('GPU(s)', cpu)
+
+        nodev = self._banner(numprocs=4, num_devices=0, device_id=-1)
+        self.assertIn('No GPU devices found', nodev)
+        self.assertNotIn('4 GPU(s)', nodev)
+
+
+class Test_GPU_DryCellStartupReconciliation(unittest.TestCase):
+    """Mode 2 must reconcile deeply-dry cells to stage=bed when the device
+    interface is built (issue #200).
+
+    A dry cell should carry stage = bed (depth 0). Mode 1 reaches that via its
+    per-step protect on the first step; the mode-2 device path only converges to it
+    gradually (halving the stage<<bed deficit each step), and any forcing applied to
+    those cells during that window — an Inlet_operator, rainfall — is absorbed into
+    raising the sub-bed stage rather than making depth, and is permanently lost. On
+    the Towradgi small case (initial stage=0 under a 215 m creek bank with a 20 m³/s
+    inlet) that lost ~24 m³, driving the whole mode-1-vs-mode-2 divergence.
+
+    The fix clamps stage up to bed in set_gpu_interface() before the initial sync to
+    the device. This guards that clamp. (The full dynamic mass loss is mesh-dependent
+    — a regular-grid domain with the same bed does not reproduce it — so it is
+    validated on the Towradgi case, not here; this test guards the mechanism.)
+    """
+
+    def test_dry_cells_reconciled_to_bed_on_interface_build(self):
+        domain = rectangular_cross_domain(8, 8)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('dry_recon')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+
+        # High bed, stage well below it -> every cell is deeply dry (stage << bed).
+        domain.set_quantity('elevation', 100.0)
+        domain.set_quantity('stage', 0.0)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+        stage_c = domain.quantities['stage'].centroid_values
+        bed_c = domain.quantities['elevation'].centroid_values
+        self.assertTrue((stage_c < bed_c).all(),
+                        'setup precondition: all cells should start dry (stage < bed)')
+
+        # Building the mode-2 interface must reconcile stage up to the bed — on the
+        # DEVICE. Reading the host would pass regardless (the standard host-side
+        # protect in distribute_to_vertices_and_edges reconciles the host copy even
+        # without the fix); the bug is that the DEVICE keeps the un-reconciled stage,
+        # so sync it back before checking. On a CPU-only build host and device are the
+        # same arrays, so this can only fail on a real GPU-offload build — which is
+        # where the bug exists.
+        domain.set_multiprocessor_mode(2)
+        domain.distribute_to_vertices_and_edges()   # triggers set_gpu_interface()
+        domain.gpu_interface.sync_from_device()
+
+        stage_c = domain.quantities['stage'].centroid_values
+        bed_c = domain.quantities['elevation'].centroid_values
+        np.testing.assert_allclose(
+            stage_c, bed_c, rtol=0, atol=1e-9,
+            err_msg='mode-2 did not reconcile deeply-dry cells to stage=bed on the '
+                    'device at interface build (issue #200)')
+
+    def test_reconciliation_is_noop_for_wet_cells(self):
+        """Cells already at/above bed must be left untouched by the reconciliation."""
+        domain = rectangular_cross_domain(8, 8)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('wet_noop')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+
+        domain.set_quantity('elevation', -5.0)
+        domain.set_quantity('stage', 2.0)          # wet everywhere (stage > bed)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+        before = domain.quantities['stage'].centroid_values.copy()
+        domain.set_multiprocessor_mode(2)
+        domain.distribute_to_vertices_and_edges()
+
+        after = domain.quantities['stage'].centroid_values
+        np.testing.assert_allclose(
+            after, before, rtol=0, atol=1e-12,
+            err_msg='reconciliation must be a no-op where stage >= bed')
+
+
+class Test_GPU_RateOperatorGhostInflux(unittest.TestCase):
+    """Rate_operator mass tracking must exclude ghost cells in mode 2 (issue #191).
+
+    Under MPI a rainfall polygon straddling a partition boundary appears on several
+    ranks; only the rank that OWNS a triangle may count it toward the reported influx.
+    The CPU path masks its sum with ``full_indices``; the mode-2 kernel used to sum
+    over every index, so parallel runs over-reported rainfall influx (and hence
+    ``domain.fractional_step_volume_integral``) by the ghost-cell contribution. The
+    stage update itself was — and stays — applied to ghosts on both paths, since the
+    halo exchange overwrites them.
+
+    This is a serial test of a parallel bug: it fakes the partition by clearing
+    ``tri_full_flag``, which is the only thing ``set_full_indices()`` reads. That keeps
+    the regression catchable in the ordinary (non-MPI) suite.
+    """
+
+    RATE = 1.0e-3
+    TIMESTEP = 2.0
+
+    def _influx(self, mode):
+        from anuga import Rate_operator
+
+        domain = rectangular_cross_domain(10, 10)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('rate_ghost')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_multiprocessor_mode(mode)
+
+        domain.set_quantity('elevation', -10.0)
+        domain.set_quantity('stage', 1.0)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        domain.distribute_to_vertices_and_edges()   # builds the mode-2 device interface
+
+        # Pretend an MPI partition owns only 2/3 of the triangles. Must happen before
+        # the operator is constructed — set_full_indices() reads tri_full_flag in
+        # Rate_operator.__init__.
+        domain.tri_full_flag[::3] = 0
+
+        op = Rate_operator(domain, rate=self.RATE, factor=1.0)
+
+        domain.timestep = self.TIMESTEP
+        op()
+
+        owned_area = domain.areas[domain.tri_full_flag == 1].sum()
+        all_area = domain.areas.sum()
+        return op.local_influx, owned_area, all_area
+
+    def test_influx_excludes_ghost_cells(self):
+        """Mode 2 must count only owned triangles — and agree with mode 1 and theory."""
+        cpu, owned_area, all_area = self._influx(1)
+        gpu, _, _ = self._influx(2)
+
+        # Exact expected value: rate * factor * timestep * (area of OWNED triangles).
+        expected = self.RATE * self.TIMESTEP * owned_area
+        # What the bug produced: the same sum over EVERY triangle, ghosts included.
+        buggy = self.RATE * self.TIMESTEP * all_area
+
+        # Guard the guard: the two must be far apart, or this test proves nothing.
+        self.assertGreater(abs(buggy - expected), 0.1 * abs(expected))
+
+        self.assertAlmostEqual(
+            cpu, expected, places=10,
+            msg='mode-1 reference influx does not match the analytic value')
+        self.assertAlmostEqual(
+            gpu, expected, places=10,
+            msg='mode-2 counted ghost cells in the rate-operator influx (issue #191)')
+        self.assertAlmostEqual(
+            gpu, cpu, places=10,
+            msg='mode-1 and mode-2 disagree on rate-operator influx')
+
+
 class Test_GPU_ForcingOperators(unittest.TestCase):
     """Wind_stress / Barometric_pressure / Rate OPERATORS must give identical
     results in mode 1 (legacy) and mode 2 (unified).
@@ -2248,7 +2974,11 @@ class Test_GPU_ForcingOperators(unittest.TestCase):
     def _assert_modes_agree(self, add_operator, label):
         d1 = self._run(1, add_operator, f'{label}_m1')
         d2 = self._run(2, add_operator, f'{label}_m2')
-        atol = 1e-8 if anuga.gpu_offload_enabled() else 1e-12
+        # These operators apply the same per-cell forcing in mode 1 and mode 2, so
+        # they agree to machine precision on still water: measured <=1.2e-15 at t=5
+        # for wind/pressure and bit-identical for rain on a GPU-offload build. The
+        # bound below catches any mode-1/mode-2 regression with wide headroom.
+        atol = 1e-10 if anuga.gpu_offload_enabled() else 1e-12
         for q in ['stage', 'xmomentum', 'ymomentum']:
             np.testing.assert_allclose(
                 d2.quantities[q].centroid_values,
@@ -2296,6 +3026,614 @@ class Test_GPU_ForcingOperators(unittest.TestCase):
             lambda d: Rate_operator(d, rate=1.0e-3), 'rain')   # 1 mm/s rain
         # rainfall must raise the stage above the initial 1.0 m
         self.assertGreater(np.max(d1.quantities['stage'].centroid_values), 1.0)
+
+
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
+class Test_GPU_TimeBoundary(unittest.TestCase):
+    """Multiple Time_boundary objects with different values must not clobber
+    one another in mode 2.
+
+    Regression for the bug where the GPU time-boundary stored a single global
+    (stage, xmom, ymom) applied to every time-boundary edge. With two
+    Time_boundary tags carrying different values — worst on a sloped bed, where
+    the absolute stages at the two ends differ a lot — the last one set won and
+    corrupted the other boundary, diverging catastrophically from legacy
+    (e.g. avalanche_wet). The values are now stored per edge.
+    """
+
+    bed_slope = 0.1
+
+    def _make_domain(self):
+        L = 100.0
+        d = rectangular_cross_domain(12, 6, len1=L, len2=10.0)
+        d.set_flow_algorithm('DE1')
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('friction', 0.0)
+        d.set_quantity('elevation', lambda x, y: self.bed_slope * x)
+        d.set_quantity('stage', lambda x, y: self.bed_slope * x + 5.0)
+        return d, L
+
+    def _run_mode(self, mode):
+        d, L = self._make_domain()
+        # Two Time_boundary objects with DIFFERENT, time-varying values. On the
+        # sloped bed the two absolute stages differ by ~bed_slope*L = 10 m.
+        def f_left(t):
+            return [5.0 + 0.2 * t, 0.0, 0.0]
+        def f_right(t):
+            return [self.bed_slope * L + 5.0 - 0.1 * t, 0.0, 0.0]
+        Bl = anuga.Time_boundary(d, f_left)
+        Brt = anuga.Time_boundary(d, f_right)
+        Bw = Reflective_boundary(d)
+        d.set_boundary({'left': Bl, 'right': Brt, 'top': Bw, 'bottom': Bw})
+        d.set_multiprocessor_mode(mode)
+        d.set_quantities_to_be_stored(None)
+        gauge = d.get_triangle_containing_point([L / 2.0, 5.0])
+        stage = d.get_quantity('stage')
+        xmom = d.get_quantity('xmomentum')
+        out = []
+        for _ in d.evolve(yieldstep=1.0, finaltime=5.0):
+            out.append((float(stage.centroid_values[gauge]),
+                        float(xmom.centroid_values[gauge])))
+        return out
+
+    def test_two_time_boundaries_mode1_vs_mode2(self):
+        """Two differing Time_boundaries on a slope: mode 1 == mode 2."""
+        g1 = self._run_mode(1)
+        g2 = self._run_mode(2)
+        self.assertEqual(len(g1), len(g2))
+        for (s1, x1), (s2, x2) in zip(g1, g2):
+            self.assertAlmostEqual(s1, s2, places=8,
+                msg=f"stage mode1={s1} vs mode2={s2}")
+            self.assertAlmostEqual(x1, x2, places=8,
+                msg=f"xmom mode1={x1} vs mode2={x2}")
+
+
+@pytest.mark.skipif(not gpu_available(), reason=_gpu_skip_reason())
+class Test_GPU_InletWithCpuOnlyOperator(unittest.TestCase):
+    """A GPU-accelerated Inlet_operator's inflow must survive when a CPU-only
+    fractional operator is also present.
+
+    Regression: GPU-path fractional operators (Inlet_operator, Rate_operator)
+    apply their update to the *device* arrays. When a CPU-only fractional
+    operator (e.g. an Internal_boundary bridge) is also present,
+    apply_fractional_steps() brackets the operator loop with
+    sync_from_device()/sync_to_device(); the trailing host->device sync then
+    overwrote the GPU operator's device write with host data that never received
+    it, silently dropping the inflow. bridge_hecras2 drained to the bed under
+    mode 2 because of this. The GPU operators now fall back to the host path
+    while _gpu_host_writes_suppressed is set, so the batch sync carries them.
+    """
+
+    INFLOW_Q = 5.0        # m^3/s
+    FINALTIME = 5.0
+
+    def _make_domain(self):
+        d = rectangular_cross_domain(10, 10, len1=100., len2=100.)
+        d.set_flow_algorithm('DE1')
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', 0.0)
+        d.set_quantity('friction', 0.0)
+        d.set_quantity('stage', 1.0)          # 1 m over a 100x100 m closed box
+        Br = Reflective_boundary(d)
+        d.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        return d
+
+    def _total_volume(self, d):
+        h = np.maximum(d.quantities['stage'].centroid_values
+                       - d.quantities['elevation'].centroid_values, 0.0)
+        return float((h * d.areas).sum())
+
+    def _run(self, mode):
+        from anuga.operators.base_operator import Operator
+
+        class _NoopCpuOperator(Operator):
+            # A plain Operator subclass is classified CPU-only, which forces
+            # apply_fractional_steps() into its sync_from/to_device bracket.
+            def __call__(self):
+                pass
+
+            def parallel_safe(self):
+                return True
+
+        d = self._make_domain()
+        Inlet_operator(d, [[20.0, 50.0], [80.0, 50.0]], self.INFLOW_Q)
+        _NoopCpuOperator(d)
+        d.set_multiprocessor_mode(mode)
+        d.set_quantities_to_be_stored(None)
+        for _ in d.evolve(yieldstep=1.0, finaltime=self.FINALTIME):
+            pass
+        return self._total_volume(d)
+
+    def test_inlet_inflow_survives_cpu_only_operator(self):
+        """Closed-box inflow volume matches between mode 1 and mode 2."""
+        v_m1 = self._run(1)
+        v_m2 = self._run(2)
+        self.assertAlmostEqual(v_m1, v_m2, places=4,
+            msg=f"mode1 vol={v_m1} vs mode2 vol={v_m2} (inflow lost under mode 2?)")
+
+    def test_inflow_actually_applied_mode2(self):
+        """Sanity: the inflow really raises the volume under mode 2 (not ~0)."""
+        v0 = 1.0 * 100.0 * 100.0                 # initial depth 1 over 1e4 area
+        expected = self.INFLOW_Q * self.FINALTIME  # closed box: all inflow retained
+        v_m2 = self._run(2)
+        self.assertGreater(v_m2 - v0, 0.8 * expected,
+            msg=f"expected ~{expected} m^3 of inflow, got {v_m2 - v0}")
+
+
+class Test_GPU_ManyCulverts(unittest.TestCase):
+    """More culverts than MAX_CULVERTS must work (issue #217).
+
+    MAX_CULVERTS (gpu_domain.h) is only the INITIAL capacity of the culvert
+    arrays -- registration grows them by doubling, so a model may hold any
+    number.  gpu_culverts_apply_all() nevertheless sized its per-step working
+    buffers (inlet data, results, transfers and the MPI exchange buffers) as
+    fixed arrays of MAX_CULVERTS entries, then looped over num_culverts.  A
+    model with more culverts than that wrote past the end of them on every
+    timestep: a 101-culvert model overran ~8.9 kB of stack per step, which
+    showed up as the run wedging at Time = 0 and later segfaulting on a
+    pointer whose bits were a NaN double.
+
+    This test registers comfortably more than MAX_CULVERTS culverts and
+    evolves.  Before the fix that corrupts the stack and typically crashes;
+    no useful assertion can be made about the values, so completing a few
+    steps with finite state is the check.
+    """
+
+    N_CULVERTS = 80          # > MAX_CULVERTS (64), with room to spare
+
+    def test_more_culverts_than_initial_capacity(self):
+        from anuga import Boyd_box_operator
+
+        domain = rectangular_cross_domain(40, 40, len1=200.0, len2=200.0)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('many_culverts')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_multiprocessor_mode(2)
+
+        # Sloped bed so the culverts actually transfer water rather than idle.
+        domain.set_quantity('elevation', lambda x, y: -x / 20.0)
+        domain.set_quantity('stage', 2.0)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+        # Spread the culverts out so their inlets do not overlap.
+        for i in range(self.N_CULVERTS):
+            y = 5.0 + (190.0 * i) / self.N_CULVERTS
+            Boyd_box_operator(domain,
+                              end_points=[[40.0, y], [160.0, y]],
+                              losses=1.5, width=2.0, height=2.0, apron=0.0,
+                              use_momentum_jet=False, use_velocity_head=False,
+                              manning=0.013, verbose=False)
+
+        for _ in domain.evolve(yieldstep=1.0, finaltime=3.0):
+            pass
+
+        stage = domain.quantities['stage'].centroid_values
+        xmom = domain.quantities['xmomentum'].centroid_values
+        self.assertTrue(np.all(np.isfinite(stage)),
+                        'non-finite stage after evolving %d culverts'
+                        % self.N_CULVERTS)
+        self.assertTrue(np.all(np.isfinite(xmom)),
+                        'non-finite xmomentum after evolving %d culverts'
+                        % self.N_CULVERTS)
+
+
+class Test_GPU_RiverwallCrestUpdate(unittest.TestCase):
+    """A riverwall crest changed mid-run must reach the device (issue #224).
+
+    `domain.riverwallData.set_elevation()` writes only the host array. In mode 2
+    the riverwall arrays are mapped to the device once, when the interface is
+    built, and are never written there — so operating a gate part-way through a
+    run used to be silently dropped: the run completed normally and produced
+    plausible output computed with the ORIGINAL crest. The fix pushes the host
+    arrays across at yieldstep boundaries (Domain._sync_riverwall_to_device()).
+
+    NOTE ON WHAT THIS CATCHES WHERE. On a CPU build the `omp target` regions run
+    on the host and the "device" arrays ARE the host arrays, so the physics
+    comparison below cannot fail there — it is a real guard only on a GPU-offload
+    build. test_sync_is_issued_at_the_yieldstep is the white-box half that fails
+    everywhere if the push is dropped or moved off the yieldstep boundary.
+    """
+
+    WALL_X = 500.0
+    OPEN = -3.0      # crest below the ponded water: gate open
+    SHUT = 5.0       # crest above it: gate shut
+
+    def _build(self, mode):
+        domain = rectangular_cross_domain(40, 8, len1=1000.0, len2=200.0)
+        domain.set_name('rw_gate')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_flow_algorithm('DE0')
+        domain.set_quantity('elevation', lambda x, y: -x / 100.0)
+        domain.set_quantity('friction', 0.03)
+        # Pond water upstream of the wall only.
+        domain.set_quantity(
+            'stage', lambda x, y: np.where(x < self.WALL_X, 0.0, -x / 100.0))
+        domain.riverwallData.create_riverwalls(
+            {'gate': [[self.WALL_X, 0.0, self.OPEN],
+                      [self.WALL_X, 200.0, self.OPEN]]}, verbose=False)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        domain.set_multiprocessor_mode(mode)
+        return domain
+
+    def _downstream_volume(self, domain):
+        centroids = domain.get_centroid_coordinates(absolute=True)
+        downstream = centroids[:, 0] > self.WALL_X
+        h = (domain.quantities['stage'].centroid_values
+             - domain.quantities['elevation'].centroid_values)
+        return float(np.sum(np.maximum(h[downstream], 0.0)
+                            * domain.areas[downstream]))
+
+    def _run(self, mode, shut_gate):
+        """Water ponded upstream drains over an open wall; optionally shut it."""
+        domain = self._build(mode)
+        shut_done = False
+        for t in domain.evolve(yieldstep=20.0, finaltime=200.0):
+            if shut_gate and not shut_done and t >= 100.0:
+                domain.riverwallData.set_elevation('gate', self.SHUT)
+                shut_done = True
+        return self._downstream_volume(domain)
+
+    def test_shut_gate_changes_the_answer(self):
+        """Shutting the gate must hold water back — in mode 2 as in mode 1."""
+        open_1, shut_1 = self._run(1, False), self._run(1, True)
+        open_2, shut_2 = self._run(2, False), self._run(2, True)
+
+        # Sanity: the gate has a large, unambiguous effect on the reference path.
+        self.assertLess(shut_1, 0.9 * open_1,
+                        'test setup is not sensitive to the crest change')
+
+        np.testing.assert_allclose(
+            shut_2, shut_1, rtol=1e-10,
+            err_msg='mode-2 ignored a mid-run riverwall crest change (the device '
+                    'kept the original crest elevations)')
+        np.testing.assert_allclose(open_2, open_1, rtol=1e-10)
+
+    def test_sync_is_issued_at_the_yieldstep(self):
+        """The push happens on resuming from the yield, and only when needed."""
+        domain = self._build(2)
+        domain._ensure_gpu_interface()
+        self.assertIsNotNone(domain.gpu_interface)
+
+        calls = []
+        real = domain.gpu_interface.sync_riverwall_to_device
+
+        def spy():
+            calls.append(domain.get_time())
+            real()
+
+        domain.gpu_interface.sync_riverwall_to_device = spy
+
+        for t in domain.evolve(yieldstep=20.0, finaltime=100.0):
+            if t >= 40.0 and not calls:
+                domain.riverwallData.set_elevation('gate', self.SHUT)
+                # Not pushed yet: the yield body runs before evolve() resumes.
+                self.assertEqual(calls, [])
+
+        self.assertEqual(len(calls), 1,
+                         'expected exactly one device push — one per change, at '
+                         'the yieldstep boundary, got %d' % len(calls))
+        # It fired on the yieldstep at which the change was made, not later.
+        self.assertAlmostEqual(calls[0], 40.0, places=6)
+        self.assertFalse(domain.riverwallData.device_data_dirty)
+
+    def test_no_riverwalls_is_harmless(self):
+        """A domain with no riverwalls must not be disturbed by the new hook."""
+        domain = rectangular_cross_domain(10, 10)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('rw_none')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_quantity('elevation', -10.0)
+        domain.set_quantity('stage', 2.0)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        domain.set_multiprocessor_mode(2)
+
+        for _ in domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+
+        stage = domain.quantities['stage'].centroid_values
+        self.assertTrue(np.all(np.isfinite(stage)))
+        np.testing.assert_allclose(stage, 2.0, atol=1e-8)
+
+
+class Test_GPU_DegenerateTimestepProtection(unittest.TestCase):
+    """Mode 2 must SAY it does not run the degenerate-timestep protection (issue #189).
+
+    `apply_protection_against_isolated_degenerate_timesteps()` is reached only via
+    `update_timestep()`. The mode-2 C step loops return before that, and the
+    Python-orchestrated GPU loops that do call it hit a host `max_speed` the device
+    never syncs back — so under GPU offload the protection does nothing either way.
+    It is default-off, so the sharp edge is the user who turns it on and gets no
+    protection and no warning.
+    """
+
+    def _domain(self, mode, protect):
+        domain = rectangular_cross_domain(10, 10)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('degen')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_quantity('elevation', -10.0)
+        domain.set_quantity('stage', 2.0)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        domain.set_multiprocessor_mode(mode)
+        domain.protect_against_isolated_degenerate_timesteps = protect
+        return domain
+
+    @staticmethod
+    def _degenerate_warnings(caught):
+        return [w for w in caught
+                if 'isolated-degenerate' in str(w.message)
+                or 'protect_against_isolated_degenerate_timesteps' in str(w.message)]
+
+    def test_warns_when_enabled_in_mode2(self):
+        """Turning the protection on under GPU offload must not be silent."""
+        domain = self._domain(2, protect=True)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            for _ in domain.evolve(yieldstep=0.5, finaltime=1.0):
+                pass
+        found = self._degenerate_warnings(caught)
+        self.assertEqual(len(found), 1,
+                         'expected exactly one warning that mode 2 does not run the '
+                         'degenerate-timestep protection, got %d' % len(found))
+        self.assertIn('legacy', str(found[0].message))
+
+    def test_quiet_when_disabled(self):
+        """The default (off) must stay silent — the gap only matters if asked for."""
+        domain = self._domain(2, protect=False)
+        self.assertFalse(domain.protect_against_isolated_degenerate_timesteps,
+                         'this test assumes the feature is default-off')
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            for _ in domain.evolve(yieldstep=0.5, finaltime=1.0):
+                pass
+        self.assertEqual(self._degenerate_warnings(caught), [])
+
+    def test_quiet_in_mode1(self):
+        """Mode 1 implements the protection, so it must not warn."""
+        domain = self._domain(1, protect=True)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            for _ in domain.evolve(yieldstep=0.5, finaltime=1.0):
+                pass
+        self.assertEqual(self._degenerate_warnings(caught), [])
+
+    def test_routine_skips_rather_than_acting_on_stale_max_speed(self):
+        """Called directly in mode 2, the routine must warn and do nothing.
+
+        The host `max_speed` here carries the exact signature the routine looks
+        for (one isolated fast triangle, empty middle bins). In mode 1 that damps
+        the triangle's momentum; in mode 2 the same host array is stale by
+        construction, so the routine must decline to act on it.
+        """
+        for mode in (1, 2):
+            domain = self._domain(mode, protect=True)
+            domain.set_quantity('xmomentum', 1.0)
+            domain.max_speed = np.zeros(domain.number_of_triangles, dtype=float)
+            domain.max_speed[0] = 100.0     # isolated degenerate triangle
+
+            with warnings.catch_warnings(record=True) as caught:
+                warnings.simplefilter('always')
+                domain.apply_protection_against_isolated_degenerate_timesteps()
+            found = self._degenerate_warnings(caught)
+
+            xmom = domain.quantities['xmomentum'].centroid_values
+            if mode == 1:
+                self.assertEqual(found, [], 'mode 1 implements this; it must not warn')
+                self.assertEqual(float(xmom[0]), 0.0,
+                                 'mode 1 must damp the isolated triangle')
+                self.assertEqual(float(domain.max_speed[0]), 0.0)
+            else:
+                self.assertEqual(len(found), 1,
+                                 'mode 2 must warn that the protection is not applied')
+                self.assertEqual(float(xmom[0]), 1.0,
+                                 'mode 2 must not damp on the strength of a stale '
+                                 'host max_speed')
+                self.assertEqual(float(domain.max_speed[0]), 100.0)
+
+    def test_warning_is_issued_once(self):
+        """One warning per domain, not one per timestep."""
+        domain = self._domain(2, protect=True)
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter('always')
+            for _ in domain.evolve(yieldstep=0.2, finaltime=1.0):
+                pass
+            domain.apply_protection_against_isolated_degenerate_timesteps()
+        self.assertEqual(len(self._degenerate_warnings(caught)), 1)
+
+
+class Test_GPU_LargeInlet(unittest.TestCase):
+    """A culvert inlet may cover any number of triangles (issue #225).
+
+    The GPU culvert path used to cap one inlet at MAX_INLET_TRIANGLES (64) —
+    fixed-size arrays inside `struct culvert_indices`, unlike the sibling
+    operator structs, which hold heap pointers. Registering a wider inlet failed
+    outright ("Failed to register culvert ... on GPU"). The device side was
+    already fully dynamic: the metadata is flattened into heap arrays sized by
+    the actual total at map time, so the cap only ever constrained the host-side
+    staging.
+
+    The geometry below gives 79 triangles per inlet — comfortably over the old
+    cap. apron=5.0 keeps the enquiry points clear of the (wide) inlet regions.
+    """
+
+    def _run(self, mode):
+        from anuga import Boyd_box_operator
+
+        domain = rectangular_cross_domain(60, 30, len1=200.0, len2=50.0)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('big_inlet')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        # A real head across the culvert (ponded upstream, low downstream), so
+        # the discharge is large and deterministic rather than set by roundoff.
+        domain.set_quantity('elevation', -5.0)
+        domain.set_quantity('stage', lambda x, y: np.where(x < 100.0, 1.0, -1.0))
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+
+        culvert = Boyd_box_operator(
+            domain, end_points=[[60.0, 25.0], [140.0, 25.0]],
+            losses=1.5, width=20.0, height=3.0, apron=5.0,
+            use_momentum_jet=False, use_velocity_head=False,
+            manning=0.013, verbose=False)
+        domain.set_multiprocessor_mode(mode)
+
+        inlet_sizes = [len(inlet.triangle_indices) for inlet in culvert.inlets]
+
+        for _ in domain.evolve(yieldstep=1.0, finaltime=5.0):
+            pass
+
+        return (inlet_sizes,
+                domain.quantities['stage'].centroid_values.copy(),
+                float(culvert.discharge))
+
+    def test_inlet_larger_than_the_old_cap(self):
+        """An inlet of 79 triangles must register and give the mode-1 answer."""
+        sizes_1, stage_1, q_1 = self._run(1)
+        sizes_2, stage_2, q_2 = self._run(2)
+
+        self.assertEqual(sizes_1, sizes_2)
+        self.assertGreater(min(sizes_1), 64,
+                           'this test is only meaningful with inlets larger than '
+                           'the old MAX_INLET_TRIANGLES cap of 64; got %s' % sizes_1)
+
+        np.testing.assert_allclose(
+            stage_2, stage_1, rtol=0, atol=1e-10,
+            err_msg='mode-2 culvert with a >64-triangle inlet does not match mode 1')
+        self.assertAlmostEqual(q_2, q_1, places=6)
+        self.assertGreater(abs(q_1), 1.0,
+                           'the culvert should actually be passing flow')
+
+
+class Test_GPU_StructureSurfaceLevel(unittest.TestCase):
+    """The device write-back levels the inlet, as the host path does (#229).
+
+    A structure operator used to write a uniform DEPTH across its inlet, which on
+    a sloping bed tilts the water surface onto the bed and disturbs a lake at
+    rest. Both the host paths and the mode-2 device scatter now apply the volume
+    change by filling to / drawing down from a level ("water finds its level"),
+    clamping cells at their bed, and write the per-inlet momentum depth-weighted
+    so the velocity field stays bounded. A zero transfer is an exact no-op.
+    """
+
+    def _lake_at_rest(self, mode, slope_denominator=50.0):
+        from anuga import Boyd_box_operator
+
+        domain = rectangular_cross_domain(30, 15, len1=200.0, len2=50.0)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('gpu_well_balanced')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        domain.set_quantity('elevation',
+                            lambda x, y: -5.0 + x / slope_denominator)
+        domain.set_quantity('stage', 1.0)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        Boyd_box_operator(
+            domain, end_points=[[60.0, 25.0], [140.0, 25.0]],
+            enquiry_points=[[40.0, 25.0], [160.0, 25.0]],
+            losses=1.5, width=20.0, height=3.0, apron=5.0,
+            use_momentum_jet=False, use_velocity_head=False,
+            manning=0.013, verbose=False)
+        domain.set_multiprocessor_mode(mode)
+
+        for _ in domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+
+        stage = domain.quantities['stage'].centroid_values
+        return float(np.abs(stage - 1.0).max())
+
+    def test_lake_at_rest_holds_in_mode2(self):
+        """No head, no flow, no disturbance — on the device as on the host."""
+        gpu = self._lake_at_rest(2)
+        cpu = self._lake_at_rest(1)
+        # 6.8e-02 in both modes with the old uniform-depth write.
+        self.assertLess(gpu, 1e-5,
+                        'mode-2 culvert disturbed a lake at rest by %.3e m' % gpu)
+        self.assertLess(cpu, 1e-5)
+
+    def _drain_shallow_inlet(self, mode):
+        """Drain a shallow, sloping inlet into a deep pool: cells must go dry."""
+        from anuga import Boyd_box_operator
+
+        domain = rectangular_cross_domain(40, 20, len1=200.0, len2=50.0)
+        domain.set_flow_algorithm('DE0')
+        domain.set_name('gpu_wetdry')
+        domain.set_datadir(tempfile.mkdtemp())
+        domain.store = False
+        # Shallow sloping shelf upstream (depths 0.027-0.052 m over the inlet),
+        # deep pool downstream, so the culvert asks for more water than the
+        # shallow end of the inlet holds.
+        def bed(x, y):
+            return np.where(x < 100.0, -1.0 + 0.005 * x, -6.0)
+
+        domain.set_quantity('elevation', bed)
+        # Clamped at the bed so no cell starts below it — otherwise the solver's
+        # first protect step lifts those cells and creates ~100 m^3, swamping the
+        # volume check below.
+        domain.set_quantity(
+            'stage', lambda x, y: np.where(x < 100.0,
+                                           np.maximum(bed(x, y), -0.66), -5.0))
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        # End points deliberately OFF the 5 m grid lines: an exchange line lying
+        # exactly on mesh edges is a degenerate intersection whose triangle
+        # selection is compiler-dependent (gcc and nvc resolve it differently —
+        # 32 vs 54 triangles for x=60.0 on this mesh), which made this test's
+        # dried-cell threshold build-dependent.
+        culvert = Boyd_box_operator(
+            domain, end_points=[[61.3, 25.0], [138.7, 25.0]],
+            enquiry_points=[[40.0, 25.0], [170.0, 25.0]],
+            losses=1.5, width=10.0, height=3.0, apron=5.0,
+            use_momentum_jet=False, use_velocity_head=False,
+            manning=0.013, verbose=False)
+        domain.set_multiprocessor_mode(mode)
+
+        inlet0 = culvert.inlets[0].triangle_indices.copy()
+
+        def volume():
+            bed = domain.quantities['elevation'].centroid_values
+            stage = domain.quantities['stage'].centroid_values
+            return float(np.sum((stage - bed) * domain.areas))
+
+        start_volume = volume()
+        dried = 0
+        for _ in domain.evolve(yieldstep=0.5, finaltime=6.0):
+            bed = domain.quantities['elevation'].centroid_values
+            stage = domain.quantities['stage'].centroid_values
+            depth = stage - bed
+            dried = max(dried, int(np.sum(depth[inlet0] <= 1e-12)))
+
+        return (volume() - start_volume, dried,
+                domain.quantities['stage'].centroid_values.copy())
+
+    def test_wet_dry_clamp_conserves_volume(self):
+        """Draining past dry must clamp at the bed, not invent or lose water."""
+        results = {mode: self._drain_shallow_inlet(mode) for mode in (1, 2)}
+
+        for mode, (drift, dried, _) in results.items():
+            self.assertGreater(dried, 5,
+                               'mode %d: the clamp is not being exercised — no '
+                               'inlet cells went dry' % mode)
+            # An unclamped write drives cells negative; the solver's protect
+            # step then lifts them back to zero, creating water.
+            self.assertLess(abs(drift), 1e-6,
+                            'mode %d: volume drifted by %.3e m^3 draining an '
+                            'inlet dry' % (mode, drift))
+
+        np.testing.assert_allclose(
+            results[2][2], results[1][2], rtol=0, atol=1e-10,
+            err_msg='the device clamp does not match the host clamp')
 
 
 if __name__ == "__main__":

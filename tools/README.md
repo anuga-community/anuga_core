@@ -32,8 +32,10 @@ bash tools/install_anuga_nvc.sh          # NVIDIA HPC SDK (nvc) GPU build
 
 Builds the GPU-offload extension (`-Dgpu_offload=true`) with `nvc`, runs the
 isolated GPU test suite, and clears a stale build dir so the compiler switch
-takes effect. Env vars: `PY` (default 3.14), `GPU_ARCH` (default `cc120`),
-`NVHPC_ROOT`. See `../CLAUDE.md` → "Testing a GPU-offload (nvc) build".
+takes effect. Env vars: `PY` (default 3.12, same as `install_miniforge.sh`; ignored when a
+conda env is already active), `GPU_ARCH` (default: **detected from this
+machine's GPU** via `nvidia-smi`; a wrong value builds a package that
+compiles but crashes on every kernel launch), `NVHPC_ROOT`. See `../CLAUDE.md` → "Testing a GPU-offload (nvc) build".
 
 ## Contents
 

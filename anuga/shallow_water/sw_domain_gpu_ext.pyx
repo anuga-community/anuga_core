@@ -40,6 +40,9 @@ cdef extern from "gpu_domain.h" nogil:
         double maximum_allowed_speed
         double evolve_max_timestep
         int64_t low_froude
+        int64_t reconstruct_edge_bed
+        int64_t num_owned_edges
+        int64_t* owned_edges
         int64_t extrapolate_velocity_second_order
         # Beta values for gradient limiting
         double beta_w
@@ -101,6 +104,57 @@ cdef extern from "gpu_domain.h" nogil:
         int64_t* tri_full_flag
         # Riverwall arrays
         int64_t number_of_riverwall_edges
+        int64_t number_of_tracers
+        double beta_tracer
+        int64_t n_sediment_classes
+        double* sediment_settling_velocity
+        double* sediment_d_star
+        double sediment_c_max
+        double* sediment_diameter
+        double* sediment_R
+        double* sediment_tau_c_star
+        double sediment_gamma0
+        int64_t sediment_erosion_mode
+        double sediment_K_partheniades
+        int64_t sediment_deposition_mode
+        double sediment_tau_d
+        double sediment_tau_crit
+        double sediment_K_e
+        double sediment_rho_w
+        int64_t sediment_shear_closure
+        double* tracer_external_source
+        int64_t sediment_d_star_mode
+        double* sediment_reference_height
+        double sediment_a_h_floor
+        double sediment_porosity
+        int64_t sediment_bed_evolution
+        int64_t sediment_bedload_mode
+        double sediment_bedload_K
+        double sediment_bedload_m
+        double sediment_bedload_tau_c_star
+        double* sediment_z_base
+        int64_t sediment_has_z_base
+        double* sediment_repose_dz
+        double sediment_repose_tan
+        double sediment_repose_relax
+        int64_t sediment_repose_max_sweeps
+        double* sediment_source_limited
+        int64_t* sediment_bed_exhausted
+        double* sediment_qbx
+        double* sediment_qby
+        double sediment_c_pack
+        int64_t sediment_friction_mode
+        double sediment_manning_ll
+        int64_t sediment_wilson_bed
+        double sediment_wilson_D
+        double* tracer_centroid_values
+        double* tracer_edge_values
+        double* tracer_boundary_values
+        double* tracer_explicit_update
+        double* tracer_conserved_values
+        double* tracer_backup_values
+        double* tracer_boundary_flux
+        double* tracer_boundary_flux_sum
         int64_t ncol_riverwall_hydraulic_properties
         int64_t nrow_riverwall_hydraulic_properties
         int64_t* edge_flux_type
@@ -146,6 +200,8 @@ cdef extern from "gpu_domain.h" nogil:
         double *max_depth
         double *max_speed
         double *max_uh
+        double *max_tracer
+        int n_tracers
         int initialized
         int mapped
 
@@ -185,6 +241,9 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_domain_sync_from_device(gpu_domain *GD)
     void gpu_domain_sync_all_from_device(gpu_domain *GD)
     void gpu_sync_boundary_values(gpu_domain *GD)
+    void gpu_sync_riverwall_to_device(gpu_domain *GD)
+    void gpu_sync_tracer_source_to_device(gpu_domain *GD)
+    void gpu_sync_tracer_boundary_to_device(gpu_domain *GD)
     void gpu_sync_edge_values_from_device(gpu_domain *GD)
     int gpu_boundary_edge_sync_init(gpu_domain *GD, int num_boundary_cells, int *boundary_cell_ids)
     void gpu_boundary_edge_sync_finalize(gpu_domain *GD)
@@ -232,7 +291,7 @@ cdef extern from "gpu_domain.h" nogil:
     int gpu_time_boundary_init(gpu_domain *GD, int num_edges,
                                int *boundary_indices, int *vol_ids, int *edge_ids)
     void gpu_time_boundary_finalize(gpu_domain *GD)
-    void gpu_time_boundary_set_values(gpu_domain *GD, double stage, double xmom, double ymom)
+    void gpu_time_boundary_set_values(gpu_domain *GD, double *stage, double *xmom, double *ymom)
     void gpu_evaluate_time_boundary(gpu_domain *GD)
 
     # Absorbing_wave_boundary
@@ -366,6 +425,7 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_culverts_finalize_all(gpu_domain *GD)
     void gpu_culverts_map(gpu_domain *GD)
     void gpu_culverts_apply_all(gpu_domain *GD, double timestep)
+    int gpu_culverts_get_report(gpu_domain *GD, int culvert_id, double *out)
 
     # Max-quantities operator
     int  gpu_max_quantities_init(gpu_domain *GD, int n, double velocity_zero_height)
@@ -373,6 +433,7 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_max_quantities_get(gpu_domain *GD,
                                 double *out_stage, double *out_depth,
                                 double *out_speed, double *out_uh)
+    void gpu_max_tracers_get(gpu_domain *GD, double *out_tracer)
     void gpu_max_quantities_finalize(gpu_domain *GD)
 
     # FLOP counters (Gordon Bell performance profiling)
@@ -397,6 +458,109 @@ cdef extern from "gpu_domain.h" nogil:
     uint64_t gpu_flop_counters_get_global_total(gpu_domain *GD)
     double gpu_flop_counters_get_global_flops(gpu_domain *GD)
     void gpu_flop_counters_print_global(gpu_domain *GD)
+
+
+cdef extern from "core_kernels.h" nogil:
+    void core_apply_sediment_source(domain* D, double timestep)
+    void core_apply_bedload(domain* D, double timestep)
+    int64_t core_apply_repose(domain* D)
+
+
+cdef extern from "gpu_culvert_operator.h" nogil:
+    void culvert_apply_one_host(
+        int type, double g, double width, double height, double diameter,
+        double z1, double z2, double length, double manning, double sum_loss,
+        double blockage, double barrels,
+        int use_velocity_head, int use_momentum_jet, int use_old_momentum_method,
+        int always_use_Q_wetdry_adjustment, double max_velocity,
+        double smoothing_timescale,
+        double ov0x, double ov0y, double ov1x, double ov1y,
+        double invert0, double invert1, int has_invert0, int has_invert1,
+        double *smooth_delta_total_energy, double *smooth_Q,
+        double timestep,
+        double e0_stage, double e0_xmom, double e0_ymom, double e0_elev,
+        double a0_stage, double a0_depth, double a0_xmom, double a0_ymom, double a0_area,
+        double e1_stage, double e1_xmom, double e1_ymom, double e1_elev,
+        double a1_stage, double a1_depth, double a1_xmom, double a1_ymom, double a1_area,
+        int *inflow_idx,
+        double *new_inflow_depth, double *new_inflow_xmom, double *new_inflow_ymom,
+        double *new_outflow_depth, double *new_outflow_xmom, double *new_outflow_ymom,
+        double *report_gain, double *report_discharge, double *report_velocity,
+        double *report_driving_energy, double *report_delta_total_energy,
+        double *outlet_culvert_depth)
+
+    void culvert_gather_inlet_host(
+        int n, const int *indices, const double *areas,
+        const double *stage_c, const double *xmom_c,
+        const double *ymom_c, const double *bed_c,
+        double total_area,
+        double *avg_stage, double *avg_depth,
+        double *avg_xmom, double *avg_ymom)
+
+
+def culvert_gather_inlet_host_py(
+        int[::1] indices, double[::1] areas,
+        double[::1] stage_c, double[::1] xmom_c,
+        double[::1] ymom_c, double[::1] bed_c,
+        double total_area):
+    """Inlet gather matching the mode-2 device gather bit-for-bit.
+
+    Returns (avg_stage, avg_depth, avg_xmom, avg_ymom).
+    """
+    cdef int n = indices.shape[0]
+    cdef double avg_stage = 0.0, avg_depth = 0.0, avg_xmom = 0.0, avg_ymom = 0.0
+    culvert_gather_inlet_host(
+        n, &indices[0], &areas[0],
+        &stage_c[0], &xmom_c[0], &ymom_c[0], &bed_c[0],
+        total_area, &avg_stage, &avg_depth, &avg_xmom, &avg_ymom)
+    return (avg_stage, avg_depth, avg_xmom, avg_ymom)
+
+
+def culvert_apply_one_host_py(
+        int type, double g, double width, double height, double diameter,
+        double z1, double z2, double length, double manning, double sum_loss,
+        double blockage, double barrels,
+        int use_velocity_head, int use_momentum_jet, int use_old_momentum_method,
+        int always_use_Q_wetdry_adjustment, double max_velocity,
+        double smoothing_timescale,
+        double ov0x, double ov0y, double ov1x, double ov1y,
+        double invert0, double invert1, int has_invert0, int has_invert1,
+        double smooth_dte, double smooth_Q, double timestep,
+        double e0_stage, double e0_xmom, double e0_ymom, double e0_elev,
+        double a0_stage, double a0_depth, double a0_xmom, double a0_ymom, double a0_area,
+        double e1_stage, double e1_xmom, double e1_ymom, double e1_elev,
+        double a1_stage, double a1_depth, double a1_xmom, double a1_ymom, double a1_area):
+    """Bit-identical single-culvert update shared with the mode-2 batch.
+
+    Returns (smooth_dte, smooth_Q, inflow_idx,
+             new_inflow_depth, new_inflow_xmom, new_inflow_ymom,
+             new_outflow_depth, new_outflow_xmom, new_outflow_ymom,
+             report_gain, report_discharge, report_velocity,
+             report_driving_energy, report_delta_total_energy,
+             outlet_culvert_depth).
+    """
+    cdef double sdte = smooth_dte
+    cdef double sQ = smooth_Q
+    cdef int inflow_idx = 0
+    cdef double nid = 0.0, nix = 0.0, niy = 0.0
+    cdef double nod = 0.0, nox = 0.0, noy = 0.0
+    cdef double rg = 0.0, rd = 0.0, rv = 0.0, rde = 0.0, rdte = 0.0
+    cdef double ocd = 0.0
+    culvert_apply_one_host(
+        type, g, width, height, diameter, z1, z2, length, manning, sum_loss,
+        blockage, barrels, use_velocity_head, use_momentum_jet,
+        use_old_momentum_method, always_use_Q_wetdry_adjustment, max_velocity,
+        smoothing_timescale, ov0x, ov0y, ov1x, ov1y,
+        invert0, invert1, has_invert0, has_invert1,
+        &sdte, &sQ, timestep,
+        e0_stage, e0_xmom, e0_ymom, e0_elev,
+        a0_stage, a0_depth, a0_xmom, a0_ymom, a0_area,
+        e1_stage, e1_xmom, e1_ymom, e1_elev,
+        a1_stage, a1_depth, a1_xmom, a1_ymom, a1_area,
+        &inflow_idx, &nid, &nix, &niy, &nod, &nox, &noy,
+        &rg, &rd, &rv, &rde, &rdte, &ocd)
+    return (sdte, sQ, inflow_idx, nid, nix, niy, nod, nox, noy,
+            rg, rd, rv, rde, rdte, ocd)
 
 
 # ============================================================================
@@ -542,6 +706,11 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     GD.fixed_flux_timestep = fft if fft is not None else -1.0
     GD.use_sloped_mannings = 1 if getattr(domain_object, 'use_sloped_mannings', False) else 0
     D.low_froude = domain_object.low_froude
+    # Explicit even though GPUDomain's memory is zero-initialized: bed-edge
+    # reconstruction in compute_fluxes is opt-in and stays off for ANUGA.
+    D.reconstruct_edge_bed = 0
+    D.num_owned_edges = 0
+    D.owned_edges = NULL
     D.extrapolate_velocity_second_order = domain_object.extrapolate_velocity_second_order
 
     # Beta values for gradient limiting
@@ -700,6 +869,133 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
         D.edge_flux_type = &edge_flux_type[0]
     else:
         D.edge_flux_type = NULL
+
+    # Generic tracers. number_of_tracers MUST be set explicitly -- the mode-2
+    # struct is PyMem_Malloc'd and not reliably zeroed, and a garbage count makes
+    # the kernel guard fire on the device (CUDA_ERROR_ILLEGAL_ADDRESS).
+    D.number_of_tracers = getattr(domain_object, 'number_of_tracers', 0)
+    D.beta_tracer = getattr(domain_object, 'beta_tracer', 1.0)
+    # Sediment: set explicitly here too -- see the note in
+    # sw_domain_openmp_ext.pyx. Missing the mode-2 initialisation of
+    # number_of_tracers previously produced CUDA_ERROR_ILLEGAL_ADDRESS.
+    D.n_sediment_classes = getattr(domain_object, 'n_sediment_classes', 0)
+    D.sediment_c_max = getattr(domain_object, 'sediment_c_max', 0.3)
+    D.sediment_gamma0 = getattr(domain_object, 'sediment_gamma0', 0.0024)
+    D.sediment_erosion_mode = getattr(domain_object, 'sediment_erosion_mode', 0)
+    D.sediment_K_partheniades = getattr(domain_object, 'sediment_K_partheniades', 1.0e-4)
+    D.sediment_deposition_mode = getattr(domain_object, 'sediment_deposition_mode', 0)
+    D.sediment_tau_d = getattr(domain_object, 'sediment_tau_d', 0.0)
+    D.sediment_tau_crit = getattr(domain_object, 'sediment_tau_crit', 0.088)
+    D.sediment_K_e = getattr(domain_object, 'sediment_K_e', 0.2e-6/0.088**0.5)
+    D.sediment_rho_w = getattr(domain_object, 'sediment_rho_w', 1000.0)
+    D.sediment_shear_closure = getattr(domain_object, 'sediment_shear_closure', 0)
+    D.sediment_d_star_mode = getattr(domain_object, 'sediment_d_star_mode', 0)
+    D.sediment_a_h_floor = getattr(domain_object, 'sediment_a_h_floor', 0.01)
+    D.sediment_c_pack = getattr(domain_object, 'sediment_c_pack', 0.65)
+    D.sediment_porosity = getattr(domain_object, 'sediment_porosity', 0.3)
+    D.sediment_bed_evolution = 1 if getattr(domain_object, 'sediment_bed_evolution', True) else 0
+    D.sediment_bedload_mode = getattr(domain_object, 'sediment_bedload_mode', 0)
+    # [L-5]. Set UNCONDITIONALLY, outside the n_sediment_classes guard
+    # below: the kernels test this flag before dereferencing
+    # sediment_z_base, so leaving it uninitialised makes a NULL
+    # pointer look like a configured base.
+    D.sediment_has_z_base = getattr(domain_object, 'sediment_has_z_base', 0)
+    # spec 7 repose. Scalars again set unconditionally -- the kernel
+    # tests sediment_repose_tan before touching sediment_repose_dz.
+    D.sediment_repose_tan = getattr(domain_object, 'sediment_repose_tan', 0.0)
+    D.sediment_repose_relax = getattr(domain_object, 'sediment_repose_relax', 1.0)
+    D.sediment_repose_max_sweeps = getattr(domain_object, 'sediment_repose_max_sweeps', 0)
+    D.sediment_bedload_K = getattr(domain_object, 'sediment_bedload_K', 3.97)
+    D.sediment_bedload_m = getattr(domain_object, 'sediment_bedload_m', 1.5)
+    D.sediment_bedload_tau_c_star = getattr(domain_object, 'sediment_bedload_tau_c_star', 0.0495)
+    D.sediment_friction_mode = getattr(domain_object, 'sediment_friction_mode', 0)
+    D.sediment_manning_ll = getattr(domain_object, 'sediment_manning_ll', 0.065)
+    D.sediment_wilson_bed = getattr(domain_object, 'sediment_wilson_bed', 0)
+    D.sediment_wilson_D = getattr(domain_object, 'sediment_wilson_D', 1.0e-3)
+    cdef double[::1] sed1
+    cdef double[:,::1] sed2
+    cdef int64_t[::1] sedi
+    if D.n_sediment_classes > 0:
+        sed1 = domain_object.sediment_settling_velocity
+        D.sediment_settling_velocity = &sed1[0]
+        sed1 = domain_object.sediment_d_star
+        D.sediment_d_star = &sed1[0]
+        sed1 = domain_object.sediment_diameter
+        D.sediment_diameter = &sed1[0]
+        sed1 = domain_object.sediment_R
+        D.sediment_R = &sed1[0]
+        sed1 = domain_object.sediment_tau_c_star
+        D.sediment_tau_c_star = &sed1[0]
+        sed1 = domain_object.sediment_reference_height
+        D.sediment_reference_height = &sed1[0]
+        sed1 = domain_object.sediment_qbx
+        D.sediment_qbx = &sed1[0]
+        sed1 = domain_object.sediment_qby
+        D.sediment_qby = &sed1[0]
+        # [L-5]. See the note in the OpenMP binding: the scratch is
+        # dereferenced whenever a class exists, the base only when set.
+        sed2 = domain_object.sediment_source_limited
+        D.sediment_source_limited = &sed2[0,0]
+        sedi = domain_object.sediment_bed_exhausted
+        D.sediment_bed_exhausted = &sedi[0]
+        sed1 = domain_object.sediment_repose_dz
+        D.sediment_repose_dz = &sed1[0]
+        if domain_object.sediment_has_z_base:
+            sed1 = domain_object.sediment_z_base
+            D.sediment_z_base = &sed1[0]
+        else:
+            D.sediment_z_base = NULL
+    else:
+        D.sediment_settling_velocity = NULL
+        D.sediment_d_star = NULL
+        D.sediment_diameter = NULL
+        D.sediment_R = NULL
+        D.sediment_tau_c_star = NULL
+        D.sediment_reference_height = NULL
+        D.sediment_qbx = NULL
+        D.sediment_qby = NULL
+        D.sediment_z_base = NULL
+        D.sediment_source_limited = NULL
+        D.sediment_bed_exhausted = NULL
+        D.sediment_repose_dz = NULL
+    # Phase 2: wire the tracer arrays for the device. The pointers must be set
+    # whenever number_of_tracers > 0 -- the shared kernels guard on that count
+    # and dereference all six, so a NULL here is CUDA_ERROR_ILLEGAL_ADDRESS on
+    # the device, not a degraded result. gpu_domain_core.c maps them.
+    cdef double[:, ::1] tr2
+    cdef double[::1] tr1
+    if D.number_of_tracers > 0:
+        tr2 = domain_object.tracer_centroid_values
+        D.tracer_centroid_values = &tr2[0, 0]
+        tr2 = domain_object.tracer_edge_values
+        D.tracer_edge_values = &tr2[0, 0]
+        tr2 = domain_object.tracer_boundary_values
+        D.tracer_boundary_values = &tr2[0, 0]
+        tr2 = domain_object.tracer_explicit_update
+        D.tracer_explicit_update = &tr2[0, 0]
+        tr2 = domain_object.tracer_conserved_values
+        D.tracer_conserved_values = &tr2[0, 0]
+        tr2 = domain_object.tracer_backup_values
+        D.tracer_backup_values = &tr2[0, 0]
+        if domain_object.tracer_external_source is not None:
+            tr2 = domain_object.tracer_external_source
+            D.tracer_external_source = &tr2[0, 0]
+        else:
+            D.tracer_external_source = NULL
+        tr2 = domain_object.tracer_boundary_flux
+        D.tracer_boundary_flux = &tr2[0, 0]
+        tr1 = domain_object.tracer_boundary_flux_sum
+        D.tracer_boundary_flux_sum = &tr1[0]
+    else:
+        D.tracer_centroid_values = NULL
+        D.tracer_edge_values = NULL
+        D.tracer_boundary_values = NULL
+        D.tracer_explicit_update = NULL
+        D.tracer_conserved_values = NULL
+        D.tracer_backup_values = NULL
+        D.tracer_external_source = NULL
+        D.tracer_boundary_flux = NULL
+        D.tracer_boundary_flux_sum = NULL
 
     # Extract riverwall arrays (may be empty if no riverwalls)
     D.number_of_riverwall_edges = getattr(domain_object, 'number_of_riverwall_edges', 0)
@@ -1138,6 +1434,37 @@ def sync_boundary_values(GPUDomain gpu_dom):
     gpu_sync_boundary_values(&gpu_dom.GD)
 
 
+def sync_riverwall_to_device(GPUDomain gpu_dom):
+    """
+    Sync riverwall crest elevations and hydraulic properties from host to device.
+
+    Call this after Python changes a riverwall at runtime (RiverWall.set_elevation(),
+    set_elevation_offset(), set_hydraulic_parameter()). No-op when the domain has no
+    riverwalls.
+    """
+    gpu_sync_riverwall_to_device(&gpu_dom.GD)
+
+
+def sync_tracer_source_to_device(GPUDomain gpu_dom):
+    """Push the tracer external source to the device.
+
+    set_tracer_source writes the host array; a time-varying source rewrites it
+    every step, so the device copy has to be refreshed or it goes stale. One
+    array, not the whole state. #288
+    """
+    gpu_sync_tracer_source_to_device(&gpu_dom.GD)
+
+
+def sync_tracer_boundary_to_device(GPUDomain gpu_dom):
+    """Push the tracer boundary concentrations to the device.
+
+    set_tracer_boundary writes the host array, and a callable boundary is
+    re-evaluated every step; the per-step boundary push carries only the
+    hydrodynamic values, so this one has its own. One small array.
+    """
+    gpu_sync_tracer_boundary_to_device(&gpu_dom.GD)
+
+
 def sync_edge_values_from_device(GPUDomain gpu_dom):
     """
     Sync ALL edge values from device to host.
@@ -1546,14 +1873,21 @@ def init_time_boundary(GPUDomain gpu_dom, object domain_object):
                            &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0])
 
 
-def set_time_boundary_values(GPUDomain gpu_dom, double stage, double xmom, double ymom):
+def set_time_boundary_values(GPUDomain gpu_dom,
+                             np.ndarray[double, ndim=1, mode="c"] stage,
+                             np.ndarray[double, ndim=1, mode="c"] xmom,
+                             np.ndarray[double, ndim=1, mode="c"] ymom):
     """
-    Update the values for Time_boundary.
+    Update the per-edge values for Time_boundary.
 
-    Call this each timestep before evaluate_time_boundary_gpu.
-    The values come from calling the Python time-dependent function.
+    Call this each timestep before evaluate_time_boundary_gpu. The arrays hold
+    one value per time-boundary edge, concatenated across all Time_boundary tags
+    in boundary_map order (matching init_time_boundary), so multiple Time_boundary
+    objects with different values do not clobber one another.
     """
-    gpu_time_boundary_set_values(&gpu_dom.GD, stage, xmom, ymom)
+    if len(stage) == 0:
+        return
+    gpu_time_boundary_set_values(&gpu_dom.GD, &stage[0], &xmom[0], &ymom[0])
 
 
 def evaluate_time_boundary_gpu(GPUDomain gpu_dom):
@@ -1874,19 +2208,24 @@ def extrapolate_second_order_gpu(GPUDomain gpu_dom):
     gpu_extrapolate_second_order(&gpu_dom.GD)
 
 
-def compute_fluxes_gpu(GPUDomain gpu_dom):
+def compute_fluxes_gpu(GPUDomain gpu_dom, int substep_count=0, int timestep_fluxcalls=1):
     """
     Compute fluxes across all edges on GPU.
 
     Uses the central upwind Kurganov-Noelle-Petrova scheme.
+
+    substep_count / timestep_fluxcalls index domain.boundary_flux_sum so the
+    Python boundary_flux_integral_operator gets each RK substep's boundary flux.
+    The defaults (0, 1) suit a single flux call (euler / ader2 / a standalone
+    compute_fluxes()); multi-substep callers must pass the substep index, e.g.
+    rk2 -> (0,2),(1,2) and rk3 -> (0,3),(1,3),(2,3).
 
     Returns
     -------
     float
         The local minimum timestep (caller should do MPI_Allreduce for global min)
     """
-    # Standalone single flux call: substep 0 of 1 (euler-equivalent).
-    return gpu_compute_fluxes(&gpu_dom.GD, 0, 1)
+    return gpu_compute_fluxes(&gpu_dom.GD, substep_count, timestep_fluxcalls)
 
 
 def update_conserved_quantities_gpu(GPUDomain gpu_dom, double timestep):
@@ -1922,6 +2261,27 @@ def saxpy3_conserved_quantities_gpu(GPUDomain gpu_dom, double a, double b, doubl
     computes Q = (2*Q_current + Q_backup) / 3.
     """
     gpu_saxpy3_conserved_quantities(&gpu_dom.GD, a, b, c)
+
+
+def apply_sediment_source_gpu(GPUDomain gpu_dom, double timestep):
+    """Fractional step on the device: apply E-D to m and the bed change to z.
+
+    Runs the same core kernel as mode 1; on a GPU build its loop is an
+    'omp target' region, so the tracer and bed arrays are updated in place on
+    the device with no host round trip. That is what keeps this operator
+    GPU-safe and off the _gpu_host_writes_suppressed fallback path.
+    """
+    core_apply_sediment_source(&gpu_dom.GD.D, timestep)
+
+
+def apply_bedload_gpu(GPUDomain gpu_dom, double timestep):
+    """Bedload divergence [G-5] on the device."""
+    core_apply_bedload(&gpu_dom.GD.D, timestep)
+
+
+def apply_repose_gpu(GPUDomain gpu_dom):
+    """Angle-of-repose relaxation on the device. Returns sweeps used."""
+    return core_apply_repose(&gpu_dom.GD.D)
 
 
 def protect_gpu(GPUDomain gpu_dom):
@@ -2139,6 +2499,21 @@ def get_max_quantities_gpu(GPUDomain gpu_dom,
     gpu_max_quantities_get(&gpu_dom.GD,
                            &max_stage[0], &max_depth[0],
                            &max_speed[0], &max_uh[0])
+
+
+def get_max_tracers_gpu(GPUDomain gpu_dom,
+                        np.ndarray[double, ndim=2, mode="c"] max_tracer):
+    """
+    Sync the per-tracer running maxima from device to host.
+
+    max_tracer must be (n_tracers, number_of_elements) and C-contiguous --
+    the same layout the tracer arrays use, which is what the kernel writes.
+    Like get_max_quantities_gpu this is a device-to-host transfer; call it
+    only at yield steps or on export.
+    """
+    if max_tracer.shape[0] == 0:
+        return
+    gpu_max_tracers_get(&gpu_dom.GD, &max_tracer[0, 0])
 
 
 def finalize_max_quantities_gpu(GPUDomain gpu_dom):
@@ -2383,6 +2758,22 @@ def apply_all_culvert_operators(GPUDomain gpu_dom, double timestep):
     Only 2 GPU sync points regardless of number of culverts.
     """
     gpu_culverts_apply_all(&gpu_dom.GD, timestep)
+
+
+def get_culvert_report_stats(GPUDomain gpu_dom, int culvert_id):
+    """Read back a culvert's per-step reporting stats as a tuple
+    ``(gain, discharge, velocity, driving_energy, delta_total_energy)``.
+
+    Values are non-zero only on the proc that computed the discharge (the
+    culvert's master proc); other procs get zeros. Used by GPUCulvertManager to
+    mirror the C-computed stats onto the Python operator objects so mode-2
+    structure ``.log`` files match mode-1.
+    """
+    cdef double out[5]
+    cdef int rc = gpu_culverts_get_report(&gpu_dom.GD, culvert_id, out)
+    if rc != 0:
+        return (0.0, 0.0, 0.0, 0.0, 0.0)
+    return (out[0], out[1], out[2], out[3], out[4])
 
 
 # ============================================================================

@@ -364,4 +364,5 @@ class BenchmarkLeastSquares:
 
 #-------------------------------------------------------------
 if __name__ == "__main__":
-        b._build_points_dict()
+    b = BenchmarkLeastSquares()
+    b._build_points_dict()

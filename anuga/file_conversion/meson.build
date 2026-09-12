@@ -25,7 +25,6 @@ python_sources = [
   'sdf2pts.py',
   'sts2sww_mesh.py',
   'sww2array.py',
-  'sww2dem_new.py',
   'sww2vtu.py',
   'sww2dem.py',
   'sww2pts.py',

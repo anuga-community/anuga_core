@@ -147,6 +147,30 @@ class SWW_file(Data_format):
                 static_c_quantities.append(q+'_c')
                 self._overwrite_c_quantities.append(q+'_c')
 
+        # Passive tracers, and therefore suspended sediment classes, which are
+        # tracers with settling parameters (see Domain.add_grain_size).
+        #
+        # Tracers are NOT Quantity objects: they live in one contiguous
+        # (n_tracers, N) block so the C kernel can stride them and the device
+        # can map them in one go. They are deliberately kept out of
+        # domain.quantities -- that dict is walked by the solver, not just by
+        # this writer (mesh reordering rewrites vertex/edge/gradient arrays,
+        # set_beta pushes a per-quantity beta where tracers share one scalar),
+        # so registering a view there would put tracers in the path of
+        # machinery that assumes a real Quantity.
+        #
+        # They are centroid quantities, so they take the same route as a flag-3
+        # quantity: one dynamic <name>_c variable, no vertex storage, nothing
+        # interpolated that the solver never computed.
+        self._tracer_names = list(getattr(domain, '_tracer_names', []) or [])
+        if self._tracer_names and getattr(domain, 'store_tracers', True):
+            for name in self._tracer_names:
+                cname = name + '_c'
+                if cname not in dynamic_c_quantities:
+                    dynamic_c_quantities.append(cname)
+        else:
+            self._tracer_names = []
+
         # NetCDF file definition
         fid = NetCDFFile(self.filename, mode)
         if mode[0] == 'w':
@@ -156,7 +180,8 @@ class SWW_file(Data_format):
             self.writer = Write_sww(static_quantities,
                                     dynamic_quantities,
                                     static_c_quantities,
-                                    dynamic_c_quantities)
+                                    dynamic_c_quantities,
+                                    tracer_names=self._tracer_names)
 
             self.writer.store_header(fid,
                                      domain.starttime,
@@ -406,8 +431,17 @@ class SWW_file(Data_format):
                 dynamic_quantities[name] = A
 
             for name in self.writer.dynamic_c_quantities:
-                Q = domain.quantities[name[:-2]]
-                dynamic_quantities_centroid[name] = Q.centroid_values
+                base = name[:-2]
+                if base in self._tracer_names:
+                    # A tracer: a row of the (n_tracers, N) block, not a
+                    # Quantity. The block is REALLOCATED by add_tracer, so it
+                    # is looked up on the domain each step rather than cached.
+                    s_idx = domain._tracer_names.index(base)
+                    dynamic_quantities_centroid[name] = \
+                        domain.tracer_centroid_values[s_idx]
+                else:
+                    Q = domain.quantities[base]
+                    dynamic_quantities_centroid[name] = Q.centroid_values
 
             # Store dynamic quantities
             slice_index = self.writer.store_quantities(fid,
@@ -548,7 +582,8 @@ class Write_sww(Write_sts):
                  static_quantities,
                  dynamic_quantities,
                  static_c_quantities=None,
-                 dynamic_c_quantities=None):
+                 dynamic_c_quantities=None,
+                 tracer_names=None):
         """Initialise Write_sww with two (or 4) list af quantity names:
 
         static_quantities (e.g. elevation or friction):
@@ -565,11 +600,21 @@ class Write_sww(Write_sts):
             Stored every timestep in a 2D array with
             dimensions number_of_triangles X number_of_timesteps
 
+        tracer_names (e.g. ['salinity', 'sand']):
+            Which of the dynamic_c_quantities are tracers. Recorded on the
+            file as a global attribute so a reader can tell `salinity_c`
+            from `stage_c` -- both are <name>_c and nothing else
+            distinguishes them. Written even when empty, so an old file
+            (no attribute at all) is distinguishable from a new one that
+            simply has no tracers.
+
         """
         self.static_quantities = static_quantities
         self.dynamic_quantities = dynamic_quantities
         self.static_c_quantities = static_c_quantities if static_c_quantities is not None else []
         self.dynamic_c_quantities = dynamic_c_quantities if dynamic_c_quantities is not None else []
+
+        self.tracer_names = list(tracer_names) if tracer_names else []
 
         self.store_centroids = False
         if static_c_quantities or dynamic_c_quantities:
@@ -604,6 +649,10 @@ class Write_sww(Write_sts):
 
         outfile.institution = institution
         outfile.description = description
+        # Which dynamic centroid variables are tracers (space separated, and
+        # '' when there are none). Lets a reader pick the tracers out without
+        # having to keep a list of every quantity name that is not one.
+        outfile.tracer_names = ' '.join(self.tracer_names)
 
         # For sww compatibility
         if smoothing is True:

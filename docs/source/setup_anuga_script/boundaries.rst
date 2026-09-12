@@ -77,7 +77,6 @@ Standard Boundary Types
        face always sees exactly ``wave(t)`` regardless of what is propagating
        back from the interior.  Suitable for tsunami or storm-wave inflow on
        open-ocean boundaries where reflections must not re-enter the domain.
-       Fully supported in GPU mode (``multiprocessor_mode=2``).
    * - :class:`Characteristic_wave_boundary`
      - Nonlinear characteristic open boundary that prescribes the incoming
        Riemann invariant from a stage *perturbation* above a specified
@@ -85,8 +84,6 @@ Standard Boundary Types
        from the interior without linearisation.  Preferred over
        :class:`Absorbing_wave_boundary` when wave amplitudes are comparable
        to the water depth (η ~ h) and linearisation error would be significant.
-       Fully supported in GPU mode (``multiprocessor_mode=2``).
-
 
 Usage examples
 --------------
@@ -192,21 +189,11 @@ Usage examples
 
 .. seealso::
 
+   :ref:`api_boundaries`
+      Full API of every boundary class in the API Reference.
+
    `ANUGA User Manual — Chapter 9: Boundary Conditions and set_boundary
    <https://github.com/anuga-community/anuga_user_manual>`_
    gives extended examples of each boundary type, discusses time-varying
    stage specifications in detail, and explains how to diagnose common
    boundary-tag errors.
-
-Reference
----------
-
-.. autoclass:: Reflective_boundary
-.. autoclass:: Dirichlet_boundary
-.. autoclass:: Time_boundary
-.. autoclass:: Transmissive_n_momentum_zero_t_momentum_set_stage_boundary
-.. autoclass:: Flather_external_stage_zero_velocity_boundary
-.. autoclass:: File_boundary
-.. autoclass:: Field_boundary
-.. autoclass:: Absorbing_wave_boundary
-.. autoclass:: Characteristic_wave_boundary

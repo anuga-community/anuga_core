@@ -1,10 +1,11 @@
-# Running ANUGA from a TOML file with `anuga_run_toml`
+# Running ANUGA from a TOML file with `anuga_toml_run`
 
-`anuga_run_toml` runs a complete ANUGA simulation from a single plain-text
+`anuga_toml_run` runs a complete ANUGA simulation from a single plain-text
 [TOML](https://toml.io) configuration file — no Python scripting required.
-You describe the mesh, initial conditions, boundaries, rainfall, inlets and
-hydraulic structures declaratively, and the runner builds the domain, evolves
-it, and writes the SWW output (plus GeoTIFFs of the peak quantities).
+You describe the mesh (including voids for buildings and other obstructions),
+initial conditions, boundaries, rainfall, inlets, hydraulic structures and bed
+erosion declaratively, and the runner builds the domain, evolves it, and writes
+the SWW output (plus GeoTIFFs of the peak quantities).
 
 This directory has three scenarios, smallest first:
 
@@ -26,27 +27,57 @@ interface; new scenarios should use the TOML runner shown here.
 
 ## How to run
 
-`anuga_run_toml` is installed as a console command (via meson). In a source
+`anuga_toml_run` is installed as a console command (via meson). In a source
 checkout you can also run the script directly with
-`python <repo>/scripts/anuga_run_toml.py`.
+`python <repo>/scripts/anuga_toml_run.py`.
 
 ```bash
 # Simple scenario (serial)
 cd simple
-anuga_run_toml dam_break.toml
+anuga_toml_run dam_break.toml
 
 # Complex scenario (serial)
 cd ../complex
-anuga_run_toml floodplain.toml
+anuga_toml_run floodplain.toml
 
 # Either scenario in parallel (e.g. 4 processes)
-mpiexec -np 4 anuga_run_toml floodplain.toml
+mpiexec -np 4 anuga_toml_run floodplain.toml
+
+# Dry run: preview the scenario as an HTML summary in your browser,
+# without building a mesh or running the simulation.
+anuga_toml_run floodplain.toml --dry-run
 ```
 
 The runner `cd`s into the TOML's directory first, so all paths inside the TOML
 are relative to the TOML file. Output lands in
 `OUTPUT/RUN_<timestamp>_<scenario>/` (SWW, a `Simulation_logfile.log`, a copy of
 the inputs under `code/`, and peak-quantity rasters).
+
+### Dry run — preview a scenario
+
+`--dry-run` (`-n`) previews a scenario without building a mesh or simulating.
+`--format` chooses how:
+
+```bash
+anuga_toml_run floodplain.toml --dry-run                  # (browser, default)
+anuga_toml_run floodplain.toml --dry-run --format html    # write the HTML file only
+anuga_toml_run floodplain.toml --dry-run --format text    # highlighted config in the terminal
+```
+
+- **`--format browser`** *(default)* writes a self-contained HTML summary —
+  project settings, mesh resolution and refinement, boundary conditions, a
+  Manning's-*n* friction breakdown, a structures table, and, for rainfall, a
+  catchment-mean **hyetograph** (15-minute intensity bars with a
+  cumulative-depth curve) plus each inlet's rate or discharge plot — and opens
+  it in the default browser.
+- **`--format html`** writes that same summary but does not open a browser
+  (path via `--summary-output`, default `<config>_summary.html` next to the
+  TOML). Good for headless/CI use.
+- **`--format text`** prints the config to the terminal, syntax-highlighted,
+  with long runs of repeated array-of-table blocks (the many one-per-file
+  friction / culvert / rainfall entries) collapsed to the first block plus a
+  "N more" marker, so a big scenario stays legible. `--full` expands every
+  block; `--no-color` disables highlighting; `--no-pager` skips the pager.
 
 ## Anatomy of a scenario directory
 

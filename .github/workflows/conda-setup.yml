@@ -10,14 +10,49 @@ on:
       - develop_cupy
       - feat/sc26
 
+  # develop is deliberately absent: it only ever receives merges from pull
+  # requests, and the pull_request trigger above already tests the merge
+  # result -- so a push run there is the same commit tested twice, at 15 jobs
+  # a time. The branches below are worked on directly, without a PR, so push
+  # is their only coverage. develop is covered daily by scheduled-build.yml.
   push:
     branches:
       - main
-      - develop
       - develop_gpu
       - develop_cupy
       - jorge/unify_again
       - feat/sc26
+
+  # Callable so the scheduled watchdog (scheduled-build.yml) reuses this exact
+  # recipe instead of keeping a second copy of the build steps. The Windows
+  # toolchain pin already lives in two workflows; a third copy would drift.
+  workflow_call:
+    inputs:
+      ref:
+        description: 'Branch/tag/SHA to check out. Empty = the triggering ref.'
+        type: string
+        default: ''
+      python_versions:
+        description: 'JSON list of Python versions to run.'
+        type: string
+        default: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
+      os_list:
+        description: 'JSON list of runners. Lets a caller cover one OS more deeply than the others.'
+        type: string
+        default: '["ubuntu-latest", "macos-latest", "windows-latest"]'
+
+# One run per ref: updating a branch supersedes the run already going for it,
+# rather than leaving both to finish for a result nobody will read. Applies to
+# an open PR getting a fixup and to a directly-worked branch getting a second
+# push alike.
+#
+# Two things are never cancelled, because there is no later run coming to
+# replace them: a push to main, and a release publish (whose ref is the tag,
+# not main, so it needs saying separately).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: >-
+    ${{ github.event_name != 'release' && github.ref != 'refs/heads/main' }}
 
 jobs:
   test_conda:
@@ -26,16 +61,17 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: ["ubuntu-latest", "macos-latest", "windows-latest"]
+        os: ${{ fromJSON(inputs.os_list || '["ubuntu-latest", "macos-latest", "windows-latest"]') }}
 
         # 2026/04/05: dropped 3.8 -- numpy>=2.0.0 (required by anuga) requires Python>=3.9
         # 2026/04/06: dropped 3.9 -- X | Y union type syntax requires Python>=3.10
-        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ${{ fromJSON(inputs.python_versions || '["3.10", "3.11", "3.12", "3.13", "3.14"]') }}
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0  # fetch full history so git describe can find tags
+          ref: ${{ inputs.ref }}   # empty outside workflow_call = triggering ref
       - uses: conda-incubator/setup-miniconda@v4
         with:
           miniforge-version: latest      # Installs Miniforge instead of Miniconda
@@ -54,7 +90,57 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash -el {0}
         run: |
-           conda install -c conda-forge -n anuga_env libpython gcc_win-64 gxx_win-64
+           # PIN: hold the mingw sysroot chain at build 10.
+           #
+           # conda-forge's m2w64-sysroot-feedstock PR #21 ("finish v1 transition",
+           # merged 2026-08-20) rebuilt these four packages as build 11. Since that
+           # day every Windows job dies in meson's compiler sanity check with
+           #   "Executables created by c compiler ... are not runnable"
+           # while gcc_win-64 (16.1.0), binutils (2.46.1) and the runner image are
+           # all unchanged.
+           #
+           # The toolchain compiles fine; the binary crashes on startup. Running
+           # meson's check by hand on 'int main(void){return 0;}' gives:
+           #   compile: OK
+           #   *** stack smashing detected ***: terminated      (exit 127)
+           # i.e. __stack_chk_fail fires on a function with no locals -- the stack
+           # protector ABI between gcc 16.1.0 and the build-11 CRT does not line up.
+           # (Installing libwinpthread explicitly does NOT help; tried and ruled out.)
+           #
+           # TEMPORARY. libwinpthread is the one that bites at RUN time: pinning
+           # only the build packages lets the wheel build succeed and then the
+           # test step dies loading the extension. Reproduced by capytaine,
+           # ollama and raster3d on gcc 15 and 16 alike, so it is the sysroot
+           # chain. The COMPILERS must be held too: gcc/gxx_impl build 3 were
+           # built against the build-11 sysroot (they require libstdcxx-devel
+           # _103), so build 3 + sysroot 10 gives "Unknown compiler(s)" and
+           # build 11 is broken outright. Only gcc 2 + sysroot 10 + libwinpthread
+           # 10 is self-consistent. Remove the block once admin-requests#2297 lands:
+           #   conda-forge/m2w64-sysroot-feedstock#23
+           # libpython is deliberately NOT installed here -- see #255.
+           #
+           # It arrived on 2025-03-19 (6c136ada "try mingw compilers") paired
+           # with m2w64-toolchain. That toolchain was replaced by
+           # gcc_win-64/gxx_win-64, whose dependencies are gcc_impl_win-64,
+           # binutils_win-64, m2w64-sysroot_win-64 and gendef -- no libpython --
+           # but the package was carried along.
+           #
+           # Unpinned it resolved to a _cp314 build in EVERY environment, 3.10
+           # through 3.13 included; only py3.14 matched by luck. Build _103 of
+           # that mismatched package segfaults an ABI3 extension on load
+           # (exit 139, "Windows fatal exception: access violation"), which is
+           # what broke 3.11-3.13 from 2026-08-31. Reproduced in anuga-ci-lab:
+           # two identical environments differing only in libpython _103 vs
+           # _104 fail and pass respectively.
+           conda install -c conda-forge -n anuga_env gcc_win-64 gxx_win-64 \
+               "gcc_impl_win-64=16.1.0=h0942c35_2" \
+               "gxx_impl_win-64=16.1.0=he3d2c83_2" \
+               "m2w64-sysroot_win-64=*=*_10" \
+               "mingw-w64-ucrt-x86_64-crt-git=*=*_10" \
+               "mingw-w64-ucrt-x86_64-headers-git=*=*_10" \
+               "mingw-w64-ucrt-x86_64-winpthreads-git=*=*_10" \
+               "libwinpthread=*=*_10" \
+               "libstdcxx=16.1.0=hae5796f_2"
            # msmpi: Microsoft MPI — standard Windows MPI on conda-forge; provides
            # mpi.h under Library/include and is picked up by meson.build automatically.
            conda install -c conda-forge -n anuga_env msmpi mpi4py
@@ -109,6 +195,30 @@ jobs:
           conda activate anuga_env
           pip install --no-build-isolation -v .
 
+      # Diagnostics for #255: Windows 3.11-3.13 segfault at pytest startup while
+      # 3.10 and 3.14 pass, with no identifiable change in code, mpi4py, msmpi
+      # or the runner image. Comparing a green run against a red one needs the
+      # SOLVED environment, not just the handful of packages the install steps
+      # happen to echo -- that gap is what stalled diagnosis. Runs on Windows
+      # only, and always(), so a red job still uploads its environment.
+      - name: Record the solved environment (Windows, #255)
+        if: always() && runner.os == 'Windows'
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          conda list --explicit > "conda-explicit-py${{ matrix.python-version }}.txt" || true
+          conda list                > "conda-list-py${{ matrix.python-version }}.txt"     || true
+          echo "=== solved env: $(wc -l < "conda-explicit-py${{ matrix.python-version }}.txt") lines ==="
+
+      - name: Upload the solved environment (Windows, #255)
+        if: always() && runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: conda-env-windows-py${{ matrix.python-version }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: conda-*-py${{ matrix.python-version }}.txt
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Test package (fast — PR feedback)
         if: github.event_name == 'pull_request'
         shell: bash -el {0}
@@ -118,8 +228,8 @@ jobs:
           export OMP_NUM_THREADS=1
           pytest -rs --pyargs anuga --run-fast
 
-      - name: Test package (full suite — push to main/develop)
-        if: github.event_name == 'push'
+      - name: Test package (full suite — push to main/develop, and scheduled)
+        if: github.event_name != 'pull_request'
         shell: bash -el {0}
         run: |
           conda activate anuga_env
@@ -136,4 +246,19 @@ jobs:
           cd sandpit
           export OMP_NUM_THREADS=1
           pytest --pyargs anuga --cov=anuga --cov-report=xml --cov-report=term-missing --cov-config=../.coveragerc
+
+      # Exercise the unified (mode-2) compute path — the v4.0 gpu_ext C kernels
+      # running on the CPU (gpu_offload=false). ANUGA_DEFAULT_COMPUTE_MODE=unified
+      # makes every default domain use mode 2, so this validates that whole path.
+      # Safe to run the full suite in one process on a CPU build (the NVHPC
+      # target-runtime abort is GPU-build-only). Linux / Python 3.14 only.
+      - name: Test package (unified compute mode, full — Linux / Python 3.14)
+        if: runner.os == 'Linux' && matrix.python-version == '3.14'
+        shell: bash -el {0}
+        run: |
+          conda activate anuga_env
+          cd sandpit
+          export OMP_NUM_THREADS=1
+          export ANUGA_DEFAULT_COMPUTE_MODE=unified
+          pytest -rs --pyargs anuga
 

@@ -197,6 +197,15 @@ maximum_allowed_speed = 0.0 # Maximal particle speed of water
 
 maximum_froude_number = 100.0 # To be used in limiters.
 
+# Fraction of the total domain water volume that must be ADDED by clamping
+# negative-depth cells to zero depth in a single timestep before
+# update_conserved_quantities() emits a "possible loss of conservation" warning.
+# A few cells clamped by a tiny (near-zero) depth is normal in wetting/drying and
+# would otherwise warn on almost every step even though the volume involved is
+# negligible; warning on volume rather than cell count only fires when the loss is
+# actually significant. Set to 0.0 to warn whenever any volume is added.
+negative_volume_warning_fraction = 1.0e-4
+
 ################################################################################
 # Performance parameters used to invoke various optimisations
 ################################################################################

@@ -417,3 +417,105 @@ operators are the modern standard, but it is a documented numerics change.
 **Interim safety (done 2026-06-14):** until the classes are removed, mode 2 warns once
 (`Domain._warn_unsupported_mode2_forcing`) when `forcing_terms` contains anything other
 than Manning, turning the silent skip into a loud, actionable message.
+
+## Partition file I/O
+
+### Domain partitions stay pickle; mesh partitions stay NetCDF (2026-07-12)
+
+**Context:** Saving the partition files dominates offline partitioning at scale — a
+173M-triangle / 18,400-partition run measured ~1,000 s to load, ~4,000 s to partition,
+and **~37,000 s to save** (~88% of the job). While parallelising the write
+(`num_workers`) and collapsing the domain dump to one file per partition, the obvious
+question was whether both dumps should share one format: should the domain dump move to
+NetCDF (like the mesh dump), or the mesh dump to pickle (like the domain dump)?
+
+**Decision:** Keep **two formats**. `sequential_distribute_dump` (full domain: mesh +
+all quantities) writes **pickle**; `sequential_mesh_dump` (mesh topology + halo only)
+writes **NetCDF**. A **hybrid** was prototyped — bulk arrays as NetCDF variables plus a
+small pickled config blob, still one file per partition — and **rejected**.
+
+**Why:** Measured on real ~10k-triangle partitions (local SSD):
+
+| Path | write | read | size |
+|------|------:|-----:|-----:|
+| domain: single pickle (chosen) | **0.36 ms** | 0.11 ms | 868 KiB |
+| domain: hybrid NetCDF + blob | 2.09 ms | 0.98 ms | 881 KiB |
+| mesh: NetCDF (chosen) | 2.57 ms* | 1.20 ms | **294 KiB** |
+| mesh: pickle | 0.28 ms | 0.08 ms | 465 KiB |
+
+The two dumps do genuinely different jobs:
+
+- **Domain = fast internal cache.** It carries arbitrary Python state (boundary map with
+  condition objects, `Geo_reference`, domain flags) that NetCDF cannot hold without an
+  opaque pickled blob — so NetCDF buys little while costing ~6× on write, which *is* the
+  bottleneck. Size is ~equal. The hybrid round-trips exactly but is still ~6× slower to
+  write, because the bulk arrays still go through the NetCDF/HDF5 container.
+- **Mesh = portable, reusable preprocessing artifact** (partition once, run many
+  scenarios). Its content is **100% arrays**, so NetCDF is fully self-describing
+  (`ncdump -h`) with *no* opaque blob, is **1.6× smaller** than pickle, and is safe to
+  load — pickle is an arbitrary-code-execution risk for shared/archived files. Its slower
+  write is amortised over many reuses and is now parallelisable via `num_workers`.
+
+\* The mesh NetCDF write was **9.45 ms/file** until profiling showed
+`_write_mesh_partition` was writing the `boundary_tag` string variable **one row per
+boundary edge** (one HDF5 call each). Vectorising to a single write took it to 2.57 ms
+(~3.7×, byte-identical output). The apparent "NetCDF is 34× slower than pickle" gap was
+mostly that bug, not NetCDF — which is exactly why the fix was to **optimise the writer,
+not change the format**. Lesson: benchmark the *implementation* before blaming the format.
+
+**Caveats:** (1) The domain dump's `single_file=True` (new default) inlines points,
+triangles and quantities into the one pickle, cutting `3 + N_quantities` files per
+partition to 1 (~147k → 18.4k files at 18,400 ranks — the dominant cost on
+metadata-bound Lustre/GPFS). `sequential_distribute_load` detects a filename string vs an
+inline array, so legacy multi-file dumps still load and `single_file=False` restores the
+old layout. (2) Pickle is Python-only and version-fragile; that is acceptable for a
+regenerable internal cache, but is precisely why the *mesh* artifact — which users may
+inspect, archive and share — was kept on NetCDF.
+
+---
+
+## Structure inlets: level the stage, don't flatten the depth (issue #229)
+
+`Structure_operator` wrote its transfer back as a **uniform depth** across each inlet
+(`Inlet.set_depths()` → `stage = elevation + d̄`). Volume was exact, but on a sloping bed
+that tilts a level water surface onto the bed, disturbing a lake at rest by half the bed
+elevation range across the inlet, every timestep, at zero discharge (3.4e-02 m on a 1/50
+bed) — in every compute mode.
+
+**Two models were tried:**
+
+1. **Surface shift** (`e899973f`, reverted in `f4e2ab11`): move every stage by
+   `new_avg_depth − old_avg_depth`, clamp at the bed. Well balanced, but it removed the
+   smoothing the culvert feedback loop relies on: discharging into an initially **dry**
+   inlet, the shallow-water dynamics inside the inlet build a ridge, the enquiry reading
+   swings, and the discharge oscillates and stalls
+   (`test_pipe_culvert_cpu_gpu_velocity_match` failed on every CI platform; with the
+   momentum write it even collapsed the global timestep).
+
+2. **Stage leveling** (this decision): apply the volume change with the "well-mixed
+   reservoir" model the operators assume — water finds its level. Adding volume raises
+   the *lowest* stages to a common level; removing volume lowers the *highest* stages to
+   a common level, clamping each cell at its bed. Exactly zero transfer is a bit-exact
+   no-op (the lake-at-rest case). On a **flat bed** filling a level or dry inlet
+   reproduces the old uniform-depth write exactly, which is why the flat-bed culvert
+   tests are untouched by construction — the property attempt 1 lacked. This is the same
+   model `Inlet.set_stages_evenly()` already uses for inlet-operator inflow.
+
+**Momentum**: the physics produces ONE momentum per inlet. The old uniform write was
+consistent with uniform depth; over leveled (non-uniform) depths a uniform momentum
+gives a nearly-dry cell an enormous velocity and collapses the timestep. So
+`Inlet.set_average_momenta()` writes it **depth-weighted** (`m·dᵢ/d̄`): the area-weighted
+average momentum is exactly `m`, and the *velocity* field is uniform (`m/d̄`). On uniform
+depth it reduces to the old write.
+
+**Level-finding is bisection** (100 iterations → last bit of a double) on the monotone
+volume(L) function — no sort, so the same loop runs in numpy
+(`level_stages_to_average()`, `anuga/structures/inlet.py`) and inside one GPU team
+(`culvert_level_inlet_surface()`, `gpu_culvert_operator.c`). The two must change
+together. In parallel each rank levels its own share by the same per-area volume change
+(global average passed in); the seam across a partitioned inlet is the same order as the
+old write's.
+
+**Non-idempotence**: the old `stage = bed + depth` write could be applied twice
+harmlessly; leveling cannot. The mode-2 MPI path therefore does not scatter in PHASE 3b —
+the batched PHASE 4 scatter already covers a non-master rank's own inlet.

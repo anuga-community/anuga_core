@@ -1022,6 +1022,10 @@ class Barometric_pressure_fast:
         domain.forcing_terms.append(P)
         """
 
+        warn(
+            'Barometric_pressure_fast is deprecated and will be removed in a future release. Use anuga.operators.barometric_pressure.Barometric_pressure_operator instead.',
+            DeprecationWarning, stacklevel=2)
+
         from anuga.config import rho_a, rho_w, eta_w
 
         self.use_coordinates=True
@@ -1205,6 +1209,10 @@ class Wind_stress_fast:
 
         domain.forcing_terms.append(W)
         """
+
+        warn(
+            'Wind_stress_fast is deprecated and will be removed in a future release. Use anuga.operators.wind_stress_operator.Wind_stress_operator instead.',
+            DeprecationWarning, stacklevel=2)
 
         from anuga.config import rho_a, rho_w, eta_w
 

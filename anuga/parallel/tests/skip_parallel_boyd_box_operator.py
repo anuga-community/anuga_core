@@ -324,8 +324,6 @@ if __name__=="__main__":
     if numprocs == 1:
         suite = unittest.TestLoader().loadTestsFromTestCase(Test_parallel_boyd_box_operator)
         unittest.TextTestRunner(verbosity=2).run(suite)
-        #print "Running for numproc = 1"
-        runner.run(suite)
     else:
         #print "Running for numproc > 1"
 

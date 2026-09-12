@@ -1,4 +1,5 @@
 
+import anuga.utilities.log as log
 from anuga.coordinate_transforms.geo_reference import Geo_reference
 from anuga.geospatial_data.geospatial_data import Geospatial_data
 
@@ -105,7 +106,7 @@ Only the SURFACE LINE data of the following form will be utilised
     # Get ASCII file
     infile = open(name_in)
 
-    if verbose: log.info('Reading DEM from %s' % (root + '.sdf'))
+    if verbose: log.info('Reading DEM from %s' % name_in)
 
     lines = infile.readlines()
     infile.close()

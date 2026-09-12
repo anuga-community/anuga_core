@@ -105,7 +105,6 @@ if myid == 0:
             maximum_triangle_area=remainder_res,
             interior_holes=holes,
             breaklines=breaklines,
-            mesh_filename=meshname,
             interior_regions=interior_regions,
             use_cache=use_cache,
             verbose=verbose)
@@ -214,7 +213,7 @@ fixed_inflow = Inlet_operator(domain, region0 , 19.7, verbose = True)
 #------------------------------------------------------------------------------
 
 for t in domain.evolve(yieldstep=10,finaltime=1000):#1000
-    if myid == 0: print(domain.timestepping_statistics())
+    if myid == 0 and verbose: print(domain.timestepping_statistics())
 
 
 domain.sww_merge(delete_old=True)

@@ -378,7 +378,7 @@ def read_hole_dir_single_file_with_multi_poly(directory, filepattern='*.csv'):
     # now get the result list
     result = []
     for f in files: # For the 1 file
-        result.append(read_multi_poly_file(multi_P_file)) # Get the multiple Polygons
+        result.append(read_multi_poly_file(f)) # Get the multiple Polygons
     return result
 
 

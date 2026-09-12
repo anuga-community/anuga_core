@@ -26,7 +26,7 @@ def analytic_cg(points, t=0.0, h0=5e2, L=5e4, a=1.0, Tp=900.0):
     def shore(t):
         def g(u):
             return u + 2.0*A*pi/T*sin(2.0*pi/T*(t+u))    
-        u = fsolve(g,0.0)
+        u = fsolve(g,0.0)[0]
         xi = -0.5*u*u + A*cos(2.0*pi/T*(t+u))
         position = 1.0 + xi
         return position, u

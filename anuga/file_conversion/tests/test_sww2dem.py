@@ -2546,26 +2546,11 @@ class Test_Sww2Dem(unittest.TestCase):
         fid.close()
 
         # Export to ascii/prj files
-        if True:
-            sww2dem_batch(os.path.join(self.domain.get_datadir(), self.domain.get_name()),
-                        quantities=['elevation', 'depth'],
-                        cellsize=cellsize,
-                        verbose=self.verbose,
-                        format='asc')
-
-        else:
-            sww2dem_batch(os.path.join(self.domain.get_datadir(), self.domain.get_name()),
-                quantities=['depth'],
-                cellsize=cellsize,
-                verbose=self.verbose,
-                format='asc')
-
-
-            export_grid(self.domain.get_name(),
-                quantities=['elevation'],
-                cellsize=cellsize,
-                verbose=self.verbose,
-                format='asc')
+        sww2dem_batch(os.path.join(self.domain.get_datadir(), self.domain.get_name()),
+                    quantities=['elevation', 'depth'],
+                    cellsize=cellsize,
+                    verbose=self.verbose,
+                    format='asc')
 
         prjfile = self.domain.get_name() + '_elevation.prj'
         ascfile = self.domain.get_name() + '_elevation.asc'
@@ -2687,26 +2672,11 @@ class Test_Sww2Dem(unittest.TestCase):
         fid.close()
 
         # Export to ascii/prj files
-        if True:
-            sww2dem_batch(os.path.join(domain.get_datadir(), domain.get_name()),
-                        quantities=['elevation', 'depth'],
-                        cellsize=cellsize,
-                        verbose=self.verbose,
-                        format='asc')
-
-        else:
-            sww2dem_batch(os.path.join(domain.get_datadir(), domain.get_name()),
-                quantities=['depth'],
-                cellsize=cellsize,
-                verbose=self.verbose,
-                format='asc')
-
-
-            export_grid(domain.get_name(),
-                quantities=['elevation'],
-                cellsize=cellsize,
-                verbose=self.verbose,
-                format='asc')
+        sww2dem_batch(os.path.join(domain.get_datadir(), domain.get_name()),
+                    quantities=['elevation', 'depth'],
+                    cellsize=cellsize,
+                    verbose=self.verbose,
+                    format='asc')
 
         prjfile = os.path.join(domain.get_datadir(), domain.get_name() + '_elevation.prj')
         ascfile = os.path.join(domain.get_datadir(), domain.get_name() + '_elevation.asc')
@@ -2820,27 +2790,12 @@ class Test_Sww2Dem(unittest.TestCase):
 
         # Export to ascii/prj files
         extra_name_out = 'yeah'
-        if True:
-            sww2dem_batch(os.path.join(self.domain.get_datadir(), self.domain.get_name()),
-                        quantities=['elevation', 'depth'],
-                        extra_name_out=extra_name_out,
-                        cellsize=cellsize,
-                        verbose=self.verbose,
-                        format='asc')
-
-        else:
-            sww2dem_batch(os.path.join(self.domain.get_datadir(), self.domain.get_name()),
-                quantities=['depth'],
-                cellsize=cellsize,
-                verbose=self.verbose,
-                format='asc')
-
-
-            sww2dem_batch(os.path.join(self.domain.get_datadir(), self.domain.get_name()),
-                quantities=['elevation'],
-                cellsize=cellsize,
-                verbose=self.verbose,
-                format='asc')
+        sww2dem_batch(os.path.join(self.domain.get_datadir(), self.domain.get_name()),
+                    quantities=['elevation', 'depth'],
+                    extra_name_out=extra_name_out,
+                    cellsize=cellsize,
+                    verbose=self.verbose,
+                    format='asc')
 
         prjfile = self.domain.get_name() + '_elevation_yeah.prj'
         ascfile = self.domain.get_name() + '_elevation_yeah.asc'
@@ -2953,27 +2908,12 @@ class Test_Sww2Dem(unittest.TestCase):
 
         # Export to ascii/prj files
         extra_name_out = 'yeah'
-        if True:
-            sww2dem_batch(os.path.join(domain.get_datadir(), domain.get_name()),
-                        quantities=['elevation', 'depth'],
-                        extra_name_out=extra_name_out,
-                        cellsize=cellsize,
-                        verbose=self.verbose,
-                        format='asc')
-
-        else:
-            sww2dem_batch(os.path.join(domain.get_datadir(), domain.get_name()),
-                quantities=['depth'],
-                cellsize=cellsize,
-                verbose=self.verbose,
-                format='asc')
-
-
-            sww2dem_batch(os.path.join(domain.get_datadir(), domain.get_name()),
-                quantities=['elevation'],
-                cellsize=cellsize,
-                verbose=self.verbose,
-                format='asc')
+        sww2dem_batch(os.path.join(domain.get_datadir(), domain.get_name()),
+                    quantities=['elevation', 'depth'],
+                    extra_name_out=extra_name_out,
+                    cellsize=cellsize,
+                    verbose=self.verbose,
+                    format='asc')
 
         prjfile = os.path.join(domain.get_datadir(), domain.get_name() + '_elevation_yeah.prj')
         ascfile = os.path.join(domain.get_datadir(), domain.get_name() + '_elevation_yeah.asc')

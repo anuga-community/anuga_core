@@ -115,6 +115,11 @@ class Sanddune_erosion_operator(Operator, Region)  :
 
         Operator.__init__(self, domain, description, label, logging, verbose)
 
+        # Erosion changes the bed every timestep: store elevation time-varying
+        # (see _mark_domain_erosion / Domain.initialise_storage).
+        from anuga.operators.erosion_operators import _mark_domain_erosion
+        _mark_domain_erosion(self.domain)
+
 
 
         Region.__init__(self, domain,
@@ -139,26 +144,25 @@ class Sanddune_erosion_operator(Operator, Region)  :
         #------------------------------------------
         # Local variables
         #------------------------------------------
-        self.base = base
+        # self.base must be indexable the same way self.elev_c / self.stage_c
+        # are (i.e. a full-domain array), since __call__ does self.base[ind].
+        # Allow the caller to pass either a single uniform base level (int/float)
+        # or a pre-built per-triangle array.
+        if num.isscalar(base):
+            self.base = num.full(domain.number_of_elements, float(base))
+        else:
+            self.base = num.asarray(base, dtype=float)
+            if self.base.shape[0] != domain.number_of_elements:
+                raise ValueError(
+                    "sanddune_erosion_operator: 'base' array length (%d) does not "
+                    "match number of domain elements (%d)"
+                    % (self.base.shape[0], domain.number_of_elements)
+                )
 
-        if self.indices != []:
-
-            ind = self.indices
-
-            neighbours = self.domain.surrogate_neighbours
-
-            self.neighbourindices = neighbours[ind]           # get the neighbour Indices for each triangle in the erosion zone(s)
-
-            self.n0 = self.neighbourindices[:,0]              # separate into three lists
-            self.n1 = self.neighbourindices[:,1]
-            self.n2 = self.neighbourindices[:,2]
-
-            k = self.n0.shape[0]                              # Erosion poly lEN - num of triangles in poly
-
-            self.e = num.zeros((k,3))                         # create elev array k triangles, 3 neighbour elev
-
-            self.ident  = num.arange(k)                       # ident is array 0.. k-1, step 1
-
+        # Note: neighbour-index arrays are NOT cached here. Erosion-zone
+        # membership (self.indices) can change size between calls, so the
+        # neighbour arrays are rebuilt against the current indices every call
+        # in __call__ rather than once at construction.
 
 
     def __call__(self):
@@ -172,7 +176,11 @@ class Sanddune_erosion_operator(Operator, Region)  :
 
         updated = True             # flag called OK
 
-        if self.indices != []:     # empty list no polygon - return
+        # self.indices is None (whole domain), [] (nothing to do), or a non-empty
+        # ndarray of triangle ids. Test with len()/is None rather than
+        # `self.indices != []`, which raises under NumPy 2.x when self.indices is
+        # an array (array-vs-empty-list broadcast error).
+        if self.indices is None or len(self.indices) > 0:
 
 
             Wd       = self.Wd
@@ -199,6 +207,12 @@ class Sanddune_erosion_operator(Operator, Region)  :
 
 
             ind = self.indices             # indices of triangles in polygon
+            if ind is None:
+                # None means "apply to the entire domain" (Region/Operator convention).
+                # Left unresolved, NumPy silently treats None as np.newaxis when used
+                # as a fancy index, producing corrupted-shape intermediate arrays
+                # instead of an error - so it must be turned into a real index array.
+                ind = num.arange(self.domain.number_of_elements)
 
             stage_c_ind = self.stage_c[ind]
             elev_c_ind  = self.elev_c[ind]
@@ -220,31 +234,35 @@ class Sanddune_erosion_operator(Operator, Region)  :
             # no scour though if Tau_bed < Tau_crit ie if de is <= 0
             de = num.where(de > 0.0, de, 0.0)                                    # de=de whenever de>0 vector
 
-            # Also ensure we don't erode below the base surface level
-            self.elev_c[ind] = num.maximum(elev_c_ind - de, base_ind )
+            # Also ensure we don't erode below the base surface level.
+            # The outer minimum keeps this a LIMIT on erosion: without it a bed
+            # that already sits below base_ind is lifted up to it.
+            self.elev_c[ind] = num.minimum(
+                elev_c_ind, num.maximum(elev_c_ind - de, base_ind))
 
             #-------------------------------------------------------------------------------------------
             # Reduce triangles elevations in any area where erosion has created unstable face slopes, so
             # that the final face slope lies at or about the angle of repose. This only approximates the
     		# collapse process as slopes are CG to CG and not specifically oriented to the dip angle.
             #--------------------------------------------------------------------------------------------
-            #neighbours = self.domain.surrogate_neighbours
+            # NOTE: self.indices can change size from one call to the next (e.g. threshold-based
+            # region membership shrinking/growing as water rises or recedes). The neighbour-index
+            # arrays therefore CANNOT be safely cached once in __init__ (as a fixed-size self.n0/
+            # self.e/self.ident) - they must be rebuilt against the current ind every call.
 
-            #neighbourindices = neighbours[ind]           # get the neighbour Indices for each triangle in the erosion zone(s)
+            neighbours = self.domain.surrogate_neighbours
 
-            #n0 = neighbourindices[:,0]                   # separate into three lists
-            #n1 = neighbourindices[:,1]
-            #n2 = neighbourindices[:,2]
+            neighbourindices = neighbours[ind]           # get the neighbour Indices for each triangle in the erosion zone(s)
 
-            #k = n0.shape[0]                              # Erosion poly lEN - num of triangles in poly
+            n0 = neighbourindices[:,0]                   # separate into three lists
+            n1 = neighbourindices[:,1]
+            n2 = neighbourindices[:,2]
 
-            #e = num.zeros((k,3))                         # create elev array k triangles, 3 neighbour elev
+            k = n0.shape[0]                              # Erosion poly lEN - num of triangles in poly
 
-            n0 = self.n0
-            n1 = self.n1
-            n2 = self.n2
+            e = num.zeros((k,3))                         # create elev array k triangles, 3 neighbour elev
 
-            e = self.e
+            ident = num.arange(k)                        # ident is array 0.. k-1, step 1
 
             e[:,0] = self.elev_c[n0]                     # get the elev of each neighbours CG
             e[:,1] = self.elev_c[n1]
@@ -252,7 +270,7 @@ class Sanddune_erosion_operator(Operator, Region)  :
 
             minid0 = num.argmin(e, axis=1)               # get indices of min elev for each triangles neighbours
 
-            n0ind = self.neighbourindices[self.ident,minid0]       # store the neighbour indices in order lowest elev first (n0)
+            n0ind = neighbourindices[ident,minid0]       # store the neighbour indices in order lowest elev first (n0)
 
 
             # compute the plan distance lxy from each triangles CG to the lowest neighbours CG

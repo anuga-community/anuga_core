@@ -1,16 +1,16 @@
 """
-End-to-end smoke test for the ``anuga_run_toml`` runner.
+End-to-end smoke test for the ``anuga_toml_run`` runner.
 
 Unlike the other scenario tests (which exercise the ``setup_*`` modules in
 isolation against synthetic domains), this drives the *whole* runner the way a
 user does: it lays down the tiny ``simple`` dam-break scenario in a temporary
-directory and invokes ``anuga_run_toml`` on it as a subprocess, then validates
+directory and invokes ``anuga_toml_run`` on it as a subprocess, then validates
 the SWW it produces.
 
 To run regardless of the working directory, it is deliberately self-contained:
 
-* **Runner** — preferred is the installed ``anuga_run_toml`` console command
-  (``shutil.which``); falling back to ``scripts/anuga_run_toml.py`` in a source
+* **Runner** — preferred is the installed ``anuga_toml_run`` console command
+  (``shutil.which``); falling back to ``scripts/anuga_toml_run.py`` in a source
   checkout. The test only skips if neither can be found.
 * **Inputs** — the shipped ``examples/run_toml/simple/`` files are used when a
   checkout is locatable (so the committed example is smoke-tested); otherwise
@@ -42,7 +42,7 @@ except ImportError as _e:  # pragma: no cover - import guard
     HAS_MODULE = False
     SKIP_REASON = str(_e)
 
-# The anuga_run_toml runner imports the scenario boundary/mesh setup, which pulls
+# The anuga_toml_run runner imports the scenario boundary/mesh setup, which pulls
 # in the geodata interface (fiona/rasterio/shapely) via spatialInputUtil. When
 # that stack is unavailable (e.g. a broken conda geodata install in CI) the
 # runner subprocess fails; skip rather than report a spurious failure, matching
@@ -146,13 +146,13 @@ def _search_roots():
 
 
 def _find_runner():
-    """Path to the runner: the installed ``anuga_run_toml`` console command if on
-    PATH, else ``scripts/anuga_run_toml.py`` from a checkout, else None."""
-    installed = shutil.which('anuga_run_toml')
+    """Path to the runner: the installed ``anuga_toml_run`` console command if on
+    PATH, else ``scripts/anuga_toml_run.py`` from a checkout, else None."""
+    installed = shutil.which('anuga_toml_run')
     if installed:
         return installed
     for root in _search_roots():
-        candidate = root / 'scripts' / 'anuga_run_toml.py'
+        candidate = root / 'scripts' / 'anuga_toml_run.py'
         if candidate.is_file():
             return str(candidate)
     return None
@@ -195,7 +195,7 @@ def _stage_inputs(work):
 
 
 @unittest.skipUnless(HAS_MODULE, SKIP_REASON)
-@unittest.skipUnless(RUNNER is not None, 'anuga_run_toml runner not found')
+@unittest.skipUnless(RUNNER is not None, 'anuga_toml_run runner not found')
 @unittest.skipUnless(HAS_GEODATA,
                      'requires geodata interface (fiona, rasterio, shapely)')
 class TestRunTomlEndToEnd(unittest.TestCase):
@@ -216,7 +216,7 @@ class TestRunTomlEndToEnd(unittest.TestCase):
             tail = '\n'.join(proc.stdout.splitlines()[-25:])
             self.assertEqual(
                 proc.returncode, 0,
-                'anuga_run_toml exited %d. Output tail:\n%s'
+                'anuga_toml_run exited %d. Output tail:\n%s'
                 % (proc.returncode, tail))
 
             # The runner creates OUTPUT/RUN_<timestamp>_dam_break/dam_break.sww

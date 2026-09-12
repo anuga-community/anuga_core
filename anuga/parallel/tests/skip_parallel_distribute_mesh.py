@@ -79,5 +79,5 @@ class Test_parallel_distribute_mesh(unittest.TestCase):
         pass
 
 if __name__ == '__main__':
-    suite = unittest.TestLoader().loadTestsFromTestCase(Test_results)
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_parallel_distribute_mesh)
     unittest.TextTestRunner(verbosity=2).run(suite)

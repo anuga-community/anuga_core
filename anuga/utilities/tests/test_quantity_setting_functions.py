@@ -418,6 +418,6 @@ class Test_quantity_setting_functions(unittest.TestCase):
 
 # =========================================================================
 if __name__ == "__main__":
-    suite = unittest.TestLoader().loadTestsFromTestCase(Test_quantity_setting)
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_quantity_setting_functions)
     runner = unittest.TextTestRunner()
     runner.run(suite)

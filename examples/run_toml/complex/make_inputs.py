@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the input data files for the complex anuga_run_toml example.
+"""Generate the input data files for the complex anuga_toml_run example.
 
 The committed CSVs in this directory were produced by this script; re-run it
 (``python make_inputs.py``) to regenerate them or to experiment with the

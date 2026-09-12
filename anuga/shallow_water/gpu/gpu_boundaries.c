@@ -93,7 +93,7 @@ void gpu_evaluate_reflective_boundary(struct gpu_domain *GD) {
     double *height_ev = GD->D.height_edge_values;
     double *xmom_ev = GD->D.xmom_edge_values;
     double *ymom_ev = GD->D.ymom_edge_values;
-    double *normals = GD->D.normals;
+    anuga_geom_t *normals = GD->D.normals;
 
     // Boundary values (write)
     double *stage_bv = GD->D.stage_boundary_values;
@@ -447,7 +447,7 @@ void gpu_evaluate_transmissive_n_zero_t_boundary(struct gpu_domain *GD) {
     double *ymom_ev = GD->D.ymom_edge_values;
     double *bed_ev = GD->D.bed_edge_values;
     double *height_ev = GD->D.height_edge_values;
-    double *normals = GD->D.normals;
+    anuga_geom_t *normals = GD->D.normals;
 
     // Boundary values (write)
     double *stage_bv = GD->D.stage_boundary_values;
@@ -632,22 +632,26 @@ int gpu_time_boundary_init(struct gpu_domain *GD, int num_edges,
 
     B->num_edges = num_edges;
     B->mapped = 0;
-    B->stage_value = 0.0;
-    B->xmom_value = 0.0;
-    B->ymom_value = 0.0;
 
     if (num_edges == 0) {
         B->boundary_indices = NULL;
         B->vol_ids = NULL;
         B->edge_ids = NULL;
+        B->stage_values = NULL;
+        B->xmom_values = NULL;
+        B->ymom_values = NULL;
         return 0;
     }
 
     B->boundary_indices = (int*)malloc(num_edges * sizeof(int));
     B->vol_ids = (int*)malloc(num_edges * sizeof(int));
     B->edge_ids = (int*)malloc(num_edges * sizeof(int));
+    B->stage_values = (double*)calloc(num_edges, sizeof(double));
+    B->xmom_values = (double*)calloc(num_edges, sizeof(double));
+    B->ymom_values = (double*)calloc(num_edges, sizeof(double));
 
-    if (!B->boundary_indices || !B->vol_ids || !B->edge_ids) {
+    if (!B->boundary_indices || !B->vol_ids || !B->edge_ids ||
+        !B->stage_values || !B->xmom_values || !B->ymom_values) {
         fprintf(stderr, "Failed to allocate time_boundary arrays\n");
         return -1;
     }
@@ -668,25 +672,50 @@ void gpu_time_boundary_finalize(struct gpu_domain *GD) {
         int *b_idx = B->boundary_indices;
         int *v_ids = B->vol_ids;
         int *e_ids = B->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        double *s_val = B->stage_values;
+        double *x_val = B->xmom_values;
+        double *y_val = B->ymom_values;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+                                                 s_val[0:ne], x_val[0:ne], y_val[0:ne])
     }
 
     if (B->boundary_indices) free(B->boundary_indices);
     if (B->vol_ids) free(B->vol_ids);
     if (B->edge_ids) free(B->edge_ids);
+    if (B->stage_values) free(B->stage_values);
+    if (B->xmom_values) free(B->xmom_values);
+    if (B->ymom_values) free(B->ymom_values);
 
     B->num_edges = 0;
     B->boundary_indices = NULL;
     B->vol_ids = NULL;
     B->edge_ids = NULL;
+    B->stage_values = NULL;
+    B->xmom_values = NULL;
+    B->ymom_values = NULL;
     B->mapped = 0;
 }
 
-void gpu_time_boundary_set_values(struct gpu_domain *GD, double stage, double xmom, double ymom) {
-    // Update values - called from Python each timestep before evaluate
-    GD->time_bdry.stage_value = stage;
-    GD->time_bdry.xmom_value = xmom;
-    GD->time_bdry.ymom_value = ymom;
+void gpu_time_boundary_set_values(struct gpu_domain *GD,
+                                  double *stage, double *xmom, double *ymom) {
+    // Copy Python-evaluated per-edge values into the struct and push to device.
+    // Called each timestep before gpu_evaluate_time_boundary. Per-edge (not a
+    // single scalar) so multiple Time_boundary objects with different values do
+    // not clobber one another.
+    struct time_boundary *B = &GD->time_bdry;
+    if (B->num_edges == 0) return;
+
+    int ne = B->num_edges;
+    memcpy(B->stage_values, stage, ne * sizeof(double));
+    memcpy(B->xmom_values,  xmom,  ne * sizeof(double));
+    memcpy(B->ymom_values,  ymom,  ne * sizeof(double));
+
+    if (B->mapped) {
+        double *stage_v = B->stage_values;
+        double *xmom_v  = B->xmom_values;
+        double *ymom_v  = B->ymom_values;
+        #pragma omp target update to(stage_v[0:ne], xmom_v[0:ne], ymom_v[0:ne])
+    }
 }
 
 void gpu_evaluate_time_boundary(struct gpu_domain *GD) {
@@ -699,9 +728,9 @@ void gpu_evaluate_time_boundary(struct gpu_domain *GD) {
     int *boundary_indices = B->boundary_indices;
     int *vol_ids = B->vol_ids;
     int *edge_ids = B->edge_ids;
-    double stage_val = B->stage_value;
-    double xmom_val = B->xmom_value;
-    double ymom_val = B->ymom_value;
+    double *stage_values = B->stage_values;
+    double *xmom_values = B->xmom_values;
+    double *ymom_values = B->ymom_values;
 
     // Edge values (read for bed/height)
     double *bed_ev = GD->D.bed_edge_values;
@@ -720,10 +749,10 @@ void gpu_evaluate_time_boundary(struct gpu_domain *GD) {
         int vid = vol_ids[k];
         int eid = edge_ids[k];
 
-        // Set stage and momentum from time-dependent values
-        stage_bv[bid] = stage_val;
-        xmom_bv[bid] = xmom_val;
-        ymom_bv[bid] = ymom_val;
+        // Set stage and momentum from per-edge time-dependent values
+        stage_bv[bid] = stage_values[k];
+        xmom_bv[bid] = xmom_values[k];
+        ymom_bv[bid] = ymom_values[k];
 
         // Copy bed/height from interior edge
         bed_bv[bid] = bed_ev[3 * vid + eid];
@@ -807,7 +836,7 @@ void gpu_evaluate_absorbing_wave_boundary(struct gpu_domain *GD) {
     double *height_ev = GD->D.height_edge_values;
     double *xmom_ev   = GD->D.xmom_edge_values;
     double *ymom_ev   = GD->D.ymom_edge_values;
-    double *normals   = GD->D.normals;
+    anuga_geom_t *normals   = GD->D.normals;
 
     double *stage_bv  = GD->D.stage_boundary_values;
     double *bed_bv    = GD->D.bed_boundary_values;
@@ -940,7 +969,7 @@ void gpu_evaluate_characteristic_wave_boundary(struct gpu_domain *GD) {
     double *height_ev = GD->D.height_edge_values;
     double *xmom_ev   = GD->D.xmom_edge_values;
     double *ymom_ev   = GD->D.ymom_edge_values;
-    double *normals   = GD->D.normals;
+    anuga_geom_t *normals   = GD->D.normals;
 
     double *stage_bv  = GD->D.stage_boundary_values;
     double *bed_bv    = GD->D.bed_boundary_values;
@@ -1082,7 +1111,7 @@ void gpu_evaluate_flather_boundary(struct gpu_domain *GD) {
     double *height_ev = GD->D.height_edge_values;
     double *xmom_ev   = GD->D.xmom_edge_values;
     double *ymom_ev   = GD->D.ymom_edge_values;
-    double *normals   = GD->D.normals;
+    anuga_geom_t *normals   = GD->D.normals;
 
     double *stage_bv  = GD->D.stage_boundary_values;
     double *bed_bv    = GD->D.bed_boundary_values;

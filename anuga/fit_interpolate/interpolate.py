@@ -1121,31 +1121,3 @@ class Interpolation_function:
 
         return msg
 
-
-def interpolate_sww(sww_file, time, interpolation_points,
-                    quantity_names=None, verbose=False):
-    """
-    obsolete.
-    use file_function in utils
-    """
-
-    #open sww file
-    x, y, volumes, time, quantities = read_sww(sww_file)
-    log.info("x=%s" % str(x))
-    log.info("y=%s" % str(y))
-
-    log.info("time=%s" % str(time))
-    log.info("quantities=%s" % str(quantities))
-
-    #Add the x and y together
-    vertex_coordinates = num.concatenate((x[:,num.newaxis], y[:,num.newaxis]),
-                                         axis=1)
-
-    #Will return the quantity values at the specified times and locations
-    interp = Interpolation_interface(time,
-                                     quantities,
-                                     quantity_names=quantity_names,
-                                     vertex_coordinates=vertex_coordinates,
-                                     triangles=volumes,
-                                     interpolation_points=interpolation_points,
-                                     verbose=verbose)

@@ -11,12 +11,20 @@ PEP 440 mapping:
   abcdef  (no tag reachable)     -> 0.0.0+gabcdef
 """
 
+import os
 import re
 import subprocess
 import sys
 
 
 def git_version():
+    # Allow an explicit override (PEP 440 string) for builds where git metadata
+    # is unavailable — e.g. an sdist, or a Docker build whose context excludes
+    # .git. Set ANUGA_VERSION to what `git describe` would have produced.
+    override = os.environ.get('ANUGA_VERSION', '').strip()
+    if override:
+        return override
+
     result = subprocess.run(
         ['git', 'describe', '--tags', '--dirty', '--always'],
         capture_output=True, text=True

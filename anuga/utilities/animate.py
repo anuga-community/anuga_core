@@ -2,6 +2,7 @@
 A module to allow interactive plotting in a Jupyter notebook of quantities and mesh
 associated with an ANUGA domain and SWW file.
 """
+import functools
 import warnings
 import numpy as np
 import os
@@ -41,6 +42,56 @@ def _resolve_provider(cx, provider_str):
     return obj
 
 
+def _configure_tile_client(cx):
+    """Identify ANUGA to tile servers and cache tiles between sessions.
+
+    contextily defaults to ``USER_AGENT = "contextily-" + uuid4().hex`` — a
+    fresh random agent every process.  OpenStreetMap's tile usage policy
+    requires a stable User-Agent identifying the *application*, and treats
+    rotating agents as an attempt to evade rate limits, so it blocks the
+    request.  The block arrives as a normal HTTP 200 tile whose *image* reads
+    "Access blocked ... osm.wiki/Blocked", so nothing raises and the notice is
+    simply drawn onto the map.
+
+    Sending a stable agent naming ANUGA and its project page fixes it, and a
+    persistent on-disk cache keeps repeat views (every redraw, every frame of
+    an animation) off the volunteer-run servers, which the policy also asks
+    for.  Both are best-effort: contextily is a third-party package, so an
+    unexpected version just leaves its defaults in place.
+    """
+    try:
+        from anuga import __version__ as _v
+    except Exception:
+        _v = 'unknown'
+
+    ua = ('ANUGA/%s (hydrodynamic modelling; '
+          '+https://github.com/anuga-community/anuga_core)' % _v)
+
+    try:
+        import contextily.tile as _tile
+        if getattr(_tile, 'USER_AGENT', '').startswith('contextily-'):
+            _tile.USER_AGENT = ua
+    except Exception:
+        pass
+
+    global _TILE_CACHE_SET
+    if not _TILE_CACHE_SET:
+        try:
+            cache_dir = os.path.join(
+                os.environ.get('XDG_CACHE_HOME',
+                               os.path.join(os.path.expanduser('~'), '.cache')),
+                'anuga', 'tiles')
+            os.makedirs(cache_dir, exist_ok=True)
+            cx.set_cache_dir(cache_dir)
+        except Exception:
+            pass
+        _TILE_CACHE_SET = True
+
+
+# set_cache_dir() only needs calling once per session
+_TILE_CACHE_SET = False
+
+
 def _add_basemap(ax, epsg, provider=BASEMAP_DEFAULT, cache=None):
     """Overlay a tile basemap on *ax* using contextily.
 
@@ -71,6 +122,8 @@ def _add_basemap(ax, epsg, provider=BASEMAP_DEFAULT, cache=None):
             "Install it with: conda install contextily  or  pip install contextily",
             stacklevel=3)
         return
+
+    _configure_tile_client(cx)
 
     xl, xr = ax.get_xlim()
     yb, yt = ax.get_ylim()
@@ -164,22 +217,44 @@ class Domain_plotter:
 
         self.friction = domain.quantities['friction'].centroid_values
 
-        self.depth = self.stage - self.elev
-
-        with np.errstate(invalid='ignore'):
-            self.xvel = np.where(self.depth > self.min_depth,
-                             self.xmom / self.depth, 0.0)
-            self.yvel = np.where(self.depth > self.min_depth,
-                             self.ymom / self.depth, 0.0)
-
-        self.speed = np.sqrt(self.xvel**2 + self.yvel**2)
-
-        self.speed_depth = self.speed*self.depth
-
         self.domain = domain
         self._depth_frame_count = 0
         self._stage_frame_count = 0
         self._speed_frame_count = 0
+
+    # ------------------------------------------------------------------
+    # Derived quantities.
+    #
+    # self.stage/elev/xmom/ymom are references into the domain's centroid
+    # arrays, so they follow the evolution.  These are computed on access so
+    # they follow it too -- caching them in __init__ froze them at t = 0, and
+    # anything sampling e.g. plotter.speed inside an evolve loop silently
+    # recorded the initial value at every yieldstep.
+    # ------------------------------------------------------------------
+
+    @property
+    def depth(self):
+        return self.stage - self.elev
+
+    @property
+    def xvel(self):
+        depth = self.depth
+        with np.errstate(invalid='ignore'):
+            return np.where(depth > self.min_depth, self.xmom / depth, 0.0)
+
+    @property
+    def yvel(self):
+        depth = self.depth
+        with np.errstate(invalid='ignore'):
+            return np.where(depth > self.min_depth, self.ymom / depth, 0.0)
+
+    @property
+    def speed(self):
+        return np.sqrt(self.xvel**2 + self.yvel**2)
+
+    @property
+    def speed_depth(self):
+        return self.speed * self.depth
 
 
     #------------------------------------------
@@ -209,8 +284,6 @@ class Domain_plotter:
 
         name = os.path.basename(self.domain.get_name())
         time = self.domain.get_time()
-
-        self.depth[:] = self.stage - self.elev
 
         md = self.min_depth
 
@@ -324,8 +397,6 @@ class Domain_plotter:
 
         name = os.path.basename(self.domain.get_name())
         time = self.domain.get_time()
-
-        self.depth[:] = self.stage - self.elev
 
         md = self.min_depth
 
@@ -443,16 +514,6 @@ class Domain_plotter:
         time = self.domain.get_time()
 
         md = self.min_depth
-
-        self.depth[:] = self.stage - self.elev
-
-        with np.errstate(invalid='ignore'):
-            self.xvel = np.where(self.depth > self.min_depth,
-                             self.xmom / self.depth, 0.0)
-            self.yvel = np.where(self.depth > self.min_depth,
-                             self.ymom / self.depth, 0.0)
-
-        self.speed = np.sqrt(self.xvel**2 + self.yvel**2)
 
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
@@ -725,8 +786,6 @@ class SWW_plotter:
         vols1 = self.triangles[:, 1]
         vols2 = self.triangles[:, 2]
 
-        self.triang = tri.Triangulation(self.x, self.y, self.triangles)
-
         self.xc = (self.x[vols0]+self.x[vols1]+self.x[vols2])/3.0
         self.yc = (self.y[vols0]+self.y[vols1]+self.y[vols2])/3.0
 
@@ -747,6 +806,11 @@ class SWW_plotter:
 
             self.xc[:] = self.xc + self.xllcorner
             self.yc[:] = self.yc + self.yllcorner
+
+        # Built after the absolute shift above: Triangulation copies the
+        # coordinate arrays it is given, so constructing it first would leave
+        # self.triang in relative coordinates while self.x/self.xc are absolute.
+        self.triang = tri.Triangulation(self.x, self.y, self.triangles)
 
         # Absolute-coordinate triangulation used when drawing a basemap
         if self.epsg is not None and not absolute:
@@ -782,6 +846,31 @@ class SWW_plotter:
         self.speed_depth = self.speed*self.depth
 
         self.time = p.variables['time'][:]
+
+        # Tracers -- and suspended sediment classes, which are tracers -- are
+        # stored one dynamic centroid variable each. The file names them in a
+        # tracer_names attribute, since <name>_c is indistinguishable from
+        # stage_c otherwise.
+        from anuga.utilities.plot_utils import _tracer_names_from
+        self.tracers = {}
+        self.max_tracers = {}
+        self._tracer_frame_count = {}
+        for _tname in _tracer_names_from(p):
+            if _tname + '_c' not in p.variables:
+                continue
+            self.tracers[_tname] = p.variables[_tname + '_c'][:]
+            self._tracer_frame_count[_tname] = 0
+            # Named attribute and bound save method per tracer, so a caller
+            # that drives this class by attribute name -- anuga_sww_gui does
+            # -- reaches a tracer the same way it reaches stage.
+            setattr(self, 'tracer_' + _tname, self.tracers[_tname])
+            setattr(self, 'save_tracer_%s_frame' % _tname,
+                    functools.partial(self._save_tracer_frame, _tname))
+            if 'max_' + _tname + '_c' in p.variables:
+                self.max_tracers[_tname] = p.variables['max_' + _tname + '_c'][:]
+                setattr(self, 'max_tracer_' + _tname, self.max_tracers[_tname])
+                setattr(self, 'save_max_tracer_%s_frame' % _tname,
+                        functools.partial(self._save_max_tracer_frame, _tname))
 
         # Load precomputed max quantities if stored by Collect_max_quantities_operator
         pvars = p.variables
@@ -828,6 +917,69 @@ class SWW_plotter:
     # Frame rendering helpers (figure reuse)
     #------------------------------------------
 
+
+    #------------------------------------------
+    # Tracer procedures
+    #
+    # One pair of methods for every tracer rather than a hand-written pair
+    # per name: a tracer is user-defined, so there is no fixed list to write
+    # out. __init__ binds `save_tracer_<name>_frame` for each.
+    #------------------------------------------
+    def _tracer_frame(self, tracer, frame, figsize, dpi, vmin, vmax,
+                      cmap='viridis', basemap=False, alpha=1.0,
+                      basemap_provider=BASEMAP_DEFAULT,
+                      xlim=None, ylim=None, smooth=False,
+                      show_elev=False, elev_levels=10, show_mesh=False):
+        return self._animated_frame(
+            frame, 'tracer_' + tracer, self.tracers[tracer][frame, :],
+            tracer, figsize, dpi, vmin, vmax, cmap, basemap, alpha,
+            basemap_provider, xlim=xlim, ylim=ylim, smooth=smooth,
+            show_elev=show_elev, elev_levels=elev_levels, show_mesh=show_mesh)
+
+    def _save_tracer_frame(self, tracer, frame=-1, figsize=(10, 6), dpi=160,
+                           vmin=0.0, vmax=1.0, cmap='viridis', basemap=False,
+                           alpha=1.0, basemap_provider=BASEMAP_DEFAULT,
+                           xlim=None, ylim=None, smooth=False,
+                           show_elev=False, elev_levels=10, show_mesh=False):
+        frame_num = self._tracer_frame_count[tracer]
+        fig, ax = self._tracer_frame(tracer, frame, figsize, dpi, vmin, vmax,
+                                     cmap, basemap, alpha, basemap_provider,
+                                     xlim=xlim, ylim=ylim, smooth=smooth,
+                                     show_elev=show_elev,
+                                     elev_levels=elev_levels,
+                                     show_mesh=show_mesh)
+        fname = '%s_tracer_%s_%010d.png' % (self.name, tracer, frame_num)
+        if self.plot_dir is None:
+            fig.savefig(fname)
+        else:
+            fig.savefig(os.path.join(self.plot_dir, fname))
+        plt.close(fig)
+        self._tracer_frame_count[tracer] += 1
+
+    def _save_max_tracer_frame(self, tracer, frame=None, figsize=(10, 6),
+                               dpi=160, vmin=0.0, vmax=1.0, cmap='viridis',
+                               basemap=False, alpha=1.0,
+                               basemap_provider=BASEMAP_DEFAULT,
+                               xlim=None, ylim=None, smooth=False,
+                               show_elev=False, elev_levels=10,
+                               show_mesh=False):
+        """The running maximum, if the run stored one. Time-independent, so
+        `frame` is accepted and ignored, as for the other max quantities."""
+        data = self.max_tracers[tracer]
+        # Stored flag-4, i.e. overwritten each yield step: the last slice is
+        # the maximum over the whole run.
+        values = data[-1, :] if data.ndim == 2 else data
+        fig, ax = self._animated_frame(
+            -1, 'max_tracer_' + tracer, values, 'Max ' + tracer,
+            figsize, dpi, vmin, vmax, cmap, basemap, alpha, basemap_provider,
+            xlim=xlim, ylim=ylim, smooth=smooth, show_elev=show_elev,
+            elev_levels=elev_levels, show_mesh=show_mesh)
+        fname = self.name + '_max_tracer_%s_0000000000.png' % tracer
+        if self.plot_dir is None:
+            fig.savefig(fname)
+        else:
+            fig.savefig(os.path.join(self.plot_dir, fname))
+        plt.close(fig)
 
     def _animated_frame(self, frame, qty_name, qty_data, qty_label,
                         figsize, dpi, vmin, vmax, cmap, basemap, alpha,
@@ -1136,7 +1288,7 @@ class SWW_plotter:
 
         import matplotlib.pyplot as plt
 
-        self._speed_depth_frame(frame, figsize, dpi, vmin, vmax)
+        fig, ax = self._speed_depth_frame(frame, figsize, dpi, vmin, vmax)
 
         #plt.show()
 
@@ -1833,7 +1985,7 @@ class SWW_plotter:
         import matplotlib.pyplot as plt
         fig, ax = plt.subplots(figsize=figsize, dpi=dpi)
 
-        im = ax.tripcolor(self.triang,  *args, **kwargs)
+        im = ax.tripcolor(self.triang, **kwargs)
         return fig, ax, im
 
     def get_flow_through_cross_section(self, polyline: list, verbose: bool = False) -> tuple[np.ndarray, list]:

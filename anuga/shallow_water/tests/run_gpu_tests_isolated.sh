@@ -32,10 +32,15 @@ fi
 
 fail=0
 for cls in "${CLASSES[@]}"; do
-  line=$(python -m pytest "$cls" -p no:cacheprovider -q 2>&1 | tail -1)
+  # NB: `rc=$?` after a pipeline reads the LAST command's status (tail, always
+  # 0), which silently reported every failing class as ok. Capture the full
+  # output first, then take pytest's own status.
+  out=$(python -m pytest "$cls" -p no:cacheprovider -q 2>&1)
   rc=$?
+  line=$(printf '%s\n' "$out" | tail -1)
   if [ "$rc" -ne 0 ]; then
     echo "FAIL  $cls  -> $line"
+    printf '%s\n' "$out" | tail -40
     fail=1
   else
     echo "ok    $cls  -> $line"

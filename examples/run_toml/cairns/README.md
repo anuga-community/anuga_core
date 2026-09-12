@@ -1,6 +1,6 @@
 # Cairns scenario — a real DEM tsunami run
 
-The full real-world `anuga_run_toml` example: a tsunami inundation model of
+The full real-world `anuga_toml_run` example: a tsunami inundation model of
 Cairns, Queensland, driven by a real Digital Elevation Model and a shapefile
 domain outline. Where [`../simple/`](../simple/) and [`../complex/`](../complex/)
 use tiny hand-made CSVs so they run anywhere in seconds, this one uses an actual
@@ -40,14 +40,14 @@ local:
 
 ```bash
 # serial
-anuga_run_toml cairns_example.toml
+anuga_toml_run cairns_example.toml
 
 # parallel (e.g. 6 processes)
-mpiexec -np 6 anuga_run_toml cairns_example.toml
+mpiexec -np 6 anuga_toml_run cairns_example.toml
 ```
 
 In a source checkout without the installed command, use
-`python <repo>/scripts/anuga_run_toml.py cairns_example.toml`.
+`python <repo>/scripts/anuga_toml_run.py cairns_example.toml`.
 
 > **This is a real run.** The default `finaltime` is 21600 s (6 hours of model
 > time). For a quick smoke test, lower `finaltime` in `[project]` (e.g. to a few

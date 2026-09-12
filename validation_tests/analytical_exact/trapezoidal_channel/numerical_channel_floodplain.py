@@ -70,7 +70,6 @@ if myid == 0:
                                                       'bottom2': [7] },
                                        maximum_triangle_area = 0.5*l0*l0,
                                        minimum_triangle_angle = 28.0,
-                                       mesh_filename = 'channel_floodplain.msh',
                                        interior_regions = [ ],
                                        #interior_regions = [\
                                        #    [channel_polygon, 0.5*l0*l0] ],

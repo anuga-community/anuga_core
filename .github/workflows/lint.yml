@@ -5,10 +5,28 @@ on:
     branches:
       - main
       - develop
+
+  # develop is deliberately NOT here: work reaches it through a pull request,
+  # and the pull_request check above already runs against the merge result, so
+  # a push run on merge is the same commit tested twice. main stays, being both
+  # rare and what releases are cut from. See also the nightly watchdog in
+  # scheduled-build.yml, which covers develop daily.
   push:
     branches:
       - main
-      - develop
+
+# One run per ref: updating a branch supersedes the run already going for it,
+# rather than leaving both to finish for a result nobody will read. Applies to
+# an open PR getting a fixup and to a directly-worked branch getting a second
+# push alike.
+#
+# Two things are never cancelled, because there is no later run coming to
+# replace them: a push to main, and a release publish (whose ref is the tag,
+# not main, so it needs saying separately).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: >-
+    ${{ github.event_name != 'release' && github.ref != 'refs/heads/main' }}
 
 jobs:
   ruff:

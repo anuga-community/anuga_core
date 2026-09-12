@@ -1,5 +1,5 @@
 # =============================================================================
-# Simplest possible anuga_run_toml scenario: a dam break in a flat box.
+# Simplest possible anuga_toml_run scenario: a dam break in a flat box.
 # =============================================================================
 #
 # A 100 m x 100 m flat basin with reflective (wall) boundaries.  A 4 m deep
@@ -10,10 +10,10 @@
 # so it runs out of the box with no external data.
 #
 # Run it (serial):
-#     anuga_run_toml dam_break.toml
+#     anuga_toml_run dam_break.toml
 #
 # Run it (parallel, 4 processes):
-#     mpiexec -np 4 anuga_run_toml dam_break.toml
+#     mpiexec -np 4 anuga_toml_run dam_break.toml
 #
 # Output (SWW + GeoTIFFs + logs) lands in OUTPUT/RUN_<timestamp>_dam_break/.
 

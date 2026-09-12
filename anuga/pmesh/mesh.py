@@ -27,6 +27,7 @@ from anuga.coordinate_transforms.geo_reference import Geo_reference, \
 from anuga.load_mesh.loadASCII import NOMAXAREA, export_mesh_file, \
     import_mesh_file
 import anuga.alpha_shape.alpha_shape
+import anuga.utilities.log as log
 from anuga.geospatial_data.geospatial_data import Geospatial_data, \
     ensure_geospatial, ensure_absolute, ensure_numeric
 from anuga.mesh_engine.mesh_engine import generate_mesh

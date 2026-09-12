@@ -78,6 +78,7 @@ python_sources = [
 'sww_merge.py',
 'system_tools.py',
 'terminal_width.py',
+'toml_view.py',
 'tk_scaling.py',
 'where_close.py',
 'xml_tools.py',

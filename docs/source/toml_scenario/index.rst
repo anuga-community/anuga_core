@@ -1,12 +1,12 @@
 .. _toml_scenario:
 
 =====================================
-Running Scenarios with anuga_run_toml
+Running Scenarios with anuga_toml_run
 =====================================
 
 .. currentmodule:: anuga
 
-The ``anuga_run_toml`` script provides a ready-made runner for ANUGA flood and
+The ``anuga_toml_run`` script provides a ready-made runner for ANUGA flood and
 tsunami scenarios.  All simulation inputs are described in a single
 `TOML <https://toml.io>`_ configuration file — no Python coding required for
 standard setups.  The same script also accepts legacy Excel (``.xlsx``) files
@@ -24,17 +24,40 @@ Quick Start
 
 .. code-block:: bash
 
-   anuga_run_toml  path/to/scenario.toml
+   anuga_toml_run  path/to/scenario.toml
 
 **Parallel run (MPI):**
 
 .. code-block:: bash
 
-   mpirun -np 6  anuga_run_toml  path/to/scenario.toml
+   mpirun -np 6  anuga_toml_run  path/to/scenario.toml
 
 All relative paths inside the TOML file are resolved relative to the directory
 that contains the TOML file, so the script can be invoked from any working
 directory.
+
+
+Eject to a standalone Python script
+-----------------------------------
+
+When you need to go beyond what the TOML supports — a custom operator, a
+scripted boundary function, bespoke post-processing — generate an equivalent
+standalone script and edit it::
+
+   anuga_toml_run --emit-script my_run.py  path/to/scenario.toml
+
+This writes ``my_run.py`` (and exits without running). The script parses the
+same TOML via ``PrepareData`` and drives the standard phases (mesh → initial
+conditions → forcing/structures → boundaries → evolve), so it runs identically
+to ``anuga_toml_run``::
+
+   python my_run.py
+   mpiexec -np 4 python my_run.py        # legacy (CPU) parallel
+
+It is ordinary, editable Python: delete phases you do not need, splice in your
+own operators or boundaries between phases, or replace any ``setup_*`` call with
+hand-written ANUGA code. Keep the script alongside the TOML (it resolves
+TOML-relative paths from its own directory).
 
 
 Working example — Cairns tsunami scenario
@@ -50,8 +73,8 @@ The (≈9 MB) DEM is shared under ``examples/data/cairns/``.
 .. code-block:: bash
 
    cd examples/run_toml/cairns
-   anuga_run_toml cairns_example.toml          # serial
-   mpirun -np 4 anuga_run_toml cairns_example.toml   # parallel
+   anuga_toml_run cairns_example.toml          # serial
+   mpirun -np 4 anuga_toml_run cairns_example.toml   # parallel
 
 The same scenario is also available through a legacy Excel front-end under
 ``examples/cairns_toml_excel/`` (see *Excel Compatibility* below).
@@ -82,6 +105,10 @@ Copy it, adjust the file paths, and add extra sections as needed.
    # [[mesh.interior_regions]]
    # polygon    = "mesh/fine_zone.csv"
    # resolution = 10000.0   # finer triangles inside this polygon [m²]
+
+   # [[mesh.interior_holes]]
+   # polygon = "mesh/buildings.csv"   # cut OUT of the mesh entirely
+   # tag     = "building"             # optional; needs a matching boundary condition
 
    # ── Boundary conditions ───────────────────────────────────────────────────
    [boundary_conditions]
@@ -157,6 +184,15 @@ Configuration File Reference
 The TOML file is divided into sections (TOML *tables*).  Every key shown
 without a comment is **required**; keys shown with a ``# default:`` comment
 are optional.
+
+.. note::
+
+   TOML has no arithmetic, so ``finaltime = 5*60`` is a syntax error. Numeric
+   fields therefore also accept a **quoted** arithmetic expression, which the
+   parser evaluates — e.g. ``finaltime = "5*60"`` gives ``300``,
+   ``finaltime = "7*24*3600"`` gives one week. Only numeric literals and
+   ``+ - * / // % **`` with parentheses are permitted (no names or function
+   calls). Plain numbers such as ``finaltime = 21600.0`` work as before.
 
 .. _toml-project:
 
@@ -243,8 +279,11 @@ Top-level simulation settings.
    # Number of OpenMP threads.  Omit to read OMP_NUM_THREADS env var (default 1).
    # omp_num_threads = 4
 
-   # Multiprocessor mode: 1 = OpenMP CPU (default), 2 = OpenMP GPU offload (experimental, branch sp26)
-   multiprocessor_mode = 1
+   # Compute mode: "legacy" = OpenMP CPU (default), "unified" = shared
+   # CPU/GPU kernels, offloading only when GPU offload is enabled
+   # process-wide (experimental).  The older integer multiprocessor_mode
+   # (1 or 2) is still accepted.
+   compute_mode = "legacy"
 
 .. _toml-mesh:
 
@@ -294,6 +333,23 @@ Mesh geometry and resolution.
    # Point-based resolution file — CSV with columns x, y, resolution.
    # Mutually exclusive with [[mesh.interior_regions]].
    region_areas_file = ""
+
+   # [[mesh.interior_holes]] — polygons cut OUT of the mesh entirely, leaving a
+   # void rather than a refined region. Use for anything water should neither
+   # enter nor flow through: building footprints, tank pads, solid structures.
+   #
+   # Unlike [[mesh.interior_regions]], which keeps the triangles and only changes
+   # their size, so no resolution is given.
+   #
+   # 'tag' is optional and names the hole's edges so a boundary condition can be
+   # bound to them. If set, a matching [[boundary_conditions.boundaries]] entry is
+   # REQUIRED, or the run stops with
+   #   Tag "..." has not been bound to a boundary object
+   # Omit it and the mesh generator applies its own 'interior' default.
+   #
+   # [[mesh.interior_holes]]
+   # polygon = "mesh/buildings.csv"
+   # tag     = "building"
 
    # Interpretation of the resolution column in region_areas_file.
    #   "area"   — maximum triangle area [m²]
@@ -630,6 +686,8 @@ Multiple ``[[weirs]]`` entries are supported.
 Pump operator transferring water between a wet-well basin and a discharge
 point.  Set ``enabled = false`` to disable without removing the definition.
 
+
+
 .. code-block:: toml
 
    [[pumping_stations]]
@@ -649,6 +707,58 @@ point.  Set ``enabled = false`` to disable without removing the definition.
 Multiple ``[[pumping_stations]]`` entries are supported.
 
 
+[[erosion]]
+~~~~~~~~~~~
+
+Bed erosion / scour operators. Multiple ``[[erosion]]`` entries are supported.
+
+.. code-block:: toml
+
+   [[erosion]]
+
+   # Which erosion behaviour to apply. One of:
+   #   simple      — base erosion operator
+   #   bed_shear   — scour driven by bed shear stress (dam-breach style)
+   #   flat_slice  — erode down to a flat surface at a given elevation
+   #   flat_fill   — as flat_slice, filling rather than only cutting
+   #   sand_dune   — sand-dune erosion, limited by an angle of repose
+   type = "bed_shear"
+
+   # Region the operator acts on — give EITHER a polygon OR center + radius.
+   # (Raw triangle indices are not supported here: they cannot survive a
+   # re-mesh, so they have no stable meaning in a configuration file.)
+   polygon = "erosion/breach.csv"
+   # center = [382000.0, 6354000.0]
+   # radius = 50.0
+
+   # Bed shear below which no scour occurs. 0.0 means scour begins immediately.
+   # default: 0.0
+   threshold = 0.0
+
+   # Minimum bed level [m]; scour does not cut below this.
+   # default: 0.0
+   base = -5.0
+
+   # Optional label naming this operator's log file when logging = true
+   label   = "breach"
+   logging = false
+
+   # ── Type-specific parameters ──────────────────────────────────────────────
+   # Supplying one on the wrong type is an ERROR, not silently ignored.
+   #
+   #   shear_factor   bed_shear only   — higher slows the breach (default 75000.0)
+   #   elevation      flat_slice / flat_fill only — target surface level [m]
+   #   Ra             sand_dune only   — angle of repose [degrees] (default 34.0)
+   shear_factor = 75000.0
+
+.. warning::
+
+   Erosion changes bed elevation as the run proceeds, but ANUGA stores elevation
+   **once at t=0** by default — so the eroded bed will not appear in the ``.sww``
+   file or in any raster derived from it. Set ``store_elevation_every_timestep =
+   true`` in ``[project]`` when using erosion operators. A warning is issued if
+   ``[[erosion]]`` is present without it.
+
 Input Validation
 -----------------
 
@@ -660,7 +770,7 @@ A missing required field or an out-of-range value produces a message like::
 
    TOML configuration errors in 'scenario.toml':
      [project] 'scenario' is required but missing
-     [project] 'flow_algorithm' must be one of ('DE0', 'DE1') — got 'de0'
+     [project] 'flow_algorithm' must be one of ('DE0', 'DE1', 'DE2', 'DE0_7', 'DE1_7', 'DE_ader2') — got 'de0'
      culverts['road_culvert_1'] 'width' must be > 0 — got -0.9
 
 The run aborts after reporting all errors.
@@ -724,7 +834,7 @@ Each run creates a timestamped directory under ``output_base_directory``::
        ├── *.tif                  ← GeoTiff rasters of peak quantities
        ├── code/                  ← archived copy of all input files
        │   ├── scenario.toml
-       │   ├── anuga_run_toml     ← copy of the runner script
+       │   ├── anuga_toml_run     ← copy of the runner script
        │   └── user_functions.py
        └── SPATIAL_TEXT/          ← text copies of spatial inputs (for QC)
 
@@ -732,12 +842,12 @@ Each run creates a timestamped directory under ``output_base_directory``::
 Excel Compatibility
 --------------------
 
-``anuga_run_toml`` also accepts legacy Excel files::
+``anuga_toml_run`` also accepts legacy Excel files::
 
-   anuga_run_toml  path/to/ANUGA_setup.xlsx
+   anuga_toml_run  path/to/ANUGA_setup.xlsx
 
 The Excel format is described in the ``cairns_toml_excel`` example directory.
 Attributes that exist only in the TOML interface
-(``multiprocessor_mode``, ``omp_num_threads``, ``outputstep``,
+(``compute_mode``, ``omp_num_threads``, ``outputstep``,
 ``report_operator_statistics``) are set to sensible defaults when reading
 Excel files.

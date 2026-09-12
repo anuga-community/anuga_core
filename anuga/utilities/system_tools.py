@@ -125,13 +125,10 @@ def get_pathname_from_package(package):
 
     """
 
-    # Execute import command
-    # See https://stackoverflow.com/questions/1463306/how-does-exec-work-with-locals
-    exec('import %s as x' % package, globals())
+    import importlib
 
-    # # Get and return path
-    # return x.__path__[0]
-    return os.path.dirname(x.__file__)
+    module = importlib.import_module(package)
+    return os.path.dirname(module.__file__)
 
 
 def clean_line(str, delimiter):

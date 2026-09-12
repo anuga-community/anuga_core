@@ -14,6 +14,22 @@
 #include <inttypes.h>
 #include "anuga_typedefs.h"
 
+// Precision of the STATIC GEOMETRY arrays (normals, edgelengths, radii,
+// areas, centroid/edge/vertex coordinates).  Default double: bit-compatible
+// with every existing consumer (ANUGA never defines the macro).  Building
+// with -DANUGA_GEOM_FP32 halves the geometry traffic of the memory-bound
+// kernels -- an EXPERIMENT: geometry enters the scheme multiplicatively so
+// relative 1e-7 perturbations are benign for convergence, but results are
+// not bit-compatible with the double build and the well-balance gate must be
+// re-verified.  State (stage/bed/momenta) stays double unconditionally: the
+// stage - bed cancellation that well-balancing rests on has ~mm significance
+// against ~100 m magnitudes and does not survive FP32.
+#ifdef ANUGA_GEOM_FP32
+typedef float anuga_geom_t;
+#else
+typedef double anuga_geom_t;
+#endif
+
 // structures
 struct domain {
     // Changing these don't change the data in python object
@@ -47,10 +63,10 @@ struct domain {
     anuga_int*   neighbours;
     anuga_int*   neighbour_edges;
     anuga_int*   surrogate_neighbours;
-    double*    normals;
-    double*    edgelengths;
-    double*    radii;
-    double*    areas;
+    anuga_geom_t* normals;
+    anuga_geom_t* edgelengths;
+    anuga_geom_t* radii;
+    anuga_geom_t* areas;
 
     anuga_int*   edge_flux_type;
 
@@ -58,9 +74,9 @@ struct domain {
     anuga_int*   already_computed_flux;
     double*    max_speed;
 
-    double* vertex_coordinates;
-    double* edge_coordinates;
-    double* centroid_coordinates;
+    anuga_geom_t* vertex_coordinates;
+    anuga_geom_t* edge_coordinates;
+    anuga_geom_t* centroid_coordinates;
 
     anuga_int* number_of_boundaries;
     double* stage_edge_values;
@@ -117,6 +133,309 @@ struct domain {
     double* stage_backup_values;
     double* xmom_backup_values;
     double* ymom_backup_values;
+
+    /* ------------------------------------------------------------------
+     * Generic passive tracers (sediment concentration, salinity, ...).
+     *
+     * Appended at the END of the struct on purpose so every pre-existing
+     * field keeps its offset and the cache layout of the hot arrays is
+     * untouched. Adding a member anywhere else silently shifts the offset of
+     * everything after it, and the Cython extensions are not rebuilt when
+     * this header changes -- so the failure is a wrong binary, not a
+     * compile error.
+     *
+     * number_of_tracers == 0 is the ordinary case and must cost nothing:
+     * the flux kernel guards all tracer work behind a single test on this
+     * loop-invariant integer.
+     *
+     * Layout is tracer-major:
+     *   centroid[s*n + k]          n = number_of_elements
+     *   edge    [s*3n + 3k + i]
+     *   boundary[s*boundary_length + m]
+     *   explicit_update[s*n + k]
+     * ------------------------------------------------------------------ */
+    anuga_int number_of_tracers;
+    double* tracer_centroid_values;
+    double* tracer_edge_values;
+    double* tracer_boundary_values;
+    double* tracer_explicit_update;
+    /* m = h*c, the CONSERVED tracer variable. Integrated by
+     * update/backup/saxpy exactly like stage; tracer_centroid_values (c) is
+     * DERIVED from it each substep, exactly as height is derived from stage. */
+    double* tracer_conserved_values;
+    double* tracer_backup_values;
+    /* Per-cell accumulation of tracer flux across DOMAIN BOUNDARY edges, for
+     * conservation accounting; (n_tracers, N), same layout as the rest.
+     *
+     * Per-cell rather than a scalar reduction on purpose. The water equivalent
+     * uses reduction(+:boundary_flux_sum_substep), but the tracer version would
+     * need a runtime-length ARRAY reduction, reduction(+:t[0:ns]), which is
+     * unproven on nvc GPU targets. Each cell only ever writes its own edges, so
+     * accumulating per cell needs no reduction and no atomics, and the sum is
+     * taken on the host at yield time.
+     *
+     * Sign follows edgeflux[0]: positive is INTO the domain. */
+    double* tracer_boundary_flux;
+    /* Per-substep, per-tracer totals of the above; (timestep_fluxcalls,
+     * n_tracers), mirroring boundary_flux_sum for water. Filled by ns SCALAR
+     * reductions after the flux loop -- one per tracer, which every target
+     * supports -- rather than one array reduction inside it. */
+    double* tracer_boundary_flux_sum;
+    /* Reconstruction aggressiveness for tracers, analogous to beta_w for stage.
+     * 0.0 => first order; >0 => limited second order. Appended at the very end
+     * so no previously-existing field offset moves. */
+    double beta_tracer;
+
+    /* ------------------------------------------------------------------
+     * Phase 3: suspended sediment source terms.
+     *
+     * Appended at the very END of the struct, after the tracer block, so no
+     * previously-existing field offset moves. See HANDOVER.md 2.1: a shifted
+     * offset here aliases members silently, with no compile error.
+     *
+     * All arrays are (n_sediment_classes,) and indexed by TRACER index, so
+     * grain size s occupies tracer slot s. Grain sizes are registered through
+     * Domain.add_grain_size(), which registers the tracer first.
+     *
+     * n_sediment_classes == 0 is the ordinary case and must cost nothing: the
+     * source kernel returns immediately on a single test, exactly as the flux
+     * kernel does for number_of_tracers.
+     * ------------------------------------------------------------------ */
+    anuga_int n_sediment_classes;
+    /* Settling velocity v_s, [S-1] Ferguson & Church (2004), precomputed on
+     * the host: it depends only on grain size and fluid properties, so there
+     * is no reason to evaluate a square root per cell per step. [m/s] */
+    double* sediment_settling_velocity;
+    /* d*(Z): ratio of near-bed to depth-averaged concentration, [D-1].
+     * 1.0 is the well-mixed limit. Phase 3b replaces this constant with the
+     * Rouse profile of spec 4.3. */
+    double* sediment_d_star;
+    /* [L-2] maximum volumetric concentration. FG21 use 0.30, aS16 0.20. */
+    double sediment_c_max;
+
+    /* Phase 3b: entrainment, non-cohesive route [E-1]/[E-2].
+     *
+     *   tau_star  = f_c |v|^2 / (R g d)      [T-3], f_c = g n^2 h^(-1/3)
+     *   S         = tau_star / tau_c_star - 1
+     *   E_star    = 0.65 gamma0 S / (1 + gamma0 S)  for S > 0, else 0  [E-1]
+     *   E         = v_s E_star                                        [E-2]
+     *
+     * (Written with _star spelled out: the natural notation tau-star-slash
+     * would close this comment.)
+     *
+     * Water density cancels in tau*, so only the SUBMERGED specific gravity
+     * R = rho_s/rho - 1 is needed, not the two densities separately. 0.65 is
+     * the maximum packing fraction, so E* saturates rather than growing without
+     * bound. */
+    double* sediment_diameter;      /* (ncl) grain diameter d_g   [m] */
+    double* sediment_R;             /* (ncl) submerged specific gravity */
+    double* sediment_tau_c_star;    /* (ncl) critical Shields stress; FG21 0.04 */
+    double sediment_gamma0;         /* [E-1] empirical, FG21 0.0024 */
+
+    /* Erosion route, spec 4.1.1. This is a statement about the BED MATERIAL,
+     * not a numerical preference: [E-1] and [E-3] describe different sediment
+     * and getting it wrong is a physics error, not a tuning error.
+     *   0 = NON-COHESIVE, Shields/Smith-McLean [E-1]/[E-2]: sand, gravel
+     *   1 = COHESIVE, Hanson & Simon [E-3]/[E-5]: silt, clay, cohesive banks
+     *
+     *   [E-3]  E   = K_e (tau_b - tau_c)     tau DIMENSIONAL, Pa
+     *   [E-5]  K_e = 0.2e-6 / sqrt(tau_c)    [m3 N-1 s-1]
+     *
+     * Units check (spec open item E1): [m3 N-1 s-1][N m-2] = m/s, the same
+     * units as the non-cohesive v_s E*, so it drops into the same slot. */
+    anuga_int sediment_erosion_mode;      /* 0 [E-1], 1 [E-3], 2 [E-4] */
+    /* [E-4] Partheniades, as RDy26 use it:
+     *     E = K_p (tau_b - tau_c)/tau_c   for tau_b > tau_c, else 0
+     * K_p is a MASS flux in kg m-2 s-1 (RDy26 give 1e-4), so it is divided by
+     * the class density to reach the m/s that E and D use here. */
+    double sediment_K_partheniades;
+    /* Deposition law:
+     *   0 = [D-1]  D = d*(Z) c v_s                          (default)
+     *   1 = [D-2]  D = v_s c (1 - tau_b/tau_d),  tau_b < tau_d, else 0
+     * [D-2] is RDy26's form. tau_d = 0 disables deposition entirely, which is
+     * the hook their passive-transport benchmarks rely on. */
+    anuga_int sediment_deposition_mode;
+    double sediment_tau_d;                /* critical DEPOSITION stress [Pa] */
+    double sediment_tau_crit;       /* tau_c, DIMENSIONAL [Pa] */
+    double sediment_K_e;            /* [E-5], [m3 N-1 s-1] */
+    double sediment_rho_w;          /* needed for tau_b = rho f_c |v|^2 [T-1] */
+
+    /* Bed shear closure, spec 3.1 and 3.4. Divergence D1.
+     *   0 = [T-1] quadratic drag,  tau_b = rho f_c |v|^2   (default)
+     *   1 = [T-7] depth-slope,     tau_b = rho g h S       (aSM16 Eqs 6-7)
+     *
+     * [T-7] is the steady uniform (normal) flow approximation: it assumes the
+     * energy slope equals the BED slope and that the flow is locally in
+     * equilibrium -- exactly what does not hold in the dam-breach and outburst
+     * floods this work targets. It is retained only for reproducing published
+     * anugaSed results, as spec 3.4 recommends, and is not the default.
+     *
+     * S is the magnitude of the bed gradient, taken cell-locally from the
+     * divergence theorem, grad z = (1/A) sum_e z_e n_e L_e, using the edge
+     * values already to hand. No neighbour access, so it offloads. */
+    anuga_int sediment_shear_closure;
+
+    /* S_ms of [G-3]: an optional EXTERNAL source of suspended sediment --
+     * hillslope yield, tributary load, rainfall washoff -- in m/s, i.e. the
+     * same units as E and D. (ns, n), or NULL when unused.
+     *
+     * Applied AFTER the [L-1]/[L-2] limiters, deliberately. Those bound the
+     * BED EXCHANGE by what the bed and the water column can supply; an
+     * external supply is not bed exchange and must not be clipped by them. It
+     * is also what makes a Method of Manufactured Solutions possible: the
+     * manufactured source has to reach the equation unmodified. */
+    double* tracer_external_source;
+
+    /* Near-bed concentration ratio d*(Z), spec 4.3 / open item S1a.
+     *   0 = constant, use sediment_d_star (the P14/P13 d* = 1 limiting case)
+     *   1 = Rouse, evaluate the fitted form of [S-4] per cell
+     * sediment_reference_height is 'a' in [S-4], the near-bed reference height
+     * that aSM16 requires but never states. Exposed rather than hidden: d*
+     * varies by up to 13x across plausible a/h at high Z. */
+    anuga_int sediment_d_star_mode;
+    double* sediment_reference_height;   /* (ncl) a [m] */
+    /* van Rijn-style floor a >= sediment_a_h_floor * h. Standard practice and
+     * on by default (0.01), but exposed: it is the largest single divergence
+     * from anugaSed, which applies no floor. See PHYSICS_SPEC 12, D4b. */
+    double sediment_a_h_floor;
+    /* [L-4] maximum packing fraction bounding the near-bed concentration
+     * c_b = d* c. Same constant that bounds E* in [E-1]. */
+    double sediment_c_pack;
+    /* Bed porosity lambda in [G-4]: dz/dt = (D-E)/(1-lambda). The sediment
+     * VOLUME leaving suspension is (1-lambda) dz, the rest being pore space. */
+    double sediment_porosity;
+    /* Coupling stage of spec 2.4:
+     *   0 = FIXED BED (Phase 3): exchange acts on m only, z never moves.
+     *   1 = EVOLVING BED (Phase 4): [G-4] Exner update is applied.
+     * Both are legitimate published configurations, not a debug switch. */
+    anuga_int sediment_bed_evolution;
+
+    /* Bedload, spec 6.  dz/dt = -(1/(1-lambda)) div q_b   [K-3]/[G-5]
+     *
+     *   0 = off
+     *   1 = power law [K-1]/[K-2]:  q_b* = K tau_x^m,
+     *       q_b = q_b* sqrt(R g) d^1.5,  tau_x = tau* - tau_c*
+     *   2 = Engelund-Hansen [K-5]:  q_b* = 0.05 tau*^2.5 / f_c, NO threshold
+     *
+     * Mode 2 is a TOTAL LOAD relation with suspension already in it, so the
+     * suspended source must not run alongside it (spec 6, "critical usage
+     * rule"). The Python API refuses the combination rather than warning.
+     *
+     * K, m and tau_c* are exposed rather than hard-coded because which Wong &
+     * Parker relation FG21 used is still open: Eq 24 gives 3.97/1.5/0.0495,
+     * Eq 23 gives 4.93/1.60/0.0470. Resolving it should be a default change. */
+    anuga_int sediment_bedload_mode;
+    double sediment_bedload_K;
+    double sediment_bedload_m;
+    double sediment_bedload_tau_c_star;
+    /* Per-cell bedload transport vector, [K-4]. Scratch: filled and consumed
+     * within one call, but device-resident so the divergence pass can read a
+     * neighbour's value. */
+    double* sediment_qbx;
+    double* sediment_qby;
+
+    /* Friction closure for the sediment kernel, spec 3.3.
+     *   0 = constant     n from friction_centroid_values (default)
+     *   1 = larsen_lamb  n uniform, from [T-14]/[T-15]; sediment_manning_ll
+     *   2 = wilson       f_c per cell from bed type, [T-8]..[T-10]
+     * In ALL modes f_c still varies per cell per timestep, because [T-6]
+     * depends on h. Spec 3.3 calls that the coupling most easily missed.
+     *
+     * NOTE ON THE FACTOR OF 8. W04 write their equations as (8/f_c)^1/2, but
+     * THEIR f_c is the Darcy-Weisbach f (their Eq 4: U = [(8gRS)/f_c]^1/2),
+     * whereas f_c in this struct is the spec's f_c = f/8. The two collide on
+     * the same symbol. Working it through, f_c(ours) = f/8 = 1/X^2 where X is
+     * the right-hand side of [T-8]..[T-10] -- the eights cancel. Using W04's
+     * value directly would make tau_b 8x too large. */
+    anuga_int sediment_friction_mode;
+    double sediment_manning_ll;     /* [T-14] uniform n for larsen_lamb */
+    anuga_int sediment_wilson_bed;  /* 0 sand [T-8], 1 gravel [T-9], 2 boulder [T-10] */
+    double sediment_wilson_D;       /* D50 for sand, D84 for gravel/boulder [m] */
+
+    /* ---- [L-5] non-erodible base -----------------------------------------
+     *
+     * sediment_z_base is a per-CENTROID bedrock elevation: erosion may lower
+     * the bed to it and no further. It is a full (n) array, not a scalar,
+     * because bedrock is a surface -- a scoured channel over an outcrop, a
+     * lined culvert, a dam apron -- and a single number cannot describe one.
+     *
+     * The available erodible thickness in cell k is bed_centroid_values[k] -
+     * sediment_z_base[k], which the limiter never lets go negative.
+     *
+     * sediment_has_z_base is the enable flag. With no base configured the
+     * kernels take exactly the path they took before this existed, so the
+     * default costs nothing and cannot change an existing answer.
+     */
+    double* sediment_z_base;           /* (n) bedrock centroid elevation [m] */
+    anuga_int sediment_has_z_base;     /* 0 = unlimited depth (default) */
+
+    /* Scratch, (ncl x n), tracer-major like the tracer arrays.
+     *
+     * The suspended source is computed for every class BEFORE any of it is
+     * applied, because [L-5] scales the classes against a shared budget: the
+     * erodible thickness is a property of the CELL, not of a class, so the
+     * classes must be limited together. Applying class 0 in full and letting
+     * class 1 take what is left would make the answer depend on registration
+     * order, which is not physics. */
+    double* sediment_source_limited;   /* (ncl*n) [G-3] bed exchange, per class */
+
+    /* Whether each cell had reached its base at the START of the bedload
+     * step, snapshotted because bedload's second pass WRITES bed elevation
+     * while reading its neighbours' state. Testing bed_cv against z_base
+     * inside that loop would read a value a neighbouring thread may already
+     * have updated, so the two cells sharing an edge could disagree about
+     * whether it is open -- and a bedload edge flux the two sides disagree
+     * about is no longer antisymmetric, which is precisely what makes the
+     * scheme conservative. */
+    anuga_int* sediment_bed_exhausted; /* (n) */
+
+    /* ---- spec 7, angle-of-repose relaxation ------------------------------
+     *
+     * Where the centroid-to-centroid bed slope exceeds a threshold angle, bed
+     * material is moved downslope until it does not. FG21 are explicit that
+     * this is a NUMERICAL HEURISTIC, not physics -- real slope failures are
+     * advective -- and that it suppresses knickpoint retreat that may be real.
+     * It exists to stop the rest of the model breaking on over-steep slopes.
+     *
+     * This is the ONLY non-cell-local sediment kernel: a cell's update depends
+     * on its neighbours' elevation, so it is swept iteratively, Jacobi style,
+     * with sediment_repose_dz holding the sweep's increments. Reading live
+     * elevation instead would make the result depend on thread order.
+     *
+     * sediment_repose_tan = 0 disables it, which is the default.
+     */
+    double* sediment_repose_dz;            /* (n) per-sweep increment [m] */
+    double sediment_repose_tan;            /* tan of the critical angle */
+    double sediment_repose_relax;          /* under-relaxation, (0, 1] */
+    anuga_int sediment_repose_max_sweeps;  /* hard cap; reported when hit */
+
+    /* ------------------------------------------------------------------
+     * Flux-path opt-ins for the fused GPU step (gpu/core_kernels.c).
+     *
+     * Appended at the END of the struct, like the tracer and sediment blocks
+     * above, so no pre-existing field offset moves (see the note at the top
+     * of the tracer block).  Both pyx extensions set all three explicitly:
+     * the legacy Domain_C_struct comes from PyMem_Malloc, so an unset field
+     * is garbage, not zero (claude/KNOWN_ISSUES.md).
+     *
+     * reconstruct_edge_bed: 0 unless the driver guarantees that fluxes
+     * always follow an extrapolate (direct compute_fluxes callers such as
+     * test_flux rely on an independently set bed_ev):
+     *   1 -- cell-based kernel reconstructs edge bed values as stage - height
+     *        (bit-identical to bed_ev after any extrapolate, one less gather)
+     *   2 -- additionally selects the scatter flux kernel (single Riemann
+     *        solve per edge, atomic accumulation; not valid with riverwalls,
+     *        sloped Manning or tracers).  Scatter also requires owned_edges.
+     * ------------------------------------------------------------------ */
+    anuga_int reconstruct_edge_bed;
+    /* Compacted list of the cell-edge slots the scatter flux kernel computes:
+     * every boundary slot, plus the side of each interior edge whose
+     * neighbour index is larger.  Built once by the driver from `neighbours`
+     * (about 1.5 elements per cell + boundary).  Lets the kernel run one
+     * thread per PHYSICAL edge instead of one per slot with half of them
+     * exiting immediately.  NULL + 0 when scatter mode is unused. */
+    anuga_int  num_owned_edges;
+    anuga_int* owned_edges;
 
 };
 

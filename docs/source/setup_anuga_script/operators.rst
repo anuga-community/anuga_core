@@ -108,7 +108,6 @@ Time-varying rate:
     rain = anuga.Rate_operator(domain, rate=storm, polygon=rain_polygon)
 
 .. autosummary::
-   :toctree: generated
 
    Rate_operator
 
@@ -136,7 +135,6 @@ rather than the areal rate.
     )
 
 .. autosummary::
-   :toctree: generated
 
    Inlet_operator
 
@@ -167,7 +165,6 @@ fixed level, or a moving bed).
     )
 
 .. autosummary::
-   :toctree: generated
 
    Set_quantity_operator
    Set_stage_operator
@@ -218,7 +215,6 @@ hydraulic structure.  They are specified by two ``end_points`` (or
     )
 
 .. autosummary::
-   :toctree: generated
 
    Boyd_box_operator
    Boyd_pipe_operator
@@ -353,7 +349,6 @@ Other Operators
 ---------------
 
 .. autosummary::
-   :toctree: generated
 
    Kinematic_viscosity_operator
 

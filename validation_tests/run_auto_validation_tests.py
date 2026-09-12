@@ -28,6 +28,12 @@ anuga_args = anuga.get_args()
 dirs_to_skip = ['.']       # avoid infinite recursion
 dirs_to_skip += ['patong'] # requires downloaded data, takes many hours
 
+# Long-running HEC-RAS bridge/weir behaviour cases (>100 s each). Skipped by
+# default to keep the routine run fast; pass -l/--long to include them.
+long_dirs = ['bridge_hecras', 'bridge_hecras2', 'lateral_weir_hecras']
+if not anuga_args.long:
+    dirs_to_skip += long_dirs
+
 # (dirpath, filename, runner)  where runner is 'python' or 'pytest'
 all_tests = []
 
@@ -46,6 +52,14 @@ for dirpath, dirnames, filenames in os.walk('.'):
         elif filename.startswith('test_regression_') and filename.endswith('.py'):
             all_tests.append((dirpath, filename, 'pytest'))
 
+# De-duplicate the behaviour_only cases: a test_regression_*.py already runs the
+# simulation (via ensure_sww) and checks it, so the sibling validate_*.py in the
+# same directory would run the same sim a second time. Drop those validate_
+# scripts when a regression test covers the directory.
+regression_dirs = {p for p, f, r in all_tests if r == 'pytest'}
+all_tests = [t for t in all_tests
+             if not (t[2] == 'python' and t[0] in regression_dirs)]
+
 all_tests.sort()
 
 # Separate the two groups for display
@@ -61,6 +75,9 @@ print()
 print(80*'=')
 print('Running all validation tests - some may take many minutes')
 print('and some may require memory in the order of 8-16GB       ')
+if not anuga_args.long:
+    print('(skipping long HEC-RAS behaviour tests: %s; pass -l/--long to include)'
+          % ', '.join(long_dirs))
 print(80*'=')
 
 print('Simulation + accuracy tests (validate_*.py):')

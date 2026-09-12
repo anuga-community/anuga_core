@@ -15,7 +15,7 @@ def shoreline(t):
         numer = 5.0*(2.0/a_const*(u+t))**3.0 - (2.0/a_const*(u+t))**5.0
         denom = (1.0 + 4.0/a_const**2.0 * (u+t)**2.0)**4.0
         return u - 8.0*eps/a_const*numer/denom    
-    u = fsolve(f,0.0)  # t must be involved here.
+    u = fsolve(f,0.0)[0]  # t must be involved here.
     lam = 2.0/a_const*(u+t)
     x = -0.5*u**2.0 + eps - eps*(1.0 + 3*lam**2.0 - 2.0*lam**4.0)/(1.0+lam**2.0)**3.0
     return x, u

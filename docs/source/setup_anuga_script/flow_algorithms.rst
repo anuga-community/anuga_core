@@ -44,7 +44,7 @@ Quick comparison
      - 1
      - 1.0
      - 1.0 (full)
-     - Same accuracy as DE1 at the cost of DE0 — **recommended for production**
+     - DE1 accuracy at DE0's cost (ADER predictor); **future default — still being validated**
    * - ``DE2``
      - 3rd
      - 3
@@ -229,9 +229,7 @@ of DE0, DE1, DE_ader2, or DE2:
     domain.set_low_froude(2)
 
 
-Reference
----------
+.. seealso::
 
-.. automethod:: Domain.set_flow_algorithm
-.. automethod:: Domain.get_flow_algorithm
-.. automethod:: Domain.set_low_froude
+   :ref:`api_domain` — full API of ``set_flow_algorithm``,
+   ``get_flow_algorithm`` and ``set_low_froude``.

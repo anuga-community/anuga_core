@@ -14,9 +14,14 @@ No CUDA or Python GPU libraries are required.
 .. note::
 
    The GPU backend is experimental and under active development.  The API
-   (``set_multiprocessor_mode``, operator support) may change in future
+   (``set_compute_mode``, operator support) may change in future
    releases.  For production runs where result reproducibility matters,
-   validate GPU output against ``mode=1`` before switching.
+   validate GPU output against ``'legacy'`` before switching.
+
+.. seealso::
+
+   :ref:`install_gpu` — how to build ANUGA with GPU support (NVIDIA HPC SDK /
+   ``nvc``). This page covers *using* the backend once it is built.
 
 
 Hardware and compiler requirements
@@ -72,12 +77,12 @@ evolve loop:
 
    # ... set quantities, boundaries, operators as normal ...
 
-   domain.set_multiprocessor_mode(2)   # enable GPU mode
+   domain.set_compute_mode('unified')   # enable GPU mode
 
    for t in domain.evolve(yieldstep=60., finaltime=3600.):
        domain.print_timestepping_statistics()
 
-``set_multiprocessor_mode(2)`` initialises the GPU interface and switches the
+``set_compute_mode('unified')`` initialises the GPU interface and switches the
 evolve loop to a C-side Runge-Kutta loop that keeps all data resident on the
 GPU between timesteps.  Data is only transferred back to the host at each
 ``yieldstep`` for Python I/O.
@@ -224,7 +229,7 @@ for a future release (G2.2).
    # 4 MPI ranks, each using one GPU
    mpiexec -np 4 python my_parallel_gpu_script.py
 
-In the script each rank calls ``set_multiprocessor_mode(2)`` independently
+In the script each rank calls ``set_compute_mode('unified')`` independently
 after domain decomposition.
 
 
@@ -244,7 +249,7 @@ Checking the build and device
 
    domain = anuga.rectangular_cross_domain(100, 100)
    domain.set_flow_algorithm('DE0')
-   domain.set_multiprocessor_mode(2)
+   domain.set_compute_mode('unified')
 
    # Check device memory (prints estimate and device info if CUDA/HIP available)
    # Raises RuntimeError if estimated memory exceeds device capacity.
@@ -252,7 +257,7 @@ Checking the build and device
    from anuga.shallow_water.sw_domain_gpu_ext import check_device_memory
    check_device_memory(domain.gpu_interface.gpu_dom)
 
-   print(f"Mode: {domain.get_multiprocessor_mode()}")   # 2
+   print(f"Mode: {domain.get_compute_mode()}")   # unified
 
 
 Performance tips

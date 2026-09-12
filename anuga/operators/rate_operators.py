@@ -286,9 +286,16 @@ class Rate_operator(Operator):
         if self.indices is not None and len(self.indices) == 0:
             return
 
-        # Check for GPU execution path
+        # Check for GPU execution path. Skip it when _gpu_host_writes_suppressed
+        # is set: that flag means we are inside apply_fractional_steps'
+        # sync_from_device()/sync_to_device() bracket (a CPU-only fractional
+        # operator is present). The GPU path writes the *device* stage/momentum,
+        # but the trailing sync_to_device() (host->device) would overwrite them
+        # with host data that never received the rate — silently dropping it.
+        # Fall through to the host path so the batch sync carries the change.
         if (hasattr(self.domain, 'multiprocessor_mode') and
             self.domain.multiprocessor_mode == MULTIPROCESSOR_GPU and
+            not getattr(self.domain, '_gpu_host_writes_suppressed', False) and
             not self.rate_spatial and
             not self.rate_xarray):
 

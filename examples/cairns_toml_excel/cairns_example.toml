@@ -2,9 +2,9 @@
 #
 # Plain-text replacement for the Excel (.xls) interface.
 # Run with:
-#   anuga_run_toml.py cairns_example.toml
+#   anuga_toml_run.py cairns_example.toml
 # or in parallel:
-#   mpirun -np 6 anuga_run_toml.py cairns_example.toml
+#   mpirun -np 6 anuga_toml_run.py cairns_example.toml
 
 
 # =============================================================================
@@ -75,10 +75,8 @@ report_operator_statistics               = false
 # Omit (or set to 1) to use a single thread; reads OMP_NUM_THREADS env var if present.
 # omp_num_threads = 4
 
-# Multiprocessor mode:
-#   1 = OpenMP (default)
-#   2 = CuPy / GPU
-multiprocessor_mode = 1
+# Compute path: "legacy" (CPU OpenMP, default) or "unified" (shared CPU/GPU kernels)
+compute_mode = "legacy"
 
 
 

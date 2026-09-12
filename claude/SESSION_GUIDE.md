@@ -25,11 +25,22 @@ Key files to read first:
 | Milestone | Branch | Status |
 |-----------|--------|--------|
 | **v3.3.2** | `develop` → `main` | **SHIPPED 2026-04-05** — tagged, PyPI + conda-forge published; propagated to GA remote |
+| **v3.3.8** | cherry-picks → `main` | **SHIPPED 2026-07-11** — latest 3.3.x patch; tagged + PyPI (see session 48) |
 | **v4.0.0** | `feat/sc26` → `develop` → `main` | In progress — feat/sc26 merged into develop |
 
 **v3.3.2:** Shipped. Includes EPSG/CRS support, utm→pyproj replacement, sww_merge fixes,
 sww2vtu converter, pyproj DeprecationWarning fixes, ruff linting, riverwall throughflow,
 NPY002 fixes, GDAL removal, regression snapshot tests.
+
+**v3.3.8:** Shipped (2026-07-11). Patch release on the 3.3.x line: parallel
+structure-operator logging (accumulated_flow column, unique operator numbering,
+sequential-matching filenames) and the weir critical-depth gravity fix
+(hardcoded 9.81 → `domain.g`) — both cherry-picked to `main` via PR #182 — plus
+the SWW large-t store crash (#149), osx-64 wheels (#142) and checkout 6→7 (#146).
+**Release procedure:** the publish workflow uploads to PyPI on a *published
+GitHub Release*, **not** on a bare tag push — so create the annotated tag
+(`git tag -a 3.3.8 -m "ANUGA 3.3.8"`, bare version, no `v`), push it, then
+`gh release create 3.3.8 --verify-tag`. conda-forge follows via its feedstock bot.
 
 **v4.0.0:** `feat/sc26` has been merged into `develop` (2026-04-01). `develop` is now
 the active working branch. feat/sc26 contains GPU/OpenMP-offloading work
@@ -62,9 +73,30 @@ pytest anuga/shallow_water/tests/test_shallow_water_domain.py  # single file
 
 # Per-test process isolation (required on a GPU build; works on any build).
 # -cm legacy|unified sets the default compute mode for every child.
-anuga_run_isolated_tests --pyargs anuga.shallow_water -cm unified   # 408 pass, 2 skip
+anuga_run_isolated_tests --pyargs anuga.shallow_water -cm unified   # 437 pass, 2 skip
 anuga_run_isolated_tests                                            # the GPU file
 ```
+
+⚠️ **The fast suite SKIPS `test_DE_gpu_omp.py` (86 tests) on a GPU-offload build.** A green
+`--run-fast` on the nvc build is *not* evidence for anything in that file — it never ran it.
+Tell the two apart by the counts:
+
+| build | `pytest --pyargs anuga --run-fast` |
+|---|---|
+| GPU offload (nvc) | 2610 pass / 218 skip ← the 86 are skipped |
+| CPU-only (gcc) | **2696 pass** / 219 skip ← the 86 actually run |
+
+So **validate any change to `test_DE_gpu_omp.py` on a CPU-only build** — which is what CI
+builds, and which is how a green local run still turned CI red on #192:
+
+```bash
+pip install --no-build-isolation -e . -Csetup-args=-Dgpu_offload=false   # CI's build
+```
+
+On a GPU build, use `anuga_run_isolated_tests` (it opts in via `ANUGA_GPU_TESTS_ISOLATED`)
+to exercise the file — but that is a *complement* to the CPU-build run, not a substitute:
+some assertions come out differently on the two builds (see the order-sensitivity trap in
+session 49).
 See `CLAUDE.md` → "Testing a GPU-offload (nvc) build" for the full GPU recipe.
 
 ### Build
@@ -104,6 +136,29 @@ Rationale + the nvc finding: `claude/DECISIONS.md` and `claude/KNOWN_ISSUES.md`.
 pyflakes anuga/path/to/module.py
 autopep8 anuga/path/to/module.py
 ```
+
+### Transmissive riverwalls (`Cd_through`) — issue #32
+
+Riverwalls can leak *through* the wall body (below the crest), not just overtop —
+via a per-riverwall `Cd_through` discharge coefficient in the hydraulic-parameter
+dict (alongside `Qfactor, s1, s2, h1, h2`):
+
+```python
+riverWall_Par = {'fence': {'Cd_through': 0.5}}   # 0.0 (default) = impermeable
+domain.riverwallData.create_riverwalls(riverWall, riverWall_Par)
+```
+
+- Physics: submerged orifice `Q = Cd_through · h_eff · √(2g·|Δstage|) · sign(Δstage)`,
+  `h_eff` = upstream (driving-side) submerged depth below the crest (so it flows
+  even when the downstream side is dry). Momentum contribution is zero (conservative).
+- Applied **on top of** the weir/overtopping discharge, so a transmissive wall does
+  seepage *and* overtopping. `Cd_through=0` reproduces the old impermeable behaviour.
+- Lives in the **shared** flux kernel `anuga/shallow_water/gpu/core_kernels.c`
+  (`gpu_adjust_edgeflux_with_throughflow`, hydraulic-properties **column 5**), which
+  the legacy `_openmp_compute_fluxes_central` (mode 1) *and* the unified path (mode 2)
+  both call — so it works in **both compute modes with bit-identical results**. Do
+  NOT look for it in a `sw_domain_openmp_ext.c` (that's a build artifact and doesn't
+  exist). Added in commit `6ebb4453`; documented on issue #32.
 
 ---
 
@@ -264,6 +319,85 @@ Key findings:
 
 ---
 
+## GPU hardware comparison — RTX 5070 vs V100, per-kernel (nsys, 2026-07-16)
+
+Case: `run_small_towradgi.py -mpm 2 -go -ft 240`, ~256k tri, **OpenMP-target on both**
+(`nvc -mp=gpu`), single rank/GPU. Identical 4736-instance counts on both profiles ⇒
+same work, directly comparable. RTX 5070 = laptop (8GB GDDR7, ~450 GB/s); V100 = gadi
+SXM2 (HBM2, ~900 GB/s), profiled by Steve on gadi.
+
+**Headline: V100 only 1.16× faster in TOTAL GPU kernel time (4.64 s vs 5.40 s) — the 5070
+delivers 86% of V100 kernel throughput, nowhere near the ~2:1 raw-DRAM-bandwidth ratio.**
+
+| kernel | 5070 ms | V100 ms | faster |
+|---|--:|--:|:--|
+| **compute_fluxes_central** (dominant) | 2303.9 | 2690.2 | **5070 1.17×** |
+| extrapolate_second_order_edge | 1746.1 | 938.1 | V100 1.86× |
+| update_conserved_quantities | 585.8 | 182.7 | V100 3.21× |
+| manning_friction | 279.7 | 120.4 | V100 2.32× |
+| rate_operator_apply | 239.2 | 353.0 | 5070 1.48× |
+| **TOTAL GPU kernel** | **5399.5** | **4635.4** | **V100 1.16×** |
+
+Two camps. **Memory-bound** kernels (extrapolate, update_conserved, manning — gather /
+scatter / elementwise) go to the V100 by 1.9–3.2× — that IS the HBM2 bandwidth advantage.
+But the **compute-bound** `fluxes_central` (Riemann flux math, the single largest cost —
+43% of 5070 time, 58% of V100 time) goes to the **5070**: it is not bandwidth-limited, so
+Blackwell's newer/higher-clocked SMs win the arithmetic. Because that kernel dominates, the
+5070's win there nearly cancels the V100's bandwidth wins elsewhere.
+
+**Lesson (and a correction to record).** When Steve estimated the 5070 at ~75% of the V100
+from wall-clock (200 s vs 150 s at ft=3600), I pushed back that the real DRAM ratio is ~50%
+(V100 2×). I was right about the *spec sheet* — the memory-bound kernels confirm ~2× — but
+wrong about what matters for *this* code: towradgi is not bandwidth-bound end to end (its
+heaviest kernel is compute-bound), so the achieved ratio is 86%, not 50%. Steve's effective
+estimate was closer than my bandwidth correction. **Measure the kernels; do not infer GPU
+throughput from either the spec sheet or wall-clock.** Also note the kernel ratio (V100
+1.16×) is *smaller* than the wall-clock ratio (1.33×) — the ~1.15× remainder is host-side
+(gadi's server CPUs beat the laptop on the 30–70% non-kernel setup / Python / I/O portion).
+
+**Method, reusable:** for identical work, `time_A / time_B` per kernel *is* the inverse
+achieved-throughput ratio (no need for absolute GB/s). Match kernels by base name after
+stripping the `nvkernel_` prefix and `_F<n>L<n>_<n>` source-location suffix (the two builds'
+line numbers differ). Extract with `nsys stats --report cuda_gpu_kern_sum --format csv`.
+
+### FP64 is the hidden bottleneck on GeForce — ncu, 2026-07-18 (issue #199)
+
+Followed up the "memory-bound" kernels with `ncu`, and the bandwidth framing was **wrong**.
+On the RTX 5070 these DP kernels are **FP64-COMPUTE-bound, not bandwidth-bound**:
+
+| kernel (5070) | DRAM % | FP64 pipe % | verdict |
+|---|--:|--:|---|
+| update_conserved_quantities | **12%** | **89%** | FP64-pipe-bound |
+| extrapolate_second_order_edge | 22% | 81% | FP64-pipe-bound |
+
+GeForce FP64 is **1/64 rate** (vs datacenter V100 **1/2**), so ANUGA's double-precision
+kernels — full of divisions — become **FP64-throughput-limited** on consumer cards even
+though they *look* memory-bound and are memory-bound on a V100. This is **why the 5070/V100
+kernel ratios varied** (update_conserved 3.2× — worse than the ~2× DRAM ratio — is the most
+FP64-bound one): the "achieved 55% of peak bandwidth" number was a red herring; the kernel
+is slow because it is doing FP64 division, not because it fails to move memory.
+
+**Actionable lever: cut FP64 divisions.** `update_conserved_quantities` did 6 FP64 divisions
+per element; reformulating `cv/(1-dt*siu/c) == cv*c/(c-dt*siu)` (halving to 3) gave **2.85×**
+on the 5070 (123.7 -> 43.4 µs/call, closing the gap to the V100's 38.6 µs), and helps the
+**CPU unified path** too (shared kernel). Committed `2d7893ee`. `extrapolate` (still 81% FP64)
+is the obvious next candidate — same treatment (count and reduce its DP divisions) should pay
+off similarly on GeForce. **General rule:** on a GeForce/consumer GPU, profile the DP kernels'
+`sm__pipe_fp64_cycles_active` before assuming they are bandwidth-bound; division count, not
+bytes, is often the lever. (Datacenter GPUs with fast FP64 are unaffected — they stay
+bandwidth-bound, so this is a consumer-hardware optimisation, not a portable win.)
+
+**Trap that cost time here, recorded for reuse:** a roundoff-level change to a *shared* kernel
+perturbs the chaotic trajectory of every mode-1-vs-mode-2 comparison test. It collapsed the
+#192 order-sensitivity test (whose signal was pure chaotic amplification — the flat-bed
+culvert was a no-op, so operator order never mattered *deterministically*). Fix was to rebuild
+that test on a setup where order matters by a **large deterministic margin** (sloped bed ->
+active culvert; rate confined to one inlet), giving a chaos-free 1e-15-vs-7e-3 fix/bug signal.
+**Lesson (again): never let a guard depend on chaotic-amplification magnitude** — assert the
+deterministic property (mode-2 [rate,culvert] matches mode-1 [rate,culvert], not [culvert,rate]).
+
+---
+
 ## Weak-scaling benchmark — rectangular, constant timestep (MSI laptop, RTX 5070, AMD Ryzen 9 32C/30GB, 2026-06-26)
 
 Case: `examples/parallel/run_parallel_rectangular_weak_scaling.py` — the extent grows with
@@ -315,7 +449,958 @@ Findings:
 
 ---
 
-## Recent session summaries (sessions 21–45)
+## Recent session summaries (sessions 21–57)
+
+**Session 57 (2026-08-21/23):** **4.0.0 release engineering** — Phases 1 and 2
+complete, RC published, and three separate upstream breakages absorbed along the
+way. None of the four defects found were in ANUGA's solver.
+
+- **Review + release plan.** An engineering review of the whole repo (published
+  as an Artifact) produced `claude/RELEASE_PLAN_4.0.0.md`: go straight to 4.0.0,
+  no 3.4 bridge, because `main` and `develop` already share the packaging
+  foundation and develop still defaults to `legacy` compute mode — so there is
+  no behavioural cliff. The scary parts of "v4" (mode-2 default flip, forcing
+  removal) are explicitly deferred to 4.1.
+- **Phase 1: nine verification gates, all green.** Full suite both builds
+  (2937 / 2948), unified-mode one-process (2947), GPU isolated runners on TWO
+  architectures (local RTX 5070 cc120 and cloud g6.xlarge Ada L4 — identical
+  counts), validation suite (120 passed), Towradgi mode-1 vs mode-2, MPI,
+  wheels, fresh conda 3.10/3.14, docs.
+- **Phase 2: notes, guide, citation, RC.** `RELEASE_NOTES.md` and
+  `UPGRADING_TO_4.0.md` written and approved; `CITATION.cff` was stale at
+  version 3.1.9 / 2022-06-26 with a 2022 commit pin. `4.0.0rc1` published to
+  **TestPyPI** — 21 artifacts, cp310–cp314, Linux/macOS(arm64+x86_64)/Windows —
+  built via the `ANUGA_VERSION` override so **no rc tag** was needed on develop.
+  Verified installable in a clean venv by the exact command the announcement
+  gives people.
+
+**Four defects found, none in the solver:**
+
+1. **`run_gpu_tests_isolated.sh` swallowed failures** — `rc=$?` after a pipeline
+   read `tail`'s status, so every failing class reported "ok" and the script
+   exited 0. This is why several "all GPU classes green" claims earlier were
+   worthless.
+2. **`anuga_run_isolated_tests` crashed against an installed anuga** — all 106
+   tests CRASH in a container. pytest emits node ids relative to ITS rootdir
+   (the common ancestor of the targets); the runner resolved them against its
+   own cwd-derived ROOTDIR. In a checkout the two coincide, which is why it was
+   invisible locally. Now resolves against target-derived base dirs and **fails
+   loudly** when an id resolves to no file.
+3. **gcc/nvc disagree on line-region triangle selection** (#231) — a culvert
+   exchange line lying exactly on mesh edges selected 32 vs 54 triangles for the
+   same script. Test made geometry-robust.
+4. **Concurrent writes to one SWW silently interleave** (#232) — `domain_name`
+   is hardcoded in the case-study scripts, so two runs corrupt each other's
+   output with a non-monotonic time axis and plausible-looking numbers. Cost a
+   full invalid gate-5 result. Found via the frame-index pattern (writer A at
+   0,2,4-8; B at 1,3).
+
+**Three upstream breakages, none our doing:**
+
+- **conda-forge mingw build 11** broke every Windows job for two days: binaries
+  compile and then abort in the stack protector (`__stack_chk_fail` on an empty
+  `main`). Took five CI cycles to converge because the ground kept moving — the
+  compilers were rebuilt mid-investigation, so a sysroot-only pin worked for a
+  day and then failed. **Only one self-consistent set exists**: gcc/gxx_impl
+  build 2 + sysroot chain build 10 + `libwinpthread` build 10 + `libstdcxx`
+  build 2. Pinning one half looks like it works (wheels build) and then every
+  test process dies silently at exit 127, because libwinpthread bites at RUN
+  time. Removal tracked in **#235**; upstream is
+  conda-forge/m2w64-sysroot-feedstock#23, where our reproduction is cited.
+- **Cython 3.3.0** broke all 20 wheel builds: `dict.items()` can no longer be
+  assigned to a `cdef list`. `sparse_matrix_ext.pyx` had one such assignment
+  that was **never used**, plus a second on the next line that would have failed
+  next. Local builds stayed green on Cython 3.2.5.
+- **Branch protection** turned out to be enforced by *rulesets*, not classic
+  protection — removing the classic setting did nothing, which only surfaced
+  when a merge was refused.
+
+**Also:** #237 (bare `ModuleNotFoundError` from an unbuilt tree) fixed;
+#238 filed (make the meshpy import lazy — Triangle's licence makes it a hard
+non-free dependency at import time); `claude/PPA_FEASIBILITY.md` written for
+#25 (Ubuntu has every dependency except meshpy and pymetis; recommend against a
+PPA since pip wheels, conda-forge and Docker now cover the original ask).
+
+**RESUME STATE (as of 2026-08-23):**
+- `develop` == `origin/develop` == `stoiver/develop` at `743b6369`. All CI green.
+- **Waiting on**: RC soak feedback from Ole, Rudy, Petar, David and Jorge; and
+  conda-forge/admin-requests#2297 landing so the Windows pin (#235) can go.
+- **Petar's verdict on Towradgi can reopen the #229 physics decision**, not just
+  the wording — it is his case study and it is the evidence behind the release
+  notes' numbers. Reproduction recipe kept in
+  `claude/RELEASE_4.0.0rc1_REPLY_PETAR.md`.
+- **RC drift** (commits after 4.0.0rc1, tracked in the release plan): #237's
+  import message and the Cython 3.3.0 fix. Both build/import level; neither can
+  change results, so the soak stands. Anything that COULD change results means
+  rebuilding the RC, not adding a row.
+- Phase 3 is short and scripted in `claude/RELEASE_PLAN_4.0.0.md`: release PR to
+  `main`, set `date-released` in CITATION.cff, annotated bare-version tag, then
+  the GitHub Release triggers PyPI / Docker / the conda-forge bot.
+- Open from this session: #231, #232, #235, #238. Closed: #189, #214, #224,
+  #225, #229, #237.
+
+**Session 56 (2026-08-20/21):** **Issue triage sweep → five issues closed**, one
+of them the long-standing well-balancedness defect in every structure operator.
+
+- **Triage of all 24 open issues** against the code. #214 (TOML interior holes +
+  erosion) was already implemented on develop — closed citing the commits. #25
+  got a comment pointing at the docker/ images + GHCR workflow (PPA half stays
+  open). #143 awaits samcom12's re-run. The rest confirmed still open.
+- **#224 riverwall crest → device (PR #227, merged).** `set_elevation()` wrote
+  only the host array; mode-2 kernels kept the crest they were mapped with — a
+  gate operated mid-run was silently ignored. New `gpu_sync_riverwall_to_device()`
+  pushed by `evolve()` **at yieldstep boundaries only** (the user asked for
+  that timing): once before the loop, once on resuming from each yield, gated by
+  a `device_data_dirty` flag set by the three RiverWall setters. Also warns if
+  `create_riverwalls()` runs after the interface exists (fresh arrays — the
+  device still points at the old ones; not fixable by a push).
+- **#189 degenerate-timestep protection (PR #228, merged).** Mode 2 never runs
+  it: the C loops return before `update_timestep()`, and the Python-orchestrated
+  GPU loops reach it but the stale host `max_speed` (device never syncs it back)
+  makes its `<10` guard return — absent on every path, one of them by accident.
+  Option 1 from the issue: warn once per domain, and the routine itself now
+  warns-and-returns in mode 2 so the absence is a decision.
+- **#225 MAX_INLET_TRIANGLES (PR #228, merged).** The 64-triangle inlet cap was
+  fixed arrays in `culvert_indices` — host-side staging only; the device side
+  was already dynamic. Now heap arrays sized by the real count, cap deleted.
+  `Test_GPU_LargeInlet`: 79 triangles/inlet, modes agree ~1e-14.
+- **#229 structure well-balancedness (PR #230, merged) — took two attempts.**
+  Filed first: `Inlet.set_depths()` writes a uniform DEPTH, which on a sloping
+  bed tilts a lake at rest by half the inlet's bed range per step at zero Q.
+  **Attempt 1 (surface shift, e899973f) reverted** (f4e2ab11): broke the pipe
+  culvert on all 15 CI jobs — flattening is the smoothing the culvert feedback
+  loop needs; a dry receiving inlet grew a ridge and Q stalled to 0.
+  **Attempt 2 (stage leveling): water finds its level** — fills raise the
+  lowest stages, drawdowns lower the highest, clamped at the bed, bisection (no
+  sort, same loop in numpy and one GPU team). Flat bed reproduces the old write
+  **exactly**, so the pipe test passes by construction; zero transfer is
+  bit-exact (lake at rest 6.8e-02 → 3.7e-09). Second trap: one momentum value
+  written uniformly over leveled depths gave a near-dry cell 1.7e6 m/s and
+  collapsed the timestep — `set_average_momenta()` now writes it depth-weighted
+  (uniform VELOCITY). Full details in DECISIONS.md.
+- **`run_gpu_tests_isolated.sh` lied (8662239c).** `rc=$?` after a pipeline read
+  `tail`'s status — every failing class reported "ok", which is how attempt 1's
+  failure reached CI instead of this desk. Fixed + verified against a deliberate
+  failure. Lesson applied: attempt 2 was validated with the full suite exactly
+  as CI runs it (2937 passed), not the fast subset.
+- **New gotcha (KNOWN_ISSUES):** a structure in near-still water amplifies
+  roundoff exponentially (1 ULP → ~1e-2 m stage in seconds) via the
+  enquiry↔inlet feedback. NOT mode-related — a 1-ULP mode-1 perturbation
+  diverges as fast as mode 2. Un-masked now #229 is fixed: CPU/GPU culvert
+  comparisons need a driven head; well-balancedness tests stay short.
+- **Process:** merges to `develop` don't fire `Fixes #N` (default branch is
+  `main`) — #189/#224/#225/#229 all closed by hand with commit citations.
+
+*(superseded by session 57's resume state above)*
+
+**RESUME STATE (as of 2026-08-21):**
+- `develop` == `origin/develop` == `stoiver/develop` at `7f98999a` (merge of
+  PR #230). Topic branch `fix/229-well-balanced-inlets` deleted after merge.
+- Merged this session: PRs #227, #228, #230. Closed: issues #189, #214, #224,
+  #225, #229.
+- **Still open from the triage:** #223 (gpu-aware MPI is host-staged), #170
+  (per-substep boundaries in the C RK loop), #190 (blocked on draft PR #188),
+  #143 (awaiting samcom12 re-run), #77, #141, and the older wishlist items.
+- Uncommitted, deliberately: `towradgi.toml` arithmetic demo. Untracked:
+  `sandpit/culvert_issue/` (48 MB reporter model — do not commit),
+  `docs/source/reference/generated/`.
+
+**Session 55 (2026-08-13):** A regression of our own making, the culvert crash,
+and hardening the installers so neither can happen quietly again.
+
+- **gpu culvert stack overflow (#217, PR merged via #218).** 101 culverts wedged
+  at `Time = 0` then segfaulted on a NaN-bit-pattern pointer.
+  `gpu_culverts_apply_all()` sized its per-step buffers as fixed stack arrays of
+  `MAX_CULVERTS` (64) but looped over `num_culverts`: 24240 bytes into 15360, on
+  every timestep. `MAX_CULVERTS` is only the *initial* capacity — registration
+  grows by doubling. Buffers moved to the heap. Regression test
+  `Test_GPU_ManyCulverts` (80 culverts) hangs on the old code, passes in 1.3 s.
+- **`-Dgpu_arch` never selected anything (PR #220).** nvc device-links at the
+  LINK step and `gpu_link_args` was empty, so it built for the build host's GPU,
+  or — with no GPU visible, as in a container — every arch the CUDA supports.
+  The "multi-arch" images were portable *by accident*. Fixed by repeating
+  `-gpu=<arch>` at link.
+- **…which then broke Petar's RTX 30xx (PR #221).** With the flag working,
+  `install_anuga_nvc.sh`'s hardcoded `GPU_ARCH=cc120` produced sm_120-only
+  builds that compile cleanly and crash at every kernel launch. Now detected
+  from `nvidia-smi`.
+- **Compatibility is ONE-DIRECTIONAL** (measured, not assumed): nvc embeds PTX
+  and the driver JIT-compiles it *forward*, so a cc86 build runs on sm_120;
+  a cc120 build can never run on sm_86. JIT costs +0.38 s at first launch, no
+  throughput difference — matters where the cache is cold (isolated runner,
+  containers, MPI ranks). `cc70`/V100 needs a CUDA ≤ 12.x in the SDK; CUDA 13
+  dropped Volta.
+- **Installers (PR #222, open).** New `tools/anuga_build_report.py` (also for bug
+  reports) prints version/install type/GPU build/MPI/SM archs/GPU present, and
+  `--check` fails a build that cannot run here. Both scripts log a transcript.
+  `GPU_ARCH=auto` probes what the toolchain can build rather than assuming (nvc
+  on Gadi is a module wrapper with no SDK layout beneath it). Explicit arch lists
+  are never silently narrowed. `install_miniforge.sh` is re-runnable, detects a
+  GPU and *advises* (does not switch compilers — the nvc host fallback is
+  several times slower than gcc), `GPU=1` opts in. GPU tests are skipped when no
+  GPU is visible (they were running on a Gadi login node).
+- **`anuga:gpu-mpi` image** (2.69 GB, in ECR): HPC-X OpenMPI 4.1.7a1, CUDA-aware,
+  mpi4py + pymetis, `-Dgpu_aware_mpi=true`. Four container gotchas solved and
+  documented: `OMPI_CC=gcc`, `OPAL_PREFIX`, `OMPI_MCA_ess_singleton_isolated=1`
+  (singleton `MPI_Init` hangs — bites *serial* runs, since `import anuga` pulls
+  in mpi4py), and container transports (`pml=ob1, btl=self,smcuda,tcp`).
+- **`.dockerignore` excludes `docker/Dockerfile*`** — they landed in the
+  `COPY . .` layer, so a one-line Dockerfile edit invalidated the ~45 min ANUGA
+  compile. Now 2.6 s with 14 layers cached.
+- **Issue #223 (open):** `-Dgpu_aware_mpi=true` is not GPU-aware — `gpu_halo.c`
+  stages every halo through host memory in *both* paths (UCX `uct_mm` SIGSEGVs
+  on device pointers). Measure halo cost before implementing real GPUDirect.
+
+*(Session 56's resume state below is superseded by session 57's above; and
+session 55's by session 56's — PR #222
+merged, and the issue landscape has moved.)*
+
+**RESUME STATE (as of 2026-08-13):**
+- `develop` = `stoiver/develop`, **8 commits ahead of origin/develop**, all in
+  **PR #222** (installer hardening). CI was green on `5d53d602`; later commits
+  only touch shell scripts, which CI does not exercise.
+- Merged this session: #218, #220, #221. Closed: #219 (superseded — its fix rode
+  in with #218), issue #217.
+- **Open: PR #222, issue #223.**
+- ECR (ap-southeast-2, `067589750115`): `anuga:gpu-slim` 460 MB (cc70–cc120,
+  portable, AMD-verified on g6) and `anuga:gpu-mpi` 599 MB.
+- Uncommitted, deliberately: `towradgi.toml` arithmetic demo. Untracked:
+  `sandpit/culvert_issue/` (48 MB reporter model — do not commit).
+- Gadi: build works from a login node; the open question is whether that
+  `nvhpc` module can build `cc70` — run `tools/anuga_build_report.py --check`
+  on a `gpuvolta` node to find out.
+
+**Session 54 (2026-08-11):** Portable GPU image proven on AMD, C-level output
+captured in the logfile, and the first GPU scaling numbers at 1.6M triangles.
+- **`-tp=haswell` fix never actually built.** 394b61b8 set `CXXFLAGS=-tp=haswell`
+  too, but only `CC` is nvc — `CXX` stays g++, which rejects `-tp` and kills
+  meson's compiler detection (`Unable to detect linker for compiler c++ …`).
+  That is why the ECR image was still the non-portable AVX-512 build. Fixed in
+  `54b18f69`: **CFLAGS only** (`meson.build:166` already avoids `-march=native`,
+  so the g++-built C++ extensions were always portable).
+- **Portability PROVEN on AMD** — the thing that was outstanding all of session
+  53. Run landed on **g6.xlarge** (AMD EPYC Zen 4 + L4): `rc=0`, no SIGILL,
+  real GPU offload. g5 had zero capacity in Sydney all session; **g6 is the type
+  that actually launches** there.
+- **Logging: the logfile never contained C output.** `TeeStream` tees the
+  `sys.stdout` *object*, so everything the C extensions printf to fd 1 (the GPU
+  domain banner, Triangle, ~99 printf sites in the GPU kernels) reached the
+  terminal but not the file — batch logs had no record of the GPU config used.
+  `set_logfile()` now installs an **fd-level tee** (fd 1 → pipe → terminal +
+  file). Needed `setvbuf`/`reconfigure(line_buffering=True)` (fd 1 is no longer
+  a tty, so libc *and* Python block-buffer), and the logging file handler now
+  writes **through the pipe** so the file has a single writer and exact write
+  order. `file_only()` consequently mutes C output too. Adds `close_logfile()`;
+  `set_logfile()` now **truncates** (logs used to accumulate every run ever).
+  `anuga/utilities/tests/test_log.py` — subprocess-based, because pytest's
+  capture replaces `sys.stdout` with something that never touches fd 1.
+- **`-sc/--scale`** added to `run_small_towradgi.py` (10 = 135237 tri, 1 =
+  256688, 0.1 = 1636238). Deliberately **in the script, not anuga's standard
+  parser**: containerised runs take the script from the staged S3 inputs but
+  anuga from the image, so a parser-level flag needs an image rebuild. First
+  attempt (`c109e65d`) made exactly that mistake and failed on AWS with
+  `unrecognized arguments: -sc 0.1`; reverted in `39e3e429`.
+- **GPU scaling — small meshes flatter slow GPUs.** Same 600 s sim, mode 2:
+
+  | GPU | 257k mesh | 1.64M mesh |
+  |---|---|---|
+  | RTX 5070 laptop (cc120) | 24.77 s / 61.4 M cell-updates/s | 111.52 s / **73.4 M/s** |
+  | L4, g6.2xlarge (cc89) | 31.89 s / 47.7 M/s | 120.32 s / **68.1 M/s** |
+  | T4, g4dn (cc75) | 53.06 s / 28.6 M/s | — |
+
+  At 257k the 5070 looks 1.29× the L4; at 1.64M it is only **1.08×** — both
+  cards are under-saturated at 257k and the L4 recovers more (+43% vs +20%
+  throughput). Expect **g6 ≈ 93% of the laptop** on production-size problems.
+  Memory at 1.64M is only **3.4 GB host / 762 MB GPU** (per-cell cost is small;
+  the 1.6 GB at 257k is mostly fixed overhead — do not extrapolate linearly).
+  Results **bit-identical** across cc120/cc89, native vs container.
+- **towradgi's constant `delta t` is a mesh artifact, not physics** — see
+  KNOWN_ISSUES.
+
+**RESUME STATE (as of 2026-08-11, end of session 54):**
+- `develop` pushed to **`stoiver`**; **PR #218** open to `anuga-community/develop`
+  (14 commits at open; 2 more since — `-sc` flag add + revert/move).
+- ECR `anuga:gpu-slim` is current: portable multi-arch build **including** the
+  logging fixes (`sha256:ed7f18dcde0b…`).
+- Uncommitted working-tree edit: `towradgi.toml` arithmetic *demo*
+  (`finaltime="3600*24"`) — still not for committing.
+- Open follow-ups: PR #218 CI is a **gcc `gpu_offload=false`** build (differs
+  from the local nvc one); the terminal — not the logfile — is only
+  approximately ordered under the fd tee; REDIST trimming in the slim image.
+
+**Session 53 (2026-08-09 – 08-11):** Parallel bug fixes + Docker slim image +
+first real AWS GPU run of towradgi.
+- **MPI deadlock in `update_conserved_quantities`** (negative-cells "loss of
+  conservation" warning called the collective `get_water_volume()` under a
+  per-rank `if num_negative_ids>0` branch → `-np 1` worked, `-np 2` hung;
+  faulthandler pinned it). Fixed: warn **serial-only** (no collective in the hot
+  per-substep path; two earlier attempts — local volume, then unconditional
+  Allreduce — each caused a *new* hang, incl. `test_parallel_boyd_box_operator`).
+  → **PR #216, merged to develop.** Regression test
+  `test_parallel_negative_cells_deadlock.py` added.
+- **anuga_toml_run**: per-rank MPI logs; ranks≠GPUs unified guard (fail fast, not
+  hang); end-of-run water-balance V0 fix (capture at first yieldstep, not before
+  evolve — pre-evolve `get_water_volume` gives a bogus unclamped V0); `--emit-script`
+  (eject an editable standalone run script). *(on branch add-toml-scenario-features / PR #213)*
+- **Erosion**: default elevation to time-varying storage when erosion present —
+  TOML parser (warn only on explicit static) **and** core operators
+  (`_mark_domain_erosion`; `initialise_storage` warns if reset to static).
+- **Riverwall verbose output** condensed to one line per wall.
+- **TOML numeric fields** accept quoted arithmetic (`finaltime = "5*60"`, safe ast eval).
+- **Docker**: slim multi-stage GPU image (CUDA **-base** + NVHPC REDIST + venv) =
+  **2.15 GB / 459 MB compressed, ~37x smaller** to pull; validated locally. `-tp=haswell`
+  portability fix (native nvc build SIGILLs on AWS g5/Zen2 — no AVX-512). `aws_run_gpu.sh`
+  gained **`--ecr`** (private in-region image + role ECR-read + instance login).
+- **AWS**: validated `run_small_towradgi.py` end-to-end via ECR slim image
+  (`aws_run_gpu.sh --ecr --instance g4dn.xlarge`, rc=0, ~2 min). Coords in memory
+  `reference_aws_towradgi_run.md`.
+
+*(Session 53's resume state is superseded by session 54's above: the commits are
+pushed, PR #213 merged, and the ECR image rebuilt portable.)*
+
+
+**Session 52 (2026-07-25):** **Fix the CI unified-compute-mode failure + harden
+`update_conserved_quantities`.** The `github CI` "Test package (unified compute mode,
+full — Linux / Python 3.14)" step (CPU build, `ANUGA_DEFAULT_COMPUTE_MODE=unified`)
+went red with 5 failures in `Test_negative_cells_warning`, all
+`AttributeError: 'NoneType' object has no attribute 'update_conserved_quantities_kernel'`
+at `shallow_water_domain.py:2948`.
+- **Root cause.** Those white-box tests call `domain.update_conserved_quantities()`
+  **directly, outside `evolve()`**, then inspect host `centroid_values`. Under the unified
+  default the domain is mode 2 (`MULTIPROCESSOR_GPU`) but `gpu_interface` is only built during
+  `evolve`, so the direct call hit `self.gpu_interface.…` with `gpu_interface` still `None`.
+- **Fix 1 — pin the tests (commit `641db3bd`).** Added `domain.set_compute_mode('legacy')`
+  in the test's `make_domain()` helper — the documented white-box pattern
+  (`test_forcing.py`/`test_friction.py`). Build-agnostic: legacy just selects the CPU openmp
+  solver per-domain, never touches GPU offload, so it's correct on the GPU-offload build too
+  (and sidesteps the NVHPC mode-2 domain-count abort). Verified 8/8 pass in both default and
+  unified. **CI confirmed fully green** (run 30145027044).
+- **Fix 2 — harden the method (commit `c80bc457`).** `update_conserved_quantities` was the lone
+  mode-2 entry point that read `self.gpu_interface` **without** first calling
+  `_ensure_gpu_interface()` (its siblings `compute_fluxes`/`compute_forcing_terms`/extrapolate/
+  distribute all guard). Added the guard: it builds the interface when boundaries are ready,
+  else falls back to legacy. No-op during normal evolve. Verified a direct unified call now runs
+  mode 2 instead of crashing; sw-domain evolve/conservation tests 14/14 green under unified.
+- Both commits on `develop`, pushed to `origin` (anuga-community).
+
+**Session 51 (2026-07-19/20):** **Unify the culvert kernel (mode-1 == mode-2), diagnose
+Towradgi's residual as rain-on-dry, tighten comparison tolerances.** Rebuilt CPU-only
+(gcc, `-Dgpu_offload=false`), confirmed the full suite green in both modes (legacy 2698 /
+unified 2697), then closed out the mode-1-vs-mode-2 culvert difference and chased what's left.
+- **Culvert unification (commit `b7a010ae`).** Extracted the per-culvert discharge +
+  semi-implicit transfer into one C routine `culvert_compute_one()` plus a shared host inlet
+  gather `culvert_gather_inlet_host()` (`gpu_culvert_operator.c`). Mode-2's batch calls it
+  (behaviour-preserving); **mode-1's Python operators now route their per-step update through it
+  via a Cython bridge** (`culvert_apply_one_host` / `culvert_gather_inlet_host_py`), gated to
+  fully-local culverts (cross-boundary MPI keeps the Python path). Wired into **both**
+  `Structure_operator` and — the one that matters — `Parallel_Structure_operator`. Result:
+  **mode-1 == mode-2 bit-for-bit** for every culvert config (box/pipe, velocity head, blockage),
+  1 and 16 threads. De-dups the Python/C physics on the runtime path.
+  - **The seed was the inlet-average gather**, not momentum/ordering/FMA: mode-1 summed with
+    numpy, mode-2 with a C loop, 1 ULP apart for multi-cell inlets.
+  - **Two wrong-turn traps worth remembering:** (1) `anuga.Boyd_box_operator` is a **factory**
+    returning `Parallel_Boyd_box_operator` — a *separate* class hierarchy from `Structure_operator`
+    — even in serial, so a monkeypatch of `Structure_operator.__call__` silently hit an unused
+    class and produced two invalid "proofs". Instrument the class that actually runs. (2) An FMA
+    hypothesis was moot: the CPU build is generic x86-64 (no `-march`/`-mfma`).
+- **Towradgi still diverges → it's rain-on-dry, NOT culverts.** Built an **in-process
+  double-precision localization harness** (two domains from the same setup, restartable lockstep
+  evolve, diff `centroid_values` in double). It pinned the seed to `Rate_operator` on **dry**
+  cells: remove rain → bit-identical; rain on a **fully-wet** domain → bit-identical; rain on
+  **dry** → 1 ULP. **Corrected framing:** both modes are *stage-primary* (`height == stage - bed`
+  in each); the residual is a 1-ULP difference in the core's near-dry **stage itself**, masked by
+  the dry-cell bed-clamp (`protect` sets `stage=bed`) until rain lifts the cell off the bed. Rate
+  inputs and the device sync (a plain memcpy) are ruled out; exact operation not isolated (needs
+  C-RK-loop device-state instrumentation). Same family as #200; **benign, accepted**. Red
+  herring: the #200 init dry-cell clamp asymmetry — forcing mode-1 to clamp too left the
+  divergence unchanged, so the initial state is not the cause. Documented in FUTURE_WORK /
+  KNOWN_ISSUES (commit `aadbd8e7`).
+- **GPU build validated.** Rebuilt nvc (`gpu_offload=true`, cc120, RTX 5070). Towradgi
+  mode-1(CPU) vs mode-2(GPU): same-order divergence dominated by rain-on-dry (**wet-only ΔStage
+  ≈ 0 at t=120** — only dry cells differ; wet cells diverge later via chaos). Isolated GPU test
+  runner: **all classes pass** on the device, including the culvert/weir/dry-cell/fractional-step
+  tests that touch the changed code.
+- **Tightened mode-1/mode-2 comparison tolerances (commit `7a42bb2d`).** The culvert/weir
+  CPU-vs-GPU tests used **atol=0.02/0.05** with comments blaming Python-vs-C ~3% drift — obsolete
+  now that both run the same C kernel. Re-measured and tightened: culvert 0.02/0.05→1e-10/1e-9,
+  weir 0.02→1e-10, inlet 1e-8→1e-10, forcing helper (wind/pressure/**rate**) 1e-8→1e-10 on GPU.
+  Measured ≤1.2e-15 everywhere (rain bit-identical); kept 5–6 orders of headroom. These now catch
+  a mode-1/mode-2 regression instead of silently passing multi-percent drift. All 17 pass under
+  the isolated GPU runner. **Lesson:** when a comparison test's loose tolerance is justified by a
+  "Python vs C FP drift" note, re-measure after any unification — the rationale may be stale by
+  orders of magnitude. All commits on `develop`, pushed to `stoiver`.
+
+**Session 50 (2026-07-16/19):** **mode-1 vs mode-2 difference notebook → two real GPU bugs.**
+Built `validation_tests/case_studies/towradgi/compare_mode1_mode2.ipynb` (uses
+`anuga.SWW_plotter`; white-background `YlOrRd` log difference maps, 3×1 stacked panels)
+to show *where/when* legacy and unified diverge on Towradgi small. Chasing the plot
+features found two genuine bugs, both fixed on `develop`.
+- **BUG (#199, fixed `2d7893ee`): `update_conserved_quantities` FP64-bound on GeForce.**
+  ncu (not nsys) is decisive: DRAM 12% / **FP64 pipe 89%** on the RTX 5070 — the kernel is
+  *compute*-bound on double-precision division, not bandwidth-bound (GeForce FP64 = 1/64
+  rate vs V100 1/2). Reformulating `cv/(1-dt·siu/c) == cv·c/(c-dt·siu)` halves the divisions
+  (6→3) → **2.85× faster** on the 5070 (123.7→43.4 µs/call), and helps the CPU unified path
+  too (shared kernel). See the "GPU hardware comparison" and "FP64 is the hidden bottleneck"
+  sections above.
+- **BUG (#200, fixed `b3a7da9a`): mode-2 loses startup forcing on deeply-dry cells.**
+  This is the one the notebook's t≈120 divergence was really showing. Towradgi sets initial
+  `stage=0`, but the creek-inlet bed is 215–320 m, so those cells start *deeply* dry
+  (stage ≪ bed). Mode 1 reconciles them to `stage=bed` in one step (its per-step protect);
+  the mode-2 device path converges only gradually — **halving the deficit each step, ~12
+  steps** — and the inlet's inflow during that window raises the sub-bed stage instead of
+  making depth, and is **permanently lost** (~24 m³ on Towradgi). Fix: clamp `stage` up to
+  `bed` for dry cells in `set_gpu_interface()` before the initial device sync (mass-neutral,
+  no-op for wet cells; mode 1 never calls it so is untouched). After the fix,
+  mode-1-vs-mode-2 max|dStage| at t=120 drops **2.8 cm → 7.6e-6** — the difference is finally
+  the roundoff-seeded chaos the notebook always *claimed* it was.
+  - **The chase, 4 wrong layers before the truth** (each ruled out by measurement, worth
+    reusing): "roundoff chaos" → no, systematic & localized; "inlet under-injects" → no, its
+    accounting says applied=Q·t; "whole device state frozen" → no, only inlet-cell *depth*;
+    "deep-dry alone" → no, needs deep-dry **at a bed gradient** on the real unstructured
+    mesh. Instrument the *device* (sync_from_device), not the host — the host-side protect
+    reconciles the host copy regardless, so a host read hides the bug.
+  - **Fine output cracked it open.** The default 120 s yieldstep made it look like a t=120
+    event; `-ys 0.1` showed the freeze is the **first ~1 s / ~12 internal steps** and the
+    coarse output was hiding it. Lesson: when a divergence sits suspiciously on an output
+    time, re-run with fine output before theorising.
+  - **Regression guard:** `Test_GPU_DryCellStartupReconciliation` checks the *device* stage
+    is reconciled after interface build (fails with fix reverted, GPU build only — CPU builds
+    share host/device arrays so cannot express it). The full dynamic mass loss is
+    **mesh-dependent** (a regular grid with the same bed does not reproduce it — only the real
+    unstructured mesh), so it is validated on Towradgi, not re-created as a unit test.
+- **Ruled out an operator bug at t=360** (user asked): toggled rain and culverts off — the
+  mode-1/mode-2 divergence is *bit-identical* with/without them, distributed domain-wide,
+  smooth (no step at t=360), sub-mm. It is chaotic amplification; the rain ramp only makes
+  chaos *visible earlier* (lift-off t~90 with rain, t~300 without), not a systematic jump.
+- **RTX 5070 vs V100 per-kernel** (nsys, both OpenMP-target): V100 only **1.16× faster in
+  total kernel time** (5070 = 86% of V100), because the dominant `fluxes_central` is
+  compute-bound and Blackwell wins it, while only the memory-bound kernels show the ~2× DRAM
+  ratio. Recorded in the "GPU hardware comparison" benchmark section; corrected the earlier
+  spec-sheet "50%" claim — measure kernels, don't infer from spec or wall-clock.
+
+**Session 49 (2026-07-13/14):** **Operator parity audit, mode-1 vs mode-2 vs parallel** —
+which found three real bugs, two of them in the *legacy* path, not the GPU one. Started
+from a question about the CPU/GPU divergence in the PR-188 validation: the differences grow
+sharply around t=360 s, so was an operator implemented differently on the two paths?
+- **The t=360 divergence was NOT a bug** — worth recording, because the negative result is
+  the point. The rainfall time series **steps up 3.5x at exactly t=360** (0.000375 ->
+  0.001314 m/s); more rain ⇒ more newly wetted cells ⇒ more wet/dry fronts ⇒ faster chaotic
+  amplification. Both paths see the identical rate. The clincher: the growth table showing
+  the t=360 jump was **OpenACC vs OpenMP-target — both mode 2, sharing identical operator
+  code**. Two runs with the *same* operators still show the jump, so it cannot be a CPU/GPU
+  operator mismatch. **Method:** when a divergence correlates with a time, check the
+  *forcing* before you go hunting in the code.
+- **Operator physics does match.** `Rate_operator`: both paths evaluate `t`, `timestep`,
+  `rate` and `factor` identically and apply the same update. `Inlet_operator`: both use the
+  time-averaged `Q = 0.5*(Q(t) + Q(t+dt))`. Culverts: harmonised back in session 48.
+- **BUG (#191, fixed `52705240`): mode-2 `Rate_operator` counted ghost cells in its mass
+  tracking.** The CPU masks its influx sum with `full_indices`; the GPU kernel summed over
+  every index. Under MPI a rainfall polygon straddling a partition boundary appears on
+  several ranks, so the reported influx (and `fractional_step_volume_integral`) was inflated
+  by the halo: **+4.8% at np=2, +9.1% at np=4** — which is exactly the discrepancy Steve had
+  seen on gadi with 4 GPUs/4 ranks. The insidious part: `full_indices`/`num_full` were
+  plumbed from Python into the C struct, malloc'd, memcpy'd, freed — and **never read by any
+  kernel**. The code *looked* like it handled ghosts. Fix bakes the mask into the area array
+  at init (`areas` -> `mass_areas`, zero for unowned cells; free, since `areas` was used for
+  nothing else) and **deletes the dead fields** so the trap cannot reappear.
+- **BUG (#193, fixed `c843ee78`): parallel inlet over-counted the mass balance by
+  x(number of ranks).** `fractional_step_volume_integral` is a per-rank LOCAL accumulator
+  (allreduce-summed on read), but the parallel inlet added the master's GLOBAL volume on
+  *every* participating rank: **np=1 -> 40.0, np=2 -> 80.0, np=4 -> 160.0** against a true
+  `Q*dt = 40.0`. **Not a GPU bug** — mode 1 and mode 2 gave identical wrong numbers, so this
+  had been corrupting `Water_volume_statistics` in *legacy* production MPI runs. Root defect
+  was a **convention clash**: `Rate_operator` contributes its local share, the inlet
+  contributed the global total, into the same accumulator. Fixed by routing all nine inlet
+  sites through `_add_fractional_step_volume()` (master-only) and documenting the
+  convention. Audited the other contributors: parallel **structure operators never touch the
+  accumulator at all** (internal transfers, mass-neutral), so they are clean.
+- **BUG (#194, PR #195): the mode-2 banner printed the RANK count labelled "GPU(s)".** A
+  4-rank run on a 1-GPU box reported "4 GPU(s)". It concealed the one thing the banner was
+  best placed to catch — ranks map to devices round-robin (`rank % num_devices`), so
+  oversubscription silently shares a device.
+- **Can you run several ranks on one GPU? Measured, and the answer is useful** (160k-tri
+  mode-2 evolve, one RTX 5070):
+
+    | ranks | no MPS | with MPS |
+    |---|---|---|
+    | 1 | 3.80 s | 3.51 s |
+    | 2 | 7.13 s | **3.48 s** |
+    | 4 | 11.21 s | **3.72 s** |
+
+  Without MPS the ranks **time-slice** the device: ~3x slower at np=4. **NVIDIA MPS erases
+  the penalty but never beats one rank per GPU** — a single rank with the whole mesh already
+  saturates the device, so splitting it adds no parallelism; MPS just lets the fragments
+  overlap again. *MPS is a way to stop losing, not a way to go faster.* Note it did **not**
+  hang and every rank count gave a **bit-identical checksum** — so the known hang/garble
+  failure is real (Steve has hit it on gadi) but **not universal**, which is why the banner
+  now leads with the measured slowdown and reports hangs as a possibility. A warning that
+  predicts a crash that does not come is one people learn to ignore — which is how the
+  original banner failed.
+- **BUG (#192, fixed — PR to `develop`): mode 2 IGNORED fractional-step operator
+  registration order.** Mode 1 runs operators in registration order; mode 2 hoisted every
+  Boyd culvert to the **front** (batched via `GPUCulvertManager`) before the loop. Mode 2
+  therefore returned **bit-identical** results whether a `Rate_operator` was registered
+  before or after a culvert, while mode 1 gave different answers:
+
+    | order sensitivity, max abs stage diff | mode 1 | mode 2 |
+    |---|---|---|
+    | pre-fix | responds (9.75e-05) | **0.0 — ignores order** |
+    | post-fix | responds (9.75e-05) | responds (9.78e-05) |
+
+  Towradgi registers its 22 culverts first, so the orders coincided *by luck*.
+  - **Steve asked the right design question: should the CPU adopt culverts-first instead?**
+    **No** — and the investigation shows why it would not even have worked. The batched GPU
+    path is **gather-all -> compute-all -> scatter-all**, so there are *two* divergences:
+    the hoisting, AND mode 2 applying culverts **simultaneously from a snapshot** where mode
+    1 applies them **sequentially** (culvert 2 sees culvert 1's stage change). Reordering the
+    CPU fixes the first and leaves the second — you would move every calibrated production
+    model's answers and *still* not have parity. Also: **mode 1 is the oracle** we validate
+    GPU work against; changing the oracle to match the thing under test is backwards.
+  - **Fix:** fire the batched cycle **at the position of the first culvert** rather than
+    before the loop. Contiguous culverts (what every real script does) then reproduce
+    registration order *exactly*, batching untouched, **zero performance cost**. Interleaved
+    culverts still get pulled forward — so it now **warns** instead of diverging silently.
+  - **The measurement trap — READ THIS BEFORE TOUCHING THE GUARD.** My first check said the
+    fix made things *worse* (656 -> 1076 cells differing). It had not. Comparing
+    mode-1-vs-mode-2 *divergence* is the wrong instrument: a separate, pre-existing
+    mode-1/mode-2 culvert discrepancy (~1e-4) dominates, and in this setup it is nearly
+    **equal and opposite** to the order effect — so the *wrong* order coincidentally looked
+    closer (1.4e-06) than the right one (9.77e-05, the floor). The correct instrument is
+    order **sensitivity** (does swapping the registration order change the answer?), which is
+    unambiguous: exactly 0.0 with the bug. The test docstring carries this warning so nobody
+    later "improves" the guard back into the misleading form.
+  - **Still open, separate:** the snapshot-vs-sequential culvert difference above, and the
+    ~1e-4 mode-1/mode-2 Boyd_box discrepancy that forms the floor. Neither is caused by #192
+    or by its fix (the culvert-first control is byte-for-byte unchanged across it).
+  - **NEAR-MISS + a real lint gap.** Inserting `_warn_if_culverts_interleaved()` after the
+    operator loop silently swallowed the trailing
+    `if gpu_mode and needs_cpu_sync: sync_to_device()` into the *new method*, where those
+    locals do not exist. `apply_fractional_steps()` then stopped pushing host work back to
+    the device, so CPU-only operators (wind stress) never reached the GPU — the exact bug
+    class fixed earlier this session. **The unified suite caught it (3 wind-stress
+    failures); `ruff check` did NOT.** The project's ruff config does not enable **F821
+    (undefined name)** — `ruff check` reports "All checks passed" on code with two undefined
+    names, while `ruff check --select F821` flags them. **112 F821s exist repo-wide**, so
+    enabling it is its own piece of work, but *lint here cannot catch a typo'd or orphaned
+    variable reference.* Do not rely on it to; run the suite.
+- **Testing lessons worth keeping.**
+  - ⚠️ **On a GPU-offload build the fast suite SKIPS `test_DE_gpu_omp.py` ENTIRELY — all 86
+    tests.** This bit hard: the #192 guard was written, "verified" with a green fast suite on
+    the nvc build, pushed — and CI went red on 8 jobs, because the fast suite had never
+    *run* the tests being added. Counts make it obvious once you know:
+
+        GPU-offload build (nvc):  2610 pass / 218 skip     <- test_DE_gpu_omp skipped
+        CPU-only build (gcc):     2696 pass / 219 skip     <- the extra 86 ARE those tests
+
+    **Any change to `test_DE_gpu_omp.py` must be validated on a CPU-only build**
+    (`pip install --no-build-isolation -e . -Csetup-args=-Dgpu_offload=false`), which is
+    what CI builds. The isolated runner (`anuga_run_isolated_tests`) *does* exercise the file
+    on a GPU build, but the *fast suite alone is not evidence* for it.
+  - **Do not assert on a mode-1-vs-mode-2 divergence MAGNITUDE — it is build-dependent.**
+    The first version of the #192 guard required mode-2's order-sensitivity to match mode-1's
+    within 5%. It passed on the GPU build (ratio 1.00) and failed on CI's CPU build (ratio
+    2.0), because the magnitude is confounded by the pre-existing mode-1/mode-2 culvert
+    discharge discrepancy, which differs per build. Assert on the *property* (mode 2 obeys
+    registration order — exactly 0.0 sensitivity when it does not), not on a number that a
+    separate discrepancy contaminates. **This is the same trap already documented two bullets
+    up, and I walked straight into it anyway** — which is precisely why it is written down
+    twice.
+  - A parallel bug can often be made **serially catchable**: #191's guard fakes the partition
+    by clearing `tri_full_flag` (the only thing `set_full_indices()` reads) and asserts
+    against the analytic influx — so it runs in the ordinary non-MPI suite. #193's could
+    *not* be (at np=1 there is only the master, so the bug is structurally invisible), hence
+    a real `mpicmd` np=3 test.
+  - **Extract the untestable into a pure function.** `gpu_startup_banner()` only ever fires
+    on hardware CI lacks, so it was pulled out as a pure function of
+    `(numprocs, num_devices, device_id, offload_active)`; the whole matrix is now covered
+    serially.
+  - **`ruff check` does not catch undefined names here (issue #197).** F821 is not enabled,
+    so an orphaned/typo'd variable reference lints clean — it took the test suite to catch
+    one. 112 F821s exist repo-wide, 74 of them in the single broken module
+    `anuga/tsunami_source/eqf_v2.py`. Do not trust lint for this class of error.
+  - Every fix this session was **proven by re-injecting the bug** and watching the new test
+    fail. Do that; a guard you have not seen fail is not a guard.
+
+**Session 48 (2026-07-11/12):** Culvert/weir mode-1 vs mode-2 reporting parity,
+two real physics bugs, the **3.3.8 patch release**, then **partition-save
+performance** (parallel dump, single-file layout) and docs. A user reported the parallel
+(MPI) culvert/trap logs differed from sequential. Root-caused and fixed on
+`develop` (branch `fix/culvert-parallel-mode2-reporting`, PRs pushed direct to
+both develops, four commits `d55e1984`→`467255f0`):
+- **Parallel structure logging** — parallel `.log` files were missing the
+  `accumulated_flow` column (computed on master, never written) and mis-numbered
+  operators (counter advanced only on the master proc, so a culvert and trap with
+  different masters collided). Fixed: write the column + header, advance the
+  counter on every rank in lockstep (participants in the ctor, non-participants
+  in the factory `return None` branch), and drop the `_P<rank>` filename suffix so
+  names match sequential. Verified np=4 and np=16 bit-identical to serial.
+- **Mode-2 (GPU) stats write-back** — in mode 2 the batched `GPUCulvertManager`
+  runs the Boyd/weir physics in C and skips the Python `__call__`, so the logs
+  were **all zeros**. Added per-culvert report fields to `culvert_state`
+  (C `gpu_culvert_operator.c`), a `gpu_culverts_get_report` getter, and a
+  write-back in `apply_all` mirroring mode-1's accumulation.
+- **boyd_pipe critical-depth bug** (real): the GPU C translation **divided** by
+  `(bf·d)^2.5` where the Python reference **multiplies** → flow_area/velocity ~8%
+  off (discharge matched only because it was inlet-controlled; outlet-controlled
+  flow would corrupt discharge too). Fixed both dcrit pairs; added a boyd-pipe
+  cross-mode regression test (the existing one only used boyd_box).
+- **weir critical-depth gravity** (real, issue #181, closed): the Python
+  `weir_orifice_trapezoid_function` hardcoded **9.81** in the trapezoid
+  critical-depth Newton solve, vs the C using `domain.g` (9.8) → ~0.034% velocity
+  offset in partly-full flow. Fixed to derive `g` from `domain.g` on both sides
+  (Python grows a `g` arg, discharge routines pass `self.domain.g`); note this
+  shifts mode-1 weir results ~0.034%. Guard test added.
+- **3.3.8 release.** Cherry-picked the two **legacy** (non-GPU) fixes — parallel
+  logging + weir gravity — to `main` via **PR #182** (GPU-only pipe/mode-2 fixes
+  omitted; that machinery isn't on 3.3.x). Also in 3.3.8 since 3.3.7: SWW
+  large-t store crash (#149), osx-64 wheels (#142), checkout 6→7 (#146). Tagged
+  **annotated `3.3.8`** on the merge commit (bare version, no `v`, per the
+  convention), published the GitHub Release → PyPI (21 files, trusted OIDC);
+  conda-forge follows via feedstock bot.
+- **Gotcha (memory):** MPI parallel + mode-2 needs `#ranks == #GPUs` or it hangs/
+  garbles — validate GPU mode-2 in serial on a 1-GPU box.
+
+Then, **partition-save performance** (a 173M-triangle / 18,400-partition run
+measured ~1,000 s load + ~4,000 s partition + **~37,000 s to save the
+partitions** — ~88% of the job; the dump routines wrote files in a serial loop):
+- **Four stacking speedups (PR #183).**
+  - **Opt-in parallel dump** (`num_workers`) for `sequential_distribute_dump`
+    (domain) and `sequential_mesh_dump` (mesh). `extract_submesh` only *reads*
+    the shared submesh, so a **fork** `ProcessPoolExecutor` shares the
+    partitioned mesh **copy-on-write** (never pickled), and `gc.freeze()` keeps
+    the big inherited structure out of the workers' GC scans (avoids both the
+    rescan cost and COW page-dirtying). Default 1 = today's serial, memory-frugal
+    path (it releases each rank as it writes; the parallel path keeps the whole
+    submesh live — the memory-for-speed trade-off).
+  - **Single-file domain dump** (`single_file=True`, new default): inline
+    points/triangles/quantities into the one per-partition pickle instead of
+    separate `.npy` files → **8 files/partition → 1** (~147k → 18.4k files at
+    18,400 ranks), the dominant cost on metadata-bound Lustre/GPFS. The loader
+    reads **both** layouts (filename-string vs inline array), so old dumps still
+    load; `single_file=False` restores the legacy layout.
+  - **Batched serial gc** — was collecting every rank (18,400 full graph
+    traversals); now every 64 (big arrays are freed by refcounting anyway).
+  - **Vectorized mesh `boundary_tag` write** — `_write_mesh_partition` wrote the
+    NetCDF string variable **one row per boundary edge** (one HDF5 write each).
+    cProfile showed this loop dominating; assembling the char array and writing
+    it once took the mesh write **9.45 → 2.57 ms/file (~3.7×)**, byte-identical.
+- **Partition file format — pickle vs NetCDF (decision).** Benchmarked on real
+  partitions. **Domain → keep pickle**: writes ~6–8× faster than NetCDF at ~equal
+  size, and it carries arbitrary Python state (boundary map, geo_reference) that
+  NetCDF cannot hold without a blob. **Mesh → keep NetCDF**: its content is 100%
+  arrays, it is **1.6× smaller** than pickle *and* portable/inspectable
+  (`ncdump -h`), safe to load, and write-once/read-many. Prototyped a **hybrid**
+  (bulk arrays as NetCDF variables + a small pickled config blob, one file) — it
+  round-trips exactly but writes ~6× slower, so **not adopted**. Two formats for
+  two genuinely different jobs; the mesh's apparent 34× gap was mostly the
+  boundary_tag bug above, not NetCDF itself.
+- **Docs (PRs #184, #185).** Documented `num_workers` / `single_file` and added
+  "Performance for large partition counts" sections. Then **harmonized** the
+  domain/mesh offline-partitioning pages: `sequential_distribute_dump` had a
+  **stub docstring** (no `Parameters` block) and `sequential_distribute_load` had
+  **none**, so the domain page's autodoc API rendered sparse next to the mesh
+  page — both now have full numpydoc + `See Also`, and each dump states its
+  on-disk format (domain → pickle, mesh → NetCDF). Also reordered the
+  **Appendices** (builds → advanced usage → GPU internals → theory → Contributing)
+  and shortened two long nav labels.
+  **Gotcha:** #183's final commit landed on the branch *after* the merge captured
+  it, so it silently missed `develop` — recovered via #184. Check the merge picked
+  up the head you expect.
+- **`pymetis` → core dependency** (was a `parallel` extra). `partition_mesh` needs
+  it, and the *sequential* offline-partitioning preprocessing uses that without
+  mpi4py — so gating it behind `parallel` meant a plain install could not
+  partition a mesh.
+- **GPU install docs.** Stated the real requirement is **a compiler with working
+  OpenMP offloading** — the kernels are standard OpenMP `target`, not CUDA, so
+  nvc is simply the best option *at the moment* (GCC's nvptx backend ICEs on the
+  ANUGA kernels; LLVM/Clang offload, AMD AOMP, Intel icx untested but feasible).
+- **`tools/install_anuga_nvc.sh` preflight (user report).** A user ran the script
+  in a conda env **not** created from `environments/environment_<PY>.yml` and it
+  died with `BackendUnavailable: Cannot import 'mesonpy'` — *after* nvc was found,
+  so it read like a GPU/compiler failure when it was just a missing build dep.
+  Cause: the build uses `pip install --no-build-isolation`, so pip does **not**
+  create a temp build env — the **meson-python** backend and the rest of
+  pyproject's `build-system.requires` must already be in the env. Added a
+  **preflight** that checks `mesonpy`/`cython`/`pybind11`/`numpy` are importable
+  and `meson`/`ninja` are on PATH, and on failure names the missing packages and
+  gives the fix (`conda install -c conda-forge …`, or recreate from the matching
+  `environments/environment_<ver>.yml`). It also prints the env's **actual**
+  Python version — the script prefers an *already-activated* env and ignores `$PY`,
+  so the banner could say `PY=3.14` while building into a 3.12 env (confusing in
+  the user's log).
+  **Triage tip:** `Cannot import 'mesonpy'` from this script is never an nvc
+  problem — it is a missing build backend in the target env.
+- **Test isolation: `Test_File_Conversion` (issue #186, closed).**
+  `test_ferret2sww3` passed in isolation but ERRORed in a full run. `setUp` and
+  several tests in the class create files with **bare relative names**
+  (`most_small_*.nc`, `test_*.nc`, `test.sww`, `*.tms`, `*.asc`/`.dem`) in the
+  **CWD**, and clean them up *inline at the end of each test body* — so a test
+  that fails or is interrupted leaves stale files behind and the **next** run dies
+  overwriting them with `NetCDFFile(..., 'w')` (triggered by a stale `tmp/` left by
+  a previously failed `install_anuga.py`). Fixed by giving each test its **own
+  temp working directory** (`setUp`: `mkdtemp` + `chdir`; `tearDown`: `chdir` back
+  + `rmtree`), so cleanup is **unconditional** even on failure. Chose the temp-CWD
+  approach over patching ferret3 alone because it fixes *every* CWD-writer in the
+  class at once and stops the suite polluting the directory it runs from; safe
+  because the class reads no fixture files by relative path (it creates everything
+  it reads). Verified it still passes with **corrupt + read-only** leftovers
+  planted in the CWD (the exact failure mode), leaving them untouched.
+  **Pattern for similar failures:** "passes alone, fails in a full run" + files
+  written to the CWD ⇒ isolate the whole TestCase in a temp CWD rather than
+  chasing individual `os.remove` calls. (An earlier fix, `55d91479`, had used
+  per-file `mkstemp` for `test_sww_extent` but never touched the ferret tests.)
+- **`set_quantity()` did not reach the device in mode 2 — a REAL silent
+  correctness bug** (`d22bb53f`). Triaging unified-mode test failures reported on
+  PR #187 (which we first suspected were just the known unified-in-one-process
+  aborts — they were **not**: no aborts, and they reproduced *in isolation*).
+  `test_sww2dem_verbose_True` stored an SWW whose stage was `[-0.6, -0.1]` after
+  being set to `1.0`. Root cause: once the GPU interface exists the **device**
+  holds the authoritative centroid state, but `Domain.set_quantity()` updated only
+  the **host** arrays — so the device kept evolving stale/default values. With the
+  initial condition removed, mode 2 evolved **stage = 0** (the device default),
+  proving `set_quantity` never reached it. **Reachable from ordinary scripts**,
+  because `set_boundary()` *and* `distribute_to_vertices_and_edges()` both call
+  `_ensure_gpu_interface()`:
+
+      domain.set_boundary(...)           # builds the device interface
+      domain.set_quantity('stage', ...)  # host only -> device never sees it
+      domain.evolve(...)                 # evolves stale values -> WRONG output
+
+  i.e. GPU runs could be silently wrong, no error or warning. Session 39 had fixed
+  exactly this for `set_boundary()`; `set_quantity()` was missed. Fix mirrors it:
+  sync host **from** device, apply the change, sync **to** device (no-op in legacy;
+  off the hot path — no operator/structure calls `set_quantity()` per timestep).
+  Guard: `Test_GPU_SetQuantityReachesDevice` (fails with the fix reverted).
+  **Lesson:** when a host array and the device can both hold state, *every* public
+  mutator needs the sync, not just the one that bit you. Worth auditing other
+  host-mutating APIs (e.g. direct `quantity.set_values()`) for the same gap.
+- **`test_urs2sts` unified failures were NOT a bug** (`b20bfca0`). Three tests
+  assert on `quantity.boundary_values`, a *host* array mode 2 never populates (it
+  evaluates boundaries on-device and only syncs centroids back). Verified the
+  **physics is mode-2-correct**: skipping only those host-array asserts, the tests'
+  own fbound-vs-Dirichlet comparisons all pass under unified. So they are white-box
+  mode-1-only-state checks ⇒ pinned to legacy per `CONVENTIONS.md`. `test_2pts`
+  already passed under unified.
+  **Triage rule that paid off:** before "fixing" a mode-2 test failure by pinning it
+  to legacy, check whether the *physics* still agrees — if it doesn't, you are
+  hiding a real bug. PR #187 proposed pinning these tests, which would have masked
+  the `set_quantity` corruption above.
+- **Audit of the other host-mutating paths, and the choke-point fix** (`c6a6f503`).
+  Followed the lesson above. `set_quantity_vertices_dict()` routes through
+  `set_quantity()` ⇒ covered; `set_boundary()` ⇒ session 39; fractional-step
+  operators ⇒ covered (non-GPU-safe ops are classified CPU-only and
+  `apply_fractional_steps()` brackets them with a sync pair); no direct
+  `centroid_values[:] =` on conserved quantities exists; checkpoint restore drops
+  the interface and rebuilds lazily. **Two residuals**, both actioned:
+  - Direct `Quantity.set_values()` still bypassed the sync. Fixed by moving the
+    round-trip **down from `Domain.set_quantity()` into `Quantity.set_values()`** —
+    the single choke point for host-side quantity writes, so both routes are
+    covered by one mechanism and neither double-syncs. Two guards keep it off the
+    hot paths: `GPU_SYNCED_QUANTITIES` limits the sync to the four centroid arrays
+    the C actually round-trips (`stage`, `xmomentum`, `ymomentum`, `height` — see
+    `gpu_domain_sync_to_device()`), so elevation/friction/user tracers pay nothing;
+    and `apply_fractional_steps()` sets `_gpu_host_writes_suppressed` inside its
+    already-bracketed region, without which an operator that sets a quantity would
+    cost a full host↔device transfer pair *per operator per timestep*.
+    **Rejected:** the deferred-push ("dirty flag, flush at next step") variant — it
+    races with the yieldstep's `sync_from_device()`, which would silently drop the
+    pending host write and reintroduce this exact bug class.
+  - **Issue #189** — `apply_protection_against_isolated_degenerate_timesteps()`
+    never runs in mode 2. It hangs off `update_timestep()` (line 2718), but all
+    three mode-2 step functions return early into their C counterparts *before*
+    reaching it. Default-off (`config.py:151`) so nothing is silently wrong today;
+    the sharp edge is that enabling it under GPU gives no protection *and no
+    warning*. Suggested fix: warn, as mode 2 already does for unsupported forcing.
+  - **Verification gotcha worth remembering:** these sync guards only mean anything
+    on a **GPU-offload build** (`gpu_offload=True`, nvc). On a CPU build the
+    `omp target update` pragmas are no-ops and the host arrays *are* the "device"
+    arrays, so the tests pass whether or not the fix exists. Always confirm the
+    build (`build/*/meson-info/intro-buildoptions.json`) before trusting a green
+    run as proof. With the sync disabled on the GPU build, the direct-Quantity test
+    and the `set_quantity` guard both fail while the "interface not yet built"
+    control still passes — the right signature.
+- **PR #188 (JorgeG94) — OpenACC offload back end: reviewed and numerically
+  validated.** Adds `gpu_backend=openmp|openacc` (meson), routing every kernel
+  through `gpu/gpu_omp_macros.h` so the same source compiles for OpenMP-target,
+  OpenACC (`nvc -acc=gpu`) or CPU multicore. Verified the load-bearing claim rather
+  than trusting it: **no raw `#pragma omp target`/`omp parallel` and no `reduction(`
+  survives** in `gpu/*.c` — important, because under `-acc=gpu -mp=multicore` a
+  leftover `omp target` would silently run on the **host** while the data sat on the
+  GPU. Every host↔device transfer also genuinely routes through a draining macro.
+  - **Numerical validation (the gate the PR left open).** Ran `run_small_towradgi.py`
+    (`-mpm 2 -go`, 256k tri, ft=3600) on both back ends **built from the same branch**,
+    so the back end was the only variable. Result: **OpenACC validates.**
+
+    | comparison | max ΔStage | RMS | >1mm |
+    |---|---|---|---|
+    | OpenACC run1 vs run2 (determinism) | **0.000e+00** | 0 | 0 |
+    | OpenACC vs OpenMP-target | 7.29e-02 | 1.26e-04 | 500 |
+    | OpenMP-target vs legacy CPU (*already shipped*) | 8.15e-02 | 3.70e-04 | 1650 |
+
+    **The yardstick row is the third** — that is the divergence we already ship and
+    accept between the current GPU back end and the CPU solver. ACC-vs-OMP is *smaller*
+    on every measure. Divergence starts at **exactly zero at t=0** (so the
+    `acc enter data copyin` mapping is right), is **5.96e-08 = 2⁻²⁴ (one ULP of the
+    `.sww`'s float32 storage) at t=120**, and only then amplifies — textbook chaotic
+    sensitivity in a wetting/drying model seeded by a different FP reduction order.
+    **Reusable method:** a *bitwise* run-to-run repeat is what separates "chaotic but
+    correct" from "data race" — both produce the same growth curve, but only a race
+    breaks reproducibility. Worth reaching for on any future GPU-backend change.
+  - **Perf: the kernel win is real but does not reach wall clock.** Steve spotted that
+    the PR's "fluxes-central 2.0s → 1.62s" had to be a short run; re-measured with
+    **nsys at `-ft 240`** and it reproduces — 2.304 s → 1.843 s (**−20%**, same 4736
+    instances); total GPU kernel time 5.40 → 4.92 s. Yet wall clock is a dead heat at
+    ft=240 (17.59 s vs 17.58 s) and ~1% *slower* at ft=3600 (206.2 s vs 208.3 s). The
+    CUDA API breakdown locates it: **the async queue issues 2.5× MORE
+    `cuStreamSynchronize` than OpenMP-target** (554,260 calls / 5.46 s vs 225,038 /
+    3.00 s) — the opposite of its stated motivation — masked only because OpenACC also
+    does far less D2H (3.61 s → 0.93 s), leaving total host API time a wash (7.13 vs
+    7.15 s). That wash is what eats the 20%. **Headroom, not a defect.**
+    **Lesson:** "kernel is faster" and "run is faster" are different claims; always ask
+    which was measured before agreeing *or* disagreeing.
+  - **Real bug found: `set_gpu_offload(False)` / `-ngo` silently no-ops on OpenACC.**
+    The host-fallback routes target regions to the initial device
+    (`omp_set_default_device(omp_get_initial_device())`); the ACC shim turns that into
+    `acc_set_device_num(-1, ...)`, and a negative devicenum in OpenACC is not "run on
+    the host" — the runtime just reverts to implementation-defined default. OpenACC has
+    no equivalent of OpenMP's initial-device semantics. So the run stays on the GPU with
+    no error. **Issue #190**, scoped as a merge blocker for #188 rather than a live bug
+    (the back end is only on the feature branch) so it survives a rebase/split of that PR.
+    Fix is likely to *hard-error* rather than implement: the OpenMP idiom has no OpenACC
+    counterpart at all (host execution is a device *type*, not a device *number*), and the
+    separate `g_gpu_offload_enabled` flag may already carry most of the weight.
+    **Note the validation above does not cover this path** — both runs used the GPU, so a
+    green `.sww` diff gives false comfort here.
+  - Also flagged: the PR silently changes the **default** build's flags
+    (`-mp=gpu,multicore` → `-mp=gpu`), which bears on the known nvc host-fallback
+    pathology; and `acc_free` at `gpu_halo.c:121` frees device buffers without draining
+    the queue, inconsistent with the header's own `exit data` reasoning.
+
+**Session 47 (2026-07-07/08):** Documentation overhaul — restructure, API
+cross-linking, meta-pages, and a warning-free Read the Docs build.
+- **Issue #32 "Make riverwalls transmissive."** Verified the `Cd_through`
+  submerged-orifice throughflow is already active in **both** compute modes:
+  legacy mode-1's `_openmp_compute_fluxes_central` delegates to the shared
+  `core_compute_fluxes_central` in `core_kernels.c` (no mode gating), so the
+  earlier "not in legacy" reading was wrong. Confirmed empirically (mode-1 and
+  mode-2 give bit-identical throughflow). Documented on the issue and here.
+- **Docs overhaul (PR #157).** Split into a standard-user **Contents** vs
+  advanced **Appendices** structure; added a landing quick-start, a
+  **Conventions & units** primer, and an evolve **Stability/blow-ups** section;
+  moved Parallelisation into Contents and TOML/ANUGA-Viewer/QGIS into the
+  standard sections; led the appendices with the developer + new **GPU install**
+  pages. Converted the narrative "Reference" blocks to compact autosummary tables
+  linking into the **API Reference** (expanded API consolidated there), and made
+  every class page's method summary link to per-method signatures
+  (`autodoc_default_options={'members':True}` + `sphinx.ext.napoleon`). Reframed
+  the **ANUGA Viewer** as the recommended fast viewer for large `.sww` (dropped
+  "legacy"). Content-review fixes (typos, heading levels, missing pip path,
+  smoke-test, quantity units). New **Citing**, **Contributing**, **Glossary**
+  meta-pages (surfacing `CITATION.cff`, `CONTRIBUTING.rst`, Apache-2.0).
+- **Docstring + tooling fixes.** Reformatted malformed-RST docstrings surfaced by
+  autodoc `members` (`Quantity`/`Domain` ×6 in #158, `internal_boundary_operator`
+  ×2 in #160). `install_anuga_nvc.sh` now builds into an already-activated conda
+  env if present (#158).
+- **Warning-free build (PRs #159, #161).** Fixed the local warnings —
+  `html_static_path` (`_static` dir) and the `Geo_reference.epsg` duplicate
+  (napoleon renders a class-docstring *Attribute* **and** the real property →
+  `napoleon_use_ivar = True`). Then **watched Read the Docs** (it builds
+  `develop`): it had surfaced 62 warnings the local build hid — 56 `ipython3`
+  Pygments-lexer (RTD lacks IPython → add `ipython` to `docs/requirements.txt`)
+  plus the operator docstrings. RTD `develop` now builds **clean** (only the
+  harmless MPI-less `Could not import mpi4py`). Added a Contributing "Building
+  the documentation" note on reproducing RTD locally (#162). **Lesson:** a
+  locally-installed IPython and `-D nbsphinx_execute=never` hid warnings RTD
+  shows — build docs from a clean `docs/requirements.txt` env.
+- **Branch policy (PR #163 + memory).** Recorded in `ROADMAP.md`: **do not merge
+  `develop` → `main` until the team cuts v4.0.0**; all work/syncs stay on
+  `develop`.
+- **PDF structure + Conventions polish.** Noted the Unix-epoch time origin
+  (seconds from 00:00:00 UTC 1 Jan 1970; `set_starttime` via `datetime`/
+  `zoneinfo`) in the Conventions page (#166). Fixed the PDF putting every
+  section under a single "Quick start" chapter — the `.. toctree::` sat *inside*
+  the Quick-start section on the landing page, so moved Quick start to its own
+  `quickstart.rst` (first in the toctree); verified against the live RTD PDF that
+  Quick start and the other sections are now sibling chapters (#167).
+- **Versioning diagnosis + wheel-repair cherry-pick (2026-07-08).**
+  `git describe` on `develop` showed `1.3.1-4093-g…`, but the package version is
+  correct — `anuga.__version__ = 3.3.6.dev767+g…` (`_git_version.py` uses
+  `git describe --tags`). Two causes: the `3.x` tags are **lightweight**, so a
+  plain `git describe` skips them and falls back to the old **annotated** `1.3.1`
+  (`git describe --tags` → `3.3.6-…`); and `3.3.7` is a release tagged on `main`
+  **not reachable from `develop`**. That 3.3.7 release had exactly one commit
+  `develop` lacked — `e4700a7b` *"Repair wheels on all platforms so they are
+  self-contained"* (delocate/delvewheel/auditwheel so mac/win/linux wheels are
+  self-contained) — **cherry-picked into `develop`** (`014451da`; pushed **direct
+  to `anuga-community/develop`** as an authorised one-off, no PR). Recorded a
+  **tagging convention** in `ROADMAP.md` (PR #168): future release tags must be
+  **annotated**, bare version, no `v` prefix (`git tag -a 3.3.8 -m "ANUGA 3.3.8"`)
+  so plain `git describe` is correct.
+- **nvc GPU rebuild + GPU sanity check.** Rebuilt via `tools/install_anuga_nvc.sh`
+  (active-env path from #158) → `3.3.6.dev772+g08d4c10b`, 65/65 isolated GPU
+  tests, and a dam-break sanity sim (GPU offload engaged, mass conserved to ~1e-13,
+  GPU vs CPU-legacy ~4e-7).
+- **GPU `Time_boundary` mode-1/mode-2 divergence — root-caused and fixed
+  (PR #171, issue #170).** A rising-tide flood diverged ~4e-3 between mode-1 and
+  mode-2. Isolated it: **single-substep** algorithms (DE0, DE_ader2) agree to
+  machine precision, **multi-substep** (DE1/DE2) diverge — and only with
+  **Python-evaluated boundaries** (Time/File/wave/Flather); reflective/steady are
+  exact. Cause: the single-call **C RK loop** (`_evolve_one_rk*_step_c`) sets
+  time-varying boundaries on the device **once per step**, reusing that value for
+  every RK substep, whereas mode-1 calls `update_boundary()` **per substep**
+  (an O(dt) boundary-forcing error). Fix (**option B**): route domains with any
+  Python-evaluated boundary to the Python-orchestrated GPU loop (refreshes per
+  substep → bit-matches mode-1; benchmarked GPU cost ≤~4%, within noise). Added
+  `Test_GPU_TimeBoundarySubstep`; 69/69 GPU tests green. Filed **issue #170** for
+  the proper per-substep C-loop fix (option A).
+- **Fractional-step operator/structure timing (PRs #174, #175, #177; issue #176).**
+  Checked operators/structures for the yieldstep-vs-inner-step concern — they are
+  fine (applied **every inner timestep** in both modes: 13/13 and 46/46 evals ≫
+  yieldsteps). But found a related **operator-evaluation-time** bug: fractional-step
+  operators (applied by the evolve loop *before* it advances time to t+dt) should
+  see the pre-step time **t**, and DE0/DE_ader2 do — but **DE1 (rk2)** and **DE2
+  (rk3)** left `relative_time` advanced, so operators evaluated forcing at t+dt
+  ("one step too far"), ~4e-4 for a time-varying rate. For **DE1** only mode-1 was
+  affected (diverged from mode-2), fixed by restoring the pre-step time in the
+  mode-1 rk2 body (**PR #174**). For **DE2** *both* modes advanced (mode-1 body +
+  mode-2 C **and** GPU loops), so it stayed self-consistent and the cross-mode
+  check missed it — fixed all three rk3 paths (**PR #177**, closes #176). Now all
+  four algorithms evaluate operators at t in both modes. Guards: `test_operator_timing.py`
+  (CPU, mode-1 — runs on any build) + `Test_GPU_OperatorTimeAlignment` (cross-mode);
+  the GPU-only guard was split out to a CPU test in **PR #175**. No prior test used
+  a time-varying operator (coverage gap). CPU suite 2610 pass, GPU 73/73.
+- All merged to `anuga-community/develop` (PRs **#157–#177**, admin-merged by
+  number, except the one-off direct cherry-pick `014451da`); RTD `develop` HTML
+  **and PDF** confirmed clean.
+
+**Session 46 (2026-07-06):** Issue #33 (memory) documentation + measurement,
+plus follow-ups.
+- **Issue #33 "Reduce Memory usage".** Documented on the issue everything already
+  implemented for v4.0.0: the **Quantity per-type allocation** (QM1–QM7 — each
+  quantity allocates only the arrays its `qty_type` needs instead of the blanket
+  9; lazy `vertex_values`; centroid-primary elevation; lazy gradients/`phi`;
+  shared gradient workspace `22559a5b`; ~54–58% off quantity memory) and the
+  **domain C work-array reduction** (DM1: 9 dead arrays removed + deferred to
+  first evolve; DM2: riverwall arrays lazy; ~740 MB at 2.25M tris), plus the
+  exported `memory_stats`/`quantity_memory_stats`/`domain_memory_stats`/
+  `domain_struct_stats` instrumentation. Then **re-ran the issue's exact
+  benchmark** (`run_parallel_rectangular.py`, `mpiexec -np 2`, proc-0 Max RSS):
+  **710→511 MB (−28%), 2.5 GB→1.37 GB (−45%), 5.1 GB→2.74 GB (−46%)** — RSS
+  roughly **halved at 2.25M triangles**, the saving growing with N. Recorded the
+  numbers in `PROGRESS_ARCHIVE.md` (PR #155) and posted them to the issue. The
+  `print_domain_memory_stats` breakdown shows `river wall 0.00 MB` (DM2 lazy) and
+  the trimmed work arrays (DM1). Remaining lever: rank-0's peak building the full
+  domain before `distribute`.
+- **`tools/install_ubuntu.sh`.** Combined the ~90%-identical `install_ubuntu_2X_04.sh`
+  scripts into one version-aware `install_ubuntu.sh` (22.04/24.04/26.04 `case`,
+  auto-derived python version); fixed the earlier cleanup's broken 20.04 dispatch
+  and README mislabel (PR #154).
+- **PR triage.** Reviewed **#148** (multi-compiler flag tuning, GCC 15/NVHPC/ICX)
+  — recommended gating the FP-semantics flags (`-ffinite-math-only`,
+  `-fassociative-math`, `-Mfprelaxed`) behind an opt-in `-Dfast_math` option so
+  the default `pip install` keeps strict IEEE, while keeping the safe flags +
+  `pow→cbrt` rewrite as default; asked @samcom12 to make that change.
+- **Synced `develop` → `anuga-community`** (PRs #153/#154/#155); upstream CI green.
 
 **Session 45 (2026-07-02 – 07-05):** Geodata CI breakage (libjxl), NumPy-2.5
 warnings, PR triage, and a `tools/` cleanup.
@@ -397,7 +1482,7 @@ serial operators, absent here); MPI's growing `distribute` overhead (→30 s at
 **Session 42 (2026-06-25):** Test robustness, PR #144 conflict resolution, and an
 MPI build gotcha. Made the run_toml end-to-end test directory-independent: locate
 the checkout via `cwd` (not just `__file__`, which lives in site-packages for an
-installed pkg), then self-contained — prefer the installed `anuga_run_toml`
+installed pkg), then self-contained — prefer the installed `anuga_toml_run`
 console command + inline-generated inputs, so it runs from any directory and
 skips only when no runner exists (commits `316620e5`, `e9400c6d`). Resolved the
 conflicts on **PR #144** ("Defer GPU/offload interface build to first evolve"):
@@ -413,7 +1498,7 @@ re-ran MPI detection; fixed by rebuilding into a fresh `-Cbuild-dir` (mpi4py
 fallback then finds `mpicc`/`mpi.h`), documented in `KNOWN_ISSUES.md` (commit
 `a07216dd`). Those four tests then pass (8/8).
 
-**Session 41 (2026-06-23):** `anuga_run_toml` TOML scenario runner — examples,
+**Session 41 (2026-06-23):** `anuga_toml_run` TOML scenario runner — examples,
 georeferencing, and an end-to-end test. Added `examples/run_toml/` with
 self-contained `simple/` (dam break) and `complex/` (floodplain) scenarios + per-
 scenario READMEs (commits `0c3c9546`, `d2f85ad4`). Added `"EPSG:<code>"`
@@ -645,7 +1730,7 @@ suite: 58.13% → 58.68%.
 | Memory reporting | `anuga/utilities/system_tools.py::memory_stats()` |
 | Timestepping output | `anuga/abstract_2d_finite_volumes/generic_domain.py::timestepping_statistics()` |
 | Triangle quiet/verbose | `anuga/pmesh/mesh.py::_generateMesh_impl()` |
-| TOML scenario config | `anuga/scenario/`, `scripts/anuga_run_toml.py`, `examples/run_toml/` (simple/complex/cairns; shared DEM in `examples/data/cairns/`); legacy Excel front-end in `examples/cairns_toml_excel/` |
+| TOML scenario config | `anuga/scenario/`, `scripts/anuga_toml_run.py`, `examples/run_toml/` (simple/complex/cairns; shared DEM in `examples/data/cairns/`); legacy Excel front-end in `examples/cairns_toml_excel/` |
 | Single-process benchmark | `benchmarks/run_benchmarks.py` + `benchmarks/compare_benchmarks.py` |
 | MPI distribution benchmark | `benchmarks/distribute_benchmarks.py` + `benchmarks/run_benchmark_grid.py` |
 

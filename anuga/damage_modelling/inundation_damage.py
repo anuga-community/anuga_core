@@ -7,7 +7,6 @@
 import os
 from math import sqrt
 from scipy.interpolate import interp1d
-scipy_available = True
 
 
 from random import choice
@@ -227,12 +226,8 @@ class EventDamageModel:
                                            #[kinds.default_float_kind.MAX,64.7]
                                            ])
 
-    if scipy_available:
-        double_brick_damage_curve = interp1d(double_brick_damage_array[:,0],double_brick_damage_array[:,1])
-    else:
-        double_brick_damage_curve = InterpolatingFunction( \
-             (num.ravel(double_brick_damage_array[:,0:1]),),
-              num.ravel(double_brick_damage_array[:,1:]))
+    double_brick_damage_curve = interp1d(double_brick_damage_array[:,0],
+                                        double_brick_damage_array[:,1])
 
     brick_veeer_damage_array = num.array([#[-kinds.default_float_kind.MAX, 0.0],
                                           [-1000.0,0.0],
@@ -249,12 +244,8 @@ class EventDamageModel:
                                           #[kinds.default_float_kind.MAX,69.4]
                                           ])
 
-    if scipy_available:
-        brick_veeer_damage_curve = interp1d(brick_veeer_damage_array[:,0],brick_veeer_damage_array[:,1])
-    else:
-        brick_veeer_damage_curve = InterpolatingFunction( \
-                                 (num.ravel(brick_veeer_damage_array[:,0:1]),),
-                                  num.ravel(brick_veeer_damage_array[:,1:]))
+    brick_veeer_damage_curve = interp1d(brick_veeer_damage_array[:,0],
+                                       brick_veeer_damage_array[:,1])
 
 
 
@@ -277,12 +268,8 @@ class EventDamageModel:
                                        ])
 
 
-    if scipy_available:
-        contents_damage_curve = interp1d(contents_damage_array[:,0],contents_damage_array[:,1])
-    else:
-        contents_damage_curve = InterpolatingFunction( \
-             (num.ravel(contents_damage_array[:,0:1]),),
-              num.ravel(contents_damage_array[:,1:]))
+    contents_damage_curve = interp1d(contents_damage_array[:,0],
+                                     contents_damage_array[:,1])
 
 
 

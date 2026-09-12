@@ -323,6 +323,32 @@ class GPUCulvertManager:
         timestep = self.domain.get_timestep()
         ext.apply_all_culvert_operators(
             self.domain.gpu_interface.gpu_dom, timestep)
+        self._update_operator_stats(ext)
+
+    def _update_operator_stats(self, ext):
+        """Copy the per-culvert stats the C layer just computed onto the Python
+        operator objects, so their ``.log`` files carry the same discharge /
+        velocity / energy / accumulated-flow columns as mode-1.
+
+        The C values are non-zero only on each culvert's master proc (the one
+        that computes the discharge), which is also the only proc that logs, so
+        writing them on every proc is harmless. We mirror the mode-1 discharge
+        routine exactly: ``accumulated_flow`` and ``discharge_abs_timemean``
+        accumulate every timestep (the logger resets the latter each yieldstep),
+        while the rest are instantaneous.
+        """
+        gpu_dom = self.domain.gpu_interface.gpu_dom
+        yieldstep = getattr(self.domain, 'yieldstep', None)
+        for op, culvert_id in zip(self.operators, self.culvert_ids):
+            gain, discharge, velocity, driving_energy, delta_total_energy = \
+                ext.get_culvert_report_stats(gpu_dom, culvert_id)
+            op.accumulated_flow += gain
+            if yieldstep:
+                op.discharge_abs_timemean += gain / yieldstep
+            op.discharge = discharge
+            op.velocity = velocity
+            op.driving_energy = driving_energy
+            op.delta_total_energy = delta_total_energy
 
     def finalize(self):
         """Clean up all GPU culvert resources."""

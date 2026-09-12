@@ -127,6 +127,26 @@ class Parallel_Inlet_operator(Inlet_operator):
         except Exception as e:
             raise RuntimeError(f"GPU parallel inlet operator init failed: {e}") from e
 
+    def _add_fractional_step_volume(self, volume):
+        """Add this inlet's contribution to domain.fractional_step_volume_integral.
+
+        ONLY the master proc accumulates, and that is the whole point of this method.
+
+        ``domain.fractional_step_volume_integral`` is a per-rank LOCAL accumulator:
+        ``Domain.get_fractional_step_volume_integral()`` sums it across ranks with an
+        MPI allreduce.  But ``volume`` here is the GLOBAL volume for the whole inlet —
+        the master computes it and broadcasts it to every other participating rank — so
+        if all of them added it, the inlet's contribution to the mass balance would come
+        back multiplied by ``len(self.procs)`` (4x on 4 ranks).
+
+        Rate_operator gets this right by construction: each rank adds only its own local
+        influx, which is what the allreduce expects.  This method makes the inlet obey
+        the same convention.  See issue #193.
+        """
+
+        if self.myid == self.master_proc:
+            self.domain.fractional_step_volume_integral += volume
+
     def _call_gpu(self):
         """GPU path for parallel __call__ - small-buffer MPI."""
         from anuga.utilities import parallel_abstraction as pypar
@@ -193,16 +213,16 @@ class Parallel_Inlet_operator(Inlet_operator):
                 vel_u, vel_v, has_velocity, ext_vel_u, ext_vel_v, zero_vel)
 
             if volume >= 0.0:
-                self.domain.fractional_step_volume_integral += volume
+                self._add_fractional_step_volume(volume)
                 self.total_requested_volume += volume
             elif current_volume + volume >= 0.0:
-                self.domain.fractional_step_volume_integral += volume
+                self._add_fractional_step_volume(volume)
                 self.total_requested_volume += volume
             else:
                 self.total_requested_volume += volume
                 volume = -current_volume
                 self.applied_Q = -current_volume / timestep
-                self.domain.fractional_step_volume_integral -= current_volume
+                self._add_fractional_step_volume(-current_volume)
 
         else:
             # Multi-rank inlet: need MPI merge-sort for set_stages_evenly
@@ -212,7 +232,7 @@ class Parallel_Inlet_operator(Inlet_operator):
 
             if volume >= 0.0:
                 self.inlet.set_stages_evenly(volume)
-                self.domain.fractional_step_volume_integral += volume
+                self._add_fractional_step_volume(volume)
                 self.total_requested_volume += volume
 
                 depths = self.inlet.get_depths()
@@ -229,7 +249,7 @@ class Parallel_Inlet_operator(Inlet_operator):
             elif current_volume + volume >= 0.0:
                 depth = (current_volume + volume) / total_area
                 self.inlet.set_depths(depth)
-                self.domain.fractional_step_volume_integral += volume
+                self._add_fractional_step_volume(volume)
                 self.total_requested_volume += volume
 
                 depths = self.inlet.get_depths()
@@ -248,7 +268,7 @@ class Parallel_Inlet_operator(Inlet_operator):
                 self.total_requested_volume += volume
                 volume = -current_volume
                 self.applied_Q = -current_volume / timestep
-                self.domain.fractional_step_volume_integral -= current_volume
+                self._add_fractional_step_volume(-current_volume)
                 self.inlet.set_xmoms(0.0)
                 self.inlet.set_ymoms(0.0)
 
@@ -258,9 +278,18 @@ class Parallel_Inlet_operator(Inlet_operator):
 
     def __call__(self):
 
-        # GPU path: use small-buffer MPI instead of full domain sync
+        # GPU path: use small-buffer MPI instead of full domain sync.
+        # NOT taken when _gpu_host_writes_suppressed is set: that flag means we
+        # are inside apply_fractional_steps' sync_from_device()/sync_to_device()
+        # bracket (a CPU-only fractional operator is present). The GPU path
+        # writes the *device* inlet cells, but the trailing sync_to_device()
+        # (host->device) would then overwrite them with host data that never
+        # received the inflow — silently dropping it. Fall through to the host
+        # path so the batch sync_to_device() carries the inflow to the device.
         # Only use GPU path for ranks that own part of this inlet
-        if getattr(self.domain, 'multiprocessor_mode', 0) == 2 and self.myid in self.procs:
+        if (getattr(self.domain, 'multiprocessor_mode', 0) == 2
+                and not getattr(self.domain, '_gpu_host_writes_suppressed', False)
+                and self.myid in self.procs):
             if not self._gpu_initialized:
                 self._init_gpu()
             if self._gpu_initialized:
@@ -310,7 +339,7 @@ class Parallel_Inlet_operator(Inlet_operator):
         # just pull water off to have a uniform depth.
         if volume >= 0.0 :
             self.inlet.set_stages_evenly(volume)
-            self.domain.fractional_step_volume_integral+=volume
+            self._add_fractional_step_volume(volume)
             self.total_requested_volume += volume
 
             if self.velocity is not None:
@@ -330,7 +359,7 @@ class Parallel_Inlet_operator(Inlet_operator):
         elif current_volume + volume >= 0.0 :
             depth = (current_volume + volume)/total_area
             self.inlet.set_depths(depth)
-            self.domain.fractional_step_volume_integral+=volume
+            self._add_fractional_step_volume(volume)
             self.total_requested_volume += volume
             if self.velocity is not None:
                 depths = self.inlet.get_depths()
@@ -350,7 +379,7 @@ class Parallel_Inlet_operator(Inlet_operator):
             self.total_requested_volume += volume
             volume = -current_volume
             self.applied_Q = -current_volume/timestep
-            self.domain.fractional_step_volume_integral-=current_volume
+            self._add_fractional_step_volume(-current_volume)
             self.inlet.set_xmoms(0.0)
             self.inlet.set_ymoms(0.0)
 

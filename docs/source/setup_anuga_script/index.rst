@@ -2,8 +2,8 @@
 
 
 
-Script Structure
-=================
+Writing an ANUGA script
+=======================
 
 
 .. only:: html
@@ -12,6 +12,7 @@ Script Structure
    :maxdepth: 1
 
    domain
+   conventions
    flow_algorithms
    coordinate_reference
    initial_conditions
@@ -19,6 +20,8 @@ Script Structure
    operators
    rainfall
    riverwalls
+   tracers
+   sediment
    evolve
 
 .. seealso::

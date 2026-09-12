@@ -8,6 +8,7 @@ Note: the full simulation (finaltime=10000 s) takes many hours.  Add
 exclude it from automated runs.
 """
 
+import sys
 import unittest
 import os
 import anuga
@@ -46,4 +47,5 @@ class Test_results(unittest.TestCase):
 
 if __name__ == '__main__':
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_results)
-    unittest.TextTestRunner(verbosity=2).run(suite)
+    result = unittest.TextTestRunner(verbosity=2).run(suite)
+    sys.exit(0 if result.wasSuccessful() else 1)

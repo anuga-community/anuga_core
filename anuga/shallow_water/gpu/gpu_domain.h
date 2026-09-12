@@ -105,9 +105,9 @@ struct time_boundary {
     int *boundary_indices;       // Where to write in boundary_values arrays [num_edges]
     int *vol_ids;                // Interior cell IDs [num_edges]
     int *edge_ids;               // Which edge (0, 1, or 2) [num_edges]
-    double stage_value;          // Current stage value (updated each timestep from Python)
-    double xmom_value;           // Current xmom value (updated each timestep from Python)
-    double ymom_value;           // Current ymom value (updated each timestep from Python)
+    double *stage_values;        // Per-edge stage (updated each timestep from Python) [num_edges]
+    double *xmom_values;         // Per-edge xmom  [num_edges]
+    double *ymom_values;         // Per-edge ymom  [num_edges]
     int mapped;                  // Whether arrays are mapped to GPU
 };
 
@@ -191,9 +191,14 @@ struct boundary_edge_sync {
 struct rate_operator_info {
     int num_indices;             // Number of triangles this operator applies to
     int *indices;                // Triangle indices [num_indices] - mapped to GPU
-    double *areas;               // Triangle areas for mass tracking [num_indices]
-    int *full_indices;           // Indices that are "full" (not ghost) for mass tracking
-    int num_full;                // Number of full indices
+    // Triangle area used for mass tracking [num_indices], with the ghost-cell mask
+    // ALREADY BAKED IN: mass_areas[k] is 0.0 for a ghost triangle, so ghosts add
+    // nothing to the influx reduction. Under MPI a rainfall polygon straddling a
+    // partition boundary appears on several ranks; only the rank that OWNS a
+    // triangle may count it, or the reported influx is inflated. (The *stage*
+    // update is still applied to ghosts, as on the CPU path — the halo exchange
+    // overwrites them.) Mirrors Rate_operator.full_indices on the Python side.
+    double *mass_areas;
     int active;                  // Whether this operator slot is in use
     int mapped;                  // Whether arrays are mapped to GPU
     // Rate array caching (avoids H2D transfer every call)
@@ -234,8 +239,11 @@ struct inlet_operators {
 };
 
 // Culvert operator types
+// MAX_CULVERTS, like MAX_RATE_OPERATORS / MAX_INLET_OPERATORS above, is the
+// *initial* heap allocation size; the array grows by doubling, so there is no
+// hard limit on the number of culverts. There is likewise no limit on the
+// number of triangles in an inlet — see struct culvert_indices.
 #define MAX_CULVERTS 64
-#define MAX_INLET_TRIANGLES 64
 #define CULVERT_TYPE_BOX              0
 #define CULVERT_TYPE_PIPE             1
 #define CULVERT_TYPE_WEIR_TRAPEZOID   2
@@ -272,13 +280,20 @@ struct culvert_params {
 struct culvert_indices {
     int enquiry_index_0;         // -1 if not on this rank
     int enquiry_index_1;         // -1 if not on this rank
+    // Host-side staging for the inlet triangles of each end, between
+    // registration (gpu_culvert_init) and the flattening done by
+    // gpu_culverts_map(), which is what the device actually sees. Heap arrays
+    // sized by the actual triangle count — as in rate_operator_info and
+    // inlet_operator_info — so an inlet region may cover any number of
+    // triangles. NULL when the corresponding *_num is 0. Owned here and freed
+    // by gpu_culverts_finalize_all().
     int inlet0_num;              // 0 if no local triangles
-    int inlet0_indices[MAX_INLET_TRIANGLES];
-    double inlet0_areas[MAX_INLET_TRIANGLES];
+    int *inlet0_indices;         // [inlet0_num]
+    double *inlet0_areas;        // [inlet0_num]
     double inlet0_total_area;    // LOCAL area (partial if cross-boundary)
     int inlet1_num;
-    int inlet1_indices[MAX_INLET_TRIANGLES];
-    double inlet1_areas[MAX_INLET_TRIANGLES];
+    int *inlet1_indices;         // [inlet1_num]
+    double *inlet1_areas;        // [inlet1_num]
     double inlet1_total_area;
 
     // MPI topology (for cross-boundary culverts)
@@ -293,6 +308,17 @@ struct culvert_indices {
 struct culvert_state {
     double smooth_delta_total_energy;
     double smooth_Q;
+
+    // Reporting stats (host-side), refreshed every apply_all on the proc that
+    // computes the discharge (the master proc; zero on non-master / dry /
+    // closed). Read back by the Python structure logger so mode-2 (unified /
+    // GPU) .log files carry the same columns as mode-1. See
+    // gpu_culverts_get_report().
+    double report_gain;               // Q * timestep_star this step   [m^3]
+    double report_discharge;          // instantaneous discharge       [m^3/s]
+    double report_velocity;           // barrel velocity               [m/s]
+    double report_driving_energy;     // inflow driving energy         [m]
+    double report_delta_total_energy; // |smoothed delta total energy| [m]
 };
 
 // Culvert manager (lives inside gpu_domain)
@@ -304,19 +330,57 @@ struct culvert_operators {
     struct culvert_state *state;     // heap-allocated, capacity entries
     int initialized;
 
-    // Scratch buffers for batched gather/scatter
-    double *scratch_stage;
+    // ------------------------------------------------------------------
+    // Host-side per-step working buffers, grown to hold num_culverts.
+    // These were once fixed-size stack arrays of MAX_CULVERTS, which
+    // silently overflowed for any model with more culverts than that
+    // (MAX_CULVERTS is only the *initial* capacity — see the note above).
+    // Allocated once and reused, so the hot path stays malloc-free.
+    // ------------------------------------------------------------------
+    int host_scratch_capacity;             // entries allocated below (0 = none)
+    struct inlet_data *host_data0;         // [capacity] inlet 0 gathered data
+    struct inlet_data *host_data1;         // [capacity] inlet 1 gathered data
+    struct culvert_result *host_results;   // [capacity] per-culvert discharge
+    struct culvert_transfer *host_transfers; // [capacity] per-culvert transfer
+    struct culvert_mpi_bufs *host_mpi_bufs;  // MPI exchange buffers (opaque)
+
+    // ------------------------------------------------------------------
+    // Device-resident scratch. Everything here is mapped ONCE in
+    // gpu_culverts_map() and torn down in gpu_culverts_finalize_all().
+    // Constant buffers use map(to:); per-step buffers use map(alloc:) and
+    // are refreshed on-device each timestep (no per-step map/alloc/free).
+    // ------------------------------------------------------------------
+
+    // Enquiry points (2 per culvert). Indices are constant → map(to:) once.
+    int *scratch_enquiry_indices;   // [2*nc] centroid index of each enquiry pt
+    double *scratch_stage;          // [2*nc] gathered enquiry values (D2H each step)
     double *scratch_xmom;
     double *scratch_ymom;
     double *scratch_elev;
 
-    int total_inlet_triangles;
-    int *scratch_inlet_indices;
-    double *scratch_inlet_areas;
-    double *scratch_inlet_stage;
-    double *scratch_inlet_xmom;
-    double *scratch_inlet_ymom;
-    double *scratch_inlet_elev;
+    // Inlet triangles, flattened across all culverts. Constant metadata is
+    // mapped map(to:) once; per-triangle values are read straight from the
+    // domain centroid arrays on-device, so no per-triangle value buffers.
+    int total_inlet_triangles;      // nt
+    int *scratch_inlet_indices;     // [nt] centroid index of each triangle
+    double *scratch_inlet_areas;    // [nt] triangle area (reduction weight)
+    // Per-inlet contiguous range into the flattened triangle arrays. Slot
+    // 2*c is inlet 0, 2*c+1 is inlet 1. Lets gather/scatter parallelise over
+    // inlets (ne teams) with a sequential inner sum — no atomics, and the
+    // summation order matches the old host code exactly.
+    int *scratch_slot_start;        // [2*nc] first flattened triangle of the inlet
+    int *scratch_slot_count;        // [2*nc] triangle count for the inlet
+
+    // Per-inlet area-weighted sums, accumulated on-device (D2H each step).
+    double *scratch_avg_stage;      // [2*nc]
+    double *scratch_avg_depth;
+    double *scratch_avg_xmom;
+    double *scratch_avg_ymom;
+
+    // Per-inlet scatter values, pushed H2D each step then written on-device.
+    double *scratch_slot_shift;     // [2*nc] delta average depth per inlet (new - old)
+    double *scratch_slot_xmom;      // [2*nc]
+    double *scratch_slot_ymom;      // [2*nc]
 
     int mapped;
 };
@@ -330,6 +394,12 @@ struct max_quantities_info {
     double *max_depth;           // [n] device-resident running max depth
     double *max_speed;           // [n] device-resident running max speed
     double *max_uh;              // [n] device-resident running max ||(uh,vh)||
+    // Running max of each tracer's concentration, [n_tracers][n] flattened as
+    // max_tracer[s*n + i], the same layout the tracer arrays themselves use.
+    // NULL and n_tracers == 0 when the domain has no tracers, which is the
+    // common case and costs nothing.
+    double *max_tracer;
+    int n_tracers;
     int initialized;
     int mapped;
 };
@@ -469,6 +539,12 @@ void gpu_domain_sync_all_from_device(struct gpu_domain *GD);  // Debug: sync ALL
 // Sync boundary values TO GPU (after CPU boundary evaluation)
 void gpu_sync_boundary_values(struct gpu_domain *GD);
 
+// Sync riverwall crest elevations / hydraulic properties TO GPU (after a
+// host-side RiverWall.set_elevation() and friends)
+void gpu_sync_riverwall_to_device(struct gpu_domain *GD);
+void gpu_sync_tracer_source_to_device(struct gpu_domain *GD);
+void gpu_sync_tracer_boundary_to_device(struct gpu_domain *GD);
+
 // Sync edge values FROM GPU (before CPU boundary evaluation)
 void gpu_sync_edge_values_from_device(struct gpu_domain *GD);
 
@@ -541,7 +617,7 @@ void gpu_evaluate_flather_boundary(struct gpu_domain *GD);
 int gpu_time_boundary_init(struct gpu_domain *GD, int num_edges,
                            int *boundary_indices, int *vol_ids, int *edge_ids);
 void gpu_time_boundary_finalize(struct gpu_domain *GD);
-void gpu_time_boundary_set_values(struct gpu_domain *GD, double stage, double xmom, double ymom);
+void gpu_time_boundary_set_values(struct gpu_domain *GD, double *stage, double *xmom, double *ymom);
 void gpu_evaluate_time_boundary(struct gpu_domain *GD);
 
 // Rate operators - rain, extraction, etc.
@@ -577,6 +653,7 @@ void gpu_max_quantities_update(struct gpu_domain *GD);
 void gpu_max_quantities_get(struct gpu_domain *GD,
                             double *out_stage, double *out_depth,
                             double *out_speed, double *out_uh);
+void gpu_max_tracers_get(struct gpu_domain *GD, double *out_tracer);
 void gpu_max_quantities_finalize(struct gpu_domain *GD);
 
 // Ghost exchange - the key MPI function
@@ -585,6 +662,11 @@ void gpu_exchange_ghosts(struct gpu_domain *GD);
 
 // GPU kernels (stubs - will be implemented in sw_domain_gpu.c)
 void gpu_extrapolate_second_order(struct gpu_domain *GD);
+
+// Fused RK2-backup (optional) + protect + extrapolate centroid pass in one
+// launch; returns the protect mass error.  Pair with gpu_extrapolate_edges.
+double gpu_prepare_step(struct gpu_domain *GD, int do_backup, int zero_eu);
+void gpu_extrapolate_edges(struct gpu_domain *GD, double predictor_dt);
 double gpu_compute_fluxes(struct gpu_domain *GD, int substep_count, int timestep_fluxcalls);
 void gpu_update_conserved_quantities(struct gpu_domain *GD, double timestep);
 void gpu_backup_conserved_quantities(struct gpu_domain *GD);
@@ -593,6 +675,20 @@ void gpu_saxpy3_conserved_quantities(struct gpu_domain *GD, double a, double b, 
 double gpu_protect(struct gpu_domain *GD);
 double gpu_compute_water_volume(struct gpu_domain *GD);
 void gpu_manning_friction(struct gpu_domain *GD);
+
+// Fused Manning + update (+ RK2 average when do_saxpy) in a single launch.
+// timestep must already be known. Falls back to the separate kernels under
+// sloped Manning.
+void gpu_forcing_and_update(struct gpu_domain *GD, double timestep,
+                            int apply_forcing, int do_saxpy,
+                            double a, double b);
+
+// Flux + apply phases: select the edge-based kernel pair automatically when
+// D->edge_flux_work is allocated (and no riverwalls); cell-based otherwise.
+double gpu_flux_phase(struct gpu_domain *GD, int substep_count, int timestep_fluxcalls);
+int gpu_prepare_should_zero_eu(struct gpu_domain *GD);
+void gpu_apply_phase(struct gpu_domain *GD, double timestep, int apply_forcing,
+                     int do_saxpy, double a, double b, int substep_count);
 
 // Full Euler step on GPU
 double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int apply_forcing);
@@ -694,5 +790,10 @@ void gpu_culvert_finalize(struct gpu_domain *GD, int culvert_id);
 void gpu_culverts_finalize_all(struct gpu_domain *GD);
 void gpu_culverts_map(struct gpu_domain *GD);
 void gpu_culverts_apply_all(struct gpu_domain *GD, double timestep);
+// Read back a culvert's per-step reporting stats into out[5] =
+// {gain, discharge, velocity, driving_energy, delta_total_energy}. Returns 0 on
+// success, -1 if culvert_id is out of range. Values are non-zero only on the
+// proc that computed the discharge (the master proc).
+int gpu_culverts_get_report(struct gpu_domain *GD, int culvert_id, double *out);
 
 #endif // GPU_DOMAIN_H

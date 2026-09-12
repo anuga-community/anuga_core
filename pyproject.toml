@@ -28,6 +28,7 @@ dependencies = [
     'netCDF4>=1.6',
     'scipy>=1.11',
     'meshpy>=2022.1',
+    'pymetis>=2023.1',
     'pyproj>=3.6',
     'xarray',
 ]
@@ -53,7 +54,6 @@ classifiers = [
 [project.optional-dependencies]
 parallel = [
     'mpi4py',
-    'pymetis>=2023.1',
 ]
 data = [
     'rasterio',
@@ -116,7 +116,6 @@ ignore = [
     "F403",   # star import (57) — ANUGA uses * imports for domain API
     "F405",   # may be from star import (1405)
     "F811",   # redefined while unused (190) — some intentional
-    "F821",   # undefined name (176) — false positives from star imports
     "F841",   # local variable assigned but never used (1034)
 ]
 

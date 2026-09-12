@@ -26,6 +26,7 @@ import unittest
 import numpy as num
 import copy
 import os
+import shutil
 
 def axes2points(x, y):
     """Generate all combinations of grid point coordinates from x and y axes
@@ -95,6 +96,20 @@ class Test_File_Conversion(unittest.TestCase):
 
     def setUp(self):
         import time
+
+        # Run each test in its own temporary working directory.
+        #
+        # This setUp and several tests create NetCDF/ASCII files using bare
+        # relative names (e.g. most_small_ha.nc, test_ha.nc, test.sww), i.e. in
+        # the current working directory, and clean them up *inline* at the end
+        # of the test body.  A test that fails or is interrupted therefore
+        # leaves stale files behind, and the next run fails when it tries to
+        # overwrite them with NetCDFFile(..., 'w').  Isolating each test in a
+        # fresh temp dir (removed wholesale in tearDown) makes the tests
+        # order-independent and immune to leftovers from an earlier run.
+        self._orig_cwd = os.getcwd()
+        self._temp_cwd = tempfile.mkdtemp(prefix='anuga_test_file_conversion_')
+        os.chdir(self._temp_cwd)
 
         self.verbose = Test_File_Conversion.verbose
         # Create basic mesh
@@ -216,15 +231,13 @@ class Test_File_Conversion(unittest.TestCase):
 
 
     def tearDown(self):
-        for ext in ['_ha.nc', '_ua.nc', '_va.nc', '_e.nc']:
-            #print 'Trying to remove', self.test_MOST_file + ext
-            os.remove(self.test_MOST_file + ext)
-
-        for file in ['timefile2netcdf_seconds.tms', 'timefile2netcdf.tms']:
-            try:
-                os.remove(file)
-            except OSError:
-                pass
+        # Restore the working directory and drop the whole temp dir.  This
+        # removes every file any test created, even if the test failed part-way
+        # through -- previously each test deleted its own files inline at the end
+        # of the test body, so a failure left stale .nc files behind that broke
+        # the *next* run.
+        os.chdir(self._orig_cwd)
+        shutil.rmtree(self._temp_cwd, ignore_errors=True)
 
     def test_ferret2sww1(self):
         """Test that georeferencing etc works when converting from

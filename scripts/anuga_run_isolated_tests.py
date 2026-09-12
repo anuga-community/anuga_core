@@ -134,23 +134,68 @@ def _abs_target(tok):
     return tok
 
 
-def _abs_nodeid(nodeid):
-    """Resolve a (rootdir-relative) collected node id to an absolute one.
+# Directories to resolve relative node ids against, most specific first.
+# Populated in main() from the resolved targets; ROOTDIR is the last resort.
+#
+# WHY THIS EXISTS: pytest emits node ids relative to ITS OWN rootdir, which is
+# the common ancestor of the targets -- the test file's directory for a single
+# file, the package directory for a --pyargs package. That is NOT the same as
+# this script's ROOTDIR (derived from the cwd). Inside a source checkout the two
+# coincide, so resolving against ROOTDIR alone worked; for an installed package
+# outside a checkout (a container, a wheel install) it does not, and every child
+# was handed an unresolvable id like 'test_DE_gpu_omp.py::Test::test_x',
+# reported "file or directory not found", and was classified CRASH.
+_BASE_DIRS = []
 
-    A node id collected for an installed package (e.g. via ``--pyargs``) is
-    already an absolute path under site-packages and is returned unchanged; only
-    rootdir-relative ids get the rootdir prefix, and only when that resolves to a
-    real file (so an unexpected layout falls back to the raw id rather than
-    fabricating a bad absolute path)."""
-    path, sep, rest = nodeid.partition("::")
-    p = Path(path)
-    if not p.is_absolute():
-        cand = ROOTDIR / path
-        if cand.exists():
-            p = cand
+
+def _register_base_dirs(targets, pyargs):
+    """Record where pytest will have rooted its node ids for these targets."""
+    dirs = []
+    for tok in targets:
+        path = tok.partition("::")[0]
+        if pyargs:
+            # A module/package name: resolve it to its location on disk.
+            try:
+                import importlib.util
+                spec = importlib.util.find_spec(path)
+            except Exception:
+                spec = None
+            if spec is None:
+                continue
+            if spec.submodule_search_locations:      # package
+                dirs += [Path(d) for d in spec.submodule_search_locations]
+            elif spec.origin:                        # module
+                dirs.append(Path(spec.origin).parent)
         else:
-            return nodeid
-    return str(p) + sep + rest
+            p = Path(path)
+            dirs.append(p if p.is_dir() else p.parent)
+    seen, out = set(), []
+    for d in dirs + [ROOTDIR]:
+        d = d.resolve()
+        if d not in seen and d.is_dir():
+            seen.add(d)
+            out.append(d)
+    _BASE_DIRS[:] = out
+
+
+def _abs_nodeid(nodeid):
+    """Resolve a collected node id to an absolute one.
+
+    Node ids already absolute pass through. A relative id is resolved against
+    ROOTDIR first (preserving in-checkout behaviour exactly), then against the
+    target-derived base directories. A candidate is only accepted when it names
+    a real FILE -- a bare directory match would fabricate a nonsense id."""
+    path, sep, rest = nodeid.partition("::")
+    if not path:
+        return nodeid
+    p = Path(path)
+    if p.is_absolute():
+        return str(p) + sep + rest
+    for base in (ROOTDIR, *_BASE_DIRS):
+        cand = base / path
+        if cand.is_file():
+            return str(cand) + sep + rest
+    return nodeid
 
 # Status -> short label used in the live log and summary
 PASS, FAIL, SKIP, ERROR, CRASH, TIMEOUT, NOTESTS = (
@@ -270,9 +315,22 @@ def main(argv=None):
     print(f"Compute mode: {mode}"
           f"{'' if COMPUTE_MODE else ' (inherited)'}", flush=True)
     print(f"Collecting tests from: {' '.join(targets)}", flush=True)
+    _register_base_dirs(targets, args.pyargs)
     ids = [_abs_nodeid(n) for n in collect(targets, args.pyargs, args.k_expr)]
     if not ids:
         print("No tests collected.", file=sys.stderr)
+        return 2
+
+    # An id that still is not an existing file cannot be run by any child. That
+    # is a harness bug, not a test failure: say so once, instead of spawning N
+    # children that each report "file or directory not found" as a CRASH.
+    unresolved = [n for n in ids if not Path(n.partition("::")[0]).is_file()]
+    if unresolved:
+        print(f"ERROR: {len(unresolved)} of {len(ids)} collected node ids could "
+              f"not be resolved to a file on disk.\n"
+              f"  first: {unresolved[0]}\n"
+              f"  searched: {', '.join(str(d) for d in (ROOTDIR, *_BASE_DIRS))}\n"
+              f"This is a bug in the runner, not a test failure.", file=sys.stderr)
         return 2
     print(f"Running {len(ids)} tests, one per process "
           f"(timeout {args.timeout:g}s, jobs {args.jobs}).\n", flush=True)

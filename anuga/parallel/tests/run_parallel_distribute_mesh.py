@@ -395,20 +395,6 @@ def get_true_seq_values(metis_version=4):
                 [0.75, 0.75]])
 
 
-    if False:
-        from pprint import pformat
-        true_values = dict(
-        true_ghost_layer_width = ghost_layer_width,
-        true_points = points,
-        true_vertices = vertices,
-        true_ghost_recv_dict_1 = ghost_recv_dict[1],
-        true_ghost_recv_dict_2 = ghost_recv_dict[2],
-        true_full_send_dict_1 = full_send_dict[1],
-        true_full_send_dict_2 = full_send_dict[2])
-        for key,item in true_values.items():
-            msg = key + '=' + pformat(item)
-            print (msg)
-
     if metis_version == 4:
         triangles = [[4, 9, 3], [4, 12, 5], [7, 12, 4], [8, 12, 7], [5, 12, 8],
                     [0, 9, 1], [1, 9, 4], [1, 10, 2], [4, 10, 1], [5, 10, 4],

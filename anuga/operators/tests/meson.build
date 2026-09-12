@@ -9,6 +9,7 @@ python_sources = [
 'test_mannings_operator.py',
 'test_kinematic_viscosity_operator.py',
 'test_rate_operators.py',
+'test_sanddune_erosion_operator.py',
 'test_set_elevation_operator.py',
 'test_set_quantity.py',
 'test_set_stage_operator.py',

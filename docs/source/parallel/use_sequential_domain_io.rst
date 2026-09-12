@@ -19,8 +19,10 @@ implements an *offline domain partitioning* workflow (also called
       python create_dump.py -np N
 
    Rank 0 builds a complete :class:`Domain` (mesh + all quantities),
-   partitions it into *N* subdomains, and writes one set of files per rank:
-   a pickle file plus NumPy ``.npy`` arrays for the mesh and each quantity.
+   partitions it into *N* subdomains, and writes **one pickle file per rank**
+   (the single-file layout, the default; see `File format`_).  For very large
+   partition counts the writing can be parallelised — see
+   `Performance for large partition counts`_.
 
 2. **Simulation** — run as many times as needed:
 
@@ -92,8 +94,9 @@ API
 File format
 -----------
 
-For a domain named ``flood`` partitioned into *N* ranks, the preprocessing
-step creates the following files per rank *p* in ``partition_dir``:
+By default (``single_file=True``) the preprocessing step writes **one file per
+rank**.  For a domain named ``flood`` partitioned into *N* ranks, in
+``partition_dir``:
 
 .. list-table::
    :header-rows: 1
@@ -102,8 +105,24 @@ step creates the following files per rank *p* in ``partition_dir``:
    * - File
      - Contents
    * - ``flood_P<N>_<p>.pickle``
-     - Python pickle: mesh topology, boundary conditions, domain settings,
-       and per-quantity filenames.
+     - Python pickle holding everything for rank *p*: mesh topology (node
+       coordinates and triangle connectivity), boundary conditions, domain
+       metadata (name, flow algorithm, geo_reference, ``store`` flag, …), and
+       every quantity's centroid values — all stored inline as NumPy arrays.
+
+Passing ``single_file=False`` selects the **legacy multi-file layout**, which
+splits the arrays into separate ``.npy`` files (``3 + N_quantities`` files per
+rank, referenced by path from the pickle):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 42 58
+
+   * - File
+     - Contents
+   * - ``flood_P<N>_<p>.pickle``
+     - Pickle: mesh topology, boundary conditions, domain settings, and
+       per-quantity **filenames**.
    * - ``flood_P<N>_<p>.pickle.np1.npy``
      - Node (x, y) coordinates as a NumPy ``float64`` array, shape (nnodes, 2).
    * - ``flood_P<N>_<p>.pickle.np2.npy``
@@ -112,10 +131,47 @@ step creates the following files per rank *p* in ``partition_dir``:
      - One file per quantity (e.g. ``elevation``, ``stage``, ``friction``):
        centroid values as a NumPy ``float64`` array, shape (ntris,).
 
-The pickle file stores domain metadata (name, flow algorithm,
-geo_reference, ``store`` flag, etc.) so that ``sequential_distribute_load``
-can reconstruct the domain identically to how it was configured during
-preprocessing.
+``sequential_distribute_load`` reads **both** layouts automatically, so
+single-file and legacy multi-file dumps are interchangeable on load.
+
+
+Performance for large partition counts
+--------------------------------------
+
+For very large meshes split into many partitions, **writing the partition
+files dominates** the preprocessing time.  As a reference point, a
+173-million-triangle mesh partitioned into 18,400 ranks measured roughly
+1,000 s to load, 4,000 s to partition, and **37,000 s to write the partitions**.
+Two options address this:
+
+``single_file`` (default ``True``)
+   Writes one pickle per rank instead of ``3 + N_quantities`` separate files —
+   cutting the file count roughly an order of magnitude (e.g. ~147,000 → 18,400
+   files at 18,400 ranks with five quantities).  This is the dominant cost on
+   metadata-bound parallel filesystems (Lustre, GPFS).
+
+``num_workers`` (default ``1``)
+   With ``num_workers > 1`` (on a POSIX/fork platform) the per-rank files are
+   written in parallel by a pool of worker processes that share the partitioned
+   mesh copy-on-write, so the write scales toward the filesystem's I/O and
+   metadata throughput.  Match ``num_workers`` to the machine doing the
+   preprocessing (often a large-memory login/preprocessing node).
+
+.. code-block:: python
+
+   anuga.sequential_distribute_dump(
+       domain, numprocs=18400, partition_dir='Partitions',
+       num_workers=32,          # write with 32 worker processes
+       # single_file=True is the default
+   )
+
+.. note::
+
+   The serial default (``num_workers=1``) releases each rank's memory as it is
+   written, keeping rank-0 peak RAM low.  The parallel path keeps the whole
+   partitioned mesh resident for the duration of the worker pool — the
+   memory-for-speed trade-off — so choose ``num_workers`` with the preprocessing
+   node's RAM in mind.
 
 
 Preprocessing example

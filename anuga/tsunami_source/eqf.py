@@ -109,37 +109,12 @@ class Okada_func:
         produced by a submarine mass failure.
         """
 
-        from math import sin, cos, radians, exp, cosh
-        from okada import okadatest
-
-        #ensure vectors x and y have the same length
-        N = len(x)
-        assert N == len(y)
-
-        depth = self.depth
-        dip = self.dip
-        length = self.length
-        width = self.width
-        x0 = self.x0
-        y0 = self.y0
-        strike = self.strike
-        dip = self.dip
-        rake = self.rake
-        slip = self.slip
-
-        #double Gaussian calculation assumes water displacement is oriented
-        #E-W, so, for displacement at some angle alpha clockwise from the E-W
-        #direction, rotate (x,y) coordinates anti-clockwise by alpha
-
-        cosa = cos(radians(strike))
-        sina = sin(radians(strike))
-
-        xr = ( (x-x0) * sina + (y-y0) * cosa)
-        yr = (-(x-x0) * cosa + (y-y0) * sina)
-
-        z = okada(xr,yr,depth,length,width,dip,rake,slip)
-
-
-        return z
+        raise NotImplementedError(
+            "eqf.Okada_func is not callable: it depends on a compiled Fortran 'okada' "
+            "extension that ANUGA no longer builds (only the okada.f source remains). "
+            "The body also called okada() while importing okadatest, so it could not "
+            "have worked even with the extension present. "
+            "Use anuga.tsunami_source.tsunami_okada.Okada_func instead — a pure-Python "
+            "implementation that is built, tested and maintained.")
 
 

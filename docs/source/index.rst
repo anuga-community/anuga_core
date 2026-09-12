@@ -17,31 +17,46 @@ ANUGA was created in a collaboration by Geoscience Australia
 and Mathematical Sciences Institute at the Australian National University. 
 It is now developed and maintained by a community of volunteers.
 
+.. note::
+
+   The main documentation (**Contents**) covers the standard workflow most users
+   need: install ANUGA, try an example, write a script (or use the TOML scenario
+   interface), run it, view the results, and parallelise if needed. The
+   **Appendices** hold advanced topics — the developer and GPU installs, advanced
+   parallel methods, compute modes and GPU offloading, and advanced scripting.
+
 
 .. toctree::
    :maxdepth: 2
    :caption: Contents:
 
+   quickstart
    background
    installation/index
-   setup_anuga_script/index
    examples/index
+   setup_anuga_script/index
+   toml_scenario/index
    visualisation/index
    parallel/index
    reference/index
+   glossary
    troubleshooting
+   citing
    genindex
 
 .. toctree::
    :maxdepth: 2
    :caption: Appendices:
 
-   mathematical_background
-   appendices/advanced_script
-   appendices/advanced_visualisation
    installation/install_anuga_developers
-   toml_scenario/index
+   Installing for GPU <appendices/install_gpu>
+   appendices/advanced_script
    parallel/advanced
+   mathematical_background
+   Sediment physics: choosing the laws <appendices/sediment_physics>
+   Compute modes: legacy vs unified <appendices/compute_modes>
+   appendices/profiling_gpu
+   appendices/contributing
 
 
    

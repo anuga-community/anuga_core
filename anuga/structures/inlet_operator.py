@@ -180,8 +180,16 @@ class Inlet_operator(anuga.Operator):
 
     def __call__(self):
 
-        # GPU path: skip full domain sync, transfer only inlet data
-        if getattr(self.domain, 'multiprocessor_mode', 0) == 2:
+        # GPU path: skip full domain sync, transfer only inlet data.
+        # NOT taken when _gpu_host_writes_suppressed is set: that flag means we
+        # are inside apply_fractional_steps' sync_from_device()/sync_to_device()
+        # bracket (a CPU-only fractional operator is present). The GPU path
+        # writes the *device* inlet cells, but the trailing sync_to_device()
+        # (host->device) would then overwrite them with host data that never
+        # received the inflow — silently dropping it. Fall through to the host
+        # path so the batch sync_to_device() carries the inflow to the device.
+        if (getattr(self.domain, 'multiprocessor_mode', 0) == 2
+                and not getattr(self.domain, '_gpu_host_writes_suppressed', False)):
             if not self._gpu_initialized:
                 self._init_gpu()
             if self._gpu_initialized:

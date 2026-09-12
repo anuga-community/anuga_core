@@ -330,9 +330,9 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->time_bdry.boundary_indices = NULL;
     GD->time_bdry.vol_ids = NULL;
     GD->time_bdry.edge_ids = NULL;
-    GD->time_bdry.stage_value = 0.0;
-    GD->time_bdry.xmom_value = 0.0;
-    GD->time_bdry.ymom_value = 0.0;
+    GD->time_bdry.stage_values = NULL;
+    GD->time_bdry.xmom_values = NULL;
+    GD->time_bdry.ymom_values = NULL;
     GD->time_bdry.mapped = 0;
 
     // Initialize file_boundary to empty
@@ -406,16 +406,22 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->culvert_ops.initialized = 0;
     GD->culvert_ops.mapped = 0;
     GD->culvert_ops.total_inlet_triangles = 0;
+    GD->culvert_ops.scratch_enquiry_indices = NULL;
     GD->culvert_ops.scratch_stage = NULL;
     GD->culvert_ops.scratch_xmom = NULL;
     GD->culvert_ops.scratch_ymom = NULL;
     GD->culvert_ops.scratch_elev = NULL;
     GD->culvert_ops.scratch_inlet_indices = NULL;
     GD->culvert_ops.scratch_inlet_areas = NULL;
-    GD->culvert_ops.scratch_inlet_stage = NULL;
-    GD->culvert_ops.scratch_inlet_xmom = NULL;
-    GD->culvert_ops.scratch_inlet_ymom = NULL;
-    GD->culvert_ops.scratch_inlet_elev = NULL;
+    GD->culvert_ops.scratch_slot_start = NULL;
+    GD->culvert_ops.scratch_slot_count = NULL;
+    GD->culvert_ops.scratch_avg_stage = NULL;
+    GD->culvert_ops.scratch_avg_depth = NULL;
+    GD->culvert_ops.scratch_avg_xmom = NULL;
+    GD->culvert_ops.scratch_avg_ymom = NULL;
+    GD->culvert_ops.scratch_slot_shift = NULL;
+    GD->culvert_ops.scratch_slot_xmom = NULL;
+    GD->culvert_ops.scratch_slot_ymom = NULL;
 
     // Initialize FLOP counters (Gordon Bell profiling)
     gpu_flop_counters_init(GD);
@@ -499,13 +505,13 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
     double *ymom_siu = GD->D.ymom_semi_implicit_update;
     anuga_int *neighbours = GD->D.neighbours;
     anuga_int *neighbour_edges = GD->D.neighbour_edges;
-    double *normals = GD->D.normals;
-    double *edgelengths = GD->D.edgelengths;
-    double *areas = GD->D.areas;
-    double *radii = GD->D.radii;
+    anuga_geom_t *normals = GD->D.normals;
+    anuga_geom_t *edgelengths = GD->D.edgelengths;
+    anuga_geom_t *areas = GD->D.areas;
+    anuga_geom_t *radii = GD->D.radii;
     double *max_speed = GD->D.max_speed;
-    double *centroid_coords = GD->D.centroid_coordinates;
-    double *edge_coords = GD->D.edge_coordinates;
+    anuga_geom_t *centroid_coords = GD->D.centroid_coordinates;
+    anuga_geom_t *edge_coords = GD->D.edge_coordinates;
 
     // Additional arrays for extrapolation
     anuga_int *surrogate_neighbours = GD->D.surrogate_neighbours;
@@ -629,8 +635,12 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         int *b_idx = TB->boundary_indices;
         int *v_ids = TB->vol_ids;
         int *e_ids = TB->edge_ids;
+        double *s_val = TB->stage_values;
+        double *x_val = TB->xmom_values;
+        double *y_val = TB->ymom_values;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+                                              s_val[0:ne], x_val[0:ne], y_val[0:ne])
         TB->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -760,6 +770,87 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         GD->backup_arrays_mapped = 1;
     }
 
+    // Map generic tracer arrays if any tracers are registered.
+    //
+    // Layout is tracer-major and C-contiguous, matching the indexing the shared
+    // kernels use: centroid[s*n + k], edge[s*3n + 3k + i], boundary[s*nb + m].
+    // All six must be mapped together: the kernels' n_tracers > 0 guard reads
+    // all of them, so a partial mapping is an illegal device address, not a
+    // degraded result.
+    if (GD->D.number_of_tracers > 0) {
+        anuga_int ns = GD->D.number_of_tracers;
+        double *tr_cv = GD->D.tracer_centroid_values;
+        double *tr_ev = GD->D.tracer_edge_values;
+        double *tr_eu = GD->D.tracer_explicit_update;
+        double *tr_qv = GD->D.tracer_conserved_values;
+        double *tr_bk = GD->D.tracer_backup_values;
+        // tracer_boundary_flux is per-cell conservation scratch: the kernel
+        // accumulates into it and totals it per substep, so it belongs with the
+        // rest of the block for the same reason -- the n_tracers > 0 guard
+        // reads it, and a partial mapping is an illegal device address.
+        double *tr_bf = GD->D.tracer_boundary_flux;
+        #pragma omp target enter data map(to: \
+            tr_cv[0:ns*n], tr_ev[0:ns*3*n], \
+            tr_eu[0:ns*n], tr_qv[0:ns*n], tr_bk[0:ns*n], \
+            tr_bf[0:ns*n])
+
+        // The external source [G-3]. Allocated with the rest of the block by
+        // add_tracer, so it is always present when n_tracers > 0 and is mapped
+        // unconditionally like the others. It is read by the source kernel, so
+        // an unmapped one is an unmapped host address on the device and the
+        // source silently contributes nothing (#288).
+        double *tr_es = GD->D.tracer_external_source;
+        if (tr_es != NULL) {
+            #pragma omp target enter data map(to: tr_es[0:ns*n])
+        }
+
+        // Boundary values are sized by boundary_length, which is zero on a
+        // domain with no boundary edges -- mapping a zero-length array is not
+        // meaningful, so follow the same nb > 0 guard the other bv arrays use.
+        if (nb > 0) {
+            double *tr_bv = GD->D.tracer_boundary_values;
+            #pragma omp target enter data map(to: tr_bv[0:ns*nb])
+        }
+        // Deliberately NOT recording a 'tracer_arrays_mapped' flag in
+        // struct gpu_domain: that struct embeds struct domain D, so adding a
+        // member risks the silent offset-aliasing failure documented in
+        // HANDOVER.md 2.1. number_of_tracers cannot change over the lifetime
+        // of a mapped domain (add_tracer tears the GPU interface down), so the
+        // unmap path re-tests the same condition instead.
+    }
+
+    // Map the per-class sediment parameter arrays (Phase 3). Tiny -- one
+    // double per class -- but they are read inside a target region, so they
+    // must be present on the device like everything else.
+    if (GD->D.n_sediment_classes > 0) {
+        anuga_int ncl = GD->D.n_sediment_classes;
+        double *sed_vs = GD->D.sediment_settling_velocity;
+        double *sed_ds = GD->D.sediment_d_star;
+        double *sed_dm = GD->D.sediment_diameter;
+        double *sed_rr = GD->D.sediment_R;
+        double *sed_tc = GD->D.sediment_tau_c_star;
+        double *sed_ar = GD->D.sediment_reference_height;
+        double *sed_qx = GD->D.sediment_qbx;
+        double *sed_qy = GD->D.sediment_qby;
+        #pragma omp target enter data map(to: sed_vs[0:ncl], sed_ds[0:ncl], \
+            sed_dm[0:ncl], sed_rr[0:ncl], sed_tc[0:ncl], sed_ar[0:ncl]) \
+            map(alloc: sed_qx[0:n], sed_qy[0:n])
+
+        // [L-5]. The scratch and the exhaustion snapshot are pure device
+        // workspace, so alloc; the base itself is input and must be copied.
+        // Mapped inside the same n_sediment_classes guard as everything
+        // above, which is what allocates them.
+        double *sed_sl = GD->D.sediment_source_limited;
+        anuga_int *sed_ex = GD->D.sediment_bed_exhausted;
+        double *sed_rdz = GD->D.sediment_repose_dz;
+        #pragma omp target enter data map(alloc: sed_sl[0:ncl*n], \
+            sed_ex[0:n], sed_rdz[0:n])
+        if (GD->D.sediment_has_z_base) {
+            double *sed_zb = GD->D.sediment_z_base;
+            #pragma omp target enter data map(to: sed_zb[0:n])
+        }
+    }
+
     // Map halo exchange arrays if we have neighbors
     if (H->num_neighbors > 0) {
         int send_size = H->total_send_size;
@@ -768,9 +859,13 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         int *flat_recv = H->flat_recv_indices;
         double *send_buf = H->send_buffer;
         double *recv_buf = H->recv_buffer;
+        // Must match gpu_halo_stride() in gpu_halo.c: 3 conserved hydro
+        // quantities plus one m slot per tracer. A mismatch here maps a buffer
+        // shorter than the exchange writes.
+        const int halo_stride = 3 + (int)GD->D.number_of_tracers;
 
         #pragma omp target enter data map(to: flat_send[0:send_size], flat_recv[0:recv_size]) \
-            map(alloc: send_buf[0:3*send_size], recv_buf[0:3*recv_size])
+            map(alloc: send_buf[0:halo_stride*send_size], recv_buf[0:halo_stride*recv_size])
     }
 
     GD->gpu_initialized = 1;
@@ -861,8 +956,12 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
         int *b_idx = TB->boundary_indices;
         int *v_ids = TB->vol_ids;
         int *e_ids = TB->edge_ids;
+        double *s_val = TB->stage_values;
+        double *x_val = TB->xmom_values;
+        double *y_val = TB->ymom_values;
 
-        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+                                              s_val[0:ne], x_val[0:ne], y_val[0:ne])
         TB->mapped = 1;
 
         if (GD->rank == 0 && GD->verbose) {
@@ -949,13 +1048,13 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     double *ymom_siu = GD->D.ymom_semi_implicit_update;
     anuga_int *neighbours = GD->D.neighbours;
     anuga_int *neighbour_edges = GD->D.neighbour_edges;
-    double *normals = GD->D.normals;
-    double *edgelengths = GD->D.edgelengths;
-    double *areas = GD->D.areas;
-    double *radii = GD->D.radii;
+    anuga_geom_t *normals = GD->D.normals;
+    anuga_geom_t *edgelengths = GD->D.edgelengths;
+    anuga_geom_t *areas = GD->D.areas;
+    anuga_geom_t *radii = GD->D.radii;
     double *max_speed = GD->D.max_speed;
-    double *centroid_coords = GD->D.centroid_coordinates;
-    double *edge_coords = GD->D.edge_coordinates;
+    anuga_geom_t *centroid_coords = GD->D.centroid_coordinates;
+    anuga_geom_t *edge_coords = GD->D.edge_coordinates;
 
     // Additional arrays for extrapolation
     anuga_int *surrogate_neighbours = GD->D.surrogate_neighbours;
@@ -1051,7 +1150,11 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *b_idx = TB->boundary_indices;
         int *v_ids = TB->vol_ids;
         int *e_ids = TB->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        double *s_val = TB->stage_values;
+        double *x_val = TB->xmom_values;
+        double *y_val = TB->ymom_values;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+                                                 s_val[0:ne], x_val[0:ne], y_val[0:ne])
         TB->mapped = 0;
     }
 
@@ -1140,6 +1243,57 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
             stage_backup[0:n], xmom_backup[0:n], ymom_backup[0:n])
     }
 
+    // Unmap tracer arrays. Same condition as the map path above -- see the note
+    // there on why this is re-tested rather than recorded in a struct flag.
+    if (GD->D.number_of_tracers > 0) {
+        anuga_int ns = GD->D.number_of_tracers;
+        double *tr_cv = GD->D.tracer_centroid_values;
+        double *tr_ev = GD->D.tracer_edge_values;
+        double *tr_eu = GD->D.tracer_explicit_update;
+        double *tr_qv = GD->D.tracer_conserved_values;
+        double *tr_bk = GD->D.tracer_backup_values;
+        double *tr_bf = GD->D.tracer_boundary_flux;
+        #pragma omp target exit data map(delete: \
+            tr_cv[0:ns*n], tr_ev[0:ns*3*n], \
+            tr_eu[0:ns*n], tr_qv[0:ns*n], tr_bk[0:ns*n], \
+            tr_bf[0:ns*n])
+        double *tr_es = GD->D.tracer_external_source;
+        if (tr_es != NULL) {
+            #pragma omp target exit data map(delete: tr_es[0:ns*n])
+        }
+        if (nb > 0) {
+            double *tr_bv = GD->D.tracer_boundary_values;
+            #pragma omp target exit data map(delete: tr_bv[0:ns*nb])
+        }
+    }
+
+    // Unmap the sediment parameter arrays. Same condition as the map path.
+    if (GD->D.n_sediment_classes > 0) {
+        anuga_int ncl = GD->D.n_sediment_classes;
+        double *sed_vs = GD->D.sediment_settling_velocity;
+        double *sed_ds = GD->D.sediment_d_star;
+        double *sed_dm = GD->D.sediment_diameter;
+        double *sed_rr = GD->D.sediment_R;
+        double *sed_tc = GD->D.sediment_tau_c_star;
+        double *sed_ar = GD->D.sediment_reference_height;
+        double *sed_qx = GD->D.sediment_qbx;
+        double *sed_qy = GD->D.sediment_qby;
+        #pragma omp target exit data map(delete: sed_vs[0:ncl], sed_ds[0:ncl], \
+            sed_dm[0:ncl], sed_rr[0:ncl], sed_tc[0:ncl], sed_ar[0:ncl], \
+            sed_qx[0:n], sed_qy[0:n])
+
+        // [L-5]. Mirrors the enter-data above, on the same guard.
+        double *sed_sl = GD->D.sediment_source_limited;
+        anuga_int *sed_ex = GD->D.sediment_bed_exhausted;
+        double *sed_rdz = GD->D.sediment_repose_dz;
+        #pragma omp target exit data map(delete: sed_sl[0:ncl*n], sed_ex[0:n], \
+            sed_rdz[0:n])
+        if (GD->D.sediment_has_z_base) {
+            double *sed_zb = GD->D.sediment_z_base;
+            #pragma omp target exit data map(delete: sed_zb[0:n])
+        }
+    }
+
     // Unmap halo arrays
     if (H->num_neighbors > 0) {
         int send_size = H->total_send_size;
@@ -1148,10 +1302,14 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *flat_recv = H->flat_recv_indices;
         double *send_buf = H->send_buffer;
         double *recv_buf = H->recv_buffer;
+        // Must match gpu_halo_stride() in gpu_halo.c: 3 conserved hydro
+        // quantities plus one m slot per tracer. A mismatch here maps a buffer
+        // shorter than the exchange writes.
+        const int halo_stride = 3 + (int)GD->D.number_of_tracers;
 
         #pragma omp target exit data map(delete: \
             flat_send[0:send_size], flat_recv[0:recv_size], \
-            send_buf[0:3*send_size], recv_buf[0:3*recv_size])
+            send_buf[0:halo_stride*send_size], recv_buf[0:halo_stride*recv_size])
     }
 
     GD->gpu_initialized = 0;
@@ -1168,6 +1326,66 @@ void gpu_domain_sync_to_device(struct gpu_domain *GD) {
     double *height_cv = GD->D.height_centroid_values;
 
     #pragma omp target update to(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+
+    // Tracers: the conserved variable m = h*c is what the device integrates,
+    // and c is what Python seeds via set_tracer, so both have to go across.
+    // Boundary values too -- they are set on the host by boundary conditions.
+    if (GD->D.number_of_tracers > 0) {
+        anuga_int ns = GD->D.number_of_tracers;
+        anuga_int nb = GD->D.boundary_length;
+        double *tr_cv = GD->D.tracer_centroid_values;
+        double *tr_qv = GD->D.tracer_conserved_values;
+        #pragma omp target update to(tr_cv[0:ns*n], tr_qv[0:ns*n])
+        if (nb > 0) {
+            double *tr_bv = GD->D.tracer_boundary_values;
+            #pragma omp target update to(tr_bv[0:ns*nb])
+        }
+    }
+}
+
+// Push the external source [G-3] to the device on its own.
+//
+// set_tracer_source writes it on the HOST, and a time-varying supply -- a
+// manufactured solution, a tributary hydrograph -- rewrites it every step. The
+// device copy would otherwise hold whatever it had when the arrays were mapped
+// and the source would be silently stale rather than absent, which is worse.
+// Separate from gpu_sync_to_device so a per-step push costs one array, not all
+// of them. #288
+void gpu_sync_tracer_source_to_device(struct gpu_domain *GD)
+{
+    if (!GD->gpu_initialized) return;
+    if (GD->D.number_of_tracers <= 0) return;
+
+    double *tr_es = GD->D.tracer_external_source;
+    if (tr_es == NULL) return;
+
+    anuga_int n = GD->D.number_of_elements;
+    anuga_int ns = GD->D.number_of_tracers;
+    #pragma omp target update to(tr_es[0:ns*n])
+}
+
+// Push the tracer boundary concentrations to the device on their own.
+//
+// set_tracer_boundary() and update_tracer_boundary_values() write the HOST
+// array.  The device copy is made once, when the arrays are mapped, and
+// gpu_sync_boundary_values() (the per-step push the boundary evaluators use)
+// carries only the hydrodynamic boundary values -- so without this a value
+// set after the interface exists, or re-evaluated for a later time, is never
+// seen by the flux kernel and every inflow edge keeps injecting the mapped
+// (t = 0, or zero-filled) concentration.  One small array, like the source.
+void gpu_sync_tracer_boundary_to_device(struct gpu_domain *GD)
+{
+    if (!GD->gpu_initialized) return;
+    if (GD->D.number_of_tracers <= 0) return;
+
+    anuga_int nb = GD->D.boundary_length;
+    if (nb <= 0) return;   /* not mapped either; see gpu_domain_map_arrays */
+
+    double *tr_bv = GD->D.tracer_boundary_values;
+    if (tr_bv == NULL) return;
+
+    anuga_int ns = GD->D.number_of_tracers;
+    #pragma omp target update to(tr_bv[0:ns*nb])
 }
 
 void gpu_domain_sync_from_device(struct gpu_domain *GD) {
@@ -1181,6 +1399,27 @@ void gpu_domain_sync_from_device(struct gpu_domain *GD) {
     double *height_cv = GD->D.height_centroid_values;
 
     #pragma omp target update from(stage_cv[0:n], xmom_cv[0:n], ymom_cv[0:n], height_cv[0:n])
+
+    // Tracers: bring back both the conserved m and the derived c. Python reads
+    // c via get_tracer and computes mass from m, so returning only one of them
+    // would hand back a domain whose c and m disagree.
+    if (GD->D.number_of_tracers > 0) {
+        anuga_int ns = GD->D.number_of_tracers;
+        double *tr_cv = GD->D.tracer_centroid_values;
+        double *tr_qv = GD->D.tracer_conserved_values;
+        #pragma omp target update from(tr_cv[0:ns*n], tr_qv[0:ns*n])
+    }
+
+    // Bed elevation, once sediment can move it. Normally z is constant and
+    // never needs syncing back, which is why it is not in the list above; with
+    // the Exner update of [G-4] the device owns it and the host copy would
+    // otherwise stay at its initial value for ever. Centroid AND edge, because
+    // the DE algorithms use discontinuous elevation and the kernel shifts both.
+    if (GD->D.n_sediment_classes > 0) {
+        double *bed_cv_s = GD->D.bed_centroid_values;
+        double *bed_ev_s = GD->D.bed_edge_values;
+        #pragma omp target update from(bed_cv_s[0:n], bed_ev_s[0:3*n])
+    }
 }
 
 void gpu_domain_sync_all_from_device(struct gpu_domain *GD) {
@@ -1258,6 +1497,32 @@ void gpu_sync_boundary_values(struct gpu_domain *GD) {
 
     #pragma omp target update to(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
                                  bed_bv[0:nb], height_bv[0:nb])
+}
+
+void gpu_sync_riverwall_to_device(struct gpu_domain *GD) {
+    // Sync riverwall crest elevations and hydraulic properties TO GPU.
+    //
+    // These arrays are mapped once at setup and are never written on the device,
+    // so a host-side change — RiverWall.set_elevation() / set_elevation_offset()
+    // / set_hydraulic_parameter(), e.g. operating a gate mid-run — is invisible
+    // to the kernels until it is pushed back across. Cheap: sized by the number
+    // of riverwall edges, not by the mesh.
+    if (!GD->gpu_initialized) return;
+
+    anuga_int n_rw_edges = GD->D.number_of_riverwall_edges;
+    if (n_rw_edges <= 0) return;
+
+    double *riverwall_elevation = GD->D.riverwall_elevation;
+    if (riverwall_elevation != NULL) {
+        #pragma omp target update to(riverwall_elevation[0:n_rw_edges])
+    }
+
+    double *riverwall_hydraulic_properties = GD->D.riverwall_hydraulic_properties;
+    anuga_int ncol_hp = GD->D.ncol_riverwall_hydraulic_properties;
+    anuga_int nrow_hp = GD->D.nrow_riverwall_hydraulic_properties;
+    if (riverwall_hydraulic_properties != NULL && ncol_hp > 0 && nrow_hp > 0) {
+        #pragma omp target update to(riverwall_hydraulic_properties[0:nrow_hp*ncol_hp])
+    }
 }
 
 void gpu_sync_edge_values_from_device(struct gpu_domain *GD) {

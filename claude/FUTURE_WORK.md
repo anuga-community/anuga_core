@@ -1,7 +1,7 @@
 # Future Work Recommendations
 
-Generated: 2026-04-24 (session 23). Last updated: 2026-04-25 (session 25).
-Based on codebase investigation cross-referenced against 25 sessions of completed work.
+Generated: 2026-04-24 (session 23). Last updated: 2026-07-19 (session 50).
+Based on codebase investigation cross-referenced against 50 sessions of completed work.
 
 Items marked ~~strikethrough~~ have been invalidated (see notes).
 
@@ -13,6 +13,103 @@ Items marked ~~strikethrough~~ have been invalidated (see notes).
 > migrate the standard distribution to `multiprocessor_mode=2` + `gpu_offload=false`
 > (CPU-multicore C operators by default). Step 1 in review as PR #144; **step 2
 > (audit operator fall-back) is the next action.**
+
+---
+
+## Session 50 follow-ups (2026-07-19) — GPU mode-2 / OpenACC
+
+Open items from the mode-1-vs-mode-2 investigation (session 50). Seven bugs from that
+thread are already fixed on `develop` (#191–#194, #197, #199, #200); these remain.
+
+**P1 — #190 OpenACC `set_gpu_offload(False)` / `-ngo` silently stays on the GPU.** MERGE
+BLOCKER for PR #188. The host-fallback idiom `omp_set_default_device(omp_get_initial_device())`
+maps to `acc_set_device_num(-1, ...)`, and a negative devicenum is NOT "run on host" in
+OpenACC — the run silently stays on the GPU with no error. OpenACC has no device-*number*
+for host execution (it is a device-*type* concept). Likely fix: **hard-error** on the OpenACC
+build rather than implement, and lean on the separate `g_gpu_offload_enabled` flag. Only on
+the `#188` branch, so not live on `develop`. (Full analysis in the issue and session guide.)
+
+**P2 — #189 mode-2 never runs `apply_protection_against_isolated_degenerate_timesteps()`.**
+It hangs off `update_timestep()`, which the mode-2 step path returns early past (all three
+`evolve_one_*_step` functions dispatch to `_evolve_one_*_step_c` before it). Default-OFF
+(`config.py:151`), so low priority — but a user who enables it under GPU gets no protection
+*and no warning*. Cheapest fix: warn in mode 2 when it is enabled (mode 2 already warns for
+other unsupported forcing).
+
+**P2 — PR #188 (OpenACC backend) is WIP and needs the author.** Reviewed + numerically
+validated in session 50: bit-reproducible, agrees with OpenMP-target at the mode-1-vs-mode-2
+tolerance (see `validation_tests/case_studies/towradgi/compare_openmp_openacc.ipynb`), and the
+per-kernel `fluxes-central` ~20% win is real. Before it leaves WIP: fix #190; explain the
+unmentioned `-mp=gpu,multicore` → `-mp=gpu` change to the *default* build; drain the queue at
+the `acc_free` teardown in `gpu_halo.c`; add tests; and rebase onto `develop` (it lacks #199,
+#200). The kernel win does **not** reach wall-clock (the async queue issues 2.5× more
+`cuStreamSynchronize` than OpenMP-target) — headroom, not a blocker, but worth noting.
+
+**~~P2 — Unify the culvert implementation so mode-1 and mode-2 are bit-identical.~~ DONE
+(session 51, uncommitted in working tree as of write-up).**
+
+**What was done.** There is now **one** implementation of the Boyd/weir per-culvert update —
+`culvert_compute_one()` in `shallow_water/gpu/gpu_culvert_operator.c` — plus a shared host inlet
+gather `culvert_gather_inlet_host()`. Mode-2's batch was refactored to call it (behaviour
+preserving); mode-1's Python operators (both `Structure_operator` and the *default*
+`Parallel_Structure_operator`) now route their per-step update through it via a Cython bridge
+(`culvert_apply_one_host` / `culvert_gather_inlet_host_py` in `sw_domain_gpu_ext.pyx`), gated to
+fully-local culverts (cross-boundary MPI culverts keep the Python+MPI path). Files touched:
+`gpu_culvert_operator.c/.h`, `sw_domain_gpu_ext.pyx`, `structures/structure_operator.py`,
+`parallel/parallel_structure_operator.py`. Result: **mode-1 == mode-2 bit-for-bit** for every
+culvert config (box/pipe, velocity head, blockage), at 1 and 16 threads. Full suite green in
+legacy (2698) and unified (2697); 230 structure/GPU tests pass. De-dups the Python/C physics on
+the runtime path (single source of truth).
+
+**Correction to the earlier diagnosis (don't repeat the wrong turns):** the seed was **not**
+momentum, ordering, or FMA. It was the **inlet-average gather** — mode-1 summed with numpy
+(`num.sum(v*a)/area`), mode-2 with a C loop; for a multi-cell inlet these round 1 ULP apart in a
+value-dependent way (plus a dry-cell depth clamp the C gather does and the Python global-average
+path didn't). Two earlier "proofs" were invalid because a monkeypatch hit the **unused serial
+`Structure_operator`** while the default operator is `Parallel_Structure_operator` (a *separate*
+class hierarchy). Lesson: `anuga.Boyd_box_operator` is a **factory** returning the parallel
+class even in serial — instrument the class that actually runs.
+
+---
+
+**Towradgi still diverges — and it is NOT culverts (diagnosed, recommend ACCEPT).**
+After the culvert fix, towradgi mode-1 vs mode-2 is unchanged (7.6e-6 → 2.5e-3). An in-process
+double-precision localization harness (two domains from the same setup, restartable lockstep
+evolve, double diff — reconstructable, see session 51) pinned the real seed:
+
+- The seed is **rainfall (`Rate_operator`) falling on DRY cells.** Remove the rate operators from
+  both domains → **zero divergence** (bit-identical); rain on a **fully wet** domain →
+  bit-identical; rain on **dry** cells → 1 ULP.
+- It is **not** the rate operator's arithmetic (numpy `arr+scalar` == a C loop; wet cells prove
+  it, and the rate inputs `local_rate/timestep/rate/factor` are bit-identical between modes) and
+  **not** the sync (a plain `omp target update` memcpy of stage). Both modes are in fact
+  **stage-primary** (`height == stage - bed` exactly in each) — there is no `stage = bed + height`
+  reconstruction to flip. The residual is a **1-ULP difference in the core's near-dry stage
+  itself**: mode-2's stage going *into* the rate op is already ~1 ULP off from mode-1, produced by
+  the unified C RK loop's dry-cell handling and **masked by the bed-clamp** (`protect` sets
+  `stage = bed` exactly in both) right up until rain lifts the cell off the bed and exposes it.
+  That's why bare runs are bit-identical and only *rain-on-dry* diverges. Same family as the
+  **#200** dry-cell issue (a wet/dry-margin roundoff gap between the legacy and unified paths).
+  The exact operation was not isolated — it needs instrumenting the C RK loop's device state
+  mid-step.
+- A red herring ruled out along the way: mode-2 also clamps dry cells to bed at
+  `set_multiprocessor_mode(2)` (#200) while mode-1 defers to first protect — but forcing mode-1
+  to clamp too left the divergence unchanged, so the *initial* state is not the cause.
+
+**Recommendation: accept it.** One ULP in the stage of dry ground under a hair of rain —
+physically meaningless, chaos-amplified to mm over hours, both modes equally valid. A real fix
+means reconciling stage-primary vs height-primary at the wet/dry margin (core-level, #200
+family, large blast radius, no physical payoff). Unifying the `Rate_operator` would **not** help
+(it's already identical on wet cells). If ever pursued, the localization harness is the tool.
+
+**P3 — process, not code:**
+- **`develop` is ~833 commits ahead of `main`.** *Every* session-50 fix (including the #200
+  startup mass-loss and #193 parallel-inlet mass-balance correctness fixes) is unreleased,
+  gated behind the "no develop→main until v4.0.0" rule. Worth a conscious call on when v4.0.0
+  is cut — real correctness fixes are sitting unreleased.
+- **Branch-protection bypasses.** Merges/pushes to `develop` this session went through with
+  `--admin` ("Bypassed rule violations — changes must be made through a pull request"). Decide
+  whether the PR-required rule on `develop` should be enforced or relaxed.
 
 ---
 

@@ -255,6 +255,27 @@ Target achieved: ~54% memory reduction (800 MB → ~368 MB for 10-quantity 1M-tr
 - [x] **DM2** `edge_flux_type`/`edge_river_wall_counter` lazy for non-riverwall simulations *(2026-04-15)*
 - [x] **DM3** `domain_memory_stats`, `print_domain_memory_stats`, `domain_struct_stats`, `print_domain_struct_stats` added to `system_tools.py` *(2026-04-15)*
 
+### Measured end-to-end result (issue #33 benchmark, re-run 2026-07-06)
+
+`mpiexec -np 2 /usr/bin/time -f "…%M…" python -u examples/parallel/run_parallel_rectangular.py --sqrtN N`,
+`OMP_NUM_THREADS=1`, process-0 Max RSS. "Before" = the original figures in issue #33.
+
+| sqrtN | triangles | RSS before | RSS now | reduction |
+|------:|----------:|-----------:|--------:|:---------:|
+| 250 | 250,000 | 710 MB | 511 MB | −28% |
+| 500 | 1,000,000 | 2.5 GB | 1.37 GB | −45% |
+| 750 | 2,250,000 | 5.1 GB | 2.74 GB | **−46%** |
+
+The saving grows with N (fixed interpreter/import overhead dominates at small N; domain
+arrays dominate at large N), so RSS is roughly halved at 2.25M triangles.
+
+Hardware-independent per-rank domain arrays (`print_domain_memory_stats`, rank 0 after
+`distribute`): quantities 55.7 / 222.0 / 499.0 MB and total numpy 102.7 / 409.6 / 920.5 MB
+for local N = 125,706 / 501,465 / 1,127,216. At sqrtN=750 the breakdown is geometry 224,
+connectivity 146, quantities 499, work arrays 26, **river wall 0.00** (DM2 lazy), other ~26,
+total 920.5 MB. Remaining lever: rank 0's peak building the *full* domain before `distribute`.
+Posted to issue #33.
+
 ---
 
 ## Benchmark Suite ✅ Complete
@@ -320,3 +341,82 @@ Full plan: `claude/archive/GPU_DEVELOPMENT_PLAN.md`
 - [x] **M40.2** Install the per-test process-isolation harness as a console command: moved `anuga/shallow_water/tests/run_isolated_tests.py` → `scripts/anuga_run_isolated_tests.py`, registered in `meson.build` (`configure_file` → bindir, matching the other `anuga_*` scripts). Made it install-safe: importlib-resolved default target, cwd-seeded rootdir, `_abs_nodeid` passes absolute/`--pyargs` ids through. Commit `37eccc6d`. *(2026-06-17)*
 - [x] **M40.3** Added `-cm`/`--compute-mode {legacy,unified}` to set `ANUGA_DEFAULT_COMPUTE_MODE` for every child process (omit to inherit; banner prints the resolved mode). Verified via `test_default_is_legacy` (skips under unified, passes under legacy). Commit `34401cde`. *(2026-06-17)*
 - [x] **M40.4** Docs: green-run note in `KNOWN_ISSUES.md` (commit `f57d0532`); compute-mode testing story across `CLAUDE.md`, new `CONVENTIONS.md` → "Compute mode in tests", `DECISIONS.md` rationale entry, `SESSION_GUIDE.md` Session 40 summary + quick-reference rows (commit `905cb1f2`). *(2026-06-17)*
+
+## Documentation Overhaul ✅ Complete (session 47, 2026-07-07)
+
+Merged to `anuga-community/develop` as PRs **#157–#164** (admin-merged by number).
+
+- [x] **D47.1** Restructured the docs into a standard-user **Contents** vs advanced **Appendices** split, and added a landing-page **quick start** (install + minimal runnable model). Moved Parallelisation into Contents and the TOML/ANUGA-Viewer/QGIS pages into the standard sections; led the appendices with the developer + new GPU-install pages (PR #157).
+- [x] **D47.2** New **Conventions & units** primer (`setup_anuga_script/conventions.rst`): coordinate system + `Geo_reference`, quantity units and `depth = stage - elevation`, wet/dry thresholds, `anuga.config` physical defaults, time conventions (PR #157).
+- [x] **D47.3** New evolve **"Stability and blow-ups"** section: reading `delta t`/`steps`, warning signs, common causes, and a live `Domain.diagnose_timestep` snippet linked to troubleshooting (PR #157).
+- [x] **D47.4** Converted every narrative "Reference" block into compact `autosummary` tables that link into the **API Reference** (expanded API consolidated there), and made each class page's method/attribute summary **link to per-method signatures** via `autodoc_default_options={'members':True}` + `sphinx.ext.napoleon` (PR #157).
+- [x] **D47.5** Reframed the **ANUGA Viewer** as the recommended fast viewer for large `.sww` files (dropped "legacy"), linked to `anuga-viewer.readthedocs.io` (PR #157).
+- [x] **D47.6** New GPU-install appendix (`appendices/install_gpu.rst`): NVIDIA HPC SDK / `nvc` setup, `install_anuga_nvc.sh` vs manual build, `gpu_arch` table, build-dir-switch warning (PR #157).
+- [x] **D47.7** Content-review fixes: typos, heading-level consistency, a missing `pip install` path + version smoke-test, quantity units, `../../examples` link cleanup (PR #157).
+- [x] **D47.8** New **Citing**, **Contributing**, and **Glossary** meta-pages, surfacing `CITATION.cff`, the user-manual DOI, Apache-2.0, `CONTRIBUTING.rst`, and 15 domain terms (stage/elevation/depth, yieldstep/finaltime/duration/outputstep, CFL, riverwall, DE algorithm, …) (PR #157).
+- [x] **D47.9** Issue #32 "Make riverwalls transmissive": verified `Cd_through` throughflow is already active in **both** compute modes (legacy `_openmp_compute_fluxes_central` delegates to the shared `core_compute_fluxes_central`); confirmed bit-identical empirically; documented on the issue and in the docs.
+- [x] **D47.10** Fixed malformed-RST source docstrings surfaced by autodoc `members`: `Quantity`/`Domain` ×6 (PR #158) and `internal_boundary_operator` ×2 (PR #160).
+- [x] **D47.11** `install_anuga_nvc.sh` now builds into an already-activated conda env if present, else falls back to `$HOME/miniforge3` + `anuga_env_$PY` (PR #158).
+- [x] **D47.12** Warning-free local build: fixed `html_static_path` (`_static` dir) and the `Geo_reference.epsg` duplicate — napoleon rendered a class-docstring *Attribute* **and** the real property, resolved with `napoleon_use_ivar = True` (PR #159).
+- [x] **D47.13** Read the Docs `develop` build made **clean**: it had surfaced 62 warnings the local build hid — 56 `ipython3` Pygments-lexer (RTD lacks IPython → added `ipython` to `docs/requirements.txt`, PR #161) + the operator docstrings. Verified via RTD build 33476518 (only the harmless MPI-less `Could not import mpi4py` remains).
+- [x] **D47.14** Added a Contributing **"Building the documentation"** note: reproduce the RTD build from a clean `docs/requirements.txt` env; a stray IPython or `nbsphinx_execute=never` can hide warnings RTD shows (PR #162).
+- [x] **D47.15** Recorded the **branch policy** in `ROADMAP.md` (and memory): do not merge `develop` → `main` until the team cuts v4.0.0 (PR #163). Session 47 summary added to `SESSION_GUIDE.md` (PR #164).
+
+## GPU mode-2 Time_boundary substep fix ✅ Complete (option B; session 47, 2026-07-08)
+
+- [x] **GB.1** Root-caused a mode-1 vs mode-2 divergence with time-varying
+  boundaries. A rising-tide (`Time_boundary`) flood diverged **~4.3e-3 m** (GPU
+  vs CPU-legacy); reflective/steady boundaries agree to ~1e-12–1e-15. Isolated
+  it by RK substep count: **DE0 / DE_ader2** (single substep) match to machine
+  precision; **DE1 (rk2) / DE2 (rk3)** diverge — and only with **Python-evaluated
+  boundaries** (Time/File/Field, wave, Flather, transmissive-set-stage). Cause:
+  the single-call **C RK loop** (`_evolve_one_rk*_step_c`) sets those boundaries
+  on the device **once per timestep**, reusing that value for every RK substep,
+  whereas mode-1 calls `update_boundary()` **before each substep** — an O(dt)
+  boundary-forcing error. Verified by call-time instrumentation (mode-1 evaluates
+  the boundary 2× per rk2 step, mode-2 1×) and by `use_c_rk_loop=False`
+  (Python-orchestrated loop) → 1e-15.
+- [x] **GB.2** Fix (**option B**, PR #171): `_has_python_evaluated_gpu_boundaries()`
+  gates the mode-2 RK2/RK3 dispatch — domains with any Python-evaluated boundary
+  route to the Python-orchestrated GPU loop (refreshes the boundary per substep →
+  bit-matches mode-1, ~4e-3 → ~1e-15). Reflective/steady keep the fast C loop;
+  single-substep DE0/DE_ader2 untouched. Benchmarked GPU cost **≤ ~4%** (within
+  noise, 14k–640k triangles).
+- [x] **GB.3** Regression test `Test_GPU_TimeBoundarySubstep` in
+  `test_DE_gpu_omp.py` (DE1/DE2 mode-1==mode-2 to atol 1e-6 + routing checks);
+  full GPU file green (69/69) via the isolated runner. No rebuild needed
+  (pure-Python change).
+- [ ] **Option A** — proper per-substep evaluation inside the C RK loop: tracked
+  as **issue #170** (see Remaining / Deferred in `PROGRESS.md`).
+
+## Fractional-step operator evaluation timing ✅ Complete (session 47, 2026-07-08)
+
+Fractional-step operators are applied by the evolve loop *before* it advances
+`relative_time` from t to t+dt, so they should evaluate forcing at the pre-step
+time **t** (the mode-2 code documents that t+dt is "one step too far"). First
+confirmed operators/structures are applied **every inner timestep** in both modes
+(13/13 and 46/46 evals ≫ yieldsteps — not a yieldstep-only issue). Then found and
+fixed an operator-*time* bug in the RK schemes:
+
+- [x] **OT.1 — DE1 (rk2), PR #174.** The mode-1 rk2 body advanced `relative_time`
+  mid-step (for the substep-2 boundary) and never restored it, so its operators
+  evaluated forcing at **t+dt**, diverging from mode-2 (which uses t) by ~4e-4 for
+  a time-varying `Rate_operator`/`Inlet`. Restore the pre-step time at the end of
+  the mode-1 rk2 body → DE1 matches DE0/DE2/DE_ader2 and mode-2 (0.0). Added
+  `Test_GPU_OperatorTimeAlignment` (cross-mode, all algorithms).
+- [x] **OT.2 — CPU regression test, PR #175.** The cross-mode guard is GPU-only
+  (skips on standard builds), so added `test_operator_timing.py` — a mode-1-only
+  test that runs anywhere: a time-varying operator must be evaluated at t
+  (last inner step's eval < finaltime). Reverting a fix fails it. Registered in
+  `tests/meson.build`.
+- [x] **OT.3 — DE2 (rk3), PR #177 (closes #176).** Subtler than DE1: **all three**
+  rk3 paths left time advanced (mode-1 body, mode-2 C loop, mode-2 GPU loop), so
+  DE2 was post-step in *both* modes — self-consistent (mode-1 == mode-2), so the
+  cross-mode check missed it. Restore the pre-step time in the mode-1 body and
+  mode-2 GPU loop; drop the advance in the mode-2 C loop (matching the rk2 C loop).
+  DE2 now evaluates operators at t in both modes. Added
+  `test_rk3_operator_evaluated_at_pre_step_time`.
+
+Result: all four flow algorithms evaluate fractional-step operators at the
+pre-step time t, mode-1 == mode-2. No prior test used a time-varying operator, so
+the bug was invisible (coverage gap now closed). CPU suite 2610 pass, GPU 73/73.

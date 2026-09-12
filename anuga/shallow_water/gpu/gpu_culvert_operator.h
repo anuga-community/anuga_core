@@ -96,4 +96,47 @@ void culvert_smooth_discharge(double smooth_delta_total_energy,
                               double ts,
                               double *Q_out, double *velocity_out);
 
+// Single implementation of the per-culvert Boyd/weir update (discharge +
+// semi-implicit water transfer), shared by the mode-2 batch and the mode-1
+// host path so both compute modes agree bit-for-bit. Assumes a local/master,
+// in-bounds culvert; the caller handles non-master parallel skips.
+void culvert_compute_one(const struct inlet_data *data0,
+                         const struct inlet_data *data1,
+                         const struct culvert_params *p,
+                         struct culvert_state *st,
+                         double timestep,
+                         struct culvert_result *r,
+                         struct culvert_transfer *t);
+
+// Flat host entry point (scalars in/out) for the mode-1 Python path.
+void culvert_apply_one_host(
+        int type, double g, double width, double height, double diameter,
+        double z1, double z2, double length, double manning, double sum_loss,
+        double blockage, double barrels,
+        int use_velocity_head, int use_momentum_jet, int use_old_momentum_method,
+        int always_use_Q_wetdry_adjustment, double max_velocity,
+        double smoothing_timescale,
+        double ov0x, double ov0y, double ov1x, double ov1y,
+        double invert0, double invert1, int has_invert0, int has_invert1,
+        double *smooth_delta_total_energy, double *smooth_Q,
+        double timestep,
+        double e0_stage, double e0_xmom, double e0_ymom, double e0_elev,
+        double a0_stage, double a0_depth, double a0_xmom, double a0_ymom, double a0_area,
+        double e1_stage, double e1_xmom, double e1_ymom, double e1_elev,
+        double a1_stage, double a1_depth, double a1_xmom, double a1_ymom, double a1_area,
+        int *inflow_idx,
+        double *new_inflow_depth, double *new_inflow_xmom, double *new_inflow_ymom,
+        double *new_outflow_depth, double *new_outflow_xmom, double *new_outflow_ymom,
+        double *report_gain, double *report_discharge, double *report_velocity,
+        double *report_driving_energy, double *report_delta_total_energy,
+        double *outlet_culvert_depth);
+
+// Host inlet gather (mode-1), bit-identical to the mode-2 device gather.
+void culvert_gather_inlet_host(int n, const int *indices, const double *areas,
+                               const double *stage_c, const double *xmom_c,
+                               const double *ymom_c, const double *bed_c,
+                               double total_area,
+                               double *avg_stage, double *avg_depth,
+                               double *avg_xmom, double *avg_ymom);
+
 #endif // GPU_CULVERT_OPERATOR_H

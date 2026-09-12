@@ -410,8 +410,13 @@ def composite_quantity_setting_function(poly_fun_pairs,
             elif type(fi) is str and os.path.exists(fi):
                 # fi is a file which is assumed to be
                 # a rasterio-compatible raster OR an x,y,z elevation file
-                if os.path.splitext(fi)[1] in ['.txt', '.csv']:
-                    fi_array = su.read_csv_optional_header(fi)
+                # (comma-separated .txt/.csv, or a saved numpy array .npy).
+                _ext = os.path.splitext(fi)[1].lower()
+                if _ext in ['.txt', '.csv', '.npy']:
+                    if _ext == '.npy':
+                        fi_array = numpy.load(fi)
+                    else:
+                        fi_array = su.read_csv_optional_header(fi)
                     # Check the results
                     if fi_array.shape[1] != 3:
                         print('Treated input file ' + fi +

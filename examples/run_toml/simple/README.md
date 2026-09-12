@@ -1,6 +1,6 @@
 # Simple scenario — dam break in a flat box
 
-The smallest useful `anuga_run_toml` scenario. A 100 m × 100 m flat basin with
+The smallest useful `anuga_toml_run` scenario. A 100 m × 100 m flat basin with
 solid (reflective) walls on all four sides. A 4 m deep column of water fills the
 western 40 m — "the reservoir" — and the rest starts dry. When the run begins
 the column collapses and sloshes back and forth off the walls.
@@ -19,14 +19,14 @@ Everything it needs is in this directory; no external data.
 
 ```bash
 # serial
-anuga_run_toml dam_break.toml
+anuga_toml_run dam_break.toml
 
 # parallel (e.g. 4 processes)
-mpiexec -np 4 anuga_run_toml dam_break.toml
+mpiexec -np 4 anuga_toml_run dam_break.toml
 ```
 
 In a source checkout without the installed command, use
-`python <repo>/scripts/anuga_run_toml.py dam_break.toml`.
+`python <repo>/scripts/anuga_toml_run.py dam_break.toml`.
 
 ## What you get
 

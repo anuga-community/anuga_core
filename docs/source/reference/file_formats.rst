@@ -211,7 +211,7 @@ Mesh file formats — TSH and MSH
 ---------------------------------
 
 Mesh files describe the triangular mesh and its boundary structure.
-They can be created by :func:`create_mesh_from_regions` or by the
+They can be created by :func:`create_pmesh_from_regions` or by the
 built-in mesh generator.
 
 **TSH** (ASCII) is the human-readable format.  It encodes:
@@ -236,7 +236,7 @@ To create a TSH or MSH file from polygon regions:
 
 .. code-block:: python
 
-   anuga.create_mesh_from_regions(
+   anuga.create_pmesh_from_regions(
        bounding_polygon,
        boundary_tags={'left': [0], 'right': [1], 'top': [2], 'bottom': [3]},
        maximum_triangle_area=100.0,

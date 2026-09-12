@@ -207,6 +207,17 @@ if gpu_offload
   endif
   message('GPU offloading enabled')
   message('GPU architecture: ' + gpu_arch)
+  # The build contains ONLY the architectures named here, and a mismatch is not
+  # a build error -- it fails later, at every kernel launch. Anyone who leaves
+  # the option at its default is very unlikely to want a V100-only build, so say
+  # so while they can still act on it.
+  if gpu_arch == 'cc70'
+    warning('gpu_arch is at its default (cc70 = V100). The build will contain ' +
+            'ONLY that architecture and will fail at every kernel launch on any ' +
+            'other GPU. Pass -Dgpu_arch=<ccXX> for your card ' +
+            '(nvidia-smi --query-gpu=compute_cap --format=csv), or use ' +
+            'tools/install_anuga_nvc.sh, which detects it.')
+  endif
 else
   # CPU multicore execution (no GPU offloading)
   # #pragma omp target teams loop becomes regular OpenMP parallel
@@ -346,6 +357,18 @@ endif
 #                              Python binary; portable across any conda env path
 #   sys.prefix/lib           — absolute fallback for non-standard layouts
 gpu_link_args = []
+
+# nvc performs the *device* link when producing the shared module, and it picks
+# the target architectures from the -gpu= on the LINK line -- the -gpu= used at
+# compile time does not carry through.  With no -gpu= here nvc guesses: the
+# build host's own GPU when one is visible, or every architecture the bundled
+# CUDA supports when none is (e.g. inside a container).  Either way -Dgpu_arch
+# was silently ignored, so a build "for cc80" could come out as sm_120, and the
+# Docker images were portable only by accident.  Repeat the flags at link time
+# so the requested architectures are the ones actually embedded.
+if gpu_offload and effective_compiler_id == 'nvidia_hpc'
+  gpu_link_args += ['-mp=gpu,multicore', '-gpu=' + gpu_arch]
+endif
 if host_machine.system() == 'darwin' and have_full_mpi
   _py_prefix = run_command(py3, ['-c', 'import sys; print(sys.prefix)'], check: false)
   if _py_prefix.returncode() == 0

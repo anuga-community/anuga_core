@@ -32,13 +32,17 @@ class PrepareData(ProjectData):
 
     """
 
-    def __init__(self, filename, make_directories=True, output_log=None):
+    def __init__(self, filename, make_directories=True, output_log=None,
+                 echo_terminal=True):
         """Parse the input data then process it for ANUGA
 
             @param filename = configuration file (xls)
             @param make_directories Create output directories for simulation
             @param output_log filename to redirect stdout (inside output
                 directories)
+            @param echo_terminal If False, the tee'd stdout goes to the log file
+                only (a quiet terminal); if True (default) it also echoes to the
+                terminal.
 
         """
         # Get the 'raw' data
@@ -47,7 +51,8 @@ class PrepareData(ProjectData):
         # Create a unique output directory, and redirect stdout there
         self.define_output_directory_and_redirect_stdout(
             make_directories=make_directories,
-            output_log=output_log)
+            output_log=output_log,
+            echo_terminal=echo_terminal)
 
         # Read files / pre-process
         self.process_project_data()
@@ -63,7 +68,8 @@ class PrepareData(ProjectData):
 
     def define_output_directory_and_redirect_stdout(self,
                                                     make_directories=True,
-                                                    output_log=None):
+                                                    output_log=None,
+                                                    echo_terminal=True):
         """Make the main output directory, and redirect stdout to a file there
 
             @param output_log Name of file (stored inside the output directory)
@@ -99,9 +105,46 @@ class PrepareData(ProjectData):
             else:
                 stdout_file = output_log
 
-            if myid == 0:
-                print('Redirecting output now to ' + stdout_file)
-            sys.stdout = TeeStream(stdout_file)
+            # Per-rank log files in parallel: every rank redirects its own fd 1
+            # to this one file, so a single shared path interleaves all ranks'
+            # output line-by-line (unreadable). Give each rank its own file
+            # (…_P{myid}.log) so the logs stay separable; rank 0's terminal
+            # summary is unaffected.
+            if numprocs > 1:
+                _root, _ext = os.path.splitext(stdout_file)
+                stdout_file = '%s_P%d%s' % (_root, myid, _ext)
+
+            if echo_terminal:
+                # Tee stdout to both the terminal and the log file.
+                if myid == 0:
+                    print('Redirecting output now to ' + stdout_file)
+                sys.stdout = TeeStream(stdout_file)
+                self.terminal = sys.__stdout__
+            else:
+                # Quiet terminal: redirect the OS stdout file descriptor to the
+                # log file so ALL output — Python print(), logging, and C
+                # extensions (e.g. the Triangle mesh engine) that write to fd 1
+                # — is captured there. Keep a handle to the real terminal so the
+                # caller can still print banners / a summary. (This process's
+                # fd 1 is redirected; the parent shell is unaffected, so there is
+                # no need to restore it.)
+                sys.stdout.flush()
+                self.terminal = os.fdopen(os.dup(1), 'w', buffering=1)
+                if myid == 0:
+                    if numprocs > 1:
+                        _root, _ext = os.path.splitext(stdout_file)
+                        # strip the _P0 suffix to show the shared pattern
+                        _pat = _root.rsplit('_P', 1)[0] + '_P{rank}' + _ext
+                        self.terminal.write(
+                            'Detailed output -> %s (one per rank)\n' % _pat)
+                    else:
+                        self.terminal.write(
+                            'Detailed output -> ' + stdout_file + '\n')
+                    self.terminal.flush()
+                self._log_fh = open(stdout_file, 'a', encoding='utf-8')
+                os.dup2(self._log_fh.fileno(), 1)
+                # Rebind sys.stdout to the new fd-1 target with line buffering.
+                sys.stdout = os.fdopen(1, 'w', buffering=1, closefd=False)
 
         return
 
@@ -163,6 +206,32 @@ class PrepareData(ProjectData):
 
         self.interior_regions = [[su.read_polygon(ir[0]), ir[1]] for ir in
                                  self.interior_regions_data]
+
+        # Same treatment for interior holes: read each polygon file, and build
+        # the tag structure create_pmesh_from_regions expects.
+        #
+        # hole_tags is documented as "see boundary_tags", i.e. a list with one
+        # entry PER HOLE, each entry a dict mapping a tag name to the segment
+        # indices carrying it -- not a list of tag strings. The TOML takes a
+        # single friendly `tag = "building"` per hole, so expand it here to cover
+        # every segment of that hole's polygon (n points -> n closing segments).
+        # Holes with no tag pass None, which pmesh renders as its own 'interior'
+        # default.
+        holes_data = getattr(self, 'interior_holes_data', [])
+        self.interior_holes = [su.read_polygon(ih[0]) for ih in holes_data]
+        self.hole_tags = None
+        if any(ih[1] is not None for ih in holes_data):
+            self.hole_tags = [
+                ({ih[1]: list(range(len(poly)))} if ih[1] is not None else None)
+                for ih, poly in zip(holes_data, self.interior_holes)]
+
+        # Erosion operator regions: read any polygon files, leaving
+        # center/radius entries alone. Done here rather than in setup_erosion so
+        # the operators receive coordinates, matching how every other setup_*
+        # module is handed ready-to-use geometry.
+        for e in getattr(self, 'erosion_data', []):
+            if e.get('polygon'):
+                e['polygon_points'] = su.read_polygon(e['polygon'])
 
         # Deal with intersections in the bounding polygon / breaklines /
         # riverwalls. At the moment we cannot add points to the bounding
@@ -287,7 +356,7 @@ class PrepareData(ProjectData):
                 [self.config_filename]
 
             # If the runner script (sys.argv[0]) lives outside the scenario
-            # directory (e.g. anuga_run_toml installed in bindir), copy it too.
+            # directory (e.g. anuga_toml_run installed in bindir), copy it too.
             import sys as _sys
             runner = os.path.abspath(_sys.argv[0])
             if os.path.isfile(runner) and \

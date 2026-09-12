@@ -121,6 +121,19 @@ _QTY_TITLE = {
 }
 
 
+# Tracers are user-defined, so unlike everything above they cannot be listed
+# here: which ones exist is a property of the SWW file being opened. Loading a
+# file appends its tracers (and their maxima, when the run stored them) to this
+# list and to the five tables above, keyed 'tracer_<name>' / 'max_tracer_<name>'.
+# Everything downstream then treats a tracer exactly like stage or depth.
+_TRACER_QUANTITIES = []
+
+
+def _all_quantities():
+    """The fixed quantities plus whatever tracers the open file carries."""
+    return tuple(_QUANTITIES) + tuple(_TRACER_QUANTITIES)
+
+
 _CMAPS = ['viridis', 'plasma', 'inferno', 'magma', 'cividis',
           'Blues', 'Greens', 'Oranges', 'Reds', 'YlOrRd',
           'RdBu_r', 'coolwarm', 'seismic', 'jet', 'turbo',
@@ -163,7 +176,7 @@ def _apply_config_to_gui(data, gui):
         if not isinstance(v, dict):
             cfg[k] = v
 
-    if 'qty' in cfg and cfg['qty'] in _QUANTITIES:
+    if 'qty' in cfg and cfg['qty'] in _all_quantities():
         gui._qty_var.set(cfg['qty'])
     if 'vmin' in cfg:
         gui._vmin_var.set(str(cfg['vmin']))
@@ -287,7 +300,7 @@ class SWWAnimationGUI:
         self._build_ui()
 
         # Apply render-tab params (independent of SWW file)
-        if initial_qty and initial_qty in _QUANTITIES:
+        if initial_qty and initial_qty in _all_quantities():
             self._qty_var.set(initial_qty)
         if initial_vmin is not None:
             self._vmin_var.set(str(initial_vmin))
@@ -333,7 +346,37 @@ class SWWAnimationGUI:
     # UI construction                                                 #
     # -------------------------------------------------------------- #
 
+    def _build_menubar(self):
+        """File menu — Open/config/Quit, reusing the toolbar's handlers.
+
+        Quit goes through _on_close so it does exactly what the window's close
+        button does: cancel any running generation, stop playback and close the
+        matplotlib figures.  Calling root.destroy() directly would leave a
+        worker pool and open figures behind.
+        """
+        menubar = tk.Menu(self.root)
+
+        file_menu = tk.Menu(menubar, tearoff=0)
+        file_menu.add_command(label='Open SWW...', accelerator='Ctrl+O',
+                              command=self._browse_sww)
+        file_menu.add_separator()
+        file_menu.add_command(label='Load Config...', command=self._load_config)
+        file_menu.add_command(label='Save Config...', command=self._save_config)
+        file_menu.add_separator()
+        file_menu.add_command(label='Quit', accelerator='Ctrl+Q',
+                              command=self._on_close)
+        menubar.add_cascade(label='File', menu=file_menu)
+
+        self.root.config(menu=menubar)
+
+        # Keyboard accelerators (the labels above are only cosmetic; tk needs
+        # the bindings made explicitly).
+        self.root.bind_all('<Control-o>', lambda e: self._browse_sww())
+        self.root.bind_all('<Control-q>', lambda e: self._on_close())
+
     def _build_ui(self):
+        self._build_menubar()
+
         # ---- status bar (packed first so it anchors to the bottom) ----
         status_frame = ttk.Frame(self.root)
         status_frame.pack(side=tk.BOTTOM, fill=tk.X)
@@ -386,8 +429,10 @@ class SWWAnimationGUI:
         ttk.Label(rA, text='Quantity:').pack(side=tk.LEFT)
         self._qty_var = tk.StringVar(value='depth')
         qty_combo = ttk.Combobox(rA, textvariable=self._qty_var,
-                                 values=list(_QUANTITIES), width=13,
+                                 values=list(_all_quantities()), width=13,
                                  state='readonly')
+        # Kept so a newly loaded file can add its tracers to the list.
+        self._qty_combo = qty_combo
         qty_combo.pack(side=tk.LEFT, padx=(2, 8))
         qty_combo.bind('<<ComboboxSelected>>', lambda _e: self._on_qty_change())
 
@@ -645,6 +690,10 @@ class SWWAnimationGUI:
         ttk.Button(ts_ctrl, text='Export CSV',
                    command=self._export_timeseries).pack(side=tk.RIGHT, padx=4)
 
+        # NB: do not set dpi here for the on-screen figures.  matplotlib's Tk
+        # backend already scales the canvas by Tk's points-per-pixel (set from
+        # the UI scale in tk_scaling), so passing a scaled dpi as well makes the
+        # plots twice as large as intended.
         self._ts_fig, self._ts_ax = plt.subplots(figsize=(10, 1.8))
         self._ts_fig.tight_layout(pad=1.5)
         self._ts_canvas = FigureCanvasTkAgg(self._ts_fig, master=self._ts_outer)
@@ -680,6 +729,8 @@ class SWWAnimationGUI:
         self._canvas_frame.pack(fill=tk.BOTH, expand=True)
         self._canvas = FigureCanvasTkAgg(self._fig, master=self._canvas_frame)
         self._canvas.draw()
+        # ... and once more after the window has been laid out for real.
+        self.root.after_idle(self._sync_canvas_sizes)
         self._canvas.get_tk_widget().pack(fill=tk.BOTH, expand=True)
         self._hover_cid = self._canvas.mpl_connect(
             'motion_notify_event', self._on_hover)
@@ -757,7 +808,52 @@ class SWWAnimationGUI:
         epsg_val = self._splotter.epsg
         self._epsg_var.set(str(epsg_val) if epsg_val is not None else '')
 
+        self._register_tracer_quantities()
+
         self._refresh_basemap_state()
+
+    def _register_tracer_quantities(self):
+        """Add the open file's tracers to the quantity menu.
+
+        Called after the plotter is built, which is where the tracer names and
+        data become known. SWW_plotter has already bound a `tracer_<name>`
+        attribute and a `save_tracer_<name>_frame` method for each, so the
+        existing lookup tables are all that need filling in.
+        """
+        global _TRACER_QUANTITIES
+
+        # Rebuild rather than append: opening a second file must not leave the
+        # first file's tracers in the menu.
+        for key in _TRACER_QUANTITIES:
+            for table in (_QTY_DEFAULTS, _QTY_DATA_ATTR, _QTY_SAVE_METHOD,
+                          _QTY_CBAR_LABEL, _QTY_TITLE):
+                table.pop(key, None)
+        _TRACER_QUANTITIES = []
+
+        splotter = self._splotter
+        for name in getattr(splotter, 'tracers', {}):
+            for key, attr, label in (
+                    ('tracer_' + name, 'tracer_' + name, name),
+                    ('max_tracer_' + name, 'max_tracer_' + name, 'Max ' + name)):
+                data = getattr(splotter, attr, None)
+                if data is None:
+                    continue          # no stored maximum for this tracer
+                _TRACER_QUANTITIES.append(key)
+                # A concentration's scale is the model's business -- sediment
+                # runs at 1e-2, a normalised tracer at 1 -- so take the range
+                # from the data rather than guessing a default.
+                _QTY_DEFAULTS[key] = dict(vmin=float(data.min()),
+                                          vmax=float(data.max()))
+                _QTY_DATA_ATTR[key] = attr
+                _QTY_SAVE_METHOD[key] = 'save_%s_frame' % key
+                _QTY_CBAR_LABEL[key] = '%s (concentration)' % label
+                _QTY_TITLE[key] = label
+
+        if getattr(self, '_qty_combo', None) is not None:
+            self._qty_combo.config(values=list(_all_quantities()))
+            # A tracer selected for the previous file may not exist in this one.
+            if self._qty_var.get() not in _all_quantities():
+                self._qty_var.set('depth')
 
     def _refresh_basemap_state(self):
         """Enable/disable the basemap checkbox based on current EPSG + contextily."""
@@ -1248,6 +1344,38 @@ class SWWAnimationGUI:
         self._update_xs_overlay()
         self._set_status(f'Loaded {n} frames  |  {plot_dir}')
 
+    def _sync_canvas_sizes(self):
+        """Match each embedded figure to its widget's real pixel size.
+
+        matplotlib's Tk backend sizes a figure from the first <Configure> it
+        receives, but on a HiDPI display that arrives before the canvas knows
+        its device-pixel-ratio, so the figure comes out ui_scale times larger
+        than the widget: the image then renders to an oversized canvas and only
+        its corner is visible, un-centred and at the wrong scale.  Any later
+        resize corrects it, which is why nudging the window "fixed" it.
+
+        Re-assert the size once the widget geometry is real.  Safe to call
+        repeatedly; a widget that is not laid out yet (1x1) is skipped.
+        """
+        for fig, canvas in ((self._fig, self._canvas),
+                            (self._ts_fig, self._ts_canvas),
+                            (self._xs_fig, self._xs_fig_canvas)):
+            try:
+                w = canvas.get_tk_widget()
+                wpx, hpx = w.winfo_width(), w.winfo_height()
+                if wpx <= 1 or hpx <= 1:
+                    continue
+                dpi = fig.get_dpi()
+                if dpi <= 0:
+                    continue
+                want_w, want_h = wpx / dpi, hpx / dpi
+                have_w, have_h = fig.get_size_inches()
+                if (abs(want_w - have_w) > 0.01 or abs(want_h - have_h) > 0.01):
+                    fig.set_size_inches(want_w, want_h, forward=False)
+                    canvas.draw_idle()
+            except (tk.TclError, AttributeError):
+                continue
+
     def _show_frame(self, idx):
         if not self._frames:
             return
@@ -1265,6 +1393,9 @@ class SWWAnimationGUI:
         if self._im is None:
             self._im = self._ax.imshow(img, aspect='equal')
             self._im.set_extent([0, img.shape[1], img.shape[0], 0])
+            # First image: the canvas may still be carrying the oversized
+            # figure from its initial <Configure> (see _sync_canvas_sizes).
+            self.root.after_idle(self._sync_canvas_sizes)
         else:
             self._im.set_data(img)
             self._im.set_extent([0, img.shape[1], img.shape[0], 0])
@@ -3517,9 +3648,19 @@ def main():
                         metavar='PROVIDER',
                         help=('Basemap tile provider. Choices: '
                               + ', '.join(BASEMAP_PROVIDERS.keys())))
+    parser.add_argument('--ui-scale', type=float, default=None, metavar='FACTOR',
+                        help=('Scale the interface (fonts, spacing and on-screen '
+                              'plots). Default: detected from the display. Use '
+                              'e.g. 3 on a very high-DPI laptop panel, 1 to '
+                              'disable. Equivalent to ANUGA_GUI_SCALE.'))
+
     parser.set_defaults(basemap=None)
 
     args = parser.parse_args()
+
+    # Feed --ui-scale to the detector via the same env var users can export.
+    if args.ui_scale is not None:
+        os.environ['ANUGA_GUI_SCALE'] = str(args.ui_scale)
 
     # Load TOML config (if given); explicit CLI args take precedence.
     cfg = {}

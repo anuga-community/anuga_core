@@ -436,5 +436,5 @@ class Test_okada_tsunami(unittest.TestCase):
         ## end
 
 if __name__ == '__main__':
-    suite = unittest.TestLoader().loadTestsFromTestCase(Test_results)
+    suite = unittest.TestLoader().loadTestsFromTestCase(Test_okada_tsunami)
     unittest.TextTestRunner(verbosity=2).run(suite)

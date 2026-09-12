@@ -14,7 +14,7 @@ except ImportError:
 
 #from zoneinfo import ZoneInfo
 
-class Test_Timzone(unittest.TestCase):
+class Test_Timezone(unittest.TestCase):
     def setUp(self):
         pass
 

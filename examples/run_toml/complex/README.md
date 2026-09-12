@@ -1,6 +1,6 @@
 # Complex scenario — sloping floodplain with inflow and rain
 
-A "Cairns-like" `anuga_run_toml` scenario, scaled down so it runs anywhere in a
+A "Cairns-like" `anuga_toml_run` scenario, scaled down so it runs anywhere in a
 minute or two with no external datasets. A 400 m × 200 m plain slopes from 3 m
 elevation in the west down to 0 m at an eastern outlet. Water enters from an
 inlet hydrograph in the west, rain falls over the whole domain, and everything
@@ -43,14 +43,14 @@ python make_inputs.py
 
 ```bash
 # serial
-anuga_run_toml floodplain.toml
+anuga_toml_run floodplain.toml
 
 # parallel (e.g. 4 processes)
-mpiexec -np 4 anuga_run_toml floodplain.toml
+mpiexec -np 4 anuga_toml_run floodplain.toml
 ```
 
 In a source checkout without the installed command, use
-`python <repo>/scripts/anuga_run_toml.py floodplain.toml`.
+`python <repo>/scripts/anuga_toml_run.py floodplain.toml`.
 
 ## What you get
 
@@ -66,7 +66,7 @@ rainfall/inlet operator.
 
 ## Reporting hooks (`user_functions.py`)
 
-`anuga_run_toml` imports a `user_functions` module from the scenario directory
+`anuga_toml_run` imports a `user_functions` module from the scenario directory
 when present and calls these hooks each yieldstep, gated by `[project]` flags in
 the TOML:
 
