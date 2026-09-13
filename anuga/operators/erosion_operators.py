@@ -9,6 +9,8 @@ __date__ ="$09/03/2012 4:46:39 PM$"
 
 
 
+import warnings
+
 import numpy as num
 
 
@@ -16,6 +18,39 @@ from anuga import Domain
 from anuga import Quantity
 from anuga.operators.base_operator import Operator
 from anuga import Region
+
+# One notice per process, however many erosion operators a script creates.
+_MIGRATION_NOTICE_SHOWN = False
+
+
+def _erosion_migration_notice(op_name):
+    """Point first-time users at the sediment transport module.
+
+    Not a deprecation: these operators work and nothing is scheduled for
+    removal. But they are the expensive option -- Python on the host every
+    timestep, and CPU-only, so on the unified compute path they force a
+    GPU->CPU sync per RK step. Measured on 115k triangles they add 12.9x the
+    overhead of the whole sediment transport module on GPU, and 3.3x on CPU,
+    while modelling less. Most people reaching for them today want
+    domain.add_grain_size(); see anuga-community/anuga_core#310.
+    """
+    global _MIGRATION_NOTICE_SHOWN
+    if _MIGRATION_NOTICE_SHOWN:
+        return
+    _MIGRATION_NOTICE_SHOWN = True
+    warnings.warn(
+        "%s: the erosion operators are the expensive way to evolve a bed. "
+        "They run in Python on the host every timestep and are CPU-only, so "
+        "under compute mode 'unified' they force a GPU<->CPU sync every RK "
+        "step -- measured at 12.9x the overhead of the full sediment "
+        "transport module on GPU (3.3x on CPU), for less physics and no mass "
+        "conservation. Consider domain.add_grain_size(...); "
+        "Bed_shear_erosion_operator in particular maps closely onto "
+        "set_shear_closure('energy_slope') with a cohesive bed material. See "
+        "the 'Coming from the erosion operators' section of the sediment "
+        "documentation. This notice appears once per process."
+        % op_name,
+        UserWarning, stacklevel=3)
 
 
 def _mark_domain_erosion(domain):
@@ -70,6 +105,7 @@ class Erosion_operator(Operator, Region):
         # Default to dynamic storage unless the user deliberately chose static;
         # initialise_storage() warns if it ends up static regardless.
         _mark_domain_erosion(self.domain)
+        _erosion_migration_notice(type(self).__name__)
 
         Region.__init__(self, domain,
                         indices=indices,

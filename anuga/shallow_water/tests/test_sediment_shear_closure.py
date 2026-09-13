@@ -1,4 +1,4 @@
-"""Bed shear closures [T-1] and [T-7] (PHYSICS_SPEC 3.1, 3.4).
+"""Bed shear closures [T-1], [T-7] and [T-7e] (PHYSICS_SPEC 3.1, 3.4).
 
     [T-1]  tau_b = rho f_c |v|^2     quadratic drag (default)
     [T-7]  tau_b = rho g h S         depth-slope
@@ -38,6 +38,52 @@ def test_depth_slope_can_be_selected():
     d = channel()
     d.set_shear_closure('depth_slope')
     assert d.sediment_shear_closure == 1
+
+
+def test_energy_slope_can_be_selected():
+    d = channel()
+    d.set_shear_closure('energy_slope')
+    assert d.sediment_shear_closure == 2
+
+
+def test_energy_slope_differs_from_depth_slope_when_the_surface_is_not_parallel():
+    """[T-7e] takes S from the free surface, [T-7] from the bed.
+
+    On a bed that is FLAT while the free surface is sloping, [T-7] sees no
+    slope at all and predicts no shear, while [T-7e] sees the surface slope
+    that is actually driving the flow. If the two ever agree here, the energy
+    closure is reading the bed.
+    """
+    import numpy as np
+    from anuga import Dirichlet_boundary
+
+    def run(closure):
+        d = rectangular_cross_domain(20, 10, 100.0, 50.0)
+        d.set_flow_algorithm('DE1')
+        d.set_quantity('elevation', 0.0)              # FLAT bed: grad z == 0
+        d.set_quantity('friction', 0.03)
+        d.set_quantity('stage', lambda x, y: 2.0 - 0.01 * x)   # sloping surface
+        d.set_boundary({'left': Dirichlet_boundary([2.0, 1.0, 0.0]),
+                        'right': Dirichlet_boundary([1.0, 0.0, 0.0]),
+                        'top': Reflective_boundary(d),
+                        'bottom': Reflective_boundary(d)})
+        d.add_grain_size('sand', diameter=2.0e-4)
+        d.set_shear_closure(closure)
+        d.set_bed_material('cohesive', tau_crit=1e-9, K_e=1.0e-5)
+        d.set_deposition(law='threshold', tau_d=0.0)
+        d.set_datadir('.')
+        d.set_name('t7e_' + closure)
+        d.set_quantities_to_be_stored(None)
+        z0 = d.quantities['elevation'].centroid_values.copy()
+        for t in d.evolve(yieldstep=5.0, finaltime=10.0):
+            pass
+        return np.abs(d.quantities['elevation'].centroid_values - z0).max()
+
+    bed = run('depth_slope')
+    energy = run('energy_slope')
+    assert energy > bed, (
+        'energy_slope (%g) did not exceed depth_slope (%g) on a flat bed with '
+        'a sloping surface -- it is reading the wrong gradient' % (energy, bed))
 
 
 def test_an_unknown_closure_is_rejected():

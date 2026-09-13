@@ -802,6 +802,116 @@ invalidates the device mapping, so configuring sediment after selecting
 
 --------------
 
+.. _coming_from_erosion_operators:
+
+Coming from the erosion operators
+---------------------------------
+
+ANUGA has carried a family of erosion operators for a long time --
+``Polygonal_erosion_operator``, ``Circular_erosion_operator``,
+``Bed_shear_erosion_operator``, ``Flat_slice_erosion_operator``,
+``Flat_fill_slice_erosion_operator`` and ``Sanddune_erosion_operator``. They
+still work and nothing is scheduled for removal, but they are the expensive
+way to evolve a bed: each runs in Python on the host every timestep, and none
+is GPU-safe, so under compute mode ``'unified'`` each one forces a
+GPU-to-host sync on every RK step.
+
+Measured on 115,200 triangles, the overhead an erosion operator adds above a
+plain run is **12.9x that of the entire sediment transport module on the GPU**,
+and 3.3x on the CPU -- while modelling less and conserving nothing.
+
+Structural equivalents
+~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - erosion operator argument
+     - sediment equivalent
+   * - ``base=``
+     - :meth:`set_erodible_base` (``elevation=``), :spec:`L-5`
+   * - ``polygon=``, ``center=``/``radius=``
+     - :meth:`set_erodible_region`
+   * - Sanddune's repose relaxation
+     - :meth:`set_angle_of_repose`
+   * - eroded material simply disappears
+     - ``set_deposition(law='threshold', tau_d=0.0)`` suppresses redeposition
+
+``Bed_shear_erosion_operator``
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+This one maps almost exactly. It forms ``1000 * 9.81 * d * EN_slope`` -- that
+is :math:`\rho g h S` with :math:`S` the **energy** slope -- and then erodes
+``de = tau_b / shear_factor * dt``. That is the cohesive Hanson & Simon law
+:spec:`E-3`, :math:`E = K_e(\tau_b - \tau_c)`, with no threshold and
+:math:`K_e = 1/\texttt{shear\_factor}`:
+
+.. code-block:: python
+
+   domain.add_grain_size('sand', diameter=2.0e-4)
+   domain.set_shear_closure('energy_slope')            # tau_b = rho g h S   [T-7e]
+   domain.set_bed_material('cohesive', tau_crit=1e-9,
+                           K_e=0.5 / shear_factor)     # E = K_e tau_b
+   domain.set_deposition(law='threshold', tau_d=0.0)   # no redeposition
+   domain.set_erodible_base(elevation=base)
+   domain.set_erodible_region(polygon=polygon)
+
+Use ``'energy_slope'`` rather than ``'depth_slope'``: the old operator used the
+free-surface slope, and choosing the bed slope instead is what costs the
+agreement. On a sloping channel over 30 s, correlation of the bed-change field
+against the original operator:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 60 40
+
+   * - closure
+     - correlation with the old operator
+   * - ``'depth_slope'`` -- bed slope, :spec:`T-7`
+     - 0.815
+   * - ``'energy_slope'`` -- free surface, :spec:`T-7e`
+     - **0.964**
+   * - ``'energy_slope'`` with ``K_e`` calibrated
+     - **0.988**
+
+``K_e`` needs calibrating: the two gradient reconstructions differ, so
+``1/shear_factor`` is the right form but not the right constant. Halving it
+matched the case above. Calibrate against a run you trust.
+
+The others
+~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - operator
+     - notes
+   * - ``Polygonal``, ``Circular``
+     - Erode at ``de = |momentum| * dt``. There is no sediment law of that
+       form, and it is dimensionally inconsistent -- ``|momentum|`` is
+       m\ :sup:`2`/s, so ``de`` is not a length. Treat it as a tuning knob,
+       not a rate, and move to the Shields route :spec:`E-1` (the default)
+       rather than trying to reproduce it.
+   * - ``Flat_slice``, ``Flat_fill_slice``
+     - Not erosion: they set elevation to a target value. Use
+       ``set_quantity('elevation', ...)`` or ``Set_elevation_operator``.
+       Sediment has no equivalent because these are not scour models.
+   * - ``Sanddune``
+     - Erosion plus repose. The repose half is
+       :meth:`set_angle_of_repose`; the erosion half is another excess-shear
+       law, as for ``Bed_shear`` above.
+
+.. warning::
+
+   Nothing prevents enabling an erosion operator **and** sediment transport on
+   the same domain. Both write ``elevation`` and the bed changes simply add.
+   One conserves mass and the other does not, so the sum is unlikely to mean
+   anything -- pick one.
+
+--------------
+
 Choosing a configuration
 ------------------------
 

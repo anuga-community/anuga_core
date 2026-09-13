@@ -1659,6 +1659,16 @@ A grain size is a tracer -- so it is transported by the machinery of
         uniform (normal) flow approximation: it assumes the energy slope equals
         the **bed** slope and the flow is locally in equilibrium.
 
+        `'energy_slope'` -- `[T-7e]`, the same `tau_b = rho g h S` with `S` the
+        **free-surface** slope magnitude instead. Under the shallow-water
+        assumption the free surface is the energy grade line, so this drops
+        `[T-7]`'s equilibrium assumption and uses the slope actually driving
+        the flow. Prefer it wherever the bed slope is not a good proxy for the
+        energy slope: backwater, a pool-riffle sequence, a bed that is flat but
+        drawing down, a dam break. It is also what the older
+        `Bed_shear_erosion_operator` used (`EN_slope`), so it is the closure to
+        pick when reproducing a model built on that operator.
+
         Notes
         -----
         Spec 3.4 recommends `[T-1]` and keeps `[T-7]` only for reproducing
@@ -1675,7 +1685,7 @@ A grain size is a tracer -- so it is transported by the machinery of
         dimensionally inconsistent and the second is the undocumented clamp of
         divergence D1a. `[T-7]` here follows the manual, not the code.
         """
-        closures = {'quadratic_drag': 0, 'depth_slope': 1}
+        closures = {'quadratic_drag': 0, 'depth_slope': 1, 'energy_slope': 2}
         if closure not in closures:
             raise ValueError('unknown shear closure %r; expected one of %r'
                              % (closure, sorted(closures)))
@@ -1947,7 +1957,8 @@ A grain size is a tracer -- so it is transported by the machinery of
         dstar = {0: "constant, per grain size", 1: "Rouse profile   [S-4]"
                  }[self.sediment_d_star_mode]
         shear = {0: "quadratic drag, tau_b = rho f_c |v|^2   [T-1]",
-                 1: "depth-slope, tau_b = rho g h S (aSM16; legacy)   [T-7]"
+                 1: "depth-slope, tau_b = rho g h S (bed slope; aSM16)   [T-7]",
+                 2: "energy-slope, tau_b = rho g h S (free surface)   [T-7e]"
                  }[self.sediment_shear_closure]
         fric = {0: "constant n, from the domain friction quantity",
                 1: "larsen_lamb, n = %.5f   [T-13..15]" % self.sediment_manning_ll,

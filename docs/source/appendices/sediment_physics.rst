@@ -317,6 +317,7 @@ friction factor goes into it.
 
    domain.set_shear_closure('quadratic_drag')   # default
    domain.set_shear_closure('depth_slope')
+   domain.set_shear_closure('energy_slope')
 
 .. list-table::
    :header-rows: 1
@@ -329,8 +330,11 @@ friction factor goes into it.
      - :math:`\tau_b = \rho\, f_c\, |\mathbf{v}|^2`
      - :spec:`T-1`
    * - ``'depth_slope'``
-     - :math:`\tau_b = \rho\, g\, h\, S`
+     - :math:`\tau_b = \rho\, g\, h\, S`, :math:`S` from the bed
      - :spec:`T-7`
+   * - ``'energy_slope'``
+     - :math:`\tau_b = \rho\, g\, h\, S`, :math:`S` from the free surface
+     - :spec:`T-7e`
 
 ``'quadratic_drag'`` is the default and the right choice for unsteady or
 rapidly varying flow -- dam breaks, floods, anything with significant
@@ -340,7 +344,15 @@ inertia.
 It is what anugaSed uses, so choose it when reproducing their results
 (divergence **D1** in the spec). It degrades where that balance does not hold.
 
-The two are interchangeable by construction: the kernel returns ``tau_b/rho``,
+:spec:`T-7e` is :spec:`T-7` with the equilibrium assumption dropped. Under the
+shallow-water assumption the free surface *is* the energy grade line, so where
+the bed slope is a poor proxy for it -- backwater, a pool-riffle sequence, a
+flat bed drawing down, a dam break -- the free-surface slope is what actually
+drives the flow. It is also what the older ``Bed_shear_erosion_operator`` used,
+which makes it the closure to pick when reproducing a model built on that
+operator; see :ref:`coming_from_erosion_operators`.
+
+The three are interchangeable by construction: the kernel returns ``tau_b/rho``,
 so everything downstream is unchanged by the choice.
 
 .. _72-set_sediment_friction----what:
@@ -824,7 +836,12 @@ summaries, and renumbering would only break the correspondence.
    * - .. _spec-t-7:
 
        ``[T-7]``
-     - depth-slope closure, ``tau_b = rho g h S``
+     - depth-slope closure, ``tau_b = rho g h S`` with ``S`` the BED slope
+   * - .. _spec-t-7e:
+
+       ``[T-7e]``
+     - energy-slope closure, the same ``tau_b = rho g h S`` with ``S`` the
+       FREE-SURFACE slope
    * - .. _spec-t-8:
        .. _spec-t-10:
 
