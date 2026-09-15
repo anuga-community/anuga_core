@@ -74,7 +74,7 @@ b.sediment_porosity = 0.3
 b.set_bed_material('cohesive', tau_crit=TAU_CRIT)
 b.set_shear_closure('depth_slope')
 b.sediment_d_star_mode = 1                      # Rouse, as their fit approximates
-b.add_grain_size(name='sand', diameter=D50, rho_s=2650.0, initial_concentration=CONC)
+b.add_sediment_fraction(name='sand', diameter=D50, rho_s=2650.0, initial_concentration=CONC)
 b.set_tracer_boundary('sand', 'left', CONC)   # 'left' is the inflow
 zb0 = b.quantities['elevation'].centroid_values.copy()
 b.evolve_to_end(finaltime=FINALTIME)

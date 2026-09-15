@@ -5,7 +5,7 @@ kernel can stride it -- so it takes the same route as a flag-3 quantity: one
 dynamic `<name>_c` variable per tracer, centroids only, nothing interpolated
 that the solver never computed.
 
-Grain sizes are tracers (Domain.add_grain_size calls add_tracer), so
+Grain sizes are tracers (Domain.add_sediment_fraction calls add_tracer), so
 they are covered by the same path.
 """
 

@@ -31,7 +31,7 @@ def channel(slope=0.02, depth=0.5, n_manning=0.025, dt=0.5):
 
 def _gravel_channel(formula='wong_parker_eq24', concentration=0.0):
     d = channel()
-    d.add_grain_size(name='gravel', diameter=5e-3, tau_c_star=0.0,
+    d.add_sediment_fraction(name='gravel', diameter=5e-3, tau_c_star=0.0,
                      initial_concentration=concentration)
     d.set_bedload(formula)
     return d

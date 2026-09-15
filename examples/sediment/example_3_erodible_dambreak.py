@@ -45,8 +45,8 @@ domain.set_deposition('d_star', near_bed='rouse')  # [S-4] rather than well-mixe
 domain.set_sediment_friction('constant')           # ordinary flood work
 domain.set_bedload('wong_parker_eq24')             # [K-1] and [G-5]
 
-domain.add_grain_size(name='fine_sand', diameter=1.5e-4, initial_concentration=0.0)
-domain.add_grain_size(name='coarse_sand', diameter=8.0e-4, initial_concentration=0.0)
+domain.add_sediment_fraction(name='fine_sand', diameter=1.5e-4, initial_concentration=0.0)
+domain.add_sediment_fraction(name='coarse_sand', diameter=8.0e-4, initial_concentration=0.0)
 
 # 'unified' is the shared CPU/GPU path. Whether it offloads to a device is a
 # property of the build, not of this call: a build without offload runs the

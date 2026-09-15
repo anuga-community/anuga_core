@@ -40,7 +40,7 @@ def build(base=None, base_depth=None, classes=(('sand', 2.0e-4),),
     if bedload:
         d.set_bedload('wong_parker_eq24')
     for name, diameter in classes:
-        d.add_grain_size(name=name, diameter=diameter)
+        d.add_sediment_fraction(name=name, diameter=diameter)
     if base is not None:
         d.set_erodible_base(elevation=base)
     elif base_depth is not None:
@@ -148,7 +148,7 @@ def test_bedload_holds_the_base_to_within_one_step_of_flux():
 def test_registration_order_does_not_change_the_answer():
     """The erodible thickness belongs to the CELL, not to a class, so the
     classes are limited together by one shared proportional factor. Serving
-    them in order would make the answer depend on the order add_grain_size
+    them in order would make the answer depend on the order add_sediment_fraction
     was called, which is not physics."""
     first = build(base_depth=0.004, classes=TWO_CLASSES)
     first.evolve_to_end(finaltime=30.0)
@@ -257,7 +257,7 @@ def test_locked_cells_still_accrete():
     d.set_quantity('friction', 0.03)
     d.set_boundary({t: Reflective_boundary(d) for t in d.get_boundary_tags()})
     d.set_sediment_parameters(porosity=POROSITY)
-    d.add_grain_size(name='silt', diameter=6.0e-5, tau_c_star=1.0e6,
+    d.add_sediment_fraction(name='silt', diameter=6.0e-5, tau_c_star=1.0e6,
                      initial_concentration=0.01)
     zc = d.quantities['elevation'].centroid_values.copy()
     d.set_erodible_region(polygon=HALF)

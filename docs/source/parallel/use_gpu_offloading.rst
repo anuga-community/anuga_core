@@ -286,6 +286,73 @@ Performance tips
    a 1M-triangle domain), so yieldstep granularity has minimal impact on
    throughput.
 
+6. **Active-set stepping, on mostly-dry domains.**  See below.
+
+
+Active-set stepping
+-------------------
+
+A mostly-dry domain spends most of its time integrating cells that cannot
+change: dry, and surrounded by dry.  Active-set stepping skips them.
+
+.. code-block:: python
+
+   domain.set_use_active_set(True)     # off by default
+
+On mostly-dry flood problems -- a dam break, a levee breach, a storm surge
+over dry land -- this is the largest single speedup measured for the GPU path.
+It costs nothing in accuracy: a cell is skipped only when it is dry and its
+whole two-ring neighbourhood is dry, so there is nothing to integrate.  Water
+added by rate operators is never lost either; a newly wetted cell activates on
+the next step.
+
+.. warning::
+
+   **The flag is a request, not a guarantee.**  Several configurations turn it
+   off again, and they do so with a log notice rather than an error -- so a run
+   that quietly gets no speedup looks exactly like one that does.  Check the
+   log, or ask the domain:
+
+   .. code-block:: python
+
+      frac, rebuilds = domain.get_active_set_stats()
+      # frac == 1.0 means the active set never engaged
+
+   ``get_active_set_stats()`` returns the mean active fraction and the number
+   of rebuilds, and reports ``1.0`` whenever the active set did not engage.
+
+The flag is ignored, with a notice, when:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 66
+
+   * - Condition
+     - Why
+   * - compute mode is ``'legacy'``
+     - only the unified (GPU) path implements it
+   * - flow algorithm is ``DE2`` (rk3)
+     - implemented for ``DE0``/euler, ``DE1``/rk2 and ``DE_ader2``
+   * - passive tracers or sediment are registered
+     - the active path uses the single-solve scatter flux kernel, which does
+       not advect tracers; only the cell-based kernel does
+   * - the domain has riverwalls
+     - the scatter kernel does not carry them
+   * - Manning friction varies across a cell
+     - likewise
+   * - running under MPI
+     - serial domains only for now
+
+Enabling it alongside **rate operators** is allowed and correct, but widespread
+rainfall wets the whole mesh, which activates every cell and erodes the speedup
+toward zero.  That combination also logs a notice.
+
+.. note::
+
+   Active-set stepping switches the flux kernel to single-solve scatter mode.
+   Results differ from the default cell-based kernel only at floating-point
+   roundoff.
+
 
 Troubleshooting
 ----------------

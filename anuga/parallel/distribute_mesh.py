@@ -55,7 +55,7 @@ DEFAULT_DISTRIBUTE_QUANTITY_NAMES = ["stage", "xmomentum", "ymomentum", "elevati
 # keys: the same reordering, ghost layer and MPI transfer, for free.
 #
 # Keyed by SLOT, not by name. The order is what carries meaning (class s must
-# land back in slot s, which add_grain_size relies on), and a
+# land back in slot s, which add_sediment_fraction relies on), and a
 # tracer name is free text that has no business in a dict key. The names travel
 # beside the values, in the metadata below.
 TRACER_QUANTITY_PREFIX = '__tracer__'

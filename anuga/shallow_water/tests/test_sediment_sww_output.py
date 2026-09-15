@@ -1,6 +1,6 @@
 """Suspended sediment must reach the sww file (issue #274, gap 2).
 
-A grain size IS a tracer -- `add_grain_size` calls `add_tracer`, so
+A grain size IS a tracer -- `add_sediment_fraction` calls `add_tracer`, so
 class `s` occupies tracer slot `s` -- which means the tracer writer stores it
 with no sediment-specific code at all. `test_tracers_sww.py` says as much in
 its docstring, but says it about `add_tracer`; nothing checked the claim
@@ -54,7 +54,7 @@ def _read(path, name):
 
 def test_a_sediment_class_is_written(tmp_path):
     d = _domain()
-    d.add_grain_size(name='sand', diameter=D50, initial_concentration=0.02)
+    d.add_sediment_fraction(name='sand', diameter=D50, initial_concentration=0.02)
     names = _vars(_run(d, tmp_path))
     assert 'sand_c' in names, \
         'suspended concentration is missing from the sww: %s' % sorted(names)
@@ -63,7 +63,7 @@ def test_a_sediment_class_is_written(tmp_path):
 def test_it_is_written_every_timestep(tmp_path):
     """Static storage would record the initial field and miss the transport."""
     d = _domain()
-    d.add_grain_size(name='sand', diameter=D50, initial_concentration=0.02)
+    d.add_sediment_fraction(name='sand', diameter=D50, initial_concentration=0.02)
     sww = _run(d, tmp_path)
     n_times = len(_read(sww, 'time'))
     sand = _read(sww, 'sand_c')
@@ -74,7 +74,7 @@ def test_it_is_written_every_timestep(tmp_path):
 
 def test_the_stored_values_are_the_concentrations(tmp_path):
     d = _domain()
-    d.add_grain_size(name='sand', diameter=D50, initial_concentration=0.02)
+    d.add_sediment_fraction(name='sand', diameter=D50, initial_concentration=0.02)
     sww = _run(d, tmp_path)
     assert num.allclose(_read(sww, 'sand_c')[-1], d.get_tracer('sand'),
                         atol=1e-12), \
@@ -84,8 +84,8 @@ def test_the_stored_values_are_the_concentrations(tmp_path):
 def test_two_classes_do_not_alias(tmp_path):
     """Class s must land in slot s; a shared row would make them identical."""
     d = _domain()
-    d.add_grain_size(name='sand', diameter=D50, initial_concentration=0.02)
-    d.add_grain_size(name='silt', diameter=2.0e-5, initial_concentration=0.005)
+    d.add_sediment_fraction(name='sand', diameter=D50, initial_concentration=0.02)
+    d.add_sediment_fraction(name='silt', diameter=2.0e-5, initial_concentration=0.005)
     sww = _run(d, tmp_path)
 
     sand = _read(sww, 'sand_c')
@@ -98,7 +98,7 @@ def test_two_classes_do_not_alias(tmp_path):
 def test_a_sediment_class_and_a_plain_tracer_coexist(tmp_path):
     """They share the tracer block, so a slot mix-up would show here."""
     d = _domain()
-    d.add_grain_size(name='sand', diameter=D50, initial_concentration=0.02)
+    d.add_sediment_fraction(name='sand', diameter=D50, initial_concentration=0.02)
     d.add_tracer('salinity', initial_value=0.03)
     sww = _run(d, tmp_path)
 
@@ -117,7 +117,7 @@ def test_settling_is_visible_in_the_file(tmp_path):
     be useless for validating a sediment model.
     """
     d = _domain()
-    d.add_grain_size(name='sand', diameter=D50, initial_concentration=0.02)
+    d.add_sediment_fraction(name='sand', diameter=D50, initial_concentration=0.02)
     sww = _run(d, tmp_path, finaltime=4.0)
     sand = _read(sww, 'sand_c')
     moved = num.abs(sand[-1] - sand[0]).max()
@@ -126,7 +126,7 @@ def test_settling_is_visible_in_the_file(tmp_path):
 
 def test_store_tracers_false_opts_out(tmp_path):
     d = _domain()
-    d.add_grain_size(name='sand', diameter=D50, initial_concentration=0.02)
+    d.add_sediment_fraction(name='sand', diameter=D50, initial_concentration=0.02)
     d.store_tracers = False
     assert 'sand_c' not in _vars(_run(d, tmp_path))
 
@@ -139,7 +139,7 @@ def test_the_bed_and_the_suspended_load_are_both_recorded(tmp_path):
     picture that looks complete and is not.
     """
     d = _domain()
-    d.add_grain_size(name='sand', diameter=D50, initial_concentration=0.02)
+    d.add_sediment_fraction(name='sand', diameter=D50, initial_concentration=0.02)
     assert d.sediment_bed_evolution, 'this test assumes an evolving bed'
     sww = _run(d, tmp_path, finaltime=4.0)
 

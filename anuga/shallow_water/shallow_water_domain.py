@@ -93,6 +93,8 @@ def profileit(name):
     return inner
 #-----------------------------
 
+import warnings
+
 import numpy as num
 import sys
 import os
@@ -695,7 +697,7 @@ class Domain(Generic_Domain):
         self.n_sediment_classes = 0
         self.sediment_c_max = 0.30              # [L-2]; FG21 0.30, aS16 0.20
         self._sediment_names = []
-        # rho_s and the settling kwargs are kept per grain size so that
+        # rho_s and the settling kwargs are kept per fraction so that
         # R and v_s can be recomputed if the domain-wide rho_w changes
         # after registration -- otherwise they would silently go stale.
         self._sediment_rho_s = []
@@ -1129,12 +1131,12 @@ class Domain(Generic_Domain):
             raise ValueError('grain diameter must be > 0, got %g' % d)
         return (R * _g * d * d) / (C1 * nu + math.sqrt(0.75 * C2 * R * _g * d**3))
 
-    def _register_sediment_fraction(self, name, diameter, d_star=1.0, beta=None,
+    def _allocate_sediment_fraction(self, name, diameter, d_star=1.0, beta=None,
                                     initial_concentration=0.0, rho_s=2650.0,
                                     tau_c_star=0.04,
                                     reference_height=None,
                                     **settling_kwargs):
-        """Register one suspended sediment grain size and return its index.
+        """Register one suspended sediment fraction and return its index.
 
         Private: the public entry point is
         :class:`~anuga.operators.sediment_operator.Sediment_transport_operator`,
@@ -1143,10 +1145,10 @@ class Domain(Generic_Domain):
         device mapping -- belongs with the rest of the domain's array
         management.
 
-A grain size is a tracer -- so it is transported by the machinery of
+A sediment fraction is a tracer -- so it is transported by the machinery of
         Phases 1-2 -- plus the settling parameters the source term needs. The
-        tracer is registered first, so grain size `s` always occupies tracer
-        slot `s`; `add_tracer` and `add_grain_size` must not be interleaved on
+        tracer is registered first, so fraction `s` always occupies tracer
+        slot `s`; `add_tracer` and `add_sediment_fraction` must not be interleaved on
         the same domain if you rely on that.
 
         Parameters
@@ -1195,15 +1197,15 @@ A grain size is a tracer -- so it is transported by the machinery of
         """
         if self.number_of_tracers != self.n_sediment_classes:
             raise ValueError(
-                'add_grain_size requires grain size s to occupy tracer '
-                'slot s, but this domain already has %d tracers and %d grain '
-                'sizes. Do not mix add_tracer() and add_grain_size().'
+                'add_sediment_fraction requires fraction s to occupy tracer '
+                'slot s, but this domain already has %d tracers and %d sediment '
+                'fractions. Do not mix add_tracer() and add_sediment_fraction().'
                 % (self.number_of_tracers, self.n_sediment_classes))
 
         if tau_c_star < 0.0:
             raise ValueError('tau_c_star must be >= 0, got %g' % tau_c_star)
         # rho_w is a property of the fluid, so it is domain-wide: see
-        # set_sediment_parameters. Only rho_s varies per grain size.
+        # set_sediment_parameters. Only rho_s varies per fraction.
         rho_w = self.sediment_rho_w
         v_s = self.settling_velocity(diameter, rho_s=rho_s, rho_w=rho_w,
                                      **settling_kwargs)
@@ -1620,7 +1622,7 @@ A grain size is a tracer -- so it is transported by the machinery of
             passive-transport benchmarks rely on.
         near_bed : {'constant', 'rouse'}
             How `d*` in `[D-1]` is obtained. `'constant'` uses the
-            per-grain-size value given to `add_grain_size` (default 1.0, the well-mixed
+            per-fraction value given to `add_sediment_fraction` (default 1.0, the well-mixed
             limit of P14/P13). `'rouse'` evaluates the fitted `[S-4]` profile
             per cell from the local Rouse number.
         reference_height_floor : float
@@ -1659,6 +1661,16 @@ A grain size is a tracer -- so it is transported by the machinery of
         uniform (normal) flow approximation: it assumes the energy slope equals
         the **bed** slope and the flow is locally in equilibrium.
 
+        `'energy_slope'` -- `[T-7e]`, the same `tau_b = rho g h S` with `S` the
+        **free-surface** slope magnitude instead. Under the shallow-water
+        assumption the free surface is the energy grade line, so this drops
+        `[T-7]`'s equilibrium assumption and uses the slope actually driving
+        the flow. Prefer it wherever the bed slope is not a good proxy for the
+        energy slope: backwater, a pool-riffle sequence, a bed that is flat but
+        drawing down, a dam break. It is also what the older
+        `Bed_shear_erosion_operator` used (`EN_slope`), so it is the closure to
+        pick when reproducing a model built on that operator.
+
         Notes
         -----
         Spec 3.4 recommends `[T-1]` and keeps `[T-7]` only for reproducing
@@ -1675,7 +1687,7 @@ A grain size is a tracer -- so it is transported by the machinery of
         dimensionally inconsistent and the second is the undocumented clamp of
         divergence D1a. `[T-7]` here follows the manual, not the code.
         """
-        closures = {'quadratic_drag': 0, 'depth_slope': 1}
+        closures = {'quadratic_drag': 0, 'depth_slope': 1, 'energy_slope': 2}
         if closure not in closures:
             raise ValueError('unknown shear closure %r; expected one of %r'
                              % (closure, sorted(closures)))
@@ -1693,29 +1705,29 @@ A grain size is a tracer -- so it is transported by the machinery of
 
         This is the entry point for sediment transport. It takes the
         DOMAIN-WIDE parameters -- the ones that describe the run as a whole
-        rather than any one grain size -- and creates the single
+        rather than any one fraction -- and creates the single
         :class:`~anuga.operators.sediment_operator.Sediment_transport_operator`
         that carries the bed exchange.
 
-        Grain sizes are added separately, with :meth:`add_grain_size`:
+        Grain sizes are added separately, with :meth:`add_sediment_fraction`:
 
         .. code-block:: python
 
             domain.initialize_sediment_operator(porosity=0.28, rho_w=1000.0)
-            domain.add_grain_size('sand', diameter=2.0e-4)
-            domain.add_grain_size('silt', diameter=2.0e-5)
+            domain.add_sediment_fraction('sand', diameter=2.0e-4)
+            domain.add_sediment_fraction('silt', diameter=2.0e-5)
 
         The split is the point. A parameter belongs to exactly one of the two
         calls, so there is never a question of which call wins: `porosity` and
         `rho_w` are properties of the run, `diameter` and `rho_s` are properties
-        of a grain size.
+        of a fraction.
 
         ONE OPERATOR PER DOMAIN. Calling this twice returns the same operator,
         applying any parameters given the second time -- the kernel makes a
-        single pass over every registered grain size, so a second operator in
+        single pass over every registered fraction, so a second operator in
         the fractional-step list would apply the bed exchange twice per step.
 
-        Calling it is optional in the simplest case: :meth:`add_grain_size` will
+        Calling it is optional in the simplest case: :meth:`add_sediment_fraction` will
         create the operator with default domain-wide parameters if none exists.
         The two may be called in either order.
 
@@ -1748,7 +1760,7 @@ A grain size is a tracer -- so it is transported by the machinery of
 
         See Also
         --------
-        add_grain_size : register one grain size.
+        add_sediment_fraction : register one sediment fraction.
         set_sediment_parameters : change the domain-wide parameters later.
         sediment_summary : print the complete active configuration.
         """
@@ -1766,24 +1778,25 @@ A grain size is a tracer -- so it is transported by the machinery of
             self, description=description, label=label, logging=logging,
             verbose=verbose)
 
-    def add_grain_size(self, name, diameter, rho_s=2650.0, tau_c_star=0.04,
-                       d_star=1.0, beta=None, initial_concentration=0.0,
-                       reference_height=None, **settling_kwargs):
-        """Register one suspended sediment grain size and return its index.
+    def add_sediment_fraction(self, name, diameter, rho_s=2650.0,
+                              tau_c_star=0.04, d_star=1.0, beta=None,
+                              initial_concentration=0.0,
+                              reference_height=None, **settling_kwargs):
+        """Register one suspended sediment fraction and return its index.
 
-        Everything here is a property of THIS grain size. The domain-wide
+        Everything here is a property of THIS fraction. The domain-wide
         parameters live on :meth:`initialize_sediment_operator`; in particular
         there is no `rho_w` here, because there is one fluid.
 
         .. code-block:: python
 
-            domain.add_grain_size('sand', diameter=2.0e-4)
-            domain.add_grain_size('silt', diameter=2.0e-5, tau_c_star=0.11)
+            domain.add_sediment_fraction('sand', diameter=2.0e-4)
+            domain.add_sediment_fraction('silt', diameter=2.0e-5, tau_c_star=0.11)
 
-        A grain size is a tracer with settling parameters attached, so it
+        A sediment fraction is a tracer with settling parameters attached, so it
         inherits the transport, boundary and conservation machinery described
         under :ref:`tracers`, and takes the tracer slot of the same index. Do
-        not interleave :meth:`add_tracer` and `add_grain_size` on the same
+        not interleave :meth:`add_tracer` and `add_sediment_fraction` on the same
         domain if you rely on that correspondence.
 
         If the domain has no sediment operator yet, one is created with the
@@ -1792,7 +1805,7 @@ A grain size is a tracer -- so it is transported by the machinery of
         Parameters
         ----------
         name : str
-            Identifier for this grain size, e.g. 'sand'. Also its tracer name.
+            Identifier for this fraction, e.g. 'sand'. Also its tracer name.
         diameter : float
             Grain diameter in metres.
         rho_s : float, optional
@@ -1800,14 +1813,14 @@ A grain size is a tracer -- so it is transported by the machinery of
             the submerged specific gravity `R = rho_s/rho_w - 1`.
         tau_c_star : float, optional
             Critical Shields stress for entrainment `[E-1]`. Default 0.04.
-            Setting it to 0 disables entrainment for this grain size, leaving
+            Setting it to 0 disables entrainment for this fraction, leaving
             deposition only.
         d_star : float, optional
             Ratio of near-bed to depth-averaged concentration in `[D-1]`.
             Default 1.0, the well-mixed limit. Ignored when the domain's
             `near_bed` mode is `'rouse'`, which computes it per cell.
         beta : float, optional
-            Edge reconstruction limiter for this grain size's tracer.
+            Edge reconstruction limiter for this fraction's tracer.
         initial_concentration : float or array-like, optional
             Initial `c_s`; seeds `m = h*c` consistently.
         reference_height : float, optional
@@ -1818,7 +1831,7 @@ A grain size is a tracer -- so it is transported by the machinery of
         Returns
         -------
         int
-            The index of this grain size, which is also its tracer index.
+            The index of this fraction, which is also its tracer index.
 
         See Also
         --------
@@ -1832,8 +1845,8 @@ A grain size is a tracer -- so it is transported by the machinery of
                               'rho_w'})
         if domain_wide:
             raise TypeError(
-                'add_grain_size() got %s, which %s of the run rather than '
-                'of one grain size; pass %s to initialize_sediment_operator() '
+                'add_sediment_fraction() got %s, which %s of the run rather than '
+                'of one fraction; pass %s to initialize_sediment_operator() '
                 'or set_sediment_parameters()'
                 % (', '.join(domain_wide),
                    'are properties' if len(domain_wide) > 1 else 'is a property',
@@ -1843,7 +1856,7 @@ A grain size is a tracer -- so it is transported by the machinery of
                    for op in getattr(self, 'fractional_step_operators', ())):
             self.initialize_sediment_operator()
 
-        return self._register_sediment_fraction(
+        return self._allocate_sediment_fraction(
             name, diameter, rho_s=rho_s, tau_c_star=tau_c_star,
             d_star=d_star, beta=beta,
             initial_concentration=initial_concentration,
@@ -1859,10 +1872,10 @@ A grain size is a tracer -- so it is transported by the machinery of
         """Set the domain-wide water density and refresh what derives from it.
 
         `rho_w` is a property of the fluid, so there is one per domain rather
-        than one per grain size. Two quantities are computed from it at
+        than one per fraction. Two quantities are computed from it at
         registration time -- the submerged specific gravity `R = rho_s/rho_w - 1`
         and the settling velocity `v_s` `[S-1]` -- so changing it afterwards has
-        to recompute them, or already-registered grain sizes keep values from
+        to recompute them, or already-registered fractions keep values from
         the old density and nothing says so.
         """
         if rho_w <= 0.0:
@@ -1937,17 +1950,18 @@ A grain size is a tracer -- so it is transported by the machinery of
         statements rather than tuning (spec 4.1.1).
         """
         if self.n_sediment_classes == 0:
-            return 'sediment: no grain sizes registered'
+            return 'sediment: no sediment fractions registered'
 
         ero = {0: "Shields / Smith-McLean, non-cohesive (sand, gravel)   [E-1]",
                1: "Hanson & Simon, cohesive (silt, clay)   [E-3]",
                2: "Partheniades (RDycore)   [E-4]"}[self.sediment_erosion_mode]
         dep = {0: "D = d* c v_s   [D-1]", 1: "D = v_s c (1 - tau_b/tau_d)   [D-2]"
                }[self.sediment_deposition_mode]
-        dstar = {0: "constant, per grain size", 1: "Rouse profile   [S-4]"
+        dstar = {0: "constant, per fraction", 1: "Rouse profile   [S-4]"
                  }[self.sediment_d_star_mode]
         shear = {0: "quadratic drag, tau_b = rho f_c |v|^2   [T-1]",
-                 1: "depth-slope, tau_b = rho g h S (aSM16; legacy)   [T-7]"
+                 1: "depth-slope, tau_b = rho g h S (bed slope; aSM16)   [T-7]",
+                 2: "energy-slope, tau_b = rho g h S (free surface)   [T-7e]"
                  }[self.sediment_shear_closure]
         fric = {0: "constant n, from the domain friction quantity",
                 1: "larsen_lamb, n = %.5f   [T-13..15]" % self.sediment_manning_ll,
@@ -1962,10 +1976,10 @@ A grain size is a tracer -- so it is transported by the machinery of
                   self.sediment_bedload_tau_c_star)))
 
         L = ['sediment configuration',
-             # The name is free text, so it is usually a material ('sand')
-             # rather than a size. Carry the diameter alongside it, or the
-             # line labels as a grain size something that is not one.
-             '  grain sizes        : %d  --  %s'
+             # The name is free text ('sand', 'silt'), so carry the
+             # diameter alongside it -- the name alone does not say what the
+             # fraction actually is.
+             '  fractions          : %d  --  %s'
              % (self.n_sediment_classes,
                 ', '.join('%s (d=%.4g m)' % (nm, self.sediment_diameter[i])
                           for i, nm in
@@ -2029,7 +2043,7 @@ A grain size is a tracer -- so it is transported by the machinery of
         L.append('   see the Sediment physics appendix -- the description '
                  'before each')
         L.append('   label is the whole story.)')
-        L.append('  per grain size:')
+        L.append('  per fraction:')
         for i, nm in enumerate(self.get_sediment_names()):
             L.append('    %-10s d=%.4g m  v_s=%.4e m/s  R=%.4g  tau_c*=%.4g'
                      % (nm, self.sediment_diameter[i],
@@ -2043,8 +2057,8 @@ A grain size is a tracer -- so it is transported by the machinery of
 
         `'noncohesive'` (default) -- sand, gravel, boulders. Shields
         entrainment via Smith & McLean / Parker, `[E-1]`/`[E-2]`, with a
-        critical Shields stress per grain size (`tau_c_star` on
-        `add_grain_size`).
+        critical Shields stress per fraction (`tau_c_star` on
+        `add_sediment_fraction`).
 
         `'partheniades'` -- `[E-4]`, `E = K_p (tau_b - tau_c)/tau_c`, the form
         RDycore-sediment uses. `K_e` here is the Partheniades coefficient as a
@@ -2153,6 +2167,39 @@ A grain size is a tracer -- so it is transported by the machinery of
                 raise ValueError(
                     "wilson needs grain_size > 0 (D50 for sand, D84 for "
                     "gravel/boulder)")
+
+            # `bed` picks the curve; `grain_size` sets the relative submergence
+            # h/D it is evaluated at. They are independent, so a boulder curve
+            # at a sand-sized D is a well-formed calculation of nothing real --
+            # and it fails quietly and hugely. The gravel and boulder relations
+            # are logarithmic in h/D, so shrinking D inflates the submergence
+            # and drives f_c down: bed='boulder' at D = 2e-4 gives f_c = 0.0016
+            # against 0.031 at a plausible D = 0.5, a factor of 19 in f_c and
+            # therefore in tau_b. Measured end to end, that under-predicted
+            # scour four-fold.
+            #
+            # Bounds are deliberately loose -- roughly Wentworth, widened so
+            # the usual borderline choices pass. This warns, it does not
+            # refuse: an unusual bed is the user's call to make.
+            plausible = {'sand': (6.0e-5, 2.0e-3),
+                         'gravel': (2.0e-3, 0.25),
+                         'boulder': (0.05, 10.0)}
+            lo, hi = plausible[bed]
+            if not lo <= grain_size <= hi:
+                warnings.warn(
+                    "set_sediment_friction('wilson', bed=%r, grain_size=%g): "
+                    "grain_size looks implausible for a %s bed, which the "
+                    "relations expect to be roughly %g to %g m. `bed` only "
+                    "selects the curve; `grain_size` sets the relative "
+                    "submergence h/D it is evaluated at, and nothing "
+                    "cross-checks them, so a mismatch runs without error and "
+                    "can shift f_c -- and therefore tau_b -- by an order of "
+                    "magnitude. Note grain_size is the roughness length scale "
+                    "of the BED (D50 for sand, D84 for gravel/boulder), not "
+                    "the diameter passed to add_sediment_fraction()."
+                    % (bed, grain_size, bed, lo, hi),
+                    UserWarning, stacklevel=2)
+
             self.sediment_wilson_bed = beds[bed]
             self.sediment_wilson_D = float(grain_size)
 
@@ -3562,6 +3609,71 @@ A grain size is a tracer -- so it is transported by the machinery of
         else:
             self.use_sloped_mannings = False
 
+
+
+    def set_use_active_set(self, flag: bool = True) -> None:
+        """Enable active-set stepping: skip cells that are provably
+        unchangeable this step (dry, with an all-dry 2-ring neighbourhood).
+
+        Only the GPU/unified compute path honours the flag (rk2/DE1,
+        ader2/DE_ader2 and euler/DE0 stepping; DE2/rk3 runs full steps with a
+        notice).  It is also ignored, with a notice, on domains with passive
+        tracers or sediment classes, riverwalls, or sloped Manning friction:
+        the active path uses the single-solve scatter flux kernel, which
+        carries none of those.  It also switches the flux kernel to single-solve scatter
+        mode, whose results differ from the default cell-based kernel only at
+        floating-point roundoff.  Serial domains only for now -- under MPI
+        the flag is ignored with a warning.
+
+        On mostly-dry flood domains (dam break, levee breach, storm surge)
+        this is the largest single speedup measured for the GPU path.  Water
+        added by rate operators (rainfall) is never lost -- newly wetted
+        cells activate on the next step -- but widespread rain activates the
+        whole mesh and the speedup degrades toward zero, hence the warning
+        when both are in play.
+        """
+        self.use_active_set = bool(flag)
+        gi = getattr(self, 'gpu_interface', None)
+        if gi is not None and getattr(gi, 'gpu_dom', None) is not None:
+            try:
+                from anuga.shallow_water.sw_domain_gpu_ext import set_use_active_set_gpu
+                set_use_active_set_gpu(gi.gpu_dom, 1 if flag else 0)
+            except ImportError:
+                pass
+        if flag:
+            if getattr(self, 'number_of_tracers', 0) > 0:
+                log.warning('active-set stepping requested on a domain with '
+                            'passive tracers / sediment classes: only the '
+                            'cell-based flux kernel advects tracers, so the '
+                            'GPU path will run full steps (flag ignored).')
+            rate_like = [type(op).__name__ for op in
+                         getattr(self, 'fractional_step_operators', [])
+                         if 'rate' in type(op).__name__.lower()]
+            if rate_like:
+                log.warning('active-set stepping enabled with rate operators '
+                            'attached (%s): results stay correct, but rained '
+                            'regions activate and the speedup degrades under '
+                            'widespread rain.' % ', '.join(rate_like))
+
+    def get_use_active_set(self) -> bool:
+        """Whether active-set stepping is requested (see set_use_active_set)."""
+        return bool(getattr(self, 'use_active_set', False))
+
+    def get_active_set_stats(self):
+        """Return (mean_active_fraction, n_rebuilds) once evolution has run.
+
+        mean_active_fraction is 1.0 whenever the active set never engaged
+        (flag off, non-GPU compute mode, MPI fallback, or before the first
+        rebuild).
+        """
+        gi = getattr(self, 'gpu_interface', None)
+        if gi is not None and getattr(gi, 'gpu_dom', None) is not None:
+            try:
+                from anuga.shallow_water.sw_domain_gpu_ext import active_set_stats_gpu
+                return active_set_stats_gpu(gi.gpu_dom)
+            except (ImportError, AttributeError):
+                pass
+        return (1.0, 0)
 
     def set_compute_fluxes_method(self, flag: str = 'original') -> None:
         """Set method for computing fluxes.

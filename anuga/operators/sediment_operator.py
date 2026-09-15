@@ -38,14 +38,14 @@ class Sediment_transport_operator(Operator):
     Not normally constructed directly. The entry point is
     :meth:`~anuga.shallow_water.shallow_water_domain.Domain.initialize_sediment_operator`,
     which creates this operator and returns it, with
-    :meth:`~anuga.shallow_water.shallow_water_domain.Domain.add_grain_size`
+    :meth:`~anuga.shallow_water.shallow_water_domain.Domain.add_sediment_fraction`
     for each grain size:
 
     .. code-block:: python
 
         domain.initialize_sediment_operator(porosity=0.28)
-        domain.add_grain_size('sand', diameter=2.0e-4)
-        domain.add_grain_size('silt', diameter=2.0e-5)
+        domain.add_sediment_fraction('sand', diameter=2.0e-4)
+        domain.add_sediment_fraction('silt', diameter=2.0e-5)
 
     Constructing it directly is equivalent to
     `domain.initialize_sediment_operator()` with no domain-wide parameters, and
@@ -91,9 +91,9 @@ class Sediment_transport_operator(Operator):
         self.repose_sweeps_total = 0
         self.repose_cap_hits = 0
 
-    def add_grain_size(self, name, diameter, **kwargs):
-        """Register a grain size. Delegates to `domain.add_grain_size`."""
-        return self.domain.add_grain_size(name, diameter, **kwargs)
+    def add_sediment_fraction(self, name, diameter, **kwargs):
+        """Register a grain size. Delegates to `domain.add_sediment_fraction`."""
+        return self.domain.add_sediment_fraction(name, diameter, **kwargs)
 
     def __call__(self):
         # Creating the operator without a grain size is legal -- it is how
@@ -111,7 +111,7 @@ class Sediment_transport_operator(Operator):
                        'sediment, register the grain size and select '
                        "set_bedload('engelund_hansen'), which turns the "
                        'suspended exchange off. Call '
-                       'domain.add_grain_size(name, diameter)')
+                       'domain.add_sediment_fraction(name, diameter)')
                 log.critical(msg)
                 warnings.warn(msg, UserWarning, stacklevel=2)
             return

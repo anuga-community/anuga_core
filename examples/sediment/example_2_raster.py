@@ -57,7 +57,7 @@ domain.set_boundary({'bottom': Bi, 'side1': Br, 'side2': Br,
 
 # --- our API ----------------------------------------------------------------
 domain.sediment_porosity = 0.3
-domain.add_grain_size(name='sand', diameter=D50, rho_s=2650.0, initial_concentration=0.0)
+domain.add_sediment_fraction(name='sand', diameter=D50, rho_s=2650.0, initial_concentration=0.0)
 domain.set_tracer_boundary('sand', 'top', INFLOW_CONC)    # 'top' carries INFLOW_STAGE
 
 areas = domain.areas

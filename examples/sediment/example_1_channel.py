@@ -5,7 +5,7 @@ Same geometry, slope, boundaries and duration; our API and, deliberately, the
 non-cohesive erosion route -- see README.md.
 
 Demonstrates
-  * add_grain_size()          registers the grain size and its operator
+  * add_sediment_fraction()          registers the grain size and its operator
   * set_tracer_boundary()     prescribed inflow concentration, per boundary tag
   * entrainment [E-1], deposition [D-1], Exner bed change [G-4]
 """
@@ -59,7 +59,7 @@ domain.sediment_porosity = 0.3
 if args.bed == 'cohesive':
     # anugaSed's own configuration: Hanson & Simon [E-3] with tau_c = 0.088 Pa.
     domain.set_bed_material('cohesive', tau_crit=0.088)
-domain.add_grain_size(name='sand', diameter=D50, rho_s=2650.0,
+domain.add_sediment_fraction(name='sand', diameter=D50, rho_s=2650.0,
                       initial_concentration=INFLOW_CONC)
 # The domain starts DRY, so the initial concentration washes out immediately;
 # what actually matters is the concentration of the water flowing in.

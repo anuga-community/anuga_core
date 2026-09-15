@@ -107,7 +107,7 @@ Registering and setting
 Order matters. A tracer's slot is fixed at registration, and a sediment grain
 size
 occupies the tracer slot of the same index, so do not interleave
-:meth:`add_tracer` and ``add_grain_size`` if you rely on that
+:meth:`add_tracer` and ``add_sediment_fraction`` if you rely on that
 correspondence.
 
 A tracer may not be named after a quantity. Both are written to the sww as

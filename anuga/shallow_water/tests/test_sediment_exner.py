@@ -51,7 +51,7 @@ def build():
     d.sediment_porosity = LAMBDA
     x, y = d.centroid_coordinates[:, 0], d.centroid_coordinates[:, 1]
     c0 = 0.7 * np.exp(-5.0 * (x - 0.9) ** 2 - 50.0 * (y - 0.5) ** 2)
-    d.add_grain_size(name='sand', diameter=D_G, rho_s=RHO_S, tau_c_star=0.0,
+    d.add_sediment_fraction(name='sand', diameter=D_G, rho_s=RHO_S, tau_c_star=0.0,
                      initial_concentration=c0)
     return d, c0
 

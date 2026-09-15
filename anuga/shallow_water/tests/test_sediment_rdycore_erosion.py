@@ -78,7 +78,7 @@ def build(exchange, nx=800, manning=MANNING):
         d.set_deposition('threshold', tau_d=TAU_D)
     else:
         d.set_deposition('threshold', tau_d=0.0)     # their passive hook
-    d.add_grain_size(name='ssc', diameter=1.0e-4, rho_s=RHO_S, tau_c_star=0.0,
+    d.add_sediment_fraction(name='ssc', diameter=1.0e-4, rho_s=RHO_S, tau_c_star=0.0,
                      initial_concentration=np.where(x < DAM_X, CL, CR))
     d.sediment_settling_velocity[0] = V_S            # RDy26 prescribe it
     return d, x

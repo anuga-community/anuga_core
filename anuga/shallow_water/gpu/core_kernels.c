@@ -700,21 +700,28 @@ static inline double core_rouse_d_star(double Z, double a_h) {
  * which the density cancels, and the dimensional stress the cohesive route
  * needs is simply rho_w times this.
  *
- * S is the bed gradient magnitude from the divergence theorem over the cell's
- * own edges, so this stays cell-local and offloads. */
+ * S is a gradient magnitude from the divergence theorem over the cell's own
+ * edges, so this stays cell-local and offloads. WHICH surface supplies it is
+ * the closure: the bed for [T-7], the free surface for [T-7e]. The two agree
+ * only in steady uniform flow, which is [T-7]'s stated assumption; where the
+ * flow is not in equilibrium the free-surface slope is the better estimate of
+ * what drives it, and it is what the older Bed_shear_erosion_operator used. */
 static inline double core_tau_b_over_rho(anuga_int closure, double f_c,
                                          double vel2, double grav, double h,
                                          const double * restrict bed_ev,
+                                         const double * restrict stage_ev,
                                          const anuga_geom_t * restrict normals,
                                          const anuga_geom_t * restrict edgelengths,
                                          double area, anuga_int k) {
-    if (closure != 1) {
+    if (closure != 1 && closure != 2) {
         return f_c * vel2;                       /* [T-1] */
     }
-    /* [T-7]: grad z = (1/A) sum_e z_e n_e L_e */
+    /* [T-7]:  grad z = (1/A) sum_e z_e n_e L_e   (bed slope)
+     * [T-7e]: grad w = (1/A) sum_e w_e n_e L_e   (free-surface slope) */
+    const double * restrict surf_ev = (closure == 2) ? stage_ev : bed_ev;
     double gx = 0.0, gy = 0.0;
     for (anuga_int i = 0; i < 3; i++) {
-        const double ze = bed_ev[3 * k + i];
+        const double ze = surf_ev[3 * k + i];
         const double L = edgelengths[3 * k + i];
         gx += ze * normals[6 * k + 2 * i] * L;
         gy += ze * normals[6 * k + 2 * i + 1] * L;
@@ -776,6 +783,7 @@ void core_apply_bedload(struct domain *D, double timestep) {
     double * restrict stage_cv = D->stage_centroid_values;
     double * restrict bed_cv = D->bed_centroid_values;
     double * restrict bed_ev = D->bed_edge_values;
+    double * restrict stage_ev = D->stage_edge_values;
     double * restrict xmom_cv = D->xmom_centroid_values;
     double * restrict ymom_cv = D->ymom_centroid_values;
     double * restrict friction_cv = D->friction_centroid_values;
@@ -832,9 +840,9 @@ void core_apply_bedload(struct domain *D, double timestep) {
             f_c = grav * nman * nman / cbrt(h);
         }
 
-        /* Same closure as the suspended source, [T-1] or [T-7]. */
+        /* Same closure as the suspended source: [T-1], [T-7] or [T-7e]. */
         const double tbr = core_tau_b_over_rho(shear_closure, f_c, vel2, grav,
-                                               h, bed_ev, normals,
+                                               h, bed_ev, stage_ev, normals,
                                                edgelengths, areas[k], k);
 
         double q_b_total = 0.0;
@@ -1272,6 +1280,7 @@ void core_apply_sediment_source(struct domain *D, double timestep) {
     double * restrict tau_c_star = D->sediment_tau_c_star;
     double * restrict a_ref = D->sediment_reference_height;
     double * restrict bed_ev_r = D->bed_edge_values;
+    double * restrict stage_ev_r = D->stage_edge_values;
     anuga_geom_t * restrict normals_r = D->normals;
     anuga_geom_t * restrict edgelengths_r = D->edgelengths;
     anuga_geom_t * restrict areas_r = D->areas;
@@ -1360,9 +1369,9 @@ void core_apply_sediment_source(struct domain *D, double timestep) {
             f_c = grav * nman * nman / cbrt(h);
         }
 
-        /* tau_b/rho under the selected closure, [T-1] or [T-7]. */
+        /* tau_b/rho under the selected closure: [T-1], [T-7] or [T-7e]. */
         const double tbr = core_tau_b_over_rho(shear_closure, f_c, vel2, grav,
-                                               h, bed_ev_r, normals_r,
+                                               h, bed_ev_r, stage_ev_r, normals_r,
                                                edgelengths_r, areas_r[k], k);
 
         for (anuga_int s = 0; s < n_classes; s++) {

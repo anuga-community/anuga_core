@@ -66,7 +66,7 @@ def run(nxy, dt, alpha=1.0):
     d.sediment_c_pack = 10.0
 
     x, y = d.centroid_coordinates[:, 0], d.centroid_coordinates[:, 1]
-    d.add_grain_size(name='mms', diameter=D50, tau_c_star=0.0,
+    d.add_sediment_fraction(name='mms', diameter=D50, tau_c_star=0.0,
                      initial_concentration=c_exact(x, y, 0.0, alpha))
     v_s = d.sediment_settling_velocity[0]
 
@@ -150,7 +150,7 @@ def test_an_external_source_is_delivered_against_a_tight_ceiling():
     d.set_quantity('stage', DEPTH)
     d.set_boundary({t: Reflective_boundary(d) for t in d.get_boundary_tags()})
     d.sediment_c_max = 1e-6                # absurdly tight
-    d.add_grain_size(name='s', diameter=D50, tau_c_star=0.0, d_star=0.0,
+    d.add_sediment_fraction(name='s', diameter=D50, tau_c_star=0.0, d_star=0.0,
                      initial_concentration=0.0)
     d.set_tracer_source('s', 1.0e-3)
     m0 = float((d.tracer_conserved_values[0] * d.areas).sum())

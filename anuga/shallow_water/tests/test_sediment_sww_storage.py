@@ -30,7 +30,7 @@ def test_plain_domain_still_stores_elevation_statically():
 def test_adding_a_sediment_class_upgrades_elevation_to_dynamic():
     d = _domain()
     assert d.quantities_to_be_stored['elevation'] == 1
-    d.add_grain_size(name='sand', diameter=200e-6)
+    d.add_sediment_fraction(name='sand', diameter=200e-6)
     assert d.sediment_bed_evolution is True
     assert d.quantities_to_be_stored['elevation'] == 2, \
         'an evolving bed must be stored per timestep, not once'
@@ -41,14 +41,14 @@ def test_fixed_bed_leaves_elevation_static():
     # once is correct and we must not inflate the file.
     d = _domain()
     d.set_sediment_parameters(bed_evolution=False)
-    d.add_grain_size(name='sand', diameter=200e-6)
+    d.add_sediment_fraction(name='sand', diameter=200e-6)
     assert d.quantities_to_be_stored['elevation'] == 1
 
 
 def test_enabling_bed_evolution_afterwards_upgrades_it():
     d = _domain()
     d.set_sediment_parameters(bed_evolution=False)
-    d.add_grain_size(name='sand', diameter=200e-6)
+    d.add_sediment_fraction(name='sand', diameter=200e-6)
     assert d.quantities_to_be_stored['elevation'] == 1
     d.set_sediment_parameters(bed_evolution=True)
     assert d.quantities_to_be_stored['elevation'] == 2
@@ -60,14 +60,14 @@ def test_deliberate_flags_are_not_rewritten(flag):
     # explicit choices; upgrading them to 2 would override the user.
     d = _domain()
     d.quantities_to_be_stored['elevation'] = flag
-    d.add_grain_size(name='sand', diameter=200e-6)
+    d.add_sediment_fraction(name='sand', diameter=200e-6)
     assert d.quantities_to_be_stored['elevation'] == flag
 
 
 def test_an_explicit_2_is_left_alone():
     d = _domain()
     d.quantities_to_be_stored['elevation'] = 2
-    d.add_grain_size(name='sand', diameter=200e-6)
+    d.add_sediment_fraction(name='sand', diameter=200e-6)
     assert d.quantities_to_be_stored['elevation'] == 2
 
 
@@ -85,7 +85,7 @@ def test_the_evolving_bed_actually_reaches_the_sww(tmp_path):
     d.set_quantity('stage', 1.0)
     b = anuga.Reflective_boundary(d)
     d.set_boundary({'left': b, 'right': b, 'top': b, 'bottom': b})
-    d.add_grain_size(name='sand', diameter=200e-6, initial_concentration=0.02)
+    d.add_sediment_fraction(name='sand', diameter=200e-6, initial_concentration=0.02)
     d.set_bedload()   # default: wong_parker_eq24
 
     d.set_name('sed_bed_storage')

@@ -26,6 +26,21 @@ class spec_ref(nodes.Inline, nodes.Element):
     """Placeholder resolved once every document's labels are known."""
 
 
+class SpecLitRole(SphinxRole):
+    """``:speclit:`T-6``` -- the label, styled, but NOT a link.
+
+    For the cell that DEFINES a label. Linking it would point at itself, but
+    it still needs the ``spec-label`` class: without it the theme's
+    ``code.literal { white-space: normal }`` applies and the browser breaks
+    the label at its hyphen, rendering "[D-" on one line and "2]" on the next
+    in a narrow column.
+    """
+
+    def run(self):
+        label = self.text.strip()
+        return [nodes.literal('', '[%s]' % label, classes=['spec-label'])], []
+
+
 class SpecRole(SphinxRole):
     def run(self):
         node = spec_ref()
@@ -63,6 +78,7 @@ class ResolveSpecRefs(SphinxPostTransform):
 
 def setup(app):
     app.add_role('spec', SpecRole())
+    app.add_role('speclit', SpecLitRole())
     app.add_post_transform(ResolveSpecRefs)
     return {'version': '1.0',
             'parallel_read_safe': True,

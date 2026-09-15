@@ -41,7 +41,7 @@ def build(algorithm='DE0', bedload=False, repose=None, sediment=True):
         d.set_sediment_parameters(porosity=POROSITY)
         if bedload:
             d.set_bedload('wong_parker_eq24')
-        d.add_grain_size(name='sand', diameter=3.0e-4)
+        d.add_sediment_fraction(name='sand', diameter=3.0e-4)
         if repose is not None:
             d.set_angle_of_repose(repose, max_sweeps=50)
     return d
@@ -75,7 +75,7 @@ def cone_domain(repose=None, algorithm='DE0'):
     d.set_quantity('friction', 0.03)
     d.set_boundary({t: Reflective_boundary(d) for t in d.get_boundary_tags()})
     d.set_sediment_parameters(porosity=POROSITY)
-    d.add_grain_size(name='sand', diameter=3.0e-4)
+    d.add_sediment_fraction(name='sand', diameter=3.0e-4)
     if repose is not None:
         d.set_angle_of_repose(repose, max_sweeps=400)
     return d

@@ -171,7 +171,7 @@ def run(nxy, dt=None):
         # the sediment operator consumes it, so the operator is created below
         # -- after MMS_source_operator. Sediment_transport_operator() would
         # otherwise put itself first.
-        d._register_sediment_fraction(
+        d._allocate_sediment_fraction(
             nm, diameter=1.0e-4, tau_c_star=0.0,
             initial_concentration=c_ex[a](x, y, 0.0))
         names.append(nm)
@@ -244,7 +244,7 @@ def run(nxy, dt=None):
         # the sediment operator consumes it, so the operator is created below
         # -- after MMS_source_operator. Sediment_transport_operator() would
         # otherwise put itself first.
-        d._register_sediment_fraction(
+        d._allocate_sediment_fraction(
             nm, diameter=1.0e-4, tau_c_star=0.0,
             initial_concentration=c_ex[a](x, y, 0.0))
         names.append(nm)

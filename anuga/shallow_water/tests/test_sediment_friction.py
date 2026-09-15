@@ -39,6 +39,38 @@ def _depth_for_n(f_c, n, g):
     return (n * n * g / f_c) ** 3
 
 
+def test_wilson_warns_when_grain_size_is_implausible_for_the_bed():
+    """`bed` picks the curve, `grain_size` sets h/D -- nothing ties them.
+
+    A boulder curve at a sand-sized D is a well-formed calculation of nothing
+    real: f_c drops from 0.031 to 0.0016, a factor of 19 in tau_b, silently.
+    """
+    import warnings
+
+    for bed, D in (('boulder', 2.0e-4), ('boulder', 0.02),
+                   ('gravel', 2.0e-4), ('sand', 0.5)):
+        d = channel()
+        d.add_sediment_fraction('sand', diameter=2.0e-4)
+        with pytest.warns(UserWarning, match='implausible'):
+            d.set_sediment_friction('wilson', bed=bed, grain_size=D)
+
+
+def test_wilson_is_quiet_for_sensible_bed_and_grain_size():
+    """The warning must not fire on ordinary choices, or it will be ignored."""
+    import warnings
+
+    for bed, D in (('sand', 2.0e-4), ('sand', 1.0e-3),
+                   ('gravel', 0.01), ('gravel', 0.1),
+                   ('boulder', 0.3), ('boulder', 1.0)):
+        d = channel()
+        d.add_sediment_fraction('sand', diameter=2.0e-4)
+        with warnings.catch_warnings(record=True) as w:
+            warnings.simplefilter('always')
+            d.set_sediment_friction('wilson', bed=bed, grain_size=D)
+        assert not [x for x in w if 'implausible' in str(x.message)], (
+            'warned on a sensible combination: bed=%s grain_size=%g' % (bed, D))
+
+
 def test_the_wilson_factor_of_eight_conversion():
     """W04 write (8/f_c)^1/2, but THEIR f_c is the Darcy-Weisbach f (their
     Eq 4) while ours is f/8. Taking their f_c literally as ours is an
@@ -144,7 +176,7 @@ def test_all_three_closures_run_and_give_distinct_answers():
         if name != 'constant':
             d.set_sediment_friction(name, **kwargs)
         d.sediment_d_star_mode = 1
-        d.add_grain_size(name='s', diameter=1e-4, initial_concentration=0.01)
+        d.add_sediment_fraction(name='s', diameter=1e-4, initial_concentration=0.01)
         d.evolve_to_end(finaltime=20.0)
         means[name] = float(d.get_tracer('s').mean())
 

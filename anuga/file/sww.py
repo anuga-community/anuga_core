@@ -148,7 +148,7 @@ class SWW_file(Data_format):
                 self._overwrite_c_quantities.append(q+'_c')
 
         # Passive tracers, and therefore suspended sediment classes, which are
-        # tracers with settling parameters (see Domain.add_grain_size).
+        # tracers with settling parameters (see Domain.add_sediment_fraction).
         #
         # Tracers are NOT Quantity objects: they live in one contiguous
         # (n_tracers, N) block so the C kernel can stride them and the device
