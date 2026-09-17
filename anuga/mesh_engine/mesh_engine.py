@@ -2,15 +2,36 @@
 import sys
 
 class NoTrianglesError(Exception): pass
-#import anuga.mesh_engine.mesh_engine_c_layer as triang
-#import anuga.mesh_engine.list_dic as triang
 
-try:
-    import meshpy.triangle as triang
-    TRILIB = 'meshpy'
-except ImportError:
-    import triangle as triang
-    TRILIB = 'triangle'
+# The triangulation backend (meshpy, or the `triangle` package, both wrapping
+# Shewchuk's Triangle) is imported on first use rather than here, so that
+# `import anuga` works without one. Only CREATING a mesh needs it: loading an
+# existing .msh/.tsh, reading SWW output, post-processing and running a domain
+# built elsewhere do not. TRILIB is None until the backend has been loaded.
+_triang = None
+TRILIB = None
+
+
+def _get_triangulator():
+    """Import the triangulation backend on first use and return it."""
+    global _triang, TRILIB
+    if _triang is None:
+        try:
+            import meshpy.triangle as _t
+            TRILIB = 'meshpy'
+        except ImportError:
+            try:
+                import triangle as _t
+                TRILIB = 'triangle'
+            except ImportError as exc:
+                raise ImportError(
+                    "Generating a mesh needs a triangulation backend, but "
+                    "neither meshpy nor triangle is installed:\n"
+                    "    pip install meshpy\n"
+                    "ANUGA can be imported and used without one; it is only "
+                    "required to create meshes.") from exc
+        _triang = _t
+    return _triang
 
 
 
@@ -32,6 +53,8 @@ def generate_mesh(points=None,
     #FIXME (DSG-DSG): Catch parameters that are lists,
     #instead of lists of lists
     # check shape[1] is 2 etc
+
+    triang = _get_triangulator()
 
     if points is None:
         points = []
