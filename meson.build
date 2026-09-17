@@ -25,6 +25,12 @@ add_project_arguments('-DNPY_NO_DEPRECATED_API=NPY_1_7_API_VERSION', language: '
 
 py3 = import('python').find_installation(pure: false)
 
+# `meson dist` (which is what meson-python's sdist build runs) has no .git in
+# the staged tree, so bake the version in as a file _git_version.py reads
+# before trying git. Without this an sdist install reports 0.0.0+unknown.
+# Dist scripts run from the build directory, hence files() for the path.
+meson.add_dist_script(py3, files('_git_version.py'), '--write-dist')
+
 dep_py = py3.dependency()
 py3_version = py3.language_version()
 

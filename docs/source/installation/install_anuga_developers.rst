@@ -251,6 +251,16 @@ You can set the environment variable `OMP_NUM_THREADS=4`, as such:
     export OMP_NUM_THREADS=4
     python my_anuga_script.py
 
+.. note::
+
+   Run your scripts from a directory other than the repository root. Python
+   searches the working directory before the installed packages, so a script
+   started from inside the ``anuga_core`` clone imports the source tree in
+   preference to the installed ANUGA. If that tree has not been built (or was
+   built for a different environment) the import fails with a message saying
+   ``anuga/_version.py`` is missing; the fix is to ``cd`` somewhere else, or
+   to build the tree in place with ``pip install --no-build-isolation -e .``.
+
 
 Updating
 ^^^^^^^^^
