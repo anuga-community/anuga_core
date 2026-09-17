@@ -23,7 +23,9 @@ def test_import_anuga_needs_no_triangulator():
     r = _run("import anuga; from anuga.mesh_engine import mesh_engine; "
              "print(mesh_engine.TRILIB)")
     assert r.returncode == 0, r.stderr
-    assert r.stdout.strip() == 'None'          # nothing loaded until first use
+    # Only the last line is ours: `import anuga` can print first (mpi4py's
+    # UCX layer reports unusable transports on some CI runners, to stdout).
+    assert r.stdout.strip().splitlines()[-1] == 'None'   # nothing loaded until first use
 
 
 def test_generate_mesh_without_a_backend_says_what_to_install():
