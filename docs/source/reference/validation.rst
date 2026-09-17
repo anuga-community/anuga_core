@@ -70,6 +70,23 @@ tests (excluding the large case studies):
    python all_tests_produce_report.py
 
 
+Nightly run in CI
+-----------------
+
+The suite also runs every night in GitHub Actions (``validation.yml``), on
+Linux with one Python, against both ``main`` and ``develop``, including the
+long HEC-RAS behaviour cases. The unit tests say the code does what the code
+says; this run says the solver still reproduces the benchmarks it is
+validated against, which a limiter or wet/dry change can break while every
+unit test stays green.
+
+Each run's job summary shows the ``VALIDATION SUMMARY`` table, and the full
+log plus the plots each case wrote are kept as an artifact for two weeks. A
+failing scheduled run opens, or comments on, an issue titled *Validation
+tests failing*. The workflow can also be started by hand from the Actions
+tab for any branch, algorithm (``-alg``) and with or without the long cases,
+which is the way to validate a feature branch before merging it.
+
 Test suite structure
 ---------------------
 
