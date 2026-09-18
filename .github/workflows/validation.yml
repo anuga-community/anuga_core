@@ -92,6 +92,9 @@ jobs:
         run: |
           conda activate anuga_env
           pip install --no-build-isolation -v .
+          # From a subdirectory: at the repository root `import anuga` picks up
+          # the unbuilt source tree instead of the installed package (#237).
+          cd validation_tests
           python -c "import anuga; print('anuga', anuga.__version__)"
 
       - name: Run the validation suite
