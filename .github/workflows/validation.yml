@@ -120,11 +120,23 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      # Artifact names may not contain / \ : * ? " < > | or newlines, and a
+      # branch like fix/x or a PR ref like refs/pull/N/head has slashes. The
+      # ref goes through env rather than into the script text.
+      - name: Artifact name
+        if: always()
+        id: artifact
+        env:
+          REF: ${{ matrix.ref }}
+        run: |
+          safe=$(printf '%s' "$REF" | tr '/\\:*?"<>| \n\r' '-')
+          echo "name=validation-${safe}-${{ github.run_id }}-${{ github.run_attempt }}" >> "$GITHUB_OUTPUT"
+
       - name: Keep the log and plots
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: validation-${{ matrix.ref }}-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ steps.artifact.outputs.name }}
           path: |
             validation_tests/validation.log
             validation_tests/**/*.png
