@@ -42,7 +42,7 @@ GATE_TIME = float(os.environ.get('ZARAGOZA_GATE_TIME', '0.0'))
 GATE_DT = 0.005
 # Extra refinement of the contraction at the gate (m^2 per triangle), 0 = none
 A_GATE = float(os.environ.get('ZARAGOZA_A_GATE', '0.0'))
-# [T-12] pier-scour correction: the bed shear the sediment sees is amplified
+# [T-16] pier-scour correction: the bed shear the sediment sees is amplified
 # by 1 + PIER_AMP exp(-(r - R)/(PIER_LEN R)) around the pier, r the distance
 # from its centreline (the P2 pier's, from its axis), R its half-width and
 # PIER_LEN the decay length in half-widths, standing in for the horseshoe

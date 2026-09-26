@@ -11,7 +11,7 @@ where the water goes. ANUGA can carry that drag alongside Manning friction:
 
 ``density`` is the stem density :math:`m` in stems per square metre,
 ``diameter`` the stem diameter :math:`D` in metres and ``height`` the stem
-height :math:`h_v` in metres. Each is given as ``set_quantity`` takes a
+height :math:`h_v` in metres. Each is given as :meth:`~anuga.Domain.set_quantity` takes a
 value: a constant, an array with one value per cell centroid, or a function
 of ``x`` and ``y``. They become the quantities ``veg_density``,
 ``veg_diameter`` and ``veg_height``. A cell with zero density or zero height
@@ -38,10 +38,10 @@ Delta model of Wright and Passalacqua, where the wetland classes carry
 120 to 200 stems per square metre of 1 to 1.5 cm diameter.
 
 The drag runs in the friction kernel of both compute modes, so it offloads
-with the rest of the step on a GPU build. Call ``set_vegetation_drag``
+with the rest of the step on a GPU build. Call :meth:`~anuga.Domain.set_vegetation_drag`
 before the first ``evolve``: the three fields are copied to the device once.
 On a distributed run call it after ``distribute()``, on every rank, as for
-any ``set_quantity``. ``set_vegetation_drag(formulation='off')`` removes it.
+any :meth:`~anuga.Domain.set_quantity`. :meth:`set_vegetation_drag(formulation='off') <anuga.Domain.set_vegetation_drag>` removes it.
 
 Vegetation and sediment
 -----------------------

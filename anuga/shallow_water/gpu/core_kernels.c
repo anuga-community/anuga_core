@@ -891,7 +891,7 @@ void core_apply_bedload(struct domain *D, double timestep) {
     // Vegetation seen by the sediment shear (core_vegetation_sediment_fc).
     const anuga_int veg_shear = (D->vegetation_mode > 0) ? D->sediment_vegetation_shear : 0;
     double * restrict veg_m = D->veg_density_centroid_values;
-    double * restrict shear_fac = D->sediment_shear_factor;   /* [T-12], or NULL */
+    double * restrict shear_fac = D->sediment_shear_factor;   /* [T-16], or NULL */
     double * restrict veg_d = D->veg_diameter_centroid_values;
     double * restrict veg_h = D->veg_height_centroid_values;
     const double veg_Cd = D->vegetation_Cd;
@@ -983,7 +983,7 @@ void core_apply_bedload(struct domain *D, double timestep) {
                                                            veg_h[k], veg_Cd, veg_Cb, grav);
             if (f_v >= 0.0) f_c = f_v;
         }
-        if (shear_fac != NULL) f_c *= shear_fac[k];           /* [T-12] */
+        if (shear_fac != NULL) f_c *= shear_fac[k];           /* [T-16] */
 
         /* Same closure as the suspended source: [T-1], [T-7] or [T-7e].
          * This pass only reads the bed, so the slope can be taken here. */
@@ -1543,7 +1543,7 @@ void core_apply_sediment_source(struct domain *D, double timestep) {
     // Vegetation seen by the sediment shear (core_vegetation_sediment_fc).
     const anuga_int veg_shear = (D->vegetation_mode > 0) ? D->sediment_vegetation_shear : 0;
     double * restrict veg_m = D->veg_density_centroid_values;
-    double * restrict shear_fac = D->sediment_shear_factor;   /* [T-12], or NULL */
+    double * restrict shear_fac = D->sediment_shear_factor;   /* [T-16], or NULL */
     double * restrict veg_d = D->veg_diameter_centroid_values;
     double * restrict veg_h = D->veg_height_centroid_values;
     const double veg_Cd = D->vegetation_Cd;
@@ -1646,7 +1646,7 @@ void core_apply_sediment_source(struct domain *D, double timestep) {
                                                            veg_h[k], veg_Cd, veg_Cb, grav);
             if (f_v >= 0.0) f_c = f_v;
         }
-        if (shear_fac != NULL) f_c *= shear_fac[k];           /* [T-12] */
+        if (shear_fac != NULL) f_c *= shear_fac[k];           /* [T-16] */
 
         /* tau_b/rho under the selected closure: [T-1], [T-7] or [T-7e]. */
         double S = (shear_closure == 1 || shear_closure == 2)

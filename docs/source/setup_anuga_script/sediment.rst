@@ -60,7 +60,7 @@ about 0.145.
    concentration everywhere, check the hydrodynamics before the sediment
    settings.
 
-``add_sediment_fraction`` is the entry point. One call gives you a transported
+:meth:`~anuga.Domain.add_sediment_fraction` is the entry point. One call gives you a transported
 concentration, erosion, deposition, the settling velocity, the bed exchange,
 and the limiters, with defaults chosen for a sand bed. It creates the sediment
 operator and registers the fractional step for you, so there is nothing else to
@@ -203,13 +203,13 @@ a question of which call wins.
    domain.add_sediment_fraction('sand', diameter=2.0e-4)                    # a grain
    domain.add_sediment_fraction('silt', diameter=2.0e-5, tau_c_star=0.11)   # another
 
-``initialize_sediment_operator`` takes what describes the **run**;
-``add_sediment_fraction`` takes what describes **one fraction**. Neither accepts the
+:meth:`~anuga.Domain.initialize_sediment_operator` takes what describes the **run**;
+:meth:`~anuga.Domain.add_sediment_fraction` takes what describes **one fraction**. Neither accepts the
 other's parameters -- passing ``diameter=`` to the first, or ``rho_w=`` to the
 second, is a ``TypeError`` rather than a silently ignored argument.
 
-The two may be called in either order, and ``initialize_sediment_operator`` is
-optional: ``add_sediment_fraction`` creates the operator with default domain-wide
+The two may be called in either order, and :meth:`~anuga.Domain.initialize_sediment_operator` is
+optional: :meth:`~anuga.Domain.add_sediment_fraction` creates the operator with default domain-wide
 parameters if none exists, which is why the program at the top of this page is
 a single line.
 
@@ -227,7 +227,7 @@ a single line.
 Switches sediment transport on and returns the operator. The physical
 parameters are the same ones :ref:`set_sediment_parameters <scalar_parameters>`
 takes, and are documented there; passing them here is a convenience, and
-``set_sediment_parameters`` can still change them afterwards.
+:meth:`~anuga.Domain.set_sediment_parameters` can still change them afterwards.
 
 **One operator per domain.** Calling it again returns the same operator,
 applying any parameters given the second time. That is not just tidiness: the
@@ -303,8 +303,8 @@ velocity and critical stress, and each exchanges with the same bed. Call it
 once per fraction.
 
 There is no ``rho_w`` here. Water density is a property of the fluid, and there
-is one fluid, so it lives on ``initialize_sediment_operator`` and
-``set_sediment_parameters``. Changing it afterwards recomputes :math:`R` and
+is one fluid, so it lives on :meth:`~anuga.Domain.initialize_sediment_operator` and
+:meth:`~anuga.Domain.set_sediment_parameters`. Changing it afterwards recomputes :math:`R` and
 :math:`v_s` for every fraction already registered.
 
 
@@ -354,12 +354,12 @@ the bed itself, is shared.
      - one ``elevation``, which all fractions erode and deposit onto
 
 Because the shared settings live on the **domain**, not on the operator, order
-does not matter: ``set_bed_material('cohesive')`` called after both fractions
+does not matter: :meth:`set_bed_material('cohesive') <anuga.Domain.set_bed_material>` called after both fractions
 are registered applies to both.
 
 Fractions occupy tracer slots in call order, so fraction ``s`` is tracer
-``s``. **The one ordering rule**: do not interleave ``add_tracer`` and
-``add_sediment_fraction`` on the same domain if you rely on that correspondence.
+``s``. **The one ordering rule**: do not interleave :meth:`~anuga.Domain.add_tracer` and
+:meth:`~anuga.Domain.add_sediment_fraction` on the same domain if you rely on that correspondence.
 
 
 .. _operator_order:
@@ -380,9 +380,9 @@ want it in the sequence, and add the fractions afterwards:
    for nm, d50 in grain_sizes:
        domain.add_sediment_fraction(nm, diameter=d50)
 
-``add_sediment_fraction`` will not displace an operator that already exists, so the
+:meth:`~anuga.Domain.add_sediment_fraction` will not displace an operator that already exists, so the
 order established here survives however many fractions follow. Ordinary
-models do not need this: calling ``add_sediment_fraction`` straight away, as
+models do not need this: calling :meth:`~anuga.Domain.add_sediment_fraction` straight away, as
 everywhere else on this page, puts the operator in a sensible place by itself.
 
 
@@ -440,9 +440,9 @@ both are required positional parameters, and omitting either is a
    # TypeError: add_sediment_fraction() missing 1 required positional argument: 'diameter'
 
 Setting sediment up with **no** fraction at all is legal, and is what
-``initialize_sediment_operator`` on its own does -- see :ref:`operator_order`.
+:meth:`~anuga.Domain.initialize_sediment_operator` on its own does -- see :ref:`operator_order`.
 It is a configured run waiting for its sediment, not an error. But it is only
-useful as a step on the way to ``add_sediment_fraction``: an operator with no grain
+useful as a step on the way to :meth:`~anuga.Domain.add_sediment_fraction`: an operator with no grain
 sizes transports nothing, and evolving that way warns rather than completing
 silently with the bed untouched.
 
@@ -574,7 +574,7 @@ negative erodible thickness, which is a mistake, not a configuration.
 
    domain.erodible_thickness()   # (n,) metres remaining; 0 means bedrock
 
-``sediment_summary()`` reports the range and how many cells have reached bedrock.
+:meth:`~anuga.Domain.sediment_summary` reports the range and how many cells have reached bedrock.
 
 What it guarantees
 ~~~~~~~~~~~~~~~~~~
@@ -675,7 +675,7 @@ The two compose, in either order, and neither discards the other:
    domain.set_erodible_base(depth=0.4)        # 0.4 m of erodible material
    domain.set_erodible_region(polygon=reach)  # but only inside this reach
 
-Where they disagree the stricter wins. ``sediment_summary()`` reports both, and
+Where they disagree the stricter wins. :meth:`~anuga.Domain.sediment_summary` reports both, and
 the thickness range it prints covers only the erodible cells -- locked ones
 carry zero thickness and would otherwise drag the minimum to zero whatever the
 layer is.
@@ -791,7 +791,7 @@ same way and switch the mode.
 ``'unified'`` selects the *unified* code path; whether that path actually
 offloads to a device is a property of the **build**, not of this call. A build
 without offload compiles the same kernels under ``CPU_ONLY_MODE`` and runs them
-on the host. ``set_compute_mode('unified')`` therefore does not fail on a
+on the host. :meth:`set_compute_mode('unified') <anuga.Domain.set_compute_mode>` therefore does not fail on a
 machine with no GPU, but it also does not report one:
 ``domain.get_compute_mode()`` reads ``'unified'`` either way. To find out what
 you are actually running on, ask the build:
@@ -805,7 +805,7 @@ To confirm kernels are reaching the device on a run, set
 ``NVCOMPILER_ACC_NOTIFY=1`` in the environment. Polling ``nvidia-smi`` is
 unreliable for this -- the sampling interval misses short kernel bursts.
 
-Call ``set_compute_mode`` **after** the sediment setup. Each setter
+Call :meth:`~anuga.Domain.set_compute_mode` **after** the sediment setup. Each setter
 invalidates the device mapping, so configuring sediment after selecting
 ``'unified'`` simply forces the mapping to be rebuilt.
 
@@ -875,8 +875,8 @@ slope as its neighbours. ``'depth_slope'`` on an evolving bed feeds back on
 itself -- erosion roughens the bed and steeper local slopes erode faster --
 which is the closure's own property; anugaSed contains it with the global
 clamp described in the specification. ANUGA offers two stated bounds
-instead: ``set_shear_closure('depth_slope', max_slope=0.05)`` caps the slope
-per cell, and ``set_shear_closure('depth_slope', freeze_slope=True)`` takes
+instead: :meth:`set_shear_closure('depth_slope', max_slope=0.05) <anuga.Domain.set_shear_closure>` caps the slope
+per cell, and :meth:`set_shear_closure('depth_slope', freeze_slope=True) <anuga.Domain.set_shear_closure>` takes
 the slope from the bed at setup and keeps it, so the closure sees the reach
 slope it was written for while the bed evolves under it
 (:meth:`~anuga.Domain.bed_slope_magnitude` returns that slope). Prefer the
@@ -941,25 +941,25 @@ If you do not know where to start:
 - **Sand bed, flood or dam break, morphology wanted.** Defaults, plus one
   sediment fraction:
   ``domain.add_sediment_fraction('sand', diameter=2e-4)``. Add
-  ``set_bedload('wong_parker_eq24')`` if the grains are coarse enough to move
+  :meth:`set_bedload('wong_parker_eq24') <anuga.Domain.set_bedload>` if the grains are coarse enough to move
   along the bed.
-- **Fine cohesive sediment, muddy estuary.** ``set_bed_material('cohesive')``
+- **Fine cohesive sediment, muddy estuary.** :meth:`set_bed_material('cohesive') <anuga.Domain.set_bed_material>`
   with a ``tau_crit`` you trust, ``d*`` left at 1.0.
-- **Deep, slow, stratified flow.** ``set_deposition(near_bed='rouse')``, and give
+- **Deep, slow, stratified flow.** :meth:`set_deposition(near_bed='rouse') <anuga.Domain.set_deposition>`, and give
   each class a ``reference_height``.
-- **Shallow flow over gravel.** ``set_sediment_friction('wilson', bed='gravel', grain_size=...)``.
-- **Reproducing anugaSed.** ``set_bed_material('cohesive')`` and
-  ``set_shear_closure('depth_slope')``; see ``examples/sediment/``.
+- **Shallow flow over gravel.** :meth:`set_sediment_friction('wilson', bed='gravel', grain_size=...) <anuga.Domain.set_sediment_friction>`.
+- **Reproducing anugaSed.** :meth:`set_bed_material('cohesive') <anuga.Domain.set_bed_material>` and
+  :meth:`set_shear_closure('depth_slope') <anuga.Domain.set_shear_closure>`; see ``examples/sediment/``.
 - **Comparing against an analytic solution.**
-  ``set_sediment_parameters(bed_evolution=False)`` and leave ``d*`` at 1.0.
-- **A finite erodible layer over rock.** ``set_erodible_base(depth=...)``, and
-  check ``erodible_thickness()`` afterwards to see where it bit.
-- **Scour confined to one structure or reach.** ``set_erodible_region(polygon=...)``,
+  :meth:`set_sediment_parameters(bed_evolution=False) <anuga.Domain.set_sediment_parameters>` and leave ``d*`` at 1.0.
+- **A finite erodible layer over rock.** :meth:`set_erodible_base(depth=...) <anuga.Domain.set_erodible_base>`, and
+  check :meth:`~anuga.Domain.erodible_thickness` afterwards to see where it bit.
+- **Scour confined to one structure or reach.** :meth:`set_erodible_region(polygon=...) <anuga.Domain.set_erodible_region>`,
   or ``erodible=False`` to lock an apron while the rest of the domain erodes.
 - **A dune or a steep bank that should collapse rather than stand vertical.**
-  ``set_angle_of_repose(35.0)``, and read section 11.1 first.
+  :meth:`set_angle_of_repose(35.0) <anuga.Domain.set_angle_of_repose>`, and read section 11.1 first.
 
-Then print ``sediment_summary()`` and check it says what you meant.
+Then print :meth:`~anuga.Domain.sediment_summary` and check it says what you meant.
 
 --------------
 

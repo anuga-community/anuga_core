@@ -794,7 +794,7 @@ exchange :math:`\alpha`, and with the well-mixed ``d* = 1`` the option
 fraction's reference height with the same floor as ``'rouse'``.
 
 **The default.** ``'two_layer'`` with ``layer_fraction=0.2`` and
-``velocity_profile=True`` is what ``set_deposition`` selects if you say
+``velocity_profile=True`` is what :meth:`~anuga.Domain.set_deposition` selects if you say
 nothing; ``adaptation='none'`` restores the instantaneous exchange that
 was the default up to ANUGA 4.0. The near-bed tracers it registers at the
 first ``evolve`` are the only change to a script's tracer list, and they

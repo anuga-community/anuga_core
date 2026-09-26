@@ -495,3 +495,137 @@ def test_the_two_layer_default_reduces_to_the_instantaneous_exchange_at_d_star_o
     two = run('two_layer')
     assert plain.mean() > 0.0
     assert np.allclose(two, plain, rtol=1e-9, atol=1e-14)
+
+
+def test_the_summary_reports_the_whole_configuration():
+    """Every switch a run can set should be visible in sediment_summary(),
+    so a log says what was actually computed."""
+    d = uniform_flow(near_bed='rouse', reference_height_floor=0.1)
+    d.set_deposition(law='d_star', near_bed='rouse', reference_height_floor=0.1)
+    d.set_bedload('wong_parker_eq24', min_depth=4.0e-4)
+    d.set_shear_amplification(lambda x, y: 1.0 + 3.0 * (x > 25.0))
+    s = d.sediment_summary()
+    assert 'adaptation [D-5]' in s                 # the default closure
+    assert 'near-bed layer 0.2 h' in s
+    assert 'velocity profile' in s
+    assert 'c_b carried' in s and '[D-5]' in s     # not the bare [D-1] form
+    assert 'bedload h_min [K-7]' in s and '0.0004' in s
+    assert 'amplified by 1 to 4 per cell' in s and '[T-16]' in s
+    # and the plain closure still reads as itself
+    plain = uniform_flow(near_bed='rouse', adaptation='none')
+    assert 'D = d* c v_s   [D-1]' in plain.sediment_summary()
+    assert 'adaptation' not in plain.sediment_summary()
+
+
+# ------------------------------------------------- the summary stays complete
+#
+# A setting that sediment_summary() does not report is a setting a run's log
+# hides. Three had crept in that way. Rather than trust the next author to
+# remember, every `sediment_*` attribute is inventoried below: either it names
+# the closure that has to be switched on for the summary to mention it, and
+# the test proves that changing it changes the summary, or it is exempt with
+# the reason. A new attribute in neither list fails the test.
+
+def _summary_domain():
+    d = rectangular_cross_domain(6, 4, len1=30.0, len2=20.0)
+    d.set_flow_algorithm('DE1')
+    d.store = False
+    d.set_quantity('elevation', 0.0)
+    d.set_quantity('stage', 1.0)
+    d.set_quantity('xmomentum', 1.0)
+    d.set_boundary({t: Reflective_boundary(d) for t in d.get_boundary_tags()})
+    d.initialize_sediment_operator(porosity=0.4, bed_evolution=True)
+    d.add_sediment_fraction('sand', diameter=2.0e-4, initial_concentration=1.0e-3)
+    d.set_bedload('wong_parker_eq24')
+    return d
+
+
+# closure -> what to call so that its own parameters are in play
+ACTIVATE = {
+    'base': lambda d: None,
+    'smith_mclean': lambda d: d.set_bed_material('noncohesive'),
+    'de_leeuw': lambda d: d.set_bed_material('noncohesive', entrainment='de_leeuw'),
+    'cohesive': lambda d: d.set_bed_material('cohesive'),
+    'partheniades': lambda d: d.set_bed_material('partheniades'),
+    'larsen_lamb': lambda d: d.set_sediment_friction('larsen_lamb', k_s=0.02),
+    'wilson': lambda d: d.set_sediment_friction('wilson', grain_size=0.02),
+    'depth_slope': lambda d: d.set_shear_closure('depth_slope', max_slope=0.1),
+    'repose': lambda d: d.set_angle_of_repose(32.0, relax=0.5),
+    'threshold_dep': lambda d: d.set_deposition(law='threshold', tau_d=0.5),
+    'rouse': lambda d: d.set_deposition(law='d_star', near_bed='rouse'),
+    'constant_lag': lambda d: d.set_deposition(near_bed='rouse', adaptation='constant',
+                                               adaptation_alpha=2.0),
+    'rouse_corr': lambda d: d.set_deposition(near_bed='rouse', rouse_beta='van_rijn',
+                                             rouse_scale=0.7),
+    'bedload_ramp': lambda d: d.set_bedload('wong_parker_eq24', min_depth=4.0e-4),
+}
+
+# every scalar sediment_* attribute, and the closure under which the summary
+# must mention it
+REPORTED = {
+    'sediment_porosity': 'base', 'sediment_rho_w': 'base',
+    'sediment_c_max': 'base', 'sediment_c_pack': 'base',
+    'sediment_morphological_factor': 'base',
+    'sediment_bedload_K': 'base', 'sediment_bedload_m': 'base',
+    'sediment_bedload_tau_c_star': 'base',
+    'sediment_bedload_h_min': 'bedload_ramp',
+    'sediment_gamma0': 'smith_mclean',
+    'sediment_tau_crit': 'cohesive', 'sediment_K_e': 'cohesive',
+    'sediment_K_partheniades': 'partheniades',
+    'sediment_dl_A': 'de_leeuw', 'sediment_dl_alpha': 'de_leeuw',
+    'sediment_dl_beta': 'de_leeuw', 'sediment_dl_ks': 'de_leeuw',
+    'sediment_dl_ks_factor': 'de_leeuw', 'sediment_dl_threshold': 'de_leeuw',
+    'sediment_manning_ll': 'larsen_lamb', 'sediment_wilson_D': 'wilson',
+    'sediment_max_slope': 'depth_slope',
+    'sediment_repose_tan': 'repose', 'sediment_repose_relax': 'repose',
+    'sediment_repose_max_sweeps': 'repose',
+    'sediment_tau_d': 'threshold_dep',
+    'sediment_a_h_floor': 'rouse',
+    'sediment_adaptation_alpha': 'constant_lag',
+    'sediment_rouse_scale': 'rouse_corr',
+    'sediment_layer_fraction': 'base', 'sediment_exchange_factor': 'base',
+}
+
+EXEMPT = {
+    # mode selectors: the summary names the closure in words instead
+    'sediment_erosion_mode', 'sediment_deposition_mode', 'sediment_d_star_mode',
+    'sediment_shear_closure', 'sediment_friction_mode', 'sediment_bedload_mode',
+    'sediment_adaptation_mode', 'sediment_rouse_beta_mode',
+    'sediment_wilson_bed', 'sediment_vegetation_shear',
+    'sediment_velocity_profile', 'sediment_bed_evolution',
+    'sediment_slope_frozen', 'sediment_has_z_base',
+    # per-fraction or per-cell state, reported in their own sections
+    'sediment_diameter', 'sediment_R', 'sediment_tau_c_star', 'sediment_d_star',
+    'sediment_settling_velocity', 'sediment_reference_height',
+    'sediment_z_base', 'sediment_shear_factor', 'sediment_nearbed_base',
+    'sediment_bedload_open', 'sediment_bedload_supply',
+    # kernel scratch, not settings
+    'sediment_qbx', 'sediment_qby', 'sediment_qba', 'sediment_slope_work',
+    'sediment_source_limited', 'sediment_bed_exhausted', 'sediment_repose_dz',
+}
+
+
+def test_every_sediment_setting_is_inventoried():
+    """A new sediment_* attribute must be classified, so it cannot be added
+    without deciding whether the summary should report it."""
+    d = _summary_domain()
+    found = {k for k in vars(d) if k.startswith('sediment_')}
+    missing = sorted(found - set(REPORTED) - EXEMPT)
+    assert missing == [], (
+        'these sediment settings are in neither REPORTED nor EXEMPT: %s. Add a '
+        'line to sediment_summary() and list it in REPORTED, or explain it in '
+        'EXEMPT.' % missing)
+
+
+@pytest.mark.parametrize('name,closure', sorted(REPORTED.items()))
+def test_a_setting_that_changes_changes_the_summary(name, closure):
+    """Under the closure that uses it, perturbing a setting must show."""
+    d = _summary_domain()
+    ACTIVATE[closure](d)
+    before = d.sediment_summary()
+    old = getattr(d, name)
+    setattr(d, name, old * 2.0 + 1.0)
+    after = d.sediment_summary()
+    setattr(d, name, old)
+    assert after != before, (
+        '%s is not reported by sediment_summary() under %r' % (name, closure))

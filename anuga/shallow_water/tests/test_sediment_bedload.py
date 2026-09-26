@@ -320,7 +320,7 @@ def test_min_depth_ramps_the_bedload_off_in_thin_flow():
 
 @pytest.mark.parametrize('mode', ['legacy', 'unified'])
 def test_shear_amplification_scales_f_c_like_the_square_of_manning_n(mode):
-    """[T-12] a factor F on the bed shear is f_c -> F f_c, which under Manning
+    """[T-16] a factor F on the bed shear is f_c -> F f_c, which under Manning
     is n -> sqrt(F) n: the bedload bed change of one step must match."""
     def hole(n_manning, factor):
         from anuga import Dirichlet_boundary

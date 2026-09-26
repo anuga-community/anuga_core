@@ -813,7 +813,7 @@ class Domain(Generic_Domain):
         # spec assumes. See set_erodible_base().
         self.sediment_z_base = None
         self.sediment_has_z_base = 0
-        self.sediment_shear_factor = None      # [T-12] per-centroid factor on the sediment's bed shear
+        self.sediment_shear_factor = None      # [T-16] per-centroid factor on the sediment's bed shear
         # The two user intents behind sediment_z_base, kept apart so they
         # compose: a base is a DEPTH limit, a region is a WHERE limit, and
         # setting one must not silently discard the other. Both are folded
@@ -1466,7 +1466,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
             del self._gpu_boundary_info_initialized
 
     def set_shear_amplification(self, factor=None):
-        """Multiply the bed shear the sediment sees by a per-cell factor `[T-12]`.
+        """Multiply the bed shear the sediment sees by a per-cell factor `[T-16]`.
 
         The depth-averaged shear is the uniform-flow one and misses the
         local amplification at obstacles: at a bridge pier the horseshoe
@@ -2317,21 +2317,34 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
         if self.n_sediment_classes == 0:
             return 'sediment: no sediment fractions registered'
 
-        ero = {0: "Shields / Smith-McLean, non-cohesive (sand, gravel)   [E-1]",
+        ero = {0: "Shields / Smith-McLean, non-cohesive (sand, gravel), "
+                  "gamma0=%.4g   [E-1]" % self.sediment_gamma0,
                1: "Hanson & Simon, cohesive (silt, clay)   [E-3]",
                2: "Partheniades (RDycore)   [E-4]",
                3: "de Leeuw et al. 2020, non-cohesive bed material load "
-                  "(A=%.3g alpha=%.3g beta=%.3g)   [E-6]"
-                  % (self.sediment_dl_A, self.sediment_dl_alpha, self.sediment_dl_beta),
+                  "(A=%.3g alpha=%.3g beta=%.3g, X0=%.3g, k_s=%s)   [E-6]"
+                  % (self.sediment_dl_A, self.sediment_dl_alpha,
+                     self.sediment_dl_beta, self.sediment_dl_threshold,
+                     ('%.4g m' % self.sediment_dl_ks) if self.sediment_dl_ks > 0.0
+                     else '%.3g d' % self.sediment_dl_ks_factor),
                }[self.sediment_erosion_mode]
         dep = {0: "D = d* c v_s   [D-1]", 1: "D = v_s c (1 - tau_b/tau_d)   [D-2]"
                }[self.sediment_deposition_mode]
+        if self.sediment_deposition_mode == 0 and self.sediment_adaptation_mode in (3, 4):
+            # the near-bed concentration is carried, not d* c: say so here
+            # rather than leave [D-1] to be read as the whole story
+            dep = ("D = c_b v_s with c_b carried   [D-1] under %s"
+                   % ('[D-4]' if self.sediment_adaptation_mode == 3 else '[D-5]'))
         dstar = {0: "constant, per fraction", 1: "Rouse profile   [S-4]"
                  }[self.sediment_d_star_mode]
         shear = {0: "quadratic drag, tau_b = rho f_c |v|^2   [T-1]",
                  1: "depth-slope, tau_b = rho g h S (bed slope; aSM16)   [T-7]",
                  2: "energy-slope, tau_b = rho g h S (free surface)   [T-7e]"
                  }[self.sediment_shear_closure]
+        if self.sediment_shear_factor is not None:
+            f = self.sediment_shear_factor
+            shear += ("; amplified by %.3g to %.3g per cell   [T-16]"
+                      % (f.min(), f.max()))
         if self.sediment_shear_closure in (1, 2):
             bounds = []
             if self.sediment_max_slope > 0.0:
@@ -2367,6 +2380,9 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
              '  shear closure      : %s' % shear,
              '  friction closure   : %s' % fric,
              '  bedload            : %s' % bl,
+             *(['  bedload h_min [K-7]: %.4g m (none below, full above twice it)'
+                % self.sediment_bedload_h_min]
+               if self.sediment_bedload_mode and self.sediment_bedload_h_min > 0.0 else []),
              '  bed evolution      : %s  (%s)'
              % (self.sediment_bed_evolution,
                 'Phase 4, evolving' if self.sediment_bed_evolution

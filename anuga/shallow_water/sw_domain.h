@@ -447,7 +447,7 @@ struct domain {
      * default costs nothing and cannot change an existing answer.
      */
     double* sediment_z_base;           /* (n) bedrock centroid elevation [m] */
-    /* [T-12] Per-centroid factor on the bed shear seen by the sediment
+    /* [T-16] Per-centroid factor on the bed shear seen by the sediment
      * (f_c is multiplied by it in both the suspended source and the bedload
      * kernel), or NULL for 1 everywhere. The depth-averaged shear misses
      * the local amplification at obstacles (the horseshoe vortex at a pier,

@@ -873,7 +873,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
             double *sed_zb = GD->D.sediment_z_base;
             #pragma omp target enter data map(to: sed_zb[0:n])
         }
-        // [T-12] the shear factor, input, only when set.
+        // [T-16] the shear factor, input, only when set.
         double *sed_sf = GD->D.sediment_shear_factor;
         if (sed_sf != NULL) {
             #pragma omp target enter data map(to: sed_sf[0:n])

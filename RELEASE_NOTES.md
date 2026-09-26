@@ -154,7 +154,7 @@
   diameters is the physical choice.
 
 * `set_shear_amplification(factor)` multiplies the bed shear the sediment
-  sees by a per-cell factor ([T-12]), taken as a scalar, an array or a
+  sees by a per-cell factor ([T-16]), taken as a scalar, an array or a
   function of `x, y`. It exists for the structures a depth-averaged model
   cannot resolve: at a bridge pier the horseshoe vortex raises the bed shear
   to several times the approach value within about a diameter, and that is
