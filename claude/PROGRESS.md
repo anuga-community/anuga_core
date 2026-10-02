@@ -28,8 +28,8 @@ Future work recommendations: `claude/FUTURE_WORK.md`
 | Documentation overhaul (session 47) | 15 | 15 | 0 |
 | GPU mode-2 Time_boundary fix | 2 | 2 | 0 |
 | Operator-timing fixes (DE1 rk2, DE2 rk3) | 2 | 2 | 0 |
-| Validation reports per release (session 58) | 5 | 4 | 1 |
-| **Total** | **233** | **224** | **9** |
+| Validation reports per release (session 58) | 6 | 5 | 1 |
+| **Total** | **234** | **225** | **9** |
 
 ---
 
@@ -55,9 +55,12 @@ Future work recommendations: `claude/FUTURE_WORK.md`
 - [x] DE_ader2 dt-dependent steady state documented (KNOWN_ISSUES)
 - [x] Release workflow: per-algorithm reports, release assets, Zenodo draft (PR #408)
 - [x] Zenodo sandbox dry run (create + new version), tokens, `anuga` community
-- [ ] Combined three-algorithm report (PR #409, open). After the next
-  develop→main merge, run the workflow by hand with zenodo = sandbox to test
-  its wiring, and add the community co-managers.
+- [x] Combined three-algorithm report (PR #409); CITATION.cff valid and
+  checked in CI (#410, #412); 4.1.0 release notes (#413)
+- [ ] After the next develop→main merge, run the workflow by hand with
+  zenodo = sandbox to test its wiring; add the Zenodo community co-managers;
+  after the first release is archived, add the software record to the
+  `anuga` community.
 
 ### GPU correctness
 

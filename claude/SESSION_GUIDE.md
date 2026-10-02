@@ -453,7 +453,7 @@ Findings:
 
 ## Recent session summaries (sessions 21–58)
 
-**Session 58 (2026-10-01/02):** Roll waves in the validation suite, why
+**Session 58 (2026-10-01/03):** Roll waves in the validation suite, why
 DE_ader2 never quite settles, and validation reports as part of every
 release. (Work between sessions 57 and 58, including 4.0.0 shipping and the
 sediment cases, is not summarised here; see the git log and `ROADMAP.md`.)
@@ -484,17 +484,35 @@ sediment cases, is not summarised here; see the git log and `ROADMAP.md`.)
   personal accounts plus the `anuga` community. Tokens are set, and the
   sandbox dry run (run locally) passed both the create and new-version paths.
   Setup and steps: `claude/RELEASE_VALIDATION_REPORTS.md`.
-- **Combined report (PR #409, open).** One report with every case once and
+- **Combined report (PR #409, merged).** One report with every case once and
   each differing figure as DE0 | DE1 | DE_ader2 panels, plus a run-time
   summary. `validations_report_body.tex` is now shared by both reports
   (add new cases there). `validations_combine_algs.py collect/combine`.
   Report runs use `reports/matplotlibrc` (13 pt, 200 dpi) so legends survive
   the third-width panels. `subcritical_depth_expansion` was being run but had
   never been in the report; it is now.
+- **Citation and Zenodo software DOI (#410, #412, merged).** Zenodo's GitHub
+  integration is on, so each published release is archived as software from
+  `CITATION.cff`. The file was invalid (the licence must be SPDX `Apache-2.0`)
+  and is fixed, with the title "ANUGA: hydrodynamic modelling of floods, storm
+  surges and tsunamis". The lint workflow now validates it (`cffconvert`).
+- **4.1.0 preparation.** The call for testing is pinned issue #411. The
+  release notes are completed (#413): an opening, highlights, DE_ader2's
+  changed results, the audit fixes, Requirements, Known issues, and Thanks
+  with a placeholder for the testers. #406 (the corrected DE0 wave-damping
+  figures) is merged. The merged branches are cleaned up.
+- **Zaragoza pier wake (#414, merged).** Right behind the pier the flume
+  scours where the model deposits. Suspension changes the bed by under 1 mm,
+  and a resolved wake (103k triangles, St 0.20, recirculation) still fills
+  the lee, so the lee scour is 3D. The case now adds a wake tail on the
+  shear amplification (A_w = 2 over 5 D, a calibration): ring 7.9/11.8 mm
+  against 10.4/12.6, RMS 3.2/3.6.
 - **Lessons.** `workflow_dispatch` only works for workflows on the default
   branch (`main`), so test a new release workflow's script locally. The GPU
   build in unified mode is no faster on the validation suite (17-24 min per
-  algorithm against 19 on 8 CPU threads), because the meshes are small.
+  algorithm against 19 on 8 CPU threads), because the meshes are small. For small
+  meshes (the Zaragoza case, 18.8k triangles: 30 s on the CPU) say so before
+  choosing the CPU; the user expects the GPU for runs.
   `/tmp` is a 16 GB tmpfs with a quota, so full report runs belong in an on-disk worktree.
   `gh pr merge` is blocked by the permission classifier, so the user merges.
 
