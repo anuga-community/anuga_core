@@ -143,5 +143,9 @@ filterwarnings = [
     # NumPy-2.5-compatible release.  (ANUGA's own .shape= assignments were
     # converted to .reshape().)
     "ignore:Setting the shape on a NumPy array has been deprecated:DeprecationWarning",
+    # Small test meshes routinely put culvert enquiry points inside inlet
+    # triangles (EnquiryPointWarning). Expected there; the tests that check
+    # for it record it explicitly with simplefilter('always').
+    "ignore:Enquiry point is in an inlet triangle:UserWarning",
 ]
 

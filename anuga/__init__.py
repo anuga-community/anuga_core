@@ -84,6 +84,7 @@ from anuga.coordinate_transforms.geo_reference import Geo_reference
 from anuga.operators.base_operator import Operator
 from anuga.operators.sediment_operator import Sediment_transport_operator
 from anuga.structures.structure_operator import Structure_operator
+from anuga.structures.inlet_enquiry import EnquiryPointWarning
 
 # The plotting helpers need matplotlib, and anuga.utilities.animate raises at
 # import when it is missing. Importing them eagerly here made that a hard
