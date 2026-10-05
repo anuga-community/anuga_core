@@ -65,6 +65,7 @@ static int g_active_set = 0;
 static int g_active_ready = 0;            // 0 until the first full step ran
 static anuga_int *g_as_wet, *g_as_ring1, *g_as_cells, *g_as_edges;
 static anuga_int g_as_counts[2];
+static double g_active_avg_pct = 100.0;   // rank-averaged, for the CSV
 // --active-every K: rebuild the full classification only every K steps and
 // run the per-step rebuild over a CANDIDATE superset instead of the mesh.
 // The candidate is the ring-2 cell list dilated by 2K+2 further rings (plus
@@ -417,6 +418,7 @@ typedef struct {
     int64_t warmup;
     int64_t report_every;
     double  max_wall;
+    double  tend;          // stop the timed loop at this simulated time (0 = off)
     int     repeat;
     int     phases;
     int     verbose;
@@ -450,12 +452,14 @@ static void usage(const char *argv0) {
 "                      by triangle count)\n"
 "                      instead of generating the rectangular cross; brings\n"
 "                      its own terrain and initial stage\n"
-"    --case NAME       dam | dambumps | lake | river    (default dam)\n"
+"    --case NAME       dam | dambumps | lake | river | beach (default dam)\n"
 "                        dam       flat bed, wet dam break (every cell wet)\n"
 "                        dambumps  bumpy bed dam break (wet/dry branches)\n"
 "                        lake      water at rest over bumps (well-balanced)\n"
 "                        river     reservoir breaks into a thin river in a\n"
 "                                  carved channel; floodplain banks start dry\n"
+"                        beach     offshore tsunami hump runs up a sloping shore\n"
+"                                  with headlands; the shoreline moves (wet/dry)\n"
 "    --manning V       Manning n                        (default 0.03)\n"
 "    --water V         still-water / downstream stage   (default 5)\n"
 "    --dam V           upstream stage                   (default 10)\n"
@@ -490,6 +494,11 @@ static void usage(const char *argv0) {
 "  run\n"
 "    --steps N         timed RK2 steps                  (default 100)\n"
 "    --warmup N        untimed RK2 steps first          (default 5)\n"
+"    --tend T          stop the timed loop once simulated time reaches T s\n"
+"                      (--steps is then only a cap).  Fixes the WORK, not the\n"
+"                      step count, so runs are comparable across schemes and\n"
+"                      machines and a time-evolving active set is averaged\n"
+"                      over the same physical event\n"
 "    --repeat N        repeat the timed loop N times, report the best\n"
 "    --cfl V           CFL number                       (default 1.0)\n"
 "    --phases          per-kernel timing breakdown\n"
@@ -823,6 +832,7 @@ int main(int argc, char **argv) {
         else if (!strcmp(a, "--repeat"))     O.repeat = (int)arg_i(argc, argv, &i, a);
         else if (!strcmp(a, "--report"))     O.report_every = arg_i(argc, argv, &i, a);
         else if (!strcmp(a, "--max-wall"))   O.max_wall = arg_d(argc, argv, &i, a);
+        else if (!strcmp(a, "--tend"))       O.tend = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--lenx"))       P.length_x = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--leny"))       P.length_y = arg_d(argc, argv, &i, a);
         else if (!strcmp(a, "--manning"))    P.manning = arg_d(argc, argv, &i, a);
@@ -890,10 +900,16 @@ int main(int argc, char **argv) {
             else if (!strcmp(c, "dambumps")) P.which_case = BENCH_CASE_DAMBUMPS;
             else if (!strcmp(c, "lake"))     P.which_case = BENCH_CASE_LAKE;
             else if (!strcmp(c, "river"))    P.which_case = BENCH_CASE_RIVER;
+            else if (!strcmp(c, "beach"))    P.which_case = BENCH_CASE_BEACH;
             else { fprintf(stderr, "bench: unknown case '%s'\n", c); return 2; }
         }
         else if (!strcmp(a, "--help") || !strcmp(a, "-h")) { usage(argv[0]); return 0; }
         else { fprintf(stderr, "bench: unknown option '%s' (try --help)\n", a); return 2; }
+    }
+
+    if (O.tend > 0.0 && O.repeat > 1) {
+        fprintf(stderr, "bench: --tend cannot be combined with --repeat > 1 (state is not reset between repeats)\n");
+        return 2;
     }
 
     if (scheme_set) {
@@ -1028,7 +1044,8 @@ int main(int argc, char **argv) {
 
     const char *case_name = P.which_case == BENCH_CASE_DAM      ? "dam"
                           : P.which_case == BENCH_CASE_DAMBUMPS ? "dambumps"
-                          : P.which_case == BENCH_CASE_RIVER    ? "river" : "lake";
+                          : P.which_case == BENCH_CASE_RIVER    ? "river"
+                          : P.which_case == BENCH_CASE_BEACH    ? "beach" : "lake";
 #ifdef CPU_ONLY_MODE
     const char *build_kind = "host OpenMP (CPU_ONLY_MODE)";
 #else
@@ -1167,7 +1184,8 @@ int main(int argc, char **argv) {
     }
 
     // ---- timed loop ------------------------------------------------------
-    double best = 1.0e300, total_all = 0.0;
+    double best = 1.0e300, total_all = 0.0, tsim_span = 0.0, best_span = 0.0;
+    double best_phase[PH_NPHASES] = {0};
     uint64_t flops_total = 0;
 
     for (int r = 0; r < O.repeat; r++) {
@@ -1176,6 +1194,7 @@ int main(int argc, char **argv) {
         gpu_flop_counters_enable(GD, 1);
 
         const double t0 = omp_get_wtime();
+        const double tsim0 = t_sim;
         double win_t0 = t0;
         int64_t win_s0 = 0;
         int64_t steps_done = 0;
@@ -1214,20 +1233,30 @@ int main(int argc, char **argv) {
                 win_t0 = now; win_s0 = s + 1;
                 g_as_cellfrac_sum = 0.0; g_as_samples = 0;   // window-local stats
             }
-            if (O.max_wall > 0.0 && omp_get_wtime() - t0 > O.max_wall) break;
+            if (O.max_wall > 0.0) {   // collective: ranks must break together or the dt allreduce hangs
+                const int over = omp_get_wtime() - t0 > O.max_wall;
+                if ((g_np > 1 ? bmpi_max_i(over) : over)) break;
+            }
+            if (O.tend > 0.0 && t_sim >= O.tend) break;   // dt is global under MPI
         }
+        tsim_span = t_sim - tsim0;
         const double elapsed = omp_get_wtime() - t0;
         if (steps_done < O.steps) O.steps = steps_done;   // honest averages below
 
         gpu_flop_counters_enable(GD, 0);
         flops_total = gpu_flop_counters_get_total(GD);
         total_all += elapsed;
-        if (elapsed < best) best = elapsed;
+        if (elapsed < best) {      // phases + sim span must come from the SAME repeat as `best`
+            best = elapsed; best_span = tsim_span;
+            memcpy(best_phase, phase_time, sizeof(phase_time));
+        }
         if (O.repeat > 1)
             printf("  run %2d/%d : %8.4f s  (%.4f ms/step)\n",
                    r + 1, O.repeat, elapsed, 1.0e3 * elapsed / (double)O.steps);
     }
 
+    memcpy(phase_time, best_phase, sizeof(phase_time));
+    tsim_span = best_span;
     best = bmpi_max_d(best);          // slowest rank is the honest wall time
     const double per_step = best / (double)O.steps;
     const double cellsteps_per_s = (double)n_report * (double)O.steps / best;
@@ -1239,7 +1268,7 @@ int main(int argc, char **argv) {
            1.0e3 * per_step, 1.0e-6 * cellsteps_per_s);
     printf("              t = %.9g s, last dt = %.6g s\n", t_sim, dt);
     printf("              sim rate: %.3f simulated s per wall s (this loop)\n",
-           (double)O.steps * dt / best);
+           tsim_span / best);
     if (flops_total > 0)
         printf("  flops     : %.3f GFLOP over the timed loop, %.2f GFLOP/s\n",
                1.0e-9 * (double)flops_total, 1.0e-9 * (double)flops_total / best);
@@ -1300,6 +1329,7 @@ int main(int argc, char **argv) {
         // most active cells, so max/min is the load imbalance in one number.
         const double mine = g_as_cellfrac_sum / (double)g_as_samples;
         const double frac = bmpi_sum_d(mine) / g_np;
+        g_active_avg_pct = 100.0 * frac;
         if (g_cand_rebuilds > 0)
             printf("  candidate : %.2f%% of cells, every %d steps (%ld full rebuilds)\n",
                    100.0 * g_cand_frac_sum / (double)g_cand_rebuilds,
@@ -1361,7 +1391,13 @@ int main(int argc, char **argv) {
             rc |= snapshot_check(O.check_path, GD, M.orig_id, O.rtol, O.atol);
     }
 
-    if (O.csv_path) {
+    // Phase columns: per-phase MAX over ranks (rank 0 is an end slab with one
+    // neighbour, so its halo time alone understates an interior rank).  Collective,
+    // so every rank computes it before the rank-0 write.  NaN when --phases is off.
+    double ph_max[PH_NPHASES];
+    for (int p = 0; p < PH_NPHASES; p++) ph_max[p] = bmpi_max_d(phase_time[p]);
+    const double nanv = nan("");
+    if (O.csv_path && g_rank == 0) {   // one row, global figures
         FILE *fp = fopen(O.csv_path, "r");
         const int fresh = (fp == NULL);
         if (fp) fclose(fp);
@@ -1373,15 +1409,24 @@ int main(int argc, char **argv) {
             if (fresh)
                 fprintf(fp, "nx,ny,triangles,case,steps,ms_per_step,mcellsteps_per_s,"
                             "gflops,build_s,map_s,dev_bytes,host_peak_bytes,"
-                            "volume_drift,max_momentum,nans\n");
+                            "volume_drift,max_momentum,nans,sim_time,sim_rate,active_pct,ranks,"
+                            "halo_ms,dt_ms,kernel_ms,t_end\n");
             fprintf(fp, "%lld,%lld,%lld,%s,%lld,%.6f,%.4f,%.4f,%.4f,%.4f,"
-                        "%zu,%zu,%.6e,%.6e,%d\n",
+                        "%zu,%zu,%.6e,%.6e,%d,%.6f,%.4f,%.3f,%d,%.5f,%.5f,%.5f,%.6f\n",
                     (long long)O.nx, (long long)O.ny, (long long)n_report, case_name,
                     (long long)O.steps, 1.0e3 * per_step, 1.0e-6 * cellsteps_per_s,
                     1.0e-9 * (double)flops_total / best, t_build, t_map,
                     dev_need, peak_host_rss(),
                     volume0 != 0.0 ? (volume1 - volume0) / volume0 : 0.0,
-                    sqrt(max_speed_sq), nan_count);
+                    sqrt(max_speed_sq), nan_count, tsim_span, tsim_span / best,
+                    g_active_set ? g_active_avg_pct : 100.0,
+                    g_np,
+                    O.phases ? 1.0e3 * ph_max[PH_HALO] / (double)O.steps : nanv,
+                    O.phases ? 1.0e3 * (ph_max[PH_DTREDUCE] + ph_max[PH_WAIT]) / (double)O.steps : nanv,
+                    O.phases ? 1.0e3 * (ph_max[PH_ACTIVE] + ph_max[PH_PREPARE] + ph_max[PH_EXTRAPOLATE]
+                                        + ph_max[PH_BOUNDARY] + ph_max[PH_FLUXES]
+                                        + ph_max[PH_FORCING_UPDATE]) / (double)O.steps : nanv,
+                    t_sim);
             fclose(fp);
         }
     }

@@ -1,0 +1,69 @@
+{
+  "_comment": "Benchmark definitions for suite.py.  Edit this file, not the script, to add a case or change a size.  Every benchmark is analytic (no data files), so it runs identically on any machine.",
+
+  "sizes": {
+    "S":  200,
+    "M":  700,
+    "L":  1400,
+    "XL": 2450
+  },
+  "_sizes_note": "nx -> 4*nx*nx triangles: S=160k, M=2.0M, L=7.8M, XL=24M.  Any integer is also accepted via --sizes.",
+
+  "common_args": ["--scheme", "ader2", "--flux", "scatter", "--warmup", "5", "--phases"],
+
+  "gates": {
+    "_comment": "Run before any timing.  A failed gate marks the whole run INVALID in the summary.",
+    "lake_at_rest_max_momentum": 1e-9,
+    "volume_drift":              1e-10
+  },
+
+  "benchmarks": [
+    {
+      "name": "dam",
+      "title": "Wet dam break (hero)",
+      "regime": "all cells wet, constant work per step, conservative",
+      "args": ["--case", "dam"],
+      "stop": {"steps": 200},
+      "conserves_volume": true,
+      "variants": {
+        "full": []
+      }
+    },
+    {
+      "name": "river",
+      "title": "Dam break into a dry river valley",
+      "regime": "reservoir releases into a carved channel; floodplain starts dry, ~20% of cells active",
+      "args": ["--case", "river"],
+      "stop": {"tend": 20.0},
+      "conserves_volume": true,
+      "variants": {
+        "full":   [],
+        "active": ["--active-set", "--active-every", "32"]
+      }
+    },
+    {
+      "name": "beach",
+      "title": "Tsunami run-up on a headland coast",
+      "regime": "offshore wave inundates a dry slope; the shoreline (wet/dry front) moves with time",
+      "args": ["--case", "beach"],
+      "stop": {"tend": 60.0},
+      "conserves_volume": true,
+      "variants": {
+        "full":   [],
+        "active": ["--active-set", "--active-every", "32"]
+      }
+    },
+    {
+      "name": "river_rain",
+      "title": "Rain on the river valley",
+      "regime": "uniform rain wets every cell: the active set's worst case (~100% active, rebuild overhead only)",
+      "args": ["--case", "river", "--rain", "50"],
+      "stop": {"tend": 20.0},
+      "conserves_volume": false,
+      "variants": {
+        "full":   [],
+        "active": ["--active-set"]
+      }
+    }
+  ]
+}

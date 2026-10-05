@@ -16,8 +16,10 @@ typedef enum {
     BENCH_CASE_DAM = 0,      // flat bed, wet dam break -- all cells wet
     BENCH_CASE_DAMBUMPS,     // bumpy bed, dam break -- exercises wet/dry
     BENCH_CASE_LAKE,         // bumpy bed, water at rest -- well-balancedness
-    BENCH_CASE_RIVER         // valley + channel: reservoir breaks into a thin
+    BENCH_CASE_RIVER,        // valley + channel: reservoir breaks into a thin
                              // river, floodplain banks start dry
+    BENCH_CASE_BEACH         // coastal inundation: offshore wave runs up a
+                             // sloping shore with headlands; moving shoreline
 } bench_case;
 
 // Timestepping schemes, matching ANUGA's flow-algorithm presets:

@@ -1,0 +1,3 @@
+results/
+jobs/node_check_*.pbs
+__pycache__/

@@ -25,7 +25,33 @@
 #define RIVER_DAM_X       0.15   // fraction of length_x: reservoir extent
 #define RIVER_FLOW_DEPTH  0.5    // m, initial river depth in the channel
 
+// The BEACH case: a tsunami-style coastal inundation.  Deep ocean on the left
+// (x = 0 is a reflective wall), a ramp up to a shoreline whose position varies
+// with y (headlands and bays), and an inland slope that stays dry until the
+// wave arrives.  The initial condition is a Gaussian hump of sea surface
+// offshore, which splits into a shoreward wave and runs up the beach.
+// Sea level is stage 0; everything is relative to length_x/length_y.
+#define BEACH_DEPTH       20.0   // m, ocean depth
+#define BEACH_RAMP_START  0.30   // fraction of length_x: where the ramp begins
+#define BEACH_SHORE_X     0.60   // fraction of length_x: mean shoreline
+#define BEACH_SHORE_AMP   0.08   // fraction of length_x: headland/bay amplitude
+#define BEACH_INLAND_SLOPE 0.05  // dz/dx inland of the shoreline
+#define BEACH_HUMP_AMP    3.0    // m, initial sea-surface displacement
+#define BEACH_HUMP_X      0.15   // fraction of length_x
+#define BEACH_HUMP_R      0.08   // fraction of length_x (Gaussian sigma)
+
 #pragma omp declare target
+
+static inline double bench_beach_bed(const bench_params *P, double x, double y) {
+    const double u = x / P->length_x;
+    const double v = y / P->length_y;
+    const double shore = BEACH_SHORE_X
+        + BEACH_SHORE_AMP * sin(4.0 * 3.14159265358979323846 * v);
+    if (u < BEACH_RAMP_START) return -BEACH_DEPTH;
+    if (u < shore)
+        return -BEACH_DEPTH * (shore - u) / (shore - BEACH_RAMP_START);
+    return (u - shore) * P->length_x * BEACH_INLAND_SLOPE;
+}
 
 static inline double bench_river_bed(const bench_params *P, double x, double y) {
     const double u  = x / P->length_x;
@@ -44,6 +70,7 @@ static inline double bench_river_bed(const bench_params *P, double x, double y) 
 static inline double bench_bed_value(const bench_params *P, double x, double y) {
     if (P->which_case == BENCH_CASE_DAM) return 0.0;
     if (P->which_case == BENCH_CASE_RIVER) return bench_river_bed(P, x, y);
+    if (P->which_case == BENCH_CASE_BEACH) return bench_beach_bed(P, x, y);
 
     // Five Gaussian humps on a gentle downstream slope.  Deterministic, smooth,
     // and tall enough that parts of the domain go dry.
@@ -80,6 +107,13 @@ static inline double bench_stage_value(const bench_params *P, double x, double y
             const double surf = RIVER_DROP * (1.0 - u) - RIVER_CH_DEPTH
                                 + RIVER_FLOW_DEPTH;
             return fmax(z, surf);
+        }
+        case BENCH_CASE_BEACH: {
+            const double du = x / P->length_x - BEACH_HUMP_X;
+            const double dv = (y / P->length_y - 0.5) * (P->length_y / P->length_x);
+            const double r2 = (du * du + dv * dv)
+                            / (2.0 * BEACH_HUMP_R * BEACH_HUMP_R);
+            return fmax(z, BEACH_HUMP_AMP * exp(-r2));   // sea level = 0
         }
         case BENCH_CASE_LAKE:
         default:

@@ -112,6 +112,28 @@ ifeq ($(CONFIG),gpumpi)
                  -DGPU_AWARE_MPI
   LDFLAGS     := -mp=gpu,multicore -gpu=$(GPU_ARCH)
 endif
+# Frontier / Aurora: the vendor compiler is driven through the site MPI wrapper
+# (Cray `cc` with PrgEnv-amd / the oneAPI PrgEnv, or mpicc -cc=...).  Halo
+# staging goes through the host (GPU_AWARE_MPI packs/unpacks on device only),
+# so no GPU-transport library (GTL) is needed.
+#   Frontier: make CONFIG=amdgpumpi   MPICC=cc AMD_ARCH=gfx90a
+#   Aurora:   make CONFIG=intelgpumpi MPICC=mpicc
+ifeq ($(CONFIG),amdgpumpi)
+  CC          := $(MPICC)
+  AMD_ARCH    ?= $(shell rocm_agent_enumerator 2>/dev/null | grep -v gfx000 | head -1)
+  ifeq ($(strip $(AMD_ARCH)),)
+    AMD_ARCH  := gfx90a
+  endif
+  CFLAGS      := -O3 -g -fopenmp --offload-arch=$(AMD_ARCH) -DHAVE_MPI \
+                 -DGPU_AWARE_MPI $(WARN)
+  LDFLAGS     := -fopenmp --offload-arch=$(AMD_ARCH)
+endif
+ifeq ($(CONFIG),intelgpumpi)
+  CC          := $(MPICC)
+  CFLAGS      := -O3 -g -fiopenmp -fopenmp-targets=spir64 -DHAVE_MPI \
+                 -DGPU_AWARE_MPI $(WARN)
+  LDFLAGS     := -fiopenmp -fopenmp-targets=spir64
+endif
 ifeq ($(CONFIG),clanggpu)
   CC          := clang
   SM_ARCH     := sm_$(patsubst cc%,%,$(GPU_ARCH))
@@ -161,10 +183,10 @@ OBJ        := $(addprefix $(OBJDIR)/,$(notdir $(KERNEL_SRC:.c=.o)) $(notdir $(BE
 DEP        := $(OBJ:.o=.d)
 
 # ---------------------------------------------------------------- targets
-.PHONY: all cpu gpu ompcpu clanggpu amdgpu intelgpu cpumpi gpumpi build clean verify run dist
+.PHONY: all cpu gpu ompcpu clanggpu amdgpu intelgpu cpumpi gpumpi amdgpumpi intelgpumpi build clean verify run dist
 all: cpu gpu
 
-cpu ompcpu gpu clanggpu amdgpu intelgpu cpumpi gpumpi:
+cpu ompcpu gpu clanggpu amdgpu intelgpu cpumpi gpumpi amdgpumpi intelgpumpi:
 	@$(MAKE) --no-print-directory CONFIG=$@ build
 
 build: $(BIN)

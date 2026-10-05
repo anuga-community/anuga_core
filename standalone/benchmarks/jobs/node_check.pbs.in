@@ -1,0 +1,41 @@
+#!/bin/bash
+#PBS -N chk_@M@
+#PBS -q @Q@
+#PBS -P tf05
+#PBS -l ncpus=48
+#PBS -l ngpus=4
+#PBS -l mem=@MEM@GB
+#PBS -l jobfs=100GB
+#PBS -l storage=gdata/bm55+scratch/bm55
+#PBS -l walltime=01:00:00
+#PBS -l wd
+#PBS -j oe
+#PBS -o /scratch/bm55/jlv900/dev/mesh_exp/standalone/benchmarks/results/@M@_nodecheck.log
+# Full-node check of the benchmark suite on @M@ (binaries pre-built in build/@M@/).
+#  1. suite on GPU 0 of an otherwise idle node
+#  2. MPI correctness gate: np=1 golden vs np=4 across the 4 GPUs (scatter -> --ftol)
+#  3. intra-node scaling smoke: 1, 2, 4 GPUs, weak + strong
+set -x
+ROOT=/scratch/bm55/jlv900/dev/mesh_exp/standalone
+cd $ROOT; source ./my_claude_env.sh
+M=@M@; OUT=benchmarks/results/${M}_nodecheck; mkdir -p $OUT
+nvidia-smi -L; nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv | tee $OUT/gpu.txt
+python3 --version
+
+# 1 -------------------------------------------------------------------------
+CUDA_VISIBLE_DEVICES=0 python3 benchmarks/suite.py --label $M --bin build/$M/bench_gpu \
+    --sizes S,M,L --out $OUT/suite
+
+# 2 -------------------------------------------------------------------------
+export OMP_NUM_THREADS=4
+A="--nx 400 --ny 400 --steps 60 --case river --scheme ader2 --flux scatter"
+mpirun --bind-to none -np 1 build/$M/bench $A --save $PBS_JOBFS/g.bin > $OUT/gate_np1.txt 2>&1
+mpirun --bind-to none --map-by ppr:4:node -np 4 build/$M/bench $A --check $PBS_JOBFS/g.bin --ftol 1e-7 > $OUT/gate_np4.txt 2>&1
+grep -H tolerance $OUT/gate_np*.txt | tee $OUT/GATES.txt
+
+# 3 -------------------------------------------------------------------------
+for st in weak strong; do
+  python3 benchmarks/scaling.py run --machine @M@ --study $st --nodes 1,2,4 --tpn 1 \
+      --launcher "mpirun --bind-to none -np {ranks}" --global-tris 100000000 --steps 50 \
+      --bin build/$M/bench --out $OUT/scaling
+done

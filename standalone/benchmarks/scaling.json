@@ -1,0 +1,175 @@
+{
+  "_comment": "Machine presets and study definitions for scaling.py.  Only gadi_h200 has been exercised; the others are best-effort launch lines -- expect to adjust the launcher/env on first contact.  {nodes} {ranks} {tpn} {bin} {args} are substituted.",
+  "common_args": [
+    "--case",
+    "dam",
+    "--scheme",
+    "ader2",
+    "--flux",
+    "scatter",
+    "--warmup",
+    "10",
+    "--repeat",
+    "3",
+    "--phases"
+  ],
+  "studies": {
+    "weak": {
+      "_comment": "Fixed work per rank: the slab is k columns x ny cells, global columns = k * ranks, dx = 1 m throughout.  Ideal: flat time per step.",
+      "ny": 2048,
+      "steps": 100
+    },
+    "strong": {
+      "_comment": "Fixed global mesh.  Global columns = min_cols_per_rank * ranks(largest node count), so the last point still has min_cols_per_rank columns per rank (ghost fraction ~ 2/min_cols).  Smallest node count is set by device memory.",
+      "ny": 2048,
+      "min_cols_per_rank": 64,
+      "steps": 100
+    }
+  },
+  "machines": {
+    "frontier": {
+      "scheduler": "slurm",
+      "gpus_per_node": 8,
+      "gpu_mem_gib": 64,
+      "host_mem_gib": 480,
+      "weak_tris_per_rank": 40000000,
+      "make": [
+        "CONFIG=amdgpumpi",
+        "MPICC=cc",
+        "AMD_ARCH=gfx90a"
+      ],
+      "modules_hint": "module load PrgEnv-amd craype-accel-amd-gfx90a rocm",
+      "env": {
+        "OMP_NUM_THREADS": "7",
+        "MPICH_GPU_SUPPORT_ENABLED": "0"
+      },
+      "launcher": "srun -N {nodes} -n {ranks} --ntasks-per-node={tpn} -c 7 --gpus-per-task=1 --gpu-bind=closest",
+      "sbatch": [
+        "-A <PROJECT>",
+        "-q <QOS>"
+      ],
+      "setup": [
+        "module load PrgEnv-amd craype-accel-amd-gfx90a rocm"
+      ]
+    },
+    "aurora": {
+      "scheduler": "pbs",
+      "gpus_per_node": 12,
+      "gpu_mem_gib": 64,
+      "host_mem_gib": 900,
+      "weak_tris_per_rank": 40000000,
+      "make": [
+        "CONFIG=intelgpumpi",
+        "MPICC=mpicc"
+      ],
+      "modules_hint": "module load oneapi; (flat mode: 12 tiles/node, one rank each)",
+      "env": {
+        "OMP_NUM_THREADS": "8",
+        "ZE_FLAT_DEVICE_HIERARCHY": "FLAT"
+      },
+      "launcher": "mpiexec -n {ranks} -ppn {tpn} --cpu-bind depth -d 8 gpu_tile_compact.sh",
+      "pbs": [
+        "-A <PROJECT>",
+        "-q <QUEUE>",
+        "-l filesystems=home:flare"
+      ],
+      "pbs_resources": "-l select={nodes}:system=aurora,place=scatter",
+      "setup": [
+        "module load oneapi"
+      ]
+    },
+    "perlmutter": {
+      "scheduler": "slurm",
+      "gpus_per_node": 4,
+      "gpu_mem_gib": 40,
+      "host_mem_gib": 220,
+      "weak_tris_per_rank": 16000000,
+      "make": [
+        "CONFIG=gpumpi",
+        "MPICC=cc",
+        "GPU_ARCH=cc80"
+      ],
+      "modules_hint": "module load PrgEnv-nvidia cudatoolkit",
+      "env": {
+        "OMP_NUM_THREADS": "16"
+      },
+      "launcher": "srun -N {nodes} -n {ranks} --ntasks-per-node={tpn} -c 32 --gpus-per-task=1 --gpu-bind=single:1",
+      "sbatch": [
+        "-A tf05_g",
+        "-C gpu",
+        "-q regular"
+      ],
+      "setup": [
+        "module load PrgEnv-nvidia cudatoolkit"
+      ]
+    },
+    "gadi_h200": {
+      "scheduler": "pbs",
+      "gpus_per_node": 4,
+      "gpu_mem_gib": 141,
+      "host_mem_gib": 500,
+      "weak_tris_per_rank": 36000000,
+      "make": [
+        "CONFIG=gpumpi",
+        "GPU_ARCH=cc90"
+      ],
+      "modules_hint": "source env.sh; module load openmpi/5.0.5",
+      "env": {
+        "OMP_NUM_THREADS": "4"
+      },
+      "launcher": "mpirun --bind-to none --map-by ppr:{tpn}:node -np {ranks}",
+      "pbs": [
+        "-q gpuhopper",
+        "-P tf05",
+        "-l storage=gdata/bm55+scratch/bm55",
+        "-l jobfs=200GB"
+      ],
+      "pbs_resources": "-l ncpus={cpus} -l ngpus={gpus} -l mem={mem}GB",
+      "setup": [
+        "source ./my_claude_env.sh"
+      ],
+      "strong_global_tris": 400000000
+    },
+    "generic": {
+      "scheduler": "none",
+      "gpus_per_node": 1,
+      "gpu_mem_gib": 32,
+      "host_mem_gib": 64,
+      "weak_tris_per_rank": 8000000,
+      "make": [
+        "CONFIG=gpumpi"
+      ],
+      "env": {
+        "OMP_NUM_THREADS": "4"
+      },
+      "launcher": "mpirun --bind-to none --oversubscribe -np {ranks}"
+    },
+    "gadi_v100": {
+      "scheduler": "pbs",
+      "gpus_per_node": 4,
+      "gpu_mem_gib": 32,
+      "host_mem_gib": 380,
+      "weak_tris_per_rank": 24000000,
+      "make": [
+        "CONFIG=gpumpi",
+        "GPU_ARCH=cc70"
+      ],
+      "setup": [
+        "source ./my_claude_env.sh"
+      ],
+      "modules_hint": "gadi gpuvolta: 4 x V100-32GB per node",
+      "env": {
+        "OMP_NUM_THREADS": "4"
+      },
+      "launcher": "mpirun --bind-to none --map-by ppr:{tpn}:node -np {ranks}",
+      "pbs": [
+        "-q gpuvolta",
+        "-P tf05",
+        "-l storage=gdata/bm55+scratch/bm55",
+        "-l jobfs=200GB"
+      ],
+      "pbs_resources": "-l ncpus={cpus} -l ngpus={gpus} -l mem={mem}GB",
+      "strong_global_tris": 160000000
+    }
+  }
+}
