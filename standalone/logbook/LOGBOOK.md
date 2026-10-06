@@ -82,7 +82,8 @@ allreduce.
 
 ### 2026-10-05 — weak scaling, 40M triangles/GCD
 
-Jobs 5624934 (1–8 nodes, 3m51s) and 5624969 (8–256 nodes, 5m59s, ~26 node-h).
+Jobs 5624934 (1–8 nodes, 3m51s), 5624969 (8–256 nodes, 5m59s, ~26 node-h) and
+5625186 (512 + 1024 nodes, 2m25s, ~41 node-h; ran 2026-10-06).
 Efficiency = t(1 node) / t(N), with t(1) = 110.1 ms.
 
 | nodes | GCDs | triangles | ms/step | halo ms | dt ms | efficiency |
@@ -95,58 +96,86 @@ Efficiency = t(1 node) / t(N), with t(1) = 110.1 ms.
 | 32    | 256  | 10.2G     | 114.4   | 1.05    | 13.1  | 0.962      |
 | 64    | 512  | 20.5G     | 113.8   | 0.98    | 13.3  | 0.968      |
 | 128   | 1024 | 41.0G     | 113.9   | 1.32    | 12.6  | 0.967      |
-| 256   | 2048 | 81.9G     | 114.4   | 1.25    | 14.8  | **0.962**  |
+| 256   | 2048 | 81.9G     | 114.4   | 1.25    | 14.8  | 0.962      |
+| 512   | 4096 | 164G      | 113.9   | 1.21    | 14.0  | 0.967      |
+| 1024  | 8192 | 328G      | 114.7   | 1.16    | 15.4  | **0.960**  |
 
 - All points `ok`, no NaNs, volume drift ≤ 1.7e-13. 18.2 GiB/GCD.
-- Efficiency settles near 96% by 16 nodes and stays flat from 16 to 256 nodes.
+- Efficiency settles near 96% by 16 nodes and stays flat from 16 to 1024 nodes.
   The halo stays at ~1 ms. Kernels are ~99% of the step.
 - Run-to-run noise is about ±2%: the 8-node point was measured in both jobs.
-- 256 nodes reach ~716 G cell-steps/s.
+- 256 nodes reach ~716 G cell-steps/s; 1024 nodes (8192 GCDs, 328G triangles)
+  reach ~2.86 T cell-steps/s. The dt allreduce grows slowly (8 → 15 ms, log-like
+  in node count); the halo does not grow.
 - Plot: `python3 standalone/logbook/plot_weak_frontier.py out.png` (reads every
   `benchmarks/results/frontier_n*/scaling_frontier.csv`).
 
-### In flight (submitted 2026-10-05, not yet run)
+### 2026-10-06 — strong scaling (overnight jobs 5625208–5625215)
 
-| job      | nodes | what                                       | results in                                     |
-|----------|-------|--------------------------------------------|------------------------------------------------|
-| 5625186  | 1024  | weak, 512 + 1024 nodes                     | `benchmarks/results/frontier_n1024/`           |
-| 5625208  | 8     | strong small (2.56G)                       | `benchmarks/results/frontier_strong/n8/small/` |
-| 5625209  | 16    | strong small                               | `.../frontier_strong/n16/small/`               |
-| 5625210  | 32    | strong small                               | `.../frontier_strong/n32/small/`               |
-| 5625211  | 64    | strong small                               | `.../frontier_strong/n64/small/`               |
-| 5625212  | 128   | strong large (81.9G) + small               | `.../frontier_strong/n128/{large,small}/`      |
-| 5625213  | 256   | strong large + small                       | `.../frontier_strong/n256/{large,small}/`      |
-| 5625214  | 512   | strong large + small                       | `.../frontier_strong/n512/{large,small}/`      |
-| 5625215  | 1024  | strong large + small                       | `.../frontier_strong/n1024/{large,small}/`     |
+All 8 jobs and all 12 points `ok`, no NaNs, |drift| ≤ 2.4e-14. Cost of the
+overnight batch including the 1024-node weak job: **~71 node-h** (estimate was
+~130). Job scripts: `benchmarks/results/frontier_strong/jobs/strong_n*.sl`.
+Efficiency = (t_ref · N_ref) / (t_N · N).
 
-Job scripts: `benchmarks/results/frontier_strong/jobs/strong_n*.sl` and
-`benchmarks/results/frontier_n1024/jobs/`.
+**Large / headline — 81.9G triangles (nx = 10000384), reference = 128 nodes:**
 
-Strong-scaling design:
-- **Large / headline:** 81.9G triangles (nx = 10000384, the same mesh as the
-  256-node weak point) from 128 to 1024 nodes, i.e. 80M down to 10M triangles
-  per GCD. The reference is 128 nodes (38 GiB/GCD; host ~380 GB/node, which is
-  tight but fits). The 256-node point should reproduce the weak result (114.4 ms).
-  Expect ≳ 90% at 1024 nodes.
-- **Small / failure point:** 2.56G triangles (nx = 312512, the same mesh as the
-  8-node weak point) from 8 to 1024 nodes, i.e. 40M down to 0.31M per GCD. Expect
-  it to fall off around 64–128 nodes.
-- Rule of thumb from the weak data: kernels cost ~2.76 ms per M triangles per
-  GCD; halo (~1 ms) and dt (a few ms) are roughly fixed. So efficiency holds
-  while each GCD has well over ~5M triangles.
-- Estimated cost: ~130 node-h expected, ~480 node-h worst case.
+| nodes | GCDs | tris/GCD | ms/step | kernel ms | halo ms | dt ms | efficiency |
+|-------|------|----------|---------|-----------|---------|-------|------------|
+| 128   | 1024 | 80.0M    | 224.8   | 226.0     | 1.59    | 23.1  | 1.000      |
+| 256   | 2048 | 40.0M    | 114.5   | 114.2     | 1.19    | 15.3  | 0.982      |
+| 512   | 4096 | 20.0M    | 57.6    | 57.1      | 0.64    | 8.0   | 0.976      |
+| 1024  | 8192 | 10.0M    | 28.8    | 28.3      | 0.46    | 4.4   | **0.977**  |
 
-To collect when done:
+- 7.8× speed-up for 8× the nodes. The 256-node point reproduces the weak-scaling
+  run of the same mesh (114.45 vs 114.4 ms).
+- 128 nodes held 36.4 GiB/GCD without trouble.
 
-```bash
-cd standalone/benchmarks/results
-sacct -j 5625186,5625208,5625209,5625210,5625211,5625212,5625213,5625214,5625215 -X -o JobID,JobName%14,State,Elapsed,NNodes
-cat frontier_n1024/scaling_frontier.csv
-for f in frontier_strong/n*/*/scaling_frontier.csv; do echo "== $f"; tail -n +2 $f; done
-```
+**Small / failure point — 2.56G triangles (nx = 312512), reference = 8 nodes:**
 
-Then add the rows to the tables above and re-plot. The weak plot picks up
-`frontier_n1024` automatically; the strong plot still needs writing.
+| nodes | GCDs | tris/GCD | ms/step | kernel ms | halo ms | dt ms | efficiency |
+|-------|------|----------|---------|-----------|---------|-------|------------|
+| 8     | 64   | 40.0M    | 111.3   | 112.0     | 1.28    | 11.2  | 1.000      |
+| 16    | 128  | 20.0M    | 56.3    | 56.1      | 0.74    | 5.95  | 0.988      |
+| 32    | 256  | 10.0M    | 28.1    | 28.0      | 0.41    | 3.10  | 0.990      |
+| 64    | 512  | 5.0M     | 13.81   | 13.49     | 0.23    | 1.54  | 1.007      |
+| 128   | 1024 | 2.5M     | 6.97    | 6.50      | 0.22    | 0.96  | 0.999      |
+| 256   | 2048 | 1.25M    | 3.42    | 3.18      | 0.24    | 0.39  | 1.016      |
+| 512   | 4096 | 0.63M    | 2.00    | 1.73      | 0.27    | 0.32  | 0.869      |
+| 1024  | 8192 | 0.31M    | 1.30    | 0.99      | 0.27    | 0.28  | **0.668**  |
+
+- It holds ≥ 99% down to 1.25M triangles/GCD (256 nodes). That is much later than
+  the predicted fall-off at 64–128 nodes. The ~5M/GCD rule of thumb was too pessimistic.
+  The fixed costs are smaller at small sizes: halo ~0.25 ms (vs ~1 ms at 40M,
+  where the message is larger) and dt ~0.3 ms (less imbalance to wait for).
+- Slightly superlinear points (64, 256 nodes) are within the ±2% noise. Part of the cause is a lower
+  per-triangle kernel cost at small sizes: 2.55 ms/M at 1.25M vs 2.8 ms/M at 40M.
+- The fall-off starts below ~1M triangles/GCD: 87% at 0.63M, 67% at 0.31M. At
+  1024 nodes the step is 1.30 ms, of which ~0.55 ms is halo + dt. That floor is
+  set by latency.
+- Plot: `python3 standalone/logbook/plot_strong_frontier.py out.png` (reads every
+  `benchmarks/results/frontier_strong/n*/*/scaling_frontier.csv`). Current renders:
+  `logbook/weak_frontier.png`, `logbook/strong_frontier.png`.
+
+### In flight — full-machine series (submitted 2026-10-06 19:09 EDT)
+
+Strong scaling on 1.263T triangles (nx = 154140672, ny = 2048), reference 2048 nodes.
+nx divides evenly across 16384, 32768, 65536 and 75264 ranks. Plus a weak point
+(40M/GCD, 3.01T triangles) in the 9408-node job.
+
+| script | nodes | tris/GCD | GiB/GCD | expected ms/step | est. node-h |
+|--------|-------|----------|---------|------------------|-------------|
+| `full_n2048.sl` (5629157) | 2048 | 77.1M | 36.8 | ~216 | ~85 |
+| `full_n4096.sl` (5629158) | 4096 | 38.5M | 18.4 | ~110 | ~140 |
+| `full_n8192.sl` (5629159) | 8192 | 19.3M | 9.2  | ~56  | ~270–410 |
+| `full_n9408.sl` (5629160) | 9408 | 16.8M | 8.0  | ~49  | ~470–780 (+weak ~500) |
+| `full_n9216.sl` (not submitted) | 9216 | 17.1M | 8.2  | fallback if 9408 cannot be scheduled | |
+
+Scripts in `benchmarks/results/frontier_full/jobs/`; submit from `standalone/`.
+`sbatch --test-only` accepted all five. At the time it estimated that the ≥8192-node jobs could
+start at a 21:01 window (2026-10-06), and 2048/4096 the next afternoon.
+All four were submitted together, to catch the 21:01 window for large jobs. Results land in
+`benchmarks/results/frontier_full/n*/{strong,weak}/scaling_frontier.csv`. Collect with:
+`sacct -j 5629157,5629158,5629159,5629160 -X -o JobID,JobName%12,State,Elapsed,NNodes`.
 
 ### Caveats for the paper
 
@@ -154,7 +183,7 @@ Then add the rows to the tables above and re-plot. The weak plot picks up
   of rank count, uniform all-wet work.
 - `scaling.py` flags `BAD_PHYSICS` when volume drift exceeds 1e-9. At 1e11
   triangles, summation roundoff could trip that gate; check before trusting it.
-  So far drift *decreases* with size (7.9e-16 at 256 nodes).
+  So far drift *decreases* with size (2.0e-16 at 512 and 1024 nodes).
 - `scaling.py emit` does not pass `--timeout` / `--out` through to the run
   line; job scripts were edited by hand (feature request sent to the gadi
   session).
