@@ -89,11 +89,22 @@ ifeq ($(CONFIG),amdgpu)
   CFLAGS      := -O3 -g -fopenmp --offload-arch=$(AMD_ARCH) -DANUGA_OMP_TEAMS_DPF $(WARN)
   LDFLAGS     := -fopenmp --offload-arch=$(AMD_ARCH)
 endif
+# oneAPI offload target.  Default: SPIR-V, JIT-compiled for the present device
+# by every process at startup.  INTEL_AOT=pvc compiles the device code ahead of
+# time at link (Aurora PVC), so thousands of ranks skip the JIT.  The device
+# backend flag only applies at link; the target sits in CFLAGS too so the
+# flag stamp changes and the objects are rebuilt.
+ifneq ($(strip $(INTEL_AOT)),)
+  INTEL_TGT   := -fopenmp-targets=spir64_gen
+  INTEL_LDTGT := $(INTEL_TGT) -Xopenmp-target-backend "-device $(INTEL_AOT)"
+else
+  INTEL_TGT   := -fopenmp-targets=spir64
+  INTEL_LDTGT := $(INTEL_TGT)
+endif
 ifeq ($(CONFIG),intelgpu)
-  # oneAPI: icx with SPIR-V offload (JIT for the present device).
   CC          := icx
-  CFLAGS      := -O3 -g -fiopenmp -fopenmp-targets=spir64 $(WARN)
-  LDFLAGS     := -fiopenmp -fopenmp-targets=spir64
+  CFLAGS      := -O3 -g -fiopenmp $(INTEL_TGT) $(WARN)
+  LDFLAGS     := -fiopenmp $(INTEL_LDTGT)
 endif
 # --- MPI configs: same code, real MPI via bench_mpi.h + the gpu kernels'
 # --- own HAVE_MPI paths.  Flags come from the mpicc wrapper so any MPI works
@@ -124,7 +135,7 @@ endif
 #             it makes cc link libmpi_gtl_hsa, which needs ROCm 6's
 #             libamdhip64.so.6 and fails to load under rocm/10.0.0.
 #             make CONFIG=amdgpumpi   MPICC=cc AMD_ARCH=gfx90a
-#   Aurora:   make CONFIG=intelgpumpi MPICC=mpicc
+#   Aurora:   make CONFIG=intelgpumpi MPICC=mpicc INTEL_AOT=pvc
 ifeq ($(CONFIG),amdgpumpi)
   CC          := $(MPICC)
   AMD_ARCH    ?= $(shell rocm_agent_enumerator 2>/dev/null | grep -v gfx000 | head -1)
@@ -137,9 +148,9 @@ ifeq ($(CONFIG),amdgpumpi)
 endif
 ifeq ($(CONFIG),intelgpumpi)
   CC          := $(MPICC)
-  CFLAGS      := -O3 -g -fiopenmp -fopenmp-targets=spir64 -DHAVE_MPI \
+  CFLAGS      := -O3 -g -fiopenmp $(INTEL_TGT) -DHAVE_MPI \
                  -DGPU_AWARE_MPI $(WARN)
-  LDFLAGS     := -fiopenmp -fopenmp-targets=spir64
+  LDFLAGS     := -fiopenmp $(INTEL_LDTGT)
 endif
 ifeq ($(CONFIG),clanggpu)
   CC          := clang

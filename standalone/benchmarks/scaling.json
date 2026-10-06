@@ -61,23 +61,24 @@
       "weak_tris_per_rank": 40000000,
       "make": [
         "CONFIG=intelgpumpi",
-        "MPICC=mpicc"
+        "MPICC=mpicc",
+        "INTEL_AOT=pvc"
       ],
-      "modules_hint": "module load oneapi; (flat mode: 12 tiles/node, one rank each)",
+      "modules_hint": "default Aurora PE (oneapi/release/2026.1.0, mpich/prd/5.0.0); no extra modules needed",
       "env": {
         "OMP_NUM_THREADS": "8",
-        "ZE_FLAT_DEVICE_HIERARCHY": "FLAT"
+        "ZE_FLAT_DEVICE_HIERARCHY": "FLAT",
+        "MPIR_CVAR_ENABLE_GPU": "0"
       },
-      "launcher": "mpiexec -n {ranks} -ppn {tpn} --cpu-bind depth -d 8 gpu_tile_compact.sh",
+      "launcher": "mpiexec -n {ranks} -ppn {tpn} --cpu-bind=list:1-8:9-16:17-24:25-32:33-40:41-48:53-60:61-68:69-76:77-84:85-92:93-100 gpu_tile_compact.sh",
       "pbs": [
-        "-A <PROJECT>",
+        "-A mom6_anuga_gpu",
         "-q <QUEUE>",
         "-l filesystems=home:flare"
       ],
-      "pbs_resources": "-l select={nodes}:system=aurora,place=scatter",
-      "setup": [
-        "module load oneapi"
-      ]
+      "pbs_resources": "-l select={nodes} -l place=scatter",
+      "setup": [],
+      "_comment": "Built on an Aurora login node 2026-10-06 (icx 2026.1.0, mpich 5.0.0, default PE): ldd clean, 1-rank CPU smoke OK; GPU runs not yet verified. 12 ranks/node, one per PVC tile: gpu_tile_compact.sh (on PATH, /opt/aurora/<ver>/support/tools/mpi_wrapper_utils) sets ZE_AFFINITY_MASK per local rank, so each rank sees one device. The cpu-bind list is ALCF's: 8 cores per rank, skipping the OS cores 0 and 52, ranks 0-5 on socket 0. Halo is staged through host, so MPI never sees device pointers (MPIR_CVAR_ENABLE_GPU=0). Queues: debug 1-2 nodes, debug-scaling 2-256, prod 256+; all 1 h max except prod. NOTE: emit writes '#PBS -l wd' (gadi only); delete it from Aurora scripts."
     },
     "perlmutter": {
       "scheduler": "slurm",

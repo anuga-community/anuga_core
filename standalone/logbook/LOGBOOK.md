@@ -202,14 +202,105 @@ The dt allreduce grows to 16.2 ms and halo to 1.5 ms, while kernels stay at 114.
 
 ---
 
-## Aurora (ALCF, PVC, 12 tiles/node)
+## Aurora (ALCF, PVC, 12 tiles/node, project mom6_anuga_gpu)
 
-Briefed 2026-10-05; work is in progress in the aurora session. As of the last
-report, `CONFIG=intelgpumpi` builds, with an optional AOT build for PVC
-(`INTEL_AOT=pvc`), and `benchmarks/aurora_smoke.sh` is written. GPU smoke tests
-are waiting on the user's interactive session. Whether `ANUGA_OMP_TEAMS_DPF`
-helps on Intel is still to be measured (1-tile A/B). That session owns this
-section.
+Budget: **30k node-hours**, spend carefully. Every point gets `--timeout 600`.
+Queues: `debug` (1–2 nodes, 1 h), `debug-scaling` (2–256 nodes, 1 h), `prod`
+(256+ nodes).
+
+### Environment (verified 2026-10-06)
+
+```bash
+# default Aurora PE: oneapi/release/2026.1.0 (icx 2026.1.0), mpich/prd/5.0.0, no extra modules
+cd standalone && make intelgpumpi MPICC=mpicc INTEL_AOT=pvc      # -> bin/bench_intelgpumpi
+```
+
+- `INTEL_AOT=pvc` (new Makefile switch) builds the device code ahead of time
+  (`-fopenmp-targets=spir64_gen -Xopenmp-target-backend "-device pvc"`). The
+  backend flag only takes effect at link. Without the switch the build stays
+  JIT `spir64`, and JIT costs ~2 s per process at startup (see the A/B below).
+  The AOT link reports one IGC `RetryManager` recompile, in
+  `core_compute_fluxes_central`, which `--flux scatter` does not run.
+- `ldd` is clean: mpich 5.0.0, libomptarget and libze_loader from the PE,
+  libfabric 2.3.1. The halo is staged through host, so the run uses
+  `MPIR_CVAR_ENABLE_GPU=0`.
+- Launch line: `mpiexec -n 12N -ppn 12
+  --cpu-bind=list:1-8:9-16:17-24:25-32:33-40:41-48:53-60:61-68:69-76:77-84:85-92:93-100
+  gpu_tile_compact.sh`, with `ZE_FLAT_DEVICE_HIERARCHY=FLAT` and
+  `OMP_NUM_THREADS=8`. Checked (`aurora_smoke.sh bind`): ranks 0–11 get
+  `ZE_AFFINITY_MASK` 0–11 and 8 disjoint cores each, cores 0 and 52 (OS) are
+  skipped, and ranks 0–5 sit on socket 0. Each rank sees 1 device.
+- Login nodes compile and can run a 1-rank CPU smoke test
+  (`OMP_TARGET_OFFLOAD=DISABLED`), but `mpiexec` does not work there at all.
+  The user runs GPU tests in an interactive session
+  (`qsub -I -l select=1 -l walltime=1:00:00 -l filesystems=home:flare -A mom6_anuga_gpu -q debug`).
+- `scaling.py emit` used to write `#PBS -l wd` (NCI-only). The gadi session
+  moved it into the gadi presets; until that is pushed, strip the line from
+  Aurora job scripts by hand.
+
+### 2026-10-06 — first contact
+
+**On icx the loop construct makes no difference** (unlike amdclang). One tile,
+1M triangles (`aurora_smoke.sh ab`):
+
+| build                                  | ms/step | Mcell-steps/s | process wall | volume drift |
+|----------------------------------------|---------|---------------|--------------|--------------|
+| AOT, `teams loop`                      | 1.2805  | 786.9         | 1.83 s       | 0            |
+| AOT, `teams distribute parallel for`   | 1.2821  | 785.9         | 1.49 s       | 0            |
+| JIT, `teams distribute parallel for`   | 1.2813  | 786.4         | 3.54 s       | 0            |
+
+- The Intel configs stay without `ANUGA_OMP_TEAMS_DPF`, the same as nvc.
+- The phase split is the same in all three: fluxes 46%, extrapolate 36%.
+- One PVC tile is ~1.9× one MI250X GCD at this size (1.28 vs 2.44 ms/step).
+
+1-node smoke (12 tiles, `aurora_smoke.sh mpi`):
+
+| tris/tile | ms/step | kernels | halo | dt   | Mcell-steps/s/node | GiB/tile | drift   | wall/point |
+|-----------|---------|---------|------|------|--------------------|----------|---------|------------|
+| 1M        | 1.542   | 1.378   | 0.16 | 0.10 | 7775               | 0.46     | 1.8e-14 | 2 s        |
+| 40M       | 65.13   | 65.72   | 0.23 | 3.65 | 7371               | 18.2     | 1.1e-13 | 37 s       |
+
+- One Aurora node is **2.55× one Frontier node** at 40M/device (7371 vs 2895
+  Mcell-steps/s).
+- Each tile delivers 614 Mcell-steps/s, against 787 for a lone tile at 1M. That
+  ~20% gap is wider than Frontier's ~12%. It is not the halo (0.2 ms). The
+  same single-device 40M check applies here.
+- A 40M point takes ~37 s including setup, so weak points cost about 1 node-min
+  per node.
+
+### 2026-10-06 — weak scaling, 40M triangles/tile
+
+Jobs 8905901 (1–8 nodes, 2 min, ~0.3 node-h), 8905911 (16 nodes, 41 s) and
+8905920 (32–256 nodes, 2m47s, ~12 node-h), all on `debug-scaling`. Efficiency
+= t(1 node) / t(N), with t(1) = 65.32 ms.
+
+| nodes | tiles | triangles | ms/step | kernels | halo ms | dt ms | efficiency |
+|-------|-------|-----------|---------|---------|---------|-------|------------|
+| 1     | 12    | 0.48G     | 65.32   | 65.77   | 0.23    | 2.1   | 1.000      |
+| 2     | 24    | 0.96G     | 66.69   | 67.61   | 0.30    | 5.6   | 0.979      |
+| 4     | 48    | 1.92G     | 66.50   | 67.95   | 0.27    | 5.8   | 0.982      |
+| 8     | 96    | 3.84G     | 67.30   | 69.99   | 0.31    | 7.4   | 0.971      |
+| 16    | 192   | 7.68G     | 68.94   | 72.27   | 0.26    | 10.5  | 0.948      |
+| 32    | 384   | 15.4G     | 67.87   | 69.66   | 0.25    | 8.6   | 0.962      |
+| 64    | 768   | 30.7G     | 68.93   | 72.07   | 0.28    | 10.8  | 0.948      |
+| 128   | 1536  | 61.4G     | 70.53   | 75.04   | 0.36    | 12.9  | 0.926      |
+| 256   | 3072  | 122.9G    | 70.61   | 75.24   | 0.38    | 17.1  | **0.925**  |
+
+- All points `ok`, no NaNs, drift ≤ 1.1e-13 (2.6e-16 at 256 nodes). Each
+  point takes 38–48 s.
+- 256 nodes (3072 tiles, 123G triangles) reach ~1.74 T cell-steps/s, 2.4× the
+  Frontier 256-node point at 1.5× the mesh.
+- The efficiency loss is not the halo (≤ 0.4 ms throughout). It tracks the
+  slowest tile: `kernels` (max over ranks) climbs from 65.8 to 75.2 ms while
+  `dt` (waiting at the allreduce) climbs from 2 to 17 ms. That fits
+  tile-to-tile speed variation, where the slowest of N tiles gets slower as N
+  grows. A per-rank kernel-time dump would confirm it.
+- The 1-node point reproduces the interactive smoke run (65.13 vs 65.32 ms).
+
+`debug-scaling` allows only one queued job per user (dependency holds do not
+get around it), so 32–256 nodes ran as one 256-node job. Prepared, not yet
+submitted: 512, 1024 and 2048 nodes (`prod`). Scripts are in `benchmarks/results/aurora_weak_{debug-scaling,prod}/jobs/`;
+results go to `benchmarks/results/aurora_nN/`.
 
 ---
 
