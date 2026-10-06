@@ -78,12 +78,15 @@ endif
 ifeq ($(CONFIG),amdgpu)
   # ROCm: amdclang or mainline clang with AMDGPU offload.
   # AMD_ARCH: gfx90a (MI210/250), gfx942 (MI300); autodetected when possible.
-  CC          ?= amdclang
+  # make predefines CC=cc (the Cray wrapper on Frontier), so ?= never fires.
+  ifneq ($(origin CC),command line)
+    CC        := amdclang
+  endif
   AMD_ARCH    ?= $(shell rocm_agent_enumerator 2>/dev/null | grep -v gfx000 | head -1)
   ifeq ($(strip $(AMD_ARCH)),)
     AMD_ARCH  := gfx90a
   endif
-  CFLAGS      := -O3 -g -fopenmp --offload-arch=$(AMD_ARCH) $(WARN)
+  CFLAGS      := -O3 -g -fopenmp --offload-arch=$(AMD_ARCH) -DANUGA_OMP_TEAMS_DPF $(WARN)
   LDFLAGS     := -fopenmp --offload-arch=$(AMD_ARCH)
 endif
 ifeq ($(CONFIG),intelgpu)
@@ -116,7 +119,11 @@ endif
 # (Cray `cc` with PrgEnv-amd / the oneAPI PrgEnv, or mpicc -cc=...).  Halo
 # staging goes through the host (GPU_AWARE_MPI packs/unpacks on device only),
 # so no GPU-transport library (GTL) is needed.
-#   Frontier: make CONFIG=amdgpumpi   MPICC=cc AMD_ARCH=gfx90a
+#   Frontier: module load PrgEnv-amd amd/10.0.0 rocm/10.0.0   (verified to
+#             compile + link 2026-10-05).  Do NOT load craype-accel-amd-gfx90a:
+#             it makes cc link libmpi_gtl_hsa, which needs ROCm 6's
+#             libamdhip64.so.6 and fails to load under rocm/10.0.0.
+#             make CONFIG=amdgpumpi   MPICC=cc AMD_ARCH=gfx90a
 #   Aurora:   make CONFIG=intelgpumpi MPICC=mpicc
 ifeq ($(CONFIG),amdgpumpi)
   CC          := $(MPICC)
@@ -125,7 +132,7 @@ ifeq ($(CONFIG),amdgpumpi)
     AMD_ARCH  := gfx90a
   endif
   CFLAGS      := -O3 -g -fopenmp --offload-arch=$(AMD_ARCH) -DHAVE_MPI \
-                 -DGPU_AWARE_MPI $(WARN)
+                 -DGPU_AWARE_MPI -DANUGA_OMP_TEAMS_DPF $(WARN)
   LDFLAGS     := -fopenmp --offload-arch=$(AMD_ARCH)
 endif
 ifeq ($(CONFIG),intelgpumpi)

@@ -38,19 +38,20 @@
         "MPICC=cc",
         "AMD_ARCH=gfx90a"
       ],
-      "modules_hint": "module load PrgEnv-amd craype-accel-amd-gfx90a rocm",
+      "modules_hint": "module load PrgEnv-amd amd/10.0.0 rocm/10.0.0  (no craype-accel-amd-gfx90a: it links GTL built for ROCm 6)",
       "env": {
         "OMP_NUM_THREADS": "7",
         "MPICH_GPU_SUPPORT_ENABLED": "0"
       },
-      "launcher": "srun -N {nodes} -n {ranks} --ntasks-per-node={tpn} -c 7 --gpus-per-task=1 --gpu-bind=closest",
+      "launcher": "srun -N {nodes} -n {ranks} --ntasks-per-node={tpn} -c 7 --threads-per-core=1 --gpus-per-task=1 --gpu-bind=closest",
       "sbatch": [
-        "-A <PROJECT>",
-        "-q <QOS>"
+        "-A CSC693"
       ],
       "setup": [
-        "module load PrgEnv-amd craype-accel-amd-gfx90a rocm"
-      ]
+        "module load PrgEnv-amd amd/10.0.0 rocm/10.0.0",
+        "export LD_LIBRARY_PATH=$CRAY_LD_LIBRARY_PATH:$(pkg-config --variable=libdir libfabric):$LD_LIBRARY_PATH"
+      ],
+      "_comment": "Verified on Frontier 2026-10-05: amdgpumpi compiles/links with the setup modules. 8 ranks x 7 cores = the 56 cores left by Frontier's default -S 8 core spec; --gpus-per-task=1 --gpu-bind=closest gives each rank its own GCD (ROCR_VISIBLE_DEVICES), so rank %% omp_get_num_devices() picks device 0. No -q needed (batch is default; debug QOS is <=2 h)."
     },
     "aurora": {
       "scheduler": "pbs",

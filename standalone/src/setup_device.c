@@ -41,6 +41,8 @@
 // the rest of the kernel set uses.
 #ifdef CPU_ONLY_MODE
 #define DI_GEOM_LOOP _Pragma("omp parallel for reduction(+:bad_areas)")
+#elif defined(ANUGA_OMP_TEAMS_DPF)   // amdclang: `teams loop` runs ~10x slower
+#define DI_GEOM_LOOP _Pragma("omp target teams distribute parallel for reduction(+:bad_areas) firstprivate(PP)")
 #else
 #define DI_GEOM_LOOP _Pragma("omp target teams loop reduction(+:bad_areas) firstprivate(PP)")
 #endif

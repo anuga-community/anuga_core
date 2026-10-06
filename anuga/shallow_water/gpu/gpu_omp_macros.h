@@ -86,9 +86,16 @@ static inline int _anuga_omp_get_initial_device(void) { return 0; }
 // GPU MODE - OpenMP target offloading
 // ============================================================================
 
-// Parallel loops on device
+// Parallel loops on device.  `teams loop` is the nvc default; LLVM/AMD
+// (amdclang) builds define ANUGA_OMP_TEAMS_DPF to use the explicit
+// `teams distribute parallel for` form instead (see standalone/Makefile).
+#ifdef ANUGA_OMP_TEAMS_DPF
+#define OMP_PARALLEL_LOOP _Pragma("omp target teams distribute parallel for")
+#define OMP_PARALLEL_LOOP_SIMD _Pragma("omp target teams distribute parallel for")
+#else
 #define OMP_PARALLEL_LOOP _Pragma("omp target teams loop")
 #define OMP_PARALLEL_LOOP_SIMD _Pragma("omp target teams loop")
+#endif
 
 // Reductions on device - use DO_PRAGMA to allow variable name expansion
 // Note: Using distribute parallel for for better reduction support
