@@ -1397,6 +1397,14 @@ int main(int argc, char **argv) {
     double ph_max[PH_NPHASES];
     for (int p = 0; p < PH_NPHASES; p++) ph_max[p] = bmpi_max_d(phase_time[p]);
     const double nanv = nan("");
+    // Per-RANK compute time (sum of this rank's kernel phases, no MPI waits), then
+    // max and mean over ranks.  `kernel_ms` above is a sum of per-phase maxima, which
+    // can exceed the step time and drifts upward with rank count from noise alone;
+    // max-vs-mean of THIS quantity is the slowest-of-N test.
+    const double k_local = phase_time[PH_ACTIVE] + phase_time[PH_PREPARE] + phase_time[PH_EXTRAPOLATE]
+                         + phase_time[PH_BOUNDARY] + phase_time[PH_FLUXES] + phase_time[PH_FORCING_UPDATE];
+    const double k_rank_max  = bmpi_max_d(k_local);
+    const double k_rank_mean = bmpi_sum_d(k_local) / (double)g_np;
     if (O.csv_path && g_rank == 0) {   // one row, global figures
         FILE *fp = fopen(O.csv_path, "r");
         const int fresh = (fp == NULL);
@@ -1410,9 +1418,9 @@ int main(int argc, char **argv) {
                 fprintf(fp, "nx,ny,triangles,case,steps,ms_per_step,mcellsteps_per_s,"
                             "gflops,build_s,map_s,dev_bytes,host_peak_bytes,"
                             "volume_drift,max_momentum,nans,sim_time,sim_rate,active_pct,ranks,"
-                            "halo_ms,dt_ms,kernel_ms,t_end\n");
+                            "halo_ms,dt_ms,kernel_ms,t_end,kernel_rank_max_ms,kernel_rank_mean_ms\n");
             fprintf(fp, "%lld,%lld,%lld,%s,%lld,%.6f,%.4f,%.4f,%.4f,%.4f,"
-                        "%zu,%zu,%.6e,%.6e,%d,%.6f,%.4f,%.3f,%d,%.5f,%.5f,%.5f,%.6f\n",
+                        "%zu,%zu,%.6e,%.6e,%d,%.6f,%.4f,%.3f,%d,%.5f,%.5f,%.5f,%.6f,%.5f,%.5f\n",
                     (long long)O.nx, (long long)O.ny, (long long)n_report, case_name,
                     (long long)O.steps, 1.0e3 * per_step, 1.0e-6 * cellsteps_per_s,
                     1.0e-9 * (double)flops_total / best, t_build, t_map,
@@ -1426,7 +1434,9 @@ int main(int argc, char **argv) {
                     O.phases ? 1.0e3 * (ph_max[PH_ACTIVE] + ph_max[PH_PREPARE] + ph_max[PH_EXTRAPOLATE]
                                         + ph_max[PH_BOUNDARY] + ph_max[PH_FLUXES]
                                         + ph_max[PH_FORCING_UPDATE]) / (double)O.steps : nanv,
-                    t_sim);
+                    t_sim,
+                    O.phases ? 1.0e3 * k_rank_max / (double)O.steps : nanv,
+                    O.phases ? 1.0e3 * k_rank_mean / (double)O.steps : nanv);
             fclose(fp);
         }
     }

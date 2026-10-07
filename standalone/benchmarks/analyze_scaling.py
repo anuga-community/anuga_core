@@ -34,7 +34,11 @@ def series(rows, machine, study):
     d = {int(r["nodes"]): r for r in rs}
     n = np.array(sorted(d))
     f = lambda k: np.array([float(d[i][k]) for i in n])
-    return n, f("ms_per_step"), f("kernel_ms"), f("halo_ms"), f("dt_ms"), f("triangles"), f("ranks")
+    # kernel_ms (sum of per-phase maxima) can exceed the step; prefer the per-rank
+    # compute max when the run recorded it.
+    has = all(d[i].get("kernel_rank_max_ms", "") not in ("", "nan") for i in n)
+    ker = f("kernel_rank_max_ms") if has else f("kernel_ms")
+    return n, f("ms_per_step"), ker, f("halo_ms"), f("dt_ms"), f("triangles"), f("ranks")
 
 
 def main():

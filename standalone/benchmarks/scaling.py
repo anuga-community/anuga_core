@@ -43,7 +43,7 @@ HOST_B_PER_TRI = 600     # host_peak_bytes / triangles on the generated mesh
 
 FIELDS = ["machine", "study", "nodes", "ranks", "nx", "ny", "triangles",
           "tris_per_rank", "steps", "status", "ms_per_step", "kernel_ms",
-          "halo_ms", "dt_ms", "mcellsteps_per_s", "volume_drift", "nans",
+          "halo_ms", "dt_ms", "kernel_rank_max_ms", "kernel_rank_mean_ms", "mcellsteps_per_s", "volume_drift", "nans",
           "dev_gib_per_rank", "build_s", "note"]
 
 
@@ -173,6 +173,8 @@ def cmd_run(cfg, a):
                 rec.update(status="BAD_PHYSICS" if bad else "ok",
                            ms_per_step=r["ms_per_step"], kernel_ms=r["kernel_ms"],
                            halo_ms=r["halo_ms"], dt_ms=r["dt_ms"],
+                           kernel_rank_max_ms=r.get("kernel_rank_max_ms", ""),
+                           kernel_rank_mean_ms=r.get("kernel_rank_mean_ms", ""),
                            mcellsteps_per_s=r["mcellsteps_per_s"],
                            volume_drift=r["volume_drift"], nans=r["nans"],
                            dev_gib_per_rank="%.2f" % (float(r["dev_bytes"]) / 2**30),
@@ -221,7 +223,7 @@ def cmd_emit(cfg, a):
                 nodes=N, gpus=gpus, cpus=12 * gpus,
                 mem=int(m["host_mem_gib"] / m["gpus_per_node"] * gpus))
             L += ["#PBS -N %s" % name[:15], "#PBS " + res,
-                  "#PBS -l walltime=%s" % a.walltime, "#PBS -l wd", "#PBS -j oe"]
+                  "#PBS -l walltime=%s" % a.walltime, "#PBS -j oe"]
             L += ["#PBS " + x for x in m.get("pbs", [])]
         L += ["", "set -x", "cd %s" % ROOT] + m.get("setup", ["# " + m.get("modules_hint", "load compiler + MPI modules")]) + [""]
         if not a.bin:
@@ -236,8 +238,9 @@ def cmd_emit(cfg, a):
         if st == "strong":      # every job in a strong study shares ONE global mesh
             extra = " --global-tris %d" % (4 * j0["nx"] * j0["ny"])
         L.append("python3 benchmarks/scaling.py run --machine %s --study %s --nodes %s --bin %s"
-                 " --ny %d --tpn %d%s%s"
-                 % (a.machine, st, ",".join(map(str, ns)), binp, j0["ny"], tpn, extra,
+                 " --ny %d --tpn %d --timeout %g --out %s%s%s"
+                 % (a.machine, st, ",".join(map(str, ns)), binp, j0["ny"], tpn,
+                    a.timeout, os.path.abspath(a.out), extra,
                     " --tris-per-rank %d" % a.tris_per_rank if a.tris_per_rank else ""))
         path = os.path.join(outdir, name + (".sl" if sched == "slurm" else ".pbs"))
         with open(path, "w") as f:
