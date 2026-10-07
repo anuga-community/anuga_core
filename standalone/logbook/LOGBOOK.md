@@ -217,6 +217,26 @@ divided by kernel-trace durations. Job script and CSVs are in
 - Optimization headroom is in the extrapolate kernel: it moves 1061 B/tri
   (58% of the traffic) at 40% of peak.
 
+### In flight — HBM counters at scale (submitted 2026-10-06 ~22:00 EDT)
+
+The same counters as the 1-GCD measurement above, now collected under MPI. On each
+node, local rank 0 runs under rocprofv3 (`prof_wrap.sh`) and the other 7 ranks run
+plain. Every rank has the same work, so the profiled ranks are representative.
+Each run is 20 timed steps + 2 warmup, so the profiled ranks' step times are
+inflated. Use these runs for bytes only; the step times come from the unprofiled runs.
+
+| job | nodes | weak (40M/GCD) | strong | state |
+|-----|-------|----------------|--------|-------|
+| 5629613 `hbm_n1024.sl` | 1024 | nx 40001536 (328G) | 81.9G mesh, 10M/GCD | queued, est. start 22:50 |
+| 5629550 `hbm_n4096.sl` | 4096 | nx 160006144 (1.31T) | 1.263T mesh, 38.5M/GCD | **held** (`scontrol release 5629550`) |
+
+The 1.26T mesh cannot run on 1024 nodes: ~154M tris/GCD is about 70 GiB, more
+than 64. Scripts and output are in `benchmarks/results/frontier_hbm/n{1024,4096}/`:
+`weak.out`/`strong.out`, plus one rocprofv3 directory per profiled rank under
+`weak/` and `strong/`. Analysis: sum the four TCC_EA counters per kernel over the
+profiled ranks, as in the table above. Check whether weak reproduces 1817 B/tri
+and whether strong at 10M/GCD moves fewer bytes per triangle (more L2 reuse).
+
 ### Caveats for the paper
 
 - Weak scaling is a best case by construction: 1-D slab, halo size independent
