@@ -21,12 +21,21 @@ BLUE, ORANGE, AQUA = "#2a78d6", "#eb6834", "#1baf7a"
 INK, INK2, GRID, SURF = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
 plt.rcParams.update({"font.size": 10.5, "axes.edgecolor": INK2, "axes.labelcolor": INK2,
                      "xtick.color": INK2, "ytick.color": INK2, "font.family": "DejaVu Sans"})
+def thin(ticks, r):
+    """Node-count labels, dropping any within a factor r of the next kept one (right to left)."""
+    keep, last = set(), None
+    for t in sorted(ticks, reverse=True):
+        if last is None or last / t >= r:
+            keep.add(t); last = t
+    return FuncFormatter(lambda v, _: "%d" % v if round(v) in keep else "")
+
+
 fig, (a, b) = plt.subplots(1, 2, figsize=(12, 4.8), gridspec_kw={"width_ratios": [1.6, 1]},
                            facecolor=SURF)
 for ax in (a, b):
     ax.set_facecolor(SURF); ax.set_xscale("log", base=2)
     ax.xaxis.set_major_locator(FixedLocator(nodes))
-    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: "%d" % v))
+    ax.xaxis.set_major_formatter(thin(nodes, 1.3 if ax is a else 3.5))
     ax.xaxis.set_minor_locator(FixedLocator([]))
     ax.grid(axis="y", color=GRID, lw=0.8); ax.set_axisbelow(True)
     for s in ("top", "right"): ax.spines[s].set_visible(False)
@@ -40,13 +49,13 @@ a.scatter([r[0] for r in rows], [base / r[1] for r in rows], s=46, color=BLUE,
           edgecolor=SURF, linewidth=2, zorder=3)
 a.set_ylim(0.80, 1.03); a.set_ylabel("weak-scaling efficiency  (t₁ / tₙ)")
 last = nodes[-1]
-a.annotate("%.1f%%\n%d GCDs, %.0fG triangles\n%.1f ms/step" % (100 * base / mean[last], 8 * last,
-           tris[last] / 1e9, mean[last]), (last, base / mean[last]), xytext=(-8, -58),
+a.annotate("%.1f%%\n%d GCDs, %s triangles\n%.1f ms/step" % (100 * base / mean[last], 8 * last,
+           ("%.3gT" % (tris[last] / 1e12)) if tris[last] >= 1e12 else ("%.0fG" % (tris[last] / 1e9)), mean[last]), (last, base / mean[last]), xytext=(-8, -58),
            textcoords="offset points", ha="right", color=INK, fontsize=9.5,
            arrowprops=dict(arrowstyle="-", color=INK2, lw=0.8))
 a.annotate("1 node: %.1f ms/step\n40M triangles / GCD" % base, (1, 1.0), xytext=(4, -150),
            textcoords="offset points", color=INK, fontsize=9.5)
-a.set_title("ANUGA weak scaling on Frontier (preliminary)", loc="left", color=INK,
+a.set_title("ANUGA weak scaling on Frontier", loc="left", color=INK,
             fontsize=12.5, fontweight="bold")
 
 # (b) overheads

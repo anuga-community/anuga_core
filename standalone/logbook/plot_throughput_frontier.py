@@ -20,6 +20,15 @@ for f in sorted(files):
             float(r["mcellsteps_per_s"]) * 1e6)
 best = {k: {n: max(v) for n, v in d.items()} for k, d in series.items()}
 
+
+def thin(ticks, r):
+    """Node-count labels, dropping any within a factor r of the next kept one (right to left)."""
+    keep, last = set(), None
+    for t in sorted(ticks, reverse=True):
+        if last is None or last / t >= r:
+            keep.add(t); last = t
+    return FuncFormatter(lambda v, _: "%d" % v if round(v) in keep else "")
+
 BLUE, ORANGE, GREEN, INKC = "#2a78d6", "#eb6834", "#1f9e6e", "#0b0b0b"
 INK, INK2, GRID, SURF = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
 plt.rcParams.update({"font.size": 10.5, "axes.edgecolor": INK2, "axes.labelcolor": INK2,
@@ -29,7 +38,7 @@ ax.set_facecolor(SURF)
 allnodes = sorted({n for d in best.values() for n in d})
 ax.set_xscale("log", base=2); ax.set_yscale("log", base=10)
 ax.xaxis.set_major_locator(FixedLocator(allnodes))
-ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: "%d" % v))
+ax.xaxis.set_major_formatter(thin(allnodes, 1.3))
 ax.xaxis.set_minor_locator(NullLocator())
 ax.grid(color=GRID, lw=0.8); ax.set_axisbelow(True)
 for s in ("top", "right"): ax.spines[s].set_visible(False)

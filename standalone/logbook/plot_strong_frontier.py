@@ -18,6 +18,15 @@ for f in sorted(glob.glob(R + "/frontier_strong/n*/*/scaling_frontier.csv") +
 mean = {t: {n: sum(v) / len(v) for n, v in d.items()} for t, d in series.items()}
 order = sorted(mean, reverse=True)            # largest mesh first = series 1
 
+
+def thin(ticks, r):
+    """Node-count labels, dropping any within a factor r of the next kept one (right to left)."""
+    keep, last = set(), None
+    for t in sorted(ticks, reverse=True):
+        if last is None or last / t >= r:
+            keep.add(t); last = t
+    return FuncFormatter(lambda v, _: "%d" % v if round(v) in keep else "")
+
 BLUE, ORANGE, GREEN = "#2a78d6", "#eb6834", "#1f9e6e"
 INK, INK2, GRID, SURF = "#0b0b0b", "#52514e", "#e4e3df", "#fcfcfb"
 COL = dict(zip(order, (GREEN, BLUE, ORANGE)))
@@ -29,7 +38,7 @@ allnodes = sorted({n for t in mean for n in mean[t]})
 for ax in (a, b):
     ax.set_facecolor(SURF); ax.set_xscale("log", base=2)
     ax.xaxis.set_major_locator(FixedLocator(allnodes))
-    ax.xaxis.set_major_formatter(FuncFormatter(lambda v, _: "%d" % v))
+    ax.xaxis.set_major_formatter(thin(allnodes, 1.3 if ax is a else 3.5))
     ax.xaxis.set_minor_locator(NullLocator())
     ax.grid(axis="y", color=GRID, lw=0.8); ax.set_axisbelow(True)
     for s in ("top", "right"): ax.spines[s].set_visible(False)
@@ -53,7 +62,7 @@ for t in order:
     sp = [t0 / mean[t][n] for n in ns]
     a.plot(ns, sp, color=COL[t], lw=2, marker="o", ms=7, mec=SURF, mew=2, zorder=3,
            label="%s  (ref. %d nodes)" % (label(t), n0))
-    a.annotate("%.1f× (ideal %d×)" % (sp[-1], ns[-1] // n0), (ns[-1], sp[-1]),
+    a.annotate("%.1f× (ideal %.3g×)" % (sp[-1], ns[-1] / n0), (ns[-1], sp[-1]),
                xytext=(-10, -4), textcoords="offset points", ha="right", va="top",
                color=INK, fontsize=9.5)
 tl = max(order, key=lambda t: max(mean[t]) / min(mean[t]))   # longest ideal line

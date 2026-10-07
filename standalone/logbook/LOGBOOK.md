@@ -156,10 +156,10 @@ Efficiency = (t_ref · N_ref) / (t_N · N).
   `benchmarks/results/frontier_strong/n*/*/scaling_frontier.csv`). Current renders:
   `logbook/weak_frontier.png`, `logbook/strong_frontier.png`.
 
-### 2026-10-06 — full-machine strong scaling (jobs 5629157–5629159)
+### 2026-10-06 — full machine: strong to 9408 nodes, weak at 9408 (jobs 5629157–5629160)
 
 Strong scaling on 1.263T triangles (nx = 154140672, ny = 2048), reference 2048 nodes.
-All three jobs COMPLETED with exit 0 and status `ok`: 0 NaNs, volume drift <= 2.1e-16.
+All four jobs COMPLETED with exit 0 and status `ok`: 0 NaNs, volume drift <= 2.1e-16.
 The 2048- and 4096-node jobs started at 19:46, ahead of the 2026-10-07 estimate.
 
 | nodes | ranks | tris/GCD | GiB/GCD | ms/step | halo ms | dt ms | speedup | eff. | elapsed | node-h |
@@ -167,20 +167,25 @@ The 2048- and 4096-node jobs started at 19:46, ahead of the 2026-10-07 estimate.
 | 2048 | 16384 | 77.1M | 35.0 | 218.13 | 2.04 | 25.3 | 1.00x | — | 2:16 | 77 |
 | 4096 | 32768 | 38.5M | 17.5 | 109.88 | 1.38 | 14.8 | 1.99x | 99.3% | 1:30 | 102 |
 | 8192 | 65536 | 19.3M | 8.8  | 55.47  | 0.70 | 8.1  | 3.93x | 98.3% | 1:55 | 262 |
+| 9408 | 75264 | 16.8M | 7.6  | 48.28  | 0.87 | 7.4  | 4.52x of 4.59x | 98.4% | 4:33 (incl. weak) | 713 |
 
-- Peak aggregate throughput: 22.8T triangle-steps/s on 8192 nodes (65536 GCDs).
+Weak at 9408 nodes (75264 GCDs, 40M tris/GCD, 3.01T triangles): 114.87 ms/step.
+That is **95.8%** of the 1-node 110.08 ms, the same as 1024 nodes (114.71 ms, 96.0%).
+The dt allreduce grows to 16.2 ms and halo to 1.5 ms, while kernels stay at 114.8 ms.
+
+- Peak aggregate throughput: 26.2T triangle-steps/s on 9408 nodes, from both the strong
+  (1.26T) and the weak (3.01T) run.
 - Per-GCD rate lines up with the smaller meshes: 77M tris/GCD runs at 218 ms, against
   224.8 ms for 80M/GCD on the 81.9G mesh.
-- The batch cost about 440 node-h, well under the ~495–635 estimated.
-- Still queued: `full_n9408.sl` (5629160; strong + weak 3.01T at 40M/GCD). On
-  2026-10-06 20:16 Slurm estimated a 20:54 start. `full_n9216.sl` was never
-  submitted and is now only a fallback.
+- The whole batch cost about 1150 node-h. The 9408-node job started at 20:43.
+  `full_n9216.sl` was never submitted and is no longer needed.
 - Scripts are in `benchmarks/results/frontier_full/jobs/`. Results are in
   `benchmarks/results/frontier_full/n*/{strong,weak}/scaling_frontier.csv`.
 - Plots: `plot_strong_frontier.py` and `plot_weak_frontier.py` now also read
   `frontier_full/`. The new `plot_throughput_frontier.py out.png` draws every weak and strong
   run as aggregate triangle-steps/s against the 1-node-weak × N ideal.
-  Renders: `logbook/strong_frontier.png` and `logbook/throughput_frontier.png`.
+  Renders: `logbook/{strong,weak,throughput}_frontier.png`. Node-count tick labels are thinned
+  so 8192 and 9408 don't collide.
 
 ### Caveats for the paper
 
