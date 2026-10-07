@@ -303,7 +303,7 @@ Jobs 8905901 (1–8 nodes, 2 min, ~0.3 node-h), 8905911 (16 nodes, 41 s) and
   step time (75.2 > 70.6 ms) and grows with N from noise alone. The per-rank
   stderr line (`rank r: ... ms/step kernels`) includes the MPI waits, so every
   rank shows the wall time (70.609 ± 0.001 ms). To test it, make each rank
-  print its compute-only time and rerun 256-node weak with `--phases-sync`.
+  print its compute-only time and rerun 256-node weak. Done 2026-10-07, see below.
   Rank 0 at 256 nodes: fluxes 30.7, extrapolate 19.2, forcing+update 6.6,
   prepare 5.3 (compute ≈ 61.9 ms), dt_allreduce 8.5, halo 0.2.
 - The 1-node point reproduces the interactive smoke run (65.13 vs 65.32 ms).
@@ -411,6 +411,27 @@ Small, 3.84G triangles (nx = 468768). Efficiency is relative to 8 nodes.
   halo and ~0.18 ms dt are about half the step.
 - All rows and the weak CSV were sent to the gadi session for the paper
   (2026-10-07). Still queued: 8905967, 8907423, 8907424 and 8907628–31.
+
+### 2026-10-07 — per-rank compute spread at 256 nodes (job 8907892)
+
+256-node weak point rerun with `bin/bench_intelgpumpi_rk`: b7efff0d with
+AOT pvc and DPF, the same flags as production. It adds `kernel_rank_max_ms` and
+`kernel_rank_mean_ms`, each rank's compute-only time (no MPI waits). Status
+`ok`, 42 s walltime, ~3 node-h.
+
+| ms/step | rank max | rank mean | max/mean | halo | dt   | eff vs 65.32 |
+|---------|----------|-----------|----------|------|------|--------------|
+| 69.33   | 69.03    | 61.97     | 1.114    | 0.26 | 12.6 | 0.942        |
+
+- **Slowest-of-N confirmed.** The step is the slowest tile's compute plus
+  the halo (69.03 + 0.26). The mean tile (62.0 ms) is faster than the 1-node
+  step (65.3 ms), so per-tile compute does not degrade with N. The whole
+  weak-scaling loss is the 11% spread between the average and the slowest
+  of 3072 tiles.
+- Run-to-run: 69.33 vs 70.61 ms in the original run (−1.8%).
+- Open: the same max/mean at 1 node (12 tiles) and a lone tile at 40M
+  (interactive debug node). Together they would show how much of the ~20%
+  "12 tiles vs lone tile" gap is also variance.
 
 ---
 
