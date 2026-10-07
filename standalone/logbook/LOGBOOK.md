@@ -290,17 +290,122 @@ Jobs 8905901 (1–8 nodes, 2 min, ~0.3 node-h), 8905911 (16 nodes, 41 s) and
   point takes 38–48 s.
 - 256 nodes (3072 tiles, 123G triangles) reach ~1.74 T cell-steps/s, 2.4× the
   Frontier 256-node point at 1.5× the mesh.
-- The efficiency loss is not the halo (≤ 0.4 ms throughout). It tracks the
-  slowest tile: `kernels` (max over ranks) climbs from 65.8 to 75.2 ms while
-  `dt` (waiting at the allreduce) climbs from 2 to 17 ms. That fits
-  tile-to-tile speed variation, where the slowest of N tiles gets slower as N
-  grows. A per-rank kernel-time dump would confirm it.
+- The efficiency loss is not the halo (≤ 0.4 ms throughout). `dt` (waiting at
+  the allreduce) climbs from 2 to 17 ms, which fits tile-to-tile speed
+  variation: the slowest of N tiles gets slower as N grows. This is still a
+  hypothesis. The `kernels` column cannot settle it: the CSV `kernel_ms` is
+  the sum over phases of the per-phase max over ranks. That sum exceeds the
+  step time (75.2 > 70.6 ms) and grows with N from noise alone. The per-rank
+  stderr line (`rank r: ... ms/step kernels`) includes the MPI waits, so every
+  rank shows the wall time (70.609 ± 0.001 ms). To test it, make each rank
+  print its compute-only time and rerun 256-node weak with `--phases-sync`.
+  Rank 0 at 256 nodes: fluxes 30.7, extrapolate 19.2, forcing+update 6.6,
+  prepare 5.3 (compute ≈ 61.9 ms), dt_allreduce 8.5, halo 0.2.
 - The 1-node point reproduces the interactive smoke run (65.13 vs 65.32 ms).
 
 `debug-scaling` allows only one queued job per user (dependency holds do not
 get around it), so 32–256 nodes ran as one 256-node job. Prepared, not yet
-submitted: 512, 1024 and 2048 nodes (`prod`). Scripts are in `benchmarks/results/aurora_weak_{debug-scaling,prod}/jobs/`;
-results go to `benchmarks/results/aurora_nN/`.
+submitted: 512, 1024 and 2048 nodes (`prod`).
+
+### In flight (submitted 2026-10-06)
+
+| job     | nodes | queue         | what                                        | results in                                     |
+|---------|-------|---------------|---------------------------------------------|------------------------------------------------|
+| 8905967 | 2048  | large         | weak, 512 + 1024 + 2048                     | `benchmarks/results/aurora_n512-2048/`         |
+| 8907425 | 128   | debug-scaling | strong large @128; strong small @8–128      | `aurora_strong/n128/large`, `aurora_strong/n8-128/small` |
+| 8907420 | 256   | small         | strong large + small                        | `aurora_strong/n256/{large,small}`             |
+| 8907421 | 512   | small         | strong large + small                        | `aurora_strong/n512/{large,small}`             |
+| 8907422 | 1024  | small         | strong large + small                        | `aurora_strong/n1024/{large,small}`            |
+| 8907423 | 2048  | large         | strong large + small                        | `aurora_strong/n2048/{large,small}`            |
+| 8907424 | 4096  | large         | weak (1.97T tris) + strong large + small    | `aurora_n4096`, `aurora_strong/n4096/{large,small}` |
+
+All paths are under `benchmarks/results/`; job scripts are in
+`benchmarks/results/aurora_strong/jobs/`. Walltime is 20 min (30 min for the
+8–128 and 4096 jobs).
+
+Strong-scaling design (mirrors Frontier, extended to 4096 nodes):
+- **Large / headline:** 122.9G triangles (nx = 15000576, the 256-node weak
+  mesh), 128 → 4096 nodes = 80M → 2.5M triangles per tile. The 128-node
+  reference uses 38 GiB of each tile's 64. The 256-node point should reproduce
+  the weak result (70.61 ms).
+- **Small / failure point:** 3.84G triangles (nx = 468768, the 8-node weak
+  mesh), 8 → 4096 nodes = 40M → 78k triangles per tile (9.5 columns per rank at
+  4096).
+- Cost: ~500 node-h expected and ~2.7k worst case at walltime, for everything
+  in the table, including 8905967.
+
+Queue rules learned: `prod` needs ≥ 256 nodes (it routes 256–1024 to `small`
+and ≥ 2000 to `large`); `debug-scaling` caps at 256 nodes and one queued job
+per user; `large` allows 10 queued jobs per project.
+
+To collect:
+
+```bash
+qstat -xf 8905967 8907420 8907421 8907422 8907423 8907424 8907425 | grep -E 'Job Id|job_state|resources_used.walltime|Exit_status'
+cd benchmarks/results
+for f in aurora_n512-2048 aurora_n4096 aurora_strong/n*/*; do echo "== $f"; tail -n +2 $f/scaling_aurora.csv; done
+```
+
+Then add the weak rows (efficiency vs 65.32 ms), build the strong tables
+(efficiency vs the 128-node large and the 8-node small reference), and re-plot.
+
+### Full-machine run (submitted 2026-10-06, requested by the Frontier session)
+
+Sized with the Frontier recipe. At submission ~10.1k of 10,624 nodes were up
+and not reserved, so the largest point is 9600 nodes.
+
+| job     | nodes | walltime | what                                         |
+|---------|-------|----------|----------------------------------------------|
+| 8907628 | 2048  | 15 min   | strong, huge mesh (reference)                |
+| 8907629 | 4096  | 15 min   | strong, huge mesh                            |
+| 8907630 | 8192  | 20 min   | strong, huge mesh                            |
+| 8907631 | 9600  | 30 min   | weak 40M/tile (4.61T tris) + strong, huge mesh |
+
+- Huge mesh: nx = 235,929,600 = 32 × lcm(12 × {2048, 4096, 8192, 9600}),
+  ny = 2048, so 1.933T triangles. That is 78.6M/tile at 2048 nodes and 16.8M/tile
+  at 9600, all above the ~10M level where efficiency stays near-ideal.
+- Results go to `benchmarks/results/aurora_full/n<N>/{huge,weak}`. Scripts are in
+  `aurora_full/jobs/`.
+- Cost: ~2.8k node-h expected, ~10k worst case at walltime.
+
+### 2026-10-07 — strong scaling to 1024 nodes
+
+Jobs 8907425 (8–128 nodes), 8907420 (256), 8907421 (512) and 8907422 (1024),
+all `ok`, drift ≤ 1.6e-14. These use the same binary as the weak runs:
+src/ is unchanged since 14e48919.
+
+Large, 122.9G triangles (nx = 15000576). Efficiency is relative to 128 nodes.
+
+| nodes | tiles | tris/tile | ms/step | halo ms | dt ms | efficiency |
+|-------|-------|-----------|---------|---------|-------|------------|
+| 128   | 1536  | 80M       | 135.69  | 0.27    | 20.6  | 1.000      |
+| 256   | 3072  | 40M       | 69.53   | 0.26    | 12.8  | 0.976      |
+| 512   | 6144  | 20M       | 34.61   | 0.26    | 8.4   | 0.980      |
+| 1024  | 12288 | 10M       | 16.89   | 0.27    | 3.4   | **1.004**  |
+
+- The 256-node point reproduces the weak result (69.53 vs 70.61 ms).
+- 1024 nodes reach ~7.28 T cell-steps/s.
+
+Small, 3.84G triangles (nx = 468768). Efficiency is relative to 8 nodes.
+
+| nodes | tiles | tris/tile | ms/step | halo ms | dt ms | efficiency |
+|-------|-------|-----------|---------|---------|-------|------------|
+| 8     | 96    | 40M       | 68.51   | 0.26    | 9.9   | 1.000      |
+| 16    | 192   | 20M       | 33.88   | 0.25    | 5.7   | 1.011      |
+| 32    | 384   | 10M       | 16.40   | 0.28    | 2.2   | 1.044      |
+| 64    | 768   | 5M        | 8.06    | 0.22    | 1.1   | 1.063      |
+| 128   | 1536  | 2.5M      | 3.86    | 0.18    | 0.38  | **1.111**  |
+| 256   | 3072  | 1.25M     | 2.07    | 0.18    | 0.27  | 1.036      |
+| 512   | 6144  | 625k      | 1.13    | 0.18    | 0.21  | 0.944      |
+| 1024  | 12288 | 312k      | 0.75    | 0.18    | 0.18  | 0.717      |
+
+- Scaling is superlinear from 20M down to 1.25M triangles per tile. The cause
+  has not been diagnosed: no cache counters were collected. Part of it is
+  `dt` (the slowest-tile wait) shrinking faster than the work does.
+- Efficiency falls below ~1M triangles per tile. At 312k, the fixed ~0.18 ms
+  halo and ~0.18 ms dt are about half the step.
+- All rows and the weak CSV were sent to the gadi session for the paper
+  (2026-10-07). Still queued: 8905967, 8907423, 8907424 and 8907628–31.
 
 ---
 
