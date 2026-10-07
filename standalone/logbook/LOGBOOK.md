@@ -243,6 +243,28 @@ ranks were profiled per study. Each profiled run was 20 steps + 2 warmup. The ra
   `scontrol release 5629550`). Raise its time limit to ≥45 min before releasing,
   because writing the profiler output scales with the number of profiled ranks.
 
+### 2026-10-06 — STREAM reference on MI250X (job 5629778)
+
+`tools/stream/stream_omp.c` (same `teams distribute parallel for` form and compiler
+as the miniapp, device arrays) and `stream_hip.cpp` (native HIP ceiling). 2 GiB/array,
+best of 19 reps.
+
+| | copy | scale | add | triad |
+|-|------|-------|-----|-------|
+| OpenMP, 1 GCD | 1371 | 1360 | 1336 | **1289** GB/s |
+| HIP, 1 GCD (full grid) | 1394 | 1376 | 1350 | 1306 GB/s |
+| OpenMP, 8 GCDs at once (per GCD) | 1363–1382 | 1360–1384 | 1296–1348 | 1264–1321 GB/s |
+
+- OpenMP is within 1–2% of native HIP. Running all 8 GCDs at once does not lower the
+  per-GCD rate, so the node-level contention is nil. Achievable bandwidth is ~81% of
+  the 1.6 TB/s theoretical peak.
+- At 8 GiB/array, add/triad drop to ~1220 GB/s. Use the 2 GiB values.
+- **ANUGA against STREAM triad (1289 GB/s):** 708 GB/s in kernels = **55%**; 634 GB/s at
+  speed in the 1024-node weak run = **49%**. Per kernel: extrapolate 52%, fluxes 54%,
+  forcing+update 81%, prepare 88%. The streaming kernels are near STREAM; the two
+  gather/scatter kernels sit at about half of it. This replaces the earlier
+  "~60% of achievable" figure, which used prepare_step's 1.13 TB/s as the ceiling.
+
 ### Caveats for the paper
 
 - Weak scaling is a best case by construction: 1-D slab, halo size independent
