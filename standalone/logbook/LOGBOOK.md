@@ -189,6 +189,34 @@ The dt allreduce grows to 16.2 ms and halo to 1.5 ms, while kernels stay at 114.
   2.56G mesh at 512 and 1024 nodes (0.63M and 0.31M tris/GCD; 86.9% and 66.8%), so that
   fall-off has to be covered in the paper text (`DROP` in each script).
 
+### 2026-10-06 — HBM traffic, one GCD (job 5629533, rocprofv3)
+
+40M triangles, dam break, ader2/scatter, 1 GCD. Unprofiled: 107.5 ms/step.
+Bytes are L2↔HBM traffic from the TCC_EA counters
+(read = 32·RDREQ_32B + 64·(RDREQ − RDREQ_32B); write analogous with WRREQ_64B),
+divided by kernel-trace durations. Job script and CSVs are in
+`benchmarks/results/frontier_hbm/`.
+
+| kernel | ms/step | read B/tri | write B/tri | GB/s |
+|--------|---------|------------|-------------|------|
+| extrapolate (edge pass) | 65.55 | 548 | 513 | 648 |
+| compute_fluxes (scatter) | 30.49 | 451 | 65 | 677 |
+| forcing + update | 5.53 | 88 | 48 | 984 |
+| prepare_step | 3.67 | 32 | 72 | 1134 |
+| **step** | **105.3** | | **1817 B/tri** | **690** |
+
+- 72.7 GB of HBM traffic per step, or 690 GB/s on average. That is 43% of the
+  1.6 TB/s GCD peak, and about half of what the simple streaming kernels reach
+  (1.1–1.3 TB/s). The two big kernels run at about 650–680 GB/s: gathers and
+  the scatter atomics, not streaming.
+- Arithmetic intensity is ~0.25 flop/B (172.9 GFLOP/s from the code's own
+  count), far below the ~15 flop/B ridge, so the code is memory-bound.
+- Scaled to the full machine at 1817 B/tri-step: 26.2T tri-steps/s ≈ **47.6 PB/s**
+  of aggregate HBM traffic on 9408 nodes. Per GCD that is ~633 GB/s in the
+  weak run (114.9 ms/step), about 40% of the 120 PB/s machine peak.
+- Optimization headroom is in the extrapolate kernel: it moves 1061 B/tri
+  (58% of the traffic) at 40% of peak.
+
 ### Caveats for the paper
 
 - Weak scaling is a best case by construction: 1-D slab, halo size independent
