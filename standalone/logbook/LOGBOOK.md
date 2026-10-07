@@ -185,7 +185,9 @@ The dt allreduce grows to 16.2 ms and halo to 1.5 ms, while kernels stay at 114.
   `frontier_full/`. The new `plot_throughput_frontier.py out.png` draws every weak and strong
   run as aggregate triangle-steps/s against the 1-node-weak × N ideal.
   Renders: `logbook/{strong,weak,throughput}_frontier.png`. Node-count tick labels are thinned
-  so 8192 and 9408 don't collide.
+  so 8192 and 9408 don't collide. The strong and throughput plots leave out the
+  2.56G mesh at 512 and 1024 nodes (0.63M and 0.31M tris/GCD; 86.9% and 66.8%), so that
+  fall-off has to be covered in the paper text (`DROP` in each script).
 
 ### Caveats for the paper
 

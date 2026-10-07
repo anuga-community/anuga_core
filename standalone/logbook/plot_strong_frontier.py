@@ -15,7 +15,10 @@ for f in sorted(glob.glob(R + "/frontier_strong/n*/*/scaling_frontier.csv") +
         if r["study"] == "strong" and r["status"] == "ok":
             series.setdefault(int(r["triangles"]), {}).setdefault(int(r["nodes"]), []).append(
                 float(r["ms_per_step"]))
-mean = {t: {n: sum(v) / len(v) for n, v in d.items()} for t, d in series.items()}
+# Drop the 2.56G mesh past 256 nodes (<1M tris/GCD); the fall-off is discussed in the text.
+DROP = {2560098304: {512, 1024}}
+mean = {t: {n: sum(v) / len(v) for n, v in d.items() if n not in DROP.get(t, ())}
+        for t, d in series.items()}
 order = sorted(mean, reverse=True)            # largest mesh first = series 1
 
 
@@ -62,13 +65,12 @@ for t in order:
     sp = [t0 / mean[t][n] for n in ns]
     a.plot(ns, sp, color=COL[t], lw=2, marker="o", ms=7, mec=SURF, mew=2, zorder=3,
            label="%s  (ref. %d nodes)" % (label(t), n0))
+    right = ns[-1] < allnodes[-1] / 2          # room to the right of the last point?
     a.annotate("%.1f× (ideal %.3g×)" % (sp[-1], ns[-1] / n0), (ns[-1], sp[-1]),
-               xytext=(-10, -4), textcoords="offset points", ha="right", va="top",
+               xytext=(10, 0) if right else (-10, -4), textcoords="offset points",
+               ha="left" if right else "right", va="center" if right else "top",
                color=INK, fontsize=9.5)
-tl = max(order, key=lambda t: max(mean[t]) / min(mean[t]))   # longest ideal line
-a.text(max(mean[tl]), max(mean[tl]) / min(mean[tl]) * 1.12, "ideal (dashed)", color=INK2,
-       ha="center", va="bottom", fontsize=9)
-a.set_ylabel("strong-scaling speedup  (t₀ / tN)")
+a.plot([], [], color=INK2, lw=1.2, ls=(0, (4, 3)), label="ideal  (N / N₀)")
 a.legend(frameon=False, loc="upper left", fontsize=9, labelcolor=INK)
 a.set_title("ANUGA strong scaling on Frontier", loc="left", color=INK,
             fontsize=12.5, fontweight="bold")
@@ -80,9 +82,10 @@ for t in order:
     eff = [t0 * n0 / (mean[t][n] * n) for n in ns]
     b.plot(ns, eff, color=COL[t], lw=2, marker="o", ms=7, mec=SURF, mew=2, zorder=3)
     b.annotate("%.1f%%\n%.2gM tris/GCD" % (100 * eff[-1], t / (8 * ns[-1]) / 1e6), (ns[-1], eff[-1]),
-               xytext=(-10, -6) if t == order[-1] else (10, -10), textcoords="offset points",
-               ha="right", va="top", color=INK, fontsize=9.5)
-b.set_ylim(0.6, 1.06); b.set_ylabel("efficiency  (t₀N₀ / tN N)")
+               xytext=(0, 9) if t == order[-1] else (10, -10), textcoords="offset points",
+               ha="center" if t == order[-1] else "right", va="bottom" if t == order[-1] else "top",
+               color=INK, fontsize=9.5)
+b.set_ylim(0.9, 1.05); b.set_ylabel("efficiency  (t₀N₀ / tN N)")
 b.set_title("Parallel efficiency", loc="left", color=INK, fontsize=12.5, fontweight="bold")
 
 fig.text(0.01, 0.01, "Dam break, ader2/scatter, 1-D slab, ny = 2048, 100 steps x 3 repeats (best). "

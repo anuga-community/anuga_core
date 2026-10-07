@@ -18,7 +18,10 @@ for f in sorted(files):
         key = ("weak", int(r["tris_per_rank"])) if r["study"] == "weak" else ("strong", int(r["triangles"]))
         series.setdefault(key, {}).setdefault(int(r["nodes"]), []).append(
             float(r["mcellsteps_per_s"]) * 1e6)
-best = {k: {n: max(v) for n, v in d.items()} for k, d in series.items()}
+# Drop the 2.56G mesh past 256 nodes (<1M tris/GCD); the fall-off is discussed in the text.
+DROP = {("strong", 2560098304): {512, 1024}}
+best = {k: {n: max(v) for n, v in d.items() if n not in DROP.get(k, ())}
+        for k, d in series.items()}
 
 
 def thin(ticks, r):
