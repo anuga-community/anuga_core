@@ -383,6 +383,8 @@ and not reserved, so the largest point is 9600 nodes.
 - Cost: ~2.8k node-h expected, ~10k worst case at walltime.
 - 2048-node reference (8907628, 1m29s, `ok`): 143.83 ms/step, halo 0.26,
   dt 38.9 ms (27% of the step, the slowest-of-N wait at 78.6M/tile), 13.4 T cell-steps/s.
+- 4096 nodes (8907629, 1m01s, `ok`): 72.46 ms/step, 39.3M/tile, halo 0.24, dt 20.6,
+  **strong efficiency 0.993** vs 2048, 26.7 T cell-steps/s.
 
 ### 2026-10-07 — strong scaling to 1024 nodes
 
