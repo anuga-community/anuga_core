@@ -5,7 +5,8 @@ from matplotlib.ticker import FixedLocator, FuncFormatter
 
 R = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "benchmarks", "results")
 rows = []
-for f in sorted(glob.glob(R + "/frontier_n*/scaling_frontier.csv")):
+for f in sorted(glob.glob(R + "/frontier_n*/scaling_frontier.csv") +
+                glob.glob(R + "/frontier_full/n*/weak/scaling_frontier.csv")):
     for r in csv.DictReader(open(f)):
         if r["study"] == "weak" and r["status"] == "ok":
             rows.append((int(r["nodes"]), float(r["ms_per_step"]), float(r["halo_ms"]),

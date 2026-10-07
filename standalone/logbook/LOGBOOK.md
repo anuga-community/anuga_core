@@ -156,26 +156,31 @@ Efficiency = (t_ref · N_ref) / (t_N · N).
   `benchmarks/results/frontier_strong/n*/*/scaling_frontier.csv`). Current renders:
   `logbook/weak_frontier.png`, `logbook/strong_frontier.png`.
 
-### In flight — full-machine series (submitted 2026-10-06 19:09 EDT)
+### 2026-10-06 — full-machine strong scaling (jobs 5629157–5629159)
 
 Strong scaling on 1.263T triangles (nx = 154140672, ny = 2048), reference 2048 nodes.
-nx divides evenly across 16384, 32768, 65536 and 75264 ranks. Plus a weak point
-(40M/GCD, 3.01T triangles) in the 9408-node job.
+All three jobs COMPLETED with exit 0 and status `ok`: 0 NaNs, volume drift <= 2.1e-16.
+The 2048- and 4096-node jobs started at 19:46, ahead of the 2026-10-07 estimate.
 
-| script | nodes | tris/GCD | GiB/GCD | expected ms/step | est. node-h |
-|--------|-------|----------|---------|------------------|-------------|
-| `full_n2048.sl` (5629157) | 2048 | 77.1M | 36.8 | ~216 | ~85 |
-| `full_n4096.sl` (5629158) | 4096 | 38.5M | 18.4 | ~110 | ~140 |
-| `full_n8192.sl` (5629159) | 8192 | 19.3M | 9.2  | ~56  | ~270–410 |
-| `full_n9408.sl` (5629160) | 9408 | 16.8M | 8.0  | ~49  | ~470–780 (+weak ~500) |
-| `full_n9216.sl` (not submitted) | 9216 | 17.1M | 8.2  | fallback if 9408 cannot be scheduled | |
+| nodes | ranks | tris/GCD | GiB/GCD | ms/step | halo ms | dt ms | speedup | eff. | elapsed | node-h |
+|-------|-------|----------|---------|---------|---------|-------|---------|------|---------|--------|
+| 2048 | 16384 | 77.1M | 35.0 | 218.13 | 2.04 | 25.3 | 1.00x | — | 2:16 | 77 |
+| 4096 | 32768 | 38.5M | 17.5 | 109.88 | 1.38 | 14.8 | 1.99x | 99.3% | 1:30 | 102 |
+| 8192 | 65536 | 19.3M | 8.8  | 55.47  | 0.70 | 8.1  | 3.93x | 98.3% | 1:55 | 262 |
 
-Scripts in `benchmarks/results/frontier_full/jobs/`; submit from `standalone/`.
-`sbatch --test-only` accepted all five. At the time it estimated that the ≥8192-node jobs could
-start at a 21:01 window (2026-10-06), and 2048/4096 the next afternoon.
-All four were submitted together, to catch the 21:01 window for large jobs. Results land in
-`benchmarks/results/frontier_full/n*/{strong,weak}/scaling_frontier.csv`. Collect with:
-`sacct -j 5629157,5629158,5629159,5629160 -X -o JobID,JobName%12,State,Elapsed,NNodes`.
+- Peak aggregate throughput: 22.8T triangle-steps/s on 8192 nodes (65536 GCDs).
+- Per-GCD rate lines up with the smaller meshes: 77M tris/GCD runs at 218 ms, against
+  224.8 ms for 80M/GCD on the 81.9G mesh.
+- The batch cost about 440 node-h, well under the ~495–635 estimated.
+- Still queued: `full_n9408.sl` (5629160; strong + weak 3.01T at 40M/GCD). On
+  2026-10-06 20:16 Slurm estimated a 20:54 start. `full_n9216.sl` was never
+  submitted and is now only a fallback.
+- Scripts are in `benchmarks/results/frontier_full/jobs/`. Results are in
+  `benchmarks/results/frontier_full/n*/{strong,weak}/scaling_frontier.csv`.
+- Plots: `plot_strong_frontier.py` and `plot_weak_frontier.py` now also read
+  `frontier_full/`. The new `plot_throughput_frontier.py out.png` draws every weak and strong
+  run as aggregate triangle-steps/s against the 1-node-weak × N ideal.
+  Renders: `logbook/strong_frontier.png` and `logbook/throughput_frontier.png`.
 
 ### Caveats for the paper
 
