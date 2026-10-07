@@ -292,10 +292,14 @@ Jobs 8905901 (1–8 nodes, 2 min, ~0.3 node-h), 8905911 (16 nodes, 41 s) and
 | 256   | 3072  | 122.9G    | 70.61   | 75.24   | 0.38    | 17.1  | 0.925    |
 | 512   | 6144  | 245.8G    | 70.11   | 72.23   | 0.27    | 16.9  | 0.932      |
 | 1024  | 12288 | 491.5G    | 70.61   | 74.95   | 0.31    | 17.6  | 0.925      |
-| 2048  | 24576 | 983.1G    | 70.52   | 75.06   | 0.40    | 17.6  | **0.926**  |
+| 2048  | 24576 | 983.1G    | 70.52   | 75.06   | 0.40    | 17.6  | 0.926      |
+| 4096  | 49152 | 1.97T     | 74.81   | 81.31   | 0.25    | 21.9  | **0.873**  |
 
 - 512–2048 nodes: job 8905967 (2m15s, `large`), added 2026-10-07. The step
   levels off at ~70.5 ms from 128 nodes on. 2048 nodes reach ~13.9 T cell-steps/s.
+- 4096 nodes: job 8907424. The extra drop to 0.873 is all `dt` wait (17.6 →
+  21.9 ms) while the halo is unchanged, so it is the slowest-of-N tail again. Single sample.
+  26.3 T cell-steps/s.
 - All points `ok`, no NaNs, drift ≤ 1.1e-13 (2.6e-16 at 256 nodes). Each
   point takes 38–48 s.
 - 256 nodes (3072 tiles, 123G triangles) reach ~1.74 T cell-steps/s, 2.4× the
@@ -377,6 +381,8 @@ and not reserved, so the largest point is 9600 nodes.
 - Results go to `benchmarks/results/aurora_full/n<N>/{huge,weak}`. Scripts are in
   `aurora_full/jobs/`.
 - Cost: ~2.8k node-h expected, ~10k worst case at walltime.
+- 2048-node reference (8907628, 1m29s, `ok`): 143.83 ms/step, halo 0.26,
+  dt 38.9 ms (27% of the step, the slowest-of-N wait at 78.6M/tile), 13.4 T cell-steps/s.
 
 ### 2026-10-07 — strong scaling to 1024 nodes
 
@@ -391,10 +397,13 @@ Large, 122.9G triangles (nx = 15000576). Efficiency is relative to 128 nodes.
 | 128   | 1536  | 80M       | 135.69  | 0.27    | 20.6  | 1.000      |
 | 256   | 3072  | 40M       | 69.53   | 0.26    | 12.8  | 0.976      |
 | 512   | 6144  | 20M       | 34.61   | 0.26    | 8.4   | 0.980      |
-| 1024  | 12288 | 10M       | 16.89   | 0.27    | 3.4   | **1.004**  |
+| 1024  | 12288 | 10M       | 16.89   | 0.27    | 3.4   | 1.004      |
+| 2048  | 24576 | 5M        | 8.30    | 0.23    | 1.4   | **1.021**  |
+| 4096  | 49152 | 2.5M      | 4.49    | 0.18    | 1.0   | 0.944      |
 
 - The 256-node point reproduces the weak result (69.53 vs 70.61 ms).
-- 1024 nodes reach ~7.28 T cell-steps/s.
+- 1024 nodes reach ~7.28 T cell-steps/s; 2048 reach 14.8 T and 4096 reach 27.3 T
+  (jobs 8907423, 8907424).
 
 Small, 3.84G triangles (nx = 468768). Efficiency is relative to 8 nodes.
 
@@ -408,6 +417,8 @@ Small, 3.84G triangles (nx = 468768). Efficiency is relative to 8 nodes.
 | 256   | 3072  | 1.25M     | 2.07    | 0.18    | 0.27  | 1.036      |
 | 512   | 6144  | 625k      | 1.13    | 0.18    | 0.21  | 0.944      |
 | 1024  | 12288 | 312k      | 0.75    | 0.18    | 0.18  | 0.717      |
+| 2048  | 24576 | 156k      | 0.62    | 0.17    | 0.18  | 0.434      |
+| 4096  | 49152 | 78k       | 0.56    | 0.17    | 0.22  | 0.238      |
 
 - Scaling is superlinear from 20M down to 1.25M triangles per tile. The cause
   has not been diagnosed: no cache counters were collected. Part of it is
