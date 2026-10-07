@@ -212,7 +212,7 @@ Queues: `debug` (1–2 nodes, 1 h), `debug-scaling` (2–256 nodes, 1 h), `prod`
 
 ```bash
 # default Aurora PE: oneapi/release/2026.1.0 (icx 2026.1.0), mpich/prd/5.0.0, no extra modules
-cd standalone && make intelgpumpi MPICC=mpicc INTEL_AOT=pvc      # -> bin/bench_intelgpumpi
+cd standalone && make intelgpumpi MPICC=mpicc INTEL_AOT=pvc EXTRA_CFLAGS=-DANUGA_OMP_TEAMS_DPF   # -> bin/bench_intelgpumpi
 ```
 
 - `INTEL_AOT=pvc` (new Makefile switch) builds the device code ahead of time
@@ -249,7 +249,12 @@ cd standalone && make intelgpumpi MPICC=mpicc INTEL_AOT=pvc      # -> bin/bench_
 | AOT, `teams distribute parallel for`   | 1.2821  | 785.9         | 1.49 s       | 0            |
 | JIT, `teams distribute parallel for`   | 1.2813  | 786.4         | 3.54 s       | 0            |
 
-- The Intel configs stay without `ANUGA_OMP_TEAMS_DPF`, the same as nvc.
+- The `intelgpumpi` config does not set `ANUGA_OMP_TEAMS_DPF` (nvc doesn't
+  either), but **every Aurora scaling run used the DPF build**. Checked
+  2026-10-07: `bin/bench_intelgpumpi` is byte-identical to
+  `bench_intelgpumpi_dpf`, and its embedded compile line contains
+  `-D ANUGA_OMP_TEAMS_DPF`. On icx the loop form is performance-neutral (table
+  above), so no numbers change, but the paper should list Intel as DPF.
 - The phase split is the same in all three: fluxes 46%, extrapolate 36%.
 - One PVC tile is ~1.9× one MI250X GCD at this size (1.28 vs 2.44 ms/step).
 
