@@ -217,25 +217,31 @@ divided by kernel-trace durations. Job script and CSVs are in
 - Optimization headroom is in the extrapolate kernel: it moves 1061 B/tri
   (58% of the traffic) at 40% of peak.
 
-### In flight — HBM counters at scale (submitted 2026-10-06 ~22:00 EDT)
+### 2026-10-06 — HBM counters at 1024 nodes (job 5629613)
 
-The same counters as the 1-GCD measurement above, now collected under MPI. On each
-node, local rank 0 runs under rocprofv3 (`prof_wrap.sh`) and the other 7 ranks run
-plain. Every rank has the same work, so the profiled ranks are representative.
-Each run is 20 timed steps + 2 warmup, so the profiled ranks' step times are
-inflated. Use these runs for bytes only; the step times come from the unprofiled runs.
+Same counters as the 1-GCD measurement above, collected under MPI. On each node, local
+rank 0 ran under rocprofv3 (`prof_wrap.sh`) and the other 7 ranks ran plain, so 1024
+ranks were profiled per study. Each profiled run was 20 steps + 2 warmup. The rates
+"at speed" divide by the unprofiled ms/step. Analysis: `benchmarks/analyze_hbm.py`.
 
-| job | nodes | weak (40M/GCD) | strong | state |
-|-----|-------|----------------|--------|-------|
-| 5629613 `hbm_n1024.sl` | 1024 | nx 40001536 (328G) | 81.9G mesh, 10M/GCD | queued, est. start 22:50 |
-| 5629550 `hbm_n4096.sl` | 4096 | nx 160006144 (1.31T) | 1.263T mesh, 38.5M/GCD | **held** (`scontrol release 5629550`) |
+| study | tris/GCD | B/tri/step (rank spread) | GB/s in kernels | at unprofiled ms/step | aggregate, 8192 GCDs |
+|-------|----------|--------------------------|-----------------|-----------------------|----------------------|
+| weak, 328G | 40.0M | **1818** (1814–1822) | 708 (44%) | 634 GB/s @ 114.71 ms | **5.19 PB/s (40%)** |
+| strong, 81.9G | 10.0M | **1777** (1772–1782) | 718 (45%) | 618 GB/s @ 28.76 ms | **5.06 PB/s (39%)** |
 
-The 1.26T mesh cannot run on 1024 nodes: ~154M tris/GCD is about 70 GiB, more
-than 64. Scripts and output are in `benchmarks/results/frontier_hbm/n{1024,4096}/`:
-`weak.out`/`strong.out`, plus one rocprofv3 directory per profiled rank under
-`weak/` and `strong/`. Analysis: sum the four TCC_EA counters per kernel over the
-profiled ranks, as in the table above. Check whether weak reproduces 1817 B/tri
-and whether strong at 10M/GCD moves fewer bytes per triangle (more L2 reuse).
+- The weak run reproduces the 1-GCD 1817 B/tri to 0.1%, with a ±0.2% spread across
+  1024 ranks. The per-kernel split is unchanged: extrapolate 548+513, flux 455+62,
+  forcing+update 88+48, prepare 32+72 B/tri.
+- At 10M tris/GCD the traffic is only 2% lower. The reduction is all in the gathered
+  reads (extrapolate 532, flux 431 B/tri), so the 8 MB L2 gives almost no extra reuse
+  at this size. The bandwidth fraction is effectively independent of problem size
+  above ~10M tris/GCD.
+- The job hit its 20-min limit while rocprofv3 was writing the strong output: 1022 of
+  1024 ranks completed and 2 were skipped. The physics took ~2 min per study; the rest
+  was profiler finalization on Lustre.
+- Held: 5629550 `hbm_n4096.sl` (4096 nodes, weak 1.31T + strong 1.26T,
+  `scontrol release 5629550`). Raise its time limit to ≥45 min before releasing,
+  because writing the profiler output scales with the number of profiled ranks.
 
 ### Caveats for the paper
 
