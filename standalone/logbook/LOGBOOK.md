@@ -461,6 +461,16 @@ and not reserved, so the largest point is 9600 nodes.
   dt 38.9 ms (27% of the step, the slowest-of-N wait at 78.6M/tile), 13.4 T cell-steps/s.
 - 4096 nodes (8907629, 1m01s, `ok`): 72.46 ms/step, 39.3M/tile, halo 0.24, dt 20.6,
   **strong efficiency 0.993** vs 2048, 26.7 T cell-steps/s.
+- 8192 nodes (8907630, 1m20s, `ok`): 36.10 ms/step, 19.7M/tile, halo 0.31, dt 9.5,
+  **strong efficiency 0.996** vs 2048 (1.004 vs 4096), 53.5 T cell-steps/s.
+- 9600 nodes, strong (8907631, `ok`): 30.64 ms/step, 16.8M/tile, halo 0.29,
+  dt 8.4, **strong efficiency 1.002** vs 2048, 63.1 T cell-steps/s. This is the
+  largest point. Strong scaling stays flat from 2048 to 9600 nodes on this mesh.
+- 9600 nodes, weak (same job, 3m13s in total): 4.61T triangles, 86.97 ms/step,
+  kernels 87.18, halo 0.38, dt 34.2, **weak efficiency 0.751** vs 65.32 ms,
+  53.0 T cell-steps/s. The drop from 0.873 at 4096 nodes comes mostly from `dt`
+  wait (21.9 → 34.2 ms), the same slowest-of-N effect seen at 4096.
+- Drift 0 and no NaNs in all three runs.
 
 ### 2026-10-07 — strong scaling to 1024 nodes
 
