@@ -708,7 +708,9 @@ double gpu_rate_operator_apply_array(struct gpu_domain *GD, int op_id,
                                      double factor, double timestep);
 
 // Max-quantities operator — GPU-resident running maxima
-int  gpu_max_quantities_init(struct gpu_domain *GD, int n, double velocity_zero_height);
+int  gpu_max_quantities_init(struct gpu_domain *GD, int n, double velocity_zero_height,
+                             const double *seed_stage, const double *seed_depth,
+                             const double *seed_speed, const double *seed_uh);
 void gpu_max_quantities_update(struct gpu_domain *GD);
 void gpu_max_quantities_get(struct gpu_domain *GD,
                             double *out_stage, double *out_depth,

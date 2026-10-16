@@ -6535,6 +6535,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
                         save_checkpoint = True
 
                 if save_checkpoint:
+                    self._sync_max_quantities_to_host()
                     pickle_name = os.path.join(self.checkpoint_dir,self.get_name())+'_'+str(self.get_time())+'.pickle'
                     pickle.dump(self, open(pickle_name, 'wb'))
 
@@ -6599,8 +6600,22 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
         """
 
         nvtxRangePush('store_timestep')
+        self._sync_max_quantities_to_host()
         self.writer.store_timestep()
         nvtxRangePop()
+
+    def _sync_max_quantities_to_host(self) -> None:
+        """Bring every Collect_max_quantities_operator's host maxima up to date.
+
+        In GPU mode the running maxima live on the device and are only copied
+        to the host here, so each stored SWW frame (and a checkpoint) carries
+        the current per-step peaks without a per-timestep transfer.
+        """
+        from anuga.operators.collect_max_quantities_operator import \
+            Collect_max_quantities_operator
+        for op in self.fractional_step_operators:
+            if isinstance(op, Collect_max_quantities_operator):
+                op.sync_to_host()
 
 
     def sww_merge(self, *args, **kwargs) -> None:

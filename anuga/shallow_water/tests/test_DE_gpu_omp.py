@@ -2022,10 +2022,11 @@ class Test_GPU_DeviceMemory(unittest.TestCase):
 class Test_GPU_CollectMaxQuantities(unittest.TestCase):
     """Consistency tests for Collect_max_quantities_operator in mode 1 vs mode 2.
 
-    Three tiers of tests:
-    1. GPU self-consistency: D2H-updated arrays vs explicit get — must be bit-identical.
-    2. Mode 2 domain-quantity integration: store_to_sww path updates the right quantities.
-    3. Mode 1 vs mode 2 approximate agreement: same solver family, results within ~1e-3.
+    1. No per-update host copy: the maxima reach the host only via
+       sync_to_host(), which the domain calls once per stored SWW frame.
+    2. sync_to_host() / stored frames are bit-identical to an explicit get.
+    3. Resume: device arrays are seeded from the host maxima.
+    4. Mode 1 vs mode 2 agreement (also with a non-default velocity_zero_height).
     """
 
     def _create_domain(self, name):
@@ -2043,20 +2044,35 @@ class Test_GPU_CollectMaxQuantities(unittest.TestCase):
         d.set_boundary({'left': Bd, 'right': Br, 'top': Br, 'bottom': Br})
         return d
 
-    def test_mode2_self_consistent_store_to_sww(self):
-        """GPU kernel self-consistency: D2H-updated arrays == explicit get at end.
+    def _count_d2h(self):
+        """Patch get_max_quantities_gpu to count device->host max transfers."""
+        import anuga.shallow_water.sw_domain_gpu_ext as ext
+        real = ext.get_max_quantities_gpu
+        calls = []
 
-        When store_to_sww=True the operator syncs max arrays device→host every
-        update_frequency steps.  At the end, calling get_max_quantities_gpu()
-        explicitly must return the same bit-identical values — no re-computation
-        happens, both paths read the same device memory.
+        def counting(*args):
+            calls.append(1)
+            return real(*args)
+
+        ext.get_max_quantities_gpu = counting
+        self.addCleanup(setattr, ext, 'get_max_quantities_gpu', real)
+        return calls
+
+    def test_mode2_no_per_update_host_copy(self):
+        """The kernel never copies maxima to the host on its own.
+
+        With no SWW storage the host arrays stay at their initial values for
+        the whole run; an explicit sync_to_host() then returns exactly the
+        device maxima (bit-identical to a direct get).
         """
         from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
+        from anuga.config import max_float
         from anuga.shallow_water.sw_domain_gpu_ext import (
             sync_to_device, sync_from_device, get_max_quantities_gpu)
 
         d = self._create_domain('test_maxqty_selfcons')
         op = Collect_max_quantities_operator(d, store_to_sww=True)
+        calls = self._count_d2h()
 
         d.set_multiprocessor_mode(2)
         gpu_dom = d.gpu_interface.gpu_dom
@@ -2065,61 +2081,80 @@ class Test_GPU_CollectMaxQuantities(unittest.TestCase):
             pass
         sync_from_device(gpu_dom)
 
-        # op.max_stage was kept up-to-date via D2H sync during evolve.
-        # Explicit get must return identical values (same device array, no kernel re-run).
+        self.assertEqual(len(calls), 0, "max arrays copied to host without a store")
+        self.assertTrue(np.all(op.max_stage == -max_float),
+                        "host max_stage changed without sync_to_host()")
+
+        op.sync_to_host()
+        self.assertEqual(len(calls), 1)
         check_stage = np.empty_like(op.max_stage)
         check_depth = np.empty_like(op.max_depth)
         check_speed = np.empty_like(op.max_speed)
         check_uh    = np.empty_like(op.max_uh)
         get_max_quantities_gpu(gpu_dom, check_stage, check_depth, check_speed, check_uh)
 
-        np.testing.assert_array_equal(op.max_stage, check_stage,
-                                      err_msg="D2H-updated max_stage != explicit get")
-        np.testing.assert_array_equal(op.max_depth, check_depth,
-                                      err_msg="D2H-updated max_depth != explicit get")
-        np.testing.assert_array_equal(op.max_speed, check_speed,
-                                      err_msg="D2H-updated max_speed != explicit get")
-        np.testing.assert_array_equal(op.max_uh, check_uh,
-                                      err_msg="D2H-updated max_uh != explicit get")
+        np.testing.assert_array_equal(op.max_stage, check_stage)
+        np.testing.assert_array_equal(op.max_depth, check_depth)
+        np.testing.assert_array_equal(op.max_speed, check_speed)
+        np.testing.assert_array_equal(op.max_uh, check_uh)
+        self.assertTrue(np.any(op.max_depth > 0.0), "kernel never updated max_depth")
 
-    def test_mode2_self_consistent_update_frequency(self):
-        """Self-consistency is maintained with update_frequency > 1.
-
-        Fewer D2H syncs during evolve (every 3 steps) but the final explicit
-        get must still return identical values as the last D2H-updated snapshot.
-        """
+    def test_mode2_host_copy_only_at_store(self):
+        """With SWW storage on, there is exactly one D2H copy per stored frame
+        (t = 0, 0.5, 1.0), not one per update, and the final frame's maxima
+        equal the device maxima."""
         from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
         from anuga.shallow_water.sw_domain_gpu_ext import (
             sync_to_device, sync_from_device, get_max_quantities_gpu)
+        from anuga.file.netcdf import NetCDFFile
 
-        d = self._create_domain('test_maxqty_freq')
-        op = Collect_max_quantities_operator(d, update_frequency=3, store_to_sww=True)
+        d = self._create_domain('test_maxqty_store')
+        d.store = True
+        op = Collect_max_quantities_operator(d, update_frequency=1, store_to_sww=True)
 
         d.set_multiprocessor_mode(2)
         gpu_dom = d.gpu_interface.gpu_dom
         sync_to_device(gpu_dom)
+        calls = self._count_d2h()
         for t in d.evolve(yieldstep=0.5, finaltime=1.0):
             pass
         sync_from_device(gpu_dom)
+
+        # Frames at t = 0, 0.5, 1.0; the t = 0 store precedes the first update,
+        # so there is nothing to copy yet.  One copy per later frame.
+        self.assertEqual(len(calls), 2, "expected one D2H copy per stored frame")
 
         check_stage = np.empty_like(op.max_stage)
         check_depth = np.empty_like(op.max_depth)
         check_speed = np.empty_like(op.max_speed)
         check_uh    = np.empty_like(op.max_uh)
         get_max_quantities_gpu(gpu_dom, check_stage, check_depth, check_speed, check_uh)
+        np.testing.assert_array_equal(op.max_stage, check_stage)
+        np.testing.assert_array_equal(op.max_depth, check_depth)
+        np.testing.assert_array_equal(d.quantities['max_stage'].centroid_values, check_stage)
+        np.testing.assert_array_equal(d.quantities['max_speed'].centroid_values, check_speed)
 
-        np.testing.assert_array_equal(op.max_stage, check_stage,
-                                      err_msg="update_frequency=3: max_stage != explicit get")
-        np.testing.assert_array_equal(op.max_depth, check_depth,
-                                      err_msg="update_frequency=3: max_depth != explicit get")
+        fid = NetCDFFile(os.path.join(d.get_datadir(), d.get_name() + '.sww'))
+        try:
+            sww_md = np.array(fid.variables['max_depth_c'][:])
+        finally:
+            fid.close()
+        np.testing.assert_allclose(sww_md, check_depth, rtol=1e-6, atol=1e-6)
+        self.assertTrue(np.any(check_depth > 0.0), "kernel never updated max_depth")
 
-    def test_mode2_store_to_sww_updates_domain_quantities(self):
-        """Mode 2 with store_to_sww=True updates domain quantities each update step."""
+    def test_mode2_resume_seeds_from_host(self):
+        """Device arrays are seeded from the host maxima on first use, so a
+        checkpoint resume keeps prior peaks instead of restarting at -inf/0."""
         from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
         from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
 
-        d = self._create_domain('test_maxqty_sww')
-        op = Collect_max_quantities_operator(d, update_frequency=2, store_to_sww=True)
+        d = self._create_domain('test_maxqty_seed')
+        op = Collect_max_quantities_operator(d, store_to_sww=True)
+        # "Restored" peaks well above anything this run reaches.
+        op.max_stage[:] = 100.0
+        op.max_depth[:] = 50.0
+        op.max_speed[:] = 20.0
+        op.max_uh[:]    = 30.0
 
         d.set_multiprocessor_mode(2)
         gpu_dom = d.gpu_interface.gpu_dom
@@ -2127,19 +2162,44 @@ class Test_GPU_CollectMaxQuantities(unittest.TestCase):
         for t in d.evolve(yieldstep=0.5, finaltime=1.0):
             pass
         sync_from_device(gpu_dom)
+        op.sync_to_host()
 
-        # Domain quantities should have been updated (non-trivial values)
-        max_stage_qty = d.quantities['max_stage'].centroid_values
-        max_depth_qty = d.quantities['max_depth'].centroid_values
+        np.testing.assert_array_equal(op.max_stage, 100.0)
+        np.testing.assert_array_equal(op.max_depth, 50.0)
+        np.testing.assert_array_equal(op.max_speed, 20.0)
+        np.testing.assert_array_equal(op.max_uh, 30.0)
 
-        self.assertTrue(np.any(max_stage_qty > -1e30),
-                        "max_stage domain quantity was never updated from initial -inf")
-        self.assertTrue(np.any(max_depth_qty > 0.0),
-                        "max_depth domain quantity was never updated from zero")
+    def test_mode1_mode2_match_with_velocity_zero_height(self):
+        """A caller-supplied velocity_zero_height (run_anuga passes 0.005 m)
+        reaches the GPU kernel: mode 1 and mode 2 agree on max_speed."""
+        from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_to_device, sync_from_device
 
-        # operator arrays must also be consistent with domain quantities
-        np.testing.assert_allclose(op.max_stage, max_stage_qty, rtol=1e-12, atol=1e-15)
-        np.testing.assert_allclose(op.max_depth, max_depth_qty, rtol=1e-12, atol=1e-15)
+        cpu_domain = self._create_domain('test_maxqty_vzh_cpu')
+        gpu_domain = self._create_domain('test_maxqty_vzh_gpu')
+        cpu_op = cpu_domain.set_collect_max_quantities(
+            velocity_zero_height=0.005, store_to_sww=False)
+        gpu_op = gpu_domain.set_collect_max_quantities(
+            velocity_zero_height=0.005, store_to_sww=False)
+        self.assertEqual(gpu_op.velocity_zero_height, 0.005)
+
+        cpu_domain.set_multiprocessor_mode(1)
+        for t in cpu_domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+
+        gpu_domain.set_multiprocessor_mode(2)
+        gpu_dom = gpu_domain.gpu_interface.gpu_dom
+        sync_to_device(gpu_dom)
+        for t in gpu_domain.evolve(yieldstep=0.5, finaltime=1.0):
+            pass
+        sync_from_device(gpu_dom)
+        gpu_op.sync_to_host()
+
+        np.testing.assert_allclose(cpu_op.max_speed, gpu_op.max_speed,
+                                   atol=1e-10, rtol=1e-10,
+                                   err_msg="max_speed mode1/mode2 mismatch at vzh=0.005")
+        np.testing.assert_allclose(cpu_op.max_depth, gpu_op.max_depth,
+                                   atol=1e-10, rtol=1e-10)
 
     def test_mode1_mode2_approximate_match(self):
         """Mode 1 (CPU NumPy) and mode 2 (GPU kernel) produce results within ~1e-10.
@@ -2170,9 +2230,7 @@ class Test_GPU_CollectMaxQuantities(unittest.TestCase):
             pass
         sync_from_device(gpu_dom)
 
-        get_max_quantities_gpu(gpu_dom,
-                               gpu_op.max_stage, gpu_op.max_depth,
-                               gpu_op.max_speed, gpu_op.max_uh)
+        gpu_op.sync_to_host()
 
         # Both should produce non-trivial, physically sensible values
         self.assertTrue(np.all(gpu_op.max_depth >= 0.0), "GPU max_depth has negative values")
