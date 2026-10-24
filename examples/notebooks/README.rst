@@ -16,6 +16,10 @@ Interactive Jupyter notebooks demonstrating ANUGA usage from beginner to advance
    * - ``notebook_create_domain_from_regions.ipynb``
      - Unstructured mesh from polygon regions with tagged boundary segments.
      - Intermediate
+   * - ``notebook_create_domain_from_dem.ipynb``
+     - Mesh sized from the DEM's flow paths (``create_domain_from_dem``),
+       compared with a uniform mesh on the Merewether flood.
+     - Intermediate
    * - ``notebook_create_domain_with_riverwalls.ipynb``
      - Levee/riverwall structures via ``breaklines`` and ``create_riverwalls``.
      - Intermediate

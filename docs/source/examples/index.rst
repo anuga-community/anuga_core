@@ -16,6 +16,7 @@ downloaded and run locally; the script example is also available in the
    script_simple_example
    notebook_simple_example
    notebook_create_domain_from_regions
+   notebook_create_domain_from_dem
    notebook_create_domain_with_riverwalls
    notebook_flooding_example
    notebook_tsunami_benchmark
@@ -45,6 +46,13 @@ downloaded and run locally; the script example is also available in the
        tagged boundary segments using ``create_domain_from_regions``.
        Demonstrates mesh refinement with ``maximum_triangle_area`` and
        multi-tag boundary assignment.
+     - Intermediate
+   * - :doc:`Domain from a DEM <notebook_create_domain_from_dem>`
+     - Sizes the mesh from the DEM's flow paths with
+       ``create_domain_from_dem``, after tidying the building outlines, and
+       compares it with a uniform mesh on the Merewether flood: a quarter of
+       the triangles, twice the timestep, the same flood levels at the
+       observation points.
      - Intermediate
    * - :doc:`Domain with riverwalls <notebook_create_domain_with_riverwalls>`
      - Adds infinitely-thin levee/riverwall structures to a mesh using

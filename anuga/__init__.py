@@ -308,6 +308,8 @@ from anuga.simulation.simulation import Simulation
 from anuga.pmesh.mesh_interface import create_pmesh_from_regions
 from anuga.pmesh.mesh_interface import create_mesh_from_regions  # deprecated alias
 from anuga.pmesh.size_field import Size_field, size_field_from_regions
+from anuga.pmesh.dem_mesh import create_pmesh_from_dem, size_field_from_dem
+from anuga.pmesh.dem_mesh import drainage_area_from_dem, remove_mesh_pits
 
 # -----------------------------
 # SWW file access
@@ -410,6 +412,7 @@ from anuga.utilities.mem_time_equation import estimate_time_mem
 # create domain functions
 # -------------------------
 from anuga.extras import create_domain_from_regions
+from anuga.extras import create_domain_from_dem
 from anuga.extras import create_domain_from_file
 from anuga.extras import rectangular_cross_domain
 from anuga.extras import create_basic_mesh_from_regions
@@ -592,11 +595,16 @@ __all__ = [
     'read_polygon_dir',
     # Domain creation
     'create_basic_mesh_from_regions',
+    'create_domain_from_dem',
     'create_domain_from_file',
     'create_domain_from_regions',
     'create_mesh_from_regions',   # deprecated alias for create_pmesh_from_regions
+    'create_pmesh_from_dem',
     'create_pmesh_from_regions',
+    'drainage_area_from_dem',
+    'remove_mesh_pits',
     'Size_field',
+    'size_field_from_dem',
     'size_field_from_regions',
     # System / utility
     'acos',

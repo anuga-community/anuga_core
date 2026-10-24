@@ -68,7 +68,12 @@ Domain creation functions and the domain methods used throughout this guide:
 
    rectangular_cross_domain
    create_domain_from_regions
+   create_domain_from_dem
+   create_pmesh_from_dem
    size_field_from_regions
+   size_field_from_dem
+   drainage_area_from_dem
+   remove_mesh_pits
    Size_field
 
 
