@@ -176,6 +176,9 @@ def create_basic_mesh_from_regions(bounding_polygon,
         If positive, follow the triangulation with up to this many passes of
         worst-cell relaxation, which moves the vertices of the smallest
         cells to enlarge them and so lengthen the timestep (default: 0).
+        The vertices you give stay where they are; a point the generator
+        added part-way along a straight segment (a hole's side, a
+        breakline) may slide along it, so the segment keeps its shape.
         See :meth:`anuga.pmesh.mesh.Pmesh.relax_worst_cells`.
 
     Returns
@@ -374,6 +377,9 @@ def create_domain_from_regions(bounding_polygon,
         If positive, follow the triangulation with up to this many passes of
         worst-cell relaxation, which moves the vertices of the smallest
         cells to enlarge them and so lengthen the timestep (default: 0).
+        The vertices you give stay where they are; a point the generator
+        added part-way along a straight segment (a hole's side, a
+        breakline) may slide along it, so the segment keeps its shape.
         See :meth:`anuga.pmesh.mesh.Pmesh.relax_worst_cells`.
 
     Returns

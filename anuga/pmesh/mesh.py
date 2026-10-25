@@ -1257,15 +1257,18 @@ class Pmesh:
         if relax_passes:
             self.relax_worst_cells(passes=relax_passes, verbose=verbose)
 
-    def relax_worst_cells(self, passes=30, fraction=0.5, verbose=False):
+    def relax_worst_cells(self, passes=30, fraction=0.5, verbose=False,
+                          slide=True):
         """Move the vertices of the smallest cells so the smallest cell grows.
 
         ANUGA steps at the global minimum of radii / wave speed, so the
         smallest cell of the mesh sets the timestep of the whole run. This
         nudges the vertices of the worst ``fraction`` percent of cells, for
         up to ``passes`` passes, to enlarge them. Vertices on a segment (the
-        boundary, breaklines, region outlines) do not move and the triangles
-        are not reconnected. See
+        boundary, holes, breaklines, region outlines) keep the segment's
+        shape: the input vertices do not move, and with ``slide`` a vertex
+        the generator inserted part-way along a straight segment may move
+        along it. The triangles are not reconnected. See
         :func:`anuga.pmesh.mesh_relax.relax_worst_cells`.
 
         The mesh must have been triangulated. Vertex attributes are left as
@@ -1276,16 +1279,22 @@ class Pmesh:
         before, after : float
             Quality, min(radii, inradius), of the worst cell before and after.
         """
-        from anuga.pmesh.mesh_relax import relax_worst_cells
+        from anuga.pmesh.mesh_relax import relax_worst_cells, segment_sliders
 
         if self.tri_mesh is None:
             raise Exception('Generate the mesh before relaxing it')
 
         tri_mesh = self.tri_mesh
         fixed = num.unique(num.asarray(tri_mesh.segments, dtype=num.int64))
+        sliders = None
+        n_input = getattr(self, 'number_of_input_vertices', None)
+        if slide and n_input is not None:
+            sliders = segment_sliders(tri_mesh.vertices, tri_mesh.segments,
+                                      n_input)
         vertices, before, after = relax_worst_cells(
             tri_mesh.vertices, tri_mesh.triangles, fixed,
-            passes=passes, fraction=fraction, verbose=verbose)
+            passes=passes, fraction=fraction, verbose=verbose,
+            slide=sliders)
         tri_mesh.vertices = vertices
         return before, after
 
@@ -1402,6 +1411,9 @@ class Pmesh:
                 self.geo_reference.get_xllcorner(),
                 self.geo_reference.get_yllcorner())
 
+        # Triangle numbers the input points first, so any vertex from here
+        # on was inserted by it (relax_worst_cells lets those slide)
+        self.number_of_input_vertices = len(meshDict['pointlist'])
         generatedMesh = generate_mesh(
             meshDict['pointlist'],
             meshDict['segmentlist'],
