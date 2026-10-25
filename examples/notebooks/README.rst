@@ -25,6 +25,8 @@ Interactive Jupyter notebooks demonstrating ANUGA usage from beginner to advance
      - Intermediate
    * - ``notebook_flooding_example.ipynb``
      - Real-world urban flood model of Merewether, Newcastle (NSW).
+       Superseded by ``notebook_create_domain_from_dem.ipynb`` and no longer
+       in the online documentation; kept for existing workshop material.
      - Advanced
    * - ``notebook_tsunami_benchmark.ipynb``
      - Okushiri Island tsunami runup (IWTS Benchmark 2).
