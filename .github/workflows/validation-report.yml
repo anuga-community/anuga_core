@@ -143,7 +143,7 @@ jobs:
             texlive-latex-base texlive-latex-recommended texlive-latex-extra \
             texlive-fonts-recommended
 
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: validation-figures-*
           merge-multiple: true
@@ -175,7 +175,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: validation-report-*
           merge-multiple: true
@@ -205,11 +205,11 @@ jobs:
           sparse-checkout: |
             CITATION.cff
             .github/scripts
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ env.PY }}
       - run: pip install requests pyyaml
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@v8
         with:
           pattern: validation-report-*
           merge-multiple: true
