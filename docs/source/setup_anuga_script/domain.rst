@@ -130,10 +130,73 @@ needs the ``meshpy`` triangulation backend.
 mesh. Triangulation bounds the largest triangle and the smallest angle, but
 not the smallest triangle, and leaves a few cells much smaller than the rest.
 Relaxation moves the vertices of those cells, for up to the given number of
-passes, to enlarge them. Vertices on the boundary, on breaklines and on
-region outlines do not move, and no triangles are added or removed. On
-meshes of 0.5 to 4 million triangles built from a size field it has roughly
-doubled the smallest ``radii``, and with it the timestep.
+passes, to enlarge them. The vertices you gave (polygon corners, breakline
+and hole vertices) do not move, so every outline keeps its exact shape; a
+point the triangulation inserted part-way along a straight segment may slide
+along it, which helps most beside short building sides. No triangles are
+added or removed. On meshes of 0.5 to 4 million triangles built from a size
+field it has roughly doubled the smallest ``radii``, and with it the
+timestep.
+
+
+Meshes from a DEM
+~~~~~~~~~~~~~~~~~
+
+Where water goes is written in the elevation model, so the DEM itself can
+say where the mesh should be fine. :func:`create_domain_from_dem` routes the
+DEM by D8 (each cell drains to its steepest downhill neighbour, after the
+depressions are filled), which gives every cell the area draining through
+it: the streams of a catchment, or the streets and overland flow paths of a
+town. It then meshes fine along those paths and coarse on the slopes between
+them, with a graded size field (so no segments are added), relaxes the worst
+cells, and sets each triangle's elevation to the mean of the DEM over it:
+
+.. code-block:: python
+
+   domain = anuga.create_domain_from_dem('topography.asc',
+                               maximum_triangle_area = 8.0,
+                               bounding_polygon = bounding_polygon,
+                               boundary_tags = boundary_tags,
+                               streams = [(5000.0, 2.0), (1000.0, 4.0)],
+                               interior_holes = houses)
+
+``streams`` is a list of ``(drainage area, maximum triangle area)``: here
+cells that 5000 m² or more drains through get triangles of up to 2 m², and
+those draining 1000 m² up to 4 m². The target holds for ``band`` (1.5) edge
+lengths either side of the flow path and then grows by ``grade`` (0.5) metres
+per metre, as in :func:`size_field_from_regions`. Water is routed around
+``interior_holes`` and leaves across the bounding polygon.
+
+``floodplain`` refines the valley floors, the ground a stream spreads over
+when it rises: ``(height, drainage area, maximum triangle area)`` refines the
+cells no more than ``height`` above the stream they drain to (HAND, height
+above nearest drainage), where that stream drains at least ``drainage
+area``. ``regions`` adds polygons for what the DEM cannot show, such as a
+town centre or a structure, again without adding their segments.
+
+The DEM can be an ``.asc``, ``.grd``, ``.dem`` or ``.tif`` file, or a raster
+tuple ``(x, y, Z)`` with ``Z[i, j]`` the elevation at ``(x[i], y[j])``. Use
+:func:`size_field_from_dem` to build the field alone (to combine it, or to
+plot it, with its ``drainage_area``), :func:`create_pmesh_from_dem` for the
+mesh without a domain, and :func:`drainage_area_from_dem` to look at the
+routing.
+
+On the Merewether case (:doc:`../examples/notebook_create_domain_from_dem`)
+this meshes the town with a quarter of the triangles of a uniform 1 m² mesh
+and twice the timestep, and the flood levels at the observation points agree
+to 2 cm.
+
+**Pits.** On a coarse mesh a triangle's mean elevation can fill the gully it
+drained by, leaving the triangle upstream lower than all its neighbours: a
+pit that holds water for good. In a large catchment these can store a large
+part of the rain. :func:`remove_mesh_pits` removes them on the mesh, from the
+outlets you name: ``method='fill'`` raises each pit to its spill level, and
+``method='breach'`` instead lowers the cells along its lowest way out, filling
+only where the cut would be deeper than ``max_depth``. A small cell is more
+likely a real depression than an artefact, so pass ``where`` to limit the
+change to the coarse cells. ``create_domain_from_dem`` does this when given
+``pits='fill'`` or ``'breach'`` with ``pit_outlets``; by default it leaves
+the elevation as sampled.
 
 
 .. seealso::
@@ -154,5 +217,6 @@ doubled the smallest ``radii``, and with it the timestep.
 .. seealso::
 
    :ref:`api_domain` — full API of the domain-creation functions
-   (``rectangular_cross_domain``, ``create_domain_from_regions``) and the
+   (``rectangular_cross_domain``, ``create_domain_from_regions``,
+   ``create_domain_from_dem``) and the
    ``Domain`` methods.
