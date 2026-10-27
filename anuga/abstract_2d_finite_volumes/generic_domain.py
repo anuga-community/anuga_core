@@ -60,6 +60,11 @@ class Generic_Domain:
     """Generic computational Domain constructor.
     """
 
+    # True while the host vertex and edge values lag the centroid values: a
+    # domain may skip the extrapolation at a yield and leave it to the first
+    # reader (see Quantity.vertex_values and _prepare_yield)
+    _host_values_stale = False
+
     def __init__(self,
                  source=None,
                  triangles=None,
@@ -2001,7 +2006,7 @@ class Generic_Domain:
         if skip_initial_step is False:
 
             # Assuming centroid values ok, calculate edge and vertes values
-            self.distribute_to_vertices_and_edges()
+            self._prepare_yield()
             self.update_boundary()
 
             yield(self.get_time())      # Yield initial values
@@ -2058,7 +2063,7 @@ class Generic_Domain:
                 # and stop
                 #self.set_time(self.finaltime)
                 self.set_relative_time(self.relative_finaltime)
-                self.distribute_to_vertices_and_edges()
+                self._prepare_yield()
                 self.update_boundary()
                 self.log_operator_timestepping_statistics()
                 yield(self.get_time())
@@ -2073,7 +2078,7 @@ class Generic_Domain:
 
                 # Log and then Pass control on to outer loop for more
                 # specific actions
-                self.distribute_to_vertices_and_edges()
+                self._prepare_yield()
                 self.update_boundary()
                 self.log_operator_timestepping_statistics()
                 yield(self.get_time())
@@ -2713,6 +2718,21 @@ class Generic_Domain:
                 Q.extrapolate_second_order()
             else:
                 raise Exception('Unknown order: %s' % str(self._order_))
+
+    def _prepare_yield(self):
+        """Make the domain's values readable before evolve() yields.
+
+        The default extrapolates the centroid values to the vertices and
+        edges. A domain whose readers mostly need only the centroids may
+        instead mark the vertex and edge values stale, leaving the work to
+        :meth:`_refresh_host_values` on the first read.
+        """
+        self.distribute_to_vertices_and_edges()
+
+    def _refresh_host_values(self):
+        """Bring stale vertex and edge values up to date with the centroids."""
+        self._host_values_stale = False
+        self.distribute_to_vertices_and_edges()
 
     def centroid_norm(self, quantity, normfunc):
         """Calculate the norm of the centroid values of a specific quantity,
