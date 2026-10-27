@@ -25,6 +25,22 @@ void core_extrapolate_edge_pass(struct domain *D, double predictor_dt);
 void core_extrapolate_edge_pass_on(struct domain *D, double predictor_dt,
                                    const anuga_int *iter, anuga_int iter_n);
 
+// True when cell k and its surrogate neighbours k0, k1, k2 (a missing
+// neighbour is k itself) are all below the minimum height: the edge pass zeroes
+// the momentum of such a cell. Shared with _openmp_extrapolate_centroids_only,
+// which must zero exactly the same cells.
+#pragma omp declare target
+static inline int core_dry_among_dry_neighbours(const double *height_cv,
+                                                anuga_int k, anuga_int k0,
+                                                anuga_int k1, anuga_int k2,
+                                                double minimum_allowed_height)
+{
+    return ((height_cv[k0] < minimum_allowed_height) || (k0 == k)) &&
+           ((height_cv[k1] < minimum_allowed_height) || (k1 == k)) &&
+           ((height_cv[k2] < minimum_allowed_height) || (k2 == k));
+}
+#pragma omp end declare target
+
 // Fused RK2-backup (optional) + protect + extrapolate centroid pass in one
 // launch.  Returns the protect mass error.  Follow with
 // core_extrapolate_edge_pass() to complete the reconstruction.

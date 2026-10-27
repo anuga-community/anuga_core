@@ -293,9 +293,8 @@ void core_extrapolate_edge_pass_on(struct domain *D, double predictor_dt,
 
         double area2 = dy2 * dx1 - dy1 * dx2;
 
-        int dry = ((height_cv[k0] < minimum_allowed_height) || (k0 == k)) &&
-                  ((height_cv[k1] < minimum_allowed_height) || (k1 == k)) &&
-                  ((height_cv[sn2] < minimum_allowed_height) || (sn2 == k));
+        int dry = core_dry_among_dry_neighbours(height_cv, k, k0, k1, sn2,
+                                                minimum_allowed_height);
 
         if (dry) {
             x_centroid_work[k] = 0.0;

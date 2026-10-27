@@ -163,16 +163,13 @@ void _openmp_extrapolate_centroids_only(struct domain *__restrict D)
     double *y_centroid_work = D->y_centroid_work;
     anuga_int *surrogate_neighbours = D->surrogate_neighbours;
 
-    // As core_extrapolate_edge_pass_on
     #pragma omp parallel for
     for (anuga_int k = 0; k < n; k++) {
-        anuga_int k0 = surrogate_neighbours[3 * k + 0];
-        anuga_int k1 = surrogate_neighbours[3 * k + 1];
-        anuga_int sn2 = surrogate_neighbours[3 * k + 2];
-        int dry = ((height_cv[k0] < minimum_allowed_height) || (k0 == k)) &&
-                  ((height_cv[k1] < minimum_allowed_height) || (k1 == k)) &&
-                  ((height_cv[sn2] < minimum_allowed_height) || (sn2 == k));
-        if (dry) {
+        if (core_dry_among_dry_neighbours(height_cv, k,
+                                          surrogate_neighbours[3 * k + 0],
+                                          surrogate_neighbours[3 * k + 1],
+                                          surrogate_neighbours[3 * k + 2],
+                                          minimum_allowed_height)) {
             x_centroid_work[k] = 0.0;
             xmom_cv[k] = 0.0;
             y_centroid_work[k] = 0.0;
