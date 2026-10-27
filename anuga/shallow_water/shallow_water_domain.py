@@ -142,9 +142,11 @@ from anuga.utilities.parallel_abstraction import pypar_available, barrier
 
 
 # The centroid arrays the GPU interface round-trips between host and device —
-# see gpu_domain_sync_to_device()/_from_device() in gpu/gpu_domain_core.c.  A host
-# write to any other quantity (elevation, friction, a user tracer) is not
-# device-resident state and so needs no sync.  Keep this in step with the C.
+# see gpu_domain_sync_to_device()/_from_device() in gpu/gpu_domain_core.c.  Keep
+# this in step with the C.  Friction and the bed elevation are device-resident
+# too, but not carried by that round trip, so a host write to either is pushed
+# on its own: see Domain.sync_friction_to_device() and
+# Domain.sync_elevation_to_device().
 GPU_SYNCED_QUANTITIES = frozenset(('stage', 'xmomentum', 'ymomentum', 'height'))
 
 # Absolute lower bound (m^3) on the volume added by clamping negative-depth cells
@@ -4219,6 +4221,10 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
     # region don't re-sync once per call.
     _gpu_host_writes_suppressed = False
 
+    # Set by a host-side bed change on this rank; the ghost cells' copy of the
+    # bed is refreshed at the next yieldstep boundary (_sync_bed_ghosts).
+    _bed_ghosts_stale = False
+
     def _gpu_syncs_host_quantity_write(self, name: str) -> bool:
         """True if a host write to quantity `name` has to be mirrored to the device."""
 
@@ -4245,6 +4251,85 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
 
         if self._gpu_syncs_host_quantity_write(name):
             self.gpu_interface.sync_to_device()
+        elif name == 'friction':
+            self.sync_friction_to_device()
+        elif name == 'elevation':
+            self._bed_ghosts_stale = True
+            if not self._gpu_host_writes_suppressed:
+                self.sync_elevation_to_device()
+
+    def sync_friction_to_device(self) -> None:
+        """Push the host friction centroid values to the device (mode 2).
+
+        In mode 2 the Manning kernel reads the *device* copy of friction, which
+        is mapped once, when the GPU interface is built.  set_quantity('friction',
+        ...) pushes it for you; call this after writing
+        ``quantities['friction'].centroid_values`` directly -- e.g. a depth-
+        varying n updated in the evolve loop -- or the run silently keeps the
+        old values.  No-op off the GPU or before the interface exists.
+
+        Unlike the conserved quantities, friction is never written on the
+        device, so this is a one-array push with no pull first, and it is safe
+        inside apply_fractional_steps(), whose sync bracket does not carry it.
+        """
+
+        if (self.multiprocessor_mode == MULTIPROCESSOR_GPU
+                and getattr(self, 'gpu_interface', None) is not None):
+            self.gpu_interface.sync_friction_to_device()
+
+    def sync_elevation_to_device(self) -> None:
+        """Push the host bed elevation to the device (mode 2).
+
+        The flux kernels read the *device* copy of the bed (centroid and edge
+        values), which is mapped once, when the GPU interface is built, and is
+        not part of the per-step state sync.  set_quantity('elevation', ...)
+        and the CPU-only fractional-step operators (Set_elevation_operator,
+        the erosion operators) push it for you; call this after writing
+        ``quantities['elevation'].centroid_values``/``edge_values`` directly,
+        or the run keeps the old bed -- and, if stage was moved with the bed to
+        keep the depth, gains or loses that water.  The push is a no-op off the
+        GPU or before the interface exists.
+
+        In parallel this also marks the bed changed, in every compute mode, so
+        the ghost cells get their owners' new bed at the next yieldstep
+        boundary (see _sync_bed_ghosts); call it after a direct write in mode 1
+        too.
+        """
+
+        self._bed_ghosts_stale = True
+        if (self.multiprocessor_mode == MULTIPROCESSOR_GPU
+                and getattr(self, 'gpu_interface', None) is not None):
+            self.gpu_interface.sync_bed_to_device()
+
+    def _sync_bed_ghosts(self) -> None:
+        """Give every ghost cell its owner's bed after a host-side bed change.
+
+        Elevation is not in the per-step ghost exchange, so a bed changed after
+        distribute() -- set_quantity('elevation', ...) on owned cells only, or a
+        direct write -- leaves the ghosts on the old bed and the run drifts from
+        serial.  The write only marks this rank's bed stale: it may happen on
+        some ranks and not others (set_quantity with indices only some ranks
+        have), so exchanging there could deadlock.  This is called by evolve()
+        before the first step and at every yieldstep boundary, which all ranks
+        reach together; one small allreduce decides whether any rank changed
+        its bed, and if so they all exchange.  Per-step bed operators are
+        handled in apply_fractional_steps() instead.
+        """
+
+        stale = self._bed_ghosts_stale
+        self._bed_ghosts_stale = False
+        if not self.parallel:
+            return
+
+        from mpi4py import MPI
+        if not MPI.COMM_WORLD.allreduce(bool(stale), op=MPI.LOR):
+            return
+
+        from anuga.parallel.parallel_generic_communications import communicate_bed_ghosts
+        communicate_bed_ghosts(self)
+        if (self.multiprocessor_mode == MULTIPROCESSOR_GPU
+                and getattr(self, 'gpu_interface', None) is not None):
+            self.gpu_interface.sync_bed_to_device()
 
 
     def _sync_riverwall_to_device(self) -> None:
@@ -6372,6 +6457,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
         # Any riverwall change made before evolve() (or between two evolve()
         # calls) reaches the device here, before the first step.
         self._sync_riverwall_to_device()
+        self._sync_bed_ghosts()
 
         #nvtx marker
         nvtxRangePush('_evolve_base')
@@ -6421,7 +6507,9 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
             # The outer loop may have operated a riverwall (set_elevation() and
             # friends). In mode 2 the device copy is stale until pushed; do it
             # here so the change takes effect from the next timestep on.
+            # Likewise a bed change: its ghost cells are refreshed here.
             self._sync_riverwall_to_device()
+            self._sync_bed_ghosts()
 
             self.yieldstep_counter += 1
 
@@ -8062,6 +8150,31 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
         finally:
             self._gpu_host_writes_suppressed = False
 
+        # An operator that moves the bed (modifies_bed = True) changes it on the
+        # cells it covers, owned and ghost alike, but a ghost's change is worked
+        # out from its own neighbourhood, not its owner's, and an operator given
+        # owned cells only leaves the ghosts alone.  Either way the ghosts must
+        # get their owners' bed before the next step's fluxes.  Collective: this
+        # assumes every rank registers the same operators (the SPMD pattern
+        # every parallel script follows).  The flag is cleared because the
+        # exchange has just happened.
+        if self.parallel and any(getattr(op, 'modifies_bed', False)
+                                 for op in self.fractional_step_operators):
+            from anuga.parallel.parallel_generic_communications import (
+                communicate_bed_ghosts, communicate_ghosts_non_blocking)
+            communicate_bed_ghosts(self)
+            self._bed_ghosts_stale = False
+            # Mode 2: these operators are CPU-only, so the host arrays are current
+            # here and the pushes below carry the exchange across.  The stage the
+            # operator moved with the bed needs exchanging too: mode 2 exchanges
+            # the conserved quantities BEFORE the fractional steps, so its ghosts
+            # would otherwise keep the old stage on the new bed into the next
+            # step's fluxes, and the two ranks would disagree about the flux
+            # across the partition boundary (water was created).  Mode 1
+            # exchanges at the start of the next step anyway.
+            if gpu_mode and needs_cpu_sync:
+                communicate_ghosts_non_blocking(self)
+
         # Push the host-side work of any CPU-only operator back to the device. Mode-2
         # correctness depends on this: without it a CPU-only operator (wind stress,
         # say) writes only the host arrays and the device never sees it.
@@ -8073,8 +8186,15 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
         # Skipping is correct rather than merely safe: a rebuilt interface is
         # populated from the host arrays, so the host-side writes are picked up
         # anyway.
+        #
+        # The bed goes back too: the state sync does not carry it, and an operator
+        # that moves it (Set_elevation_operator, the erosion operators) moves stage
+        # with it, so pushing stage alone would put the new stage on the old bed
+        # and create or destroy water.  With sediment the device owns the bed, but
+        # sync_from_device() above pulled it, so this round-trips it unchanged.
         if gpu_mode and needs_cpu_sync and self.gpu_interface is not None:
             self.gpu_interface.sync_to_device()
+            self.gpu_interface.sync_bed_to_device()
 
     def _warn_if_culverts_interleaved(self):
         """Warn once if the Boyd culverts are not contiguous in the operator list.

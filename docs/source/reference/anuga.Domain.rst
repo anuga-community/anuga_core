@@ -244,6 +244,8 @@
       ~Domain.statistics
       ~Domain.store_timestep
       ~Domain.sww_merge
+      ~Domain.sync_elevation_to_device
+      ~Domain.sync_friction_to_device
       ~Domain.timestepping_statistics
       ~Domain.tripcolor
       ~Domain.triplot

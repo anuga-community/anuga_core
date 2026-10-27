@@ -592,6 +592,10 @@ void gpu_sync_boundary_values(struct gpu_domain *GD);
 void gpu_sync_riverwall_to_device(struct gpu_domain *GD);
 void gpu_sync_tracer_source_to_device(struct gpu_domain *GD);
 void gpu_sync_tracer_boundary_to_device(struct gpu_domain *GD);
+// Sync friction centroid values TO GPU (after a host-side friction change)
+void gpu_sync_friction_to_device(struct gpu_domain *GD);
+// Sync bed elevation (centroid + edge) TO GPU (after a host-side bed change)
+void gpu_sync_bed_to_device(struct gpu_domain *GD);
 
 // Sync edge values FROM GPU (before CPU boundary evaluation)
 void gpu_sync_edge_values_from_device(struct gpu_domain *GD);
