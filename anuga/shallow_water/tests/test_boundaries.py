@@ -398,5 +398,66 @@ class Test_Flather_boundary(unittest.TestCase):
         B.evaluate_segment(domain, ids)
 
 
+class Test_set_stage_boundary_momentum_scaling(unittest.TestCase):
+    """A set stage that leaves a boundary edge shallower than the interior
+    scales the transmitted momentum by the depth ratio, so the boundary
+    carries the interior velocity. Unscaled, a stage just above the edge bed
+    gave velocity = momentum / ~0 and collapsed the timestep."""
+
+    CLASSES = (Transmissive_momentum_set_stage_boundary,
+               Transmissive_n_momentum_zero_t_momentum_set_stage_boundary)
+
+    def _right_edges(self, domain):
+        return [(v, e) for (v, e), tag in domain.boundary.items() if tag == 'right']
+
+    def test_evaluate_scales_momentum_by_depth(self):
+        # interior edge depth 0.5, |momentum| normal to the right edge 0.1
+        for cls in self.CLASSES:
+            for stage, factor in [(0.0, 0.0), (-1.0, 0.0), (0.25, 0.5), (0.5, 1.0), (2.0, 1.0)]:
+                domain = _make_domain()
+                B = cls(domain, function=lambda t, s=stage: s)
+                domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})
+                for vol_id, edge_id in self._right_edges(domain):
+                    q = B.evaluate(vol_id, edge_id)
+                    self.assertAlmostEqual(q[0], stage)
+                    self.assertAlmostEqual(q[1], 0.1 * factor,
+                                           msg=f'{cls.__name__} stage={stage}')
+
+    def test_evaluate_segment_matches_evaluate(self):
+        cls = Transmissive_n_momentum_zero_t_momentum_set_stage_boundary
+        for stage in (0.0, 1e-9, 0.25, 0.5, 2.0):
+            domain = _make_domain()
+            B = cls(domain, function=lambda t, s=stage: s)
+            domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})
+            ids = np.arange(len(domain.boundary_cells))
+            B.evaluate_segment(domain, ids)
+            for i in ids:
+                q = B.evaluate(domain.boundary_cells[i], domain.boundary_edges[i])
+                self.assertAlmostEqual(domain.quantities['xmomentum'].boundary_values[i], q[1])
+                self.assertAlmostEqual(domain.quantities['ymomentum'].boundary_values[i], q[2])
+
+    def test_stage_just_above_bed_keeps_timestep(self):
+        # Water flowing out at 1 m/s through an edge whose set stage is 1e-9 m
+        # above the bed: unscaled, the boundary velocity is 5e8 m/s.
+        import warnings
+        for mode in ('legacy', 'unified'):
+            for cls in self.CLASSES:
+                with self.subTest(mode=mode, boundary=cls.__name__):
+                    domain = anuga.rectangular_cross_domain(10, 4, len1=10.0, len2=4.0)
+                    domain.set_compute_mode(mode)
+                    domain.set_quantity('elevation', 0.0)
+                    domain.set_quantity('stage', 0.5)
+                    domain.set_quantity('xmomentum', 0.5)
+                    domain.set_store(False)
+                    Br = anuga.Reflective_boundary(domain)
+                    domain.set_boundary({'left': Br, 'top': Br, 'bottom': Br,
+                                         'right': cls(domain, function=lambda t: 1e-9)})
+                    with warnings.catch_warnings():
+                        warnings.simplefilter('ignore')
+                        for _ in domain.evolve(yieldstep=0.5, finaltime=0.5):
+                            pass
+                    self.assertLess(domain.number_of_steps, 1000)
+
+
 if __name__ == '__main__':
     unittest.main()
