@@ -5662,13 +5662,20 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
                     set_flather_value(gpu_dom, stage_val)
                 evaluate_flather_boundary_gpu(gpu_dom)
             else:
-                # Some boundaries need CPU - sync edge values, evaluate on CPU, sync back
-                boundary_edge_sync(gpu_dom)
-                for tag in self.tag_boundary_cells:
-                    B = self.boundary_map[tag]
-                    if B is not None:
-                        B.evaluate_segment(self, self.tag_boundary_cells[tag])
-                sync_boundary_values(gpu_dom)
+                # Some boundaries need CPU - sync edge values, evaluate on CPU, sync back.
+                # The boundary cells' edges come from the device, and they
+                # are all the boundaries read: no host extrapolation for them
+                stale = self._host_values_stale
+                self._host_values_stale = False
+                try:
+                    boundary_edge_sync(gpu_dom)
+                    for tag in self.tag_boundary_cells:
+                        B = self.boundary_map[tag]
+                        if B is not None:
+                            B.evaluate_segment(self, self.tag_boundary_cells[tag])
+                    sync_boundary_values(gpu_dom)
+                finally:
+                    self._host_values_stale = stale
         else:
             # CPU mode - evaluate boundaries on CPU
             for tag in self.tag_boundary_cells:
@@ -5826,6 +5833,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
             from .sw_domain_openmp_ext import (protect_new,
                                                extrapolate_second_order_edge_sw)
             protect_new(self)
+            self._host_values_stale = False
             extrapolate_second_order_edge_sw(self, distribute_to_vertices=distribute_to_vertices)
             nvtxRangePop()
             return
@@ -5843,6 +5851,44 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
         extrapolate_second_order_edge_sw(self, distribute_to_vertices=distribute_to_vertices)
 
         nvtxRangePop()
+
+    def _prepare_yield(self):
+        """Make the domain's values readable before evolve() yields.
+
+        Mode 2 ('unified') brings back only the centroid values, and brings
+        them to the state the full extrapolation would leave them in. They are
+        what the SWW writer stores by default (centroids, and vertex values
+        averaged from them). The host extrapolation to the vertices and edges
+        costs several GPU steps on a large mesh, so it is left to the first
+        reader of ``vertex_values`` or ``edge_values`` (see
+        :meth:`_refresh_host_values`): a yield that nothing reads them at
+        costs only the transfer.
+        """
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            self.gpu_interface.sync_from_device()
+            from .sw_domain_openmp_ext import protect_new, extrapolate_centroids_only
+            # The centroid side of the full path, which readers see: protected
+            # heights, dry momenta zeroed, tracer c = m/h
+            protect_new(self)
+            extrapolate_centroids_only(self)
+            self._host_values_stale = True
+            return
+        self.distribute_to_vertices_and_edges()
+
+    def _refresh_host_values(self):
+        """Extrapolate the host centroid values to the vertices and edges.
+
+        Called by the first read of stale ``vertex_values`` or ``edge_values``.
+        The host centroids are already current (synced and protected at the
+        yield, or since written by the user, which reaches the device anyway),
+        so this is the extrapolation alone.
+        """
+        self._host_values_stale = False     # first: the extension reads them
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU:
+            from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
+            extrapolate_second_order_edge_sw(self, distribute_to_vertices=True)
+        else:
+            self.distribute_to_vertices_and_edges()
 
     def distribute_to_edges(self):
         """ extrapolate centroid values edges"""

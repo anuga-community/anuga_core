@@ -207,6 +207,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 	double _openmp_compute_fluxes_central(domain* D, double timestep)
 	double _openmp_protect(domain* D)
 	void _openmp_extrapolate_second_order_edge_sw(domain* D)
+	void _openmp_extrapolate_centroids_only(domain* D)
 	anuga_int _openmp_fix_negative_cells(domain* D)
 	double _openmp_negative_cells_volume(domain* D)
 	anuga_int _openmp_gravity(domain *D)
@@ -1379,6 +1380,17 @@ def distribute_edges_to_vertices(object domain_py_object, update_domain_c_struct
 		_openmp_distribute_edges_to_vertices(D)
 
 	
+
+def extrapolate_centroids_only(object domain_py_object,
+                               update_domain_c_struct=False):
+	"""The centroid values extrapolate_second_order_edge_sw leaves (heights,
+	dry momenta, tracer concentrations), without computing the edges."""
+
+	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
+
+	with nogil:
+		_openmp_extrapolate_centroids_only(D)
+
 
 def extrapolate_second_order_edge_sw(object domain_py_object, 
                                      distribute_to_vertices=True,

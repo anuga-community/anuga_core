@@ -146,6 +146,41 @@ void _openmp_extrapolate_second_order_edge_sw(struct domain *__restrict D)
     core_extrapolate_second_order_edge(D);
 }
 
+// The centroid values _openmp_extrapolate_second_order_edge_sw leaves, without
+// the edge values: the centroid pass (height, dry momenta, tracer c = m/h), and
+// the edge pass's zeroing of the momentum of a cell that is dry among dry
+// neighbours. A GPU domain at a yield needs only these.
+void _openmp_extrapolate_centroids_only(struct domain *__restrict D)
+{
+    core_extrapolate_centroid_pass(D);
+
+    anuga_int n = D->number_of_elements;
+    double minimum_allowed_height = D->minimum_allowed_height;
+    double *height_cv = D->height_centroid_values;
+    double *xmom_cv = D->xmom_centroid_values;
+    double *ymom_cv = D->ymom_centroid_values;
+    double *x_centroid_work = D->x_centroid_work;
+    double *y_centroid_work = D->y_centroid_work;
+    anuga_int *surrogate_neighbours = D->surrogate_neighbours;
+
+    // As core_extrapolate_edge_pass_on
+    #pragma omp parallel for
+    for (anuga_int k = 0; k < n; k++) {
+        anuga_int k0 = surrogate_neighbours[3 * k + 0];
+        anuga_int k1 = surrogate_neighbours[3 * k + 1];
+        anuga_int sn2 = surrogate_neighbours[3 * k + 2];
+        int dry = ((height_cv[k0] < minimum_allowed_height) || (k0 == k)) &&
+                  ((height_cv[k1] < minimum_allowed_height) || (k1 == k)) &&
+                  ((height_cv[sn2] < minimum_allowed_height) || (sn2 == k));
+        if (dry) {
+            x_centroid_work[k] = 0.0;
+            xmom_cv[k] = 0.0;
+            y_centroid_work[k] = 0.0;
+            ymom_cv[k] = 0.0;
+        }
+    }
+}
+
 void _openmp_distribute_edges_to_vertices(struct domain *__restrict D)
 {
     // Unified: calls core_distribute_edges_to_vertices from core_kernels.c
