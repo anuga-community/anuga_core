@@ -54,6 +54,9 @@ jobs:
     name: validate (${{ matrix.ref }})
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    env:                       # shared memory only: see conda-setup.yml
+      OMPI_MCA_pml: ob1
+      OMPI_MCA_btl: self,sm
     strategy:
       fail-fast: false
       matrix:

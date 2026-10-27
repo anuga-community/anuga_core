@@ -58,6 +58,15 @@ jobs:
   test_conda:
     name: Example (${{ matrix.python-version }}, ${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # Open MPI on shared memory only. Since about 2026-10-24 the Ubuntu
+    # runners carry an Azure MANA adapter (mana_0) that UCX picks and cannot
+    # open ("uct_iface_open(ud_verbs/mana_0:1) failed: Address not valid"),
+    # and the OFI fallback then reports a maximum message size of 0: every
+    # MPI test failed and one hung until the 6 h job limit. One runner needs
+    # nothing but shared memory anyway. msmpi (Windows) ignores these.
+    env:
+      OMPI_MCA_pml: ob1
+      OMPI_MCA_btl: self,sm
     strategy:
       fail-fast: false
       matrix:
@@ -220,6 +229,7 @@ jobs:
           retention-days: 30
 
       - name: Test package (fast — PR feedback)
+        timeout-minutes: 60       # a hung MPI test fails here, not at the 6 h job limit
         if: github.event_name == 'pull_request'
         shell: bash -el {0}
         run: |
@@ -229,6 +239,7 @@ jobs:
           pytest -rs --pyargs anuga --run-fast
 
       - name: Test package (full suite — push to main/develop, and scheduled)
+        timeout-minutes: 60       # a hung MPI test fails here, not at the 6 h job limit
         if: github.event_name != 'pull_request'
         shell: bash -el {0}
         run: |
@@ -238,6 +249,7 @@ jobs:
           pytest -rs --pyargs anuga
 
       - name: Coverage report (Linux / Python 3.12 only)
+        timeout-minutes: 60       # a hung MPI test fails here, not at the 6 h job limit
         if: runner.os == 'Linux' && matrix.python-version == '3.12'
         shell: bash -el {0}
         run: |
@@ -253,6 +265,7 @@ jobs:
       # Safe to run the full suite in one process on a CPU build (the NVHPC
       # target-runtime abort is GPU-build-only). Linux / Python 3.14 only.
       - name: Test package (unified compute mode, full — Linux / Python 3.14)
+        timeout-minutes: 60       # a hung MPI test fails here, not at the 6 h job limit
         if: runner.os == 'Linux' && matrix.python-version == '3.14'
         shell: bash -el {0}
         run: |
