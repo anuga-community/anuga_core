@@ -48,6 +48,9 @@ jobs:
   report:
     name: report (${{ matrix.alg }})
     runs-on: ubuntu-latest
+    env:                       # shared memory only: see conda-setup.yml
+      OMPI_MCA_pml: ob1
+      OMPI_MCA_btl: self,sm
     timeout-minutes: 345
     strategy:
       fail-fast: false
