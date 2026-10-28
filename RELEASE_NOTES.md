@@ -17,6 +17,17 @@ A patch release on the 4.1 line.
   the pier case the scour is about half a millimetre shallower and the eroded
   volume 15% smaller under `DE1`, with the same RMS against the Kinect bed
   (#450).
+* Boundaries: a set-stage boundary that leaves an edge nearly dry no longer
+  collapses the timestep. `Transmissive_n_momentum_zero_t_momentum_set_stage_boundary`
+  and `Transmissive_momentum_set_stage_boundary` copied the interior momentum
+  onto the boundary edge whatever depth the set stage left there, and the
+  flux divides that momentum by the boundary depth. A stage rating along an
+  outflow line whose bed varies (TUFLOW's HQ boundary) crossed one edge's bed
+  by 1e-7 m: 0.27 m²/s became 1.7e6 m/s, and the run stopped with "Too small
+  timestep" on the CPU and ran on forever at 1e-13 s on the GPU. Both now
+  scale the momentum by min(1, boundary depth / interior depth), so the
+  boundary carries the interior velocity, on the CPU and the GPU. Results are
+  unchanged wherever the boundary is at least as deep as the interior.
 
 ---
 
