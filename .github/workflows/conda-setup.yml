@@ -49,8 +49,14 @@ on:
 # Two things are never cancelled, because there is no later run coming to
 # replace them: a push to main, and a release publish (whose ref is the tag,
 # not main, so it needs saying separately).
+#
+# Called from scheduled-build.yml, github.workflow and github.ref are the
+# caller's, so its four calls (main, develop, and each on Windows) would share
+# one group, and a group keeps one run plus one pending: the other two were
+# cancelled as soon as they queued. The call's inputs keep them apart; they
+# are empty for push and pull_request runs, whose grouping is unchanged.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ${{ github.workflow }}-${{ github.ref }}-${{ inputs.ref }}-${{ inputs.os_list }}
   cancel-in-progress: >-
     ${{ github.event_name != 'release' && github.ref != 'refs/heads/main' }}
 
