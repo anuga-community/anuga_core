@@ -58,9 +58,6 @@ jobs:
     if: github.event_name != 'schedule' || github.repository == 'anuga-community/anuga_core'
     runs-on: ubuntu-latest
     timeout-minutes: 180
-    env:                       # shared memory only: see conda-setup.yml
-      OMPI_MCA_pml: ob1
-      OMPI_MCA_btl: self,sm
     strategy:
       fail-fast: false
       matrix:
@@ -68,6 +65,8 @@ jobs:
         # long-lived branches.
         ref: ${{ fromJSON(github.event_name == 'workflow_dispatch' && format('["{0}"]', inputs.ref) || '["main", "develop"]') }}
     env:
+      OMPI_MCA_pml: ob1        # shared memory only: see conda-setup.yml
+      OMPI_MCA_btl: self,sm
       PY: ${{ inputs.python_version || '3.12' }}
       ALG: ${{ inputs.alg || 'DE1' }}
       # Scheduled runs include the long cases; manual runs only if asked.
