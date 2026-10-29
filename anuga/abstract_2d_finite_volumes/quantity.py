@@ -762,7 +762,9 @@ class Quantity:
 
         vol_id  = self.domain.boundary_cells
         edge_id = self.domain.boundary_edges
-        self.boundary_values = (self.edge_values.flat)[3*vol_id+edge_id]
+        # Write in place: the C domain struct holds a pointer to this array,
+        # so rebinding it leaves the C code reading freed memory (#473).
+        self.boundary_values[:] = (self.edge_values.flat)[3*vol_id+edge_id]
 
     ##
     # @brief Set boundary values using a function

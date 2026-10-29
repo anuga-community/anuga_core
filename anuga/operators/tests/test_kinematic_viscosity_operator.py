@@ -1391,6 +1391,29 @@ class Test_kinematic_viscosity(unittest.TestCase):
         assert num.allclose(w.centroid_values, wc, rtol=2.0e-3)
 
 
+    def test_kinematic_operator_keeps_boundary_arrays(self):
+        """The operator must not replace any quantity's boundary_values
+        array: the C domain struct points at them, and a replaced array
+        left the boundary code reading freed memory, which segfaulted or
+        hung evolve (#473)."""
+
+        import anuga
+        domain = anuga.rectangular_cross_domain(20, 4, len1=200.0, len2=40.0)
+        domain.set_quantity('elevation', lambda x, y: -0.001 * x)
+        domain.set_quantity('stage', 1.0)
+        Br = anuga.Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        Kinematic_viscosity_operator(domain)
+
+        arrays = {name: q.boundary_values
+                  for name, q in domain.quantities.items()}
+        for t in domain.evolve(yieldstep=1.0, finaltime=2.0):
+            pass
+
+        for name, q in domain.quantities.items():
+            assert q.boundary_values is arrays[name], name
+
+
 ################################################################################
 
 if __name__ == "__main__":
