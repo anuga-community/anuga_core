@@ -22,8 +22,14 @@ class Kinematic_viscosity_operator(Operator):
     As an anuga operator, when the __call__ method is called one step of the parabolic
     step is applied. In particular the x and y velocities are updated using
 
-    du/dt = div( h grad u )
-    dv/dt = div( h grad v )
+    du/dt = div( d grad u )
+    dv/dt = div( d grad v )
+
+    where d is the diffusivity: the water depth h by default
+    (diffusivity='height'), or a constant or quantity given by the
+    diffusivity argument. The velocities, not the momenta, are diffused, and
+    the momenta are then reset from them, so this is not the
+    momentum-conserving form d(hu)/dt = div( nu h grad u ).
 
     """
 

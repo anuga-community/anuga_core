@@ -28,6 +28,20 @@ A patch release on the 4.1 line.
   scale the momentum by min(1, boundary depth / interior depth), so the
   boundary carries the interior velocity, on the CPU and the GPU. Results are
   unchanged wherever the boundary is at least as deep as the interior.
+* `Barometric_pressure_operator`: the pressure-gradient force had the wrong
+  sign. It added `+h ∇p / rho_w` to the momentum instead of `-h ∇p / rho_w`,
+  so water accelerated towards high pressure, and at rest the surface rose
+  under high pressure instead of falling by about 1 cm per hPa (the
+  inverse-barometer effect). A closed basin started from the inverse-barometer
+  equilibrium now stays at rest. **If you negated your pressure input to work
+  around this, remove the negation.** Reported by William Mitchell (#472).
+* `Kinematic_viscosity_operator` no longer crashes or hangs `evolve`.
+  `Quantity.set_boundary_values_from_edges` replaced the `boundary_values`
+  array instead of writing into it, and the operator calls it on the
+  elevation every step, so the C boundary and flux code read freed memory: a
+  segmentation fault on 4.1.0, a hang on larger meshes. It now writes in place.
+  The operator's docstring now also states that it diffuses velocity, not
+  momentum. Reported by William Mitchell (#473).
 
 ---
 
