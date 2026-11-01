@@ -75,6 +75,29 @@ def read_points(path):
     return points
 
 
+def read_polygon(path):
+    """The first polygon of an ESRI shapefile, as a list of [x, y] (not closed).
+
+    Reads the .shp directly (format: ESRI Shapefile Technical Description,
+    1998), so no shapefile package is needed.
+    """
+    import struct
+    with open(path, 'rb') as f:
+        data = f.read()
+    off = 100 + 8                                  # file header, record header
+    shape_type, = struct.unpack('<i', data[off:off + 4])
+    assert shape_type in (5, 15, 25), 'not a polygon shapefile: %s' % path
+    n_parts, n_points = struct.unpack('<2i', data[off + 36:off + 44])
+    parts = struct.unpack('<%di' % n_parts, data[off + 44:off + 44 + 4 * n_parts])
+    start = off + 44 + 4 * n_parts
+    xy = np.frombuffer(data, '<f8', 2 * n_points, start).reshape(-1, 2)
+    end = parts[1] if n_parts > 1 else n_points
+    pts = [list(map(float, p)) for p in xy[parts[0]:end]]
+    if pts[0] == pts[-1]:
+        pts = pts[:-1]
+    return pts
+
+
 def read_asc(path):
     """ESRI ASCII grid as (x_centres, y_centres ascending, z[ny, nx])."""
     header = {}

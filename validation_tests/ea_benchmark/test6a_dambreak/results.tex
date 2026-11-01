@@ -1,0 +1,65 @@
+\section{EA Test 6A: dam break past a building, laboratory scale}
+
+Test~6A of the Environment Agency benchmark \cite{NeelzPender2013} is the
+IMPACT isolated-building dam break in the flume at the Universit\'e
+catholique de Louvain (Soares-Fraz\~ao and Zech \cite{SoaresFrazaoZech2002}).
+A channel 3.6~m wide, with side slopes 0.34~m wide and 0.155~m high along
+both walls, holds 0.4~m of water in a 6.75~m reservoir behind a 0.8~m
+thick dam with a 1~m opening, and 0.02~m beyond it. The gate is lifted at
+$t = 0$ and the flood strikes a 0.8~m~$\times$~0.4~m building set at
+63$^\circ$ to the channel (Figure~\ref{fig:ea6a_setup}). Manning's
+$n = 0.01$, the specified resolution is 0.1~m (here triangles of at most
+0.01~m$^2$, about 56,000 in all), and the run lasts 2~min. The geometry is
+built from the benchmark's DEM exactly as for Test~6B,
+every length divided by 20.
+
+\begin{figure}[h]
+\begin{center}
+\includegraphics[width=0.9\textwidth]{setup.png}
+\end{center}
+\caption{EA Test 6A: the flume, and the reservoir, dam, building and gauges
+G1--G6 close up.}
+\label{fig:ea6a_setup}
+\end{figure}
+
+The report shows the UCL measurements, available for the first 30~s,
+against the packages (its Figures 4.25--4.26). Every package matched the
+level at G6, upstream of the gate, which follows the periodic flow through
+the gate with a period of about 9~s. Elsewhere none of them reproduced the
+transcritical flow consistently: ``at best there was usually a discrepancy
+in the timing of transitions''. \anuga{} behaves the same way. The level
+and speed at G6 and the levels at G3 and G4 follow the measurements
+closely, but the hydraulic jump that forms in front of the building and
+travels back upstream reaches G2 at about 30~s with the second-order
+schemes, where the measurements show it at 13--18~s and most packages at
+10--12~s, and the levels at G1 and in the wake (G5) are 3--4~cm low. The
+first-order scheme (DE0) puts the jump at G2 at 17~s. Friction, the mesh
+(down to 0.0025~m$^2$ triangles) and the representation of the building
+leave the timing unchanged; flattening the side slopes moves the answer
+further from the measurements.
+
+The checks (Figure~\ref{fig:ea6a_checks}) are the volume balance, the
+order in which the bore reaches the gauges, the period of the gate flow,
+a bound on the largest speed, and a stored baseline per flow algorithm.
+
+\begin{figure}
+\begin{center}
+\includegraphics[width=0.95\textwidth]{stage_plot.png}
+\end{center}
+\caption{EA Test 6A: water level at G1--G6 over the first minute.}
+\end{figure}
+
+\begin{figure}
+\begin{center}
+\includegraphics[width=0.95\textwidth]{speed_plot.png}
+\end{center}
+\caption{EA Test 6A: speed at G1--G6 over the first minute.}
+\end{figure}
+
+\begin{figure}
+\begin{center}
+\includegraphics[width=0.9\textwidth]{checks.png}
+\end{center}
+\caption{EA Test 6A: the checks and their outcome.}
+\label{fig:ea6a_checks}
+\end{figure}

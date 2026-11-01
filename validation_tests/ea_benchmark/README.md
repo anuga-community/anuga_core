@@ -14,14 +14,16 @@ it on first use, so there is no separate step.
 | --- | --- | --- | --- |
 | `test3_obstruction` | 3: momentum over a small obstruction | 2 s | volume; report text (Section 4.4.3); baseline |
 | `test4_floodplain` | 4: flood propagation over a flat floodplain | 3 min | volume; front order and ~1 h travel time (Section 4.5.4); baseline |
+| `test5_valley` | 5: dam-failure flood down a 17 km valley | 40 s | volume; arrival order; arrival at point 5, peak speeds (Section 4.6.4); final pond level (TUFLOW 2017); baseline |
+| `test6a_dambreak` | 6A: dam break past a building, laboratory flume | 30 s | volume; bore order; gate-flow period (Section 4.7.1); speed bound; baseline |
 | `test6b_dambreak` | 6B: dam break past a building, field scale | 1 min | volume; bore order; speed bound; level end state; baseline |
 
 The report publishes the other packages' results only as raster figures (and
 reserves its rights in them), so the cases do not test against their envelope.
 Each case checks what the report states in its text, physical constraints, and
 a stored baseline per flow algorithm (`baseline_<test>_<alg>.csv`), so that a
-change that moves the answer fails. Tests 7 and 8A/8B are not included yet
-(issues #477 and #478).
+change that moves the answer fails. Tests 1, 2, 7 and 8A/8B are not included yet
+(issues #477 and #478 for 7 and 8).
 
 Each case directory holds:
 
@@ -48,11 +50,13 @@ cd test4_floodplain
 EA_REGENERATE_BASELINE=1 python validate_test4.py -alg DE1
 ```
 
-Test 6B takes two settings for studies, both off by default:
-`EA_6B_MAX_AREA` (triangle area, default 4 m^2; finer meshes are best run in
-`unified` mode on a GPU) and `EA_6B_BUILDING` (`hole`, the default; `block`,
-the fitted rectangle as raised floor; or `dem`, the DEM's own building cells).
-Their outputs are named `test6b_a<area>_*` and `test6b_<building>_*`.
+Tests 6A and 6B share their set-up (`ea_dambreak.py`). They take two
+settings for studies, both off by default: `EA_6A_MAX_AREA`/`EA_6B_MAX_AREA`
+(triangle area; finer meshes are best run in `unified` mode on a GPU) and
+`EA_6A_BUILDING`/`EA_6B_BUILDING` (`hole`, the default; `block`, the fitted
+rectangle as raised floor; or `dem`, the DEM's own building cells). Test 5
+takes `EA_5_MAX_AREA`. The outputs are then named `test<N>_a<area>_*` and
+`test<N>_<building>_*`.
 
 The cases run in serial: gauges are sampled from the domain during
 `evolve`, which needs the whole mesh in one process.
