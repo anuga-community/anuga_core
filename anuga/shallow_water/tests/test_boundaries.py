@@ -180,17 +180,49 @@ class Test_Time_stage_zero_momentum_boundary(unittest.TestCase):
         # Note: class name in repr has typo "momemtum" — test actual behaviour
         self.assertIn('stage_zero_mom', r)
 
-    def test_evaluate_segment_sets_stage(self):
-        """evaluate_segment sets stage and zeros momenta."""
+    def test_evaluate_segment_guards(self):
+        """evaluate_segment returns quietly without a domain or segment."""
         import numpy as np
         domain = _make_domain()
         B = Time_stage_zero_momentum_boundary(domain, function=lambda t: 3.5)
         domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})
         ids = np.arange(len(domain.boundary_cells))
-        # evaluate_segment should not raise even though evaluate is broken
-        # (self.f vs self.function mismatch in evaluate is a pre-existing bug)
         B.evaluate_segment(domain, None)  # None guard
         B.evaluate_segment(None, ids)     # None guard
+
+    def test_evaluate(self):
+        """evaluate gives [stage(t), 0, 0] at the domain's time."""
+        domain = _make_domain()
+        B = Time_stage_zero_momentum_boundary(domain, function=lambda t: 1.0 + 0.1 * t)
+        domain.set_time(5.0)
+        assert np.allclose(B.evaluate(), [1.5, 0.0, 0.0])
+
+    def test_evaluate_segment_sets_stage(self):
+        """evaluate_segment sets stage(t) and zeros the momenta."""
+        domain = _make_domain()
+        B = Time_stage_zero_momentum_boundary(domain, function=lambda t: 1.0 + 0.1 * t)
+        domain.set_boundary({'left': B, 'right': B, 'top': B, 'bottom': B})
+        domain.set_time(5.0)
+        ids = np.arange(len(domain.boundary_cells))
+        B.evaluate_segment(domain, ids)
+        assert np.allclose(domain.quantities['stage'].boundary_values[ids], 1.5)
+        assert np.allclose(domain.quantities['xmomentum'].boundary_values[ids], 0.0)
+        assert np.allclose(domain.quantities['ymomentum'].boundary_values[ids], 0.0)
+
+    def test_evolve_fills_from_boundary(self):
+        """A domain evolves with it, and water enters as the stage rises."""
+        domain = anuga.rectangular_cross_domain(10, 2, len1=10.0, len2=2.0)
+        domain.set_compute_mode('legacy')
+        domain.set_quantity('elevation', 0.0)
+        domain.set_quantity('stage', 0.1)
+        B = Time_stage_zero_momentum_boundary(domain, function=lambda t: 0.1 + 0.02 * t)
+        Br = Reflective_boundary(domain)
+        domain.set_boundary({'left': B, 'right': Br, 'top': Br, 'bottom': Br})
+        volume_0 = domain.get_water_volume()
+        for _ in domain.evolve(yieldstep=1.0, finaltime=5.0):
+            pass
+        assert domain.get_water_volume() > volume_0 + 0.1
+        assert np.all(domain.quantities['xmomentum'].centroid_values > -1.0e-12)
 
 
 class Test_Dirichlet_discharge_boundary(unittest.TestCase):

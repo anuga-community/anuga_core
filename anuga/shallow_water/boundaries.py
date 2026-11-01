@@ -615,7 +615,8 @@ class Time_stage_zero_momentum_boundary(Boundary):
             raise Exception(msg)
 
 
-        self.f = function
+        # Boundary.get_boundary_values evaluates self.function
+        self.function = function
         self.domain = domain
 
     def __repr__(self):
@@ -624,7 +625,7 @@ class Time_stage_zero_momentum_boundary(Boundary):
 
     def evaluate(self, vol_id=None, edge_id=None):
 
-        return self.get_boundary_values()
+        return np.array([float(self.get_boundary_values()), 0.0, 0.0])
 
 
     def evaluate_segment(self, domain, segment_edges):
