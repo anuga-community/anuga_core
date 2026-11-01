@@ -26,6 +26,7 @@ grid-based packages saw it); the outputs gain a _<building> suffix. Finer meshes
 'unified' compute mode (ANUGA_DEFAULT_COMPUTE_MODE=unified) on a GPU build.
 """
 
+import json
 import os
 import sys
 
@@ -88,6 +89,10 @@ def building_polygon():
 
 building = building_polygon()
 
+# The geometry, for the report's set-up figure.
+with open(NAME + '_geometry.json', 'w') as f:
+    json.dump({'bounding_polygon': bounding_polygon, 'building': building}, f)
+
 domain = anuga.create_domain_from_regions(
     bounding_polygon,
     boundary_tags={'wall': list(range(len(bounding_polygon)))},
@@ -132,6 +137,9 @@ if BUILDING != 'hole':   # dry on top of the building
 
 Br = anuga.Reflective_boundary(domain)
 domain.set_boundary({'wall': Br, 'interior': Br} if BUILDING == 'hole' else {'wall': Br})
+
+from anuga.validation_utilities import save_parameters_tex
+save_parameters_tex(domain)
 
 gauges = ea.Gauges(domain, points)
 volume_0 = ea.domain_volume(domain)

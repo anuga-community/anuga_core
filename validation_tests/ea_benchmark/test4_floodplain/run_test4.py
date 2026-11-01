@@ -45,6 +45,9 @@ domain.set_quantity('stage', 0.0, location='centroids')
 Br = anuga.Reflective_boundary(domain)
 domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
 
+from anuga.validation_utilities import save_parameters_tex
+save_parameters_tex(domain)
+
 # The 20 m breach, in the middle of the western side, one cell in.
 inflow_line = [[2.5, W / 2 - 10.0], [2.5, W / 2 + 10.0]]
 anuga.Inlet_operator(domain, inflow_line, Q=ea.inflow_function(t_bc, q_bc))

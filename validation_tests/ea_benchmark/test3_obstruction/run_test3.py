@@ -49,6 +49,9 @@ domain.set_quantity('stage', expression='elevation', location='centroids')
 Br = anuga.Reflective_boundary(domain)
 domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
 
+from anuga.validation_utilities import save_parameters_tex
+save_parameters_tex(domain)
+
 # Inflow across the full 100 m width, one cell in from the left wall.
 inflow_line = [[2.5, 0.0], [2.5, W]]
 anuga.Inlet_operator(domain, inflow_line, Q=ea.inflow_function(t_bc, q_bc))

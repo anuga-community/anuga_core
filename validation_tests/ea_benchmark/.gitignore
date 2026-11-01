@@ -11,3 +11,12 @@ Benchmarking_Model_Data.zip
 run.log
 test*_gauges.csv
 test*_volume.txt
+test*_geometry.json
+parameters.tex
+report.pdf
+*.aux
+*.bbl
+*.blg
+*.log
+*.out
+*.toc

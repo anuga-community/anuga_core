@@ -217,14 +217,15 @@ def check_baseline(gauge_csv, stem, alg, columns, atol, indent=''):
 
 
 def plot_gauges(result, names, quantity, filename, title, ylabel,
-                time_scale=1.0, time_label='Time (s)', baseline=None):
+                time_scale=1.0, time_label='Time (s)', baseline=None, ncol=2,
+                tmax=None, label='ANUGA'):
     """One panel per gauge: ANUGA (and the stored baseline, if given)."""
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
 
     n = len(names)
-    ncol = 2 if n > 1 else 1
+    ncol = min(ncol, n)
     nrow = (n + ncol - 1) // ncol
     fig, axes = plt.subplots(nrow, ncol, figsize=(5.5 * ncol, 3.0 * nrow),
                              squeeze=False, sharex=True)
@@ -234,13 +235,15 @@ def plot_gauges(result, names, quantity, filename, title, ylabel,
         col = '%s_%s' % (quantity, name)
         if baseline is not None:
             ax.plot(baseline['time'] / time_scale, baseline[col], color='0.6',
-                    lw=2.5, label='baseline')
-        ax.plot(t, result[col], color='C0', lw=1.2, label='ANUGA')
-        ax.set_title('Point %s' % name, fontsize=10)
+                    lw=2.5, label='stored baseline')
+        ax.plot(t, result[col], color='C0', lw=1.2, label=label)
+        ax.set_title('Point %s' % name if name.isdigit() else name, fontsize=10)
         ax.set_ylabel(ylabel)
         ax.grid(alpha=0.3)
     for ax in axes[-1]:
         ax.set_xlabel(time_label)
+        if tmax is not None:
+            ax.set_xlim(0, tmax / time_scale)
     for k in range(n, nrow * ncol):
         axes[k // ncol][k % ncol].set_visible(False)
     axes[0][0].legend(fontsize=8)
@@ -248,3 +251,80 @@ def plot_gauges(result, names, quantity, filename, title, ylabel,
     fig.tight_layout()
     fig.savefig(filename, dpi=120)
     plt.close(fig)
+
+
+# ---------------------------------------------------------------------------
+# Checks: one list, shared by validate_*.py and the report
+# ---------------------------------------------------------------------------
+
+class Checks:
+    """Named pass/fail checks with the value found and the criterion.
+
+    validate_<test>.py asserts on them; plot_results.py draws them as a
+    table for the report and exits non-zero if any failed, so the release
+    report marks the case failed.
+    """
+
+    def __init__(self):
+        self.rows = []          # (name, value, criterion, ok)
+
+    def add(self, name, value, criterion, ok):
+        self.rows.append((name, value, criterion, bool(ok)))
+
+    def failed(self):
+        return [r for r in self.rows if not r[3]]
+
+    def report(self, indent=''):
+        for name, value, criterion, ok in self.rows:
+            print(indent + '%-4s %s: %s (%s)' % ('ok' if ok else 'FAIL', name, value, criterion))
+
+    def figure(self, filename, title):
+        """The checks as a table image (one per algorithm in the report)."""
+        import matplotlib
+        matplotlib.use('Agg')
+        import matplotlib.pyplot as plt
+
+        n = len(self.rows)
+        fig, ax = plt.subplots(figsize=(9.0, 0.3 * n + 0.5))
+        ax.axis('off')
+        cells = [[name, value, criterion, 'pass' if ok else 'FAIL']
+                 for name, value, criterion, ok in self.rows]
+        table = ax.table(cellText=cells, colLabels=['Check', 'ANUGA', 'Criterion', ''],
+                         colWidths=[0.36, 0.22, 0.34, 0.08], loc='center', cellLoc='left')
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1.0, 1.35)
+        for (r, c), cell in table.get_celld().items():
+            cell.set_edgecolor('0.8')
+            if r == 0:
+                cell.set_text_props(weight='bold')
+            elif c == 3:
+                cell.set_text_props(color='#1a7f37' if self.rows[r - 1][3] else '#c62828',
+                                    weight='bold')
+        ax.set_title(title, fontsize=11)
+        fig.savefig(filename, dpi=120, bbox_inches='tight')
+        plt.close(fig)
+
+
+def baseline_check(checks, gauge_csv, stem, alg, columns, atol):
+    """Add the stored-baseline comparison to checks (see check_baseline)."""
+    baseline = 'baseline_%s_%s.csv' % (stem, alg)
+    tol = list(atol.values())[0]
+    if os.environ.get('EA_REGENERATE_BASELINE') == '1':
+        check_baseline(gauge_csv, stem, alg, columns, atol)
+        checks.add('Levels against stored baseline', 'rewritten',
+                   '|diff| < %g m' % tol, True)
+    elif not os.path.exists(baseline):
+        checks.add('Levels against stored baseline', 'no baseline for %s' % alg,
+                   '|diff| < %g m' % tol, True)
+    else:
+        diffs, failed = compare_baseline(load_gauges(gauge_csv), load_gauges(baseline),
+                                         columns, atol)
+        checks.add('Levels against stored baseline', 'max |diff| %.4f m' % max(diffs.values()),
+                   '|diff| < %g m' % tol, not failed)
+
+
+def read_volume(path):
+    """The key/value file each run writes next to its gauges."""
+    with open(path) as f:
+        return {k: float(v) for k, v in (line.split() for line in f)}
