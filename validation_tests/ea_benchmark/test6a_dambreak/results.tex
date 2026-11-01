@@ -32,11 +32,44 @@ and speed at G6 and the levels at G3 and G4 follow the measurements
 closely, but the hydraulic jump that forms in front of the building and
 travels back upstream reaches G2 at about 30~s with the second-order
 schemes, where the measurements show it at 13--18~s and most packages at
-10--12~s, and the levels at G1 and in the wake (G5) are 3--4~cm low. The
-first-order scheme (DE0) puts the jump at G2 at 17~s. Friction, the mesh
-(down to 0.0025~m$^2$ triangles) and the representation of the building
-leave the timing unchanged; flattening the side slopes moves the answer
+10--12~s, and the levels at G1 and in the wake (G5) are 3--4~cm low.
+Friction, the time stepping and the representation of the building leave
+the timing unchanged, and flattening the side slopes moves the answer
 further from the measurements.
+
+The timing is set by the slope limiter (Table~\ref{tab:ea6a_limiter}).
+The jet from the gate is supercritical, about 3~cm deep at 2.2~m/s (a
+Froude number near 4), and the jump forms where it meets the water held up
+by the building. With the limiter at full strength ($\beta = 1$, as in DE1
+and DE\_ader2) the jump holds its place in front of the building until
+after 20~s; with $\beta = 0.5$ (as in DE0) it reaches G2 at 17~s, and with
+$\beta = 0$, a first-order reconstruction, at 11~s, which fits every gauge
+best. Refining the mesh moves the jump later at every setting, towards the
+$\beta = 1$ result, which is itself unchanged. The shallow-water equations,
+solved accurately, therefore put the jump at G2 at about 30~s: the earlier
+jump in the flume needs dissipation the equations do not contain, such as
+the turbulence of the shallow jet and of the jump, and the packages that
+reproduce it, \anuga{}~1.1 among them (9~s in 2009), owe it largely to
+numerical diffusion.
+
+\begin{table}[h]
+\begin{center}
+\begin{tabular}{lcc}
+\hline
+Limiter & \multicolumn{2}{c}{Jump reaches G2} \\
+ & 0.01~m$^2$ triangles & 0.0025~m$^2$ triangles \\
+\hline
+$\beta = 0$ & 10.7~s & 12.3~s \\
+$\beta = 0.5$ (DE0) & 16.9~s & 19.4~s \\
+$\beta = 1$ (DE1, DE\_ader2) & about 30~s & about 30~s \\
+\hline
+Measured & \multicolumn{2}{c}{13--18~s} \\
+\hline
+\end{tabular}
+\end{center}
+\caption{EA Test 6A: when the hydraulic jump reaches G2, by limiter and mesh.}
+\label{tab:ea6a_limiter}
+\end{table}
 
 The checks (Figure~\ref{fig:ea6a_checks}) are the volume balance, the
 order in which the bore reaches the gauges, the period of the gate flow,
