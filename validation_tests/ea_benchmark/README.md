@@ -12,6 +12,8 @@ it on first use, so there is no separate step.
 
 | Directory | Test | Run time (8 threads) | Checked against |
 | --- | --- | --- | --- |
+| `test1_disconnected` | 1: flooding a disconnected water body | 10 s | peak and final levels, flat pond, sheet flow (Section 4.2); baseline |
+| `test2_depressions` | 2: filling floodplain depressions | 50 s | volume; sill levels (DEM); final levels (TUFLOW 2017); transient peaks, wet/dry depressions (Section 4.3.3); baseline |
 | `test3_obstruction` | 3: momentum over a small obstruction | 2 s | volume; report text (Section 4.4.3); baseline |
 | `test4_floodplain` | 4: flood propagation over a flat floodplain | 3 min | volume; front order and ~1 h travel time (Section 4.5.4); baseline |
 | `test5_valley` | 5: dam-failure flood down a 17 km valley | 40 s | volume; arrival order; arrival at point 5, peak speeds (Section 4.6.4); final pond level (TUFLOW 2017); baseline |
@@ -22,8 +24,8 @@ The report publishes the other packages' results only as raster figures (and
 reserves its rights in them), so the cases do not test against their envelope.
 Each case checks what the report states in its text, physical constraints, and
 a stored baseline per flow algorithm (`baseline_<test>_<alg>.csv`), so that a
-change that moves the answer fails. Tests 1, 2, 7 and 8A/8B are not included yet
-(issues #477 and #478 for 7 and 8).
+change that moves the answer fails. Tests 7 and 8A/8B are not included yet
+(issues #477 and #478).
 
 Each case directory holds:
 
@@ -54,8 +56,8 @@ Tests 6A and 6B share their set-up (`ea_dambreak.py`). They take two
 settings for studies, both off by default: `EA_6A_MAX_AREA`/`EA_6B_MAX_AREA`
 (triangle area; finer meshes are best run in `unified` mode on a GPU) and
 `EA_6A_BUILDING`/`EA_6B_BUILDING` (`hole`, the default; `block`, the fitted
-rectangle as raised floor; or `dem`, the DEM's own building cells). Test 5
-takes `EA_5_MAX_AREA`. The outputs are then named `test<N>_a<area>_*` and
+rectangle as raised floor; or `dem`, the DEM's own building cells). Tests 2 and 5
+take `EA_2_MAX_AREA` and `EA_5_MAX_AREA`. The outputs are then named `test<N>_a<area>_*` and
 `test<N>_<building>_*`.
 
 The cases run in serial: gauges are sampled from the domain during

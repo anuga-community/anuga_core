@@ -76,7 +76,9 @@ def read_points(path):
 
 
 def read_polygon(path):
-    """The first polygon of an ESRI shapefile, as a list of [x, y] (not closed).
+    """The first polygon (or polyline) of an ESRI shapefile, as a list of [x, y].
+
+    A polygon is returned unclosed; a polyline keeps all its points.
 
     Reads the .shp directly (format: ESRI Shapefile Technical Description,
     1998), so no shapefile package is needed.
@@ -86,14 +88,14 @@ def read_polygon(path):
         data = f.read()
     off = 100 + 8                                  # file header, record header
     shape_type, = struct.unpack('<i', data[off:off + 4])
-    assert shape_type in (5, 15, 25), 'not a polygon shapefile: %s' % path
+    assert shape_type in (3, 13, 23, 5, 15, 25), 'not a polygon or polyline shapefile: %s' % path
     n_parts, n_points = struct.unpack('<2i', data[off + 36:off + 44])
     parts = struct.unpack('<%di' % n_parts, data[off + 44:off + 44 + 4 * n_parts])
     start = off + 44 + 4 * n_parts
     xy = np.frombuffer(data, '<f8', 2 * n_points, start).reshape(-1, 2)
     end = parts[1] if n_parts > 1 else n_points
     pts = [list(map(float, p)) for p in xy[parts[0]:end]]
-    if pts[0] == pts[-1]:
+    if shape_type in (5, 15, 25) and pts[0] == pts[-1]:
         pts = pts[:-1]
     return pts
 
@@ -316,6 +318,7 @@ class Checks:
                          colWidths=[0.36, 0.22, 0.34, 0.08], loc='center', cellLoc='left')
         table.auto_set_font_size(False)
         table.set_fontsize(9)
+        table.auto_set_column_width(range(4))     # fit the text, which can be long
         table.scale(1.0, 1.35)
         for (r, c), cell in table.get_celld().items():
             cell.set_edgecolor('0.8')
