@@ -37,7 +37,8 @@ Friction, the time stepping and the representation of the building leave
 the timing unchanged, and flattening the side slopes moves the answer
 further from the measurements.
 
-The timing is set by the slope limiter (Table~\ref{tab:ea6a_limiter}).
+The timing is set by the slope limiter (Table~\ref{tab:ea6a_limiter},
+Figures~\ref{fig:ea6a_limiter_field} and~\ref{fig:ea6a_limiter_stage}).
 The jet from the gate is supercritical, about 3~cm deep at 2.2~m/s (a
 Froude number near 4), and the jump forms where it meets the water held up
 by the building. With the limiter at full strength ($\beta = 1$, as in DE1
@@ -70,6 +71,40 @@ Measured & \multicolumn{2}{c}{13--18~s} \\
 \caption{EA Test 6A: when the hydraulic jump reaches G2, by limiter and mesh.}
 \label{tab:ea6a_limiter}
 \end{table}
+
+Figure~\ref{fig:ea6a_limiter_field} shows the flow for the three settings
+on the standard mesh. In every case the jet fans out from the gate and the
+jump (the red line, where the Froude number is 1, closing the
+supercritical region) first forms against the building. With $\beta = 0$
+the jump moves upstream past G1 and G2 by 12~s and the supercritical
+region shrinks back towards the gate; with $\beta = 0.5$ it reaches G2 at
+about 17~s; with $\beta = 1$ it stays at the front of the building until
+after 24~s, with the flow still supercritical at G2. The levels at the
+gauges (Figure~\ref{fig:ea6a_limiter_stage}) show the same: the limiter
+changes little at G3, G4 and G6, but at G2 it decides when the level
+jumps from 3~cm to 12--13~cm, and it moves the levels at G1 and in the
+wake (G5) by 3--4~cm.
+
+\begin{figure}
+\begin{center}
+\includegraphics[width=\textwidth]{limiter_field.png}
+\end{center}
+\caption{EA Test 6A: depth, velocity and the line where the Froude number
+is 1 around the building, 6--30~s after the gate opens, with the slope
+limiter's $\beta$ set to 0, 0.5 and 1 (0.01~m$^2$
+triangles).}
+\label{fig:ea6a_limiter_field}
+\end{figure}
+
+\begin{figure}
+\begin{center}
+\includegraphics[width=\textwidth]{limiter_stage.png}
+\end{center}
+\caption{EA Test 6A: water level at G1--G6 over the first 40~s for the
+three settings of $\beta$. The grey band at G2 marks when the measured
+jump arrives (13--18~s).}
+\label{fig:ea6a_limiter_stage}
+\end{figure}
 
 The checks (Figure~\ref{fig:ea6a_checks}) are the volume balance, the
 order in which the bore reaches the gauges, the period of the gate flow,

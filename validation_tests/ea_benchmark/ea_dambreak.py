@@ -25,7 +25,9 @@ EA_<TEST>_BUILDING picks how the building is modelled: 'hole' (default, a
 reflective hole in the mesh), 'block' (the fitted rectangle as a breakline
 with the floor raised 10 m inside it) or 'dem' (the DEM's own cells,
 sampled at the centroids, as the grid-based packages saw it); the outputs
-gain a _<building> suffix. Finer meshes are best run in 'unified' compute
+gain a _<building> suffix. run(beta=...) overrides the slope limiter
+(beta_w, beta_uh, beta_vh) for the limiter study of Test 6A; the outputs
+gain a _b<beta> suffix. Finer meshes are best run in 'unified' compute
 mode (ANUGA_DEFAULT_COMPUTE_MODE=unified) on a GPU build.
 """
 
@@ -50,8 +52,8 @@ WALL = 5.0                 # DEM cells above this are walls (heights are not sca
 LOW = 0.2                  # DEM cells above this are wall, dam or building
 
 
-def run_name(test):
-    """The output stem for this test and the EA_<TEST>_* settings."""
+def run_name(test, beta=None):
+    """The output stem for this test, the EA_<TEST>_* settings and beta."""
     p = TESTS[test]
     max_area = float(os.environ.get('EA_%s_MAX_AREA' % test, p['max_area']))
     building = os.environ.get('EA_%s_BUILDING' % test, 'hole')
@@ -60,6 +62,8 @@ def run_name(test):
         name += '_a%g' % max_area
     if building != 'hole':
         name += '_' + building
+    if beta is not None:
+        name += '_b%g' % beta
     return name, max_area, building
 
 
@@ -101,10 +105,10 @@ def geometry(test):
     return bounding_polygon, building, (x_dem, y_dem, z_dem)
 
 
-def run(test, alg, verbose=False):
+def run(test, alg, verbose=False, beta=None, final_time=None):
     p = TESTS[test]
     s = p['scale']
-    name, max_area, building_mode = run_name(test)
+    name, max_area, building_mode = run_name(test, beta)
     points = ea.read_points(ea.data_path('Test6', p['points']))
     bounding_polygon, building, (x_dem, y_dem, z_dem) = geometry(test)
     cs = x_dem[1] - x_dem[0]
@@ -122,6 +126,8 @@ def run(test, alg, verbose=False):
 
     domain.set_name(name)
     domain.set_flow_algorithm(alg)
+    if beta is not None:
+        domain.beta_w = domain.beta_uh = domain.beta_vh = beta
 
     # Floor only: drop the walls and the partly covered cells beside them.
     z_floor = np.where(z_dem > LOW, 0.0, z_dem)
@@ -164,7 +170,7 @@ def run(test, alg, verbose=False):
     max_speed = 0.0
     wet_depth = 0.05 * s
     for t in domain.evolve(yieldstep=p['yield_step'], outputstep=p['output_step'],
-                           finaltime=p['final_time']):
+                           finaltime=final_time or p['final_time']):
         gauges.sample()
         h = (domain.quantities['stage'].centroid_values
              - domain.quantities['elevation'].centroid_values)

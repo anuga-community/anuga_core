@@ -17,7 +17,7 @@ it on first use, so there is no separate step.
 | `test3_obstruction` | 3: momentum over a small obstruction | 2 s | volume; report text (Section 4.4.3); baseline |
 | `test4_floodplain` | 4: flood propagation over a flat floodplain | 3 min | volume; front order and ~1 h travel time (Section 4.5.4); baseline |
 | `test5_valley` | 5: dam-failure flood down a 17 km valley | 40 s | volume; arrival order; arrival at point 5, peak speeds (Section 4.6.4); final pond level (TUFLOW 2017); baseline |
-| `test6a_dambreak` | 6A: dam break past a building, laboratory flume | 30 s | volume; bore order; gate-flow period (Section 4.7.1); speed bound; baseline |
+| `test6a_dambreak` | 6A: dam break past a building, laboratory flume | 30 s (report: 70 s, with the limiter study) | volume; bore order; gate-flow period (Section 4.7.1); speed bound; baseline |
 | `test6b_dambreak` | 6B: dam break past a building, field scale | 1 min | volume; bore order; speed bound; level end state; baseline |
 
 The report publishes the other packages' results only as raster figures (and
@@ -51,6 +51,10 @@ To write or rewrite the baseline for one algorithm:
 cd test4_floodplain
 EA_REGENERATE_BASELINE=1 python validate_test4.py -alg DE1
 ```
+
+The 6A report also runs `run_limiter_study.py`: the first 40 s with the slope
+limiter's beta set to 0, 0.5 and 1, for its figures of how the limiter moves
+the hydraulic jump (#479). The nightly validation does not run it.
 
 Tests 6A and 6B share their set-up (`ea_dambreak.py`). They take two
 settings for studies, both off by default: `EA_6A_MAX_AREA`/`EA_6B_MAX_AREA`
