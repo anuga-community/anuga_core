@@ -1414,6 +1414,180 @@ class Test_kinematic_viscosity(unittest.TestCase):
             assert q.boundary_values is arrays[name], name
 
 
+    # ------------------------------------------------------------------
+    # Physics of the viscous step (#483): applied on its own to a state,
+    # with the boundary values a domain would give it.
+    # ------------------------------------------------------------------
+
+    def _apply(self, domain, nu, form, dt=0.05):
+        import anuga
+        op = Kinematic_viscosity_operator(domain, diffusivity=nu, form=form)
+        domain.distribute_to_vertices_and_edges()
+        domain.update_boundary()
+        domain.timestep = dt
+        op()
+        return op
+
+    def _wall_stress(self, op, domain, dt=0.05):
+        """The x-momentum the momentum-form step took in through the domain
+        boundary: dt sum over boundary edges of a_e l_e / d_e (u_b - u_i)."""
+        rows, k, v = op._rhs_bdry
+        u = domain.quantities['xvelocity']
+        return dt * num.sum(v * (u.boundary_values[k] - u.centroid_values[rows]))
+
+    def _graded_domain(self):
+        import anuga
+        domain = anuga.create_domain_from_regions(
+            [[0, 0], [10, 0], [10, 2], [0, 2]], boundary_tags={'b': [0, 1, 2, 3]},
+            maximum_triangle_area=0.05,
+            interior_regions=[[[[2, 0.5], [4, 0.5], [4, 1.5], [2, 1.5]], 0.002]],
+            use_cache=False, verbose=False)
+        domain.set_compute_mode('legacy')
+        domain.set_store(False)
+        return domain
+
+    def test_uniform_flow_on_graded_mesh(self):
+        """A uniform velocity must not change, whatever the triangle areas.
+        The solve once scaled each neighbour's term by the neighbour's area,
+        which changed a uniform 1 m/s flow to 0.65-1.49 m/s in one step
+        where the mesh is graded (#483)."""
+        import anuga
+        for form in ('velocity', 'momentum'):
+            domain = self._graded_domain()
+            assert domain.areas.max() > 10 * domain.areas.min()
+            domain.set_quantity('elevation', 0.0)
+            domain.set_quantity('stage', 0.2)
+            domain.set_quantity('xmomentum', 0.2)
+            domain.set_quantity('ymomentum', -0.1)
+            domain.set_boundary({'b': anuga.Transmissive_boundary(domain)})
+            self._apply(domain, 0.01, form)
+            uh = domain.quantities['xmomentum'].centroid_values
+            vh = domain.quantities['ymomentum'].centroid_values
+            assert num.allclose(uh, 0.2, rtol=1.0e-6), form
+            assert num.allclose(vh, -0.1, rtol=1.0e-6), form
+
+    def _depth_step_domain(self):
+        """Deep still water (0.3 m) either side of a shallow fast strip
+        (0.03 m at 2 m/s), away from the end walls."""
+        import anuga
+        domain = anuga.rectangular_cross_domain(40, 4, len1=2.0, len2=0.2)
+        domain.set_compute_mode('legacy')
+        domain.set_store(False)
+        domain.set_quantity('elevation', 0.0)
+        x = domain.centroid_coordinates[:, 0]
+        fast = (x > 0.7) & (x < 1.3)
+        domain.set_quantity('stage', num.where(fast, 0.03, 0.3), location='centroids')
+        domain.set_quantity('xmomentum', num.where(fast, 0.06, 0.0), location='centroids')
+        Br = anuga.Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        return domain, fast
+
+    def test_momentum_form_conserves_momentum(self):
+        """The momentum form moves momentum between cells and creates none.
+        The velocity form gains 13-42% here in one step (#483)."""
+        for nu in (0.003, 0.03):
+            domain, fast = self._depth_step_domain()
+            uh = domain.quantities['xmomentum'].centroid_values
+            p0 = num.sum(domain.areas * uh)
+            op = self._apply(domain, nu, 'momentum')
+            p1 = num.sum(domain.areas * uh)
+            # Only the walls change the total, and they barely feel the strip
+            wall = self._wall_stress(op, domain)
+            assert abs(wall) < 1.0e-5 * p0, wall
+            assert abs(p1 - p0 - wall) < 1.0e-12 * p0, (nu, p0, p1, wall)
+            # Momentum has moved into the deep water, at a modest speed
+            u_deep = uh[~fast] / 0.3
+            assert 0.0 < u_deep.max() < 0.25, u_deep.max()
+
+    def test_momentum_form_needs_eddy_viscosity(self):
+        import anuga
+        domain = anuga.rectangular_cross_domain(2, 2)
+        with self.assertRaises(ValueError):
+            Kinematic_viscosity_operator(domain, form='momentum')
+        with self.assertRaises(ValueError):
+            Kinematic_viscosity_operator(domain, diffusivity=0.01, form='stress')
+
+    def test_shear_decay(self):
+        """u = U cos(pi y / L) between free-slip walls decays as
+        exp(-nu (pi/L)^2 t). Flat bed and constant depth, so both forms
+        agree. The steps are CFL-sized: the operator holds the walls'
+        boundary velocities at their values from the step before, which
+        slows the decay once nu dt / dx^2 is not small."""
+        import anuga
+        L, U, nu, dt, steps = 1.0, 0.1, 0.01, 0.005, 400
+        exact = U * num.exp(-nu * (num.pi / L) ** 2 * dt * steps)
+        for form in ('velocity', 'momentum'):
+            domain = anuga.rectangular_cross_domain(40, 10, len1=4.0, len2=L)
+            domain.set_compute_mode('legacy')
+            domain.set_store(False)
+            domain.set_quantity('elevation', 0.0)
+            domain.set_quantity('stage', 0.5)
+            x, y = domain.centroid_coordinates.T
+            domain.set_quantity('xmomentum', 0.5 * U * num.cos(num.pi * y / L),
+                                location='centroids')
+            domain.distribute_to_vertices_and_edges()
+            Br = anuga.Reflective_boundary(domain)
+            Bt = anuga.Transmissive_boundary(domain)
+            domain.set_boundary({'left': Bt, 'right': Bt, 'top': Br, 'bottom': Br})
+            op = Kinematic_viscosity_operator(domain, diffusivity=nu, form=form)
+            domain.timestep = dt
+            for _ in range(steps):
+                domain.update_boundary()
+                op()
+            u = domain.quantities['xmomentum'].centroid_values / 0.5
+            c = num.cos(num.pi * y / L)
+            mid = abs(x - 2.0) < 0.5     # away from the transmissive ends
+            amplitude = num.sum((u * c)[mid]) / num.sum((c * c)[mid])
+            assert abs(amplitude - exact) < 0.03 * (U - exact), (form, amplitude, exact)
+
+    def test_momentum_form_dry_cells(self):
+        """Dry cells take no part: they keep zero momentum, no speed grows,
+        and momentum is conserved around the dry patch."""
+        import anuga
+        domain = anuga.rectangular_cross_domain(40, 10, len1=2.0, len2=0.5)
+        domain.set_compute_mode('legacy')
+        domain.set_store(False)
+        x, y = domain.centroid_coordinates.T
+        island = (abs(x - 1.0) < 0.2) & (abs(y - 0.25) < 0.1)
+        domain.set_quantity('elevation', num.where(island, 0.5, 0.0), location='centroids')
+        z = domain.quantities['elevation'].centroid_values
+        stage = num.maximum(0.1, z)
+        h = stage - z
+        domain.set_quantity('stage', stage, location='centroids')
+        flow = (x > 0.4) & (x < 1.6) & (y > 0.1) & (y < 0.4)
+        domain.set_quantity('xmomentum', h * num.sin(6 * y) * flow, location='centroids')
+        Br = anuga.Reflective_boundary(domain)
+        domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+        uh = domain.quantities['xmomentum'].centroid_values
+        p0 = num.sum(domain.areas * uh)
+        speed0 = num.max(num.abs(uh[h > 0] / h[h > 0]))
+        op = self._apply(domain, 0.003, 'momentum')
+        assert num.all(uh[island] == 0.0)
+        assert num.max(num.abs(uh[h > 0] / h[h > 0])) <= speed0 * (1 + 1.0e-8)
+        wall = self._wall_stress(op, domain)
+        assert abs(num.sum(domain.areas * uh) - p0 - wall) < 1.0e-12 * abs(p0)
+
+    def test_lake_at_rest_with_viscosity(self):
+        """A lake at rest over an uneven bed with dry ground stays at rest."""
+        import anuga
+        for form in ('velocity', 'momentum'):
+            domain = anuga.rectangular_cross_domain(20, 10, len1=2.0, len2=1.0)
+            domain.set_compute_mode('legacy')
+            domain.set_store(False)
+            domain.set_flow_algorithm('DE1')
+            domain.set_quantity('elevation', lambda x, y: 0.3 * num.sin(3 * x) * num.cos(2 * y) + 0.1 * x)
+            z = domain.quantities['elevation'].centroid_values
+            domain.set_quantity('stage', num.maximum(0.15, z), location='centroids')
+            Br = anuga.Reflective_boundary(domain)
+            domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
+            Kinematic_viscosity_operator(domain, diffusivity=0.01, form=form)
+            stage0 = domain.quantities['stage'].centroid_values.copy()
+            for t in domain.evolve(yieldstep=0.5, finaltime=2.0):
+                pass
+            assert num.allclose(domain.quantities['stage'].centroid_values, stage0, atol=1.0e-6), form
+            assert num.max(num.abs(domain.quantities['xmomentum'].centroid_values)) < 1.0e-6, form
+
+
 ################################################################################
 
 if __name__ == "__main__":
