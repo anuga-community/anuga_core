@@ -54,7 +54,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
 
         #print domain.quantities['stage'].boundary_values
 
-        return Kinematic_viscosity_operator(domain)
+        return Kinematic_viscosity_operator(domain, form='velocity')
 
     #Second test operator class (2 triangles)
     def operator2(self):
@@ -77,7 +77,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
 
 
 
-        return Kinematic_viscosity_operator(domain)
+        return Kinematic_viscosity_operator(domain, form='velocity')
 
     def test_enumerate_boundary(self):
         operator1 = self.operator1()
@@ -440,7 +440,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         b.set_values(0.0)
         b.set_boundary_values(0.0)
 
-        operator = Kinematic_viscosity_operator(domain)
+        operator = Kinematic_viscosity_operator(domain, form='velocity')
 
         n = operator.n
         tot_len = operator.tot_len
@@ -553,7 +553,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         b.set_values(0.0)
         b.set_boundary_values(0.0)
 
-        operator = Kinematic_viscosity_operator(domain)
+        operator = Kinematic_viscosity_operator(domain, form='velocity')
 
         dt = 0.01
         operator.dt = dt
@@ -617,7 +617,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         b.set_values(0.0)
         b.set_boundary_values(0.0)
 
-        kv = Kinematic_viscosity_operator(domain)
+        kv = Kinematic_viscosity_operator(domain, form='velocity')
 
         n = kv.n
         tot_len = kv.tot_len
@@ -667,7 +667,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         v = domain.quantities['yvelocity']
         v.set_boundary_values(2.0)
 
-        kv = Kinematic_viscosity_operator(domain)
+        kv = Kinematic_viscosity_operator(domain, form='velocity')
 
 
         # let's make timestep large so that the final solution will look like
@@ -763,7 +763,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         v = domain.quantities['yvelocity']
         v.set_boundary_values(2.0)
 
-        kv = Kinematic_viscosity_operator(domain)
+        kv = Kinematic_viscosity_operator(domain, form='velocity')
 
 
         # let's make timestep large so that the final solution will look like
@@ -872,7 +872,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         domain.set_boundary( {'left': B, 'right': B, 'top': B, 'bottom': B})
 
         # kill off the wave with viscosity
-        kv = Kinematic_viscosity_operator(domain)
+        kv = Kinematic_viscosity_operator(domain, form='velocity')
 
 
         # let's make timestep large so that the final solution will look like
@@ -1003,7 +1003,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         Q = Quantity(domain)
         Q = 2.0
         # kill off the wave with viscosity
-        kv = Kinematic_viscosity_operator(domain, diffusivity = Q)
+        kv = Kinematic_viscosity_operator(domain, diffusivity = Q, form='velocity')
 
 
         # let's make timestep large so that the final solution will look like
@@ -1139,7 +1139,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         domain.set_boundary( {'left': B, 'right': B, 'top': B, 'bottom': B})
 
         # kill off the wave with viscosity
-        kv = Kinematic_viscosity_operator(domain, diffusivity=2.0)
+        kv = Kinematic_viscosity_operator(domain, diffusivity=2.0, form='velocity')
 
 
         # let's make timestep large so that the final solution will look like
@@ -1282,7 +1282,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         domain.set_boundary( {'left': B, 'right': B, 'top': B, 'bottom': B})
 
         # kill off the wave with viscosity
-        kv = Kinematic_viscosity_operator(domain, diffusivity = 'height')
+        kv = Kinematic_viscosity_operator(domain, diffusivity = 'height', form='velocity')
 
 
         # let's make timestep large so that the final solution will look like
@@ -1403,7 +1403,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
         domain.set_quantity('stage', 1.0)
         Br = anuga.Reflective_boundary(domain)
         domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
-        Kinematic_viscosity_operator(domain)
+        Kinematic_viscosity_operator(domain, form='velocity')
 
         arrays = {name: q.boundary_values
                   for name, q in domain.quantities.items()}
@@ -1419,9 +1419,9 @@ class Test_kinematic_viscosity(unittest.TestCase):
     # with the boundary values a domain would give it.
     # ------------------------------------------------------------------
 
-    def _apply(self, domain, nu, form, dt=0.05):
+    def _apply(self, domain, nu, form, dt=0.05, scheme='implicit'):
         import anuga
-        op = Kinematic_viscosity_operator(domain, diffusivity=nu, form=form)
+        op = Kinematic_viscosity_operator(domain, diffusivity=nu, form=form, scheme=scheme)
         domain.distribute_to_vertices_and_edges()
         domain.update_boundary()
         domain.timestep = dt
@@ -1434,6 +1434,28 @@ class Test_kinematic_viscosity(unittest.TestCase):
         rows, k, v = op._rhs_bdry
         u = domain.quantities['xvelocity']
         return dt * num.sum(v * (u.boundary_values[k] - u.centroid_values[rows]))
+
+    def _explicit_wall_stress(self, domain, nu, dt):
+        """The same for the explicit scheme, worked out here independently:
+        dt sum over boundary edges of nu h_e l_e / d_e (u_b - u_i), with h_e
+        the harmonic mean of the cell and boundary depths."""
+        hmin = domain.minimum_allowed_height
+        nbr = domain.neighbours
+        i, k = num.nonzero(nbr < 0)
+        m = -nbr[i, k] - 1
+        w = domain.quantities['stage']
+        z = domain.quantities['elevation']
+        uh = domain.quantities['xmomentum']
+        h_i = w.centroid_values[i] - z.centroid_values[i]
+        h_b = w.boundary_values[m] - z.edge_values[i, k]
+        wet = (h_i > hmin) & (h_b > hmin)
+        f = lambda h: h / (h * h + 1.0e-8)
+        u_i = uh.centroid_values[i] * f(h_i)
+        u_b = uh.boundary_values[m] * f(h_b)
+        em = domain.edge_coordinates.reshape(-1, 3, 2)[i, k]
+        d = num.sqrt(((em - domain.centroid_coordinates[i])**2).sum(axis=1))
+        h_e = num.where(wet, 2 * h_i * h_b / num.where(wet, h_i + h_b, 1.0), 0.0)
+        return dt * num.sum(nu * h_e * domain.edgelengths[i, k] / d * (u_b - u_i))
 
     def _graded_domain(self):
         import anuga
@@ -1452,7 +1474,8 @@ class Test_kinematic_viscosity(unittest.TestCase):
         which changed a uniform 1 m/s flow to 0.65-1.49 m/s in one step
         where the mesh is graded (#483)."""
         import anuga
-        for form in ('velocity', 'momentum'):
+        for form, scheme in (('velocity', 'implicit'), ('momentum', 'implicit'),
+                             ('momentum', 'explicit')):
             domain = self._graded_domain()
             assert domain.areas.max() > 10 * domain.areas.min()
             domain.set_quantity('elevation', 0.0)
@@ -1460,7 +1483,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
             domain.set_quantity('xmomentum', 0.2)
             domain.set_quantity('ymomentum', -0.1)
             domain.set_boundary({'b': anuga.Transmissive_boundary(domain)})
-            self._apply(domain, 0.01, form)
+            self._apply(domain, 0.01, form, scheme=scheme)
             uh = domain.quantities['xmomentum'].centroid_values
             vh = domain.quantities['ymomentum'].centroid_values
             assert num.allclose(uh, 0.2, rtol=1.0e-6), form
@@ -1499,6 +1522,89 @@ class Test_kinematic_viscosity(unittest.TestCase):
             u_deep = uh[~fast] / 0.3
             assert 0.0 < u_deep.max() < 0.25, u_deep.max()
 
+    def test_explicit_conserves_momentum(self):
+        """The explicit scheme's edge stresses cancel exactly, so the total
+        changes only by the stress on the walls."""
+        for nu in (0.003, 0.03):
+            domain, fast = self._depth_step_domain()
+            uh = domain.quantities['xmomentum'].centroid_values
+            p0 = num.sum(domain.areas * uh)
+            dt = 1.7e-5 / nu            # one sub-step, checked below
+            op = self._apply(domain, nu, 'momentum', dt=dt, scheme='explicit')
+            assert op.substeps == 1
+            wall = self._explicit_wall_stress(domain, nu, dt)
+            p1 = num.sum(domain.areas * uh)
+            assert abs(wall) < 1.0e-5 * p0, wall
+            assert abs(p1 - p0 - wall) < 1.0e-12 * p0, (nu, p0, p1, wall)
+            u_deep = uh[~fast] / 0.3
+            assert 0.0 < u_deep.max() < 0.25, u_deep.max()
+
+    def test_explicit_matches_implicit(self):
+        """On a uniform depth the harmonic and arithmetic edge depths agree,
+        so one small step of either scheme gives the same momentum to
+        first order in dt."""
+        results = {}
+        for scheme in ('implicit', 'explicit'):
+            domain, fast = self._depth_step_domain()
+            domain.set_quantity('stage', 0.3)
+            x = domain.centroid_coordinates[:, 0]
+            domain.set_quantity('xmomentum', 0.3 * num.exp(-((x - 1.0) / 0.2)**2),
+                                location='centroids')
+            uh = domain.quantities['xmomentum'].centroid_values
+            uh0 = uh.copy()
+            self._apply(domain, 0.01, 'momentum', dt=2.0e-4, scheme=scheme)
+            results[scheme] = uh - uh0
+        change = num.max(num.abs(results['implicit']))
+        assert change > 0.0
+        assert num.max(num.abs(results['explicit'] - results['implicit'])) < 0.02 * change
+
+    def test_explicit_substeps(self):
+        """A step longer than the stability limit is split into sub-steps,
+        and the speed stays within its initial range."""
+        domain, fast = self._depth_step_domain()
+        uh = domain.quantities['xmomentum'].centroid_values
+        h = domain.quantities['stage'].centroid_values
+        op = Kinematic_viscosity_operator(domain, diffusivity=0.03, form='momentum',
+                                          scheme='explicit')
+        p0 = num.sum(domain.areas * uh)
+        domain.distribute_to_vertices_and_edges()
+        domain.update_boundary()
+        domain.timestep = 4.5 * op.max_stable_timestep()
+        op()
+        assert op.substeps == 5
+        u = uh / h
+        assert u.min() >= -1.0e-12 and u.max() <= 2.0 + 1.0e-12, (u.min(), u.max())
+        assert abs(num.sum(domain.areas * uh) - p0) < 1.0e-6 * p0
+
+    def test_default_form_warns(self):
+        """Leaving out form keeps the velocity form, with a FutureWarning as
+        the default may change; set_use_kinematic_viscosity does not warn."""
+        import warnings
+        import anuga
+        domain = anuga.rectangular_cross_domain(2, 2)
+        with self.assertWarns(FutureWarning):
+            op = Kinematic_viscosity_operator(domain)
+        assert op.form == 'velocity'
+        domain = anuga.rectangular_cross_domain(2, 2)
+        with warnings.catch_warnings():
+            warnings.simplefilter('error', FutureWarning)
+            Kinematic_viscosity_operator(domain, form='velocity')
+            domain.set_use_kinematic_viscosity(True)
+        assert domain.kv_operator.form == 'velocity'
+
+    def test_explicit_needs_constant_eddy_viscosity(self):
+        import anuga
+        domain = anuga.rectangular_cross_domain(2, 2)
+        for kwargs in (dict(diffusivity=0.01, form='velocity'),
+                       dict(diffusivity='height', form='velocity'),
+                       dict(diffusivity='elevation', form='momentum'),
+                       dict(diffusivity=-1.0, form='momentum')):
+            with self.assertRaises(ValueError):
+                Kinematic_viscosity_operator(domain, scheme='explicit', **kwargs)
+        with self.assertRaises(ValueError):
+            Kinematic_viscosity_operator(domain, diffusivity=0.01, form='momentum',
+                                         scheme='crank-nicolson')
+
     def test_momentum_form_needs_eddy_viscosity(self):
         import anuga
         domain = anuga.rectangular_cross_domain(2, 2)
@@ -1516,7 +1622,8 @@ class Test_kinematic_viscosity(unittest.TestCase):
         import anuga
         L, U, nu, dt, steps = 1.0, 0.1, 0.01, 0.005, 400
         exact = U * num.exp(-nu * (num.pi / L) ** 2 * dt * steps)
-        for form in ('velocity', 'momentum'):
+        for form, scheme in (('velocity', 'implicit'), ('momentum', 'implicit'),
+                             ('momentum', 'explicit')):
             domain = anuga.rectangular_cross_domain(40, 10, len1=4.0, len2=L)
             domain.set_compute_mode('legacy')
             domain.set_store(False)
@@ -1529,20 +1636,27 @@ class Test_kinematic_viscosity(unittest.TestCase):
             Br = anuga.Reflective_boundary(domain)
             Bt = anuga.Transmissive_boundary(domain)
             domain.set_boundary({'left': Bt, 'right': Bt, 'top': Br, 'bottom': Br})
-            op = Kinematic_viscosity_operator(domain, diffusivity=nu, form=form)
+            op = Kinematic_viscosity_operator(domain, diffusivity=nu, form=form,
+                                              scheme=scheme)
             domain.timestep = dt
             for _ in range(steps):
+                # as evolve does before each step
+                domain.distribute_to_vertices_and_edges()
                 domain.update_boundary()
                 op()
             u = domain.quantities['xmomentum'].centroid_values / 0.5
             c = num.cos(num.pi * y / L)
             mid = abs(x - 2.0) < 0.5     # away from the transmissive ends
             amplitude = num.sum((u * c)[mid]) / num.sum((c * c)[mid])
-            assert abs(amplitude - exact) < 0.03 * (U - exact), (form, amplitude, exact)
+            assert abs(amplitude - exact) < 0.03 * (U - exact), (form, scheme, amplitude, exact)
 
     def test_momentum_form_dry_cells(self):
         """Dry cells take no part: they keep zero momentum, no speed grows,
         and momentum is conserved around the dry patch."""
+        for scheme in ('implicit', 'explicit'):
+            self._dry_cells(scheme)
+
+    def _dry_cells(self, scheme):
         import anuga
         domain = anuga.rectangular_cross_domain(40, 10, len1=2.0, len2=0.5)
         domain.set_compute_mode('legacy')
@@ -1561,16 +1675,18 @@ class Test_kinematic_viscosity(unittest.TestCase):
         uh = domain.quantities['xmomentum'].centroid_values
         p0 = num.sum(domain.areas * uh)
         speed0 = num.max(num.abs(uh[h > 0] / h[h > 0]))
-        op = self._apply(domain, 0.003, 'momentum')
+        op = self._apply(domain, 0.003, 'momentum', scheme=scheme)
         assert num.all(uh[island] == 0.0)
         assert num.max(num.abs(uh[h > 0] / h[h > 0])) <= speed0 * (1 + 1.0e-8)
-        wall = self._wall_stress(op, domain)
+        # The flow is away from the walls: an explicit step sees no wall stress
+        wall = self._wall_stress(op, domain) if scheme == 'implicit' else 0.0
         assert abs(num.sum(domain.areas * uh) - p0 - wall) < 1.0e-12 * abs(p0)
 
     def test_lake_at_rest_with_viscosity(self):
         """A lake at rest over an uneven bed with dry ground stays at rest."""
         import anuga
-        for form in ('velocity', 'momentum'):
+        for form, scheme in (('velocity', 'implicit'), ('momentum', 'implicit'),
+                             ('momentum', 'explicit')):
             domain = anuga.rectangular_cross_domain(20, 10, len1=2.0, len2=1.0)
             domain.set_compute_mode('legacy')
             domain.set_store(False)
@@ -1580,7 +1696,7 @@ class Test_kinematic_viscosity(unittest.TestCase):
             domain.set_quantity('stage', num.maximum(0.15, z), location='centroids')
             Br = anuga.Reflective_boundary(domain)
             domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
-            Kinematic_viscosity_operator(domain, diffusivity=0.01, form=form)
+            Kinematic_viscosity_operator(domain, diffusivity=0.01, form=form, scheme=scheme)
             stage0 = domain.quantities['stage'].centroid_values.copy()
             for t in domain.evolve(yieldstep=0.5, finaltime=2.0):
                 pass

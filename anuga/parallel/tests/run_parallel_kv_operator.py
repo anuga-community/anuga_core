@@ -7,7 +7,8 @@ Usage:
   mpiexec -np 3 python run_parallel_kv_operator.py   # parallel → kv_parallel_xvel_velocity.npy
 
 An optional argument 'momentum' runs the momentum-conserving form instead
-(eddy viscosity 0.01), writing kv_*_xvel_momentum.npy.
+(eddy viscosity 0.01), writing kv_*_xvel_momentum.npy, and 'explicit' the
+same form with the explicit scheme, writing kv_*_xvel_explicit.npy.
 """
 
 import os
@@ -46,8 +47,11 @@ domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
 if form == 'momentum':
     kv = Kinematic_viscosity_operator(domain, diffusivity=0.01, form='momentum',
                                        use_triangle_areas=True, verbose=verbose)
+elif form == 'explicit':
+    kv = Kinematic_viscosity_operator(domain, diffusivity=0.01, form='momentum',
+                                       scheme='explicit', verbose=verbose)
 else:
-    kv = Kinematic_viscosity_operator(domain, diffusivity='height',
+    kv = Kinematic_viscosity_operator(domain, diffusivity='height', form='velocity',
                                        use_triangle_areas=True, verbose=verbose)
 
 for t in domain.evolve(yieldstep=0.05, finaltime=0.15):

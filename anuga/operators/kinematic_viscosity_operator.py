@@ -1,4 +1,6 @@
 
+import warnings
+
 from anuga import Quantity
 from anuga.utilities.sparse import Sparse, Sparse_CSR
 from anuga.utilities.cg_solve import conjugate_gradient, Stats, ConvergenceError
@@ -50,13 +52,31 @@ class Kinematic_viscosity_operator(Operator):
     symmetric and positive definite. Each momentum then changes by
     h (u - u^old).
 
+    With scheme='explicit' (form='momentum' and a constant nu only) the
+    momentum form is instead advanced by forward Euler, with the edge depth
+    taken as the harmonic mean 2 h_i h_j / (h_i + h_j). There is no linear
+    solve: one pass over the edges, which runs on the GPU in unified mode.
+    The step is stable while 2 nu dt sum_e (l_e / d_e) / A_i <= 1 for every
+    cell; the operator splits a longer timestep into equal sub-steps that
+    meet it. At the timesteps the flow solver takes nu dt / dx^2 is usually
+    far below this, so one step is enough.
+
+    For a physical eddy viscosity use form='momentum', scheme='explicit'
+    with nu in m^2/s: it is the form the depth-averaged equations give,
+    conserves momentum, and runs on the GPU. The velocity form, the
+    default, is a smoother: it diffuses velocity rather than momentum,
+    which creates momentum where the depth varies. Not passing form gives
+    a FutureWarning, as the default may change; pass form='velocity' to
+    keep it.
+
     """
 
     def __init__(self,
                  domain, diffusivity='height',
                  use_triangle_areas=True,
                  add_safety = False,
-                 form='velocity',
+                 form=None,
+                 scheme='implicit',
                  verbose=False):
 
         if verbose: log.info('Kinematic Viscosity: Beginning Initialisation')
@@ -64,13 +84,38 @@ class Kinematic_viscosity_operator(Operator):
 
         Operator.__init__(self,domain)
 
+        if form is None:
+            warnings.warn(
+                "Kinematic_viscosity_operator: no form given, so using the "
+                "velocity form, du/dt = div(d grad u), which does not conserve "
+                "momentum where the depth varies. Pass form='velocity' to keep "
+                "it, or form='momentum' with an eddy viscosity nu (and "
+                "scheme='explicit') for the momentum-conserving form. The "
+                "default may change in a future release.",
+                FutureWarning, stacklevel=2)
+            form = 'velocity'
         if form not in ('velocity', 'momentum'):
             raise ValueError("form must be 'velocity' or 'momentum', not %r" % (form,))
         if form == 'momentum' and isinstance(diffusivity, str) and diffusivity == 'height':
             raise ValueError("form='momentum' needs the eddy viscosity nu as the "
                              "diffusivity (a number, Quantity or quantity name); "
                              "the depth h is already part of the momentum form")
+        if scheme not in ('implicit', 'explicit'):
+            raise ValueError("scheme must be 'implicit' or 'explicit', not %r" % (scheme,))
+        if scheme == 'explicit':
+            if form != 'momentum':
+                raise ValueError("scheme='explicit' needs form='momentum'")
+            if isinstance(diffusivity, bool) or not isinstance(diffusivity, (int, float)):
+                raise ValueError("scheme='explicit' needs a constant eddy viscosity "
+                                 "nu (a number) as the diffusivity")
+            if diffusivity < 0:
+                raise ValueError('the eddy viscosity must not be negative')
         self.form = form
+        self.scheme = scheme
+
+        if scheme == 'explicit':
+            self._init_explicit(float(diffusivity), verbose)
+            return
 
         #Expose the domain attributes
         self.mesh = self.domain.mesh
@@ -156,6 +201,101 @@ class Kinematic_viscosity_operator(Operator):
         if verbose: log.info('Kinematic Viscosity: Initialisation Done')
 
 
+    def _init_explicit(self, nu, verbose):
+        """Set up the explicit scheme: no matrix, just the stability bound."""
+
+        domain = self.domain
+        self.mesh = domain.mesh
+        self.nu = nu
+        self.verbose = verbose
+        self.n = len(domain)
+        self.u_stats = None
+        self.v_stats = None
+        self.substeps = 0          # sub-steps taken by the last call
+        self._scratch = {}         # 'host' / 'gpu' -> scratch handle
+
+        # G = max over cells of sum_e (l_e / d_e) / A_i, the geometric part
+        # of the stability bound 2 nu dt G <= 1. The same on every rank, so
+        # that all ranks take the same number of sub-steps.
+        mesh = self.mesh
+        nbr = mesh.neighbours
+        cc = mesh.centroid_coordinates
+        em = mesh.edge_midpoint_coordinates.reshape(-1, 3, 2)
+        other = num.where((nbr >= 0)[:, :, None], cc[num.maximum(nbr, 0)], em)
+        dist = num.sqrt(((other - cc[:, None, :])**2).sum(axis=2))
+        g = (mesh.edgelengths / dist).sum(axis=1) / mesh.areas
+        G = num.array([g.max() if len(g) else 0.0])
+        if getattr(domain, 'numproc', 1) > 1:
+            import anuga.utilities.parallel_abstraction as pypar
+            from mpi4py.MPI import MAX
+            G_all = num.zeros(1)
+            pypar.comm.Allreduce(G, G_all, op=MAX)
+            G = G_all
+        self.stability_G = float(G[0])
+
+        if verbose:
+            log.info('Kinematic Viscosity: explicit, nu = %g, stable for dt <= %g'
+                     % (nu, self.max_stable_timestep()))
+
+    def max_stable_timestep(self):
+        """Longest timestep the explicit scheme takes in a single step."""
+
+        if self.nu <= 0.0 or self.stability_G <= 0.0:
+            return float('inf')
+        return 1.0 / (2.0 * self.nu * self.stability_G)
+
+    def _explicit_step(self):
+        """One explicit step of the momentum form, on the device in mode 2."""
+
+        domain = self.domain
+        dt = domain.get_timestep()
+        if dt <= 0.0 or self.nu <= 0.0:
+            self.substeps = 0
+            return
+
+        # As for the sediment operator: inside the host-coherent window that
+        # a CPU-only operator opens (_gpu_host_writes_suppressed) the host
+        # copy is the one that gets pushed back, so work on the host there.
+        on_gpu = (domain.multiprocessor_mode == 2
+                  and getattr(domain, 'gpu_interface', None) is not None
+                  and not getattr(domain, '_gpu_host_writes_suppressed', False))
+        key = 'gpu' if on_gpu else 'host'
+        if on_gpu:
+            from anuga.shallow_water.sw_domain_gpu_ext import (
+                kv_scratch_alloc_gpu as alloc, kinematic_viscosity_explicit_gpu as step)
+            target = domain.gpu_interface.gpu_dom
+        else:
+            from anuga.shallow_water.sw_domain_openmp_ext import (
+                kv_scratch_alloc as alloc, kinematic_viscosity_explicit as step)
+            target = domain
+        if key not in self._scratch:
+            self._scratch[key] = alloc(self.n)
+        scratch = self._scratch[key]
+
+        nsub = max(1, int(num.ceil(dt / self.max_stable_timestep())))
+        self.substeps = nsub
+        for _ in range(nsub):
+            # Fractional steps run before the step's ghost exchange, and the
+            # stress on an edge shared with another rank needs the ghost's
+            # current momentum.
+            if domain.parallel:
+                if on_gpu:
+                    domain.gpu_interface.exchange_ghosts()
+                else:
+                    domain.update_ghosts()
+            step(target, self.nu, dt / nsub, scratch)
+
+    def __del__(self):
+        # Host scratch only; device scratch is released with the device
+        # context, as the GPU runtime may already be gone at interpreter exit.
+        handle = getattr(self, '_scratch', {}).get('host')
+        if handle is not None:
+            try:
+                from anuga.shallow_water.sw_domain_openmp_ext import kv_scratch_free
+                kv_scratch_free(handle)
+            except Exception:
+                pass
+
     def parallel_safe(self):
         return True
 
@@ -166,6 +306,10 @@ class Kinematic_viscosity_operator(Operator):
         (I + dt (div d grad) ) U^{n+1} = U^{n}
 
         """
+
+        if self.scheme == 'explicit':
+            self._explicit_step()
+            return
 
         domain = self.domain
 

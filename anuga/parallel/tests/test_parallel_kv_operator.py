@@ -1,7 +1,7 @@
 """
 Test that the kinematic viscosity operator gives the same xvelocity field
-when run serially and when run in parallel across 3 processes, in both its
-velocity and momentum forms.
+when run serially and when run in parallel across 3 processes, in its
+velocity and momentum forms and with the explicit scheme.
 """
 
 import os
@@ -21,7 +21,7 @@ except ImportError:
 path = os.path.dirname(os.path.abspath(__file__))
 run_filename = os.path.join(path, 'run_parallel_kv_operator.py')
 
-FORMS = ('velocity', 'momentum')
+FORMS = ('velocity', 'momentum', 'explicit')
 
 
 def serial_file(form):
@@ -94,9 +94,11 @@ class Test_parallel_kv_operator(unittest.TestCase):
             self.assertEqual(serial.shape, parallel.shape,
                              'Serial and parallel result arrays have different shapes')
 
-            # Allow tolerance commensurate with CG convergence (tol = 1e-5)
+            # Allow tolerance commensurate with CG convergence (tol = 1e-5);
+            # the explicit scheme has no solve, so it should match to round-off
+            rtol, atol = (0.0, 1e-10) if form == 'explicit' else (1e-3, 1e-5)
             self.assertTrue(
-                num.allclose(serial, parallel, rtol=1e-3, atol=1e-5),
+                num.allclose(serial, parallel, rtol=rtol, atol=atol),
                 f'{form}: max absolute difference: '
                 f'{num.max(num.abs(serial - parallel)):.3e}')
 

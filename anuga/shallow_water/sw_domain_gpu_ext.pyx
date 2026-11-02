@@ -10,7 +10,7 @@ Key responsibilities:
 """
 
 import cython
-from libc.stdint cimport int64_t, int32_t, uint64_t
+from libc.stdint cimport int64_t, int32_t, uint64_t, uintptr_t
 from libc.stdlib cimport malloc, free
 from libc.string cimport memset
 
@@ -511,6 +511,9 @@ cdef extern from "core_kernels.h" nogil:
     void core_apply_sediment_source(domain* D, double timestep)
     void core_apply_bedload(domain* D, double timestep)
     int64_t core_apply_repose(domain* D)
+    double* core_kv_scratch_alloc(int64_t n)
+    void core_kv_scratch_free(double* scratch)
+    void core_kinematic_viscosity_explicit(domain* D, double nu, double dt, double* scratch)
 
 
 cdef extern from "gpu_culvert_operator.h" nogil:
@@ -2453,6 +2456,29 @@ def apply_sediment_source_gpu(GPUDomain gpu_dom, double timestep):
 def apply_bedload_gpu(GPUDomain gpu_dom, double timestep):
     """Bedload divergence [G-5] on the device."""
     core_apply_bedload(&gpu_dom.GD.D, timestep)
+
+
+def kv_scratch_alloc_gpu(int64_t n):
+    """Device scratch for kinematic_viscosity_explicit_gpu: 2n doubles.
+
+    Device-only memory (omp_target_alloc), so it has no host copy to alias.
+    Returns a handle for kv_scratch_free_gpu.
+    """
+    cdef double* p = core_kv_scratch_alloc(n)
+    if p == NULL:
+        raise MemoryError('could not allocate kinematic viscosity scratch on the device')
+    return <uintptr_t> p
+
+
+def kv_scratch_free_gpu(uintptr_t handle):
+    """Free scratch from kv_scratch_alloc_gpu."""
+    core_kv_scratch_free(<double*> handle)
+
+
+def kinematic_viscosity_explicit_gpu(GPUDomain gpu_dom, double nu, double dt,
+                                     uintptr_t scratch):
+    """Explicit momentum-form viscosity on the device (same kernel as mode 1)."""
+    core_kinematic_viscosity_explicit(&gpu_dom.GD.D, nu, dt, <double*> scratch)
 
 
 def apply_repose_gpu(GPUDomain gpu_dom):
