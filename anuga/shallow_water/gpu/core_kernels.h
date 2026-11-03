@@ -155,7 +155,9 @@ void core_ader_ck_predictor_edge(struct domain *D, double dt);
 // Kinematic viscosity, explicit momentum form: one forward-Euler step with a
 // constant eddy viscosity nu (see the .c comment). scratch is 2n doubles from
 // core_kv_scratch_alloc (device memory on a GPU build).
-double *core_kv_scratch_alloc(anuga_int n);
+double *core_kv_scratch_alloc(anuga_int n, anuga_int m);
+void core_kv_scratch_set_walls(double *scratch, anuga_int n, anuga_int m,
+                               const double *flags);
 void core_kv_scratch_free(double *scratch);
 void core_kinematic_viscosity_explicit(struct domain *D, double nu, double dt,
                                        double *scratch);

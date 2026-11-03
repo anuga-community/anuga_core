@@ -1410,7 +1410,8 @@ cdef extern from "gpu/core_kernels.h" nogil:
 	void core_apply_sediment_source(domain* D, double timestep)
 	void core_apply_bedload(domain* D, double timestep)
 	anuga_int core_apply_repose(domain* D)
-	double* core_kv_scratch_alloc(anuga_int n)
+	double* core_kv_scratch_alloc(anuga_int n, anuga_int m)
+	void core_kv_scratch_set_walls(double* scratch, anuga_int n, anuga_int m, double* flags)
 	void core_kv_scratch_free(double* scratch)
 	void core_kinematic_viscosity_explicit(domain* D, double nu, double dt, double* scratch)
 
@@ -1451,13 +1452,19 @@ def apply_repose(object domain_py_object, update_domain_c_struct=False):
 	return sweeps
 
 
-def kv_scratch_alloc(anuga_int n):
-	"""Scratch for kinematic_viscosity_explicit: 2n doubles. Returns a handle."""
+def kv_scratch_alloc(anuga_int n, anuga_int m):
+	"""Scratch for kinematic_viscosity_explicit: 2n + m doubles. Returns a handle."""
 
-	cdef double* p = core_kv_scratch_alloc(n)
+	cdef double* p = core_kv_scratch_alloc(n, m)
 	if p == NULL:
 		raise MemoryError('could not allocate kinematic viscosity scratch')
 	return <uintptr_t> p
+
+
+def kv_scratch_set_walls(uintptr_t handle, anuga_int n, np.ndarray[double, ndim=1, mode="c"] flags not None):
+	"""Set which of the m boundary edges are walls that carry no stress."""
+
+	core_kv_scratch_set_walls(<double*> handle, n, flags.shape[0], &flags[0] if flags.shape[0] else NULL)
 
 
 def kv_scratch_free(uintptr_t handle):

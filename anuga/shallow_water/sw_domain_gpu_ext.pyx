@@ -511,7 +511,8 @@ cdef extern from "core_kernels.h" nogil:
     void core_apply_sediment_source(domain* D, double timestep)
     void core_apply_bedload(domain* D, double timestep)
     int64_t core_apply_repose(domain* D)
-    double* core_kv_scratch_alloc(int64_t n)
+    double* core_kv_scratch_alloc(int64_t n, int64_t m)
+    void core_kv_scratch_set_walls(double* scratch, int64_t n, int64_t m, double* flags)
     void core_kv_scratch_free(double* scratch)
     void core_kinematic_viscosity_explicit(domain* D, double nu, double dt, double* scratch)
 
@@ -2458,16 +2459,21 @@ def apply_bedload_gpu(GPUDomain gpu_dom, double timestep):
     core_apply_bedload(&gpu_dom.GD.D, timestep)
 
 
-def kv_scratch_alloc_gpu(int64_t n):
-    """Device scratch for kinematic_viscosity_explicit_gpu: 2n doubles.
+def kv_scratch_alloc_gpu(int64_t n, int64_t m):
+    """Device scratch for kinematic_viscosity_explicit_gpu: 2n + m doubles.
 
     Device-only memory (omp_target_alloc), so it has no host copy to alias.
     Returns a handle for kv_scratch_free_gpu.
     """
-    cdef double* p = core_kv_scratch_alloc(n)
+    cdef double* p = core_kv_scratch_alloc(n, m)
     if p == NULL:
         raise MemoryError('could not allocate kinematic viscosity scratch on the device')
     return <uintptr_t> p
+
+
+def kv_scratch_set_walls_gpu(uintptr_t handle, int64_t n, np.ndarray[double, ndim=1, mode="c"] flags not None):
+    """Set which of the m boundary edges are walls that carry no stress."""
+    core_kv_scratch_set_walls(<double*> handle, n, flags.shape[0], &flags[0] if flags.shape[0] else NULL)
 
 
 def kv_scratch_free_gpu(uintptr_t handle):

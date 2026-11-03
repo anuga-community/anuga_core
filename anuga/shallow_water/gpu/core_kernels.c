@@ -4601,20 +4601,35 @@ void core_ader_ck_predictor_edge(struct domain *D, double dt) {
 // 2 nu dt sum_e (l_e / d_e) / A_i <= 1; the operator sub-steps to keep it.
 //
 // A boundary edge takes the boundary values of stage and momentum, and the
-// cell's own bed edge value. dxm and dym are scratch of length n from
-// core_kv_scratch_alloc: the increments are formed for every cell before any
-// is applied, since each cell reads its neighbours' momentum.
+// cell's own bed edge value, except that a Reflective wall carries no stress.
+// Scratch comes from core_kv_scratch_alloc: dxm and dym, of length n, hold the
+// increments, formed for every cell before any is applied since each cell
+// reads its neighbours' momentum; wall, of length m, flags the wall edges.
 
 #ifdef CPU_ONLY_MODE
 #define KV_SCRATCH_LOOP _Pragma("omp parallel for")
 #define KV_DEVICE 0
 #else
-#define KV_SCRATCH_LOOP _Pragma("omp target teams distribute parallel for is_device_ptr(dxm, dym)")
+#define KV_SCRATCH_LOOP _Pragma("omp target teams distribute parallel for is_device_ptr(dxm, dym, wall)")
 #define KV_DEVICE omp_get_default_device()
 #endif
 
-double *core_kv_scratch_alloc(anuga_int n) {
-    return (double *)omp_target_alloc((size_t)(2 * n) * sizeof(double), KV_DEVICE);
+double *core_kv_scratch_alloc(anuga_int n, anuga_int m) {
+    size_t count = (size_t)(2 * n + m);
+    // omp_target_alloc(0) may return NULL, which callers take as failure.
+    return (double *)omp_target_alloc((count > 0 ? count : 1) * sizeof(double), KV_DEVICE);
+}
+
+void core_kv_scratch_set_walls(double *scratch, anuga_int n, anuga_int m,
+                               const double *flags) {
+    if (m <= 0) return;
+#ifdef CPU_ONLY_MODE
+    for (anuga_int k = 0; k < m; k++) scratch[2 * n + k] = flags[k];
+#else
+    omp_target_memcpy(scratch, flags, (size_t)m * sizeof(double),
+                      (size_t)(2 * n) * sizeof(double), 0,
+                      KV_DEVICE, omp_get_initial_device());
+#endif
 }
 
 void core_kv_scratch_free(double *scratch) {
@@ -4643,6 +4658,7 @@ void core_kinematic_viscosity_explicit(struct domain *D, double nu, double dt,
     anuga_geom_t * restrict areas = D->areas;
     double *dxm = scratch;
     double *dym = scratch + n;
+    double *wall = scratch + 2 * n;
 
     if (n == 0 || nu <= 0.0 || dt <= 0.0) return;
 
@@ -4667,6 +4683,7 @@ void core_kinematic_viscosity_explicit(struct domain *D, double nu, double dt,
                     yj = cc[2 * j + 1];
                 } else {
                     anuga_int m = -j - 1;
+                    if (wall[m] != 0.0) continue;
                     hj = stage_bv[m] - bed_ev[3 * i + k];
                     uhj = xmom_bv[m];
                     vhj = ymom_bv[m];

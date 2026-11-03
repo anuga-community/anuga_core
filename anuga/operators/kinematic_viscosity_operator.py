@@ -40,7 +40,9 @@ class Kinematic_viscosity_operator(Operator):
     where nu is the eddy viscosity given by the diffusivity argument (a
     number, a Quantity or a quantity name, not 'height'). An edge between a
     wet and a dry cell carries no stress, so total momentum changes only
-    through the domain boundary.
+    through the domain boundary. In either form a Reflective boundary is a
+    free-slip wall and carries no stress either; other boundaries prescribe
+    the velocity at the edge.
 
     Either form is solved implicitly, one step per call:
 
@@ -164,6 +166,9 @@ class Kinematic_viscosity_operator(Operator):
 
         # Only needs to built once, doesn't change
         kinematic_viscosity_operator_ext.build_geo_structure(self)
+        self._geo_structure_base = self.geo_structure_values.copy()
+        self._geo_boundary_objects = None
+        self._geo_walls_set = False
 
         # Setup type of scaling
         self.set_triangle_areas(use_triangle_areas)
@@ -213,6 +218,7 @@ class Kinematic_viscosity_operator(Operator):
         self.v_stats = None
         self.substeps = 0          # sub-steps taken by the last call
         self._scratch = {}         # 'host' / 'gpu' -> scratch handle
+        self._scratch_walls = {}   # 'host' / 'gpu' -> boundary_objects last set
 
         # G = max over cells of sum_e (l_e / d_e) / A_i, the geometric part
         # of the stability bound 2 nu dt G <= 1. The same on every rank, so
@@ -262,15 +268,23 @@ class Kinematic_viscosity_operator(Operator):
         key = 'gpu' if on_gpu else 'host'
         if on_gpu:
             from anuga.shallow_water.sw_domain_gpu_ext import (
-                kv_scratch_alloc_gpu as alloc, kinematic_viscosity_explicit_gpu as step)
+                kv_scratch_alloc_gpu as alloc, kv_scratch_set_walls_gpu as set_walls,
+                kinematic_viscosity_explicit_gpu as step)
             target = domain.gpu_interface.gpu_dom
         else:
             from anuga.shallow_water.sw_domain_openmp_ext import (
-                kv_scratch_alloc as alloc, kinematic_viscosity_explicit as step)
+                kv_scratch_alloc as alloc, kv_scratch_set_walls as set_walls,
+                kinematic_viscosity_explicit as step)
             target = domain
         if key not in self._scratch:
-            self._scratch[key] = alloc(self.n)
+            self._scratch[key] = alloc(self.n, len(domain.boundary))
         scratch = self._scratch[key]
+        objects = getattr(domain, 'boundary_objects', None)
+        if self._scratch_walls.get(key) is not objects or key not in self._scratch_walls:
+            flags = num.zeros(len(domain.boundary), dtype=float)
+            flags[[k for k, _vol, _edge in self._wall_edges()]] = 1.0
+            set_walls(scratch, self.n, flags)
+            self._scratch_walls[key] = objects
 
         nsub = max(1, int(num.ceil(dt / self.max_stable_timestep())))
         self.substeps = nsub
@@ -284,6 +298,32 @@ class Kinematic_viscosity_operator(Operator):
                 else:
                     domain.update_ghosts()
             step(target, self.nu, dt / nsub, scratch)
+
+    def _wall_edges(self):
+        """(boundary index, triangle, edge) of each Reflective boundary edge.
+
+        A Reflective wall is free-slip, so it exerts no viscous stress: it
+        keeps the flow off the wall through the pressure and the fluxes alone.
+        Its boundary values mirror the flow rather than prescribe a velocity,
+        and using them as one, a sixth of a cell from the centroid on a
+        rectangular cross mesh, swamps the stress between the cells.
+        """
+        from anuga.shallow_water.boundaries import Reflective_boundary
+
+        objects = getattr(self.domain, 'boundary_objects', None) or []
+        return [(k, vol, edge) for k, ((vol, edge), B) in enumerate(objects)
+                if isinstance(B, Reflective_boundary)]
+
+    def _update_wall_edges(self):
+        """Take Reflective edges out of the geometry when the boundaries change."""
+        objects = getattr(self.domain, 'boundary_objects', None)
+        if objects is self._geo_boundary_objects and self._geo_walls_set:
+            return
+        self.geo_structure_values[:] = self._geo_structure_base
+        for _k, vol, edge in self._wall_edges():
+            self.geo_structure_values[vol, edge] = 0.0
+        self._geo_boundary_objects = objects
+        self._geo_walls_set = True
 
     def __del__(self):
         # Host scratch only; device scratch is released with the device
@@ -319,6 +359,8 @@ class Kinematic_viscosity_operator(Operator):
         if self.dt < self.dt_apply:
             return
 
+
+        self._update_wall_edges()
 
         # Setup initial values of velocity
         domain.update_centroids_of_velocities_and_height()

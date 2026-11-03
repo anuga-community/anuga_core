@@ -1705,6 +1705,101 @@ class Test_kinematic_viscosity(unittest.TestCase):
 
 
 ################################################################################
+# Reflective walls are free-slip: they carry no viscous stress.
+################################################################################
+
+_KV_SCHEMES = [dict(form='momentum'), dict(form='momentum', scheme='explicit'), dict(form='velocity')]
+_KV_MOMENTUM_SCHEMES = _KV_SCHEMES[:2]
+
+
+def _kv_channel(N, rows, length=100.0):
+    from anuga import rectangular_cross_domain
+    dx = length / N
+    domain = rectangular_cross_domain(N, rows, len1=length, len2=rows * dx)
+    domain.set_flow_algorithm('DE1')
+    domain.set_compute_mode('legacy')
+    domain.set_store(False)
+    domain.set_quantity('elevation', -1.0)
+    domain.set_quantity('friction', 0.0)
+    domain.set_quantity('stage', 0.0)
+    domain.set_quantity('xmomentum', 0.0)
+    domain.set_quantity('ymomentum', 0.0)
+    return domain
+
+
+def _kv_walls(domain, **others):
+    from anuga import Reflective_boundary
+    R = Reflective_boundary(domain)
+    domain.set_boundary({tag: others.get(tag, R) for tag in ('left', 'right', 'top', 'bottom')})
+
+
+@pytest.mark.parametrize('kwargs', _KV_SCHEMES)
+@pytest.mark.parametrize('N, rows, nu', [(50, 1, 2.0), (100, 1, 2.0), (50, 1, 10.0), (50, 4, 2.0)])
+def test_viscous_wave_decay_in_closed_channel(kwargs, N, rows, nu):
+    """A standing wave's amplitude decays at nu k^2 / 2, on any grid and for any nu."""
+    length = 100.0
+    g = 9.8
+    k = 2 * num.pi / length
+    period = 2 * num.pi / (k * num.sqrt(g))
+    domain = _kv_channel(N, rows, length)
+    # The velocity form is given a larger wave: it loses velocity changes below
+    # the solver's absolute tolerance (1e-5), so small waves decay too slowly.
+    amplitude0 = 1.0e-2 if kwargs['form'] == 'velocity' else 1.0e-3
+    domain.set_quantity('stage', lambda x, y: amplitude0 * num.cos(k * x))
+    _kv_walls(domain)
+    Kinematic_viscosity_operator(domain, diffusivity=nu, **kwargs)
+    basis = num.cos(k * domain.centroid_coordinates[:, 0])
+    amplitude = []
+    for t in domain.evolve(yieldstep=period, finaltime=4 * period):
+        amplitude.append(2 * num.mean(domain.quantities['stage'].centroid_values * basis))
+    rate = -num.log(abs(amplitude[-1] / amplitude[0])) / (4 * period)
+    assert abs(rate / (nu * k * k / 2) - 1.0) < 0.15, rate / (nu * k * k / 2)
+
+
+@pytest.mark.parametrize('kwargs', _KV_MOMENTUM_SCHEMES)
+def test_reflective_walls_keep_total_momentum(kwargs):
+    """With only Reflective walls the stresses cancel in pairs."""
+    domain = _kv_channel(20, 4)
+    domain.set_quantity('xmomentum', lambda x, y: 0.1 * num.sin(x / 7.0) + 0.05)
+    domain.set_quantity('ymomentum', lambda x, y: 0.02 * num.cos(y / 3.0) - 0.01)
+    _kv_walls(domain)
+    operator = Kinematic_viscosity_operator(domain, diffusivity=2.0, **kwargs)
+    domain.distribute_to_vertices_and_edges()
+    domain.update_boundary()
+    domain.timestep = 0.05
+    xmom = domain.quantities['xmomentum'].centroid_values
+    ymom = domain.quantities['ymomentum'].centroid_values
+    x0, y0, spread0 = num.sum(xmom * domain.areas), num.sum(ymom * domain.areas), num.ptp(xmom)
+    for _ in range(20):
+        operator()
+    assert abs(num.sum(xmom * domain.areas) - x0) < 1.0e-9
+    assert abs(num.sum(ymom * domain.areas) - y0) < 1.0e-9
+    assert num.ptp(xmom) < spread0   # and it did diffuse
+
+
+@pytest.mark.parametrize('kwargs', _KV_MOMENTUM_SCHEMES)
+def test_changing_boundary_from_reflective_is_honoured(kwargs):
+    """Other boundaries still prescribe the velocity, also after set_boundary changes one."""
+    domain = _kv_channel(20, 2)
+    domain.set_quantity('xmomentum', 0.1)
+    _kv_walls(domain)
+    operator = Kinematic_viscosity_operator(domain, diffusivity=2.0, **kwargs)
+    domain.distribute_to_vertices_and_edges()
+    domain.update_boundary()
+    domain.timestep = 0.05
+    xmom = domain.quantities['xmomentum'].centroid_values
+    total = num.sum(xmom * domain.areas)
+    operator()
+    assert abs(num.sum(xmom * domain.areas) - total) < 1.0e-9   # uniform flow, walls: nothing
+
+    # Water at rest beyond the left edge now drags on the flow.
+    _kv_walls(domain, left=Dirichlet_boundary([0.0, 0.0, 0.0]))
+    domain.update_boundary()
+    operator()
+    assert num.sum(xmom * domain.areas) < total - 1.0e-3
+
+
+################################################################################
 
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(Test_kinematic_viscosity)
