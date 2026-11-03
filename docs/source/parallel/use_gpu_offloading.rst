@@ -174,7 +174,10 @@ after each CPU operator call.
 +============================================+==================================+
 | ``Bed_shear_erosion_operator``             | No GPU kernel yet                |
 +--------------------------------------------+----------------------------------+
-| ``Kinematic_viscosity_operator``           | No GPU kernel yet                |
+| ``Kinematic_viscosity_operator``           | Implicit solve has no GPU kernel;|
+| (default ``scheme='implicit'``)            | use ``form='momentum',           |
+|                                            | scheme='explicit'``, which runs  |
+|                                            | on the GPU                       |
 +--------------------------------------------+----------------------------------+
 | ``Weir_orifice_trapezoid_operator``        | GPU via GPUCulvertManager        |
 | (parallel)                                 | (cross-boundary MPI supported)   |

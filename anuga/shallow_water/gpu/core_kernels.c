@@ -4574,3 +4574,139 @@ void core_ader_ck_predictor_edge(struct domain *D, double dt) {
         } // end if (fabs(det) >= 1.0e-20)
     }
 }
+
+// ============================================================================
+// Kinematic viscosity, explicit momentum form
+// ============================================================================
+//
+// One forward-Euler step of
+//
+//     d(uh)/dt = div(nu h grad u),    d(vh)/dt = div(nu h grad v)
+//
+// with a constant eddy viscosity nu. Each edge carries the stress
+//
+//     c_e (u_j - u_i),    c_e = nu h_e l_e / d_e,
+//
+// where l_e is the edge length, d_e the distance from the centroid to the
+// neighbour's centroid (or to the edge midpoint on a boundary edge) and h_e
+// the harmonic mean 2 h_i h_j / (h_i + h_j). The two cells of an edge compute
+// the same c_e, so their stresses cancel exactly and total momentum changes
+// only through the domain boundary. The harmonic mean is never more than
+// twice the smaller depth, which keeps the step stable in a shallow cell next
+// to a deep one (the arithmetic mean is not) and makes the stress fall to
+// zero as either side dries. An edge to a cell at or below
+// minimum_allowed_height carries no stress.
+//
+// Stable while dt sum_e c_e / (A_i h_i) <= 1, which holds when
+// 2 nu dt sum_e (l_e / d_e) / A_i <= 1; the operator sub-steps to keep it.
+//
+// A boundary edge takes the boundary values of stage and momentum, and the
+// cell's own bed edge value, except that a Reflective wall carries no stress.
+// Scratch comes from core_kv_scratch_alloc: dxm and dym, of length n, hold the
+// increments, formed for every cell before any is applied since each cell
+// reads its neighbours' momentum; wall, of length m, flags the wall edges.
+
+#ifdef CPU_ONLY_MODE
+#define KV_SCRATCH_LOOP _Pragma("omp parallel for")
+#define KV_DEVICE 0
+#else
+#define KV_SCRATCH_LOOP _Pragma("omp target teams distribute parallel for is_device_ptr(dxm, dym, wall)")
+#define KV_DEVICE omp_get_default_device()
+#endif
+
+double *core_kv_scratch_alloc(anuga_int n, anuga_int m) {
+    size_t count = (size_t)(2 * n + m);
+    // omp_target_alloc(0) may return NULL, which callers take as failure.
+    return (double *)omp_target_alloc((count > 0 ? count : 1) * sizeof(double), KV_DEVICE);
+}
+
+void core_kv_scratch_set_walls(double *scratch, anuga_int n, anuga_int m,
+                               const double *flags) {
+    if (m <= 0) return;
+#ifdef CPU_ONLY_MODE
+    for (anuga_int k = 0; k < m; k++) scratch[2 * n + k] = flags[k];
+#else
+    omp_target_memcpy(scratch, flags, (size_t)m * sizeof(double),
+                      (size_t)(2 * n) * sizeof(double), 0,
+                      KV_DEVICE, omp_get_initial_device());
+#endif
+}
+
+void core_kv_scratch_free(double *scratch) {
+    if (scratch != NULL) omp_target_free(scratch, KV_DEVICE);
+}
+
+void core_kinematic_viscosity_explicit(struct domain *D, double nu, double dt,
+                                       double *scratch) {
+    const anuga_int n = D->number_of_elements;
+    const double hmin = D->minimum_allowed_height;
+    // Velocity from momentum as in update_centroids_of_velocities_and_height.
+    const double H0 = 1.0e-8;
+
+    double * restrict stage_cv = D->stage_centroid_values;
+    double * restrict bed_cv = D->bed_centroid_values;
+    double * restrict xmom_cv = D->xmom_centroid_values;
+    double * restrict ymom_cv = D->ymom_centroid_values;
+    double * restrict stage_bv = D->stage_boundary_values;
+    double * restrict xmom_bv = D->xmom_boundary_values;
+    double * restrict ymom_bv = D->ymom_boundary_values;
+    double * restrict bed_ev = D->bed_edge_values;
+    anuga_int * restrict neighbours = D->neighbours;
+    anuga_geom_t * restrict cc = D->centroid_coordinates;
+    anuga_geom_t * restrict ec = D->edge_coordinates;
+    anuga_geom_t * restrict edgelengths = D->edgelengths;
+    anuga_geom_t * restrict areas = D->areas;
+    double *dxm = scratch;
+    double *dym = scratch + n;
+    double *wall = scratch + 2 * n;
+
+    if (n == 0 || nu <= 0.0 || dt <= 0.0) return;
+
+    KV_SCRATCH_LOOP
+    for (anuga_int i = 0; i < n; i++) {
+        double sx = 0.0, sy = 0.0;
+        double hi = stage_cv[i] - bed_cv[i];
+        if (hi > hmin) {
+            double fi = hi / (hi * hi + H0);
+            double ui = xmom_cv[i] * fi;
+            double vi = ymom_cv[i] * fi;
+            double xi = cc[2 * i];
+            double yi = cc[2 * i + 1];
+            for (int k = 0; k < 3; k++) {
+                anuga_int j = neighbours[3 * i + k];
+                double hj, uhj, vhj, xj, yj;
+                if (j >= 0) {
+                    hj = stage_cv[j] - bed_cv[j];
+                    uhj = xmom_cv[j];
+                    vhj = ymom_cv[j];
+                    xj = cc[2 * j];
+                    yj = cc[2 * j + 1];
+                } else {
+                    anuga_int m = -j - 1;
+                    if (wall[m] != 0.0) continue;
+                    hj = stage_bv[m] - bed_ev[3 * i + k];
+                    uhj = xmom_bv[m];
+                    vhj = ymom_bv[m];
+                    xj = ec[2 * (3 * i + k)];
+                    yj = ec[2 * (3 * i + k) + 1];
+                }
+                if (hj <= hmin) continue;
+                double fj = hj / (hj * hj + H0);
+                double dx = xj - xi, dy = yj - yi;
+                double c = nu * (2.0 * hi * hj / (hi + hj))
+                           * edgelengths[3 * i + k] / sqrt(dx * dx + dy * dy);
+                sx += c * (uhj * fj - ui);
+                sy += c * (vhj * fj - vi);
+            }
+        }
+        double s = dt / areas[i];
+        dxm[i] = s * sx;
+        dym[i] = s * sy;
+    }
+
+    KV_SCRATCH_LOOP
+    for (anuga_int i = 0; i < n; i++) {
+        xmom_cv[i] += dxm[i];
+        ymom_cv[i] += dym[i];
+    }
+}

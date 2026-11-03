@@ -4896,7 +4896,9 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
         if flag :
             # Create Operator if necessary
             if self.kv_operator is None:
-                self.kv_operator = Kinematic_viscosity_operator(self)
+                # The depth-weighted velocity smoother this switch has
+                # always added, whatever the operator's default becomes.
+                self.kv_operator = Kinematic_viscosity_operator(self, form='velocity')
         else:
             if self.kv_operator is None:
                 return
@@ -8023,6 +8025,8 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
         from anuga.structures.gpu_culvert_manager import GPUCulvertManager
         from anuga.operators.collect_max_quantities_operator import Collect_max_quantities_operator
         from anuga.operators.sediment_operator import Sediment_transport_operator
+        from anuga.operators.kinematic_viscosity_operator import (
+            Kinematic_viscosity_operator)
 
         # Initialize GPU culvert manager for Boyd operators if needed
         has_boyd_ops = any(GPUCulvertManager.is_boyd_operator(op)
@@ -8069,6 +8073,11 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
             elif isinstance(op, Sediment_transport_operator):
                 # The sediment kernel runs on the device in mode 2 and updates
                 # the tracer and bed arrays in place, so no host sync is needed.
+                continue
+            elif (isinstance(op, Kinematic_viscosity_operator)
+                  and getattr(op, 'scheme', 'implicit') == 'explicit'):
+                # The explicit scheme is one device kernel updating momentum in
+                # place; the implicit solve still runs on the host.
                 continue
             elif GPUCulvertManager.is_boyd_operator(op):
                 # Handled by GPUCulvertManager (local + cross-boundary via MPI in C)

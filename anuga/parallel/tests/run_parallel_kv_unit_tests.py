@@ -42,7 +42,7 @@ if numprocs > 1:
 Br = Reflective_boundary(domain)
 domain.set_boundary({'left': Br, 'right': Br, 'top': Br, 'bottom': Br})
 
-kv = Kinematic_viscosity_operator(domain, diffusivity='height',
+kv = Kinematic_viscosity_operator(domain, diffusivity='height', form='velocity',
                                    use_triangle_areas=True, verbose=False)
 kv.dt = 0.05   # set a nominal timestep so matrices are meaningful
 

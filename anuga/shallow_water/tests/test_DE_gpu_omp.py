@@ -2423,6 +2423,46 @@ class Test_GPU_OperatorTimeAlignment(unittest.TestCase):
         self._assert_agree('DE_ader2')
 
 
+class Test_GPU_KinematicViscosity(unittest.TestCase):
+    """The explicit kinematic viscosity scheme runs as a device kernel in mode
+    2, without the host round trip, and agrees with mode 1."""
+
+    def _run(self, mode, nu):
+        from anuga.operators.kinematic_viscosity_operator import (
+            Kinematic_viscosity_operator)
+        d = rectangular_cross_domain(24, 16, len1=10., len2=5.)
+        d.set_flow_algorithm('DE_ader2')
+        d.set_name(f'kv_m{mode}')
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', lambda x, y: 0.02 * x)
+        d.set_quantity('stage', lambda x, y: np.where(x < 4.0, 0.5, 0.1))
+        Br = Reflective_boundary(d)
+        d.set_boundary({b: Br for b in d.get_boundary_tags()})
+        op = None
+        if nu > 0:
+            op = Kinematic_viscosity_operator(d, diffusivity=nu, form='momentum',
+                                              scheme='explicit')
+        d.set_multiprocessor_mode(mode)
+        for t in d.evolve(yieldstep=0.5, finaltime=2.0):
+            pass
+        if mode == 2:
+            self.assertFalse(d._has_cpu_only_fractional_operators())
+        if op is not None:
+            self.assertGreaterEqual(op.substeps, 1)
+        return d.quantities['xmomentum'].centroid_values.copy()
+
+    def test_explicit_mode2_matches_mode1(self):
+        m1 = self._run(1, 0.05)
+        m2 = self._run(2, 0.05)
+        np.testing.assert_allclose(
+            m2, m1, atol=1e-8, rtol=0.0,
+            err_msg=f'explicit viscosity mode-1/mode-2 mismatch '
+                    f'(max {np.abs(m2 - m1).max():.3e})')
+        # and the viscosity did something
+        self.assertGreater(np.abs(m1 - self._run(1, 0.0)).max(), 1e-4)
+
+
 class Test_GPU_NonGPUBoundaryFallback(unittest.TestCase):
     """Mode 2 must fall back to host boundary evaluation for boundary types the
     C loop cannot evaluate on the device — for EVERY flow algorithm, including

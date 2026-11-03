@@ -1410,6 +1410,10 @@ cdef extern from "gpu/core_kernels.h" nogil:
 	void core_apply_sediment_source(domain* D, double timestep)
 	void core_apply_bedload(domain* D, double timestep)
 	anuga_int core_apply_repose(domain* D)
+	double* core_kv_scratch_alloc(anuga_int n, anuga_int m)
+	void core_kv_scratch_set_walls(double* scratch, anuga_int n, anuga_int m, double* flags)
+	void core_kv_scratch_free(double* scratch)
+	void core_kinematic_viscosity_explicit(domain* D, double nu, double dt, double* scratch)
 
 
 def apply_sediment_source(object domain_py_object, double timestep,
@@ -1446,6 +1450,37 @@ def apply_repose(object domain_py_object, update_domain_c_struct=False):
 		sweeps = core_apply_repose(D)
 
 	return sweeps
+
+
+def kv_scratch_alloc(anuga_int n, anuga_int m):
+	"""Scratch for kinematic_viscosity_explicit: 2n + m doubles. Returns a handle."""
+
+	cdef double* p = core_kv_scratch_alloc(n, m)
+	if p == NULL:
+		raise MemoryError('could not allocate kinematic viscosity scratch')
+	return <uintptr_t> p
+
+
+def kv_scratch_set_walls(uintptr_t handle, anuga_int n, np.ndarray[double, ndim=1, mode="c"] flags not None):
+	"""Set which of the m boundary edges are walls that carry no stress."""
+
+	core_kv_scratch_set_walls(<double*> handle, n, flags.shape[0], &flags[0] if flags.shape[0] else NULL)
+
+
+def kv_scratch_free(uintptr_t handle):
+	"""Free scratch from kv_scratch_alloc."""
+
+	core_kv_scratch_free(<double*> handle)
+
+
+def kinematic_viscosity_explicit(object domain_py_object, double nu, double dt,
+                                 uintptr_t scratch, update_domain_c_struct=False):
+	"""Fractional step: one explicit step of the momentum-form viscosity."""
+
+	cdef domain* D = get_domain_c_struct_ptr(domain_py_object, update_domain_c_struct=update_domain_c_struct)
+
+	with nogil:
+		core_kinematic_viscosity_explicit(D, nu, dt, <double*> scratch)
 
 
 def protect_new(object domain_py_object, update_domain_c_struct=False):
