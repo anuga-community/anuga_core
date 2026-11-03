@@ -97,6 +97,11 @@ static inline double gpu_edge_limit_ratio(double dq, double lo, double hi, doubl
     return r;
 }
 
+// Change to an edge offset dq that brings it between 0 and the prescribed dq_p.
+static inline double gpu_prescribed_excess(double dq, double dq_p) {
+    return fmin(fmax(dq, fmin(dq_p, 0.0)), fmax(dq_p, 0.0)) - dq;
+}
+
 // Compute edge values with gradient limiting (for typical case with 3 neighbors)
 static inline void gpu_calc_edge_values_with_gradient(
     double cv_k, double cv_k0, double cv_k1, double cv_k2,
@@ -125,17 +130,44 @@ static inline void gpu_calc_edge_values_with_gradient(
         // like a local extremum and would be flattened. Where the boundary
         // condition prescribes the value it plays the part of that neighbour:
         // the edge may move from the centroid towards it but not past it.
-        // The small margin keeps the limiter continuous. Without it an edge with
-        // nothing to limit (offset 0 against a bound of 0) collapses the whole
-        // gradient on round-off alone, so results differ between CPU and GPU.
+        //
+        // The excess comes off the gradient along that edge's own direction, and
+        // the rest of the gradient stays. Scaling the whole gradient instead gives
+        // phi = bound/offset, and where both are tiny (a gradient running along the
+        // boundary, as with a tangential velocity near zero) that ratio turns
+        // round-off into a large change on the other edges, so CPU and GPU diverge.
+        double d, r2;
+        if (prescribed_edges & 1) {
+            d = gpu_prescribed_excess(dqv[0], dq_p0);
+            r2 = dxv0 * dxv0 + dyv0 * dyv0;
+            dqv[1] += d * (dxv0 * dxv1 + dyv0 * dyv1) / r2;
+            dqv[2] += d * (dxv0 * dxv2 + dyv0 * dyv2) / r2;
+            dqv[0] += d;
+        }
+        if (prescribed_edges & 2) {
+            d = gpu_prescribed_excess(dqv[1], dq_p1);
+            r2 = dxv1 * dxv1 + dyv1 * dyv1;
+            dqv[0] += d * (dxv1 * dxv0 + dyv1 * dyv0) / r2;
+            dqv[2] += d * (dxv1 * dxv2 + dyv1 * dyv2) / r2;
+            dqv[1] += d;
+        }
+        if (prescribed_edges & 4) {
+            d = gpu_prescribed_excess(dqv[2], dq_p2);
+            r2 = dxv2 * dxv2 + dyv2 * dyv2;
+            dqv[0] += d * (dxv2 * dxv0 + dyv2 * dyv0) / r2;
+            dqv[1] += d * (dxv2 * dxv1 + dyv2 * dyv1) / r2;
+            dqv[2] += d;
+        }
+
+        // The other edges keep the usual bounds. Scaling towards the centroid
+        // cannot take a prescribed edge past its value. The small margin stops an
+        // edge with no offset against a bound of 0 collapsing the gradient on
+        // round-off alone.
         double margin = 1.0e-6 * fmax(fabs(dqv[0]), fmax(fabs(dqv[1]), fabs(dqv[2])));
         double r = 1000.0;
-        r = gpu_edge_limit_ratio(dqv[0], ((prescribed_edges & 1) ? fmin(dq_p0, 0.0) : qmin) - margin,
-                                 ((prescribed_edges & 1) ? fmax(dq_p0, 0.0) : qmax) + margin, r);
-        r = gpu_edge_limit_ratio(dqv[1], ((prescribed_edges & 2) ? fmin(dq_p1, 0.0) : qmin) - margin,
-                                 ((prescribed_edges & 2) ? fmax(dq_p1, 0.0) : qmax) + margin, r);
-        r = gpu_edge_limit_ratio(dqv[2], ((prescribed_edges & 4) ? fmin(dq_p2, 0.0) : qmin) - margin,
-                                 ((prescribed_edges & 4) ? fmax(dq_p2, 0.0) : qmax) + margin, r);
+        if (!(prescribed_edges & 1)) r = gpu_edge_limit_ratio(dqv[0], qmin - margin, qmax + margin, r);
+        if (!(prescribed_edges & 2)) r = gpu_edge_limit_ratio(dqv[1], qmin - margin, qmax + margin, r);
+        if (!(prescribed_edges & 4)) r = gpu_edge_limit_ratio(dqv[2], qmin - margin, qmax + margin, r);
         double phi = fmin(r * beta_tmp, 1.0);
         edge_values[0] = cv_k + phi * dqv[0];
         edge_values[1] = cv_k + phi * dqv[1];

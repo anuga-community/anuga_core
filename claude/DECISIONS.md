@@ -603,9 +603,18 @@ the fast test suite passed anyway. Only the validation suite showed it.
 So the bound uses real outside information: `limiter_prescribes` on the boundary
 class fills `domain.boundary_limit_mask`, and a prescribed value bounds its edge in
 place of the missing neighbour. Copies of interior values (walls, transmissive
-momentum) must stay out: they say nothing about what is beyond the edge. The bound
-carries a margin of 1e-6 of the gradient; with none, an edge with no offset against
-a zero-width bound collapses the whole gradient on round-off, and CPU and GPU part.
+momentum) must stay out: they say nothing about what is beyond the edge.
+
+The excess is projected off the gradient along that edge's own direction; the other
+edges keep the usual scaling. Scaling the whole gradient to meet the bound was tried
+first and rejected: phi = bound/offset is a ratio of two tiny numbers where the
+gradient runs along the boundary and the value already matches (tangential velocity
+near zero beside a Dirichlet edge), so 1e-11 became 3e-6 on the other edges and CPU
+and GPU drifted 4e-5 apart in deep water. It passed the validation suite and the
+serial mode tests; a strict mode-1/mode-2 test under MPI caught it. Larger margins cure
+the sensitivity but let the edge overshoot the value. A 1e-6 margin stays on the other
+edges, so an edge with no offset against a bound of 0 does not collapse the gradient on
+round-off.
 
 Walls remain first order. A proper treatment needs what a wall does know (zero normal
 velocity, and a stage gradient from the momentum balance), which is separate work.

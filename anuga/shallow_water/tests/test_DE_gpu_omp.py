@@ -3858,6 +3858,28 @@ class Test_GPU_PrescribedBoundaryLimiter(unittest.TestCase):
         self._assert_agree('set_stage', lambda d: anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(
             d, function=lambda t: 0.2))
 
+    def test_round_off_stays_round_off_beside_a_dirichlet_edge(self):
+        # Deep water with almost no y velocity beside the Dirichlet edge: bounding
+        # by scaling the whole gradient took the modes 4e-5 apart here by t = 1.
+        result = {}
+        for mode in (1, 2):
+            d = rectangular_cross_domain(29, 29)
+            d.set_flow_algorithm('DE1')
+            d.set_name(f'beside_dirichlet_m{mode}')
+            d.set_datadir(tempfile.mkdtemp())
+            d.store = False
+            d.set_quantity('elevation', lambda x, y: -x / 2)
+            d.set_quantity('friction', 0.0)
+            d.set_quantity('stage', expression='elevation')
+            Br = Reflective_boundary(d)
+            d.set_boundary({'left': Br, 'right': Dirichlet_boundary([-0.2, 0.0, 0.0]),
+                            'top': Br, 'bottom': Br})
+            d.set_multiprocessor_mode(mode)
+            for t in d.evolve(yieldstep=0.25, finaltime=1.0):
+                pass
+            result[mode] = d.quantities['stage'].centroid_values.copy()
+        np.testing.assert_allclose(result[2], result[1], atol=1e-11, rtol=0.0)
+
     def test_set_boundary_during_a_run(self):
         result = {}
         for mode in (1, 2):

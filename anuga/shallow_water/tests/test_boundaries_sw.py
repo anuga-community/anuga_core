@@ -1030,6 +1030,26 @@ class Test_Prescribed_Boundary_Limiter(unittest.TestCase):
         for noise in (1.0e-16, -1.0e-15, 1.0e-13):
             self.assertTrue(num.allclose(edges(noise), clean, atol=1.0e-8), noise)
 
+    def test_tiny_bound_does_not_amplify_round_off(self):
+        # The y velocity nearly vanishes at the cell and the boundary, so its bound
+        # is tiny, and its gradient runs almost along the boundary, so the offset of
+        # the boundary edge is tiny as well. Their ratio must not set the gradient:
+        # that turned 1e-11 into 3e-6 on the other edges, enough to make results
+        # differ visibly between the CPU and GPU paths.
+        def edges(value):
+            domain = self._domain(lambda d: Dirichlet_boundary([1.0, 0.0, 0.0]))
+            domain.set_quantity('ymomentum', lambda x, y: 0.1 * (y - 2.5) + 1.0e-7 * x)
+            k, edge = self._end_cell(domain)
+            domain.quantities['ymomentum'].centroid_values[k] = value
+            self._extrapolate(domain)
+            return domain.quantities['ymomentum'].edge_values[k].copy()
+
+        worst = 0.0
+        for value in num.linspace(-2.0e-6, 2.0e-6, 41):
+            eps = 1.0e-11
+            worst = max(worst, num.abs(edges(value + eps) - edges(value)).max() / eps)
+        self.assertLess(worst, 10.0)
+
     def test_limit_mask_follows_the_boundary_class(self):
         class Custom(Boundary):
             def evaluate(self, vol_id=None, edge_id=None):

@@ -19,6 +19,10 @@ A patch release on the 4.1 line.
   diffusion alone can change more: a lid-driven cavity with no viscosity loses
   about half its kinetic energy at a given resolution. A custom boundary can
   opt in with the class attribute `limiter_prescribes = (stage, momentum)`.
+* `Domain.reorder()` now renumbers `domain.boundary` and, if the boundary was
+  already set, `boundary_objects` and `boundary_flux_type`. They kept the old
+  triangle numbers, so a boundary set after a reorder paired tags with the wrong
+  edges in those lists. Boundary values themselves were not affected.
 * Sediment: a bed that rises under a thin film no longer leaves the film with
   its whole momentum. Every sediment kernel moves the bed with the stage held,
   so the depth falls by the deposit, and the momentum was left as it was: a

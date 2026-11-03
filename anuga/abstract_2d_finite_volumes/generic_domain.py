@@ -569,6 +569,7 @@ class Generic_Domain:
         old_boundary_enumeration = dict(self.mesh.boundary_enumeration)
 
         self.mesh.reorder(new_order, in_place=True)
+        self.boundary             = self.mesh.boundary
         self.boundary_enumeration = self.mesh.boundary_enumeration
         self.boundary_cells       = self.mesh.boundary_cells
         self.boundary_edges       = self.mesh.boundary_edges
@@ -624,6 +625,12 @@ class Generic_Domain:
                   getattr(self, 'ghost_recv_dict', {})):
             for proc in d:
                 d[proc][0] = inv_order[d[proc][0]]
+
+        # A boundary set before the reorder holds the old triangle numbers in
+        # boundary_objects, boundary_flux_type and boundary_limit_mask. Last, so
+        # a mode-2 device interface is rebuilt on the reordered arrays.
+        if self.boundary_map is not None:
+            self.set_boundary({})
 
     def statistics(self, *args, **kwargs):
         return self.mesh.statistics(*args, **kwargs)
