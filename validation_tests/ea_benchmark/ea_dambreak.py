@@ -101,7 +101,10 @@ def geometry(test):
     a, b = 8.0 * s, 4.0 * s                              # half sides
     corners = [(xc, yc) + sa * a * major + sb * b * minor
                for sa, sb in [(-1, -1), (1, -1), (1, 1), (-1, 1)]]
-    building = [list(c) for c in corners]
+    # eigh differs in the last digits between OpenBLAS CPU kernels, and the mesh
+    # generator turns that into a different mesh (55812 or 55601 triangles in 6A)
+    # and gauge levels 6 cm apart. Round so every machine meshes the same corners.
+    building = [[round(float(c[0]), 6), round(float(c[1]), 6)] for c in corners]
     return bounding_polygon, building, (x_dem, y_dem, z_dem)
 
 
