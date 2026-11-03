@@ -85,6 +85,7 @@ cdef extern from "gpu_domain.h" nogil:
         int64_t* neighbour_edges
         int64_t* surrogate_neighbours
         int64_t* number_of_boundaries
+        int64_t* boundary_limit_mask
         double* normals
         double* edgelengths
         double* areas
@@ -733,6 +734,7 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
     cdef double[::1] stage_backup, xmom_backup, ymom_backup
     cdef int64_t[:,::1] neighbours, neighbour_edges, surrogate_neighbours
     cdef int64_t[::1] number_of_boundaries
+    cdef int64_t[::1] boundary_limit_mask
     cdef double[:,::1] normals, edgelengths
     cdef double[::1] areas, radii, max_speed
     cdef double[:,::1] centroid_coords, edge_coords
@@ -847,6 +849,8 @@ cdef void get_domain_pointers(gpu_domain *GD, object domain_object):
 
     number_of_boundaries = domain_object.number_of_boundaries
     D.number_of_boundaries = &number_of_boundaries[0]
+    boundary_limit_mask = domain_object.boundary_limit_mask
+    D.boundary_limit_mask = &boundary_limit_mask[0]
 
     normals = domain_object.normals
     D.normals = &normals[0, 0]

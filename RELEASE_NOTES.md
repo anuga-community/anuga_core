@@ -4,6 +4,21 @@ A patch release on the 4.1 line.
 
 ## Fixes
 
+* Boundaries: a prescribed boundary value now bounds the edge limiter on that
+  edge. A boundary cell has no neighbour beyond its boundary edge, so the end
+  of a smooth slope looked like a local extremum, the limiter flattened the
+  gradient and the cell went first order. Where a boundary condition prescribes
+  the value (`Dirichlet_boundary`, `Time_boundary`, `Time_space_boundary`,
+  `File_boundary`, `Field_boundary`; stage only for the `Transmissive_*_set_stage`
+  boundaries and `Time_stage_zero_momentum_boundary`), it now stands in for that
+  neighbour: the edge may move towards the value but not past it. Walls,
+  `Transmissive_boundary` and custom boundary classes have no
+  outside information and keep the limiter exactly as before, so a model with
+  only those is unchanged. Models with prescribed boundaries will see small
+  changes near them, and flows driven through a Dirichlet edge by numerical
+  diffusion alone can change more: a lid-driven cavity with no viscosity loses
+  about half its kinetic energy at a given resolution. A custom boundary can
+  opt in with the class attribute `limiter_prescribes = (stage, momentum)`.
 * Sediment: a bed that rises under a thin film no longer leaves the film with
   its whole momentum. Every sediment kernel moves the bed with the stage held,
   so the depth falls by the deposit, and the momentum was left as it was: a

@@ -90,13 +90,21 @@ static inline void gpu_limit_gradient(double * restrict dqv, double qmin, double
     dqv[2] *= phi;
 }
 
+// Largest fraction of an edge's gradient offset dq that stays within [lo, hi].
+static inline double gpu_edge_limit_ratio(double dq, double lo, double hi, double r) {
+    if (dq < -GPU_TINY) return fmin(r, lo / dq);
+    if (dq > GPU_TINY) return fmin(r, hi / dq);
+    return r;
+}
+
 // Compute edge values with gradient limiting (for typical case with 3 neighbors)
 static inline void gpu_calc_edge_values_with_gradient(
     double cv_k, double cv_k0, double cv_k1, double cv_k2,
     double dxv0, double dxv1, double dxv2,
     double dyv0, double dyv1, double dyv2,
     double dx1, double dx2, double dy1, double dy2,
-    double inv_area2, double beta_tmp, double * restrict edge_values) {
+    double inv_area2, double beta_tmp, int prescribed_edges, double dq_p0, double dq_p1, double dq_p2,
+    double * restrict edge_values) {
 
     double dqv[3];
     double dq0 = cv_k0 - cv_k;
@@ -112,6 +120,28 @@ static inline void gpu_calc_edge_values_with_gradient(
 
     double qmin, qmax;
     gpu_find_qmin_and_qmax_dq1_dq2(dq0, dq1, dq2, &qmin, &qmax);
+    if (prescribed_edges) {
+        // A boundary edge has no neighbour, so the end of a smooth slope looks
+        // like a local extremum and would be flattened. Where the boundary
+        // condition prescribes the value it plays the part of that neighbour:
+        // the edge may move from the centroid towards it but not past it.
+        // The small margin keeps the limiter continuous. Without it an edge with
+        // nothing to limit (offset 0 against a bound of 0) collapses the whole
+        // gradient on round-off alone, so results differ between CPU and GPU.
+        double margin = 1.0e-6 * fmax(fabs(dqv[0]), fmax(fabs(dqv[1]), fabs(dqv[2])));
+        double r = 1000.0;
+        r = gpu_edge_limit_ratio(dqv[0], ((prescribed_edges & 1) ? fmin(dq_p0, 0.0) : qmin) - margin,
+                                 ((prescribed_edges & 1) ? fmax(dq_p0, 0.0) : qmax) + margin, r);
+        r = gpu_edge_limit_ratio(dqv[1], ((prescribed_edges & 2) ? fmin(dq_p1, 0.0) : qmin) - margin,
+                                 ((prescribed_edges & 2) ? fmax(dq_p1, 0.0) : qmax) + margin, r);
+        r = gpu_edge_limit_ratio(dqv[2], ((prescribed_edges & 4) ? fmin(dq_p2, 0.0) : qmin) - margin,
+                                 ((prescribed_edges & 4) ? fmax(dq_p2, 0.0) : qmax) + margin, r);
+        double phi = fmin(r * beta_tmp, 1.0);
+        edge_values[0] = cv_k + phi * dqv[0];
+        edge_values[1] = cv_k + phi * dqv[1];
+        edge_values[2] = cv_k + phi * dqv[2];
+        return;
+    }
     gpu_limit_gradient(dqv, qmin, qmax, beta_tmp);
 
     edge_values[0] = cv_k + dqv[0];

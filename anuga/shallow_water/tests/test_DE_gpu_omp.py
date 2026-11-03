@@ -3821,5 +3821,57 @@ class Test_GPU_ElevationSync_Operator(_ElevationSyncCase, unittest.TestCase):
             indices=self.strip(d)))
 
 
+class Test_GPU_PrescribedBoundaryLimiter(unittest.TestCase):
+    """The limiter reads boundary values, so mode-2 must see the same ones as
+    mode-1 and hold the limit mask on the device, including after a later
+    set_boundary(). The limiter must also be continuous: at a discontinuity,
+    round-off differences between the two make the results part."""
+
+    def _domain(self, name, mode, make_boundary):
+        d = rectangular_cross_domain(12, 8, len1=150., len2=100.)
+        d.set_flow_algorithm('DE1')
+        d.set_low_froude(0)
+        d.set_name(f'{name}_m{mode}')
+        d.set_datadir(tempfile.mkdtemp())
+        d.store = False
+        d.set_quantity('elevation', lambda x, y: (x / 150.0) * 2.0 - 1.0)
+        d.set_quantity('friction', 0.03)
+        d.set_quantity('stage', 1.5)
+        Br = Reflective_boundary(d)
+        d.set_boundary({'left': make_boundary(d), 'right': Br, 'top': Br, 'bottom': Br})
+        d.set_multiprocessor_mode(mode)
+        return d
+
+    def _assert_agree(self, name, make_boundary):
+        result = {}
+        for mode in (1, 2):
+            d = self._domain(name, mode, make_boundary)
+            for t in d.evolve(yieldstep=2.0, finaltime=6.0):
+                pass
+            result[mode] = d.quantities['stage'].centroid_values.copy()
+        np.testing.assert_allclose(result[2], result[1], atol=1e-8, rtol=0.0)
+
+    def test_dirichlet(self):
+        self._assert_agree('dirichlet', lambda d: Dirichlet_boundary([0.2, 0.0, 0.0]))
+
+    def test_set_stage(self):
+        self._assert_agree('set_stage', lambda d: anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(
+            d, function=lambda t: 0.2))
+
+    def test_set_boundary_during_a_run(self):
+        result = {}
+        for mode in (1, 2):
+            d = self._domain('switch', mode, lambda d: Reflective_boundary(d))
+            for t in d.evolve(yieldstep=1.0, finaltime=1.0):
+                pass
+            Br = Reflective_boundary(d)
+            d.set_boundary({'left': Dirichlet_boundary([0.2, 0.0, 0.0]),
+                            'right': Br, 'top': Br, 'bottom': Br})
+            for t in d.evolve(yieldstep=2.0, finaltime=5.0):
+                pass
+            result[mode] = d.quantities['stage'].centroid_values.copy()
+        np.testing.assert_allclose(result[2], result[1], atol=1e-8, rtol=0.0)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

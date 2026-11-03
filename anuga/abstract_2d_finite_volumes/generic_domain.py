@@ -65,6 +65,9 @@ class Generic_Domain:
     # reader (see Quantity.vertex_values and _prepare_yield)
     _host_values_stale = False
 
+    # set_boundary() has run and its boundary values are not yet evaluated.
+    _boundary_values_stale = False
+
     def __init__(self,
                  source=None,
                  triangles=None,
@@ -253,6 +256,7 @@ class Generic_Domain:
         self.areas = self.mesh.areas
 
         self.number_of_boundaries = self.mesh.number_of_boundaries
+        self.boundary_limit_mask = num.zeros_like(self.number_of_boundaries)
         self.boundary_length = self.mesh.boundary_length
         self.tag_boundary_cells = self.mesh.tag_boundary_cells
         self.number_of_triangles_per_node = self.mesh.number_of_triangles_per_node
@@ -1203,6 +1207,20 @@ class Generic_Domain:
             if isinstance(B, anuga.Compute_fluxes_boundary):
                 self.boundary_flux_type[k] = 1
 
+        # Per triangle: bits 0-2 say the boundary prescribes stage on that edge,
+        # bits 3-5 momentum. Filled in place, the extensions hold a pointer to it.
+        self.boundary_limit_mask[:] = 0
+        for (vol_id, edge_id), B in self.boundary_objects:
+            stage_set, momentum_set = getattr(B, 'limiter_prescribes', (False, False))
+            if stage_set:
+                self.boundary_limit_mask[vol_id] |= 1 << edge_id
+            if momentum_set:
+                self.boundary_limit_mask[vol_id] |= 8 << edge_id
+
+        # The limiter reads these values, and a continued evolve() does not refresh
+        # them before its first step, so they must not outlive the old boundary.
+        self._boundary_values_stale = True
+
     def set_tag_region(self, *args, **kwargs):
         """Set quantities based on a regional tag.
 
@@ -2008,8 +2026,13 @@ class Generic_Domain:
             # Assuming centroid values ok, calculate edge and vertes values
             self._prepare_yield()
             self.update_boundary()
+            self._boundary_values_stale = False
 
             yield(self.get_time())      # Yield initial values
+
+        elif self._boundary_values_stale:
+            self.update_boundary()
+            self._boundary_values_stale = False
 
         while True:
             initial_relative_time = self.relative_time

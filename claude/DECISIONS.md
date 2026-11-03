@@ -591,3 +591,21 @@ and again when the first grain size allocates the array (the later wins), so no
 device sync is needed mid-run. The sediment_erosion validation case now evolves
 its bed under a frozen slope against a per-cell ODE with depth feedback.
 
+## Edge limiter at boundaries: only a prescribed value relaxes it
+
+A boundary cell cannot tell the end of a slope from a local peak, because nothing
+lies beyond the edge. Flattening both is stable and first order. Assuming a slope
+everywhere (a symmetric bound from the interior range on every boundary edge) was
+tried and rejected: edges ran away from the boundary value at outflows (timestep
+collapse) and overshot next to walls (peak speed doubled in a closed flume), and
+the fast test suite passed anyway. Only the validation suite showed it.
+
+So the bound uses real outside information: `limiter_prescribes` on the boundary
+class fills `domain.boundary_limit_mask`, and a prescribed value bounds its edge in
+place of the missing neighbour. Copies of interior values (walls, transmissive
+momentum) must stay out: they say nothing about what is beyond the edge. The bound
+carries a margin of 1e-6 of the gradient; with none, an edge with no offset against
+a zero-width bound collapses the whole gradient on round-off, and CPU and GPU part.
+
+Walls remain first order. A proper treatment needs what a wall does know (zero normal
+velocity, and a stage gradient from the momentum balance), which is separate work.

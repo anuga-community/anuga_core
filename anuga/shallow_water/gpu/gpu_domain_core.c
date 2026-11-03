@@ -531,6 +531,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
     // Additional arrays for extrapolation
     anuga_int *surrogate_neighbours = GD->D.surrogate_neighbours;
     anuga_int *number_of_boundaries = GD->D.number_of_boundaries;
+    anuga_int *boundary_limit_mask = GD->D.boundary_limit_mask;
     double *x_centroid_work = GD->D.x_centroid_work;
     double *y_centroid_work = GD->D.y_centroid_work;
 
@@ -549,7 +550,7 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
         stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n], \
         stage_siu[0:n], xmom_siu[0:n], ymom_siu[0:n], \
         neighbours[0:3*n], neighbour_edges[0:3*n], \
-        surrogate_neighbours[0:3*n], number_of_boundaries[0:n], \
+        surrogate_neighbours[0:3*n], number_of_boundaries[0:n], boundary_limit_mask[0:n], \
         x_centroid_work[0:n], y_centroid_work[0:n], \
         normals[0:6*n], edgelengths[0:3*n], \
         areas[0:n], radii[0:n], max_speed[0:n], \
@@ -1113,6 +1114,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
     // Additional arrays for extrapolation
     anuga_int *surrogate_neighbours = GD->D.surrogate_neighbours;
     anuga_int *number_of_boundaries = GD->D.number_of_boundaries;
+    anuga_int *boundary_limit_mask = GD->D.boundary_limit_mask;
     double *x_centroid_work = GD->D.x_centroid_work;
     double *y_centroid_work = GD->D.y_centroid_work;
 
@@ -1131,7 +1133,7 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         stage_eu[0:n], xmom_eu[0:n], ymom_eu[0:n], \
         stage_siu[0:n], xmom_siu[0:n], ymom_siu[0:n], \
         neighbours[0:3*n], neighbour_edges[0:3*n], \
-        surrogate_neighbours[0:3*n], number_of_boundaries[0:n], \
+        surrogate_neighbours[0:3*n], number_of_boundaries[0:n], boundary_limit_mask[0:n], \
         x_centroid_work[0:n], y_centroid_work[0:n], \
         normals[0:6*n], edgelengths[0:3*n], \
         areas[0:n], radii[0:n], max_speed[0:n], \

@@ -151,6 +151,7 @@ cdef extern from "sw_domain_openmp.c" nogil:
 		double* edge_coordinates
 		double* centroid_coordinates
 		anuga_int* number_of_boundaries
+		anuga_int* boundary_limit_mask
 		double* stage_edge_values
 		double* xmom_edge_values
 		double* ymom_edge_values
@@ -397,6 +398,7 @@ cdef inline get_python_domain_pointers(domain *D, object domain_py_object):
 	cdef double[:,::1] edge_coordinates
 	cdef double[:,::1] centroid_coordinates
 	cdef anuga_int[::1]  number_of_boundaries
+	cdef anuga_int[::1]  boundary_limit_mask
 	cdef anuga_int[:,::1] surrogate_neighbours
 	cdef double[::1]   max_speed
 	cdef double[::1]   edge_flux_work
@@ -495,6 +497,8 @@ cdef inline get_python_domain_pointers(domain *D, object domain_py_object):
 
 	number_of_boundaries = domain_py_object.number_of_boundaries
 	D.number_of_boundaries = &number_of_boundaries[0]
+	boundary_limit_mask = domain_py_object.boundary_limit_mask
+	D.boundary_limit_mask = &boundary_limit_mask[0]
 
 	if domain_py_object.edge_flux_work is not None:
 		edge_flux_work = domain_py_object.edge_flux_work
