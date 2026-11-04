@@ -362,6 +362,11 @@ class Kinematic_viscosity_operator(Operator):
 
         self._update_wall_edges()
 
+        # The solve runs on the host and reads boundary values, which mode 2
+        # keeps on the device. Without them every open edge looks dry and still.
+        if domain.multiprocessor_mode == 2 and getattr(domain, 'gpu_interface', None) is not None:
+            domain.gpu_interface.sync_boundary_values_from_device()
+
         # Setup initial values of velocity
         domain.update_centroids_of_velocities_and_height()
 

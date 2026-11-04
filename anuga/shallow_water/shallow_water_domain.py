@@ -5916,7 +5916,12 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
             # run the host (openmp) protect + extrapolate, which produces edges
             # AND vertices. The host protect does not affect the device
             # trajectory — the next C step re-protects on the device.
-            self.gpu_interface.sync_from_device()
+            #
+            # Not while fractional operators run: apply_fractional_steps() has
+            # already pulled the centroids, the host is ahead of the device, and a
+            # pull here would discard what an operator has just written.
+            if not self._gpu_host_writes_suppressed:
+                self.gpu_interface.sync_from_device()
             from .sw_domain_openmp_ext import (protect_new,
                                                extrapolate_second_order_edge_sw)
             protect_new(self)

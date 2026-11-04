@@ -1629,6 +1629,25 @@ void gpu_sync_boundary_values(struct gpu_domain *GD) {
                                  bed_bv[0:nb], height_bv[0:nb])
 }
 
+void gpu_sync_boundary_values_from_device(struct gpu_domain *GD) {
+    // Sync boundary values FROM GPU, for a host-side operator that reads them.
+    // gpu_domain_sync_from_device() carries centroids only, and the device owns
+    // these arrays in mode 2, so the host copy otherwise stays at zero.
+    if (!GD->gpu_initialized) return;
+
+    anuga_int nb = GD->D.boundary_length;
+    if (nb == 0) return;
+
+    double *stage_bv = GD->D.stage_boundary_values;
+    double *xmom_bv = GD->D.xmom_boundary_values;
+    double *ymom_bv = GD->D.ymom_boundary_values;
+    double *bed_bv = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
+
+    #pragma omp target update from(stage_bv[0:nb], xmom_bv[0:nb], ymom_bv[0:nb], \
+                                   bed_bv[0:nb], height_bv[0:nb])
+}
+
 void gpu_sync_riverwall_to_device(struct gpu_domain *GD) {
     // Sync riverwall crest elevations and hydraulic properties TO GPU.
     //

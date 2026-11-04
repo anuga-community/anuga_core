@@ -4,6 +4,14 @@ A patch release on the 4.1 line.
 
 ## Fixes
 
+* Kinematic viscosity: the implicit scheme now works in mode 2 on a GPU build.
+  The operator solves on the host, but its last call,
+  `distribute_to_vertices_and_edges()`, pulled the centroids back from the device
+  and discarded the momentum it had just computed, so viscosity had no effect at
+  all: results were identical to a run without the operator. The solve also read
+  host boundary values that were never synced, so open edges looked dry and
+  still. Device and host runs now agree to round-off. Viscous mode-2 runs on a
+  GPU change; CPU builds and the explicit scheme do not.
 * Sediment: a bed that rises under a thin film no longer leaves the film with
   its whole momentum. Every sediment kernel moves the bed with the stage held,
   so the depth falls by the deposit, and the momentum was left as it was: a
