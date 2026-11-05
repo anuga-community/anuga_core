@@ -1,15 +1,20 @@
 """Tests for anuga/rain: Arr_hub_rain, Single_pattern, Raster_rate_operator,
-ARR_rate_operator."""
+ARR_rate_operator, Arr_grd, Arr_ifd_rain."""
 
 import io
 import os
 import tempfile
 import unittest
+import warnings
 import zipfile
 
 import numpy as np
+import pytest
 
-from anuga import Domain, Reflective_boundary
+from anuga import Domain, Reflective_boundary, rectangular_cross_domain
+from anuga.coordinate_transforms.geo_reference import Geo_reference
+from anuga.rain import ARR_rate_operator, Arr_grd, Arr_ifd_rain
+from anuga.rain.raster_rate_operator import Raster_rate_operator
 
 
 # ---------------------------------------------------------------------------
@@ -444,6 +449,245 @@ class TestARRRateOperator(unittest.TestCase):
     def test_accessible_from_package(self):
         import anuga.rain
         self.assertTrue(hasattr(anuga.rain, 'ARR_rate_operator'))
+
+
+# ---------------------------------------------------------------------------
+# Tests: the time span of the rain data
+# ---------------------------------------------------------------------------
+
+class _Pattern:
+    """10 mm over three 10-minute steps."""
+    Tstep = 10
+    Ev_dur = 30
+    Ev_dep = 10.0
+    Tplot = np.array([0.0, 10.0, 20.0, 30.0])
+    Rplot = np.array([0.0, 2.0, 3.0, 5.0])
+
+
+class _Raster:
+    """2 mm then 3 mm, in two 10-minute slices."""
+    time_step = 600.0
+    times = np.array([0.0, 600.0])
+
+    def extract_data_at_locations(self, locations):
+        self.locations = np.array(locations)
+        return np.tile([[0.002], [0.003]], (1, len(locations)))
+
+
+def _flat_domain(mode, starttime=0.0):
+    domain = rectangular_cross_domain(4, 4, len1=100.0, len2=100.0)
+    domain.set_name('rain_span')
+    domain.set_store(False)
+    domain.set_quantity('elevation', 0.0)
+    domain.set_quantity('friction', 0.03)
+    domain.set_quantity('stage', 0.0)
+    domain.set_boundary({tag: Reflective_boundary(domain)
+                         for tag in domain.get_boundary_tags()})
+    domain.set_starttime(starttime)
+    domain.set_compute_mode(mode)
+    return domain
+
+
+def _delivered_mm(domain, finaltime):
+    for _ in domain.evolve(yieldstep=60.0, finaltime=finaltime):
+        pass
+    return domain.quantities['stage'].get_integral() / 1.0e4 * 1000.0
+
+
+@pytest.mark.parametrize('mode', ['legacy', 'unified'])
+@pytest.mark.parametrize('starttime, finaltime', [(0.0, 1800.0), (0.0, 3600.0), (-1800.0, 3600.0)])
+def test_arr_delivers_the_storm_depth_and_no_more(mode, starttime, finaltime):
+    domain = _flat_domain(mode, starttime)
+    ARR_rate_operator(domain, np.full(len(domain), 10.0), _Pattern)
+    assert _delivered_mm(domain, finaltime) == pytest.approx(10.0, abs=1e-9)
+
+
+@pytest.mark.parametrize('mode', ['legacy', 'unified'])
+@pytest.mark.parametrize('starttime', [0.0, -1800.0])
+def test_raster_delivers_its_slices_and_no_more(mode, starttime):
+    domain = _flat_domain(mode, starttime)
+    Raster_rate_operator(domain, _Raster())
+    assert _delivered_mm(domain, 3600.0) == pytest.approx(5.0, abs=1e-9)
+
+
+@pytest.mark.parametrize('make', ['arr', 'raster'])
+def test_default_rate_applies_outside_the_data(make):
+    domain = _flat_domain('legacy')
+    if make == 'arr':
+        op = ARR_rate_operator(domain, np.full(len(domain), 10.0), _Pattern,
+                               default_rate=lambda t: 1.0e-6 * t)
+        end = 1800.0
+    else:
+        op = Raster_rate_operator(domain, _Raster(), default_rate=lambda t: 1.0e-6 * t)
+        end = 1200.0
+
+    domain.set_time(end)
+    op()
+    np.testing.assert_allclose(op.rate, 1.0e-6 * end)
+
+    # A default that varies with time is followed, and stays a centroid array.
+    domain.set_time(end + 100.0)
+    op()
+    np.testing.assert_allclose(op.rate, 1.0e-6 * (end + 100.0))
+    assert op.rate_type == 'centroid_array'
+
+    domain.set_time(0.0)
+    op()
+    np.testing.assert_allclose(op.rate, op._rates_cache[1 if make == 'arr' else 0])
+
+
+def test_raster_is_read_at_absolute_coordinates():
+    domain = _flat_domain('legacy')
+    domain.set_georeference(Geo_reference(zone=56, xllcorner=300000.0, yllcorner=6000000.0))
+    raster = _Raster()
+    Raster_rate_operator(domain, raster)
+    np.testing.assert_allclose(raster.locations,
+                               domain.get_centroid_coordinates(absolute=True))
+
+
+# ---------------------------------------------------------------------------
+# Tests: ARR_rate_operator inputs
+# ---------------------------------------------------------------------------
+
+def test_ev_dep_has_no_effect_on_the_rates():
+    class Scaled(_Pattern):
+        Ev_dep = 100.0
+        Rplot = _Pattern.Rplot * 10.0
+
+    domain = _flat_domain('legacy')
+    depth = np.full(len(domain), 10.0)
+    np.testing.assert_allclose(ARR_rate_operator(domain, depth, _Pattern)._rates_cache,
+                               ARR_rate_operator(domain, depth, Scaled)._rates_cache)
+
+
+@pytest.mark.parametrize('bad', [np.nan, -9999.0, np.inf])
+def test_arr_rejects_bad_depths_only_where_it_acts(bad):
+    domain = _flat_domain('legacy')
+    depth = np.full(len(domain), 10.0)
+    depth[0] = bad
+    with pytest.raises(ValueError, match='depth_array'):
+        ARR_rate_operator(domain, depth, _Pattern)
+    ARR_rate_operator(domain, depth, _Pattern, indices=[1, 2, 3])
+
+
+def test_ifd_duration_warns_on_a_mismatch():
+    domain = _flat_domain('legacy')
+    depth = np.full(len(domain), 10.0)
+    with pytest.warns(UserWarning, match='60 min.*30 min'):
+        ARR_rate_operator(domain, depth, _Pattern, ifd_duration=60)
+    with warnings.catch_warnings():
+        warnings.simplefilter('error')
+        ARR_rate_operator(domain, depth, _Pattern, ifd_duration=30)
+        ARR_rate_operator(domain, depth, _Pattern, ifd_duration='30')
+        ARR_rate_operator(domain, depth, _Pattern)
+
+
+# ---------------------------------------------------------------------------
+# Tests: Arr_grd and Arr_ifd_rain
+# ---------------------------------------------------------------------------
+
+XLL, YLL, CELL, NCOLS, NROWS = 150.0, -34.0, 0.025, 4, 3
+
+
+def _grid_values():
+    """Row 0 is the northernmost; each value identifies its cell."""
+    return [[100.0 * (row + 1) + col for col in range(NCOLS)] for row in range(NROWS)]
+
+
+@pytest.fixture
+def make_grd(tmp_path):
+    def make(values=None, name='catchment_depth_60min_100aep.txt.asc'):
+        values = _grid_values() if values is None else values
+        text = (f'ncols {NCOLS}\nnrows {NROWS}\nxllcorner {XLL}\nyllcorner {YLL}\n'
+                f'cellsize {CELL}\nNODATA_value -9999\n')
+        text += ''.join(' '.join(str(v) for v in row) + '\n' for row in values)
+        with zipfile.ZipFile(tmp_path / 'IFD.zip', 'w') as archive:
+            archive.writestr(name, text)
+        return Arr_grd(60, 100, name, str(tmp_path / 'IFD.zip'), str(tmp_path))
+    return make
+
+
+@pytest.mark.parametrize('fx', [0.0, 0.1, 0.49, 0.51, 0.9])
+@pytest.mark.parametrize('fy', [0.0, 0.1, 0.49, 0.51, 0.9])
+def test_grid_lookup_returns_the_cell_holding_the_point(make_grd, fx, fy):
+    grd = make_grd()
+    values = _grid_values()
+    for from_south in range(NROWS):
+        for col in range(NCOLS):
+            lon = XLL + (col + fx) * CELL
+            lat = YLL + (from_south + fy) * CELL
+            expected = values[NROWS - 1 - from_south][col]
+            assert grd.get_rain_at_point(lon, lat) == expected
+            assert grd.get_rain_at_points([lon], [lat])[0] == expected
+
+
+def test_grid_lookup_on_the_outer_edges(make_grd):
+    grd = make_grd()
+    east, north = XLL + NCOLS * CELL, YLL + NROWS * CELL
+    # (Lon, Lat, row from the north, column)
+    for lon, lat, row, col in ((XLL, YLL, NROWS - 1, 0),
+                               (east, YLL, NROWS - 1, NCOLS - 1),
+                               (XLL, north, 0, 0),
+                               (east, north, 0, NCOLS - 1)):
+        assert grd.get_rain_at_point(lon, lat) == _grid_values()[row][col]
+
+
+@pytest.mark.parametrize('lon, lat', [(XLL - 0.01, YLL + 0.01), (XLL + NCOLS * CELL + 0.01, YLL + 0.01),
+                                      (XLL + 0.01, YLL - 0.01), (XLL + 0.01, YLL + NROWS * CELL + 0.01)])
+def test_grid_lookup_rejects_points_outside(make_grd, lon, lat):
+    grd = make_grd()
+    with pytest.raises(ValueError, match='outside the IFD grid'):
+        grd.get_rain_at_point(lon, lat)
+    with pytest.raises(ValueError, match='1 of 2 points'):
+        grd.get_rain_at_points([XLL + 0.01, lon], [YLL + 0.01, lat])
+
+
+def test_nodata_is_nan_with_a_warning(make_grd):
+    values = _grid_values()
+    values[0][1] = -9999
+    grd = make_grd(values)
+    assert grd.NODATA_value == -9999.0
+    assert np.isnan(grd.IFD_Data[0, 1])
+    assert np.nanmin(grd.IFD_Data) > 0.0
+
+    north = YLL + (NROWS - 0.5) * CELL
+    with pytest.warns(UserWarning, match='1 of 2 points fall on NODATA'):
+        out = grd.get_rain_at_points([XLL + 1.5 * CELL, XLL + 0.5 * CELL], [north, north])
+    assert np.isnan(out[0]) and out[1] == values[0][0]
+
+
+def test_plot_at_cell_centres_with_nodata(make_grd):
+    plt = pytest.importorskip('matplotlib.pyplot')
+    values = _grid_values()
+    values[0][1] = -9999
+    grd = make_grd(values)
+    ax = grd.plot()
+    # Plotted at the cell centres, the mesh's cell edges are the grid's edges.
+    assert ax.collections[0].get_datalim(ax.transData).x0 == pytest.approx(XLL)
+    plt.close('all')
+
+
+def test_arr_ifd_rain_opens_a_grid_by_duration_and_aep(tmp_path, make_grd):
+    make_grd()  # writes tmp_path/IFD.zip
+    ifd = Arr_ifd_rain(str(tmp_path), Lat=-33.97, Lon=150.01)
+    grd = ifd.open_grd(Dur=60, Frq=100)
+    assert (int(grd.dur), int(grd.frq)) == (60, 100)
+    assert grd.get_rain_at_point(XLL + 0.5 * CELL, YLL + 0.5 * CELL) == _grid_values()[-1][0]
+    assert ifd.open_grd(Dur=30, Frq=100) is None
+
+
+def test_documented_centroid_lookup(make_grd):
+    """The recipe in docs/source/setup_anuga_script/rainfall.rst."""
+    pytest.importorskip('pyproj')
+    from anuga.coordinate_transforms.redfearn import epsg_to_ll, ll_to_epsg
+
+    easting, northing = ll_to_epsg(YLL + 0.03, XLL + 0.05, 32756)
+    domain = _flat_domain('legacy')
+    domain.set_georeference(Geo_reference(epsg=32756, xllcorner=float(easting),
+                                          yllcorner=float(northing)))
+    xy = domain.get_centroid_coordinates(absolute=True)
+    lats, lons = epsg_to_ll(xy[:, 0], xy[:, 1], domain.get_epsg())
+    assert make_grd().get_rain_at_points(lons, lats).shape == (len(domain),)
 
 
 if __name__ == '__main__':
