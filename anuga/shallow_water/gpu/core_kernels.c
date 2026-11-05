@@ -236,6 +236,11 @@ void core_extrapolate_edge_pass_on(struct domain *D, double predictor_dt,
     anuga_int * restrict number_of_boundaries = D->number_of_boundaries;
     double * restrict x_centroid_work = D->x_centroid_work;
     double * restrict y_centroid_work = D->y_centroid_work;
+    anuga_int * restrict neighbours = D->neighbours;
+    anuga_int * restrict boundary_limit_mask = D->boundary_limit_mask;
+    double * restrict stage_bv = D->stage_boundary_values;
+    double * restrict xmom_bv = D->xmom_boundary_values;
+    double * restrict ymom_bv = D->ymom_boundary_values;
 
     // Generic passive tracers. n_tracers == 0 in every ordinary run; keep only
     // the loop-invariant count live in the common path.
@@ -352,13 +357,73 @@ void core_extrapolate_edge_pass_on(struct domain *D, double predictor_dt,
             double inv_area2 = 1.0 / area2;
             double edge_vals[3];
 
+            // Edges whose boundary condition prescribes the value: bound them by
+            // that value, but only where the edge depth cannot come near zero.
+            int stage_edges = 0, mom_edges = 0;
+            double dq_stage0 = 0.0, dq_stage1 = 0.0, dq_stage2 = 0.0;
+            double dq_height0 = 0.0, dq_height1 = 0.0, dq_height2 = 0.0;
+            double dq_u0 = 0.0, dq_u1 = 0.0, dq_u2 = 0.0;
+            double dq_v0 = 0.0, dq_v1 = 0.0, dq_v2 = 0.0;
+            int limit_mask = (int)boundary_limit_mask[k];
+            if (limit_mask && 2.0 * fmax(hmax - hc, hc - hmin) < hc) {
+                double dz1 = bed_cv[k1] - bed_cv[k0];
+                double dz2 = bed_cv[sn2] - bed_cv[k0];
+                double az = (dy2 * dz1 - dy1 * dz2) * inv_area2;
+                double bz = (dx1 * dz2 - dx2 * dz1) * inv_area2;
+                if (limit_mask & 9) {
+                    anuga_int b = -neighbours[k3 + 0] - 1;
+                    double h_b = stage_bv[b] - (bed_cv[k] + az * dxv0 + bz * dyv0);
+                    if (h_b >= 1.0e-6 && (limit_mask & 1)) {
+                        stage_edges |= 1;
+                        dq_stage0 = stage_bv[b] - stage_cv[k];
+                        dq_height0 = h_b - hc;
+                    }
+                    if (h_b >= 1.0e-6 && (limit_mask & 8)) {
+                        mom_edges |= 1;
+                        double f = extrapolate_velocity_second_order ? 1.0 / h_b : 1.0;
+                        dq_u0 = xmom_bv[b] * f - x_centroid_work[k];
+                        dq_v0 = ymom_bv[b] * f - y_centroid_work[k];
+                    }
+                }
+                if (limit_mask & 18) {
+                    anuga_int b = -neighbours[k3 + 1] - 1;
+                    double h_b = stage_bv[b] - (bed_cv[k] + az * dxv1 + bz * dyv1);
+                    if (h_b >= 1.0e-6 && (limit_mask & 2)) {
+                        stage_edges |= 2;
+                        dq_stage1 = stage_bv[b] - stage_cv[k];
+                        dq_height1 = h_b - hc;
+                    }
+                    if (h_b >= 1.0e-6 && (limit_mask & 16)) {
+                        mom_edges |= 2;
+                        double f = extrapolate_velocity_second_order ? 1.0 / h_b : 1.0;
+                        dq_u1 = xmom_bv[b] * f - x_centroid_work[k];
+                        dq_v1 = ymom_bv[b] * f - y_centroid_work[k];
+                    }
+                }
+                if (limit_mask & 36) {
+                    anuga_int b = -neighbours[k3 + 2] - 1;
+                    double h_b = stage_bv[b] - (bed_cv[k] + az * dxv2 + bz * dyv2);
+                    if (h_b >= 1.0e-6 && (limit_mask & 4)) {
+                        stage_edges |= 4;
+                        dq_stage2 = stage_bv[b] - stage_cv[k];
+                        dq_height2 = h_b - hc;
+                    }
+                    if (h_b >= 1.0e-6 && (limit_mask & 32)) {
+                        mom_edges |= 4;
+                        double f = extrapolate_velocity_second_order ? 1.0 / h_b : 1.0;
+                        dq_u2 = xmom_bv[b] * f - x_centroid_work[k];
+                        dq_v2 = ymom_bv[b] * f - y_centroid_work[k];
+                    }
+                }
+            }
+
             // Stage
             double beta_stage = beta_w_dry + (beta_w - beta_w_dry) * hfactor;
             if (beta_stage > 0.0) {
                 gpu_calc_edge_values_with_gradient(
                     stage_cv[k], stage_cv[k0], stage_cv[k1], stage_cv[sn2],
                     dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                    dx1, dx2, dy1, dy2, inv_area2, beta_stage, edge_vals);
+                    dx1, dx2, dy1, dy2, inv_area2, beta_stage, stage_edges, dq_stage0, dq_stage1, dq_stage2, edge_vals);
             } else {
                 gpu_set_constant_edge_values(stage_cv[k], edge_vals);
             }
@@ -371,7 +436,7 @@ void core_extrapolate_edge_pass_on(struct domain *D, double predictor_dt,
                 gpu_calc_edge_values_with_gradient(
                     height_cv[k], height_cv[k0], height_cv[k1], height_cv[sn2],
                     dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                    dx1, dx2, dy1, dy2, inv_area2, beta_stage, edge_vals);
+                    dx1, dx2, dy1, dy2, inv_area2, beta_stage, stage_edges, dq_height0, dq_height1, dq_height2, edge_vals);
             } else {
                 gpu_set_constant_edge_values(height_cv[k], edge_vals);
             }
@@ -385,7 +450,7 @@ void core_extrapolate_edge_pass_on(struct domain *D, double predictor_dt,
                 gpu_calc_edge_values_with_gradient(
                     x_centroid_work[k], x_centroid_work[k0], x_centroid_work[k1], x_centroid_work[sn2],
                     dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                    dx1, dx2, dy1, dy2, inv_area2, beta_xmom, edge_vals);
+                    dx1, dx2, dy1, dy2, inv_area2, beta_xmom, mom_edges, dq_u0, dq_u1, dq_u2, edge_vals);
             } else {
                 gpu_set_constant_edge_values(x_centroid_work[k], edge_vals);
             }
@@ -399,7 +464,7 @@ void core_extrapolate_edge_pass_on(struct domain *D, double predictor_dt,
                 gpu_calc_edge_values_with_gradient(
                     y_centroid_work[k], y_centroid_work[k0], y_centroid_work[k1], y_centroid_work[sn2],
                     dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                    dx1, dx2, dy1, dy2, inv_area2, beta_ymom, edge_vals);
+                    dx1, dx2, dy1, dy2, inv_area2, beta_ymom, mom_edges, dq_v0, dq_v1, dq_v2, edge_vals);
             } else {
                 gpu_set_constant_edge_values(y_centroid_work[k], edge_vals);
             }
@@ -423,7 +488,7 @@ void core_extrapolate_edge_pass_on(struct domain *D, double predictor_dt,
                         gpu_calc_edge_values_with_gradient(
                             t_cv[off + k], t_cv[off + k0], t_cv[off + k1], t_cv[off + sn2],
                             dxv0, dxv1, dxv2, dyv0, dyv1, dyv2,
-                            dx1, dx2, dy1, dy2, inv_area2, beta_t, edge_vals);
+                            dx1, dx2, dy1, dy2, inv_area2, beta_t, 0, 0.0, 0.0, 0.0, edge_vals);
                     } else {
                         gpu_set_constant_edge_values(t_cv[off + k], edge_vals);
                     }
