@@ -596,14 +596,14 @@ def _grid_values():
 
 @pytest.fixture
 def make_grd(tmp_path):
-    def make(values=None, name='catchment_depth_60min_100aep.txt.asc'):
+    def make(values=None, name='catchment_depth_60min_01000aep.txt.asc'):
         values = _grid_values() if values is None else values
         text = (f'ncols {NCOLS}\nnrows {NROWS}\nxllcorner {XLL}\nyllcorner {YLL}\n'
                 f'cellsize {CELL}\nNODATA_value -9999\n')
         text += ''.join(' '.join(str(v) for v in row) + '\n' for row in values)
         with zipfile.ZipFile(tmp_path / 'IFD.zip', 'w') as archive:
             archive.writestr(name, text)
-        return Arr_grd(60, 100, name, str(tmp_path / 'IFD.zip'), str(tmp_path))
+        return Arr_grd(60, 1000, name, str(tmp_path / 'IFD.zip'), str(tmp_path))
     return make
 
 
@@ -670,10 +670,86 @@ def test_plot_at_cell_centres_with_nodata(make_grd):
 def test_arr_ifd_rain_opens_a_grid_by_duration_and_aep(tmp_path, make_grd):
     make_grd()  # writes tmp_path/IFD.zip
     ifd = Arr_ifd_rain(str(tmp_path), Lat=-33.97, Lon=150.01)
-    grd = ifd.open_grd(Dur=60, Frq=100)
-    assert (int(grd.dur), int(grd.frq)) == (60, 100)
+    grd = ifd.open_grd(Dur=60, Frq=1000)
+    assert (int(grd.dur), int(grd.frq)) == (60, 1000)
     assert grd.get_rain_at_point(XLL + 0.5 * CELL, YLL + 0.5 * CELL) == _grid_values()[-1][0]
-    assert ifd.open_grd(Dur=30, Frq=100) is None
+
+
+def _ifd_dir(tmp_path, zips):
+    """Write zip files of grids, each grid's values set to its own AEP label."""
+    for zip_name, grids in zips.items():
+        with zipfile.ZipFile(tmp_path / zip_name, 'w') as archive:
+            archive.writestr('IFD2016_projection _epsg4283.prj', 'Projection GEOGRAPHIC')
+            for dur, label in grids:
+                text = (f'ncols {NCOLS}\r\nnrows {NROWS}\r\nxllcorner {XLL}\r\n'
+                        f'yllcorner {YLL}\r\ncellsize {CELL}\r\nNODATA_value  -9999\r\n')
+                text += (' '.join([str(int(label))] * NCOLS) + ' \r\n') * NROWS
+                archive.writestr(f'catchment_depth_{dur}min_{label}aep.txt.asc', text)
+    return str(tmp_path)
+
+
+AEP_GRIDS = [(60, label) for label in ('00050', '00100', '01000', '39347', '63212')]
+
+
+@pytest.mark.parametrize('aep, label', [(0.05, 50), (0.1, 100), (1.0, 1000), (1, 1000),
+                                        (39.347, 39347), (39.35, 39347), (63.2, 63212)])
+def test_open_grd_by_aep_percent(tmp_path, aep, label):
+    ifd = Arr_ifd_rain(_ifd_dir(tmp_path, {'Rare_Extent.zip': AEP_GRIDS}), -33.97, 150.01)
+    grd = ifd.open_grd(Dur=60, aep_percent=aep)
+    assert int(grd.frq) == label
+    assert grd.IFD_Data[0, 0] == label
+
+
+def test_open_grd_frq_is_the_file_label_not_a_return_period(tmp_path):
+    """Frq=100 is the 1 in 1000 grid; 1% AEP is 1000."""
+    ifd = Arr_ifd_rain(_ifd_dir(tmp_path, {'Rare_Extent.zip': AEP_GRIDS}), -33.97, 150.01)
+    assert ifd.open_grd(Dur=60, Frq=100).IFD_Data[0, 0] == ifd.open_grd(Dur=60, aep_percent=0.1).IFD_Data[0, 0]
+    assert ifd.open_grd(Dur=60, Frq=1000).IFD_Data[0, 0] == ifd.open_grd(Dur=60, aep_percent=1.0).IFD_Data[0, 0]
+
+
+@pytest.mark.parametrize('kwargs', [dict(Dur=60), dict(Dur=60, Frq=1000, aep_percent=1.0)])
+def test_open_grd_needs_exactly_one_probability(tmp_path, kwargs):
+    ifd = Arr_ifd_rain(_ifd_dir(tmp_path, {'x.zip': AEP_GRIDS}), -33.97, 150.01)
+    with pytest.raises(ValueError, match='exactly one'):
+        ifd.open_grd(**kwargs)
+
+
+@pytest.mark.parametrize('kwargs', [dict(Dur=30, aep_percent=1.0), dict(Dur=60, aep_percent=2.0),
+                                    dict(Dur=60, Frq=2000), dict(Dur=60, aep_percent=0.11)])
+def test_open_grd_raises_and_lists_what_is_available(tmp_path, kwargs):
+    ifd = Arr_ifd_rain(_ifd_dir(tmp_path, {'x.zip': AEP_GRIDS}), -33.97, 150.01)
+    with pytest.raises(ValueError, match=r'No IFD grid.*Durations \(min\): \[60\].*0\.05'):
+        ifd.open_grd(**kwargs)
+
+
+def test_arr_ifd_rain_reads_zips_under_any_name(tmp_path):
+    (tmp_path / 'notes.zip').write_text('not a zip')
+    with zipfile.ZipFile(tmp_path / 'other.zip', 'w') as archive:
+        archive.writestr('readme.txt', 'nothing to see')
+    _ifd_dir(tmp_path, {'IFD_Extent.zip': [(60, '01000')],
+                        'Rare_Extent.zip': [(60, '01000'), (60, '00050')],
+                        'Very_frequent_Extent.zip': [(60, '99999')]})
+    with pytest.warns(UserWarning, match='notes.zip'):
+        ifd = Arr_ifd_rain(str(tmp_path), -33.97, 150.01)
+    assert len(ifd.file_list) == 4  # .prj and readme.txt skipped
+    assert ifd.open_grd(Dur=60, aep_percent=1.0).IFD_Data[0, 0] == 1000
+    assert ifd.open_grd(Dur=60, aep_percent=99.999).IFD_Data[0, 0] == 99999
+
+
+def test_arr_ifd_rain_warns_when_it_finds_no_grids(tmp_path):
+    with pytest.warns(UserWarning, match='No IFD grids'):
+        Arr_ifd_rain(str(tmp_path), -33.97, 150.01)
+
+
+def test_a_depth_of_zero_warns(make_grd):
+    """The Bureau's grids hold 0, not NODATA, over the ocean."""
+    values = _grid_values()
+    values[0][1] = 0
+    grd = make_grd(values)
+    north = YLL + (NROWS - 0.5) * CELL
+    with pytest.warns(UserWarning, match='1 of 2 points read a depth of 0'):
+        out = grd.get_rain_at_points([XLL + 1.5 * CELL, XLL + 0.5 * CELL], [north, north])
+    assert out[0] == 0.0 and out[1] == values[0][0]
 
 
 def test_documented_centroid_lookup(make_grd):

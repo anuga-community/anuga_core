@@ -93,18 +93,19 @@ Loading ARR data
    from anuga.rain import Arr_hub_rain
 
    hub = Arr_hub_rain('site_hub_export.txt')
-   print(hub.Tpat_code)   # e.g. 'EC' for East Coast
+   print(hub.Tpat_code)   # e.g. 'ECsouth' for East Coast South
    print(hub.Loc_Lat, hub.Loc_Lon)
 
 **IFD grid** — download the IFD zip files from the `ARR IFD Data Server`_
-and open the grid for a specific duration and AEP:
+(:doc:`../appendices/arr_design_rainfall` shows how) and open the grid for a
+specific duration and AEP:
 
 .. code-block:: python
 
    from anuga.rain import Arr_ifd_rain
 
    ifd = Arr_ifd_rain('/data/arr_ifd', Lat=-33.0, Lon=151.3)
-   grd = ifd.open_grd(Dur=60, Frq=100)  # 60-min, 1% AEP
+   grd = ifd.open_grd(Dur=60, aep_percent=1.0)  # 60-min, 1% AEP
 
    # Extract depths at domain centroid coordinates
    # (centroids are in projected metres — convert to lat/lon first)
