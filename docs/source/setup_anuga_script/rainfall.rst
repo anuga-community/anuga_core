@@ -65,7 +65,7 @@ natively.
    rain = Raster_rate_operator(domain, radar,
                                time_offset=radar.start_time)
 
-   for t in domain.evolve(yieldstep=360.0, finaltime=43200.0):
+   for t in domain.evolve(yieldstep=rain.time_step, finaltime=43200.0):
        domain.print_timestepping_statistics()
 
 
@@ -93,18 +93,19 @@ Loading ARR data
    from anuga.rain import Arr_hub_rain
 
    hub = Arr_hub_rain('site_hub_export.txt')
-   print(hub.Tpat_code)   # e.g. 'EC' for East Coast
+   print(hub.Tpat_code)   # e.g. 'ECsouth' for East Coast South
    print(hub.Loc_Lat, hub.Loc_Lon)
 
 **IFD grid** — download the IFD zip files from the `ARR IFD Data Server`_
-and open the grid for a specific duration and AEP:
+(:doc:`../appendices/arr_design_rainfall` shows how) and open the grid for a
+specific duration and AEP:
 
 .. code-block:: python
 
    from anuga.rain import Arr_ifd_rain
 
    ifd = Arr_ifd_rain('/data/arr_ifd', Lat=-33.0, Lon=151.3)
-   grd = ifd.open_grd(Dur=60, Frq=100)  # 60-min, 1% AEP
+   grd = ifd.open_grd(Dur=60, aep_percent=1.0)  # 60-min, 1% AEP
 
    # Extract depths at domain centroid coordinates
    # (centroids are in projected metres — convert to lat/lon first)
@@ -142,7 +143,8 @@ Running the simulation
    # ifd_duration warns if the IFD grid and the pattern have different durations
    rain = ARR_rate_operator(domain, depth_array, pattern, ifd_duration=grd.dur)
 
-   for t in domain.evolve(yieldstep=600.0, finaltime=3600.0):
+   finaltime = pattern.Ev_dur * 60 + 6 * 3600   # the storm, then 6 hours to drain
+   for t in domain.evolve(yieldstep=rain.time_step, finaltime=finaltime):
        domain.print_timestepping_statistics()
 
 The operator switches rate arrays only at pattern time-step boundaries
@@ -153,7 +155,9 @@ Outside the pattern, before its start and after its end, the rate is
 :class:`Raster_rate_operator` outside the time span of its data.
 
 A timestep that starts before a switch applies the old rate for the whole step,
-so end ``yieldstep`` on the pattern's boundaries for an exact total depth.
+so end each ``yieldstep`` on a change for an exact total depth. ``rain.time_step``
+is the time between changes in seconds; use it or a whole fraction of it.
+See :doc:`../appendices/arr_design_rainfall` for more on choosing it.
 
 ANUGA does not apply the areal reduction factors or losses that
 :class:`Arr_hub_rain` reads from the hub file: adjust ``depth_array`` yourself.

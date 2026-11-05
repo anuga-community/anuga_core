@@ -4,6 +4,17 @@ A patch release on the 4.1 line.
 
 ## Fixes
 
+* Rain: `Arr_ifd_rain.open_grd` takes `aep_percent`, for example `aep_percent=1.0`.
+  The docs gave `Frq=100` for 1% AEP, but `Frq` is the Bureau of Meteorology's file
+  label, the AEP in percent times 1000: 1% is `Frq=1000`, and `Frq=100` opens the
+  1 in 1000 grid, 29% more rain at the location checked. If you followed the old
+  docs, check your `Frq`. `open_grd` now raises `ValueError` when no grid matches,
+  instead of printing a warning and returning `None`. `Arr_ifd_rain` reads the
+  Bureau's zip files under any name (it skipped `Rare_Extent.zip` and
+  `Very_frequent_Extent.zip`), and a point reading a depth of 0, which is what the
+  grids hold over the ocean, now gives a warning. `ARR_rate_operator` and
+  `Raster_rate_operator` have a `time_step` attribute, the time between changes of
+  rate, to use as the `yieldstep`. See the new appendix on ARR design rainfall data.
 * Kinematic viscosity: the implicit scheme now works in mode 2 on a GPU build.
   The operator solves on the host, but its last call,
   `distribute_to_vertices_and_edges()`, pulled the centroids back from the device

@@ -35,7 +35,9 @@ class Arr_hub_rain:
     The areal reduction factors (``ARF_a`` to ``ARF_i``) and losses (``ARR_IL``,
     ``ARR_CL``) are stored as strings, as read from the file.  Nothing in ANUGA
     applies them: adjust the depths passed to
-    :class:`~anuga.rain.ARR_rate_operator` yourself.
+    :class:`~anuga.rain.ARR_rate_operator` yourself. ``ARR_IL`` and ``ARR_CL`` come
+    from the file's ``[LOSSES]`` section, which the hub labels as superseded where
+    it has newer values.
     """
 
     def __init__(self, hub_filename):

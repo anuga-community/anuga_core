@@ -221,6 +221,30 @@ each is below.
    Kinematic_viscosity_operator
 
 
+.. _api_rainfall_data:
+
+Rainfall data
+-------------
+
+Operators that apply rainfall from radar or design data, and the classes that read
+that data. See :doc:`../setup_anuga_script/rainfall` for usage and
+:doc:`../appendices/arr_design_rainfall` for getting the ARR data.
+
+.. currentmodule:: anuga
+
+.. autosummary::
+   :toctree: generated
+   :nosignatures:
+
+   Raster_rate_operator
+   ARR_rate_operator
+   Arr_ifd_rain
+   Arr_grd
+   Arr_hub_rain
+   ARR_point_rainfall_patterns
+   Single_pattern
+
+
 .. _api_logging:
 
 Logging
