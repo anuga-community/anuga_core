@@ -4,6 +4,14 @@ A patch release on the 4.1 line.
 
 ## Fixes
 
+* Kinematic viscosity: the implicit scheme now works in mode 2 on a GPU build.
+  The operator solves on the host, but its last call,
+  `distribute_to_vertices_and_edges()`, pulled the centroids back from the device
+  and discarded the momentum it had just computed, so viscosity had no effect at
+  all: results were identical to a run without the operator. The solve also read
+  host boundary values that were never synced, so open edges looked dry and
+  still. Device and host runs now agree to round-off. Viscous mode-2 runs on a
+  GPU change; CPU builds and the explicit scheme do not.
 * GPU: a mode-2 domain no longer runs with the Dirichlet boundary values of a
   domain freed before it. The stage and momentum values were left registered on
   the device when a domain was released, so a later domain whose arrays got the

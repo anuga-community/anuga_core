@@ -280,6 +280,7 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_domain_sync_from_device(gpu_domain *GD)
     void gpu_domain_sync_all_from_device(gpu_domain *GD)
     void gpu_sync_boundary_values(gpu_domain *GD)
+    void gpu_sync_boundary_values_from_device(gpu_domain *GD)
     void gpu_sync_riverwall_to_device(gpu_domain *GD)
     void gpu_sync_tracer_source_to_device(gpu_domain *GD)
     void gpu_sync_tracer_boundary_to_device(gpu_domain *GD)
@@ -1575,6 +1576,15 @@ def sync_boundary_values(GPUDomain gpu_dom):
     Call this after Python updates boundary conditions.
     """
     gpu_sync_boundary_values(&gpu_dom.GD)
+
+
+def sync_boundary_values_from_device(GPUDomain gpu_dom):
+    """
+    Sync boundary values from device to host.
+
+    Call this before a host-side operator reads boundary values.
+    """
+    gpu_sync_boundary_values_from_device(&gpu_dom.GD)
 
 
 def sync_riverwall_to_device(GPUDomain gpu_dom):
