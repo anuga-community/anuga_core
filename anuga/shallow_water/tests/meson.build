@@ -32,6 +32,7 @@ python_sources = [
 'test_tracers_distribute.py',
 'test_tracers_gpu.py',
 'test_kv_gpu_host_solve.py',
+'test_dirichlet_device_unmap.py',
 'test_tracers_gpu_boundary.py',
 'test_tracers_gpu_boundary_sync.py',
 'test_tracers_gpu_boundary_refresh.py',

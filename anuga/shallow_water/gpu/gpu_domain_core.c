@@ -1171,7 +1171,11 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         int *b_idx = Dir->boundary_indices;
         int *v_ids = Dir->vol_ids;
         int *e_ids = Dir->edge_ids;
-        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
+        double *s_val = Dir->stage_values;
+        double *x_val = Dir->xmom_values;
+        double *y_val = Dir->ymom_values;
+        #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+                                                 s_val[0:ne], x_val[0:ne], y_val[0:ne])
         Dir->mapped = 0;
     }
 

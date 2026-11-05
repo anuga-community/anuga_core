@@ -12,6 +12,15 @@ A patch release on the 4.1 line.
   host boundary values that were never synced, so open edges looked dry and
   still. Device and host runs now agree to round-off. Viscous mode-2 runs on a
   GPU change; CPU builds and the explicit scheme do not.
+* GPU: a mode-2 domain no longer runs with the Dirichlet boundary values of a
+  domain freed before it. The stage and momentum values were left registered on
+  the device when a domain was released, so a later domain whose arrays got the
+  same host addresses skipped the copy and used stale device values. Boundary
+  values were silently wrong (a stage error of up to 0.48 m in the regression
+  case), or the run stopped with "partially present on the device" or
+  `CUDA_ERROR_ILLEGAL_ADDRESS`. It needs a GPU-offload build and more than one
+  Dirichlet domain in a process; one domain per process and CPU builds are not
+  affected.
 * Sediment: a bed that rises under a thin film no longer leaves the film with
   its whole momentum. Every sediment kernel moves the bed with the stage held,
   so the depth falls by the deposit, and the momentum was left as it was: a
