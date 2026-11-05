@@ -4,6 +4,11 @@ A patch release on the 4.1 line.
 
 ## Fixes
 
+* Install: `pip install anuga` works on Windows again. pymetis has no Windows wheels and
+  does not build there, so pip failed on it. It is now installed only on Linux and macOS.
+  Serial runs do not need it. Parallel runs on Windows need pymetis from conda-forge, or
+  another `partition_scheme` (`morton`, `hilbert` or `rcm`), and METIS partitioning
+  without pymetis now says so. Conda installs are unchanged.
 * Rain: `Arr_ifd_rain.open_grd` takes `aep_percent`, for example `aep_percent=1.0`.
   The docs gave `Frq=100` for 1% AEP, but `Frq` is the Bureau of Meteorology's file
   label, the AEP in percent times 1000: 1% is `Frq=1000`, and `Frq=100` opens the
