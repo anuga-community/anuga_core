@@ -249,6 +249,8 @@ class Transmissive_momentum_set_stage_boundary(Boundary):
     >>> domain.set_boundary({'left': BC, 'right': BC, 'top': BC, 'bottom': BC})
     """
 
+    limiter_prescribes = (True, False)
+
     def __init__(self, domain=None, function=None):
         """Initialise a transmissive-momentum / set-stage boundary.
 
@@ -359,6 +361,8 @@ class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
     ...     domain, lambda t: 0.5)
     >>> domain.set_boundary({'left': BC, 'right': BC, 'top': BC, 'bottom': BC})
     """
+
+    limiter_prescribes = (True, False)
 
     def __init__(self, domain=None, function=None, default_boundary=0.0):
         """Initialise the boundary.
@@ -560,6 +564,8 @@ class Time_stage_zero_momentum_boundary(Boundary):
     ...     domain, function=lambda t: (60 < t < 3660) * 2.0)
     >>> domain.set_boundary({'left': Bt, 'right': Bt, 'top': Bt, 'bottom': Bt})
     """
+
+    limiter_prescribes = (True, False)
 
     def __init__(self, domain=None,
                  #f=None, # Should be removed and replaced by function below
@@ -1130,6 +1136,8 @@ class Field_boundary(Boundary):
     >>> Bf = anuga.Field_boundary('boundary.sww', domain, mean_stage=0.5)
     >>> domain.set_boundary({'left': Bf, 'right': Bf, 'top': Bf, 'bottom': Bf})
     """
+
+    limiter_prescribes = (True, True)
 
     def __init__(self,
                  filename,
