@@ -18,7 +18,11 @@ A patch release on the 4.1 line.
   changes near them, and flows driven through a Dirichlet edge by numerical
   diffusion alone can change more: a lid-driven cavity with no viscosity loses
   about half its kinetic energy at a given resolution. A custom boundary can
-  opt in with the class attribute `limiter_prescribes = (stage, momentum)`.
+  opt in with the class attribute `limiter_prescribes = (stage, momentum)`. With
+  bedload on, a wave reaching a prescribed inflow now leaves a small mark in the
+  first cells (about 2e-5 m in the bed hump validation, where the wave's velocity
+  change is 7e-3 m/s), and a finer mesh does not remove it. That case now settles its
+  flow before the bed can move.
 * `Domain.reorder()` now renumbers `domain.boundary` and, if the boundary was
   already set, `boundary_objects` and `boundary_flux_type`. They kept the old
   triangle numbers, so a boundary set after a reorder paired tags with the wrong
