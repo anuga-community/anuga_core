@@ -11,20 +11,12 @@ This appendix shows how to get the data for an Australian Rainfall and Runoff
 
 A design storm needs two things from two different places:
 
-.. list-table::
-   :header-rows: 1
-   :widths: 25 35 40
-
-   * - Input
-     - Source
-     - ANUGA class
-   * - Rainfall depth at each location (IFD grids)
-     - Bureau of Meteorology `Design Rainfall Data System`_
-     - :class:`Arr_ifd_rain`, :class:`Arr_grd`
-   * - How that depth falls over time (temporal patterns)
-     - `ARR Data Hub`_
-     - :class:`Arr_hub_rain`, :class:`ARR_point_rainfall_patterns`,
-       :class:`Single_pattern`
+* **Rainfall depth at each location (IFD grids)**, from the Bureau of Meteorology's
+  `Design Rainfall Data System`_. Read them with :class:`Arr_ifd_rain`, which
+  returns an :class:`Arr_grd`.
+* **How that depth falls over time (temporal patterns)**, from the `ARR Data Hub`_.
+  Read them with :class:`Arr_hub_rain`, :class:`ARR_point_rainfall_patterns` and
+  :class:`Single_pattern`.
 
 
 IFD grids
@@ -44,24 +36,16 @@ you redistribute the grids, for example in a repository.
 
 .. list-table::
    :header-rows: 1
-   :widths: 30 30 20 20
+   :widths: 35 65
 
    * - File
      - AEPs (%)
-     - ``Frq``
-     - Grids
    * - ``IFD_Extent.zip``
      - 63.212, 50, 39.347, 20, 18.127, 10, 5, 2, 1
-     - 63212 … 1000
-     - 261
    * - ``Rare_Extent.zip``
      - 1, 0.5, 0.2, 0.1, 0.05
-     - 1000 … 50
-     - 145
    * - ``Very_frequent_Extent.zip``
      - 99.999, 99.752, 98.168, 95.021, 86.466, 63.212, 39.347, 18.127
-     - 99999 … 18127
-     - 232
 
 Each probability comes in the 29 standard durations, from 1 minute to 7 days.
 
@@ -83,6 +67,18 @@ Put the zip files, under any name, in one directory:
 
 :meth:`Arr_ifd_rain.open_grd` raises ``ValueError``, listing what is available, if
 no grid matches.
+
+A grid holds the depth for one duration and one probability, so a set of grids gives
+curves like these at each location.
+
+.. figure:: arr_ifd_curves.*
+   :width: 100%
+   :alt: Invented rainfall depth against storm duration on log axes, for five AEPs
+         from 50% to 0.1%. Depth rises with duration and with rarity. One point,
+         24 hours at 1% AEP, is marked at 309 mm.
+
+   Synthetic data, to show the form of the curves. These are not real depths. The
+   marked point is the grid that ``open_grd(Dur=1440, aep_percent=1.0)`` would open.
 
 .. warning::
 
@@ -106,6 +102,16 @@ Then read the depth at each centroid. The grids are in latitude and longitude
 
 Each point takes the value of the grid cell holding it, so the depths are in
 steps of about 2.5 km.
+
+.. figure:: arr_ifd_grid.*
+   :width: 80%
+   :alt: A map of invented depths in square cells, with a black coast line and gray
+         ocean cells holding 0. A point inland reads 309 mm. A point on land, next
+         to the coast but in a cell whose centre is offshore, reads 0 mm.
+
+   Synthetic grid and coast, read back with :meth:`Arr_grd.get_rain_at_point`. These
+   are not real depths. Gray cells hold 0. The point at the coast is on land, but its
+   cell is mostly ocean, so it reads 0 mm.
 
 * **Outside the grid:** a point outside the extent raises ``ValueError``.
 * **Ocean:** the grids hold 0, not NODATA, over the ocean. A point on such a cell
@@ -144,6 +150,28 @@ column 1 and the group in column 4. This picks the ten for a rare 24-hour storm:
 ARR 2016 runs a storm with each of the ten patterns and works from the set of
 results, so a single pattern is not a design answer on its own.
 
+The ten patterns can put the same depth down very differently. Among the ten rare
+24-hour patterns for East Coast (South), the wettest hour holds from 7.6% to 17.4% of
+the depth, and the first 12 hours from 31.5% to 66.3%.
+
+.. figure:: arr_pattern_ensemble.*
+   :width: 100%
+   :alt: Ten small bar charts of hourly rainfall as a percentage of the storm depth,
+         one per rare 24-hour pattern, sharing axes. The bursts fall at different
+         hours in each pattern. Pattern 4661 has the highest hour, at 17.4%.
+
+   The ten rare 24-hour patterns for East Coast (South), labelled by event ID.
+   Patterns from the `ARR Data Hub`_.
+
+.. figure:: arr_pattern_cumulative.*
+   :width: 100%
+   :alt: Cumulative rainfall as a percentage of the storm depth against time for the
+         ten patterns. All reach 100% at 24 hours, and they spread from about 32% to
+         66% at 12 hours. Pattern 4655, which the example selects, is highlighted.
+
+   The same patterns as cumulative rain. Each delivers the whole depth and differs in
+   how it gets there, so the runoff can differ too. Patterns from the `ARR Data Hub`_.
+
 
 Running the storm
 -----------------
@@ -154,8 +182,25 @@ Running the storm
 
    rain = ARR_rate_operator(domain, depth_array, pattern, ifd_duration=grd.dur)
 
+   finaltime = pattern.Ev_dur * 60 + 6 * 3600   # the storm, then 6 hours to drain
+   for t in domain.evolve(yieldstep=rain.time_step, finaltime=finaltime):
+       domain.print_timestepping_statistics()
+
 ``ifd_duration`` warns if the grid and the pattern have different durations.
-End each ``yieldstep`` on the pattern's time steps to deliver the exact depth.
+
+``rain.time_step`` is the time between changes of rate, in seconds. It is 3600 for
+the 24-hour pattern above, and the patterns range from 5 minutes to 3 hours. A
+timestep that starts before a change applies the old rate for the whole step, so the
+storm delivers its exact depth only if each ``yieldstep`` ends on a change.
+
+* **More output:** use a whole fraction of it, such as
+  ``yieldstep=rain.time_step / 6`` for every 10 minutes here. A fixed value is not
+  safe: 600 s fits this pattern, but not one with 15-minute steps.
+* **Less output:** keep ``yieldstep`` and add an ``outputstep``, a whole multiple of
+  ``yieldstep``, which sets how often the SWW file is written.
+* **Starting before the rain:** the pattern starts at model time 0, and yields count
+  from the start time. Use a ``starttime`` that is a whole number of yieldsteps
+  before 0, for example ``domain.set_starttime(-6 * rain.time_step)``.
 
 
 What ANUGA does not do for you

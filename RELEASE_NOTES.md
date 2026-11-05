@@ -12,8 +12,9 @@ A patch release on the 4.1 line.
   instead of printing a warning and returning `None`. `Arr_ifd_rain` reads the
   Bureau's zip files under any name (it skipped `Rare_Extent.zip` and
   `Very_frequent_Extent.zip`), and a point reading a depth of 0, which is what the
-  grids hold over the ocean, now gives a warning. See the new appendix on ARR
-  design rainfall data.
+  grids hold over the ocean, now gives a warning. `ARR_rate_operator` and
+  `Raster_rate_operator` have a `time_step` attribute, the time between changes of
+  rate, to use as the `yieldstep`. See the new appendix on ARR design rainfall data.
 * Kinematic viscosity: the implicit scheme now works in mode 2 on a GPU build.
   The operator solves on the host, but its last call,
   `distribute_to_vertices_and_edges()`, pulled the centroids back from the device

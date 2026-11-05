@@ -488,8 +488,8 @@ def _flat_domain(mode, starttime=0.0):
     return domain
 
 
-def _delivered_mm(domain, finaltime):
-    for _ in domain.evolve(yieldstep=60.0, finaltime=finaltime):
+def _delivered_mm(domain, finaltime, yieldstep=60.0):
+    for _ in domain.evolve(yieldstep=yieldstep, finaltime=finaltime):
         pass
     return domain.quantities['stage'].get_integral() / 1.0e4 * 1000.0
 
@@ -500,6 +500,30 @@ def test_arr_delivers_the_storm_depth_and_no_more(mode, starttime, finaltime):
     domain = _flat_domain(mode, starttime)
     ARR_rate_operator(domain, np.full(len(domain), 10.0), _Pattern)
     assert _delivered_mm(domain, finaltime) == pytest.approx(10.0, abs=1e-9)
+
+
+def test_rain_operators_report_their_time_step():
+    domain = _flat_domain('legacy')
+    assert ARR_rate_operator(domain, np.full(len(domain), 10.0), _Pattern).time_step == 600.0
+    assert Raster_rate_operator(domain, _Raster()).time_step == 600.0
+
+
+@pytest.mark.parametrize('mode', ['legacy', 'unified'])
+@pytest.mark.parametrize('divisor', [1, 3])
+def test_yieldstep_from_time_step_delivers_the_exact_depth(mode, divisor):
+    domain = _flat_domain(mode)
+    rain = ARR_rate_operator(domain, np.full(len(domain), 10.0), _Pattern)
+    delivered = _delivered_mm(domain, 1800.0, yieldstep=rain.time_step / divisor)
+    assert delivered == pytest.approx(10.0, abs=1e-9)
+
+
+@pytest.mark.parametrize('mode', ['legacy', 'unified'])
+def test_yieldstep_off_the_time_steps_misses_the_depth(mode):
+    """Why the docs say to use time_step: 1.5 x time_step skips a change of rate."""
+    domain = _flat_domain(mode)
+    rain = ARR_rate_operator(domain, np.full(len(domain), 10.0), _Pattern)
+    delivered = _delivered_mm(domain, 1800.0, yieldstep=1.5 * rain.time_step)
+    assert abs(delivered - 10.0) > 1e-3
 
 
 @pytest.mark.parametrize('mode', ['legacy', 'unified'])
