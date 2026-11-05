@@ -107,14 +107,18 @@ and open the grid for a specific duration and AEP:
    grd = ifd.open_grd(Dur=60, Frq=100)  # 60-min, 1% AEP
 
    # Extract depths at domain centroid coordinates
-   # (centroids are in UTM metres — convert to lon/lat first)
+   # (centroids are in projected metres — convert to lat/lon first)
    import anuga
+   from anuga.coordinate_transforms.redfearn import epsg_to_ll
+
    domain = anuga.create_domain_from_regions(...)
-   geo = domain.geo_reference
-   lons, lats = geo.get_lonlat_from_xy(
-       domain.centroid_coordinates[:, 0],
-       domain.centroid_coordinates[:, 1])
+   xy = domain.get_centroid_coordinates(absolute=True)
+   lats, lons = epsg_to_ll(xy[:, 0], xy[:, 1], domain.get_epsg())
    depth_array = grd.get_rain_at_points(lons, lats)  # mm
+
+A point outside the grid raises ``ValueError``. A point on a NODATA cell gives
+NaN and a warning, and :class:`ARR_rate_operator` rejects NaN on the cells it
+acts on.
 
 **Temporal patterns** — load the patterns zip and pick one pattern:
 
@@ -124,9 +128,9 @@ and open the grid for a specific duration and AEP:
 
    prp = ARR_point_rainfall_patterns('EC_Patterns.zip', hub.Tpat_code)
 
-   # Pattern index 1–720; Ev_dep scales the hyetograph to a target depth
-   mean_depth = float(depth_array.mean())
-   pattern = Single_pattern(prp, index=1, Ev_dep=mean_depth)
+   # Pattern index 1–720. The depth comes from depth_array: Ev_dep only scales
+   # pattern.Rplot and pattern.plot(), and has no effect on ARR_rate_operator.
+   pattern = Single_pattern(prp, index=1)
 
 Running the simulation
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -135,7 +139,8 @@ Running the simulation
 
    from anuga.rain import ARR_rate_operator
 
-   rain = ARR_rate_operator(domain, depth_array, pattern)
+   # ifd_duration warns if the IFD grid and the pattern have different durations
+   rain = ARR_rate_operator(domain, depth_array, pattern, ifd_duration=grd.dur)
 
    for t in domain.evolve(yieldstep=600.0, finaltime=3600.0):
        domain.print_timestepping_statistics()
@@ -143,6 +148,15 @@ Running the simulation
 The operator switches rate arrays only at pattern time-step boundaries
 (every ``pattern.Tstep`` minutes), so the GPU execution path sees a
 ``centroid_array`` rate with no CPU overhead between those transitions.
+Outside the pattern, before its start and after its end, the rate is
+``default_rate`` (0 by default). The same applies to
+:class:`Raster_rate_operator` outside the time span of its data.
+
+A timestep that starts before a switch applies the old rate for the whole step,
+so end ``yieldstep`` on the pattern's boundaries for an exact total depth.
+
+ANUGA does not apply the areal reduction factors or losses that
+:class:`Arr_hub_rain` reads from the hub file: adjust ``depth_array`` yourself.
 
 API summary
 -----------
