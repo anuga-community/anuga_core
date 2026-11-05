@@ -23,6 +23,39 @@ A patch release on the 4.1 line.
   already set, `boundary_objects` and `boundary_flux_type`. They kept the old
   triangle numbers, so a boundary set after a reorder paired tags with the wrong
   edges in those lists. Boundary values themselves were not affected.
+* Kinematic viscosity: the implicit scheme now works in mode 2 on a GPU build.
+  The operator solves on the host, but its last call,
+  `distribute_to_vertices_and_edges()`, pulled the centroids back from the device
+  and discarded the momentum it had just computed, so viscosity had no effect at
+  all: results were identical to a run without the operator. The solve also read
+  host boundary values that were never synced, so open edges looked dry and
+  still. Device and host runs now agree to round-off. Viscous mode-2 runs on a
+  GPU change; CPU builds and the explicit scheme do not.
+* Rain (results change): `ARR_rate_operator` and `Raster_rate_operator` no longer
+  rain outside the span of their data. They repeated the last value up to
+  `finaltime`, and the first value before the start, so a 10 mm storm of 30
+  minutes delivered 85 mm in a 3 hour run. The rate there is now `default_rate`,
+  0 by default.
+* Rain (results change): `Arr_grd.get_rain_at_point(s)` now return the cell holding
+  the point. Rounding the indices picked a neighbouring cell for most points, and
+  the scalar version could raise `IndexError`. Points outside the grid now raise
+  `ValueError` instead of returning a wrapped or edge value.
+* Rain: NODATA in an IFD grid is now NaN, with a warning, instead of a negative
+  depth that removed water. `ARR_rate_operator` rejects NaN or negative depths on
+  the cells it acts on, and takes `ifd_duration` to warn when the grid and the
+  pattern have different durations.
+* Rain: `Raster_rate_operator` now looks up rasters at absolute coordinates. It
+  used coordinates relative to the domain's origin, which is wrong on a
+  georeferenced domain.
+* GPU: a mode-2 domain no longer runs with the Dirichlet boundary values of a
+  domain freed before it. The stage and momentum values were left registered on
+  the device when a domain was released, so a later domain whose arrays got the
+  same host addresses skipped the copy and used stale device values. Boundary
+  values were silently wrong (a stage error of up to 0.48 m in the regression
+  case), or the run stopped with "partially present on the device" or
+  `CUDA_ERROR_ILLEGAL_ADDRESS`. It needs a GPU-offload build and more than one
+  Dirichlet domain in a process; one domain per process and CPU builds are not
+  affected.
 * Sediment: a bed that rises under a thin film no longer leaves the film with
   its whole momentum. Every sediment kernel moves the bed with the stage held,
   so the depth falls by the deposit, and the momentum was left as it was: a

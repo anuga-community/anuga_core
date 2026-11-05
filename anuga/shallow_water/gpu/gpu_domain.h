@@ -586,6 +586,7 @@ void gpu_domain_sync_all_from_device(struct gpu_domain *GD);  // Debug: sync ALL
 
 // Sync boundary values TO GPU (after CPU boundary evaluation)
 void gpu_sync_boundary_values(struct gpu_domain *GD);
+void gpu_sync_boundary_values_from_device(struct gpu_domain *GD);
 
 // Sync riverwall crest elevations / hydraulic properties TO GPU (after a
 // host-side RiverWall.set_elevation() and friends)

@@ -144,6 +144,11 @@ class GPU_OMP_interface:
         from anuga.shallow_water.sw_domain_gpu_ext import sync_boundary_values
         sync_boundary_values(self.gpu_dom)
 
+    def sync_boundary_values_from_device(self):
+        """Sync boundary values from device to host."""
+        from anuga.shallow_water.sw_domain_gpu_ext import sync_boundary_values_from_device
+        sync_boundary_values_from_device(self.gpu_dom)
+
     def sync_riverwall_to_device(self):
         """Sync riverwall elevations / hydraulic properties from host to device."""
         from anuga.shallow_water.sw_domain_gpu_ext import sync_riverwall_to_device
