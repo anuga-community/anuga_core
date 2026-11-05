@@ -44,7 +44,7 @@ different boundary conditions to be applied to different segments.
 
 Other polygons are the interior polygons that define the regions within the domain. 
 These other polygons can be used to define regions with different refinement
-levels and holes in the domain.
+levels (see `Refinement regions`_) and holes in the domain.
 
 The following example creates a domain with a rectangular boundary 20m by 10m with 
 boundary tags on the 4 sides of the rectangle, and the mesh having a maximum triangle 
@@ -75,11 +75,52 @@ See the :func:`create_domain_from_regions` API for the full argument list, and t
 :doc:`../examples/notebook_create_domain_from_regions` for a worked example.
 
 
+Refinement regions
+~~~~~~~~~~~~~~~~~~
+
+A single ``maximum_triangle_area`` gives much the same resolution everywhere,
+but a model usually needs fine triangles only in places: a river channel, a
+town, the ground around a structure. ``interior_regions`` is a list of
+``(polygon, maximum area)`` pairs. Each sets a smaller maximum triangle area
+inside its polygon, and ``maximum_triangle_area`` still applies everywhere else:
+
+.. code-block:: python
+
+   town = [[8.0, 3.0], [12.0, 3.0], [12.0, 7.0], [8.0, 7.0]]
+
+   domain = anuga.create_domain_from_regions(bounding_polygon,
+                               boundary_tags,
+                               maximum_triangle_area = 0.2,
+                               interior_regions = [(town, 0.01)])
+
+Triangles are now at most 0.01 m² in the town and 0.2 m² elsewhere, giving about
+4,300 triangles against about 1,500 for the mesh above.
+
+An equilateral triangle of edge length *h* has area 0.43 *h*\ ², so 0.01 m² means
+edges of about 0.15 m. Halving the edge length takes four times as many
+triangles. The smallest triangles also set the timestep of the whole run, so
+refine only where the flow needs it.
+
+The polygons have to follow a few rules:
+
+* **Inside the boundary.** A polygon that is not fully inside the bounding
+  polygon raises an error. With ``fail_if_polygons_outside = False`` it is
+  ignored instead.
+* **Nested or separate.** A polygon can sit inside another, in any order, and
+  the inner area applies inside it, so ``[(town, 0.05), (street, 0.01)]`` works
+  when ``street`` is inside ``town``.
+* **No crossing outlines.** Crossing outlines do not raise an error, but the
+  areas are then unreliable: triangles can be larger than any area you asked
+  for, and a finer region may not get its resolution.
+* **Not too close.** Outlines close to each other, or to the boundary, force
+  small triangles between them.
+
+
 Resolution from a size field
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Each polygon in ``interior_regions`` becomes part of the mesh: its outline is
-a ring of segments that the triangulation honours exactly. That is what you
+The outline of a refinement region becomes part of the mesh, as a ring of
+segments that the triangulation honours exactly. That is what you
 want when the outline is a physical feature. Often it is not. A region such
 as "below 12 m elevation" or "within 500 m of the town" only says where the
 mesh should be fine, and its outline can do harm: a sharp corner, or two
@@ -91,11 +132,10 @@ A *size field* gives the resolution without adding any segments. It is the
 maximum triangle area as a function of position, and a triangle is refined
 whenever its area exceeds the field at its centroid.
 :func:`size_field_from_regions` builds one from the same
-``(polygon, maximum area)`` list that ``interior_regions`` takes:
+``(polygon, maximum area)`` list that ``interior_regions`` takes, so the town
+above becomes:
 
 .. code-block:: python
-
-   town = [[8.0, 3.0], [12.0, 3.0], [12.0, 7.0], [8.0, 7.0]]
 
    field = anuga.size_field_from_regions(bounding_polygon,
                                [(town, 0.01)],
@@ -107,8 +147,9 @@ whenever its area exceeds the field at its centroid.
                                size_field = field,
                                relax_passes = 30)
 
-The polygons given to :func:`size_field_from_regions` may touch, overlap
-(the finest wins), have sharp corners or extend beyond the bounding polygon.
+Unlike refinement regions, the polygons given to
+:func:`size_field_from_regions` may touch, overlap (the finest wins), have sharp
+corners or extend beyond the bounding polygon.
 The field is graded: the target edge length holds inside each polygon and
 grows away from it by ``grade`` metres per metre (0.5 by default), so the
 mesh coarsens smoothly instead of stepping at the outline.
