@@ -72,6 +72,13 @@ class Raster_rate_operator(_Precomputed_rate_operator):
     default_rate : float or callable(t), optional
         Rate (m/s) outside the time span of the data.  Default 0.
     description, label, logging, verbose : optional
+
+    Attributes
+    ----------
+    time_step : float
+        Time (s) between changes of rate, ``raster_data.time_step``. Use it, or a
+        whole fraction of it, as the ``yieldstep`` of
+        :meth:`~anuga.Domain.evolve` to deliver the exact depth.
     """
 
     def __init__(self, domain, raster_data,
@@ -98,6 +105,7 @@ class Raster_rate_operator(_Precomputed_rate_operator):
                          logging=logging,
                          verbose=verbose)
 
+        self.time_step      = raster_data.time_step
         self._raster        = raster_data
         self._time_offset   = time_offset
         self._last_slice_idx = -1
@@ -147,6 +155,13 @@ class ARR_rate_operator(_Precomputed_rate_operator):
     ifd_duration : int, optional
         Duration (minutes) of the IFD grid behind ``depth_array``, for example
         ``grd.dur``.  A warning is given if it differs from ``pattern.Ev_dur``.
+
+    Attributes
+    ----------
+    time_step : float
+        Time (s) between changes of rate, ``pattern.Tstep`` in seconds. Use it, or
+        a whole fraction of it, as the ``yieldstep`` of
+        :meth:`~anuga.Domain.evolve` to deliver the exact depth.
 
     Notes
     -----
@@ -212,6 +227,7 @@ class ARR_rate_operator(_Precomputed_rate_operator):
                 f'but the temporal pattern is for {int(pattern.Ev_dur)} min.',
                 stacklevel=2)
 
+        self.time_step       = pattern.Tstep * 60.0
         self._pattern        = pattern
         self._last_slice_idx = -1
 
