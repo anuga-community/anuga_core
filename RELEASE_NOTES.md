@@ -4,6 +4,12 @@ A patch release on the 4.1 line.
 
 ## Fixes
 
+* Mesh: `create_domain_from_regions` and the other mesh functions now raise `PolygonError`
+  when the outlines of two `interior_regions` or `interior_holes` cross. They used to
+  accept them without complaint and give the wrong mesh: regions got the wrong triangle
+  areas, even above `maximum_triangle_area`, and holes came out the wrong shape. A script
+  that stops with this error was getting such a mesh. Use `size_field_from_regions` for
+  overlapping refinement, or change the polygons so that they are nested or separate.
 * Install: `pip install anuga` works on Windows again. pymetis has no Windows wheels and
   does not build there, so pip failed on it. It is now installed only on Linux and macOS.
   Serial runs do not need it. Parallel runs on Windows need pymetis from conda-forge, or

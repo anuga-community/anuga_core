@@ -140,9 +140,11 @@ def create_basic_mesh_from_regions(bounding_polygon,
         interior regions.
     interior_regions : list of tuples, optional
         List of (polygon, resolution) tuples for each region to be separately
-        refined. Polygon lines must not cross or overlap.
+        refined. Polygons may be nested or separate. Outlines that cross
+        raise PolygonError. For overlapping refinement see
+        size_field_from_regions.
     interior_holes : list of polygons, optional
-        Polygons for each hole.
+        Polygons for each hole. Outlines must not cross.
     hole_tags : list of dict, optional
         List of tag segment dictionaries for hole boundaries.
     poly_geo_reference : GeoReference, optional

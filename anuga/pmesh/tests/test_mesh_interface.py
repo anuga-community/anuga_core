@@ -4,11 +4,13 @@
 import tempfile
 import unittest
 import os
+import numpy
 import pytest
 
 from anuga.pmesh.mesh import import_mesh_from_file
 from anuga.pmesh.mesh_interface import create_pmesh_from_regions
-from anuga.pmesh.mesh_interface import _create_pmesh_from_regions
+from anuga.pmesh.mesh_interface import _create_pmesh_from_regions, PolygonError
+from anuga.geometry.polygon import polygon_outlines_cross
 from anuga.load_mesh.loadASCII import *
 from anuga.geometry.polygon import is_inside_polygon
 from anuga.coordinate_transforms.geo_reference import Geo_reference,DEFAULT_ZONE
@@ -999,6 +1001,81 @@ END\n')
         else:
             msg = 'Segment out of bounds not caught '
             raise Exception(msg)
+
+class TestCrossingOutlines:
+    """Interior region and hole outlines must not cross (issue #497)"""
+
+    bounding = [[0., 0.], [20., 0.], [20., 10.], [0., 10.]]
+    town = [[8., 3.], [12., 3.], [12., 7.], [8., 7.]]
+    crossing = [[10., 5.], [15., 5.], [15., 8.], [10., 8.]]
+    nested = [[9., 4.], [11., 4.], [11., 6.], [9., 6.]]
+    separate = [[14., 3.], [16., 3.], [16., 7.], [14., 7.]]
+    shares_edge = [[12., 3.], [15., 3.], [15., 7.], [12., 7.]]
+
+    def mesh(self, regions=None, holes=None):
+        return _create_pmesh_from_regions(self.bounding,
+                                          {'all': [0, 1, 2, 3]},
+                                          maximum_triangle_area=1.0,
+                                          interior_regions=regions,
+                                          interior_holes=holes,
+                                          verbose=False)
+
+    def test_crossing_regions_raise_in_either_order(self):
+        for a, b in ((self.town, self.crossing), (self.crossing, self.town)):
+            with pytest.raises(PolygonError, match='size_field_from_regions'):
+                self.mesh(regions=[(a, 0.1), (b, 0.5)])
+
+    def test_message_names_the_two_polygons(self):
+        with pytest.raises(PolygonError, match=r'interior_regions\[0\] and interior_regions\[2\]'):
+            self.mesh(regions=[(self.town, 0.1), (self.separate, 0.1), (self.crossing, 0.5)])
+
+    def test_crossing_with_no_vertex_inside_the_other_raises(self):
+        wide = [[6., 4.], [14., 4.], [14., 6.], [6., 6.]]
+        tall = [[9., 1.], [11., 1.], [11., 9.], [9., 9.]]
+        with pytest.raises(PolygonError):
+            self.mesh(regions=[(wide, 0.1), (tall, 0.5)])
+
+    def test_edge_through_a_vertex_raises(self):
+        # Two edges enter town exactly through its corners (12, 3) and (12, 7)
+        through = [[13., 2.], [10., 5.], [13., 8.]]
+        assert polygon_outlines_cross(self.town, through)
+        assert polygon_outlines_cross(through, self.town)
+
+    def test_inside_and_touching_at_corners_does_not_cross(self):
+        diamond = [[10., 1.], [14., 5.], [10., 9.], [6., 5.]]
+        assert not polygon_outlines_cross(self.town, diamond)
+
+    def test_crossing_holes_raise(self):
+        with pytest.raises(PolygonError, match='interior_holes'):
+            self.mesh(holes=[self.town, self.crossing])
+
+    def test_hole_crossing_a_region_raises(self):
+        with pytest.raises(PolygonError, match='interior_regions.*interior_holes'):
+            self.mesh(regions=[(self.town, 0.1)], holes=[self.crossing])
+
+    def test_polygons_that_do_not_cross_are_accepted(self):
+        self.mesh(regions=[(self.town, 0.1), (self.nested, 0.05)])
+        self.mesh(regions=[(self.nested, 0.05), (self.town, 0.1)])
+        self.mesh(regions=[(self.town, 0.1), (self.separate, 0.1)])
+        self.mesh(regions=[(self.town, 0.1), (self.shares_edge, 0.1)])
+        self.mesh(regions=[(self.town, 0.1)], holes=[self.separate])
+        self.mesh(regions=[(self.town, 0.1)], holes=[self.nested])
+        self.mesh(regions=[(self.nested, 0.1)], holes=[self.town])
+
+    def test_touching_outlines_do_not_cross(self):
+        corner = [[12., 7.], [15., 7.], [15., 9.], [12., 9.]]
+        part_of_edge = [[12., 4.], [15., 4.], [15., 6.], [12., 6.]]
+        for other in (self.shares_edge, corner, part_of_edge):
+            assert not polygon_outlines_cross(self.town, other)
+            assert not polygon_outlines_cross(other, self.town)
+
+    def test_large_utm_coordinates(self):
+        shift = numpy.array([500000., 6200000.])
+        town = numpy.array(self.town) + shift
+        assert polygon_outlines_cross(town, numpy.array(self.crossing) + shift)
+        assert not polygon_outlines_cross(town, numpy.array(self.shares_edge) + shift)
+        assert not polygon_outlines_cross(town, numpy.array(self.nested) + shift)
+
 
 ################################################################################
 

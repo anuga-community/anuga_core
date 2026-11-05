@@ -5,6 +5,7 @@ from anuga.utilities.numerical_tools import ensure_numeric
 import numpy as num
 from anuga.geometry.polygon import inside_polygon
 from anuga.geometry.polygon import polylist2points_verts
+from anuga.geometry.polygon import polygon_outlines_cross
 import anuga.utilities.log as log
 import datetime
 import warnings
@@ -15,6 +16,40 @@ try:
     from anuga.pmesh.mesh import Pmesh
 except ImportError:
     from .mesh import Pmesh
+
+
+def _check_outlines_do_not_cross(interior_regions, interior_holes):
+    """Raise PolygonError if two interior region or hole outlines cross.
+
+    Each region and hole is found from a seed point near its first vertex.
+    Crossing outlines cut a polygon into pieces, and the seed can land in the
+    wrong piece or inside the other polygon. Regions then get the wrong
+    triangle areas and holes the wrong shape, with no other sign of a problem.
+    """
+
+    polygons = []
+    if interior_regions is not None:
+        polygons += [('interior_regions', i, region[0])
+                     for i, region in enumerate(interior_regions)]
+    if interior_holes is not None:
+        polygons += [('interior_holes', i, hole)
+                     for i, hole in enumerate(interior_holes)]
+
+    for n, (kind0, i0, polygon0) in enumerate(polygons):
+        for kind1, i1, polygon1 in polygons[n + 1:]:
+            if polygon_outlines_cross(polygon0, polygon1):
+                msg = ('The outlines of %s[%d] and %s[%d] cross, which gives '
+                       'the wrong mesh. Their first vertices are %s and %s. '
+                       % (kind0, i0, kind1, i1,
+                          str(list(polygon0[0])), str(list(polygon1[0]))))
+                if kind0 == kind1 == 'interior_regions':
+                    msg += ('For overlapping refinement, use '
+                            'anuga.size_field_from_regions, or change the '
+                            'polygons so that they are nested or separate.')
+                else:
+                    msg += ('Change the polygons so that they are nested or '
+                            'separate.')
+                raise PolygonError(msg)
 
 
 class PolygonError(Exception):
@@ -59,10 +94,12 @@ def create_pmesh_from_regions(bounding_polygon,
         (supported formats: .tsh, .msh). The Pmesh object is still returned.
     interior_regions : list of tuples, optional
         List of (polygon, resolution) tuples for each region to be separately
-        refined. Polygon lines should not cross or overlap, and should not be
-        close to each other.
+        refined. Polygons may be nested or separate. Outlines that cross
+        raise PolygonError, as do outlines of a region and a hole that cross.
+        They should not be close to each other. For overlapping refinement
+        see size_field_from_regions.
     interior_holes : list of polygons, optional
-        List of polygons for each hole.
+        List of polygons for each hole. Outlines must not cross.
     hole_tags : list, optional
         Boundary tags for the holes, see boundary_tags parameter.
     poly_geo_reference : Geo_reference, optional
@@ -312,6 +349,8 @@ def _create_pmesh_from_regions(bounding_polygon,
                 msg = 'Interior polygon %s is outside bounding polygon: %s'\
                       % (str(interior_polygon), str(bounding_polygon))
                 raise PolygonError(msg)
+
+    _check_outlines_do_not_cross(interior_regions, interior_holes)
 
     # Resolve geo referencing
     if mesh_geo_reference is None:

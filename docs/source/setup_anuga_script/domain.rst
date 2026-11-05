@@ -109,9 +109,10 @@ The polygons have to follow a few rules:
 * **Nested or separate.** A polygon can sit inside another, in any order, and
   the inner area applies inside it, so ``[(town, 0.05), (street, 0.01)]`` works
   when ``street`` is inside ``town``.
-* **No crossing outlines.** Crossing outlines do not raise an error, but the
-  areas are then unreliable: triangles can be larger than any area you asked
-  for, and a finer region may not get its resolution.
+* **No crossing outlines.** Crossing outlines raise ``PolygonError``, because
+  the mesh would be wrong: triangles larger than any area you asked for, and a
+  finer region that does not get its resolution. The same goes for
+  ``interior_holes``, and for a hole that crosses a region.
 * **Not too close.** Outlines close to each other, or to the boundary, force
   small triangles between them.
 
