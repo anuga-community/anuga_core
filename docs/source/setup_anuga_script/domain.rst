@@ -108,7 +108,8 @@ The polygons have to follow a few rules:
   ignored instead.
 * **Nested or separate.** A polygon can sit inside another, in any order, and
   the inner area applies inside it, so ``[(town, 0.05), (street, 0.01)]`` works
-  when ``street`` is inside ``town``.
+  when ``street`` is inside ``town``. The polygons may share vertices and
+  edges, and an inner region or hole may also touch the bounding polygon.
 * **No crossing outlines.** Crossing outlines raise ``PolygonError``, because
   the mesh would be wrong: triangles larger than any area you asked for, and a
   finer region that does not get its resolution. The same goes for

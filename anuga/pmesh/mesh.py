@@ -733,7 +733,7 @@ class Pmesh:
             self.userVertices.append(v)
 
     def add_hole_from_polygon(self, polygon, segment_tags=None,
-                              geo_reference=None):
+                              geo_reference=None, exclude_polygons=None):
         """
         Add a polygon with tags to the current mesh, as a region.
         The maxArea of the region can be specified.
@@ -746,6 +746,8 @@ class Pmesh:
         polygon a list of points, in meters that describe the polygon
              (e.g. [[x1,y1],[x2,y2],...]
         tags (e.g.{'wall':[0,1,3],'ocean':[2]})
+        exclude_polygons - other polygons (same coordinates as polygon) the
+        hole's seed point must not be inside, such as regions nested in it.
 
         This returns the region instance, so if the user whats to modify
         it they can.
@@ -753,12 +755,13 @@ class Pmesh:
         return self._add_area_from_polygon(polygon,
                                            segment_tags=segment_tags,
                                            hole=True,
-                                           geo_reference=geo_reference
+                                           geo_reference=geo_reference,
+                                           exclude_polygons=exclude_polygons
                                            )
 
     def add_region_from_polygon(self, polygon, segment_tags=None,
                                 max_triangle_area=None, geo_reference=None,
-                                region_tag=None):
+                                region_tag=None, exclude_polygons=None):
         """
         Add a polygon with tags to the current mesh, as a region.
         The maxArea of the region can be specified.
@@ -773,6 +776,10 @@ class Pmesh:
         segment_tags (e.g.{'wall':[0,1,3],'ocean':[2]}) add tags to the
         segements of the region
         region_tags  - add a tag to all of the triangles in the region.
+        exclude_polygons - other polygons (same coordinates as polygon) the
+        region's seed point must not be inside, such as the regions and
+        holes nested in it. Otherwise a nested polygon that includes this
+        one's first vertex can take its seed, and with it its area.
 
         This returns the region instance (if a max_triangle_area is given),
         so if the user whats to modify it they can.
@@ -785,7 +792,8 @@ class Pmesh:
         region = self._add_area_from_polygon(polygon,
                                              segment_tags=segment_tags,
                                              geo_reference=geo_reference,
-                                             region=create_region)
+                                             region=create_region,
+                                             exclude_polygons=exclude_polygons)
         if max_triangle_area is not None:
             region.set_max_area(max_triangle_area)
         if region_tag is not None:
@@ -796,7 +804,8 @@ class Pmesh:
     def _add_area_from_polygon(self, polygon, segment_tags=None,
                                geo_reference=None,
                                hole=False,
-                               region=False):
+                               region=False,
+                               exclude_polygons=None):
         """
         Add a polygon with tags to the current mesh, as a region.
         The maxArea of the region can be specified.
@@ -822,6 +831,9 @@ class Pmesh:
         # get absolute values
         if geo_reference is not None:
             polygon = geo_reference.get_absolute(polygon)
+            if exclude_polygons is not None:
+                exclude_polygons = [geo_reference.get_absolute(other)
+                                    for other in exclude_polygons]
         # polygon is now absolute
         # print "polygon  should be absolute",polygon
 
@@ -847,12 +859,12 @@ class Pmesh:
 
         if region is True:
             # get inner point - absolute values
-            inner_point = point_in_polygon(polygon)
+            inner_point = point_in_polygon(polygon, exclude=exclude_polygons)
             inner = self.add_region(inner_point[0], inner_point[1],
                                     geo_reference=None)
         elif hole is True:
             # get inner point - absolute values
-            inner_point = point_in_polygon(polygon)
+            inner_point = point_in_polygon(polygon, exclude=exclude_polygons)
             inner = self.add_hole(inner_point[0], inner_point[1],
                                   geo_reference=None)
         else:

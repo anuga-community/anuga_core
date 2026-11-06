@@ -1079,6 +1079,103 @@ class TestCrossingOutlines:
 
 ################################################################################
 
+
+class TestNestedSeedPoints:
+    """A region's or hole's seed point must not fall inside a polygon nested
+    in it, or the nested polygon takes its area (issue #504)"""
+
+    bounding = [[0., 0.], [20., 0.], [20., 10.], [0., 10.]]
+    tags = {'bottom': [0], 'right': [1], 'top': [2], 'left': [3]}
+    outer = [[8., 3.], [12., 3.], [12., 7.], [8., 7.]]
+    # Includes the first vertex of outer
+    inner = [[8., 3.], [10., 3.], [10., 5.], [8., 5.]]
+    # Includes the first vertex of the bounding polygon
+    corner = [[0., 0.], [3., 0.], [3., 3.], [0., 3.]]
+    small_hole = [[8., 3.], [9., 3.], [9., 4.], [8., 4.]]
+
+    def domain(self, shift=(0., 0.), **kwargs):
+        import anuga
+        def move(polygon):
+            return [[x + shift[0], y + shift[1]] for x, y in polygon]
+        for key in ('interior_regions',):
+            if key in kwargs:
+                kwargs[key] = [(move(p), r) for p, r in kwargs[key]]
+        if 'interior_holes' in kwargs:
+            kwargs['interior_holes'] = [move(p) for p in kwargs['interior_holes']]
+        domain = anuga.create_domain_from_regions(move(self.bounding), self.tags,
+                                                  verbose=False, **kwargs)
+        domain.test_shift = numpy.array(shift)
+        return domain
+
+    def largest(self, domain, polygon, without=()):
+        """Largest triangle with its centroid in polygon but not in without"""
+        from anuga.geometry.polygon import inside_polygon
+        c = domain.get_centroid_coordinates(absolute=True)
+        shift = domain.test_shift
+        inside = numpy.zeros(len(c), bool)
+        inside[inside_polygon(c, numpy.array(polygon) + shift)] = True
+        for other in without:
+            inside[inside_polygon(c, numpy.array(other) + shift)] = False
+        assert inside.any()
+        return domain.areas[inside].max()
+
+    def test_inner_region_at_outer_first_vertex(self):
+        for regions in ([(self.outer, 0.05), (self.inner, 0.01)],
+                        [(self.inner, 0.01), (self.outer, 0.05)]):
+            domain = self.domain(maximum_triangle_area=0.2,
+                                 interior_regions=regions)
+            assert self.largest(domain, self.outer, [self.inner]) <= 0.05
+            assert self.largest(domain, self.inner) <= 0.01
+
+    def test_region_at_bounding_first_vertex(self):
+        domain = self.domain(maximum_triangle_area=0.2,
+                             interior_regions=[(self.corner, 5.0)])
+        assert self.largest(domain, self.bounding, [self.corner]) <= 0.2
+
+    def test_hole_at_region_first_vertex(self):
+        domain = self.domain(maximum_triangle_area=0.2,
+                             interior_regions=[(self.outer, 0.05)],
+                             interior_holes=[self.small_hole])
+        assert self.largest(domain, self.outer) <= 0.05
+        assert numpy.allclose(domain.areas.sum(), 199.0)
+
+    def test_hole_at_bounding_first_vertex(self):
+        domain = self.domain(maximum_triangle_area=0.2,
+                             interior_holes=[self.corner])
+        assert domain.areas.max() <= 0.2
+        assert numpy.allclose(domain.areas.sum(), 191.0)
+
+    def test_utm_coordinates(self):
+        domain = self.domain(shift=(300000., 6180000.),
+                             maximum_triangle_area=0.2,
+                             interior_regions=[(self.outer, 0.05),
+                                               (self.inner, 0.01)])
+        assert self.largest(domain, self.outer, [self.inner]) <= 0.05
+        assert self.largest(domain, self.bounding, [self.outer]) <= 0.2
+
+    def test_geo_referenced_polygons(self):
+        # Polygons given relative to poly_geo_reference
+        geo = Geo_reference(zone=56, xllcorner=300000., yllcorner=6180000.)
+        m = _create_pmesh_from_regions(self.bounding, self.tags,
+                                       maximum_triangle_area=0.2,
+                                       interior_regions=[(self.outer, 0.05),
+                                                         (self.inner, 0.01)],
+                                       poly_geo_reference=geo,
+                                       verbose=False)
+        seeds = [(r.x, r.y, r.get_max_area()) for r in m.regions
+                 if r.get_max_area() is not None]
+        assert sorted(area for x, y, area in seeds) == [0.01, 0.05, 0.2]
+        outer = numpy.array(self.outer)
+        inner = numpy.array(self.inner)
+        for x, y, area in seeds:
+            # Seeds are relative to the mesh geo_reference
+            [[x, y]] = m.geo_reference.get_absolute([[x, y]])
+            x -= 300000.
+            y -= 6180000.
+            if area == 0.05:
+                assert is_inside_polygon([x, y], outer, closed=False)
+                assert not is_inside_polygon([x, y], inner)
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestCase)
     runner = unittest.TextTestRunner() #verbosity=2)

@@ -10,6 +10,13 @@ A patch release on the 4.1 line.
   areas, even above `maximum_triangle_area`, and holes came out the wrong shape. A script
   that stops with this error was getting such a mesh. Use `size_field_from_regions` for
   overlapping refinement, or change the polygons so that they are nested or separate.
+* Mesh: a nested region or hole that includes the first vertex of the polygon around it no
+  longer takes that polygon's triangle area. Each region is marked by a seed point next to
+  its first vertex, and that point could fall inside the nested polygon. The outer region,
+  or for a polygon at the bounding polygon's first corner the rest of the domain, then got
+  no area limit: its triangles could be much larger than its area or
+  `maximum_triangle_area`. Seed points now avoid the polygons nested inside. Meshes without
+  such a shared vertex are unchanged.
 * Boundaries: a prescribed boundary value now bounds the edge limiter on that
   edge. A boundary cell has no neighbour beyond its boundary edge, so the end
   of a smooth slope looked like a local extremum, the limiter flattened the
