@@ -4,6 +4,12 @@ A patch release on the 4.1 line.
 
 ## Fixes
 
+* Mesh: `create_domain_from_regions` and the other mesh functions now raise `PolygonError`
+  when the outlines of two `interior_regions` or `interior_holes` cross. They used to
+  accept them without complaint and give the wrong mesh: regions got the wrong triangle
+  areas, even above `maximum_triangle_area`, and holes came out the wrong shape. A script
+  that stops with this error was getting such a mesh. Use `size_field_from_regions` for
+  overlapping refinement, or change the polygons so that they are nested or separate.
 * Boundaries: a prescribed boundary value now bounds the edge limiter on that
   edge. A boundary cell has no neighbour beyond its boundary edge, so the end
   of a smooth slope looked like a local extremum, the limiter flattened the

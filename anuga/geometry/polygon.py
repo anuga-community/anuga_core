@@ -959,6 +959,65 @@ def populate_polygon(polygon, number_of_points, seed=None, exclude=None):
     return points
 
 
+def polygon_outlines_cross(polygon0, polygon1):
+    """Return True if the outlines of two polygons cross.
+
+    Outlines that only touch do not count: polygons may share vertices or
+    edges. Nested polygons and separate polygons do not cross.
+
+    Parameters
+    ----------
+    polygon0, polygon1 : array_like
+        Vertices of the polygons, Nx2.
+
+    Returns
+    -------
+    bool
+        True if an edge of one passes through an edge of the other, or if
+        one polygon has vertices both strictly inside and strictly outside
+        the other (which catches an edge passing exactly through a vertex).
+    """
+
+    p0 = ensure_numeric(polygon0, float)
+    p1 = ensure_numeric(polygon1, float)
+
+    if (p0.max(axis=0) < p1.min(axis=0)).any() or \
+       (p1.max(axis=0) < p0.min(axis=0)).any():
+        return False
+
+    # Relative to a nearby origin, as UTM coordinates would swamp the tolerance
+    origin = p0.min(axis=0)
+    p0 = p0 - origin
+    p1 = p1 - origin
+    tol = 1.0e-12 * max(num.abs(p0).max(), num.abs(p1).max()) ** 2
+
+    a = p0[:, None, :]
+    b = num.roll(p0, -1, axis=0)[:, None, :]
+    c = p1[None, :, :]
+    d = num.roll(p1, -1, axis=0)[None, :, :]
+
+    def side(s, e, q):
+        return (e[..., 0] - s[..., 0]) * (q[..., 1] - s[..., 1]) \
+             - (e[..., 1] - s[..., 1]) * (q[..., 0] - s[..., 0])
+
+    c_side = side(a, b, c)
+    d_side = side(a, b, d)
+    a_side = side(c, d, a)
+    b_side = side(c, d, b)
+
+    if (((c_side > tol) & (d_side < -tol) | (c_side < -tol) & (d_side > tol)) &
+        ((a_side > tol) & (b_side < -tol) | (a_side < -tol) & (b_side > tol))).any():
+        return True
+
+    for points, polygon in ((p0, p1), (p1, p0)):
+        strictly_inside = len(inside_polygon(points, polygon, closed=False))
+        inside_or_on = len(inside_polygon(points, polygon, closed=True))
+        if strictly_inside > 0 and inside_or_on < len(points):
+            return True
+
+    return False
+
+
 def point_in_polygon(polygon, delta=1e-8):
     """Return a point inside a given polygon which will be close to the
     polygon edge.
