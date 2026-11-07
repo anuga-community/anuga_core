@@ -1018,7 +1018,7 @@ def polygon_outlines_cross(polygon0, polygon1):
     return False
 
 
-def point_in_polygon(polygon, delta=1e-8):
+def point_in_polygon(polygon, delta=1e-8, exclude=None):
     """Return a point inside a given polygon which will be close to the
     polygon edge.
 
@@ -1026,35 +1026,100 @@ def point_in_polygon(polygon, delta=1e-8):
        polygon - list of vertices of polygon
        delta - the square root of 2 * delta is the maximum distance from the
        polygon points and the returned point.
+       exclude - optional list of polygons the point must not be inside or
+       on. Mesh generation uses the point as the seed of a region or hole,
+       so it must not fall inside a polygon nested in this one. Polygons
+       that contain this polygon are ignored, as every point of it is
+       inside them.
     Output:
        points - a point inside polygon
 
        searches in all diagonals and up and down (not left and right).
+       With exclude, the point found without exclude is returned if it is
+       outside all the excluded polygons, so meshes that were right before
+       are unchanged.
     """
 
     polygon = ensure_numeric(polygon)
 
+    point = _point_near_vertex(polygon, delta)
+
+    if not exclude:
+        return point
+
+    others = [ensure_numeric(other, float) for other in exclude]
+    others = [other for other in others
+              if not _polygon_contains(other, polygon)]
+
+    def is_free(pt):
+        return not any(is_inside_polygon(pt, other, closed=True)
+                       for other in others)
+
+    if is_free(point):
+        return point
+
+    # Near the other vertices first, then on finer and finer grids
+    for d in delta * 10.0 ** -num.arange(4):
+        for pt in _points_near_vertices(polygon, d):
+            if is_inside_polygon(pt, polygon, closed=False) and is_free(pt):
+                return pt
+
+    lo = polygon.min(axis=0)
+    hi = polygon.max(axis=0)
+    for n in (8, 32, 128, 512):
+        s = (num.arange(n) + 0.5) / n
+        gx, gy = num.meshgrid(lo[0] + s * (hi[0] - lo[0]),
+                              lo[1] + s * (hi[1] - lo[1]))
+        pts = num.column_stack((gx.ravel(), gy.ravel()))
+        free = num.zeros(len(pts), bool)
+        free[inside_polygon(pts, polygon, closed=False)] = True
+        for other in others:
+            free[inside_polygon(pts, other, closed=True)] = False
+        if free.any():
+            return list(pts[num.argmax(free)])
+
+    # The excluded polygons cover this one, so it has no area of its own
+    # and its seed does not matter
+    return point
+
+
+def _points_near_vertices(polygon, delta):
+    """The candidate points of point_in_polygon: each vertex moved by a
+    relative delta in the eight directions (and not at all)."""
+
+    for poly_point in polygon:
+        for x_mult in range(-1, 2):
+            for y_mult in range(-1, 2):
+                pt_x, pt_y = poly_point
+
+                if pt_x == 0:
+                    x_delta = x_mult * delta
+                else:
+                    x_delta = pt_x + x_mult*pt_x*delta
+
+                if pt_y == 0:
+                    y_delta = y_mult * delta
+                else:
+                    y_delta = pt_y + y_mult*pt_y*delta
+
+                yield [x_delta, y_delta]
+
+
+def _point_near_vertex(polygon, delta):
+    """The first candidate point inside polygon, reducing delta until one
+    is."""
+
     while True:
-        for poly_point in polygon:
-            for x_mult in range(-1, 2):
-                for y_mult in range(-1, 2):
-                    pt_x, pt_y = poly_point
-
-                    if pt_x == 0:
-                        x_delta = x_mult * delta
-                    else:
-                        x_delta = pt_x + x_mult*pt_x*delta
-
-                    if pt_y == 0:
-                        y_delta = y_mult * delta
-                    else:
-                        y_delta = pt_y + y_mult*pt_y*delta
-
-                    point = [x_delta, y_delta]
-
-                    if is_inside_polygon(point, polygon, closed=False):
-                        return point
+        for point in _points_near_vertices(polygon, delta):
+            if is_inside_polygon(point, polygon, closed=False):
+                return point
         delta = delta * 0.1
+
+
+def _polygon_contains(outer, polygon):
+    """True if every vertex of polygon is inside or on outer."""
+
+    return len(inside_polygon(polygon, outer, closed=True)) == len(polygon)
 
 
 def number_mesh_triangles(interior_regions, bounding_poly, remainder_res):

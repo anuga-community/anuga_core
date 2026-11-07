@@ -385,13 +385,23 @@ def _create_pmesh_from_regions(bounding_polygon,
                               segment_tags=boundary_tags,
                               geo_reference=poly_geo_reference)
 
-    # Find one point inside region automatically
+    # Each region's and hole's seed point must not fall inside another
+    # region or hole nested in it, or that one takes its area (#504)
+    region_polygons = []
     if interior_regions is not None:
-        excluded_polygons = []
-        for polygon, res in interior_regions:
-            excluded_polygons.append(polygon)
+        region_polygons = [polygon for polygon, res in interior_regions]
+    hole_polygons = []
+    if interior_holes is not None:
+        hole_polygons = list(interior_holes)
+    seed_polygons = region_polygons + hole_polygons
+    if poly_geo_reference is not None:
+        seed_polygons_absolute = [poly_geo_reference.get_absolute(polygon)
+                                  for polygon in seed_polygons]
     else:
-        excluded_polygons = None
+        seed_polygons_absolute = seed_polygons
+
+    def others(i):
+        return seed_polygons[:i] + seed_polygons[i + 1:]
 
     # Convert bounding poly to absolute values
     # this sort of thing can be fixed with the geo_points class
@@ -401,16 +411,18 @@ def _create_pmesh_from_regions(bounding_polygon,
     else:
         bounding_polygon_absolute = bounding_polygon
 
-    inner_point = point_in_polygon(bounding_polygon_absolute)
+    inner_point = point_in_polygon(bounding_polygon_absolute,
+                                   exclude=seed_polygons_absolute)
     inner = m.add_region(inner_point[0], inner_point[1])
     inner.set_max_area(maximum_triangle_area)
 
     # Do interior regions
     if interior_regions is not None:
-        for polygon, res in interior_regions:
+        for i, (polygon, res) in enumerate(interior_regions):
             m.add_region_from_polygon(polygon,
                                       max_triangle_area=res,
-                                      geo_reference=poly_geo_reference)
+                                      geo_reference=poly_geo_reference,
+                                      exclude_polygons=others(i))
 
     # Do interior holes
     if interior_holes is not None:
@@ -421,7 +433,9 @@ def _create_pmesh_from_regions(bounding_polygon,
                 tags = {}
             m.add_hole_from_polygon(polygon,
                                     segment_tags=tags,
-                                    geo_reference=poly_geo_reference)
+                                    geo_reference=poly_geo_reference,
+                                    exclude_polygons=others(
+                                        len(region_polygons) + n))
 
     # 22/04/2014
     # Add user-specified point-based regions with max area
