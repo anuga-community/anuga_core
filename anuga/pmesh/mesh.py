@@ -1236,7 +1236,9 @@ class Pmesh:
         ----------
         maximum_triangle_area : float, optional
             Maximum area of any triangle. Regions with their own maximum
-            area are refined to that as well.
+            area are refined to that as well. Defaults to
+            ``self.default_maximum_triangle_area`` if set (as
+            create_pmesh_from_regions does), else no global limit.
         minimum_triangle_angle : float, optional
             Minimum angle of any triangle, in degrees (default 28.0).
         verbose : bool, optional
@@ -1255,6 +1257,10 @@ class Pmesh:
             size_field = getattr(self, 'size_field', None)
         if relax_passes is None:
             relax_passes = getattr(self, 'relax_passes', 0)
+        if maximum_triangle_area in ("", None):
+            maximum_triangle_area = getattr(self, 'default_maximum_triangle_area', None)
+        if maximum_triangle_area is None:
+            maximum_triangle_area = ""
 
         if verbose is True:
             silent = ''

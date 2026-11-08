@@ -1176,6 +1176,51 @@ class TestNestedSeedPoints:
                 assert is_inside_polygon([x, y], outer, closed=False)
                 assert not is_inside_polygon([x, y], inner)
 
+
+class TestBreaklineAreaLimit(unittest.TestCase):
+    """#511: breaklines from boundary to boundary used to drop the area limit
+    beyond them."""
+
+    @staticmethod
+    def _cell_areas(m):
+        pts = numpy.array(m.get_mesh_vertices())
+        P = pts[numpy.array(m.get_triangulation())]
+        area = 0.5 * numpy.abs((P[:, 1, 0] - P[:, 0, 0]) * (P[:, 2, 1] - P[:, 0, 1])
+                               - (P[:, 2, 0] - P[:, 0, 0]) * (P[:, 1, 1] - P[:, 0, 1]))
+        return P.mean(axis=1), area
+
+    _BOX = [[0.0, 0.0], [100.0, 0.0], [100.0, 30.0], [0.0, 30.0]]
+    _TAGS = {'bottom': [0], 'right': [1], 'top': [2], 'left': [3]}
+
+    def test_breaklines_across_domain_keep_maximum_area(self):
+        breaklines = [[[0.0, 10.0], [100.0, 10.0]], [[0.0, 20.0], [100.0, 20.0]]]
+        m = create_pmesh_from_regions(self._BOX, self._TAGS, maximum_triangle_area=1.0,
+                                      breaklines=breaklines)
+        m.generate_mesh(verbose=False)
+        c, area = self._cell_areas(m)
+        for lo, hi in ((0, 10), (10, 20), (20, 30)):
+            strip = (c[:, 1] > lo) & (c[:, 1] < hi)
+            assert strip.sum() > 0
+            assert area[strip].max() <= 1.0 + 1e-9, (lo, hi, area[strip].max())
+
+    def test_coarse_interior_region_stays_coarse(self):
+        # The global limit must not refine a region coarser than the default
+        coarse = [[[50.0, 0.0], [100.0, 0.0], [100.0, 30.0], [50.0, 30.0]], 25.0]
+        m = create_pmesh_from_regions(self._BOX, self._TAGS, maximum_triangle_area=1.0,
+                                      interior_regions=[coarse])
+        m.generate_mesh(verbose=False)
+        c, area = self._cell_areas(m)
+        assert area[c[:, 0] < 50].max() <= 1.0 + 1e-9
+        assert 5.0 < area[c[:, 0] > 50].max() <= 25.0 + 1e-9
+        assert m.default_maximum_triangle_area == 25.0
+
+    def test_breaklines_across_domain_via_create_domain(self):
+        import anuga
+        domain = anuga.create_domain_from_regions(
+            self._BOX, self._TAGS, maximum_triangle_area=1.0,
+            breaklines=[[[0.0, 10.0], [100.0, 10.0]]])
+        assert domain.areas.max() <= 1.0 + 1e-9
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestCase)
     runner = unittest.TextTestRunner() #verbosity=2)

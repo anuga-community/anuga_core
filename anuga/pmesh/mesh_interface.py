@@ -113,6 +113,10 @@ def create_pmesh_from_regions(bounding_polygon,
     breaklines : list of polygons, optional
         Lines to be preserved by the triangulation algorithm (e.g., coastlines,
         walls). The polygons are not closed.
+        maximum_triangle_area also applies to parts of the domain that
+        breaklines separate. If an interior region is coarser than
+        maximum_triangle_area, those parts are limited to the coarsest
+        region's area instead.
     regionPtArea : list, optional
         User-specified point-based regions with max area.
     minimum_triangle_angle : float, optional
@@ -443,6 +447,17 @@ def _create_pmesh_from_regions(bounding_polygon,
         for i in range(len(regionPtArea)):
             inner = m.add_region(regionPtArea[i][0], regionPtArea[i][1])
             inner.set_max_area(regionPtArea[i][2])
+
+    # Regional limits only reach the triangles Triangle can flood-fill from
+    # their seed point, and breaklines stop the fill, so a breakline running
+    # from boundary to boundary would leave the far side with no limit
+    # (#511). Also pass a global limit. Triangle applies both, so the global
+    # one is the largest limit given: every region keeps its own.
+    area_limits = [maximum_triangle_area]
+    area_limits += [res for _, res in (interior_regions or [])]
+    area_limits += [r[2] for r in (regionPtArea or [])]
+    if all(a is not None for a in area_limits):
+        m.default_maximum_triangle_area = max(area_limits)
 
     # NOTE (Ole): This was moved here as it is annoying if mesh is always
     # stored irrespective of whether the computation
