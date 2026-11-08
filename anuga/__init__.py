@@ -425,6 +425,7 @@ from anuga.config import g
 from anuga.config import velocity_protection
 from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
 from anuga.config import LOW_FROUDE_OFF, LOW_FROUDE_1, LOW_FROUDE_2
+from anuga.config import LOW_FROUDE_TANGENTIAL_UPWIND
 
 # --------------------------------------
 # Public API — names exported by `import anuga`
@@ -646,6 +647,7 @@ __all__ = [
     'LOW_FROUDE_1',
     'LOW_FROUDE_2',
     'LOW_FROUDE_OFF',
+    'LOW_FROUDE_TANGENTIAL_UPWIND',
     'MULTIPROCESSOR_GPU',
     'MULTIPROCESSOR_OPENMP',
     'velocity_protection',

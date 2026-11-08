@@ -129,6 +129,7 @@ from anuga.abstract_2d_finite_volumes.generic_domain \
 
 from anuga.config import MULTIPROCESSOR_OPENMP, MULTIPROCESSOR_GPU
 from anuga.config import LOW_FROUDE_OFF, LOW_FROUDE_1, LOW_FROUDE_2
+from anuga.config import LOW_FROUDE_TANGENTIAL_UPWIND
 
 from anuga.shallow_water.forcing import Cross_section
 from anuga.utilities.numerical_tools import mean
@@ -4871,11 +4872,45 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
         """ For low Froude problems the standard flux calculations
         can lead to excessive damping. Set low_froude to 1 or 2 for
         flux calculations which minimize the damping in this case.
+
+        The value may also carry the flag LOW_FROUDE_TANGENTIAL_UPWIND
+        (e.g. ``LOW_FROUDE_1 | LOW_FROUDE_TANGENTIAL_UPWIND``); see
+        set_tangential_upwind. The value is stored as given, so passing a
+        mode without the flag switches tangential upwinding off.
         """
 
-        assert low_froude in [LOW_FROUDE_OFF, LOW_FROUDE_1, LOW_FROUDE_2]
+        mode = low_froude & ~LOW_FROUDE_TANGENTIAL_UPWIND
+        assert mode in [LOW_FROUDE_OFF, LOW_FROUDE_1, LOW_FROUDE_2], \
+            f'low_froude must be 0, 1 or 2, optionally | {LOW_FROUDE_TANGENTIAL_UPWIND}; got {low_froude}'
 
         self.low_froude = low_froude
+
+    def set_tangential_upwind(self, flag: bool = True) -> None:
+        """Upwind the edge-tangential momentum with the mass flux.
+
+        The central-upwind flux diffuses the momentum component along an edge
+        at the gravity-wave speed sqrt(g h), although in the Riemann problem
+        that component only moves with the contact wave (the normal velocity).
+        Across a velocity shear, such as a channel and its slower banks, this
+        exchanges momentum laterally and makes channels too resistive; the
+        error is first order in the cell size. With the flag set, the
+        tangential momentum flux is the mass flux times the upwind tangential
+        velocity (as in HLLC). The normal momentum keeps the low_froude
+        scaling, so the flag combines with any low_froude mode.
+
+        Default off. Sets or clears the LOW_FROUDE_TANGENTIAL_UPWIND bit of
+        low_froude; call it after set_low_froude.
+        """
+
+        if flag:
+            self.low_froude = self.low_froude | LOW_FROUDE_TANGENTIAL_UPWIND
+        else:
+            self.low_froude = self.low_froude & ~LOW_FROUDE_TANGENTIAL_UPWIND
+
+    def get_tangential_upwind(self) -> bool:
+        """Return True if tangential momentum upwinding is on (see set_tangential_upwind)."""
+
+        return bool(self.low_froude & LOW_FROUDE_TANGENTIAL_UPWIND)
 
     def set_use_optimise_dry_cells(self, flag: bool = True) -> None:
         """ Try to optimize calculations where region is dry
