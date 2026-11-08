@@ -24,6 +24,7 @@ python_sources = [
 'test_domain_reference_docs.py',
 'test_water_volume_region.py',
 'test_tracers.py',
+'test_tangential_upwind.py',
 'test_tracers_boundary.py',
 'test_tracers_sww.py',
 'test_tracers_conservation.py',

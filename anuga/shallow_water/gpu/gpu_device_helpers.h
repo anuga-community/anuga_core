@@ -244,9 +244,11 @@ static inline double gpu_compute_local_froude(
     double denominator = soundspeed_left * soundspeed_left +
                          soundspeed_right * soundspeed_right + 1.0e-10;
 
-    if (low_froude == 1) {
+    // Bit 4 (LOW_FROUDE_TANGENTIAL_UPWIND) is a separate flag, see below
+    anuga_int mode = low_froude & ~((anuga_int) 4);
+    if (mode == 1) {
         return sqrt(fmax(0.001, fmin(1.0, numerator / denominator)));
-    } else if (low_froude == 2) {
+    } else if (mode == 2) {
         double fr = sqrt(numerator / denominator);
         return sqrt(fmin(1.0, 0.01 + fmax(fr - 0.01, 0.0)));
     } else {
@@ -349,6 +351,15 @@ static inline void gpu_flux_function_central(
         double flux_2 = s_max * flux_left[2] - s_min * flux_right[2];
         flux_2 += local_fr * s_max_s_min * (vh_right - vh_left);
         edgeflux[2] = flux_2 * inverse_denominator;
+
+        // LOW_FROUDE_TANGENTIAL_UPWIND: the tangential velocity only moves
+        // with the contact wave, so carry it with the mass flux from the
+        // upwind side (as in HLLC) instead of diffusing it at the
+        // gravity-wave speed. With no flow through the edge there is no
+        // tangential momentum exchange.
+        if (low_froude & 4) {
+            edgeflux[2] = edgeflux[0] * ((edgeflux[0] > 0.0) ? v_left : v_right);
+        }
 
         *pressure_flux = 0.5 * g * (s_max * h_left * h_left - s_min * h_right * h_right) * inverse_denominator;
 
