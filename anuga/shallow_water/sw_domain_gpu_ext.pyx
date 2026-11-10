@@ -477,7 +477,9 @@ cdef extern from "gpu_domain.h" nogil:
     int gpu_culverts_get_report(gpu_domain *GD, int culvert_id, double *out)
 
     # Max-quantities operator
-    int  gpu_max_quantities_init(gpu_domain *GD, int n, double velocity_zero_height)
+    int  gpu_max_quantities_init(gpu_domain *GD, int n, double velocity_zero_height,
+                                 const double *seed_stage, const double *seed_depth,
+                                 const double *seed_speed, const double *seed_uh)
     void gpu_max_quantities_update(gpu_domain *GD)
     void gpu_max_quantities_get(gpu_domain *GD,
                                 double *out_stage, double *out_depth,
@@ -2719,17 +2721,41 @@ def apply_rate_operator_array_gpu(GPUDomain gpu_dom, int op_id,
 # Max-Quantities Operator GPU Support
 # ============================================================================
 
-def init_max_quantities_gpu(GPUDomain gpu_dom, int n, double velocity_zero_height):
+def init_max_quantities_gpu(GPUDomain gpu_dom, int n, double velocity_zero_height,
+                            max_stage=None, max_depth=None,
+                            max_speed=None, max_uh=None):
     """
     Initialise device-resident max-quantities arrays.
 
     Allocates four arrays of length *n* on the device (stage, depth, speed,
-    momentum magnitude), initialised to large-negative / zero as appropriate.
-    Call once before the evolve loop starts.
+    momentum magnitude). If all four of max_stage, max_depth, max_speed and
+    max_uh are given (float64 arrays of length *n*), the device arrays are
+    seeded from them -- e.g. the operator's host maxima after a checkpoint
+    resume, so prior peaks are kept. Otherwise they start large-negative /
+    zero as appropriate. Call once before the evolve loop starts.
 
     Returns 0 on success, -1 on allocation failure.
     """
-    ret = gpu_max_quantities_init(&gpu_dom.GD, n, velocity_zero_height)
+    cdef double[::1] s_v
+    cdef double[::1] d_v
+    cdef double[::1] sp_v
+    cdef double[::1] u_v
+    seeds = (max_stage, max_depth, max_speed, max_uh)
+    if all(a is None for a in seeds):
+        ret = gpu_max_quantities_init(&gpu_dom.GD, n, velocity_zero_height,
+                                      NULL, NULL, NULL, NULL)
+    elif any(a is None for a in seeds):
+        raise ValueError("init_max_quantities_gpu: give all four seed arrays or none")
+    else:
+        s_v  = np.ascontiguousarray(max_stage, dtype=np.float64)
+        d_v  = np.ascontiguousarray(max_depth, dtype=np.float64)
+        sp_v = np.ascontiguousarray(max_speed, dtype=np.float64)
+        u_v  = np.ascontiguousarray(max_uh,    dtype=np.float64)
+        if (s_v.shape[0] != n or d_v.shape[0] != n or
+                sp_v.shape[0] != n or u_v.shape[0] != n):
+            raise ValueError("init_max_quantities_gpu: seed arrays must have length n")
+        ret = gpu_max_quantities_init(&gpu_dom.GD, n, velocity_zero_height,
+                                      &s_v[0], &d_v[0], &sp_v[0], &u_v[0])
     if ret < 0:
         raise RuntimeError('init_max_quantities_gpu: ' + get_last_error(gpu_dom))
     return ret
@@ -2755,8 +2781,9 @@ def get_max_quantities_gpu(GPUDomain gpu_dom,
     Sync max arrays from device to host and copy into the supplied numpy arrays.
 
     The four output arrays must each have length == domain.number_of_elements.
-    This is the only call that incurs a device-to-host transfer; call it only
-    at yield steps (SWW write) or at end-of-simulation export.
+    This is the only call that incurs a device-to-host transfer; the operator
+    calls it only when an SWW frame is stored (sync_to_host), at checkpoint
+    and at end-of-simulation export.
     """
     gpu_max_quantities_get(&gpu_dom.GD,
                            &max_stage[0], &max_depth[0],
