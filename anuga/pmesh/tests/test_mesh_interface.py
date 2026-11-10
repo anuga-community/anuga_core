@@ -1214,6 +1214,17 @@ class TestBreaklineAreaLimit(unittest.TestCase):
         assert 5.0 < area[c[:, 0] > 50].max() <= 25.0 + 1e-9
         assert m.default_maximum_triangle_area == 25.0
 
+    def test_area_limit_in_exponent_notation(self):
+        # str(1e20) is '1e+20', and Triangle read 'a1e+20' as a limit of 1
+        # (the weir_1 validation mesh went from 2 219 to 16 129 triangles).
+        breaklines = [[[50.0, 0.0], [50.0, 30.0]]]
+        m = create_pmesh_from_regions(self._BOX, self._TAGS, maximum_triangle_area=1.0e20,
+                                      breaklines=breaklines,
+                                      regionPtArea=[[25.0, 15.0, 50.0], [75.0, 15.0, 50.0]])
+        m.generate_mesh(verbose=False)
+        c, area = self._cell_areas(m)
+        assert 10.0 < area.max() <= 50.0 + 1e-9, area.max()
+
     def test_breaklines_across_domain_via_create_domain(self):
         import anuga
         domain = anuga.create_domain_from_regions(

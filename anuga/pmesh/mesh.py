@@ -1261,6 +1261,11 @@ class Pmesh:
             maximum_triangle_area = getattr(self, 'default_maximum_triangle_area', None)
         if maximum_triangle_area is None:
             maximum_triangle_area = ""
+        elif maximum_triangle_area != "":
+            # Triangle reads the number up to the first character that is
+            # not a digit or '.', so 'a1e+20' would be an area limit of 1.
+            maximum_triangle_area = num.format_float_positional(
+                float(maximum_triangle_area), trim='-')
 
         if verbose is True:
             silent = ''
