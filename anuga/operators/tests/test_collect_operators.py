@@ -171,8 +171,9 @@ class Test_collect_max_quantities_sync_and_velocity_height(unittest.TestCase):
         operator and gates speed; the default stays minimum_allowed_height."""
         import tempfile
         d = self._domain(tempfile.mkdtemp())
-        default_op = anuga.operators.collect_max_quantities_operator \
-            .Collect_max_quantities_operator(self._domain(tempfile.mkdtemp()))
+        from anuga.operators.collect_max_quantities_operator import \
+            Collect_max_quantities_operator
+        default_op = Collect_max_quantities_operator(self._domain(tempfile.mkdtemp()))
         self.assertEqual(default_op.velocity_zero_height, d.minimum_allowed_height)
 
         op = d.set_collect_max_quantities(velocity_zero_height=0.005)
