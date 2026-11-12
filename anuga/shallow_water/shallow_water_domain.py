@@ -5961,6 +5961,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
                                                extrapolate_second_order_edge_sw)
             protect_new(self)
             self._host_values_stale = False
+            self._pull_gpu_boundary_values()
             extrapolate_second_order_edge_sw(self, distribute_to_vertices=distribute_to_vertices)
             nvtxRangePop()
             return
@@ -5978,6 +5979,19 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
         extrapolate_second_order_edge_sw(self, distribute_to_vertices=distribute_to_vertices)
 
         nvtxRangePop()
+
+    def _pull_gpu_boundary_values(self):
+        """Bring the boundary values to the host for the host extrapolation.
+
+        The edge limiter reads the boundary values on prescribed edges. When
+        every boundary is evaluated on the device, the host copy is never
+        written and stays at zero, which bounds those edges by zero: the cells
+        on them come out flat (edge = centroid). When some boundary is
+        evaluated on the host, the host copy is the one that is current, and
+        it is pushed to the device after it, so there is nothing to pull.
+        """
+        if self.gpu_interface is not None and getattr(self, '_gpu_all_on_gpu', False):
+            self.gpu_interface.sync_boundary_values_from_device()
 
     def _prepare_yield(self):
         """Make the domain's values readable before evolve() yields.
@@ -6013,6 +6027,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
         self._host_values_stale = False     # first: the extension reads them
         if self.multiprocessor_mode == MULTIPROCESSOR_GPU:
             from .sw_domain_openmp_ext import extrapolate_second_order_edge_sw
+            self._pull_gpu_boundary_values()
             extrapolate_second_order_edge_sw(self, distribute_to_vertices=True)
         else:
             self.distribute_to_vertices_and_edges()
