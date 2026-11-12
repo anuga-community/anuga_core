@@ -327,15 +327,18 @@ run can differ from 4.1.0.
   With `DE2` the inlet volume could come out at about -1e-12 m³ from rounding,
   which failed an assertion on the first step. A negative volume below a
   1e-10 m mean depth over the inlet now counts as zero.
+* `create_domain_from_regions` accepts `mesh_filename` again. The argument
+  went in 3.3.0 when the domain began to be built in memory, so scripts that
+  pass it, among them the Cairns and buildings examples, stopped with a
+  `TypeError`. The domain is still built in memory; with `mesh_filename` the
+  mesh it is built on is also written to that file. `create_domain_from_dem`
+  takes the same argument (#506).
 * `read_polygon` reads a CSV polygon without `fiona`, `rasterio` or `shapely`
   installed. It raised `ImportError`, which failed the conda-forge build of
   4.1.0.
 
 ## Known issues
 
-* `examples/cairns/runcairns.py` and `examples/simple_examples/buildings.py`
-  pass `mesh_filename`, which `create_domain_from_regions` no longer accepts
-  (#506).
 * `create_okushiri.py` exports an untriangulated mesh, so fitting the
   bathymetry fails (#507).
 * The 4.1.0 known issues still apply.
