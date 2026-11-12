@@ -3916,6 +3916,31 @@ class Test_GPU_PrescribedBoundaryLimiter(unittest.TestCase):
         self._assert_agree('set_stage', lambda d: anuga.Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(
             d, function=lambda t: 0.2))
 
+    def test_host_edges_and_vertices_beside_a_dirichlet_edge(self):
+        # Edge and vertex values read on the host are extrapolated there, and
+        # the limiter reads the boundary values on a prescribed edge. Mode 2
+        # keeps those on the device: with the host copy left at zero, the
+        # cells on the Dirichlet edge came out flat (edge = centroid).
+        result = {}
+        for mode in (1, 2):
+            d = self._domain('host_edges', mode,
+                             lambda d: Dirichlet_boundary([1.8, 0.0, 0.0]))
+            for t in d.evolve(yieldstep=2.0, finaltime=6.0):
+                pass
+            result[mode] = {
+                (name, where): getattr(d.quantities[name], where).copy()
+                for name in ('stage', 'xmomentum', 'ymomentum')
+                for where in ('centroid_values', 'edge_values', 'vertex_values')}
+            if mode == 1:
+                left = [vol for (vol, edge), tag in d.boundary.items() if tag == 'left']
+        for key in result[1]:
+            np.testing.assert_allclose(result[2][key], result[1][key],
+                                       atol=1e-8, rtol=0.0, err_msg=str(key))
+        # The comparison must be able to see a flattened cell
+        stage = result[1]
+        spread = np.ptp(stage[('stage', 'edge_values')][left], axis=1)
+        assert spread.max() > 1e-3, spread.max()
+
     def test_round_off_stays_round_off_beside_a_dirichlet_edge(self):
         # Deep water with almost no y velocity beside the Dirichlet edge: bounding
         # by scaling the whole gradient took the modes 4e-5 apart here by t = 1.
