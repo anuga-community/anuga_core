@@ -1232,6 +1232,61 @@ class TestBreaklineAreaLimit(unittest.TestCase):
             breaklines=[[[0.0, 10.0], [100.0, 10.0]]])
         assert domain.areas.max() <= 1.0 + 1e-9
 
+
+class TestCreateDomainMeshFilename:
+    """mesh_filename writes the mesh the domain is built on (#506)."""
+
+    _BOX = [[0.0, 0.0], [100.0, 0.0], [100.0, 30.0], [0.0, 30.0]]
+    _TAGS = {'bottom': [0], 'right': [1], 'top': [2], 'left': [3]}
+
+    def _check_file_matches(self, domain, filename):
+        import anuga
+        assert os.path.exists(filename)
+        from_file = anuga.create_domain_from_file(filename)
+        assert from_file.number_of_triangles == domain.number_of_triangles
+        numpy.testing.assert_allclose(
+            from_file.get_vertex_coordinates(absolute=True),
+            domain.get_vertex_coordinates(absolute=True))
+        assert (sorted(from_file.get_boundary_tags())
+                == sorted(domain.get_boundary_tags()))
+
+    @pytest.mark.parametrize('ext', ['.msh', '.tsh'])
+    def test_regions_writes_mesh(self, tmp_path, ext):
+        import anuga
+        filename = str(tmp_path / ('mesh' + ext))
+        inner = [[40.0, 10.0], [60.0, 10.0], [60.0, 20.0], [40.0, 20.0]]
+        domain = anuga.create_domain_from_regions(
+            self._BOX, self._TAGS, maximum_triangle_area=20.0,
+            interior_regions=[[inner, 2.0]], mesh_filename=filename)
+        self._check_file_matches(domain, filename)
+
+    def test_regions_writes_relaxed_mesh(self, tmp_path):
+        # The file is written after relaxation, so it is the domain's mesh.
+        import anuga
+        filename = str(tmp_path / 'mesh.msh')
+        hole = [[40.0, 10.0], [60.0, 10.0], [60.0, 20.0], [40.0, 20.0]]
+        domain = anuga.create_domain_from_regions(
+            self._BOX, self._TAGS, maximum_triangle_area=20.0,
+            interior_holes=[hole], relax_passes=5, mesh_filename=filename)
+        self._check_file_matches(domain, filename)
+
+    def test_regions_writes_nothing_by_default(self, tmp_path, monkeypatch):
+        import anuga
+        monkeypatch.chdir(tmp_path)
+        anuga.create_domain_from_regions(self._BOX, self._TAGS,
+                                         maximum_triangle_area=20.0)
+        assert os.listdir(tmp_path) == []
+
+    def test_dem_writes_mesh(self, tmp_path):
+        import anuga
+        filename = str(tmp_path / 'mesh.msh')
+        x = numpy.linspace(0.0, 100.0, 51)
+        y = numpy.linspace(0.0, 30.0, 16)
+        Z = 0.01 * x[:, None] + 0.05 * numpy.abs(y[None, :] - 15.0)
+        domain = anuga.create_domain_from_dem(
+            (x, y, Z), maximum_triangle_area=20.0, mesh_filename=filename)
+        self._check_file_matches(domain, filename)
+
 if __name__ == "__main__":
     suite = unittest.TestLoader().loadTestsFromTestCase(TestCase)
     runner = unittest.TextTestRunner() #verbosity=2)

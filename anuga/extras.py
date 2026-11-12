@@ -284,6 +284,7 @@ def create_domain_from_dem(dem,
                            pit_max_depth=None,
                            pit_where=None,
                            verbose=False,
+                           mesh_filename=None,
                            **kwargs):
     """Create a domain meshed and elevated from a DEM.
 
@@ -330,6 +331,10 @@ def create_domain_from_dem(dem,
         Cells whose elevation pit removal may change, or a function of the
         domain returning them. Default all.
     verbose : bool, optional
+    mesh_filename : str, optional
+        If given, also write the mesh the domain is built on to this file
+        (``.msh`` or ``.tsh``). The file holds the mesh only, not the
+        elevation.
     **kwargs :
         Passed on to :func:`anuga.create_pmesh_from_dem` (``grade``,
         ``band``, ``size_field``, ``breaklines``, ``hole_tags``,
@@ -362,7 +367,10 @@ def create_domain_from_dem(dem,
                                   interior_holes=interior_holes,
                                   relax_passes=relax_passes,
                                   verbose=verbose, **kwargs)
-    domain = Domain(pmesh_to_mesh(pmesh), use_cache=False, verbose=verbose)
+    mesh = pmesh_to_mesh(pmesh)
+    if mesh_filename is not None:
+        pmesh.export_mesh_file(mesh_filename)
+    domain = Domain(mesh, use_cache=False, verbose=verbose)
     domain.set_quantity('elevation', elevation_from_dem(domain, dem),
                         location='centroids')
 
@@ -427,7 +435,8 @@ def create_domain_from_regions(bounding_polygon,
                                use_cache=False,
                                verbose=False,
                                size_field=None,
-                               relax_passes=0):
+                               relax_passes=0,
+                               mesh_filename=None):
 
     """Create domain from bounding polygons and resolutions.
 
@@ -490,6 +499,12 @@ def create_domain_from_regions(bounding_polygon,
         added part-way along a straight segment (a hole's side, a
         breakline) may slide along it, so the segment keeps its shape.
         See :meth:`anuga.pmesh.mesh.Pmesh.relax_worst_cells`.
+    mesh_filename : str, optional
+        If given, also write the mesh the domain is built on to this file
+        (``.msh`` or ``.tsh``), to look at or to reuse with
+        :func:`anuga.create_domain_from_file`. The domain is built in
+        memory either way. With ``use_cache=True`` the file is written only
+        when the mesh is generated, not when the domain comes from the cache.
 
     Returns
     -------
@@ -507,11 +522,6 @@ def create_domain_from_regions(bounding_polygon,
     args = (bounding_polygon,
             boundary_tags)
 
-    # if mesh_filename is None:
-    #     import tempfile
-    #     import time
-    #     mesh_filename = 'mesh_%d.msh'%int(time.time())
-
     kwargs = {'maximum_triangle_area': maximum_triangle_area,
               'interior_regions': interior_regions,
               'interior_holes': interior_holes,
@@ -524,13 +534,10 @@ def create_domain_from_regions(bounding_polygon,
               'fail_if_polygons_outside': fail_if_polygons_outside,
               'verbose': verbose,
               'size_field': size_field,
-              'relax_passes': relax_passes} #FIXME (Ole): See ticket:14
+              'relax_passes': relax_passes,
+              'mesh_filename': mesh_filename} #FIXME (Ole): See ticket:14
 
     # Call underlying engine with or without caching
-
-    # FIXME SR: The _create_domain_from_regions function creates a mesh file which is then read in to
-    # create the domain. It would make sense to take the created pmesh Mesh and then convert it to an anuga.Mesh
-    # and use that to create the domain.
     if use_cache is True:
         try:
             from anuga.caching import cache
@@ -564,7 +571,8 @@ def _create_domain_from_regions(bounding_polygon,
                                 fail_if_polygons_outside=True,
                                 verbose=True,
                                 size_field=None,
-                                relax_passes=0):
+                                relax_passes=0,
+                                mesh_filename=None):
     """_create_domain_from_regions - internal function.
 
     See create_domain_from_regions for documentation.
@@ -591,6 +599,11 @@ def _create_domain_from_regions(bounding_polygon,
                              relax_passes=relax_passes)
 
     mesh = pmesh_to_mesh(pmesh)
+
+    # pmesh_to_mesh has triangulated the pmesh, so the file holds the mesh
+    # the domain is built on.
+    if mesh_filename is not None:
+        pmesh.export_mesh_file(mesh_filename)
 
     domain = Domain(mesh, use_cache=False, verbose=verbose)
 
