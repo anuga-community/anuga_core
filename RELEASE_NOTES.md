@@ -1,4 +1,4 @@
-# ANUGA 4.2.0 (unreleased)
+# ANUGA 4.2.0
 
 ANUGA 4.2.0 adds **meshes sized from a DEM's flow paths**, a
 **momentum-conserving eddy viscosity** with an explicit scheme that runs on the
