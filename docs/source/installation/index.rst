@@ -4,7 +4,7 @@ Installation
 
 
 ANUGA is a Python package with some C/Cython extensions. It runs and is tested
-on **Python 3.10 – 3.14**.
+on **Python 3.10 – 3.15**.
 
 The standard install is two short steps: set up a Python environment
 (:doc:`install_python`), then install the prebuilt ANUGA package with ``conda``

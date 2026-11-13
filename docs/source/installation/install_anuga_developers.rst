@@ -6,7 +6,7 @@ If you want to use the very latest version of ANUGA (or to develop ANUGA code) t
 to download the `anuga_core` repository from `github` and then `pip` install
 ANUGA from the source. These steps will require that the following package `git` is installed.
 
-ANUGA supports **Python 3.10 – 3.14**.  Environment files for each supported
+ANUGA supports **Python 3.10 – 3.15**.  Environment files for each supported
 version are provided under ``environments/`` (e.g. ``environment_3.12.yml``).
 
 

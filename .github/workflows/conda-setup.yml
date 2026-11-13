@@ -35,7 +35,7 @@ on:
       python_versions:
         description: 'JSON list of Python versions to run.'
         type: string
-        default: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
+        default: '["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]'
       os_list:
         description: 'JSON list of runners. Lets a caller cover one OS more deeply than the others.'
         type: string
@@ -80,7 +80,7 @@ jobs:
 
         # 2026/04/05: dropped 3.8 -- numpy>=2.0.0 (required by anuga) requires Python>=3.9
         # 2026/04/06: dropped 3.9 -- X | Y union type syntax requires Python>=3.10
-        python-version: ${{ fromJSON(inputs.python_versions || '["3.10", "3.11", "3.12", "3.13", "3.14"]') }}
+        python-version: ${{ fromJSON(inputs.python_versions || '["3.10", "3.11", "3.12", "3.13", "3.14", "3.15"]') }}
 
     steps:
       - uses: actions/checkout@v7
