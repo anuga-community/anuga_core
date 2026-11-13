@@ -43,4 +43,5 @@ doi: 10.5281/zenodo.23585306
 # than left stale (it read 2022-06-26 through three releases). The `commit:`
 # pin was dropped for the same reason: the tag identifies the release.
 version: 4.2.0
+date-released: '2026-11-13'
 

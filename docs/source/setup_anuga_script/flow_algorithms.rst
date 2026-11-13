@@ -267,7 +267,7 @@ of DE0, DE1, DE_ader2, or DE2:
 
 
 Tangential momentum upwinding
-^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The central-upwind flux also applies the gravity-wave diffusion to the
 momentum component *along* each edge. In the exact Riemann problem that
