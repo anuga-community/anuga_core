@@ -52,6 +52,10 @@ concurrency:
 jobs:
   validate:
     name: validate (${{ matrix.ref }})
+    # Nightly runs belong to anuga-community only; mirrors such as
+    # GeoscienceAustralia carry this file but should not spend an hour of
+    # runners repeating the same check. Manual runs still work anywhere.
+    if: github.event_name != 'schedule' || github.repository == 'anuga-community/anuga_core'
     runs-on: ubuntu-latest
     timeout-minutes: 180
     strategy:

@@ -89,7 +89,11 @@ jobs:
           ref: ${{ inputs.ref }}   # empty outside workflow_call = triggering ref
       - uses: conda-incubator/setup-miniconda@v4
         with:
-          miniforge-version: latest      # Installs Miniforge instead of Miniconda
+          # Pinned, not 'latest': Miniforge 26.9.4-0 (2026-10-22) breaks
+          # 'conda init' on Windows ("needs sudo", exit 1) before any of our
+          # steps run -- conda-forge/miniforge#913. Return to 'latest' once
+          # that is fixed.
+          miniforge-version: 26.7.2-1    # Installs Miniforge instead of Miniconda
           use-mamba: true                # Recommended for faster installs
           python-version: ${{ matrix.python-version }}
           auto-update-conda: true        # Auto-update conda or mamba
