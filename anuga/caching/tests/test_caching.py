@@ -46,6 +46,16 @@ def f_object(A, B):
 def f_generic(A):
     return A
 
+def f_nested_double(x):
+    """A function with a lambda and a generator expression inside"""
+    scale = lambda v: 2*v
+    return sum(scale(v) for v in x)
+
+def f_nested_triple(x):
+    """As f_nested_double, but for the constant inside the lambda"""
+    scale = lambda v: 3*v
+    return sum(scale(v) for v in x)
+
 def clear_and_create_cache(Dummy, verbose=False):
 
     a = cache(Dummy, 'clear', verbose=verbose)
@@ -472,6 +482,61 @@ class Test_Caching(unittest.TestCase):
         res2 = cache(f2, x, verbose=False)
         msg = 'Wrong result for f2(x)'
         assert num.allclose(res2, ref2), msg
+
+
+    def test_bytecode_of_nested_functions_is_plain_data(self):
+        """A lambda or generator expression inside a cached function is a
+        code object among its constants. The cache stores those constants,
+        and dill 0.4.1 cannot pickle a code object on Python 3.15, so
+        get_bytecode must hand back plain data that still tells two
+        different inner functions apart.
+        """
+
+        import pickle
+        import types
+
+        def code_objects(T):
+            if isinstance(T, types.CodeType):
+                return 1
+            if isinstance(T, (tuple, list)):
+                return sum(code_objects(t) for t in T)
+            return 0
+
+        consts = f_nested_double.__code__.co_consts
+        assert code_objects(consts) > 0, 'Test function has no inner code'
+
+        bc_double = get_bytecode(f_nested_double)
+        bc_triple = get_bytecode(f_nested_triple)
+
+        assert code_objects(bc_double) == 0
+
+        # The standard pickler rejects code objects, so this would fail
+        # if one were left in
+        assert pickle.loads(pickle.dumps(bc_double)) == bc_double
+
+        # The two functions differ only in a constant inside the lambda
+        assert f_nested_double.__code__.co_code == \
+            f_nested_triple.__code__.co_code
+        assert bc_double != bc_triple
+        assert bc_double == get_bytecode(f_nested_double)
+
+
+    def test_caching_function_with_nested_functions(self):
+        """Cache a function that has a lambda inside (failed on Python 3.15)
+        """
+
+        x = [1.0, 2.0, 3.0]
+
+        cache(f_nested_double, (x,), clear=True, verbose=False)
+        flag = cache(f_nested_double, (x,), test=True, verbose=False)
+        assert flag is None
+
+        res = cache(f_nested_double, (x,), verbose=False)
+        assert res == 12.0
+
+        # Retrieved from the cache
+        res = cache(f_nested_double, (x,), test=True, verbose=False)
+        assert res == 12.0
 
 
     def test_bytecodes_correctly_evaluated(self):

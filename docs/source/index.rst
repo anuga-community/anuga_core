@@ -10,7 +10,7 @@ ANUGA (pronounced "AHnooGAH") is open-source software for the simulation of the
 shallow water equation, 
 in particular it can be used to model tsunamis and floods.
 
-ANUGA is a Python 3 package (Python 3.10 – 3.14) with some C and Cython
+ANUGA is a Python 3 package (Python 3.10 – 3.15) with some C and Cython
 extensions.
 
 ANUGA was created in a collaboration by Geoscience Australia 

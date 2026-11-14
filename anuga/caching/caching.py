@@ -1346,6 +1346,24 @@ def myload(file, compressed):
 
 # -----------------------------------------------------------------------------
 
+def raise_if_code_object_unpicklable(e):
+  """Explain dill's failure to pickle a function by value on Python 3.15.
+
+  dill 0.4.1 reads code.co_lnotab, which Python 3.15 removed, so a lambda or
+  a function defined in the main script cannot be pickled there. This hits
+  caching when such a function is an argument or part of the result.
+  """
+
+  if 'co_lnotab' in str(e):
+    msg = 'Caching could not pickle a function: this version of dill does '
+    msg += 'not support code objects on Python %d.%d. ' % sys.version_info[:2]
+    msg += 'A lambda, or a function defined in the script being run, was '
+    msg += 'among the arguments or in the result of the cached call. '
+    msg += 'Define it in an importable module, call without caching, or '
+    msg += 'use a newer dill if one is available.'
+    raise TypeError(msg) from e
+
+
 def mysave(T, file, compression):
   """Save data T to file
 
@@ -1373,13 +1391,20 @@ def mysave(T, file, compression):
       msg = '****WARNING (caching.py): Could not pickle data for compression.'
       msg += ' Try using compression = False'
       raise MemoryError(msg)
+    except AttributeError as e:
+      raise_if_code_object_unpicklable(e)
+      raise
     else:
       # Compressed pickling
       TsC = zlib.compress(Ts, comp_level)
       file.write(TsC)
   else:
       # Uncompressed pickling
-      pickler.dump(T, file, bin)
+      try:
+        pickler.dump(T, file, bin)
+      except AttributeError as e:
+        raise_if_code_object_unpicklable(e)
+        raise
 
       # FIXME: This may not work on Windoze network drives.
       # The error msg is IOError: [Errno 22] Invalid argument
@@ -1691,11 +1716,30 @@ def get_func_code_details(my_F):
   """
 
   bytecode = my_F.__code__.co_code
-  consts = my_F.__code__.co_consts
+  consts = plain_consts(my_F.__code__.co_consts)
   argcount = my_F.__code__.co_argcount
   defaults = my_F.__defaults__
 
   return bytecode, consts, argcount, defaults
+
+
+def plain_consts(consts):
+  """Replace the code objects among a function's constants by plain tuples.
+
+  A lambda, nested function or generator expression inside a function is a
+  code object in its co_consts. These constants are stored with the cached
+  result and compared on the next call, so they must pickle. dill 0.4.1
+  cannot pickle a code object on Python 3.15 (it reads co_lnotab, which 3.15
+  removed), so each one is stored as what identifies it instead: its
+  bytecode, constants, names and argument count. Other constants are
+  returned unchanged.
+  """
+
+  return tuple(
+      ('code', c.co_code, plain_consts(c.co_consts), c.co_names,
+       c.co_varnames, c.co_argcount)
+      if isinstance(c, types.CodeType) else c
+      for c in consts)
 
 # -----------------------------------------------------------------------------
 

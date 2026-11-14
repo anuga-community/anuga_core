@@ -79,12 +79,10 @@ jobs:
           use-mamba: true
           # No python-version here. The action would create its own 'test' env
           # from conda-forge alone, which cannot resolve a CPython release
-          # candidate: 3.15 failed with "_python_rc does not exist (perhaps a
-          # missing channel)" before any of our steps ran. Nothing uses that
-          # env -- every later step activates anuga_env, built below with the
-          # right channels -- so it is simply not asked for. This is what
-          # build-wheels-osx64 already does, and why it passed on 3.15 when
-          # these three did not.
+          # candidate: 3.15.0rc failed with "_python_rc does not exist (perhaps
+          # a missing channel)" before any of our steps ran. Nothing uses that
+          # env -- every later step activates anuga_env, built below -- so it
+          # is simply not asked for, as in build-wheels-osx64.
           auto-update-conda: true
           conda-remove-defaults: true
 
@@ -98,10 +96,10 @@ jobs:
           # (GIL) build: python_abi uses the cp3XX tag consistently across
           # versions, so this excludes cp3XXt and is a no-op for 3.10-3.13.
           pytag=$(echo "${{ matrix.python-version }}" | tr -d .)
-          # conda-forge/label/python_rc carries the CPython release candidates
-          # (3.15 until it ships). It is empty of released versions, so listing
-          # it is a no-op for 3.10-3.14; drop it once 3.15 is final.
-          conda create -n anuga_env -c conda-forge/label/python_rc -c conda-forge \
+          # For a CPython release candidate, add -c conda-forge/label/python_rc
+          # ahead of conda-forge here and in build-wheels-osx64, and keep its
+          # wheels off PyPI until the release is final (as was done for 3.15).
+          conda create -n anuga_env -c conda-forge \
             python=${{ matrix.python-version }} "python_abi=${{ matrix.python-version }}=*_cp${pytag}" pip \
             meson-python meson ninja cython pybind11 numpy pkg-config
 
@@ -187,16 +185,13 @@ jobs:
           done
           repairwheel "${libdirs[@]}" -o dist dist-wheel/*.whl
 
-      # 3.15 is built to prove it compiles, but NOT published: the wheel
-      # would be built against a release candidate. Its artifact is named
-      # outside the `wheel-*` pattern the publish jobs collect. Rename it
-      # back to wheel-py... once 3.15 is final.
+      # The publish jobs collect every artifact named `wheel-*`. To build a
+      # wheel without publishing it (a CPython release candidate), name its
+      # artifact outside that pattern.
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.python-version == '3.15'
-                    && format('unpublished-py{0}-{1}', matrix.python-version, matrix.os)
-                    || format('wheel-py{0}-{1}', matrix.python-version, matrix.os) }}
+          name: wheel-py${{ matrix.python-version }}-${{ matrix.os }}
           path: dist/*.whl
 
   # ---------------------------------------------------------------------------
@@ -236,7 +231,7 @@ jobs:
           # Pin the standard (GIL) CPython ABI (see build-wheels above).
           pytag=$(echo "${{ matrix.python-version }}" | tr -d .)
           CONDA_SUBDIR=osx-64 conda create -n anuga_env \
-            -c conda-forge/label/python_rc -c conda-forge \
+            -c conda-forge \
             python=${{ matrix.python-version }} "python_abi=${{ matrix.python-version }}=*_cp${pytag}" pip \
             meson-python meson ninja cython pybind11 numpy pkg-config compilers
           conda activate anuga_env
@@ -256,14 +251,10 @@ jobs:
           pip install repairwheel
           repairwheel -l "$CONDA_PREFIX/lib" -o dist dist-wheel/*.whl
 
-      # Built but not published while 3.15 is a release candidate; see the
-      # note on the build-wheels job above.
       - name: Upload wheel artifact
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ matrix.python-version == '3.15'
-                    && format('unpublished-osx64-py{0}', matrix.python-version)
-                    || format('wheel-osx64-py{0}', matrix.python-version) }}
+          name: wheel-osx64-py${{ matrix.python-version }}
           path: dist/*.whl
 
   # ---------------------------------------------------------------------------

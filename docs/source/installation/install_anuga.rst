@@ -34,7 +34,7 @@ version of `mpi` you are using.
 
 
 This has set up and activated a ``conda`` environment ``anuga_env`` using Python 3.12.
-ANUGA supports Python 3.10 – 3.14.
+ANUGA supports Python 3.10 – 3.15.
 
 We are now ready to use ANUGA.
 
