@@ -1,6 +1,8 @@
 """
 Build the combined validation report: every case once, with each of its
-figures shown for DE0, DE1 and DE_ader2 side by side.
+figures shown for DE0, DE1 and DE_ader2 side by side (or one above the other
+in the chapters whose figures are too wide for that; see \algpanelsinrows in
+validations_report_body.tex).
 
 Two steps:
 
@@ -132,9 +134,12 @@ def algs_macros(algs):
     exists = '#2'
     for a in reversed(algs):
         exists = r'\IfFileExists{combined/%s/\casepath/#1}{#2}{%s}' % (a, exists if a != algs[-1] else '#3')
+    rows = r'\par\medskip'.join(r'\algrow{%s}{%s}{#1}' % (a, n)
+                                 for a, n in zip(algs, names))
     return '\n'.join([
         r'\newcommand{\algnames}{%s}' % listed,
-        r'\newcommand{\allalgpanels}[1]{\par\noindent%s\par}' % panels,
+        r'\newcommand{\algpanelsacrosspage}[1]{\par\noindent%s\par}' % panels,
+        r'\newcommand{\algpanelsstacked}[1]{\par\noindent%s\par}' % rows,
         r'\newcommand{\anyalgfigexists}[3]{\IfFileExists{combined/shared/\casepath/#1}{#2}{%s}}' % exists,
     ]) + '\n'
 

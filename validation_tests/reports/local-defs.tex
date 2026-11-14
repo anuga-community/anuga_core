@@ -17,3 +17,10 @@
 % false in the combined report, where pdflatex runs in reports/ and the figure
 % sits in the case directory. Same three arguments as \IfFileExists.
 \newcommand{\figifexists}[3]{\IfFileExists{\casedir/#1}{#2}{#3}}
+
+% How the combined report lays out a figure's per-algorithm panels: across
+% the page (the default) or one above the other, for chapters whose figures
+% are too wide to read at a third of the page. They do nothing in a report
+% for a single algorithm; validations_report_combined.tex redefines them.
+\newcommand{\algpanelsinrows}{}
+\newcommand{\algpanelsacross}{}

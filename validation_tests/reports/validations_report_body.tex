@@ -159,6 +159,10 @@ against a stored result per flow algorithm, which catches any change that
 moves the answer. Tests 7 (river and floodplain linking) and 8A/8B (urban
 flooding, whose data are not public) are not yet included.
 
+% These figures are page-wide rows of plots: one row per algorithm in the
+% combined report.
+\algpanelsinrows
+
 \inputresults{../ea_benchmark/test1_disconnected}
 \inputresults{../ea_benchmark/test2_depressions}
 \inputresults{../ea_benchmark/test3_obstruction}
@@ -166,6 +170,8 @@ flooding, whose data are not public) are not yet included.
 \inputresults{../ea_benchmark/test5_valley}
 \inputresults{../ea_benchmark/test6a_dambreak}
 \inputresults{../ea_benchmark/test6b_dambreak}
+
+\algpanelsacross
 
 %%======================
 \chapter{Sediment transport and erosion} \label{ch:sediment}

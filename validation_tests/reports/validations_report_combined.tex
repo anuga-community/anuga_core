@@ -49,6 +49,23 @@
       {\fbox{\parbox[c][0.5\linewidth][c]{0.9\linewidth}{\centering\footnotesize not produced}}}%
   \end{minipage}}
 
+% One row: {directory under combined/}{label}{figure}. Three rows and a
+% caption have to fit on one page, hence the height limit.
+\newcommand{\algrow}[3]{%
+  \begin{minipage}[t]{\linewidth}\centering
+    {\footnotesize\textsf{#2}}\\[2pt]
+    \IfFileExists{combined/#1/\casepath/#3}%
+      {\origincludegraphics[width=\linewidth,height=0.26\textheight,keepaspectratio]%
+        {combined/#1/\casepath/#3}}%
+      {\fbox{\parbox[c][0.1\linewidth][c]{0.9\linewidth}{\centering\footnotesize not produced}}}%
+  \end{minipage}}
+
+% The panels go across the page unless the body asks for rows, which it does
+% for chapters whose figures are already as wide as the page.
+\newcommand{\allalgpanels}[1]{\algpanelsacrosspage{#1}}
+\renewcommand{\algpanelsinrows}{\renewcommand{\allalgpanels}[1]{\algpanelsstacked{##1}}}
+\renewcommand{\algpanelsacross}{\renewcommand{\allalgpanels}[1]{\algpanelsacrosspage{##1}}}
+
 % Every figure a case includes: once if all algorithms produced the same
 % file, otherwise one panel per algorithm. The case's own size options apply
 % only to the shared form.
@@ -76,7 +93,9 @@ Test Problems\\[6pt] \large Flow algorithms \algnames{} compared}
 This report runs every validation case with each of the flow algorithms
 \algnames{}. The text of each case appears once. A figure that differs
 between the algorithms is shown as a row of panels, one per algorithm,
-labelled above each panel and in the order \algnames{}; a figure that is the
+labelled above each panel and in the order \algnames{}. In
+Chapter~\ref{ch:ea}, where the figures are as wide as the page, the panels
+are one above the other instead. A figure that is the
 same for all of them (a setup diagram, a mesh) is shown once. Where a case's
 text names a single algorithm, it describes that case's own discussion, not
 the panels. The separate report for each algorithm, with full-size figures,
