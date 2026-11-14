@@ -21,10 +21,12 @@ def uniform_discharge(depth=DEPTH, slope=SLOPE, manning=MANNING):
 
 
 def channel(algorithm='DE1', boundary_slope=SLOPE, friction=MANNING,
-            **boundary_kwargs):
+            mode=None, **boundary_kwargs):
     """A sloping channel in uniform flow, with the boundary at its outlet."""
 
     domain = anuga.rectangular_cross_domain(40, 2, len1=LENGTH, len2=WIDTH)
+    if mode is not None:
+        domain.set_compute_mode(mode)
     domain.set_flow_algorithm(algorithm)
     domain.set_store(False)
     domain.set_quantity('elevation', lambda x, y: -SLOPE*x)
@@ -242,6 +244,82 @@ def test_evaluate_agrees_with_evaluate_segment():
         assert q[1] == pytest.approx(domain.quantities['xmomentum'].boundary_values[k])
         assert q[2] == pytest.approx(domain.quantities['ymomentum'].boundary_values[k])
         assert q[1] > 0.0   # out of the right-hand boundary
+
+
+def centroid_values(domain):
+    return [domain.quantities[name].centroid_values.copy()
+            for name in ('stage', 'xmomentum', 'ymomentum')]
+
+
+@pytest.mark.parametrize('algorithm', ALGORITHMS + ['DE2'])
+def test_unified_mode_matches_legacy(algorithm):
+    """The device kernel gives what the host evaluation gives."""
+
+    results = {}
+    for mode in ('legacy', 'unified'):
+        domain = channel(algorithm, boundary_slope=0.004, mode=mode)
+        run(domain, 600.0, yieldstep=300.0)
+        results[mode] = (centroid_values(domain),
+                         domain.get_boundary_flux_integral())
+
+    for legacy, unified in zip(results['legacy'][0], results['unified'][0]):
+        assert np.max(np.abs(legacy - unified)) < 1e-11
+    assert results['unified'][1] == pytest.approx(results['legacy'][1], rel=1e-11)
+    assert results['legacy'][1] < -1.0
+
+
+def pond_with_two_outlets(mode):
+    """Two boundaries that differ in slope, roughness and inflow rule."""
+
+    domain = anuga.rectangular_cross_domain(12, 12, len1=60.0, len2=60.0)
+    domain.set_compute_mode(mode)
+    domain.set_flow_algorithm('DE1')
+    domain.set_store(False)
+    domain.set_quantity('elevation', 0.0)
+    domain.set_quantity('friction', MANNING)
+    domain.set_quantity('stage', 0.5)
+
+    Br = anuga.Reflective_boundary(domain)
+    Bn = anuga.Normal_depth_boundary(domain, slope=0.001)
+    Bm = anuga.Normal_depth_boundary(domain, slope=0.004, manning=0.05,
+                                     inflow='transmissive')
+    domain.set_boundary({'left': Br, 'right': Bn, 'top': Bm, 'bottom': Br})
+    return domain
+
+
+def test_two_boundaries_keep_their_own_settings_on_the_device():
+    """Slope, manning= and the inflow rule are held per edge in the kernel."""
+
+    results = {}
+    for mode in ('legacy', 'unified'):
+        domain = pond_with_two_outlets(mode)
+        run(domain, 60.0, yieldstep=20.0)
+        results[mode] = (centroid_values(domain),
+                         domain.get_boundary_flux_integral())
+
+    for legacy, unified in zip(results['legacy'][0], results['unified'][0]):
+        assert np.max(np.abs(legacy - unified)) < 1e-11
+    assert results['unified'][1] == pytest.approx(results['legacy'][1], rel=1e-11)
+
+    # The two outlets do differ: the pond is not symmetric about its diagonal
+    stage = results['legacy'][0][0]
+    x, y = pond_with_two_outlets('legacy').centroid_coordinates.T
+    right = stage[(x > 50.0) & (y < 30.0)].mean()
+    top = stage[(y > 50.0) & (x < 30.0)].mean()
+    assert abs(right - top) > 1e-3
+
+
+def test_unified_mode_evaluates_it_on_the_device():
+    """No host fallback: the class is one the device path evaluates."""
+
+    from anuga.shallow_water.shallow_water_domain import GPU_BOUNDARY_TYPES
+    assert 'Normal_depth_boundary' in GPU_BOUNDARY_TYPES
+
+    domain = channel('DE1', mode='unified')
+    with warnings.catch_warnings():
+        # The host fallback announces itself with a UserWarning
+        warnings.simplefilter('error', UserWarning)
+        run(domain, 60.0)
 
 
 def test_arguments_are_checked():

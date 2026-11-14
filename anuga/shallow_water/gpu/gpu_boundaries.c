@@ -3,6 +3,7 @@
 // All boundary types: Reflective, Dirichlet, Transmissive,
 // Transmissive_n_zero_t, Time_boundary
 
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -1174,5 +1175,187 @@ void gpu_evaluate_flather_boundary(struct gpu_domain *GD) {
             xmom_bv[bid]  = qperp * n1 + qpar * n2;
             ymom_bv[bid]  = qperp * n2 - qpar * n1;
         }
+    }
+}
+
+// ============================================================================
+// Normal_depth_boundary: outflow as uniform flow on a slope given by the user
+// ============================================================================
+
+int gpu_normal_depth_init(struct gpu_domain *GD, int num_edges,
+                          int *boundary_indices, int *vol_ids, int *edge_ids,
+                          int *wall, double *slope, double *manning,
+                          double *distance, double minimum_manning) {
+    struct normal_depth_boundary *B = &GD->normal_depth;
+
+    gpu_normal_depth_finalize(GD);
+
+    B->minimum_manning = minimum_manning;
+    if (num_edges == 0) return 0;
+
+    B->boundary_indices = (int*)malloc(num_edges * sizeof(int));
+    B->vol_ids          = (int*)malloc(num_edges * sizeof(int));
+    B->edge_ids         = (int*)malloc(num_edges * sizeof(int));
+    B->wall             = (int*)malloc(num_edges * sizeof(int));
+    B->slope            = (double*)malloc(num_edges * sizeof(double));
+    B->manning          = (double*)malloc(num_edges * sizeof(double));
+    B->distance         = (double*)malloc(num_edges * sizeof(double));
+
+    if (!B->boundary_indices || !B->vol_ids || !B->edge_ids || !B->wall ||
+        !B->slope || !B->manning || !B->distance) {
+        gpu_normal_depth_finalize(GD);
+        gpu_set_error(GD, "Failed to allocate normal depth boundary arrays");
+        return -1;
+    }
+
+    memcpy(B->boundary_indices, boundary_indices, num_edges * sizeof(int));
+    memcpy(B->vol_ids,          vol_ids,          num_edges * sizeof(int));
+    memcpy(B->edge_ids,         edge_ids,         num_edges * sizeof(int));
+    memcpy(B->wall,             wall,             num_edges * sizeof(int));
+    memcpy(B->slope,            slope,            num_edges * sizeof(double));
+    memcpy(B->manning,          manning,          num_edges * sizeof(double));
+    memcpy(B->distance,         distance,         num_edges * sizeof(double));
+    B->num_edges = num_edges;
+
+    return 0;
+}
+
+void gpu_normal_depth_map(struct gpu_domain *GD) {
+    struct normal_depth_boundary *B = &GD->normal_depth;
+    if (B->num_edges == 0 || B->boundary_indices == NULL || B->mapped) return;
+
+    int ne = B->num_edges;
+    int *b_idx = B->boundary_indices;
+    int *v_ids = B->vol_ids;
+    int *e_ids = B->edge_ids;
+    int *wall = B->wall;
+    double *slope = B->slope;
+    double *manning = B->manning;
+    double *distance = B->distance;
+
+    #pragma omp target enter data map(to: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+                                          wall[0:ne], slope[0:ne], manning[0:ne], \
+                                          distance[0:ne])
+    B->mapped = 1;
+
+    if (GD->rank == 0 && GD->verbose) {
+        printf("  Normal depth boundary: %d edges\n", ne);
+        fflush(stdout);
+    }
+}
+
+void gpu_normal_depth_unmap(struct gpu_domain *GD) {
+    struct normal_depth_boundary *B = &GD->normal_depth;
+    if (!B->mapped || B->num_edges == 0) return;
+
+    int ne = B->num_edges;
+    int *b_idx = B->boundary_indices;
+    int *v_ids = B->vol_ids;
+    int *e_ids = B->edge_ids;
+    int *wall = B->wall;
+    double *slope = B->slope;
+    double *manning = B->manning;
+    double *distance = B->distance;
+
+    #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne], \
+                                             wall[0:ne], slope[0:ne], manning[0:ne], \
+                                             distance[0:ne])
+    B->mapped = 0;
+}
+
+void gpu_normal_depth_finalize(struct gpu_domain *GD) {
+    struct normal_depth_boundary *B = &GD->normal_depth;
+
+    gpu_normal_depth_unmap(GD);
+
+    if (B->boundary_indices) free(B->boundary_indices);
+    if (B->vol_ids)          free(B->vol_ids);
+    if (B->edge_ids)         free(B->edge_ids);
+    if (B->wall)             free(B->wall);
+    if (B->slope)            free(B->slope);
+    if (B->manning)          free(B->manning);
+    if (B->distance)         free(B->distance);
+
+    B->num_edges = 0;
+    B->boundary_indices = NULL;
+    B->vol_ids = NULL;
+    B->edge_ids = NULL;
+    B->wall = NULL;
+    B->slope = NULL;
+    B->manning = NULL;
+    B->distance = NULL;
+    B->mapped = 0;
+}
+
+void gpu_evaluate_normal_depth_boundary(struct gpu_domain *GD) {
+    // Mirrors Normal_depth_boundary._boundary_state in boundaries.py
+    struct normal_depth_boundary *B = &GD->normal_depth;
+    if (B->num_edges == 0) return;
+    if (!B->mapped) return;
+
+    int num_edges         = B->num_edges;
+    int *boundary_indices = B->boundary_indices;
+    int *vol_ids          = B->vol_ids;
+    int *edge_ids         = B->edge_ids;
+    int *wall             = B->wall;
+    double *slope         = B->slope;
+    double *manning       = B->manning;
+    double *distance      = B->distance;
+    double minimum_manning = B->minimum_manning;
+    double minimum_allowed_height = GD->D.minimum_allowed_height;
+
+    double *stage_ev    = GD->D.stage_edge_values;
+    double *bed_ev      = GD->D.bed_edge_values;
+    double *height_ev   = GD->D.height_edge_values;
+    double *xmom_ev     = GD->D.xmom_edge_values;
+    double *ymom_ev     = GD->D.ymom_edge_values;
+    double *friction_cv = GD->D.friction_centroid_values;
+    anuga_geom_t *normals = GD->D.normals;
+
+    double *stage_bv  = GD->D.stage_boundary_values;
+    double *bed_bv    = GD->D.bed_boundary_values;
+    double *height_bv = GD->D.height_boundary_values;
+    double *xmom_bv   = GD->D.xmom_boundary_values;
+    double *ymom_bv   = GD->D.ymom_boundary_values;
+
+    OMP_PARALLEL_LOOP
+    for (int k = 0; k < num_edges; k++) {
+        int bid = boundary_indices[k];
+        int vid = vol_ids[k];
+        int eid = edge_ids[k];
+
+        double h = height_ev[3 * vid + eid];
+        if (h < 0.0) h = 0.0;
+
+        double n1 = normals[vid * 6 + 2 * eid];
+        double n2 = normals[vid * 6 + 2 * eid + 1];
+        double ndotq = n1 * xmom_ev[3 * vid + eid] + n2 * ymom_ev[3 * vid + eid];
+
+        double n_man = manning[k] >= 0.0 ? manning[k] : friction_cv[vid];
+
+        // Outward normal momentum: uniform flow at this depth, or the interior
+        // flow where there is no friction to give a uniform flow
+        double q_n;
+        if (n_man > minimum_manning) {
+            q_n = pow(h, 5.0 / 3.0) * sqrt(slope[k]) / n_man;
+        } else {
+            q_n = ndotq > 0.0 ? ndotq : 0.0;
+        }
+
+        // Interior flow into the domain: mirror it, as a wall does
+        if (wall[k] && ndotq < 0.0) q_n = -ndotq;
+
+        if (!(h > minimum_allowed_height)) q_n = 0.0;
+
+        // Carry the surface of uniform flow on to the edge, by no more than
+        // half the depth (see boundaries.py)
+        double fall = slope[k] * distance[k];
+        if (fall > 0.5 * h) fall = 0.5 * h;
+
+        stage_bv[bid]  = stage_ev[3 * vid + eid] - fall;
+        bed_bv[bid]    = bed_ev[3 * vid + eid];
+        height_bv[bid] = height_ev[3 * vid + eid];
+        xmom_bv[bid]   = q_n * n1;
+        ymom_bv[bid]   = q_n * n2;
     }
 }

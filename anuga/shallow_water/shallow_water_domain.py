@@ -308,6 +308,7 @@ GPU_BOUNDARY_TYPES = frozenset({
     'Time_boundary', 'File_boundary', 'Field_boundary',
     'Absorbing_wave_boundary', 'Characteristic_wave_boundary',
     'Flather_external_stage_zero_velocity_boundary',
+    'Normal_depth_boundary',
 })
 
 
@@ -5721,6 +5722,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
                 evaluate_characteristic_wave_boundary_gpu,
                 set_flather_value,
                 evaluate_flather_boundary_gpu,
+                evaluate_normal_depth_boundary_gpu,
                 boundary_edge_sync,
                 sync_boundary_values,
                 init_boundary_edge_sync,
@@ -5783,6 +5785,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
                         stage_val = float(value[0])
                     set_flather_value(gpu_dom, stage_val)
                 evaluate_flather_boundary_gpu(gpu_dom)
+                evaluate_normal_depth_boundary_gpu(gpu_dom)
             else:
                 # Some boundaries need CPU - sync edge values, evaluate on CPU, sync back.
                 # The boundary cells' edges come from the device, and they
@@ -6941,6 +6944,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
             evaluate_characteristic_wave_boundary_gpu,
             set_flather_value,
             evaluate_flather_boundary_gpu,
+            evaluate_normal_depth_boundary_gpu,
         )
         import numpy as np
 
@@ -6995,6 +6999,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
                         stage_val = float(value[0])
                     set_flather_value(gpu_dom, stage_val)
                 evaluate_flather_boundary_gpu(gpu_dom)
+                evaluate_normal_depth_boundary_gpu(gpu_dom)
             else:
                 boundary_edge_sync(gpu_dom)
                 for tag in self.tag_boundary_cells:
@@ -7158,6 +7163,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
             evaluate_characteristic_wave_boundary_gpu,
             set_flather_value,
             evaluate_flather_boundary_gpu,
+            evaluate_normal_depth_boundary_gpu,
         )
         import numpy as np
 
@@ -7218,6 +7224,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
                     stage_val = float(value[0])
                 set_flather_value(gpu_dom, stage_val)
             evaluate_flather_boundary_gpu(gpu_dom)
+            evaluate_normal_depth_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -7294,6 +7301,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
                     stage_val = float(value[0])
                 set_flather_value(gpu_dom, stage_val)
             evaluate_flather_boundary_gpu(gpu_dom)
+            evaluate_normal_depth_boundary_gpu(gpu_dom)
         else:
             boundary_edge_sync(gpu_dom)
             for tag in self.tag_boundary_cells:
@@ -7354,6 +7362,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
             evaluate_characteristic_wave_boundary_gpu,
             set_flather_value,
             evaluate_flather_boundary_gpu,
+            evaluate_normal_depth_boundary_gpu,
         )
         import numpy as np
 
@@ -7404,6 +7413,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
                     stage_val = float(value[0])
                 set_flather_value(gpu_dom, stage_val)
             evaluate_flather_boundary_gpu(gpu_dom)
+            evaluate_normal_depth_boundary_gpu(gpu_dom)
         else:
             # Host evaluation of any non-GPU boundary type (e.g.
             # Transmissive_momentum_set_stage_boundary), then sync edge values
@@ -7668,6 +7678,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
             evaluate_characteristic_wave_boundary_gpu,
             set_flather_value,
             evaluate_flather_boundary_gpu,
+            evaluate_normal_depth_boundary_gpu,
         )
         import numpy as np
 
@@ -7719,6 +7730,7 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
                         stage_val = float(value[0])
                     set_flather_value(gpu_dom, stage_val)
                 evaluate_flather_boundary_gpu(gpu_dom)
+                evaluate_normal_depth_boundary_gpu(gpu_dom)
             else:
                 boundary_edge_sync(gpu_dom)
                 for tag in self.tag_boundary_cells:

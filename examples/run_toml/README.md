@@ -128,5 +128,9 @@ cairns/
 - `Stage` — transmissive momentum with prescribed stage from a `time,stage`
   file (GPU-friendly: `Transmissive_n_momentum_zero_t_momentum_set_stage`).
 - `Flather_Stage` — Flather radiation boundary with a prescribed stage file.
+- `Normal_depth` — outflow as uniform (Manning) flow on a given slope, for the
+  downstream end of a river or catchment model.
 
 `Stage` / `Flather_Stage` need `file = "...csv"` and an optional `start_time`.
+`Normal_depth` needs `slope` and takes an optional `manning` (default: the
+domain friction at the boundary) and `inflow` (`"wall"` or `"transmissive"`).

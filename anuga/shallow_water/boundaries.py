@@ -560,6 +560,30 @@ class Normal_depth_boundary(Boundary):
     def __repr__(self):
         return 'Normal_depth_boundary(slope=%g)' % self.slope
 
+    def _warn_no_friction(self, has_friction):
+        """Warn, once, that some edges have no friction."""
+
+        if self._warned_zero_friction or np.all(has_friction):
+            return
+        self._warned_zero_friction = True
+        import warnings
+        warnings.warn(
+            'Normal_depth_boundary: Manning friction is zero on %d of %d '
+            'boundary edges. Uniform flow needs friction, so these edges '
+            'are transmissive. Set the friction quantity, or pass manning= '
+            'to the boundary.' % (int((~has_friction).sum()), has_friction.size),
+            stacklevel=4)
+
+    def warn_if_no_friction(self, domain, segment_edges):
+        """The check of _boundary_state, for the device path, which never
+        calls it. Made when the boundary is handed to the device."""
+
+        if self.manning is not None:
+            return
+        vol_ids = domain.boundary_cells[np.asarray(segment_edges)]
+        friction = domain.quantities['friction'].centroid_values[vol_ids]
+        self._warn_no_friction(friction > self.minimum_manning)
+
     def _boundary_state(self, stage, xmom, ymom, h, n1, n2, friction,
                         distance):
         """Boundary (stage, xmom, ymom) from interior edge values (arrays).
@@ -574,15 +598,7 @@ class Normal_depth_boundary(Boundary):
             friction = np.full_like(h, self.manning)
 
         has_friction = friction > self.minimum_manning
-        if not self._warned_zero_friction and not np.all(has_friction):
-            self._warned_zero_friction = True
-            import warnings
-            warnings.warn(
-                'Normal_depth_boundary: Manning friction is zero on %d of %d '
-                'boundary edges. Uniform flow needs friction, so these edges '
-                'are transmissive. Set the friction quantity, or pass manning= '
-                'to the boundary.' % (int((~has_friction).sum()), h.size),
-                stacklevel=3)
+        self._warn_no_friction(has_friction)
 
         n_safe = np.where(has_friction, friction, 1.0)
         q_uniform = h**(5.0/3.0)*np.sqrt(self.slope)/n_safe
