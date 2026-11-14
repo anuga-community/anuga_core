@@ -85,13 +85,28 @@ jobs:
           cd validation_tests
           python -c "import anuga; print('anuga', anuga.__version__)"
 
-      # datatool, placeins and titlesec are in latex-extra; bibtex comes with base
+      # datatool, placeins and titlesec are in latex-extra; bibtex comes with
+      # base. datatool 3 (TeX Live 2025) loads tracklang, which Ubuntu ships in
+      # plain-generic: without it every 4.2.0 report failed to typeset.
       - name: Install LaTeX
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             texlive-latex-base texlive-latex-recommended texlive-latex-extra \
-            texlive-fonts-recommended
+            texlive-fonts-recommended texlive-plain-generic
+
+      # The report is typeset after every case has run, hours from now. Load
+      # its packages here so a missing one fails the job in the first minutes.
+      - name: Check the report's LaTeX packages load
+        run: |
+          cd "$(mktemp -d)"
+          {
+            echo '\documentclass[11pt,a4paper]{report}'
+            grep -h '^\\usepackage' "$GITHUB_WORKSPACE"/validation_tests/reports/validations_report.tex
+            echo '\begin{document}Packages load.\end{document}'
+          } > packages.tex
+          cat packages.tex
+          pdflatex -interaction=nonstopmode -halt-on-error packages.tex
 
       - name: Build the report
         shell: bash -el {0}
@@ -144,7 +159,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             texlive-latex-base texlive-latex-recommended texlive-latex-extra \
-            texlive-fonts-recommended
+            texlive-fonts-recommended texlive-plain-generic
 
       - uses: actions/download-artifact@v8
         with:
