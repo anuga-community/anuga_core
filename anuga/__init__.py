@@ -234,6 +234,8 @@ from anuga.shallow_water.boundaries import \
 from anuga.shallow_water.boundaries import \
                     Flather_external_stage_zero_velocity_boundary
 from anuga.shallow_water.boundaries import \
+                    Normal_depth_boundary
+from anuga.shallow_water.boundaries import \
                     Absorbing_wave_boundary, \
                     Characteristic_wave_boundary
 from anuga.abstract_2d_finite_volumes.generic_boundary_conditions import \
@@ -460,6 +462,7 @@ __all__ = [
     'Absorbing_wave_boundary',
     'Characteristic_wave_boundary',
     'Flather_external_stage_zero_velocity_boundary',
+    'Normal_depth_boundary',
     'Reflective_boundary',
     'Time_boundary',
     'Time_space_boundary',

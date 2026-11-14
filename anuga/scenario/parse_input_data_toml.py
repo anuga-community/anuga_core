@@ -553,6 +553,7 @@ class ProjectDataTOML:
             'Transmissive_n_momentum_zero_t_momentum_set_stage_boundary': 'Stage',
             'Flather_external_stage_zero_velocity':                        'Flather_Stage',
             'Flather_external_stage_zero_velocity_boundary':               'Flather_Stage',
+            'Normal_depth_boundary':                                       'Normal_depth',
         }
         self.boundary_data = []
         for b in bc.get('boundaries', []):
@@ -567,12 +568,22 @@ class ProjectDataTOML:
                 row = [tag, btype, fpath, float(b.get('start_time', 0.0))]
             elif btype == 'Reflective':
                 row = [tag, btype]
+            elif btype == 'Normal_depth':
+                if 'slope' not in b:
+                    raise ValueError(
+                        f"Boundary '{tag}': a Normal_depth boundary needs "
+                        f"'slope', the friction slope of the uniform outflow")
+                manning = b.get('manning', None)
+                row = [tag, btype, float(b['slope']),
+                       None if manning is None else float(manning),
+                       str(b.get('inflow', 'wall'))]
             else:
                 raise ValueError(
                     f'Unknown boundary type {raw!r} for tag {tag!r}. Valid types: '
                     f'"Reflective", "Stage" (alias '
                     f'Transmissive_n_momentum_zero_t_momentum_set_stage), '
-                    f'"Flather_Stage" (alias Flather_external_stage_zero_velocity)')
+                    f'"Flather_Stage" (alias Flather_external_stage_zero_velocity), '
+                    f'"Normal_depth"')
             self.boundary_data.append(row)
 
     # -----------------------------------------------------------------------

@@ -61,6 +61,13 @@ Standard Boundary Types
        state using characteristic-like variables.  Useful as a weakly
        reflecting open-ocean boundary where the stage should be approximately
        specified but outgoing waves are allowed to leave.
+   * - :class:`Normal_depth_boundary`
+     - Lets water leave as uniform flow on a slope you give: the outflow per
+       unit width is ``(1/n) h^(5/3) sqrt(slope)``, with ``h`` the depth at
+       the boundary and ``n`` the Manning friction there.  Use it at the
+       downstream end of a river or catchment model where no stage record
+       exists; a transmissive boundary there lets the water back up.  Water
+       never enters through it by default.
    * - :class:`File_boundary`
      - Reads stage and momentum time series from an SWW file and interpolates
        them spatially to each boundary midpoint and linearly in time.  Used
@@ -155,6 +162,25 @@ Usage examples
 
     Bfl = anuga.Flather_external_stage_zero_velocity_boundary(domain, waveform)
     domain.set_boundary({'ocean': Bfl, 'land': anuga.Reflective_boundary(domain)})
+
+**Normal depth boundary (downstream end of a river or catchment)**
+
+.. code-block:: python
+
+    import anuga
+
+    # Water leaves as uniform flow on a 1 in 500 slope, using the Manning
+    # friction of the domain at the boundary
+    Bn = anuga.Normal_depth_boundary(domain, slope=0.002)
+    domain.set_boundary({'outlet': Bn, 'land': anuga.Reflective_boundary(domain)})
+
+Set ``slope`` to the bed or energy slope of the reach just downstream of the
+model.  ``manning`` overrides the friction of the domain at the boundary.  The
+domain needs friction there: with none, the uniform flow is undefined, a
+warning is given and the boundary falls back to passing the interior outflow
+through.  Flow directed into the domain meets a wall (``inflow='wall'``, the
+default).  ``inflow='transmissive'`` keeps the uniform outflow as the
+boundary state there, which can let some water in.
 
 **Absorbing wave boundary (active-absorption open boundary)**
 

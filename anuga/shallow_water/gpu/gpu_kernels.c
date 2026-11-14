@@ -560,6 +560,7 @@ double gpu_evolve_one_ader2_step(struct gpu_domain *GD, double max_timestep, int
     gpu_evaluate_absorbing_wave_boundary(GD);
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
+    gpu_evaluate_normal_depth_boundary(GD);
 
     // ========================================
     // Step 3: single flux call from Q^{n+1/2} edges (or Q^n on bootstrap step)
@@ -643,6 +644,7 @@ double gpu_evolve_one_euler_step(struct gpu_domain *GD, double max_timestep, int
     gpu_evaluate_absorbing_wave_boundary(GD);
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
+    gpu_evaluate_normal_depth_boundary(GD);
 
     local_timestep = as_c ? core_compute_fluxes_scatter_on(&GD->D, 0, 1, as_e, as_ne)
                           : gpu_flux_phase(GD, 0, 1);
@@ -731,6 +733,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_absorbing_wave_boundary(GD);
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
+    gpu_evaluate_normal_depth_boundary(GD);
 
     // Compute fluxes - returns local minimum timestep
     local_timestep = as_c ? core_compute_fluxes_scatter_on(&GD->D, 0, 2, as_e, as_ne)
@@ -800,6 +803,7 @@ double gpu_evolve_one_rk2_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_absorbing_wave_boundary(GD);
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
+    gpu_evaluate_normal_depth_boundary(GD);
 
     // Compute fluxes (ignore timestep from second step)
     if (as_c) core_compute_fluxes_scatter_on(&GD->D, 1, 2, as_e, as_ne);
@@ -862,6 +866,7 @@ double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_absorbing_wave_boundary(GD);
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
+    gpu_evaluate_normal_depth_boundary(GD);
 
     local_timestep = gpu_compute_fluxes(GD, 0, 3);
 
@@ -910,6 +915,7 @@ double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_absorbing_wave_boundary(GD);
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
+    gpu_evaluate_normal_depth_boundary(GD);
 
     gpu_compute_fluxes(GD, 1, 3);
     if (apply_forcing) gpu_manning_friction(GD);
@@ -935,6 +941,7 @@ double gpu_evolve_one_rk3_step(struct gpu_domain *GD, double max_timestep, int a
     gpu_evaluate_absorbing_wave_boundary(GD);
     gpu_evaluate_characteristic_wave_boundary(GD);
     gpu_evaluate_flather_boundary(GD);
+    gpu_evaluate_normal_depth_boundary(GD);
 
     gpu_compute_fluxes(GD, 2, 3);
     if (apply_forcing) gpu_manning_friction(GD);

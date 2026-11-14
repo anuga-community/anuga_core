@@ -478,6 +478,200 @@ class Transmissive_n_momentum_zero_t_momentum_set_stage_boundary(Boundary):
         Ymom.boundary_values[ids] = ndotq * n2
 
 
+class Normal_depth_boundary(Boundary):
+    """Outflow at normal depth: uniform flow on a slope given by the user.
+
+    Each boundary edge passes the discharge per unit width of uniform flow at
+    the depth ``h`` of the edge,
+
+        q = (1/n) h^(5/3) sqrt(slope)
+
+    directed out of the domain. Stage on the boundary is the interior stage,
+    so the edge flux is that of the interior flow against uniform flow at the
+    same depth. No water level, tide or rating curve is needed.
+
+    Use it where water should simply leave, away from the area of interest.
+    It sets no downstream level, so it cannot represent backwater.
+
+    Parameters
+    ----------
+    domain : anuga.Domain
+        The domain to which this boundary is attached.
+    slope : float
+        Friction slope of the uniform flow (dimensionless, positive), as a
+        rule the bed slope near the outlet.
+    manning : float, optional
+        Manning's n of the uniform flow. Default ``None`` takes the friction
+        of the cell behind each edge.
+    inflow : {'wall', 'transmissive'}
+        What an edge does when the interior flow is directed into the domain:
+        ``'wall'`` (default) reflects it, so no water enters; ``'transmissive'``
+        keeps the uniform outflow as the boundary state, which lets some in.
+
+    Notes
+    -----
+    Uniform flow does not exist without friction. An edge whose Manning's n
+    is below ``minimum_manning`` passes the interior normal momentum
+    unchanged (a transmissive edge). ANUGA's default friction is zero, so
+    this is what happens if friction was never set.
+
+    Examples
+    --------
+    >>> import anuga
+    >>> domain = anuga.rectangular_cross_domain(10, 10)
+    >>> domain.set_quantity('friction', 0.03)
+    >>> Bn = anuga.Normal_depth_boundary(domain, slope=0.001)
+    >>> Br = anuga.Reflective_boundary(domain)
+    >>> domain.set_boundary({'left': Br, 'right': Bn, 'top': Br, 'bottom': Br})
+    """
+
+    # Everything here is computed from the interior: see Boundary.
+    limiter_prescribes = (False, False)
+
+    minimum_manning = 1.0e-6
+
+    def __init__(self, domain=None, slope=None, manning=None, inflow='wall'):
+
+        Boundary.__init__(self)
+
+        if domain is None:
+            raise Exception('Domain must be specified for Normal_depth_boundary')
+        if slope is None:
+            raise Exception('Slope must be specified for Normal_depth_boundary')
+        slope = float(slope)
+        if not slope > 0.0:
+            raise ValueError('Normal_depth_boundary: slope must be positive, '
+                             'got %g' % slope)
+        if manning is not None:
+            manning = float(manning)
+            if not manning > 0.0:
+                raise ValueError('Normal_depth_boundary: manning must be '
+                                 'positive, got %g' % manning)
+        if inflow not in ('wall', 'transmissive'):
+            raise ValueError("Normal_depth_boundary: inflow must be 'wall' or "
+                             "'transmissive', got %r" % (inflow,))
+
+        self.domain = domain
+        self.slope = slope
+        self.manning = manning
+        self.inflow = inflow
+        self._warned_zero_friction = False
+
+    def __repr__(self):
+        return 'Normal_depth_boundary(slope=%g)' % self.slope
+
+    def _warn_no_friction(self, has_friction):
+        """Warn, once, that some edges have no friction."""
+
+        if self._warned_zero_friction or np.all(has_friction):
+            return
+        self._warned_zero_friction = True
+        import warnings
+        warnings.warn(
+            'Normal_depth_boundary: Manning friction is zero on %d of %d '
+            'boundary edges. Uniform flow needs friction, so these edges '
+            'are transmissive. Set the friction quantity, or pass manning= '
+            'to the boundary.' % (int((~has_friction).sum()), has_friction.size),
+            stacklevel=4)
+
+    def warn_if_no_friction(self, domain, segment_edges):
+        """The check of _boundary_state, for the device path, which never
+        calls it. Made when the boundary is handed to the device."""
+
+        if self.manning is not None:
+            return
+        vol_ids = domain.boundary_cells[np.asarray(segment_edges)]
+        friction = domain.quantities['friction'].centroid_values[vol_ids]
+        self._warn_no_friction(friction > self.minimum_manning)
+
+    def _boundary_state(self, stage, xmom, ymom, h, n1, n2, friction,
+                        distance):
+        """Boundary (stage, xmom, ymom) from interior edge values (arrays).
+
+        distance is that from the centroid of the cell to the edge.
+        """
+
+        h = np.maximum(h, 0.0)
+        ndotq = n1*xmom + n2*ymom
+
+        if self.manning is not None:
+            friction = np.full_like(h, self.manning)
+
+        has_friction = friction > self.minimum_manning
+        self._warn_no_friction(has_friction)
+
+        n_safe = np.where(has_friction, friction, 1.0)
+        q_uniform = h**(5.0/3.0)*np.sqrt(self.slope)/n_safe
+
+        # Outward normal momentum on the boundary
+        q_n = np.where(has_friction, q_uniform, np.maximum(ndotq, 0.0))
+
+        if self.inflow == 'wall':
+            # Interior flow into the domain: mirror it, as a wall does
+            q_n = np.where(ndotq < 0.0, -ndotq, q_n)
+
+        q_n = np.where(h > self.domain.minimum_allowed_height, q_n, 0.0)
+
+        # The surface of uniform flow falls at the friction slope. The edge
+        # value of a cell on the boundary is its centroid value (there is no
+        # neighbour to reconstruct against), so carry the surface on to the
+        # edge. Without this the last cell has no surface slope ahead of it,
+        # slows, and sits a little deep. The fall is held to half the depth:
+        # in a film thinner than the fall the boundary would otherwise be dry
+        # and still carry the momentum, which collapses the timestep.
+        stage = stage - np.minimum(self.slope*distance, 0.5*h)
+
+        return stage, q_n*n1, q_n*n2
+
+    def evaluate(self, vol_id, edge_id):
+        """Boundary values for one edge."""
+
+        domain = self.domain
+        q = domain.get_conserved_quantities(vol_id, edge=edge_id)
+        normal = domain.get_normal(vol_id, edge_id)
+        h = domain.quantities['height'].edge_values[vol_id, edge_id]
+        friction = domain.quantities['friction'].centroid_values[vol_id]
+
+        stage, xmom, ymom = self._boundary_state(
+            np.array([q[0]]), np.array([q[1]]), np.array([q[2]]),
+            np.array([h]), normal[0], normal[1], np.array([friction]),
+            np.array([2.0*domain.areas[vol_id]
+                      / (3.0*domain.edgelengths[vol_id, edge_id])]))
+
+        q[0] = stage[0]
+        q[1] = xmom[0]
+        q[2] = ymom[0]
+        return q
+
+    def evaluate_segment(self, domain, segment_edges):
+        """Apply the boundary to the edges listed in segment_edges."""
+
+        Stage = domain.quantities['stage']
+        Height = domain.quantities['height']
+        Xmom = domain.quantities['xmomentum']
+        Ymom = domain.quantities['ymomentum']
+        Friction = domain.quantities['friction']
+
+        ids = segment_edges
+        vol_ids = domain.boundary_cells[ids]
+        edge_ids = domain.boundary_edges[ids]
+
+        n1 = domain.normals[vol_ids, 2*edge_ids]
+        n2 = domain.normals[vol_ids, 2*edge_ids+1]
+
+        stage, xmom, ymom = self._boundary_state(
+            Stage.edge_values[vol_ids, edge_ids],
+            Xmom.edge_values[vol_ids, edge_ids],
+            Ymom.edge_values[vol_ids, edge_ids],
+            Height.edge_values[vol_ids, edge_ids],
+            n1, n2, Friction.centroid_values[vol_ids],
+            2.0*domain.areas[vol_ids]/(3.0*domain.edgelengths[vol_ids, edge_ids]))
+
+        Stage.boundary_values[ids] = stage
+        Xmom.boundary_values[ids] = xmom
+        Ymom.boundary_values[ids] = ymom
+
+
 class Transmissive_stage_zero_momentum_boundary(Boundary):
     """Transmissive stage with zero momentum boundary.
 

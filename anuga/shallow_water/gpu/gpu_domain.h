@@ -163,6 +163,22 @@ struct flather_boundary {
     int mapped;
 };
 
+// Normal_depth_boundary - outflow as uniform flow on a slope given by the user.
+// Everything is per edge, so several boundaries with different slopes share
+// the one struct. Nothing changes during the run.
+struct normal_depth_boundary {
+    int num_edges;
+    int *boundary_indices;       // Where to write in boundary_values arrays [num_edges]
+    int *vol_ids;                // Interior cell IDs [num_edges]
+    int *edge_ids;               // Which edge (0, 1, or 2) [num_edges]
+    int *wall;                   // 1 = reflect interior flow directed into the domain [num_edges]
+    double *slope;               // Friction slope of the uniform flow [num_edges]
+    double *manning;             // Manning's n; negative = friction of the cell [num_edges]
+    double *distance;            // Centroid of the cell to the edge [num_edges]
+    double minimum_manning;      // Below this an edge is transmissive
+    int mapped;
+};
+
 // Boundary edge sync buffers - pre-allocated for efficient sparse sync
 // Allocated once during setup, reused every timestep
 struct boundary_edge_sync {
@@ -512,6 +528,7 @@ struct gpu_domain {
     struct absorbing_wave_boundary absorbing_wave;
     struct characteristic_wave_boundary characteristic_wave;
     struct flather_boundary flather;
+    struct normal_depth_boundary normal_depth;
 
     // Boundary edge sync (for sparse edge value sync)
     struct boundary_edge_sync edge_sync;
@@ -665,6 +682,16 @@ int  gpu_flather_init(struct gpu_domain *GD, int num_edges,
 void gpu_flather_finalize(struct gpu_domain *GD);
 void gpu_flather_set_value(struct gpu_domain *GD, double stage_outside);
 void gpu_evaluate_flather_boundary(struct gpu_domain *GD);
+
+// Normal_depth_boundary - uniform flow outflow, evaluated entirely on device
+int  gpu_normal_depth_init(struct gpu_domain *GD, int num_edges,
+                           int *boundary_indices, int *vol_ids, int *edge_ids,
+                           int *wall, double *slope, double *manning,
+                           double *distance, double minimum_manning);
+void gpu_normal_depth_finalize(struct gpu_domain *GD);
+void gpu_normal_depth_map(struct gpu_domain *GD);
+void gpu_normal_depth_unmap(struct gpu_domain *GD);
+void gpu_evaluate_normal_depth_boundary(struct gpu_domain *GD);
 
 // Time_boundary - time-dependent Dirichlet values
 int gpu_time_boundary_init(struct gpu_domain *GD, int num_edges,

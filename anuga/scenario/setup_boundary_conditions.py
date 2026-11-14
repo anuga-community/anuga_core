@@ -79,6 +79,12 @@ def _setup_boundary_conditions_inner(domain, project):
             boundary_tags_and_conditions[boundary_tag] = \
                 boundary_function
 
+        elif boundary_condition_type == 'Normal_depth':
+            # Outflow as uniform flow: [tag, type, slope, manning, inflow]
+            boundary_tags_and_conditions[boundary_tag] = \
+                asb.Normal_depth_boundary(
+                    domain, slope=bd[2], manning=bd[3], inflow=bd[4])
+
         else:
             msg = 'Boundary condition type ' + boundary_condition_type +\
                   ' for tag ' + boundary_tag + ' is not implemented'

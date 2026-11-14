@@ -178,6 +178,22 @@ class TestSetupBoundaryConditions(unittest.TestCase):
 
     # --- Error cases ---
 
+    def test_normal_depth_boundary_applied(self):
+        domain = _make_domain()
+        boundary_data = [
+            ['right', 'Normal_depth', 0.002, 0.05, 'transmissive'],
+            ['left', 'Reflective'],
+            ['bottom', 'Reflective'],
+            ['top', 'Reflective'],
+        ]
+        setup_boundary_conditions(domain, _make_project(boundary_data))
+
+        B = _boundary_for_tag(domain, 'right')
+        self.assertEqual(type(B).__name__, 'Normal_depth_boundary')
+        self.assertEqual(B.slope, 0.002)
+        self.assertEqual(B.manning, 0.05)
+        self.assertEqual(B.inflow, 'transmissive')
+
     def test_unknown_boundary_type_raises(self):
         # Can only provide 'left' boundary since set_boundary needs all 4 —
         # unknown type raises before set_boundary is called

@@ -385,6 +385,18 @@ int gpu_domain_init(struct gpu_domain *GD, MPI_Comm comm, int rank, int nprocs) 
     GD->flather.stage_outside    = 0.0;
     GD->flather.mapped           = 0;
 
+    // Initialize normal depth boundary to empty
+    GD->normal_depth.num_edges        = 0;
+    GD->normal_depth.boundary_indices = NULL;
+    GD->normal_depth.vol_ids          = NULL;
+    GD->normal_depth.edge_ids         = NULL;
+    GD->normal_depth.wall             = NULL;
+    GD->normal_depth.slope            = NULL;
+    GD->normal_depth.manning          = NULL;
+    GD->normal_depth.distance         = NULL;
+    GD->normal_depth.minimum_manning  = 0.0;
+    GD->normal_depth.mapped           = 0;
+
     // Initialize boundary edge sync to empty
     GD->edge_sync.num_boundary_cells = 0;
     GD->edge_sync.cell_ids = NULL;
@@ -462,6 +474,7 @@ void gpu_domain_finalize(struct gpu_domain *GD) {
     gpu_absorbing_wave_finalize(GD);
     gpu_characteristic_wave_finalize(GD);
     gpu_flather_finalize(GD);
+    gpu_normal_depth_finalize(GD);
 
     // Free boundary edge sync structures
     gpu_boundary_edge_sync_finalize(GD);
@@ -736,6 +749,8 @@ int gpu_domain_map_arrays(struct gpu_domain *GD) {
             fflush(stdout);
         }
     }
+
+    gpu_normal_depth_map(GD);
 
     // Map riverwall arrays if present
     // edge_flux_type is always mapped (size 3*n); other arrays only if riverwalls exist
@@ -1075,6 +1090,8 @@ void gpu_remap_boundary_arrays(struct gpu_domain *GD) {
             fflush(stdout);
         }
     }
+
+    gpu_normal_depth_map(GD);
 }
 
 void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
@@ -1265,6 +1282,8 @@ void gpu_domain_unmap_arrays(struct gpu_domain *GD) {
         #pragma omp target exit data map(delete: b_idx[0:ne], v_ids[0:ne], e_ids[0:ne])
         FL->mapped = 0;
     }
+
+    gpu_normal_depth_unmap(GD);
 
     // Unmap riverwall arrays
     anuga_int *edge_flux_type = GD->D.edge_flux_type;

@@ -824,6 +824,42 @@ class TestBoundaryConditions(unittest.TestCase):
         with self.assertRaises(FileNotFoundError):
             self._make(bc_section=bc)
 
+    def test_normal_depth_boundary(self):
+        bc = textwrap.dedent("""\
+            [boundary_conditions]
+            [[boundary_conditions.boundaries]]
+            tag = "outlet"
+            type = "Normal_depth"
+            slope = 0.002
+        """)
+        p = self._make(bc_section=bc)
+        self.assertEqual(p.boundary_data[0],
+                         ['outlet', 'Normal_depth', 0.002, None, 'wall'])
+
+    def test_normal_depth_boundary_options_and_class_name(self):
+        bc = textwrap.dedent("""\
+            [boundary_conditions]
+            [[boundary_conditions.boundaries]]
+            tag = "outlet"
+            type = "Normal_depth_boundary"
+            slope = 0.002
+            manning = 0.05
+            inflow = "transmissive"
+        """)
+        p = self._make(bc_section=bc)
+        self.assertEqual(p.boundary_data[0],
+                         ['outlet', 'Normal_depth', 0.002, 0.05, 'transmissive'])
+
+    def test_normal_depth_boundary_without_slope_raises(self):
+        bc = textwrap.dedent("""\
+            [boundary_conditions]
+            [[boundary_conditions.boundaries]]
+            tag = "outlet"
+            type = "Normal_depth"
+        """)
+        with self.assertRaisesRegex(ValueError, 'slope'):
+            self._make(bc_section=bc)
+
     def test_unknown_boundary_type_raises(self):
         bc = textwrap.dedent("""\
             [boundary_conditions]

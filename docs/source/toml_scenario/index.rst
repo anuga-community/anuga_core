@@ -426,6 +426,14 @@ that appears in the bounding polygon.
    file       = "boundarycond/tide.csv"
    start_time = 0.0
 
+   # Normal depth boundary — water leaves as uniform flow on the given slope
+   [[boundary_conditions.boundaries]]
+   tag     = "Outlet"
+   type    = "Normal_depth"
+   slope   = 0.002          # required: bed or energy slope downstream
+   # manning = 0.035        # optional; default is the domain friction there
+   # inflow  = "wall"       # optional; "wall" (default) or "transmissive"
+
 .. _toml-initial:
 
 [initial_conditions]

@@ -187,6 +187,7 @@ use it; the full API of each class is below.
    Time_boundary
    Transmissive_n_momentum_zero_t_momentum_set_stage_boundary
    Flather_external_stage_zero_velocity_boundary
+   Normal_depth_boundary
    File_boundary
    Field_boundary
    Absorbing_wave_boundary

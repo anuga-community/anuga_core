@@ -360,6 +360,13 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_flather_set_value(gpu_domain *GD, double stage_outside)
     void gpu_evaluate_flather_boundary(gpu_domain *GD)
 
+    # Normal_depth_boundary
+    int  gpu_normal_depth_init(gpu_domain *GD, int num_edges,
+                               int *boundary_indices, int *vol_ids, int *edge_ids,
+                               int *wall, double *slope, double *manning,
+                               double *distance, double minimum_manning)
+    void gpu_evaluate_normal_depth_boundary(gpu_domain *GD)
+
     # GPU kernels
     void gpu_extrapolate_second_order(gpu_domain *GD)
     double gpu_compute_fluxes(gpu_domain *GD, int substep_count, int timestep_fluxcalls)
@@ -2249,6 +2256,80 @@ def set_flather_value(GPUDomain gpu_dom, double stage_outside):
 def evaluate_flather_boundary_gpu(GPUDomain gpu_dom):
     """Evaluate Flather_external_stage_zero_velocity_boundary on GPU."""
     gpu_evaluate_flather_boundary(&gpu_dom.GD)
+
+
+def init_normal_depth_boundary(GPUDomain gpu_dom, object domain_object):
+    """
+    Initialize Normal_depth_boundary for GPU.
+
+    Collects the edges of every Normal_depth_boundary in domain.boundary_map,
+    with the slope, Manning's n and inflow rule of each, so several such
+    boundaries can differ. Call once after domain setup, BEFORE map_to_gpu.
+
+    Returns
+    -------
+    int
+        Number of boundary edges found (0 if none).
+    """
+    cdef int num_edges = 0
+    cdef np.ndarray[int, ndim=1, mode="c"] boundary_indices
+    cdef np.ndarray[int, ndim=1, mode="c"] vol_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] edge_ids_arr
+    cdef np.ndarray[int, ndim=1, mode="c"] wall_arr
+    cdef np.ndarray[double, ndim=1, mode="c"] slope_arr
+    cdef np.ndarray[double, ndim=1, mode="c"] manning_arr
+    cdef np.ndarray[double, ndim=1, mode="c"] distance_arr
+    cdef double minimum_manning = 0.0
+
+    if domain_object.boundary_map is None:
+        return 0
+
+    all_ids = []
+    walls = []
+    slopes = []
+    mannings = []
+    for tag, boundary in domain_object.boundary_map.items():
+        if boundary is not None and \
+                boundary.__class__.__name__ == 'Normal_depth_boundary':
+            segment_edges = domain_object.tag_boundary_cells.get(tag, None)
+            if segment_edges is not None and len(segment_edges) > 0:
+                n = len(segment_edges)
+                all_ids.extend(segment_edges)
+                walls.extend([1 if boundary.inflow == 'wall' else 0]*n)
+                slopes.extend([boundary.slope]*n)
+                # Negative: take the friction of the cell behind the edge
+                mannings.extend([-1.0 if boundary.manning is None
+                                 else boundary.manning]*n)
+                minimum_manning = boundary.minimum_manning
+                boundary.warn_if_no_friction(domain_object, segment_edges)
+
+    if len(all_ids) == 0:
+        return 0
+
+    ids = np.array(all_ids, dtype=np.intc)
+    num_edges = len(ids)
+    boundary_indices = ids
+    vol_ids_arr  = np.ascontiguousarray(domain_object.boundary_cells[ids], dtype=np.intc)
+    edge_ids_arr = np.ascontiguousarray(domain_object.boundary_edges[ids], dtype=np.intc)
+    wall_arr     = np.array(walls, dtype=np.intc)
+    slope_arr    = np.array(slopes, dtype=np.float64)
+    manning_arr  = np.array(mannings, dtype=np.float64)
+    distance_arr = np.ascontiguousarray(
+        2.0*domain_object.areas[vol_ids_arr]
+        / (3.0*domain_object.edgelengths[vol_ids_arr, edge_ids_arr]),
+        dtype=np.float64)
+
+    if     gpu_normal_depth_init(&gpu_dom.GD, num_edges,
+                             &boundary_indices[0], &vol_ids_arr[0], &edge_ids_arr[0],
+                             &wall_arr[0], &slope_arr[0], &manning_arr[0],
+                             &distance_arr[0], minimum_manning) != 0:
+        raise RuntimeError('init_normal_depth_boundary: ' + get_last_error(gpu_dom))
+    return num_edges
+
+
+def evaluate_normal_depth_boundary_gpu(GPUDomain gpu_dom):
+    """Evaluate Normal_depth_boundary on GPU."""
+    gpu_evaluate_normal_depth_boundary(&gpu_dom.GD)
 
 
 def evolve_one_euler_step_gpu(GPUDomain gpu_dom, double max_timestep, int apply_forcing):
