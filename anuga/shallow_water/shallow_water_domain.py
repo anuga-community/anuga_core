@@ -6583,6 +6583,12 @@ A sediment fraction is a tracer -- so it is transported by the machinery of
         self._sync_riverwall_to_device()
         self._sync_bed_ghosts()
 
+        # Name the flux kernel now, with the other start-up lines. Left to the
+        # first flux call it would print after the t=0 yield. It follows the
+        # riverwall sync because riverwalls decide the kernel.
+        if self.multiprocessor_mode == MULTIPROCESSOR_GPU and self.gpu_interface is not None:
+            self.gpu_interface.report_flux_path()
+
         #nvtx marker
         nvtxRangePush('_evolve_base')
 

@@ -145,6 +145,11 @@ class GPU_OMP_interface:
         from anuga.shallow_water.sw_domain_gpu_ext import prepare_yield_gpu
         return prepare_yield_gpu(self.gpu_dom)
 
+    def report_flux_path(self):
+        """Print the flux kernel in use, with the other start-up messages."""
+        from anuga.shallow_water.sw_domain_gpu_ext import report_flux_path_gpu
+        report_flux_path_gpu(self.gpu_dom)
+
     def sync_boundary_values(self):
         """Sync boundary values from host to device."""
         from anuga.shallow_water.sw_domain_gpu_ext import sync_boundary_values

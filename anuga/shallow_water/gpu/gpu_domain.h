@@ -777,6 +777,7 @@ void gpu_forcing_and_update(struct gpu_domain *GD, double timestep,
 // D->edge_flux_work is allocated (and no riverwalls); cell-based otherwise.
 double gpu_flux_phase(struct gpu_domain *GD, int substep_count, int timestep_fluxcalls);
 int gpu_prepare_should_zero_eu(struct gpu_domain *GD);
+void gpu_report_flux_path(struct gpu_domain *GD);
 void gpu_apply_phase(struct gpu_domain *GD, double timestep, int apply_forcing,
                      int do_saxpy, double a, double b, int substep_count);
 
