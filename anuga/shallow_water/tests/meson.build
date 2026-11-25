@@ -12,6 +12,7 @@ python_sources = [
 
 'test_flux.py',
 'test_gpu_error_reporting.py',
+'test_gpu_startup_messages.py',
 'test_lazy_yield_values.py',
 'test_normal_depth_boundary.py',
 'test_operator_timing.py',

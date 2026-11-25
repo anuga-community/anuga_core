@@ -376,6 +376,7 @@ cdef extern from "gpu_domain.h" nogil:
     void gpu_saxpy3_conserved_quantities(gpu_domain *GD, double a, double b, double c)
     double gpu_protect(gpu_domain *GD)
     double gpu_prepare_step(gpu_domain *GD, int do_backup, int zero_eu)
+    void gpu_report_flux_path(gpu_domain *GD)
     double gpu_compute_water_volume(gpu_domain *GD)
     double gpu_active_set_mean_fraction(gpu_domain *GD)
     void gpu_manning_friction(gpu_domain *GD)
@@ -2606,6 +2607,19 @@ def prepare_yield_gpu(GPUDomain gpu_dom):
         Mass error (total volume added to prevent negative depths)
     """
     return gpu_prepare_step(&gpu_dom.GD, 0, 0)
+
+
+def report_flux_path_gpu(GPUDomain gpu_dom):
+    """
+    Print which flux kernel the device uses (once per process, verbose only).
+
+    Called at the start of evolve so the line appears with the other start-up
+    messages. Prepares active-set stepping first, since that selects the
+    scatter kernel.
+    """
+    import sys
+    sys.stdout.flush()
+    gpu_report_flux_path(&gpu_dom.GD)
 
 
 def protect_gpu(GPUDomain gpu_dom):

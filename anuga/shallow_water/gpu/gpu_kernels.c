@@ -313,17 +313,30 @@ int gpu_prepare_should_zero_eu(struct gpu_domain *GD) {
     return gpu_flux_mode(GD) == FLUX_SCATTER;
 }
 
+// Say once per process which flux kernel is in use (rank 0, verbose only).
+static void gpu_print_flux_path_once(struct gpu_domain *GD, int mode) {
+    static int printed = 0;
+    if (printed || !GD->verbose || GD->rank != 0) return;
+    printf("  flux path : %s\n",
+           mode == FLUX_SLOT ? "slot" : mode == FLUX_SCATTER ? "scatter" : "cell");
+    fflush(stdout);
+    printed = 1;
+}
+
+// Report the flux kernel at the start of evolve, with the other start-up
+// lines, instead of at the first flux call (which comes after the first
+// yield).  Active-set stepping selects the scatter kernel when it is
+// prepared, so prepare it here; the call is a no-op once done.  Call after
+// the riverwalls have been synced, because they decide the kernel too.
+void gpu_report_flux_path(struct gpu_domain *GD) {
+    gpu_active_set_prepare(GD);
+    gpu_print_flux_path_once(GD, gpu_flux_mode(GD));
+}
+
 double gpu_flux_phase(struct gpu_domain *GD, int substep_count, int timestep_fluxcalls) {
     const int mode = gpu_flux_mode(GD);
-    if (GD->verbose) {
-        static int printed = 0;
-        if (!printed) {
-            printf("  flux path : %s\n",
-                   mode == FLUX_SLOT ? "slot" : mode == FLUX_SCATTER ? "scatter" : "cell");
-            fflush(stdout);
-            printed = 1;
-        }
-    }
+    // Fallback for drivers that step without going through evolve().
+    gpu_print_flux_path_once(GD, mode);
     if (mode == FLUX_CELL)
         return gpu_compute_fluxes(GD, substep_count, timestep_fluxcalls);
 
