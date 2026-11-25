@@ -1,0 +1,62 @@
+NVIDIA HPC SDK run-time libraries distributed with ANUGA
+=========================================================
+
+ANUGA itself is licensed under the Apache License, Version 2.0 (LICENSE.txt).
+
+This build of ANUGA was compiled with the NVIDIA HPC SDK C compiler (nvc) so
+that its OpenMP kernels run on NVIDIA GPUs. To run without the SDK installed,
+it carries the SDK's redistributable run-time libraries, unmodified, in the
+directory that holds this notice:
+
+    anuga/_nvhpc_runtime/    in the anuga-gpu wheel
+    /opt/nvhpc-redist/       in the ANUGA GPU container images
+
+"This package" below means that wheel or container image.
+
+Those libraries are NOT part of ANUGA and are NOT covered by the Apache
+License. They are proprietary software of NVIDIA Corporation and its
+licensors, and are included under the distribution terms of the "NVIDIA
+Software License Agreement for HPC Software Development Kit", reproduced in
+full in LICENSE_NVIDIA_HPC_SDK.txt alongside this file. Compiler run-time
+code linked into ANUGA's extension modules is covered by the same agreement.
+
+By installing or using this package you agree that, in respect of those
+libraries and that run-time code (the "NVIDIA run-time files"):
+
+ 1. They may be used only as part of this package, to run ANUGA. They are
+    loaded only by ANUGA's own extension modules.
+
+ 2. You may not distribute them further, on their own or as part of anything
+    else. To give this package to someone else, direct them to where you
+    obtained it.
+
+ 3. You may not modify them, create derivative works of them, reverse
+    engineer, decompile or disassemble them, or otherwise attempt to obtain
+    their source code.
+
+ 4. You may not remove or alter any copyright or other proprietary notice in
+    them, or this notice and the accompanying licence.
+
+ 5. You may not export them, directly or indirectly, in violation of United
+    States export control laws or the export or import regulations of any
+    other country.
+
+ 6. NVIDIA and its licensors retain all right, title and interest in them.
+    Nothing here grants any licence to NVIDIA software or technology beyond
+    what is stated above.
+
+ 7. THEY ARE PROVIDED "AS IS". ALL WARRANTIES, EXPRESS OR IMPLIED, INCLUDING
+    WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+    NON-INFRINGEMENT, ARE DISCLAIMED ON BEHALF OF NVIDIA CORPORATION, ITS
+    AFFILIATES AND ITS LICENSORS. TO THE MAXIMUM EXTENT PERMITTED BY LAW,
+    NVIDIA CORPORATION, ITS AFFILIATES AND ITS LICENSORS SHALL NOT BE LIABLE
+    FOR ANY DAMAGES, DIRECT OR INDIRECT, INCIDENTAL OR CONSEQUENTIAL, ARISING
+    FROM ANY USE OF THEM.
+
+This package is not an NVIDIA product and is not endorsed by NVIDIA. NVIDIA
+is named here only as the licensor of the run-time files and to identify the
+hardware the package runs on.
+
+If you become aware of the NVIDIA run-time files being distributed or used
+other than as described here, please tell the ANUGA maintainers:
+https://github.com/anuga-community/anuga_core/issues
